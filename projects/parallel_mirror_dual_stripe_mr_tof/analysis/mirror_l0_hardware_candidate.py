@@ -98,6 +98,9 @@ def main() -> int:
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
+    from common.host_resource_python import ensure_heavy_entry
+
+    ensure_heavy_entry("projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0_hardware_candidate")
     result = run(arguments.contract)
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

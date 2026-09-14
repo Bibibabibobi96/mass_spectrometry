@@ -54,6 +54,7 @@ $logDir=$package.log_dir;$runConfig=$package.run_config;$summary=$package.summar
 $artifactRoot=Join-Path $workspaceRoot 'artifacts';$cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
 $lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight'
 try {
+  $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   $families=@(
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseCentralRunPath -ExpectedRegion central_transport -ExpectedScale 1.0 -Label coarse_central -PythonExe $python -RepoRoot $repoRoot
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseMirrorRunPath -ExpectedRegion mirror_turn_positive -ExpectedScale 1.0 -Label coarse_mirror -PythonExe $python -RepoRoot $repoRoot
@@ -112,7 +113,6 @@ try {
   $comparisonRecords=@();$nativeRecords=@();$csvOutputs=@()
   $comparisonScript=Join-Path $repoRoot 'common\simion\compare_dirichlet_patch_interface.lua'
   $simionLog=Join-Path $logDir 'simion_interface_comparisons.log'
-  $lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
   foreach($family in $families){
     $mesh=[double]$family.contract.identity.mesh.mm_per_gu[0]
     if(@($family.contract.identity.mesh.mm_per_gu|Where-Object{[double]$_-ne$mesh}).Count-ne 0){
@@ -162,8 +162,8 @@ try {
       }
     }
   }
-  Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
-  $hostOutcome='success'
+  $lease=Update-HostResourceStage -Lease $lease -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
 
   $measurementInput=Join-Path $inputDir 'interface_measurement_input.json'
   Write-RunJson -Path $measurementInput -Depth 12 -Value ([ordered]@{
@@ -200,6 +200,7 @@ try {
     -Software @('SIMION 2020','Python 3.11') `
     -Outputs (@($summary,$measurementInput,$result,$simionLog,$capacityStartupPath,$capacityTerminalPath,$retention)+$csvOutputs)
   $terminalized=$true
+  $hostOutcome='success'
   Write-Host "MRTOF_ANALYZER_LOCAL_INTERFACE=PASS RUN_ID=$RunId COMPARISONS=$($metrics.comparison_count)"
 } catch {
   if(-not$terminalized){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `

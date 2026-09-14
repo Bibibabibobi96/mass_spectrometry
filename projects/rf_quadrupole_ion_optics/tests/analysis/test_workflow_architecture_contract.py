@@ -106,6 +106,11 @@ def _parameter_block(source: str) -> str:
     return source[: source.index("Set-StrictMode")]
 
 
+def _without_host_budget_role(source: str) -> str:
+    # Exempt only the registered host budget command's fixed SIMION category.
+    return re.sub(r"\bGet-HostResourceBudget -Role SIMION\b", "Get-HostResourceBudget SIMION", source)
+
+
 def _powershell_functions(source: str) -> set[str]:
     return set(re.findall(r"(?im)^\s*function\s+([A-Za-z0-9_-]+)\b", source))
 
@@ -231,7 +236,7 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
             self.assertFalse(
                 any(
                     "mass_filter" in path.stem
-                    for path in root.iterdir()
+                    for path in (root.iterdir() if root.exists() else ())
                     if path.suffix.lower() in {".ps1", ".m"}
                 )
             )
@@ -381,6 +386,22 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
             self.assertIn("generate_particle_table", source)
             self.assertIn("--validate-bundle", source)
 
+    def test_host_budget_role_exception_preserves_business_branch_rejection(self) -> None:
+        allowed = "Get-HostResourceBudget -Role SIMION -Stage flight"
+        self.assertNotRegex(_without_host_budget_role(allowed), r"(?i)\b(?:role|mode)\b")
+        for forbidden in (
+            "Invoke-Science -Role SIMION",
+            "Get-HostResourceBudget -Role science",
+            "Get-HostResourceBudget -Role SIMION_business",
+            "if ($Role -eq 'transport') { Invoke-Science }",
+            "if ($Mode -eq 'mass_filter') { Invoke-Science }",
+        ):
+            with self.subTest(source=forbidden):
+                self.assertRegex(
+                    _without_host_budget_role(allowed + "\n" + forbidden),
+                    r"(?i)\b(?:role|mode)\b",
+                )
+
     def test_shared_modules_have_registered_narrow_responsibilities(self) -> None:
         config_core = _read(SIMION_CONFIG_CORE)
         execution_support = _read(SIMION_EXECUTION_SUPPORT)
@@ -406,7 +427,7 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
         }:
             self.assertNotIn(foreign_function, execution_support)
         self.assertNotRegex(
-            execution_support,
+            _without_host_budget_role(execution_support),
             r"(?i)\b(?:role|mode|mass[_-]?filter|interface_contract|rf_peak|waveform)\b",
         )
 

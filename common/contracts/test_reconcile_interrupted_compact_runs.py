@@ -1,5 +1,6 @@
 import json
 import io
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -37,7 +38,9 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         self.assertTrue(plan["eligible"])
         self.assertEqual(plan["removable_file_count"], 2)
         self.assertTrue(pa.exists())
-        result = reconcile(self.runs, apply=True)[0]
+        # This temporary fixture has no solver; do not observe unrelated host jobs.
+        with patch.object(reconciliation.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout="")):
+            result = reconcile(self.runs, apply=True)[0]
         self.assertTrue(result["applied"])
         self.assertFalse(pa.exists())
         self.assertFalse(trajectory.exists())
@@ -101,7 +104,8 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         (second / "run_manifest.json").write_text(json.dumps({"status":"interrupted","run_config":record(second / "run_config.json"),"inputs":{},"outputs":[record(second / "summary.json")]}), encoding="utf-8")
         (self.run / "first.pa0").write_bytes(b"a")
         (second / "second.pa0").write_bytes(b"b")
-        reconcile(self.runs, apply=True, max_apply_runs=1)
+        with patch.object(reconciliation.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout="")):
+            reconcile(self.runs, apply=True, max_apply_runs=1)
         self.assertEqual(sum(path.exists() for path in (self.run / "first.pa0", second / "second.pa0")), 1)
 
     def test_summary_does_not_include_per_run_payload(self) -> None:
@@ -127,13 +131,17 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         self.assertTrue(report["eligible"])
         self.assertEqual(report["removable_file_count"], 1)
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows tasklist guard")
     def test_active_simion_blocks_apply_before_any_run_scan(self) -> None:
         with (
-            patch.object(reconciliation, "assert_no_active_simion", side_effect=RuntimeError("SIMION active")),
+            patch.object(reconciliation.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 0, stdout='"SIMION.exe","1234","Console","1","1024 K"\n',
+            )) as listing,
             patch.object(reconciliation, "inspect_run") as inspect,
         ):
-            with self.assertRaisesRegex(RuntimeError, "SIMION active"):
+            with self.assertRaisesRegex(RuntimeError, "refusing compact reconciliation while SIMION is active"):
                 reconcile(self.runs, apply=True)
+        listing.assert_called_once()
         inspect.assert_not_called()
 
     def test_cli_summary_only_emits_aggregate_receipt(self) -> None:

@@ -128,7 +128,7 @@ try {
     for ($attempt = 1; $attempt -le $StartupAttempts; $attempt++) {
         if ($attempt -gt 1) {
             Update-HostResourceStage -Lease $resourceLease -Stage prepare `
-                -Budget $stageBudgets.prepare -RetainedMemoryBytes 0
+                -Budget $stageBudgets.prepare -RetainedMemoryBytes 0 | Out-Null
         }
         Remove-Item -LiteralPath $report -Force -ErrorAction SilentlyContinue
         $launcherArguments = @()
@@ -146,12 +146,12 @@ try {
             '-mlstartdir', $repoRoot
         )
         Update-HostResourceStage -Lease $resourceLease -Stage solver `
-            -Budget $stageBudgets.solver -RetainedMemoryBytes 0
+            -Budget $stageBudgets.solver -RetainedMemoryBytes 0 | Out-Null
         $serversBeforeAttempt = @(Get-ComsolServerProcessIds)
         $launcherProcess = Start-ComsolLauncherProcess -FilePath $launcher `
             -Arguments $launcherArguments
         try {
-            Register-HostResourceProcess -Lease $resourceLease -ProcessId $launcherProcess.Id
+            Register-HostResourceProcess -Lease $resourceLease -ProcessId $launcherProcess.Id | Out-Null
         } catch {
             # Do not leave an unregistered solver running if ownership publication fails.
             if (-not $launcherProcess.HasExited) {
@@ -167,7 +167,7 @@ try {
         while (-not $launcherProcess.HasExited -and
                -not (Test-Path -LiteralPath $report -PathType Leaf) -and
                [DateTime]::UtcNow -lt $reportDeadline) {
-            Receive-HostResourceStage -Lease $resourceLease
+            Receive-HostResourceStage -Lease $resourceLease | Out-Null
             Start-Sleep -Milliseconds 500
             $launcherProcess.Refresh()
         }
@@ -183,14 +183,14 @@ try {
                 "$StartupReportTimeoutSeconds seconds (attempt $attempt/$StartupAttempts).")
         } else {
             while (-not $launcherProcess.HasExited) {
-                Receive-HostResourceStage -Lease $resourceLease
+                Receive-HostResourceStage -Lease $resourceLease | Out-Null
                 [void]$launcherProcess.WaitForExit(500)
             }
             $launcherExit = $launcherProcess.ExitCode
         }
         $launcherStandardOutput = $standardOutputRead.GetAwaiter().GetResult()
         $launcherStandardError = $standardErrorRead.GetAwaiter().GetResult()
-        Receive-HostResourceStage -Lease $resourceLease
+        Receive-HostResourceStage -Lease $resourceLease | Out-Null
 
         if (Test-Path -LiteralPath $report -PathType Leaf) {
             $reportText = Get-Content -LiteralPath $report -Raw -Encoding UTF8
@@ -198,12 +198,12 @@ try {
             if ($launcherExit -eq 0 -and $reportText -match '(?m)^STATUS=PASS$') {
                 Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'task completion'
                 Update-HostResourceStage -Lease $resourceLease -Stage postprocess `
-                    -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0
+                    -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0 | Out-Null
                 return
             }
             Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'task failure'
             Update-HostResourceStage -Lease $resourceLease -Stage postprocess `
-                -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0
+                -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0 | Out-Null
             if ($attempt -lt $StartupAttempts -and
                 (Test-ComsolRetryableStartupReport -ReportText $reportText)) {
                 $archivedReport = $report + '.startup_retry.' + $attempt + '.' +
@@ -225,7 +225,7 @@ try {
             else { 'startup without a task report' }
         Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason $noReportReason
         Update-HostResourceStage -Lease $resourceLease -Stage postprocess `
-            -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0
+            -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0 | Out-Null
         if ($attempt -lt $StartupAttempts) {
             Write-Warning ("COMSOL/MATLAB exited before the task report was created; " +
                 "retrying clean startup in $StartupRetryDelaySeconds s " +
@@ -242,5 +242,5 @@ finally {
 
 throw "LiveLink task did not create its report after $StartupAttempts clean startup attempts: $report"
 } finally {
-    Exit-HostResourceStage -Lease $resourceLease
+    Exit-HostResourceStage -Lease $resourceLease | Out-Null
 }

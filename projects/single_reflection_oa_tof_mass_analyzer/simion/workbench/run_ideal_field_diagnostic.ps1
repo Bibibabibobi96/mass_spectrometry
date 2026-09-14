@@ -12,6 +12,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$hostRole = 'SIMION' # AnalyzeOnly still performs the runtime geometry gate.
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
+try {
 $projectRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $projectRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 $formalDir = Join-Path $artifactRoot 'formal\simion'
@@ -139,10 +143,16 @@ try {
     )
     if (-not $AnalyzeOnly) {
       Write-Host ("Running {0} / {1}" -f $d.Name,$m.Name)
+      $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+        -Budget (Get-HostResourceBudget -Role $hostRole -Stage flight) -RetainedMemoryBytes 0
       $p = Start-Process -FilePath $SimionExe -ArgumentList $args -WorkingDirectory $runtimeAlias.execution_alias -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
       if ($p.ExitCode -ne 0) { throw "SIMION failed for $stem with exit code $($p.ExitCode); see $stderr" }
     } elseif (-not (Test-Path -LiteralPath $stdout)) {
       throw "AnalyzeOnly requested but log is missing: $stdout"
+    }
+    if (-not $AnalyzeOnly) {
+      $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+        -Budget (Get-HostResourceBudget -Role $hostRole -Stage postprocess) -RetainedMemoryBytes 0
     }
     $summary = & $analyzer -Log $stdout -IonFile $ionFiles[$d.Name] -Mode $m.Name -Distribution $d.Name -ParticleCsv $particleCsv
     $summaries.Add($summary)
@@ -182,3 +192,7 @@ catch { Write-Warning "Could not remove short diagnostic execution alias: $($_.E
 $executionAlias = $null
 $summaries | Sort-Object Distribution,Mode | Format-Table Distribution,Mode,Hit,EfficiencyPct,MeanTofUs,StdTofNs,FwhmTofNs,ResolutionFwhm,MaxCrossingRadiusMm -AutoSize
 Write-Host "Summary: $summaryCsv"
+
+} finally {
+  Exit-HostExecutionLease -Lease $hostExecutionLease
+}

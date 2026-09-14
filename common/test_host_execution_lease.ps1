@@ -25,6 +25,27 @@ try {
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = $statePath
   $env:SIMULATION_PYTHON_EXE = $PythonExe
   . $leaseSource
+  . (Join-Path $PSScriptRoot 'contracts/run_artifact_support.ps1')
+  $ordinary = Get-HostResourceBudget -Role GATE -Stage unlisted-ordinary-check
+  Assert-True (-not $ordinary.heavy_stage -and -not $ordinary.unknown_peak -and $ordinary.memory_bytes -eq 2GB) `
+    'Ordinary unclassified GATE work must default to its declared light budget.'
+  Assert-True ($ordinary.cpu_cores -le 2 -and $ordinary.cpu_cores -gt 0) 'Ordinary CPU declaration is invalid.'
+  foreach ($vendorRole in @('GATE','SIMION','COMSOL')) {
+    Assert-True (-not (Get-HostResourceBudget -Role $vendorRole -Stage unlisted-solver).heavy_stage) `
+      'An unlisted stage must remain light regardless of software role.'
+  }
+  $comsolPostprocess = Get-HostResourceBudget -Role COMSOL -Stage postprocess
+  Assert-True (-not $comsolPostprocess.heavy_stage -and -not $comsolPostprocess.unknown_peak -and
+    $comsolPostprocess.memory_bytes -eq $ordinary.memory_bytes) 'COMSOL postprocess must use ordinary-light.'
+  Assert-True ((Get-HostResourceBudget -Role COMSOL -Stage solver).heavy_stage) 'COMSOL solver lost its heavy permission.'
+  foreach ($stageCase in @(@('SIMION','pa_refine'), @('SIMION','flight'), @('GATE','theory_compute'))) {
+    Assert-True ((Get-HostResourceBudget -Role $stageCase[0] -Stage $stageCase[1]).heavy_stage) 'Listed stage lost heavy classification.'
+  }
+  foreach ($prepareStage in @('prepare','pa_prepare','mrtof_pa_prepare','analyzer_local_pa_prepare','accelerator_pa_prepare')) {
+    Assert-True (-not (Get-HostResourceBudget -Role SIMION -Stage $prepareStage).heavy_stage) `
+      'An unlisted PA preparation stage must remain light.'
+  }
+  Assert-True ((Get-HostResourceBudget -Profile unknown).unknown_peak) 'Explicit conservative unknown profile was lost.'
   Assert-True (Test-HostResourceConsoleProcess -ImagePath (Join-Path ([Environment]::SystemDirectory) 'conhost.exe')) `
     'The OS console image was not recognized.'
   Assert-True (-not (Test-HostResourceConsoleProcess -ImagePath (Join-Path $testRoot 'conhost.exe'))) `
@@ -39,16 +60,39 @@ try {
     return $value
   }
   $light = Get-HostResourceBudget -Profile measured-small-check
-  $lease = Enter-HostResourceStage -Role GATE -Stage 'test-prepare' -Budget $light
+  $override = Get-HostResourceBudget -Profile heavy-compute
+  $override.cpu_cores = $light.cpu_cores; $override.memory_bytes = $light.memory_bytes; $override.io_slots = 0
+  $lease = Enter-HostResourceStage -Role GATE -Stage 'test-prepare' -Budget $override
   Assert-True ($lease.status -eq 'acquired') 'A valid stage did not acquire.'
+  $rejectedLight = $false
+  try { Assert-HostResourceHeavyStage } catch { $rejectedLight = $true }
+  Assert-True $rejectedLight 'Light admission incorrectly authorized whole-host worker scheduling.'
   $inherited = Enter-HostResourceStage -Role GATE -Stage 'nested-known' -Budget $light
   Assert-True ($inherited.inherited -and $inherited.token -eq $lease.token) 'Nested entry allocated a second reservation.'
   Exit-HostExecutionLease -Lease $inherited
   $lease = Update-HostResourceStage -Lease $lease -Stage 'test-analyze' -Budget $light -RetainedMemoryBytes 0
   Assert-True ($lease.stage -eq 'test-analyze' -and $lease.status -eq 'acquired') 'Stage transition failed.'
+  $lease = Update-HostResourceStage -Lease $lease -Stage 'theory_compute' `
+    -Budget $light -RetainedMemoryBytes 0
+  Assert-HostResourceHeavyStage -Lease $lease
+  Assert-HostResourceHeavyStage
   Exit-HostResourceStage -Lease $lease
   $lease = $null
   Assert-True (@((Get-HostResourceStatus -StatePath $statePath).records).Count -eq 0) 'Normal release leaked a reservation.'
+
+  # Run the real postprocess -> artifact-capacity entry chain against an empty
+  # temporary artifact root and this private ledger, never production storage.
+  $capacityRoot = Join-Path $testRoot 'artifacts'
+  New-Item -ItemType Directory -Path $capacityRoot | Out-Null
+  $lease = Enter-HostExecutionLease -Role SIMION -Stage mrtof_postprocess
+  try {
+    $capacity = Invoke-ArtifactCapacityGate -Python $PythonExe -RepoRoot (Split-Path -Parent $PSScriptRoot) `
+      -ArtifactRoot $capacityRoot -TargetGiB 500 -MinimumFreeGiB 0
+    Assert-True $capacity.satisfied_after_apply 'Nested capacity gate did not complete.'
+    $records = @((Get-HostResourceStatus -StatePath $statePath).records)
+    Assert-True ($records.Count -eq 1 -and $records[0].token -eq $lease.token) 'Capacity child changed its parent grant.'
+  } finally { Exit-HostExecutionLease -Lease $lease; $lease = $null }
+  Assert-True (@((Get-HostResourceStatus -StatePath $statePath).records).Count -eq 0) 'Postprocess capacity chain leaked a grant.'
 
   # A hidden Windows console owns a real conhost child for its entire life.
   # Process identities and image paths are real; only host pressure is fixed.
@@ -94,7 +138,7 @@ try {
   Assert-True ($hidden.ExitCode -eq 0) "Hidden stage could not transition with its own conhost child: $hiddenFailure"
 
   # Independent contender, not a child claiming the same budget.
-  $lease = Enter-HostExecutionLease -Role COMSOL -RunId 'test-unknown'
+  $lease = Enter-HostExecutionLease -Role COMSOL -Stage solver -RunId 'test-listed-heavy'
   $quotedSource = $leaseSource.Replace("'", "''")
   $quotedState = $statePath.Replace("'", "''")
   $childCode = @"
@@ -107,8 +151,11 @@ function Get-HostResourceSnapshot {
   `$s.cpu_percent=0; `$s.available_memory_bytes=32GB; `$s.total_memory_bytes=64GB; `$s.logical_processors=4; `$s.io_pressure=`$false
   return `$s
 }
-`$childLease = Enter-HostResourceStage -Role GATE -Stage test-child -StatePath '$quotedState' -Budget (Get-HostResourceBudget -Profile measured-small-check) -NoWait -NoEnvironment
-if (`$childLease.status -ne 'waiting') { throw 'Unknown peak did not exclude a second stage.' }
+`$childLease = Enter-HostResourceStage -Role GATE -Stage test-child -StatePath '$quotedState' -Budget (Get-HostResourceBudget -Role GATE -Stage test-child) -NoWait -NoEnvironment
+if (`$childLease.status -ne 'acquired') { throw 'Ordinary light work could not share idle heavy capacity.' }
+Exit-HostResourceStage -Lease `$childLease
+`$childLease = Enter-HostResourceStage -Role SIMION -Stage flight -StatePath '$quotedState' -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -NoWait -NoEnvironment
+if (`$childLease.status -ne 'waiting') { throw 'An unknown heavy stage did not exclude a second heavy stage.' }
 Exit-HostResourceStage -Lease `$childLease
 "@
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childCode))

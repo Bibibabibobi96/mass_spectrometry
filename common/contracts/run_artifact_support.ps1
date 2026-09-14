@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'require_powershell7.ps1')
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'host_execution_lease.ps1')
 
 function Invoke-RunToolRootContext {
   [CmdletBinding()]
@@ -44,6 +45,11 @@ function Invoke-ArtifactCapacityGate {
   if(($null-eq$KnownMeasuredBytes)-ne($null-eq$MaximumNewArtifactBytes)){
     throw 'Artifact capacity gate requires both known measurement and maximum new bytes.'
   }
+  # Capacity work uses shared host admission and inherits the caller's permit.
+  # Light admission is not a cache-consumption or deletion lock; the reconciler
+  # must separately enforce artifact protection and retention rules.
+  $capacityLease=Enter-HostExecutionLease -Role GATE
+  try{
   $arguments=@(
     '-m','common.contracts.reconcile_artifact_capacity',
     '--artifact-root',$ArtifactRoot,
@@ -78,7 +84,11 @@ function Invoke-ArtifactCapacityGate {
   if($receipt.satisfied_after_apply -ne $true){
     throw 'Artifact capacity gate could not satisfy its watermark.'
   }
-  Write-Output -NoEnumerate $receipt
+  # The JSON root is one object; NoEnumerate wraps it and changes nested-array access.
+  Write-Output $receipt
+  }finally{
+    Exit-HostExecutionLease -Lease $capacityLease
+  }
 }
 
 function New-PublishedPaCacheProtectionSnapshot {

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import tempfile
+import sys
+import ast
+import inspect
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -8,6 +11,7 @@ from unittest.mock import patch
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.optimize_reflectron_ring_voltages import (
     render_lua_profile,
 )
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation import run_compensation as compensation
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation.run_compensation import (
     _plan_batches_from_observation,
     _split_ions,
@@ -18,6 +22,32 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class ReflectronVoltageCompensationTests(unittest.TestCase):
+    def test_only_complete_pool_calls_cross_the_stage_bridge(self) -> None:
+        tree = ast.parse(inspect.getsource(compensation.main))
+        calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+        stage_calls = [node for node in calls if isinstance(node.func, ast.Name) and node.func.id == "run_heavy_function"]
+        self.assertEqual(len(stage_calls), 3)
+        for call in stage_calls:
+            self.assertEqual(ast.literal_eval(call.args[0]), compensation.__name__)
+            self.assertEqual(ast.literal_eval(call.args[1]), "_run_mode")
+        self.assertFalse(any(isinstance(call.func, ast.Name) and call.func.id == "_run_mode" for call in calls))
+
+    def test_missing_case_fails_before_requesting_a_flight_grant(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(sys, "argv", ["run_compensation", "--case-dir", directory]), \
+                    patch.object(compensation, "run_heavy_function") as permit:
+                with self.assertRaises(FileNotFoundError):
+                    compensation.main()
+            permit.assert_not_called()
+
+    def test_help_does_not_request_heavy_permission(self) -> None:
+        with patch.object(sys, "argv", ["run_compensation", "--help"]), \
+                patch.object(compensation, "run_heavy_function") as permit:
+            with self.assertRaises(SystemExit) as exited:
+                compensation.main()
+        self.assertEqual(exited.exception.code, 0)
+        permit.assert_not_called()
+
     def test_profile_renderer_freezes_counts_and_ring_voltages(self) -> None:
         profile = render_lua_profile(
             {

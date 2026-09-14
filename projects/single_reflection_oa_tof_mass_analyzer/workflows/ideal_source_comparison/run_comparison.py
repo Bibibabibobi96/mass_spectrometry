@@ -221,6 +221,12 @@ def _prepare_run(config_path: Path, *, seed: int, run_id: str, resume_from: Path
     _write_json(run_dir / "run_config.json", {"schema_version": 2, "run_id": run_id,
                 "project": PROJECT_ROOT.name, "mode": mode, "inputs": frozen,
                 "input_sha256": identities, "numerical_identity": identity,
+                # Execution provenance is deliberately outside numerical/resume identity.
+                "execution_source_sha256": {
+                    name: file_sha256(REPO_ROOT / "common" / name)
+                    for name in ("host_resource_python.py", "host_resource_python.ps1",
+                                 "host_execution_lease.ps1", "host_resource_scheduler.py", "host_resource_policy.json")
+                },
                 "git_head": _command(["git", "rev-parse", "HEAD"]),
                 "git_worktree_status": _command(["git", "status", "--short"]),
                 "run_instance": {"seed": seed, "resume_from": str(resume_from) if resume_from else None},
@@ -336,6 +342,11 @@ def main(argv: list[str] | None = None) -> int:
                 plan = build_case_plan(config, args.seed)
             print(json.dumps(plan, indent=2))
             return 0
+        from common.host_resource_python import ensure_heavy_entry
+
+        ensure_heavy_entry(
+            "projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison", argv,
+        )
         run_id = args.run_id or datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d_%H%M%S__analysis__python__ideal-source-comparison")
         run_dir = execute(args.config, seed=args.seed, run_id=run_id,
                           resume_from=args.resume_from, max_workers=args.max_workers)

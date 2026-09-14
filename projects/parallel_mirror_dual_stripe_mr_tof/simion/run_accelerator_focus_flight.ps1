@@ -106,7 +106,7 @@ try{
   $sourceFamilyBefore=@($sourceFamilyMembers|ForEach-Object{[ordered]@{path=$_;bytes=(Get-Item -LiteralPath $_).Length;sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash}})
   $voltageText={param($Value)([double]$Value).ToString('R',[Globalization.CultureInfo]::InvariantCulture)}
   $voltageArguments=@($sourceAcceleratorPa0,$acceleratorPa0,'0')+@($trialValue.endpoint_voltages_v|ForEach-Object{& $voltageText $_})+@($trialValue.ring_voltages_v|ForEach-Object{& $voltageText $_})
-  $failureStage='voltageize_accelerator_pa0';$lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
+  $failureStage='voltageize_accelerator_pa0';$lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   & $simion '--nogui' '--noprompt' 'lua' $voltageizer @voltageArguments
   if($LASTEXITCODE -ne 0){throw 'SIMION accelerator PA0 voltageization failed'}
   foreach($identity in $sourceFamilyBefore){
@@ -123,8 +123,12 @@ try{
   $config.parameters.source_key=$SourceKey;$config.parameters.particle_count=$expectedCount;$config.parameters.source_sha256=$sourceIdentity.fly2_sha256;$config.parameters.first_gap_drop_v=$firstGapDrop;$config.parameters.selected_net_gain_center_v=if($null-ne$SelectedNetGainCenterV){[double]$SelectedNetGainCenterV}else{$null}
   Write-RunJson -Path $runConfig -Value $config
   $failureStage='native_accelerator_focus'
+  $lease=Update-HostResourceStage -Lease $lease -Stage flight `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
   Push-Location -LiteralPath $solverDir
   try{& $simion '--nogui' '--noprompt' 'lua' $launcher (Join-Path $solverDir 'mrtof_three_component_candidate.iob') 2>&1|Tee-Object -FilePath (Join-Path $logDir 'native_accelerator_focus.log');if($LASTEXITCODE -ne 0){throw 'SIMION accelerator focus flight failed'}}finally{Pop-Location}
+  $lease=Update-HostResourceStage -Lease $lease -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
   $rawLog=Join-Path $logDir 'native_accelerator_focus.log';$analysis=Join-Path $resultDir 'accelerator_focus_analysis.json'
   $failureStage='focus_analysis';Invoke-ProjectPython -Arguments @($analyzer,$rawLog,$trialContract,$analysis,'--expected-count',"$expectedCount",'--reviewed-contract',$reviewedContract)
   $analysisValue=Get-Content -LiteralPath $analysis -Raw -Encoding UTF8|ConvertFrom-Json

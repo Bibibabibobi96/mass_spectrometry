@@ -18,8 +18,14 @@ $python = if ($PythonExe) {
 $runDirectory = [IO.Path]::GetFullPath($ComsolRunDirectory)
 $outputDirectory = [IO.Path]::GetFullPath($OutputDir)
 $null = New-Item -ItemType Directory -Path $outputDirectory -Force
-$csv = Join-Path $runDirectory 'gas_field_rz.csv'
-$metadata = Join-Path $runDirectory 'gas_field_metadata.json'
+$runManifest = Join-Path $runDirectory 'run_manifest.json'
+& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $runManifest `
+    --require-status success --require-local-run-config
+if ($LASTEXITCODE -ne 0) {
+    throw "COMSOL source run manifest verification failed with exit code $LASTEXITCODE."
+}
+$csv = Join-Path $runDirectory 'results\gas_field_rz.csv'
+$metadata = Join-Path $runDirectory 'results\gas_field_metadata.json'
 $runtime = Join-Path $outputDirectory 'gas_field_runtime.lua'
 $manifest = Join-Path $outputDirectory 'gas_field_manifest.json'
 

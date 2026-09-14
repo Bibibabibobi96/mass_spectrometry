@@ -169,6 +169,7 @@ $existingIntegrationTestModules = @(
 )
 
 $stageItems = [ordered]@{}
+$script:ChangedGateHygienePassed = $false
 function Add-ChangedStageItem {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -200,7 +201,8 @@ $documentationReason = if ($hasDocumentationChange) {
 }
 Add-ChangedStageItem 'documentation' $hasDocumentationChange `
     $documentationReason 'stdlib' {
-    & (Join-Path $PSScriptRoot 'verify_documentation.ps1')
+    & (Join-Path $PSScriptRoot 'verify_documentation.ps1') `
+        -StructureOnly:$script:ChangedGateHygienePassed -PythonExe $PythonExe
 }
 $developmentReason = if ($hasCodeChange) {
     'source_code_changed'
@@ -270,6 +272,16 @@ foreach ($route in $routes) {
     } else {
         Add-ChangedStageItem $name $false 'no_route_match' `
             ([string]$route.dependency_profile)
+    }
+}
+
+foreach ($route in $routes) {
+    if ($null -eq $route.PSObject.Properties['full_scope_coverage_stage']) { continue }
+    $coverageStage = [string]$route.full_scope_coverage_stage
+    if ($stageItems[$coverageStage].Run) {
+        $item = $stageItems[[string]$route.stage]
+        $item.Run = $false
+        $item.Reason = "covered_by_$coverageStage"
     }
 }
 
@@ -386,6 +398,7 @@ $env:RUFF_NO_CACHE = 'true'
 Invoke-ChangedGateStage 'repository_hygiene' 'always' (
     $stageItems['repository_hygiene'].Action
 )
+$script:ChangedGateHygienePassed = $true
 Invoke-ChangedGateStage 'repository_text_bytes' 'always' (
     $stageItems['repository_text_bytes'].Action
 )

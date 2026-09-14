@@ -55,6 +55,7 @@ $logDir=$package.log_dir;$runConfig=$package.run_config;$summary=$package.summar
 $artifactRoot=Join-Path $workspaceRoot 'artifacts';$cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
 $lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight';$cacheAliases=@()
 try {
+  $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   $traceRun=(Resolve-Path -LiteralPath $CenterTraceRunPath).Path
   $traceManifest=Join-Path $traceRun 'run_manifest.json'
   & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $traceManifest --require-status success|Out-Null
@@ -151,7 +152,6 @@ try {
   $basisVoltageScript=Join-Path $repoRoot 'common\simion\measure_pa_basis_voltage.lua'
   $comparisonLog=Join-Path $logDir 'simion_portal_interface_comparisons.log'
   $comparisonRecords=@();$csvOutputs=@();$normalizationOutputs=@();$basisByScale=[ordered]@{}
-  $lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
   foreach($scale in @(1.0,0.5)){
     $central=$families|Where-Object{$_.region-eq'central_transport' -and [double]$_.scale-eq$scale}
     $bridge=$families|Where-Object{$_.region-eq'stripe_mirror_bridge_positive' -and [double]$_.scale-eq$scale}
@@ -203,7 +203,8 @@ try {
       }
     }
   }
-  Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null;$hostOutcome='success'
+  $lease=Update-HostResourceStage -Lease $lease -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
 
   $measurementInput=Join-Path $inputDir 'portal_comparison_input.json'
   Write-RunJson -Path $measurementInput -Depth 12 -Value ([ordered]@{
@@ -244,6 +245,7 @@ try {
     -Software @('SIMION 2020','Python 3.11') `
     -Outputs (@($summary,$sampleReceipt,$measurementInput,$result,$comparisonLog,$capacityStartupPath,$capacityTerminalPath,$retention)+$sampleCsvs+$normalizationOutputs+$csvOutputs)
   $terminalized=$true
+  $hostOutcome='success'
   Write-Host "MRTOF_ANALYZER_LOCAL_PORTAL_INTERFACE=PASS RUN_ID=$RunId COMPARISONS=$($metrics.comparison_count)"
 } catch {
   if(-not$terminalized){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `

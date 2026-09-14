@@ -14,6 +14,10 @@ if(-not(Test-Path -LiteralPath $SimionExe -PathType Leaf)){throw "SIMION executa
 $python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 $cacheRoot=if($PaCacheRoot){[IO.Path]::GetFullPath($PaCacheRoot)}else{Join-Path (Split-Path -Parent $repoRoot) 'artifacts\common\simion\pa_family_cache'}
 $output=[IO.Path]::GetFullPath($OutputDir)
+. (Join-Path $repoRoot 'common/host_execution_lease.ps1')
+$hostLease=$null
+try{
+$hostLease=Enter-HostExecutionLease -Role SIMION -Stage prepare
 & (Join-Path $PSScriptRoot 'prepare.ps1') -OutputDir $output -Mode c0_gem_smoke -SimionExe $SimionExe -PythonExe $python
 if($LASTEXITCODE-ne 0){throw 'C0 input preparation failed.'}
 $solverDir=Join-Path $output 'solver\simion'
@@ -33,8 +37,15 @@ try{
     try{
       & $SimionExe --nogui --noprompt gem2pa dual_cone_tandem.gem dual_cone_tandem.pa#
       if($LASTEXITCODE-ne 0){throw 'SIMION gem2pa failed.'}
-      & $SimionExe --nogui --noprompt refine dual_cone_tandem.pa#
-      if($LASTEXITCODE-ne 0){throw 'SIMION refine failed.'}
+      $hostLease=Update-HostResourceStage -Lease $hostLease -Stage pa_refine `
+        -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+      try{
+        & $SimionExe --nogui --noprompt refine dual_cone_tandem.pa#
+        if($LASTEXITCODE-ne 0){throw 'SIMION refine failed.'}
+      }finally{
+        $hostLease=Update-HostResourceStage -Lease $hostLease -Stage prepare `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+      }
     }finally{Pop-Location}
     & $python -m common.simion.pa_family_cache --action publish --cache-root $cacheRoot --identity $identity --filenames $inventory --source-directory $solverDir | Out-Null
     if($LASTEXITCODE-ne 0){throw 'SIMION PA cache publication failed.'}
@@ -43,3 +54,6 @@ try{
 $missing=@($required|Where-Object{-not(Test-Path -LiteralPath (Join-Path $solverDir $_) -PathType Leaf)})
 if($missing.Count-gt 0){throw "C0 PA family is incomplete: $($missing -join ', ')"}
 Write-Output "DUAL_CONE_SIMION_C0_GEM_SMOKE=PASS OUTPUT=$output"
+}finally{
+  if($null-ne$hostLease){Exit-HostExecutionLease -Lease $hostLease}
+}

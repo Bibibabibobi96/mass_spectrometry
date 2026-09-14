@@ -47,6 +47,9 @@ def main() -> None:
     parser.add_argument("--project-root", type=Path, required=True)
     parser.add_argument("--run-id")
     args = parser.parse_args()
+    from common.host_resource_python import ensure_heavy_entry
+
+    ensure_heavy_entry("common.multipole.run_ideal_transport")
     project_root = args.project_root.resolve()
     project_id = project_root.name.replace("_", "-")
     run_id = args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S") + f"__sim__python__{project_id}-l1__n100"

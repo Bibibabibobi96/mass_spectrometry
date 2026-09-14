@@ -17,6 +17,9 @@ ROLE = "oa_tof_candidate_execution_source_closure"
 # This is intentionally an auditable allowlist, not dependency discovery.
 # Keep paths repository-relative and use forward slashes in the machine record.
 RELATIVE_PATHS = (
+    "common/host_execution_lease.ps1",
+    "common/host_resource_scheduler.py",
+    "common/host_resource_policy.json",
     "common/comsol/add_comsol_size_feature.m",
     "common/comsol/livelink_environment.ps1",
     "common/comsol/livelink_failure_classification.ps1",
@@ -92,11 +95,13 @@ RELATIVE_PATHS = (
 )
 
 PYTHON_BOUND_SOURCES = frozenset({
+    "common/host_execution_lease.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/generate_comsol_consistent_ions.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1",
 })
 PYTHON_ASSIGNMENT = "$python = Join-Path $repoRoot '.venv\\Scripts\\python.exe'"
+HOST_PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {\n    Join-Path $repo '.venv/Scripts/python.exe'\n  }"
 WORKSPACE_ASSIGNMENT = "    workspaceRoot = fileparts(repoRoot);"
 
 
@@ -110,13 +115,13 @@ def _source_path(source_id: str) -> Path:
     return source
 
 
-def _bind_python_runtime(payload: bytes, python_executable: Path) -> bytes:
+def _bind_python_runtime(payload: bytes, python_executable: Path, assignment: str = PYTHON_ASSIGNMENT) -> bytes:
     text = payload.decode("utf-8")
-    if text.count(PYTHON_ASSIGNMENT) != 1:
+    if text.count(assignment) != 1:
         raise ValueError("candidate PowerShell source has an unexpected Python binding")
     escaped = str(python_executable).replace("'", "''")
     replacement = f"$python = '{escaped}' # frozen candidate runtime binding"
-    return text.replace(PYTHON_ASSIGNMENT, replacement).encode("utf-8")
+    return text.replace(assignment, replacement).encode("utf-8")
 
 
 def freeze_candidate_source_closure(
@@ -150,7 +155,8 @@ def freeze_candidate_source_closure(
 
         transformations: list[str] = []
         if source_id in PYTHON_BOUND_SOURCES:
-            payload = _bind_python_runtime(payload, python_path)
+            assignment = HOST_PYTHON_ASSIGNMENT if source_id == "common/host_execution_lease.ps1" else PYTHON_ASSIGNMENT
+            payload = _bind_python_runtime(payload, python_path, assignment)
             transformations.append("python_runtime_binding")
         if source_id == "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m":
             text = payload.decode("utf-8")

@@ -222,7 +222,7 @@ try {
   $structureReport = Join-Path $resultDir 'iob_structure_report.txt'
 
   $failureStage = 'simion_iob_assembly'
-  $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -RunId $RunId
+  $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   Invoke-MrtofSimionStep -Stage 'build_three_component_iob' -Arguments (@('--nogui', '--noprompt', 'lua', $builder, '--',
     $seed, $frozenAnalyzerPa, $frozenAcceleratorPa, $frozenDetectorPa, $iob, $program, $fly2) + $origins)
   $failureStage = 'simion_iob_inspection'
@@ -240,6 +240,8 @@ try {
     '--structure-report', $structureReport, '--output', $geometryReviewManifest)
 
   $failureStage = 'publish_geometry_review'
+  $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
   $summaryObject = [ordered]@{
     schema_version = 1; role = 'mrtof_three_component_candidate_iob_assembly'; status = 'success'
     qualification = 'prototype_geometry_review_only'; particle_fly_executed = $false

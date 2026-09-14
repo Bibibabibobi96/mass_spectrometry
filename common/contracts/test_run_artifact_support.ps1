@@ -23,7 +23,14 @@ $executionRoot = Join-Path 'C:\tmp\ms' ("run_artifact_support_" + [guid]::NewGui
 $originalPythonPath=[Environment]::GetEnvironmentVariable('PYTHONPATH')
 $originalNoUserSite=[Environment]::GetEnvironmentVariable('PYTHONNOUSERSITE')
 
+$hostEnvironment=@{}
+foreach($name in @('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','SIMULATION_PYTHON_EXE')) {
+  $hostEnvironment[$name]=[Environment]::GetEnvironmentVariable($name,'Process')
+}
 try {
+  $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=''
+  $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $testRoot 'host.sqlite3'
+  $env:SIMULATION_PYTHON_EXE=$python
   . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
   $originalLocation=(Get-Location).Path
   [Environment]::SetEnvironmentVariable('PYTHONPATH','run-artifact-test-pythonpath')
@@ -73,6 +80,8 @@ try {
     -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0
   Assert-Equal $capacityReceipt.role 'artifact_capacity_gate' 'Capacity gate role changed.'
   Assert-Equal $capacityReceipt.satisfied_after_apply $true 'Capacity gate did not publish a satisfied receipt.'
+  Assert-Equal ($capacityReceipt -is [pscustomobject]) $true `
+    'Capacity gate must return the JSON object without a collection wrapper.'
   $capacityFastReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0 `
     -KnownMeasuredBytes 0 -MaximumNewArtifactBytes 0
@@ -373,6 +382,9 @@ try {
 
   Write-Output 'RUN_ARTIFACT_SUPPORT=PASS'
 } finally {
+  foreach($name in $hostEnvironment.Keys) {
+    [Environment]::SetEnvironmentVariable($name,$hostEnvironment[$name],'Process')
+  }
   [Environment]::SetEnvironmentVariable('PYTHONPATH',$originalPythonPath)
   [Environment]::SetEnvironmentVariable('PYTHONNOUSERSITE',$originalNoUserSite)
   if (Test-Path -LiteralPath $testRoot) {

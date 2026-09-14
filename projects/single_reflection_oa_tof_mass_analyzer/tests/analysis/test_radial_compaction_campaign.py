@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import copy
 import json
+import sys
+import ast
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
     compile_design_overrides,
 )
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction import run_campaign as radial
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign import (
     NUMERICS_PATH,
     _assert_only_allowed_changes,
@@ -31,6 +35,42 @@ class RadialCompactionCampaignTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+
+    def test_only_complete_pool_calls_cross_the_stage_bridge(self) -> None:
+        tree = ast.parse(inspect.getsource(radial.main))
+        calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+        stage_calls = [node for node in calls if isinstance(node.func, ast.Name) and node.func.id == "run_heavy_function"]
+        self.assertEqual(len(stage_calls), 4)
+        for call in stage_calls:
+            self.assertEqual(ast.literal_eval(call.args[0]), radial.__name__)
+            self.assertEqual(ast.literal_eval(call.args[1]), "_run_parallel_flights")
+        self.assertFalse(any(isinstance(call.func, ast.Name) and call.func.id == "_run_parallel_flights" for call in calls))
+
+    def test_preparation_failure_does_not_request_a_flight_grant(self) -> None:
+        argv = ["run_campaign", "--run-id", "20260914_160000__sim__simion__permit-fixture",
+                "--simion-exe", sys.executable]
+        with patch.object(sys, "argv", argv), \
+                patch.object(radial, "run_heavy_function") as permit, \
+                patch.object(radial, "_verify_authorities", side_effect=ValueError("input-failure")):
+            with self.assertRaisesRegex(ValueError, "input-failure"):
+                radial.main()
+        permit.assert_not_called()
+
+    def test_dry_run_does_not_request_heavy_permission_or_build_pa(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            argv = ["run_campaign", "--run-id", "20260914_160001__sim__simion__plan-fixture",
+                    "--simion-exe", sys.executable, "--dry-run"]
+            with patch.object(sys, "argv", argv), patch.object(radial, "ARTIFACT_ROOT", root), \
+                    patch.object(radial, "run_heavy_function") as permit, \
+                    patch.object(radial, "_verify_authorities", return_value=(root / "summary", root / "particles")), \
+                    patch.object(radial, "_canonical_metrics", return_value={}), \
+                    patch.object(radial, "_prepare_case", return_value={}), \
+                    patch.object(radial, "_build_case") as build:
+                radial.main()
+            permit.assert_not_called()
+            build.assert_not_called()
+            self.assertEqual(json.loads(next((root / "runs").glob("*/summary.json")).read_text())['status'], 'dry_run')
 
     def test_radius_rows_change_only_the_three_governed_radii(self) -> None:
         for row in self.config["radius_screen"]:

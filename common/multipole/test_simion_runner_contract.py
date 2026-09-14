@@ -12,6 +12,7 @@ from pathlib import Path
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.multipole.particle_source_preflight import COLUMNS
 from common.multipole.simion_particle_source import render_canonical_source
+from common.simion.resource_profile import publish_resource_profile
 
 
 RUNNER = Path(__file__).resolve().parent / "run_simion_finite_3d_transport.ps1"
@@ -19,6 +20,80 @@ REPO_ROOT = Path(__file__).parents[2]
 
 
 class SimionRunnerContractTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_control_receipt_cannot_replace_primary_observation(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        block = source[source.index("    $resourceUsage=if($name-eq$primaryName)"):
+                       source.index("    if($batchRuns.Count-gt 1){\n      if($script:retainedFormalBatchOutputs.ContainsKey($name))")]
+        support = (RUNNER.parent / "resource_budget_support.ps1").read_text(encoding="utf-8-sig")
+        observation = support[support.index("  if($ExistingProcessRecords.Count-gt 0){\n    $first="):
+                              support.index("  Write-ResourceUsage -Usage $usage -Path $UsagePath", support.index("    $usage.first_formal_observation="))]
+        terminal = source[source.index("  $caseResourceUsage=[ordered]@{}"):
+                          source.index("  if($null-ne$dispatchPlan-and$resourceIdentityWasUnknown){", source.index("  $caseResourceUsage=[ordered]@{}"))]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            support_path = str(RUNNER.parent / "resource_budget_support.ps1").replace("'", "''")
+            script = f". '{support_path}'\n" + """
+$ErrorActionPreference='Stop'
+$resultDir=$PWD.Path;$runDir=$resultDir;$primaryName='primary'
+$script:calls=@()
+function Invoke-ResourceBudgetedProcesses {
+ param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords)
+ $usage=@{role='multipole_resource_usage';status='running';peak_run_directory_bytes=0;peak_process_tree_working_set_bytes=999999}
+""" + observation + """
+ $usage|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $UsagePath
+ $script:calls+=@{launched=@($ProcessSpecifications|ForEach-Object{$_.scheduler_batch.index});retained=@($ExistingProcessRecords).Count}
+ return @{resource_budget_exceeded=$false;processes=@(@{exit_code=0})}
+}
+$simion='unused';$solverDir='.';$logDir='.';$dispatchPlan='unused';$rfDriveKernelLua='unused'
+$flyArguments=@('a','b','c','d','e','f','g')
+$batchRuns=@(1,2|ForEach-Object{@{batch=@{index=$_;particle_id_min=$_;particle_id_max=$_};lua_config='unused';fly2='unused'}})
+# Explicit fixture observation differs from the aggregate peak above.
+$script:existingFormalProcessRecords=@(@{name='primary-first';peak_working_set_bytes=12345;
+ peak_managed_memory_bytes=12345;completed_during_observation=$true;
+ observed_process_cpu_percent=12;observed_background_cpu_percent=3})
+function Run-Case($name) {
+""" + block + """
+}
+Run-Case primary
+$before=[IO.File]::ReadAllText((Join-Path $resultDir 'resource_usage.json'))
+Run-Case control
+if([IO.File]::ReadAllText((Join-Path $resultDir 'resource_usage.json')) -ne $before){throw 'Control overwrote primary'}
+$resourceUsage=Join-Path $resultDir 'resource_usage.json'
+$resolvedResourceBudget=$null;$control=@{};$controlName='control'
+$null=Complete-ResourceUsage -RunDir $runDir -UsagePath $resourceUsage
+""" + terminal + """
+ConvertTo-Json -InputObject $script:calls -Depth 6
+"""
+            result = subprocess.run(
+                [shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                cwd=root, capture_output=True, text=True, timeout=30, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), [
+                {"launched": [2], "retained": 1}, {"launched": [1, 2], "retained": 0},
+            ])
+            plan = root / "plan.json"
+            plan.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan", "resource_identity": {"solver": "SIMION"},
+                "waves": [{"kind": "observed_formal_batch", "batches": [{"count": 1}]}],
+            }), encoding="utf-8")
+            profile = publish_resource_profile(
+                run_id="fixture", resource_usage_path=root / "resource_usage.json", dispatch_plan_path=plan,
+            )
+            self.assertEqual(profile["per_batch_peak_working_set_bytes"], 12345)
+            for name, filename in (("primary", "resource_usage.json"), ("control", "resource_usage__control.json")):
+                receipt = json.loads((root / filename).read_text(encoding="utf-8-sig"))
+                self.assertEqual(receipt["case_name"], name)
+                self.assertEqual(receipt["status"], "completed")
+                self.assertEqual(receipt["measurement_scope"], "single_transport_case_not_all_run_cases")
+            with self.assertRaisesRegex(ValueError, "explicit first formal observation"):
+                publish_resource_profile(
+                    run_id="fixture", resource_usage_path=root / "resource_usage__control.json", dispatch_plan_path=plan,
+                )
+        self.assertIn("$outputs+=@($caseResourceUsage.Values|Where-Object{$_-ne$resourceUsage})", source)
+        self.assertIn("single_transport_case_not_all_run_cases", source)
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
     def test_transport_snapshots_include_host_runtime_dependency_closure(self) -> None:
         expected = {
@@ -134,7 +209,9 @@ class SimionRunnerContractTests(unittest.TestCase):
                 source,
             )
             self.assertIn(
-                f"$hostExecutionLease=Enter-HostExecutionLease -Role {role} -RunId $RunId",
+                (f"$hostExecutionLease=Enter-HostResourceStage -Role {role} -Stage prepare -RunId $RunId"
+                 if role == "SIMION" else
+                 f"$hostExecutionLease=Enter-HostExecutionLease -Role {role} -Stage prepare -RunId $RunId"),
                 source,
             )
             self.assertIn("$hostExecutionOutcome='failed'", source)
@@ -149,7 +226,11 @@ class SimionRunnerContractTests(unittest.TestCase):
                 "Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId",
                 source,
             )
-            self.assertEqual(source.count("Exit-HostExecutionLease"), 1)
+            # COMSOL also returns its own light preparation grant before the
+            # child launcher; that boundary carries no terminal outcome.
+            self.assertEqual(source.count("Exit-HostExecutionLease"), 2 if role == "COMSOL" else 1)
+            if role == "COMSOL":
+                self.assertIn("Exit-HostExecutionLease -Lease $hostExecutionLease\n", source)
             self.assertEqual(source.count("Write-VerifiedRunManifest"), successful_manifests)
             self.assertLess(
                 source.rindex("Write-VerifiedRunManifest"),
@@ -159,6 +240,172 @@ class SimionRunnerContractTests(unittest.TestCase):
                 source.rindex("$hostExecutionOutcome='success'"),
                 source.rindex("Exit-HostExecutionLease"),
             )
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_dispatch_request_does_not_replace_design_manifest_input(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        block = source[source.index("      $dispatchRequestDocument=[ordered]@"):
+                       source.index("      $dispatchRequestDocument|ConvertTo-Json")]
+        script = (
+            "$ErrorActionPreference='Stop'; $request='design.json'; "
+            "$automaticDispatch=@{field_kind='rf'}; $sourceMeta=@{particle_count=17}; "
+            "$TrajectoryQuality=0; $RuntimeProfileId='fixture'; $RfStepsPerPeriod=32; "
+            + block + "\n@{design_request=$request; dispatch=$dispatchRequestDocument}|ConvertTo-Json -Depth 5"
+        )
+        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                cwd=REPO_ROOT, capture_output=True, text=True, timeout=30, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["design_request"], "design.json")
+        self.assertEqual(payload["dispatch"]["particle_count"], 17)
+        self.assertIn("design_request=$request", source)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_control_launches_all_batches_after_retaining_primary_first_worker(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        block = source[source.index("    if($null-eq$dispatchPlan-and$batchRuns.Count-eq 1-and$script:existingFormalProcessRecords.Count-eq 0)"):
+                       source.index("    if($batchRuns.Count-gt 1){\n      if($script:retainedFormalBatchOutputs.ContainsKey($name))")]
+        script = """
+$ErrorActionPreference='Stop'
+$script:calls=@()
+function Invoke-ResourceBudgetedProcesses {
+ param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords)
+ $script:calls+=@{launched=@($ProcessSpecifications|ForEach-Object{$_.scheduler_batch.index}); retained=@($ExistingProcessRecords).Count}
+ return @{resource_budget_exceeded=$false;processes=@(@{exit_code=0})}
+}
+$simion='unused';$solverDir='.';$logDir='.';$resourceUsage='unused';$runDir='.';$dispatchPlan='unused';$rfDriveKernelLua='unused'
+$flyArguments=@('a','b','c','d','e','f','g')
+$batchRuns=@(1,2|ForEach-Object{@{batch=@{index=$_;particle_id_min=$_;particle_id_max=$_};lua_config='unused';fly2='unused'}})
+$script:existingFormalProcessRecords=@(@{name='primary-first'})
+""" + "\nforeach($name in @('primary','control')){\n" + block + "\n}\nConvertTo-Json -InputObject $script:calls -Depth 6"
+        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                cwd=REPO_ROOT, capture_output=True, text=True, timeout=30, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), [
+            {"launched": [2], "retained": 1}, {"launched": [1, 2], "retained": 0},
+        ])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_single_dispatch_waits_in_shared_executor_before_start(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        block = source[source.index("    if($null-eq$dispatchPlan-and$batchRuns.Count-eq 1"):
+                       source.index("    if($batchRuns.Count-gt 1){\n      if($script:retainedFormalBatchOutputs.ContainsKey($name))")]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch = root / "dispatch.json"
+            dispatch.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan",
+                "estimation": {"kind": "exact_resource_profile",
+                               "per_process_memory_budget_bytes": 64 * 1024**2,
+                               "memory_safety_factor": 1.1},
+                "limits": {"maximum_concurrency": 1, "launch_stagger_seconds": 5,
+                           "memory_critical_seconds": 15, "memory_recovery_stable_seconds": 45,
+                           "maximum_memory_recovery_attempts": 2,
+                           "maximum_memory_danger_termination_attempts": 2,
+                           "memory_admission_reserve_bytes": 1024**3,
+                           "memory_critical_reserve_bytes": 512 * 1024**2,
+                           "cpu_admission_percent": 95},
+            }), encoding="utf-8")
+            def quoted(path: Path) -> str:
+                return "'" + str(path).replace("'", "''") + "'"
+            script = (
+                f". {quoted(REPO_ROOT / 'common/multipole/resource_budget_support.ps1')}\n"
+                f"$runDir={quoted(root)};$logDir=$runDir;$solverDir=$runDir;"
+                f"$resourceUsage={quoted(root / 'usage.json')};$dispatchPlan={quoted(dispatch)};"
+                + """
+function Assert-HostResourceHeavyStage {}
+function Invoke-SimionStep {throw 'single-dispatch-bypassed-wave'}
+function Get-SystemCpuPercent {return [double]0}
+$script:memorySamples=0
+function Get-RepositoryAvailableMemoryBytes {
+ $script:memorySamples++
+ if($script:memorySamples-le2){return [int64](1GB)}
+ return [int64](4GB)
+}
+$script:startWorker=${function:Start-RepositoryScheduledProcess}
+function Start-RepositoryScheduledProcess {
+ param($Specification)
+ if($script:memorySamples-lt3){throw 'worker-started-before-memory-recovery'}
+ $Specification.argument_list=@('-NoProfile','-Command','Start-Sleep -Milliseconds 200')
+ & $script:startWorker -Specification $Specification
+}
+$simion=(Get-Process -Id $PID).Path;$name='primary';$rfDriveKernelLua='unused'
+$flyArguments=@('a','b','c','d','e','f','g')
+$batchRuns=@(@{batch=@{index=1;particle_id_min=1;particle_id_max=1};lua_config='unused';fly2='unused'})
+$script:existingFormalProcessRecords=@()
+""" + block + """
+$receipt=Get-Content -Raw $resourceUsage|ConvertFrom-Json
+$pauses=@($receipt.scheduler_receipt.launch_pause_events|Where-Object {$_.reason-eq'available_memory_below_dynamic_admission'})
+if($pauses.Count-lt1-or$wave.processes.Count-ne1-or$wave.processes[0].exit_code-ne0){throw 'missing-wait-or-completion'}
+"""
+            )
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                    cwd=REPO_ROOT, capture_output=True, text=True,
+                                    encoding="utf-8", errors="replace", timeout=30, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_refine_returns_same_facade_grant_to_light_after_terminal_step(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        start = source.index("    $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine")
+        end = source.index("    if($paBasisReuseAuthorized){", start)
+        block = source[start:end]
+        facade = REPO_ROOT / "common/host_execution_lease.ps1"
+        for scenario in ("success", "failure", "inherited_light"):
+            with self.subTest(scenario=scenario):
+                script = f". '{facade}'\n$scenario='{scenario}'\n" + r'''
+$script:events=@();$script:heavy=$false;$script:terminal=$false
+$hostExecutionLease=@{token='same-token';role='SIMION';stage='prepare';state_path='unused';
+    inherited=($scenario-eq'inherited_light');status='acquired';reason=''}
+function Invoke-HostResourceTransaction {
+ param($StatePath,$Request)
+ if($Request.token-ne'same-token'){throw 'token-changed'}
+ if($Request.operation-eq'inherit'){
+   if($Request.ContainsKey('budget')-and$Request.budget.heavy_stage-and-not$script:heavy){throw 'inherited-light-cannot-upgrade'}
+   if($Request.ContainsKey('require_heavy_stage')-and-not$script:heavy){throw 'solver-without-heavy'}
+   return @{}
+ }
+ if($Request.operation-ne'transition'){throw 'unexpected-operation'}
+ if($Request.stage-eq'prepare'-and-not$script:terminal){throw 'released-before-terminal'}
+ $script:heavy=[bool]$Request.budget.heavy_stage
+ $script:events+="transition:$($Request.stage):$($script:heavy)"
+ return @{status='acquired';reason=''}
+}
+function Invoke-SimionStep($name,$arguments){
+ Assert-HostResourceHeavyStage -Lease $hostExecutionLease
+ $script:events+="solver:$name"
+ $script:terminal=$true
+ if($scenario-eq'failure'){throw 'refine-fixture-failure'}
+}
+$caught=''
+try {
+''' + block + r'''
+} catch {$caught=$_.Exception.Message}
+if($scenario-eq'inherited_light'){
+ if($caught-ne'inherited-light-cannot-upgrade'-or$script:events.Count-ne0){throw 'inherited-upgrade-bypassed'}
+}else{
+ if(($script:events-join',')-ne'transition:pa_refine:True,solver:refine,transition:prepare:False'){throw 'wrong-boundaries'}
+ if($script:heavy-or$hostExecutionLease.stage-ne'prepare'){throw 'heavy-permission-not-returned'}
+ if($scenario-eq'failure'-and$caught-ne'refine-fixture-failure'){throw 'failure-swallowed'}
+ if($scenario-eq'success'-and$caught){throw $caught}
+}
+'''
+                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                                        cwd=REPO_ROOT, capture_output=True, timeout=20, check=False)
+                self.assertEqual(result.returncode, 0, repr(result.stdout) + repr(result.stderr))
+
+    def test_simion_refine_and_flight_are_the_explicit_heavy_stages(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertEqual(source.count("Enter-HostResourceStage -Role SIMION"), 1)
+        self.assertEqual(source.count("Update-HostResourceStage -Lease $hostExecutionLease"), 4)
+        self.assertLess(source.index("-Stage prepare -RunId"), source.index("  $codeRoot=Join-Path"))
+        self.assertLess(source.index("-Stage flight `"), source.index("$primary=Invoke-TransportCase"))
+        self.assertLess(source.rindex("$control=Invoke-TransportCase"), source.index("-Stage postprocess `"))
+        policy = json.loads((REPO_ROOT / "common/host_resource_policy.json").read_text(encoding="utf-8"))
+        for stage in ("pa_refine", "flight"):
+            self.assertTrue(policy["profiles"][policy["stages"]["SIMION/" + stage]]["heavy_stage"])
+        self.assertNotIn("SIMION/prepare", policy["stages"])
+        self.assertFalse(policy["profiles"][policy["stages"]["SIMION/postprocess"]]["heavy_stage"])
 
     def test_segmented_voltage_binding_uses_resolved_dynamic_electrodes(self) -> None:
         lua = (RUNNER.parent / "simion_transport.lua").read_text(encoding="utf-8")

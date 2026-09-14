@@ -36,6 +36,7 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-
 $resultDir=$package.result_dir;$logDir=$package.log_dir;$runConfig=$package.run_config;$summary=$package.summary
 $terminalized=$false;$failureStage='preflight';$lease=$null;$hostOutcome='failed'
 try {
+  $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   $materialization=Copy-VerifiedRunInput -Source $materializationSource -Destination (Join-Path $package.input_dir 'two_prism_trial_materialization.json')
   $boundFiles=@($iob)
   $manifestDocument=Get-Content -Raw -LiteralPath $workbenchManifest|ConvertFrom-Json -Depth 40
@@ -50,13 +51,14 @@ try {
   $configuration.inputs=[ordered]@{workbench_run_manifest=$workbenchManifest;operating_run_manifest=$operatingManifest;operating_iob=$iob;operating_point_materialization=$materialization}
   $configuration.parameters=[ordered]@{particle_count=1;trajectory_profile=$TrajectoryProfile;maximum_step_us=$maximumStep;prism_mode='static_injection_only';mesh_role='global_1mm_with_local_0p5mm_replacements'}
   Write-RunJson -Path $runConfig -Depth 20 -Value $configuration
-  $failureStage='native_center_flight';$lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
+  $failureStage='native_center_flight';$lease=Update-HostResourceStage -Lease $lease -Stage flight -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
   $rawLog=Join-Path $logDir 'native_center_flight.log'
   Push-Location -LiteralPath (Split-Path -Parent $iob)
   try {
     & $simion --nogui --noprompt fly --adjustable "maximum_step_us=$([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$maximumStep))" $iob 2>&1|Tee-Object -FilePath $rawLog
     if($LASTEXITCODE-ne0){throw 'SIMION local-replacement center flight failed.'}
   } finally {Pop-Location}
+  $lease=Update-HostResourceStage -Lease $lease -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
   foreach($path in $boundFiles){if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash-ne$before[$path]){throw "Read-only flight changed a Workbench-bound file: $path"}}
   $failureStage='event_analysis';$result=Join-Path $resultDir 'analyzer_local_center_result.json'
   Push-Location -LiteralPath $repoRoot

@@ -149,8 +149,77 @@ class ResourceSchedulerTests(unittest.TestCase):
             available_memory_bytes=100 * GIB, total_physical_memory_bytes=128 * GIB,
             first_batch_completed=False,
         )
-        self.assertEqual(final["limits"]["cpu_capacity"], 10)
-        self.assertEqual(final["limits"]["maximum_concurrency"], 10)
+        self.assertEqual(final["limits"]["cpu_capacity"], 9)
+        self.assertEqual(final["limits"]["maximum_concurrency"], 9)
+
+    def test_temporary_memory_pressure_keeps_work_until_live_admission(self) -> None:
+        plan = plan_simion_dispatch(
+            self.request(), [self.profile(peak=GIB)],
+            available_memory_bytes=GIB, total_physical_memory_bytes=8 * GIB,
+        )
+        self.assertEqual(plan["limits"]["maximum_concurrency"], 1)
+        self.assertEqual(plan["admission"]["status"], "wait_for_memory")
+        self.assertEqual(plan["admission"]["current_capacity"], 0)
+        self.assertEqual(sum(b["count"] for b in plan["waves"][0]["batches"]), 5000)
+        recovered = plan_runtime_dispatch(
+            plan, available_memory_bytes=6 * GIB, total_physical_memory_bytes=8 * GIB,
+        )
+        self.assertEqual(recovered["admission"]["status"], "ready")
+        self.assertGreater(recovered["admission"]["current_capacity"], 0)
+
+    def test_known_peak_that_cannot_fit_total_memory_fails_explicitly(self) -> None:
+        with self.assertRaisesRegex(ValueError, "total physical memory"):
+            plan_simion_dispatch(
+                self.request(), [self.profile(peak=8 * GIB)],
+                available_memory_bytes=8 * GIB, total_physical_memory_bytes=8 * GIB,
+            )
+
+    def test_live_first_lane_is_retained_while_no_sibling_fits(self) -> None:
+        initial = plan_simion_dispatch(
+            self.request(), [], available_memory_bytes=8 * GIB,
+            total_physical_memory_bytes=8 * GIB,
+        )
+        plan = plan_adaptive_followup(
+            initial, GIB, available_memory_bytes=GIB,
+            total_physical_memory_bytes=8 * GIB, first_batch_completed=False,
+        )
+        self.assertEqual(plan["limits"]["maximum_concurrency"], 1)
+        self.assertEqual(plan["admission"]["current_capacity"], 0)
+        self.assertEqual(plan["admission"]["status"], "wait_for_memory")
+        self.assertEqual(sum(b["count"] for b in plan["waves"][0]["batches"]), 5000)
+
+    def test_case_memory_pressure_preserves_pending_case(self) -> None:
+        plan = plan_simion_case_dispatch(
+            [{"case_id": "pending", "resource_identity": {}}],
+            self.request(particle_count=1), [self.profile(peak=GIB)],
+            available_memory_bytes=GIB, total_physical_memory_bytes=8 * GIB,
+        )
+        self.assertEqual(plan["admission"]["current_capacity"], 0)
+        self.assertEqual(plan["admission"]["status"], "wait_for_memory")
+        self.assertEqual(plan["waves"][0]["cases"][0]["case_id"], "pending")
+
+    def test_live_formal_cpu_capacity_includes_existing_worker(self) -> None:
+        initial = plan_simion_dispatch(
+            self.request(), [], available_memory_bytes=100 * GIB,
+            total_physical_memory_bytes=128 * GIB,
+        )
+        for completed in (False, True):
+            with self.subTest(first_completed=completed):
+                final = plan_adaptive_followup(
+                    initial, GIB, observed_cpu_percent=20,
+                    available_memory_bytes=100 * GIB,
+                    total_physical_memory_bytes=128 * GIB,
+                    first_batch_completed=completed,
+                )
+                self.assertEqual(final["limits"]["maximum_concurrency"], 4)
+                self.assertLessEqual(
+                    final["limits"]["maximum_concurrency"] * 20,
+                    final["limits"]["cpu_admission_percent"],
+                )
+                batches = final["waves"][0]["batches"]
+                self.assertEqual(sum(batch["count"] for batch in batches), 5000)
+                self.assertEqual(batches[0]["particle_id_min"], 1)
+                self.assertEqual(batches[-1]["particle_id_max"], 5000)
 
     def test_completed_first_batch_keeps_balanced_lane_remainder(self) -> None:
         initial = plan_simion_dispatch(

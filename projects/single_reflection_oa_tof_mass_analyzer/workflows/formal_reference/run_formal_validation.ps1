@@ -16,6 +16,10 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $runRecordComplete = $true
+$hostRole = 'SIMION'
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
+try {
 
 if ($Phase -in @('Publish','Recover')) {
   if ([string]::IsNullOrWhiteSpace($PromotionRequest)) {
@@ -210,9 +214,17 @@ try {
     $oldEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, 'Process')
     [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
   }
+  # Standalone orchestration yields to the child lifecycle; inherited grants stay owned by the parent.
+  if ($null -ne $hostExecutionLease -and -not $hostExecutionLease.inherited) {
+    Exit-HostExecutionLease -Lease $hostExecutionLease
+    $hostExecutionLease = $null
+  }
   & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
     -TaskScript (Join-Path $projectRoot 'comsol\run_fixed_particle_retrace.m') `
     -ReportPath $comsolReport
+  if ($null -eq $hostExecutionLease) {
+    $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
+  }
 } finally {
   foreach ($entry in $environment.GetEnumerator()) {
     [Environment]::SetEnvironmentVariable($entry.Key,$oldEnvironment[$entry.Key],'Process')
@@ -222,12 +234,16 @@ if (-not (Select-String -LiteralPath $comsolReport -Pattern '^DETECTED=1000/1000
   throw 'Formal vNext COMSOL did not detect 1000/1000 particles.'
 }
 
+$hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+  -Budget (Get-HostResourceBudget -Role $hostRole -Stage flight) -RetainedMemoryBytes 0
 $process = Start-Process -FilePath $SimionExe -WorkingDirectory $candidateSimion -WindowStyle Hidden `
   -Wait -PassThru -RedirectStandardOutput $simionLog -RedirectStandardError $simionStderr `
   -ArgumentList @('--default-num-particles','1000','--nogui','fly','--trajectory-quality','8',
     '--retain-trajectories','0','--particles',$ion,'--programs','1',
     '--adjustable','trajectory_quality=8','--adjustable','trajectory_log_enable=1',$iob)
 if ($process.ExitCode -ne 0) { throw "Formal vNext SIMION fly failed: $simionStderr" }
+$hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+  -Budget (Get-HostResourceBudget -Role $hostRole -Stage postprocess) -RetainedMemoryBytes 0
 $summary = & (Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1') `
   -Log $simionLog -IonFile $ion -Mode 'formal_vnext_candidate_assets' `
   -Distribution 'fixedN1000' -ParticleCsv $simionCsv
@@ -269,3 +285,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Formal vNext manifest creation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Formal vNext manifest verification failed.' }
 $runRecordComplete = $true
 "FORMAL_VNEXT_VALIDATION=PASS RUN_ID=$RunId"
+
+} finally {
+  if ($null -ne $hostExecutionLease) { Exit-HostExecutionLease -Lease $hostExecutionLease }
+}

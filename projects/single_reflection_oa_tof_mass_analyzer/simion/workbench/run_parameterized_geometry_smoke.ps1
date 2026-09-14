@@ -16,6 +16,9 @@ $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__gate__simion__native-ideal-grid__smoke'
 }
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
+try {
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
@@ -85,6 +88,8 @@ $failureStage = 'run_initialization'
 $stageWallSeconds = [ordered]@{}
 
 function Invoke-Builder([string]$Script, [object[]]$Arguments, [string]$LogStem) {
+  $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+    -Budget (Get-HostResourceBudget -Role 'SIMION' -Stage pa_refine) -RetainedMemoryBytes 0
   $timer = [Diagnostics.Stopwatch]::StartNew()
   & $SimionExe --nogui lua $Script @Arguments `
     1> (Join-Path $outputFull ($LogStem + '.log')) `
@@ -92,6 +97,8 @@ function Invoke-Builder([string]$Script, [object[]]$Arguments, [string]$LogStem)
   $timer.Stop()
   $stageWallSeconds[$LogStem] = [Math]::Round($timer.Elapsed.TotalSeconds,3)
   if ($LASTEXITCODE -ne 0) { throw "SIMION builder failed: $Script" }
+  $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+    -Budget (Get-HostResourceBudget -Role 'SIMION' -Stage prepare) -RetainedMemoryBytes 0
 }
 
 try {
@@ -186,6 +193,8 @@ Get-Content -LiteralPath $formalN100 -TotalCount 1 | Set-Content -LiteralPath $s
 $crossingLog = Join-Path $outputFull 'native_ideal_grid_crossing.log'
 $crossingError = Join-Path $outputFull 'native_ideal_grid_crossing.stderr.log'
 $flyTimer = [Diagnostics.Stopwatch]::StartNew()
+$hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+  -Budget (Get-HostResourceBudget -Role 'SIMION' -Stage flight) -RetainedMemoryBytes 0
 $process = Start-Process -FilePath $SimionExe -ArgumentList @(
   '--nogui','fly','--trajectory-quality','8','--retain-trajectories','0',
   '--particles',$singleIon,'--adjustable','trajectory_quality=8',
@@ -195,6 +204,8 @@ $process = Start-Process -FilePath $SimionExe -ArgumentList @(
 $flyTimer.Stop()
 $stageWallSeconds['single_particle_fly'] = [Math]::Round($flyTimer.Elapsed.TotalSeconds,3)
 if ($process.ExitCode -ne 0) { throw "Native ideal-grid crossing smoke failed: $crossingError" }
+$hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+  -Budget (Get-HostResourceBudget -Role 'SIMION' -Stage postprocess) -RetainedMemoryBytes 0
 $crossings = @(Select-String -LiteralPath $crossingLog -Pattern '^TRACE: native_grid_crossing ')
 $expectedCrossings = [ordered]@{
   'grid1:forward'=1; 'grid2:forward'=1
@@ -266,4 +277,7 @@ $terminalized = $true
       Write-Warning "Could not remove short execution alias after native-grid smoke: $($_.Exception.Message)"
     }
   }
+}
+} finally {
+  Exit-HostExecutionLease -Lease $hostExecutionLease
 }

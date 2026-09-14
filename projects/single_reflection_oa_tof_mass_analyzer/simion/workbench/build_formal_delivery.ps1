@@ -72,6 +72,9 @@ else {
   $textDir = Join-Path $projectRoot 'simion\workbench\formal'
 }
 
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
+try {
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
   if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__build__simion__formal-delivery__n1000'
@@ -106,7 +109,11 @@ $detector = $contract.simion_detector_marker
 $source = $contract.particle_source
 $voltage = $contract.electrodes_V
 
-function Invoke-SimionLua([string]$Script, [object[]]$Arguments) {
+function Invoke-SimionLua([string]$Script, [object[]]$Arguments, [switch]$Refines) {
+  if ($Refines) {
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+  }
   # A parameterized rebuild may intentionally change PA dimensions relative
   # to the seed IOB.  In --nogui mode SIMION otherwise waits indefinitely at
   # the interactive "Continue loading anyway?" prompt.  --noprompt accepts
@@ -115,6 +122,10 @@ function Invoke-SimionLua([string]$Script, [object[]]$Arguments) {
   & $SimionExe --nogui --noprompt lua $Script @Arguments
   if ($LASTEXITCODE -ne 0) {
     throw "SIMION Lua failed with exit code ${LASTEXITCODE}: $Script"
+  }
+  if ($Refines) {
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
   }
 }
 
@@ -165,12 +176,16 @@ function Invoke-ReflectronFastAdjust([int]$MaxElectrode) {
 }
 
 function Invoke-SegmentedReflectronRefine([int]$MaxElectrode) {
+  $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
   $singleRefiner = Join-Path $projectRoot 'simion\reflectron\refine_single_pa.lua'
   foreach ($electrode in 0..$MaxElectrode) {
     Invoke-SimionLua $singleRefiner @(
       (Join-Path $outputFull "reflectron.pa$electrode")
     )
   }
+  $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
 }
 
 $acceleratorStem = Join-Path $outputFull 'accelerator.pa#'
@@ -178,7 +193,7 @@ if ($reuseComponentNames -contains 'accelerator') {
   Copy-ReusablePaSet 'accelerator'
 }
 else {
-  Invoke-SimionLua (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\build_two_zone_pa.lua') @(
+  Invoke-SimionLua -Refines (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\build_two_zone_pa.lua') @(
   (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\two_zone_accelerator.gem'), $acceleratorStem,
   $build.accelerator.cell_xy_mm, $build.accelerator.cell_z_mm,
   $geometry.accelerator_bore_half, $geometry.accelerator_ring_width,
@@ -207,7 +222,7 @@ elseif ($reuseComponentNames -contains 'reflectron') {
   Copy-ReusablePaSet 'reflectron'
 }
 else {
-  Invoke-SimionLua (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
+  Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
   (Join-Path $projectRoot 'simion\reflectron\oatof_reflectron_ideal_10_5.gem'), $reflectronStem,
   $build.reflectron.cell_axial_mm, $build.reflectron.cell_radial_mm,
   $build.reflectron.max_gib, $geometry.flight_tube_r, $geometry.flight_tube_wall,
@@ -227,7 +242,7 @@ if ($reuseComponentNames -contains 'flight_tube') {
   Copy-ReusablePaSet 'flight_tube_ground'
 }
 else {
-  Invoke-SimionLua (Join-Path $projectRoot 'simion\workbench\build_flight_tube_variant.lua') @(
+  Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\workbench\build_flight_tube_variant.lua') @(
   (Join-Path $projectRoot 'simion\workbench\oatof_flight_tube_ground.gem'), $flightTubeStem,
   $build.flight_tube.cell_axial_mm, $build.flight_tube.cell_radial_mm,
   $build.flight_tube.max_gib, $geometry.flight_tube_r, $geometry.flight_tube_wall,
@@ -240,7 +255,7 @@ if ($reuseComponentNames -contains 'detector') {
   Copy-ReusablePaSet 'detector_ground'
 }
 else {
-  Invoke-SimionLua (Join-Path $projectRoot 'simion\workbench\build_detector_variant.lua') @(
+  Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\workbench\build_detector_variant.lua') @(
   (Join-Path $projectRoot 'simion\workbench\oatof_detector_ground.gem'), $detectorStem,
   $detector.cell_xy_mm, $detector.cell_z_mm, $detector.active_radius_mm,
   $detector.absorber_thickness_mm, $detector.front_margin_z_mm,
@@ -337,6 +352,8 @@ foreach ($required in @('oatof_ideal_grounded.iob','oatof_ideal_grounded.con','o
     throw "Delivery is missing $required"
   }
 }
+$hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+  -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
 $manifestScript = Join-Path $repoRoot 'common\contracts\write_run_manifest.py'
 $shaPath = Join-Path $outputFull 'SHA256SUMS.csv'
 # The build manifest records the checksum file, so the checksum file cannot in
@@ -359,3 +376,7 @@ if (-not $DeferRunFinalization) {
   if ($LASTEXITCODE -ne 0) { throw 'Run-manifest generation failed.' }
 }
 "STATUS=PASS OUTPUT_DIR=$outputFull FILES=$($hashes.Count)"
+
+} finally {
+  Exit-HostExecutionLease -Lease $hostExecutionLease
+}

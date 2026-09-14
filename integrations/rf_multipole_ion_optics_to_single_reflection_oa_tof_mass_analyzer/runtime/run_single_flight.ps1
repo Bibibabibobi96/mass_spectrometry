@@ -691,7 +691,7 @@ function Resolve-RfSemanticallyEquivalentFineCache {
 Write-RfPreCacheRunConfiguration `
   -LifecycleStage 'pa_cache_policy_pending_budget_validation'
 
-$hostExecutionLease = Enter-HostExecutionLease -Role SIMION -RunId $RunId
+$hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
 $hostExecutionOutcome = 'failed'
 # The capacity gate runs before the frozen budget exposes this policy.  Keep
 # failure publication informative if that earliest gate cannot complete.
@@ -1807,11 +1807,15 @@ try {
       -ProtectedPaths $artifactCapacityProtectedPaths `
       -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
       -RequiredHeadroomBytes $frontendProjectedFamilyBytes | Out-Null
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
     $basisInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'frontend_basis_initialization_resource_usage.json') -FilePath $SimionExe `
       -WorkingDirectory $frontendBuildDir -RedirectStandardOutput (Join-Path $package.log_dir 'frontend_basis_initialization.stdout.log') `
       -RedirectStandardError (Join-Path $package.log_dir 'frontend_basis_initialization.stderr.log') `
       -ArgumentList @('--nogui','--noprompt','lua',$cacheBasisInitializer,$cachePaSharp)
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
     if ($basisInitialization.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Frontend basis initialization exceeded its resource budget.' }
     if ($basisInitialization.exit_code -ne 0) {
       $frontendBasisInitializationDetail = [ordered]@{
@@ -2064,16 +2068,24 @@ try {
                 'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract',
                 '--pa-plus-contract',$fineDefinition.contract,'--pa-plus-output',$finePaPlus) `
                 -Failure 'Accelerator-main PA+ file rendering failed.'
+              $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+                -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
               $paPlusInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
                 -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir ($fineDefinition.name + '_pa_plus_initialization_resource_usage.json')) `
                 -FilePath $SimionExe -WorkingDirectory $fineBuildDir `
                 -RedirectStandardOutput (Join-Path $package.log_dir ($fineDefinition.name + '_pa_plus_initialization.stdout.log')) `
                 -RedirectStandardError (Join-Path $package.log_dir ($fineDefinition.name + '_pa_plus_initialization.stderr.log')) `
                 -ArgumentList @('--nogui','--noprompt','lua',$paPlusInitializerSource,$fineBuildSharp)
+              $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+                -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
               if ($paPlusInitialization.resource_budget_exceeded -or $paPlusInitialization.exit_code -ne 0 -or
                   -not (Test-Path -LiteralPath $finePa0 -PathType Leaf)) {
                 throw "$($fineDefinition.name) PA+ controller initialization failed."
               }
+            }
+            if ($fineDefinition.name -ne 'accelerator_main') {
+              $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+                -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
             }
             $basis = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
               -UsagePath (Join-Path $package.log_dir ($fineDefinition.name + '_basis_resource_usage.json')) `
@@ -2084,6 +2096,10 @@ try {
                 ([string]$frontendBoundaryGeometry.instance_origin_mm.x),([string]$frontendBoundaryGeometry.instance_origin_mm.y),([string]$frontendBoundaryGeometry.instance_origin_mm.z),
                 ([string]$fineGeometry.instance_origin_mm.x),([string]$fineGeometry.instance_origin_mm.y),([string]$fineGeometry.instance_origin_mm.z),
                 $(if($fineUsesPaPlus){$finePaPlusModeSpec}else{[string]$maximumFrontendElectrodeId}),$fineBasisReport)
+            if ($fineDefinition.name -ne 'accelerator_main') {
+              $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+                -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+            }
             if ($basis.resource_budget_exceeded -or $basis.exit_code -ne 0) { throw "$($fineDefinition.name) basis transfer failed." }
           }
           # A cache publication gate can fail after every PA+ member has
@@ -2151,6 +2167,8 @@ try {
               scheduler_batch=[pscustomobject]@{index=($fineSolutionIds.IndexOf($electrode)+1);total_batches=$fineSolutionIds.Count;work_item_id_min=($fineSolutionIds.IndexOf($electrode)+1);work_item_id_max=($fineSolutionIds.IndexOf($electrode)+1);count=1;execution_unit='independent_work_items'}
             }
           })
+          $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+            -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
           $fineExistingProcessRecords = @()
           if ([string]$fineRefineRuntimePlan.estimation.kind -eq 'formal_first_batch_observation') {
             $fineObservation = Start-ObservedFormalProcess `
@@ -2184,6 +2202,8 @@ try {
             -UsagePath $fineRefineResourceUsage `
             -ProcessSpecifications $fineRefineSpecifications `
             -ExistingProcessRecords $fineExistingProcessRecords
+          $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+            -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
           if ($fineRefineWave.resource_budget_exceeded -or
               @($fineRefineWave.processes | Where-Object { [int]$_.exit_code -ne 0 }).Count -ne 0) {
             throw "$($fineDefinition.name) PA refinement failed."
@@ -2333,12 +2353,16 @@ try {
               'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract',
               '--pa-plus-contract',$acceleratorEntranceLocalContract,'--pa-plus-output',$localPaPlus) `
               -Failure 'Accelerator entrance-local PA+ file rendering failed.'
+            $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+              -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
             $localPaPlusInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
               -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'accelerator_entrance_local_pa_plus_initialization_resource_usage.json') `
               -FilePath $SimionExe -WorkingDirectory $localBuildDir `
               -RedirectStandardOutput (Join-Path $package.log_dir 'accelerator_entrance_local_pa_plus_initialization.stdout.log') `
               -RedirectStandardError (Join-Path $package.log_dir 'accelerator_entrance_local_pa_plus_initialization.stderr.log') `
               -ArgumentList @('--nogui','--noprompt','lua',$paPlusInitializerSource,$localBuildSharp)
+            $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+              -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
             if ($localPaPlusInitialization.resource_budget_exceeded -or $localPaPlusInitialization.exit_code -ne 0 -or
                 -not (Test-Path -LiteralPath $localPa0 -PathType Leaf)) {
               $localPaPlusInitializationFailure = 'Accelerator entrance-local PA+ controller initialization failed.'
@@ -2434,6 +2458,8 @@ try {
               scheduler_batch=[pscustomobject]@{index=($localSolutionIds.IndexOf($electrode)+1);total_batches=$localSolutionIds.Count;work_item_id_min=($localSolutionIds.IndexOf($electrode)+1);work_item_id_max=($localSolutionIds.IndexOf($electrode)+1);count=1;execution_unit='independent_work_items'}
             }
           })
+          $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+            -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
           $localExistingProcessRecords = @()
           if ([string]$localRefineRuntimePlan.estimation.kind -eq 'formal_first_batch_observation') {
             $localObservation = Start-ObservedFormalProcess `
@@ -2467,6 +2493,8 @@ try {
             -UsagePath $localRefineResourceUsage `
             -ProcessSpecifications $localRefineSpecifications `
             -ExistingProcessRecords $localExistingProcessRecords
+          $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+            -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
           if ($localRefineWave.resource_budget_exceeded -or
               @($localRefineWave.processes | Where-Object { [int]$_.exit_code -ne 0 }).Count -ne 0) {
             throw 'Accelerator entrance-local PA refinement failed.'
@@ -2685,6 +2713,8 @@ try {
           -ArgumentList @('--nogui','--noprompt','gem2pa',$overlayCacheGem,$overlayBuildPaSharp)
         if ($overlayGem2Pa.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Overlay GEM conversion exceeded its resource budget.' }
         if ($overlayGem2Pa.exit_code -ne 0) { throw 'Overlay GEM conversion failed.' }
+        $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
         $overlayBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
           -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'overlay_basis_resource_usage.json') `
           -FilePath $SimionExe -WorkingDirectory $overlayBuildDir `
@@ -2694,6 +2724,8 @@ try {
             ([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),
             ([string]$overlayGeometry.instance_origin_mm.x),([string]$overlayGeometry.instance_origin_mm.y),([string]$overlayGeometry.instance_origin_mm.z),
             ([string]$maximumFrontendElectrodeId),$overlayBuildBasisReport)
+        $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
         if ($overlayBuild.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Overlay basis transfer exceeded its resource budget.' }
         if ($overlayBuild.exit_code -ne 0) { throw 'Overlay basis transfer failed.' }
         # The basis transfer above writes all boundary-conditioned PA arrays
@@ -2748,6 +2780,8 @@ try {
             scheduler_batch=[pscustomobject]@{index=$electrode+1;total_batches=$frontendBasisElectrodeIds.Count;work_item_id_min=$electrode+1;work_item_id_max=$electrode+1;count=1;execution_unit='independent_work_items'}
           }
         })
+        $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
         $overlayExistingProcessRecords = @()
         if ([string]$overlayRefineRuntimePlan.estimation.kind -eq 'formal_first_batch_observation') {
           $overlayObservation = Start-ObservedFormalProcess `
@@ -2781,6 +2815,8 @@ try {
           -UsagePath $overlayRefineResourceUsage `
           -ProcessSpecifications $overlayRefineSpecifications `
           -ExistingProcessRecords $overlayExistingProcessRecords
+        $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
         if ($overlayRefineWave.resource_budget_exceeded) {
           $resourceBudgetExceeded=$true
           throw 'Accelerator overlay refinement wave exceeded the repository resource budget.'
@@ -2922,6 +2958,8 @@ try {
             -RedirectStandardOutput (Join-Path $package.log_dir "${overlayId}_gem2pa.stdout.log") -RedirectStandardError (Join-Path $package.log_dir "${overlayId}_gem2pa.stderr.log") `
             -ArgumentList @('--nogui','--noprompt','gem2pa',$buildGem,$buildPaSharp)
           if ($gem2pa.resource_budget_exceeded -or $gem2pa.exit_code -ne 0) { throw "$overlayId GEM conversion failed." }
+          $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+            -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
           $basis = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
             -UsagePath (Join-Path $package.log_dir "${overlayId}_basis_resource_usage.json") -FilePath $SimionExe -WorkingDirectory $overlayBuildDir `
             -RedirectStandardOutput (Join-Path $package.log_dir "${overlayId}_basis.stdout.log") -RedirectStandardError (Join-Path $package.log_dir "${overlayId}_basis.stderr.log") `
@@ -2929,6 +2967,8 @@ try {
               ([string]$basisSourceOrigin.x),([string]$basisSourceOrigin.y),([string]$basisSourceOrigin.z),
               ([string]$overlayGeometry.instance_origin_mm.x),([string]$overlayGeometry.instance_origin_mm.y),([string]$overlayGeometry.instance_origin_mm.z),
               ([string]$maximumFrontendElectrodeId),$buildBasisReport)
+          $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+            -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
           if ($basis.resource_budget_exceeded -or $basis.exit_code -ne 0) { throw "$overlayId basis transfer failed." }
           $refineDispatchRequest = Join-Path $package.input_dir ("${overlayId}_refine_dispatch_request.json")
           $refineDispatchPlan = Join-Path $package.input_dir ("${overlayId}_refine_dispatch_plan.json")
@@ -2958,8 +2998,12 @@ try {
               scheduler_batch=[pscustomobject]@{index=$electrode+1;total_batches=$frontendBasisElectrodeIds.Count;work_item_id_min=$electrode+1;work_item_id_max=$electrode+1;count=1;execution_unit='independent_work_items'}
             }
           })
+          $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+            -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
           $refineWave = Invoke-ResourceBudgetedProcesses -DispatchPlanPath $refineDispatchPlan -RunDir $package.run_dir `
             -UsagePath $refineResourceUsage -ProcessSpecifications $refineSpecifications -ExistingProcessRecords @()
+          $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+            -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
           if ($refineWave.resource_budget_exceeded -or @($refineWave.processes | Where-Object { [int]$_.exit_code -ne 0 }).Count -ne 0) { throw "$overlayId PA refinement failed." }
           $overlayCacheDir = Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot `
             -ProjectId $runProjectId -CacheRoot $overlayCacheRoot -CacheKey $overlayKey -Role $overlayRole `
@@ -3873,6 +3917,8 @@ try {
     $flightTubeBuildStderr = Join-Path $package.log_dir 'flight_tube_build.stderr.log'
     $geometry = $oatofGeometryDocument.geometry_mm
     $build = $oatofGeometryDocument.simion_geometry_build.flight_tube
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
     $flightTubeBuild = Invoke-ResourceBudgetedProcess `
       -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'flight_tube_build_resource_usage.json') `
@@ -3886,6 +3932,8 @@ try {
         ([string]$geometry.flight_tube_wall),
         ([string]$geometry.shield_endcap_thickness),
         ([string]$geometry.shield_outer_z_min),([string]$geometry.L_flight))
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
     if ($flightTubeBuild.resource_budget_exceeded) {
       $resourceBudgetExceeded=$true
       throw 'Candidate flight-tube PA build exceeded its resource budget.'
@@ -3921,6 +3969,8 @@ try {
     $build = $oatofGeometryDocument.simion_geometry_build.reflectron
     $rings = $oatofGeometryDocument.rings
     $voltage = $oatofGeometryDocument.electrodes_V
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
     $reflectronBuild = Invoke-ResourceBudgetedProcess `
       -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'reflectron_build_resource_usage.json') `
@@ -3938,6 +3988,8 @@ try {
         ([string]$geometry.ring_outer_r),([string]$rings.stage1_count),
         ([string]$rings.stage2_count),([string]$voltage.midgrid),
         ([string]$voltage.backplate),'initialize-only')
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
     if ($reflectronBuild.resource_budget_exceeded) {
       $resourceBudgetExceeded=$true
       throw 'Candidate reflectron PA build exceeded its resource budget.'
@@ -3948,6 +4000,8 @@ try {
     $maximumReflectronElectrode = 4 + [int]$rings.stage1_count + [int]$rings.stage2_count
     foreach ($electrode in 0..$maximumReflectronElectrode) {
       $singlePa = Join-Path $runtimeDir "reflectron.pa$electrode"
+      $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+        -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
       $singleRefine = Invoke-ResourceBudgetedProcess `
         -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
         -UsagePath (Join-Path $package.log_dir "reflectron_refine_pa${electrode}_resource_usage.json") `
@@ -3955,6 +4009,8 @@ try {
         -RedirectStandardOutput (Join-Path $package.log_dir "reflectron_refine_pa${electrode}.stdout.log") `
         -RedirectStandardError (Join-Path $package.log_dir "reflectron_refine_pa${electrode}.stderr.log") `
         -ArgumentList @('--nogui','--noprompt','lua',$reflectronRefinerFrozen,$singlePa)
+      $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+        -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
       if ($singleRefine.resource_budget_exceeded) {
         $resourceBudgetExceeded=$true
         throw "Candidate reflectron pa$electrode refine exceeded its resource budget."
@@ -5127,6 +5183,10 @@ try {
   $resourceIdentityWasUnknown =
     $processSpecifications.Count -gt 0 -and
       [string]$runtimeDispatchPlan.estimation.kind -eq 'formal_first_batch_observation'
+  if ($processSpecifications.Count -gt 0) {
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
+  }
   $existingProcessRecords = @()
   if ($resourceIdentityWasUnknown) {
     if ($null -eq $batchContinuationPlan -and $processSpecifications.Count -ne 1) {
@@ -5281,6 +5341,8 @@ try {
   if (@($waveResult.processes | Where-Object { [int]$_.exit_code -ne 0 }).Count -ne 0) {
     throw 'Single-flight SIMION batch wave failed.'
   }
+  $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
   $resourceUsageFiles = @($resourceUsageFiles | Where-Object {
     $_ -and (Test-Path -LiteralPath $_ -PathType Leaf)
   })

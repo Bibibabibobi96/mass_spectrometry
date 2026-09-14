@@ -52,9 +52,9 @@ try{
   $frozenGasManifest=Join-Path $package.input_dir 'gas_field_manifest.json'
   Write-RunJson -Path $frozenGasManifest -Value $sourceGasManifest -Depth 12
   $failureStage='simion_geometry_preflight'
-  $lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
   & (Join-Path $PSScriptRoot 'run_c0_gem_smoke.ps1') -OutputDir $simionOutput `
     -SimionExe $SimionExe -PythonExe $python -PaCacheRoot $PaCacheRoot
+  $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   & (Join-Path $PSScriptRoot 'prepare.ps1') -OutputDir $simionOutput -Mode gas_assisted_transport `
     -GasFieldManifest $frozenGasManifest -SimionExe $SimionExe -PythonExe $python
 
@@ -96,6 +96,8 @@ try{
     & $SimionExe --nogui --noprompt lua build_simion_runtime_iob.lua dual_cone_tandem.iob `
       gas_assisted_transport.lua gas_source.fly2
     if($LASTEXITCODE-ne 0){throw 'SIMION runtime IOB build failed.'}
+    $lease=Update-HostResourceStage -Lease $lease -Stage flight `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
     $flyOutput=& $SimionExe --nogui --noprompt fly `
       --trajectory-quality ([string]$numerics.trajectory.trajectory_quality) `
       --particles dual_cone_tandem.fly2 --programs 1 --retain-trajectories 0 `
@@ -112,6 +114,8 @@ try{
     Pop-Location
   }
 
+  $lease=Update-HostResourceStage -Lease $lease -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
   $trajectory=Join-Path $simionResults 'trajectory_samples.csv'
   $finalState=Join-Path $simionResults 'particle_final_state.csv'
   if(-not(Test-Path -LiteralPath $trajectory -PathType Leaf)-or-not(Test-Path -LiteralPath $finalState -PathType Leaf)){
@@ -152,7 +156,7 @@ try{
     default_diagnostic_plot=(Join-Path $package.artifact_run_dir 'results\trajectory_rz_projection.png')
   }) -Depth 12
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
-    -RunConfig $package.run_config -PreservePaths @($trajectoryPlot,$transportMetrics,$transmittedStates,$reportPath,$log)
+    -RunConfig $package.run_config
   $capacityTerminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -ProtectedPaths @($package.artifact_run_dir)
   $capacityTerminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'

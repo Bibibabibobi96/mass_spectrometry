@@ -27,8 +27,18 @@ MATLAB 源码中没有隐藏入口压力、出口压力、温度、分子直径�
   -RunId <timestamp>__sim__comsol__dual-cone-gas-flow
 ```
 
-该入口已登记为项目计划级 runner：它创建不可覆盖的标准运行包、冻结输入、串行占用 COMSOL 主机租约，
-并发布经校验的 summary 与 manifest。任务报告不能代替 run 三件套，也不能因 `STATUS=PASS` 自动取得 Candidate 或 Formal 资格。
+该入口已登记为项目计划级 runner：它创建不可覆盖的标准运行包、冻结输入，并按 `prepare`、`solver`、
+`postprocess` 三阶段向公共主机调度器申报资源；公共 COMSOL launcher 独立管理求解器阶段及其子进程，
+项目 runner 不再持有覆盖整条链的旧式独占租约。入口最终发布经校验的 summary 与 manifest。任务报告
+不能代替 run 三件套，也不能因 `STATUS=PASS` 自动取得 Candidate 或 Formal 资格。
+当前三个阶段均没有经过可靠峰值测量，因此使用 `unknown` 保守预算；不得根据运行前瞬时 CPU 或空闲内存
+推断可以与另一项未知峰值商业求解并行。runner 显式传递并恢复 `SIMULATION_PYTHON_EXE`，且在 run 输入
+中冻结 PowerShell 前置检查、调度 facade/core/policy、COMSOL launcher、LiveLink bootstrap、失败分类、
+环境预检和安装解析器的源码身份。
+运行身份由这些冻结副本及manifest哈希确定；运行完成时不再与可能已由另一任务合法更新的活动工作树
+逐字节比较，避免把并发源码演进误判为本次冻结求解失败。`run_config.json`在求解前同时记录每个冻结
+输入的SHA-256，执行入口使用冻结launcher，独立字段验证器也显式读取冻结的science、numerics和geometry。
+项目后处理从中央`COMSOL/postprocess`阶段取得轻任务预算，不在项目内复制容量常量。
 异常写入 `comsol_run_report.txt` 的 `STATUS=FAIL` 并重新抛出；只有求解、插值与质量守恒检查均通过
 才写 `STATUS=PASS`，不允许改用其他物理接口或从中间解导出合格场。
 

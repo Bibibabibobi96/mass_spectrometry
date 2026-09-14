@@ -20,11 +20,13 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath
 $failureStage='freeze_inputs'
 $terminalized=$false
-$lease=$null
-$hostOutcome='failed'
-$environmentNames=@('DUAL_CONE_GAS_FLOW_OUTPUT_DIR','DUAL_CONE_PROJECT_ROOT')
+$resourceLease=$null
+$environmentNames=@('DUAL_CONE_GAS_FLOW_OUTPUT_DIR','DUAL_CONE_PROJECT_ROOT','SIMULATION_PYTHON_EXE')
 $savedEnvironment=Save-RunEnvironment -Names $environmentNames
 try{
+  $env:SIMULATION_PYTHON_EXE=$python
+  $resourceLease=Enter-HostResourceStage -Role COMSOL -Stage prepare `
+    -Budget (Get-HostResourceBudget -Profile unknown) -RunId $RunId
   $failureStage='capacity_preflight'
   $capacityStartup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -ProtectedPaths @($package.artifact_run_dir)
@@ -39,15 +41,43 @@ try{
     matlab_model_builder='comsol\build_and_solve_axisymmetric_gas_flow.m'
     matlab_task='comsol\run_axisymmetric_gas_flow.m'
   }
+  $schedulerFiles=[ordered]@{
+    powershell_preflight='common\require_powershell7.ps1'
+    host_resource_support='common\host_execution_lease.ps1'
+    host_resource_scheduler='common\host_resource_scheduler.py'
+    host_resource_policy='common\host_resource_policy.json'
+    comsol_launcher='common\comsol\run_comsol_r2025b.ps1'
+    comsol_bootstrap='common\comsol\livelink_r2025b\comsolstartup.m'
+    comsol_failure_classifier='common\comsol\livelink_failure_classification.ps1'
+    comsol_environment_preflight='common\comsol\livelink_environment.ps1'
+    comsol_launcher_resolver='common\comsol\resolve_comsol_64.ps1'
+  }
   foreach($key in $sourceFiles.Keys){
     $source=Join-Path $projectRoot $sourceFiles[$key]
     $destination=Join-Path (Join-Path $package.input_dir 'project_snapshot') $sourceFiles[$key]
     $frozen[$key]=Copy-VerifiedRunInput -Source $source -Destination $destination
   }
+  foreach($key in $schedulerFiles.Keys){
+    $source=Join-Path $repoRoot $schedulerFiles[$key]
+    $destination=Join-Path (Join-Path $package.input_dir 'repository_snapshot') $schedulerFiles[$key]
+    $frozen[$key]=Copy-VerifiedRunInput -Source $source -Destination $destination
+  }
   $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
   $configuration.inputs=[ordered]@{}
-  foreach($key in $frozen.Keys){
+  $configuration.input_identity=[ordered]@{}
+  foreach($key in $sourceFiles.Keys){
     $configuration.inputs[$key]=Join-Path $package.artifact_run_dir ("inputs\project_snapshot\"+$sourceFiles[$key])
+    $configuration.input_identity[$key]=[ordered]@{
+      path=$configuration.inputs[$key]
+      sha256=Get-RunFileSha256 -Path $frozen[$key]
+    }
+  }
+  foreach($key in $schedulerFiles.Keys){
+    $configuration.inputs[$key]=Join-Path $package.artifact_run_dir ("inputs\repository_snapshot\"+$schedulerFiles[$key])
+    $configuration.input_identity[$key]=[ordered]@{
+      path=$configuration.inputs[$key]
+      sha256=Get-RunFileSha256 -Path $frozen[$key]
+    }
   }
   $configuration.parameters=[ordered]@{
     lifecycle_stage='prepared_for_comsol_solve'
@@ -56,17 +86,16 @@ try{
   }
   Write-RunJson -Path $package.run_config -Value $configuration -Depth 12
   $failureStage='comsol_axisymmetric_gas_flow'
-  $lease=Enter-HostExecutionLease -Role COMSOL -RunId $RunId
   $env:DUAL_CONE_GAS_FLOW_OUTPUT_DIR=$package.result_dir
   $env:DUAL_CONE_PROJECT_ROOT=Join-Path $package.input_dir 'project_snapshot'
-  & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
-    -TaskScript $frozen.matlab_task -ReportPath (Join-Path $package.log_dir 'comsol_bootstrap_report.txt')
+  Exit-HostResourceStage -Lease $resourceLease
+  $resourceLease=$null
+  & $frozen.comsol_launcher `
+    -TaskScript $frozen.matlab_task -ReportPath (Join-Path $package.log_dir 'comsol_bootstrap_report.txt') `
+    -RunId $RunId
   if($LASTEXITCODE-ne 0){throw 'COMSOL gas-flow launcher failed.'}
-  foreach($key in $sourceFiles.Keys){
-    if(-not(Test-RunFilesIdentical -Left (Join-Path $projectRoot $sourceFiles[$key]) -Right $frozen[$key])){
-      throw "COMSOL source changed during execution: $key"
-    }
-  }
+  $resourceLease=Enter-HostResourceStage -Role COMSOL -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role COMSOL -Stage postprocess) -RunId $RunId
   $field=Join-Path $package.result_dir 'gas_field_rz.csv'
   $metadata=Join-Path $package.result_dir 'gas_field_metadata.json'
   $model=Join-Path $package.result_dir 'axisymmetric_gas_flow.mph'
@@ -77,7 +106,9 @@ try{
   $failureStage='independent_gas_field_validation'
   $validation=Join-Path $package.result_dir 'gas_field_validation.json'
   & $python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.validate_gas_field `
-    --csv $field --metadata $metadata --output $validation
+    --csv $field --metadata $metadata --science $frozen.gas_flow_science `
+    --numerics $frozen.comsol_solver_numerics --geometry $frozen.resolved_geometry `
+    --output $validation
   if($LASTEXITCODE-ne 0){throw 'Independent gas-field validation failed.'}
   $fieldMetadata=Get-Content -LiteralPath $metadata -Raw|ConvertFrom-Json
   Write-RunJson -Path $package.summary -Value ([ordered]@{
@@ -86,7 +117,7 @@ try{
     rear_pressure_pa=400;gas_species='N2';field_metadata=$fieldMetadata
   }) -Depth 14
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
-    -RunConfig $package.run_config -PreservePaths @($field,$metadata,$taskReport,$validation)
+    -RunConfig $package.run_config
   $capacityTerminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -ProtectedPaths @($package.artifact_run_dir)
   $capacityTerminalPath=Join-Path $package.result_dir 'artifact_capacity_gate_terminal.json'
@@ -97,19 +128,24 @@ try{
     -Status success -Software @('COMSOL Multiphysics 6.4','MATLAB R2025b','Python 3.11') `
     -Outputs $outputs
   $terminalized=$true
-  $hostOutcome='success'
+  Invoke-HostExecutionCompletionNotification -Outcome success -RunId $RunId
   Write-Output "DUAL_CONE_GAS_FLOW=PASS RUN=$($package.artifact_run_dir)"
 }catch{
+  if($null-eq$resourceLease-and$failureStage-eq'comsol_axisymmetric_gas_flow'){
+    $resourceLease=Enter-HostResourceStage -Role COMSOL -Stage postprocess `
+      -Budget (Get-HostResourceBudget -Role COMSOL -Stage postprocess) -RunId $RunId
+  }
   if(-not$terminalized){
     Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
       -Summary $package.summary -SummaryRole 'dual_cone_axisymmetric_gas_flow_summary' `
       -Reason $_.Exception.Message -FailureStage $failureStage `
       -Software @('COMSOL Multiphysics 6.4','MATLAB R2025b','Python 3.11')
     $terminalized=$true
+    Invoke-HostExecutionCompletionNotification -Outcome failed -RunId $RunId
   }
   throw
 }finally{
   Restore-RunEnvironment -Names $environmentNames -Snapshot $savedEnvironment
-  if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome $hostOutcome -RunId $RunId}
+  if($null-ne$resourceLease){Exit-HostResourceStage -Lease $resourceLease}
   Remove-RunPackageExecutionAlias -Package $package
 }

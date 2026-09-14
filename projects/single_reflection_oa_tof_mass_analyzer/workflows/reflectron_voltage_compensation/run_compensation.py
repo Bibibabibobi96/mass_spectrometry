@@ -20,6 +20,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.optimize_reflectro
     render_lua_profile,
 )
 from common.analysis.peak_metrics import compute_peak_metrics
+from common.host_resource_python import run_heavy_function
 from common.simion.process_observation import run_observed_process
 from common.simion.resource_scheduler import (
     plan_adaptive_followup,
@@ -200,6 +201,7 @@ def main() -> None:
     parser.add_argument("--regularization", type=float, default=1e-4)
     args = parser.parse_args()
 
+
     case_dir = args.case_dir.resolve()
     simion_dir = case_dir / "simion"
     contract_path = case_dir / "contracts" / "candidate_resolved_geometry.json"
@@ -252,7 +254,9 @@ def main() -> None:
         [line for line in source.read_text(encoding="ascii").splitlines() if line.strip()]
     )
     batches = _split_ions(source, output_dir / "batch_inputs", 1)
-    baseline = _run_mode(
+    baseline = run_heavy_function(
+        "projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation.run_compensation",
+        "_run_mode",
             batches=batches, label="baseline", compensation=False,
             ideal_reflectron=False, simion_exe=args.simion_exe, simion_dir=simion_dir,
             output_dir=output_dir, trajectory_quality=args.trajectory_quality,
@@ -266,13 +270,17 @@ def main() -> None:
     batches = _split_ions(source, output_dir / "batch_inputs", scheduled_batch_count)
     modes = {
         "baseline": baseline,
-        "compensated": _run_mode(
+        "compensated": run_heavy_function(
+            "projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation.run_compensation",
+            "_run_mode",
             batches=batches, label="compensated", compensation=True,
             ideal_reflectron=False, simion_exe=args.simion_exe, simion_dir=simion_dir,
             output_dir=output_dir, trajectory_quality=args.trajectory_quality,
             workers=scheduled_batch_count,
         ),
-        "ideal_reflectron": _run_mode(
+        "ideal_reflectron": run_heavy_function(
+            "projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation.run_compensation",
+            "_run_mode",
             batches=batches, label="ideal_reflectron", compensation=False,
             ideal_reflectron=True, simion_exe=args.simion_exe, simion_dir=simion_dir,
             output_dir=output_dir, trajectory_quality=args.trajectory_quality,

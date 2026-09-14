@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import hashlib
+import os
 from pathlib import Path
 import stat
 import subprocess
@@ -634,6 +635,13 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             def publish(label: str) -> None:
                 command = (
                     f". '{RUN_ARTIFACTS_PATH}'; "
+                    # Observe only this synthetic fixture's writers; keep the
+                    # real guard and its quiet-window/publication checks.
+                    "$generationGuard=${function:Wait-RfCacheStagingWriterExit}; "
+                    "function Wait-RfCacheStagingWriterExit { "
+                    "param($StagingDirectory,[switch]$FailIfWriterObserved) "
+                    "function Get-CimInstance { param($ClassName,$ErrorAction) @() }; "
+                    "& $generationGuard @PSBoundParameters }; "
                     f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                     "$key=Get-RfContentIdentitySha256 -Identity $identity; "
                     f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
@@ -645,8 +653,16 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                     "-CacheKey $key -Role $identity.role -Identity $identity "
                     f"-StagingDirectory $staging -ProviderRunId '{label}' -MinimumFreeGiB 0 | Out-Null"
                 )
-                subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
-                               check=True, capture_output=True, text=True, timeout=120)
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                    check=False, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=120,
+                )
+                self.assertEqual(
+                    result.returncode, 0,
+                    f"publish({label}) exit={result.returncode}\n"
+                    f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+                )
 
             publish("first")
             key_directory = next(cache_root.iterdir())
@@ -662,6 +678,41 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             self.assertEqual((first_entry / "frontend.pa0").read_text(encoding="utf-8"), first_payload)
             self.assertEqual((second_entry / "frontend.pa0").read_text(encoding="utf-8"), "second:frontend.pa0")
             self.assertEqual(len(list((key_directory / "generations").iterdir())), 2)
+
+    def test_real_cache_writer_guard_rejects_matching_and_ignores_unrelated_writers(self) -> None:
+        # Exercise the production guard separately from generation publication.
+        with tempfile.TemporaryDirectory() as directory:
+            command = f". '{RUN_ARTIFACTS_PATH}'; " + r"""
+$ErrorActionPreference='Stop'
+function Get-CimInstance {
+    param($ClassName,$ErrorAction)
+    [pscustomobject]@{Name='simion.exe';ProcessId=456;CommandLine=('simion.exe refine "' + $env:WRITER_FIXTURE_DIRECTORY + '/frontend.pa#"')}
+}
+$rejected=$false
+try {
+    Wait-RfCacheStagingWriterExit -StagingDirectory $env:WRITER_FIXTURE_DIRECTORY `
+        -TimeoutSeconds 1
+} catch {
+    if($_.Exception.Message -notlike '*Timed out waiting for SIMION staging writer(s): 456*'){throw}
+    $rejected=$true
+}
+if(-not $rejected){throw 'Matching persistent writer was accepted'}
+function Get-CimInstance {
+    param($ClassName,$ErrorAction)
+    [pscustomobject]@{Name='simion.exe';ProcessId=789;CommandLine='simion.exe refine unrelated-fixture.pa#'}
+}
+Wait-RfCacheStagingWriterExit -StagingDirectory $env:WRITER_FIXTURE_DIRECTORY -TimeoutSeconds 0
+Write-Output 'WRITER_GUARDS=PASS'
+"""
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                env=dict(os.environ, WRITER_FIXTURE_DIRECTORY=directory),
+                check=False, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30,
+            )
+            self.assertEqual(result.returncode, 0,
+                             f"exit={result.returncode}\n{result.stdout}\n{result.stderr}")
+            self.assertIn("WRITER_GUARDS=PASS", result.stdout)
 
     def test_resolver_recovers_a_valid_prior_generation_with_same_payload(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

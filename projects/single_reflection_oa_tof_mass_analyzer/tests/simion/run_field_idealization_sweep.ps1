@@ -13,6 +13,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$hostRole = if ($ValidateConfigOnly) { 'GATE' } else { 'SIMION' }
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$hostStage = 'prepare'
+$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage $hostStage
+try {
 $workspaceRoot = Split-Path -Parent $repoRoot
 $projectRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer'
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
@@ -165,12 +170,18 @@ foreach ($case in $configuration.cases) {
       '--adjustable','trajectory_log_enable=1',$iob
     )
     $timer = [Diagnostics.Stopwatch]::StartNew()
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+      -Budget (Get-HostResourceBudget -Role $hostRole -Stage flight) -RetainedMemoryBytes 0
     $process = Start-Process -FilePath $SimionExe -ArgumentList $arguments -WorkingDirectory $runtimeDir -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     $timer.Stop()
     if ($process.ExitCode -ne 0) { throw "SIMION failed for $stem with exit code $($process.ExitCode)." }
     $solveSeconds = $timer.Elapsed.TotalSeconds
   } else {
     $solveSeconds = if ($previousSolveSeconds.ContainsKey($stem)) { $previousSolveSeconds[$stem] } else { 0.0 }
+  }
+  if (-not $AnalyzeOnly) {
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+      -Budget (Get-HostResourceBudget -Role $hostRole -Stage postprocess) -RetainedMemoryBytes 0
   }
   $metrics = & $analyzer -Log $stdout -IonFile $ionFile -Mode $stem -Distribution 'shared' -ParticleCsv $particleCsv
   $rows.Add([pscustomobject]@{
@@ -202,3 +213,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Manifest creation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed.' }
 $runRecordComplete = $true
 Write-Host "SIMION_FIELD_IDEALIZATION=PASS output=$OutputDir"
+
+} finally {
+  Exit-HostExecutionLease -Lease $hostExecutionLease
+}

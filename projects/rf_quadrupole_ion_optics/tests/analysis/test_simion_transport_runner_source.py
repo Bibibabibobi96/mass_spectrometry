@@ -67,6 +67,97 @@ def write_canonical_source(path: Path) -> None:
 
 
 class SimionTransportRunnerSourceTests(unittest.TestCase):
+    def test_runner_host_permission_lifecycle_without_solver(self) -> None:
+        # Execute the production acquisition/finally AST with an isolated ledger.
+        # Only the scientific body and host pressure are fixtures.
+        script = r"""
+$ErrorActionPreference='Stop'
+. (Join-Path $PWD 'common/host_execution_lease.ps1')
+$script:HostResourceStatePath=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
+function Get-HostResourceSnapshot {
+    return @{complete=$true;unknown_process_ids=@();logical_processors=8;
+        cpu_percent=0;total_memory_bytes=64GB;available_memory_bytes=32GB;io_pressure=$false;
+        processes=@(@{pid=$PID;parent_pid=0;started='fixture-owner';memory_bytes=1MB})}
+}
+function Remove-RunPackageExecutionAlias { param($Package) }
+$tokens=$null;$parseErrors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($env:RF_TEST_RUNNER,[ref]$tokens,[ref]$parseErrors)
+if ($parseErrors.Count) { throw 'Runner parse failed' }
+$outer=@($ast.EndBlock.Statements | Where-Object { $_ -is [Management.Automation.Language.TryStatementAst] })
+if ($outer.Count -ne 1) { throw 'Expected one protected runner body' }
+$acquire=@($outer[0].Body.Statements | Where-Object { $_.Extent.Text -match '^\$hostExecutionLease = Enter-HostExecutionLease' })
+if ($acquire.Count -ne 1) { throw 'Host acquisition must be inside the protected body' }
+$calls=@($outer[0].Body.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and
+    $n.GetCommandName() -in @('Start-RfSimionFormalFirstBatch','Invoke-RfSimionParticleBatchWave')},$true))
+if ($calls.Count -ne 2 -or @($calls | Where-Object { $_.Extent.StartOffset -lt $acquire[0].Extent.StartOffset }).Count) {
+    throw 'Every solver branch must follow host acquisition'
+}
+$package=@{};$RunId='rf-lease-fixture'
+foreach ($nested in @($false,$true)) {
+    foreach ($fail in @($false,$true)) {
+        $parent=$null
+        if ($nested) { $parent=Enter-HostExecutionLease -Role SIMION -Stage flight -RunId parent }
+        $hostExecutionLease=$null;$hostExecutionOutcome='failed';$caught=$false
+        $body=$acquire[0].Extent.Text + @'
+
+# Exercise production PA stage transitions around a native-command fixture.
+. (Join-Path $PWD 'projects/rf_quadrupole_ion_optics/runtime/simion_execution.ps1')
+function Invoke-TestSimion {
+    if ('gem2pa' -in $args) {
+        $current=@((Get-HostResourceStatus).records)[0]
+        if (-not $nested -and $current.stage -ne 'prepare') { throw 'GEM preparation held heavy stage' }
+    } elseif ('refine' -in $args) { Assert-HostResourceHeavyStage }
+    else { throw 'Unexpected native operation' }
+    $global:LASTEXITCODE=0
+}
+Initialize-RfSimionPaBasis -SimionExe Invoke-TestSimion -CandidateDir $PWD -HostLease $hostExecutionLease
+$current=@((Get-HostResourceStatus).records)[0]
+if (-not $nested -and $current.stage -ne 'prepare') { throw 'Refine did not return to preparation' }
+$hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
+Assert-HostResourceHeavyStage
+if ($hostExecutionLease.inherited -ne $nested) { throw 'Wrong inheritance' }
+if (@((Get-HostResourceStatus).records).Count -ne 1) { throw 'Duplicate host reservation' }
+if ($fail) { throw 'injected-scientific-failure' }
+$hostExecutionOutcome='success'
+'@
+        try {
+            . ([scriptblock]::Create('try {'+$body+'} finally '+$outer[0].Finally.Extent.Text))
+        } catch {
+            if ($_.Exception.Message -ne 'injected-scientific-failure') { throw }
+            $caught=$true
+        }
+        if ($caught -ne $fail) { throw 'Failure did not propagate' }
+        $expected=if($nested){1}else{0}
+        if (@((Get-HostResourceStatus).records).Count -ne $expected) { throw 'Incorrect terminal release' }
+        if ($nested) { Assert-HostResourceHeavyStage -Lease $parent; Exit-HostExecutionLease -Lease $parent }
+    }
+}
+'HOST_LIFECYCLE=PASS'
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            for index, runner in enumerate((RUNNER, MASS_RUNNER)):
+                with self.subTest(runner=runner.name, workflow=runner.parent.name):
+                    environment = os.environ.copy()
+                    for key in tuple(environment):
+                        if key.startswith("MASS_SPECTROMETRY_HOST_"):
+                            environment.pop(key)
+                    environment.update({
+                        "RF_TEST_RUNNER": str(runner),
+                        "SIMULATION_PYTHON_EXE": sys.executable,
+                        "SIMULATION_COMPLETION_SOUND": "off",
+                        "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(
+                            Path(directory) / f"state-{index}.sqlite3"
+                        ),
+                    })
+                    result = subprocess.run(
+                        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                        cwd=REPO_ROOT, env=environment, capture_output=True,
+                        encoding="utf-8", errors="replace", timeout=60,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("HOST_LIFECYCLE=PASS", result.stdout)
+
     def test_dedicated_runners_accept_an_optional_simion_executable(self) -> None:
         for runner in (RUNNER, MASS_RUNNER):
             script = (

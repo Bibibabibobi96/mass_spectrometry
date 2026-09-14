@@ -6,15 +6,24 @@ function Initialize-RfSimionPaBasis {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$SimionExe,
-        [Parameter(Mandatory = $true)][string]$CandidateDir
+        [Parameter(Mandatory = $true)][string]$CandidateDir,
+        $HostLease = $null
     )
 
     Push-Location $CandidateDir
     try {
         & $SimionExe --nogui --noprompt gem2pa quad_monolithic.gem quad_monolithic.pa#
         if ($LASTEXITCODE -ne 0) { throw 'SIMION gem2pa failed.' }
+        if ($null -ne $HostLease) {
+            $HostLease = Update-HostResourceStage -Lease $HostLease -Stage pa_refine `
+              -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+        } else { Assert-HostResourceHeavyStage }
         & $SimionExe --nogui --noprompt refine quad_monolithic.pa#
         if ($LASTEXITCODE -ne 0) { throw 'SIMION refine failed.' }
+        if ($null -ne $HostLease) {
+            $HostLease = Update-HostResourceStage -Lease $HostLease -Stage prepare `
+              -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+        }
     } finally {
         Pop-Location
     }
@@ -199,6 +208,7 @@ function Invoke-RfSimionPreparedBatch {
 function Invoke-RfSimionParticleBatchWave {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory = $true)]$HostLease,
         [Parameter(Mandatory = $true)][string]$SimionExe,
         [Parameter(Mandatory = $true)][string]$CandidateDir,
         [Parameter(Mandatory = $true)][string]$IobPath,
@@ -224,11 +234,15 @@ function Invoke-RfSimionParticleBatchWave {
 
     if ($BatchRuns.Count -eq 0) { throw 'SIMION particle batch wave requires at least one batch.' }
     if (-not $Prepared) {
-        Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir
+        Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir -HostLease $HostLease
         Initialize-RfSimionPreparedBatch -SimionExe $SimionExe -CandidateDir $CandidateDir `
             -IobPath $IobPath -Fly2Path $RootFly2Path -IobBuilderScript $IobBuilderScript `
             -ProgramSourcePath $ProgramSourcePath -RunConfigLua $RootRunConfigLua `
             -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir
+    }
+    if (-not $Prepared) {
+        $HostLease = Update-HostResourceStage -Lease $HostLease -Stage flight `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
     }
     $specifications = @($BatchRuns | ForEach-Object {
         New-RfSimionFlyProcessSpecification -Name ([string]$_.name) `
@@ -272,6 +286,7 @@ function Invoke-RfSimionParticleBatchWave {
 function Start-RfSimionFormalFirstBatch {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory = $true)]$HostLease,
         [Parameter(Mandatory = $true)][string]$SimionExe,
         [Parameter(Mandatory = $true)][string]$CandidateDir,
         [Parameter(Mandatory = $true)][string]$IobPath,
@@ -287,11 +302,13 @@ function Start-RfSimionFormalFirstBatch {
         [Parameter(Mandatory = $true)]$FirstBatchRun,
         [Parameter(Mandatory = $true)][string]$DispatchPlanPath
     )
-    Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir
+    Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir -HostLease $HostLease
     Initialize-RfSimionPreparedBatch -SimionExe $SimionExe -CandidateDir $CandidateDir `
         -IobPath $IobPath -Fly2Path $RootFly2Path -IobBuilderScript $IobBuilderScript `
         -ProgramSourcePath $ProgramSourcePath -RunConfigLua $RootRunConfigLua `
         -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir
+    $HostLease = Update-HostResourceStage -Lease $HostLease -Stage flight `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
     $specification = New-RfSimionFlyProcessSpecification -Name ([string]$FirstBatchRun.name) `
         -SimionExe $SimionExe -CandidateDir $CandidateDir -IobPath ([string]$FirstBatchRun.config.iob) `
         -Fly2Path ([string]$FirstBatchRun.config.fly2) -RunConfigLua ([string]$FirstBatchRun.lua) `

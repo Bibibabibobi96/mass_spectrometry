@@ -243,6 +243,9 @@ def main() -> int:
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
+    from common.host_resource_python import ensure_heavy_entry
+
+    ensure_heavy_entry("projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0_l1_hardware_candidate")
     receipt = json.loads(arguments.l0_receipt.read_text(encoding="utf-8"))
     contract = load_contract(arguments.contract)
     energies = derive_operating_energy_envelope(contract).mirror_energy_nodes_v

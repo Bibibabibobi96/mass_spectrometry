@@ -405,7 +405,9 @@ class ClocDeltaReportTests(unittest.TestCase):
 
     def test_identical_commit_has_no_json_delta(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            fake_cloc = self._write_fake_cloc(Path(temporary))
+            root = Path(temporary)
+            self._initialize_repo(root)
+            fake_cloc = self._write_fake_cloc(root)
             completed = _run(
                 [
                     "pwsh",
@@ -418,14 +420,25 @@ class ClocDeltaReportTests(unittest.TestCase):
                     "HEAD",
                     "-ClocExe",
                     str(fake_cloc),
+                    "-RepoRoot",
+                    str(root),
                 ],
-                REPO_ROOT,
+                root,
             )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertRegex(
             completed.stdout,
             r"LANGUAGE=JSON .* DELTA_CODE=0",
         )
+        identities = re.findall(
+            r"INPUT_IDENTITY SNAPSHOT=(?:baseline|result) FILES=5 SHA256=([0-9a-f]{64})",
+            completed.stdout,
+        )
+        self.assertEqual(len(identities), 2)
+        self.assertEqual(identities[0], identities[1])
+        deltas = re.findall(r"DELTA_(?:FILES|BLANK|COMMENT|CODE)=(-?\d+)", completed.stdout)
+        self.assertTrue(deltas)
+        self.assertEqual(set(deltas), {"0"})
 
 
 if __name__ == "__main__":

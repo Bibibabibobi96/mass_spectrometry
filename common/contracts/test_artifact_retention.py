@@ -364,6 +364,8 @@ class ArtifactRetentionTests(unittest.TestCase):
 
     def test_new_run_package_callers_are_explicitly_migrated_or_baselined(self) -> None:
         migrated = {
+            "projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1",
+            "projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/run_gas_field_prototype.ps1",
             "common/multipole/run_finite_3d_transport.ps1",
             "common/multipole/run_simion_finite_3d_transport.ps1",
             "common/multipole/run_simion_transport_campaign.ps1",

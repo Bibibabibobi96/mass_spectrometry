@@ -28,10 +28,10 @@ def load_policy() -> dict[str, Any]:
 
 
 def validate_budget(budget: dict[str, Any]) -> dict[str, Any]:
-    """Reject missing/unknown fields and non-finite or negative resource requests."""
+    """Validate v1 budgets; the additive heavy_stage flag defaults to false."""
     fields = {"schema_version", "cpu_cores", "memory_bytes", "io_slots",
               "exclusive_resources", "unknown_peak"}
-    if set(budget) != fields or budget["schema_version"] != 1:
+    if set(budget) - {"heavy_stage"} != fields or budget["schema_version"] != 1:
         raise ValueError("resource budget must contain exactly the version 1 fields")
     for key in ("cpu_cores", "memory_bytes", "io_slots"):
         value = budget[key]
@@ -44,7 +44,13 @@ def validate_budget(budget: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("exclusive_resources must contain nonempty names")
     if len(resources) != len(set(resources)) or not isinstance(budget["unknown_peak"], bool):
         raise ValueError("duplicate resource names or non-boolean unknown_peak")
-    return dict(budget)
+    if not isinstance(budget.get("heavy_stage", False), bool):
+        raise ValueError("heavy_stage must be boolean")
+    return {**budget, "heavy_stage": budget.get("heavy_stage", False)}
+
+
+def _is_heavy(budget: dict[str, Any]) -> bool:
+    return budget.get("heavy_stage", False)
 
 
 def _identity(process: dict[str, Any]) -> tuple[int, str]:
@@ -113,10 +119,8 @@ def _reason(candidate: dict[str, Any], records: list[dict[str, Any]], snapshot: 
     active = [r for r in records if r is not candidate and r["status"] == "acquired"]
     parked = [r for r in records if r is not candidate and r["status"] != "acquired" and _reserved(r)]
     budget = candidate["budget"]
-    if any(r["budget"]["unknown_peak"] for r in active):
-        return "unknown_peak_active"
-    if budget["unknown_peak"] and active:
-        return "unknown_peak_requires_exclusive_host"
+    if _is_heavy(budget) and any(_is_heavy(r["budget"]) for r in active):
+        return "heavy_stage_active"
     exclusive = set(budget["exclusive_resources"])
     if any(exclusive.intersection(r["budget"]["exclusive_resources"]) for r in active):
         return "exclusive_resource_in_use"
@@ -124,6 +128,8 @@ def _reason(candidate: dict[str, Any], records: list[dict[str, Any]], snapshot: 
         return "telemetry_unavailable"
     if snapshot["cpu_percent"] >= policy["cpu_admission_percent"]:
         return "cpu_pressure"
+    if not _is_heavy(budget) and snapshot["cpu_percent"] + 100 * budget["cpu_cores"] / snapshot["logical_processors"] > policy["cpu_admission_percent"]:
+        return "cpu_headroom"
     if snapshot["available_memory_bytes"] < policy["memory_admission_reserve_bytes"]:
         return "memory_pressure"
     if sum(r["budget"]["cpu_cores"] for r in active) + budget["cpu_cores"] > snapshot["logical_processors"]:
@@ -146,20 +152,26 @@ def _reason(candidate: dict[str, Any], records: list[dict[str, Any]], snapshot: 
 
 def _admit(records: list[dict[str, Any]], snapshot: dict[str, Any], policy: dict[str, Any]) -> None:
     blocked: list[dict[str, Any]] = []
+    barred_classes: set[bool] = set()
     for record in sorted((r for r in records if r["status"] == "waiting"), key=lambda r: r["sequence"]):
+        heavy = _is_heavy(record["budget"])
+        if heavy in barred_classes:
+            record["reason"] = "same_class_queue_barrier"
+            continue
         reason = _reason(record, records, snapshot, policy)
         if reason:
             record["reason"] = reason
             blocked.append(record)
             if record["bypasses"] >= policy["maximum_queue_bypasses"]:
-                break
+                barred_classes.add(heavy)
             continue
         record["status"] = "acquired"
         record["reason"] = ""
         for older in blocked:
-            older["bypasses"] += 1
-        if any(r["bypasses"] >= policy["maximum_queue_bypasses"] for r in blocked):
-            break
+            if _is_heavy(older["budget"]) == heavy:
+                older["bypasses"] += 1
+                if older["bypasses"] >= policy["maximum_queue_bypasses"]:
+                    barred_classes.add(heavy)
 
 
 def transact(path: Path, request: dict[str, Any], snapshot: dict[str, Any], policy: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -186,7 +198,9 @@ def _validate_capacity(budget: dict[str, Any], snapshot: dict[str, Any], policy:
     budget = validate_budget(budget)
     if budget["cpu_cores"] > snapshot["logical_processors"] or budget["io_slots"] > policy["io_slots"]:
         raise ValueError("request exceeds configured host CPU or I/O capacity")
-    if not budget["unknown_peak"] and budget["memory_bytes"] > snapshot["total_memory_bytes"] - policy["memory_admission_reserve_bytes"]:
+    if not _is_heavy(budget) and 100 * budget["cpu_cores"] / snapshot["logical_processors"] > policy["cpu_admission_percent"]:
+        raise ValueError("light request exceeds the CPU admission ceiling even on an idle host")
+    if budget["memory_bytes"] > snapshot["total_memory_bytes"] - policy["memory_admission_reserve_bytes"]:
         raise ValueError("request exceeds host memory capacity")
     return budget
 
@@ -246,16 +260,20 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
     elif operation == "inherit":
         if record["status"] != "acquired":
             raise ValueError("cannot inherit a waiting reservation")
+        if request.get("require_heavy_stage") and not _is_heavy(record["budget"]):
+            raise ValueError("execution requires an heavy stage grant")
         requested = request.get("budget")
-        if requested is not None and not record["budget"]["unknown_peak"]:
+        if requested is not None:
             requested = validate_budget(requested)
             parent = record["budget"]
-            if not set(requested["exclusive_resources"]).issubset(parent["exclusive_resources"]):
+            if _is_heavy(requested) and not _is_heavy(parent):
+                raise ValueError("child requires an heavy stage grant")
+            if not _is_heavy(parent) and not set(requested["exclusive_resources"]).issubset(parent["exclusive_resources"]):
                 raise ValueError("parent grant does not own the required exclusive resources")
-            if requested["unknown_peak"]:
-                raise ValueError("unknown peak cannot inherit a measured parent budget")
-            if not requested["unknown_peak"] and any(requested[key] > parent[key] for key in ("cpu_cores", "memory_bytes", "io_slots")):
-                raise ValueError("child requirements exceed the inherited stage budget")
+            exceeded = [f"{key}: requested={requested[key]}, parent={parent[key]}"
+                        for key in ("cpu_cores", "memory_bytes", "io_slots") if requested[key] > parent[key]]
+            if not _is_heavy(parent) and exceeded:
+                raise ValueError("child requirements exceed the inherited stage budget: " + "; ".join(exceeded))
     elif operation == "release":
         # An explicit boundary release cannot discard an orphaned solver.
         children = [p for p in record["processes"] if _identity(p) != _identity(record["owner"]) and int(p["pid"]) in record["live_process_ids"]]

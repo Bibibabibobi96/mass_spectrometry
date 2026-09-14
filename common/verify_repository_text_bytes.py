@@ -45,10 +45,12 @@ def lf_tracked_paths(repo_root: Path) -> list[Path]:
     ]
 
 
-def carriage_return_paths(repo_root: Path) -> list[Path]:
+def carriage_return_paths(
+    repo_root: Path, *, tracked_paths: list[Path] | None = None
+) -> list[Path]:
     """Return LF-governed tracked files containing CR bytes in the worktree."""
     offenders: list[Path] = []
-    for relative in lf_tracked_paths(repo_root):
+    for relative in lf_tracked_paths(repo_root) if tracked_paths is None else tracked_paths:
         path = repo_root / relative
         if path.is_file() and b"\r" in path.read_bytes():
             offenders.append(relative)
@@ -64,14 +66,15 @@ def main() -> None:
     )
     args = parser.parse_args()
     repo_root = args.repo_root.resolve()
-    offenders = carriage_return_paths(repo_root)
+    tracked_paths = lf_tracked_paths(repo_root)
+    offenders = carriage_return_paths(repo_root, tracked_paths=tracked_paths)
     if offenders:
         rendered = "\n".join(path.as_posix() for path in offenders)
         raise SystemExit(
             "REPOSITORY_TEXT_BYTES=FAIL REASON=tracked_eol_lf_contains_cr\n"
             + rendered
         )
-    print(f"REPOSITORY_TEXT_BYTES=PASS FILES={len(lf_tracked_paths(repo_root))}")
+    print(f"REPOSITORY_TEXT_BYTES=PASS FILES={len(tracked_paths)}")
 
 
 if __name__ == "__main__":

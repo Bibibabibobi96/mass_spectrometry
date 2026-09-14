@@ -8,6 +8,22 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
 ## 当前状态
 
 - 静态门禁覆盖隐藏 Windows 宿主的非法参数拒绝；分析测试失败时立即拒绝，不发布项目 PASS。
+- 项目门禁与输入准备使用轻许可；独立入口在调用商业子流程前交还自己的轻许可，由子流程管理实际阶段。
+  几何builder只在refine（含内部执行refine的Lua调用）阶段占重许可，飞行占重许可，结束后回到轻后处理。
+  嵌套调用保留父许可，父轻许可不能被子流程擅自升级。异常路径释放本层许可；这项调整不改变几何、数值或既有资格。
+
+- 理想源比较 [`run_comparison.py`](../workflows/ideal_source_comparison/run_comparison.py) 的实际计算分支
+  复用公共 [`host_resource_python`](../../../common/host_resource_python.py) 外层重许可桥接；`--plan` 保持纯规划。
+  调度依赖记录为独立的 `execution_source_sha256`，不纳入 `numerical_identity`，也不改变原恢复判据；
+  入口源码原有身份检查仍有效，不能据此恢复任意旧版本。
+  [`radial_compaction`](../workflows/radial_compaction/run_campaign.py) 和
+  [`reflectron_voltage_compensation`](../workflows/reflectron_voltage_compensation/run_compensation.py) 按完整飞行池函数
+  申请一次 `flight` 重许可，函数退出后释放；普通准备和最终汇总不占重许可，也不声称有独立轻预算记录。
+  已有父重许可只核验继承，父轻许可明确拒绝，不能清除token绕过。PA准备由PS builder负责自身阶段。
+  原内部池、规划、观测、错峰、结果复用与续算不变；dry-run不申请飞行许可。本次只做无求解器回归，
+  不构成真实OA飞行验收或完整动态调度资格。内部JSON结果只在系统TEMP的
+  `host-resource-python-call-`临时目录传递，正常或异常返回均清理，不作为run证据。
+  分类与继承见[主机资源调度](../../../docs/OPERATIONS.md#主机资源调度)。
 
 - 分析入口的原始文件身份统一复用 `common/contracts/file_identity.py`，仍按原始字节输出大写 SHA-256，
   不规范化 run 输入的换行；已有不同 JSON 序列化合同保持原身份。理论 CLI 的递归预期值比较复用

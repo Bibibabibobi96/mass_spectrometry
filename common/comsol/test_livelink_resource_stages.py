@@ -51,17 +51,31 @@ function Start-ComsolLauncherProcess {
     if ($env:STAGE_SCENARIO -eq 'startup_retry' -and $global:FakeLaunchCount -eq 1) {
         $reportText = "STATUS=FAIL`nERROR=mphload mphopen Not connected to a server`n"
     }
+    if ($env:STAGE_SCENARIO -in @('running_then_pass','running_without_terminal')) {
+        $reportText = "STATUS=RUNNING`n"
+    }
     [IO.File]::WriteAllText($env:COMSOL_BOOTSTRAP_REPORT,$reportText)
     $reader = [pscustomobject]@{}
     $reader | Add-Member ScriptMethod ReadToEndAsync {
         return [Threading.Tasks.Task]::FromResult[string]('')
     }
     $process = [pscustomobject]@{
-        Id=999999; HasExited=($env:STAGE_SCENARIO -ne 'registration_failure')
-        ExitCode=0; StandardOutput=$reader; StandardError=$reader
+        Id=999999
+        HasExited=($env:STAGE_SCENARIO -notin @('registration_failure','running_then_pass'))
+        ExitCode=$(if ($env:STAGE_SCENARIO -eq 'running_without_terminal') { 3 } else { 0 })
+        StandardOutput=$reader
+        StandardError=$reader
     }
     $process | Add-Member ScriptMethod Kill { param($Tree) Write-Event 'kill'; $this.HasExited=$true }
-    $process | Add-Member ScriptMethod WaitForExit { Write-Event 'wait' }
+    $process | Add-Member ScriptMethod WaitForExit {
+        param($Milliseconds)
+        Write-Event 'wait'
+        if ($env:STAGE_SCENARIO -eq 'running_then_pass') {
+            [IO.File]::WriteAllText($env:COMSOL_BOOTSTRAP_REPORT,"STATUS=PASS`n")
+            $this.HasExited=$true
+        }
+        return $true
+    }
     return $process
 }
 function Stop-ComsolAttemptServers {
@@ -188,6 +202,41 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
         self.assertEqual(events.count("update:prepare:unknown=True"), 1)
         self.assertEqual(events.count("update:solver:unknown=True"), 2)
         self.assertEqual(events[-1], "exit")
+
+    def test_running_report_allows_long_task_to_reach_pass(self) -> None:
+        code, events, output = self.run_scenario("running_then_pass")
+        self.assertEqual(code, 0, output)
+        self.assertIn("wait", events)
+        self.assertEqual(events.count("launch"), 1)
+        self.assertIn("server_cleanup:task completion", events)
+
+    def test_process_exit_with_running_report_fails_closed(self) -> None:
+        code, events, _ = self.run_scenario("running_without_terminal")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(events.count("launch"), 1)
+        self.assertIn("server_cleanup:task failure", events)
+
+
+class LiveLinkBootstrapContractTests(unittest.TestCase):
+    """The bootstrap report separates startup readiness from task completion."""
+
+    def test_running_precedes_task_and_pass_follows_it(self) -> None:
+        source = (ROOT / "common/comsol/livelink_r2025b/comsolstartup.m").read_text(encoding="utf-8")
+        running = source.index('writeBootstrapReport(bootstrapReportPath, "RUNNING", "")')
+        task = source.index("executeComsolTask(bootstrapTaskPath)")
+        passed = source.index('writeBootstrapReport(bootstrapReportPath, "PASS", "")')
+        self.assertLess(running, task)
+        self.assertLess(task, passed)
+        self.assertIn(
+            'writeBootstrapReport(bootstrapReportPath, "FAIL", getReport(ME, \'extended\'))',
+            source,
+        )
+        self.assertIn("function executeComsolTask(taskPath)", source)
+        self.assertIn("run(taskPath);", source)
+        self.assertIn("catch reportException", source)
+        failure_catch = source.index("catch ME")
+        nonzero_exit = source.index("exit(2)", failure_catch)
+        self.assertGreater(nonzero_exit, source.index("catch reportException", failure_catch))
 
 
 @unittest.skipUnless(os.name == "nt", "CREATE_NO_WINDOW is Windows-specific")

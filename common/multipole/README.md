@@ -129,6 +129,27 @@ effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_
 
 两入口同时冻结主机调度 facade、Python 核心、策略和 PowerShell 7 检查四个公共依赖，并向冻结执行链传递已选 Python 路径；预算与继承规则见[主机资源调度](../../docs/OPERATIONS.md#主机资源调度)。
 
+COMSOL 父 runner 先持普通轻任务 `prepare`，在启动冻结公共 launcher 前释放自己的许可并恢复继承环境；
+子 launcher 独立管理准备、求解和清理阶段，终态后父 runner 重新申请普通轻任务 `postprocess` 完成校验与发布。
+若调用方已持许可，runner 不释放或清除别人的 token；继承轻许可不能启动重求解，必须由调用方正确安排阶段。
+原预算计量、失败 summary/manifest 和终态通知继续保留。
+
+SIMION 的输入复制、GEM→PA、已确认仅构建 IOB 的 Lua、cache 物化与发布使用普通轻任务 `prepare`。
+仅 `refine` 前将同一租约切至重任务 `pa_refine`，进程结束后回到 `prepare`；所有选定 case 共用一个
+重任务 `flight` 阶段，随后重新准入普通轻任务 `postprocess`。轻任务仍遵守现有资源预算与实时压力检查，
+未知峰值不作为判重依据。case 间的合并和指标分析保留 flight 许可，避免重复切换。
+有 dispatch plan 的单批 flight 也通过公共批执行器检查实时 CPU 和完整内存安全预算，临时不足时等待。
+内部批次复用外层重任务许可，不增加 allocation 文件或
+逐 case 重规划；首批正式进程只在所属 case 内复用，不能跳过后续 control 的首批。
+
+主工况与控制工况的资源回执各自独立：`resource_usage.json` 记录 primary，
+`resource_usage__<case_name>.json` 记录对应 control；`case_name` 和
+`measurement_scope=single_transport_case_not_all_run_cases` 标明作用域，不能把其中一份当作整次 run 的资源总量。
+
+六/八极的理想场 Python 传输 CLI [`run_ideal_transport.py`](run_ideal_transport.py) 复用
+[`host_resource_python`](../host_resource_python.py) 外层桥接取得并核验重许可，原串行积分和科学参数不变。
+许可分类与继承只遵循[主机资源调度](../../docs/OPERATIONS.md#主机资源调度)；接入不代表新增动态粒子分批能力。
+
 两端消费同一resolved hash、杆阵列、接口、屏蔽、segmentation和完整drive。数值profile与物理设计分层；
 SIMION使用`cell_mm_xyz`，COMSOL显式声明电势单元阶次。普通收敛点默认`compact`，只有事前授权的
 最终参考或GUI复核可保留重型求解器资产。
@@ -156,6 +177,11 @@ RMS、输出能量统计、成对差和指标JSON均由Python分析器从canonic
 求解器元数据、状态和事件。PowerShell只编排已冻结的输入与外部进程。跨run图必须共享坐标与分箱；
 图和工程metrics本身不授予资格。资源越界时停止本次进程树并报告
 `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不自动重试。
+
+共享SIMION阶段与资源回执已通过一次四极杆N=100主臂/控制臂真实复验：
+[运行manifest](../../../artifacts/projects/rf_quadrupole_ion_optics/runs/20260914_161823__sim__simion__quad-dispatch-acceptance-a-n100/run_manifest.json)
+完整验证64项输出，两臂均保留全部100个粒子身份，主臂首批观测与控制臂回执独立。
+该运行实际完成refine升降级及CPU压力暂停后继续飞行；仅证明共享执行链贯通，不授予物理收敛或Formal资格。
 
 ## 单PA GUI模板
 

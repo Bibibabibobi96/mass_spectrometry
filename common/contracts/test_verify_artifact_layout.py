@@ -158,7 +158,9 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "runtime directory is not empty"):
                 verify_artifacts_root(projects)
             (runtime / "partial-generation").rmdir()
-            (generation / "family.pa0").write_text("tampered\n", encoding="utf-8")
+            family = generation / "family.pa0"
+            family.chmod(family.stat().st_mode | 0o200)
+            family.write_text("tampered\n", encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "generation differs"):
                 verify_artifacts_root(projects)
 

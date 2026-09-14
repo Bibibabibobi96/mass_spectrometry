@@ -8,31 +8,61 @@
   "poll_milliseconds": 1000,
   "status_interval_seconds": 30,
   "snapshot_backoff_max_milliseconds": 5000,
+  "default_profiles": {
+    "GATE": "ordinary-light",
+    "SIMION": "ordinary-light",
+    "COMSOL": "ordinary-light"
+  },
   "profiles": {
+    "ordinary-light": {
+      "schema_version": 1,
+      "cpu_cores": 2,
+      "memory_bytes": 2147483648,
+      "io_slots": 0,
+      "exclusive_resources": [],
+      "unknown_peak": false,
+      "heavy_stage": false
+    },
     "measured-small-check": {
       "schema_version": 1,
       "cpu_cores": 1,
       "memory_bytes": 402653184,
       "io_slots": 0,
       "exclusive_resources": [],
-      "unknown_peak": false
+      "unknown_peak": false,
+      "heavy_stage": false
     },
-    "unknown": {
+    "heavy-compute": {
       "schema_version": 1,
       "cpu_cores": 0,
       "memory_bytes": 0,
       "io_slots": 1,
       "exclusive_resources": [],
-      "unknown_peak": true
+      "unknown_peak": false,
+      "heavy_stage": true
+    },
+    "unknown": {
+      "schema_version": 1,
+      "cpu_cores": 2,
+      "memory_bytes": 2147483648,
+      "io_slots": 0,
+      "exclusive_resources": [],
+      "unknown_peak": true,
+      "heavy_stage": false
     }
   },
   "stages": {
+    "COMSOL/postprocess": "ordinary-light",
     "GATE/expected_values_tests": "measured-small-check",
     "GATE/ruff_all": "measured-small-check",
     "GATE/ruff_changed_python": "measured-small-check",
-    "SIMION/mrtof_pa_prepare": "unknown",
-    "SIMION/mrtof_flight": "unknown",
-    "SIMION/mrtof_postprocess": "unknown"
+    "SIMION/pa_refine": "heavy-compute",
+    "SIMION/flight": "heavy-compute",
+    "SIMION/postprocess": "ordinary-light",
+    "SIMION/mrtof_flight": "heavy-compute",
+    "SIMION/mrtof_postprocess": "ordinary-light",
+    "COMSOL/solver": "heavy-compute",
+    "GATE/theory_compute": "heavy-compute"
   },
   "observations": {
     "date": "2026-09-14",
@@ -41,14 +71,18 @@
     "ruff_all_managed_peak_bytes": 84930560,
     "headroom_multiplier": 4,
     "round_up_bytes": 67108864,
-    "limits": "Single sampled runs, not proven worst-case bounds. Ruff consumers restrict RAYON_NUM_THREADS=1; only these named pure checks are classified. Larger or unknown stages remain exclusive."
+    "limits": "Single sampled runs, not proven worst-case bounds. Ruff consumers restrict RAYON_NUM_THREADS=1; only the named small-check stages use these measured envelopes. All unlisted stages use the separate declared light budget regardless of software role."
   },
   "rationale": {
+    "comsol-postprocess": "After this attempt's servers have fully exited, launcher postprocess returns and project postprocess performs output validation and metadata/summary/manifest publication. Only the listed COMSOL/solver stage holds the heavy permission; prepare and unlisted stages use ordinary-light.",
+    "ordinary-light": "User-authorized efficiency-first declaration, not a measured worst-case peak or a sampling prerequisite: every unlisted stage requests 2 logical cores and 2 GiB, with no bulk I/O slot, regardless of role. The resolver caps CPU at the machine admission ceiling on small hosts. Aggregate promises and live pressure still control admission.",
     "snapshot_backoff": "Rejected stale snapshots are resampled after bounded randomized backoff, without a retry-count failure. The five-second delay ceiling preserves cancellation and reduces synchronized contention; invalid telemetry still fails closed.",
     "io_slots": "One uncalibrated streaming I/O producer at a time; zero means metadata-only or no bulk I/O, not unrestricted disk access.",
-    "maximum_queue_bypasses": "Bounded backfilling: after eight later admissions the older request becomes a queue barrier until it can run.",
+    "maximum_queue_bypasses": "Bounded backfilling within each task class: after eight later admissions of the same class, the older request blocks further admissions of that class until it can run. The other class remains eligible under the existing resource checks.",
     "measured-small-check": "Initial complete-tree observed envelopes with fourfold margin rounded upward to 64 MiB; not OS-enforced limits.",
     "safety_reserves": "Moved unchanged from the existing SIMION repository policy: 95 percent system CPU ceiling and 1 GiB physical-memory reserve. SIMION imports these same values.",
-    "mrtof_stages": "Initial separate stage boundaries remain unknown/exclusive pending complete process-tree peak measurements. PA file-set bytes are not a process-memory peak. Publication includes retention and payload hashing, so it is not classified as zero bulk I/O. The campaign itself does not retain a grant between rows."
+    "heavy-compute": "Actual PA refinement and internally parallel ion flight hold the single heavy stage permission even after worker peaks are measured. Both ordinary declared light work and measured small checks may coexist within their CPU/memory/I/O budgets and live pressure limits. No permanent whole-host CPU or memory reservation is imposed; the existing internal planner manages live worker capacity.",
+    "mrtof_stages": "PA preparation and postprocess publication use ordinary-light. Actual refinement uses SIMION/pa_refine and flight uses the listed heavy permission. The campaign does not retain a grant between rows.",
+    "unknown": "Unknown peak is informational and does not classify work as heavy or authorize the internal worker planner. This explicit profile retains the ordinary declared light envelope."
   }
 }

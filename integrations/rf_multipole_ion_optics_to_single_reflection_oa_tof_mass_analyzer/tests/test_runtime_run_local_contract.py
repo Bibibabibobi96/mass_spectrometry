@@ -56,6 +56,16 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("'--oatof-geometry',$oatofGeometry", runner[export:retention])
         self.assertIn("total_axis_field_theory_comparison", runner[retention:retention + 2500])
 
+    def test_host_stages_wrap_refine_and_flight_without_changing_internal_scheduling(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("Enter-HostExecutionLease -Role SIMION -Stage prepare", runner)
+        for stage in ("pa_refine", "flight", "postprocess"):
+            self.assertIn(f"Update-HostResourceStage -Lease $hostExecutionLease -Stage {stage}", runner)
+        flight = runner.index("Update-HostResourceStage -Lease $hostExecutionLease -Stage flight")
+        observation = runner.index("$formalObservation = Start-ObservedFormalProcess", flight)
+        wave = runner.index("$waveResult = Invoke-ResourceBudgetedProcesses", observation)
+        self.assertNotIn("Update-HostResourceStage", runner[observation:wave])
+
     def test_terminal_capacity_gate_uses_actual_protected_run_upper_bound(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         terminal = runner.index("$terminalCapacityArguments = @(")

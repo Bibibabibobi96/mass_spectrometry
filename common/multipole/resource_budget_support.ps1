@@ -1,6 +1,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
+if (-not (Get-Command Assert-HostResourceHeavyStage -ErrorAction SilentlyContinue)) {
+  . (Join-Path $PSScriptRoot '..\host_execution_lease.ps1')
+}
+
 if(-not('MultipoleMemoryStatus' -as[type])){
   Add-Type -TypeDefinition @'
 using System;
@@ -252,6 +256,24 @@ function Test-RepositorySimionProcessSpecification {
   )
 }
 
+function Test-RepositoryManagedProcessIsActive {
+  <# Direct SIMION launches end with the exact root process identity.  Other
+     executables may be launchers, so their process-tree sample remains the
+     completion authority. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Specification,
+    [Parameter(Mandatory)][int]$RootProcessId,
+    [Parameter(Mandatory)][int64]$RootProcessStartedAtUtcTicks,
+    [Parameter(Mandatory)]$Sample
+  )
+  if (Test-RepositorySimionProcessSpecification -Specification $Specification) {
+    return Test-ManagedRootProcessIsLive -ProcessId $RootProcessId `
+      -ExpectedStartedAtUtcTicks $RootProcessStartedAtUtcTicks
+  }
+  return @($Sample.active_process_ids).Count -gt 0
+}
+
 function Stop-ManagedSolverProcesses {
   param([Parameter(Mandatory)][int[]]$ProcessIds)
   foreach($processId in $ProcessIds){
@@ -337,6 +359,13 @@ function Invoke-ResourceBudgetedProcess {
     $startArguments.RedirectStandardError=$RedirectStandardError
   }
   if($Environment.Count-gt 0){$startArguments.Environment=$Environment}
+  # Callers supply the native argument array: only explicit refine/fly verbs
+  # require heavy permission. GEM conversion and construction-only Lua do not.
+  $requiresHeavySimionCommand=@($ArgumentList|Where-Object{$_ -in @('refine','fly')}).Count-gt 0
+  if ($requiresHeavySimionCommand -and
+      (Test-RepositorySimionProcessSpecification -Specification ([pscustomobject]@{file_path=$FilePath}))) {
+    Assert-HostResourceHeavyStage
+  }
   $process=Start-Process @startArguments
   $rootProcessStartedAtUtcTicks=[int64]$process.StartTime.ToUniversalTime().Ticks
   $lastDirectorySampleAt=$null
@@ -348,6 +377,7 @@ function Invoke-ResourceBudgetedProcess {
   $trackedProcessStartedAtUtcTicks=@{
     ([string]$process.Id)=$rootProcessStartedAtUtcTicks
   }
+  $processSpecification=[pscustomobject]@{file_path=$FilePath}
   $managedActive=$true
   while($managedActive){
     $now=[datetimeoffset]::UtcNow
@@ -360,12 +390,15 @@ function Invoke-ResourceBudgetedProcess {
     if($sample.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks'){
       $trackedProcessStartedAtUtcTicks=$sample.tracked_process_started_at_utc_ticks
     }
-    $managedActive=@($sample.active_process_ids).Count -gt 0
+    $managedActive=Test-RepositoryManagedProcessIsActive `
+      -Specification $processSpecification -RootProcessId ([int]$process.Id) `
+      -RootProcessStartedAtUtcTicks $rootProcessStartedAtUtcTicks -Sample $sample
     # Do not let a transient process-tree enumeration gap tear down a staging
-    # directory while the exact root process is still refining it.  Descendant
-    # tracking remains responsible after the root exits; this guard only adds
-    # the verified live root as a minimum completion condition.
-    if (-not $managedActive) {
+    # directory while a non-SIMION launcher's exact root is still active.
+    # Direct SIMION uses that root identity as its complete authority above;
+    # descendants cannot outlive it into an unrelated PID lineage.
+    if (-not $managedActive -and
+        -not (Test-RepositorySimionProcessSpecification -Specification $processSpecification)) {
       $managedActive = Test-ManagedRootProcessIsLive -ProcessId ([int]$process.Id) `
         -ExpectedStartedAtUtcTicks $rootProcessStartedAtUtcTicks
     }
@@ -538,6 +571,7 @@ function Start-ObservedFormalProcess {
     [Parameter(Mandatory)]$ProcessSpecification,
     [switch]$WaitForNaturalCompletionAfterObservation
   )
+  Assert-HostResourceHeavyStage
   $plan=Get-Content -LiteralPath $DispatchPlanPath -Raw -Encoding UTF8|ConvertFrom-Json
   if([string]$plan.estimation.kind-ne'formal_first_batch_observation'){
     throw 'Formal observation requires an unknown-identity repository plan.'
@@ -564,8 +598,10 @@ function Start-ObservedFormalProcess {
   while($record.active){
     $now=Get-RepositoryUtcNow
     $sampleArgs=@{RootProcessIds=@($record.root_process_id);TrackedProcessIds=$record.tracked_process_ids}
+    $recordRootStartedAtUtcTicks=[int64]0
     if($record.PSObject.Properties.Name -contains 'root_process_started_at_utc_ticks'){
-      $sampleArgs.RootProcessStartedAtUtcTicks=@{([string]$record.root_process_id)=[int64]$record.root_process_started_at_utc_ticks}
+      $recordRootStartedAtUtcTicks=[int64]$record.root_process_started_at_utc_ticks
+      $sampleArgs.RootProcessStartedAtUtcTicks=@{([string]$record.root_process_id)=$recordRootStartedAtUtcTicks}
     }
     if($record.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks'){
       $sampleArgs.TrackedProcessStartedAtUtcTicks=$record.tracked_process_started_at_utc_ticks
@@ -580,7 +616,10 @@ function Start-ObservedFormalProcess {
     if($sample.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks'){
       $record.tracked_process_started_at_utc_ticks=$sample.tracked_process_started_at_utc_ticks
     }
-    $record.active=@($sample.active_process_ids).Count-gt 0
+    $record.active=Test-RepositoryManagedProcessIsActive `
+      -Specification $record.specification -RootProcessId ([int]$record.root_process_id) `
+      -RootProcessStartedAtUtcTicks $recordRootStartedAtUtcTicks `
+      -Sample $sample
     $record.peak_working_set_bytes=[math]::Max(
       [int64]$record.peak_working_set_bytes,[int64]$sample.working_set_bytes)
     $record.peak_managed_memory_bytes=[math]::Max(
@@ -676,6 +715,7 @@ function Invoke-ResourceBudgetedProcesses {
     # callback must fail closed if its immutable receipt cannot be published.
     [scriptblock]$OnProcessCompleted=$null
   )
+  Assert-HostResourceHeavyStage
   $plan=Get-Content -LiteralPath $DispatchPlanPath -Raw -Encoding UTF8|ConvertFrom-Json
   if([string]$plan.role-ne'simion_repository_dispatch_plan'){
     throw 'Parallel execution requires a repository SIMION dispatch plan.'
@@ -763,8 +803,10 @@ function Invoke-ResourceBudgetedProcesses {
     $aggregateWorkingSet=[int64]0;$aggregateManagedMemory=[int64]0
     foreach($record in @($running)){
       $sampleArgs=@{RootProcessIds=@($record.root_process_id);TrackedProcessIds=$record.tracked_process_ids}
+      $recordRootStartedAtUtcTicks=[int64]0
       if($record.PSObject.Properties.Name -contains 'root_process_started_at_utc_ticks'){
-        $sampleArgs.RootProcessStartedAtUtcTicks=@{([string]$record.root_process_id)=[int64]$record.root_process_started_at_utc_ticks}
+        $recordRootStartedAtUtcTicks=[int64]$record.root_process_started_at_utc_ticks
+        $sampleArgs.RootProcessStartedAtUtcTicks=@{([string]$record.root_process_id)=$recordRootStartedAtUtcTicks}
       }
       if($record.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks'){
         $sampleArgs.TrackedProcessStartedAtUtcTicks=$record.tracked_process_started_at_utc_ticks
@@ -779,18 +821,16 @@ function Invoke-ResourceBudgetedProcesses {
       if($sample.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks'){
         $record.tracked_process_started_at_utc_ticks=$sample.tracked_process_started_at_utc_ticks
       }
-      $record.active=@($sample.active_process_ids).Count-gt 0
+      $record.active=Test-RepositoryManagedProcessIsActive `
+        -Specification $record.specification -RootProcessId ([int]$record.root_process_id) `
+        -RootProcessStartedAtUtcTicks $recordRootStartedAtUtcTicks `
+        -Sample $sample
       # SIMION is launched directly by every repository worker.  Its root
       # process is therefore the writer and authoritative completion fact.
       # Do not let a leftover console/helper process (observed after SIMION
       # exits on Windows) make a completed PA wave wait forever.  A different
       # executable can be a short-lived launcher, so it keeps the existing
       # descendant-based completion behavior.
-      if ((Test-RepositorySimionProcessSpecification -Specification $record.specification) -and
-          -not (Test-ManagedRootProcessIsLive -ProcessId ([int]$record.root_process_id) `
-            -ExpectedStartedAtUtcTicks ([int64]$record.root_process_started_at_utc_ticks))) {
-        $record.active=$false
-      }
       $record.peak_working_set_bytes=[math]::Max(
         [int64]$record.peak_working_set_bytes,[int64]$sample.working_set_bytes)
       $record.peak_managed_memory_bytes=[math]::Max(
@@ -865,17 +905,8 @@ function Invoke-ResourceBudgetedProcesses {
     $dynamicAdmissionBytes=[int64][math]::Max(
       $plannedMemoryBudget,[math]::Ceiling(
         [math]::Max($livePeak,$observedPerProcessManagedPeak)*$memorySafetyFactor))
-    # A one-lane plan has no additional worker to protect.  Its next batch may
-    # start only after the retained formal batch exits, so admit it against the
-    # measured single-process peak plus the repository reserve.  Keep the
-    # inflated budget for every multi-lane launch and all live-growth checks.
+    # A single lane still needs the same measured safety margin as a wave.
     $launchAdmissionBytes=$dynamicAdmissionBytes
-    if($running.Count-eq 0-and$maximumConcurrency-eq 1-and
-       $null-ne$estimation-and[string]$estimation.kind-in@('exact_resource_profile','observed_formal_batch')-and
-       $estimation.PSObject.Properties.Name-contains'observed_peak_bytes' -and
-       [int64]$estimation.observed_peak_bytes -gt 0){
-      $launchAdmissionBytes=[int64]$estimation.observed_peak_bytes
-    }
     if($available-lt$criticalBytes){if($null-eq$criticalSince){$criticalSince=$now}}else{$criticalSince=$null}
     if($null-ne$criticalSince-and($now-$criticalSince).TotalSeconds-ge 15-and$running.Count-gt 0){
       if($dangerTerminationAttempts-ge$maximumDangerTerminations){

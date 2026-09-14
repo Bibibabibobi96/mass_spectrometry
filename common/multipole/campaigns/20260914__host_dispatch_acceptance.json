@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "role": "multipole_transport_experiment_campaign",
+  "family_id": "rf_multipole_ion_optics",
+  "campaign_id": "20260914__host_dispatch_acceptance",
+  "preregistered_before_run": true,
+  "experiments": [
+    {
+      "experiment_id": "quad_dispatch_acceptance",
+      "project_id": "rf_quadrupole_ion_optics",
+      "authorized_run_id": "20260914_154002__sim__simion__quad-dispatch-acceptance-a-n100",
+      "solver": "simion",
+      "stop_stage": "transport",
+      "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {
+        "kind": "profile",
+        "profile_id": "simion_followup_A_r030_z030_t080"
+      },
+      "retention_class": "compact",
+      "resource_authorization": {
+        "authorized": true,
+        "limits": {
+          "wall_clock_seconds_by_solver": {
+            "comsol": 1800,
+            "simion": 1800
+          },
+          "transient_run_directory_bytes": 6442450944,
+          "process_tree_working_set_bytes": 6442450944,
+          "minimum_system_available_memory_bytes": 8589934592,
+          "compact_final_retained_bytes": 26214400,
+          "maximum_pa_grid_points": 20000000,
+          "automatic_retry_count": 0
+        },
+        "full_matrix_authorization": {
+          "authorized": false,
+          "reason": "Only this existing A-profile N100 two-case dispatch acceptance run is authorized."
+        },
+        "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED"
+      },
+      "claim_limit": "Shared host-dispatch execution acceptance only. Existing A-profile physics, N100 mother sample and the original primary/control pair are unchanged. Judge actual dispatch receipts without forcing one batch or memory pressure; no baseline, numerical-convergence, Candidate or Formal claim."
+    },
+    {
+      "experiment_id": "quad_dispatch_receipt_acceptance",
+      "project_id": "rf_quadrupole_ion_optics",
+      "authorized_run_id": "20260914_161823__sim__simion__quad-dispatch-acceptance-a-n100",
+      "solver": "simion",
+      "stop_stage": "transport",
+      "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics": {
+        "kind": "profile",
+        "profile_id": "simion_followup_A_r030_z030_t080"
+      },
+      "retention_class": "compact",
+      "resource_authorization": {
+        "authorized": true,
+        "limits": {
+          "wall_clock_seconds_by_solver": {
+            "comsol": 1800,
+            "simion": 1800
+          },
+          "transient_run_directory_bytes": 6442450944,
+          "process_tree_working_set_bytes": 6442450944,
+          "minimum_system_available_memory_bytes": 8589934592,
+          "compact_final_retained_bytes": 26214400,
+          "maximum_pa_grid_points": 20000000,
+          "automatic_retry_count": 0
+        },
+        "full_matrix_authorization": {
+          "authorized": false,
+          "reason": "Only this existing A-profile N100 two-case dispatch acceptance run is authorized."
+        },
+        "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED"
+      },
+      "claim_limit": "Shared host-dispatch execution acceptance only. Existing A-profile physics, N100 mother sample and the original primary/control pair are unchanged. Judge actual dispatch receipts without forcing one batch or memory pressure; no baseline, numerical-convergence, Candidate or Formal claim."
+    }
+  ],
+  "claim_limit": "Shared host-dispatch execution acceptance only. Existing A-profile physics, N100 mother sample and the original primary/control pair are unchanged. Judge actual dispatch receipts without forcing one batch or memory pressure; no baseline, numerical-convergence, Candidate or Formal claim."
+}

@@ -187,11 +187,36 @@ def select_memory_profile(
     return result
 
 
+def _memory_admission(
+    available_memory_bytes: int | None, total_physical_memory_bytes: int | None,
+    memory_budget: int,
+) -> dict[str, Any]:
+    """Report present launch capacity separately from the complete work layout.
+
+    A temporarily busy host remains a waiting execution, not a failed science
+    run. Only an impossible whole-host envelope fails planning. Executors must
+    resample free RAM and retain this safety budget at every actual launch.
+    """
+    if (total_physical_memory_bytes is not None
+            and memory_budget > total_physical_memory_bytes - MEMORY_ADMISSION_RESERVE_BYTES):
+        raise ValueError("SIMION safety memory budget exceeds total physical memory after system reserve")
+    capacity = (0 if available_memory_bytes is None else
+                max(0, (available_memory_bytes - MEMORY_ADMISSION_RESERVE_BYTES) // memory_budget))
+    return {
+        "status": "ready" if capacity else "wait_for_memory",
+        "current_capacity": capacity,
+        "capacity_scope": "additional_workers_by_current_free_memory",
+        "required_available_memory_bytes": memory_budget + MEMORY_ADMISSION_RESERVE_BYTES,
+        "requires_live_launch_check": True,
+    }
+
+
 def _capacity(
     *, particle_count: int, available_memory_bytes: int | None,
     total_physical_memory_bytes: int | None, per_process_memory_bytes: int,
     process_cpu_percent: float, background_cpu_percent: float,
 ) -> tuple[int, int, int]:
+    _memory_admission(available_memory_bytes, total_physical_memory_bytes, per_process_memory_bytes)
     cpu_cost = max(MINIMUM_PROCESS_CPU_PERCENT, process_cpu_percent)
     cpu_capacity = max(1, math.floor(
         max(0.0, CPU_ADMISSION_PERCENT - background_cpu_percent) / cpu_cost
@@ -455,6 +480,7 @@ def plan_simion_dispatch(
             "memory_safety_factor": KNOWN_MEMORY_SAFETY_FACTOR,
             "observation_wait_skipped": True,
         },
+        "admission": _memory_admission(available_memory_bytes, total_physical_memory_bytes, memory_budget),
         "host": host, "limits": _public_limits(concurrency, cpu_capacity, memory_capacity),
         "waves": [{
             "index": 1, "kind": "scheduled", "batch_count": len(batches),
@@ -515,9 +541,8 @@ def plan_adaptive_followup(
                 // memory_budget,
             )
         memory_capacity = 1 + additional_memory_capacity
-        # CPU capacity is an independent process count.  The active formal
-        # worker is one of those processes, so preserve its existing lane.
-        cpu_capacity += 1
+        # CPU capacity already counts all workers against the whole host.
+        # Unlike free RAM, its input has not deducted the live formal worker.
         concurrency = min(work_count, cpu_capacity, memory_capacity)
     first = dict(plan["waves"][0]["batches"][0])
     batches = _batches_after_formal_first(
@@ -536,6 +561,7 @@ def plan_adaptive_followup(
     }
     result["host"]["available_memory_bytes"] = available_memory_bytes
     result["host"]["total_physical_memory_bytes"] = total_physical_memory_bytes
+    result["admission"] = _memory_admission(available_memory_bytes, total_physical_memory_bytes, memory_budget)
     result["limits"] = _public_limits(concurrency, cpu_capacity, memory_capacity)
     result["waves"] = [{
         "index": 1, "kind": "scheduled", "batch_count": len(batches),
@@ -655,7 +681,13 @@ def plan_simion_case_dispatch(
         limits = _public_limits(len(selected), len(selected), len(selected))
         estimation = "exact_resource_profiles"
         kind = "scheduled"
+    admission = {} if unknown else {"admission": _memory_admission(
+        plans[0][1]["host"]["available_memory_bytes"],
+        plans[0][1]["host"]["total_physical_memory_bytes"],
+        selected[0]["per_process_memory_budget_bytes"],
+    )}
     return {
+        **admission,
         "schema_version": 2, "role": "simion_repository_case_dispatch_plan",
         "solver": "SIMION", "field_kind": request.get("field_kind"),
         "case_count": len(cases),

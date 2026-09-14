@@ -17,13 +17,155 @@ QUAD = "rf_quadrupole_ion_optics"
 HEX = "rf_hexapole_ion_optics"
 OCT = "rf_octupole_ion_optics"
 
+# Process/memory fixtures isolate the host permit; facade tests exercise its ledger.
+HOST_PERMIT_FIXTURE = "function Assert-HostResourceHeavyStage {};"
+
 
 class ResourceBudgetTests(unittest.TestCase):
+    def test_single_simion_native_verbs_require_heavy_only_for_refine_and_fly(self) -> None:
+        """Known construction steps reach launch under light; solving cannot."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            budget = root / "budget.json"
+            budget.write_text(json.dumps({"limits": {}}), encoding="utf-8")
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            for verb in ("gem2pa", "lua", "refine", "fly"):
+                with self.subTest(verb=verb):
+                    expected = "fixture-permit-denied" if verb in {"refine", "fly"} else "fixture-reached-start"
+                    command = (
+                        f". '{support}';"
+                        "function Assert-HostResourceHeavyStage {throw 'fixture-permit-denied'};"
+                        "function Start-Process {throw 'fixture-reached-start'};"
+                        "try {Invoke-ResourceBudgetedProcess "
+                        f"-ResolvedBudgetPath '{budget}' -RunDir '{root}' "
+                        f"-UsagePath '{root / 'usage.json'}' -FilePath 'C:\\fixture\\simion.exe' "
+                        f"-ArgumentList @('--nogui','--noprompt','{verb}','build_simion_runtime_iob.lua');exit 3}} catch {{"
+                        f"if($_.Exception.Message-ne'{expected}'){{throw}}}};exit 0"
+                    )
+                    result = subprocess.run(
+                        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                        cwd=REPO_ROOT, capture_output=True, timeout=15, check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, repr(result.stdout) + repr(result.stderr))
+                    self.assertFalse((root / "usage.json").exists())
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_comsol_parent_hands_owned_prepare_to_child_and_reacquires_postprocess(self) -> None:
+        source = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        start = source.index("    if($hostExecutionLease.inherited){")
+        end = source.index("    if($solverProcess.resource_budget_exceeded)", start)
+        block = source[start:end]
+        facade = REPO_ROOT / "common/host_execution_lease.ps1"
+        for scenario in ("success", "child_failure", "failure_and_postprocess_denied", "inherited_light", "inherited_heavy"):
+            with self.subTest(scenario=scenario):
+                script = f". '{facade}'\n$scenario='{scenario}'\n" + r'''
+Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue
+$script:events=@();$script:counter=0
+function Enter-HostExecutionLease {
+ param($Role,$Stage,$RunId)
+ if($Stage-eq'postprocess'-and$scenario-eq'failure_and_postprocess_denied'){throw 'postprocess-denied'}
+ $budget=Get-HostResourceBudget -Role $Role -Stage $Stage
+ $script:counter++;$token="fixture-$script:counter"
+ $script:events+="enter:$Stage`:$($budget.heavy_stage)"
+ $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=$token
+ return @{token=$token;role=$Role;stage=$Stage;inherited=$false;heavy=$budget.heavy_stage}
+}
+function Exit-HostExecutionLease {
+ param($Lease)
+ if(-not$Lease.inherited){
+   if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN-ne$Lease.token){throw 'wrong-token-released'}
+   $script:events+="release:$($Lease.token)"
+   Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN
+ }
+}
+function Assert-HostResourceHeavyStage {
+ param($Lease)
+ if(-not$Lease.heavy){throw 'inherited-light-denied'}
+}
+function Invoke-ResourceBudgetedProcess {
+ param($ResolvedBudgetPath,$RunDir,$UsagePath,$FilePath,$ArgumentList)
+ $script:events+='child-start'
+ if($scenario-eq'inherited_heavy'){
+   if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN-ne'parent'){throw 'inherited-token-cleared'}
+   return @{resource_budget_exceeded=$false;exit_code=0}
+ }
+ if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN){throw 'parent-token-leaked-to-child'}
+ $child=Enter-HostExecutionLease -Role COMSOL -Stage prepare
+ try {
+   $budget=Get-HostResourceBudget -Role COMSOL -Stage solver
+   if(-not$budget.heavy_stage){throw 'child-solver-not-heavy'}
+   $script:events+='child-solver-heavy'
+   if($scenario-ne'success'){throw 'child-original-failure'}
+   return @{resource_budget_exceeded=$false;exit_code=0}
+ }finally{
+   $budget=Get-HostResourceBudget -Role COMSOL -Stage postprocess
+   if($budget.heavy_stage){throw 'child-postprocess-not-light'}
+   $script:events+='child-terminal'
+   Exit-HostExecutionLease -Lease $child
+ }
+}
+$RunId='fixture';$resolvedResourceBudget='unused';$runDir='.';$resourceUsage='unused'
+$pwsh='unused';$codeRoot='.';$task='unused';$report='unused'
+if($scenario-like'inherited_*'){
+ $hostExecutionLease=@{token='parent';role='COMSOL';stage='prepare';inherited=$true;heavy=($scenario-eq'inherited_heavy')}
+ $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='parent'
+}else{
+ $hostExecutionLease=Enter-HostExecutionLease -Role COMSOL -Stage prepare
+}
+$caught=''
+try {
+''' + block + r'''
+}catch{$caught=$_.Exception.Message}
+if($scenario-eq'inherited_light'){
+ if($caught-ne'inherited-light-denied'-or$script:events.Count){throw 'inherited-light-bypassed'}
+ if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN-ne'parent'){throw 'parent-token-changed'}
+}elseif($scenario-eq'inherited_heavy'){
+ if($caught-or($script:events-join',')-ne'child-start'){throw 'inherited-heavy-released'}
+}else{
+ if($scenario-ne'success'-and$caught-ne'child-original-failure'){throw "original-failure-lost:$caught"}
+ if($scenario-eq'success'-and$caught){throw $caught}
+ $expected='enter:prepare:False,release:fixture-1,child-start,enter:prepare:False,child-solver-heavy,child-terminal,release:fixture-2'
+ if($scenario-ne'failure_and_postprocess_denied'){
+   $expected+=',enter:postprocess:False'
+   if($hostExecutionLease.stage-ne'postprocess'){throw 'parent-did-not-reacquire-light'}
+ }elseif($null-ne$hostExecutionLease){throw 'invented-postprocess-lease'}
+ if(($script:events-join',')-ne$expected){throw "wrong-sequence:$($script:events-join',')"}
+ if($null-ne$hostExecutionLease){Exit-HostExecutionLease -Lease $hostExecutionLease}
+ if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN){throw 'owned-token-remains'}
+}
+'''
+                completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                                           cwd=REPO_ROOT, capture_output=True, timeout=20, check=False)
+                self.assertEqual(completed.returncode, 0, repr(completed.stdout) + repr(completed.stderr))
+
+    def test_internal_dispatch_checks_host_permit_before_work(self) -> None:
+        """Both internal dispatch entries must reject before touching inputs."""
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        for invocation in (
+            "Start-ObservedFormalProcess -DispatchPlanPath missing.json "
+            "-ProcessSpecification ([pscustomobject]@{})",
+            "Invoke-ResourceBudgetedProcesses -DispatchPlanPath missing.json "
+            "-RunDir . -UsagePath missing-usage.json",
+        ):
+            with self.subTest(invocation=invocation):
+                command = (
+                    f". '{support}';"
+                    "function Assert-HostResourceHeavyStage {throw 'fixture-permit-denied'};"
+                    f"try {{{invocation};exit 3}} catch {{"
+                    "if($_.Exception.Message-ne'fixture-permit-denied'){throw}};exit 0"
+                )
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                    cwd=REPO_ROOT, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=15, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_disk_capacity_check_reports_live_volume_capacity_and_fails_closed(self) -> None:
         """The public preflight adds transient demand above the requested floor."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
         command = (
-            f". '{support}';"
+            f". '{support}';{HOST_PERMIT_FIXTURE}"
             "$pass=Test-RepositoryDiskCapacity -TargetPath $env:TEMP "
             "-TransientRunDirectoryBytes 0 -MinimumFreeBytes 10GB;"
             "if($pass.role-ne'repository_disk_capacity_check'-or"
@@ -50,7 +192,7 @@ class ResourceBudgetTests(unittest.TestCase):
         """Public executor events must identify the completed work exactly."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
         command = (
-            f". '{support}';"
+            f". '{support}';{HOST_PERMIT_FIXTURE}"
             "$spec=[pscustomobject]@{scheduler_batch=[pscustomobject]@{"
             "index=2;total_batches=4;particle_id_min=1251;particle_id_max=2500;count=1250}};"
             "$record=[pscustomobject]@{name='fly__test__batch_2';specification=$spec};"
@@ -121,7 +263,7 @@ class ResourceBudgetTests(unittest.TestCase):
         """An out-of-range WMI sample must not suppress otherwise safe lanes."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
         command = (
-            f". '{support}';"
+            f". '{support}';{HOST_PERMIT_FIXTURE}"
             "function Get-CimInstance { [pscustomobject]@{LoadPercentage=109.072} };"
             "if($null -ne (Get-SystemCpuPercent)){exit 3};"
             "function Get-CimInstance { [pscustomobject]@{LoadPercentage=6} };"
@@ -143,7 +285,7 @@ class ResourceBudgetTests(unittest.TestCase):
         """A new process with an old solver PID must not hold its watchdog open."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
         command = (
-            f". '{support}';"
+            f". '{support}';{HOST_PERMIT_FIXTURE}"
             "$ticks=[int64]((Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks-1);"
             "$sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID) "
             "-RootProcessStartedAtUtcTicks @{([string]$PID)=$ticks};"
@@ -183,7 +325,7 @@ class ResourceBudgetTests(unittest.TestCase):
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             stdout, stderr = root / "stdout.log", root / "stderr.log"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "$script:sampleCalls=0;"
                 "function Get-ManagedSolverProcessSample {"
                 "param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds);"
@@ -219,6 +361,8 @@ class ResourceBudgetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dispatch, usage = root / "dispatch.json", root / "usage.json"
+            trace = root / "trace.log"
+            trace.write_text("TRACE: fixture\n", encoding="utf-8")
             dispatch.write_text(json.dumps({
                 "role": "simion_repository_dispatch_plan",
                 "particle_count": 1,
@@ -240,16 +384,25 @@ class ResourceBudgetTests(unittest.TestCase):
             }), encoding="utf-8")
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "$script:callbackCount=0;"
+                "$callback={param($completedRecord);$script:callbackCount+=1;"
+                "Add-Content -LiteralPath $completedRecord.specification.trace "
+                "-Value 'status,Fly completed.' -Encoding utf8};"
                 "$record=[pscustomobject]@{name='batch01';completed=$true;exit_code=0;"
                 "peak_working_set_bytes=[int64]10;peak_managed_memory_bytes=[int64]20;"
                 "completed_during_observation=$true;observed_process_cpu_percent=0.0;"
-                "observed_background_cpu_percent=0.0};"
+                "observed_background_cpu_percent=0.0;"
+                f"specification=[pscustomobject]@{{trace='{trace}'}}}};"
                 f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' "
-                f"-RunDir '{root}' -UsagePath '{usage}' -ExistingProcessRecords @($record);"
+                f"-RunDir '{root}' -UsagePath '{usage}' -ExistingProcessRecords @($record) "
+                "-OnProcessCompleted $callback;"
                 "if($r.resource_budget_exceeded){exit 3};"
                 f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
-                "if($receipt.scheduler_receipt.dynamic_admission_bytes_at_finish-ne123456){exit 4}"
+                "if($receipt.scheduler_receipt.dynamic_admission_bytes_at_finish-ne123456){exit 4};"
+                "if($script:callbackCount-ne1){exit 5};"
+                f"if((Get-Content -LiteralPath '{trace}' -Tail 1)-ne"
+                "'status,Fly completed.'){exit 6}"
             )
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
@@ -289,7 +442,7 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "$script:now=[datetimeoffset]'2026-08-26T00:00:00Z';$script:nextPid=100;"
                 "function Get-RepositoryUtcNow {$script:now};"
                 "function Start-Sleep {param([int]$Seconds=0,[int]$Milliseconds=0);"
@@ -367,7 +520,7 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "function Get-SystemCpuPercent {[double]0};"
                 "function Get-RepositoryAvailableMemoryBytes {[int64](32GB)};"
                 "$exe=(Get-Process -Id $PID).Path;"
@@ -432,7 +585,7 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "function Get-SystemCpuPercent {[double]0};"
                 "function Get-RepositoryAvailableMemoryBytes {[int64](32GB)};"
                 "$exe=(Get-Process -Id $PID).Path;"
@@ -492,7 +645,7 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';$script:memorySamples=0;"
+                f". '{support}';{HOST_PERMIT_FIXTURE}$script:memorySamples=0;"
                 "function Get-SystemCpuPercent {[double]0};"
                 "function Get-RepositoryAvailableMemoryBytes {$script:memorySamples+=1;"
                 "if($script:memorySamples-eq1-or$script:memorySamples-gt11){return [int64](10GB)};"
@@ -521,8 +674,8 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
-    def test_one_lane_observed_formal_profile_starts_from_single_peak_not_concurrency_headroom(self) -> None:
-        """A completed formal batch must allow its sole remaining lane to start."""
+    def test_one_lane_waits_for_safe_memory_then_starts_without_replanning(self) -> None:
+        """A sole lane keeps its safety margin and resumes after transient pressure."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dispatch, usage = root / "dispatch.json", root / "usage.json"
@@ -554,9 +707,12 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "function Get-SystemCpuPercent {[double]0};"
-                "function Get-RepositoryAvailableMemoryBytes {[int64](38GB)};"
+                "$script:memorySamples=0;"
+                "function Get-RepositoryAvailableMemoryBytes {"
+                "$script:memorySamples++;"
+                "if($script:memorySamples-le2){[int64](38GB)}else{[int64](40GB)}};"
                 "$exe=(Get-Process -Id $PID).Path;"
                 "$specs=@([pscustomobject]@{name='only';file_path=$exe;"
                 "argument_list=@('-NoProfile','-Command','Start-Sleep -Milliseconds 200');"
@@ -565,7 +721,9 @@ class ResourceBudgetTests(unittest.TestCase):
                 f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
                 "if($r.resource_budget_exceeded-or$r.processes.Count-ne1-or$r.processes[0].exit_code-ne0){exit 3};"
                 f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
-                "if(@($receipt.scheduler_receipt.launch_pause_events).Count-ne0){exit 4}"
+                "$pauses=@($receipt.scheduler_receipt.launch_pause_events|Where-Object "
+                "{$_.reason-eq'available_memory_below_dynamic_admission'});"
+                "if($pauses.Count-lt1-or$script:memorySamples-lt3){exit 4}"
             )
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
@@ -583,7 +741,7 @@ class ResourceBudgetTests(unittest.TestCase):
         """A reused child PID must not keep a completed SIMION lane alive."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
         command = (
-            f". '{support}';"
+            f". '{support}';{HOST_PERMIT_FIXTURE}"
             "$stale=@{([string]$PID)=[int64]1};"
             "$sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID) "
             "-TrackedProcessIds @($PID) -TrackedProcessStartedAtUtcTicks $stale;"
@@ -1243,7 +1401,7 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
                 f"$r=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath '{budget}' "
                 f"-RunDir '{root}' -UsagePath '{usage}' -FilePath (Get-Process -Id $PID).Path "
                 "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 5');"
@@ -1289,7 +1447,7 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "function Get-ManagedSolverProcessSample {"
                 "param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds,"
                 "[hashtable]$RootProcessStartedAtUtcTicks,[hashtable]$TrackedProcessStartedAtUtcTicks);"
@@ -1317,6 +1475,70 @@ class ResourceBudgetTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
             self.assertGreaterEqual(measured["wall_clock_seconds"], 1.5)
+
+    def test_single_direct_simion_finishes_when_stale_descendant_sample_stays_active(
+        self,
+    ) -> None:
+        """A dead direct SIMION root, not a stale descendant PID, ends metering."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            budget = root / "budget.json"
+            usage = root / "usage.json"
+            budget.write_text(
+                json.dumps(
+                    {
+                        "limits": {
+                            "wall_clock_seconds": 10,
+                            "transient_run_directory_bytes": 1024**3,
+                            "process_tree_working_set_bytes": 1024**3,
+                            "minimum_system_available_memory_bytes": 1,
+                            "compact_final_retained_bytes": 1024**2,
+                            "automatic_retry_count": 0,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Start-Process {"
+                "param([string]$FilePath,[string[]]$ArgumentList,[switch]$PassThru,"
+                "[string]$WindowStyle,[string]$WorkingDirectory,"
+                "[string]$RedirectStandardOutput,[string]$RedirectStandardError,"
+                "[hashtable]$Environment);"
+                "Microsoft.PowerShell.Management\\Start-Process "
+                "-FilePath (Get-Process -Id $PID).Path "
+                "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 1') "
+                "-PassThru -WindowStyle Hidden"
+                "};"
+                "function Get-ManagedSolverProcessSample {"
+                "param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds,"
+                "[hashtable]$RootProcessStartedAtUtcTicks,"
+                "[hashtable]$TrackedProcessStartedAtUtcTicks);"
+                "[pscustomobject]@{tracked_process_ids=@($RootProcessIds);"
+                "tracked_process_started_at_utc_ticks=$RootProcessStartedAtUtcTicks;"
+                "active_process_ids=@(987654);working_set_bytes=0;private_bytes=0;"
+                "managed_memory_bytes=0;total_processor_time_ticks=0}"
+                "};"
+                f"$r=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath '{budget}' "
+                f"-RunDir '{root}' -UsagePath '{usage}' -FilePath 'C:\\SIMION\\simion.exe' "
+                "-ArgumentList @('ignored');"
+                "if($r.resource_budget_exceeded-or$r.exit_code-ne0){exit 3}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            measured = json.loads(usage.read_text(encoding="utf-8-sig"))
+            self.assertLess(measured["wall_clock_seconds"], 5.0)
 
     def test_parallel_wave_tracks_worker_after_short_lived_launcher_exits(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1360,7 +1582,7 @@ class ResourceBudgetTests(unittest.TestCase):
             }), encoding="utf-8")
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "$child=(Get-Process -Id $PID).Path;"
                 "$spec=[pscustomobject]@{name='launcher';file_path=$child;"
                 "argument_list=@('-NoProfile','-Command',"
@@ -1415,7 +1637,7 @@ class ResourceBudgetTests(unittest.TestCase):
             }), encoding="utf-8")
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "function Start-RepositoryScheduledProcess {param($Specification);"
                 "$p=Start-Process -FilePath (Get-Process -Id $PID).Path "
                 "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 1') -PassThru;"
@@ -1475,7 +1697,7 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';"
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "$script:directoryMeasurements=0;"
                 "function Get-RunDirectoryBytes {"
                 "param([string]$RunDir);$script:directoryMeasurements+=1;"

@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import copy
+import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -139,7 +141,9 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.path = Path(self.temporary.name) / "state.sqlite3"
         self.policy = load_policy()
-        self.snapshot = dict(complete=True, logical_processors=4, cpu_percent=10,
+        # Capacity tests model a fully idle synthetic host; live-headroom tests use the production ceiling.
+        self.policy["cpu_admission_percent"] = 100
+        self.snapshot = dict(complete=True, logical_processors=4, cpu_percent=0,
                              total_memory_bytes=16*GIB, available_memory_bytes=12*GIB,
                              io_pressure=False, processes=[
                                  dict(pid=pid, parent_pid=0, started="0000000000000000001", memory_bytes=GIB//16)
@@ -159,6 +163,63 @@ class HostResourceSchedulerTests(unittest.TestCase):
     def acquire(self, pid: int, resources: dict | None = None) -> dict:
         return self.call("request", pid, token=str(pid), role="GATE", stage="test", budget=resources or budget())
 
+    def test_known_heavy_allows_light_but_excludes_another_heavy(self) -> None:
+        heavy = self.policy["profiles"]["heavy-compute"]
+        result = self.acquire(1, heavy)
+        self.assertFalse(result["budget"]["unknown_peak"])
+        self.call("inherit", token="1", require_heavy_stage=True)
+        self.assertEqual(self.acquire(2)["status"], "acquired")
+        self.assertEqual(self.acquire(3, heavy)["status"], "waiting")
+        self.call("release", token="1")
+        self.assertEqual(self.call("poll", 2, token="2")["status"], "acquired")
+        self.assertEqual(self.call("poll", 3, token="3")["status"], "acquired")
+
+    def test_heavy_permission_rejects_light_waiting_and_unrelated_clients(self) -> None:
+        self.acquire(1)
+        with self.assertRaisesRegex(ValueError, "heavy stage"):
+            self.call("inherit", token="1", require_heavy_stage=True)
+        with self.assertRaisesRegex(ValueError, "heavy stage"):
+            self.call("inherit", token="1", budget=self.policy["profiles"]["heavy-compute"])
+        self.acquire(4, self.policy["profiles"]["heavy-compute"])
+        self.acquire(2, self.policy["profiles"]["heavy-compute"])
+        with self.assertRaisesRegex(ValueError, "waiting"):
+            self.call("inherit", 2, token="2", require_heavy_stage=True)
+        self.call("release", 4, token="4")
+        self.call("poll", 2, token="2")
+        with self.assertRaisesRegex(ValueError, "owner or a live descendant"):
+            self.call("inherit", 3, token="2", require_heavy_stage=True)
+        self.snapshot["processes"][2]["parent_pid"] = 2
+        self.call("inherit", 3, token="2", require_heavy_stage=True)
+
+    def test_legacy_live_record_without_added_field_can_poll_and_release(self) -> None:
+        self.acquire(1, budget(unknown=True))
+        connection = sqlite3.connect(self.path)
+        try:
+            state = json.loads(connection.execute("SELECT document FROM state WHERE id=1").fetchone()[0])
+            state["records"][0]["budget"].pop("heavy_stage")
+            connection.execute("UPDATE state SET document=? WHERE id=1", (json.dumps(state),))
+            connection.commit()
+        finally:
+            connection.close()
+        self.assertEqual(self.call("poll", token="1")["status"], "acquired")
+        with self.assertRaisesRegex(ValueError, "heavy stage"):
+            self.call("inherit", token="1", require_heavy_stage=True)
+        self.assertEqual(self.call("release", token="1")["status"], "released")
+        with self.assertRaises(ValueError):
+            validate_budget({**budget(), "heavy_stage": "false"})
+
+    def test_light_can_fill_heavy_headroom_but_cannot_exceed_live_pressure(self) -> None:
+        self.policy["cpu_admission_percent"] = load_policy()["cpu_admission_percent"]
+        with self.assertRaisesRegex(ValueError, "idle host"):
+            self.acquire(4, budget(cpu=4))
+        self.acquire(1, self.policy["profiles"]["heavy-compute"])
+        self.snapshot["cpu_percent"] = 75
+        self.assertEqual(self.acquire(2)["reason"], "cpu_headroom")
+        self.snapshot["cpu_percent"] = 65
+        self.assertEqual(self.call("poll", 2, token="2")["status"], "acquired")
+        self.snapshot["available_memory_bytes"] = GIB
+        self.assertEqual(self.acquire(3)["reason"], "memory_budget_full")
+
     def test_concurrent_requests_never_oversell_cpu(self) -> None:
         with ThreadPoolExecutor(max_workers=12) as executor:
             results = list(executor.map(self.acquire, range(1, 13)))
@@ -172,11 +233,13 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(self.acquire(3, budget(exclusive=["gui"]))["reason"], "exclusive_resource_in_use")
         self.assertEqual(self.acquire(4)["status"], "acquired")
 
-    def test_unknown_peak_is_exclusive_despite_low_cpu(self) -> None:
-        self.acquire(1, budget(unknown=True))
-        self.assertEqual(self.acquire(2)["reason"], "unknown_peak_active")
-        self.call("release", token="1")
-        self.assertEqual(self.call("poll", 2, token="2")["status"], "acquired")
+    def test_unknown_peak_does_not_classify_work_as_heavy(self) -> None:
+        self.acquire(1, self.policy["profiles"]["heavy-compute"])
+        self.assertEqual(self.acquire(2, budget(unknown=True))["status"], "acquired")
+        self.assertEqual(self.acquire(3, budget(unknown=True))["status"], "acquired")
+        self.call("inherit", 2, token="2", budget=budget(unknown=True))
+        with self.assertRaisesRegex(ValueError, "heavy stage"):
+            self.call("inherit", 2, token="2", require_heavy_stage=True)
 
     def test_unknown_queue_does_not_deadlock_with_other_waiters(self) -> None:
         self.acquire(1, budget(cpu=4))
@@ -204,7 +267,7 @@ class HostResourceSchedulerTests(unittest.TestCase):
 
     def test_pressure_closes_admission_without_killing_or_releasing(self) -> None:
         self.acquire(1)
-        self.snapshot["cpu_percent"] = 99
+        self.snapshot["cpu_percent"] = 100
         self.assertEqual(self.acquire(2)["reason"], "cpu_pressure")
         self.assertEqual(self.call("poll", token="1")["status"], "acquired")
         self.snapshot["cpu_percent"] = 10
@@ -245,11 +308,18 @@ class HostResourceSchedulerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.call("inherit", 3, token="1")
 
-    def test_solver_cannot_inherit_missing_named_resource_or_unknown_peak(self) -> None:
+    def test_solver_cannot_inherit_missing_named_resource_or_larger_budget(self) -> None:
         self.acquire(1)
-        for requested in (budget(exclusive=["comsol-server-session"]), budget(unknown=True), budget(cpu=2)):
+        for requested in (budget(exclusive=["comsol-server-session"]), self.policy["profiles"]["heavy-compute"], budget(cpu=2)):
             with self.assertRaises(ValueError):
                 self.call("inherit", token="1", role="COMSOL", budget=requested)
+
+    def test_inheritance_error_identifies_exceeded_budget_without_mutating_parent(self) -> None:
+        self.acquire(1)
+        with self.assertRaisesRegex(ValueError, r"cpu_cores: requested=2, parent=1; memory_bytes: requested=2147483648, parent=1073741824"):
+            self.call("inherit", token="1", budget=budget(cpu=2, memory=2*GIB))
+        self.assertEqual(self.call("poll", token="1")["budget"], validate_budget(budget()))
+        self.assertEqual(len(self.call("status")["records"]), 1)
 
     def test_bounded_backfill_prevents_starvation(self) -> None:
         self.policy["maximum_queue_bypasses"] = 2
@@ -262,6 +332,35 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(self.acquire(5)["status"], "waiting")
         self.call("release", token="1")
         self.assertEqual(self.call("poll", 2, token="2")["status"], "acquired")
+
+    def test_waiting_heavy_does_not_bar_twelve_ordinary_light_tasks(self) -> None:
+        heavy = self.policy["profiles"]["heavy-compute"]
+        light = self.policy["profiles"]["ordinary-light"]
+        self.acquire(1, heavy)
+        self.assertEqual(self.acquire(2, heavy)["status"], "waiting")
+        self.assertEqual(self.acquire(3, heavy)["status"], "waiting")
+        for pid in range(4, 16):
+            self.assertEqual(self.acquire(pid, light)["status"], "acquired")
+            self.call("release", pid, token=str(pid))
+        waiting = self.call("poll", 2, token="2")
+        self.assertEqual(waiting["status"], "waiting")
+        self.assertEqual(waiting["bypasses"], 0)
+        self.call("release", token="1")
+        self.assertEqual(self.call("poll", 2, token="2")["status"], "acquired")
+        self.assertEqual(self.call("poll", 3, token="3")["status"], "waiting")
+
+    def test_same_class_barrier_still_checks_and_allows_other_class(self) -> None:
+        self.policy["maximum_queue_bypasses"] = 1
+        self.acquire(1, budget(cpu=3))
+        self.acquire(2, budget(cpu=4))
+        self.acquire(3)
+        self.call("release", 3, token="3")
+        self.assertEqual(self.acquire(4)["reason"], "same_class_queue_barrier")
+        self.snapshot["io_pressure"] = True
+        heavy = self.policy["profiles"]["heavy-compute"]
+        self.assertEqual(self.acquire(5, heavy)["reason"], "io_pressure")
+        self.snapshot["io_pressure"] = False
+        self.assertEqual(self.call("poll", 5, token="5")["status"], "acquired")
 
     def test_invalid_and_incomplete_telemetry_preserve_state(self) -> None:
         self.acquire(1)
@@ -363,13 +462,13 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(self.acquire(2, budget(cpu=4))["status"], "acquired")
 
     def test_release_preserves_solver_under_a_system_console(self) -> None:
-        self.acquire(1, budget(unknown=True))
+        self.acquire(1, self.policy["profiles"]["heavy-compute"])
         self.snapshot["processes"].extend([
             dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=GIB, is_system_console_host=True),
             dict(pid=100, parent_pid=99, started="0000000000000000003", memory_bytes=GIB),
         ])
         self.assertEqual(self.call("release", token="1")["status"], "acquired")
-        self.assertEqual(self.acquire(2)["reason"], "unknown_peak_active")
+        self.assertEqual(self.acquire(2, self.policy["profiles"]["heavy-compute"])["reason"], "heavy_stage_active")
 
 
 if __name__ == "__main__":

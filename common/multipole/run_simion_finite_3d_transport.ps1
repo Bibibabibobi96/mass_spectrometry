@@ -248,7 +248,8 @@ $runConfig=$package.run_config;$summary=$package.summary;$manifestRepoRoot=$repo
 $resourceBudgetExceeded=$false
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 $hostExecutionOutcome='failed'
-$hostExecutionLease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
+$hostExecutionLease=Enter-HostResourceStage -Role SIMION -Stage prepare -RunId $RunId `
+  -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare)
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
@@ -584,12 +585,12 @@ try{
       $dispatchRequest=Join-Path $inputDir 'simion_dispatch_request.json'
       $dispatchPlan=Join-Path $inputDir 'simion_repository_dispatch_plan.json'
       $resourceProfiles=Join-Path $inputDir 'simion_resource_profiles.json'
-      $request=[ordered]@{solver='SIMION';field_kind=[string]$automaticDispatch.field_kind;
+      $dispatchRequestDocument=[ordered]@{solver='SIMION';field_kind=[string]$automaticDispatch.field_kind;
         particle_count=[int]$sourceMeta.particle_count;independent_particles=$true;
         trajectory_quality_profile_id=("tqual_{0}"-f$TrajectoryQuality);
         time_integration_profile_id=$RuntimeProfileId;
         rf_steps_per_period=$(if([string]$automaticDispatch.field_kind-eq'rf'){$RfStepsPerPeriod}else{$null})}
-      $request|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $dispatchRequest -Encoding UTF8
+      $dispatchRequestDocument|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $dispatchRequest -Encoding UTF8
       $projectRunsRoot=Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs"
       & $python -m common.simion.resource_profile discover --runs-root $projectRunsRoot --output $resourceProfiles
       if($LASTEXITCODE-ne 0){throw 'SIMION resource profile discovery failed.'}
@@ -968,7 +969,16 @@ try{
     Write-Output "MULTIPOLE_SIMION_PA_BASIS=REUSE CACHE_KEY=$paBasisCacheKey"
   }else{
     Invoke-SimionStep 'gem2pa' @('--nogui','--noprompt','gem2pa','quad_monolithic.gem','quad_monolithic.pa#')
-    Invoke-SimionStep 'refine' @('--nogui','--noprompt','refine','quad_monolithic.pa#')
+    $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+    try {
+      Invoke-SimionStep 'refine' @('--nogui','--noprompt','refine','quad_monolithic.pa#')
+    } finally {
+      # The metered process has exited before releasing the refine permission.
+      # The facade refuses downgrade if any owned solver descendants remain.
+      $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
+        -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+    }
     if($paBasisReuseAuthorized){
       $refinedPaBasisNames=Assert-MultipolePaBasisNames -Files @(
         Get-ChildItem -LiteralPath $solverDir -File|Where-Object{
@@ -1109,7 +1119,12 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
       }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
       return Invoke-TransportCase $name $rfScale $axialScale
     }
-    if($batchRuns.Count-eq 1-and$script:existingFormalProcessRecords.Count-eq 0){
+    # Keep each case's receipt independent: a control has no primary first worker.
+    # The canonical path remains the primary observation consumed by the publisher.
+    $resourceUsage=if($name-eq$primaryName){Join-Path $resultDir 'resource_usage.json'}else{
+      Join-Path $resultDir "resource_usage__$name.json"
+    }
+    if($null-eq$dispatchPlan-and$batchRuns.Count-eq 1-and$script:existingFormalProcessRecords.Count-eq 0){
       $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA=$batchRuns[0].lua_config
       $env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua
       try{Invoke-SimionStep "fly__$name" ($flyArguments[0..5]+@('--particles',$batchRuns[0].fly2)+$flyArguments[6..($flyArguments.Count-1)])}
@@ -1134,6 +1149,8 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
       $failed=@($wave.processes|Where-Object{$_.exit_code-ne 0})
       if($failed.Count-ne 0){throw "SIMION $name batch wave failed: $($failed.name -join ',')"}
     }
+    # A joined first worker belongs only to this case, never to a subsequent control.
+    $script:existingFormalProcessRecords=@()
     if($batchRuns.Count-gt 1){
       if($script:retainedFormalBatchOutputs.ContainsKey($name)){
         $retained=$script:retainedFormalBatchOutputs[$name]
@@ -1201,6 +1218,9 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     return Get-Content -LiteralPath $caseSummary -Raw -Encoding UTF8|ConvertFrom-Json
   }
 
+  # All cases share one heavy flight stage; internal workers do not acquire grants.
+  $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
   $control=$null;$controlName=$null
   if($segmented -or $exitAperturePlateStep){
     if($exitAperturePlateStep){
@@ -1275,6 +1295,9 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
       }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
     }
   }
+  # Flight workers have joined; publication returns to the ordinary light stage.
+  $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
   $exitStatePlot=Join-Path $resultDir 'exit_state_diagnostics.png'
   $exitStatePlotManifest=Join-Path $resultDir 'exit_state_diagnostics.json'
   $primaryState=Join-Path $resultDir "particle_states__$primaryName.csv"
@@ -1335,6 +1358,23 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     throw 'SIMION compact final retained-byte budget exceeded.'
   }
   $resourceProfile=$null
+  $caseResourceUsage=[ordered]@{}
+  $caseResourceUsage[$primaryName]=$resourceUsage
+  if($null-ne$control){
+    $controlResourceUsage=Join-Path $resultDir "resource_usage__$controlName.json"
+    if(-not(Complete-ResourceUsage -ResolvedBudgetPath $resolvedResourceBudget `
+      -RunDir $runDir -UsagePath $controlResourceUsage)){
+      $resourceBudgetExceeded=$true
+      throw 'SIMION control compact final retained-byte budget exceeded.'
+    }
+    $caseResourceUsage[$controlName]=$controlResourceUsage
+  }
+  foreach($caseName in $caseResourceUsage.Keys){
+    $caseUsage=Get-Content -LiteralPath $caseResourceUsage[$caseName] -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    $caseUsage.case_name=$caseName
+    $caseUsage.measurement_scope='single_transport_case_not_all_run_cases'
+    Write-ResourceUsage -Usage $caseUsage -Path $caseResourceUsage[$caseName]
+  }
   if($null-ne$dispatchPlan-and$resourceIdentityWasUnknown){
     $resourceProfile=Join-Path $resultDir 'simion_resource_profile.json'
     Push-Location $codeRoot
@@ -1354,6 +1394,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     (Join-Path $resultDir "particle_states__$primaryName.csv"),
     (Join-Path $resultDir "trajectory_samples__$primaryName.csv"),
     (Join-Path $resultDir "particle_state_contract__$primaryName.json"))
+  $outputs+=@($caseResourceUsage.Values|Where-Object{$_-ne$resourceUsage})
   if($null-ne$control){
     $outputs+=@(
       (Join-Path $resultDir "simion_summary__$controlName.json"),

@@ -71,6 +71,11 @@ function Assert-FrozenSourcesUnchanged {
 
 try {
   $sourceRelativePaths = @(
+    'common\host_resource_python.py',
+    'common\host_resource_python.ps1',
+    'common\host_execution_lease.ps1',
+    'common\host_resource_scheduler.py',
+    'common\host_resource_policy.json',
     'common\contracts\file_identity.py',
     'projects\orthogonal_accelerator\analysis\accelerator_time_focus.py',
     'projects\orthogonal_accelerator\analysis\two_zone_geometry.py',

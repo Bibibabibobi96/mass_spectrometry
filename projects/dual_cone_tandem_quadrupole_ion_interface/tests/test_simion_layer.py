@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -43,6 +46,94 @@ def load(path: Path) -> dict:
 
 
 class SimionGeometryTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_c0_cache_and_refine_use_the_correct_host_stage(self) -> None:
+        runner = PROJECT / "workflows/gas_assisted_transport/run_c0_gem_smoke.ps1"
+        source = runner.read_text(encoding="utf-8")
+        block = source[source.index(". (Join-Path $repoRoot 'common/host_execution_lease.ps1')"):]
+        block = block.replace("(Join-Path $PSScriptRoot 'prepare.ps1')", "(Join-Path $fixtureDir 'prepare.ps1')")
+        snapshot = """
+$script:HostResourceStatePath=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
+function Get-HostResourceSnapshot {
+ return @{complete=$true;unknown_process_ids=@();logical_processors=8;cpu_percent=0;
+ total_memory_bytes=64GB;available_memory_bytes=32GB;io_pressure=$false;
+ processes=@(@{pid=$PID;parent_pid=0;started='fixture-owner';memory_bytes=1MB})}
+}
+"""
+        block = block.replace("$hostLease=$null", snapshot + "$hostLease=$null", 1)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "prepare.ps1").write_text("""
+param($OutputDir,$Mode,$SimionExe,$PythonExe)
+$dir=Join-Path $OutputDir 'solver/simion';New-Item -ItemType Directory -Force $dir|Out-Null
+foreach($suffix in @('#','0','1','2','3','11','12','21','22')){
+ [IO.File]::WriteAllText((Join-Path $dir "dual_cone_tandem.pa$suffix"),'fixture')}
+$global:LASTEXITCODE=0
+""", encoding="utf-8")
+            (root / "python.ps1").write_text("""
+$script:HostResourceStatePath=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
+$script:HostResourcePolicyPath=Join-Path $env:C0_TEST_REPO 'common/host_resource_policy.json'
+if($args -contains 'publish'-and$env:C0_TEST_PARENT-ne'heavy'){
+ if(@((Get-HostResourceStatus).records)[0].budget.heavy_stage){throw 'Publication retained refine permission'}}
+if($args -contains 'probe'){Write-Output ('{"disposition":"'+$env:C0_TEST_CACHE+'"}')}
+$global:LASTEXITCODE=0
+""", encoding="utf-8")
+            (root / "simion.ps1").write_text("""
+$script:HostResourceStatePath=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
+$script:HostResourcePolicyPath=Join-Path $env:C0_TEST_REPO 'common/host_resource_policy.json'
+$operation=if($args -contains 'refine'){'refine'}else{'gem2pa'}
+$record=@((Get-HostResourceStatus).records)[0]
+$heavy=[bool]$record.budget.heavy_stage
+if($operation-eq'refine'){Assert-HostResourceHeavyStage}
+if($operation-eq'gem2pa'-and$heavy-and$env:C0_TEST_PARENT-ne'heavy'){throw 'gem2pa acquired heavy'}
+Add-Content -LiteralPath $env:C0_TEST_EVENTS -Value "$operation|$heavy"
+$global:LASTEXITCODE=if($operation-eq'refine'-and$env:C0_TEST_FAIL-eq'1'){1}else{0}
+""", encoding="utf-8")
+            for index, (cache, parent, fail) in enumerate((
+                ("hit", "none", False), ("miss", "none", False),
+                ("miss", "none", True), ("miss", "heavy", False),
+                ("miss", "light", False),
+            )):
+                with self.subTest(cache=cache, parent=parent, fail=fail):
+                    environment = {k: v for k, v in os.environ.items() if not k.startswith("MASS_SPECTROMETRY_HOST_")}
+                    events = root / f"events{index}.txt"
+                    environment.update({
+                        "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(root / f"state{index}.sqlite3"),
+                        "SIMULATION_PYTHON_EXE": sys.executable, "SIMULATION_COMPLETION_SOUND": "off",
+                        "C0_TEST_CACHE": cache, "C0_TEST_PARENT": parent,
+                        "C0_TEST_REPO": str(PROJECT.parents[1]),
+                        "C0_TEST_FAIL": "1" if fail else "0", "C0_TEST_EVENTS": str(events),
+                    })
+                    def quote(path: Path) -> str:
+                        return "'" + str(path).replace("'", "''") + "'"
+                    setup = (
+                        f"$ErrorActionPreference='Stop';$repoRoot={quote(PROJECT.parents[1])};$fixtureDir={quote(root)};"
+                        f"$output={quote(root / f'output{index}')};$python={quote(root / 'python.ps1')};"
+                        f"$SimionExe={quote(root / 'simion.ps1')};$cacheRoot={quote(root / 'cache')};"
+                        ". (Join-Path $repoRoot 'common/host_execution_lease.ps1');\n" + snapshot
+                        + "$parent=$null;if($env:C0_TEST_PARENT-ne'none'){$stage=if($env:C0_TEST_PARENT-eq'heavy'){'flight'}else{'prepare'};"
+                        "$parent=Enter-HostExecutionLease -Role SIMION -Stage $stage}\n$caught=$false;try{\n"
+                    )
+                    finish = """
+}catch{$caught=$true;Write-Output ('FAILURE='+$_.Exception.Message)}
+$expected=($env:C0_TEST_FAIL-eq'1'-or$env:C0_TEST_PARENT-eq'light')
+if($caught-ne$expected){throw 'Unexpected execution outcome'}
+$count=if($null-ne$parent){1}else{0}
+if(@((Get-HostResourceStatus).records).Count-ne$count){throw 'Leaked or released parent permission'}
+if($null-ne$parent){Exit-HostExecutionLease -Lease $parent}
+"""
+                    result = subprocess.run(
+                        [shutil.which("pwsh"), "-NoProfile", "-Command", setup + block + finish],
+                        cwd=PROJECT.parents[1], env=environment, capture_output=True,
+                        text=True, encoding="utf-8", errors="replace", timeout=60,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    lines = events.read_text(encoding="utf-8-sig").splitlines() if events.exists() else []
+                    expected = [] if cache == "hit" else [f"gem2pa|{'True' if parent == 'heavy' else 'False'}"]
+                    if cache == "miss" and parent != "light":
+                        expected.append("refine|True")
+                    self.assertEqual(lines, expected)
+
     def test_default_diagnostic_axial_reach_counts_unique_ions(self) -> None:
         tracks = {
             1: ([-1.0, 2.0, 6.0], [0.0, 0.1, 0.2]),
@@ -197,6 +288,14 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("run_gas_field_prototype.ps1", uniform)
         self.assertNotIn("--nogui --noprompt fly", uniform)
         self.assertIn("build_gas_runtime.ps1", comsol)
+        compiler = (
+            PROJECT
+            / "workflows/gas_assisted_transport/build_gas_runtime.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("verify_run_manifest.py", compiler)
+        self.assertIn("--require-status success", compiler)
+        self.assertIn("results\\gas_field_rz.csv", compiler)
+        self.assertIn("results\\gas_field_metadata.json", compiler)
         self.assertIn("run_gas_field_prototype.ps1", comsol)
         self.assertNotIn("--nogui --noprompt fly", comsol)
 

@@ -3,8 +3,12 @@ from __future__ import annotations
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
+from common import verify_repository_text_bytes as text_gate
 from common.verify_repository_text_bytes import carriage_return_paths
 
 
@@ -38,6 +42,18 @@ class RepositoryTextBytesTests(unittest.TestCase):
                 timeout=30,
             )
             self.assertEqual(carriage_return_paths(root), [Path("bad.json")])
+            with patch("sys.argv", ["text_gate", "--repo-root", str(root)]):
+                with patch.object(text_gate, "_git", wraps=text_gate._git) as git_calls:
+                    with self.assertRaisesRegex(SystemExit, "bad.json"):
+                        text_gate.main()
+                    self.assertEqual(git_calls.call_count, 2)
+                (root / "bad.json").write_bytes(b"{}\n")
+                output = StringIO()
+                with patch.object(text_gate, "_git", wraps=text_gate._git) as git_calls:
+                    with redirect_stdout(output):
+                        text_gate.main()
+                    self.assertEqual(git_calls.call_count, 2)
+                self.assertEqual(output.getvalue(), "REPOSITORY_TEXT_BYTES=PASS FILES=2\n")
 
 
 if __name__ == "__main__":

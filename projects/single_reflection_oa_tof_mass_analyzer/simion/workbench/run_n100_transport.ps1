@@ -16,6 +16,11 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$hostRole = 'SIMION'
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
+try {
 
 if ($ExpectedParticleCount -ne 100) {
   throw 'This shared OA-TOF transport helper is the fixed N=100 functional tier.'
@@ -40,6 +45,8 @@ $ion = (Resolve-Path -LiteralPath $IonPath).Path
 $analyzer = (Resolve-Path -LiteralPath $AnalyzerScript).Path
 $resolvedContract = (Resolve-Path -LiteralPath $ResolvedContractPath).Path
 
+$hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+  -Budget (Get-HostResourceBudget -Role $hostRole -Stage flight) -RetainedMemoryBytes 0
 $process = Start-Process -FilePath $SimionExe -ArgumentList @(
   '--default-num-particles', [string]$ExpectedParticleCount, '--nogui', 'fly',
   '--trajectory-quality', [string]$ExpectedTrajectoryQuality, '--retain-trajectories', '0',
@@ -53,6 +60,8 @@ if ($process.ExitCode -ne 0) {
   throw "SIMION N=100 transport failed with exit code $($process.ExitCode): $ErrorPath"
 }
 
+$hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+  -Budget (Get-HostResourceBudget -Role $hostRole -Stage postprocess) -RetainedMemoryBytes 0
 $diagnostics = & $analyzer -Log $LogPath -IonFile $ion -Mode 'candidate_n100_transport' `
   -Distribution 'fixedN100' -DetectorRadiusMm $DetectorRadiusMm -ParticleCsv $ParticleCsv
 if ($LASTEXITCODE -ne 0) { throw 'SIMION N=100 transport diagnostics failed.' }
@@ -89,3 +98,7 @@ $summary = [ordered]@{
 }
 $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $SummaryPath -Encoding UTF8
 "OATOF_SIMION_N100_TRANSPORT=PASS IONS=$ExpectedParticleCount SUMMARY=$SummaryPath"
+
+} finally {
+  Exit-HostExecutionLease -Lease $hostExecutionLease
+}

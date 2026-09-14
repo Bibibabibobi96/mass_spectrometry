@@ -40,10 +40,7 @@ function Get-HostResourceSnapshot {{
         total_memory_bytes=32GB; available_memory_bytes=24GB; io_pressure=$false;
         processes=@(@{{pid=$PID;parent_pid=0;started='fixture-owner';memory_bytes=64MB}}) }}
 }}
-function Get-HostResourceBudget {{ param($Stage, $Role)
-    return @{{schema_version=1;cpu_cores=1;memory_bytes=256MB;io_slots=0;
-        exclusive_resources=@();unknown_peak=$false}}
-}}
+# Use the real central budget policy as well as the real facade.
 $script:performed = 0
 Invoke-ResourceBudgetedGateAction -Name 'outer-fixture' -Action {{
     Invoke-ResourceBudgetedGateAction -Name 'nested-fixture' -Action {{ $script:performed += 1 }}

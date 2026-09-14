@@ -73,6 +73,7 @@ $logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion';$runConfig=$packa
 $artifactRoot=Join-Path $workspaceRoot 'artifacts';$cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
 $temporaryFamily=$null;$lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight'
 try {
+  $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   $failureStage='freeze_contract'
   $frozenContract=Copy-VerifiedRunInput -Source $contractInput -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
   $frozenReviewedContract=Copy-VerifiedRunInput -Source $reviewedContractSource -Destination (Join-Path $inputDir 'geometry_review_simion_prototype_contract.json')
@@ -135,7 +136,6 @@ try {
     $physicalRaw=Join-Path $temporaryFamily 'physical_ids.pa#'
     $prefix=[string]$familyContract.family_prefix
     $groupedRaw=Join-Path $temporaryFamily "$prefix.pa#"
-    $lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
     Invoke-SimionStage -Stage 'compile_local_patch_gem' -Arguments @('--nogui','--noprompt','gem2pa',$gem,$physicalRaw)
     $mapping=@($familyContract.raw_physical_to_local_electrode_id.PSObject.Properties|
       Sort-Object {[int]$_.Name}|ForEach-Object{"$($_.Name):$($_.Value)"})-join','
@@ -143,16 +143,30 @@ try {
       (Join-Path $repoRoot 'common\simion\remap_pa_electrode_ids.lua'),$physicalRaw,$groupedRaw,$mapping)
     $coarseOrigin=(@($familyContract.coarse_origin_project_mm|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)})-join',')
     $patchOrigin=(@($familyContract.patch_origin_project_mm|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)})-join',')
-    Invoke-SimionStage -Stage 'build_local_zero_response' -Arguments @('--nogui','--noprompt','lua',
-      (Join-Path $repoRoot 'common\simion\build_dirichlet_patch_basis.lua'),$groupedRaw,
-      (Join-Path $temporaryFamily ([string]$familyContract.zero_response.output_filename)),'-','-',$coarseOrigin,$patchOrigin)
+    $lease=Update-HostResourceStage -Lease $lease -Stage pa_refine `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+    try {
+      Invoke-SimionStage -Stage 'build_local_zero_response' -Arguments @('--nogui','--noprompt','lua',
+        (Join-Path $repoRoot 'common\simion\build_dirichlet_patch_basis.lua'),$groupedRaw,
+        (Join-Path $temporaryFamily ([string]$familyContract.zero_response.output_filename)),'-','-',$coarseOrigin,$patchOrigin)
+    } finally {
+      $lease=Update-HostResourceStage -Lease $lease -Stage prepare `
+        -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+    }
     foreach($recipe in @($familyContract.response_recipes)){
       $sourcePaths=@($recipe.source_basis_paths|ForEach-Object{[string]$_})-join'|'
       $sourcePhysicalIds=@($recipe.physical_ids|ForEach-Object{[string]$_})-join','
-      Invoke-SimionStage -Stage ("build_local_basis_{0:D2}"-f[int]$recipe.local_id) -Arguments @('--nogui','--noprompt','lua',
-        (Join-Path $repoRoot 'common\simion\build_dirichlet_patch_basis.lua'),$groupedRaw,
-        (Join-Path $temporaryFamily ([string]$recipe.output_filename)),$sourcePaths,([string]$recipe.local_id),$coarseOrigin,$patchOrigin,
-        '-',([string]$familyContract.coarse_raw_pa_path),$sourcePhysicalIds)
+      $lease=Update-HostResourceStage -Lease $lease -Stage pa_refine `
+        -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+      try {
+        Invoke-SimionStage -Stage ("build_local_basis_{0:D2}"-f[int]$recipe.local_id) -Arguments @('--nogui','--noprompt','lua',
+          (Join-Path $repoRoot 'common\simion\build_dirichlet_patch_basis.lua'),$groupedRaw,
+          (Join-Path $temporaryFamily ([string]$recipe.output_filename)),$sourcePaths,([string]$recipe.local_id),$coarseOrigin,$patchOrigin,
+          '-',([string]$familyContract.coarse_raw_pa_path),$sourcePhysicalIds)
+      } finally {
+        $lease=Update-HostResourceStage -Lease $lease -Stage prepare `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+      }
       Invoke-SimionStage -Stage ("export_standalone_response_{0:D2}"-f[int]$recipe.local_id) -Arguments @('--nogui','--noprompt','lua',
         (Join-Path $repoRoot 'common\simion\export_standalone_pa.lua'),
         (Join-Path $temporaryFamily ([string]$recipe.output_filename)),
@@ -167,7 +181,8 @@ try {
   $publicationPath=Join-Path $resultDir 'pa_family_cache_publication.json'
   Write-RunJson -Path $publicationPath -Depth 20 -Value $publication
   if($null-ne$temporaryFamily){Remove-GateTemporaryDirectory -Path $temporaryFamily -ExpectedNamePrefix 'mrtof_local_pa_family_';$temporaryFamily=$null}
-  if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null}
+  $lease=Update-HostResourceStage -Lease $lease -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
 
   $summaryValue=[ordered]@{
     schema_version=1;role='mrtof_analyzer_local_dirichlet_pa_family';status='success'

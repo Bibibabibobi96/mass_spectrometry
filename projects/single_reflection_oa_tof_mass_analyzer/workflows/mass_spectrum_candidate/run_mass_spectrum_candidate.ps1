@@ -14,6 +14,11 @@ $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$hostRole = if ($ReanalyzeOnly) { 'GATE' } else { 'SIMION' }
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$hostStage = 'prepare'
+$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage $hostStage
+try {
 . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
@@ -312,9 +317,17 @@ foreach ($species in $mode.species) {
       $old[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key,'Process')
       [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process')
     }
+    # Standalone orchestration yields to the child lifecycle; inherited grants stay owned by the parent.
+    if ($null -ne $hostExecutionLease -and -not $hostExecutionLease.inherited) {
+      Exit-HostExecutionLease -Lease $hostExecutionLease
+      $hostExecutionLease = $null
+    }
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
       -TaskScript (Join-Path $projectRoot 'comsol\run_fixed_particle_retrace.m') `
       -ReportPath $reportPath
+    if ($null -eq $hostExecutionLease) {
+      $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
+    }
   } finally {
     foreach ($entry in $variables.GetEnumerator()) {
       [Environment]::SetEnvironmentVariable($entry.Key,$old[$entry.Key],'Process')
@@ -354,6 +367,8 @@ if ($ReanalyzeOnly) {
   $executionLog = Join-Path $executionAlias.execution_alias 'logs\simion_stdout.log'
   $executionStderr = Join-Path $executionAlias.execution_alias 'logs\simion_stderr.log'
   try {
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+      -Budget (Get-HostResourceBudget -Role $hostRole -Stage flight) -RetainedMemoryBytes 0
     $process = Start-Process -FilePath $SimionExe -WorkingDirectory $runtimeAlias.execution_alias `
       -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $executionLog `
       -RedirectStandardError $executionStderr -ArgumentList @(
@@ -362,6 +377,8 @@ if ($ReanalyzeOnly) {
         '--programs','1','--adjustable','trajectory_quality=8','--adjustable',
         'trajectory_log_enable=1','--adjustable',
         ("diagnostic_max_tof_us={0}" -f $simionMaxTofUs),$runtimeIob)
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+      -Budget (Get-HostResourceBudget -Role $hostRole -Stage postprocess) -RetainedMemoryBytes 0
     if ($process.ExitCode -ne 0) { throw "SIMION mixed-species fly failed: $simionStderr" }
   } finally {
     if ($null -ne $runtimeAlias) {
@@ -458,3 +475,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Run manifest creation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Run manifest verification failed.' }
 $runRecordComplete = $true
 Write-Output "MASS_SPECTRUM_CANDIDATE=PASS RUN_ID=$RunId PARTICLES=$totalParticles"
+
+} finally {
+  if ($null -ne $hostExecutionLease) { Exit-HostExecutionLease -Lease $hostExecutionLease }
+}

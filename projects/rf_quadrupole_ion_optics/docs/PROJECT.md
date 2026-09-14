@@ -72,6 +72,11 @@ workflow可复用机制，但不得互相消费run或用`Mode`切换科学声明
 
 ## 当前能力
 
+接口就绪和质量过滤的SIMION入口使用轻准备许可，仅在refine与飞行阶段占重许可，后处理回到轻许可，
+成功或失败时均释放本层持有的许可。嵌套运行不重复占位，也不把父轻许可当作重计算授权。
+内部并发仍由原公共planner与实时worker准入控制；本次只完成阶段接入和无求解器回归，
+未重新执行这两个workflow的科学验收。分类规则见[主机资源调度](../../../docs/OPERATIONS.md#主机资源调度)。
+
 - 无碰撞部件回归、接口就绪输运、RF+DC质量过滤和三模式轴向实验是四个独立workflow。
 - 三模式正式统计binding必须在运行前冻结bootstrap、接受尺度、effect resolution和预算；既有缺少
   统计预登记的run只能发布`POSTHOC_DESCRIPTIVE`。

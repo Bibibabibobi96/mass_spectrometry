@@ -78,10 +78,10 @@ COMSOL 空包络气流与 COMSOL 场驱动 SIMION 的计划级受管 runner。�
 | 层级 | 状态 |
 |---|---|
 | 几何与合同 Static | 可执行 |
-| COMSOL 轴对称空包络气流 | Plan runner 已登记；旧 `20260910_z120_empty_cfd_comsol` 数值仅保留在历史记录，本机当前受管目录没有该 run，不能作为 current 证据 |
-| canonical COMSOL→SIMION 气体场 | 编译器可用；尚未登记全局 current artifact |
+| COMSOL 轴对称空包络气流 | 受管 run `20260914_154800__sim__comsol__dual-cone-gas-flow` success，bootstrap、项目报告、独立字段验证及full manifest均PASS；仍仅为无杆、无孔板、无泵口的Prototype |
+| canonical COMSOL→SIMION 气体场 | 上述成功run已由下游按full manifest、字段SHA-256和冻结三份源合同消费；未提升为Candidate/Formal资产 |
 | SIMION 几何编译 | Prototype；本机 `gem2pa/refine` 已通过 |
-| SIMION 气体辅助轨迹 | COMSOL 场消费 runner 已登记；受管均匀场控制 `20260914_104709__sim__simion__dual-cone-uniform-400pa-n100` 的 manifest 通过，N=100 中 0 个到达末端，但它不是自然压降模型的 current 结果 |
+| SIMION 气体辅助轨迹 | COMSOL场受管run `20260914_162400__sim__simion__dual-cone-comsol-field-n100` success且full manifest PASS，N=100中58个到达末端；均匀400 Pa控制run为0/100，但不是自然压降模型 |
 | 独立轨迹跨求解器闭合 | 未建立 |
 | CAD / GUI / Candidate / Formal | BLOCKED |
 
@@ -109,13 +109,20 @@ COMSOL 空包络气流与 COMSOL 场驱动 SIMION 的计划级受管 runner。�
 采用人工各向同性扩散，且尚未完成网格与稳定化敏感性复核。当前可接受结论是“差异来源已定位；旧路线
 相关、新结果仅作控制；60% 与 0% 均不是实机绝对传输率”。
 
+当前受管COMSOL场把这一判断重新闭合：气流run的最大Mach为`4.5192`、最大孔径Kn为`0.03424`、进出口
+质量守恒相对误差为`0.843%`，随后SIMION success run得到`58/100`。同一成功气体场、源合同、RF和PA
+配置的一次发布失败复验曾得到`60/100`；两次气体运行时Lua哈希相同，但粒子终态不完全相同。现有seed
+字段尚不能证明Fly2源生成与官方SDS碰撞链可以逐粒子位复现，因此`58`与`60`应视为N=100随机实现的
+重复波动，而不是气压场或电场再次改变。当前可引用值是manifest成功run的`58/100`；它与旧路线约60%
+相容，但样本太小，仍不能给出精确传输率或实机定量结论。
+
 ## 开放任务
 
 1. 确认两个锥角定义、朝向、实体孔口面、厚度、外径、孔筒和 `3 mm` 的机械测量对象。
 2. 确认椭圆杆有效长度、中心坐标、轴向方向、`7.48 mm` 的杆对定义，以及 `1.6 mm` 是轴向还是法向净距。
 3. 确认 `5.64 mm` 是相邻还是对置中心距、两组杆是否同轴，以及 `2 mm` 间是否存在 IQ0/孔板/绝缘板。
 4. 对已通过的空包络 CFD 做网格/稳定化敏感性复核；孔板仍从 CFD 排除，除非后续科学问题明确要求板前积压、孔内射流或板后膨胀。
-5. 重新执行当前合同的受管 COMSOL run 后，再决定是否把合格场发布为全局 current artifact；均匀 `400 Pa` 对照不能代替此场。
+5. 对当前受管COMSOL场做网格/稳定化敏感性复核后，再决定是否发布为全局current artifact；均匀`400 Pa`对照不能代替此场。
 6. 给出各锥、壳体和出口件的 DC，以及目标离子、源分布、迁移率或 CCS；两段 RF 的幅值口径与频率
    范围已经确认，但仍需决定是否扫描 `550 kHz` 和 `590 kHz` 端点。
 7. 补充气体场依赖、RF/DC 参数、SIMION GUI 可检查性和损失事件复核；通过后再开放 Candidate。

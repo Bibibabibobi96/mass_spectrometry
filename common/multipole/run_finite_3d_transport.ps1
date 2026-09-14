@@ -163,7 +163,8 @@ New-Item -ItemType Directory -Force -Path $runtimeDir|Out-Null
 New-Item -ItemType Directory -Force -Path $solverProgressDir|Out-Null
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 $hostExecutionOutcome='failed'
-$hostExecutionLease=Enter-HostExecutionLease -Role COMSOL -RunId $RunId
+$hostExecutionLease=Enter-HostExecutionLease -Role COMSOL -Stage prepare -RunId $RunId
+$hostExecutionOwnsLease=-not$hostExecutionLease.inherited
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
@@ -380,10 +381,33 @@ try{
     $env:MULTIPOLE_L3_FIELD_SAMPLES=if($StopStage-eq'field_solve'){$fieldSamples}else{''}
     $env:MULTIPOLE_L3_MAXIMUM_MESH_CELLS=if($null-ne$maximumMeshCells){[string]$maximumMeshCells}else{''}
     $pwsh=(Get-Process -Id $PID).Path
-    $solverProcess=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $resolvedResourceBudget `
-      -RunDir $runDir -UsagePath $resourceUsage -FilePath $pwsh -ArgumentList @(
-        '-NoProfile','-NonInteractive','-File',(Join-Path $codeRoot 'common\comsol\run_comsol_r2025b.ps1'),
-        '-TaskScript',$task,'-ReportPath',$report,'-StartupAttempts','1')
+    if($hostExecutionLease.inherited){
+      # A child may inherit a heavy owner, but cannot release or upgrade someone else's light grant.
+      Assert-HostResourceHeavyStage -Lease $hostExecutionLease
+    }else{
+      Exit-HostExecutionLease -Lease $hostExecutionLease
+      $hostExecutionLease=$null
+    }
+    $solverLaunchFailed=$false
+    try{
+      $solverProcess=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $resolvedResourceBudget `
+        -RunDir $runDir -UsagePath $resourceUsage -FilePath $pwsh -ArgumentList @(
+          '-NoProfile','-NonInteractive','-File',(Join-Path $codeRoot 'common\comsol\run_comsol_r2025b.ps1'),
+          '-TaskScript',$task,'-ReportPath',$report,'-StartupAttempts','1')
+      $solverLaunchFailed=$solverProcess.resource_budget_exceeded-or$solverProcess.exit_code-ne 0
+    }catch{
+      $solverLaunchFailed=$true
+      throw
+    }finally{
+      if($null-eq$hostExecutionLease){
+        try{
+          $hostExecutionLease=Enter-HostExecutionLease -Role COMSOL -Stage postprocess -RunId $RunId
+        }catch{
+          if(-not$solverLaunchFailed){throw}
+          Write-Warning "Postprocess admission failed after solver failure: $($_.Exception.Message)"
+        }
+      }
+    }
     if($solverProcess.resource_budget_exceeded){
       $resourceBudgetExceeded=$true
       throw 'COMSOL resource budget exceeded.'
@@ -608,9 +632,17 @@ try{
   $hostExecutionOutcome='success'
   Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId PARENT_SHA256=$resolvedHash QUALIFICATION=$qualification"
 }catch{
+  $comsolRunFailure=$_
+  if($null-eq$hostExecutionLease){
+    try{
+      $hostExecutionLease=Enter-HostExecutionLease -Role COMSOL -Stage postprocess -RunId $RunId
+    }catch{
+      Write-Warning "Failure-report admission unavailable; preserving solver failure: $($_.Exception.Message)"
+    }
+  }
   $hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}
   Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
-    -SummaryRole 'multipole_finite_3d_transport_summary' -Reason $_.Exception.Message `
+    -SummaryRole 'multipole_finite_3d_transport_summary' -Reason $comsolRunFailure.Exception.Message `
     -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') `
     -Status $(if($resourceBudgetExceeded){'interrupted'}else{'failed'}) `
     -FailureClass $(if($resourceBudgetExceeded){'resource_budget_exceeded'}else{''}) `
@@ -621,5 +653,9 @@ try{
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after COMSOL run: $($_.Exception.Message)"
   }
-  Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
+  if($null-ne$hostExecutionLease){
+    Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
+  }elseif($hostExecutionOwnsLease){
+    Invoke-HostExecutionCompletionNotification -Outcome $hostExecutionOutcome -RunId $RunId
+  }
 }

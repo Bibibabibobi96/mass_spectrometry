@@ -181,7 +181,7 @@ try {
     (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash
   }
   $failureStage = 'build_read_only_iob'
-  $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -RunId $RunId
+  $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   $buildArguments = @(
     '--nogui','--noprompt','lua',(Join-Path $solverDir 'build_three_component_iob.lua'),'--',
     (Join-Path $solverDir '3_instance_seed.iob'),$sourceFiles.analyzer,$sourceFiles.accelerator,
@@ -229,9 +229,13 @@ try {
   Write-RunJson -Path $runConfig -Value $configuration
 
   $failureStage = 'native_center_flight'
+  $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
   Invoke-MrtofSimionStep -Stage 'native_center_flight' -Arguments @(
     '--nogui','--noprompt','lua',$launcher,(Join-Path $solverDir 'mrtof_three_component_candidate.iob')
   )
+  $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
   $afterFlightHashes = @($sourceFiles.analyzer,$sourceFiles.accelerator,$sourceFiles.detector) | ForEach-Object {
     (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash
   }

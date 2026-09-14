@@ -356,7 +356,7 @@ try{
       Copy-RequiredInput $sourceP1Basis $temporaryP1Basis 'P1 electrode-16 basis array'|Out-Null
     }
   }
-  $failureStage='prepare_operating_analyzer';$lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
+  $failureStage='prepare_operating_analyzer';$lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   if(-not$reuseFrozenWorkbenchAnalyzer){
     $voltageArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'voltageize_analyzer_pa0.lua'),$sourceAnalyzer,$temporaryAnalyzer)+@($trial.analyzer_electrode_voltages_v|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)})
     Invoke-SimionStage -Stage 'voltageize_temporary_analyzer' -Arguments $voltageArguments
@@ -531,7 +531,11 @@ try{
   if(@(Compare-Object $upstreamHashes @($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Read-only IOB build changed an upstream PA'}
   if($localCacheSentinelPaths.Count-and@(Compare-Object $localCacheSentinelHashes @($localCacheSentinelPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Temporary IOB build changed an immutable local PA cache sentinel'}
   $failureStage='native_two_prism_flight'
+  $lease=Update-HostResourceStage -Lease $lease -Stage flight `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
   Invoke-SimionStage -Stage 'native_two_prism_flight' -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$temporaryIob)
+  $lease=Update-HostResourceStage -Lease $lease -Stage postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
   if(@(Compare-Object $upstreamHashes @($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Runtime Fast Adjust changed an upstream PA'}
   if($localCacheSentinelPaths.Count-and@(Compare-Object $localCacheSentinelHashes @($localCacheSentinelPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'SIMION flight changed immutable local PA-family bookkeeping'}
   if($localCacheSentinelPaths.Count){foreach($family in $localFamilies){Resolve-AnalyzerLocalFamilyCacheGeneration -Family $family -PythonExe $python -RepoRoot $repoRoot -CacheRoot (Join-Path $artifactRoot 'common\simion\pa_family_cache')|Out-Null}}

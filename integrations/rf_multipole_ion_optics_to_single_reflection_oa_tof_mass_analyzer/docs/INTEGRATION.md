@@ -4,6 +4,10 @@
 历史性能叙事、已退役 campaign 或逐次调试结论；这些材料位于 [`HISTORY.md`](HISTORY.md)。
 参数的唯一 authority、消费者和失效域见 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
 
+单飞及分段 analyzer 入口按 `prepare`、`pa_refine`、`flight`、`postprocess` 申请同一主机许可。
+普通准备与后处理为轻阶段；实际 refine 及已知内部 refine 的 Lua、粒子飞行为重阶段。
+既有观测、内部并发、波次与断点续算机制保持不变；本次仅增加外层阶段准入，不新增物理资格结论。
+
 ## 所有权与入口
 
 - 多极杆项目拥有杆内几何、RF 驱动与经过其作用后的 `handoff` 状态；离子源只发布冻结的粒子相空间快照，oaTOF 项目拥有下游几何、脉冲和分析。后续运行器只消费该统一粒子表，不依赖其是体积源、平面源还是历史外部表的生成方式。

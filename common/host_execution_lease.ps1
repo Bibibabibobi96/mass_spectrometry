@@ -12,10 +12,17 @@ function Get-HostResourceBudget {
     $key = "$Role/$Stage"
     $Profile = if ($policy.ContainsKey('stages') -and $policy.stages.ContainsKey($key)) {
       [string]$policy.stages[$key]
-    } else { 'unknown' }
+    } elseif ($policy.default_profiles.ContainsKey($Role)) {
+      [string]$policy.default_profiles[$Role]
+    } else { throw "Unknown host resource role: $Role" }
   }
   if (-not $policy.profiles.ContainsKey($Profile)) { throw "Unknown host resource profile: $Profile" }
-  return $policy.profiles[$Profile]
+  $budget = $policy.profiles[$Profile]
+  if ($Profile -eq 'ordinary-light') {
+    $budget.cpu_cores = [math]::Min([double]$budget.cpu_cores,
+      [Environment]::ProcessorCount * [double]$policy.cpu_admission_percent / 100)
+  }
+  return $budget
 }
 
 function Test-HostResourceConsoleProcess {
@@ -134,6 +141,19 @@ function Receive-HostResourceStage {
   return $Lease
 }
 
+function Assert-HostResourceHeavyStage {
+  <# Verify permission once at the internal worker scheduler boundary. #>
+  [CmdletBinding()]
+  param($Lease = $null)
+  $token = if ($null -ne $Lease) { $Lease.token } else { $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN }
+  $statePath = if ($null -ne $Lease) { $Lease.state_path } else { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH }
+  if (-not $token) { throw 'An acquired heavy stage resource token is required.' }
+  if (-not $statePath) { $statePath = $script:HostResourceStatePath }
+  $null = Invoke-HostResourceTransaction -StatePath $statePath -Request @{
+    operation='inherit';token=$token;require_heavy_stage=$true
+  }
+}
+
 function Wait-HostResourceStage {
   param([Parameter(Mandatory)]$Lease)
   $policy = Get-Content -LiteralPath $script:HostResourcePolicyPath -Raw | ConvertFrom-Json
@@ -160,6 +180,8 @@ function Enter-HostResourceStage {
     [string]$RunId = '', [string]$StatePath = '',
     [switch]$NoEnvironment, [switch]$NoWait
   )
+  $Budget = $Budget.Clone()
+  $Budget.heavy_stage = (Get-HostResourceBudget -Role $Role -Stage $Stage).heavy_stage
   if (-not $StatePath) {
     $StatePath = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) {
       $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
@@ -204,6 +226,8 @@ function Update-HostResourceStage {
   [CmdletBinding()]
   param([Parameter(Mandatory)]$Lease, [Parameter(Mandatory)][string]$Stage,
     [Parameter(Mandatory)][hashtable]$Budget, [Parameter(Mandatory)][int64]$RetainedMemoryBytes)
+  $Budget = $Budget.Clone()
+  $Budget.heavy_stage = (Get-HostResourceBudget -Role $Lease.role -Stage $Stage).heavy_stage
   if ($Lease.inherited) {
     $null = Invoke-HostResourceTransaction -StatePath $Lease.state_path -Request @{
       operation='inherit';token=$Lease.token;role=$Lease.role;budget=$Budget
@@ -248,11 +272,11 @@ function Get-HostResourceStatus {
 }
 
 function Enter-HostExecutionLease {
-  <# Unmigrated callers reserve one unknown-peak stage in the SAME scheduler. #>
+  <# Only centrally listed stages request heavy permission; unlisted work is light. #>
   [CmdletBinding()]
   param([Parameter(Mandatory)][ValidateSet('SIMION','COMSOL','GATE')][string]$Role,
-    [string]$RunId = '')
-  return Enter-HostResourceStage -Role $Role -RunId $RunId -Stage 'unclassified' -Budget (Get-HostResourceBudget -Profile unknown)
+    [string]$RunId = '', [string]$Stage = 'unclassified')
+  return Enter-HostResourceStage -Role $Role -RunId $RunId -Stage $Stage -Budget (Get-HostResourceBudget -Role $Role -Stage $Stage)
 }
 
 function Exit-HostExecutionLease {

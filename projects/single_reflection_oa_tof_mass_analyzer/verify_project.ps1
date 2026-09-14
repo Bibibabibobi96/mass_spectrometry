@@ -15,10 +15,16 @@ $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $hostExecutionLease = $null
 $hostExecutionLeaseSupport = Join-Path $repoRoot 'common\host_execution_lease.ps1'
-if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {
-  . $hostExecutionLeaseSupport
-  $hostExecutionLease = Enter-HostExecutionLease -Role GATE
+. $hostExecutionLeaseSupport
+$hostRole = if ($Level -eq 'Formal' -or ($Level -eq 'Candidate' -and $CandidateTarget -eq 'COMSOL')) {
+  'COMSOL'
+} elseif ($Level -eq 'Candidate' -and $CandidateTarget -eq 'SIMION') {
+  'SIMION'
+} else {
+  'GATE'
 }
+$hostStage = 'prepare'
+$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage $hostStage
 try {
 $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
@@ -57,8 +63,16 @@ if ($Level -eq 'Candidate') {
     $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $runId = "${stamp}__gate__simion__native-ideal-grid__smoke"
     $output = Join-Path $workspaceRoot "artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\$runId\simion"
+    # Standalone orchestration yields to the child lifecycle; inherited grants stay owned by the parent.
+    if ($null -ne $hostExecutionLease -and -not $hostExecutionLease.inherited) {
+      Exit-HostExecutionLease -Lease $hostExecutionLease
+      $hostExecutionLease = $null
+    }
     & (Join-Path $projectRoot 'simion\workbench\run_parameterized_geometry_smoke.ps1') -SimionExe $SimionExe -OutputDir $output -RunId $runId
     if ($LASTEXITCODE -ne 0) { throw 'Candidate SIMION geometry build failed.' }
+    if ($null -eq $hostExecutionLease) {
+      $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
+    }
   }
   elseif ($CandidateTarget -eq 'COMSOL') {
     if (-not $CandidateModelPath) { throw 'COMSOL Candidate requires -CandidateModelPath.' }
@@ -87,10 +101,18 @@ if ($Level -eq 'Candidate') {
       else {
         Remove-Item Env:OATOF_CONTRACT_PATH -ErrorAction SilentlyContinue
       }
+      # Standalone orchestration yields to the child lifecycle; inherited grants stay owned by the parent.
+      if ($null -ne $hostExecutionLease -and -not $hostExecutionLease.inherited) {
+        Exit-HostExecutionLease -Lease $hostExecutionLease
+        $hostExecutionLease = $null
+      }
       & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
         -TaskScript (Join-Path $projectRoot 'comsol\verify_oatof_comsol_sync.m') `
         -ReportPath $report
       if ($LASTEXITCODE -ne 0) { throw 'Candidate COMSOL MPH gate failed.' }
+      if ($null -eq $hostExecutionLease) {
+        $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
+      }
     }
     finally {
       if ($null -eq $oldModelPath) { Remove-Item Env:OATOF_COMSOL_MODEL_PATH -ErrorAction SilentlyContinue }
@@ -148,10 +170,18 @@ elseif ($Level -eq 'Formal') {
   try {
     $env:OATOF_COMSOL_MODEL_PATH = $formalModel
     Remove-Item Env:OATOF_CONTRACT_PATH -ErrorAction SilentlyContinue
+    # Standalone orchestration yields to the child lifecycle; inherited grants stay owned by the parent.
+    if ($null -ne $hostExecutionLease -and -not $hostExecutionLease.inherited) {
+      Exit-HostExecutionLease -Lease $hostExecutionLease
+      $hostExecutionLease = $null
+    }
     & (Join-Path $repoRoot 'common\comsol\run_comsol_r2025b.ps1') `
       -TaskScript (Join-Path $projectRoot 'comsol\verify_oatof_comsol_sync.m') `
       -ReportPath $comsolReport
     if ($LASTEXITCODE -ne 0) { throw 'Formal COMSOL GUI-equivalent MPH gate failed.' }
+    if ($null -eq $hostExecutionLease) {
+      $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
+    }
   }
   finally {
     if ($null -eq $oldModelPath) { Remove-Item Env:OATOF_COMSOL_MODEL_PATH -ErrorAction SilentlyContinue }

@@ -71,6 +71,7 @@ class ChangedGateContractTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.count("REPOSITORY_HYGIENE=PASS"), 1)
         self.assertIn("GATE_STAGE=RUN NAME=documentation", completed.stdout)
         self.assertIn("GATE_STAGE=RUN NAME=repository_text_bytes", completed.stdout)
         self.assertLess(
@@ -125,6 +126,37 @@ class ChangedGateContractTests(unittest.TestCase):
                 self.assertTrue(expected <= self.routed_stages(path).keys())
         gate_route = next(row for row in self.routes if row["stage"] == "gate_contract_tests")
         self.assertIn("common.contracts.test_parallel_gate_support", gate_route["command"]["arguments"])
+
+    def test_python_host_bridge_uses_one_shared_scheduler_stage_in_l1_and_l2(self) -> None:
+        stage = "host_resource_scheduler_tests"
+        for path in ("common/host_resource_python.py", "common/host_resource_python.ps1",
+                     "common/test_host_resource_python.py"):
+            self.assertEqual(set(self.routed_stages(path)), {stage}, path)
+        routes = [route for route in self.routes if route["stage"] == stage]
+        self.assertEqual(len(routes), 1)
+        self.assertEqual(routes[0]["dependency_profile"], "stdlib")
+        self.assertEqual(routes[0]["repository_integration_group"], "fast")
+        self.assertEqual(routes[0]["command"]["arguments"],
+                         ["-m", "unittest", "common.test_host_resource_scheduler", "common.test_host_resource_python"])
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        result = subprocess.run([pwsh, "-NoProfile", "-File", str(CHANGED_GATE), "-PythonExe", sys.executable,
+                                 "-PlanOnly", "-ChangedPath", "common/host_resource_python.ps1"],
+                                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
+        self.assertIsNotNone(selected, result.stdout)
+        self.assertEqual(selected[1].split(",").count(stage), 1)
+        script = (f". '{REPO_ROOT}/common/gate_catalog_support.ps1';"
+                  f"$routes=@(Read-GateCatalog -RepoRoot '{REPO_ROOT}');"
+                  "$stages=@($routes|Where-Object repository_integration_group -eq 'fast'|ForEach-Object stage);"
+                  "ConvertTo-Json -Compress -InputObject $stages")
+        result = subprocess.run([pwsh, "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout).count(stage), 1)
 
     def test_integration_test_module_change_runs_only_that_module(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -407,6 +439,17 @@ class ChangedGateContractTests(unittest.TestCase):
 
     def test_livelink_tests_use_their_direct_fast_stages(self) -> None:
         self.assertEqual(
+            self.routed_stages("common/comsol/test_livelink_resource_stages.py"),
+            {"livelink_resource_stages_tests": "livelink_resource_tests_changed"},
+        )
+        for path in (
+            "common/comsol/run_comsol_r2025b.ps1",
+            "common/comsol/test_unclassified_support.py",
+        ):
+            with self.subTest(path=path):
+                self.assertIn("multipole_common", self.routed_stages(path))
+                self.assertIn("rf_quadrupole_generated_publications", self.routed_stages(path))
+        self.assertEqual(
             self.routed_stages("common/comsol/test_livelink_environment.ps1"),
             {"livelink_environment": "livelink_environment_test_changed"},
         )
@@ -432,6 +475,36 @@ class ChangedGateContractTests(unittest.TestCase):
             self.assertFalse(route["run_on_full_scope"])
             self.assertEqual(route["full_scope_coverage_stage"], "common_contracts")
         self.assertIn("covered_by_", self.source)
+
+    def test_changed_scope_reuses_selected_contract_coverage(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        cases = (
+            (["common/contracts/test_verify_changed.py"], "gate_contract_tests", True),
+            (["common/contracts/test_report_cloc_delta.py"], "cloc_contract_tests", True),
+            (["common/contracts/file_identity.py", "pyproject.toml"], "python_dependency_contract", True),
+            (["common/verify_changed.ps1"], "gate_contract_tests", False),
+            (["common/report_cloc_delta.ps1"], "cloc_contract_tests", False),
+            (["pyproject.toml"], "python_dependency_contract", False),
+        )
+        for paths, subset, covered in cases:
+            with self.subTest(paths=paths):
+                quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+                command = (
+                    f"& {quote(CHANGED_GATE)} -PythonExe {quote(sys.executable)} "
+                    "-PlanOnly -ChangedPath @(" + ",".join(map(quote, paths)) + ")"
+                )
+                completed = subprocess.run(
+                    [pwsh, "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                    capture_output=True, text=True, timeout=30, check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
+                self.assertIsNotNone(selected, completed.stdout)
+                stages = selected.group(1).split(",")
+                self.assertEqual("common_contracts" in stages, covered)
+                self.assertEqual(subset in stages, not covered)
 
     def test_integration_changes_route_only_to_connection_gates(self) -> None:
         routed = self.routed_stages("common/integration/connection_profiles.py")

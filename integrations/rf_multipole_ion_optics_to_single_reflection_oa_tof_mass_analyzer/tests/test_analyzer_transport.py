@@ -1,7 +1,10 @@
 import csv
 import hashlib
 import json
+import re
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -397,6 +400,89 @@ class AnalyzerTransportTests(unittest.TestCase):
             frozen_lua.write_text("drifted program\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "Formal Lua differs"):
                 formal_release.validate(*paths[:-1], frozen_lua)
+
+    def test_refining_builder_and_flight_have_separate_host_phases(self) -> None:
+        source = (INTEGRATION_ROOT / "stages/cross_solver/run_analyzer_transport.ps1").read_text(encoding="utf-8")
+        transitions = list(re.finditer(r"\$hostResourceStage = Update-HostResourceStage .*?-Stage (\w+)", source))
+        for variable, expected in (("buildResult", "pa_refine"), ("processResult", "flight")):
+            offset = source.index(f"${variable} = Invoke-ResourceBudgetedProcess")
+            self.assertEqual(next(m[1] for m in reversed(transitions) if m.start() < offset), expected)
+        self.assertEqual([m[1] for m in transitions], ["pa_refine", "prepare", "flight", "postprocess"])
+        self.assertIn("Enter-HostResourceStage -Role SIMION -Stage prepare", source)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_host_runtime_freezes_beside_the_common_executor(self) -> None:
+        repo = INTEGRATION_ROOT.parents[1]
+        runner = INTEGRATION_ROOT / "stages/cross_solver/run_analyzer_transport.ps1"
+        source = runner.read_text(encoding="utf-8")
+        block = source[source.index("  $hostRuntimeInputs = [ordered]@{}"):
+                       source.index("  . $dependencySnapshotPaths['common_resource_budget_support']")]
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory)
+            def quote(path: Path) -> str:
+                return "'" + str(path).replace("'", "''") + "'"
+            script = (
+                f"$repoRoot={quote(repo)};$snapshotRoot={quote(snapshot)};"
+                f". {quote(repo / 'common/contracts/run_artifact_support.ps1')};"
+                + block + "\n$budget=Get-HostResourceBudget -Role SIMION -Stage pa_refine;"
+                "if(-not$budget.heavy_stage){throw 'missing-heavy-default'}"
+            )
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                    cwd=repo, capture_output=True, text=True,
+                                    encoding="utf-8", errors="replace", timeout=30, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            core = subprocess.run(
+                [sys.executable, "-I", str(snapshot / "common/host_resource_scheduler.py"), "--help"],
+                cwd=snapshot, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=15, check=False,
+            )
+            self.assertEqual(core.returncode, 0, core.stdout + core.stderr)
+            for name in ("host_execution_lease.ps1", "host_resource_scheduler.py", "host_resource_policy.json"):
+                self.assertEqual((snapshot / "common" / name).read_bytes(), (repo / "common" / name).read_bytes())
+                self.assertIn("      " + Path(name).stem + " = $hostRuntimeInputs[", source)
+        self.assertLess(source.index("$hostResourceStage = Enter-HostResourceStage"),
+                        source.index("$buildResult = Invoke-ResourceBudgetedProcess"))
+        self.assertLess(source.index(". $hostRuntimeInputs['host_execution_lease']"),
+                        source.index(". $dependencySnapshotPaths['common_resource_budget_support']"))
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_host_permission_is_released_or_preserved_for_parent_on_failure(self) -> None:
+        repo = INTEGRATION_ROOT.parents[1]
+        source = (INTEGRATION_ROOT / "stages/cross_solver/run_analyzer_transport.ps1").read_text(encoding="utf-8")
+        enter = source[source.index("  $env:SIMULATION_PYTHON_EXE = $python"):
+                       source.index("  $interfacePa0 = $null")]
+        # The final nested finally owns environment/alias cleanup; include its outer release block.
+        cleanup = source[source.rindex("} finally {\n  try {") + len("} finally {"):].rsplit("}", 1)[0]
+        release = "Exit-HostResourceStage -Lease $hostResourceStage; $hostResourceStage=$null"
+        for inherited in (False, True):
+            for fail in (False, True):
+                with self.subTest(inherited=inherited, fail=fail):
+                    script = (
+                        f". '{repo}/common/contracts/run_artifact_support.ps1';"
+                        f". '{repo}/common/host_execution_lease.ps1';"
+                        "$script:operations=@();"
+                        "function Invoke-HostResourceTransaction {param($Request,$StatePath);"
+                        "$script:operations+=@($Request.operation);"
+                        "return @{token=$Request.token;status='acquired';reason='';owner=@{pid=$PID}}};"
+                        "function Remove-RunPackageExecutionAlias {param($Package)};"
+                        "$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=$null;"
+                        + ("$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='parent';" if inherited else "")
+                        + "$hostResourceStage=$null;$RunId='fixture';$package=@{};$python='validated-python';"
+                        "$env:SIMULATION_PYTHON_EXE='previous-python';"
+                        "$hostEnvironment=Save-RunEnvironment -Names @('SIMULATION_PYTHON_EXE');"
+                        "try {try {" + enter +
+                        "if($env:SIMULATION_PYTHON_EXE-ne'validated-python'){throw 'wrong-python'};"
+                        + ("throw 'fixture-work-failed'" if fail else release)
+                        + "} finally {" + cleanup + "}} catch {"
+                        "if($_.Exception.Message-ne'fixture-work-failed'){throw}};"
+                        "if($env:SIMULATION_PYTHON_EXE-ne'previous-python'){throw 'python-not-restored'};"
+                        "ConvertTo-Json -Compress -InputObject @($script:operations)"
+                    )
+                    result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                            cwd=repo, capture_output=True, text=True,
+                                            encoding="utf-8", errors="replace", timeout=30, check=False)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(json.loads(result.stdout.splitlines()[-1]), ["inherit"] if inherited else ["request", "release"])
 
     def test_runner_freezes_dependencies_and_source_before_execution(self) -> None:
         runner = (

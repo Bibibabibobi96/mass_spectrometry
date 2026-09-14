@@ -46,6 +46,9 @@ projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transp
 
 该入口只生成 GEM、执行 `gem2pa` 和不带 convergence 参数的 `refine`，并检查电极基组
 `0,1,2,3,11,12,21,22`，其中 `3` 是末端孔板。它不飞行粒子、不输出传输率，也不构成 Candidate 或 Formal 证据。
+入口默认申请 `prepare` 轻许可；缓存命中不申请重许可，未命中时仅在 `refine` 前切换到中央
+`pa_refine` 重阶段，退出后回到轻阶段并最终释放。嵌套调用继承父许可；父轻任务须由外层框架先处理
+重阶段权限，子入口不能自行越权升级。此接入的回归使用隔离账本和模拟求解器，不替代真实 PA 验收。
 
 COMSOL 气体场升级路径的输入准备：
 

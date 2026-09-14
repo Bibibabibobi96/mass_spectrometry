@@ -49,6 +49,9 @@ $supportSource = $runtime.run_artifact_support
 . $supportSource
 $executionCapacityPaths = Get-RfOatofExecutionCapacityPaths -Runtime $runtime `
   -ConsumerId 'analyzer_transport' -AdditionalPaths @(
+  'inputs/runtime_snapshot/common/host_execution_lease.ps1',
+  'inputs/runtime_snapshot/common/host_resource_scheduler.py',
+  'inputs/runtime_snapshot/common/host_resource_policy.json',
   'inputs/reference_comsol_local_accelerator_exit.csv',
   'inputs/materialized_simion_local_accelerator_exit.csv',
   'logs/interface_pa_resource_usage.json',
@@ -242,6 +245,8 @@ $resourceBudgetExceeded = $false
 $snapshotRoot = Join-Path $package.input_dir 'runtime_snapshot'
 $manifestToolRoot = $snapshotRoot
 $snapshotReady = $false
+$hostResourceStage = $null
+$hostEnvironment = Save-RunEnvironment -Names @('SIMULATION_PYTHON_EXE')
 $stageTimingPath = Join-Path $package.log_dir 'stage_timings.json'
 $stageTimings = [ordered]@{}
 $stageTimer = [Diagnostics.Stopwatch]::StartNew()
@@ -411,6 +416,13 @@ try {
   }
   $frozenInterfaceComparator =
     $dependencySnapshotPaths['rf_simion_interface_transport_comparator']
+  $hostRuntimeInputs = [ordered]@{}
+  foreach ($hostFile in @('host_execution_lease.ps1','host_resource_scheduler.py','host_resource_policy.json')) {
+    $hostRuntimeInputs[[IO.Path]::GetFileNameWithoutExtension($hostFile)] = Copy-VerifiedRunInput `
+      -Source (Join-Path $repoRoot "common/$hostFile") `
+      -Destination (Join-Path $snapshotRoot "common/$hostFile")
+  }
+  . $hostRuntimeInputs['host_execution_lease']
   . $dependencySnapshotPaths['common_resource_budget_support']
   $snapshotReady = $true
   Invoke-AnalyzerTransportSnapshotPython -Python $python -SnapshotRoot $snapshotRoot `
@@ -722,6 +734,10 @@ try {
     ) -FailureMessage 'Shared-clock oaTOF pulse program build failed.'
   Complete-AnalyzerTransportStageTiming -Name 'formal_release_validation_copy_and_program_build'
 
+  # Preparation is light; the optional refiner and flight reapply this token.
+  $env:SIMULATION_PYTHON_EXE = $python
+  $hostResourceStage = Enter-HostResourceStage -Role SIMION -Stage prepare `
+    -RunId $RunId -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare)
   $interfacePa0 = $null
   $interfacePaOutputs = @()
   if ($interfaceDiagnostic) {
@@ -744,6 +760,8 @@ try {
       $interfaceBuildStderr = Join-Path $package.log_dir 'interface_pa.stderr.log'
       $interfacePa0 = Join-Path $interfacePaRoot 'interface_accelerator.pa0'
       if (-not (Test-Path -LiteralPath $interfacePa0 -PathType Leaf)) {
+        $hostResourceStage = Update-HostResourceStage -Lease $hostResourceStage -Stage pa_refine `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
         $buildResult = Invoke-ResourceBudgetedProcess `
           -ResolvedBudgetPath $budgetBinding.stage_budget -RunDir $package.run_dir `
           -UsagePath $interfaceBuildUsage -FilePath $SimionExe `
@@ -768,6 +786,8 @@ try {
           ([string]$interfaceAperture.full_height_mm),
           ([string]($accelerator.d1_mm / 2.0))
           )
+        $hostResourceStage = Update-HostResourceStage -Lease $hostResourceStage -Stage prepare `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
         if ($buildResult.exit_code -ne 0) {
           throw "SIMION interface PA build failed: $interfaceBuildStderr"
         }
@@ -823,6 +843,9 @@ try {
       resolved_source_contract = $resolvedSourceContractFrozen
       upstream_resolved_design = $upstreamResolvedDesignFrozen
       interface_aperture_contract = $interfaceApertureContractFrozen
+      host_execution_lease = $hostRuntimeInputs['host_execution_lease']
+      host_resource_scheduler = $hostRuntimeInputs['host_resource_scheduler']
+      host_resource_policy = $hostRuntimeInputs['host_resource_policy']
       code_inventory = $dependencyContract
       dependency_contract = $dependencyPublication.dependency_contract_path
       source_run_manifest = $sourceManifestPath
@@ -934,6 +957,8 @@ try {
     if ($interfaceDiagnostic) {
       $env:OATOF_ACCELERATOR_PA_OVERRIDE = $interfacePa0
     }
+    $hostResourceStage = Update-HostResourceStage -Lease $hostResourceStage -Stage flight `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
     $processResult = Invoke-ResourceBudgetedProcess `
       -ResolvedBudgetPath $budgetBinding.stage_budget `
       -RunDir $package.run_dir -UsagePath $resourceUsage `
@@ -954,6 +979,8 @@ try {
   } finally {
     $env:OATOF_ACCELERATOR_PA_OVERRIDE = $oldAcceleratorOverride
   }
+    $hostResourceStage = Update-HostResourceStage -Lease $hostResourceStage -Stage postprocess `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
   if ($processResult.resource_budget_exceeded) {
     $resourceBudgetExceeded = $true
     throw "SIMION downstream resource budget exceeded: $($processResult.limit_name)"
@@ -961,6 +988,8 @@ try {
   if ($processResult.exit_code -ne 0) {
     throw "SIMION downstream continuation failed: $stderr"
   }
+  Exit-HostResourceStage -Lease $hostResourceStage
+  $hostResourceStage = $null
   Complete-AnalyzerTransportStageTiming -Name 'simion_particle_flight'
   $downstream = Join-Path $package.result_dir `
     'simion_downstream_particles.csv'
@@ -1097,5 +1126,10 @@ try {
   }
   throw
 } finally {
-  Remove-RunPackageExecutionAlias -Package $package
+  try {
+    if ($null -ne $hostResourceStage) { Exit-HostResourceStage -Lease $hostResourceStage }
+  } finally {
+    Restore-RunEnvironment -Names @('SIMULATION_PYTHON_EXE') -Snapshot $hostEnvironment
+    Remove-RunPackageExecutionAlias -Package $package
+  }
 }

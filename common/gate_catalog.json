@@ -10,11 +10,14 @@
         { "exact": "common/host_resource_scheduler.py", "reason": "host_scheduler_changed" },
         { "exact": "common/host_resource_policy.json", "reason": "host_policy_changed" },
         { "exact": "common/test_host_resource_scheduler.py", "reason": "host_scheduler_tests_changed" },
+        { "exact": "common/host_resource_python.py", "reason": "host_python_bridge_changed" },
+        { "exact": "common/host_resource_python.ps1", "reason": "host_python_bridge_changed" },
+        { "exact": "common/test_host_resource_python.py", "reason": "host_python_bridge_tests_changed" },
         { "exact": "common/host_execution_lease.ps1", "reason": "host_adapter_changed" }
       ],
       "command": {
         "runner": "python",
-        "arguments": ["-m", "unittest", "common.test_host_resource_scheduler"]
+        "arguments": ["-m", "unittest", "common.test_host_resource_scheduler", "common.test_host_resource_python"]
       }
     },
     {
@@ -165,7 +168,7 @@
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
+          "regex": "^common/comsol/(?!test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -351,7 +354,7 @@
           "reason": "common_simion_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
+          "regex": "^common/comsol/(?!test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_dependency_changed"
         }
       ],
@@ -382,7 +385,7 @@
           "reason": "common_simion_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
+          "regex": "^common/comsol/(?!test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_dependency_changed"
         }
       ],
@@ -484,7 +487,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
+          "regex": "^common/comsol/(?!test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -561,7 +564,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
+          "regex": "^common/comsol/(?!test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_direct_dependency_changed"
         }
       ],
@@ -595,7 +598,7 @@
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
+          "regex": "^common/comsol/(?!test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -641,7 +644,7 @@
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
+          "regex": "^common/comsol/(?!test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -676,7 +679,7 @@
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
+          "regex": "^common/comsol/(?!test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -758,7 +761,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
+          "regex": "^common/comsol/(?!test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_direct_dependency_changed"
         }
       ],

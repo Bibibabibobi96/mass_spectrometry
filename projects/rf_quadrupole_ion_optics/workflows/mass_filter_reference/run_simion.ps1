@@ -53,6 +53,8 @@ $simion = if ($SimionExe) {
     'C:\Program Files\SIMION-2020\simion.exe'
 }
 
+$hostExecutionLease = $null
+$hostExecutionOutcome = 'failed'
 try {
     $sourceIon = [IO.Path]::GetFullPath($SourceIonPath)
     if (-not (Test-Path -LiteralPath $sourceIon -PathType Leaf)) {
@@ -361,8 +363,10 @@ try {
     $resourceUsage = Join-Path $resultDir 'simion_resource_usage.json'
     $resourceIdentityWasUnknown=([string]$dispatchPlanDocument.estimation.kind-eq'formal_first_batch_observation')
     $existingProcessRecords=@()
+    # One token follows preparation, refinement, flight and publication.
+    $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
     if($resourceIdentityWasUnknown){
-      $observation=Start-RfSimionFormalFirstBatch -SimionExe $simion -CandidateDir $candidateDir `
+      $observation=Start-RfSimionFormalFirstBatch -HostLease $hostExecutionLease -SimionExe $simion -CandidateDir $candidateDir `
         -IobPath ([string]$coreConfig.iob) -RootFly2Path ([string]$coreConfig.fly2) `
         -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource -RootRunConfigLua $runConfigLua `
         -InspectScript $inspectScript -IobReport $iobReport -LogDir $logDir `
@@ -378,7 +382,7 @@ try {
       $runConfig.execution_batch_count=[int]$batchPlanDocument.batch_count
       $runConfig|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfigPath -Encoding UTF8
     }
-    $waveReceipt = Invoke-RfSimionParticleBatchWave -SimionExe $simion -CandidateDir $candidateDir `
+    $waveReceipt = Invoke-RfSimionParticleBatchWave -HostLease $hostExecutionLease -SimionExe $simion -CandidateDir $candidateDir `
         -IobPath ([string]$coreConfig.iob) -RootFly2Path ([string]$coreConfig.fly2) `
         -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource -RootRunConfigLua $runConfigLua `
         -InspectScript $inspectScript -IobReport $iobReport -LogDir $logDir `
@@ -386,6 +390,8 @@ try {
         -BatchRuns $batchRuns -BatchPlanPath $batchPlan -DispatchPlanPath $dispatchPlan `
         -RunDir $runDir -UsagePath $resourceUsage -PythonExe $python -RepositoryRoot $repoRoot `
         -ExistingProcessRecords $existingProcessRecords -Prepared:$resourceIdentityWasUnknown
+    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+      -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
     Complete-ResourceUsage -RunDir $runDir -UsagePath $resourceUsage | Out-Null
 
     $resourceProfile = $null
@@ -485,6 +491,7 @@ try {
     $manifestOutputs = @($manifestOutputs | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -Unique)
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `
         -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
+    $hostExecutionOutcome = 'success'
     "EXECUTION=PASS DECISION=$physicalDecision RUN_ID=$RunId HITS=$($summary.hits) " +
         "TRANSMISSION=$($summary.transmission)"
 }
@@ -496,5 +503,8 @@ catch {
 } finally {
     try { Remove-RunPackageExecutionAlias -Package $package } catch {
         Write-Warning "Could not remove short execution alias after mass-filter SIMION run: $($_.Exception.Message)"
+    }
+    if ($null -ne $hostExecutionLease) {
+        Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
     }
 }

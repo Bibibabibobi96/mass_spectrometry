@@ -33,6 +33,7 @@ PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.machine_contracts import load_json, sha256
+from common.host_resource_python import run_heavy_function
 from common.simion.process_observation import run_observed_process
 from common.simion.resource_profile import discover_case_resource_profiles
 from common.simion.resource_scheduler import plan_simion_case_dispatch
@@ -513,7 +514,9 @@ def main() -> None:
         print(f"PA_BUILD=PASS CASE={case['case_id']}", flush=True)
 
     persisted_profiles = discover_case_resource_profiles(ARTIFACT_ROOT / "runs")
-    actual = _run_parallel_flights(
+    actual = run_heavy_function(
+        "projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign",
+        "_run_parallel_flights",
         primary, "actual", simion_exe, count, quality, persisted_profiles
     )
     resolution_reference = float(reference_metrics["mass_resolution"])
@@ -535,7 +538,9 @@ def main() -> None:
     ideal: dict[str, dict[str, dict[str, Any]]] = {}
     if config["ideal_field_attribution"]["execute_for_failed_radius_cases"]:
         for mode in config["ideal_field_attribution"]["modes"]:
-            ideal[mode] = _run_parallel_flights(
+            ideal[mode] = run_heavy_function(
+                "projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign",
+                "_run_parallel_flights",
                 failed, mode, simion_exe, count, quality,
                 persisted_profiles + _profiles_from_results(actual),
             ) if failed else {}
@@ -574,7 +579,9 @@ def main() -> None:
             )
             compensation.append(candidate)
             print(f"PA_BUILD=PASS CASE={candidate['case_id']}", flush=True)
-        compensation_results = _run_parallel_flights(
+        compensation_results = run_heavy_function(
+            "projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign",
+            "_run_parallel_flights",
             compensation, "actual", simion_exe, count, quality, persisted_profiles
         )
         diagnostic_ids = set(
@@ -594,7 +601,9 @@ def main() -> None:
                 + ", ".join(sorted(missing_diagnostic_ids))
             )
         for mode in config["ideal_field_attribution"]["modes"]:
-            compensation_ideal[mode] = _run_parallel_flights(
+            compensation_ideal[mode] = run_heavy_function(
+                "projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign",
+                "_run_parallel_flights",
                 diagnostic_cases, mode, simion_exe, count, quality,
                 persisted_profiles + _profiles_from_results(compensation_results),
             )
