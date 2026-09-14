@@ -55,6 +55,15 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertEqual(science["gas"]["collision_model"], "simion_official_collision_sds")
         self.assertEqual(science["gas"]["species_id"], "n2")
 
+    def test_source_cylinder_can_be_wider_than_the_first_aperture(self) -> None:
+        source = load(PROJECT / "config" / "cylindrical_ion_source.json")
+        resolved = load(PROJECT / "config" / "resolved_geometry.json")
+        gas_science = load(PROJECT / "config" / "gas_flow_science.json")
+        radius = source["geometry_mm"]["radius_mm"]
+        self.assertEqual(radius, 1.5)
+        self.assertGreater(radius, resolved["geometry_mm"]["first_cone"]["aperture_radius_mm"])
+        self.assertLess(radius, gas_science["geometry_proxy"]["upstream_plenum_radius_mm"])
+
     def test_rf_operating_point_uses_confirmed_peak_to_ground_voltage(self) -> None:
         field = load(PROJECT / "config" / "ion_transport_science.json")["electric_field"]
         basis = field["operating_point_basis"]
@@ -82,6 +91,14 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertEqual(program.count("function segment.fast_adjust()"), 1)
         self.assertEqual(program.count("function segment.tstep_adjust()"), 1)
         self.assertEqual(program.count("function segment.terminate()"), 1)
+        self.assertIn("query_or_boundary_loss", program)
+        self.assertIn("terminal_code[ion_number] = 3", program)
+        self.assertIn("gas-field query has no fluid support", program)
+        self.assertIn("ion_splat = 1", program)
+        self.assertLess(
+            program.index("function segment.other_actions()"),
+            program.index("terminal_code[ion_number] = 3"),
+        )
         self.assertIn("trajectory_samples.csv", (PROJECT / "simion" / "prepare.py").read_text(encoding="utf-8"))
 
     def test_gas_field_runner_reuses_common_iob_builder_and_real_simion_fly(self) -> None:
@@ -94,6 +111,8 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("terminal_plane_metrics.json", runner)
         self.assertIn("downstream_aperture_plate", runner)
         self.assertIn("electric_field=$science.electric_field", runner)
+        self.assertIn("terminal_code_definitions", runner)
+        self.assertIn("left validated gas-field fluid support", runner)
         self.assertIn("plot_simion_trajectory_projection.py", runner)
         self.assertIn("prototype_run_report.json", runner)
 
@@ -195,6 +214,7 @@ class GasPreparationTests(unittest.TestCase):
             source = fly2.read_text(encoding="utf-8")
             self.assertEqual(source.count("standard_beam {"), 100)
             self.assertIn("direction = vector(", source)
+            self.assertIn("gas_flow_science", receipt["inputs"])
 
     def test_uniform_rear_runtime_keeps_400_pa_and_zeroes_upstream_collisions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

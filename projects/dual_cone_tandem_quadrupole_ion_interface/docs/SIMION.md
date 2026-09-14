@@ -62,6 +62,9 @@ SIMION 前失败。当前 `gas_field_interface.json` 的 `current_artifact` 是 
 受许可约束的文件只进入运行目录，不复制进 Git。RF 电压计算冻结并复用
 `common/multipole/simion_rf_drive.lua`；粒子文件由 `common/simion/particle_source.py` 序列化。
 
+当前源圆柱半径为 `1.5 mm`，位于半径 `5 mm` 的上游储气腔内。源可以宽于第一锥 `1 mm` 孔半径；
+运行器保留这些离子，并让锥孔电极几何和一致的 COMSOL 流体支持边界代理决定其能否进入下游。
+
 当前两段 RF 均为 `570 kHz` 正弦波，电极组 1/2 分别为 `+300 sin(omega t)` 与
 `-300 sin(omega t)` V；因此每组对地峰值为 `300 V`，对置组之间为 `1200 Vpp`。`570 kHz` 是用户
 给定 `550–590 kHz` 范围的标称中点，不代表频率扫描已经完成。
@@ -88,6 +91,10 @@ COMSOL CSV 先由 `analysis/export_simion_gas_runtime.py`（或 `build_gas_runti
 
 禁止外推；整个 `z=-5..120 mm, r=0..23.5 mm` 域必须覆盖。圆四极杆在 `z=108.00 mm` 结束，孔板位于 `z=110.22..110.72 mm`，板后保留 `9.28 mm` 观察段；为防止 SDS 在终止步越过气体场，离子终止采样面设在 `z=119.75 mm`。后续飞行 Program 必须通过官方
 `collision_sds.lua` 注入这些函数，并通过共享 RF kernel 驱动电极；不得用 Python 阻尼积分器替代。
+规则网格的切割单元继续按有效流体角点归一化插值；若一步推进完全离开流体支持但尚未由粗 PA 表面
+终止，Program 将其记录为边界代理损失码 `3` 并停止该离子。该码与锥壁位置一致，但受 `0.1 mm`
+流场网格、`0.5 mm` PA 网格和未确认锥口圆角限制，不能单独解释为精确实机撞壁率。真正越出治理坐标域
+仍是运行错误，不能按损失吞掉。
 
 原型粒子数和当前资格见 [PROJECT](PROJECT.md#当前资格)，束斑统计与原记录的限制见
 [原型历史记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。

@@ -11,7 +11,7 @@
     "center_x_mm": 0.0,
     "center_y_mm": 0.0,
     "center_z_mm": -1.0,
-    "radius_mm": 0.5,
+    "radius_mm": 1.5,
     "axial_length_mm": 1.5
   },
   "velocity_distribution": {

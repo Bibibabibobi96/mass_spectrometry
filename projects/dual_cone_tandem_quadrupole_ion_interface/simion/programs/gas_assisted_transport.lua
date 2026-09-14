@@ -32,6 +32,7 @@ local trajectory_stream
 local final_stream
 local next_sample_us = {}
 local terminal_code = {}
+local gas_support_lost = {}
 
 local function set_electrode_voltage(id, voltage)
   assert(id == 1 or id == 2 or id == 3 or id == 11 or id == 12 or id == 21 or id == 22,
@@ -71,6 +72,10 @@ function segment.initialize()
 end
 
 function segment.other_actions()
+  if gas_support_lost[ion_number] then
+    terminal_code[ion_number] = 3
+    ion_splat = 1
+  end
   if ion_time_of_flight >= (next_sample_us[ion_number] or 0) then
     emit_sample()
     next_sample_us[ion_number] = ion_time_of_flight + config.trajectory_sample_interval_us
@@ -102,17 +107,25 @@ if config.mode == 'gas_assisted_transport' then
     assert(type(field[name]) == 'function', 'gas field omits ' .. name)
   end
   local SDS = simion.import(assert(config.collision_sds_lua), 'noinstall')
+  local function query_or_boundary_loss(query, fallback, x, y, z)
+    if gas_support_lost[ion_number] then return unpack(fallback) end
+    local result = {pcall(query, x-config.device_x_offset_mm,
+      y-config.device_y_offset_mm,z-config.device_z_offset_mm)}
+    if result[1] then return unpack(result, 2) end
+    if tostring(result[2]):find('gas-field query has no fluid support', 1, true) then
+      gas_support_lost[ion_number] = true
+      return unpack(fallback)
+    end
+    error(result[2])
+  end
   SDS.pressure = function(x,y,z)
-    return field.pressure_pa(x-config.device_x_offset_mm,
-      y-config.device_y_offset_mm,z-config.device_z_offset_mm) * (760/101325)
+    return query_or_boundary_loss(field.pressure_pa, {0}, x, y, z) * (760/101325)
   end
   SDS.temperature = function(x,y,z)
-    return field.temperature_k(x-config.device_x_offset_mm,
-      y-config.device_y_offset_mm,z-config.device_z_offset_mm)
+    return query_or_boundary_loss(field.temperature_k, {300}, x, y, z)
   end
   SDS.velocity = function(x,y,z)
-    return field.velocity_m_s(x-config.device_x_offset_mm,
-      y-config.device_y_offset_mm,z-config.device_z_offset_mm)
+    return query_or_boundary_loss(field.velocity_m_s, {0,0,0}, x, y, z)
   end
   SDS.install()
 elseif config.mode ~= 'c0_gem_smoke' then

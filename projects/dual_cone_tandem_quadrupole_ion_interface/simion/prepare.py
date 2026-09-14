@@ -25,6 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCIENCE = PROJECT_ROOT / "config" / "ion_transport_science.json"
 GAS_INTERFACE = PROJECT_ROOT / "config" / "gas_field_interface.json"
+GAS_FLOW_SCIENCE = PROJECT_ROOT / "config" / "gas_flow_science.json"
 CYLINDRICAL_SOURCE = PROJECT_ROOT / "config" / "cylindrical_ion_source.json"
 RF_KERNEL = REPO_ROOT / "common" / "multipole" / "simion_rf_drive.lua"
 PROGRAM = PROJECT_ROOT / "simion" / "programs" / "gas_assisted_transport.lua"
@@ -173,7 +174,7 @@ def _render_run_config(
 
 
 def _materialize_gas_source(
-    *, frozen: Path, solver: Path, resolved: dict[str, Any]
+    *, frozen: Path, solver: Path, resolved: dict[str, Any], gas_science: dict[str, Any]
 ) -> tuple[Path, Path, dict[str, Any]]:
     spec = _load(CYLINDRICAL_SOURCE, "continuous_axial_volume_ion_beam_source")
     geometry = spec["geometry_mm"]
@@ -181,8 +182,9 @@ def _materialize_gas_source(
     z_min = float(geometry["center_z_mm"]) - 0.5 * float(geometry["axial_length_mm"])
     z_max = float(geometry["center_z_mm"]) + 0.5 * float(geometry["axial_length_mm"])
     first_cone = resolved["geometry_mm"]["first_cone"]
-    if radius > float(first_cone["aperture_radius_mm"]):
-        raise ValueError("cylindrical source radius exceeds the first-cone aperture")
+    plenum_radius = float(gas_science["geometry_proxy"]["upstream_plenum_radius_mm"])
+    if radius > plenum_radius:
+        raise ValueError("cylindrical source radius exceeds the upstream plenum")
     if z_min < -2.0 or z_max >= float(first_cone["aperture_reference_z_mm"]):
         raise ValueError("cylindrical source must remain upstream of the first cone inside the PA")
 
@@ -234,6 +236,7 @@ def prepare(
     numerics = _load(DEFAULT_NUMERICS, "dual_cone_simion_solver_numerics")
     science = _load(SCIENCE, "dual_cone_simion_ion_transport_science")
     interface = _load(GAS_INTERFACE, "dual_cone_simion_gas_field_interface")
+    gas_science = _load(GAS_FLOW_SCIENCE, "dual_cone_axisymmetric_gas_flow_science_contract")
     if science.get("trajectory_authority") != "simion":
         raise ValueError("SIMION must remain the trajectory authority")
 
@@ -300,7 +303,10 @@ def prepare(
         }
         inputs["gas_field_manifest_identity"] = manifest
         source_fly2, source_states, source_receipt = _materialize_gas_source(
-            frozen=frozen, solver=solver, resolved=resolved
+            frozen=frozen, solver=solver, resolved=resolved, gas_science=gas_science
+        )
+        inputs["gas_flow_science"] = freeze_file(
+            GAS_FLOW_SCIENCE, frozen / "gas_flow_science.json"
         )
         inputs["cylindrical_ion_source_spec"] = freeze_file(
             CYLINDRICAL_SOURCE, frozen / "cylindrical_ion_source.json"

@@ -101,6 +101,12 @@ $report=[ordered]@{
   }
   downstream_aperture_plate=$resolved.geometry_mm.downstream_aperture_plate
   terminal_plane_device_z_mm=([double]$resolved.geometry_mm.downstream_aperture_plate.downstream_observation_end_z_mm-0.5*[double]$numerics.pa.cell_mm_xyz.z)
+  terminal_code_definitions=[ordered]@{
+    '0'='SIMION native geometry or otherwise unclassified splat'
+    '1'='reached governed terminal plane'
+    '2'='maximum flight time reached'
+    '3'='left validated gas-field fluid support'
+  }
   transport_metrics=$metrics
   trajectory_csv=[IO.Path]::GetFullPath($trajectory)
   final_state_csv=[IO.Path]::GetFullPath($finalState)
