@@ -2,6 +2,10 @@
 
 返回[仓库入口](../README.md)。本页索引已完成审计；当前规则见[生命周期](LIFECYCLE.md)，项目资格见所属 PROJECT。历史记录描述当时事实，不自动构成当前状态。
 
+## 公共机制与执行资源
+
+- [2026-09-14 公共提炼、阶段调度与验收边界](history/20260914__common-reuse-and-host-stage-scheduler.md)
+
 ## 文档整治
 
 - [2026-09-14 任务阅读路径、内容收口与检索验收](history/20260914__documentation-reading-upgrade.md)
