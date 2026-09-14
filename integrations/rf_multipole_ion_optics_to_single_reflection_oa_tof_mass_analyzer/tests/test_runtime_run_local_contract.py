@@ -568,7 +568,8 @@ $startupArguments = @()
 foreach ($protectedPath in $artifactCapacityProtectedPaths) {
   $startupArguments += @('--protect-path',$protectedPath)
 }
-if ($startupArguments -notcontains $env:RF_PREDECESSOR) {
+if ($startupArguments -notcontains
+    (Get-Item -LiteralPath $env:RF_PREDECESSOR).FullName) {
   throw 'resume predecessor is absent from startup capacity arguments'
 }
 $outside = Join-Path (Split-Path -Parent $env:RF_ARTIFACT_ROOT) 'outside'

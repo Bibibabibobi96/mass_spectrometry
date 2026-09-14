@@ -128,6 +128,8 @@ effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_
 码或结果文件存在声明成功。
 
 两入口同时冻结主机调度 facade、Python 核心、策略和 PowerShell 7 检查四个公共依赖，并向冻结执行链传递已选 Python 路径；预算与继承规则见[主机资源调度](../../docs/OPERATIONS.md#主机资源调度)。
+源码清单以解析后的复制根目录计算相对路径，避免 Windows 8.3 短路径与长路径拼写不同导致依赖项
+漏列；文件内容仍按原始 SHA-256 校验，不以路径规范化代替内容身份。
 
 COMSOL 父 runner 先持普通轻任务 `prepare`，在启动冻结公共 launcher 前释放自己的许可并恢复继承环境；
 子 launcher 独立管理准备、求解和清理阶段，终态后父 runner 重新申请普通轻任务 `postprocess` 完成校验与发布。

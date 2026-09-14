@@ -918,7 +918,7 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                     resolved_population_path=paths["population"],
                 )
             self.assertIsNone(table)
-            self.assertEqual(receipt_path, compact_receipt)
+            self.assertEqual(receipt_path.resolve(), compact_receipt.resolve())
             self.assertEqual(receipt["selected_time_us"], 12.5)
             self.assertIs(receipt["publication_evidence"]["pulse_reselection_performed"], False)
 

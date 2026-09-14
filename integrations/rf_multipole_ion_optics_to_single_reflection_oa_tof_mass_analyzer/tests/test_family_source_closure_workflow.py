@@ -601,11 +601,18 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "field_loading_policy_id": POST_PULSE_FIELD_LOADING_POLICY_ID,
         }
         experiment = {"single_flight_time_integration_profile_id": "dt40"}
-        plan = resolve_single_flight_dispatch_plan(experiment, **arguments)
+        host_memory_bytes = 64 * 1024**3
+        with patch(
+            "common.simion.resource_scheduler.physical_memory_bytes",
+            return_value=(host_memory_bytes, host_memory_bytes),
+        ):
+            plan = resolve_single_flight_dispatch_plan(experiment, **arguments)
+            profile["resource_identity"]["field_loading_policy_id"] = (
+                POST_PULSE_FIELD_LOADING_POLICY_ID
+            )
+            matched = resolve_single_flight_dispatch_plan(experiment, **arguments)
         self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
         self.assertEqual(plan["waves"][0]["batches"][0]["count"], 1)
-        profile["resource_identity"]["field_loading_policy_id"] = POST_PULSE_FIELD_LOADING_POLICY_ID
-        matched = resolve_single_flight_dispatch_plan(experiment, **arguments)
         self.assertEqual(matched["estimation"]["kind"], "exact_resource_profile")
 
     def test_flat_authoring_expands_shared_controls_and_gap_rows(self) -> None:
@@ -1789,7 +1796,8 @@ New-Item -ItemType Directory -Path (Join-Path $child 'logs') -Force | Out-Null
 $accepted = Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
   -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a' -ExperimentId 'experiment_a'
 if ($null -eq $accepted -or $accepted.run_id -ne ($expected + '__r01') -or $accepted.status -ne 'failed' -or
-    $accepted.pre_pulse_child_run_directory -ne $child) {
+    (Get-Item -LiteralPath $accepted.pre_pulse_child_run_directory).FullName -ne
+      (Get-Item -LiteralPath $child).FullName) {
   throw 'partial suffix did not recover prior same-campaign failure'
 }
 

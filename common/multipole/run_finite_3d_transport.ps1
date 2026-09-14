@@ -184,8 +184,9 @@ try{
       -Destination (Join-Path $codeRoot $relative)|Out-Null
   }
   $codeInventory=Join-Path $inputDir 'code_inventory.json'
+  $resolvedCodeRoot=(Resolve-Path -LiteralPath $codeRoot).Path
   $inventory=@(Get-ChildItem -LiteralPath $codeRoot -Recurse -File|Sort-Object FullName|ForEach-Object{
-    [ordered]@{path=$_.FullName.Substring($codeRoot.Length+1).Replace('\','/');sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
+    [ordered]@{path=[IO.Path]::GetRelativePath($resolvedCodeRoot,$_.FullName).Replace('\','/');sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
   })
   [ordered]@{schema_version=1;role='frozen_code_inventory';files=$inventory}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $codeInventory -Encoding UTF8

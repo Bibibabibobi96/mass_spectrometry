@@ -73,7 +73,10 @@ class PublishDerivedPostPulseCampaignTests(unittest.TestCase):
                         **{evidence_keyword: evidence},
                     )
 
-                self.assertEqual(campaign_path, output / "results" / "derived_post_pulse_campaign.json")
+                    self.assertEqual(
+                        campaign_path.resolve(),
+                        (output / "results" / "derived_post_pulse_campaign.json").resolve(),
+                    )
                 arguments = derive.call_args.kwargs
                 self.assertEqual(arguments[derive_keyword], evidence.resolve())
                 self.assertIsNone(

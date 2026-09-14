@@ -35,7 +35,7 @@ class CompletedSingleFlightRecoveryTests(unittest.TestCase):
                 requested_path=repo / "simulation_repo" / "config" / "campaign.json",
                 recorded_path="simulation_repo/config/campaign.json",
             )
-            self.assertEqual(resolved, campaign)
+            self.assertEqual(resolved.resolve(), campaign.resolve())
 
     def test_recovery_prefers_run_local_frozen_input_over_transient_copy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -1,4 +1,5 @@
 import csv
+import ctypes
 import hashlib
 import json
 import math
@@ -17,6 +18,20 @@ from common.simion.resource_profile import publish_resource_profile
 
 RUNNER = Path(__file__).resolve().parent / "run_simion_finite_3d_transport.ps1"
 REPO_ROOT = Path(__file__).parents[2]
+
+
+def _short_windows_path(path: Path) -> Path:
+    """Return an existing path's 8.3 spelling when Windows exposes one."""
+    if sys.platform != "win32":
+        return path
+    get_short_path = ctypes.windll.kernel32.GetShortPathNameW
+    required = get_short_path(str(path), None, 0)
+    if required == 0:
+        return path
+    buffer = ctypes.create_unicode_buffer(required)
+    if get_short_path(str(path), buffer, required) == 0:
+        return path
+    return Path(buffer.value)
 
 
 class SimionRunnerContractTests(unittest.TestCase):
@@ -105,7 +120,7 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
             capacity = source[source.index("$hostRuntimeSourcePaths="):source.index("$package=New-RunPackage")]
             freeze = source[source.index("  $codeRoot=Join-Path $inputDir 'code'"):source.index("  $manifestRepoRoot=$codeRoot")]
             with self.subTest(runner=runner_name), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = _short_windows_path(Path(directory))
                 def quoted(path: Path) -> str:
                     return "'" + str(path).replace("'", "''") + "'"
                 script = (

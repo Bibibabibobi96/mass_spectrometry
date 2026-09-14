@@ -706,7 +706,7 @@ Write-Output 'WRITER_GUARDS=PASS'
 """
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
-                env=dict(os.environ, WRITER_FIXTURE_DIRECTORY=directory),
+                env=dict(os.environ, WRITER_FIXTURE_DIRECTORY=str(Path(directory).resolve())),
                 check=False, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=30,
             )

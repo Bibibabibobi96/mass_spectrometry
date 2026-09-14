@@ -135,7 +135,10 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 require_terminal_taxonomy=True,
             )
             publication = _prepare_published_reanalysis(args)
-            self.assertEqual(publication["checkpoints"], target / "results" / "single_flight_particle_checkpoints.csv")
+            self.assertEqual(
+                publication["checkpoints"].resolve(),
+                (target / "results" / "single_flight_particle_checkpoints.csv").resolve(),
+            )
             config = json.loads((target / "run_config.json").read_text(encoding="utf-8"))
             self.assertEqual(config["parameters"]["source_run_id"], "source")
             self.assertFalse(config["parameters"]["solver_rerun"])
