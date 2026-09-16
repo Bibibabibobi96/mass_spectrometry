@@ -4,6 +4,8 @@
 
 ## 公共机制与执行资源
 
+- [2026-09-16 公共执行机制与代码整治验收](history/20260916__code-consolidation.md)
+
 - [2026-09-16 代码规模、重复与复杂度深审](history/20260916__code-size-and-complexity-audit.md)
 
 - [2026-09-16 文件保留、容量与处置审计](history/20260916__file-retention-and-storage-audit.md)
