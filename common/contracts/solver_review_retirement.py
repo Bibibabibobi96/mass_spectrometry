@@ -7,21 +7,17 @@ retirement receipt becomes the only valid verifier for the reduced run.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
-import stat
 import subprocess
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic as _atomic_json
+from common.contracts.file_identity import file_sha256
 from common.contracts.artifact_retention import classify_file, validate_retention
-from common.contracts.reconcile_artifact_capacity import (
-    _load_capacity_protection_leases,
-    _protected,
-)
+from common.contracts import capacity_protection as protection
 from common.contracts.verify_run_manifest import record_path, verify_record
 
 RECEIPT_NAME = "solver_review_retirement_receipt.json"
@@ -38,29 +34,6 @@ def _json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RetirementError(f"JSON document must be an object: {path}")
     return value
-
-
-def _sha(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest().upper()
-
-
-def _atomic_json(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(value, stream, indent=2, ensure_ascii=False)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
 
 
 def _under(path: Path, root: Path) -> Path:
@@ -173,7 +146,7 @@ def _file_inventory(run: dict[str, Any], *, retired_paths: Iterable[Path] = ()) 
         record = records.get(path.resolve())
         bytes_count = path.stat().st_size
         manifest_sha = str(record.get("sha256")).upper() if record and record.get("sha256") else None
-        actual_sha = _sha(path)
+        actual_sha = file_sha256(path)
         if record and (record["bytes"] != bytes_count or manifest_sha != actual_sha):
             raise RetirementError(f"manifest identity changed: {path}")
         inventory.append({
@@ -244,13 +217,13 @@ def plan_retirement(
             for item in prior.get("removed_files", [])
             if not (target_run / item["path"]).is_file()
         ]
-        prior_pending_sha = _sha(target_run / RECEIPT_NAME)
+        prior_pending_sha = file_sha256(target_run / RECEIPT_NAME)
     target = _load_run(target_run)
     replacement = _load_run(replacement_run)
     _manifest_records(replacement)
     if prior_pending_sha and (
-        prior["target_manifest"]["sha256"] != _sha(target_run / "run_manifest.json")
-        or prior["replacement_manifest"]["sha256"] != _sha(replacement_run / "run_manifest.json")
+        prior["target_manifest"]["sha256"] != file_sha256(target_run / "run_manifest.json")
+        or prior["replacement_manifest"]["sha256"] != file_sha256(replacement_run / "run_manifest.json")
         or prior["replacement_run_path"] != str(replacement_run)
     ):
         raise RetirementError("pending retirement manifest identity changed")
@@ -264,8 +237,8 @@ def plan_retirement(
         raise RetirementError(
             f"target still has active references: git_documents={document_refs}, downstream={downstream_refs}"
         )
-    leases = _load_capacity_protection_leases(artifact_root)
-    if _protected(target_run, leases["protected_paths"]):
+    leases = protection.load_capacity_protection_leases(artifact_root)
+    if protection.path_is_protected(target_run, leases["protected_paths"]):
         raise RetirementError("target is covered by an active capacity protection lease")
     topology = _topology_compatible(target, replacement, compatibility_input_roles)
     inventory = _file_inventory(
@@ -286,8 +259,8 @@ def plan_retirement(
         "replacement_run_path": str(replacement_run),
         "compatibility_assertion": compatibility_assertion.strip(),
         "compatibility_checks": topology,
-        "target_manifest": {"bytes": (target_run / "run_manifest.json").stat().st_size, "sha256": _sha(target_run / "run_manifest.json")},
-        "replacement_manifest": {"bytes": (replacement_run / "run_manifest.json").stat().st_size, "sha256": _sha(replacement_run / "run_manifest.json")},
+        "target_manifest": {"bytes": (target_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(target_run / "run_manifest.json")},
+        "replacement_manifest": {"bytes": (replacement_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(replacement_run / "run_manifest.json")},
         "original_file_inventory": inventory,
         "removed_files": removed,
         "preserved_files": preserved,
@@ -304,7 +277,7 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
     target = Path(plan["target_run_path"])
     replacement = Path(plan["replacement_run_path"])
     for label, path in (("target", target), ("replacement", replacement)):
-        if _sha(path / "run_manifest.json") != plan[f"{label}_manifest"]["sha256"]:
+        if file_sha256(path / "run_manifest.json") != plan[f"{label}_manifest"]["sha256"]:
             raise RetirementError(f"{label} run manifest changed before apply")
     _manifest_records(_load_run(replacement))
     _file_inventory(
@@ -330,13 +303,11 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
                     raise RetirementError(f"previously removed payload reappeared: {item['path']}")
                 removed_bytes += item["bytes"]
                 continue
-            if not path.is_file() or path.stat().st_size != item["bytes"] or _sha(path) != item["sha256"]:
-                raise RetirementError(f"heavy payload identity changed before removal: {item['path']}")
             try:
-                path.unlink()
-            except PermissionError:
-                path.chmod(path.stat().st_mode | stat.S_IWRITE)
-                path.unlink()
+                for _ in remove_recorded_files(target, [item]):
+                    pass
+            except ValueError as exc:
+                raise RetirementError(str(exc)) from exc
             removed_bytes += item["bytes"]
         complete = {
             **pending,
@@ -365,18 +336,18 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
     for name in ("run_config.json", "summary.json", "run_manifest.json"):
         if not (run_dir / name).is_file():
             raise RetirementError(f"required historical record missing: {name}")
-    if _sha(run_dir / "run_manifest.json") != receipt["target_manifest"]["sha256"]:
+    if file_sha256(run_dir / "run_manifest.json") != receipt["target_manifest"]["sha256"]:
         raise RetirementError("original run manifest changed")
     replacement = Path(receipt["replacement_run_path"])
     _manifest_records(_load_run(replacement))
-    if _sha(replacement / "run_manifest.json") != receipt["replacement_manifest"]["sha256"]:
+    if file_sha256(replacement / "run_manifest.json") != receipt["replacement_manifest"]["sha256"]:
         raise RetirementError("replacement run manifest changed")
     for item in receipt["removed_files"]:
         if (run_dir / item["path"]).exists():
             raise RetirementError(f"retired heavy payload reappeared: {item['path']}")
     for item in receipt["preserved_files"]:
         path = run_dir / item["path"]
-        if not path.is_file() or path.stat().st_size != item["bytes"] or _sha(path) != item["sha256"]:
+        if not path.is_file() or path.stat().st_size != item["bytes"] or file_sha256(path) != item["sha256"]:
             raise RetirementError(f"preserved evidence identity differs: {item['path']}")
     return {
         "schema_version": 1,

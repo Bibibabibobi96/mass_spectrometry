@@ -10,7 +10,7 @@ from unittest.mock import patch
 from common.contracts.file_identity import file_sha256
 from common.contracts import reconcile_interrupted_compact_runs as reconciliation
 from common.contracts.reconcile_interrupted_compact_runs import reconcile, summarize
-from common.contracts.reconcile_artifact_capacity import create_capacity_protection_lease
+from common.contracts.capacity_protection import create_capacity_protection_lease
 
 
 class InterruptedCompactReconciliationTests(unittest.TestCase):

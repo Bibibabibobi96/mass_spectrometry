@@ -16,17 +16,17 @@ import hashlib
 import json
 import math
 import os
-import re
 import shutil
-import stat
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from common.contracts import capacity_protection as protection
 from common.contracts import reconcile_interrupted_compact_runs as compact
 from common.contracts.artifact_retention import classify_file
+from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic as _write_json_atomic
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import verify_record
 
@@ -34,26 +34,9 @@ GIB = 1024**3
 # Run manifests in this repository publish successful solver work as
 # ``success``. Terminal runs cannot keep a reconstructible cache active.
 TERMINAL = {"success", "completed", "failed", "interrupted", "cancelled", "aborted"}
-CACHE_KEY = re.compile(r"\b[a-f0-9]{64}\b", re.IGNORECASE)
-LEASE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 POLICY_PATH = Path(__file__).with_name("artifact_capacity_policy.json")
-PROTECTION_LEASE_DIRECTORY = Path("common") / "capacity_protection_leases"
 DISPOSAL_RECEIPT_DIRECTORY = Path("common") / "capacity_disposal_receipts"
 HEAVY_RETENTION_ROLES = {"solver_native_binary", "dense_trajectory", "large_optional"}
-
-
-class CapacityProtectionLeaseError(RuntimeError):
-    """A protection lease is unreadable or cannot be trusted safely."""
-
-    def __init__(self, path: Path, reason: str) -> None:
-        self.audit = {
-            "schema_version": 1,
-            "role": "artifact_capacity_protection_lease_audit",
-            "status": "invalid",
-            "path": str(path),
-            "reason": reason,
-        }
-        super().__init__(f"invalid artifact-capacity protection lease {path}: {reason}")
 
 
 def _published_pa_cache_key(pointer_path: Path) -> str | None:
@@ -68,7 +51,7 @@ def _published_pa_cache_key(pointer_path: Path) -> str | None:
     """
 
     key = pointer_path.parent.name.lower()
-    if not CACHE_KEY.fullmatch(key):
+    if not protection.CACHE_KEY.fullmatch(key):
         return None
     pointer = _load_object(pointer_path)
     if pointer is None:
@@ -261,202 +244,8 @@ def _active_cache_keys(root: Path) -> set[str]:
     return {
         key.lower()
         for _, text in _active_run_reference_texts(root)
-        for key in CACHE_KEY.findall(text)
+        for key in protection.CACHE_KEY.findall(text)
     }
-
-
-def _utc_timestamp(value: object) -> tuple[float, str] | None:
-    """Parse a manifest UTC time without accepting an ambiguous local time."""
-
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return None
-    normalized = parsed.astimezone(timezone.utc)
-    return normalized.timestamp(), normalized.isoformat().replace("+00:00", "Z")
-
-
-def _validated_lease_id(value: object) -> str:
-    if not isinstance(value, str) or LEASE_ID.fullmatch(value) is None:
-        raise ValueError("lease_id must be a safe 1-128 character identifier")
-    return value
-
-
-def _lease_path(root: Path, lease_id: str) -> Path:
-    return root / PROTECTION_LEASE_DIRECTORY / f"{_validated_lease_id(lease_id)}.json"
-
-
-def _relative_protected_path(root: Path, value: Path) -> str:
-    root_resolved = root.resolve()
-    candidate = value if value.is_absolute() else root_resolved / value
-    candidate = candidate.resolve(strict=False)
-    try:
-        relative = candidate.relative_to(root_resolved)
-    except ValueError as exc:
-        raise ValueError("protected path must remain below the artifact root") from exc
-    if not relative.parts:
-        raise ValueError("the artifact root itself cannot be protected by a lease")
-    return relative.as_posix()
-
-
-def create_capacity_protection_lease(
-    root: Path, *, lease_id: str, owner: str, ttl_seconds: int,
-    protected_cache_keys: Iterable[str] = (), protected_paths: Iterable[Path] = (),
-    now: datetime | None = None,
-) -> dict[str, Any]:
-    """Create one immutable TTL protection lease below ``artifacts/common``."""
-
-    root = root.absolute()
-    if not root.is_dir():
-        raise ValueError("artifact root must exist")
-    lease_id = _validated_lease_id(lease_id)
-    if not isinstance(owner, str) or not owner.strip():
-        raise ValueError("lease owner must be nonempty")
-    if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or ttl_seconds <= 0:
-        raise ValueError("lease TTL seconds must be a positive integer")
-    keys = sorted({str(key).lower() for key in protected_cache_keys})
-    if any(CACHE_KEY.fullmatch(key) is None for key in keys):
-        raise ValueError("every protected cache key must be one SHA-256 key")
-    paths = sorted({_relative_protected_path(root, Path(path)) for path in protected_paths})
-    if not keys and not paths:
-        raise ValueError("a protection lease must protect at least one cache key or path")
-    created = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    expires = datetime.fromtimestamp(created.timestamp() + ttl_seconds, timezone.utc)
-    document = {
-        "schema_version": 1,
-        "role": "artifact_capacity_protection_lease",
-        "lease_id": lease_id,
-        "owner": owner.strip(),
-        "created_at_utc": created.isoformat().replace("+00:00", "Z"),
-        "expires_at_utc": expires.isoformat().replace("+00:00", "Z"),
-        "protected_cache_keys": keys,
-        "protected_paths": paths,
-    }
-    path = _lease_path(root, lease_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with path.open("x", encoding="utf-8", newline="\n") as stream:
-            json.dump(document, stream, indent=2)
-            stream.write("\n")
-    except FileExistsError as exc:
-        raise ValueError(f"protection lease already exists: {lease_id}") from exc
-    return {**document, "path": str(path)}
-
-
-def delete_capacity_protection_lease(root: Path, *, lease_id: str) -> dict[str, Any]:
-    """Delete exactly one named protection lease; missing leases are a no-op."""
-
-    root = root.absolute()
-    if not root.is_dir():
-        raise ValueError("artifact root must exist")
-    path = _lease_path(root, lease_id)
-    try:
-        path.unlink()
-        deleted = True
-    except FileNotFoundError:
-        deleted = False
-    return {
-        "schema_version": 1,
-        "role": "artifact_capacity_protection_lease_deletion",
-        "lease_id": lease_id,
-        "path": str(path),
-        "deleted": deleted,
-    }
-
-
-def _load_capacity_protection_leases(
-    root: Path, *, now: datetime | None = None,
-) -> dict[str, Any]:
-    """Load and union active leases, failing closed on an ambiguous document."""
-
-    lease_root = root / PROTECTION_LEASE_DIRECTORY
-    result: dict[str, Any] = {
-        "protected_cache_keys": set(),
-        "protected_paths": set(),
-        "audit": [],
-    }
-    if not lease_root.exists():
-        return result
-    if not lease_root.is_dir() or lease_root.is_symlink():
-        raise CapacityProtectionLeaseError(lease_root, "lease root is not a real directory")
-    observed = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).timestamp()
-    for path in sorted(lease_root.iterdir(), key=lambda item: item.name):
-        if not path.is_file() or path.is_symlink() or path.suffix != ".json":
-            raise CapacityProtectionLeaseError(path, "lease directory contains a non-JSON file")
-        try:
-            document = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise CapacityProtectionLeaseError(path, f"lease JSON is unreadable: {exc}") from exc
-        if not isinstance(document, dict):
-            raise CapacityProtectionLeaseError(path, "lease JSON must be an object")
-        expiry = _utc_timestamp(document.get("expires_at_utc"))
-        if expiry is None:
-            raise CapacityProtectionLeaseError(path, "expires_at_utc must be timezone-aware")
-        audit = {
-            "path": str(path),
-            "lease_id": document.get("lease_id", path.stem),
-            "owner": document.get("owner"),
-            "expires_at_utc": expiry[1],
-        }
-        if expiry[0] <= observed:
-            result["audit"].append({**audit, "status": "expired_ignored"})
-            continue
-        expected_fields = {
-            "schema_version", "role", "lease_id", "owner", "created_at_utc",
-            "expires_at_utc", "protected_cache_keys", "protected_paths",
-        }
-        try:
-            lease_id = _validated_lease_id(document.get("lease_id"))
-        except ValueError as exc:
-            raise CapacityProtectionLeaseError(path, str(exc)) from exc
-        created = _utc_timestamp(document.get("created_at_utc"))
-        keys = document.get("protected_cache_keys")
-        paths = document.get("protected_paths")
-        malformed = (
-            set(document) != expected_fields
-            or document.get("schema_version") != 1
-            or document.get("role") != "artifact_capacity_protection_lease"
-            or path.name != f"{lease_id}.json"
-            or not isinstance(document.get("owner"), str)
-            or not document["owner"].strip()
-            or created is None
-            or created[0] >= expiry[0]
-            or not isinstance(keys, list)
-            or not isinstance(paths, list)
-            or any(not isinstance(key, str) or CACHE_KEY.fullmatch(key) is None for key in keys or ())
-            or any(not isinstance(item, str) or not item for item in paths or ())
-            or (not keys and not paths)
-        )
-        if malformed:
-            raise CapacityProtectionLeaseError(path, "active lease fields differ from schema version 1")
-        resolved_paths: set[Path] = set()
-        try:
-            for item in paths:
-                if Path(item).is_absolute() or Path(item).as_posix() != item:
-                    raise ValueError("protected paths must be canonical artifact-root-relative paths")
-                relative = _relative_protected_path(root, Path(item))
-                if relative != item:
-                    raise ValueError("protected path is not canonical")
-                # Preserve the artifact root's accepted spelling (including a
-                # Windows 8.3 temporary path) after the resolved containment
-                # check, so comparisons match candidates from the same root.
-                resolved_paths.add((root / Path(item)).absolute())
-        except ValueError as exc:
-            raise CapacityProtectionLeaseError(path, str(exc)) from exc
-        normalized_keys = {key.lower() for key in keys}
-        result["protected_cache_keys"].update(normalized_keys)
-        result["protected_paths"].update(resolved_paths)
-        result["audit"].append({
-            **audit,
-            "status": "active",
-            "protected_cache_key_count": len(normalized_keys),
-            "protected_path_count": len(resolved_paths),
-        })
-    return result
 
 
 def _last_successful_cache_uses(root: Path) -> dict[str, tuple[float, str]]:
@@ -474,11 +263,11 @@ def _last_successful_cache_uses(root: Path) -> dict[str, tuple[float, str]]:
         document = _load_object(manifest)
         if document is None or str(document.get("status", "")).lower() not in {"success", "completed"}:
             continue
-        observed = _utc_timestamp(document.get("recorded_at_utc"))
+        observed = protection.parse_utc_timestamp(document.get("recorded_at_utc"))
         if observed is None:
             continue
         try:
-            keys = {key.lower() for key in CACHE_KEY.findall(manifest.read_text(encoding="utf-8-sig"))}
+            keys = {key.lower() for key in protection.CACHE_KEY.findall(manifest.read_text(encoding="utf-8-sig"))}
         except (OSError, UnicodeDecodeError):
             continue
         for key in keys:
@@ -491,10 +280,6 @@ def _is_capacity_excluded_path(path: Path) -> bool:
     """Exclude preserved evidence and scratch requiring object-specific review."""
 
     return any(part.lower() in {"formal", "archive", "scratch"} for part in path.parts)
-
-
-def _protected(path: Path, protected_paths: Iterable[Path]) -> bool:
-    return any(path == item or item in path.parents or path in item.parents for item in protected_paths)
 
 
 def _active_run_reference_texts(root: Path) -> tuple[tuple[Path, str], ...]:
@@ -538,7 +323,7 @@ def _has_active_run_reference(
 def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], last_successful_uses: dict[str, tuple[float, str]],
                      protected_paths: Iterable[Path], directory_bytes: dict[Path, int],
                      policy: dict[str, Any]) -> dict[str, Any] | None:
-    if _is_capacity_excluded_path(cache_key_dir) or _protected(cache_key_dir, protected_paths):
+    if _is_capacity_excluded_path(cache_key_dir) or protection.path_is_protected(cache_key_dir, protected_paths):
         return None
     name = cache_key_dir.name.lower()
     mtime = cache_key_dir.stat().st_mtime
@@ -547,7 +332,7 @@ def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], last_success
         # Age alone does not establish that a staging writer has stopped or
         # that its unpublished bytes are reconstructible. Review it explicitly.
         return None
-    if not CACHE_KEY.fullmatch(name) or name in protected_keys:
+    if not protection.CACHE_KEY.fullmatch(name) or name in protected_keys:
         return None
     pointer = cache_key_dir / "current_generation.json"
     if not pointer.is_file():
@@ -642,7 +427,7 @@ def _compact_candidates(root: Path, protected_paths: Iterable[Path], policy: dic
         if not run_root.is_dir() or _is_capacity_excluded_path(run_root):
             continue
         for run_dir in run_root.iterdir():
-            if not run_dir.is_dir() or _protected(run_dir, protected_paths):
+            if not run_dir.is_dir() or protection.path_is_protected(run_dir, protected_paths):
                 continue
             try:
                 report = compact.inspect_run(run_dir)
@@ -671,7 +456,7 @@ def _unmanaged_run_candidates(
         for run_dir in run_root.iterdir():
             if (
                 not run_dir.is_dir()
-                or _protected(run_dir, protected_paths)
+                or protection.path_is_protected(run_dir, protected_paths)
                 or (run_dir / "run_manifest.json").exists()
                 or (run_dir / "summary.json").exists()
                 or (run_dir / "run_config.json").exists()
@@ -733,7 +518,7 @@ def _success_build_payload_candidate(
         run_dir.parent.name != "runs"
         or not run_dir.is_dir()
         or _is_capacity_excluded_path(run_dir)
-        or _protected(run_dir, protected_paths)
+        or protection.path_is_protected(run_dir, protected_paths)
         or _has_active_run_reference(run_dir, active_references)
         or (run_dir / "capacity_retirement_actions.json").exists()
     ):
@@ -772,7 +557,7 @@ def _success_build_payload_candidate(
     removable_bytes = sum(int(item["bytes"]) for item in removable)
     if not removable_bytes:
         return None
-    recorded_at = _utc_timestamp(manifest.get("recorded_at_utc"))
+    recorded_at = protection.parse_utc_timestamp(manifest.get("recorded_at_utc"))
     timestamp = recorded_at[0] if recorded_at is not None else run_dir.stat().st_mtime
     return {
         "level": "RUN_PAYLOAD",
@@ -788,13 +573,6 @@ def _success_build_payload_candidate(
         "removable": removable,
         "deletion_priority": int(policy["explicit_success_build_payload_deletion_priority"]),
     }
-
-
-def _write_json_atomic(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
 
 
 def _unmanaged_run_receipt_path(root: Path, run_dir: Path) -> Path:
@@ -818,14 +596,6 @@ def _file_disposal_records(run_dir: Path, paths: Iterable[Path]) -> list[dict[st
             "sha256": file_sha256(path),
         })
     return records
-
-
-def _remove_file(path: Path) -> None:
-    try:
-        path.unlink()
-    except PermissionError:
-        path.chmod(path.stat().st_mode | stat.S_IWRITE)
-        path.unlink()
 
 
 def _remove_tree_with_receipt(root: Path, target: Path, *, reason: str,
@@ -853,17 +623,7 @@ def _remove_tree_with_receipt(root: Path, target: Path, *, reason: str,
     }
     _write_json_atomic(receipt_path, receipt)
     removed_bytes = 0
-    for record in records:
-        path = target / record["path"]
-        if not path.exists():
-            continue
-        if (path.is_symlink() or path.stat().st_size != record["bytes"]
-                or file_sha256(path) != record["sha256"]):
-            raise ValueError(f"capacity disposal file changed: {path}")
-        try:
-            _remove_file(path)
-        except FileNotFoundError:
-            continue
+    for record in remove_recorded_files(target, records, missing_ok=True):
         removed_bytes += int(record["bytes"])
     # Remove only the preflight directories, non-recursively. New files keep
     # their parent alive and leave the receipt pending for manual review.
@@ -909,8 +669,8 @@ def _retire_success_build_payload(run_dir: Path, removable: Iterable[dict[str, A
         "removed_bytes": sum(int(item["bytes"]) for item in records),
     }
     _write_json_atomic(receipt_path, receipt)
-    for path in paths:
-        _remove_file(path)
+    for _ in remove_recorded_files(run_dir, records):
+        pass
     receipt["status"] = "complete"
     _write_json_atomic(receipt_path, receipt)
     return receipt_path, int(receipt["removed_bytes"])
@@ -941,7 +701,7 @@ def plan(root: Path, *, target_bytes: int, minimum_free_bytes: int,
     explicit_protected = tuple(path.absolute() for path in protected_paths)
     explicit_keys = {
         str(key).lower() for key in protected_cache_keys
-        if CACHE_KEY.fullmatch(str(key))
+        if protection.CACHE_KEY.fullmatch(str(key))
     }
     explicit_success_build_runs: list[Path] = []
     for value in rebuildable_success_build_runs:
@@ -952,7 +712,7 @@ def plan(root: Path, *, target_bytes: int, minimum_free_bytes: int,
             raise ValueError("rebuildable success build run must remain below artifact root") from exc
         explicit_success_build_runs.append(candidate)
     explicit_success_build_runs = sorted(set(explicit_success_build_runs), key=str)
-    leases = _load_capacity_protection_leases(root)
+    leases = protection.load_capacity_protection_leases(root)
     protected = tuple(sorted(
         {*explicit_protected, *leases["protected_paths"]}, key=str
     ))
@@ -1205,7 +965,7 @@ def main() -> None:
         if args.apply or not args.lease_owner or args.lease_ttl_seconds is None:
             parser.error("lease creation requires owner and TTL, and cannot use --apply")
         try:
-            lease = create_capacity_protection_lease(
+            lease = protection.create_capacity_protection_lease(
                 args.artifact_root,
                 lease_id=args.create_protection_lease,
                 owner=args.lease_owner,
@@ -1221,7 +981,7 @@ def main() -> None:
         if args.apply:
             parser.error("lease deletion cannot use --apply")
         try:
-            deleted = delete_capacity_protection_lease(
+            deleted = protection.delete_capacity_protection_lease(
                 args.artifact_root, lease_id=args.delete_protection_lease
             )
         except ValueError as exc:
@@ -1249,7 +1009,7 @@ def main() -> None:
                        maximum_new_artifact_bytes=args.maximum_new_artifact_bytes)
         if args.apply:
             receipt = apply(receipt)
-    except CapacityProtectionLeaseError as exc:
+    except protection.CapacityProtectionLeaseError as exc:
         print(json.dumps(exc.audit, indent=2), file=sys.stderr)
         sys.exit(2)
     if args.apply:

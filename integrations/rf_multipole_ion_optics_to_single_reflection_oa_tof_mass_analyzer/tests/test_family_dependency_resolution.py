@@ -26,6 +26,33 @@ def load(path: Path) -> dict[str, object]:
 
 
 class FamilyDependencyResolutionTests(unittest.TestCase):
+    def test_retention_cli_imports_from_clean_declared_snapshot(self) -> None:
+        dependencies = load(INVENTORY)["dependencies"]
+        selected = [item for item in dependencies if item["id"] in {
+            "common_artifact_retention", "common_artifact_retention_policy",
+            "common_file_identity", "common_recorded_file_removal",
+        }]
+        self.assertEqual(len(selected), 4)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            for dependency in selected:
+                target = output / dependency["frozen_filename"]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO_ROOT / dependency["source_repo_path"], target)
+            snapshot = output / "runtime_snapshot"
+            environment = dict(os.environ)
+            environment.pop("PYTHONPATH", None)
+            for entry in (
+                ["-m", "common.contracts.artifact_retention"],
+                [str(snapshot / "common/contracts/artifact_retention.py")],
+            ):
+                result = subprocess.run(
+                    [sys.executable, "-s", *entry, "--help"], cwd=snapshot,
+                    env=environment, capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("{apply}", result.stdout)
+
     def test_accelerator_dependencies_freeze_and_import_without_repository(self) -> None:
         """The declared component closure must work from its real frozen paths."""
         pwsh = shutil.which("pwsh")

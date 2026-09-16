@@ -1349,14 +1349,13 @@ foreach ($entry in $commands) {{
         scheduler_request = text.index(
             "accelerator_overlay_refine_dispatch_request.json"
         )
-        scheduler_wave = text.index("$overlayRefineWave = Invoke-ResourceBudgetedProcesses")
+        scheduler_wave = text.index("$overlayRefineWave = Invoke-RfObservedRefineWave")
         cache_publication = text.index("Publish-RfVerifiedCacheEntry", scheduler_wave)
         self.assertLess(basis_transfer, scheduler_request)
         self.assertLess(scheduler_request, scheduler_wave)
         self.assertLess(scheduler_wave, cache_publication)
         self.assertIn("work_item_count=$frontendBasisElectrodeIds.Count", text)
         self.assertIn("independent_work_items=$true", text)
-        self.assertIn("Start-ObservedFormalProcess", text[scheduler_request:scheduler_wave])
         self.assertIn("-m','common.simion.resource_scheduler'", text[scheduler_request:scheduler_wave])
         self.assertNotIn("maximum_parallel_batches", text[scheduler_request:scheduler_wave])
 

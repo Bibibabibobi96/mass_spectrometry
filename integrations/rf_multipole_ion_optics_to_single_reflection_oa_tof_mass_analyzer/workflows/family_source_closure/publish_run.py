@@ -1256,6 +1256,13 @@ def publish_family_source_closure_run(
     if execution_strategy not in STAGES_BY_STRATEGY:
         raise ContractError("family parent execution strategy is invalid")
     stage_contracts = STAGES_BY_STRATEGY[execution_strategy]
+    for name, path in (
+        ("composition_plan", plan_path),
+        ("resolved_connection", resolved_path),
+        ("resolved_engineering_budget", budget_path),
+    ):
+        if receipt.get(f"{name}_sha256") != file_sha256(path):
+            raise ContractError(f"family parent prepared {name} identity differs")
     if (
         receipt.get("role") != "integration_family_source_closure_execution_receipt"
         or receipt.get("integration_run_id") != run_id

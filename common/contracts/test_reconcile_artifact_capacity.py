@@ -12,13 +12,12 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, Mock, patch
 from pathlib import Path
 
+from common.contracts.capacity_protection import CapacityProtectionLeaseError, create_capacity_protection_lease
 from common.contracts import reconcile_artifact_capacity as capacity
 from common.contracts.reconcile_artifact_capacity import (
-    CapacityProtectionLeaseError,
     _current_generation_pointers,
     _directory_bytes,
     apply,
-    create_capacity_protection_lease,
     main,
     plan,
     snapshot_published_pa_cache_keys,
@@ -815,15 +814,15 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             root = Path(temporary)
             candidate = self._cache(root, "role", "8" * 64, age=time.time() - 100)
             expected = capacity.file_sha256(candidate / "payload.pa0")
-            original_remove = capacity._remove_file
-            def checked_remove(path: Path) -> None:
+            original_remove = capacity.remove_recorded_files
+            def checked_remove(root_path: Path, records: object, **kwargs: object) -> object:
                 receipts = list((root / capacity.DISPOSAL_RECEIPT_DIRECTORY).glob("cache_*.json"))
                 self.assertEqual(len(receipts), 1)
                 record = json.loads(receipts[0].read_text())
                 self.assertEqual(record["status"], "pending")
                 self.assertIn(expected, [item["sha256"] for item in record["files"]])
-                return original_remove(path)
-            with patch.object(capacity, "_remove_file", side_effect=checked_remove):
+                return original_remove(root_path, records, **kwargs)
+            with patch.object(capacity, "remove_recorded_files", side_effect=checked_remove):
                 applied = apply(plan(root, minimum_free_bytes=0, target_bytes=0))
             receipt = json.loads(Path(applied["removed"][0]["disposal_receipt"]).read_text())
             self.assertEqual(receipt["status"], "complete")

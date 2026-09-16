@@ -52,7 +52,7 @@ class RetentionSafetyTests(unittest.TestCase):
         payload = self.run / "field.pa0"
         payload.write_bytes(b"transient")
         original_sha = file_sha256(payload)
-        with patch.object(retention, "_unlink_rebuildable_file", side_effect=OSError("busy")):
+        with patch.object(retention, "remove_recorded_files", side_effect=OSError("busy")):
             with self.assertRaisesRegex(OSError, "busy"):
                 retention.apply_retention(self.config)
         action = json.loads((self.run / "retention_actions.json").read_text())

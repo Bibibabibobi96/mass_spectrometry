@@ -33,6 +33,10 @@ LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍
 上游run仍完整有效；消费run必须在自己的run config记录投影ID、记录名、路径以及未断言其余记录。选择器
 缺少投影ID、空投影、路径不一致、重复记录或消费记录漂移均失败关闭。
 
+`recorded_file_removal.py`只负责已预检清单的逐文件身份重验、删除及可刷新落盘的JSON记录，不扫描或
+选择待删对象。容量、run retention和solver-review退休各自决定准入并先发布pending；迭代器每删除一项
+返回该记录，由调用方保存原有进度和终态语义。目录收尾、缺失容忍和退休续做仍在各自生命周期边界。
+
 `artifact_retention.json`和`artifact_retention.py`实现[生命周期](../../docs/LIFECYCLE.md)的run产物保留合同。迁移到manifest v2的
 入口必须显式启用公共生命周期retention，启用后的默认类是`compact`；`qualification/solver_review`
 必须在运行前给出理由。终态前`apply`只清除本次未闭合run中策略禁止的可重建文件并写
@@ -41,6 +45,8 @@ writer/verifier同时扫描未列出的重型文件，防止通过漏报output�
 新增合同而失效；未迁移入口由测试中的具名棘轮清单约束，新建或实质修改时必须退出该清单。
 
 `reconcile_artifact_capacity.py`与`artifact_capacity_policy.json`是唯一的跨项目容量清理政策；
+[`capacity_protection.py`](capacity_protection.py)实现TTL租约与路径保护，供容量清理、compact修复、
+solver-review退休和布局检查直接复用；命令仍只由容量入口提供。
 `Invoke-ArtifactCapacityGate`是`run_artifact_support.ps1`提供的PowerShell生命周期适配器。运行器必须由
 冻结或实际测得的新增字节、显式受保护run路径和缓存键调用它，并把返回的 applied receipt 作为run输出；
 适配器自动取得或继承公共`HostExecutionLease`；轻重任务可并行，因此主机许可本身不保证缓存消费与
@@ -224,7 +230,8 @@ python common/contracts/write_formal_asset_manifest.py `
 ```
 
 结构门禁默认不读取大二进制；正式发布或资产变更后再运行
-`verify_artifact_layout.py <artifacts-projects-root> --verify-hashes`做完整哈希复核。正式结果本体不复制回
+从仓库根运行`python -m common.contracts.verify_artifact_layout <artifacts-projects-root> --verify-hashes`
+做完整哈希复核。正式结果本体不复制回
 来源run；为便于独立交付，可在结果包保留三份小型来源JSON快照，但它们不能替代原始run或正式清单。
 只复核当前正式发布而不审计旧run命名时使用`--formal-only --repository-root <repository-root>`。
 

@@ -9,30 +9,17 @@ import math
 import re
 from pathlib import Path
 
-try:
-    from common.contracts.artifact_retention import validate_retention
-except ModuleNotFoundError:
-    from artifact_retention import validate_retention
+from common.contracts import capacity_protection as protection
+from common.contracts.artifact_retention import validate_retention
 
-try:
-    from common.contracts.artifact_naming import (
-        validate_archive_id,
-        validate_formal_asset_name,
-        validate_run_id,
-        validate_task_id,
-    )
-except ModuleNotFoundError:
-    from artifact_naming import (
-        validate_archive_id,
-        validate_formal_asset_name,
-        validate_run_id,
-        validate_task_id,
-    )
+from common.contracts.artifact_naming import (
+    validate_archive_id,
+    validate_formal_asset_name,
+    validate_run_id,
+    validate_task_id,
+)
 
-try:
-    from common.contracts.file_identity import file_sha256
-except ModuleNotFoundError:
-    from file_identity import file_sha256
+from common.contracts.file_identity import file_sha256
 
 from common.simion.pa_family_cache import (
     PAFamilyCacheError,
@@ -44,22 +31,13 @@ from common.simion.cache_generation import (
     payload_sha256,
 )
 
-try:
-    from common.contracts.artifact_identity_archive import (
-        legacy_artifact_location,
-        validate_identity_archive_manifest,
-        validate_plan,
-        validate_pruning_journal,
-        verify_pruned_inventory,
-    )
-except ModuleNotFoundError:
-    from artifact_identity_archive import (
-        legacy_artifact_location,
-        validate_identity_archive_manifest,
-        validate_plan,
-        validate_pruning_journal,
-        verify_pruned_inventory,
-    )
+from common.contracts.artifact_identity_archive import (
+    legacy_artifact_location,
+    validate_identity_archive_manifest,
+    validate_plan,
+    validate_pruning_journal,
+    verify_pruned_inventory,
+)
 
 
 ALLOWED_PROJECT_ENTRIES = {
@@ -916,12 +894,8 @@ def verify_artifacts_root(projects: Path) -> None:
         leases = common / "capacity_protection_leases"
         if leases.exists():
             try:
-                from common.contracts.reconcile_artifact_capacity import (
-                    CapacityProtectionLeaseError,
-                    _load_capacity_protection_leases,
-                )
-                _load_capacity_protection_leases(artifacts)
-            except CapacityProtectionLeaseError as exc:
+                protection.load_capacity_protection_leases(artifacts)
+            except protection.CapacityProtectionLeaseError as exc:
                 raise AssertionError(str(exc)) from exc
 
 

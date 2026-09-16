@@ -22,7 +22,9 @@ from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
 from common.contracts.file_identity import canonical_json_sha256, file_sha256
-from common.simion.cache_generation import materialize_direct_inventory
+from common.simion.cache_generation import (
+    materialize_direct_inventory, inventory_named_files, copy_verified_file,
+)
 
 
 SCHEMA_VERSION = 1
@@ -186,13 +188,10 @@ def pa_family_inventory(directory: str | Path, filenames: Sequence[str]) -> list
 
     root = Path(directory)
     names = _family_names(filenames)
-    records: list[dict[str, Any]] = []
-    for name in names:
-        path = root / name
-        if not path.is_file():
-            raise PAFamilyCacheError(f"PA family file is missing: {path}")
-        records.append({"name": name, "bytes": path.stat().st_size, "sha256": file_sha256(path)})
-    return records
+    try:
+        return inventory_named_files(root, names)
+    except ValueError as exc:
+        raise PAFamilyCacheError(str(exc)) from exc
 
 
 def _actual_payload_names(directory: Path) -> set[str]:
@@ -388,24 +387,9 @@ def _copy_payload(source: Path, destination: Path, filenames: Sequence[str]) -> 
         raise PAFamilyCacheError("source PA family is incomplete: " + ", ".join(missing))
     destination.mkdir(parents=True, exist_ok=False)
     for name in names:
-        _copy_verified_candidate_file(source / name, destination / name)
+        copy_verified_file(source / name, destination / name)
+        shutil.copystat(source / name, destination / name)
     return pa_family_inventory(destination, names)
-
-
-def _copy_verified_candidate_file(source: Path, destination: Path) -> None:
-    """Copy one PA payload through an explicitly flushed file handle.
-
-    ``shutil.copy2`` is normally sufficient, but large SIMION arrays on this
-    Windows host have produced a transient post-copy hash mismatch.  The cache
-    must remain fail-closed, so use a bounded chunk stream and fsync before the
-    ordinary inventory verifier decides whether the bytes are acceptable.
-    """
-    with source.open("rb") as read_handle, destination.open("wb") as write_handle:
-        while chunk := read_handle.read(8 * 1024 * 1024):
-            write_handle.write(chunk)
-        write_handle.flush()
-        os.fsync(write_handle.fileno())
-    shutil.copystat(source, destination)
 
 
 def _publish_pointer(key_root: Path, cache_key: str, generation_sha256: str) -> None:

@@ -118,6 +118,48 @@ function Invoke-SingleFlightPython {
   } finally { Restore-RunEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE') -Snapshot $saved }
 }
 
+function Invoke-RfObservedRefineWave {
+  param(
+    [Parameter(Mandatory)][string]$DispatchRequest,
+    [Parameter(Mandatory)][string]$DispatchPlan,
+    [Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][string]$UsagePath,
+    [Parameter(Mandatory)][object[]]$Specifications,
+    [scriptblock]$OnProcessCompleted
+  )
+  $runtimePlan = Get-Content -LiteralPath $DispatchPlan -Raw -Encoding UTF8 | ConvertFrom-Json
+  $existingRecords = @()
+  if ([string]$runtimePlan.estimation.kind -eq 'formal_first_batch_observation') {
+    $observation = Start-ObservedFormalProcess -DispatchPlanPath $DispatchPlan `
+      -ProcessSpecification $Specifications[0]
+    if ([int64]$observation.observed_peak_process_tree_working_set_bytes -lt 1) {
+      throw "First refinement did not produce a usable resource observation: $DispatchPlan"
+    }
+    $arguments = @(
+      '-m','common.simion.resource_scheduler','--request',$DispatchRequest,
+      '--output',$DispatchPlan,
+      '--available-memory-bytes',([string]$observation.available_memory_bytes),
+      '--total-physical-memory-bytes',([string]$observation.total_physical_memory_bytes),
+      '--observed-formal-peak-bytes',([string]$observation.observed_peak_process_tree_working_set_bytes),
+      '--observed-formal-cpu-percent',([string]$observation.observed_process_cpu_percent),
+      '--observed-background-cpu-percent',([string]$observation.observed_background_cpu_percent)
+    )
+    if ($observation.completed_naturally) { $arguments += '--first-batch-completed' }
+    Invoke-SingleFlightPython -Arguments $arguments -Failure 'Formal-first refinement resource replanning failed.' | Out-Host
+    $runtimePlan = Get-Content -LiteralPath $DispatchPlan -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ([string]$runtimePlan.estimation.kind -ne 'observed_formal_batch') {
+      throw "Formal-first refinement dispatch replan is invalid: $DispatchPlan"
+    }
+    $existingRecords = @($observation.process_record)
+    $Specifications = @($Specifications | Select-Object -Skip 1)
+  }
+  $callback = @{}
+  if ($null -ne $OnProcessCompleted) { $callback.OnProcessCompleted = $OnProcessCompleted }
+  Invoke-ResourceBudgetedProcesses -DispatchPlanPath $DispatchPlan -RunDir $RunDir `
+    -UsagePath $UsagePath -ProcessSpecifications $Specifications `
+    -ExistingProcessRecords $existingRecords @callback
+}
+
 function Resolve-RfNativeOperatingPaCompanion {
   <# Build operating points only while the native PA0 family is still in its
      writable pre-publication staging.  On published family members are never
@@ -2828,40 +2870,10 @@ try {
           }
           $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
             -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
-          $fineExistingProcessRecords = @()
-          if ([string]$fineRefineRuntimePlan.estimation.kind -eq 'formal_first_batch_observation') {
-            $fineObservation = Start-ObservedFormalProcess `
-              -DispatchPlanPath $fineRefineDispatchPlan `
-              -ProcessSpecification $fineRefineSpecifications[0]
-            if ([int64]$fineObservation.observed_peak_process_tree_working_set_bytes -lt 1) {
-              throw "First $($fineDefinition.name) refinement did not produce a usable resource observation."
-            }
-            $fineReplanArguments = @(
-              '-m','common.simion.resource_scheduler','--request',$fineRefineDispatchRequest,
-              '--output',$fineRefineDispatchPlan,
-              '--available-memory-bytes',([string]$fineObservation.available_memory_bytes),
-              '--total-physical-memory-bytes',([string]$fineObservation.total_physical_memory_bytes),
-              '--observed-formal-peak-bytes',([string]$fineObservation.observed_peak_process_tree_working_set_bytes),
-              '--observed-formal-cpu-percent',([string]$fineObservation.observed_process_cpu_percent),
-              '--observed-background-cpu-percent',([string]$fineObservation.observed_background_cpu_percent)
-            )
-            if ($fineObservation.completed_naturally) { $fineReplanArguments += '--first-batch-completed' }
-            Invoke-SingleFlightPython -Arguments $fineReplanArguments `
-              -Failure "$($fineDefinition.name) formal-first resource replanning failed."
-            $fineRefineRuntimePlan = Get-Content -LiteralPath $fineRefineDispatchPlan `
-              -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ([string]$fineRefineRuntimePlan.estimation.kind -ne 'observed_formal_batch') {
-              throw "$($fineDefinition.name) formal-first dispatch replan is invalid."
-            }
-            $fineExistingProcessRecords = @($fineObservation.process_record)
-            $fineRefineSpecifications = @($fineRefineSpecifications | Select-Object -Skip 1)
-          }
-          $fineRefineWave = Invoke-ResourceBudgetedProcesses `
-            -DispatchPlanPath $fineRefineDispatchPlan -RunDir $package.run_dir `
-            -UsagePath $fineRefineResourceUsage `
-            -ProcessSpecifications $fineRefineSpecifications `
-            -ExistingProcessRecords $fineExistingProcessRecords `
-            -OnProcessCompleted $fineModeCompletionAction
+          $fineRefineWave = Invoke-RfObservedRefineWave `
+            -DispatchRequest $fineRefineDispatchRequest -DispatchPlan $fineRefineDispatchPlan `
+            -RunDir $package.run_dir -UsagePath $fineRefineResourceUsage `
+            -Specifications $fineRefineSpecifications -OnProcessCompleted $fineModeCompletionAction
           $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
             -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
           if ($fineRefineWave.resource_budget_exceeded -or
@@ -3262,40 +3274,10 @@ try {
           }
           $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
             -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
-          $localExistingProcessRecords = @()
-          if ([string]$localRefineRuntimePlan.estimation.kind -eq 'formal_first_batch_observation') {
-            $localObservation = Start-ObservedFormalProcess `
-              -DispatchPlanPath $localRefineDispatchPlan `
-              -ProcessSpecification $localRefineSpecifications[0]
-            if ([int64]$localObservation.observed_peak_process_tree_working_set_bytes -lt 1) {
-              throw 'First accelerator entrance-local refinement did not produce a usable resource observation.'
-            }
-            $localReplanArguments = @(
-              '-m','common.simion.resource_scheduler','--request',$localRefineDispatchRequest,
-              '--output',$localRefineDispatchPlan,
-              '--available-memory-bytes',([string]$localObservation.available_memory_bytes),
-              '--total-physical-memory-bytes',([string]$localObservation.total_physical_memory_bytes),
-              '--observed-formal-peak-bytes',([string]$localObservation.observed_peak_process_tree_working_set_bytes),
-              '--observed-formal-cpu-percent',([string]$localObservation.observed_process_cpu_percent),
-              '--observed-background-cpu-percent',([string]$localObservation.observed_background_cpu_percent)
-            )
-            if ($localObservation.completed_naturally) { $localReplanArguments += '--first-batch-completed' }
-            Invoke-SingleFlightPython -Arguments $localReplanArguments `
-              -Failure 'Accelerator entrance-local formal-first resource replanning failed.'
-            $localRefineRuntimePlan = Get-Content -LiteralPath $localRefineDispatchPlan `
-              -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ([string]$localRefineRuntimePlan.estimation.kind -ne 'observed_formal_batch') {
-              throw 'Accelerator entrance-local formal-first dispatch replan is invalid.'
-            }
-            $localExistingProcessRecords = @($localObservation.process_record)
-            $localRefineSpecifications = @($localRefineSpecifications | Select-Object -Skip 1)
-          }
-          $localRefineWave = Invoke-ResourceBudgetedProcesses `
-            -DispatchPlanPath $localRefineDispatchPlan -RunDir $package.run_dir `
-            -UsagePath $localRefineResourceUsage `
-            -ProcessSpecifications $localRefineSpecifications `
-            -ExistingProcessRecords $localExistingProcessRecords `
-            -OnProcessCompleted $localModeCompletionAction
+          $localRefineWave = Invoke-RfObservedRefineWave `
+            -DispatchRequest $localRefineDispatchRequest -DispatchPlan $localRefineDispatchPlan `
+            -RunDir $package.run_dir -UsagePath $localRefineResourceUsage `
+            -Specifications $localRefineSpecifications -OnProcessCompleted $localModeCompletionAction
           $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
             -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
           if ($localRefineWave.resource_budget_exceeded -or
@@ -3569,39 +3551,10 @@ try {
         })
         $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
           -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
-        $overlayExistingProcessRecords = @()
-        if ([string]$overlayRefineRuntimePlan.estimation.kind -eq 'formal_first_batch_observation') {
-          $overlayObservation = Start-ObservedFormalProcess `
-            -DispatchPlanPath $overlayRefineDispatchPlan `
-            -ProcessSpecification $overlayRefineSpecifications[0]
-          if ([int64]$overlayObservation.observed_peak_process_tree_working_set_bytes -lt 1) {
-            throw 'First accelerator-overlay refinement did not produce a usable resource observation.'
-          }
-          $overlayReplanArguments = @(
-            '-m','common.simion.resource_scheduler','--request',$overlayRefineDispatchRequest,
-            '--output',$overlayRefineDispatchPlan,
-            '--available-memory-bytes',([string]$overlayObservation.available_memory_bytes),
-            '--total-physical-memory-bytes',([string]$overlayObservation.total_physical_memory_bytes),
-            '--observed-formal-peak-bytes',([string]$overlayObservation.observed_peak_process_tree_working_set_bytes),
-            '--observed-formal-cpu-percent',([string]$overlayObservation.observed_process_cpu_percent),
-            '--observed-background-cpu-percent',([string]$overlayObservation.observed_background_cpu_percent)
-          )
-          if ($overlayObservation.completed_naturally) { $overlayReplanArguments += '--first-batch-completed' }
-          Invoke-SingleFlightPython -Arguments $overlayReplanArguments `
-            -Failure 'Accelerator overlay formal-first resource replanning failed.'
-          $overlayRefineRuntimePlan = Get-Content -LiteralPath $overlayRefineDispatchPlan `
-            -Raw -Encoding UTF8 | ConvertFrom-Json
-          if ([string]$overlayRefineRuntimePlan.estimation.kind -ne 'observed_formal_batch') {
-            throw 'Accelerator overlay refinement formal-first dispatch replan is invalid.'
-          }
-          $overlayExistingProcessRecords = @($overlayObservation.process_record)
-          $overlayRefineSpecifications = @($overlayRefineSpecifications | Select-Object -Skip 1)
-        }
-        $overlayRefineWave = Invoke-ResourceBudgetedProcesses `
-          -DispatchPlanPath $overlayRefineDispatchPlan -RunDir $package.run_dir `
-          -UsagePath $overlayRefineResourceUsage `
-          -ProcessSpecifications $overlayRefineSpecifications `
-          -ExistingProcessRecords $overlayExistingProcessRecords
+        $overlayRefineWave = Invoke-RfObservedRefineWave `
+          -DispatchRequest $overlayRefineDispatchRequest -DispatchPlan $overlayRefineDispatchPlan `
+          -RunDir $package.run_dir -UsagePath $overlayRefineResourceUsage `
+          -Specifications $overlayRefineSpecifications
         $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
           -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
         if ($overlayRefineWave.resource_budget_exceeded) {

@@ -5330,27 +5330,6 @@ def prepare_family_source_closure(
             "pulse_timing_orchestration_sha256=" + file_sha256(orchestration_path),
             "pulse_timing_orchestration_state=" + pulse_timing_state,
         ])
-    execution_arguments: dict[str, str] = {}
-    for argument in plan["execution_steps"][0]["arguments"]:
-        name, separator, value = argument.partition("=")
-        if not separator or not name or name in execution_arguments:
-            raise ContractError("resolved execution plan arguments are invalid")
-        execution_arguments[name] = value
-    resolved_execution_plan = {
-        "schema_version": 1,
-        "role": "rf_oatof_resolved_execution_plan",
-        "campaign_id": campaign["campaign_id"],
-        "experiment_id": experiment_id,
-        "experiment_row_sha256": row_sha256,
-        "execution_strategy": execution_strategy,
-        "arguments": execution_arguments,
-    }
-    resolved_execution_plan_path = plan_output.with_name("resolved_execution_plan.json")
-    _write_json(resolved_execution_plan_path, resolved_execution_plan, sort_keys=True)
-    plan["execution_steps"][0]["arguments"].extend([
-        "resolved_execution_plan_filename=" + resolved_execution_plan_path.name,
-        "resolved_execution_plan_sha256=" + file_sha256(resolved_execution_plan_path),
-    ])
     validate_schema(plan, "composition_plan.schema.json")
     _write_json(plan_path, plan)
     verify_composition_plan(plan_path, resolved_path, repo_root=root)

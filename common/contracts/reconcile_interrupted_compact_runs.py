@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from common.contracts import capacity_protection as protection
 from common.contracts.artifact_retention import (
     _execute_removals,
     classify_file,
@@ -52,16 +53,12 @@ def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[s
     run_dir = run_dir.resolve()
     if run_dir.parent.name != "runs":
         raise ValueError("run directory must be a direct child of runs/")
-    # Import at the maintenance boundary: capacity itself uses inspect_run.
-    from common.contracts.reconcile_artifact_capacity import (
-        _load_capacity_protection_leases, _protected,
-    )
     artifact_root = (
         run_dir.parents[3] if run_dir.parents[2].name == "projects"
         else run_dir.parent.parent
     )
-    leases = _load_capacity_protection_leases(artifact_root)
-    if _protected(run_dir, leases["protected_paths"]):
+    leases = protection.load_capacity_protection_leases(artifact_root)
+    if protection.path_is_protected(run_dir, leases["protected_paths"]):
         raise ValueError("run is covered by an active capacity protection lease")
     config_path = run_dir / "run_config.json"
     summary_path = run_dir / "summary.json"

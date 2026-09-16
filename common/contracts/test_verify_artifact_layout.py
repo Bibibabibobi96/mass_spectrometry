@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -10,6 +12,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from common.contracts.capacity_protection import create_capacity_protection_lease
 from common.contracts.verify_artifact_layout import (
     main,
     verify_artifacts_root,
@@ -38,6 +41,17 @@ def record(path: Path, root: Path) -> dict[str, object]:
 
 
 class ArtifactLayoutIdentityTests(unittest.TestCase):
+    def test_module_help_without_pythonpath(self) -> None:
+        repo = Path(__file__).resolve().parents[2]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+        result = subprocess.run(
+            [sys.executable, "-m", "common.contracts.verify_artifact_layout", "--help"],
+            cwd=repo, env=env, capture_output=True, text=True, check=False, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--verify-hashes", result.stdout)
+
     @staticmethod
     def _common_pa_family_identity() -> dict[str, object]:
         return {
@@ -193,9 +207,6 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             artifacts = Path(directory) / "artifacts"
             projects = artifacts / "projects"
             projects.mkdir(parents=True)
-            from common.contracts.reconcile_artifact_capacity import (
-                create_capacity_protection_lease,
-            )
             create_capacity_protection_lease(
                 artifacts, lease_id="layout", owner="test", ttl_seconds=60,
                 protected_cache_keys=["a" * 64],

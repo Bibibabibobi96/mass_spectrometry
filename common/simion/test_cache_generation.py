@@ -80,7 +80,7 @@ class CacheGenerationTests(unittest.TestCase):
             destination.mkdir(parents=True)
             (source / "family.pa0").write_bytes(b"payload")
             records = inventory_direct_files(source)
-            with patch.object(cache_generation, "_copy_verified_file") as copy_file:
+            with patch.object(cache_generation, "copy_verified_file") as copy_file:
                 with self.assertRaisesRegex(ValueError, "overwrite"):
                     materialize_direct_inventory(source, destination, records)
             copy_file.assert_not_called()
@@ -156,13 +156,13 @@ class CacheGenerationTests(unittest.TestCase):
             payload = source / "family.pa0"
             payload.write_bytes(b"original")
             records = inventory_direct_files(source)
-            real_copy = cache_generation._copy_verified_file
+            real_copy = cache_generation.copy_verified_file
 
             def mutate_then_copy(old: Path, new: Path) -> dict[str, object]:
                 old.write_bytes(b"changed")
                 return real_copy(old, new)
 
-            with patch.object(cache_generation, "_copy_verified_file", side_effect=mutate_then_copy):
+            with patch.object(cache_generation, "copy_verified_file", side_effect=mutate_then_copy):
                 with self.assertRaisesRegex(ValueError, "differs from its manifest"):
                     materialize_direct_inventory(source, destination, records)
             self.assertFalse(destination.exists())

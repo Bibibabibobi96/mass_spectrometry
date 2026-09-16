@@ -827,6 +827,20 @@
       ]
     },
     {
+      "id": "common_recorded_file_removal",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/recorded_file_removal.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/recorded_file_removal.py",
+      "run_input_name": "common_recorded_file_removal",
+      "consumers": [
+        "pre_pulse_interface_transport",
+        "pulse_capture",
+        "analyzer_transport"
+      ]
+    },
+    {
       "id": "common_artifact_retention_policy",
       "provider_scope": "repository_common",
       "provider_project": "common",

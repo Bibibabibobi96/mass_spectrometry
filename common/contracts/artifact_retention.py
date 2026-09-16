@@ -5,16 +5,16 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
-import os
-import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 if __package__:
     from .file_identity import file_sha256
+    from .recorded_file_removal import remove_recorded_files, write_json_atomic
 else:
     from file_identity import file_sha256
+    from recorded_file_removal import remove_recorded_files, write_json_atomic
 
 POLICY_PATH = Path(__file__).with_name("artifact_retention.json")
 
@@ -148,20 +148,6 @@ def is_recoverable_simion_batch_log(path: Path) -> bool:
     )
 
 
-def _unlink_rebuildable_file(path: Path) -> None:
-    """Delete a governed rebuildable file, including read-only cache copies."""
-
-    try:
-        path.unlink()
-    except PermissionError:
-        # Verified PA-family inputs are deliberately read-only.  A run-private
-        # copy can retain that Windows attribute even after the solver exits;
-        # its retention classification and run-root containment were already
-        # validated before this helper is called.
-        path.chmod(path.stat().st_mode | stat.S_IWRITE)
-        path.unlink()
-
-
 def _has_native_completion_sentinel(path: Path) -> bool:
     """Check the final nonempty line without loading a potentially huge TRACE."""
 
@@ -290,26 +276,13 @@ def _execute_removals(
         "removed": removed, "preserved": preserved,
     }
 
-    def publish() -> None:
-        temporary = action_path.with_suffix(".json.pending")
-        with temporary.open("w", encoding="utf-8", newline="\n") as stream:
-            json.dump(action, stream, indent=2, ensure_ascii=False)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, action_path)
-
-    publish()
-    for item in removed:
-        path = run_dir / item["path"]
-        if path.stat().st_size != item["bytes"] or file_sha256(path) != item["sha256"]:
-            raise ValueError(f"retention file identity changed: {path}")
-        _unlink_rebuildable_file(path)
+    write_json_atomic(action_path, action)
+    for item in remove_recorded_files(run_dir, removed):
         action["removed_file_count"] += 1
         action["removed_bytes"] += item["bytes"]
-        publish()
+        write_json_atomic(action_path, action)
     action["status"] = "complete"
-    publish()
+    write_json_atomic(action_path, action)
     return action_path
 
 

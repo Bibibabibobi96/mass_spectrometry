@@ -315,124 +315,8 @@ def use_current_time_grid_profile(campaign: dict[str, object]) -> None:
         )
 
 
-def migrate_v3_campaign(campaign: dict[str, object]) -> dict[str, object]:
-    campaign["schema_version"] = 3
-    layout_profiles = {
-        item["layout_profile_id"]: item
-        for item in load(CONFIG_ROOT / "single_flight_layout_profiles.json")["profiles"]
-    }
-    single_flight_configuration = load(CONFIG_ROOT / "simion_single_flight.json")
-    grid_profiles = {
-        item["profile_id"]: item
-        for item in single_flight_configuration["frontend_grid_profiles"]
-    }
-    independent_ion_source_profiles = {
-        item["profile_id"]
-        for item in single_flight_configuration["source_materialization_profiles"]
-        if item.get("materialization_mode")
-        == "independent_spatial_velocity_ion_source_snapshot"
-    }
-    for row in campaign["experiments"]:
-        if row.get("execution_strategy") != "simion_single_flight":
-            continue
-        row.setdefault("source_release_mode", "continuous_frontend")
-        row.setdefault(
-            "architecture_generation_id",
-            layout_profiles[row["single_flight_layout_profile_id"]]["architecture_generation_id"],
-        )
-        row.setdefault(
-            "field_overlay_id",
-            grid_profiles[row.get(
-                "single_flight_frontend_grid_profile_id",
-                single_flight_configuration["default_frontend_grid_profile_id"],
-            )]["field_overlay_id"],
-        )
-        count = int(
-            row.get("single_flight_particle_source", {}).get(
-                "particle_count",
-                row.get("pre_pulse_source_state", {}).get(
-                    "particle_count", row["source"]["launched_particle_count"]
-                ),
-            )
-        )
-        materialization = row.get("single_flight_source_materialization_profile_id")
-        row.setdefault("source_profile_id", materialization or "campaign_source_population")
-        if row.get("source_release_mode") == "pre_pulse_restart":
-            mode, role, binding = (
-                "pre_pulse_restart", "pre_pulse_source_state",
-                "experiment_pre_pulse_source_state",
-            )
-        elif row.get("single_flight_particle_source") is not None:
-            source = row["single_flight_particle_source"]
-            mode, role, binding = (
-                (
-                    "pulse_eligible_conditional"
-                    if source["sampling_mode"] == "steady_candidate_pool"
-                    else source["sampling_mode"]
-                ), "single_flight_particle_source",
-                "experiment_single_flight_particle_source",
-            )
-        elif materialization in independent_ion_source_profiles:
-            mode, role, binding = (
-                "independent_spatial_velocity_ion_source_snapshot",
-                "single_flight_materialized_ion_source_volume",
-                "prepared_materialized_ion_source_volume",
-            )
-        elif materialization and materialization != "canonical_real_octupole_n1000":
-            mode, role, binding = (
-                "resolved_layout_pulse_ideal_linear_z_vz",
-                "single_flight_materialized_particle_source",
-                "prepared_materialized_particle_source",
-            )
-        else:
-            mode, role, binding = (
-                "continuous_injection_full_population",
-                row["source"]["particle_source_manifest_input_role"],
-                "source_contract_particle_source",
-            )
-        offset = row.pop("single_flight_pulse_offset_rf_periods", 0.0)
-        row["single_flight_pulse_schedule_policy"] = {
-            "policy_id": "multipole_handoff_ballistic_centroid_v1",
-            "offset_rf_periods": offset,
-            "pulse_width_us": 1.0,
-        }
-        ordered_hash = hashlib.sha256(
-            json.dumps(list(range(1, count + 1)), separators=(",", ":")).encode()
-        ).hexdigest().upper()
-        row["single_flight_population"] = {
-            "population_id": "test_population",
-            "population_mode": mode,
-            "source_authority": {
-                "input_role": role, "table_binding": binding,
-                "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1",
-            },
-            "execution_population": {
-                "particle_count": count,
-                "ordered_particle_id_sha256": ordered_hash,
-                "selection_algorithm": "all_rows_in_frozen_file_order",
-                "selection_seed": 0,
-            },
-            "denominators": {
-                "population_count": count, "eligible_population_count": count,
-            },
-            "analysis_randomness": {
-                "bootstrap_resample_count": 0, "bootstrap_seed": 20260812,
-            },
-            "postselection_policy": (
-                "pulse_eligibility_only"
-                if mode == "pulse_eligible_conditional"
-                else "prohibited"
-            ),
-        }
-    return campaign
 
 
-def write_current_policy_campaign(source: Path, destination: Path) -> dict[str, object]:
-    """Clone one immutable historical campaign with the active governed policy."""
-    campaign = load(source)
-    migrate_v3_campaign(campaign)
-    write_json(destination, campaign)
-    return campaign
 
 
 class FamilySourceClosureWorkflowTests(unittest.TestCase):
@@ -2586,25 +2470,8 @@ Write-Output 'RECOVERY_CHAIN=PASS'
                     ).hexdigest().upper(),
                     frozen["frozen_campaign_experiment_sha256"],
                 )
-                execution_plan = load(output / frozen["resolved_execution_plan_filename"])
-                self.assertEqual(execution_plan["role"], "rf_oatof_resolved_execution_plan")
-                self.assertEqual(execution_plan["experiment_id"], row["experiment_id"])
-                self.assertEqual(
-                    execution_plan["arguments"],
-                    {
-                        key: value for key, value in frozen.items()
-                        if key not in {
-                            "resolved_execution_plan_filename",
-                            "resolved_execution_plan_sha256",
-                        }
-                    },
-                )
-                self.assertEqual(
-                    hashlib.sha256(
-                        (output / frozen["resolved_execution_plan_filename"]).read_bytes()
-                    ).hexdigest().upper(),
-                    frozen["resolved_execution_plan_sha256"],
-                )
+                self.assertFalse((output / "resolved_execution_plan.json").exists())
+                self.assertFalse(any(name.startswith("resolved_execution_plan_") for name in frozen))
                 runtime_binding = REPO_ROOT / frozen["runtime_binding_path"]
                 resolved_source = output / frozen[
                     "resolved_source_contract_filename"

@@ -206,6 +206,9 @@ standalone 响应的全部 SHA-256 均不改变。该链已在公共租约
 
 ## 完整 family 的物化原语
 
+`inventory_named_files`和`copy_verified_file`同时供PA-family发布与通用物化使用，统一逐字节库存与
+flush复制；各缓存协议继续拥有排序、generation身份、只读属性和错误语义。
+
 [`cache_generation.py`](cache_generation.py)统一提供不同 PA-family 缓存协议共有的直接文件清单、payload/
 immutable generation 摘要，以及按 manifest 文件清单完整物化为可写 run-local 副本的原子复制原语。物化先拒绝
 既有目标，再在一次流式复制中对实际读取并写入的同一字节计算 SHA-256、逐文件核对 manifest、flush/fsync，最后

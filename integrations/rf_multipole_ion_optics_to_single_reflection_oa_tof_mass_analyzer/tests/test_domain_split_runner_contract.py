@@ -44,18 +44,82 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
                          "overlayBuild", "flightTubeBuild", "reflectronBuild", "singleRefine",
                          "fineRefineWave", "localRefineWave", "overlayRefineWave", "refineWave"):
             with self.subTest(variable=variable):
-                self.assertEqual(active_stage(self.source.index(f"${variable} = Invoke-ResourceBudgeted")), "pa_refine")
-        for observation, wave in (("fineObservation", "fineRefineWave"),
-                                  ("localObservation", "localRefineWave"),
-                                  ("overlayObservation", "overlayRefineWave"),
-                                  ("formalObservation", "waveResult")):
-            begin = self.source.index(f"${observation} = Start-ObservedFormalProcess")
-            end = self.source.index(f"${wave} = Invoke-ResourceBudgetedProcesses", begin)
-            self.assertFalse(any(begin < m.start() < end for m in stages), observation)
+                self.assertEqual(active_stage(self.source.index(f"${variable} = Invoke-")), "pa_refine")
+        begin = self.source.index("$formalObservation = Start-ObservedFormalProcess")
+        end = self.source.index("$waveResult = Invoke-ResourceBudgetedProcesses", begin)
+        self.assertFalse(any(begin < m.start() < end for m in stages))
+        for prefix in ("fine", "local", "overlay"):
+            self.assertIn(f"${prefix}RefineWave = Invoke-RfObservedRefineWave", self.source)
         self.assertEqual(active_stage(self.source.index("$formalObservation = Start-ObservedFormalProcess")), "flight")
         self.assertIn("if ($processSpecifications.Count -gt 0) {\n    $hostExecutionLease = Update-HostResourceStage", self.source)
         self.assertIn("Enter-HostExecutionLease -Role SIMION -Stage prepare", self.source)
         self.assertEqual(active_stage(self.source.index("$axisFieldResult = Invoke-ResourceBudgetedProcess")), "prepare")
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_refine_wave_observation_handoff(self) -> None:
+        start = self.source.index("function Invoke-RfObservedRefineWave {")
+        end = self.source.index("function Resolve-RfNativeOperatingPaCompanion", start)
+        function = self.source[start:end]
+        for observed, completed, callback, peak in (
+            (False, False, False, 100),
+            (True, False, True, 100),
+            (True, True, False, 100),
+            (True, True, True, 0),
+        ):
+            with self.subTest(observed=observed, completed=completed, callback=callback, peak=peak):
+                script = function + "\n" + r'''
+$ErrorActionPreference = 'Stop'
+$script:kind = 'INITIAL_KIND'
+$script:arguments = @()
+function Get-Content { param($LiteralPath, [switch]$Raw, $Encoding)
+    return (@{estimation=@{kind=$script:kind}} | ConvertTo-Json)
+}
+function Start-ObservedFormalProcess { param($DispatchPlanPath, $ProcessSpecification)
+    if ($ProcessSpecification.id -ne 1) { throw 'wrong observation item' }
+    return @{observed_peak_process_tree_working_set_bytes=PEAK;
+        available_memory_bytes=1000; total_physical_memory_bytes=2000;
+        observed_process_cpu_percent=50; observed_background_cpu_percent=5;
+        completed_naturally=COMPLETED; process_record=@{id=1}}
+}
+function Invoke-SingleFlightPython { param($Arguments, $Failure)
+    $script:arguments = $Arguments
+    $script:kind = 'observed_formal_batch'
+    Write-Output 'RESOURCE_SCHEDULER=PASS'
+    Write-Output 'RESOURCE_DISPATCH=OBSERVED'
+}
+function Out-Host { process {} }
+function Invoke-ResourceBudgetedProcesses {
+    param($DispatchPlanPath, $RunDir, $UsagePath, $ProcessSpecifications,
+        $ExistingProcessRecords, $OnProcessCompleted)
+    return @{ids=@($ProcessSpecifications | ForEach-Object {$_.id});
+        records=@($ExistingProcessRecords | ForEach-Object {$_.id});
+        callback=($null -ne $OnProcessCompleted); arguments=$script:arguments}
+}
+$options = @{}
+CALLBACK
+try {
+    Invoke-RfObservedRefineWave -DispatchRequest request -DispatchPlan plan -RunDir run `
+      -UsagePath usage -Specifications @(@{id=1},@{id=2}) @options | ConvertTo-Json -Depth 8
+} catch { @{error=$_.Exception.Message} | ConvertTo-Json }
+'''
+                script = (script.replace("INITIAL_KIND", "formal_first_batch_observation" if observed else "cached")
+                          .replace("PEAK", str(peak))
+                          .replace("COMPLETED", "$true" if completed else "$false")
+                          .replace("CALLBACK", "$options.OnProcessCompleted = {}" if callback else ""))
+                result = subprocess.run(
+                    [shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-Command", script],
+                    capture_output=True, text=True, timeout=30, cwd=REPO,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                payload = json.loads(result.stdout)
+                if not peak:
+                    self.assertIn("usable resource observation", payload["error"])
+                    continue
+                self.assertEqual(payload["ids"], [2] if observed else [1, 2])
+                self.assertEqual(payload["records"], [1] if observed else [])
+                self.assertEqual(payload["callback"], callback)
+                self.assertEqual("--first-batch-completed" in payload["arguments"], observed and completed)
+                self.assertEqual("--observed-formal-peak-bytes" in payload["arguments"], observed)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_extracted_host_boundaries_use_one_private_token_and_reject_light_parent_upgrade(self) -> None:

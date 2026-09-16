@@ -122,19 +122,21 @@ def inventory_declared_files(
     expected = validate_direct_inventory(records)
     if not root.is_dir():
         raise ValueError(f"cache directory is missing: {root}")
-    actual: list[dict[str, Any]] = []
-    for record in expected:
-        path = root / record["name"]
+    return inventory_named_files(root, [record["name"] for record in expected])
+
+
+def inventory_named_files(directory: str | Path, filenames: Iterable[str]) -> list[dict[str, Any]]:
+    """Hash a caller-ordered list of direct files; reject invalid names."""
+    root = Path(directory)
+    records = []
+    for name in filenames:
+        if not isinstance(name, str) or not name or name in {".", ".."} or Path(name).name != name:
+            raise ValueError("cache inventory name is not a direct file")
+        path = root / name
         if not path.is_file():
             raise ValueError(f"declared cache file is missing: {path}")
-        actual.append(
-            {
-                "name": record["name"],
-                "bytes": path.stat().st_size,
-                "sha256": file_sha256(path),
-            }
-        )
-    return actual
+        records.append({"name": name, "bytes": path.stat().st_size, "sha256": file_sha256(path)})
+    return validate_direct_inventory(records)
 
 
 def _make_file_writable(path: Path) -> None:
@@ -143,7 +145,7 @@ def _make_file_writable(path: Path) -> None:
     path.chmod(path.stat().st_mode | stat.S_IWUSR)
 
 
-def _copy_verified_file(source: Path, destination: Path) -> dict[str, Any]:
+def copy_verified_file(source: Path, destination: Path) -> dict[str, Any]:
     """Copy and hash one file in the same flushed byte stream."""
 
     digest = hashlib.sha256()
@@ -203,7 +205,7 @@ def materialize_direct_inventory(
             if not source_path.is_file():
                 raise ValueError(f"declared cache file is missing: {source_path}")
             try:
-                copied_record = _copy_verified_file(source_path, stage / name)
+                copied_record = copy_verified_file(source_path, stage / name)
             except Exception as exc:
                 raise RuntimeError(
                     "cache materialization copy failed: "

@@ -44,6 +44,24 @@ RUN_ARTIFACTS_PATH = (
 )
 
 
+def cache_fixture_prelude(directory: Path) -> str:
+    """Use private admission state and deterministic telemetry, preserving the guard."""
+    return (
+        f". '{RUN_ARTIFACTS_PATH}'; . '{REPO_ROOT / 'common/host_execution_lease.ps1'}'; "
+        f"$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=(Join-Path '{directory}' ('host-'+$PID+'.sqlite3')); "
+        f"$env:SIMULATION_PYTHON_EXE='{sys.executable}'; "
+        "$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=''; "
+        "function Get-CimInstance { param($ClassName,$ErrorAction) switch($ClassName) { "
+        "Win32_OperatingSystem { [pscustomobject]@{TotalVisibleMemorySize=33554432;FreePhysicalMemory=25165824} } "
+        "Win32_Processor { [pscustomobject]@{LoadPercentage=0} } "
+        "Win32_Process { [pscustomobject]@{Name='pwsh.exe';ProcessId=$PID;ParentProcessId=0;"
+        "CreationDate=[datetime]'2026-01-01';WorkingSetSize=67108864;PrivatePageCount=67108864;ExecutablePath='pwsh.exe'} } "
+        "Win32_PerfFormattedData_PerfDisk_PhysicalDisk { [pscustomobject]@{Name='fixture';CurrentDiskQueueLength=0} } } }; "
+        "$fixtureLease=Enter-HostExecutionLease -Role SIMION -Stage prepare 6>$null; "
+        "Register-EngineEvent PowerShell.Exiting -Action { Exit-HostExecutionLease -Lease $fixtureLease 6>$null } | Out-Null; "
+    )
+
+
 class JointSingleFlightOwnershipTests(unittest.TestCase):
     def test_new_single_flight_stage_is_integration_owned(self) -> None:
         upstream = "rf_octupole_ion_optics"
@@ -288,6 +306,8 @@ def make_single_flight_publication_fixture(workspace: Path) -> dict[str, object]
         "source_branch_id": "simion",
         "source_identity": canonical,
         "resolved_connection_sha256": file_sha256(resolved),
+        "composition_plan_sha256": file_sha256(plan),
+        "resolved_engineering_budget_sha256": file_sha256(budget),
         "stage_run_ids": {"single_flight_transport": stage_id},
         "stage_runtime_binding_sha256s": {
             "single_flight_transport": file_sha256(runtime)
@@ -322,6 +342,23 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 plan_path=fixture["plan"],
                 budget_path=fixture["budget"],
             )
+
+    def test_parent_publication_rejects_changed_or_unbound_prepared_inputs(self) -> None:
+        for name, field in (("plan", "composition_plan"), ("resolved", "resolved_connection"),
+                            ("budget", "resolved_engineering_budget")):
+            for mutation in ("bytes", "missing_receipt_hash"):
+                with self.subTest(name=name, mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                    fixture = make_single_flight_publication_fixture(Path(directory))
+                    if mutation == "bytes":
+                        path = fixture[name]
+                        path.write_bytes(path.read_bytes() + b"\n")
+                    else:
+                        receipt = json.loads(fixture["receipt"].read_text())
+                        del receipt[f"{field}_sha256"]
+                        write_json(fixture["receipt"], receipt)
+                    with self.assertRaisesRegex(ContractError, f"prepared {field} identity differs"):
+                        self._publish_single_flight_fixture(fixture)
+                    self.assertFalse((fixture["run_dir"] / "run_manifest.json").exists())
 
     def test_pre_pulse_single_flight_keeps_upstream_source_branch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -358,7 +395,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             }
             write_json(identity_path, identity)
             command = (
-                f". '{RUN_ARTIFACTS_PATH}'; "
+                cache_fixture_prelude(Path(directory)) +
                 f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                 f"$key=Get-RfContentIdentitySha256 -Identity $identity; "
                 "$capacity=@{known_measured_bytes=[int64]0}; "
@@ -451,7 +488,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             exact_identity_path = workspace / "exact_identity.json"
             write_json(exact_identity_path, exact_identity)
             exact_command = (
-                f". '{RUN_ARTIFACTS_PATH}'; "
+                cache_fixture_prelude(Path(directory)) +
                 f"$identity=Get-Content -Raw -LiteralPath '{exact_identity_path}' | ConvertFrom-Json; "
                 f"$directory=Resolve-RfReusableCacheDirectory -Python '{Path(sys.executable)}' "
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
@@ -498,7 +535,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             incompatible_path = workspace / "incompatible_identity.json"
             write_json(incompatible_path, incompatible)
             mismatch_command = (
-                f". '{RUN_ARTIFACTS_PATH}'; "
+                cache_fixture_prelude(Path(directory)) +
                 f"$identity=Get-Content -Raw -LiteralPath '{incompatible_path}' | ConvertFrom-Json; "
                 f"$directory=Resolve-RfReusableCacheDirectory -Python '{Path(sys.executable)}' "
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
@@ -537,7 +574,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             identity_path = workspace / "identity.json"
             write_json(identity_path, identity)
             publish = (
-                f". '{RUN_ARTIFACTS_PATH}'; "
+                cache_fixture_prelude(Path(directory)) +
                 f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                 "$key=Get-RfContentIdentitySha256 -Identity $identity; "
                 f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
@@ -555,7 +592,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             pointer = json.loads((cache_root / key / "current_generation.json").read_text(encoding="utf-8-sig"))
             entry = cache_root / key / pointer["generation_relative_path"]
             command = (
-                f". '{RUN_ARTIFACTS_PATH}'; "
+                cache_fixture_prelude(Path(directory)) +
                 f"Test-RfReusableCacheEntry -Python '{Path(sys.executable)}' "
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                 f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
@@ -595,7 +632,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             self.assertTrue(entry.exists())
             self.assertTrue((cache_root / key).exists())
             resolution = (
-                f". '{RUN_ARTIFACTS_PATH}'; "
+                cache_fixture_prelude(Path(directory)) +
                 f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                 f"$directory=Resolve-RfReusableCacheDirectory -Python '{Path(sys.executable)}' "
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
@@ -634,13 +671,12 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
 
             def publish(label: str) -> None:
                 command = (
-                    f". '{RUN_ARTIFACTS_PATH}'; "
+                    cache_fixture_prelude(Path(directory)) +
                     # Observe only this synthetic fixture's writers; keep the
                     # real guard and its quiet-window/publication checks.
                     "$generationGuard=${function:Wait-RfCacheStagingWriterExit}; "
                     "function Wait-RfCacheStagingWriterExit { "
                     "param($StagingDirectory,[switch]$FailIfWriterObserved) "
-                    "function Get-CimInstance { param($ClassName,$ErrorAction) @() }; "
                     "& $generationGuard @PSBoundParameters }; "
                     f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                     "$key=Get-RfContentIdentitySha256 -Identity $identity; "
@@ -682,7 +718,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
     def test_real_cache_writer_guard_rejects_late_and_persistent_writers(self) -> None:
         # Exercise the production guard separately from generation publication.
         with tempfile.TemporaryDirectory() as directory:
-            command = f". '{RUN_ARTIFACTS_PATH}'; " + r"""
+            command = cache_fixture_prelude(Path(directory)) + r"""
 $ErrorActionPreference='Stop'
 $script:writerSamples=0
 function Get-CimInstance {
@@ -746,7 +782,7 @@ Write-Output 'WRITER_GUARDS=PASS'
 
             def publish(provider: str) -> None:
                 command = (
-                    f". '{RUN_ARTIFACTS_PATH}'; "
+                    cache_fixture_prelude(Path(directory)) +
                     f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                     "$key=Get-RfContentIdentitySha256 -Identity $identity; "
                     f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
@@ -774,7 +810,7 @@ Write-Output 'WRITER_GUARDS=PASS'
             damaged.write_text("damaged\n", encoding="utf-8")
             damaged.chmod(stat.S_IREAD)
             command = (
-                f". '{RUN_ARTIFACTS_PATH}'; "
+                cache_fixture_prelude(Path(directory)) +
                 f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                 "$key=Get-RfContentIdentitySha256 -Identity $identity; "
                 f"Resolve-RfReusableCacheDirectory -Python '{Path(sys.executable)}' "
@@ -804,7 +840,7 @@ Write-Output 'WRITER_GUARDS=PASS'
             source_hash = file_sha256(source)
             source.chmod(stat.S_IREAD)
             command = (
-                f". '{RUN_ARTIFACTS_PATH}'; "
+                cache_fixture_prelude(Path(directory)) +
                 f"Copy-Item -LiteralPath '{source}' -Destination '{target}'; "
                 f"Set-RfMaterializedCacheFileWritable -Path '{target}'"
             )
@@ -840,7 +876,7 @@ Write-Output 'WRITER_GUARDS=PASS'
                 "identity": {}, "files": [],
             })
             command = (
-                f". '{RUN_ARTIFACTS_PATH}'; "
+                cache_fixture_prelude(Path(directory)) +
                 f"Test-RfReusableCacheEntry -Python '{Path(sys.executable)}' "
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                 f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
@@ -884,7 +920,7 @@ Write-Output 'WRITER_GUARDS=PASS'
 
             def publisher(label: str) -> subprocess.CompletedProcess[str]:
                 command = (
-                    f". '{RUN_ARTIFACTS_PATH}'; "
+                    cache_fixture_prelude(Path(directory)) +
                     f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                     "$key=Get-RfContentIdentitySha256 -Identity $identity; "
                     f"$lock=Enter-RfCacheKeyLock -CacheRoot '{cache_root}' -CacheKey $key; "
@@ -994,7 +1030,7 @@ Write-Output 'WRITER_GUARDS=PASS'
             frozen_source = child / "mother_particle_source.csv"
             frozen_receipt = child / "single_flight_source_materialization_receipt.json"
             command = (
-                f". '{RUN_ARTIFACTS_PATH}'; "
+                cache_fixture_prelude(Path(directory)) +
                 f"$root=Resolve-RfMaterializedMotherSourceRunRoot -WorkspaceRoot '{workspace}' "
                 f"-SourcePath '{source}' -ReceiptPath '{receipt}'; "
                 f"Copy-RfStableFile -SourceRunRoot $root -SourcePath '{source}' "
@@ -1224,6 +1260,8 @@ Write-Output 'WRITER_GUARDS=PASS'
                     "source_branch_id": "simion",
                     "source_identity": source_identity,
                     "resolved_connection_sha256": file_sha256(resolved),
+                    "composition_plan_sha256": file_sha256(plan),
+                    "resolved_engineering_budget_sha256": file_sha256(budget),
                     "stage_run_ids": stage_ids,
                     "stage_runtime_binding_sha256s": {
                         phase: runtime_sha for phase in STAGES

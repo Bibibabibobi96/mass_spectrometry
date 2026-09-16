@@ -23,6 +23,8 @@ Python prepare 将几何交给 resolved connection、源与人口交给各自 re
 该策略。只有 manifest 核验的单批画像可估算并发，无画像时从单批 bootstrap 开始；画像包含已解析的
 grid、reflectron/overlay cell、trajectory quality 与 RF 步数。公开 `execute.ps1` 和 prepare
 复核正式授权并冻结 resolved row、来源身份与 execution receipt。
+细网格、局部域与 overlay refine 共用首批观测、预算重规划和任务交接；各自保留 PA 身份、
+进程规格及完成回执，首批记录只交接一次，观测与后续 wave 始终处于同一重任务阶段。
 
 
 单飞行分辨率分析从冻结的 `single_flight_initial_global_state.csv` 读取唯一的正 `mass_amu`，不由
@@ -31,10 +33,13 @@ PowerShell 或恢复路径另行默认。混合质量需要显式的目标物种
 ## 生成物与身份
 
 `prepare.py` 将 authoring campaign 展开为完整冻结 experiment，生成 resolved connection、composition plan、
-resolved execution plan、resolved source/population contract 和 engineering budget。新生成的
-`resolved_execution_plan.json` 是 adapter 消费的结构化执行参数；composition plan 中的扁平参数仅用于与它
-逐项等价校验，以保持旧 prepared plan 可重放。`resolved_engineering_budget.json` 记录完整 SIMION dispatch
-plan；其 batch 决策必须与 adapter 接收的批次数一致，但它不是物理 handoff 或 PA content identity。
+resolved source/population contract 和 engineering budget。冻结的 composition plan 中
+`execution_steps[0].arguments` 是唯一执行参数运输；adapter 拒绝重复键、未知字段并复核输入身份与 SHA。
+不再生成同义 `resolved_execution_plan.json` 或维护双格式回放分支。
+正常发布复核 execution receipt 中 composition plan、resolved connection 与 engineering budget 的原始 SHA；
+缺失或不一致时拒绝发布，恢复路径继续由已发布 manifest 绑定来源。
+`resolved_engineering_budget.json` 记录完整 SIMION dispatch plan；其 batch 决策必须与 adapter 接收的
+批次数一致，但它不是物理 handoff 或 PA content identity。
 这些 preparation 生成 JSON 经过同一私有 UTF-8/LF 写入边界；它不重排默认对象字段，也不改变内容哈希、
 schema 或任一 resolved contract 的语义。
 
