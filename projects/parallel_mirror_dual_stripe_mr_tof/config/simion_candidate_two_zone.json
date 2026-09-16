@@ -81,9 +81,9 @@
     "manufacturing_constraint": "The existing five-electrode mirror geometry is already manufactured and is fixed for this Candidate.  Theory may optimize only mirror voltages and the operating point.  Axial geometry optimization is reserved for a separately identified future redesign.",
     "theory_requirements": {
       "l0_acceptance_budget": {
-        "minimum_mass_resolution": 50000,
+        "minimum_mass_resolution": 100000,
         "mirror_time_width_fraction": 1.0,
-        "semantics": "User-selected preliminary allocation: the mirror receives the full relative time-width budget for R>=50000. The L0 local slope tolerance is derived as mirror_time_width_fraction/(2*minimum_mass_resolution*half_energy_window_v), where the three mirror nodes are derived from the net-gain reference centre and maximum particle net-gain deviation. This is a preliminary mirror-only gate; later full-analyser budgeting must allocate nonzero error to source, Stripe, prism and numerical terms."
+        "semantics": "User-selected preliminary allocation: the mirror receives the full relative time-width budget for R>=100000. The L0 local slope tolerance is derived as mirror_time_width_fraction/(2*minimum_mass_resolution*half_energy_window_v), where the three mirror nodes are derived from the net-gain reference centre and maximum particle net-gain deviation. This is a preliminary mirror-only gate; later full-analyser budgeting must allocate nonzero error to source, Stripe, prism and numerical terms."
       },
       "global_l0_search_profile": {
         "base_random_seed": 20260907,

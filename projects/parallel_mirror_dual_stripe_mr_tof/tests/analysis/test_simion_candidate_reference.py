@@ -810,7 +810,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             normalized_period_slope_per_v(design, 4000.0, 0.0)
 
-    def test_mirror_l0_resolution_budget_derives_50k_full_allocation_slope_gate(self) -> None:
+    def test_mirror_l0_resolution_budget_derives_100k_full_allocation_slope_gate(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
         requirements = contract["mirror"]["theory_requirements"]
         budget = requirements["l0_acceptance_budget"]
@@ -819,7 +819,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             budget["mirror_time_width_fraction"],
             derive_operating_energy_envelope(contract).mirror_energy_nodes_v,
         )
-        self.assertAlmostEqual(tolerance, 1e-7)
+        self.assertAlmostEqual(tolerance, 5e-8)
         with self.assertRaises(CandidateContractError):
             derive_mirror_l0_slope_tolerance_per_v(50_000, 1.0, (3900.0, 4000.0, 4200.0))
 

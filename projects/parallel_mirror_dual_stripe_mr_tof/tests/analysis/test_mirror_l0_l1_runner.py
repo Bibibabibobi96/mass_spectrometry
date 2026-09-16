@@ -109,6 +109,24 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES[4],
         )
 
+    def test_summary_uses_frozen_gamma_limit_when_selected_root_omits_duplicate(self) -> None:
+        with TemporaryDirectory() as temporary:
+            l0, l1 = self._receipts(Path(temporary))
+            document = json.loads(l1.read_text(encoding="utf-8"))
+            del document["gamma_target_continuation"]["maximum_gamma_residual_degrees"]
+            l1.write_text(json.dumps(document), encoding="utf-8")
+            result = validate_and_summarize(CONTRACT, l0, l1)
+        self.assertEqual(result["status"], "success")
+
+    def test_summary_rejects_gamma_limit_that_differs_from_frozen_contract(self) -> None:
+        with TemporaryDirectory() as temporary:
+            l0, l1 = self._receipts(Path(temporary))
+            document = json.loads(l1.read_text(encoding="utf-8"))
+            document["gamma_target_continuation"]["maximum_gamma_residual_degrees"] = 0.01
+            l1.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "differs from the frozen contract"):
+                validate_and_summarize(CONTRACT, l0, l1)
+
     def test_summary_rejects_a_receipt_that_does_not_bind_l0(self) -> None:
         with TemporaryDirectory() as temporary:
             l0, l1 = self._receipts(Path(temporary))

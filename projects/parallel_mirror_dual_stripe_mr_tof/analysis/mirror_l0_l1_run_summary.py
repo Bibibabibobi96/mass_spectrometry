@@ -67,6 +67,7 @@ def validate_and_summarize(contract_path: Path, l0_path: Path, l1_path: Path) ->
     if not isinstance(search, dict):
         raise CandidateContractError("L0 receipt omits parallel_restart_search")
     profile = contract["mirror"]["theory_requirements"]["global_l0_search_profile"]
+    l1_profile = contract["mirror"]["theory_requirements"]["l1_screen_profile"]
     restart_count = int(search.get("restart_count", -1))
     if restart_count != int(profile["restart_count"]):
         raise CandidateContractError("L0 restart count differs from the frozen search profile")
@@ -84,8 +85,16 @@ def validate_and_summarize(contract_path: Path, l0_path: Path, l1_path: Path) ->
         raise CandidateContractError("L1 finite-difference probe convergence did not pass")
     residual_degrees = abs(_finite_float(continuation.get("gamma_residual_degrees"), "gamma residual"))
     residual_limit_degrees = _finite_float(
-        continuation.get("maximum_gamma_residual_degrees"), "gamma residual limit"
+        l1_profile["maximum_gamma_target_residual_degrees"], "contract gamma residual limit"
     )
+    declared_residual_limit = continuation.get("maximum_gamma_residual_degrees")
+    if declared_residual_limit is not None and not math.isclose(
+        _finite_float(declared_residual_limit, "declared gamma residual limit"),
+        residual_limit_degrees,
+        rel_tol=0.0,
+        abs_tol=0.0,
+    ):
+        raise CandidateContractError("L1 gamma residual limit differs from the frozen contract")
     if residual_degrees > residual_limit_degrees:
         raise CandidateContractError("L1 gamma residual exceeds its declared tolerance")
 
