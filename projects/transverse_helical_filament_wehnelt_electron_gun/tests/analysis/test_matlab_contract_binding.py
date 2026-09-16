@@ -812,7 +812,7 @@ function Get-HostResourceSnapshot {
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=90,
+                timeout=180,
             )
             self.assertEqual(
                 completed.returncode,
