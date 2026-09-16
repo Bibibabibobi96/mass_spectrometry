@@ -15,11 +15,30 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.particle_physics import (
+    AMU_KG,
+    ELEMENTARY_CHARGE_C,
+    kinetic_energy_ev,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+    resolve_drift_phase_contract,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_local_refinement_plan import (
     derive_local_refinement_plan,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
+    load_verified_bunch_source_receipt,
+    solver_problem_identity_from_trial_receipt,
+    source_cohort_identity,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import (
     _full_path_timeout_us,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import (
+    resolve_bunch_source_interval,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
+    native_stripe_geometry_projection_sha256,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
@@ -28,7 +47,11 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     load_contract,
     resolve_trajectory_profile,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
+    FLY_COMPLETED,
+    parse_events,
+    summarize_events,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
     ProjectPhaseSpaceState,
     observation_from_simion_events,
@@ -45,6 +68,260 @@ def _load(path: Path) -> dict[str, Any]:
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+_GLOBAL_PULSE_TIME_BASIS = "ion_time_of_flight_us_from_common_tob_zero_release"
+
+
+def _apply_trajectory_step_scale(
+    trajectory_profile: dict[str, Any], trajectory_step_scale: float,
+) -> dict[str, Any]:
+    scale = _finite(trajectory_step_scale, "trajectory step scale")
+    if not 0 < scale <= 1:
+        raise CandidateContractError("trajectory step scale must be in (0, 1]")
+    if scale == 1:
+        return trajectory_profile
+    profile = dict(trajectory_profile)
+    base_profile_id = str(profile["profile_id"])
+    base_maximum_step_us = _finite(
+        profile["maximum_step_us"], "base maximum trajectory step",
+    )
+    profile.update({
+        "profile_id": f"{base_profile_id}__step_scale_{scale:.12g}",
+        "base_profile_id": base_profile_id,
+        "base_maximum_step_us": base_maximum_step_us,
+        "step_scale": scale,
+        "maximum_step_us": base_maximum_step_us * scale,
+        "purpose": (
+            f"{profile['purpose']}; run-local numerical refinement "
+            "of one frozen source interval"
+        ),
+    })
+    return profile
+
+
+def _accelerator_energy_binding(
+    accelerator: dict[str, Any], analyzer_axial_energy_per_charge_v: float,
+) -> dict[str, float]:
+    """Validate the calibrated accelerator command against its physical target."""
+    analyzer_target = _finite(
+        analyzer_axial_energy_per_charge_v, "analyser selected axial energy",
+    )
+    applied = _finite(
+        accelerator.get("energy_per_charge_v"),
+        "accelerator applied net-gain parameter",
+    )
+    target = _finite(
+        accelerator.get("target_axial_energy_per_charge_v"),
+        "accelerator target axial energy",
+    )
+    correction = _finite(
+        accelerator.get("finite_3d_gain_correction_v"),
+        "accelerator finite-3D gain correction",
+    )
+    if abs(target - analyzer_target) > 1e-9:
+        raise CandidateContractError(
+            "accelerator target axial energy and analyser selected axial energy differ"
+        )
+    if abs((applied - correction) - target) > 1e-9:
+        raise CandidateContractError(
+            "accelerator applied net-gain parameter, finite-3D correction, and "
+            "target axial energy are inconsistent"
+        )
+    return {
+        "applied_net_gain_parameter_v": applied,
+        "target_axial_energy_per_charge_v": target,
+        "finite_3d_gain_correction_v": correction,
+    }
+
+
+def _resolve_trial_geometry(
+    reviewed_geometry_contract: dict[str, Any],
+    current_topology_contract: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve reviewed conductors with current non-geometric event authority."""
+    return resolve_geometry(
+        reviewed_geometry_contract,
+        inherited_dual_stripe_topology_contract=current_topology_contract,
+    )
+
+
+def _schema5_native_source_state(
+    stripe_summary: dict[str, Any], contract: dict[str, Any], selected_energy_v: float,
+) -> tuple[dict[str, Any], float]:
+    """Validate the exact-K native materialization that owns the +y source energy."""
+    if (
+        stripe_summary.get("schema_version") != 5
+        or stripe_summary.get("role") != "mrtof_dual_stripe_exact_k_downstream_operating_seed"
+        or stripe_summary.get("status")
+        != "native_shape_source_energy_inverse_and_stripe_on_exact_k_complete"
+    ):
+        raise CandidateContractError("P1/P2 source requires the schema-5 native Stripe seed")
+    selected = stripe_summary.get("selected_exact_k_operating_point")
+    root = stripe_summary.get("native_stripe_spatial_shape_root")
+    seed = stripe_summary.get("selected_seed")
+    materialized = seed.get("native_spatial_return_materialization") if isinstance(seed, dict) else None
+    if not all(isinstance(value, dict) for value in (selected, root, seed, materialized)):
+        raise CandidateContractError("schema-5 Stripe seed lacks its selected point, shape, or materialization")
+    nominal = contract.get("nominal")
+    accelerator_energy = contract.get("accelerator_energy_contract")
+    prism_transport = contract.get("prism_transport")
+    energy_partition = (
+        prism_transport.get("energy_partition")
+        if isinstance(prism_transport, dict) else None
+    )
+    if (
+        not isinstance(nominal, dict)
+        or not isinstance(accelerator_energy, dict)
+        or not isinstance(energy_partition, dict)
+    ):
+        raise CandidateContractError("MR-TOF contract lacks its fixed axial/source energy authorities")
+    materialized_energy = _finite(
+        materialized.get("axial_energy_per_charge_v"),
+        "native Stripe materialization axial energy",
+    )
+    stripe_energy = _finite(selected.get("axial_energy_per_charge_v"), "Stripe selected energy")
+    reference_energy = _finite(
+        accelerator_energy.get("net_gain_reference_center_per_charge_v"),
+        "contract net-gain reference centre",
+    )
+    search_half_range = _finite(
+        accelerator_energy.get("net_gain_center_search_half_range_per_charge_v"),
+        "contract net-gain search half-range",
+    )
+    nominal_energy = _finite(nominal.get("energy_per_charge_v"), "contract nominal energy")
+    if reference_energy <= 0.0 or search_half_range < 0.0 or nominal_energy != reference_energy:
+        raise CandidateContractError("MR-TOF contract net-gain reference authorities differ")
+    if not reference_energy - search_half_range <= selected_energy_v <= reference_energy + search_half_range:
+        raise CandidateContractError("selected exact-K energy is outside the contract search envelope")
+    if any(abs(value - selected_energy_v) > 1e-9 for value in (
+        materialized_energy, stripe_energy,
+    )):
+        raise CandidateContractError("native Stripe and mirror selected energies differ")
+    materialized_root = materialized.get("shape_root")
+    seed_biases = _vector(seed.get("stripe_biases_v"), 2, "native Stripe seed biases")
+    materialized_biases = _vector(
+        materialized.get("stripe_biases_v"), 2, "native Stripe materialization biases",
+    )
+    expected_geometry_identity = (
+        "canonical_json_sha256:"
+        f"{native_stripe_geometry_projection_sha256(contract)}"
+    )
+    if (
+        materialized_root != root
+        or materialized_biases != seed_biases
+        or root.get("geometry_input_identity_source") != expected_geometry_identity
+        or _finite(seed.get("nominal_kappa_1"), "native Stripe seed kappa")
+        != _finite(root.get("kappa_1"), "native Stripe shape kappa")
+        or _finite(selected.get("kappa_1"), "Stripe selected-point kappa")
+        != _finite(root.get("kappa_1"), "native Stripe shape kappa")
+    ):
+        raise CandidateContractError("schema-5 Stripe materialization shape identity is inconsistent")
+    source_energy = _finite(
+        materialized.get("source_slow_energy_per_charge_v"),
+        "native Stripe materialization source slow energy",
+    )
+    contract_source_energy = _finite(
+        energy_partition.get("drift_kinetic_energy_ev"),
+        "contract source slow energy",
+    )
+    if source_energy <= 0.0 or source_energy != contract_source_energy:
+        raise CandidateContractError("native Stripe source slow energy differs from the fixed source contract")
+    return seed, source_energy
+
+
+def load_schema5_native_source_state(
+    stripe_summary: dict[str, Any], contract: dict[str, Any], selected_energy_v: float,
+) -> tuple[dict[str, Any], float]:
+    """Public strict loader for the contract-bound schema-5 native Stripe source."""
+    return _schema5_native_source_state(stripe_summary, contract, selected_energy_v)
+
+
+def _p2_handoff_targets(
+    seed: dict[str, Any], contract: dict[str, Any],
+) -> tuple[float, float, float]:
+    """Derive the positive-turn y and low-field angle from Stripe authority."""
+    registration = contract.get("dual_stripe_l0", {}).get(
+        "theory_function_coordinate_registration"
+    )
+    if not isinstance(registration, dict):
+        raise CandidateContractError("MR-TOF contract lacks the Stripe function registration")
+    target_y = _finite(
+        registration.get("function_y_zero_project_y_mm"),
+        "Stripe function-y origin in project coordinates",
+    )
+    angle_degrees = _finite(
+        seed.get("nominal_injection_angle_degrees"),
+        "native Stripe seed nominal injection angle",
+    )
+    tangent_ratio = math.tan(math.radians(angle_degrees))
+    if not math.isfinite(tangent_ratio) or tangent_ratio <= 0.0:
+        raise CandidateContractError(
+            "native Stripe seed injection angle must give a finite positive vy/vz tangent"
+        )
+    return target_y, angle_degrees, tangent_ratio
+
+
+def _single_center_source_fly2(
+    *, mass_th: float, charge_state: int, source_slow_energy_per_charge_v: float,
+    focus_y_mm: float, release_z_mm: float,
+) -> str:
+    """Render the real +y slow-energy release used before -z acceleration."""
+    return (
+        "particles {\n  coordinates = 0,\n  standard_beam {\n"
+        f"    n = 1,\n    tob = 0,\n    mass = {mass_th:.17g},\n    charge = {charge_state},\n"
+        f"    ke = {source_slow_energy_per_charge_v * abs(charge_state):.17g},\n"
+        "    cwf = 1,\n    color = 0,\n"
+        "    direction = vector(0, 1, 0),\n"
+        "    position = circle_distribution {\n"
+        f"      center = vector(0, {focus_y_mm:.17g}, {release_z_mm:.17g}),\n"
+        "      normal = vector(0, 0, -1),\n      radius = 0,\n      fill = true\n"
+        "    }\n  }\n}\n"
+    )
+
+
+def _load_frozen_accelerator_pulse_schedule(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    schedule = _load(path)
+    if (
+        schedule.get("schema_version") not in (1, 2)
+        or schedule.get("role") != "mrtof_accelerator_global_pulse_schedule"
+        or schedule.get("status") != "frozen"
+        or schedule.get("mode") != "fixed_global_time"
+        or schedule.get("time_basis") != _GLOBAL_PULSE_TIME_BASIS
+    ):
+        raise CandidateContractError("accelerator pulse schedule identity is invalid")
+    pulse_time = _finite(schedule.get("pulse_off_time_us"), "accelerator pulse-off time")
+    if pulse_time <= 0:
+        raise CandidateContractError("accelerator pulse-off time must be positive")
+    if schedule["schema_version"] == 1:
+        source = schedule.get("source")
+        if not isinstance(source, dict) or any(
+            not isinstance(source.get(key), str) or not source[key]
+            for key in (
+                "center_run_id", "run_manifest_sha256", "trial_receipt_sha256",
+                "observation_sha256", "source_fly2_sha256", "accelerator_receipt_sha256",
+            )
+        ):
+            raise CandidateContractError("accelerator pulse schedule has incomplete source identity")
+        if source.get("source_particle_count") != 1:
+            raise CandidateContractError("legacy pulse schedules must contain one particle")
+    else:
+        if (
+            not isinstance(schedule.get("source_cohort"), dict)
+            or not isinstance(schedule.get("solver_problem_identity"), dict)
+            or not isinstance(schedule.get("safe_exit_definition"), dict)
+        ):
+            raise CandidateContractError("bunch pulse schedule has incomplete frozen identities")
+    after_state = schedule.get("after_state")
+    if (
+        not isinstance(after_state, dict)
+        or after_state.get("accelerator_electrode_ids") != list(range(1, 10))
+        or after_state.get("voltage_v") != 0.0
+    ):
+        raise CandidateContractError("accelerator pulse schedule has an invalid grounded state")
+    return schedule
 
 
 def _patch_interface_planes(contract_path: Path) -> list[dict[str, Any]]:
@@ -203,136 +480,307 @@ def _vector(value: Any, count: int, label: str) -> list[float]:
     return [_finite(item, label) for item in value]
 
 
+def _single_center_source_state(trial: dict[str, Any]) -> tuple[ProjectPhaseSpaceState, dict[str, Any]]:
+    """Derive the actual N=1 release state from the frozen source authorities."""
+    if trial.get("source_particle_count") != 1:
+        raise CandidateContractError("single-center trial observation requires source_particle_count=1")
+    position = _vector(trial.get("source_position_project_mm"), 3, "source position")
+    direction = _vector(trial.get("source_direction_project"), 3, "source direction")
+    direction_norm = math.sqrt(sum(value * value for value in direction))
+    if direction_norm <= 0.0:
+        raise CandidateContractError("source direction must be nonzero")
+    direction = [value / direction_norm for value in direction]
+    if direction != [0.0, 1.0, 0.0]:
+        raise CandidateContractError(
+            "single-center source direction must match the Fly2 +project-y release"
+        )
+    mass = _finite(trial.get("particle_mass_th"), "particle mass")
+    charge = trial.get("charge_state")
+    if mass <= 0.0 or not isinstance(charge, int) or isinstance(charge, bool) or charge == 0:
+        raise CandidateContractError("source species requires positive mass and nonzero integer charge")
+    energy_per_charge = _finite(
+        trial.get("source_slow_kinetic_energy_per_charge_v"),
+        "source slow kinetic energy per charge",
+    )
+    if energy_per_charge <= 0.0:
+        raise CandidateContractError("source slow kinetic energy per charge must be positive")
+    energy_ev = energy_per_charge * abs(charge)
+    speed_m_s = math.sqrt(2.0 * energy_ev * ELEMENTARY_CHARGE_C / (mass * AMU_KG))
+    velocity = tuple(value * speed_m_s / 1000.0 for value in direction)
+    derived_energy_ev = kinetic_energy_ev(mass, *(value * 1000.0 for value in velocity))
+    if not math.isclose(derived_energy_ev, energy_ev, rel_tol=1e-12, abs_tol=1e-12):
+        raise CandidateContractError("derived source velocity does not preserve source kinetic energy")
+    state = ProjectPhaseSpaceState(tuple(position), velocity)
+    return state, {
+        "position_mm": list(state.position_mm),
+        "velocity_mm_per_us": list(state.velocity_mm_per_us),
+        "time_us": _finite(trial.get("source_time_of_birth_us"), "source time of birth"),
+        "particle_mass_th": mass,
+        "charge_state": charge,
+        "kinetic_energy_ev": derived_energy_ev,
+        "kinetic_energy_per_charge_v": derived_energy_ev / abs(charge),
+        "direction_project": list(state.unit_direction_project),
+    }
+
+
+def _accelerator_safe_exit_observation(
+    events: list[dict[str, Any]], trial: dict[str, Any], *,
+    log_path: Path, trial_receipt_path: Path,
+) -> dict[str, Any]:
+    """Publish one measured accelerator exit, failing closed on invalid state."""
+    exits = [event for event in events if event["kind"] == "accelerator_safe_exit"]
+    base: dict[str, Any] = {
+        "event_count": len(exits),
+        "input_log": {"path": str(log_path.resolve()), "sha256": _sha256(log_path)},
+        "trial_identity": {
+            "path": str(trial_receipt_path.resolve()),
+            "sha256": _sha256(trial_receipt_path),
+        },
+    }
+    if not exits:
+        return {**base, "status": "not_observed", "state": None}
+    errors: list[str] = []
+    if len(exits) != 1:
+        errors.append("accelerator_safe_exit_count_must_equal_one")
+    event = exits[0]
+    try:
+        ion = int(event.get("ion"))
+        time_us = _finite(event.get("t_us"), "accelerator safe-exit time")
+        source_time_us = _finite(
+            trial.get("source_time_of_birth_us"), "source time of birth"
+        )
+        from_instance = int(event.get("from_instance"))
+        to_instance = int(event.get("to_instance"))
+        position = _vector(
+            [event.get(key) for key in ("x_mm", "y_mm", "z_mm")], 3,
+            "accelerator safe-exit position",
+        )
+        velocity = _vector(
+            [event.get(key) for key in ("vx_mm_us", "vy_mm_us", "vz_mm_us")], 3,
+            "accelerator safe-exit velocity",
+        )
+        mass = _finite(trial.get("particle_mass_th"), "particle mass")
+        charge = trial.get("charge_state")
+        accelerator_instance = int(trial.get("workbench_accelerator_instance", 7))
+        if accelerator_instance not in {2, 7}:
+            errors.append("workbench_accelerator_instance_is_invalid")
+        if ion != 1:
+            errors.append("accelerator_safe_exit_must_belong_to_ion_one")
+        if time_us < 0.0:
+            errors.append("accelerator_safe_exit_time_must_be_nonnegative")
+        if time_us < source_time_us:
+            errors.append("accelerator_safe_exit_cannot_precede_source_release")
+        if from_instance != accelerator_instance or to_instance == accelerator_instance:
+            errors.append("accelerator_safe_exit_instance_transition_is_invalid")
+        if velocity[2] >= 0.0:
+            errors.append("accelerator_safe_exit_must_travel_toward_negative_project_z")
+        if mass <= 0.0 or not isinstance(charge, int) or isinstance(charge, bool) or charge == 0:
+            errors.append("accelerator_safe_exit_species_is_invalid")
+    except (CandidateContractError, TypeError, ValueError) as error:
+        errors.append(str(error))
+        position = velocity = []
+        time_us = 0.0
+        mass = 0.0
+        charge = 0
+        from_instance = to_instance = 0
+    exit_index = next(
+        (index for index, candidate in enumerate(events) if candidate is event), -1
+    )
+    p1_entries = [
+        (index, candidate) for index, candidate in enumerate(events)
+        if candidate["kind"] == "prism_entry" and candidate.get("n") == 1
+    ]
+    p1_passes = [
+        (index, candidate) for index, candidate in enumerate(events)
+        if candidate["kind"] == "prism_pass" and candidate.get("n") == 1
+    ]
+    if len(p1_entries) > 1:
+        errors.append("first_prism_entry_count_exceeds_one")
+    elif p1_entries:
+        try:
+            p1_index, p1_entry = p1_entries[0]
+            if (
+                p1_index <= exit_index
+                or _finite(p1_entry.get("t_us"), "P1 entry time") <= time_us
+            ):
+                errors.append("accelerator_safe_exit_does_not_precede_P1")
+        except CandidateContractError as error:
+            errors.append(str(error))
+    elif len(p1_passes) > 1:
+        errors.append("first_prism_pass_count_exceeds_one")
+    elif p1_passes:
+        try:
+            p1_index, p1_pass = p1_passes[0]
+            if (
+                p1_index <= exit_index
+                or _finite(p1_pass.get("t_us"), "P1 pass time") <= time_us
+            ):
+                errors.append("accelerator_safe_exit_does_not_precede_P1_pass")
+        except CandidateContractError as error:
+            errors.append(str(error))
+    if errors:
+        return {**base, "status": "invalid", "state": None, "errors": errors}
+    return {
+        **base,
+        "status": "observed",
+        "state": {
+            "ion": 1,
+            "time_us": time_us,
+            "position_mm": position,
+            "velocity_mm_per_us": velocity,
+            "particle_mass_th": mass,
+            "charge_state": charge,
+            "kinetic_energy_ev": kinetic_energy_ev(
+                mass, *(value * 1000.0 for value in velocity)
+            ),
+            "from_instance": from_instance,
+            "to_instance": to_instance,
+        },
+        "p1_ordering": (
+            "verified_safe_exit_before_P1_entry"
+            if p1_entries
+            else (
+                "before_P1_pass_only__P1_entry_not_observed"
+                if p1_passes else "P1_entry_and_pass_not_observed"
+            )
+        ),
+    }
+
+
 def _lua_vector(values: list[float]) -> str:
     return "{ " + ", ".join(f"{value:.17g}" for value in values) + " }"
 
 
-def _lua_prism_switch(value: dict[str, Any] | None) -> str:
-    if value is None:
-        return ""
-    fields = [
-        "enabled = true",
-        f"electrode_id = {int(value['electrode_id'])}",
-        f"time_us = {value['time_us']:.17g}",
-        f"injection_voltage_v = {value['injection_voltage_v']:.17g}",
-        f"extraction_voltage_v = {value['extraction_voltage_v']:.17g}",
-    ]
-    if "prism_1_extraction_voltage_v" in value:
-        fields.append(
-            "prism_1_extraction_voltage_v = "
-            f"{value['prism_1_extraction_voltage_v']:.17g}"
-        )
-    return "prism_switch = { " + ", ".join(fields) + " }, "
+_STATIC_RETURN_KINDS = (
+    "drift_phase_return",
+    "return_p2_entry",
+    "return_p2_pass",
+    "return_positive_mirror_turn",
+    "detector",
+)
 
 
-def _distance_to_interval(value: float, lower: float, upper: float) -> float:
-    if value < lower:
-        return value - lower
-    if value > upper:
-        return value - upper
-    return 0.0
-
-
-def _extraction_diagnostic(
-    events: list[dict[str, Any]],
-    switch_contract: dict[str, Any],
-    detector_box_mm: list[float],
-) -> dict[str, Any]:
-    """Reduce a switched center flight to detector-plane residual evidence."""
-    box = _vector(detector_box_mm, 6, "detector box")
-    switch_time = _finite(switch_contract.get("time_us"), "prism switch time")
-    expected = {17: _finite(switch_contract.get("extraction_voltage_v"), "P2 extraction voltage")}
-    if "prism_1_extraction_voltage_v" in switch_contract:
-        expected[16] = _finite(
-            switch_contract["prism_1_extraction_voltage_v"], "P1 extraction voltage"
-        )
-    switch_events = [event for event in events if event["kind"] == "prism_voltage_switch"]
-    observed_ids = [int(event["electrode"]) for event in switch_events]
-    event_contract_ok = sorted(observed_ids) == sorted(expected)
-    if event_contract_ok:
-        for event in switch_events:
-            electrode = int(event["electrode"])
-            if not math.isclose(float(event["t_us"]), switch_time, rel_tol=1e-9, abs_tol=1e-9):
-                event_contract_ok = False
-            if not math.isclose(float(event["to_v"]), expected[electrode], rel_tol=1e-9, abs_tol=1e-9):
-                event_contract_ok = False
-
-    planes = [
-        event for event in events
-        if event["kind"] == "detector_plane" and float(event["t_us"]) >= switch_time
-    ]
-    incoming = [event for event in planes if int(event["direction_z"]) == -1]
-    scored: list[tuple[float, dict[str, Any], float, float]] = []
-    for event in incoming:
-        dx = _distance_to_interval(float(event["x_mm"]), box[0], box[3])
-        dy = _distance_to_interval(float(event["y_mm"]), box[1], box[4])
-        scored.append((math.hypot(dx, dy), event, dx, dy))
-    nearest = min(scored, key=lambda item: (item[0], float(item[1]["t_us"]))) if scored else None
-    detector_events = [
-        event for event in events
-        if event["kind"] == "detector" and float(event["t_us"]) >= switch_time
-    ]
-    terminals = [event for event in events if event["kind"] in {"splat", "terminal"}]
-    post_return_turns = [
-        event for event in events
-        if event["kind"] == "post_return_mirror_turn" and float(event["t_us"]) > switch_time
-    ]
-    earliest_causal: tuple[dict[str, Any], int] | None = None
-    for event in incoming:
-        turns_before = sum(
-            float(turn["t_us"]) <= float(event["t_us"])
-            for turn in post_return_turns
-        )
-        # The first incoming crossing occurs while the returned ion is merely
-        # leaving the positive mirror and precedes either prism.  Require at
-        # least two subsequent mirror turns before treating a detector-plane
-        # sample as causally affected by the extraction fields.
-        if turns_before >= 2:
-            earliest_causal = (event, turns_before)
-            break
-    result: dict[str, Any] = {
-        "status": "detector_hit" if detector_events else "detector_not_observed",
-        "event_contract_ok": event_contract_ok,
-        "expected_switched_electrodes": sorted(expected),
-        "observed_switched_electrodes": observed_ids,
-        "switch_time_us": switch_time,
-        "post_switch_detector_plane_count": len(planes),
-        "post_switch_incoming_detector_plane_count": len(incoming),
-        "post_return_mirror_turn_count": len(post_return_turns),
-        "detector_center_xy_mm": [(box[0] + box[3]) / 2, (box[1] + box[4]) / 2],
-        "detector_active_xy_bounds_mm": [box[0], box[3], box[1], box[4]],
+def _termination_diagnostic(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Separate physical electrode contact from project-requested SIMION stops."""
+    splats = [event for event in events if event["kind"] == "splat"]
+    terminals = [event for event in events if event["kind"] == "terminal"]
+    if len(splats) != 1 or len(terminals) != 1:
+        return {
+            "status": "ambiguous",
+            "physical_collision": None,
+            "splat_count": len(splats),
+            "terminal_count": len(terminals),
+        }
+    code = int(splats[0]["code"])
+    kinds = {
+        -1: "physical_electrode_collision",
+        1: "programmatic_detector_completion",
+        2: "programmatic_timeout",
+        4: "programmatic_topology_rejection",
+        5: "programmatic_diagnostic_stop",
     }
-    if incoming:
-        result["first_incoming_plane"] = incoming[0]
-    if earliest_causal is not None:
-        event, turns_before = earliest_causal
-        result["earliest_causally_extractable_incoming_plane"] = event
-        result["mirror_turns_before_earliest_causal_plane"] = turns_before
-        result["earliest_causal_center_residual_xy_mm"] = [
-            float(event["x_mm"]) - result["detector_center_xy_mm"][0],
-            float(event["y_mm"]) - result["detector_center_xy_mm"][1],
-        ]
-        result["earliest_causal_rectangle_residual_xy_mm"] = [
-            _distance_to_interval(float(event["x_mm"]), box[0], box[3]),
-            _distance_to_interval(float(event["y_mm"]), box[1], box[4]),
-        ]
-    if nearest is not None:
-        distance, event, dx, dy = nearest
-        result["nearest_incoming_plane"] = event
-        result["nearest_rectangle_residual_xy_mm"] = [dx, dy]
-        result["nearest_rectangle_distance_mm"] = distance
-    if detector_events:
-        result["first_detector_event"] = detector_events[0]
-        result["post_switch_time_to_detector_us"] = (
-            float(detector_events[0]["t_us"]) - switch_time
+    kind = kinds.get(code, "unclassified_solver_termination")
+    diagnostic: dict[str, Any] = {
+        "status": "observed",
+        "kind": kind,
+        "code": code,
+        "physical_collision": code == -1,
+        "event": splats[0],
+    }
+    if code == 4:
+        diagnostic["explicit_semantics"] = (
+            splats[0].get("termination_kind") == kind
+            and splats[0].get("physical_collision") == 0
         )
-    if terminals:
-        result["terminal_event"] = terminals[-1]
+        diagnostic["reason"] = splats[0].get("reason")
+    return diagnostic
+
+
+def _static_return_diagnostic(
+    events: list[dict[str, Any]], target_k: float,
+) -> dict[str, Any]:
+    """Validate the unique P2-to-positive-mirror static return event chain."""
+    selected = {kind: [event for event in events if event["kind"] == kind]
+                for kind in _STATIC_RETURN_KINDS}
+    errors: list[str] = []
+    if any(event["kind"] == "prism_voltage_switch" for event in events):
+        errors.append("prism_voltage_switch_forbidden")
+    if any(event["kind"] in {"return_p1_entry", "return_p1_pass"} for event in events):
+        errors.append("return_p1_forbidden__p1_is_injection_only")
+    if any(event["kind"] == "nonmirror_reversal" for event in events):
+        errors.append("nonmirror_vz_reversal_observed")
+    for kind, matches in selected.items():
+        if len(matches) != 1:
+            errors.append(f"{kind}_count_must_equal_one")
+    if all(len(selected[kind]) == 1 for kind in _STATIC_RETURN_KINDS):
+        times = [float(selected[kind][0]["t_us"]) for kind in _STATIC_RETURN_KINDS]
+        if any(later <= earlier for earlier, later in zip(times, times[1:])):
+            errors.append("static_return_events_out_of_order")
+        if float(selected["return_p2_entry"][0].get("vz_mm_us", 0.0)) <= 0.0:
+            errors.append("return_p2_entry_must_travel_positive_z")
+        if float(selected["return_p2_pass"][0].get("vz_mm_us", 0.0)) <= 0.0:
+            errors.append("return_p2_pass_must_travel_positive_z")
+        positive_turn = selected["return_positive_mirror_turn"][0]
+        if (float(positive_turn.get("z_mm", 0.0)) <= 0.0
+                or abs(float(positive_turn.get("vz_mm_us", math.inf))) > 1.0e-12):
+            errors.append("return_positive_mirror_turn_must_be_positive_z_vz_zero")
+        detector = selected["detector"][0]
+        if int(detector.get("direction_z", 0)) != -1:
+            errors.append("static_detector_hit_must_travel_negative_z")
+        if float(detector.get("z_mm", 0.0)) <= 0.0:
+            errors.append("static_detector_hit_must_be_in_positive_z_half_space")
+    safe_exits = [event for event in events if event["kind"] == "accelerator_safe_exit"]
+    inferred_reentry = False
+    if len(safe_exits) == 1:
+        safe_exit = safe_exits[0]
+        accelerator_instance = int(safe_exit["from_instance"])
+        inferred_reentry = any(
+            event["kind"] == "instance_transition"
+            and float(event["t_us"]) > float(safe_exit["t_us"])
+            and int(event["instance"]) == accelerator_instance
+            for event in events
+        )
+    if any(event["kind"] == "accelerator_reentry" for event in events) or inferred_reentry:
+        errors.append("accelerator_reentry_after_safe_exit_forbidden")
+    if any(event["kind"] == "post_return_mirror_turn" for event in events):
+        errors.append("legacy_post_return_mirror_turn_forbidden")
+    terminals = [event for event in events if event["kind"] == "terminal"]
+    splats = [event for event in events if event["kind"] == "splat"]
+    if len(terminals) != 1 or int(terminals[0].get("splat", 0)) != 1:
+        errors.append("detector_terminal_must_be_unique_splat_one")
+    if len(splats) != 1 or int(splats[0].get("code", 0)) != 1:
+        errors.append("detector_splat_must_be_unique_code_one")
+    event_contract_ok = not errors
+    detector_observed = len(selected["detector"]) == 1
+    result: dict[str, Any] = {
+        "status": "detector_hit" if event_contract_ok else (
+            "invalid_static_return" if detector_observed else "detector_not_observed"
+        ),
+        "event_contract_ok": event_contract_ok,
+        "required_event_order": list(_STATIC_RETURN_KINDS),
+        "event_counts": {kind: len(matches) for kind, matches in selected.items()},
+        "errors": errors,
+        "termination": _termination_diagnostic(events),
+    }
+    if detector_observed:
+        result["first_detector_event"] = selected["detector"][0]
+    if len(selected["drift_phase_return"]) == 1:
+        phase_return = selected["drift_phase_return"][0]
+        result["fractional_k"] = phase_return.get("k", phase_return.get("fractional_k"))
+        result["fractional_k_minus_target"] = (
+            float(result["fractional_k"]) - target_k
+            if result["fractional_k"] is not None else None
+        )
     return result
 
 
-def _mirror_regions(contract: dict[str, Any]) -> dict[str, list[float]]:
-    resolved = resolve_geometry(contract)
+def _mirror_regions(
+    contract: dict[str, Any], *, topology_contract: dict[str, Any] | None = None,
+) -> dict[str, list[float]]:
+    resolved = resolve_geometry(
+        contract,
+        inherited_dual_stripe_topology_contract=topology_contract,
+    )
     boxes = [
         item["box"]
         for key in ("mirror_ground_shields", "mirror_electrodes", "mirror_e_closures")
@@ -342,6 +790,121 @@ def _mirror_regions(contract: dict[str, Any]) -> dict[str, list[float]]:
         "negative": [min(box[2] for box in boxes if box[5] < 0), max(box[5] for box in boxes if box[5] < 0)],
         "positive": [min(box[2] for box in boxes if box[2] > 0), max(box[5] for box in boxes if box[2] > 0)],
     }
+
+
+def _verify_manifest_record(path: Path, record: dict[str, Any], label: str) -> None:
+    if not path.is_file() or not bool(record.get("exists")):
+        raise CandidateContractError(f"{label} is missing")
+    if Path(str(record.get("path"))).resolve() != path.resolve():
+        raise CandidateContractError(f"{label} path differs from its manifest")
+    if int(record.get("bytes", -1)) != path.stat().st_size:
+        raise CandidateContractError(f"{label} byte count differs from its manifest")
+    if str(record.get("sha256", "")).lower() != _sha256(path).lower():
+        raise CandidateContractError(f"{label} hash differs from its manifest")
+
+
+def freeze_single_center_pulse_schedule(
+    *, center_run_path: Path, output_path: Path,
+) -> dict[str, Any]:
+    """Freeze an N=1 diagnostic global time from a successful exit-triggered run."""
+    run_dir = center_run_path.resolve()
+    manifest_path = run_dir / "run_manifest.json"
+    manifest = _load(manifest_path)
+    if (
+        manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
+        or manifest.get("mode") != "finite_3d_two_prism_voltage_trial"
+        or manifest.get("status") != "success"
+    ):
+        raise CandidateContractError("pulse-schedule source run is not a successful MR-TOF trial")
+    trial_path = run_dir / "results" / "two_prism_trial_materialization.json"
+    observation_path = run_dir / "results" / "two_prism_trial_observation.json"
+    fly2_path = run_dir / "simion" / "downstream_trial_source.input.fly2"
+    output_records = {
+        Path(str(record.get("path"))).resolve(): record
+        for record in manifest.get("outputs", []) if isinstance(record, dict)
+    }
+    for path, label in (
+        (trial_path, "source trial receipt"),
+        (observation_path, "source observation"),
+    ):
+        record = output_records.get(path.resolve())
+        if not isinstance(record, dict):
+            raise CandidateContractError(f"{label} is not bound by the run manifest")
+        _verify_manifest_record(path, record, label)
+    fly2_record = (manifest.get("inputs") or {}).get("frozen_source_fly2")
+    if not isinstance(fly2_record, dict):
+        raise CandidateContractError("source Fly2 is not bound by the run manifest")
+    _verify_manifest_record(fly2_path, fly2_record, "source Fly2")
+    trial = _load(trial_path)
+    observation = _load(observation_path)
+    pulse = trial.get("accelerator_pulse") or {}
+    diagnostic = observation.get("accelerator_pulse_diagnostic") or {}
+    event = diagnostic.get("pulse_off_event")
+    if (
+        pulse.get("mode") != "initial_exit_triggered_single_center"
+        or diagnostic.get("mode") != "initial_exit_triggered_single_center"
+        or diagnostic.get("pulse_off_event_count") != 1
+        or not isinstance(event, dict)
+    ):
+        raise CandidateContractError(
+            "pulse-schedule source must contain one initial-exit-triggered centre event"
+        )
+    if (
+        trial.get("source_particle_count") != 1
+        or trial.get("source_time_of_birth_us") != 0.0
+        or trial.get("source_clock_basis") != _GLOBAL_PULSE_TIME_BASIS
+    ):
+        raise CandidateContractError("pulse-schedule source particle clock is not frozen")
+    accelerator_instance = int(trial.get("workbench_accelerator_instance", 7))
+    if (
+        accelerator_instance not in {2, 7}
+        or int(event.get("from_instance", -1)) != accelerator_instance
+        or int(event.get("to_instance", accelerator_instance)) == accelerator_instance
+    ):
+        raise CandidateContractError("pulse-schedule source event is not the first accelerator exit")
+    pulse_off_time = _finite(event.get("t_us"), "source accelerator pulse-off time")
+    if pulse_off_time <= 0:
+        raise CandidateContractError("source accelerator pulse-off time must be positive")
+    accelerator_receipt_sha256 = str(
+        (trial.get("inputs") or {}).get("accelerator_receipt_sha256", "")
+    )
+    if not accelerator_receipt_sha256:
+        raise CandidateContractError("source trial has no accelerator voltage identity")
+    schedule = {
+        "schema_version": 1,
+        "role": "mrtof_accelerator_global_pulse_schedule",
+        "status": "frozen",
+        "qualification": "single_center_diagnostic__not_a_bunch_schedule",
+        "mode": "fixed_global_time",
+        "time_basis": _GLOBAL_PULSE_TIME_BASIS,
+        "pulse_off_time_us": pulse_off_time,
+        "after_state": {
+            "accelerator_electrode_ids": list(range(1, 10)),
+            "voltage_v": 0.0,
+        },
+        "source": {
+            "center_run_id": str(manifest["run_id"]),
+            "source_particle_count": 1,
+            "run_manifest_sha256": _sha256(manifest_path),
+            "trial_receipt_sha256": _sha256(trial_path),
+            "observation_sha256": _sha256(observation_path),
+            "source_fly2_sha256": _sha256(fly2_path),
+            "accelerator_receipt_sha256": accelerator_receipt_sha256,
+        },
+        "derivation": {
+            "rule": "first_transition_out_of_declared_workbench_accelerator_instance",
+            "from_instance": int(event["from_instance"]),
+            "to_instance": int(event["to_instance"]),
+            "event_position_project_mm": [
+                _finite(event.get(key), f"source event {key}")
+                for key in ("x_mm", "y_mm", "z_mm")
+            ],
+            "bunch_safe_exit_envelope": None,
+        },
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(schedule, indent=2) + "\n", encoding="utf-8")
+    return schedule
 
 
 def materialize_trial(
@@ -355,22 +918,29 @@ def materialize_trial(
     prism_1_v: float,
     prism_2_v: float,
     stripe_biases_override_v: tuple[float, float] | None,
-    continue_main_drift: bool,
     runtime_fast_adjust_enable: bool,
-    prism_2_extraction_v: float | None,
-    prism_1_extraction_v: float | None,
-    prism_switch_time_us: float | None,
-    reference_transport_receipt_path: Path | None,
-    reference_transport_log_path: Path | None,
-    constrain_x_symmetry_plane: bool,
+    pulse_accelerator_until_initial_exit: bool,
+    accelerator_pulse_schedule_path: Path | None,
     trajectory_profile_id: str | None,
     fly2_path: Path,
     sidecar_path: Path,
     receipt_path: Path,
+    bunch_source_receipt_path: Path | None = None,
+    bunch_particle_id_min: int | None = None,
+    bunch_particle_id_max: int | None = None,
+    workbench_accelerator_instance: int = 7,
+    trajectory_step_scale: float = 1.0,
 ) -> dict[str, Any]:
-    contract = load_contract(contract_path)
+    if workbench_accelerator_instance not in {2, 7}:
+        raise CandidateContractError("workbench accelerator instance must be 2 or 7")
     trajectory_contract = load_contract(trajectory_contract_path)
-    reviewed_contract = load_contract(reviewed_contract_path)
+    detector_return_policy = trajectory_contract["accelerator"]["detector_return_path"]
+    contract = load_contract(
+        contract_path, inherited_detector_return_path=detector_return_policy,
+    )
+    reviewed_contract = load_contract(
+        reviewed_contract_path, inherited_detector_return_path=detector_return_policy,
+    )
     mirror = _load(mirror_summary_path)
     stripe = _load(stripe_summary_path)
     accelerator = _load(accelerator_receipt_path)
@@ -381,14 +951,16 @@ def materialize_trial(
             raise CandidateContractError("mirror summary has no selected exact-K operating point")
     selected_mirror = mirror.get("selected_operating_point")
     selected_stripe = stripe.get("selected_exact_k_operating_point")
-    seed = stripe.get("selected_seed")
-    if not all(isinstance(value, dict) for value in (selected_mirror, selected_stripe, seed)):
+    if not all(isinstance(value, dict) for value in (selected_mirror, selected_stripe)):
         raise CandidateContractError("mirror/Stripe summaries do not expose the selected exact-K point")
     energy = _finite(selected_mirror.get("energy_per_charge_v"), "mirror selected energy")
+    seed, slow_energy = _schema5_native_source_state(stripe, contract, energy)
+    target_turn_y, target_angle_degrees, target_tangent_ratio = (
+        _p2_handoff_targets(seed, contract)
+    )
     if abs(_finite(selected_stripe.get("axial_energy_per_charge_v"), "Stripe selected energy") - energy) > 1e-9:
         raise CandidateContractError("mirror and Stripe selected energies differ")
-    if abs(_finite(accelerator.get("energy_per_charge_v"), "accelerator selected energy") - energy) > 1e-9:
-        raise CandidateContractError("accelerator and analyser selected energies differ")
+    accelerator_energy = _accelerator_energy_binding(accelerator, energy)
     mirror_voltages = _vector(selected_mirror.get("mirror_voltages_v"), 5, "mirror voltages")
     stripe_biases = _vector(seed.get("stripe_biases_v"), 2, "Stripe biases")
     if stripe_biases_override_v is not None:
@@ -400,79 +972,61 @@ def materialize_trial(
     ring_voltages = _vector(accelerator.get("ring_voltages_v"), 5, "accelerator ring voltages")
     p1 = _finite(prism_1_v, "P1 voltage")
     p2 = _finite(prism_2_v, "P2 voltage")
-    prism_switch: dict[str, Any] | None = None
-    if prism_2_extraction_v is not None:
-        if runtime_fast_adjust_enable:
-            raise CandidateContractError(
-                "prism extraction switching cannot be combined with full analyser Fast Adjust"
-            )
-        if reference_transport_receipt_path is None or reference_transport_log_path is None:
-            raise CandidateContractError(
-                "prism extraction requires one verified reference transport receipt and log"
-            )
-        reference = _load(reference_transport_receipt_path)
-        if reference.get("role") != "mrtof_finite_3d_two_prism_voltage_trial":
-            raise CandidateContractError("reference transport receipt has the wrong role")
-        reference_prisms = _vector(reference.get("prism_voltages_v"), 2, "reference prism voltages")
-        reference_stripes = _vector(reference.get("stripe_biases_v"), 2, "reference Stripe biases")
-        if any(not math.isclose(value, reference_value, rel_tol=1e-12, abs_tol=1e-12)
-               for value, reference_value in zip((p1, p2), reference_prisms)):
-            raise CandidateContractError("injection P1/P2 do not match the reference transport")
-        if stripe_biases_override_v is not None and any(
-            not math.isclose(value, reference_value, rel_tol=1e-12, abs_tol=1e-12)
-            for value, reference_value in zip(stripe_biases, reference_stripes)
-        ):
-            raise CandidateContractError("Stripe override does not match the reference transport")
-        stripe_biases = reference_stripes
-        reference_events = parse_events(reference_transport_log_path.read_text(encoding="utf-8"))
-        coordinate_returns = [
-            event for event in reference_events if event["kind"] == "drift_coordinate_return"
-        ]
-        if len(coordinate_returns) != 1:
-            raise CandidateContractError(
-                "reference transport must contain exactly one drift-coordinate return"
-            )
-        derived_switch_time = _finite(
-            coordinate_returns[0].get("t_us"), "reference drift-coordinate return time"
-        )
-        if prism_switch_time_us is not None and not math.isclose(
-            _finite(prism_switch_time_us, "prism switch time"),
-            derived_switch_time,
-            rel_tol=1e-12,
-            abs_tol=1e-9,
-        ):
-            raise CandidateContractError(
-                "supplied prism switch time does not match the reference coordinate return"
-            )
-        switch_time = derived_switch_time
-        if switch_time <= 0:
-            raise CandidateContractError("prism switch time must be positive")
-        prism_switch = {
-            "enabled": True,
-            "electrode_id": 17,
-            "time_us": switch_time,
-            "injection_voltage_v": p2,
-            "extraction_voltage_v": _finite(
-                prism_2_extraction_v, "P2 extraction voltage"
-            ),
-        }
-        if prism_1_extraction_v is not None:
-            prism_switch["prism_1_extraction_voltage_v"] = _finite(
-                prism_1_extraction_v, "P1 extraction voltage"
-            )
-    elif prism_1_extraction_v is not None:
+    phase_contract = resolve_drift_phase_contract(contract)
+    target_k = phase_contract.target_period_ratio
+    pulse_schedule = _load_frozen_accelerator_pulse_schedule(
+        accelerator_pulse_schedule_path
+    )
+    if pulse_accelerator_until_initial_exit and pulse_schedule is not None:
         raise CandidateContractError(
-            "P1 extraction voltage requires the P2 extraction-switch contract"
+            "event-triggered and fixed-time accelerator pulse modes are mutually exclusive"
         )
-    elif prism_switch_time_us is not None:
-        raise CandidateContractError("prism switch time requires an extraction voltage")
-    elif reference_transport_receipt_path is not None or reference_transport_log_path is not None:
-        raise CandidateContractError("reference transport inputs are only valid for extraction")
+    fixed_pulse_off_time = (
+        _finite(pulse_schedule["pulse_off_time_us"], "accelerator pulse-off time")
+        if pulse_schedule is not None else None
+    )
+    accelerator_pulse_requested = (
+        pulse_accelerator_until_initial_exit or fixed_pulse_off_time is not None
+    )
     source_contract = contract["particle_source"]
     species = source_contract["species"]
-    mass = _finite(species.get("mass_th"), "particle mass")
-    charge = int(species.get("charge_e"))
-    slow_energy = _finite(seed.get("derived_drift_kinetic_energy_per_charge_v"), "slow energy")
+    bunch_source = (
+        load_verified_bunch_source_receipt(bunch_source_receipt_path)
+        if bunch_source_receipt_path is not None else None
+    )
+    if (bunch_particle_id_min is None) != (bunch_particle_id_max is None):
+        raise CandidateContractError("bunch particle interval endpoints must be supplied together")
+    bunch_selection = None
+    if bunch_particle_id_min is not None:
+        if bunch_source_receipt_path is None:
+            raise CandidateContractError("bunch particle selection requires a frozen source receipt")
+        if bunch_particle_id_max < bunch_particle_id_min:
+            raise CandidateContractError(
+                "managed bunch diagnostics require one or more contiguous particles"
+            )
+        if accelerator_pulse_requested:
+            raise CandidateContractError("frozen source interval diagnostics require a static accelerator")
+        bunch_selection = resolve_bunch_source_interval(
+            receipt_path=bunch_source_receipt_path,
+            particle_id_min=bunch_particle_id_min,
+            particle_id_max=bunch_particle_id_max,
+        )
+    if bunch_source is not None and pulse_accelerator_until_initial_exit:
+        raise CandidateContractError(
+            "N>1 bunch flights forbid initial_exit_triggered_single_center"
+        )
+    if bunch_source is not None and abs(
+        _finite(bunch_source.get("common_time_of_birth_us"), "bunch common birth time")
+    ) > 1.0e-15:
+        raise CandidateContractError("MR-TOF batch dispatch requires common tob=0")
+    selected_species = bunch_source["species"] if bunch_source is not None else species
+    mass = _finite(selected_species.get("mass_th"), "particle mass")
+    charge = int(selected_species.get("charge_e"))
+    if (
+        abs(mass - _finite(species.get("mass_th"), "contract particle mass")) > 1e-12
+        or charge != int(species.get("charge_e"))
+    ):
+        raise CandidateContractError("bunch source species differs from the MR-TOF contract")
     if mass <= 0 or charge == 0 or slow_energy <= 0:
         raise CandidateContractError("P1/P2 source mass, charge, and slow energy must be physical")
     # Voltage calibration changes the analytic focus equation but must never
@@ -481,29 +1035,67 @@ def materialize_trial(
     placement = derive_two_zone_placement(reviewed_contract)
     release = _finite(contract["accelerator"].get("release_position_in_gap_1_mm"), "accelerator release")
     release_z = placement.repeller_z_mm - release
-    fly2 = (
-        "particles {\n  coordinates = 0,\n  standard_beam {\n"
-        f"    n = 1,\n    tob = 0,\n    mass = {mass:.17g},\n    charge = {charge},\n"
-        f"    ke = {slow_energy * abs(charge):.17g},\n    cwf = 1,\n    color = 0,\n"
-        "    direction = vector(0, 1, 0),\n"
-        "    position = circle_distribution {\n"
-        f"      center = vector(0, {placement.focus_y_mm:.17g}, {release_z:.17g}),\n"
-        "      normal = vector(0, 0, -1),\n      radius = 0,\n      fill = true\n"
-        "    }\n  }\n}\n"
+    center_fly2 = _single_center_source_fly2(
+        mass_th=mass,
+        charge_state=charge,
+        source_slow_energy_per_charge_v=slow_energy,
+        focus_y_mm=placement.focus_y_mm,
+        release_z_mm=release_z,
     )
-    resolved = resolve_geometry(reviewed_contract)
+    fly2 = (
+        bunch_selection["fly2"] if bunch_selection is not None
+        else Path(bunch_source["fly2"]["path"]).read_text(encoding="utf-8")
+        if bunch_source is not None else center_fly2
+    )
+    if pulse_schedule is not None and pulse_schedule["schema_version"] == 1:
+        if bunch_source is not None:
+            raise CandidateContractError(
+                "N>1 bunch flights require a schema-2 fixed-global-time schedule"
+            )
+        source_identity = pulse_schedule["source"]
+        generated_fly2_sha256 = hashlib.sha256(fly2.encode("utf-8")).hexdigest()
+        if generated_fly2_sha256.lower() != source_identity["source_fly2_sha256"].lower():
+            raise CandidateContractError(
+                "accelerator pulse schedule was derived from a different particle source"
+            )
+        if _sha256(accelerator_receipt_path).lower() != source_identity[
+            "accelerator_receipt_sha256"
+        ].lower():
+            raise CandidateContractError(
+                "accelerator pulse schedule was derived from a different accelerator voltage state"
+            )
+    resolved = _resolve_trial_geometry(
+        reviewed_contract,
+        # The accelerator voltage trial is an independently versioned voltage
+        # receipt and may predate a project-level observation surface.  Bind
+        # non-geometric topology/diagnostic authority from the current frozen
+        # trajectory contract, as the IOB pose resolver does, while retaining
+        # the reviewed contract as the sole physical geometry source.
+        trajectory_contract,
+    )
     detector = resolved["detector"]
-    regions = _mirror_regions(reviewed_contract)
+    low_field_reference = resolved["two_prism_low_field_reference_section"]
+    if low_field_reference.get("qualification") != "candidate_reference_section__not_a_zero_field_claim":
+        raise CandidateContractError("resolved P2 reference plane has an invalid qualification")
+    low_field_aperture = low_field_reference.get("transit_aperture_project_mm")
+    if not isinstance(low_field_aperture, dict):
+        raise CandidateContractError("resolved P2 reference plane lacks its transit aperture")
+    regions = _mirror_regions(
+        reviewed_contract, topology_contract=trajectory_contract,
+    )
     prism_regions: dict[str, list[float]] = {}
     shields_by_station = {
         item["station"]: item for item in reviewed_contract["prisms"]["ground_shields"]
     }
     for index, electrode in enumerate(reviewed_contract["prisms"]["electrodes"], 1):
-        # A trajectory reverses in the finite field inside the grounded station,
-        # not inside the solid triangular electrode.  Use the station shield's
-        # complete y-z envelope for event classification.
+        # Use the CAD-derived triangular clearance envelope rather than the
+        # complete grounded-shield envelope.  The latter extends to the mirror
+        # and would falsely place the P2 pass after the low-field reference.
         shield = shields_by_station[electrode["station"]]
-        points = [(float(point[0]), float(point[1])) for point in shield["outer_polygon_yz_mm"]]
+        points = [
+            (float(point[0]), float(point[1]))
+            for point in shield["prism_clearance_polygon_yz_mm"]
+        ]
         prism_regions[f"p{index}"] = [
             min(point[0] for point in points), max(point[0] for point in points),
             min(point[1] for point in points), max(point[1] for point in points),
@@ -512,12 +1104,22 @@ def materialize_trial(
     trajectory_profile = resolve_trajectory_profile(
         trajectory_contract, trajectory_profile_id,
     )
-    target_k = int(contract["nominal"]["target_oscillation_count"])
+    trajectory_profile = _apply_trajectory_step_scale(
+        trajectory_profile, trajectory_step_scale,
+    )
     timeout = _full_path_timeout_us(contract, source_contract, target_k)
     p1_plane = _finite(contract["prism_transport"]["first_prism"]["target_interface"]["coordinate_mm"], "P1 plane")
     p1_acceptance = contract["prisms"]["ground_shields"][0]["rectangular_slots_mm"][0]["box"][1:5:3]
     patch_interface_planes = _patch_interface_planes(trajectory_contract_path)
-    prism_switch_lua = _lua_prism_switch(prism_switch)
+    accelerator_pulse_mode = "static"
+    if pulse_accelerator_until_initial_exit:
+        accelerator_pulse_mode = "initial_exit_triggered_single_center"
+    elif fixed_pulse_off_time is not None:
+        accelerator_pulse_mode = "fixed_global_time"
+    accelerator_pulse_time_lua = (
+        f"accelerator_pulse_off_time_us = {fixed_pulse_off_time:.17g}, "
+        if fixed_pulse_off_time is not None else ""
+    )
     sidecar = (
         "-- Generated run-local finite-3D P1/P2 voltage trial; do not edit.\n"
         f"return {{ qualification = 'p1_p2_finite_3d_voltage_trial_only', mirror_voltages_v = {_lua_vector(mirror_voltages)}, "
@@ -526,16 +1128,18 @@ def materialize_trial(
         f"first_prism_l0 = {{ target_plane_z_mm = {p1_plane:.17g}, target_plane_x_mm = 0, target_plane_y_acceptance_mm = {_lua_vector([float(v) for v in p1_acceptance])} }}, "
         f"mirror_regions_project = {{ negative = {{ z_min_mm = {regions['negative'][0]:.17g}, z_max_mm = {regions['negative'][1]:.17g} }}, positive = {{ z_min_mm = {regions['positive'][0]:.17g}, z_max_mm = {regions['positive'][1]:.17g} }} }}, "
         f"prism_regions_project = {{ p1 = {{ y_min_mm = {prism_regions['p1'][0]:.17g}, y_max_mm = {prism_regions['p1'][1]:.17g}, z_min_mm = {prism_regions['p1'][2]:.17g}, z_max_mm = {prism_regions['p1'][3]:.17g} }}, p2 = {{ y_min_mm = {prism_regions['p2'][0]:.17g}, y_max_mm = {prism_regions['p2'][1]:.17g}, z_min_mm = {prism_regions['p2'][2]:.17g}, z_max_mm = {prism_regions['p2'][3]:.17g} }} }}, "
+        f"p2_low_field_reference = {{ z_mm = {_finite(low_field_reference['reference_plane_project_z_mm'], 'P2 low-field reference z'):.17g}, x_min_mm = {_finite(low_field_aperture['x_mm'][0], 'P2 low-field x minimum'):.17g}, x_max_mm = {_finite(low_field_aperture['x_mm'][1], 'P2 low-field x maximum'):.17g}, y_min_mm = {_finite(low_field_aperture['y_mm'][0], 'P2 low-field y minimum'):.17g}, y_max_mm = {_finite(low_field_aperture['y_mm'][1], 'P2 low-field y maximum'):.17g} }}, "
         f"patch_interface_planes_project = {_lua_patch_interface_planes(patch_interface_planes)}, "
-        "phase_origin_mirror_side = 1, "
+        f"phase_origin_mirror_side = {phase_contract.origin_mirror_side}, return_mirror_side = {phase_contract.return_mirror_side}, "
         f"detector_box_mm = {_lua_vector([float(v) for v in detector['box']])}, detector_normal_project = '+z', "
         f"trajectory_quality = {float(trajectory_profile['trajectory_quality']):.17g}, maximum_step_us = {float(trajectory_profile['maximum_step_us']):.17g}, "
         f"full_path_timeout_us = {timeout:.17g}, nonaccelerator_scale = {_finite(simion['nonaccelerator_scale'], 'nonaccelerator scale'):.17g}, "
-        f"target_oscillation_count = {target_k}, stop_at_drift_phase_origin = {'false' if continue_main_drift else 'true'}, "
+        f"target_drift_period_ratio = {target_k:.17g}, target_half_oscillation_count = {phase_contract.target_half_oscillation_count}, "
         f"runtime_fast_adjust_enable = {'true' if runtime_fast_adjust_enable else 'false'}, "
-        "runtime_fast_adjust_accelerator_enable = false, "
-        f"{prism_switch_lua}"
-        f"constrain_x_symmetry_plane = {'true' if constrain_x_symmetry_plane else 'false'} }}\n"
+        f"runtime_accelerator_field_gate_enable = {'true' if accelerator_pulse_requested else 'false'}, "
+        f"accelerator_pulse_mode = '{accelerator_pulse_mode}', "
+        f"{accelerator_pulse_time_lua}"
+        "flight_scope = 'complete_three_dimensional_static_return' }\n"
     )
     fly2_path.parent.mkdir(parents=True, exist_ok=True)
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
@@ -550,35 +1154,106 @@ def materialize_trial(
         "schema_version": 1,
         "role": "mrtof_finite_3d_two_prism_voltage_trial",
         "status": "materialized",
-        "qualification": "single_center_trial__not_an_operating_point",
-        "x_symmetry_plane_constraint": bool(constrain_x_symmetry_plane),
+        "qualification": (
+            "contiguous_frozen_bunch_diagnostic__not_formal"
+            if bunch_selection is not None
+            else "complete_bunch_pilot_or_fixed_clock_trial__performance_pending"
+            if bunch_source is not None else "single_center_trial__not_an_operating_point"
+        ),
+        "flight_scope": "complete_three_dimensional_static_return",
         "selected_axial_energy_per_charge_v": energy,
         "source_slow_kinetic_energy_per_charge_v": slow_energy,
-        "source_position_project_mm": [0.0, placement.focus_y_mm, release_z],
-        "source_direction_project": [0.0, 1.0, 0.0],
+        "source_position_project_mm": (
+            None if bunch_source is not None else [0.0, placement.focus_y_mm, release_z]
+        ),
+        "source_direction_project": None if bunch_source is not None else [0.0, 1.0, 0.0],
+        "source_particle_count": (
+            len(bunch_selection["particle_ids"])
+            if bunch_selection is not None
+            else bunch_source["particle_count"] if bunch_source is not None else 1
+        ),
+        "source_time_of_birth_us": (
+            bunch_source["common_time_of_birth_us"] if bunch_source is not None else 0.0
+        ),
+        "source_clock_basis": _GLOBAL_PULSE_TIME_BASIS,
+        "source_cohort": (
+            bunch_selection["source_cohort"]
+            if bunch_selection is not None
+            else source_cohort_identity(bunch_source) if bunch_source is not None else None
+        ),
+        "source_expected_particle_ids": (
+            bunch_selection["particle_ids"]
+            if bunch_selection is not None
+            else bunch_source["expected_particle_ids"] if bunch_source is not None else [1]
+        ),
+        "source_selection": (
+            bunch_selection["source_cohort"]["selection"]
+            if bunch_selection is not None else None
+        ),
         "mirror_voltages_v": mirror_voltages,
         "stripe_biases_v": stripe_biases,
         "prism_voltages_v": [p1, p2],
         "detector_box_mm": [float(v) for v in detector["box"]],
         "accelerator_endpoint_voltages_v": endpoint_voltages,
         "accelerator_ring_voltages_v": ring_voltages,
+        "accelerator_applied_net_gain_parameter_v": accelerator_energy[
+            "applied_net_gain_parameter_v"
+        ],
+        "accelerator_target_axial_energy_per_charge_v": accelerator_energy[
+            "target_axial_energy_per_charge_v"
+        ],
+        "accelerator_finite_3d_gain_correction_v": accelerator_energy[
+            "finite_3d_gain_correction_v"
+        ],
         "analyzer_electrode_voltages_v": analyzer_values,
-        "target_turn_y_mm": 0.0,
-        "phase_origin_mirror_side": 1,
+        "target_positive_mirror_turn_y_mm": target_turn_y,
+        "target_nominal_injection_angle_degrees": target_angle_degrees,
+        "target_low_field_tangent_ratio_vy_over_vz": target_tangent_ratio,
+        "p2_low_field_reference_section": low_field_reference,
+        "drift_phase_contract": phase_contract.as_dict(),
         "patch_interface_planes_project": patch_interface_planes,
-        "phase_origin_side_derivation": "P2 is exited along +project-z; the first post-P2 Stripe-on mirror turn is therefore the positive mirror",
-        "target_slow_kinetic_energy_per_charge_v": slow_energy,
+        "p1_p2_handoff_definition": (
+            "P1 -> negative-mirror diagnostic turn -> P2 -> low-field Candidate "
+            "reference crossing -> first positive-mirror turn"
+        ),
+        "detector_return_policy_authority": {
+            "source": "trajectory_contract",
+            "policy": detector_return_policy,
+            "legacy_physical_contracts_rebound_without_mutation": True,
+        },
         "target_slow_turn_y_mm": _finite(
             contract["dual_stripe_l0"]["manufactured_design_abs_drift_length_L_mm"],
             "manufactured drift length",
         ),
-        "target_oscillation_count": target_k,
-        "continue_main_drift": bool(continue_main_drift),
+        "target_drift_period_ratio": target_k,
+        "target_half_oscillation_count": phase_contract.target_half_oscillation_count,
         "runtime_fast_adjust_enable": bool(runtime_fast_adjust_enable),
-        "prism_switch": prism_switch,
+        "workbench_accelerator_instance": workbench_accelerator_instance,
+        "accelerator_pulse": {
+            "mode": accelerator_pulse_mode,
+            "pulse_off_time_us": fixed_pulse_off_time,
+            "energized_before_initial_exit": (
+                True if pulse_accelerator_until_initial_exit else None
+            ),
+            "grounded_after_initial_exit": (
+                True if pulse_accelerator_until_initial_exit else None
+            ),
+            "fixed_global_time_applied": fixed_pulse_off_time is not None,
+            "qualification": (
+                "single_center_event_triggered_schedule__must_be_replaced_by_one_frozen_global_time_for_any_bunch"
+                if pulse_accelerator_until_initial_exit
+                else (
+                    "frozen_global_time_single_center_diagnostic__bunch_qualification_pending"
+                    if fixed_pulse_off_time is not None else "static_accelerator"
+                )
+            ),
+        },
         "particle_mass_th": mass,
         "charge_state": charge,
         "trajectory_profile": trajectory_profile,
+        "nonaccelerator_mesh_mm_per_gu": list(
+            simion["component_mesh_mm_per_gu"]["analyzer"]
+        ),
         "inputs": {
             "contract_sha256": _sha256(contract_path),
             "trajectory_contract_sha256": _sha256(trajectory_contract_path),
@@ -587,13 +1262,30 @@ def materialize_trial(
             "stripe_summary_sha256": _sha256(stripe_summary_path),
             "accelerator_receipt_sha256": _sha256(accelerator_receipt_path),
             **({
-                "reference_transport_receipt_sha256": _sha256(reference_transport_receipt_path),
-                "reference_transport_log_sha256": _sha256(reference_transport_log_path),
-            } if reference_transport_receipt_path is not None else {}),
+                "accelerator_pulse_schedule_sha256": _sha256(
+                    accelerator_pulse_schedule_path
+                ),
+            } if accelerator_pulse_schedule_path is not None else {}),
+            **({
+                "bunch_source_receipt_sha256": _sha256(bunch_source_receipt_path),
+            } if bunch_source_receipt_path is not None else {}),
         },
         "fly2_sha256": _sha256(fly2_path),
         "operating_point_lua_sha256": _sha256(sidecar_path),
     }
+    if pulse_schedule is not None and pulse_schedule["schema_version"] == 2:
+        if bunch_source is None:
+            raise CandidateContractError("bunch pulse schedule requires a frozen bunch source")
+        if pulse_schedule["source_cohort"] != receipt["source_cohort"]:
+            raise CandidateContractError("pulse schedule source differs from the flight cohort")
+        if (
+            pulse_schedule["solver_problem_identity"]
+            != solver_problem_identity_from_trial_receipt(receipt)
+        ):
+            raise CandidateContractError("pulse schedule solver problem differs from the flight")
+        receipt["accelerator_pulse"]["qualification"] = (
+            "complete_bunch_safe_exit_schedule__numerical_convergence_pending"
+        )
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return receipt
@@ -601,54 +1293,194 @@ def materialize_trial(
 
 def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path) -> dict[str, Any]:
     trial = _load(trial_receipt_path)
-    events = parse_events(log_path.read_text(encoding="utf-8"))
+    if trial.get("prism_switch") is not None:
+        raise CandidateContractError(
+            "active MR-TOF Candidate observation forbids all P1/P2 voltage switching"
+        )
+    log_text = log_path.read_text(encoding="utf-8")
+    events = parse_events(log_text)
+    if any(event["kind"] == "prism_voltage_switch" for event in events):
+        raise CandidateContractError(
+            "active MR-TOF Candidate log contains a forbidden P1/P2 voltage switch"
+        )
+    pulse_contract = trial.get("accelerator_pulse") or {"mode": "static"}
+    pulse_mode = pulse_contract.get("mode")
+    if pulse_mode not in {
+        "static", "initial_exit_triggered_single_center", "fixed_global_time",
+    }:
+        raise CandidateContractError("trial has an unsupported accelerator pulse mode")
+    exit_pulse_events = [
+        event for event in events if event["kind"] == "accelerator_pulse_off"
+    ]
+    global_pulse_events = [
+        event for event in events
+        if event["kind"] == "accelerator_global_pulse_applied"
+    ]
+    if pulse_mode == "initial_exit_triggered_single_center":
+        if len(exit_pulse_events) != 1 or global_pulse_events:
+            raise CandidateContractError(
+                "initial-exit-triggered accelerator trial must emit exactly one pulse-off event"
+            )
+        accelerator_instance = int(trial.get("workbench_accelerator_instance", 7))
+        if accelerator_instance not in {2, 7}:
+            raise CandidateContractError("trial has an invalid workbench accelerator instance")
+        if (
+            int(exit_pulse_events[0]["from_instance"]) != accelerator_instance
+            or int(exit_pulse_events[0]["to_instance"]) == accelerator_instance
+        ):
+            raise CandidateContractError(
+                "accelerator pulse-off event must be the first exit from the declared accelerator instance"
+            )
+    elif pulse_mode == "fixed_global_time":
+        configured_time = _finite(
+            pulse_contract.get("pulse_off_time_us"), "fixed accelerator pulse-off time"
+        )
+        if configured_time <= 0 or len(global_pulse_events) != 1 or exit_pulse_events:
+            raise CandidateContractError(
+                "fixed-time accelerator trial must define a positive time and emit exactly one pulse-off event"
+            )
+        observed_time = _finite(global_pulse_events[0].get("t_us"), "observed accelerator pulse-off time")
+        scheduled_time = _finite(
+            global_pulse_events[0].get("scheduled_t_us"),
+            "recorded scheduled accelerator pulse-off time",
+        )
+        if global_pulse_events[0].get("trigger") != "fixed_global_time":
+            raise CandidateContractError(
+                "fixed-time accelerator pulse event has the wrong trigger identity"
+            )
+        tolerance = max(1e-9, abs(configured_time) * 1e-9)
+        if (
+            abs(observed_time - configured_time) > tolerance
+            or abs(scheduled_time - configured_time) > tolerance
+        ):
+            raise CandidateContractError(
+                "fixed-time accelerator pulse event does not match the frozen global time"
+            )
+    elif exit_pulse_events or global_pulse_events:
+        raise CandidateContractError("static accelerator trial emitted an unexpected pulse-off event")
+    pulse_events = exit_pulse_events + global_pulse_events
     kinds: dict[str, int] = {}
     for event in events:
         kinds[event["kind"]] = kinds.get(event["kind"], 0) + 1
     result: dict[str, Any] = {
         "schema_version": 1,
         "role": "mrtof_finite_3d_two_prism_trial_observation",
-        "status": "transport_incomplete",
+        "status": "p2_low_field_and_positive_mirror_turn_incomplete",
         "qualification": "single_center_trial__not_an_operating_point",
         "prism_voltages_v": trial["prism_voltages_v"],
         "event_counts": kinds,
         "log_sha256": _sha256(log_path),
         "trial_receipt_sha256": _sha256(trial_receipt_path),
+        "accelerator_pulse_diagnostic": {
+            "mode": pulse_mode,
+            "pulse_off_event_count": len(pulse_events),
+            "pulse_off_event": pulse_events[0] if pulse_events else None,
+            "qualification": pulse_contract.get("qualification"),
+        },
         "patch_interface_diagnostic": _patch_interface_diagnostics(
             events, trial.get("patch_interface_planes_project")
         ),
     }
-    if isinstance(trial.get("prism_switch"), dict):
-        result["extraction_diagnostic"] = _extraction_diagnostic(
-            events,
-            trial["prism_switch"],
-            trial.get("detector_box_mm"),
+    source_particle_count = int(trial.get("source_particle_count", 1))
+    source_cohort = trial.get("source_cohort")
+    if source_cohort is not None:
+        if not isinstance(source_cohort, dict):
+            raise CandidateContractError("bunch trial source cohort must be an object")
+        expected_ids = trial.get("source_expected_particle_ids")
+        if (
+            not isinstance(expected_ids, list)
+            or len(expected_ids) != source_particle_count
+            or any(type(value) is not int for value in expected_ids)
+            or expected_ids != list(range(expected_ids[0], expected_ids[0] + source_particle_count))
+        ):
+            raise CandidateContractError(
+                "bunch trial receipt lacks one complete contiguous ordered particle cohort"
+            )
+        completion_matches = list(FLY_COMPLETED.finditer(log_text))
+        reported_splats = (
+            int(completion_matches[0].group("splats"))
+            if len(completion_matches) == 1 else None
         )
-    source = ProjectPhaseSpaceState(
-        tuple(float(v) for v in trial["source_position_project_mm"]),
-        (0.0, 1.0, 0.0),
+        cohort = summarize_events(
+            events,
+            _finite(trial.get("target_drift_period_ratio"), "target drift period ratio"),
+            reported_splats,
+            expected_particle_ids=tuple(expected_ids),
+            completion_count=len(completion_matches),
+            kinetic_energy_ev=_finite(
+                trial.get("selected_axial_energy_per_charge_v"),
+                "selected axial energy",
+            ),
+            mass_th=_finite(trial.get("particle_mass_th"), "particle mass"),
+        )
+        safe_exit_ids = sorted({
+            int(event["ion"])
+            for event in events if event["kind"] == "accelerator_safe_exit"
+        })
+        cohort["accelerator_safe_exit_particle_ids"] = safe_exit_ids
+        cohort["accelerator_safe_exit_count"] = len(safe_exit_ids)
+        cohort["accelerator_safe_exit_fraction"] = (
+            len(safe_exit_ids) / source_particle_count
+        )
+        cohort["accelerator_safe_exit_complete"] = safe_exit_ids == expected_ids
+        result.update({
+            "status": "bunch_observed" if cohort["event_integrity_passed"] else "bunch_observation_invalid",
+            "qualification": (
+                "candidate_bunch_selection_diagnostic__not_formal"
+                if trial.get("source_selection") is not None
+                else "candidate_bunch__not_formal"
+            ),
+            "cohort_analysis": cohort,
+            "source_release_state": None,
+            "accelerator_safe_exit_observation": {
+                "status": "complete_cohort_observed" if safe_exit_ids == expected_ids else "incomplete_cohort",
+                "particle_ids": safe_exit_ids,
+                "expected_particle_ids": expected_ids,
+            },
+            "termination_diagnostic": {
+                "status": "cohort",
+                "particle_terminal_count": cohort["particle_terminal_count"],
+                "splat_code_histogram": cohort["splat_code_histogram"],
+                "all_losses_retained": cohort["all_losses_retained"],
+            },
+        })
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        return result
+    source, source_state = _single_center_source_state(trial)
+    result["source_release_state"] = source_state
+    result["accelerator_safe_exit_observation"] = _accelerator_safe_exit_observation(
+        events, trial, log_path=log_path, trial_receipt_path=trial_receipt_path,
     )
+    target_k_contract = _finite(trial.get("target_drift_period_ratio"), "target drift period ratio")
+    result["termination_diagnostic"] = _termination_diagnostic(events)
+    static_return = _static_return_diagnostic(events, target_k_contract)
+    result["static_return_diagnostic"] = static_return
+    # Keep the runner's established summary field while changing its contents
+    # to the only active extraction contract: an unchanged-voltage return.
+    result["extraction_diagnostic"] = static_return
     try:
         handoff_events = events
-        if trial.get("continue_main_drift") is True:
-            phase_indices = [
-                index for index, event in enumerate(events)
-                if event["kind"] == "drift_phase_origin"
+        turn_indices = [
+            index for index, event in enumerate(events)
+            if event["kind"] == "pre_origin_positive_mirror_turn"
+        ]
+        if len(turn_indices) == 1:
+            # Downstream loss does not erase an already observed injection
+            # hand-off.  Validate the prefix independently while retaining
+            # the complete unfiltered log for all full-flight diagnostics.
+            handoff_events = events[: turn_indices[0] + 1] + [
+                {"kind": "terminal", "ion": 1, "splat": 5}
             ]
-            if len(phase_indices) == 1:
-                # The P1/P2 handoff is complete at phase origin.  A later
-                # full-drift collision is a downstream residual/failure, not
-                # evidence that the already observed handoff never occurred.
-                handoff_events = events[: phase_indices[0] + 1] + [
-                    {"kind": "terminal", "ion": 1, "splat": 5}
-                ]
         observation = observation_from_simion_events(handoff_events, source)
         residuals = prism_handoff_residuals(
             observation,
-            target_turn_y_mm=float(trial["target_turn_y_mm"]),
-            target_slow_kinetic_energy_per_charge_v=float(trial["target_slow_kinetic_energy_per_charge_v"]),
-            particle_mass_th=float(trial["particle_mass_th"]),
-            charge_state=int(trial["charge_state"]),
+            target_positive_mirror_turn_y_mm=float(
+                trial["target_positive_mirror_turn_y_mm"]
+            ),
+            target_tangent_ratio_vy_over_vz=float(
+                trial["target_low_field_tangent_ratio_vy_over_vz"]
+            ),
         )
     except CandidateContractError as error:
         result["incomplete_reason"] = str(error)
@@ -656,49 +1488,72 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
         result["terminal_events"] = terminals
     else:
         result.update({
-            "status": "phase_origin_observed",
+            "status": "p2_low_field_and_positive_mirror_turn_observed",
             "p1_state": {
                 "position_mm": observation.prism_1.position_mm,
                 "velocity_mm_per_us": observation.prism_1.velocity_mm_per_us,
             },
-            "drift_phase_origin_state": {
-                "position_mm": observation.drift_phase_origin.position_mm,
-                "velocity_mm_per_us": observation.drift_phase_origin.velocity_mm_per_us,
+            "p2_low_field_reference_state": {
+                "position_mm": observation.p2_shield_low_field_reference.position_mm,
+                "velocity_mm_per_us": observation.p2_shield_low_field_reference.velocity_mm_per_us,
+            },
+            "positive_mirror_turn_state": {
+                "position_mm": observation.positive_mirror_turn.position_mm,
+                "velocity_mm_per_us": observation.positive_mirror_turn.velocity_mm_per_us,
             },
             "residuals": {name: value for name, value in residuals},
         })
-        if trial.get("continue_main_drift") is True:
-            phase_events = [event for event in events if event["kind"] == "drift_phase_origin"]
-            if len(phase_events) != 1:
-                raise CandidateContractError("continued trial must contain one drift phase origin")
-            phase_time = _finite(phase_events[0].get("t_us"), "drift phase-origin time")
-            slow_turns = [
-                event for event in events
-                if event["kind"] == "slow_turn" and float(event["t_us"]) > phase_time
-            ]
-            coordinate_returns = [
-                event for event in events
-                if event["kind"] == "drift_coordinate_return" and float(event["t_us"]) > phase_time
-            ]
-            if not slow_turns or not coordinate_returns:
-                result["status"] = "full_drift_incomplete"
-                result["incomplete_reason"] = (
-                    "continued trial must observe a post-origin slow turn and coordinate return"
-                )
-            else:
-                slow_turn_y = _finite(slow_turns[0].get("y_mm"), "observed slow turn y")
+        phase_events = [event for event in events if event["kind"] == "drift_phase_origin"]
+        if len(phase_events) != 1:
+            raise CandidateContractError("complete trial must contain one drift phase origin")
+        phase_time = _finite(phase_events[0].get("t_us"), "drift phase-origin time")
+        slow_turns = [
+            event for event in events
+            if event["kind"] == "slow_turn" and float(event["t_us"]) > phase_time
+        ]
+        coordinate_returns = [
+            event for event in events
+            if event["kind"] == "drift_coordinate_return" and float(event["t_us"]) > phase_time
+        ]
+        exact_phase_returns = [
+            event for event in events
+            if event["kind"] == "drift_phase_return"
+            and float(event["t_us"]) > phase_time
+            and float(event["k"]) == target_k_contract
+        ]
+        return_event_valid = len(coordinate_returns) == 1 or (
+            not coordinate_returns and len(exact_phase_returns) == 1
+        )
+        if not slow_turns or not return_event_valid:
+            result["status"] = "full_drift_incomplete"
+            result["incomplete_reason"] = (
+                "complete trial must observe a post-origin slow turn and either "
+                "one coordinate return or one exact target-K phase return"
+            )
+        else:
+            slow_turn_y = _finite(slow_turns[0].get("y_mm"), "observed slow turn y")
+            if coordinate_returns:
                 fractional_k = _finite(
                     coordinate_returns[0].get("fractional_k"), "observed fractional K"
                 )
-                target_y = _finite(trial.get("target_slow_turn_y_mm"), "target slow turn y")
-                target_k = _finite(trial.get("target_oscillation_count"), "target K")
-                result["status"] = "full_drift_observed"
-                result["slow_turn_y_mm"] = slow_turn_y
-                result["fractional_k"] = fractional_k
-                result["residuals"].update({
-                    "Stripe_slow_turn_y_minus_L_mm": slow_turn_y - target_y,
-                    "Stripe_fractional_K_minus_target": fractional_k - target_k,
-                })
+                return_topology = (
+                    "exact_target_k_phase_return"
+                    if len(exact_phase_returns) == 1 and fractional_k == target_k_contract
+                    else "coordinate_return"
+                )
+            else:
+                fractional_k = float(target_k_contract)
+                return_topology = "exact_target_k_phase_return"
+            target_y = _finite(trial.get("target_slow_turn_y_mm"), "target slow turn y")
+            target_k = _finite(trial.get("target_drift_period_ratio"), "target K")
+            result["status"] = "full_drift_observed"
+            result["slow_turn_y_mm"] = slow_turn_y
+            result["fractional_k"] = fractional_k
+            result["return_topology"] = return_topology
+            result["residuals"].update({
+                "Stripe_slow_turn_y_minus_L_mm": slow_turn_y - target_y,
+                "Stripe_fractional_K_minus_target": fractional_k - target_k,
+            })
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
@@ -718,15 +1573,15 @@ def main() -> int:
     materialize.add_argument("--prism-2-v", required=True, type=float)
     materialize.add_argument("--stripe-1-v", type=float)
     materialize.add_argument("--stripe-2-v", type=float)
-    materialize.add_argument("--continue-main-drift", action="store_true")
     materialize.add_argument("--runtime-fast-adjust-enable", action="store_true")
-    materialize.add_argument("--prism-2-extraction-v", type=float)
-    materialize.add_argument("--prism-1-extraction-v", type=float)
-    materialize.add_argument("--prism-switch-time-us", type=float)
-    materialize.add_argument("--reference-transport-receipt", type=Path)
-    materialize.add_argument("--reference-transport-log", type=Path)
-    materialize.add_argument("--constrain-x-symmetry-plane", action="store_true")
+    materialize.add_argument("--pulse-accelerator-until-initial-exit", action="store_true")
+    materialize.add_argument("--accelerator-pulse-schedule", type=Path)
     materialize.add_argument("--trajectory-profile-id")
+    materialize.add_argument("--trajectory-step-scale", type=float, default=1.0)
+    materialize.add_argument("--bunch-source-receipt", type=Path)
+    materialize.add_argument("--bunch-particle-id-min", type=int)
+    materialize.add_argument("--bunch-particle-id-max", type=int)
+    materialize.add_argument("--workbench-accelerator-instance", required=True, type=int, choices=(2, 7))
     materialize.add_argument("--fly2", required=True, type=Path)
     materialize.add_argument("--sidecar", required=True, type=Path)
     materialize.add_argument("--receipt", required=True, type=Path)
@@ -734,6 +1589,9 @@ def main() -> int:
     analyze.add_argument("--log", required=True, type=Path)
     analyze.add_argument("--trial-receipt", required=True, type=Path)
     analyze.add_argument("--output", required=True, type=Path)
+    freeze = sub.add_parser("freeze-pulse-schedule")
+    freeze.add_argument("--center-run", required=True, type=Path)
+    freeze.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     if args.command == "materialize":
         stripe_override = None
@@ -751,23 +1609,31 @@ def main() -> int:
             prism_1_v=args.prism_1_v,
             prism_2_v=args.prism_2_v,
             stripe_biases_override_v=stripe_override,
-            continue_main_drift=args.continue_main_drift,
             runtime_fast_adjust_enable=args.runtime_fast_adjust_enable,
-            prism_2_extraction_v=args.prism_2_extraction_v,
-            prism_1_extraction_v=args.prism_1_extraction_v,
-            prism_switch_time_us=args.prism_switch_time_us,
-            reference_transport_receipt_path=args.reference_transport_receipt,
-            reference_transport_log_path=args.reference_transport_log,
-            constrain_x_symmetry_plane=args.constrain_x_symmetry_plane,
+            pulse_accelerator_until_initial_exit=args.pulse_accelerator_until_initial_exit,
+            accelerator_pulse_schedule_path=args.accelerator_pulse_schedule,
             trajectory_profile_id=args.trajectory_profile_id,
+            trajectory_step_scale=args.trajectory_step_scale,
+            bunch_source_receipt_path=args.bunch_source_receipt,
+            bunch_particle_id_min=args.bunch_particle_id_min,
+            bunch_particle_id_max=args.bunch_particle_id_max,
+            workbench_accelerator_instance=args.workbench_accelerator_instance,
             fly2_path=args.fly2,
             sidecar_path=args.sidecar,
             receipt_path=args.receipt,
         )
         print(f"MRTOF_TWO_PRISM_TRIAL_MATERIALIZE=PASS P1={result['prism_voltages_v'][0]:.12g} P2={result['prism_voltages_v'][1]:.12g}")
-    else:
+    elif args.command == "analyze":
         result = analyze_trial(log_path=args.log, trial_receipt_path=args.trial_receipt, output_path=args.output)
         print(f"MRTOF_TWO_PRISM_TRIAL_ANALYZE=PASS STATUS={result['status']}")
+    else:
+        result = freeze_single_center_pulse_schedule(
+            center_run_path=args.center_run, output_path=args.output,
+        )
+        print(
+            "MRTOF_ACCELERATOR_PULSE_SCHEDULE=PASS "
+            f"TIME_US={result['pulse_off_time_us']:.12g}"
+        )
     return 0
 
 

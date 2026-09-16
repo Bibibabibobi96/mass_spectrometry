@@ -2,14 +2,11 @@
 
 The source-to-analyser trajectory is evaluated by the finite three-dimensional
 solver.  This module deliberately does not approximate either triangular
-prism.  In the manufactured topology the ion undergoes a negative-mirror
-pre-reflection between P1 and P2, then traverses the positive-side Stripe
-bands after P2 before reaching the selected slow-drift phase origin:
-the first post-P2 mirror turn at the registered function coordinate ``y=0``.
-For the manufactured path P2 is exited along positive project z, so this is
-the positive mirror turn.
-Its ``z`` coordinate is observed from the Stripe-on three-dimensional
-trajectory rather than imposed from a mechanical endpoint.
+prism.  In the manufactured topology the ordered injection path is P1,
+negative-mirror pre-reflection, P2, a low-field reference crossing inside the
+P2 grounded shield, and the first post-P2 positive-mirror turn.  The two prism
+voltages match the signed direction at the reference section and the turn's
+slow coordinate.  The turn's fast coordinate is an observed diagnostic.
 """
 from __future__ import annotations
 
@@ -17,7 +14,6 @@ from dataclasses import dataclass
 import math
 from typing import Any, Sequence
 
-from common.contracts.particle_physics import kinetic_energy_ev
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
@@ -28,11 +24,11 @@ def audit_two_prism_voltage_definition(contract: dict[str, Any]) -> dict[str, An
 
     In the project-symmetric ``y-z`` transport, the two voltages are two
     physical unknowns.  The compatible Mirror--Stripe solution supplies the
-    slow kinetic energy/direction, while the first post-P2 mirror turn must
-    occur at the registered function coordinate ``y=0``.  These are the two
-    physical targets.  At that event ``v_z=0`` and ``z`` is an event-localized
-    full-field result; ``x=0`` follows from symmetry and is not an independently
-    steerable residual.
+    first positive-mirror turn position and the upstream low-field signed
+    ``v_y/v_z`` ratio.
+    The negative-mirror turn between P1 and P2 is a required topology event,
+    not a voltage residual: P2 has not acted at that event.  ``x=0`` follows
+    from symmetry and is not an independently steerable residual.
     """
     if not isinstance(contract, dict):
         raise CandidateContractError("two-prism definition audit needs a contract object")
@@ -68,10 +64,23 @@ def audit_two_prism_voltage_definition(contract: dict[str, Any]) -> dict[str, An
     aperture = matching_shields[0].get("cross_aperture")
     try:
         mechanical_z = tuple(float(value) for value in aperture["z_mm"])
+        clearance_z = tuple(
+            float(point[1])
+            for point in matching_shields[0]["prism_clearance_polygon_yz_mm"]
+        )
     except (KeyError, TypeError, ValueError) as error:
-        raise CandidateContractError("P2 shield must declare its cross-aperture z bounds") from error
+        raise CandidateContractError(
+            "P2 shield must declare its cross-aperture and prism-clearance z bounds"
+        ) from error
     if len(mechanical_z) != 2 or not all(math.isfinite(value) for value in mechanical_z) or not mechanical_z[0] < mechanical_z[1]:
         raise CandidateContractError("P2 shield cross-aperture z bounds must be finite and ordered")
+    low_field_lower = max(clearance_z)
+    low_field_upper = mechanical_z[1]
+    if not all(math.isfinite(value) for value in clearance_z) or not (
+        mechanical_z[0] < low_field_lower < low_field_upper
+    ):
+        raise CandidateContractError("P2 shield geometry has no positive-z low-field section")
+    low_field_plane = 0.5 * (low_field_lower + low_field_upper)
 
     common = {
         "unknowns": [
@@ -80,12 +89,14 @@ def audit_two_prism_voltage_definition(contract: dict[str, Any]) -> dict[str, An
         ],
         "unknown_count": 2,
         "independent_target_conditions_before_finite_3d_jacobian": [
-            f"first_post_P2_mirror_turn_project_y_equals_{origin_y:g}_mm",
-            "positive_project_y_slow_kinetic_energy_from_the_compatible_Mirror_Stripe_solution",
+            f"first_post_P2_positive_mirror_turn_project_y_equals_{origin_y:g}_mm",
+            "P2_shield_low_field_positive_signed_v_y_over_v_z_from_the_compatible_Mirror_Stripe_solution",
         ],
         "event_or_symmetry_conditions_not_counted_as_voltage_residuals": [
-            "phase_origin_mirror_turn_has_v_z_equals_0_by_event_definition",
-            "turn_project_z_is_observed_from_the_Stripe_on_full_field_trajectory",
+            "one_negative_mirror_turn_between_P1_and_P2_is_a_sequence_diagnostic_only",
+            "P2_shield_low_field_reference_crossing_has_positive_v_y_and_positive_v_z",
+            "first_post_P2_positive_mirror_turn_has_v_z_equals_zero_by_event_definition",
+            "positive_mirror_turn_project_z_is_an_observed_diagnostic_only",
             "project_x_equals_0_is_invariant_under_x_symmetric_geometry_and_voltages",
         ],
         "forbidden_implicit_fast_phase_substitutions": [
@@ -96,36 +107,25 @@ def audit_two_prism_voltage_definition(contract: dict[str, Any]) -> dict[str, An
         "p2_exit_mechanical_acceptance": {
             "project_z_open_interval_mm": [mechanical_z[0], mechanical_z[1]],
             "source": f"P2_station_grounded_shield_id_{matching_shields[0].get('id')}_cross_aperture",
-            "semantics": "a collision-free P2-exit bound only; the later drift-origin turn lies in the positive mirror",
+            "semantics": "the z bounds geometrically bracket the post-P2 low-field reference section",
+        },
+        "p2_low_field_reference_section": {
+            "project_z_open_interval_mm": [low_field_lower, low_field_upper],
+            "reference_plane_z_mm": low_field_plane,
+            "derivation": "midpoint_between_positive_P2_clearance_vertex_and_positive_cross_slot_end",
+            "field_flatness_status": "requires_finite_3d_field_diagnostic",
         },
     }
-    phase = model.get("drift_phase_origin_authority")
-    if not isinstance(phase, dict) or phase.get("status") != "derived_design_authority":
-        raise CandidateContractError("two-prism definition needs the derived drift-phase-origin authority")
-    required = {
-        "event": "first_post_P2_stripe_on_mirror_turn",
-        "target_project_z_rule": "not_an_independent_target__observe_the_Stripe_on_full_field_turn__bare_mirror_turn_is_seed_only",
-        "fast_velocity_condition": "v_z=0 with outward positive-z motion reversing toward negative z",
-    }
-    for key, expected in required.items():
-        if phase.get(key) != expected:
-            raise CandidateContractError(f"drift-phase-origin authority has an incompatible {key}")
-    try:
-        target_y = float(phase["target_project_y_mm"])
-        target_x = float(phase["target_project_x_mm"])
-    except (KeyError, TypeError, ValueError) as error:
-        raise CandidateContractError("slow-drift-origin authority needs finite x/y targets") from error
-    source = str(phase.get("source", ""))
-    if not math.isfinite(target_y) or not math.isfinite(target_x) or target_y != origin_y or target_x != 0.0 or not source:
-        raise CandidateContractError("drift-phase-origin authority conflicts with the project symmetry/function origin")
-    if "target_project_z_mm" in phase:
-        raise CandidateContractError("mirror-turn z must be derived rather than entered as a fixed target")
     return {
         **common,
         "status": "two_physical_targets_declared__finite_3d_jacobian_pending",
-        "drift_phase_origin_event": phase["event"],
-        "derived_turn_z_rule": phase["target_project_z_rule"],
-        "drift_phase_authority_source": source,
+        "handoff_events": [
+            "p2_low_field_reference",
+            "first_post_P2_positive_mirror_turn",
+        ],
+        "target_project_y_mm": origin_y,
+        "target_tangent_ratio_authority": "explicit_compatible_Mirror_Stripe_solution_input",
+        "positive_mirror_turn_z_role": "derived_trajectory_diagnostic_only__not_a_voltage_residual",
         "independent_voltage_constraint_rank_before_finite_3d_jacobian": None,
         "nullity_before_finite_3d_jacobian": None,
         "publication_gate": "closed_until_scaled_finite_3d_jacobian_is_full_column_rank_and_compatible",
@@ -167,16 +167,31 @@ class ProjectPhaseSpaceState:
 
 @dataclass(frozen=True)
 class TwoPrismTransportObservation:
-    """One collision-free source -> P1/pre-reflection/P2 -> origin-turn trajectory."""
+    """One collision-free P1/P2 trajectory with distinct angle/turn events."""
 
     source: ProjectPhaseSpaceState
     prism_1: ProjectPhaseSpaceState
-    drift_phase_origin: ProjectPhaseSpaceState
+    p2_shield_low_field_reference: ProjectPhaseSpaceState
+    positive_mirror_turn: ProjectPhaseSpaceState
     completed_without_electrode_collision: bool
 
     def __post_init__(self) -> None:
         if self.completed_without_electrode_collision is not True:
             raise CandidateContractError("P1/P2 hand-off must reject an electrode-collision trajectory")
+        _vx, vy, vz = self.p2_shield_low_field_reference.velocity_mm_per_us
+        if vy <= 0.0 or vz <= 0.0:
+            raise CandidateContractError(
+                "P2-shield low-field reference must have positive project-y and project-z velocity"
+            )
+        _turn_vx, turn_vy, turn_vz = self.positive_mirror_turn.velocity_mm_per_us
+        if (
+            self.positive_mirror_turn.position_mm[2] <= 0.0
+            or turn_vy <= 0.0
+            or abs(turn_vz) > 1e-9
+        ):
+            raise CandidateContractError(
+                "first post-P2 positive-mirror turn must be on +z with vy>0 and event-localized vz=0"
+            )
 
 
 def _state_from_event(event: dict[str, Any], label: str) -> ProjectPhaseSpaceState:
@@ -193,7 +208,7 @@ def observation_from_simion_events(
     source: ProjectPhaseSpaceState,
     *, ion_number: int = 1,
 ) -> TwoPrismTransportObservation:
-    """Extract the first post-P2 Stripe-on mirror turn used as drift origin."""
+    """Extract the post-P2 low-field direction and first positive-mirror turn."""
     if not isinstance(ion_number, int) or isinstance(ion_number, bool) or ion_number <= 0:
         raise CandidateContractError("P1/P2 event receipt needs one positive ion identity")
     ion_events = [event for event in events if event.get("ion") == ion_number]
@@ -204,53 +219,58 @@ def observation_from_simion_events(
     p1 = [event for event in prism_passes if event.get("n") == 1]
     p2 = [event for event in prism_passes if event.get("n") == 2]
     pre_reflections = [event for event in ion_events if event.get("kind") == "pre_injection_mirror_turn"]
-    phase_origins = [event for event in ion_events if event.get("kind") == "drift_phase_origin"]
+    references = [
+        event for event in ion_events
+        if event.get("kind") == "p2_low_field_reference"
+    ]
+    positive_turns = [
+        event for event in ion_events if event.get("kind") == "pre_origin_positive_mirror_turn"
+    ]
     if any(len(events) != 1 for events in (
-        p1, pre_reflections, p2, phase_origins,
+        p1, pre_reflections, p2, references, positive_turns,
     )):
         raise CandidateContractError(
             "P1/P2 hand-off needs one P1 pass, the negative-mirror pre-reflection, "
-            "one P2 pass, and one post-P2 phase-origin mirror turn"
+            "one P2 pass, one P2-shield low-field reference crossing, and one "
+            "first post-P2 positive-mirror turn"
         )
-    ordered = (p1[0], pre_reflections[0], p2[0], phase_origins[0])
+    ordered = (p1[0], pre_reflections[0], p2[0], references[0], positive_turns[0])
     if any(float(left["t_us"]) >= float(right["t_us"])
            for left, right in zip(ordered, ordered[1:])):
-        raise CandidateContractError("P1/pre-reflection/P2/Stripe path events are not in physical order")
+        raise CandidateContractError(
+            "P1/pre-reflection/P2/low-field-reference/positive-turn events are not in physical order"
+        )
     p1_state = _state_from_event(p1[0], "P1")
-    origin_state = _state_from_event(phase_origins[0], "post-P2 mirror-turn phase origin")
-    if origin_state.position_mm[2] <= 0.0 or origin_state.velocity_mm_per_us[1] <= 0.0:
-        raise CandidateContractError("drift phase origin must be the outbound positive-z mirror turn")
-    if abs(origin_state.velocity_mm_per_us[2]) > 1e-9:
-        raise CandidateContractError("drift phase origin must have event-localized v_z=0")
-    return TwoPrismTransportObservation(source, p1_state, origin_state, True)
+    reference_state = _state_from_event(references[0], "P2-shield low-field reference")
+    turn_state = _state_from_event(positive_turns[0], "first post-P2 positive-mirror turn")
+    return TwoPrismTransportObservation(source, p1_state, reference_state, turn_state, True)
 
 
 def prism_handoff_residuals(
     observation: TwoPrismTransportObservation,
     *,
-    target_turn_y_mm: float,
-    target_slow_kinetic_energy_per_charge_v: float,
-    particle_mass_th: float,
-    charge_state: int,
+    target_positive_mirror_turn_y_mm: float,
+    target_tangent_ratio_vy_over_vz: float,
 ) -> tuple[tuple[str, float], ...]:
     """Return the two independent residuals controlled by the two prism voltages.
 
-    The first residual sets the actual post-P2 mirror turn on the registered
-    ``y=0`` function origin.  The second sets the slow energy partition.  The
-    turn's ``v_z=0`` is an event definition, its ``z`` is a full-field result,
-    and ``x=0`` is a symmetry diagnostic rather than an extra voltage target.
+    The first residual sets the first post-P2 positive-mirror turn on the
+    registered theory-function origin.  The second sets signed ``v_y/v_z`` at
+    the upstream low-field section.  Turn ``z`` and ``x=0`` are diagnostics.
     """
-    target_y = float(target_turn_y_mm)
-    target_energy = float(target_slow_kinetic_energy_per_charge_v)
-    mass = float(particle_mass_th)
-    if not all(math.isfinite(value) for value in (target_y, target_energy, mass)):
-        raise CandidateContractError("P1/P2 turn targets must be finite")
-    if target_energy <= 0.0 or mass <= 0.0 or not isinstance(charge_state, int) or isinstance(charge_state, bool) or charge_state == 0:
-        raise CandidateContractError("P1/P2 slow-energy residual needs positive mass/energy and nonzero integer charge")
-    actual = observation.drift_phase_origin
-    actual_slow_energy_ev = kinetic_energy_ev(mass, 0.0, actual.velocity_mm_per_us[1] * 1000.0, 0.0)
-    actual_slow_energy_per_charge_v = actual_slow_energy_ev / abs(charge_state)
+    try:
+        target_y = float(target_positive_mirror_turn_y_mm)
+        target_ratio = float(target_tangent_ratio_vy_over_vz)
+    except (TypeError, ValueError) as error:
+        raise CandidateContractError("P1/P2 turn/low-field targets must be finite numbers") from error
+    if not math.isfinite(target_y) or not math.isfinite(target_ratio):
+        raise CandidateContractError("P1/P2 turn/low-field targets must be finite numbers")
+    if target_ratio <= 0.0:
+        raise CandidateContractError("P1/P2 target entrance tangent ratio must be positive")
+    actual_turn = observation.positive_mirror_turn
+    reference = observation.p2_shield_low_field_reference
+    actual_ratio = reference.velocity_mm_per_us[1] / reference.velocity_mm_per_us[2]
     return (
-        ("P1_P2_phase_origin_turn_y_mm", actual.position_mm[1] - target_y),
-        ("P1_P2_slow_kinetic_energy_per_charge_v", actual_slow_energy_per_charge_v - target_energy),
+        ("P1_P2_positive_mirror_turn_y_mm", actual_turn.position_mm[1] - target_y),
+        ("P1_P2_P2_shield_low_field_signed_vy_over_vz", actual_ratio - target_ratio),
     )

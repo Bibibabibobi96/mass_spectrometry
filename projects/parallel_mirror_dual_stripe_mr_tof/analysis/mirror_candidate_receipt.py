@@ -97,7 +97,6 @@ def _finite(value: object, label: str) -> float:
 def mirror_stage_contract_projection(contract: dict[str, Any]) -> dict[str, Any]:
     """Return exactly the contract fields owned or read by the mirror stage."""
     try:
-        stripe = contract["dual_stripe"]
         mirror = copy.deepcopy(contract["mirror"])
         mirror["theory_requirements"].pop("exact_k_operating_point_selection", None)
         return {
@@ -107,13 +106,6 @@ def mirror_stage_contract_projection(contract: dict[str, Any]) -> dict[str, Any]
             "nominal_energy_per_charge_v": contract["nominal"]["energy_per_charge_v"],
             "accelerator_energy_contract": contract["accelerator_energy_contract"],
             "mirror": mirror,
-            "load_contract_stripe_validation": {
-                "physical_electrode_count": stripe["physical_electrode_count"],
-                "theoretical_response_count": stripe["theoretical_response_count"],
-                "beam_slot_width_mm": stripe["beam_slot_width_mm"],
-                "minimum_width_mm": stripe["minimum_width_mm"],
-                "maximum_width_mm": stripe["maximum_width_mm"],
-            },
         }
     except (KeyError, TypeError) as error:
         raise CandidateContractError("mirror-stage contract projection is incomplete") from error
@@ -179,12 +171,16 @@ def load_managed_mirror_candidate(
     if {key: str(identity.get(key, "")).upper() for key in expected_identity} != expected_identity:
         raise CandidateContractError("managed mirror summary hash chain differs from its terminal manifest")
 
-    parent_contract = load_contract(contract_path)
-    downstream_contract = (
-        load_contract(downstream_contract_path.resolve())
-        if downstream_contract_path is not None
-        else parent_contract
-    )
+    if downstream_contract_path is None:
+        parent_contract = load_contract(contract_path)
+        downstream_contract = parent_contract
+    else:
+        # The manifest and summary already bind every byte of this immutable
+        # historical parent.  Validate the active downstream contract in full,
+        # then compare only the exact mirror-stage inputs: unrelated later
+        # topology requirements must not reinterpret an unchanged mirror.
+        parent_contract = _load_json(contract_path, "managed mirror frozen contract")
+        downstream_contract = load_contract(downstream_contract_path.resolve())
     if canonical_json_sha256(mirror_stage_contract_projection(parent_contract)) != canonical_json_sha256(
         mirror_stage_contract_projection(downstream_contract)
     ):

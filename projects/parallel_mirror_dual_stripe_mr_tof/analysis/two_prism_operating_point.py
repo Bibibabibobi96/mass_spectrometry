@@ -1,9 +1,9 @@
-"""Audit a finite-3-D two-prism shooting sequence and publish its result.
+"""Audit a finite-3-D two-prism low-field/positive-turn shooting sequence.
 
 The calculation consumes immutable SIMION trial manifests rather than typed
 voltages.  One seed and two single-axis perturbations define the local 2x2
 Jacobian; subsequent observations document the converged shooting sequence.
-The result is a single-centre hand-off candidate, not K=25 or resolution
+The result is a single-centre hand-off candidate, not target-phase or resolution
 evidence.
 """
 from __future__ import annotations
@@ -29,8 +29,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 
 RESIDUAL_NAMES = (
-    "P1_P2_phase_origin_turn_y_mm",
-    "P1_P2_slow_kinetic_energy_per_charge_v",
+    "P1_P2_positive_mirror_turn_y_mm",
+    "P1_P2_P2_shield_low_field_signed_vy_over_vz",
 )
 UNKNOWN_NAMES = ("prism_1_voltage_v", "prism_2_voltage_v")
 
@@ -78,19 +78,48 @@ def _trial(manifest_path: Path) -> dict[str, Any]:
     materialization_path = _manifest_output(manifest_path, "two_prism_trial_materialization.json")
     observation = _load_object(observation_path)
     materialization = _load_object(materialization_path)
-    if observation.get("status") != "phase_origin_observed":
-        raise CandidateContractError(f"P1/P2 trial did not reach its phase origin: {manifest_path}")
+    if observation.get("status") != "p2_low_field_and_positive_mirror_turn_observed":
+        raise CandidateContractError(
+            f"P1/P2 trial did not observe its P2 low-field state and positive mirror turn: {manifest_path}"
+        )
     voltages = observation.get("prism_voltages_v")
     residuals = observation.get("residuals")
     if not isinstance(voltages, list) or len(voltages) != 2 or not isinstance(residuals, dict):
         raise CandidateContractError("P1/P2 observation lacks its voltage or residual vector")
-    phase = observation.get("drift_phase_origin_state")
-    if not isinstance(phase, dict):
-        raise CandidateContractError("P1/P2 observation lacks its phase-origin state")
-    position = phase.get("position_mm")
-    velocity = phase.get("velocity_mm_per_us")
-    if not isinstance(position, list) or len(position) != 3 or not isinstance(velocity, list) or len(velocity) != 3:
-        raise CandidateContractError("P1/P2 phase-origin state must be three-dimensional")
+    states: dict[str, dict[str, list[float]]] = {}
+    for state_name, label in (
+        ("p2_low_field_reference_state", "P2 low-field reference"),
+        ("positive_mirror_turn_state", "positive mirror turn"),
+    ):
+        state = observation.get(state_name)
+        if not isinstance(state, dict):
+            raise CandidateContractError(f"P1/P2 observation lacks its {label} state")
+        position = state.get("position_mm")
+        velocity = state.get("velocity_mm_per_us")
+        if (
+            not isinstance(position, list)
+            or len(position) != 3
+            or not isinstance(velocity, list)
+            or len(velocity) != 3
+        ):
+            raise CandidateContractError(f"P1/P2 {label} state must be three-dimensional")
+        states[state_name] = {
+            "position_mm": [_finite(value, f"{label} position") for value in position],
+            "velocity_mm_per_us": [_finite(value, f"{label} velocity") for value in velocity],
+        }
+    target_turn_y = _finite(
+        materialization.get("target_positive_mirror_turn_y_mm"),
+        "target positive-mirror-turn y",
+    )
+    target_ratio = _finite(
+        materialization.get("target_low_field_tangent_ratio_vy_over_vz"),
+        "target low-field tangent ratio",
+    )
+    if target_ratio <= 0.0:
+        raise CandidateContractError("target low-field tangent ratio must be positive")
+    reference_section = materialization.get("p2_low_field_reference_section")
+    if not isinstance(reference_section, dict) or not reference_section:
+        raise CandidateContractError("P1/P2 materialization lacks its P2 low-field reference-section identity")
     return {
         "run_id": _load_object(manifest_path).get("run_id"),
         "run_manifest_path": str(manifest_path.resolve()),
@@ -100,8 +129,8 @@ def _trial(manifest_path: Path) -> dict[str, Any]:
         "materialization_sha256": file_sha256(materialization_path),
         "prism_voltages_v": [_finite(value, "prism voltage") for value in voltages],
         "residual_vector": [_finite(residuals.get(name), name) for name in RESIDUAL_NAMES],
-        "phase_origin_position_mm": [_finite(value, "phase-origin position") for value in position],
-        "phase_origin_velocity_mm_per_us": [_finite(value, "phase-origin velocity") for value in velocity],
+        "p2_low_field_reference_state": states["p2_low_field_reference_state"],
+        "positive_mirror_turn_state": states["positive_mirror_turn_state"],
         "source_identity": {
             key: materialization.get("inputs", {}).get(key)
             for key in (
@@ -112,29 +141,28 @@ def _trial(manifest_path: Path) -> dict[str, Any]:
                 "accelerator_receipt_sha256",
             )
         },
-        "target_turn_y_mm": materialization.get("target_turn_y_mm"),
-        "target_slow_kinetic_energy_per_charge_v": materialization.get(
-            "target_slow_kinetic_energy_per_charge_v"
-        ),
-        "phase_origin_mirror_side": materialization.get("phase_origin_mirror_side"),
+        "target_positive_mirror_turn_y_mm": target_turn_y,
+        "target_low_field_tangent_ratio_vy_over_vz": target_ratio,
+        "p2_low_field_reference_section": reference_section,
     }
 
 
 def _same_frozen_problem(trials: Sequence[dict[str, Any]]) -> None:
     fields = (
         "source_identity",
-        "target_turn_y_mm",
-        "target_slow_kinetic_energy_per_charge_v",
-        "phase_origin_mirror_side",
+        "target_positive_mirror_turn_y_mm",
+        "target_low_field_tangent_ratio_vy_over_vz",
+        "p2_low_field_reference_section",
     )
     for field in fields:
         if any(trial[field] != trials[0][field] for trial in trials[1:]):
             raise CandidateContractError(f"P1/P2 trials do not share the same frozen {field}")
-    if trials[0]["phase_origin_mirror_side"] != 1:
-        raise CandidateContractError("manufactured P1/P2 path must use the positive-z post-P2 mirror turn")
 
 
-def _natural_scales(contract: dict[str, Any]) -> tuple[list[float], list[float]]:
+def natural_two_prism_scales(
+    contract: dict[str, Any],
+) -> tuple[list[float], list[float]]:
+    """Return the shared P1/P2 parameter and residual scales."""
     try:
         energy = contract["prism_transport"]["energy_partition"]
         slow_energy = _finite(energy["drift_kinetic_energy_ev"], "drift energy")
@@ -148,7 +176,7 @@ def _natural_scales(contract: dict[str, Any]) -> tuple[list[float], list[float]]
     if slow_energy <= 0.0 or fast_energy <= 0.0 or drift_length <= 0.0:
         raise CandidateContractError("natural P1/P2 scaling inputs must be positive")
     voltage_scale = math.sqrt(slow_energy * fast_energy)
-    return [voltage_scale, voltage_scale], [drift_length, slow_energy]
+    return [voltage_scale, voltage_scale], [drift_length, math.sqrt(slow_energy / fast_energy)]
 
 
 def audit_operating_point(
@@ -159,7 +187,7 @@ def audit_operating_point(
     prism_2_perturbation_manifest: Path,
     iteration_manifests: Sequence[Path],
 ) -> dict[str, Any]:
-    """Return a rank-audited P1/P2 single-centre hand-off receipt."""
+    """Return a rank-audited P1/P2 low-field/positive-turn receipt."""
     if not iteration_manifests:
         raise CandidateContractError("P1/P2 audit needs at least one post-Jacobian iteration")
     contract = load_contract(contract_path)
@@ -185,7 +213,7 @@ def audit_operating_point(
         (np.asarray(p1_trial["residual_vector"]) - seed_r) / p1_delta[0],
         (np.asarray(p2_trial["residual_vector"]) - seed_r) / p2_delta[1],
     ))
-    parameter_scales, residual_scales = _natural_scales(contract)
+    parameter_scales, residual_scales = natural_two_prism_scales(contract)
     rank_tolerance = _finite(
         contract["dual_stripe_l0"]["determination_numerics"]["relative_singular_value_rank_tolerance"],
         "relative singular-value rank tolerance",
@@ -212,7 +240,7 @@ def audit_operating_point(
         "schema_version": 1,
         "role": "mrtof_finite_3d_two_prism_operating_point_audit",
         "status": "success",
-        "qualification": "single_center_phase_space_handoff_candidate__K25_pending",
+        "qualification": "single_center_phase_space_handoff_candidate__target_phase_pending",
         "contract_sha256": file_sha256(contract_path),
         "unknown_names": list(UNKNOWN_NAMES),
         "residual_names": list(RESIDUAL_NAMES),
@@ -228,22 +256,22 @@ def audit_operating_point(
         },
         "scale_derivation": {
             "prism_voltage": "sqrt(drift_kinetic_energy_ev*fast_reflection_kinetic_energy_ev)",
-            "phase_origin_y": "dual_stripe_l0.manufactured_design_abs_drift_length_L_mm",
-            "slow_energy": "prism_transport.energy_partition.drift_kinetic_energy_ev",
+            "positive_mirror_turn_y": "dual_stripe_l0.manufactured_design_abs_drift_length_L_mm",
+            "low_field_signed_vy_over_vz": "sqrt(drift_kinetic_energy_ev/fast_reflection_kinetic_energy_ev)",
         },
         "classification": asdict(classification),
         "first_linear_correction_v": predicted_first_step.tolist(),
         "iterations": iterations,
         "selected_prism_voltages_v": final["prism_voltages_v"],
-        "selected_phase_origin_position_mm": final["phase_origin_position_mm"],
-        "selected_phase_origin_velocity_mm_per_us": final["phase_origin_velocity_mm_per_us"],
+        "selected_p2_low_field_reference_state": final["p2_low_field_reference_state"],
+        "selected_positive_mirror_turn_state": final["positive_mirror_turn_state"],
         "selected_residuals": dict(zip(RESIDUAL_NAMES, final["residual_vector"])),
         "residual_acceptance_status": "not_declared__numeric_values_reported_without_inventing_a_tolerance",
-        "next_gate": "run_the_same_single_center_source_through_the_complete_K25_event_chain",
+        "next_gate": "run_the_same_single_center_source_through_the_baseline_target_phase_event_chain",
         "limits": [
             "one center ion only",
             "finite-three-dimensional SIMION field at one mesh and time-step setting",
-            "does not qualify K=25 return, detector hit, bundle transmission, TOF, FWHM, or mass resolution",
+            "does not qualify the baseline target-phase return, detector hit, bundle transmission, TOF, FWHM, or mass resolution",
         ],
     }
 

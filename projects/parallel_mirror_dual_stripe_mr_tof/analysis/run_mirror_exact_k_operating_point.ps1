@@ -24,6 +24,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mirror-exact-k-operating-point'
 }
 
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
@@ -41,12 +42,26 @@ function Invoke-ProjectPython {
   param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogPath)
   Push-Location -LiteralPath $repoRoot
   $savedPythonPath = $env:PYTHONPATH
+  $savedOpenBlasThreads = $env:OPENBLAS_NUM_THREADS
+  $savedOmpThreads = $env:OMP_NUM_THREADS
+  $savedMklThreads = $env:MKL_NUM_THREADS
+  $savedNumExprThreads = $env:NUMEXPR_NUM_THREADS
   try {
     $env:PYTHONPATH = $repoRoot
+    # The outer energy-node pool owns CPU parallelism.  Keep numerical kernels
+    # single-threaded so each worker does not create a nested BLAS/OpenMP pool.
+    $env:OPENBLAS_NUM_THREADS = '1'
+    $env:OMP_NUM_THREADS = '1'
+    $env:MKL_NUM_THREADS = '1'
+    $env:NUMEXPR_NUM_THREADS = '1'
     & $python @Arguments 2>&1 | Tee-Object -FilePath $LogPath
     if ($LASTEXITCODE -ne 0) { throw "MR-TOF Python stage failed: $($Arguments -join ' ')" }
   } finally {
     $env:PYTHONPATH = $savedPythonPath
+    $env:OPENBLAS_NUM_THREADS = $savedOpenBlasThreads
+    $env:OMP_NUM_THREADS = $savedOmpThreads
+    $env:MKL_NUM_THREADS = $savedMklThreads
+    $env:NUMEXPR_NUM_THREADS = $savedNumExprThreads
     Pop-Location
   }
 }
@@ -67,11 +82,18 @@ try {
   $sourcePaths = @(
     'common\contracts\file_identity.py',
     'common\contracts\verify_run_manifest.py',
+    'common\host_execution_lease.ps1',
+    'common\host_resource_python.py',
+    'common\host_resource_python.ps1',
+    'common\host_resource_scheduler.py',
+    'common\host_resource_policy.json',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\drift_phase_contract.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\joint_mirror_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_exact_k_operating_point.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\native_stripe_shape_adapter.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_geometry_parameters.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l1.py',
@@ -93,8 +115,8 @@ try {
     $sourceChecks += [pscustomobject]@{ source = $source; frozen = $frozen }
   }
   $configuration.parameters = [ordered]@{
-    lifecycle_stage = 'solver_neutral_exact_k_energy_selection'
-    governing_equation = 'T_D(theta_0)/T_0=K'
+    lifecycle_stage = 'solver_neutral_stripe_on_exact_k_energy_selection'
+    governing_equation = 'T_D_stripe_on(E_z,v1(E_z),v2(E_z))/T_0=K after analytic 5-eV-turn and kappa-prime elimination'
     solver_execution = 'none'
     geometry_change = 'none'
     voltage_publication = 'receipt_only__not_simion_authority'
@@ -107,12 +129,18 @@ try {
   }
 
   $failureStage = 'exact_k_operating_point'
-  Invoke-ProjectPython -LogPath (Join-Path $logDir 'exact_k_operating_point.log') -Arguments @(
-    '-m', 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point',
-    '--mirror-manifest', $frozenParentManifest,
-    '--contract', $frozenContract,
-    '--output', $summary
-  )
+  $theoryLease = $null
+  try {
+    $theoryLease = Enter-HostExecutionLease -Role GATE -Stage theory_compute -RunId $RunId
+    Invoke-ProjectPython -LogPath (Join-Path $logDir 'exact_k_operating_point.log') -Arguments @(
+      '-m', 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point',
+      '--mirror-manifest', $frozenParentManifest,
+      '--contract', $frozenContract,
+      '--output', $summary
+    )
+  } finally {
+    if ($theoryLease) { Exit-HostExecutionLease -Lease $theoryLease }
+  }
   foreach ($pair in $sourceChecks) {
     if (-not (Test-RunFilesIdentical -Left $pair.source -Right $pair.frozen)) {
       throw "Analytic source changed during execution: $($pair.source)"

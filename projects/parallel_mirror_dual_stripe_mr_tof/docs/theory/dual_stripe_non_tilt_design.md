@@ -65,14 +65,23 @@ $$
 
 - Stripe 1 偏压为 $v_1$；
 - Stripe 2 偏压为 $v_2$；
-- 每次轴向振荡中，离子在 Stripe 1 近常势区内的总轴向路径长度为 $S_1(y)$；
-- 在 Stripe 2 近常势区内的总轴向路径长度为 $S_2(y)$。
+- 从一个镜转折点单程走到另一镜转折点时，Stripe 1 近常势区占据的轴向长度总和为 $S_1(y)$；
+- 同一单程中，Stripe 2 近常势区占据的轴向长度总和为 $S_2(y)$。
+
+这里的 $S_i$ 不是完整往返振荡的累计路径。采用完整周期作用量
+$J=\oint p_z\,\mathrm dz=2\int_{z_-}^{z_+}|p_z|\,\mathrm dz$ 时，往返因子已经包含在下节的
+$A=\sqrt{8m}\,[\sqrt{\varepsilon-qv}-\sqrt\varepsilon]$ 中。若同一电压组在正、负 $z$ 各有一段宽度
+$s_i(y)$，则 $S_i=2s_i$，而完整周期累计穿越长度为 $4s_i$。同一槽两侧的面对面导体只围成一个
+近常势区，不能按导体数量重复计数；反之，两个沿 $z$ 分离的镜像近常势区必须各计一次。
+因此几何到 $S_i$ 的映射必须由沿轴区间及完整周期约定派生，不能根据某个倍率是否容易求到根选择。
 
 解析叠加式要求两套近常势区在轴向上不重叠，或至少能够按明确的分段电位积分。若两个电极场在同一区域叠加，不能简单把两个平方根作用量相加，必须使用真实合成电势重新积分。
 
 ## 3. 单个有限偏压 Stripe 的硬边界精确响应
 
-对正离子，设总能量为 $\varepsilon$，Stripe 偏压为 $v$。离子必须满足
+对正离子，在固定慢坐标的轴向作用量问题中，设轴向能量为
+$\varepsilon=\varepsilon_z=mv_z^2/2+q\varphi$，Stripe 偏压为 $v$。这里不是把三维总动能直接代入
+轴向动量；名义参考面取 $\varphi=0$，因此 $\varepsilon_0$ 对应名义快反射动能。离子必须满足
 
 $$
 \varepsilon-qv>0
@@ -237,8 +246,13 @@ $$
 $$
 \eta=\frac yL,
 \qquad
-w_{y0}=w_0\sin^2\vartheta_0.
+w_{y0}=w_0\tan^2\vartheta_0.
 $$
+
+本页采用轴向 $w_0=\varepsilon_0/q$ 和 $W=T_0\sqrt{\varepsilon_0/(2m)}$，故
+$\tan\vartheta_0=v_y/v_z=\sqrt{w_{y0}/w_0}$。若使用总能量约定，角度可写成
+$\sin^2\vartheta_0=w_{y0}/(w_0+w_{y0})$，但对应的有效宽度也必须按总速度换算；
+不能只替换三角函数或能量之一。以下为本项目轴向约定下的表达。
 
 对任意漂移控制器，定义归一化空间函数
 
@@ -269,7 +283,7 @@ $$
 $$
 \frac{T_D}{T_0}
 =
-\frac{L}{W\sin\vartheta_0}
+\frac{L}{W\tan\vartheta_0}
 \kappa(\eta_D),
 $$
 
@@ -286,7 +300,7 @@ $$
 $$
 \frac{\Delta T_K}{T_0}
 =
-\frac{L\sin\vartheta_0}{2W}
+\frac{L\tan\vartheta_0}{2W}
 \tau_g(\eta_D),
 $$
 
@@ -921,7 +935,8 @@ $$
 3. **忽略基线的系统响应**：基线会改变完整分析器周期与全局能量焦点；补偿须服从项目求解边界。
 4. **两个电压过于接近**：响应矩阵虽可逆但严重病态。
 5. **两个电压都很小**：需要不可制造的大宽度变化。
-6. **正偏压超过最低离子能量**：离子会在 Stripe 内反射，轨迹拓扑改变。
+6. **正偏压超过最低慢向离子能量**：离子可能在 Stripe 作用下发生慢漂移方向的提前折返，轨迹拓扑改变；
+   这不是快速反射方向的 $v_z$ 反号。$v_z$ 只能在五电极 mirror 的有效反射区变号。
 7. **场区重叠却使用作用量线性相加**：必须积分真实合成电势。
 8. **继续直接使用原 $c_0\ldots c_5$ 作为两电极形状系数**：它们是目标函数系数，不是新电极 CAD 系数。
 9. **只匹配一阶导数**：宽能量窗口还需二阶、三阶和直接时间验证。
@@ -942,7 +957,8 @@ $$
   "energy_window_V": [3900.0, 4100.0],
   "nominal_drift_length_mm": 335.0,
   "effective_mirror_distance_mm": 641.0,
-  "target_oscillation_count": 25,
+  "target_drift_period_ratio": 25.5,
+  "fast_path_symmetry": "opposite_mirror_turn__z_reflected_nonoverlapping",
   "stripe_1": {
     "bias_V": null,
     "baseline_width_mm": null,

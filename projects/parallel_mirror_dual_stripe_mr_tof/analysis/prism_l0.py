@@ -70,11 +70,11 @@ def _cross(left: tuple[float, float], right: tuple[float, float]) -> float:
     return left[0] * right[1] - left[1] * right[0]
 
 
-def _ray_segment_intersection_yz(
+def ray_segment_intersection_yz(
     origin: tuple[float, float], direction: tuple[float, float],
     start: tuple[float, float], end: tuple[float, float],
 ) -> tuple[float, float] | None:
-    """Return ray parameter and segment parameter for a nonparallel crossing."""
+    """Return forward-ray and segment parameters for a nonparallel y-z crossing."""
     edge = (end[0] - start[0], end[1] - start[1])
     denominator = _cross(direction, edge)
     if abs(denominator) <= 1e-12:
@@ -98,7 +98,7 @@ def _triangle_crossings(
         raise PrismL0Error("first-prism triangle vertices must be y-z pairs")
     hits: list[tuple[float, tuple[float, float]]] = []
     for start, end in zip(vertices, vertices[1:] + vertices[:1]):
-        result = _ray_segment_intersection_yz(origin_yz, direction_yz, start, end)
+        result = ray_segment_intersection_yz(origin_yz, direction_yz, start, end)
         if result is not None:
             ray_t, fraction = result
             point = (start[0] + fraction * (end[0] - start[0]), start[1] + fraction * (end[1] - start[1]))
@@ -194,10 +194,15 @@ def derive_first_prism_l0(contract: dict[str, Any]) -> FirstPrismL0:
     theta = math.atan(math.sqrt(drift / fast))
     output = (0.0, math.sin(theta), -math.cos(theta))
     seed = total * math.cos(theta) * math.sin(theta)
-    if second.get("electrode_id") != 17 or second.get("status") != "pre_stripe_injection_pending":
-        raise PrismL0Error("second prism must remain id-17 and explicitly pending the pre-Stripe injection contract")
+    if (
+        second.get("electrode_id") != 17
+        or second.get("status") != "low_field_angle_and_positive_mirror_turn_calibration_pending"
+    ):
+        raise PrismL0Error(
+            "second prism must remain id-17 and explicitly pending low-field-angle/positive-turn calibration"
+        )
     if _number(second.get("voltage_v"), "second-prism pending voltage") != reference_ground:
-        raise PrismL0Error("unsolved pre-Stripe second-prism voltage must equal the contractual reference ground")
+        raise PrismL0Error("unsolved second-prism voltage must equal the contractual reference ground")
     return FirstPrismL0(
         total, drift, fast, math.degrees(theta), (entry_x, entry_y, entry_z), entry_direction, output,
         (entry_x, crossing_in[0], crossing_in[1]), (entry_x, crossing_out[0], crossing_out[1]),

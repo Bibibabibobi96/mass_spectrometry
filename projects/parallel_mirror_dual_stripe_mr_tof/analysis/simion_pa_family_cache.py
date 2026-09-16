@@ -47,6 +47,62 @@ def pa_family_filenames(component: PAComponent) -> tuple[str, ...]:
     return (f"{prefix}.pa#", f"{prefix}.pa0", *(f"{prefix}.pa{identifier}" for identifier in ids))
 
 
+def accelerator_standalone_response_contract() -> dict[str, Any]:
+    """Return the filenames needed to compose accelerator operating PAs.
+
+    These files are exported while the freshly refined native family is still
+    private and writable.  Published ``.paN`` members are never reopened to
+    manufacture a missing standalone response later.
+    """
+    responses = [
+        {
+            "electrode_id": identifier,
+            "family_member_filename": f"mrtof_accelerator.pa{identifier}",
+            "standalone_response_filename": f"mrtof_accelerator.response{identifier}.pa",
+            "normalization_receipt_filename": (
+                f"mrtof_accelerator.response{identifier}.normalization.csv"
+            ),
+        }
+        for identifier in _COMPONENT_IDS["accelerator"]
+    ]
+    return {
+        "schema_version": 1,
+        "role": "mrtof_accelerator_standalone_response_bank",
+        "base_filename": "mrtof_accelerator.base.pa",
+        "base_export_receipt_filename": "mrtof_accelerator.base.export.json",
+        "zero_base_electrode_voltages_v": [
+            {"electrode_id": identifier, "voltage_v": 0.0}
+            for identifier in _COMPONENT_IDS["accelerator"]
+        ],
+        "responses": responses,
+        "composition": {
+            "algorithm": "standalone_linear_response_composition",
+            "coefficient": "applied_voltage_v / measured_basis_normalization_v",
+        },
+    }
+
+
+def component_pa_cache_filenames(component: PAComponent) -> tuple[str, ...]:
+    """Return the complete immutable payload for one component generation."""
+    family = pa_family_filenames(component)
+    if component != "accelerator":
+        return family
+    standalone = accelerator_standalone_response_contract()
+    return (
+        *family,
+        str(standalone["base_filename"]),
+        str(standalone["base_export_receipt_filename"]),
+        *(
+            str(response[key])
+            for response in standalone["responses"]
+            for key in (
+                "standalone_response_filename",
+                "normalization_receipt_filename",
+            )
+        ),
+    )
+
+
 def _component_span(contract: dict[str, Any], component: PAComponent) -> list[float]:
     value = contract["simion"].get(f"{component}_pa_span_mm")
     if not isinstance(value, list) or len(value) != 3:
@@ -86,6 +142,13 @@ def build_pa_family_identity(
     gem_sha256 = hashlib.sha256(canonical_gem).hexdigest().upper()
     project = Path(__file__).resolve().parents[1]
     simion_directory = project / "simion"
+    repository = project.parents[1]
+    common_simion = repository / "common" / "simion"
+    standalone = (
+        accelerator_standalone_response_contract()
+        if component == "accelerator"
+        else None
+    )
     return {
         "geometry": {
             "component_role": f"mrtof_{component}_pa_family",
@@ -111,6 +174,11 @@ def build_pa_family_identity(
             "mode": "installed_default",
             "convergence_override": None,
             "solutions": "pa0_and_each_declared_basis",
+            **(
+                {"standalone_response_export": standalone}
+                if standalone is not None
+                else {}
+            ),
         },
         "builder_identity": {
             "build_component_pa_lua_sha256": file_sha256(simion_directory / "build_component_pa.lua"),
@@ -120,6 +188,21 @@ def build_pa_family_identity(
             # a generation published by an older, weaker adapter cannot be
             # silently reused.
             "pa_family_cache_adapter_sha256": file_sha256(Path(__file__)),
+            **(
+                {
+                    "standalone_response_exporter_sha256": file_sha256(
+                        common_simion / "export_standalone_pa.lua"
+                    ),
+                    "zero_base_exporter_sha256": file_sha256(
+                        common_simion / "export_fast_adjusted_standalone_pa.lua"
+                    ),
+                    "basis_normalization_measurement_sha256": file_sha256(
+                        common_simion / "measure_pa_basis_voltage.lua"
+                    ),
+                }
+                if component == "accelerator"
+                else {}
+            ),
         },
     }
 
@@ -130,7 +213,9 @@ def probe_component_pa_cache(
 ) -> tuple[dict[str, Any], CacheProbe]:
     """Return the frozen component identity and its fail-closed cache disposition."""
     identity = build_pa_family_identity(contract_path, component, gem_path, simion_executable, simion_release)
-    return identity, probe_pa_family_cache(cache_root, identity, expected_filenames=pa_family_filenames(component))
+    return identity, probe_pa_family_cache(
+        cache_root, identity, expected_filenames=component_pa_cache_filenames(component)
+    )
 
 
 def publish_component_pa_cache(
@@ -149,10 +234,16 @@ def publish_component_pa_cache(
             "PA-cache publication source GEM differs from the requested component GEM"
         )
     identity = build_pa_family_identity(contract_path, component, gem_path, simion_executable, simion_release)
-    publication = publish_pa_family_cache(cache_root, identity, source_directory, pa_family_filenames(component))
+    publication = publish_pa_family_cache(
+        cache_root, identity, source_directory, component_pa_cache_filenames(component)
+    )
     return {"identity": identity, "disposition": publication.disposition.value,
             "cache_key": publication.cache_key, "generation_sha256": publication.generation_sha256,
-            "generation_directory": str(publication.generation_directory)}
+            "generation_directory": str(publication.generation_directory),
+            "standalone_response_contract": (
+                accelerator_standalone_response_contract()
+                if component == "accelerator" else None
+            )}
 
 
 def materialize_component_pa_cache(
@@ -166,11 +257,16 @@ def materialize_component_pa_cache(
     if probe.disposition is not CacheDisposition.HIT or probe.generation_directory is None:
         raise PAFamilyCacheError(f"cannot materialize {component} PA family from cache: {probe.disposition.value}: {probe.detail}")
     result: MaterializedFamily = materialize_pa_family_cache(
-        probe.generation_directory, destination_directory, expected_filenames=pa_family_filenames(component),
+        probe.generation_directory, destination_directory,
+        expected_filenames=component_pa_cache_filenames(component),
     )
     return {"identity": identity, "disposition": "materialized", "cache_key": probe.cache_key,
             "generation_directory": str(probe.generation_directory), "destination_directory": str(result.destination_directory),
-            "files": list(result.files)}
+            "files": list(result.files),
+            "standalone_response_contract": (
+                accelerator_standalone_response_contract()
+                if component == "accelerator" else None
+            )}
 
 
 def main() -> int:
@@ -191,8 +287,20 @@ def main() -> int:
             arguments.cache_root, arguments.contract, component, arguments.gem,
             arguments.simion_executable, arguments.simion_release,
         )
-        document: dict[str, Any] = {"identity": identity, "disposition": probe.disposition.value,
-                                    "cache_key": probe.cache_key, "detail": probe.detail}
+        document: dict[str, Any] = {
+            "identity": identity,
+            "disposition": probe.disposition.value,
+            "cache_key": probe.cache_key,
+            "detail": probe.detail,
+            "generation_directory": (
+                str(probe.generation_directory)
+                if probe.generation_directory is not None else None
+            ),
+            "standalone_response_contract": (
+                accelerator_standalone_response_contract()
+                if component == "accelerator" else None
+            ),
+        }
     elif arguments.action == "publish":
         document = publish_component_pa_cache(
             arguments.cache_root, arguments.contract, component, arguments.gem, arguments.run_simion_directory,

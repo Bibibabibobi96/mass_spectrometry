@@ -196,7 +196,7 @@ def build_flight_receipt(
         "flight_inputs": {
             "source_key": source_key,
             "expected_particle_ids": list(source["expected_particle_ids"]),
-            "target_oscillation_count": source["target_k"],
+            "target_drift_period_ratio": source["target_k"],
             "source_input_manifest": flight["source_input_manifest"],
             "selected_source": flight["selected_source"],
             **consumed_fly2,

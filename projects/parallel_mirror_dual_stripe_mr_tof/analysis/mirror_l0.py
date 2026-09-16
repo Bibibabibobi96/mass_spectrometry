@@ -41,6 +41,13 @@ def step_response(zeta: float) -> float:
     return 0.5 + math.atan(math.sinh(math.pi * _finite(zeta, "zeta") / 2.0)) / math.pi
 
 
+def step_response_derivative(zeta: float) -> float:
+    """Return ``dF0/dzeta`` without overflowing in the remote mirror tail."""
+    argument = abs(math.pi * _finite(zeta, "zeta") / 2.0)
+    exponential = math.exp(-argument)
+    return exponential / (1.0 + exponential * exponential)
+
+
 def validate_design(design: MirrorL0Design) -> None:
     if design.transverse_half_gap_mm <= 0.0:
         raise CandidateContractError("mirror L0 transverse half-gap must be positive")
@@ -85,6 +92,44 @@ def axial_potential_v(z_mm: float, design: MirrorL0Design) -> float:
             (position - design.terminal_electrode_plane_z_mm) / design.transverse_half_gap_mm
         )
     return potential
+
+
+def axial_potential_gradient_v_per_mm(z_mm: float, design: MirrorL0Design) -> float:
+    """Return the analytic project-``z`` derivative of :func:`axial_potential_v`.
+
+    The existing potential mirrors its positive-side expression with
+    ``abs(z)``.  Its derivative is therefore odd away from the central plane.
+    At exactly ``z=0`` the two one-sided derivatives have opposite signs; the
+    symmetric central-plane convention returns zero without changing the
+    existing potential or either one-sided tail.
+    """
+    validate_design(design)
+    coordinate = _finite(z_mm, "z_mm")
+    if coordinate == 0.0:
+        return 0.0
+    position = abs(coordinate)
+    half_gap = design.transverse_half_gap_mm
+    previous = 0.0
+    positive_gradient = 0.0
+    for boundary, voltage in zip(design.transition_z_mm, design.electrode_voltages_v):
+        voltage = _finite(voltage, "electrode_voltage_v")
+        delta = voltage - previous
+        positive_gradient += delta * step_response_derivative(
+            (position - boundary) / half_gap
+        ) / half_gap
+        if design.terminal_electrode_plane_z_mm is not None:
+            positive_gradient += delta * step_response_derivative(
+                (position - (2.0 * design.terminal_electrode_plane_z_mm - boundary))
+                / half_gap
+            ) / half_gap
+        previous = voltage
+    if design.terminal_electrode_plane_z_mm is not None:
+        positive_gradient += 2.0 * (
+            design.terminal_electrode_voltage_v - previous
+        ) * step_response_derivative(
+            (position - design.terminal_electrode_plane_z_mm) / half_gap
+        ) / half_gap
+    return positive_gradient if coordinate > 0.0 else -positive_gradient
 
 
 def turning_point_mm(energy_per_charge_v: float, design: MirrorL0Design) -> float:

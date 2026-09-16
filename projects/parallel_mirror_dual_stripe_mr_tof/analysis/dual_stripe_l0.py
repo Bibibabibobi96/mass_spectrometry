@@ -10,13 +10,19 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
 import numpy as np
+from scipy.special import roots_legendre
 
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+    resolve_drift_phase_contract,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     compile_dual_stripe_width_evaluator,
+    dual_stripe_total_path_scale,
     resolve_geometry,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
@@ -29,6 +35,17 @@ def _finite(value: Any, name: str) -> float:
     if not math.isfinite(result):
         raise CandidateContractError(f"{name} must be finite")
     return result
+
+
+@lru_cache(maxsize=None)
+def gauss_legendre_rule(order: int) -> tuple[np.ndarray, np.ndarray]:
+    """Return one cached, read-only Gauss-Legendre rule without dense eigensolves."""
+    if not isinstance(order, int) or isinstance(order, bool) or order < 1:
+        raise CandidateContractError("Gauss-Legendre order must be a positive integer")
+    nodes, weights = roots_legendre(order)
+    nodes.setflags(write=False)
+    weights.setflags(write=False)
+    return nodes, weights
 
 
 def theory_drift_y_mm(contract: dict[str, Any], project_y_mm: float) -> float:
@@ -70,6 +87,56 @@ def project_y_from_theory_drift_mm(contract: dict[str, Any], theory_y_mm: float)
     return project_y
 
 
+def derive_native_stripe_branch_validation_sample_count(contract: dict[str, Any]) -> int:
+    """Derive branch sampling from the native B-spline topology and contract."""
+    try:
+        theory = contract["dual_stripe"]["theory_profile"]
+        profile = contract["dual_stripe_l0"]["operating_seed_search"]
+        samples_per_span = theory["sampling_per_nonzero_knot_span"]
+        multiplier = profile["turning_search_sampling_multiplier"]
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError("native Stripe branch sampling contract is incomplete") from error
+    for value, name in (
+        (samples_per_span, "native Stripe samples per knot span"),
+        (multiplier, "native Stripe branch sampling multiplier"),
+    ):
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise CandidateContractError(f"{name} must be a positive integer")
+
+    span_counts: list[int] = []
+    for set_name in ("set_1", "set_2"):
+        definition = theory.get(set_name)
+        if not isinstance(definition, dict):
+            raise CandidateContractError(f"native Stripe {set_name} theory profile is missing")
+        for edge_name in ("lower_edge", "upper_edge"):
+            edge = definition.get(edge_name)
+            if not isinstance(edge, dict) or edge.get("basis") != "cubic_bspline":
+                continue
+            order = edge.get("order")
+            knots = edge.get("knots")
+            if (
+                not isinstance(order, int)
+                or isinstance(order, bool)
+                or order <= 0
+                or not isinstance(knots, list)
+                or len(knots) <= 2 * order
+            ):
+                raise CandidateContractError("native Stripe B-spline topology is invalid")
+            knot_values = tuple(_finite(value, "native Stripe knot") for value in knots)
+            span_counts.append(
+                sum(
+                    right > left
+                    for left, right in zip(
+                        knot_values[order - 1:-order],
+                        knot_values[order:1 - order],
+                    )
+                )
+            )
+    if not span_counts or min(span_counts) <= 0:
+        raise CandidateContractError("native Stripe profiles have no nonzero B-spline spans")
+    return max(span_counts) * samples_per_span * multiplier
+
+
 def _condition_number_2x2(a: float, b: float, c: float, d: float) -> float:
     """Return the 2-norm condition number without a numerical-library dependency."""
     trace = a * a + b * b + c * c + d * d
@@ -80,6 +147,112 @@ def _condition_number_2x2(a: float, b: float, c: float, d: float) -> float:
     if singular_min_sq <= 0.0:
         return math.inf
     return math.sqrt(singular_max_sq / singular_min_sq)
+
+
+@dataclass(frozen=True)
+class NativeStripeSpatialReturnNumerics:
+    """Explicit controls for one native-geometry spatial-return branch solve."""
+
+    kappa_derivative_step: float
+    initial_ratio_half_width: float
+    search_expansion_factor: float
+    maximum_search_expansions: int
+    branch_validation_sample_count: int
+    root_absolute_tolerance: float
+    root_relative_tolerance: float
+    maximum_root_iterations: int
+
+
+@dataclass(frozen=True)
+class ManufacturedStripeBasisPathScales:
+    """Native path scales relative to one explicitly supplied theory basis."""
+
+    drift_length_l_mm: float
+    high_order_response_scale_mm: float
+    linear_response_scale_mm: float
+    reference_relative_action_weight_ratio: float
+    active_eta_max: float
+    high_order_projection_rms_residual_mm: float
+    high_order_eta_coefficients_mm: tuple[float, ...]
+    linear_eta_coefficient_mm: float
+    geometry_profile_to_total_path_scales: tuple[float, float]
+
+
+@dataclass(frozen=True)
+class NativeStripeSpatialShapeRoot:
+    """A mirror-independent spatial-return root of two native path shapes."""
+
+    geometry_input_identity_source: str
+    entry_y_mm: float
+    turning_y_mm: float
+    drift_length_l_mm: float
+    drift_direction_sign: float
+    reference_relative_action_weight_ratio: float
+    reference_kappa_prime: float
+    relative_action_weight_ratio: float
+    kappa_1: float
+    kappa_prime: float
+    delta_path_lengths_at_turn_mm: tuple[float, float]
+    root_bracket: tuple[float, float]
+    searched_parameter_range: tuple[float, float]
+    validated_branch_sample_range: tuple[float, float]
+    validated_branch_sample_count: int
+
+
+@dataclass(frozen=True)
+class NativeStripeSpatialReturnRoot:
+    """A source-energy amplitude and exact biases on one spatial shape root."""
+
+    shape_root: NativeStripeSpatialShapeRoot
+    axial_energy_per_charge_v: float
+    source_slow_energy_per_charge_v: float
+    mirror_reduced_period_mm_per_sqrt_v: float
+    mirror_axial_width_w_mm: float
+    continuous_oscillation_count: float
+    pseudopotential_path_coefficients_v_per_mm: tuple[float, float]
+    stripe_biases_v: tuple[float, float]
+    turning_pseudopotential_v: float
+    source_slow_energy_mismatch_v: float
+
+
+def _pseudopotential_path_coefficient_v_per_mm(
+    axial_energy_per_charge_v: float,
+    bias_v: float,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+) -> float:
+    """Return the exact hard-boundary coefficient in ``Phi=a*delta_S``."""
+    energy = _finite(axial_energy_per_charge_v, "axial energy per charge")
+    bias = _finite(bias_v, "Stripe bias")
+    period = _finite(
+        mirror_reduced_period_mm_per_sqrt_v,
+        "mirror reduced period",
+    )
+    if energy <= 0.0 or period <= 0.0 or energy - bias <= 0.0:
+        raise CandidateContractError("finite-bias Stripe action requires positive transmitted energy and mirror period")
+    return -2.0 * (math.sqrt(energy - bias) - math.sqrt(energy)) / period
+
+
+def _invert_pseudopotential_path_coefficient_v(
+    axial_energy_per_charge_v: float,
+    coefficient_v_per_mm: float,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+) -> float:
+    """Invert the exact finite-bias action coefficient without linearization."""
+    energy = _finite(axial_energy_per_charge_v, "axial energy per charge")
+    coefficient = _finite(coefficient_v_per_mm, "pseudopotential path coefficient")
+    period = _finite(
+        mirror_reduced_period_mm_per_sqrt_v,
+        "mirror reduced period",
+    )
+    if energy <= 0.0 or period <= 0.0 or coefficient == 0.0:
+        raise CandidateContractError("finite-bias inverse requires positive energy/period and nonzero response")
+    transmitted_root = math.sqrt(energy) - 0.5 * coefficient * period
+    if transmitted_root <= 0.0:
+        raise CandidateContractError("finite-bias inverse removes Stripe transmission")
+    voltage = energy - transmitted_root * transmitted_root
+    if voltage == 0.0 or voltage >= energy:
+        raise CandidateContractError("finite-bias inverse produced an invalid Stripe bias")
+    return voltage
 
 
 def _width_bounds(record: dict[str, Any]) -> tuple[float, float]:
@@ -161,6 +334,83 @@ def _polynomial_inner_product(
     )
 
 
+def identify_manufactured_basis_path_scales(
+    contract: dict[str, Any],
+    *,
+    basis_coefficients_c0_to_c5: Sequence[float],
+) -> ManufacturedStripeBasisPathScales:
+    """Project both native paths onto an explicitly supplied manufactured basis.
+
+    This is a geometry-only adapter.  It consumes neither mirror energy or
+    period nor source energy or an old voltage point.  Its ratio
+    ``lambda_high/lambda_linear`` is therefore a valid mirror-independent
+    branch reference for :func:`solve_native_stripe_spatial_shape_branch`.
+    """
+    coefficients = tuple(
+        _finite(value, "manufactured basis coefficient")
+        for value in basis_coefficients_c0_to_c5
+    )
+    if len(coefficients) != 6:
+        raise CandidateContractError("manufactured basis projection requires c0..c5")
+    linear_basis = coefficients[0]
+    high_basis = coefficients[1:]
+    if linear_basis == 0.0 or _polynomial_inner_product(high_basis, high_basis, 1.0) == 0.0:
+        raise CandidateContractError("manufactured theory bases must both be nonzero")
+    l0 = contract.get("dual_stripe_l0")
+    if not isinstance(l0, dict):
+        raise CandidateContractError("manufactured basis projection requires the Stripe L0 contract")
+    length = _finite(
+        l0.get("manufactured_design_abs_drift_length_L_mm"),
+        "manufactured-design drift length",
+    )
+    if length <= 0.0:
+        raise CandidateContractError("manufactured-design drift length must be positive")
+
+    shape = identify_fixed_cad_component_shapes(contract)
+    selected = shape["selected_fit"]
+    physical_high = tuple(
+        _finite(value, "fitted high-order physical coefficient")
+        for value in selected["set_1_coefficients_per_physical_mm_power"]
+    )
+    if len(physical_high) != 5:
+        raise CandidateContractError("manufactured high-order fit must contain five coefficients")
+    set_1_path_scale = dual_stripe_total_path_scale(contract, "set_1")
+    set_2_path_scale = dual_stripe_total_path_scale(contract, "set_2")
+    geometry_high = tuple(
+        set_1_path_scale * value * length**power
+        for power, value in enumerate(physical_high, start=1)
+    )
+    geometry_linear = (
+        set_2_path_scale
+        * _finite(selected["set_2_coefficient_per_physical_mm"], "fitted linear coefficient")
+        * length
+    )
+    active_eta = _finite(shape["active_distance_mm"], "Stripe active distance") / length
+    high_denominator = _polynomial_inner_product(high_basis, high_basis, active_eta)
+    high_scale = _polynomial_inner_product(geometry_high, high_basis, active_eta) / high_denominator
+    linear_scale = geometry_linear / linear_basis
+    if high_scale == 0.0 or linear_scale == 0.0:
+        raise CandidateContractError("manufactured basis geometry scales must be nonzero")
+    high_residual = tuple(
+        actual - high_scale * target
+        for actual, target in zip(geometry_high, high_basis)
+    )
+    high_rms = math.sqrt(
+        _polynomial_inner_product(high_residual, high_residual, active_eta) / active_eta
+    )
+    return ManufacturedStripeBasisPathScales(
+        drift_length_l_mm=length,
+        high_order_response_scale_mm=high_scale,
+        linear_response_scale_mm=linear_scale,
+        reference_relative_action_weight_ratio=high_scale / linear_scale,
+        active_eta_max=active_eta,
+        high_order_projection_rms_residual_mm=high_rms,
+        high_order_eta_coefficients_mm=geometry_high,
+        linear_eta_coefficient_mm=geometry_linear,
+        geometry_profile_to_total_path_scales=(set_1_path_scale, set_2_path_scale),
+    )
+
+
 def derive_manufactured_basis_voltage_seed(
     contract: dict[str, Any],
     *,
@@ -193,52 +443,37 @@ def derive_manufactured_basis_voltage_seed(
     if linear_basis == 0.0 or _polynomial_inner_product(high_basis, high_basis, 1.0) == 0.0:
         raise CandidateContractError("manufactured theory bases must both be nonzero")
 
+    basis_scales = identify_manufactured_basis_path_scales(
+        contract,
+        basis_coefficients_c0_to_c5=coefficients,
+    )
+
     l0 = contract.get("dual_stripe_l0")
     nominal = contract.get("nominal")
     if not isinstance(l0, dict) or not isinstance(nominal, dict):
         raise CandidateContractError("manufactured basis inverse requires Stripe and nominal contracts")
-    length = _finite(
-        l0.get("manufactured_design_abs_drift_length_L_mm"),
-        "manufactured-design drift length",
-    )
+    length = basis_scales.drift_length_l_mm
     width = _finite(mirror_axial_width_w_mm, "mirror-owned axial width W")
     energy = (
         _finite(axial_energy_per_charge_v, "selected axial energy per charge")
         if axial_energy_per_charge_v is not None
         else _finite(nominal.get("energy_per_charge_v"), "nominal axial energy per charge")
     )
-    oscillations = nominal.get("target_oscillation_count")
+    phase_contract = resolve_drift_phase_contract(contract)
+    target_period_ratio = phase_contract.target_period_ratio
     if (
         length <= 0.0
         or width <= 0.0
         or energy <= 0.0
-        or not isinstance(oscillations, int)
-        or isinstance(oscillations, bool)
-        or oscillations <= 0
+        or target_period_ratio <= 0.0
     ):
         raise CandidateContractError("manufactured basis inverse inputs must be positive")
 
-    shape = identify_fixed_cad_component_shapes(contract)
-    selected = shape["selected_fit"]
-    physical_high = tuple(
-        _finite(value, "fitted high-order physical coefficient")
-        for value in selected["set_1_coefficients_per_physical_mm_power"]
-    )
-    if len(physical_high) != 5:
-        raise CandidateContractError("manufactured high-order fit must contain five coefficients")
-    geometry_high = tuple(
-        value * length**power for power, value in enumerate(physical_high, start=1)
-    )
-    geometry_linear = (
-        _finite(selected["set_2_coefficient_per_physical_mm"], "fitted linear coefficient")
-        * length
-    )
-    active_eta = _finite(shape["active_distance_mm"], "Stripe active distance") / length
-    high_denominator = _polynomial_inner_product(high_basis, high_basis, active_eta)
-    high_scale = _polynomial_inner_product(geometry_high, high_basis, active_eta) / high_denominator
-    linear_scale = geometry_linear / linear_basis
-    if high_scale == 0.0 or linear_scale == 0.0:
-        raise CandidateContractError("manufactured basis geometry scales must be nonzero")
+    high_scale = basis_scales.high_order_response_scale_mm
+    linear_scale = basis_scales.linear_response_scale_mm
+    active_eta = basis_scales.active_eta_max
+    geometry_high = basis_scales.high_order_eta_coefficients_mm
+    geometry_linear = basis_scales.linear_eta_coefficient_mm
 
     def psi(eta: float) -> float:
         coordinate = _finite(eta, "basis eta")
@@ -264,10 +499,10 @@ def derive_manufactured_basis_voltage_seed(
             "post-acceleration energy must equal drift energy plus the nominal axial energy"
         )
     selected_total_energy = drift_energy + energy
-    sin_theta = math.sqrt(drift_energy / selected_total_energy)
-    predicted_oscillations = kappa * length / (width * sin_theta)
-    required_width = kappa * length / (oscillations * sin_theta)
-    exact_k_residual = predicted_oscillations - oscillations
+    tangent_theta = math.sqrt(drift_energy / energy)
+    predicted_oscillations = kappa * length / (width * tangent_theta)
+    required_width = kappa * length / (target_period_ratio * tangent_theta)
+    exact_k_residual = predicted_oscillations - target_period_ratio
     exact_k_tolerance = _finite(
         contract["mirror"]["theory_requirements"]["exact_k_operating_point_selection"]
         ["maximum_abs_numerical_k_residual"],
@@ -276,38 +511,38 @@ def derive_manufactured_basis_voltage_seed(
     if exact_k_tolerance <= 0.0:
         raise CandidateContractError("exact-K numerical residual tolerance must be positive")
     exact_k_satisfied = abs(exact_k_residual) <= exact_k_tolerance
-    target_band_lower = oscillations - 0.5
-    target_band_upper = oscillations + 0.5
+    target_band_lower = target_period_ratio - 0.5
+    target_band_upper = target_period_ratio + 0.5
     target_band_margin = min(
         predicted_oscillations - target_band_lower,
         target_band_upper - predicted_oscillations,
     )
-    assigned_oscillations = math.floor(predicted_oscillations + 0.5)
+    assigned_phase_order = math.floor(predicted_oscillations) + 0.5
 
     def invert_scale(scale: float) -> tuple[float, float, float]:
-        # From lambda = W*sin(theta)^2 / [2*(1-r)] with
-        # r=sqrt(1-v/w0).  This is algebraically equivalent to the exact
-        # finite-bias action relation and remains well behaved for v<0.
-        root = 1.0 - width * drift_energy / (2.0 * energy * scale)
-        if root <= 0.0:
-            raise CandidateContractError("manufactured basis scale removes Stripe transmission")
-        voltage = energy * (1.0 - root * root)
-        if voltage == 0.0 or voltage >= energy:
-            raise CandidateContractError("manufactured basis inverse produced an invalid Stripe bias")
+        # ``drift_energy / scale`` is the coefficient in Phi=a*delta_S.
+        # Use the same exact finite-bias inverse as the native-path root.
+        path_coefficient = drift_energy / scale
+        voltage = _invert_pseudopotential_path_coefficient_v(
+            energy,
+            path_coefficient,
+            width / math.sqrt(energy),
+        )
+        root = math.sqrt((energy - voltage) / energy)
         response = 1.0 / root
-        reconstructed_scale = width * drift_energy / (2.0 * energy * (1.0 - root))
+        reconstructed_coefficient = _pseudopotential_path_coefficient_v_per_mm(
+            energy,
+            voltage,
+            width / math.sqrt(energy),
+        )
+        reconstructed_scale = drift_energy / reconstructed_coefficient
         return voltage, response, reconstructed_scale
 
     first_voltage, first_h, first_reconstructed = invert_scale(high_scale)
     second_voltage, second_h, second_reconstructed = invert_scale(linear_scale)
     condition = _condition_number_2x2(1.0, 1.0, first_h, second_h)
 
-    high_residual = tuple(
-        actual - high_scale * target for actual, target in zip(geometry_high, high_basis)
-    )
-    high_rms = math.sqrt(
-        _polynomial_inner_product(high_residual, high_residual, active_eta) / active_eta
-    )
+    high_rms = basis_scales.high_order_projection_rms_residual_mm
     realized_g = (
         first_h * high_basis[0] + second_h * linear_basis,
         *(first_h * value for value in high_basis[1:]),
@@ -320,12 +555,13 @@ def derive_manufactured_basis_voltage_seed(
         "mirror_owned_axial_width_W_mm": width,
         "selected_axial_energy_per_charge_v": energy,
         "selected_total_kinetic_energy_ev": selected_total_energy,
-        "target_oscillation_count_K": oscillations,
+        "drift_phase_contract": phase_contract.as_dict(),
+        "target_drift_period_ratio": target_period_ratio,
         "predicted_continuous_oscillation_count": predicted_oscillations,
         "oscillation_count_residual": exact_k_residual,
         "nominal_center_exact_K_design_equation": {
             "equation": "T_D(theta_0)/T_0=K",
-            "target_K": oscillations,
+            "target_period_ratio": target_period_ratio,
             "calculated_T_D_over_T_0": predicted_oscillations,
             "residual": exact_k_residual,
             "maximum_abs_numerical_residual": exact_k_tolerance,
@@ -341,11 +577,11 @@ def derive_manufactured_basis_voltage_seed(
             ),
         },
         "nominal_center_oscillation_topology": {
-            "nearest_integer_K": assigned_oscillations,
-            "target_K_interval_lower_exclusive": target_band_lower,
-            "target_K_interval_upper_exclusive": target_band_upper,
+            "nearest_opposite_turn_phase_order": assigned_phase_order,
+            "target_period_ratio_interval_lower_exclusive": target_band_lower,
+            "target_period_ratio_interval_upper_exclusive": target_band_upper,
             "signed_minimum_boundary_margin": target_band_margin,
-            "target_K_interval_passed": target_band_margin > 0.0,
+            "target_period_ratio_interval_passed": target_band_margin > 0.0,
             "semantics": (
                 "This classifies only the nominal center trajectory. The same strict interval must "
                 "later hold over the complete accepted bundle in the native three-dimensional field."
@@ -354,7 +590,7 @@ def derive_manufactured_basis_voltage_seed(
         "nominal_axial_energy_per_charge_v": energy,
         "post_acceleration_total_energy_per_charge_v": selected_total_energy,
         "nominal_kappa_1": kappa,
-        "nominal_injection_angle_degrees": math.degrees(math.asin(sin_theta)),
+        "nominal_injection_angle_degrees": math.degrees(math.atan(tangent_theta)),
         "derived_drift_kinetic_energy_per_charge_v": drift_energy,
         "derived_fast_reflection_energy_per_charge_v": energy,
         "mirror_axial_width_required_for_exact_K_mm": required_width,
@@ -362,6 +598,10 @@ def derive_manufactured_basis_voltage_seed(
         "geometry_basis_scales_mm": {
             "set_1_high_order": high_scale,
             "set_2_linear": linear_scale,
+        },
+        "geometry_profile_to_total_path_scales": {
+            "set_1": basis_scales.geometry_profile_to_total_path_scales[0],
+            "set_2": basis_scales.geometry_profile_to_total_path_scales[1],
         },
         "geometry_basis_fit": {
             "active_eta_max": active_eta,
@@ -397,8 +637,8 @@ def derive_manufactured_basis_voltage_seed(
             "independent_fixed_inputs": [
                 "manufactured L",
                 "target K",
-                "source-preserved 5 eV drift energy",
-                "selected mirror axial energy",
+                "independent slow-axis energy E_y",
+                "selected mirror-axis energy E_z",
                 "two user-confirmed manufactured theory-basis geometry scales",
             ],
             "adjustable_coordinate_implication": (
@@ -412,7 +652,7 @@ def derive_manufactured_basis_voltage_seed(
 @lru_cache(maxsize=None)
 def _legendre_rule(order: int) -> tuple[np.ndarray, np.ndarray]:
     """Return a cached Gauss--Legendre rule for repeated endpoint integrals."""
-    nodes, weights = np.polynomial.legendre.leggauss(order)
+    nodes, weights = gauss_legendre_rule(order)
     nodes.setflags(write=False)
     weights.setflags(write=False)
     return nodes, weights
@@ -491,6 +731,248 @@ def kappa_derivative_at_turn(
     upper = endpoint_regularized_kappa_at_turn(psi_at_eta, turn + increment)
     lower = endpoint_regularized_kappa_at_turn(psi_at_eta, turn - increment)
     return (upper - lower) / (2.0 * increment)
+
+
+def solve_native_stripe_spatial_shape_branch(
+    path_length_functions: Sequence[Callable[[float], float]],
+    *,
+    entry_y_mm: float,
+    drift_length_l_mm: float,
+    drift_direction_sign: float,
+    reference_relative_action_weight_ratio: float,
+    geometry_input_identity_source: str,
+    numerics: NativeStripeSpatialReturnNumerics,
+) -> NativeStripeSpatialShapeRoot:
+    """Solve ``kappa'(1)=0`` for the relative action weight of two native paths.
+
+    Only the normalized shape
+    ``psi=(delta_S1+r*delta_S2)/(delta_S1(1)+r*delta_S2(1))`` is used here.
+    Consequently the result is independent of mirror period, energy, source
+    energy, and voltage amplitude.  The named reference ratio selects one
+    locally connected physical branch; this routine neither scans all branches
+    nor imports a paper coefficient, search envelope, or acceptance tolerance.
+    """
+    if len(path_length_functions) != 2 or any(
+        not callable(function) for function in path_length_functions
+    ):
+        raise CandidateContractError("native spatial return requires exactly two callable path functions")
+    if not isinstance(geometry_input_identity_source, str) or not geometry_input_identity_source.strip():
+        raise CandidateContractError("native path geometry needs a nonempty identity source")
+    if not isinstance(numerics, NativeStripeSpatialReturnNumerics):
+        raise CandidateContractError("native spatial return requires named numerical controls")
+
+    entry = _finite(entry_y_mm, "native Stripe entry y")
+    length = _finite(drift_length_l_mm, "native Stripe drift length L")
+    direction = _finite(drift_direction_sign, "native Stripe drift direction")
+    reference_ratio = _finite(
+        reference_relative_action_weight_ratio,
+        "reference relative action weight ratio",
+    )
+    derivative_step = _finite(numerics.kappa_derivative_step, "kappa derivative step")
+    initial_half_width = _finite(
+        numerics.initial_ratio_half_width,
+        "initial ratio search half-width",
+    )
+    expansion = _finite(
+        numerics.search_expansion_factor,
+        "ratio search expansion factor",
+    )
+    absolute_tolerance = _finite(
+        numerics.root_absolute_tolerance,
+        "root absolute tolerance",
+    )
+    relative_tolerance = _finite(
+        numerics.root_relative_tolerance,
+        "root relative tolerance",
+    )
+    integer_controls = (
+        numerics.maximum_search_expansions,
+        numerics.branch_validation_sample_count,
+        numerics.maximum_root_iterations,
+    )
+    if (
+        length <= 0.0
+        or isinstance(drift_direction_sign, bool)
+        or direction not in (-1.0, 1.0)
+        or derivative_step <= 0.0
+        or derivative_step >= 1.0
+        or initial_half_width <= 0.0
+        or expansion <= 1.0
+        or absolute_tolerance <= 0.0
+        or relative_tolerance <= 0.0
+        or any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in integer_controls)
+        or numerics.branch_validation_sample_count < 2
+    ):
+        raise CandidateContractError("native spatial-return branch controls are outside their physical domains")
+
+    turning = entry + direction * length
+    paths = tuple(path_length_functions)
+
+    def delta_path(index: int, eta: float) -> float:
+        coordinate = entry + direction * length * _finite(eta, "native Stripe eta")
+        entry_width = _finite(paths[index](entry), f"native Stripe path {index + 1} at entry")
+        width = _finite(paths[index](coordinate), f"native Stripe path {index + 1}")
+        if entry_width <= 0.0 or width <= 0.0:
+            raise CandidateContractError("native Stripe path lengths must remain positive")
+        return width - entry_width
+
+    delta_at_turn = (delta_path(0, 1.0), delta_path(1, 1.0))
+    if delta_at_turn == (0.0, 0.0):
+        raise CandidateContractError("native Stripe paths have no response at the nominal turn")
+
+    def normalized_profile(ratio: float) -> Callable[[float], float]:
+        value = _finite(ratio, "relative action weight ratio")
+        denominator = delta_at_turn[0] + value * delta_at_turn[1]
+        if denominator == 0.0:
+            raise CandidateContractError("relative action weights cancel the nominal turning response")
+
+        def psi(eta: float) -> float:
+            return (delta_path(0, eta) + value * delta_path(1, eta)) / denominator
+
+        endpoint = psi(1.0)
+        for index in range(numerics.branch_validation_sample_count):
+            eta = index / numerics.branch_validation_sample_count
+            if endpoint - psi(eta) <= 0.0:
+                raise CandidateContractError("relative action weights leave the physical return branch")
+        return psi
+
+    def residual(ratio: float) -> float:
+        return kappa_derivative_at_turn(
+            normalized_profile(ratio),
+            1.0,
+            step=derivative_step,
+        )
+
+    reference_residual = residual(reference_ratio)
+    valid_samples: dict[float, float] = {reference_ratio: reference_residual}
+    half_width = initial_half_width
+    selected_bracket: tuple[float, float] | None = None
+    for _ in range(numerics.maximum_search_expansions):
+        for ratio in (reference_ratio - half_width, reference_ratio + half_width):
+            try:
+                valid_samples[ratio] = residual(ratio)
+            except CandidateContractError:
+                pass
+        ordered = sorted(valid_samples.items())
+        brackets = [
+            (left[0], right[0])
+            for left, right in zip(ordered, ordered[1:])
+            if left[1] == 0.0 or right[1] == 0.0 or left[1] * right[1] < 0.0
+        ]
+        if brackets:
+            selected_bracket = min(
+                brackets,
+                key=lambda bounds: min(
+                    abs(bounds[0] - reference_ratio),
+                    abs(bounds[1] - reference_ratio),
+                ),
+            )
+            break
+        half_width *= expansion
+    if selected_bracket is None:
+        raise CandidateContractError("no spatial-return root was bracketed on the selected native branch")
+
+    lower, upper = selected_bracket
+    lower_residual = residual(lower)
+    upper_residual = residual(upper)
+    root = lower if lower_residual == 0.0 else upper if upper_residual == 0.0 else None
+    for _ in range(numerics.maximum_root_iterations):
+        if root is not None:
+            break
+        midpoint = 0.5 * (lower + upper)
+        midpoint_residual = residual(midpoint)
+        tolerance = absolute_tolerance + relative_tolerance * max(1.0, abs(midpoint))
+        if midpoint_residual == 0.0 or upper - lower <= 2.0 * tolerance:
+            root = midpoint
+            break
+        if lower_residual * midpoint_residual < 0.0:
+            upper = midpoint
+            upper_residual = midpoint_residual
+        else:
+            lower = midpoint
+            lower_residual = midpoint_residual
+    if root is None:
+        raise CandidateContractError("native spatial-return root did not converge within the named iteration limit")
+
+    root_profile = normalized_profile(root)
+    root_residual = residual(root)
+    kappa = endpoint_regularized_kappa(root_profile)
+    sampled_parameters = tuple(sorted(valid_samples))
+    return NativeStripeSpatialShapeRoot(
+        geometry_input_identity_source=geometry_input_identity_source.strip(),
+        entry_y_mm=entry,
+        turning_y_mm=turning,
+        drift_length_l_mm=length,
+        drift_direction_sign=direction,
+        reference_relative_action_weight_ratio=reference_ratio,
+        reference_kappa_prime=reference_residual,
+        relative_action_weight_ratio=root,
+        kappa_1=kappa,
+        kappa_prime=root_residual,
+        delta_path_lengths_at_turn_mm=delta_at_turn,
+        root_bracket=(lower, upper),
+        searched_parameter_range=(reference_ratio - half_width, reference_ratio + half_width),
+        validated_branch_sample_range=(sampled_parameters[0], sampled_parameters[-1]),
+        validated_branch_sample_count=len(sampled_parameters),
+    )
+
+
+def materialize_native_stripe_spatial_return_root(
+    shape_root: NativeStripeSpatialShapeRoot,
+    *,
+    source_slow_energy_per_charge_v: float,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+    axial_energy_per_charge_v: float,
+) -> NativeStripeSpatialReturnRoot:
+    """Set the source ``E_y`` amplitude and exactly invert both Stripe biases."""
+    if not isinstance(shape_root, NativeStripeSpatialShapeRoot):
+        raise CandidateContractError("native Stripe voltage materialization requires a spatial shape root")
+    slow_energy = _finite(source_slow_energy_per_charge_v, "source slow energy per charge")
+    period = _finite(
+        mirror_reduced_period_mm_per_sqrt_v,
+        "mirror reduced period",
+    )
+    energy = _finite(axial_energy_per_charge_v, "axial energy per charge")
+    if slow_energy <= 0.0 or period <= 0.0 or energy <= 0.0:
+        raise CandidateContractError("native Stripe materialization needs positive E_y, E_z, and mirror period")
+    first_delta, second_delta = shape_root.delta_path_lengths_at_turn_mm
+    ratio = shape_root.relative_action_weight_ratio
+    denominator = first_delta + ratio * second_delta
+    if denominator == 0.0:
+        raise CandidateContractError("native Stripe root has zero turning-response amplitude")
+    first_coefficient = slow_energy / denominator
+    second_coefficient = ratio * first_coefficient
+    biases = (
+        _invert_pseudopotential_path_coefficient_v(energy, first_coefficient, period),
+        _invert_pseudopotential_path_coefficient_v(energy, second_coefficient, period),
+    )
+    reconstructed_coefficients = tuple(
+        _pseudopotential_path_coefficient_v_per_mm(energy, bias, period)
+        for bias in biases
+    )
+    turning_pseudopotential = (
+        reconstructed_coefficients[0] * first_delta
+        + reconstructed_coefficients[1] * second_delta
+    )
+    axial_width = period * math.sqrt(energy)
+    tangent_theta = math.sqrt(slow_energy / energy)
+    oscillations = (
+        shape_root.drift_length_l_mm
+        * shape_root.kappa_1
+        / (axial_width * tangent_theta)
+    )
+    return NativeStripeSpatialReturnRoot(
+        shape_root=shape_root,
+        axial_energy_per_charge_v=energy,
+        source_slow_energy_per_charge_v=slow_energy,
+        mirror_reduced_period_mm_per_sqrt_v=period,
+        mirror_axial_width_w_mm=axial_width,
+        continuous_oscillation_count=oscillations,
+        pseudopotential_path_coefficients_v_per_mm=reconstructed_coefficients,
+        stripe_biases_v=biases,
+        turning_pseudopotential_v=turning_pseudopotential,
+        source_slow_energy_mismatch_v=turning_pseudopotential - slow_energy,
+    )
 
 
 def endpoint_regularized_tau_g(
@@ -827,6 +1309,8 @@ def audit_theory_function_origin_registration(contract: dict[str, Any]) -> dict[
 def analyze_dual_stripe_l0(
     contract: dict[str, Any],
     biases_v: Sequence[float],
+    *,
+    axial_energy_per_charge_v: float | None = None,
 ) -> dict[str, Any]:
     """Check nominal dual-Stripe response independence and resolved widths.
 
@@ -834,7 +1318,11 @@ def analyze_dual_stripe_l0(
     ``[[1,1],[h1,h2]]`` maps the two nominal spatial contributions to
     ``(psi,g)`` and is the unit-independent conditioning diagnostic.
     """
-    nominal_energy = _finite(contract["nominal"]["energy_per_charge_v"], "nominal.energy_per_charge_v")
+    nominal_energy = (
+        _finite(axial_energy_per_charge_v, "selected axial energy per charge")
+        if axial_energy_per_charge_v is not None
+        else _finite(contract["nominal"]["energy_per_charge_v"], "nominal.energy_per_charge_v")
+    )
     stripe = contract["dual_stripe"]
     if len(biases_v) != 2:
         raise CandidateContractError("dual Stripe L0 requires exactly two explicit trial biases")

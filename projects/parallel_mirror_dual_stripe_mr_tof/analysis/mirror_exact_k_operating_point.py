@@ -3,16 +3,21 @@
 The fixed manufactured mirror has four non-ground voltage coordinates and
 three axial L0 equations.  L1 gamma selects one member at each trial energy.
 This module then varies only the accelerator net-gain centre within its
-declared range and applies ``T_D(theta_0)/T_0=K`` as a system-level selector.
-Stripe voltages never participate in the mirror solve.
+declared range.  At every energy it analytically derives the two Stripe
+biases from the fixed native spatial-return shape and the declared slow-axis
+source energy, then applies the Stripe-on ``T_D/T_0=K`` as the final selector.
+Stripe voltages never back-fit the independent mirror equations.
 """
 
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor
+import copy
 from dataclasses import asdict, dataclass
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -21,11 +26,19 @@ from scipy.optimize import brentq, least_squares
 
 from common.contracts.file_identity import canonical_json_sha256, file_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
+from common.host_resource_python import ensure_heavy_entry
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+    resolve_drift_phase_contract,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
-    endpoint_regularized_kappa,
+    NativeStripeSpatialShapeRoot,
+    materialize_native_stripe_spatial_return_root,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
+    StripeHardBoundary,
     classify_constraint_system,
+    derive_coupled_drift_state,
+    spatial_return_kappa_derivative_residual,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import (
     ManagedMirrorRoot,
@@ -47,6 +60,13 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import (
     refine_l0_gamma_intersection,
     screen_l1_fixed_geometry,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
+    build_native_stripe_shape_selection,
+    load_native_stripe_shape_selection,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+    compile_dual_stripe_path_length_evaluator,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
     derive_mirror_voltage_bounds,
@@ -56,7 +76,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 
 EXACT_K_SELECTOR_STATUS = (
-    "paper_normalized_adiabatic_selection_over_mirror_qualified_energy_family"
+    "native_fixed_geometry_stripe_on_period_selection_over_mirror_qualified_energy_family"
+)
+EXACT_K_SUMMARY_STATUS = (
+    "native_stripe_on_exact_k_system_point_found__3d_validation_pending"
 )
 
 
@@ -74,6 +97,10 @@ class ExactKPoint:
     gamma_degrees: float
     gamma_residual_degrees: float
     normalized_period_slopes_per_v: tuple[float, ...]
+    stripe_biases_v: tuple[float, float]
+    turning_pseudopotential_v: float
+    source_slow_energy_mismatch_v: float
+    spatial_return_kappa_prime: float
 
 
 @dataclass(frozen=True)
@@ -83,11 +110,38 @@ class ManagedExactKOperatingPoint:
     design: MirrorL0Design
     axial_energy_per_charge_v: float
     axial_width_w_mm: float
-    kappa_1: float
+    native_stripe_spatial_shape_root: NativeStripeSpatialShapeRoot
+    stripe_biases_v: tuple[float, float]
     contract: dict[str, Any]
     run_id: str
     manifest_sha256: str
     parent_mirror_manifest_sha256: str
+
+    @property
+    def kappa_1(self) -> float:
+        """Return kappa from the contract-bound native manufactured shape root."""
+        return self.native_stripe_spatial_shape_root.kappa_1
+
+
+def _evaluate_energy_node_worker(
+    payload: tuple[
+        dict[str, Any], ManagedMirrorRoot, int, float, NativeStripeSpatialShapeRoot,
+    ],
+) -> tuple[float, ExactKPoint | None, dict[str, object] | None, str | None]:
+    """Evaluate one independent mirror-energy node in a spawn-safe worker."""
+    contract, seed, branch_index, energy, shape_root = payload
+    try:
+        point, receipt = evaluate_branch_at_energy(
+            contract,
+            seed,
+            branch_index,
+            energy,
+            shape_root,
+            None,
+        )
+        return energy, point, receipt, None
+    except Exception as error:  # retried serially with continuation before failure
+        return energy, None, None, f"{type(error).__name__}: {error}"
 
 
 def _finite(value: object, label: str) -> float:
@@ -126,6 +180,30 @@ def _record_named(records: object, filename: str, label: str) -> dict[str, Any]:
     return matches[0]
 
 
+def exact_k_contract_projection(contract: dict[str, Any]) -> dict[str, Any]:
+    """Exclude downstream P1/P2 semantics that cannot affect exact-K physics."""
+    projection = copy.deepcopy(contract)
+    try:
+        injection = projection["prism_transport"]["two_prism_injection_l0"]
+        voltage_initialization = projection["dual_stripe_l0"][
+            "current_fixed_hardware_l0_l1_problem"
+        ]["voltage_initialization"]
+        full_mrtof_center = projection["particle_source"]["full_mrtof_center"]
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError("exact-K contract projection lacks P1/P2 authority") from error
+    injection.pop("voltage_polarity_contract", None)
+    authority = injection.get("low_field_angle_and_positive_mirror_turn_authority")
+    if not isinstance(authority, dict):
+        raise CandidateContractError("exact-K contract projection lacks angle authority")
+    authority.pop("direction_condition", None)
+    if not isinstance(voltage_initialization, dict) or not isinstance(full_mrtof_center, dict):
+        raise CandidateContractError("exact-K contract projection lacks downstream semantics")
+    voltage_initialization.pop("semantics", None)
+    voltage_initialization.pop("derivation_chain", None)
+    full_mrtof_center.pop("required_inputs", None)
+    return projection
+
+
 def load_managed_exact_k_operating_point(
     manifest_path: Path,
     downstream_contract_path: Path | None = None,
@@ -162,12 +240,15 @@ def load_managed_exact_k_operating_point(
         if downstream_contract_path is not None
         else contract
     )
-    if canonical_json_sha256(contract) != canonical_json_sha256(downstream):
-        raise CandidateContractError("downstream contract differs from the frozen exact-K contract")
+    if canonical_json_sha256(exact_k_contract_projection(contract)) != canonical_json_sha256(
+        exact_k_contract_projection(downstream)
+    ):
+        raise CandidateContractError("downstream contract changed one or more exact-K inputs")
     summary = _load_json(record_path(summary_record, base_dir=manifest_dir), "exact-K summary")
     if (
-        summary.get("role") != "mrtof_exact_k_mirror_energy_operating_point"
-        or summary.get("status") != "exact_k_system_point_found__peak_field_and_3d_validation_pending"
+        summary.get("schema_version") != 2
+        or summary.get("role") != "mrtof_exact_k_mirror_energy_operating_point"
+        or summary.get("status") != EXACT_K_SUMMARY_STATUS
         or summary.get("qualification") != "solver_neutral_2d_system_selection__not_simion_voltage_authority"
     ):
         raise CandidateContractError("exact-K summary is not an accepted solver-neutral Candidate")
@@ -215,7 +296,7 @@ def load_managed_exact_k_operating_point(
         for value, low, high in zip(voltages[1:], lower, upper, strict=True)
     ):
         raise CandidateContractError("exact-K point violates the selected energy voltage envelope")
-    target_k = _positive_integer(contract["nominal"]["target_oscillation_count"], "target K")
+    target_k = resolve_drift_phase_contract(contract).target_period_ratio
     k_residual = _finite(point.get("exact_k_residual"), "exact-K residual")
     tolerance = _finite(
         contract["mirror"]["theory_requirements"]["exact_k_operating_point_selection"]
@@ -245,11 +326,36 @@ def load_managed_exact_k_operating_point(
     width = _finite(point.get("mirror_axial_width_w_mm"), "exact-K axial width")
     if width <= 0.0:
         raise CandidateContractError("exact-K axial width must be positive")
+    shape_selection = load_native_stripe_shape_selection(
+        summary.get("native_stripe_spatial_shape_selection"), downstream,
+    )
+    reported_kappa = _finite(point.get("native_kappa_1"), "exact-K native kappa")
+    if reported_kappa != shape_selection.shape_root.kappa_1:
+        raise CandidateContractError("exact-K point kappa differs from its native shape root")
+    stripe_values = point.get("stripe_biases_v")
+    if not isinstance(stripe_values, list) or len(stripe_values) != 2:
+        raise CandidateContractError("Stripe-on exact-K point lacks two analytically derived biases")
+    stripe_biases = tuple(_finite(value, "exact-K Stripe bias") for value in stripe_values)
+    reproduced, reproduced_state, reproduced_kappa_prime = _stripe_on_target_state(
+        downstream,
+        shape_selection.shape_root,
+        energy_per_charge_v=energy,
+        mirror_reduced_period_mm_per_sqrt_v=reduced_period(energy, design),
+    )
+    if stripe_biases != tuple(reproduced.stripe_biases_v):
+        raise CandidateContractError("Stripe-on exact-K biases differ from the contract-derived inverse")
+    if abs(reproduced_state.target_oscillation_count_residual) > tolerance:
+        raise CandidateContractError("reproduced Stripe-on exact-K state fails its K residual gate")
+    if reproduced_kappa_prime != _finite(
+        point.get("spatial_return_kappa_prime"), "exact-K spatial return residual"
+    ):
+        raise CandidateContractError("reproduced Stripe spatial-return residual changed")
     return ManagedExactKOperatingPoint(
         design=design,
         axial_energy_per_charge_v=energy,
         axial_width_w_mm=width,
-        kappa_1=_finite(summary.get("nominal_kappa_1"), "exact-K kappa"),
+        native_stripe_spatial_shape_root=shape_selection.shape_root,
+        stripe_biases_v=stripe_biases,
         contract=downstream,
         run_id=str(manifest["run_id"]),
         manifest_sha256=file_sha256(path),
@@ -263,32 +369,14 @@ def _positive_integer(value: object, label: str) -> int:
     return value
 
 
-def _paper_kappa(contract: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed import (
-        solve_dimensionless_paper_target,
-    )
-
-    target = solve_dimensionless_paper_target(contract)
-    selected = target["selected_root"]
-    coefficients = tuple(
-        _finite(value, "paper psi coefficient")
-        for value in selected["psi_coefficients_by_power"]
-    )
-
-    def psi(eta: float) -> float:
-        return sum(value * eta**power for power, value in enumerate(coefficients, start=1))
-
-    return endpoint_regularized_kappa(psi), target
-
-
-def _drift_inputs(contract: dict[str, Any]) -> tuple[float, float, int]:
+def _drift_inputs(contract: dict[str, Any]) -> tuple[float, float, float]:
     length = _finite(
         contract["dual_stripe_l0"]["manufactured_design_abs_drift_length_L_mm"],
         "manufactured drift length L",
     )
     partition = contract["prism_transport"]["energy_partition"]
     drift_energy = _finite(partition["drift_kinetic_energy_ev"], "drift kinetic energy")
-    target_k = _positive_integer(contract["nominal"]["target_oscillation_count"], "target K")
+    target_k = resolve_drift_phase_contract(contract).target_period_ratio
     if length <= 0.0 or drift_energy <= 0.0:
         raise CandidateContractError("exact-K drift inputs must be positive")
     return length, drift_energy, target_k
@@ -301,9 +389,79 @@ def _td_over_t0(
     length_mm: float,
     drift_energy_per_charge_v: float,
 ) -> float:
-    total_energy = energy_per_charge_v + drift_energy_per_charge_v
-    sin_theta = math.sqrt(drift_energy_per_charge_v / total_energy)
-    return kappa_1 * length_mm / (width_mm * sin_theta)
+    """Return the exact slow-return/axial-period ratio for an axial ``W``.
+
+    ``energy_per_charge_v`` is the fast mirror-axis energy ``E_z`` and
+    ``width_mm`` is consequently ``W=T0*v_z/2``.  The injection angle is
+    therefore fixed by ``tan(theta)=v_y/v_z=sqrt(E_y/E_z)``.  The paper's
+    equivalent ``sin(theta)`` form uses a width built from total kinetic
+    energy; mixing that sine with this axial width introduces an implicit
+    ``cos(theta) ~= 1`` approximation.
+    """
+    axial_energy = _finite(energy_per_charge_v, "axial energy per charge")
+    width = _finite(width_mm, "mirror axial width W")
+    kappa = _finite(kappa_1, "kappa(1)")
+    length = _finite(length_mm, "drift length L")
+    drift_energy = _finite(drift_energy_per_charge_v, "drift energy per charge")
+    if axial_energy <= 0.0 or width <= 0.0 or drift_energy <= 0.0:
+        raise CandidateContractError("exact-K ratio needs positive axial energy, drift energy, and axial width")
+    theta = math.atan(math.sqrt(drift_energy / axial_energy))
+    return kappa * length / (width * math.tan(theta))
+
+
+def _stripe_on_target_state(
+    contract: dict[str, Any],
+    shape_root: NativeStripeSpatialShapeRoot,
+    *,
+    energy_per_charge_v: float,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+) -> tuple[Any, Any, float]:
+    """Eliminate ``v1,v2`` from the 5-eV turn and spatial-return equations.
+
+    The native shape root fixes the relative response needed for
+    ``kappa'(1)=0``.  Its closed inverse fixes the response amplitude from the
+    declared source slow energy.  The remaining Stripe-on period ratio is
+    therefore a scalar function of the mirror-qualified axial energy.
+    """
+    slow_energy = _finite(
+        contract["prism_transport"]["energy_partition"]["drift_kinetic_energy_ev"],
+        "source slow energy",
+    )
+    materialized = materialize_native_stripe_spatial_return_root(
+        shape_root,
+        source_slow_energy_per_charge_v=slow_energy,
+        mirror_reduced_period_mm_per_sqrt_v=mirror_reduced_period_mm_per_sqrt_v,
+        axial_energy_per_charge_v=energy_per_charge_v,
+    )
+    widths = tuple(
+        compile_dual_stripe_path_length_evaluator(contract, name)
+        for name in ("set_1", "set_2")
+    )
+    stripes = tuple(
+        StripeHardBoundary(bias, width)
+        for bias, width in zip(materialized.stripe_biases_v, widths, strict=True)
+    )
+    target_ratio = resolve_drift_phase_contract(contract).target_period_ratio
+    state = derive_coupled_drift_state(
+        mirror_reduced_period_mm_per_sqrt_v=mirror_reduced_period_mm_per_sqrt_v,
+        energy_per_charge_v=energy_per_charge_v,
+        target_oscillation_count=target_ratio,
+        stripes=stripes,
+        entry_y_mm=shape_root.entry_y_mm,
+        turning_y_mm=shape_root.turning_y_mm,
+    )
+    kappa_prime = spatial_return_kappa_derivative_residual(
+        mirror_reduced_period_mm_per_sqrt_v=mirror_reduced_period_mm_per_sqrt_v,
+        energy_per_charge_v=energy_per_charge_v,
+        stripes=stripes,
+        entry_y_mm=shape_root.entry_y_mm,
+        nominal_turning_y_mm=shape_root.turning_y_mm,
+        derivative_step=_finite(
+            contract["dual_stripe_l0"]["operating_seed_search"]["kappa_derivative_step"],
+            "Stripe kappa derivative step",
+        ),
+    )
+    return materialized, state, kappa_prime
 
 
 def _slope_tolerance(contract: dict[str, Any], energies: tuple[float, float, float]) -> float:
@@ -319,9 +477,9 @@ def _joint_refine_exact_k(
     contract: dict[str, Any],
     seed: ManagedMirrorRoot,
     approximate: ExactKPoint,
-    kappa_1: float,
+    shape_root: NativeStripeSpatialShapeRoot,
 ) -> tuple[ExactKPoint, dict[str, object]]:
-    """Close the three L0, gamma, and exact-K equations in one solve."""
+    """Close three mirror L0, gamma, and Stripe-on exact-K equations."""
     profile = contract["mirror"]["theory_requirements"]["l1_screen_profile"]
     global_profile = contract["mirror"]["theory_requirements"]["global_l0_search_profile"]
     selector = contract["mirror"]["theory_requirements"]["exact_k_operating_point_selection"]
@@ -336,10 +494,11 @@ def _joint_refine_exact_k(
     derivative_step = _finite(
         global_profile["period_slope_derivative_step_v"], "period slope derivative step"
     )
-    length, drift_energy, target_k = _drift_inputs(contract)
+    _length, _drift_energy, target_k = _drift_inputs(contract)
 
     def evaluate(parameters: np.ndarray) -> tuple[
         MirrorL0Design, tuple[float, float, float], tuple[float, ...], float, float, float,
+        Any, Any, float,
     ]:
         voltages = tuple(float(value) for value in parameters[:4])
         selected_energy = float(parameters[4])
@@ -366,25 +525,40 @@ def _joint_refine_exact_k(
             raise CandidateContractError("joint exact-K solve encountered an unstable mirror map")
         reduced = reduced_period(selected_energy, design)
         width = effective_axial_width_mm(selected_energy, reduced)
-        ratio = _td_over_t0(selected_energy, width, kappa_1, length, drift_energy)
-        return design, local_energy.mirror_energy_nodes_v, slopes, mapping.gamma_degrees, width, ratio
+        stripe_materialization, stripe_state, kappa_prime = _stripe_on_target_state(
+            contract,
+            shape_root,
+            energy_per_charge_v=selected_energy,
+            mirror_reduced_period_mm_per_sqrt_v=reduced,
+        )
+        ratio = stripe_state.predicted_oscillation_count
+        return (
+            design,
+            local_energy.mirror_energy_nodes_v,
+            slopes,
+            mapping.gamma_degrees,
+            width,
+            ratio,
+            stripe_materialization,
+            stripe_state,
+            kappa_prime,
+        )
 
     center = np.asarray([
         *approximate.mirror_voltages_v[1:], approximate.energy_per_charge_v,
     ])
-    voltage_envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]
-    particle_half_range = reference_envelope.particle_net_gain_half_range_v
+    lower_at_minimum_energy, _ = derive_mirror_voltage_bounds(
+        contract, selected_center_v=reference_envelope.net_gain_center_minimum_v,
+    )
+    _, upper_at_maximum_energy = derive_mirror_voltage_bounds(
+        contract, selected_center_v=reference_envelope.net_gain_center_maximum_v,
+    )
     lower = np.asarray([
-        *(_finite(voltage_envelope[key]["minimum_inclusive_v"], f"mirror {key} minimum")
-          for key in ("B", "C", "D")),
-        math.nextafter(
-            reference_envelope.net_gain_center_minimum_v + particle_half_range, math.inf,
-        ),
+        *lower_at_minimum_energy,
         reference_envelope.net_gain_center_minimum_v,
     ])
     upper = np.asarray([
-        *((reference_envelope.net_gain_center_maximum_v - particle_half_range,) * 3),
-        _finite(voltage_envelope["E"]["maximum_inclusive_v"], "mirror E maximum"),
+        *upper_at_maximum_energy,
         reference_envelope.net_gain_center_maximum_v,
     ])
     nominal_energy = derive_operating_energy_envelope(
@@ -394,7 +568,7 @@ def _joint_refine_exact_k(
 
     def scaled_residual(parameters: np.ndarray) -> np.ndarray:
         try:
-            _design, _energies, slopes, gamma, _width, ratio = evaluate(parameters)
+            _design, _energies, slopes, gamma, _width, ratio, _stripes, _state, _kappa_prime = evaluate(parameters)
         except CandidateContractError:
             return np.full(5, 1e9)
         return np.asarray([
@@ -415,7 +589,17 @@ def _joint_refine_exact_k(
         xtol=1e-13,
         gtol=1e-13,
     )
-    design, energies, slopes, gamma, width, ratio = evaluate(solution.x)
+    (
+        design,
+        energies,
+        slopes,
+        gamma,
+        width,
+        ratio,
+        stripe_materialization,
+        stripe_state,
+        kappa_prime,
+    ) = evaluate(solution.x)
     selected_energy = float(solution.x[4])
     local_lower, local_upper = derive_mirror_voltage_bounds(
         contract, selected_center_v=selected_energy,
@@ -451,6 +635,10 @@ def _joint_refine_exact_k(
         gamma_degrees=gamma,
         gamma_residual_degrees=gamma_residual,
         normalized_period_slopes_per_v=slopes,
+        stripe_biases_v=tuple(stripe_materialization.stripe_biases_v),
+        turning_pseudopotential_v=stripe_state.turning_pseudopotential_v,
+        source_slow_energy_mismatch_v=stripe_materialization.source_slow_energy_mismatch_v,
+        spatial_return_kappa_prime=kappa_prime,
     )
     screen = screen_l1_fixed_geometry(
         design,
@@ -467,7 +655,7 @@ def _joint_refine_exact_k(
             "message": str(solution.message),
             "cost": float(solution.cost),
             "function_evaluations": int(solution.nfev),
-            "selection_stage": "joint three-L0 plus gamma plus exact-K solve",
+            "selection_stage": "joint three-mirror-L0 plus gamma plus Stripe-on exact-K solve",
         },
         "l0_receipt": {
             "status": "l0_voltage_slice_member_not_l1_or_3d_validated",
@@ -483,6 +671,14 @@ def _joint_refine_exact_k(
             "not_evaluated": ["three_dimensional_fields", "simion_pa"],
         },
         "l1_screen": screen,
+        "stripe_elimination": {
+            "method": "native_shape_closed_inverse_at_declared_source_slow_energy",
+            "stripe_biases_v": list(stripe_materialization.stripe_biases_v),
+            "turning_pseudopotential_v": stripe_state.turning_pseudopotential_v,
+            "source_slow_energy_mismatch_v": stripe_materialization.source_slow_energy_mismatch_v,
+            "spatial_return_kappa_prime": kappa_prime,
+            "stripe_on_drift_period_ratio": ratio,
+        },
     }
     return point, receipt
 
@@ -492,7 +688,7 @@ def evaluate_branch_at_energy(
     seed: ManagedMirrorRoot,
     branch_index: int,
     energy_per_charge_v: float,
-    kappa_1: float,
+    shape_root: NativeStripeSpatialShapeRoot,
     continuation_point: ExactKPoint | None = None,
 ) -> tuple[ExactKPoint, dict[str, object]]:
     """Continue one frozen gamma branch to one admissible operating energy."""
@@ -535,8 +731,14 @@ def evaluate_branch_at_energy(
     l0 = refined["l0_receipt"]
     reduced = _finite(l0["three_point"]["reduced_periods"][1], "mirror reduced period")
     width = effective_axial_width_mm(energy_per_charge_v, reduced)
-    length, drift_energy, target_k = _drift_inputs(contract)
-    ratio = _td_over_t0(energy_per_charge_v, width, kappa_1, length, drift_energy)
+    _length, _drift_energy, target_k = _drift_inputs(contract)
+    stripe_materialization, stripe_state, kappa_prime = _stripe_on_target_state(
+        contract,
+        shape_root,
+        energy_per_charge_v=energy_per_charge_v,
+        mirror_reduced_period_mm_per_sqrt_v=reduced,
+    )
+    ratio = stripe_state.predicted_oscillation_count
     point = ExactKPoint(
         branch_index=branch_index,
         energy_per_charge_v=energy_per_charge_v,
@@ -551,6 +753,10 @@ def evaluate_branch_at_energy(
             _finite(value, "normalized period slope")
             for value in l0["normalized_period_slopes_per_v"]
         ),
+        stripe_biases_v=tuple(stripe_materialization.stripe_biases_v),
+        turning_pseudopotential_v=stripe_state.turning_pseudopotential_v,
+        source_slow_energy_mismatch_v=stripe_materialization.source_slow_energy_mismatch_v,
+        spatial_return_kappa_prime=kappa_prime,
     )
     return point, refined
 
@@ -603,21 +809,24 @@ def _probe_convergence(
 
 
 def _definition_receipt(
-    contract: dict[str, Any], point: ExactKPoint, seed: ManagedMirrorRoot, kappa_1: float,
+    contract: dict[str, Any],
+    point: ExactKPoint,
+    seed: ManagedMirrorRoot,
+    shape_root: NativeStripeSpatialShapeRoot,
 ) -> dict[str, Any]:
     selector = contract["mirror"]["theory_requirements"]["exact_k_operating_point_selection"]
     energy = derive_operating_energy_envelope(contract, selected_center_v=point.energy_per_charge_v)
     profile = contract["mirror"]["theory_requirements"]["l1_screen_profile"]
     global_profile = contract["mirror"]["theory_requirements"]["global_l0_search_profile"]
     target_gamma_degrees = _finite(profile["target_gamma_degrees"], "target gamma")
-    length, drift_energy, target_k = _drift_inputs(contract)
+    _length, _drift_energy, target_k = _drift_inputs(contract)
     names = ("mirror_B_v", "mirror_C_v", "mirror_D_v", "mirror_E_v", "net_gain_center_v")
     residual_names = (
         "mirror_period_slope_low",
         "mirror_period_slope_center",
         "mirror_period_slope_high",
         "mirror_gamma_target_residual_degrees",
-        "T_D_over_T_0_minus_target_K",
+        "stripe_on_T_D_over_T_0_minus_target_K",
     )
 
     def residual(parameters: np.ndarray) -> np.ndarray:
@@ -644,8 +853,14 @@ def _definition_receipt(
         )
         if not mapping.stable or mapping.gamma_degrees is None:
             raise CandidateContractError("definition Jacobian encountered an unstable mirror map")
-        width = effective_axial_width_mm(selected_energy, reduced_period(selected_energy, design))
-        ratio = _td_over_t0(selected_energy, width, kappa_1, length, drift_energy)
+        period = reduced_period(selected_energy, design)
+        _materialized, stripe_state, _kappa_prime = _stripe_on_target_state(
+            contract,
+            shape_root,
+            energy_per_charge_v=selected_energy,
+            mirror_reduced_period_mm_per_sqrt_v=period,
+        )
+        ratio = stripe_state.predicted_oscillation_count
         return np.asarray([
             *slopes,
             mapping.gamma_degrees - target_gamma_degrees,
@@ -696,6 +911,11 @@ def _definition_receipt(
         ),
     )
     return {
+        "analytically_eliminated_unknowns": ["stripe_set_1_bias_v", "stripe_set_2_bias_v"],
+        "elimination_equations": [
+            "turning_pseudopotential_equals_declared_source_slow_energy",
+            "spatial_return_kappa_prime_equals_zero",
+        ],
         "unknown_names": list(names),
         "residual_names": list(residual_names),
         "raw_residuals": center_residual.tolist(),
@@ -713,7 +933,9 @@ def solve_exact_k_operating_point(
     """Find and validate all exact-K roots on the managed gamma branches."""
     contract = load_contract(contract_path)
     managed = load_managed_mirror_candidate(mirror_manifest_path, contract_path)
-    kappa_1, dimensionless_target = _paper_kappa(contract)
+    shape_selection = build_native_stripe_shape_selection(contract)
+    shape_root = shape_selection.shape_root
+    kappa_1 = shape_root.kappa_1
     envelope = derive_operating_energy_envelope(contract)
     selector = contract["mirror"]["theory_requirements"].get("exact_k_operating_point_selection")
     if not isinstance(selector, dict) or selector.get("status") != EXACT_K_SELECTOR_STATUS:
@@ -726,6 +948,11 @@ def solve_exact_k_operating_point(
         envelope.net_gain_center_maximum_v,
         node_count,
     )
+    requested_workers = _positive_integer(
+        selector["maximum_parallel_energy_workers"],
+        "maximum parallel energy workers",
+    )
+    actual_workers = min(node_count, requested_workers, os.cpu_count() or 1)
     roots: list[dict[str, Any]] = []
     branch_audits: list[dict[str, Any]] = []
     for branch_index, seed in enumerate(managed.root_family):
@@ -740,11 +967,35 @@ def solve_exact_k_operating_point(
                     default=None,
                 )
                 cache[key] = evaluate_branch_at_energy(
-                    contract, seed, branch_index, key, kappa_1, continuation,
+                    contract, seed, branch_index, key, shape_root, continuation,
                 )
             return cache[key]
 
-        sampled = [evaluate(float(value))[0] for value in energy_nodes]
+        payloads = [
+            (contract, seed, branch_index, float(value), shape_root)
+            for value in energy_nodes
+        ]
+        if actual_workers == 1:
+            worker_results = [_evaluate_energy_node_worker(payload) for payload in payloads]
+        else:
+            with ProcessPoolExecutor(max_workers=actual_workers) as executor:
+                worker_results = list(executor.map(_evaluate_energy_node_worker, payloads))
+        initial_failures: dict[float, str] = {}
+        for energy_value, point, receipt, error in worker_results:
+            if point is None or receipt is None:
+                initial_failures[energy_value] = error or "unknown independent-node failure"
+                continue
+            cache[energy_value] = (point, receipt)
+        for energy_value in sorted(initial_failures):
+            try:
+                evaluate(energy_value)
+            except Exception as error:
+                raise CandidateContractError(
+                    "parallel energy node and serial continuation retry both failed at "
+                    f"{energy_value:.12g} V: parallel={initial_failures[energy_value]}; "
+                    f"serial={type(error).__name__}: {error}"
+                ) from error
+        sampled = [cache[float(value)][0] for value in energy_nodes]
         brackets = []
         for lower, upper in zip(sampled[:-1], sampled[1:], strict=True):
             if lower.exact_k_residual == 0.0:
@@ -758,6 +1009,13 @@ def solve_exact_k_operating_point(
             "source_l0_restart_index": seed.source_l0_restart_index,
             "sampled_points": [asdict(point) for point in sampled],
             "sign_change_brackets_v": [list(bracket) for bracket in brackets],
+            "parallel_energy_scan": {
+                "requested_workers": requested_workers,
+                "actual_workers": actual_workers,
+                "independent_node_count": node_count,
+                "serial_retry_count": len(initial_failures),
+                "serial_retry_initial_errors": initial_failures,
+            },
         })
         for lower, upper in brackets:
             if lower == upper:
@@ -772,7 +1030,7 @@ def solve_exact_k_operating_point(
                 )
             approximate, _nested_refined = evaluate(selected_energy)
             point, refined = _joint_refine_exact_k(
-                contract, seed, approximate, kappa_1,
+                contract, seed, approximate, shape_root,
             )
             k_residual_tolerance = _finite(
                 selector["maximum_abs_numerical_k_residual"], "K residual tolerance"
@@ -783,7 +1041,7 @@ def solve_exact_k_operating_point(
                     f"{point.exact_k_residual:.12g} exceeds tolerance {k_residual_tolerance:.12g}"
                 )
             convergence = _probe_convergence(contract, point, seed)
-            definition = _definition_receipt(contract, point, seed, kappa_1)
+            definition = _definition_receipt(contract, point, seed, shape_root)
             roots.append({
                 "point": asdict(point),
                 "probe_convergence": convergence,
@@ -791,7 +1049,7 @@ def solve_exact_k_operating_point(
                 "refined_mirror_receipt": refined,
             })
     if not roots:
-        raise CandidateContractError("no managed mirror branch brackets the target integer K")
+        raise CandidateContractError("no managed mirror branch brackets the target drift-period ratio")
     roots.sort(key=lambda item: (
         abs(float(item["point"]["energy_per_charge_v"]) - envelope.net_gain_reference_center_v),
         max(abs(float(value)) for value in item["point"]["mirror_voltages_v"]),
@@ -810,9 +1068,9 @@ def solve_exact_k_operating_point(
         * math.sqrt(2.0 * mass_kg / energy_j) * 1.0e6
     )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "mrtof_exact_k_mirror_energy_operating_point",
-        "status": "exact_k_system_point_found__peak_field_and_3d_validation_pending",
+        "status": EXACT_K_SUMMARY_STATUS,
         "qualification": "solver_neutral_2d_system_selection__not_simion_voltage_authority",
         "input": {
             "mirror_manifest": {
@@ -822,9 +1080,8 @@ def solve_exact_k_operating_point(
             },
             "contract": {"path": str(contract_path.resolve()), "sha256": file_sha256(contract_path)},
         },
-        "governing_equation": "T_D(theta_0)/T_0=K",
-        "paper_dimensionless_target": dimensionless_target,
-        "nominal_kappa_1": kappa_1,
+        "governing_equation": "T_D_stripe_on(E_z,v1(E_z),v2(E_z))/T_0=K",
+        "native_stripe_spatial_shape_selection": shape_selection.receipt(),
         "energy_search_interval_per_charge_v": [
             envelope.net_gain_center_minimum_v,
             envelope.net_gain_center_maximum_v,
@@ -835,6 +1092,7 @@ def solve_exact_k_operating_point(
         "selected_root_index": 0,
         "selected_operating_point": {
             **point,
+            "native_kappa_1": kappa_1,
             "mirror_full_two_mirror_period_T0_us_for_declared_mass": period_us,
             "post_acceleration_total_energy_ev": (
                 float(point["energy_per_charge_v"]) + _drift_inputs(contract)[1]
@@ -842,6 +1100,9 @@ def solve_exact_k_operating_point(
         },
         "limitations": [
             "The exact-K equation selects among independently mirror-qualified energy points; it is not an extra axial mirror equation.",
+            "At each energy, v1 and v2 are analytically eliminated by the declared 5-eV turn and native kappa-prime=0 equations before evaluating the Stripe-on local-period K.",
+            "The four time-platform nodes and three full-analyser energy-slope values remain diagnostics of the fixed manufactured curves; they are not duplicated as extra v1/v2 equations.",
+            "The printed paper target is only a nonphysical locator for a connected native shape-root branch; it is not the active kappa authority.",
             "This is an ideal two-dimensional analytic result. Peak field, finite slots and covers, PA fields, P1/P2 transport, and SIMION flight remain pending.",
             "No baseline voltage or solver file is modified by this receipt.",
         ],
@@ -849,6 +1110,9 @@ def solve_exact_k_operating_point(
 
 
 def main() -> int:
+    ensure_heavy_entry(
+        "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point"
+    )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mirror-manifest", required=True, type=Path)
     parser.add_argument("--contract", required=True, type=Path)

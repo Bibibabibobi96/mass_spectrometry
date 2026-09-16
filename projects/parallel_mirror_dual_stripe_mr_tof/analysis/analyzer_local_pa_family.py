@@ -137,6 +137,9 @@ def derive_local_pa_family_contract(
             "id_remapper_sha256": file_sha256(common_simion / "remap_pa_electrode_ids.lua"),
             "dirichlet_builder_sha256": file_sha256(common_simion / "build_dirichlet_patch_basis.lua"),
             "standalone_response_exporter_sha256": file_sha256(common_simion / "export_standalone_pa.lua"),
+            "private_family_stability_policy": (
+                "two_consecutive_full_byte_inventories_before_cache_publication_v1"
+            ),
         },
     }
     return {

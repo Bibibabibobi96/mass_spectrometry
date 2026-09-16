@@ -11,6 +11,10 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+    resolve_drift_phase_contract,
+)
+
 
 EVENT = re.compile(r"^MRTOF_EVENT\s+(?P<kind>\w+)\s+(?P<fields>.*)$")
 FIELD = re.compile(r"(?P<key>[A-Za-z_]+)=(?P<value>[^\s]+)")
@@ -35,6 +39,10 @@ SOURCE_PROFILE_IDS = {
 }
 ELEMENTARY_CHARGE_C = 1.602176634e-19
 ATOMIC_MASS_KG = 1.66053906660e-27
+STATIC_RETURN_KINDS = (
+    "return_p2_entry", "return_p2_pass",
+    "return_positive_mirror_turn", "detector",
+)
 REQUIRED_FIELDS = {
     "turn": {"ion", "n", "t_us", "z_mm"},
     "fast_turn": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
@@ -43,14 +51,29 @@ REQUIRED_FIELDS = {
     "prism_entry": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "prism_pass": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "pre_injection_mirror_turn": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "p2_low_field_reference": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "pre_origin_positive_mirror_turn": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "drift_phase_origin": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "drift_phase_candidate": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "drift_phase_return": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
-    "drift_coordinate_return": {"ion", "k_before", "phase_turn_t_us", "phase_turn_y_mm", "phase_time_residual_us", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "drift_coordinate_return": {"ion", "k_before", "fractional_k", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "target_k_phase_sample": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "prism_voltage_switch": {"ion", "electrode", "t_us", "from_v", "to_v"},
     "post_return_mirror_turn": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "return_origin_mirror_turn": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "return_p2_entry": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "return_p2_pass": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "return_positive_mirror_turn": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "nonmirror_reversal": {
+        "ion", "direction_before", "direction_after", "t_us",
+        "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us",
+    },
+    "accelerator_launch_vz_zero": {
+        "ion", "direction_before", "direction_after", "t_us",
+        "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us",
+    },
+    "return_p1_entry": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "return_p1_pass": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "slow_coordinate_y0": {"ion", "n", "direction_y", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "central_plane": {"ion", "n", "t_us", "x_mm", "y_mm"},
     "central_plane_directional": {"ion", "n", "direction_z", "t_us", "x_mm", "y_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
@@ -61,6 +84,21 @@ REQUIRED_FIELDS = {
         "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us",
     },
     "instance_transition": {"ion", "t_us", "instance", "x_mm", "y_mm", "z_mm"},
+    "accelerator_pulse_off": {
+        "ion", "t_us", "from_instance", "to_instance", "x_mm", "y_mm", "z_mm",
+    },
+    "accelerator_safe_exit": {
+        "ion", "t_us", "from_instance", "to_instance", "x_mm", "y_mm", "z_mm",
+        "vx_mm_us", "vy_mm_us", "vz_mm_us",
+    },
+    "accelerator_reentry": {
+        "ion", "t_us", "instance", "x_mm", "y_mm", "z_mm",
+        "vx_mm_us", "vy_mm_us", "vz_mm_us",
+    },
+    "accelerator_global_pulse_applied": {
+        "ion", "t_us", "scheduled_t_us", "instance", "x_mm", "y_mm", "z_mm", "trigger",
+    },
+    "local_field_handoff": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us", "to_instance"},
     "target_k": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm"},
     "splat": {"ion", "code", "t_us", "turns"},
     "terminal": {"ion", "splat", "t_us", "turns"},
@@ -79,27 +117,44 @@ def _integer(value: object, *, minimum: int | None = None) -> bool:
             and int(value) == value and (minimum is None or value >= minimum))
 
 
+def _half_integer(value: object, *, minimum: float | None = None) -> bool:
+    return (type(value) in (int, float) and math.isfinite(value)
+            and int(round(2.0 * value)) == 2.0 * value
+            and (minimum is None or value >= minimum))
+
+
+def _odd_half_integer(value: object, *, minimum: float | None = None) -> bool:
+    return (_half_integer(value, minimum=minimum)
+            and int(round(2.0 * float(value))) % 2 == 1)
+
+
 def _event_error(event: dict[str, Any]) -> str | None:
     kind = event.get("kind")
     if kind not in REQUIRED_FIELDS or not REQUIRED_FIELDS[kind] <= event.keys():
         return "unknown_event_or_missing_fields"
+    string_fields = {"name", "region", "face", "trigger", "termination_kind", "reason"}
     if any(type(value) not in (float, int) or not math.isfinite(value)
-           for key, value in event.items() if key not in {"kind", "name", "region", "face"}):
+           for key, value in event.items()
+           if key not in {"kind", *string_fields}):
         return "nonfinite_or_nonnumeric_event_field"
-    for key in ("name", "region", "face"):
+    for key in string_fields:
         if key in event and (not isinstance(event[key], str) or not event[key]):
             return "invalid_event_identity"
     if not _integer(event["ion"], minimum=1) or event["t_us"] < 0:
         return "invalid_particle_id_or_time"
-    for key in ("turns", "central_crossings", "n", "k", "k_before", "electrode"):
+    for key in ("turns", "central_crossings", "n", "half_cycles", "electrode", "to_instance"):
         if key in event and not _integer(event[key], minimum=0):
             return "invalid_event_counter"
-    if "instance" in event and not _integer(event["instance"], minimum=0):
-        return "invalid_instance_number"
+    for key in ("k", "k_before"):
+        if key in event and not _half_integer(event[key], minimum=0):
+            return "invalid_event_phase_ratio"
+    for key in ("instance", "from_instance", "to_instance"):
+        if key in event and not _integer(event[key], minimum=0):
+            return "invalid_instance_number"
     for key in ("splat", "code"):
         if key in event and not _integer(event[key]):
             return "invalid_splat_code"
-    for key in ("direction", "direction_y", "direction_z"):
+    for key in ("direction", "direction_y", "direction_z", "direction_before", "direction_after"):
         if key in event and event[key] not in (-1, 1):
             return "invalid_direction_sign"
     return None
@@ -161,43 +216,101 @@ def _same_direction_periods_us(events: list[dict[str, Any]]) -> list[float]:
 
 
 def _drift_coordinate_return_diagnostics(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Derive continuous return phase from immutable same-side turn samples."""
-    candidates = {
-        (int(event["ion"]), int(event["k"])): event
-        for event in events if event["kind"] == "drift_phase_candidate"
-    }
+    """Retain the turn-phase count observed at the slow-coordinate return."""
     diagnostics: list[dict[str, Any]] = []
     for event in events:
         if event["kind"] != "drift_coordinate_return":
             continue
-        ion, k_before = int(event["ion"]), int(event["k_before"])
-        current = candidates.get((ion, k_before))
-        previous = candidates.get((ion, k_before - 1))
-        period = event.get("phase_period_us")
-        if period is None and current is not None and previous is not None:
-            period = float(current["t_us"]) - float(previous["t_us"])
-        fractional = event.get("fractional_k")
-        if fractional is None and period is not None and float(period) > 0.0:
-            fractional = k_before + float(event["phase_time_residual_us"]) / float(period)
         diagnostics.append({
-            "k_before": k_before,
-            "fractional_k": float(fractional) if fractional is not None else None,
-            "phase_turn_y_mm": float(event["phase_turn_y_mm"]),
-            "phase_time_residual_us": float(event["phase_time_residual_us"]),
-            "phase_period_us": float(period) if period is not None else None,
-            "derivation": (
-                "event_reported_same_side_period"
-                if "phase_period_us" in event
-                else "adjacent_drift_phase_candidate_times"
-                if period is not None
-                else "insufficient_phase_samples"
+            "k_before": float(event["k_before"]),
+            "fractional_k": float(event["fractional_k"]),
+            "z_mm": float(event["z_mm"]),
+            "derivation": "turn_phase_counter_at_slow_coordinate_crossing",
+        })
+    return diagnostics
+
+
+def _mirrored_branch_turn_diagnostics(
+    events: list[dict[str, Any]], target_k: float,
+) -> list[dict[str, Any]]:
+    """Pair internal turns between opposite-turn endpoints across slow return.
+
+    For the declared non-retracing branch, paired states at the same slow
+    coordinate satisfy ``z_return=-z_outbound``.  The diagnostic deliberately
+    reports residuals without inventing a numerical acceptance tolerance.
+    """
+    ions = sorted({int(event["ion"]) for event in events})
+    diagnostics: list[dict[str, Any]] = []
+    for ion in ions:
+        particle = [event for event in events if int(event["ion"]) == ion]
+        origins = [event for event in particle if event["kind"] == "drift_phase_origin"]
+        returns = [
+            event for event in particle
+            if event["kind"] == "drift_phase_return" and float(event["k"]) == target_k
+        ]
+        if len(origins) != 1 or len(returns) != 1:
+            diagnostics.append({
+                "ion": ion,
+                "status": "not_evaluated__exact_target_k_phase_return_required",
+                "expected_internal_turn_count": int(2 * target_k) - 1,
+            })
+            continue
+        start, end = float(origins[0]["t_us"]), float(returns[0]["t_us"])
+        turns = sorted(
+            (
+                event for event in particle
+                if event["kind"] == "fast_turn" and start < float(event["t_us"]) < end
             ),
+            key=lambda event: float(event["t_us"]),
+        )
+        expected = int(2 * target_k) - 1
+        if len(turns) != expected:
+            diagnostics.append({
+                "ion": ion,
+                "status": "not_evaluated__main_drift_turn_count_mismatch",
+                "expected_internal_turn_count": expected,
+                "observed_internal_turn_count": len(turns),
+            })
+            continue
+        paired_count = expected // 2
+        pairs = list(zip(turns[:paired_count], reversed(turns[paired_count:])))
+
+        def residuals(field: str, sign: int) -> list[float]:
+            return [float(outbound[field]) + sign * float(returned[field])
+                    for outbound, returned in pairs]
+
+        components = {
+            "x_same_residual_mm": residuals("x_mm", -1),
+            "y_same_residual_mm": residuals("y_mm", -1),
+            "z_reflection_residual_mm": residuals("z_mm", 1),
+            "vx_reversal_residual_mm_us": residuals("vx_mm_us", 1),
+            "vy_reversal_residual_mm_us": residuals("vy_mm_us", 1),
+        }
+        diagnostics.append({
+            "ion": ion,
+            "status": "evaluated__tolerance_not_assigned",
+            "expected_internal_turn_count": expected,
+            "observed_internal_turn_count": len(turns),
+            "paired_turn_count": len(pairs),
+            "opposite_mirror_side_pair_count": sum(
+                float(outbound["z_mm"]) * float(returned["z_mm"]) < 0.0
+                for outbound, returned in pairs
+            ),
+            "maximum_absolute_residuals": {
+                name: max(abs(value) for value in values)
+                for name, values in components.items()
+            },
+            "rms_residuals": {
+                name: math.sqrt(sum(value * value for value in values) / len(values))
+                for name, values in components.items()
+            },
+            "qualification": "diagnostic_only__mesh_and_step_convergence_tolerance_required",
         })
     return diagnostics
 
 
 def _effective_axial_width_mm(period_us: float, kinetic_energy_ev: float, mass_th: float) -> float:
-    """Apply $W=T_0\sqrt{E/(2m)}$ to one full same-direction period."""
+    r"""Apply $W=T_0\sqrt{E/(2m)}$ to one full same-direction period."""
     if not all(math.isfinite(value) and value > 0.0 for value in (period_us, kinetic_energy_ev, mass_th)):
         raise ValueError("period, kinetic energy, and mass must be finite positive values")
     return period_us * 1.0e-6 * math.sqrt(
@@ -206,7 +319,7 @@ def _effective_axial_width_mm(period_us: float, kinetic_energy_ev: float, mass_t
 
 
 def summarize_events(
-    events: list[dict[str, Any]], target_k: int, reported_splat_count: int | None = None,
+    events: list[dict[str, Any]], target_k: float, reported_splat_count: int | None = None,
     *, expected_particle_ids: tuple[int, ...] | None = None,
     completion_count: int | None = None,
     kinetic_energy_ev: float | None = None,
@@ -218,8 +331,8 @@ def summarize_events(
     peak statistics are published only after the complete cohort is accounted
     for. A splat plus terminal for one ion is one lifecycle, not two particles.
     """
-    if not _integer(target_k, minimum=1):
-        raise ValueError("target_k must be a positive integer")
+    if not _odd_half_integer(target_k, minimum=0.5):
+        raise ValueError("opposite-mirror target_k must be a positive odd half-integer")
     if expected_particle_ids is not None and (
         not expected_particle_ids
         or any(type(value) is not int or value <= 0 for value in expected_particle_ids)
@@ -234,6 +347,12 @@ def summarize_events(
         errors.append("missing_or_multiple_fly_completion")
     if expected_particle_ids is None:
         errors.append("missing_frozen_particle_source")
+    if any(event["kind"] == "prism_voltage_switch" for event in events):
+        errors.append("prism_voltage_switch_forbidden")
+    if any(event["kind"] in {"return_p1_entry", "return_p1_pass"} for event in events):
+        errors.append("return_p1_forbidden__p1_is_injection_only")
+    if any(event["kind"] == "nonmirror_reversal" for event in events):
+        errors.append("nonmirror_vz_reversal_observed")
     expected = set(expected_particle_ids or ())
     observed = {int(event["ion"]) for event in events}
     unknown = sorted(observed - expected) if expected_particle_ids is not None else []
@@ -279,6 +398,80 @@ def summarize_events(
         errors.append("target_k_event_differs_from_source_contract")
     if any(event["k"] != target_k for event in target_k_phase_samples):
         errors.append("target_k_phase_sample_differs_from_source_contract")
+    for detector_event in detector:
+        ion = int(detector_event["ion"])
+        particle_events = [event for event in events if int(event.get("ion", -1)) == ion]
+        chain = {
+            kind: [event for event in events
+                   if event["kind"] == kind and int(event["ion"]) == ion]
+            for kind in STATIC_RETURN_KINDS
+        }
+        valid_chain = all(len(chain[kind]) == 1 for kind in STATIC_RETURN_KINDS)
+        if valid_chain:
+            times = [float(chain[kind][0]["t_us"]) for kind in STATIC_RETURN_KINDS]
+            valid_chain = all(later > earlier for earlier, later in zip(times, times[1:]))
+            phase_origins = [event for event in particle_events if event["kind"] == "drift_phase_origin"]
+            phase_returns = [event for event in particle_events if event["kind"] == "drift_phase_return"]
+            outbound_prisms = {
+                int(event["n"]): event for event in particle_events
+                if event["kind"] == "prism_pass" and int(event["n"]) in (1, 2)
+            }
+            valid_chain = valid_chain and len(phase_origins) == 1 and len(phase_returns) == 1
+            if valid_chain:
+                origin, returned = phase_origins[0], phase_returns[0]
+                valid_chain = (
+                    float(origin["z_mm"]) > 0.0
+                    and float(returned["z_mm"]) < 0.0
+                    and float(origin["vy_mm_us"]) > 0.0
+                    and float(returned["vy_mm_us"]) < 0.0
+                    and abs(float(origin["vz_mm_us"])) <= 1.0e-12
+                    and abs(float(returned["vz_mm_us"])) <= 1.0e-12
+                    and float(returned["k"]) == target_k
+                    and set(outbound_prisms) == {1, 2}
+                    and float(outbound_prisms[1]["vz_mm_us"]) < 0.0
+                    and float(outbound_prisms[2]["vz_mm_us"]) > 0.0
+                    and float(chain["return_p2_entry"][0]["vz_mm_us"]) > 0.0
+                    and float(chain["return_p2_pass"][0]["vz_mm_us"]) > 0.0
+                    and float(chain["return_positive_mirror_turn"][0]["z_mm"]) > 0.0
+                    and abs(float(chain["return_positive_mirror_turn"][0]["vz_mm_us"])) <= 1.0e-12
+                )
+            valid_chain = valid_chain and int(detector_event.get("direction_z", 0)) == -1
+            valid_chain = valid_chain and float(detector_event.get("z_mm", 0.0)) > 0.0
+            valid_chain = valid_chain and not any(
+                event["kind"] == "accelerator_reentry" for event in particle_events
+            )
+            safe_exits = [event for event in particle_events if event["kind"] == "accelerator_safe_exit"]
+            if len(safe_exits) == 1:
+                safe_exit = safe_exits[0]
+                accelerator_instance = int(safe_exit["from_instance"])
+                valid_chain = valid_chain and not any(
+                    event["kind"] == "instance_transition"
+                    and float(event["t_us"]) > float(safe_exit["t_us"])
+                    and int(event["instance"]) == accelerator_instance
+                    for event in particle_events
+                )
+            final = by_terminal.get(ion)
+            valid_chain = valid_chain and final is not None and int(final["splat"]) == 1
+            valid_chain = valid_chain and not any(
+                int(event["ion"]) == ion and (
+                    event["kind"] == "post_return_mirror_turn"
+                    or (event["kind"] == "drift_phase_candidate" and float(event["k"]) > target_k)
+                )
+                for event in events
+            )
+        if not valid_chain:
+            errors.append("invalid_static_detector_event_chain")
+    mirrored_branch_diagnostics = _mirrored_branch_turn_diagnostics(events, target_k)
+    mirrored_by_ion = {int(item["ion"]): item for item in mirrored_branch_diagnostics}
+    for detector_event in detector:
+        diagnostic = mirrored_by_ion.get(int(detector_event["ion"]))
+        if (
+            diagnostic is None
+            or diagnostic.get("status") != "evaluated__tolerance_not_assigned"
+            or diagnostic.get("paired_turn_count") != int(target_k)
+            or diagnostic.get("opposite_mirror_side_pair_count") != int(target_k)
+        ):
+            errors.append("mirrored_nonretracing_branch_turn_evidence_incomplete")
     turns = [int(event["turns"]) for event in lifecycle]
     splat_codes = [int(event["splat"] if event["kind"] == "terminal" else event["code"]) for event in lifecycle]
     valid = not errors
@@ -334,9 +527,9 @@ def summarize_events(
         "target_k_phase_y_residuals_mm": [
             float(event["y_mm"]) for event in target_k_phase_samples
         ],
-        "target_k_count": sum(value == target_k for value in oscillations),
+        "target_k_count": len(target_k_events),
         "target_k_fraction": (
-            sum(value == target_k for value in oscillations) / population_count
+            len(target_k_events) / population_count
             if valid
             else None
         ),
@@ -358,6 +551,9 @@ def summarize_events(
             event["kind"] == "slow_coordinate_y0" and event["direction_y"] > 0 for event in events
         ),
         "P1_plane_crossing_count": sum(event["kind"] == "p1_plane" for event in events),
+        "P2_low_field_reference_crossing_count": sum(
+            event["kind"] == "p2_low_field_reference" for event in events
+        ),
         "drift_phase_origin_count": sum(event["kind"] == "drift_phase_origin" for event in events),
         "drift_phase_return_count": sum(event["kind"] == "drift_phase_return" for event in events),
         "drift_phase_candidate_count": sum(
@@ -367,6 +563,7 @@ def summarize_events(
             event["kind"] == "drift_coordinate_return" for event in events
         ),
         "drift_coordinate_return_diagnostics": _drift_coordinate_return_diagnostics(events),
+        "mirrored_nonretracing_branch_turn_diagnostics": mirrored_branch_diagnostics,
         "same_direction_central_plane_periods_us": directional_periods,
         "same_direction_central_plane_period_median_us": median(directional_periods) if directional_periods else None,
         "effective_axial_width_W_mm": widths if kinetic_energy_ev is not None and mass_th is not None else None,
@@ -416,9 +613,7 @@ def load_particle_source(input_manifest: Path, source_key: str) -> dict[str, Any
             or any(type(value) is not int for value in record.get("expected_particle_ids", []))
             or record.get("expected_particle_ids_sha256") != hashlib.sha256(identity).hexdigest()):
         raise ValueError("frozen particle identities differ from the source contract")
-    target_k = contract["nominal"]["target_oscillation_count"]
-    if not _integer(target_k, minimum=1):
-        raise ValueError("source contract has invalid target oscillation count")
+    target_k = resolve_drift_phase_contract(contract).target_period_ratio
     particle_source = contract.get("particle_source", {})
     species = particle_source.get("species") if isinstance(particle_source, dict) else None
     if not isinstance(species, dict):
@@ -458,7 +653,7 @@ def load_particle_source(input_manifest: Path, source_key: str) -> dict[str, Any
             if type(energy) not in (int, float) or not math.isfinite(float(energy)) or float(energy) <= 0.0:
                 raise ValueError("selected source profile axial energy must be finite and positive")
             axial_kinetic_energy_ev = float(energy)
-    return {"expected_particle_ids": tuple(particle_ids), "target_k": int(target_k), "species": species,
+    return {"expected_particle_ids": tuple(particle_ids), "target_k": target_k, "species": species,
             "axial_kinetic_energy_ev": axial_kinetic_energy_ev,
             "provenance": {"input_manifest_sha256": hashlib.sha256(input_manifest.read_bytes()).hexdigest(),
                            "source_key": source_key, "fly2_filename": source_path.name,

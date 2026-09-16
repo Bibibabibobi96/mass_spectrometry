@@ -15,8 +15,9 @@ import copy
 import hashlib
 import json
 import math
+import os
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -25,10 +26,14 @@ from scipy.optimize import least_squares
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+    resolve_drift_phase_contract,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     analyze_dual_stripe_l0,
     derive_manufactured_basis_voltage_seed,
     identify_fixed_cad_component_shapes,
+    materialize_native_stripe_spatial_return_root,
     paper_dimensionless_condition_residuals,
     project_y_from_theory_drift_mm,
     theory_drift_y_mm,
@@ -36,12 +41,14 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
     JointL0Trial,
     StripeHardBoundary,
+    classify_constraint_system,
     coupled_normalized_period_slope_at_energy,
     coupled_reduced_period_mm_per_sqrt_v,
     derive_coupled_drift_state,
     derive_turning_y_from_entry_direction,
     evaluate_joint_l0_trial,
     finite_difference_joint_jacobian,
+    finite_difference_joint_jacobian_rows,
     fit_dimensionless_psi_g_profiles,
     spatial_return_kappa_derivative_residual,
     time_platform_derivative_residuals,
@@ -51,6 +58,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_recei
     load_managed_mirror_candidate,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point import (
+    ManagedExactKOperatingPoint,
     load_managed_exact_k_operating_point,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
@@ -59,9 +67,11 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     compile_dual_stripe_path_length_evaluator,
+    dual_stripe_total_path_scale,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
+    derive_operating_energy_envelope,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
     audit_two_prism_voltage_definition,
@@ -69,6 +79,18 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff impo
 
 
 WidthFunction = Callable[[float], float]
+
+
+@dataclass(frozen=True)
+class FixedHardwareMirrorPoint:
+    """Minimum mirror interface needed by the fixed-Stripe consistency solve."""
+
+    design: Any
+    energy_points_v: tuple[float, float, float]
+    nominal_energy_per_charge_v: float
+    nominal_reduced_period_mm_per_sqrt_v: float
+    nominal_axial_width_w_mm: float
+    contract: dict[str, Any]
 
 _PUBLISHABLE_DETERMINATION_STATES = {"square_exact", "overdetermined_consistent"}
 _PROJECT_ID = "parallel_mirror_dual_stripe_mr_tof"
@@ -230,6 +252,7 @@ def attach_fixed_geometry_parameter_authority(
                 "nominal_injection_angle_degrees",
                 "derived_drift_kinetic_energy_per_charge_v",
                 "derived_fast_reflection_energy_per_charge_v",
+                "derived_total_kinetic_energy_per_charge_v",
             ],
         })
     gate_passed = bool(publishable_indices)
@@ -245,8 +268,8 @@ def attach_fixed_geometry_parameter_authority(
             "not_fixed_quantities": [
                 "Stripe_biases_v1_and_v2",
                 "nominal_injection_angle_theta0",
-                "drift_energy_per_charge_wy",
-                "fast_reflection_energy_per_charge_wz",
+                "slow_axis_energy_per_charge_E_y",
+                "mirror_axis_energy_per_charge_E_z",
             ],
             "reason": "the current manufactured design fixes L, but voltage response and the resulting energy partition remain unsolved",
             "derived_feasibility_bound": (
@@ -255,9 +278,9 @@ def attach_fixed_geometry_parameter_authority(
         },
         "coupled_problem": {
             "external_or_upstream_authorities": [
-                "mirror_receipt_axial_width_W",
-                "nominal_axial_net_acceleration_gain_per_charge_w0",
-                "target_oscillation_count_K",
+                "mirror_receipt_axial_width_W_z",
+                "nominal_mirror_axis_energy_per_charge_E_z",
+                "target_drift_period_ratio_K",
             ],
             "solve_coordinates": [
                 "stripe_set_1_bias_v",
@@ -265,9 +288,9 @@ def attach_fixed_geometry_parameter_authority(
             ],
             "fixed_hardware_inputs": ["manufactured_design_drift_length_L_mm"],
             "conditionally_derived_outputs": [
-                "theta0_from_sin_theta0_equals_kappa_1_L_over_K_W",
-                "wy_equals_w0_sin_squared_theta0",
-                "wz_equals_w0_minus_wy",
+                "theta0_from_tan_theta0_equals_kappa_1_L_over_K_W_z",
+                "E_y_equals_E_z_tan_squared_theta0",
+                "E_total_equals_E_z_plus_E_y",
             ],
             "publication_condition": "at least one branch must be locally compatible, full-column-rank, and carry a passed per-residual acceptance receipt",
         },
@@ -613,7 +636,7 @@ def _seed_profile(contract: dict[str, Any]) -> dict[str, Any]:
     profile = block.get("operating_seed_search") if isinstance(block, dict) else None
     if not isinstance(profile, dict) or profile.get("status") != "paper_theory__instance_specific_K_and_spatial_return_seed":
         raise CandidateContractError("dual_stripe_l0.operating_seed_search is incomplete")
-    if profile.get("seed_equations") != ["target_oscillation_count", "spatial_return_kappa_prime"]:
+    if profile.get("seed_equations") != ["target_drift_period_ratio", "spatial_return_kappa_prime"]:
         raise CandidateContractError("Stripe operating seed must retain the declared two paper equations")
     return profile
 
@@ -679,6 +702,22 @@ def _entry_direction_and_search_end(
     return direction, search_end, sample_count
 
 
+def _orthogonal_energy_partition(
+    axial_energy_per_charge_v: float,
+    slow_energy_per_charge_v: float,
+) -> dict[str, float]:
+    """Keep the mirror-axis and slow-axis energies independent and additive."""
+    axial = _finite(axial_energy_per_charge_v, "mirror-axis energy E_z")
+    slow = _finite(slow_energy_per_charge_v, "slow-axis energy E_y")
+    if axial <= 0.0 or slow <= 0.0:
+        raise CandidateContractError("orthogonal energy components E_z and E_y must be positive")
+    return {
+        "mirror_axis_energy_per_charge_v": axial,
+        "slow_axis_energy_per_charge_v": slow,
+        "total_energy_per_charge_v": axial + slow,
+    }
+
+
 def _surrogate_widths(contract: dict[str, Any]) -> tuple[WidthFunction, WidthFunction]:
     shape = identify_fixed_cad_component_shapes(contract)
     fit = shape["selected_fit"]
@@ -687,21 +726,17 @@ def _surrogate_widths(contract: dict[str, Any]) -> tuple[WidthFunction, WidthFun
     linear = float(fit["set_2_coefficient_per_physical_mm"])
     first_baseline = float(baselines["set_1"])
     second_baseline = float(baselines["set_2"])
-    multiplier = _finite(
-        contract["dual_stripe"]["theory_profile"]["path_length_mapping"]["profile_width_to_total_S_multiplier"],
-        "Stripe surrogate path-length multiplier",
-    )
-    if multiplier <= 0.0:
-        raise CandidateContractError("Stripe surrogate path-length multiplier must be positive")
+    first_path_scale = dual_stripe_total_path_scale(contract, "set_1")
+    second_path_scale = dual_stripe_total_path_scale(contract, "set_2")
 
     def first(y_mm: float) -> float:
         distance = -float(y_mm)
-        return multiplier * (
+        return first_path_scale * (
             first_baseline + sum(value * distance**power for power, value in enumerate(coefficients, 1))
         )
 
     def second(y_mm: float) -> float:
-        return multiplier * (second_baseline + linear * -float(y_mm))
+        return second_path_scale * (second_baseline + linear * -float(y_mm))
 
     return first, second
 
@@ -722,7 +757,7 @@ def _evaluate_seed_equations(
         for bias, width in zip(biases_v, widths)
     )
     entry = project_y_from_theory_drift_mm(mirror.contract, 0.0)
-    target_k = _positive_integer(mirror.contract["nominal"]["target_oscillation_count"], "target K")
+    target_k = resolve_drift_phase_contract(mirror.contract).target_period_ratio
     energy = mirror.nominal_energy_per_charge_v
     turn = derive_turning_y_from_entry_direction(
         mirror_reduced_period_mm_per_sqrt_v=mirror.nominal_reduced_period_mm_per_sqrt_v,
@@ -852,9 +887,7 @@ def _fixed_hardware_joint_trial_at_turn(
         stripes=stripes,
         stripe_entry_y_mm=entry,
         nominal_turning_y_mm=_finite(turning_y_mm, "Stripe physical turning y"),
-        target_oscillation_count=_positive_integer(
-            contract["nominal"]["target_oscillation_count"], "target K"
-        ),
+        target_oscillation_count=resolve_drift_phase_contract(contract).target_period_ratio,
         time_platform_eta_nodes=tuple(
             _finite(value, "time-platform node")
             for value in contract["dual_stripe_l0"]["time_platform_constraint"]["eta_turn_nodes"]
@@ -989,7 +1022,152 @@ def _dimensionless_profile_fit(
     ))
 
 
-def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) -> dict[str, Any]:
+def _screen_complete_consistency_start(
+    payload: tuple[
+        FixedHardwareMirrorPoint,
+        tuple[float, float],
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+    ],
+) -> tuple[tuple[float, float], tuple[str, ...], tuple[float, ...]] | None:
+    """Evaluate one independent fixed-Stripe start for bounded search ranking."""
+    mirror, start, length, entry, drift_sign, eta_step, time_step, energy_step = payload
+    widths = tuple(
+        compile_dual_stripe_path_length_evaluator(mirror.contract, name)
+        for name in ("set_1", "set_2")
+    )
+    try:
+        report = evaluate_joint_l0_trial(_fixed_hardware_joint_trial_at_turn(
+            mirror,
+            widths,
+            start,
+            entry + drift_sign * length,
+            eta_step,
+            time_step,
+            energy_step,
+        ))
+    except CandidateContractError:
+        return None
+    names = _drift_core_residual_names(report)
+    return start, names, _named_residual_vector(report, names)
+
+
+def _refine_complete_consistency_start(
+    payload: tuple[
+        FixedHardwareMirrorPoint,
+        tuple[float, float],
+        tuple[str, ...],
+        tuple[float, ...],
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        int,
+    ],
+) -> dict[str, Any] | None:
+    """Refine one independent fixed-Stripe start in an isolated process."""
+    (
+        mirror,
+        start_values,
+        residual_names,
+        residual_scales,
+        lower,
+        upper,
+        voltage_step,
+        length,
+        entry,
+        drift_sign,
+        eta_step,
+        time_step,
+        energy_step,
+        maximum_evaluations,
+    ) = payload
+    widths = tuple(
+        compile_dual_stripe_path_length_evaluator(mirror.contract, name)
+        for name in ("set_1", "set_2")
+    )
+    start = np.asarray(start_values, dtype=float)
+    energy = mirror.nominal_energy_per_charge_v
+
+    def report_at(values: Sequence[float]):
+        trial = _fixed_hardware_joint_trial_at_turn(
+            mirror,
+            widths,
+            values,
+            entry + drift_sign * length,
+            eta_step,
+            time_step,
+            energy_step,
+        )
+        return evaluate_joint_l0_trial(trial)
+
+    def objective(values: np.ndarray) -> np.ndarray:
+        try:
+            report = report_at(values)
+            if _drift_core_residual_names(report) != residual_names:
+                raise CandidateContractError("complete residual identity changed during search")
+            return np.asarray(
+                _named_residual_vector(report, residual_names)
+            ) / np.asarray(residual_scales)
+        except CandidateContractError:
+            distance = float(np.linalg.norm(
+                (values - start) / np.asarray([energy, energy])
+            ))
+            return np.full(len(residual_scales), 1.0e3 + distance)
+
+    def objective_jacobian(values: np.ndarray) -> np.ndarray:
+        columns: list[np.ndarray] = []
+        for index in range(len(values)):
+            low_values = values.copy()
+            high_values = values.copy()
+            low_values[index] = max(lower, float(values[index]) - voltage_step)
+            high_values[index] = min(upper, float(values[index]) + voltage_step)
+            denominator = high_values[index] - low_values[index]
+            if denominator <= 0.0:
+                raise CandidateContractError("Stripe voltage Jacobian step collapsed at its bound")
+            columns.append((objective(high_values) - objective(low_values)) / denominator)
+        return np.column_stack(columns)
+
+    result = least_squares(
+        objective,
+        start,
+        bounds=([lower, lower], [upper, upper]),
+        jac=objective_jacobian,
+        x_scale=np.asarray([energy, energy]),
+        max_nfev=maximum_evaluations,
+    )
+    try:
+        final_report = report_at(result.x)
+    except CandidateContractError:
+        return None
+    scaled = np.asarray(
+        _named_residual_vector(final_report, residual_names)
+    ) / np.asarray(residual_scales)
+    return {
+        "initial_parameters": [float(value) for value in start],
+        "biases_v": [float(value) for value in result.x],
+        "manufactured_design_drift_length_L_mm": float(length),
+        "scaled_residual_norm_2": float(np.linalg.norm(scaled)),
+        "optimizer_success": bool(result.success),
+        "optimizer_message": str(result.message),
+        "function_evaluations": int(result.nfev),
+    }
+
+
+def _search_complete_fixed_hardware_consistency(
+    mirror: FixedHardwareMirrorPoint | ManagedMirrorCandidate,
+    *,
+    maximum_parallel_refinement_workers: int = 1,
+) -> dict[str, Any]:
     """Search the six paper drift residuals on the fixed physical curves.
 
     The residual scales only condition this diagnostic search.  They are not
@@ -1028,40 +1206,58 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         "manufactured_design_abs_drift_length_L_mm"
     ]
     starts = _complete_consistency_start_grid(profile, energy)
+    worker_limit = _positive_integer(
+        maximum_parallel_refinement_workers,
+        "complete consistency parallel worker count",
+    )
+    worker_point = FixedHardwareMirrorPoint(
+        mirror.design,
+        tuple(mirror.energy_points_v),
+        mirror.nominal_energy_per_charge_v,
+        mirror.nominal_reduced_period_mm_per_sqrt_v,
+        mirror.nominal_axial_width_w_mm,
+        mirror.contract,
+    )
     feasible_starts = 0
     candidates: list[dict[str, Any]] = []
     screened_starts: list[tuple[float, np.ndarray]] = []
     residual_names: tuple[str, ...] | None = None
     residual_scales: tuple[float, ...] | None = None
 
-    def report_at(values: Sequence[float]):
-        if len(values) != 2:
-            raise CandidateContractError("complete fixed-hardware search needs v1 and v2")
-        trial = _fixed_hardware_joint_trial_at_turn(
-            mirror,
-            widths,
-            values,
-            entry + drift_sign * length,
+    screen_payloads = [
+        (
+            worker_point,
+            tuple(float(value) for value in start),
+            length,
+            entry,
+            drift_sign,
             eta_step,
             time_step,
             energy_step,
         )
-        return evaluate_joint_l0_trial(trial)
-
-    for start in starts:
-        try:
-            initial = report_at(start)
-        except CandidateContractError:
+        for start in starts
+    ]
+    actual_screening_workers = min(worker_limit, len(screen_payloads), os.cpu_count() or 1)
+    if actual_screening_workers == 1:
+        screened_results = map(_screen_complete_consistency_start, screen_payloads)
+    else:
+        with ProcessPoolExecutor(max_workers=actual_screening_workers) as executor:
+            screened_results = tuple(
+                executor.map(_screen_complete_consistency_start, screen_payloads)
+            )
+    for screened in screened_results:
+        if screened is None:
             continue
+        start_values, names, raw_residuals = screened
         feasible_starts += 1
         if residual_names is None:
-            residual_names = _drift_core_residual_names(initial)
+            residual_names = names
             residual_scales = _complete_residual_scales(contract, residual_names, mirror.energy_points_v)
+        elif names != residual_names:
+            raise CandidateContractError("complete residual identity changed during start screening")
         assert residual_scales is not None
-        initial_scaled = np.asarray(
-            _named_residual_vector(initial, residual_names)
-        ) / np.asarray(residual_scales)
-        screened_starts.append((float(np.linalg.norm(initial_scaled)), start))
+        initial_scaled = np.asarray(raw_residuals) / np.asarray(residual_scales)
+        screened_starts.append((float(np.linalg.norm(initial_scaled)), np.asarray(start_values)))
 
     refined_starts = _select_diverse_refinement_starts(
         screened_starts,
@@ -1069,75 +1265,46 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         (energy, energy),
         diversity_pool_multiplier,
     )
-    for _initial_norm, start in refined_starts:
-        assert residual_scales is not None
-
-        def objective(values: np.ndarray) -> np.ndarray:
-            try:
-                report = report_at(values)
-                if _drift_core_residual_names(report) != residual_names:
-                    raise CandidateContractError("complete residual identity changed during search")
-                return np.asarray(
-                    _named_residual_vector(report, residual_names)
-                ) / np.asarray(residual_scales)
-            except CandidateContractError:
-                distance = float(np.linalg.norm(
-                    (values - start) / np.asarray([energy, energy])
-                ))
-                return np.full(len(residual_scales), 1.0e3 + distance)
-
-        def objective_jacobian(values: np.ndarray) -> np.ndarray:
-            """Differentiate the nested integral residuals on an absolute voltage scale.
-
-            SciPy's default relative perturbation becomes microscopic for this
-            kilovolt-scale solve and samples quadrature noise instead of the
-            physical voltage response.  The same contract-owned absolute step
-            used by the publication rank audit keeps search and classification
-            on one numerical scale.
-            """
-            columns: list[np.ndarray] = []
-            for index in range(len(values)):
-                low = values.copy()
-                high = values.copy()
-                coordinate_step = voltage_step
-                coordinate_lower = lower
-                coordinate_upper = upper
-                low[index] = max(coordinate_lower, float(values[index]) - coordinate_step)
-                high[index] = min(coordinate_upper, float(values[index]) + coordinate_step)
-                denominator = high[index] - low[index]
-                if denominator <= 0.0:
-                    raise CandidateContractError("Stripe voltage Jacobian step collapsed at its bound")
-                columns.append((objective(high) - objective(low)) / denominator)
-            return np.column_stack(columns)
-
-        result = least_squares(
-            objective,
-            start,
-            bounds=(
-                [lower, lower],
-                [upper, upper],
-            ),
-            jac=objective_jacobian,
-            x_scale=np.asarray([energy, energy]),
-            max_nfev=maximum_evaluations,
+    if residual_names is not None and residual_scales is not None:
+        actual_refinement_workers = min(
+            worker_limit,
+            len(refined_starts),
+            os.cpu_count() or 1,
         )
-        try:
-            final_report = report_at(result.x)
-        except CandidateContractError:
-            continue
-        scaled = np.asarray(
-            _named_residual_vector(final_report, residual_names)
-        ) / np.asarray(residual_scales)
-        candidates.append({
-            "initial_parameters": [float(value) for value in start],
-            "initial_scaled_residual_norm_2": float(_initial_norm),
-            "biases_v": [float(value) for value in result.x],
-            "manufactured_design_drift_length_L_mm": float(length),
-            "scaled_residual_norm_2": float(np.linalg.norm(scaled)),
-            "optimizer_success": bool(result.success),
-            "optimizer_message": str(result.message),
-            "function_evaluations": int(result.nfev),
-        })
+        payloads = [
+            (
+                worker_point,
+                tuple(float(value) for value in start),
+                residual_names,
+                residual_scales,
+                lower,
+                upper,
+                voltage_step,
+                length,
+                entry,
+                drift_sign,
+                eta_step,
+                time_step,
+                energy_step,
+                maximum_evaluations,
+            )
+            for _initial_norm, start in refined_starts
+        ]
+        if actual_refinement_workers == 1:
+            refined_candidates = map(_refine_complete_consistency_start, payloads)
+        else:
+            with ProcessPoolExecutor(max_workers=actual_refinement_workers) as executor:
+                refined_candidates = tuple(
+                    executor.map(_refine_complete_consistency_start, payloads)
+                )
+        for (_initial_norm, _start), candidate in zip(
+            refined_starts, refined_candidates, strict=True,
+        ):
+            if candidate is not None:
+                candidate["initial_scaled_residual_norm_2"] = float(_initial_norm)
+                candidates.append(candidate)
+    else:
+        actual_refinement_workers = 0
     if not candidates or residual_names is None or residual_scales is None:
         return {
             "status": "no_feasible_complete_consistency_iterate",
@@ -1145,6 +1312,8 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             "independent_cartesian_start_count": len(starts),
             "feasible_start_count": feasible_starts,
             "refined_start_count": 0,
+            "actual_parallel_screening_workers": actual_screening_workers,
+            "actual_parallel_refinement_workers": actual_refinement_workers,
             "limitations": ["No physical first-turn trial survived the declared bounded multi-start search."],
         }
     candidates.sort(key=lambda item: (item["scaled_residual_norm_2"], max(abs(v) for v in item["biases_v"])))
@@ -1183,6 +1352,10 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         name: value for name, value in all_residuals.items()
         if name.startswith("full_analyser_period_slope_at_")
     }
+    energy_partition = _orthogonal_energy_partition(
+        mirror.nominal_energy_per_charge_v,
+        report.drift_state.turning_pseudopotential_v,
+    )
     best.update({
         "raw_residuals": all_residuals,
         "drift_core_raw_residuals": drift_residuals,
@@ -1194,10 +1367,9 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         "residual_scales": dict(zip(residual_names, residual_scales)),
         "determination": asdict(classification),
         "drift_length_L_mm": report.drift_state.drift_length_l_mm,
-        "derived_drift_kinetic_energy_per_charge_v": report.drift_state.turning_pseudopotential_v,
-        "derived_fast_reflection_energy_per_charge_v": (
-            mirror.nominal_energy_per_charge_v - report.drift_state.turning_pseudopotential_v
-        ),
+        "derived_drift_kinetic_energy_per_charge_v": energy_partition["slow_axis_energy_per_charge_v"],
+        "derived_fast_reflection_energy_per_charge_v": energy_partition["mirror_axis_energy_per_charge_v"],
+        "derived_total_kinetic_energy_per_charge_v": energy_partition["total_energy_per_charge_v"],
         "mirror_owned_axial_width_W_mm": report.drift_state.axial_width_w_mm,
         "nominal_kappa_1": report.drift_state.nominal_kappa_1,
         "nominal_injection_angle_degrees": math.degrees(report.drift_state.nominal_injection_angle_rad),
@@ -1211,6 +1383,8 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         "independent_cartesian_start_count": len(starts),
         "feasible_start_count": feasible_starts,
         "refined_start_count": len(refined_starts),
+        "actual_parallel_screening_workers": actual_screening_workers,
+        "actual_parallel_refinement_workers": actual_refinement_workers,
         "refinement_start_selection": {
             "method": "minimum_norm_anchor_then_farthest_point_in_top_ranked_pool",
             "pool_multiplier": diversity_pool_multiplier,
@@ -1223,7 +1397,7 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             "constraint": "psi(1)-1=0",
             "status": "identically_satisfied_by_normalizing_at_the_solved_physical_turn",
         },
-        "energy_partition_semantics": "theta0, drift energy, and fast reflection energy are derived from the solved L and turning pseudopotential; complete-search L starts are independently gridded and do not inherit the historical 5 eV prism diagnostic",
+        "energy_partition_semantics": "E_z is the mirror-owned nominal axis energy; the solved Stripe turning pseudopotential is the independent E_y, tan(theta0)^2=E_y/E_z, and E_total=E_z+E_y. Complete-search L starts are independently gridded and do not inherit the historical 5 eV prism diagnostic.",
         "limitations": [
             "Optimizer convergence is a search diagnostic, not an acceptance condition.",
             "The bounded deterministic start grid is not a mathematical proof of global existence or nonexistence.",
@@ -1395,7 +1569,7 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
                 stripes=trial_stripes,
                 stripe_entry_y_mm=entry_y_mm,
                 nominal_turning_y_mm=trial_turn,
-                target_oscillation_count=int(contract["nominal"]["target_oscillation_count"]),
+                target_oscillation_count=resolve_drift_phase_contract(contract).target_period_ratio,
                 time_platform_eta_nodes=nodes,
                 kappa_derivative_step=kappa_step,
                 time_platform_derivative_step=_finite(
@@ -1432,19 +1606,21 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
                 "compatibility tolerance",
             ),
         )
+        energy_partition = _orthogonal_energy_partition(
+            energy, state.turning_pseudopotential_v,
+        )
         record = {
             "stripe_biases_v": values.tolist(),
             "native_seed_residuals": {
-                "target_oscillation_count": float(residual[0]),
+                "target_drift_period_ratio": float(residual[0]),
                 "spatial_return_kappa_prime": float(residual[1]),
             },
             "jacobian_rank": history[-1]["jacobian_rank"],
             "native_newton_history": history,
             "drift_length_L_mm": state.drift_length_l_mm,
-            "initialization_drift_kinetic_energy_per_charge_v": state.turning_pseudopotential_v,
-            "initialization_fast_reflection_energy_per_charge_v": (
-                energy - state.turning_pseudopotential_v
-            ),
+            "initialization_drift_kinetic_energy_per_charge_v": energy_partition["slow_axis_energy_per_charge_v"],
+            "initialization_fast_reflection_energy_per_charge_v": energy_partition["mirror_axis_energy_per_charge_v"],
+            "initialization_total_kinetic_energy_per_charge_v": energy_partition["total_energy_per_charge_v"],
             "mirror_owned_axial_width_W_mm": state.axial_width_w_mm,
             "nominal_kappa_1": state.nominal_kappa_1,
             "nominal_injection_angle_degrees": math.degrees(state.nominal_injection_angle_rad),
@@ -1681,34 +1857,209 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
     }, mirror.contract)
 
 
+def _evaluate_exact_k_seed_consistency(
+    exact_k: ManagedExactKOperatingPoint,
+    biases_v: Sequence[float],
+) -> dict[str, Any]:
+    """Evaluate, without searching, all native fixed-hardware residuals at one seed."""
+    contract = exact_k.contract
+    profile = _seed_profile(contract)
+    energy = _finite(exact_k.axial_energy_per_charge_v, "exact-K selected axial energy")
+    biases = tuple(_finite(value, "exact-K downstream Stripe bias") for value in biases_v)
+    if len(biases) != 2:
+        raise CandidateContractError("exact-K downstream consistency needs two Stripe biases")
+    mirror_period = reduced_period(energy, exact_k.design)
+    derived_width = mirror_period * math.sqrt(energy)
+    if not math.isclose(derived_width, exact_k.axial_width_w_mm, rel_tol=1e-12, abs_tol=1e-9):
+        raise CandidateContractError("exact-K axial width is inconsistent with its selected mirror design and energy")
+
+    energy_points = derive_operating_energy_envelope(
+        contract, selected_center_v=energy,
+    ).mirror_energy_nodes_v
+    widths = tuple(
+        compile_dual_stripe_path_length_evaluator(contract, name)
+        for name in ("set_1", "set_2")
+    )
+    entry = project_y_from_theory_drift_mm(contract, 0.0)
+    search_end, _sample_count = _stripe_search_domain(contract, profile)
+    drift_sign = 1.0 if search_end > entry else -1.0
+    length = _fixed_geometry_drift_length_bound(contract)[
+        "manufactured_design_abs_drift_length_L_mm"
+    ]
+    turning = entry + drift_sign * length
+    kappa_step = _finite(profile["kappa_derivative_step"], "kappa derivative step")
+    time_step = _finite(profile["time_platform_derivative_step"], "time-platform derivative step")
+    voltage_step = _finite(profile["native_newton_voltage_step_v"], "Stripe voltage step")
+    energy_step = _finite(
+        contract["mirror"]["theory_requirements"]["global_l0_search_profile"]
+        ["period_slope_derivative_step_v"],
+        "full-analyser energy derivative step",
+    )
+
+    def trial_from_biases(values: tuple[float, ...]) -> JointL0Trial:
+        if len(values) != 2:
+            raise CandidateContractError("exact-K consistency trial needs two Stripe biases")
+        return JointL0Trial(
+            mirror_design=exact_k.design,
+            energy_points_v=energy_points,
+            stripes=tuple(
+                StripeHardBoundary(value, width)
+                for value, width in zip(values, widths, strict=True)
+            ),
+            stripe_entry_y_mm=entry,
+            nominal_turning_y_mm=turning,
+            target_oscillation_count=resolve_drift_phase_contract(contract).target_period_ratio,
+            time_platform_eta_nodes=tuple(
+                _finite(value, "time-platform node")
+                for value in contract["dual_stripe_l0"]["time_platform_constraint"]["eta_turn_nodes"]
+            ),
+            kappa_derivative_step=kappa_step,
+            time_platform_derivative_step=time_step,
+            energy_derivative_step_v=energy_step,
+        )
+
+    initial_report = evaluate_joint_l0_trial(trial_from_biases(biases))
+    residual_names = _drift_core_residual_names(initial_report)
+    residual_scales = _complete_residual_scales(contract, residual_names, energy_points)
+    report, selected_names, jacobian_rows = finite_difference_joint_jacobian_rows(
+        ("stripe_set_1_bias_v", "stripe_set_2_bias_v"),
+        biases,
+        (voltage_step, voltage_step),
+        trial_from_biases,
+        selected_residual_names=residual_names,
+    )
+    if selected_names != residual_names:
+        raise CandidateContractError("exact-K consistency residual identity changed during Jacobian extraction")
+    numerics = contract["dual_stripe_l0"]["determination_numerics"]
+    drift_values = _named_residual_vector(report, residual_names)
+    classification = classify_constraint_system(
+        ("stripe_set_1_bias_v", "stripe_set_2_bias_v"),
+        residual_names,
+        jacobian_rows=jacobian_rows,
+        residuals=drift_values,
+        parameter_scales=(energy, energy),
+        residual_scales=residual_scales,
+        relative_rank_tolerance=_finite(
+            numerics["relative_singular_value_rank_tolerance"], "rank tolerance"
+        ),
+        compatibility_tolerance=_finite(
+            numerics["scaled_irreducible_residual_norm_tolerance"], "compatibility tolerance"
+        ),
+    )
+    all_residuals = dict(report.residuals)
+    drift_residuals = dict(zip(residual_names, drift_values, strict=True))
+    state = report.drift_state
+    source_slow_energy = _finite(
+        contract["prism_transport"]["energy_partition"]["drift_kinetic_energy_ev"],
+        "source target slow energy",
+    )
+    return {
+        "status": "single_inverse_seed_point_evaluated__no_search",
+        "stripe_biases_v": list(biases),
+        "selected_axial_energy_per_charge_v": energy,
+        "selected_energy_nodes_per_charge_v": list(energy_points),
+        "mirror_reduced_period_mm_per_sqrt_v": mirror_period,
+        "mirror_owned_axial_width_W_mm": exact_k.axial_width_w_mm,
+        "axial_width_identity_check": {
+            "recomputed_mm": derived_width,
+            "relative_tolerance": 1e-12,
+            "absolute_tolerance_mm": 1e-9,
+            "semantics": "same-algorithm serialized-receipt identity check; not a physical acceptance tolerance",
+        },
+        "drift_length_L_mm": state.drift_length_l_mm,
+        "turning_y_mm": turning,
+        "derived_drift_kinetic_energy_per_charge_v": state.turning_pseudopotential_v,
+        "source_target_slow_kinetic_energy_per_charge_v": source_slow_energy,
+        "native_turning_minus_source_slow_energy_per_charge_v": (
+            state.turning_pseudopotential_v - source_slow_energy
+        ),
+        "derived_fast_reflection_energy_per_charge_v": energy,
+        "derived_total_kinetic_energy_per_charge_v": energy + state.turning_pseudopotential_v,
+        "nominal_injection_angle_degrees": math.degrees(state.nominal_injection_angle_rad),
+        "native_kappa_1": state.nominal_kappa_1,
+        "upstream_native_shape_kappa_1": exact_k.kappa_1,
+        "native_minus_upstream_shape_kappa_1": state.nominal_kappa_1 - exact_k.kappa_1,
+        "raw_residuals": all_residuals,
+        "drift_core_raw_residuals": drift_residuals,
+        "global_energy_calibration_diagnostics": {
+            "status": "pending_downstream_TE1_TE2_calibration",
+            "residuals": {
+                name: value for name, value in all_residuals.items()
+                if name.startswith("full_analyser_period_slope_at_")
+            },
+        },
+        "residual_scales": dict(zip(residual_names, residual_scales, strict=True)),
+        "local_jacobian": {
+            "row_names": list(residual_names),
+            "column_names": ["stripe_set_1_bias_v", "stripe_set_2_bias_v"],
+            "central_difference_step_v": voltage_step,
+            "rows": [list(row) for row in jacobian_rows],
+        },
+        "determination": asdict(classification),
+        "residual_acceptance": _complete_residual_acceptance_receipt(
+            contract, drift_residuals,
+        ),
+        "qualification": "diagnostic_only__not_a_six_condition_solution_or_operating_point",
+    }
+
+
 def build_operating_seed_report_from_exact_k(
     exact_k_manifest: Path, downstream_contract: Path,
 ) -> dict[str, Any]:
-    """Derive the two-Stripe nominal inverse at a verified exact-K mirror point."""
+    """Materialize the upstream native shape at its mirror point and source energy."""
     exact_k = load_managed_exact_k_operating_point(exact_k_manifest, downstream_contract)
-    target = solve_dimensionless_paper_target(exact_k.contract)
-    coefficients = target["selected_root"]["coefficients_c0_to_c5"]
-    seed = derive_manufactured_basis_voltage_seed(
-        exact_k.contract,
-        mirror_axial_width_w_mm=exact_k.axial_width_w_mm,
-        basis_coefficients_c0_to_c5=coefficients,
+    source_slow_energy = _finite(
+        exact_k.contract["prism_transport"]["energy_partition"]["drift_kinetic_energy_ev"],
+        "source target slow energy",
+    )
+    materialized = materialize_native_stripe_spatial_return_root(
+        exact_k.native_stripe_spatial_shape_root,
+        source_slow_energy_per_charge_v=source_slow_energy,
+        mirror_reduced_period_mm_per_sqrt_v=reduced_period(
+            exact_k.axial_energy_per_charge_v, exact_k.design,
+        ),
         axial_energy_per_charge_v=exact_k.axial_energy_per_charge_v,
     )
-    if not math.isclose(
-        _finite(seed["nominal_kappa_1"], "derived Stripe kappa"),
-        exact_k.kappa_1,
-        rel_tol=0.0,
-        abs_tol=1e-10,
-    ):
-        raise CandidateContractError("exact-K and downstream Stripe kappa identities differ")
+    seed = {
+        "stripe_biases_v": list(materialized.stripe_biases_v),
+        "nominal_kappa_1": exact_k.kappa_1,
+        "predicted_continuous_oscillation_count": materialized.continuous_oscillation_count,
+        "native_spatial_return_materialization": asdict(materialized),
+        "nominal_injection_angle_degrees": math.degrees(math.atan(math.sqrt(
+            source_slow_energy / exact_k.axial_energy_per_charge_v,
+        ))),
+    }
     seed["dual_stripe_l0_response"] = analyze_dual_stripe_l0(
-        exact_k.contract, seed["stripe_biases_v"]
+        exact_k.contract,
+        seed["stripe_biases_v"],
+        axial_energy_per_charge_v=exact_k.axial_energy_per_charge_v,
     )
+    same_point_consistency = _evaluate_exact_k_seed_consistency(
+        exact_k, seed["stripe_biases_v"],
+    )
+    complete_consistency = {
+        "status": "not_solved__overdefined_diagnostic_system",
+        "unknowns": ["stripe_set_1_bias_v", "stripe_set_2_bias_v"],
+        "solved_equations": [
+            "turning_pseudopotential_equals_declared_source_slow_energy",
+            "spatial_return_kappa_prime_equals_zero",
+        ],
+        "coupled_selector": "stripe_on_T_D_over_T_0_equals_baseline_target_K_by_mirror_energy",
+        "diagnostic_only": [
+            "four_time_platform_node_derivatives",
+            "three_full_analyser_energy_slopes",
+        ],
+        "semantics": (
+            "The manufactured curves already encode their time-response shape.  The seven "
+            "diagnostics are reported at the exactly determined coupled point and are not "
+            "least-squares targets for the two Stripe voltages."
+        ),
+    }
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "role": "mrtof_dual_stripe_exact_k_downstream_operating_seed",
-        "status": "analytic_manufactured_basis_inverse_at_exact_k_complete",
-        "qualification": "solver_neutral_nominal_initialization__P1_P2_and_finite_3d_pending",
+        "status": "native_shape_source_energy_inverse_and_stripe_on_exact_k_complete",
+        "qualification": "solver_neutral_coupled_mirror_stripe_operating_seed__not_simion_voltage_authority",
         "exact_k_run_id": exact_k.run_id,
         "exact_k_manifest_sha256": exact_k.manifest_sha256,
         "parent_mirror_manifest_sha256": exact_k.parent_mirror_manifest_sha256,
@@ -1716,10 +2067,13 @@ def build_operating_seed_report_from_exact_k(
             "axial_energy_per_charge_v": exact_k.axial_energy_per_charge_v,
             "mirror_axial_width_W_mm": exact_k.axial_width_w_mm,
             "mirror_voltages_v": list(exact_k.design.electrode_voltages_v),
+            "stripe_biases_v": list(exact_k.stripe_biases_v),
             "kappa_1": exact_k.kappa_1,
         },
-        "dimensionless_target": target,
+        "native_stripe_spatial_shape_root": asdict(exact_k.native_stripe_spatial_shape_root),
         "selected_seed": seed,
+        "same_point_native_fixed_hardware_consistency": same_point_consistency,
+        "complete_fixed_hardware_consistency_search": complete_consistency,
         "voltage_adjustability": {
             "mirror_B_through_E": "frozen by the referenced exact-K receipt for this downstream seed",
             "stripe_v1_v2": "analytic nominal values; adjustable in finite-3D calibration",
@@ -1728,10 +2082,12 @@ def build_operating_seed_report_from_exact_k(
             "grounded_electrodes": "fixed at zero unless the hardware concept is explicitly changed",
         },
         "next_gate": (
-            "Use this exact-K-consistent Stripe seed only for the native 3-D P1/P2 and Stripe "
-            "single-ion chain; it does not yet validate finite fields, spatial return, or resolution."
+            "Materialize this exactly determined solver-neutral seed, solve P1/P2 against the "
+            "positive-turn handoff, and validate the native three-dimensional single-ion chain."
         ),
         "limitations": [
+            "The upstream selector closes the Stripe-on local-period fast-phase equality after eliminating the two Stripe biases from the 5-eV-turn and kappa-prime equations.",
+            "Time-platform nodes and full-analyser energy slopes are fixed-geometry diagnostics, not additional equations for v1/v2.",
             "The Stripe biases remain hard-boundary analytic initial values, not finite-field SIMION optima.",
             "P1/P2 transport, finite three-dimensional fields, bundle K distribution, and resolution remain pending.",
             "No baseline voltage or solver file is modified by this receipt.",

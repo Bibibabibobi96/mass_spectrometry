@@ -1,9 +1,8 @@
 -- Project-frame, per-particle main-drift event counter; no SIMION dependency.
--- The drift phase begins at the first contract-selected mirror turn after
--- P1/P2 and the mandatory pre-origin Stripe traversal.  In the v2 frame the
--- outward slow motion is +y and the return is -y.
--- A cycle ends at the next same-side origin turn; central z=0
--- crossings are diagnostics, not anchors.
+-- The drift phase begins at the contract-selected positive mirror turn after
+-- P1/P2.  Every subsequent physical mirror turn advances the phase by T0/2.
+-- The baseline supplies the desired half-cycle count, so K may be changed to
+-- any supported half-integer without editing this event machine.
 -- Caller must resolve trajectory sampling near roots: linear interpolation is
 -- event localization between supplied samples, not an integrator/convergence test.
 local M = {}
@@ -68,7 +67,8 @@ local function central_event(self, events, root, direction)
   self.central_crossings = self.central_crossings + 1
   self.last_central_t = root.t_us
   local event = emit(self, events, 'central_plane', root)
-  event.direction, event.accepted = direction, self.stage == 'main_drift'
+  event.direction = direction
+  event.accepted = self.stage == 'main_drift'
   event.reason = event.accepted and 'diagnostic_inside_main_drift' or 'outside_main_drift'
 end
 
@@ -80,23 +80,12 @@ local function slow_coordinate_event(self, events, root, direction)
   if not event.accepted or direction >= 0 or self.coordinate_return_observed then return end
   self.coordinate_return_observed = true
   self.coordinate_returns = self.coordinate_returns + 1
-  local phase = assert(self.last_origin_turn,
-    'main-drift coordinate return requires a preceding origin-side mirror turn')
-  local previous = assert(self.previous_origin_turn,
-    'main-drift coordinate return requires two origin-side mirror turns')
-  local phase_period_us = phase.t_us - previous.t_us
-  assert(phase_period_us > 0, 'origin-side mirror-turn period must be positive')
   local observed = emit(self, events, 'drift_coordinate_return', root)
   observed.direction = direction
-  observed.k_before = phase.k
-  observed.phase_turn_t_us = phase.t_us
-  observed.phase_turn_y_mm = phase.y_mm
-  observed.phase_time_residual_us = root.t_us - phase.t_us
-  observed.phase_period_us = phase_period_us
-  observed.fractional_k = phase.k + observed.phase_time_residual_us / phase_period_us
+  observed.k_before = self.half_cycles / 2
+  observed.fractional_k = self.half_cycles / 2
   observed.accepted = false
-  observed.reason = 'coordinate_return_is_not_phase_return'
-  self.stage, self.phase = 'after_main_drift', 'coordinate_return_without_phase_closure'
+  observed.reason = 'coordinate_return_is_diagnostic_until_target_turn_phase'
 end
 
 local function mirror_event(self, events, root, before, after)
@@ -119,40 +108,47 @@ local function mirror_event(self, events, root, before, after)
   local event = emit(self, events, 'mirror_turn', root)
   event.side, event.accepted = side, false
   if self.stage == 'armed_main_drift' then
-    if self.phase ~= 'awaiting_origin_turn' or side ~= self.origin_side or root.vy_mm_us <= 0 then
+    if self.phase ~= 'awaiting_phase_origin_turn' or side ~= self.origin_mirror_side
+        or root.vy_mm_us <= 0 then
       invalidate(self, event, 'phase_origin_must_be_the_declared_outbound_mirror_turn')
       return
     end
-    self.stage, self.phase, self.origin_turns = 'main_drift', 'awaiting_opposite_turn', 1
-    self.last_origin_turn = sample_copy(root)
-    self.last_origin_turn.k = 0
-    event.accepted, event.is_phase_origin = true, true
-    emit(self, events, 'drift_phase_origin', root).side = side
+    self.stage, self.phase = 'main_drift', 'awaiting_target_turn'
+    self.pre_origin_turns = 1
+    self.expected_turn_side = -self.origin_mirror_side
+    self.phase_origin_turn = sample_copy(root)
+    event.accepted, event.is_phase_origin_turn, event.is_pre_origin_turn = true, true, true
+    local origin = emit(self, events, 'drift_phase_origin', root)
+    origin.side, origin.period_ratio = side, 0
     return
   end
   if self.stage ~= 'main_drift' then return end
   if not self.sequence_valid then event.reason = 'invalid_sequence'; return end
-  if self.phase == 'awaiting_opposite_turn' and side == -self.origin_side then
-    self.half_cycles, self.phase = self.half_cycles + 1, 'awaiting_origin_turn'
-    emit(self, events, 'completed_half_oscillation', root).side = side
-  elseif self.phase == 'awaiting_origin_turn' and side == self.origin_side then
-    self.half_cycles, self.cycles = self.half_cycles + 1, self.cycles + 1
-    self.phase = 'awaiting_opposite_turn'
-    emit(self, events, 'completed_oscillation', root).side = side
-    self.previous_origin_turn = self.last_origin_turn
-    self.last_origin_turn = sample_copy(root)
-    self.last_origin_turn.k = self.cycles
-    local candidate = emit(self, events, 'drift_phase_candidate', root)
-    candidate.side = side
-    if root.y_mm == 0 and root.vy_mm_us < 0 then
-      emit(self, events, 'drift_phase_return', root).side = side
-      self.stage, self.phase = 'after_main_drift', 'returned_same_origin_turn_phase'
-    end
-  else
+  if side ~= self.expected_turn_side then
     invalidate(self, event, 'unexpected_mirror_turn')
     return
   end
+  self.half_cycles = self.half_cycles + 1
+  self.cycles = self.half_cycles / 2
+  event.half_cycles, event.k = self.half_cycles, self.cycles
+  self.expected_turn_side = -self.expected_turn_side
+  emit(self, events, 'completed_half_oscillation', root).side = side
   self.accepted_main_turns, event.accepted = self.accepted_main_turns + 1, true
+  local candidate = emit(self, events, 'drift_phase_candidate', root)
+  candidate.side, candidate.period_ratio = side, self.half_cycles / 2
+  if self.half_cycles == self.target_half_oscillation_count then
+    if side ~= self.return_mirror_side then
+      invalidate(self, candidate, 'target_half_cycle_reached_on_wrong_mirror_side')
+      return
+    end
+    local returned = emit(self, events, 'drift_phase_return', root)
+    returned.side, returned.period_ratio = side, self.half_cycles / 2
+    returned.target_half_oscillation_count = self.target_half_oscillation_count
+    returned.slow_coordinate_residual_mm = root.y_mm
+    self.stage, self.phase = 'after_main_drift', 'target_opposite_mirror_turn_reached'
+  elseif self.half_cycles > self.target_half_oscillation_count then
+    invalidate(self, candidate, 'target_half_cycle_count_was_skipped')
+  end
 end
 
 -- Preserve the last nonzero sign across zero nodes/plateaus. A zero-velocity
@@ -217,7 +213,7 @@ local function find_roots(self, sample)
     end
     self.y_before, self.y_zero, self.y_zero_emitted = sample, nil, false
   end
-  local root_priority = {turn=1, slow_coordinate=2, central=3}
+  local root_priority = {turn=1, central=2, slow_coordinate=3}
   table.sort(roots, function(a, b)
     if a.root.t_us == b.root.t_us then return root_priority[a.kind] < root_priority[b.kind] end
     return a.root.t_us < b.root.t_us
@@ -225,7 +221,7 @@ local function find_roots(self, sample)
   return roots
 end
 
-function M.new(regions, origin_side)
+function M.new(regions, origin_mirror_side, return_mirror_side, target_half_oscillation_count)
   assert(type(regions) == 'table', 'explicit resolved mirror regions are required')
   local copy = {}
   for _, side in ipairs({'negative', 'positive'}) do
@@ -236,11 +232,22 @@ function M.new(regions, origin_side)
   end
   assert(copy.negative.z_max_mm < 0 and copy.positive.z_min_mm > 0,
     'mirror regions must be on opposite sides of central z=0')
-  assert(origin_side == -1 or origin_side == 1, 'origin mirror side must be -1 or +1')
-  copy.origin_side = origin_side
+  assert(origin_mirror_side == -1 or origin_mirror_side == 1,
+    'phase-origin mirror side must be -1 or +1')
+  assert(return_mirror_side == -origin_mirror_side,
+    'return mirror side must oppose the phase-origin mirror side')
+  assert(type(target_half_oscillation_count) == 'number'
+      and target_half_oscillation_count > 0
+      and target_half_oscillation_count == math.floor(target_half_oscillation_count),
+    'target half-oscillation count must be a positive integer')
+  assert(target_half_oscillation_count % 2 == 1,
+    'opposite-turn return requires an odd half-oscillation count')
+  copy.origin_mirror_side = origin_mirror_side
+  copy.return_mirror_side = return_mirror_side
+  copy.target_half_oscillation_count = target_half_oscillation_count
   copy.stage, copy.phase = 'before_main_drift', 'awaiting_arm'
   copy.cycles, copy.half_cycles, copy.accepted_main_turns = 0, 0, 0
-  copy.origin_turns = 0
+  copy.pre_origin_turns, copy.origin_crossings = 0, 0
   copy.pre_main_turns, copy.observed_main_turns, copy.post_main_turns = 0, 0, 0
   copy.nonmirror_reversals, copy.central_crossings, copy.sequence_valid = 0, 0, true
   copy.coordinate_returns, copy.coordinate_return_observed = 0, false
@@ -267,8 +274,8 @@ end
 function Counter:arm_main_drift(input)
   assert(self.stage == 'before_main_drift', 'main drift must be armed exactly once')
   local events = self:sample(input)
-  self.stage, self.phase = 'armed_main_drift', 'awaiting_origin_turn'
-  -- Do not carry a pre-P1 bracket into the P1/P2/Stripe-to-turn interval.
+  self.stage, self.phase = 'armed_main_drift', 'awaiting_phase_origin_turn'
+  -- Do not carry a pre-P1 bracket into the P1/P2/reference-to-turn interval.
   self.v_before, self.v_zero = nil, nil
   self.z_before, self.z_zero, self.z_zero_emitted = nil, nil, false
   self.y_before, self.y_zero, self.y_zero_emitted = self.last, nil, false
@@ -281,7 +288,7 @@ function Counter:state()
     stage=self.stage, phase=self.phase, sequence_valid=self.sequence_valid,
     sequence_error=self.sequence_error,
     cycles=self.cycles, half_cycles=self.half_cycles, accepted_main_turns=self.accepted_main_turns,
-    origin_turns=self.origin_turns,
+    pre_origin_turns=self.pre_origin_turns, origin_crossings=self.origin_crossings,
     pre_main_turns=self.pre_main_turns, observed_main_turns=self.observed_main_turns,
     post_main_turns=self.post_main_turns, nonmirror_reversals=self.nonmirror_reversals,
     central_crossings=self.central_crossings,

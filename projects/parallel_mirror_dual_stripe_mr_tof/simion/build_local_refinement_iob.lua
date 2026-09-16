@@ -22,9 +22,17 @@ for index=1,8 do
   end
 end
 assert(seed:match('8_instance_seed%.iob$'),'must use the repository eight-instance IOB seed')
-assert(paths[1]:match('mrtof_analyzer%.pa0$') and paths[7]:match('mrtof_accelerator%.pa0$')
-  and paths[8]:match('mrtof_detector%.pa#$'),'global analyser/accelerator/detector bindings are invalid')
-for index=2,6 do assert(paths[index]:match('local_.*%.pa0$'),'local replacement PA filename is invalid') end
+local canonical_bindings=paths[1]:match('mrtof_analyzer%.pa0$')
+  and paths[7]:match('mrtof_accelerator%.pa0$') and paths[8]:match('mrtof_detector%.pa#$')
+local projected_bindings=paths[1]:match('iob_input_analyzer%.pa$')
+  and paths[7]:match('iob_input_accelerator%.pa$') and paths[8]:match('iob_input_detector%.pa$')
+assert(canonical_bindings or projected_bindings,
+  'global analyser/accelerator/detector bindings are invalid')
+for index=2,6 do
+  local canonical=paths[index]:match('local_.*%.pa0$')
+  local projected=paths[index]:match('iob_input_local_'..(index-1)..'%.pa$')
+  assert(canonical or projected,'local replacement PA filename is invalid')
+end
 assert(output:match('%.iob$') and program:match('%.lua$') and fly2:match('%.fly2$')
   and local_config:match('%.lua$'),'IOB companion suffix is invalid')
 local seed_directory=seed:match('^(.*[\\/])') or ''

@@ -62,7 +62,11 @@ def build_samples(contract: dict) -> list[tuple]:
               "aperture_half_x_mm": supports[0]["aperture_half_x_mm"],
               "aperture_half_y_mm": supports[0]["aperture_half_y_mm"]}
              for ring in resolved["accelerator_stage_2_rings"]]
-    for item in [*supports, *rings]:
+    return_supports = [
+        resolved["accelerator_repeller_support_frame"],
+        resolved["accelerator_rear_ground_grid"],
+    ]
+    for item in [*return_supports, *supports, *rings]:
         eid = ACCELERATOR_LOCAL_ELECTRODE_IDS[item["id"]]
         front, back = item["front_z_mm"]+shift, item["back_z_mm"]+shift
         low, high = math.floor(front/mesh[2])-1, math.ceil(back/mesh[2])+1
@@ -113,11 +117,12 @@ class AcceleratorGeometrySamplesTest(unittest.TestCase):
         rows = build_samples(contract)
         self.assertEqual(rows[1][2:5], (0.25, 0.25, 0.1))
         samples = [row for row in rows if row[0] == "sample"]
-        for eid in range(3, 10):
+        for eid in range(1, 10):
             axis = [row for row in samples if row[1].startswith(f"id{eid}_axis_")]
-            self.assertEqual(sum(row[-1] != 0 for row in axis), int(eid in (3, 4)))
+            self.assertEqual(sum(row[-1] != 0 for row in axis), int(eid in (1, 2, 3, 4)))
             frame = [row for row in samples if row[1].startswith(f"id{eid}_frame_x_")]
-            self.assertEqual(sum(row[-1] == eid for row in frame), 11)
+            expected_layers = 21 if eid in (1, 2) else 11
+            self.assertEqual(sum(row[-1] == eid for row in frame), expected_layers)
         self.assertEqual(sum(row[1].startswith("exit_contact_") for row in samples), 12)
 
     def test_changed_thickness_is_derived_and_off_lattice_aperture_fails(self) -> None:

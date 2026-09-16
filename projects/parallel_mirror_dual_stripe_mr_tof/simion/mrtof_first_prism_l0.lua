@@ -1,7 +1,7 @@
 -- One-particle finite-3-D first-prism diagnostic for the MR-TOF Candidate.
 --
 -- This program intentionally stops at the first grounded-shield interface.
--- It is not a K=25 circulation run, a second-prism setting, or a resolution
+-- It is not a target-phase circulation run, a second-prism setting, or a resolution
 -- calculation.  Every physical value comes from the run-local operating
 -- point written by materialize_simion_prototype.py.
 simion.workbench_program()

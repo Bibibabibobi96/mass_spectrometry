@@ -41,7 +41,7 @@ function Copy-RequiredRunInput {
   if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
     throw "$Label is missing: $Source"
   }
-  Copy-VerifiedRunInput -Source $Source -Destination $Destination
+  Copy-VerifiedRunInput -Source $Source -Destination $Destination -VerificationAttempts 3
 }
 
 function Invoke-MrtofSimionStep {
@@ -122,6 +122,7 @@ function ConvertTo-ArtifactRunPath {
 }
 
 try {
+  $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage three_component_iob_prepare -RunId $RunId
   $failureStage = 'capacity_preflight'
   # This run-local review package copies the two complete solved PA families.
   # Reserve their actual frozen source bytes rather than a stale size budget;
@@ -222,7 +223,6 @@ try {
   $structureReport = Join-Path $resultDir 'iob_structure_report.txt'
 
   $failureStage = 'simion_iob_assembly'
-  $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   Invoke-MrtofSimionStep -Stage 'build_three_component_iob' -Arguments (@('--nogui', '--noprompt', 'lua', $builder, '--',
     $seed, $frozenAnalyzerPa, $frozenAcceleratorPa, $frozenDetectorPa, $iob, $program, $fly2) + $origins)
   $failureStage = 'simion_iob_inspection'
@@ -240,8 +240,8 @@ try {
     '--structure-report', $structureReport, '--output', $geometryReviewManifest)
 
   $failureStage = 'publish_geometry_review'
-  $hostExecutionLease=Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
-    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
+  $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage three_component_iob_postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage three_component_iob_postprocess) -RetainedMemoryBytes 0
   $summaryObject = [ordered]@{
     schema_version = 1; role = 'mrtof_three_component_candidate_iob_assembly'; status = 'success'
     qualification = 'prototype_geometry_review_only'; particle_fly_executed = $false

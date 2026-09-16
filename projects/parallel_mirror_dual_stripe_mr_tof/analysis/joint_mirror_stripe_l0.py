@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     endpoint_regularized_kappa,
+    gauss_legendre_rule,
     kappa_derivative_at_turn,
     tau_g_derivative_at_turn,
 )
@@ -147,15 +148,13 @@ class JointL0Trial:
     stripes: tuple[StripeHardBoundary, ...]
     stripe_entry_y_mm: float
     nominal_turning_y_mm: float
-    target_oscillation_count: int
+    target_oscillation_count: float
     time_platform_eta_nodes: tuple[float, ...]
     kappa_derivative_step: float
     time_platform_derivative_step: float
     energy_derivative_step_v: float
-    prism_target_turn_y_mm: float | None = None
-    prism_target_slow_kinetic_energy_per_charge_v: float | None = None
-    particle_mass_th: float | None = None
-    charge_state: int | None = None
+    prism_target_positive_mirror_turn_y_mm: float | None = None
+    prism_target_p2_reference_tangent_ratio: float | None = None
     two_prism_transport_observation: TwoPrismTransportObservation | None = None
 
 
@@ -339,43 +338,37 @@ def evaluate_joint_l0_trial(trial: JointL0Trial) -> JointL0ResidualReport:
         for energy, slope in zip(energies, energy_slopes)
     ]
     residuals.extend([
-        ("target_oscillation_count", state.target_oscillation_count_residual),
+        ("target_drift_period_ratio", state.target_oscillation_count_residual),
         ("spatial_return_kappa_prime", kappa_prime),
     ])
     residuals.extend((f"time_platform_tau_g_prime_eta_{node:.12g}", value) for node, value in zip(trial.time_platform_eta_nodes, time_residuals))
     transport_values = (
-        trial.prism_target_turn_y_mm,
-        trial.prism_target_slow_kinetic_energy_per_charge_v,
-        trial.particle_mass_th,
-        trial.charge_state,
+        trial.prism_target_positive_mirror_turn_y_mm,
+        trial.prism_target_p2_reference_tangent_ratio,
         trial.two_prism_transport_observation,
     )
     if any(value is not None for value in transport_values):
         if any(value is None for value in transport_values):
-            raise CandidateContractError("joint P1/P2 trial needs turn y, slow energy, particle identity, and observed transport together")
+            raise CandidateContractError(
+                "joint P1/P2 trial needs positive-turn y, P2-reference tangent ratio, and observed transport together"
+            )
         residuals.extend(prism_handoff_residuals(
             trial.two_prism_transport_observation,
-            target_turn_y_mm=trial.prism_target_turn_y_mm,
-            target_slow_kinetic_energy_per_charge_v=trial.prism_target_slow_kinetic_energy_per_charge_v,
-            particle_mass_th=trial.particle_mass_th,
-            charge_state=trial.charge_state,
+            target_positive_mirror_turn_y_mm=trial.prism_target_positive_mirror_turn_y_mm,
+            target_tangent_ratio_vy_over_vz=trial.prism_target_p2_reference_tangent_ratio,
         ))
     return JointL0ResidualReport(tuple(residuals), state, tuple(periods))
 
 
-def finite_difference_joint_jacobian(
+def finite_difference_joint_jacobian_rows(
     variable_names: Sequence[str],
     parameter_values: Sequence[float],
     parameter_steps: Sequence[float],
     trial_from_parameters: Callable[[tuple[float, ...]], JointL0Trial],
     *,
-    parameter_scales: Sequence[float] | None = None,
-    residual_scales: Sequence[float] | None = None,
     selected_residual_names: Sequence[str] | None = None,
-    relative_rank_tolerance: float = 1e-10,
-    compatibility_tolerance: float = 1e-8,
-) -> tuple[JointL0ResidualReport, ConstraintClassification]:
-    """Differentiate the actual joint residual vector and classify its rank.
+) -> tuple[JointL0ResidualReport, tuple[str, ...], tuple[tuple[float, ...], ...]]:
+    """Return one named central-difference Jacobian without classifying it.
 
     Infeasible perturbations are intentionally errors: replacing them by an
     arbitrary penalty would make a rank statement depend on optimizer policy
@@ -414,6 +407,32 @@ def finite_difference_joint_jacobian(
         upper_values = upper_result.residual_vector()
         for row, index in zip(rows, selected_indices):
             row.append((upper_values[index] - lower_values[index]) / (2.0 * step))
+    return center, selected_names, tuple(tuple(value for value in row) for row in rows)
+
+
+def finite_difference_joint_jacobian(
+    variable_names: Sequence[str],
+    parameter_values: Sequence[float],
+    parameter_steps: Sequence[float],
+    trial_from_parameters: Callable[[tuple[float, ...]], JointL0Trial],
+    *,
+    parameter_scales: Sequence[float] | None = None,
+    residual_scales: Sequence[float] | None = None,
+    selected_residual_names: Sequence[str] | None = None,
+    relative_rank_tolerance: float = 1e-10,
+    compatibility_tolerance: float = 1e-8,
+) -> tuple[JointL0ResidualReport, ConstraintClassification]:
+    """Differentiate the actual joint residual vector and classify its rank."""
+    names = tuple(variable_names)
+    center, selected_names, rows = finite_difference_joint_jacobian_rows(
+        variable_names,
+        parameter_values,
+        parameter_steps,
+        trial_from_parameters,
+        selected_residual_names=selected_residual_names,
+    )
+    available_names = center.residual_names()
+    selected_indices = tuple(available_names.index(name) for name in selected_names)
     center_values = center.residual_vector()
     return center, classify_constraint_system(
         names,
@@ -564,8 +583,11 @@ def adiabatic_fast_phase_oscillation_count(
     Tz(E,y)=T0(E)+partial_E DeltaJ_stripe(E,y) at every slow coordinate.
     Endpoint substitution eta=1-u^2 removes the slow-turn singularity.
     The resulting dimensionless value counts complete fast oscillations and
-    reduces to the paper's L*kappa/(W*sin(theta)) only when the local period
-    is independent of y.
+    reduces to ``L*kappa/(W*tan(theta))`` when the local period is independent
+    of y and ``W=T0*v_z/2`` is built from the axial energy.  The paper's
+    equivalent sine form builds its width from total kinetic energy; using
+    that sine with this module's axial width would hide a ``cos(theta) ~= 1``
+    approximation.
     """
     mirror_period = _finite(mirror_reduced_period_mm_per_sqrt_v, "mirror reduced period")
     energy = _finite(energy_per_charge_v, "energy_per_charge_v")
@@ -583,7 +605,7 @@ def adiabatic_fast_phase_oscillation_count(
     direction = 1.0 if turning > entry else -1.0
     length = abs(turning - entry)
     turning_phi = _pseudopotential_difference_v(energy, mirror_period, stripes, entry, turning)
-    if not 0.0 < turning_phi < energy:
+    if turning_phi <= 0.0:
         raise CandidateContractError("fast-phase integral needs a physical slow turning branch")
 
     def physical_y(eta: float) -> float:
@@ -608,7 +630,7 @@ def adiabatic_fast_phase_oscillation_count(
     previous: float | None = None
     for refinement in range(max_refinements):
         order = initial_panels * (2 ** refinement)
-        nodes, weights = np.polynomial.legendre.leggauss(order)
+        nodes, weights = gauss_legendre_rule(order)
         integral = 0.0
         for node, weight in zip(nodes, weights):
             u = 0.5 * (float(node) + 1.0)
@@ -682,9 +704,10 @@ def derive_turning_y_from_entry_direction(
 ) -> float:
     """Find the first slow-drift turning section implied by the injected ray.
 
-    The fast/slow theory supplies the slow energy as
-    ``E*(v_y/|v|)^2``.  A physical turning point is the first section reached
-    along the signed y direction where the exact coupled Stripe
+    ``energy_per_charge_v`` is the mirror-axis energy ``E_z``.  The exact
+    orthogonal partition therefore supplies the slow energy as
+    ``E_y=E_z*(v_y/v_z)^2``.  A physical turning point is the first section
+    reached along the signed y direction where the exact coupled Stripe
     pseudopotential difference equals that energy.  Search limits and sample
     count are explicit caller-owned numerical contract fields; neither a CAD
     box nor a published reference length is substituted here.
@@ -697,15 +720,15 @@ def derive_turning_y_from_entry_direction(
     if len(direction) != 3 or mirror_period <= 0.0 or energy <= 0.0 or search_end == entry:
         raise CandidateContractError("turning-point derivation needs a nonzero three-component ray, positive energy/period, and nonzero search interval")
     norm = math.sqrt(sum(value * value for value in direction))
-    if norm <= 0.0 or direction[1] == 0.0:
-        raise CandidateContractError("turning-point derivation needs a nonzero y-directed entry ray")
+    if norm <= 0.0 or direction[1] == 0.0 or direction[2] == 0.0:
+        raise CandidateContractError("turning-point derivation needs nonzero y and axial-z entry components")
     if (search_end - entry) * direction[1] <= 0.0:
         raise CandidateContractError("turning search interval must follow the injected y direction")
     if not isinstance(sample_count, int) or isinstance(sample_count, bool) or sample_count < 2:
         raise CandidateContractError("turning-point derivation needs an explicit integer sample count of at least two")
-    slow_energy = energy * (direction[1] / norm) ** 2
-    if not 0.0 < slow_energy < energy:
-        raise CandidateContractError("entry ray must have a nonzero, non-total slow y energy")
+    slow_energy = energy * (direction[1] / direction[2]) ** 2
+    if slow_energy <= 0.0 or not math.isfinite(slow_energy):
+        raise CandidateContractError("entry ray must define a finite positive slow y energy")
 
     def residual(y_mm: float) -> float:
         return _pseudopotential_difference_v(energy, mirror_period, stripes, entry, y_mm) - slow_energy
@@ -726,7 +749,7 @@ def derive_coupled_drift_state_from_entry_direction(
     *,
     mirror_reduced_period_mm_per_sqrt_v: float,
     energy_per_charge_v: float,
-    target_oscillation_count: int,
+    target_oscillation_count: float,
     stripes: Sequence[StripeHardBoundary],
     entry_y_mm: float,
     entry_unit_direction_project: Sequence[float],
@@ -942,7 +965,7 @@ def derive_coupled_drift_state(
     *,
     mirror_reduced_period_mm_per_sqrt_v: float,
     energy_per_charge_v: float,
-    target_oscillation_count: int,
+    target_oscillation_count: float,
     stripes: Sequence[StripeHardBoundary],
     entry_y_mm: float,
     turning_y_mm: float,
@@ -965,17 +988,18 @@ def derive_coupled_drift_state(
     turning = _finite(turning_y_mm, "turning_y_mm")
     if mirror_period <= 0.0 or energy <= 0.0:
         raise CandidateContractError("mirror reduced period and nominal energy must be positive")
-    if not isinstance(target_oscillation_count, int) or isinstance(target_oscillation_count, bool) or target_oscillation_count <= 0:
-        raise CandidateContractError("target oscillation count must be a positive integer")
+    target_period_ratio = _finite(target_oscillation_count, "target drift period ratio")
+    if target_period_ratio <= 0.0:
+        raise CandidateContractError("target drift period ratio must be positive")
     if not stripes or turning == entry:
         raise CandidateContractError("coupled drift needs nonempty Stripe responses and a nonzero physical drift interval")
     baselines = tuple(stripe.width_mm(entry) for stripe in stripes)
     biases = tuple(_finite(stripe.bias_v, "Stripe bias_v") for stripe in stripes)
     period = coupled_reduced_period_mm_per_sqrt_v(mirror_period, energy, baselines, biases)
     turning_phi = _pseudopotential_difference_v(energy, mirror_period, stripes, entry, turning)
-    if not 0.0 < turning_phi < energy:
-        raise CandidateContractError("chosen physical turning section must have pseudopotential strictly between zero and nominal energy")
-    sine_theta = math.sqrt(turning_phi / energy)
+    if turning_phi <= 0.0:
+        raise CandidateContractError("chosen physical turning section must have positive pseudopotential")
+    tangent_theta = math.sqrt(turning_phi / energy)
     length = abs(turning - entry)
     width = mirror_period * math.sqrt(energy)
     direction = 1.0 if turning > entry else -1.0
@@ -989,7 +1013,7 @@ def derive_coupled_drift_state(
         ) / turning_phi
 
     kappa = endpoint_regularized_kappa(psi_at_eta)
-    paper_normalized_k = length * kappa / (width * sine_theta)
+    paper_normalized_k = length * kappa / (width * tangent_theta)
     predicted_k = adiabatic_fast_phase_oscillation_count(
         mirror_reduced_period_mm_per_sqrt_v=mirror_period,
         energy_per_charge_v=energy,
@@ -1004,10 +1028,10 @@ def derive_coupled_drift_state(
         axial_width_w_mm=width,
         drift_length_l_mm=length,
         turning_pseudopotential_v=turning_phi,
-        nominal_injection_angle_rad=math.asin(sine_theta),
+        nominal_injection_angle_rad=math.atan(tangent_theta),
         nominal_kappa_1=kappa,
         paper_normalized_oscillation_count=paper_normalized_k,
         predicted_oscillation_count=predicted_k,
-        target_oscillation_count_residual=predicted_k - target_oscillation_count,
+        target_oscillation_count_residual=predicted_k - target_period_ratio,
         response_h_factors=h_factors,
     )

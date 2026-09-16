@@ -71,9 +71,9 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion';$runConfig=$package.run_config;$summary=$package.summary
 $artifactRoot=Join-Path $workspaceRoot 'artifacts';$cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
-$temporaryFamily=$null;$lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight'
+$temporaryFamily=$null;$lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight';$stabilityReceiptPath=$null
 try {
-  $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
+  $lease=Enter-HostExecutionLease -Role SIMION -Stage analyzer_local_pa_prepare -RunId $RunId
   $failureStage='freeze_contract'
   $frozenContract=Copy-VerifiedRunInput -Source $contractInput -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
   $frozenReviewedContract=Copy-VerifiedRunInput -Source $reviewedContractSource -Destination (Join-Path $inputDir 'geometry_review_simion_prototype_contract.json')
@@ -150,8 +150,8 @@ try {
         (Join-Path $repoRoot 'common\simion\build_dirichlet_patch_basis.lua'),$groupedRaw,
         (Join-Path $temporaryFamily ([string]$familyContract.zero_response.output_filename)),'-','-',$coarseOrigin,$patchOrigin)
     } finally {
-      $lease=Update-HostResourceStage -Lease $lease -Stage prepare `
-        -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+      $lease=Update-HostResourceStage -Lease $lease -Stage analyzer_local_pa_prepare `
+        -Budget (Get-HostResourceBudget -Role SIMION -Stage analyzer_local_pa_prepare) -RetainedMemoryBytes 0
     }
     foreach($recipe in @($familyContract.response_recipes)){
       $sourcePaths=@($recipe.source_basis_paths|ForEach-Object{[string]$_})-join'|'
@@ -164,14 +164,24 @@ try {
           (Join-Path $temporaryFamily ([string]$recipe.output_filename)),$sourcePaths,([string]$recipe.local_id),$coarseOrigin,$patchOrigin,
           '-',([string]$familyContract.coarse_raw_pa_path),$sourcePhysicalIds)
       } finally {
-        $lease=Update-HostResourceStage -Lease $lease -Stage prepare `
-          -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
+        $lease=Update-HostResourceStage -Lease $lease -Stage analyzer_local_pa_prepare `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage analyzer_local_pa_prepare) -RetainedMemoryBytes 0
       }
       Invoke-SimionStage -Stage ("export_standalone_response_{0:D2}"-f[int]$recipe.local_id) -Arguments @('--nogui','--noprompt','lua',
         (Join-Path $repoRoot 'common\simion\export_standalone_pa.lua'),
         (Join-Path $temporaryFamily ([string]$recipe.output_filename)),
         (Join-Path $temporaryFamily ([string]$recipe.standalone_response_filename)))
     }
+    $failureStage='verify_private_family_stability'
+    $stabilityReceiptPath=Join-Path $resultDir 'private_family_stability.json'
+    $stabilityLines=Invoke-ProjectPython -Arguments @('-m','common.simion.cache_generation',
+      '--directory',$temporaryFamily,'--cache-key',([string]$probe.cache_key),'--require-stable-inventory')
+    $stability=(@($stabilityLines)-join "`n")|ConvertFrom-Json -Depth 30
+    Write-RunJson -Path $stabilityReceiptPath -Depth 30 -Value ([ordered]@{
+      schema_version=1;role='mrtof_private_pa_family_stability';status='success'
+      verification='two_consecutive_full_byte_inventories_before_cache_publication_v1'
+      file_count=@($stability.files).Count;payload_sha256=[string]$stability.payload_sha256
+    })
     $failureStage='publish_local_family_cache'
     $publishLines=Invoke-ProjectPython -Arguments @('-m','common.simion.pa_family_cache','--action','publish',
       '--cache-root',$cacheRoot,'--identity',$identityPath,'--filenames',($filenames-join ','),'--source-directory',$temporaryFamily)
@@ -181,8 +191,8 @@ try {
   $publicationPath=Join-Path $resultDir 'pa_family_cache_publication.json'
   Write-RunJson -Path $publicationPath -Depth 20 -Value $publication
   if($null-ne$temporaryFamily){Remove-GateTemporaryDirectory -Path $temporaryFamily -ExpectedNamePrefix 'mrtof_local_pa_family_';$temporaryFamily=$null}
-  $lease=Update-HostResourceStage -Lease $lease -Stage postprocess `
-    -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
+  $lease=Update-HostResourceStage -Lease $lease -Stage analyzer_local_pa_postprocess `
+    -Budget (Get-HostResourceBudget -Role SIMION -Stage analyzer_local_pa_postprocess) -RetainedMemoryBytes 0
 
   $summaryValue=[ordered]@{
     schema_version=1;role='mrtof_analyzer_local_dirichlet_pa_family';status='success'
@@ -206,8 +216,10 @@ try {
     -KnownMeasuredBytes ([int64]$capacityStartup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
   $capacityTerminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $capacityTerminalPath -Depth 14 -Value $capacityTerminal
+  $manifestOutputs=@($summary,$planPath,$familyContractPath,$identityPath,$publicationPath,$canonicalGlobalGem,$gem,$capacityStartupPath,$capacityTerminalPath,$retention)
+  if($null-ne$stabilityReceiptPath){$manifestOutputs+=$stabilityReceiptPath}
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success `
-    -Software @('SIMION 2020','Python 3.11') -Outputs @($summary,$planPath,$familyContractPath,$identityPath,$publicationPath,$canonicalGlobalGem,$gem,$capacityStartupPath,$capacityTerminalPath,$retention)
+    -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
   $terminalized=$true;$hostOutcome='success'
   Write-Host "MRTOF_ANALYZER_LOCAL_PA_FAMILY=PASS RUN_ID=$RunId REGION=$Region SCALE=$ScaleFactor CACHE=$cacheDisposition"
 } catch {

@@ -16,7 +16,8 @@ function segment.initialize_run()
   previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
   source_z, reached_focus, terminal_code = {}, {}, {}
   assert(simion.wb and #simion.wb.instances == 3, 'accelerator focus requires the reviewed three-component IOB')
-  assert(simion.wb.instances[2].filename:match('mrtof_accelerator%.pa0$'), 'instance 2 must be accelerator PA0')
+  assert(simion.wb.instances[2].filename:match('iob_input_accelerator%.pa$'),
+    'instance 2 must be the composed standalone accelerator PA')
   print('MRTOF_ACCELERATOR_FOCUS: status=prototype target_plane_z_mm=0')
 end
 

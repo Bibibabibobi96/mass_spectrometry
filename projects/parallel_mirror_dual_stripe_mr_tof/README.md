@@ -35,3 +35,5 @@ COMSOL 或其他求解器是否已有可执行入口，以 PROJECT 的当前说�
 
 - [项目身份整合](docs/history/20260802__mrtof-project-identity-consolidation.md)
 - [CAD 审计上下文冻结](docs/history/20260911__cad-audit-context-freeze.md)
+
+- [项目状态与 SIMION 旧时间线快照](docs/history/20260911__project-and-simion-status-freeze.md)：保存整治前完整原文与工作区 SHA-256。

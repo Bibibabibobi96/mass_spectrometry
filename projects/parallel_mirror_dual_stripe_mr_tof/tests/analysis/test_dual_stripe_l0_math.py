@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,29 +10,43 @@ import numpy as np
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     CandidateContractError,
+    NativeStripeSpatialReturnNumerics,
     analyze_dual_stripe_l0,
     audit_theory_function_origin_registration,
+    derive_native_stripe_branch_validation_sample_count,
     derive_manufactured_basis_voltage_seed,
     endpoint_regularized_kappa,
     endpoint_regularized_kappa_at_turn,
     endpoint_regularized_tau_g,
+    gauss_legendre_rule,
     identify_fixed_cad_component_shapes,
+    identify_manufactured_basis_path_scales,
     invert_nominal_psi_g_response,
     kappa_derivative_at_turn,
+    materialize_native_stripe_spatial_return_root,
     paper_dimensionless_condition_residuals,
     project_y_from_theory_drift_mm,
     tau_g_derivative_at_turn,
     theory_drift_y_mm,
+    solve_native_stripe_spatial_shape_branch,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+    resolve_drift_phase_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     compile_dual_stripe_width_evaluator,
     dual_stripe_width_at_y_mm,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
+    stripes_from_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed import (
     _bias_pair_is_nondegenerate,
     _compare_fixed_profile_to_dimensionless_target,
     _complete_consistency_start_grid,
     _complete_residual_acceptance_receipt,
+    _evaluate_exact_k_seed_consistency,
+    _orthogonal_energy_partition,
     _select_diverse_refinement_starts,
     _seed_profile,
     _solve_dimensionless_paper_target,
@@ -41,6 +56,16 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_
     audit_exact_paper_component_emulation_by_static_stripes,
     build_parameter_authority_from_managed_seed,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point import (
+    ManagedExactKOperatingPoint,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
+    build_native_stripe_shape_selection,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
+    MirrorL0Design,
+    reduced_period,
+)
 from common.contracts.file_identity import file_sha256
 
 
@@ -49,6 +74,36 @@ CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 
 
 class DualStripeL0MathTest(unittest.TestCase):
+    def test_gauss_legendre_rule_is_cached_read_only_and_exact_for_cubic(self) -> None:
+        nodes, weights = gauss_legendre_rule(8)
+        cached_nodes, cached_weights = gauss_legendre_rule(8)
+        self.assertIs(nodes, cached_nodes)
+        self.assertIs(weights, cached_weights)
+        self.assertFalse(nodes.flags.writeable)
+        self.assertFalse(weights.flags.writeable)
+        self.assertAlmostEqual(float(np.dot(weights, nodes**3)), 0.0, places=15)
+        self.assertAlmostEqual(float(np.dot(weights, nodes**2)), 2.0 / 3.0, places=14)
+        with self.assertRaisesRegex(CandidateContractError, "positive integer"):
+            gauss_legendre_rule(0)
+
+    def test_l0_response_uses_explicit_selected_axial_energy(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        result = analyze_dual_stripe_l0(
+            contract,
+            (-40.0, 60.0),
+            axial_energy_per_charge_v=4050.0,
+        )
+        self.assertEqual(result["energy_per_charge_v"], 4050.0)
+        self.assertAlmostEqual(result["h_factors"][0], math.sqrt(4050.0 / 4090.0))
+
+    def test_orthogonal_energy_partition_keeps_ez_and_ey_additive(self) -> None:
+        partition = _orthogonal_energy_partition(4000.0, 5.0)
+        self.assertEqual(partition["mirror_axis_energy_per_charge_v"], 4000.0)
+        self.assertEqual(partition["slow_axis_energy_per_charge_v"], 5.0)
+        self.assertEqual(partition["total_energy_per_charge_v"], 4005.0)
+        with self.assertRaisesRegex(CandidateContractError, "must be positive"):
+            _orthogonal_energy_partition(4000.0, 0.0)
+
     def test_theory_project_and_simion_y_share_direction_and_zero(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         self.assertEqual(theory_drift_y_mm(contract, 0.0), 0.0)
@@ -87,6 +142,139 @@ class DualStripeL0MathTest(unittest.TestCase):
         ] = 2.0
         with self.assertRaises(CandidateContractError):
             theory_drift_y_mm(contract, 0.0)
+
+    def test_native_path_spatial_root_is_mirror_independent_then_exactly_materialized(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        energy = 4171.767483909065
+        mirror_width = 586.9264153996922
+        mirror_period = mirror_width / math.sqrt(energy)
+        reference_biases = (-24.78463928603049, 50.03329040769912)
+        native_stripes = stripes_from_contract(contract, reference_biases)
+        path_functions = tuple(stripe.width_at_y_mm for stripe in native_stripes)
+        basis_scales = identify_manufactured_basis_path_scales(
+            contract,
+            basis_coefficients_c0_to_c5=(
+                0.83999,
+                0.75160,
+                -7.52535,
+                14.0242,
+                -9.17661,
+                2.08613,
+            ),
+        )
+        self.assertAlmostEqual(
+            basis_scales.reference_relative_action_weight_ratio,
+            basis_scales.high_order_response_scale_mm
+            / basis_scales.linear_response_scale_mm,
+        )
+        self.assertAlmostEqual(
+            basis_scales.high_order_response_scale_mm,
+            -116.16080471052766,
+        )
+        self.assertAlmostEqual(
+            basis_scales.linear_response_scale_mm,
+            58.095886014248784,
+        )
+        branch_sample_count = derive_native_stripe_branch_validation_sample_count(contract)
+        self.assertEqual(branch_sample_count, 176)
+        numerics = NativeStripeSpatialReturnNumerics(
+            kappa_derivative_step=contract["dual_stripe_l0"]["operating_seed_search"][
+                "kappa_derivative_step"
+            ],
+            initial_ratio_half_width=0.004,
+            search_expansion_factor=1.5,
+            maximum_search_expansions=12,
+            branch_validation_sample_count=branch_sample_count,
+            root_absolute_tolerance=1e-11,
+            root_relative_tolerance=1e-11,
+            maximum_root_iterations=80,
+        )
+        shape = solve_native_stripe_spatial_shape_branch(
+            path_functions,
+            entry_y_mm=project_y_from_theory_drift_mm(contract, 0.0),
+            drift_length_l_mm=340.0,
+            drift_direction_sign=1.0,
+            reference_relative_action_weight_ratio=(
+                basis_scales.reference_relative_action_weight_ratio
+            ),
+            geometry_input_identity_source=(
+                "config/simion_candidate_two_zone.json#dual_stripe.theory_profile"
+            ),
+            numerics=numerics,
+        )
+        self.assertAlmostEqual(shape.relative_action_weight_ratio, -1.9981408612, places=8)
+        self.assertAlmostEqual(shape.kappa_1, 1.4889697387, places=8)
+        self.assertLess(abs(shape.kappa_prime), 2e-8)
+        self.assertLessEqual(shape.root_bracket[0], shape.relative_action_weight_ratio)
+        self.assertGreaterEqual(shape.root_bracket[1], shape.relative_action_weight_ratio)
+        self.assertLessEqual(
+            shape.validated_branch_sample_range[0],
+            shape.root_bracket[0],
+        )
+        self.assertGreaterEqual(
+            shape.validated_branch_sample_range[1],
+            shape.root_bracket[1],
+        )
+        self.assertEqual(
+            shape.geometry_input_identity_source,
+            "config/simion_candidate_two_zone.json#dual_stripe.theory_profile",
+        )
+
+        operating = materialize_native_stripe_spatial_return_root(
+            shape,
+            source_slow_energy_per_charge_v=5.0,
+            mirror_reduced_period_mm_per_sqrt_v=mirror_period,
+            axial_energy_per_charge_v=energy,
+        )
+        self.assertAlmostEqual(operating.stripe_biases_v[0], -25.31809249, places=7)
+        self.assertAlmostEqual(operating.stripe_biases_v[1], 50.35968780, places=7)
+        self.assertAlmostEqual(operating.turning_pseudopotential_v, 5.0, places=11)
+        self.assertLess(abs(operating.source_slow_energy_mismatch_v), 1e-11)
+        self.assertAlmostEqual(operating.mirror_axial_width_w_mm, mirror_width, places=9)
+        self.assertAlmostEqual(operating.continuous_oscillation_count, 24.91472957, places=7)
+
+        changed_source = materialize_native_stripe_spatial_return_root(
+            shape,
+            source_slow_energy_per_charge_v=5.2,
+            mirror_reduced_period_mm_per_sqrt_v=mirror_period,
+            axial_energy_per_charge_v=energy,
+        )
+        self.assertEqual(changed_source.source_slow_energy_per_charge_v, 5.2)
+        self.assertAlmostEqual(changed_source.turning_pseudopotential_v, 5.2, places=11)
+        self.assertNotEqual(changed_source.stripe_biases_v, operating.stripe_biases_v)
+
+    def test_native_path_spatial_root_requires_identity_and_explicit_physical_direction(self) -> None:
+        numerics = NativeStripeSpatialReturnNumerics(
+            kappa_derivative_step=0.002,
+            initial_ratio_half_width=0.01,
+            search_expansion_factor=1.5,
+            maximum_search_expansions=2,
+            branch_validation_sample_count=8,
+            root_absolute_tolerance=1e-8,
+            root_relative_tolerance=1e-8,
+            maximum_root_iterations=20,
+        )
+        paths = (lambda y: 10.0 + y, lambda y: 20.0 + y * y)
+        with self.assertRaisesRegex(CandidateContractError, "identity"):
+            solve_native_stripe_spatial_shape_branch(
+                paths,
+                entry_y_mm=0.0,
+                drift_length_l_mm=1.0,
+                drift_direction_sign=1.0,
+                reference_relative_action_weight_ratio=1.0,
+                geometry_input_identity_source="",
+                numerics=numerics,
+            )
+        with self.assertRaisesRegex(CandidateContractError, "physical domains"):
+            solve_native_stripe_spatial_shape_branch(
+                paths,
+                entry_y_mm=0.0,
+                drift_length_l_mm=1.0,
+                drift_direction_sign=True,
+                reference_relative_action_weight_ratio=1.0,
+                geometry_input_identity_source="synthetic:test",
+                numerics=numerics,
+            )
 
     def test_function_origin_is_discriminated_from_the_terminal_trim_by_coefficients(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
@@ -325,6 +513,13 @@ class DualStripeL0MathTest(unittest.TestCase):
             "nominal_injection_angle_degrees",
             authority["branch_states"][0]["diagnostic_only_outputs"],
         )
+        coupled = authority["coupled_problem"]
+        self.assertIn("mirror_receipt_axial_width_W_z", coupled["external_or_upstream_authorities"])
+        self.assertEqual(coupled["conditionally_derived_outputs"], [
+            "theta0_from_tan_theta0_equals_kappa_1_L_over_K_W_z",
+            "E_y_equals_E_z_tan_squared_theta0",
+            "E_total_equals_E_z_plus_E_y",
+        ])
 
     def test_fixed_geometry_authority_opens_only_for_compatible_full_rank_branch(self) -> None:
         report = {"complete_fixed_hardware_root_family": [{
@@ -387,7 +582,7 @@ class DualStripeL0MathTest(unittest.TestCase):
             "mirror_root_index": 1,
             "complete_fixed_hardware_search": {"best_iterate": {
                 "determination": {"status": "overdetermined_consistent"},
-                "raw_residuals": {"target_oscillation_count": 0.0},
+                "raw_residuals": {"target_drift_period_ratio": 0.0},
             }},
         }]}
         authority = attach_fixed_geometry_parameter_authority(report, contract)[
@@ -512,21 +707,44 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertAlmostEqual(result["nominal_kappa_1"], 1.4892272348, places=9)
         self.assertAlmostEqual(result["derived_drift_kinetic_energy_per_charge_v"], 5.0)
         self.assertAlmostEqual(result["derived_fast_reflection_energy_per_charge_v"], 4000.0)
-        self.assertAlmostEqual(result["stripe_biases_v"][0], -50.68774291, places=6)
-        self.assertAlmostEqual(result["stripe_biases_v"][1], 100.39148140, places=6)
-        self.assertAlmostEqual(result["predicted_continuous_oscillation_count"], 24.41534840, places=7)
+        self.assertAlmostEqual(result["stripe_biases_v"][0], -25.30397932, places=6)
+        self.assertAlmostEqual(result["stripe_biases_v"][1], 50.35522418, places=6)
+        self.assertEqual(
+            result["geometry_profile_to_total_path_scales"],
+            {"set_1": 2.0, "set_2": 2.0},
+        )
+        self.assertLess(
+            max(abs(value) for value in result["shape_scale_reconstruction_residual_mm"]),
+            1e-10,
+        )
+        forward = stripes_from_contract(contract, result["stripe_biases_v"])
+        for index, set_name in enumerate(("set_1", "set_2")):
+            raw_width = compile_dual_stripe_width_evaluator(contract, set_name)
+            self.assertAlmostEqual(forward[index].width_mm(340.0), 2.0 * raw_width(340.0))
+            expected_h = math.sqrt(4000.0 / (4000.0 - result["stripe_biases_v"][index]))
+            self.assertAlmostEqual(result["h_factors"][index], expected_h)
+        tangent_theta = math.sqrt(5.0 / 4000.0)
+        expected_k = result["nominal_kappa_1"] * 340.0 / (586.9393396818346 * tangent_theta)
+        self.assertAlmostEqual(result["predicted_continuous_oscillation_count"], expected_k)
+        self.assertAlmostEqual(
+            result["nominal_injection_angle_degrees"],
+            math.degrees(math.atan(tangent_theta)),
+        )
         exact_k = result["nominal_center_exact_K_design_equation"]
         self.assertEqual(exact_k["equation"], "T_D(theta_0)/T_0=K")
-        self.assertEqual(exact_k["target_K"], 25)
-        self.assertAlmostEqual(exact_k["residual"], -0.58465160, places=7)
+        self.assertEqual(exact_k["target_period_ratio"], 25.5)
+        self.assertAlmostEqual(exact_k["residual"], expected_k - 25.5)
         self.assertEqual(exact_k["status"], "unsatisfied_by_current_analytic_inputs")
         topology = result["nominal_center_oscillation_topology"]
-        self.assertEqual(topology["nearest_integer_K"], 24)
-        self.assertEqual(topology["target_K_interval_lower_exclusive"], 24.5)
-        self.assertEqual(topology["target_K_interval_upper_exclusive"], 25.5)
-        self.assertAlmostEqual(topology["signed_minimum_boundary_margin"], -0.08465160, places=7)
-        self.assertFalse(topology["target_K_interval_passed"])
-        self.assertAlmostEqual(result["mirror_axial_width_required_for_exact_K_mm"], 573.21313868, places=7)
+        self.assertEqual(topology["nearest_opposite_turn_phase_order"], 24.5)
+        self.assertEqual(topology["target_period_ratio_interval_lower_exclusive"], 25.0)
+        self.assertEqual(topology["target_period_ratio_interval_upper_exclusive"], 26.0)
+        self.assertAlmostEqual(topology["signed_minimum_boundary_margin"], expected_k - 25.0)
+        self.assertFalse(topology["target_period_ratio_interval_passed"])
+        self.assertAlmostEqual(
+            result["mirror_axial_width_required_for_exact_K_mm"],
+            result["nominal_kappa_1"] * 340.0 / (25.5 * tangent_theta),
+        )
         self.assertEqual(
             result["definition_classification"]["status"],
             "current_mirror_root_fails_center_exact_K_and_target_topology",
@@ -543,6 +761,26 @@ class DualStripeL0MathTest(unittest.TestCase):
                 basis_coefficients_c0_to_c5=(0.83999, 0.75160, -7.52535, 14.0242, -9.17661, 2.08613),
             )
 
+    def test_manufactured_basis_inverse_consumes_an_alternate_baseline_k(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        contract["nominal"]["target_drift_period_ratio"] = 31.5
+        coefficients = contract["dual_stripe_l0"]["dimensionless_paper_target"][
+            "published_printed_reference_c0_to_c5"
+        ]
+        result = derive_manufactured_basis_voltage_seed(
+            contract,
+            mirror_axial_width_w_mm=586.9393396818346,
+            basis_coefficients_c0_to_c5=coefficients,
+        )
+        equation = result["nominal_center_exact_K_design_equation"]
+        self.assertEqual(equation["target_period_ratio"], 31.5)
+        self.assertAlmostEqual(
+            result["mirror_axial_width_required_for_exact_K_mm"],
+            result["nominal_kappa_1"]
+            * 340.0
+            / (31.5 * math.sqrt(5.0 / 4000.0)),
+        )
+
     def test_manufactured_basis_inverse_accepts_a_verified_selected_axial_energy(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         target = solve_dimensionless_paper_target(contract)
@@ -553,10 +791,10 @@ class DualStripeL0MathTest(unittest.TestCase):
         kappa = endpoint_regularized_kappa(psi)
         mirror_width = 586.8617288702586
         drift_energy = contract["prism_transport"]["energy_partition"]["drift_kinetic_energy_ev"]
-        target_k = contract["nominal"]["target_oscillation_count"]
+        target_k = resolve_drift_phase_contract(contract).target_period_ratio
         length = contract["dual_stripe_l0"]["manufactured_design_abs_drift_length_L_mm"]
-        sin_theta = kappa * length / (mirror_width * target_k)
-        selected_axial_energy = drift_energy / sin_theta**2 - drift_energy
+        tangent_theta = kappa * length / (mirror_width * target_k)
+        selected_axial_energy = drift_energy / tangent_theta**2
         result = derive_manufactured_basis_voltage_seed(
             contract,
             mirror_axial_width_w_mm=mirror_width,
@@ -572,7 +810,11 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertAlmostEqual(
             result["derived_fast_reflection_energy_per_charge_v"], selected_axial_energy
         )
-        self.assertAlmostEqual(result["predicted_continuous_oscillation_count"], 25.0, places=8)
+        self.assertAlmostEqual(
+            result["nominal_injection_angle_degrees"],
+            math.degrees(math.atan(tangent_theta)),
+        )
+        self.assertAlmostEqual(result["predicted_continuous_oscillation_count"], target_k, places=8)
         self.assertAlmostEqual(result["oscillation_count_residual"], 0.0, places=8)
         self.assertEqual(
             result["nominal_center_exact_K_design_equation"]["status"],
@@ -581,6 +823,64 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertEqual(
             result["definition_classification"]["status"],
             "center_exact_K_satisfied__nominal_topology_passes",
+        )
+
+    def test_exact_k_inverse_seed_gets_same_point_native_six_residual_audit(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        selected_energy = 4050.0
+        design = MirrorL0Design(
+            transverse_half_gap_mm=15.0,
+            transition_z_mm=(0.0, 167.0, 229.0, 261.0, 291.0),
+            electrode_voltages_v=(0.0, -2000.0, 3500.0, 5500.0, 8000.0),
+            terminal_electrode_plane_z_mm=320.0,
+            terminal_electrode_voltage_v=8000.0,
+        )
+        width = reduced_period(selected_energy, design) * math.sqrt(selected_energy)
+        shape_selection = build_native_stripe_shape_selection(contract)
+        materialized = materialize_native_stripe_spatial_return_root(
+            shape_selection.shape_root,
+            source_slow_energy_per_charge_v=contract["prism_transport"][
+                "energy_partition"
+            ]["drift_kinetic_energy_ev"],
+            mirror_reduced_period_mm_per_sqrt_v=reduced_period(selected_energy, design),
+            axial_energy_per_charge_v=selected_energy,
+        )
+        exact_k = ManagedExactKOperatingPoint(
+            design=design,
+            axial_energy_per_charge_v=selected_energy,
+            axial_width_w_mm=width,
+            native_stripe_spatial_shape_root=shape_selection.shape_root,
+            stripe_biases_v=materialized.stripe_biases_v,
+            contract=contract,
+            run_id="test-exact-k",
+            manifest_sha256="A" * 64,
+            parent_mirror_manifest_sha256="B" * 64,
+        )
+        result = _evaluate_exact_k_seed_consistency(
+            exact_k, materialized.stripe_biases_v,
+        )
+        self.assertEqual(result["status"], "single_inverse_seed_point_evaluated__no_search")
+        self.assertEqual(result["selected_energy_nodes_per_charge_v"][1], selected_energy)
+        self.assertEqual(len(result["raw_residuals"]), 9)
+        self.assertEqual(len(result["drift_core_raw_residuals"]), 6)
+        self.assertEqual(
+            len(result["global_energy_calibration_diagnostics"]["residuals"]),
+            3,
+        )
+        jacobian = result["local_jacobian"]
+        self.assertEqual(len(jacobian["rows"]), 6)
+        self.assertTrue(all(len(row) == 2 for row in jacobian["rows"]))
+        self.assertEqual(result["determination"]["unknown_count"], 2)
+        self.assertEqual(result["residual_acceptance"]["status"], "pending_user_authority")
+        self.assertFalse(result["residual_acceptance"]["passed"])
+        self.assertEqual(result["source_target_slow_kinetic_energy_per_charge_v"], 5.0)
+        self.assertAlmostEqual(
+            result["native_turning_minus_source_slow_energy_per_charge_v"],
+            result["derived_drift_kinetic_energy_per_charge_v"] - 5.0,
+        )
+        self.assertAlmostEqual(
+            result["native_minus_upstream_shape_kappa_1"],
+            result["native_kappa_1"] - result["upstream_native_shape_kappa_1"],
         )
 
 

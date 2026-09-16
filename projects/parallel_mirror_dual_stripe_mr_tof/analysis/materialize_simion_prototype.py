@@ -19,6 +19,9 @@ from common.simion.particle_source import render_standard_beams
 
 from common.contracts.file_identity import file_sha256, repository_text_sha256
 from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+    resolve_drift_phase_contract,
+)
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
@@ -271,7 +274,7 @@ def _particle_source_record(
             "expected_particle_ids_sha256": hashlib.sha256(identity).hexdigest()}
 
 
-def _full_path_timeout_us(contract: dict[str, Any], particle_source: dict[str, Any], target_k: int) -> float:
+def _full_path_timeout_us(contract: dict[str, Any], particle_source: dict[str, Any], target_k: float) -> float:
     """Derive a finite diagnostic bound from frozen axial geometry and species."""
     simion = contract["simion"]
     multiplier = _finite_number(
@@ -327,12 +330,8 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
     nonaccelerator_scale = _finite_number(simion.get("nonaccelerator_scale"), "simion.nonaccelerator_scale")
     if trajectory_quality <= 0.0 or maximum_step_us <= 0.0 or nonaccelerator_scale <= 0.0:
         raise CandidateContractError("SIMION runtime settings must be positive")
-    nominal = contract.get("nominal")
-    if not isinstance(nominal, dict) or not isinstance(nominal.get("target_oscillation_count"), int):
-        raise CandidateContractError("prototype requires an integer nominal.target_oscillation_count")
-    target_oscillation_count = int(nominal["target_oscillation_count"])
-    if target_oscillation_count <= 0:
-        raise CandidateContractError("nominal.target_oscillation_count must be positive")
+    phase_contract = resolve_drift_phase_contract(contract)
+    target_period_ratio = phase_contract.target_period_ratio
     particle_source = contract.get("particle_source")
     if not isinstance(particle_source, dict):
         raise CandidateContractError("prototype requires a particle-source contract")
@@ -347,7 +346,7 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
     ):
         raise CandidateContractError("prototype source roles must isolate the mirror diagnostic from the full center")
     prism_l0 = derive_first_prism_l0(contract)
-    full_path_timeout_us = _full_path_timeout_us(contract, particle_source, target_oscillation_count)
+    full_path_timeout_us = _full_path_timeout_us(contract, particle_source, target_period_ratio)
     prism_receipt = prism_l0.receipt()
     bunch_radius = _finite_number(particle_source.get("candidate_bunch_radius_mm"), "particle_source.candidate_bunch_radius_mm")
     diagnostic_center_fly2 = _particle_fly2(
@@ -439,8 +438,8 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         + f"{prism_regions['p1'][0]:.17g}, y_max_mm = {prism_regions['p1'][1]:.17g}, z_min_mm = {prism_regions['p1'][2]:.17g}, z_max_mm = {prism_regions['p1'][3]:.17g}"
         + " }, p2 = { y_min_mm = "
         + f"{prism_regions['p2'][0]:.17g}, y_max_mm = {prism_regions['p2'][1]:.17g}, z_min_mm = {prism_regions['p2'][2]:.17g}, z_max_mm = {prism_regions['p2'][3]:.17g} }}"
-        + " }, phase_origin_mirror_side = 1, detector_box_mm = { " + ", ".join(f"{float(value):.17g}" for value in detector_box)
-        + f" }}, detector_normal_project = '+z', trajectory_quality = {trajectory_quality:.17g}, maximum_step_us = {maximum_step_us:.17g}, full_path_timeout_us = {full_path_timeout_us:.17g}, nonaccelerator_scale = {nonaccelerator_scale:.17g}, target_oscillation_count = {target_oscillation_count} }}\n",
+        + f" }}, phase_origin_mirror_side = {phase_contract.origin_mirror_side}, return_mirror_side = {phase_contract.return_mirror_side}, detector_box_mm = {{ " + ", ".join(f"{float(value):.17g}" for value in detector_box)
+        + f" }}, detector_normal_project = '+z', trajectory_quality = {trajectory_quality:.17g}, maximum_step_us = {maximum_step_us:.17g}, full_path_timeout_us = {full_path_timeout_us:.17g}, nonaccelerator_scale = {nonaccelerator_scale:.17g}, target_drift_period_ratio = {target_period_ratio:.17g}, target_half_oscillation_count = {phase_contract.target_half_oscillation_count} }}\n",
         encoding="utf-8",
         newline="\n",
     )

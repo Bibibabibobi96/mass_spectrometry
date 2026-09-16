@@ -7,8 +7,8 @@ from typing import Iterable
 
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import derive_shielded_rectangular_enclosure
 from projects.orthogonal_accelerator.simion.rectangular_accelerator import (
-    emit_grounded_enclosure, emit_ideal_grid, emit_open_rectangular_frame,
-    emit_solid_rectangular_plate,
+    emit_grounded_enclosure_with_rear_aperture, emit_ideal_grid,
+    emit_open_rectangular_frame,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     geometry_fingerprint,
@@ -237,14 +237,29 @@ def build_full_candidate_gem(contract_path: Path) -> str:
         f"  ; Numerical detector event slab (not a PA electrode): {_box(resolved['detector']['box'])}.",
         f"  locate(0,{_number(placement.focus_y_mm)},0) {{",
         "  e(15) {",
-        "    ; Hollow grounded guard: exit grid meets its inner wall; repeller has a rear acceleration gap before the rear cap.",
-        "    " + emit_grounded_enclosure(enclosure, exit_z_mm=placement.exit_grid_z_mm),
+        "    ; Hollow grounded guard with the contract-required gridded rear return aperture.",
+        "    " + emit_grounded_enclosure_with_rear_aperture(
+            enclosure, exit_z_mm=placement.exit_grid_z_mm,
+            aperture_half_x_mm=aperture_x, aperture_half_y_mm=aperture_y,
+            cut_padding_mm=enclosure.guard_wall_mm,
+        ),
         "  }",
-        "  ; Theory-derived -z two-zone accelerator: closed repeller -> one-row grid1 -> one-row exit grid.",
-        emit_solid_rectangular_plate(
-            22, half_x_mm=electrode_x, half_y_mm=electrode_y,
+        "  ; Theory-derived -z two-zone accelerator with a gridded open repeller for the detector-return aperture.",
+        emit_open_rectangular_frame(
+            22, outer_half_x_mm=electrode_x, outer_half_y_mm=electrode_y,
+            aperture_half_x_mm=aperture_x, aperture_half_y_mm=aperture_y,
             front_z_mm=placement.repeller_z_mm,
             back_z_mm=placement.repeller_z_mm+repeller_thickness,
+            cut_padding_mm=repeller_thickness,
+        ),
+        emit_ideal_grid(
+            22, half_x_mm=aperture_x, half_y_mm=aperture_y,
+            z_mm=placement.repeller_z_mm,
+        ),
+        "  ; Grounded ideal grid is fixed to the inner face of the open rear support.",
+        emit_ideal_grid(
+            15, half_x_mm=aperture_x, half_y_mm=aperture_y,
+            z_mm=enclosure.rear_cap_inner_z_mm,
         ),
     ))
     for support in resolved["accelerator_grid_support_frames"]:

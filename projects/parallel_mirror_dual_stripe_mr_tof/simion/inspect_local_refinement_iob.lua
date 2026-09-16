@@ -19,9 +19,9 @@ local wb=assert(simion.wb,'SIMION Workbench API unavailable')
 wb:load(iob)
 assert(#wb.instances==8,'local-refinement IOB must contain exactly eight instances')
 local patterns={
-  'mrtof_analyzer%.pa0$', 'local_negative_mirror%.pa0$', 'local_negative_bridge%.pa0$',
-  'local_central%.pa0$', 'local_positive_bridge%.pa0$', 'local_positive_mirror%.pa0$',
-  'mrtof_accelerator%.pa0$', 'mrtof_detector%.pa#$'
+  'iob_input_analyzer%.pa$', 'iob_input_local_1%.pa$', 'iob_input_local_2%.pa$',
+  'iob_input_local_3%.pa$', 'iob_input_local_4%.pa$', 'iob_input_local_5%.pa$',
+  'iob_input_accelerator%.pa$', 'iob_input_detector%.pa$'
 }
 local lines={}
 for index=1,#wb.instances do

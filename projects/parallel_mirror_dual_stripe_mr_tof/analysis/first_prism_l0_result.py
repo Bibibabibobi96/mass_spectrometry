@@ -79,7 +79,7 @@ def analyze(log_path: Path, input_manifest: Path, receipt_path: Path) -> dict[st
             "x_offset_from_target_mm": x_offset, "y_acceptance_mm": [float(acceptance[0]), float(acceptance[1])],
         },
         "limitations": [
-            "One finite-3-D first-prism crossing only; it does not validate a second prism, K=25 circulation, time focus, transmission, or resolution.",
+            "One finite-3-D first-prism crossing only; it does not validate a second prism, target-phase circulation, time focus, transmission, or resolution.",
             "The prism-16 voltage remains a static L0 seed pending a finite-3-D shooting/return optimization.",
         ],
         "log_sha256": hashlib.sha256(log_path.read_bytes()).hexdigest(),

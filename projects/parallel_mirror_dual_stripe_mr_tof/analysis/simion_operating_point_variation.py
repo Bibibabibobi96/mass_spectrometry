@@ -12,7 +12,7 @@ import json
 import math
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 
 class OperatingPointVariationError(ValueError):
@@ -51,12 +51,32 @@ def _field(source: str, name: str, count: int | None = None) -> float | list[flo
     return _numbers(match.group(1), name, count)
 
 
-def load_operating_point(path: Path) -> dict[str, Any]:
-    """Parse the strict generated Lua sidecar shape, rejecting arbitrary Lua."""
+_PHASE_FIELDS = (
+    "phase_origin_mirror_side",
+    "return_mirror_side",
+    "target_drift_period_ratio",
+    "target_half_oscillation_count",
+)
+
+
+def load_operating_point(
+    path: Path, *, phase_contract: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Parse one generated sidecar, with an explicit legacy-phase migration.
+
+    A reviewed pre-phase sidecar may omit the four derived return-phase fields.
+    Such an asset remains immutable: callers must provide all four values from a
+    separately frozen phase contract.  Existing fields must agree exactly with
+    that contract, so this cannot silently overwrite a conflicting sidecar.
+    """
     source = path.read_text(encoding="utf-8")
     if "return {" not in source:
         raise OperatingPointVariationError("base sidecar is not a generated Lua return table")
-    return {
+    if phase_contract is not None and set(phase_contract) != set(_PHASE_FIELDS):
+        raise OperatingPointVariationError(
+            "phase_contract must define exactly the four derived return-phase fields"
+        )
+    result = {
         "mirror_voltages_v": _field(source, "mirror_voltages_v", 5),
         "stripe_biases_v": _field(source, "stripe_biases_v", 2),
         "prism_voltages_v": _field(source, "prism_voltages_v", 2),
@@ -67,8 +87,21 @@ def load_operating_point(path: Path) -> dict[str, Any]:
         "maximum_step_us": _field(source, "maximum_step_us"),
         "full_path_timeout_us": _field(source, "full_path_timeout_us"),
         "nonaccelerator_scale": _field(source, "nonaccelerator_scale"),
-        "target_oscillation_count": _field(source, "target_oscillation_count"),
     }
+    for name in _PHASE_FIELDS:
+        fallback = None if phase_contract is None else _finite(phase_contract[name], name)
+        try:
+            value = _field(source, name)
+        except OperatingPointVariationError:
+            if fallback is None:
+                raise
+            value = fallback
+        if fallback is not None and not math.isclose(value, fallback, rel_tol=0.0, abs_tol=1e-12):
+            raise OperatingPointVariationError(
+                f"base operating point {name} conflicts with the frozen phase contract"
+            )
+        result[name] = value
+    return result
 
 
 def apply_overrides(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
@@ -125,7 +158,10 @@ def render_operating_point(point: dict[str, Any], receipt_sha256: str) -> str:
         f"maximum_step_us = {scalar('maximum_step_us')}, "
         f"full_path_timeout_us = {scalar('full_path_timeout_us')}, "
         f"nonaccelerator_scale = {scalar('nonaccelerator_scale')}, "
-        f"target_oscillation_count = {scalar('target_oscillation_count')} }}\n"
+        f"phase_origin_mirror_side = {scalar('phase_origin_mirror_side')}, "
+        f"return_mirror_side = {scalar('return_mirror_side')}, "
+        f"target_drift_period_ratio = {scalar('target_drift_period_ratio')}, "
+        f"target_half_oscillation_count = {scalar('target_half_oscillation_count')} }}\n"
     )
 
 

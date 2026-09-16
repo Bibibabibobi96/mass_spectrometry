@@ -174,6 +174,8 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             "dual_stripe_operating_seed",
             "Test-RunFilesIdentical",
             "paper_theory_instance_specific",
+            "Enter-HostExecutionLease -Role GATE -Stage theory_compute",
+            "Exit-HostExecutionLease -Lease $theoryLease",
         ):
             self.assertIn(token, source)
         self.assertEqual(source.count("Complete-FailedRun"), 2)
@@ -201,7 +203,7 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             "Write-VerifiedRunManifest",
             "parent_mirror_run_manifest.json",
             "mirror_exact_k_operating_point",
-            "T_D(theta_0)/T_0=K",
+            "T_D_stripe_on(E_z,v1(E_z),v2(E_z))/T_0=K",
             "geometry_change = 'none'",
         ):
             self.assertIn(token, source)
@@ -209,13 +211,18 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         self.assertNotIn("SIMION", source)
         self.assertNotIn("Refine", source)
 
-    def _managed_manifest(self, root: Path) -> Path:
+    def _managed_manifest(
+        self, root: Path, frozen_contract_document: dict[str, object] | None = None,
+    ) -> Path:
         inputs = root / "inputs"
         results = root / "results"
         inputs.mkdir()
         results.mkdir()
         contract = inputs / "simion_candidate_two_zone.json"
-        shutil.copyfile(CONTRACT, contract)
+        if frozen_contract_document is None:
+            shutil.copyfile(CONTRACT, contract)
+        else:
+            contract.write_text(json.dumps(frozen_contract_document) + "\n", encoding="utf-8")
         l0 = results / "mirror_l0_family_receipt.json"
         l1 = results / "mirror_l0_l1_candidate_receipt.json"
         l0.write_text("{}\n", encoding="utf-8")
@@ -303,6 +310,27 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         self.assertNotEqual(candidate.contract_sha256, "")
         self.assertEqual(candidate.downstream_contract_sha256, downstream_contract_sha256)
 
+    def test_downstream_consumer_accepts_unrelated_historical_topology_change(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            historical = json.loads(CONTRACT.read_text(encoding="utf-8"))
+            del historical["accelerator"]["detector_return_path"]
+            historical["dual_stripe"]["physical_electrode_count"] = 2
+            manifest = self._managed_manifest(root, historical)
+            downstream_contract = root / "downstream_contract.json"
+            shutil.copyfile(CONTRACT, downstream_contract)
+            candidate = load_managed_mirror_candidate(manifest, downstream_contract)
+        self.assertEqual(candidate.design.electrode_voltages_v, VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES)
+
+    def test_historical_contract_without_current_downstream_keeps_full_validation(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            historical = json.loads(CONTRACT.read_text(encoding="utf-8"))
+            del historical["accelerator"]["detector_return_path"]
+            manifest = self._managed_manifest(root, historical)
+            with self.assertRaisesRegex(CandidateContractError, "detector return"):
+                load_managed_mirror_candidate(manifest)
+
     def test_downstream_consumer_rejects_post_manifest_tampering(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -311,16 +339,38 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(CandidateContractError, "integrity failed"):
                 load_managed_mirror_candidate(manifest)
 
-    def test_downstream_consumer_rejects_a_changed_mirror_projection(self) -> None:
+    def test_downstream_consumer_rejects_frozen_contract_byte_tampering(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             manifest = self._managed_manifest(root)
+            frozen_contract = root / "inputs" / "simion_candidate_two_zone.json"
+            frozen_contract.write_bytes(frozen_contract.read_bytes() + b"\n")
             downstream_contract = root / "downstream_contract.json"
-            document = json.loads(CONTRACT.read_text(encoding="utf-8"))
-            document["mirror"]["theory_requirements"]["berdnikov_transverse_half_gap_mm"] = 16.0
-            downstream_contract.write_text(json.dumps(document) + "\n", encoding="utf-8")
-            with self.assertRaisesRegex(CandidateContractError, "mirror-stage inputs"):
+            shutil.copyfile(CONTRACT, downstream_contract)
+            with self.assertRaisesRegex(CandidateContractError, "integrity failed"):
                 load_managed_mirror_candidate(manifest, downstream_contract)
+
+    def test_downstream_consumer_rejects_a_changed_mirror_projection(self) -> None:
+        mutations = (
+            lambda document: document["mirror"]["theory_requirements"].__setitem__(
+                "berdnikov_transverse_half_gap_mm", 16.0,
+            ),
+            lambda document: document["mirror"].__setitem__("inter_electrode_gaps_mm", [6, 5, 5, 5]),
+            lambda document: document["geometry_authority"].__setitem__("model", "theory_derived_3d"),
+            lambda document: document["accelerator_energy_contract"].__setitem__(
+                "maximum_particle_net_gain_deviation_per_charge_v", 90,
+            ),
+        )
+        for mutate in mutations:
+            with self.subTest(mutate=mutate), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                manifest = self._managed_manifest(root)
+                downstream_contract = root / "downstream_contract.json"
+                document = json.loads(CONTRACT.read_text(encoding="utf-8"))
+                mutate(document)
+                downstream_contract.write_text(json.dumps(document) + "\n", encoding="utf-8")
+                with self.assertRaisesRegex(CandidateContractError, "mirror-stage inputs"):
+                    load_managed_mirror_candidate(manifest, downstream_contract)
 
     def test_downstream_exact_k_selection_controls_are_not_parent_mirror_inputs(self) -> None:
         first = json.loads(CONTRACT.read_text(encoding="utf-8"))

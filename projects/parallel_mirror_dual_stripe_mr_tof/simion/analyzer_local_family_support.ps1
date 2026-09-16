@@ -78,3 +78,105 @@ function Assert-AnalyzerLocalFamilyCacheReadOnly {
     throw "Immutable local PA cache manifest is not filesystem read-only: $manifest"
   }
 }
+
+function Resolve-AnalyzerLocalStandaloneResponseSubset {
+  <#
+    Resolve only the detached response PAs required by one runtime operation.
+
+    Native `.paN` members are build-stage payloads.  SIMION 2020 can finalize
+    those members after the visible build process exits, so a later native
+    member hash drift does not invalidate an independently exported response
+    whose exact bytes remain bound by the same immutable manifest.  This
+    selector never calls the full-family cache probe and never opens `.paN`.
+  #>
+  param(
+    [Parameter(Mandatory)]$Family,
+    [Parameter(Mandatory)][ValidateCount(1,8)][int[]]$ResponseIds,
+    [Parameter(Mandatory)][string]$CacheRoot
+  )
+  $key=[string]$Family.cache_key
+  if($key-notmatch '^[0-9A-Fa-f]{64}$'){throw "Local-family cache key is invalid: $($Family.label)"}
+  $keyRoot=Join-Path ([IO.Path]::GetFullPath($CacheRoot)) $key
+  $pointerPath=Join-Path $keyRoot 'current_generation.json'
+  if(-not(Test-Path -LiteralPath $pointerPath -PathType Leaf)){throw "Local-family current pointer is missing: $($Family.label)"}
+  $pointer=Get-Content -Raw -LiteralPath $pointerPath|ConvertFrom-Json
+  if([string]$pointer.cache_key-ne$key-or[string]$pointer.generation_sha256-notmatch'^[0-9A-Fa-f]{64}$'){
+    throw "Local-family current pointer identity differs: $($Family.label)"
+  }
+  $generation=Join-Path $keyRoot ("generations\{0}"-f[string]$pointer.generation_sha256)
+  $manifestPath=Join-Path $generation 'cache_manifest.json'
+  if(-not(Test-Path -LiteralPath $manifestPath -PathType Leaf)){throw "Local-family cache manifest is missing: $($Family.label)"}
+  $manifest=Get-Content -Raw -LiteralPath $manifestPath|ConvertFrom-Json -Depth 40
+  if([int]$manifest.schema_version-ne1-or[string]$manifest.role-ne'simion_pa_family_cache'-or
+     [string]$manifest.cache_key-ne$key-or[string]$manifest.generation_sha256-ne[string]$pointer.generation_sha256){
+    throw "Local-family cache manifest identity differs: $($Family.label)"
+  }
+  $selected=@()
+  foreach($responseId in @($ResponseIds|Sort-Object -Unique)){
+    if($responseId-lt1){throw 'Local standalone response IDs must be positive.'}
+    $recipes=@($Family.contract.response_recipes|Where-Object{[int]$_.local_id-eq$responseId})
+    if($recipes.Count-ne1){throw "Local family must declare exactly one standalone response recipe for electrode $responseId"}
+    $name=[string]$recipes[0].standalone_response_filename
+    if([IO.Path]::GetFileName($name)-ne$name-or$name-notmatch'\.[pP][aA]$'){
+      throw "Local response $responseId is not a direct standalone .pa filename."
+    }
+    $records=@($manifest.files|Where-Object{[string]$_.name-eq$name})
+    if($records.Count-ne1){throw "Local response $responseId is not uniquely bound by the cache manifest."
+    }
+    $path=Join-Path $generation $name
+    if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Local standalone response is missing: $path"}
+    $item=Get-Item -LiteralPath $path -Force
+    $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+    if([int64]$item.Length-ne[int64]$records[0].bytes-or$hash-ne[string]$records[0].sha256){
+      throw "Local standalone response differs from its cache manifest: $name"
+    }
+    if(-not$item.IsReadOnly){throw "Local standalone response is not filesystem read-only: $path"}
+    $selected+=[pscustomobject]@{response_id=$responseId;name=$name;path=$path;bytes=[int64]$item.Length;sha256=$hash}
+  }
+  if(-not(Get-Item -LiteralPath $manifestPath -Force).IsReadOnly){throw "Local response manifest is not filesystem read-only: $manifestPath"}
+  $Family.generation_directory=$generation
+  [pscustomobject]@{generation_directory=$generation;manifest=$manifestPath;responses=$selected}
+}
+
+function Resolve-AnalyzerLocalRawGeometry {
+  <#
+    Resolve the immutable raw geometry companion needed to distinguish real
+    electrode nodes from physical Dirichlet boundary nodes when measuring a
+    detached response normalization.  This deliberately validates only the
+    requested `.pa#` member instead of reopening every native family member.
+  #>
+  param(
+    [Parameter(Mandatory)]$Family,
+    [Parameter(Mandatory)][string]$CacheRoot
+  )
+  $key=[string]$Family.cache_key
+  if($key-notmatch'^[0-9A-Fa-f]{64}$'){throw "Local-family cache key is invalid: $($Family.label)"}
+  $keyRoot=Join-Path ([IO.Path]::GetFullPath($CacheRoot)) $key
+  $pointerPath=Join-Path $keyRoot 'current_generation.json'
+  if(-not(Test-Path -LiteralPath $pointerPath -PathType Leaf)){throw "Local-family current pointer is missing: $($Family.label)"}
+  $pointer=Get-Content -Raw -LiteralPath $pointerPath|ConvertFrom-Json
+  if([string]$pointer.cache_key-ne$key-or[string]$pointer.generation_sha256-notmatch'^[0-9A-Fa-f]{64}$'){
+    throw "Local-family current pointer identity differs: $($Family.label)"
+  }
+  $generation=Join-Path $keyRoot ("generations\{0}"-f[string]$pointer.generation_sha256)
+  $manifestPath=Join-Path $generation 'cache_manifest.json'
+  $manifest=Get-Content -Raw -LiteralPath $manifestPath|ConvertFrom-Json -Depth 40
+  if([int]$manifest.schema_version-ne1-or[string]$manifest.role-ne'simion_pa_family_cache'-or
+     [string]$manifest.cache_key-ne$key-or[string]$manifest.generation_sha256-ne[string]$pointer.generation_sha256){
+    throw "Local-family cache manifest identity differs: $($Family.label)"
+  }
+  $name=([string]$Family.contract.family_prefix)+'.pa#'
+  $records=@($manifest.files|Where-Object{[string]$_.name-eq$name})
+  if($records.Count-ne1){throw "Local raw geometry is not uniquely bound by the cache manifest: $name"}
+  $path=Join-Path $generation $name
+  if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Local raw geometry is missing: $path"}
+  $item=Get-Item -LiteralPath $path -Force
+  $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+  if([int64]$item.Length-ne[int64]$records[0].bytes-or$hash-ne[string]$records[0].sha256){
+    throw "Local raw geometry differs from its cache manifest: $name"
+  }
+  if(-not$item.IsReadOnly){throw "Local raw geometry is not filesystem read-only: $path"}
+  if(-not(Get-Item -LiteralPath $manifestPath -Force).IsReadOnly){throw "Local response manifest is not filesystem read-only: $manifestPath"}
+  $Family.generation_directory=$generation
+  [pscustomobject]@{name=$name;path=$path;bytes=[int64]$item.Length;sha256=$hash;manifest=$manifestPath}
+}

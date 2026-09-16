@@ -7,6 +7,7 @@ explicit constraints already frozen in the project contract.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -19,6 +20,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     CandidateContractError,
     derive_stage_2_ring_layout,
     derive_two_zone_placement,
+    validate_detector_return_path,
 )
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
     TwoZoneGeometryError,
@@ -39,6 +41,90 @@ class Box:
 
     def as_list(self) -> list[float]:
         return [self.x0, self.y0, self.z0, self.x1, self.y1, self.z1]
+
+
+@dataclass(frozen=True)
+class DualStripePhysicalInstance:
+    """One physical member of a shared-bias theoretical Stripe response."""
+
+    electrode_id: int
+    set_name: str
+    reflection_axis_sign: int
+
+
+@dataclass(frozen=True)
+class DualStripeNativeEdgeEvaluators:
+    """Exact native edge functions for one physical +/-z Stripe instance."""
+
+    set_name: str
+    reflection_axis_sign: int
+    active_y_span_mm: tuple[float, float]
+    lower_z_mm: Callable[[float], float]
+    upper_z_mm: Callable[[float], float]
+    lower_dz_dy: Callable[[float], float]
+    upper_dz_dy: Callable[[float], float]
+
+
+DUAL_STRIPE_PHYSICAL_INSTANCE_INVARIANT = (
+    DualStripePhysicalInstance(11, "set_1", 1),
+    DualStripePhysicalInstance(12, "set_1", -1),
+    DualStripePhysicalInstance(13, "set_2", 1),
+    DualStripePhysicalInstance(14, "set_2", -1),
+)
+
+
+def dual_stripe_physical_instance_topology(
+    contract: dict[str, Any],
+) -> tuple[DualStripePhysicalInstance, ...]:
+    """Resolve the single topology authority used by geometry and action paths."""
+    try:
+        mapping = contract["dual_stripe"]["theory_profile"]["path_length_mapping"]
+        definitions = mapping["shared_bias_physical_instances"]
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError("dual Stripe shared-bias physical topology is incomplete") from error
+    if mapping.get("derivation") != "sum_reflection_axis_widths_of_shared_bias_physical_instances":
+        raise CandidateContractError("dual Stripe total path must be derived from its physical instance topology")
+    if not isinstance(definitions, list):
+        raise CandidateContractError("dual Stripe physical topology must be a list")
+    instances: list[DualStripePhysicalInstance] = []
+    for definition in definitions:
+        if not isinstance(definition, dict):
+            raise CandidateContractError("dual Stripe physical topology entries must be objects")
+        electrode_id = definition.get("electrode_id")
+        set_name = definition.get("set_name")
+        reflection_axis_sign = definition.get("reflection_axis_sign")
+        if (
+            type(electrode_id) is not int
+            or set_name not in {"set_1", "set_2"}
+            or type(reflection_axis_sign) is not int
+            or reflection_axis_sign not in {-1, 1}
+        ):
+            raise CandidateContractError("dual Stripe physical topology entry is invalid")
+        instances.append(DualStripePhysicalInstance(electrode_id, set_name, reflection_axis_sign))
+    if len({item.electrode_id for item in instances}) != len(instances):
+        raise CandidateContractError("dual Stripe physical electrode IDs must be unique")
+    expected_count = contract["dual_stripe"].get("physical_electrode_count")
+    if expected_count != len(instances):
+        raise CandidateContractError("dual Stripe physical topology count differs from the contract")
+    if tuple(instances) != DUAL_STRIPE_PHYSICAL_INSTANCE_INVARIANT:
+        raise CandidateContractError("dual Stripe physical topology differs from the stable project electrode invariant")
+    for set_name in ("set_1", "set_2"):
+        signs = sorted(item.reflection_axis_sign for item in instances if item.set_name == set_name)
+        if signs != [-1, 1]:
+            raise CandidateContractError(
+                "each theoretical Stripe response must have one physical band on each reflection-axis side"
+            )
+    return tuple(instances)
+
+
+def dual_stripe_total_path_scale(contract: dict[str, Any], set_name: str) -> float:
+    """Derive total ``S_i`` as the sum of the two physical +/-z band widths."""
+    if set_name not in {"set_1", "set_2"}:
+        raise CandidateContractError(f"unknown dual Stripe set: {set_name}")
+    return float(sum(
+        item.set_name == set_name
+        for item in dual_stripe_physical_instance_topology(contract)
+    ))
 
 
 def _number(value: Any, name: str) -> float:
@@ -198,80 +284,165 @@ def compile_dual_stripe_width_evaluator(
     where repeatedly reparsing the contract and recursively evaluating every
     basis function is needlessly expensive.
     """
-    if set_name not in {"set_1", "set_2"}:
-        raise CandidateContractError("dual Stripe set name must be set_1 or set_2")
-    stripe = contract.get("dual_stripe")
-    if not isinstance(stripe, dict):
-        raise CandidateContractError("dual Stripe contract is required")
-    theory = stripe.get("theory_profile")
-    if not isinstance(theory, dict) or theory.get("generator") != "theory_bspline_parameterization":
-        raise CandidateContractError("dual Stripe width needs the theory B-spline parameter contract")
-    y_span = tuple(
-        _number(value, "dual_stripe.theory_profile.active_y_span_mm")
-        for value in theory.get("active_y_span_mm", [])
-    )
-    if len(y_span) != 2 or not y_span[0] < y_span[1]:
-        raise CandidateContractError("dual Stripe active theory y span must be ordered")
-    definition = theory.get(set_name)
-    if not isinstance(definition, dict):
-        raise CandidateContractError(f"dual Stripe theory profile {set_name} is required")
-
-    # Lazy imports preserve the lightweight geometry-only import path while
-    # allowing the analysis environment's pinned SciPy to accelerate the exact
-    # native-spline evaluation.
-    from scipy.interpolate import BSpline
-    from scipy.optimize import brentq
-
-    def compile_edge(value: Any, name: str) -> Callable[[float], float]:
-        if not isinstance(value, dict):
-            raise CandidateContractError(f"{name} must be an edge definition")
-        if value.get("basis") == "constant_z":
-            constant = _number(value.get("z_mm"), f"{name}.z_mm")
-            return lambda _y: constant
-        knots, controls, order = _bspline_edge(value, name)
-        degree = order - 1
-        lower_parameter, upper_parameter = knots[degree], knots[-order]
-        y_spline = BSpline(knots, tuple(point[0] for point in controls), degree, extrapolate=False)
-        z_spline = BSpline(knots, tuple(point[1] for point in controls), degree, extrapolate=False)
-        start_y = float(y_spline(lower_parameter))
-        end_y = float(y_spline(upper_parameter))
-        if start_y == end_y:
-            raise CandidateContractError(f"{name} must vary monotonically in y")
-        minimum_y, maximum_y = sorted((start_y, end_y))
-
-        def z_at_y(y_mm: float) -> float:
-            y_value = _number(y_mm, f"{name}.physical_y")
-            if not minimum_y - 1e-6 <= y_value <= maximum_y + 1e-6:
-                raise CandidateContractError(f"{name} does not cover the frozen Stripe y span")
-            if y_value <= minimum_y:
-                parameter = lower_parameter if start_y < end_y else upper_parameter
-            elif y_value >= maximum_y:
-                parameter = upper_parameter if start_y < end_y else lower_parameter
-            else:
-                parameter = brentq(
-                    lambda candidate: float(y_spline(candidate)) - y_value,
-                    lower_parameter,
-                    upper_parameter,
-                    xtol=1e-13,
-                    rtol=4.0 * math.ulp(1.0),
-                )
-            return float(z_spline(parameter))
-
-        return z_at_y
-
-    lower_z = compile_edge(definition.get("lower_edge"), f"dual Stripe {set_name}.lower_edge")
-    upper_z = compile_edge(definition.get("upper_edge"), f"dual Stripe {set_name}.upper_edge")
+    edges = compile_dual_stripe_edge_evaluators(contract, set_name, 1)
 
     def width_at_y(y_mm: float) -> float:
         y_value = _number(y_mm, "dual Stripe physical y")
-        if not y_span[0] <= y_value <= y_span[1]:
+        if not edges.active_y_span_mm[0] <= y_value <= edges.active_y_span_mm[1]:
             raise CandidateContractError("dual Stripe physical y lies outside its frozen span")
-        width = upper_z(y_value) - lower_z(y_value)
+        width = edges.upper_z_mm(y_value) - edges.lower_z_mm(y_value)
         if width <= 0.0:
             raise CandidateContractError("dual Stripe B-spline geometry has non-positive physical width")
         return width
 
     return width_at_y
+
+
+def _compile_dual_stripe_native_edge(
+    value: Any, name: str,
+) -> tuple[Callable[[float], float], Callable[[float], float], tuple[float, float]]:
+    """Compile one native edge as ``z(y)`` and its analytic ``dz/dy``."""
+    if not isinstance(value, dict):
+        raise CandidateContractError(f"{name} must be an edge definition")
+    if value.get("basis") == "constant_z":
+        constant = _number(value.get("z_mm"), f"{name}.z_mm")
+        return (lambda _y: constant), (lambda _y: 0.0), (-math.inf, math.inf)
+
+    knots, controls, order = _bspline_edge(value, name)
+    degree = order - 1
+    lower_parameter, upper_parameter = knots[degree], knots[-order]
+    # Lazy import preserves the lightweight geometry-only import path.
+    from scipy.interpolate import BSpline
+    from scipy.optimize import brentq
+
+    y_spline = BSpline(knots, tuple(point[0] for point in controls), degree, extrapolate=False)
+    z_spline = BSpline(knots, tuple(point[1] for point in controls), degree, extrapolate=False)
+    dy_spline = y_spline.derivative()
+    dz_spline = z_spline.derivative()
+    start_y = float(y_spline(lower_parameter))
+    end_y = float(y_spline(upper_parameter))
+    if start_y == end_y:
+        raise CandidateContractError(f"{name} must vary monotonically in y")
+    minimum_y, maximum_y = sorted((start_y, end_y))
+
+    def parameter_at_y(y_mm: float) -> float:
+        y_value = _number(y_mm, f"{name}.physical_y")
+        if not minimum_y - 1e-6 <= y_value <= maximum_y + 1e-6:
+            raise CandidateContractError(f"{name} does not cover the frozen Stripe y span")
+        if y_value <= minimum_y:
+            return lower_parameter if start_y < end_y else upper_parameter
+        if y_value >= maximum_y:
+            return upper_parameter if start_y < end_y else lower_parameter
+        return brentq(
+            lambda candidate: float(y_spline(candidate)) - y_value,
+            lower_parameter,
+            upper_parameter,
+            xtol=1e-13,
+            rtol=4.0 * math.ulp(1.0),
+        )
+
+    def z_at_y(y_mm: float) -> float:
+        return float(z_spline(parameter_at_y(y_mm)))
+
+    def dz_dy(y_mm: float) -> float:
+        parameter = parameter_at_y(y_mm)
+        dy_dt = float(dy_spline(parameter))
+        dz_dt = float(dz_spline(parameter))
+        scale = max(1.0, abs(dy_dt), abs(dz_dt))
+        if abs(dy_dt) <= 128.0 * math.ulp(scale):
+            raise CandidateContractError(f"{name} has no finite z(y) derivative")
+        return dz_dt / dy_dt
+
+    return z_at_y, dz_dy, (minimum_y, maximum_y)
+
+
+def compile_dual_stripe_edge_evaluators(
+    contract: dict[str, Any], set_name: str, reflection_axis_sign: int,
+) -> DualStripeNativeEdgeEvaluators:
+    """Compile exact native ``z(y)`` edges for one physical Stripe band.
+
+    The positive instance follows the frozen native B-spline definitions.
+    The negative instance is their exact project-``z`` reflection, so its
+    lower edge is the reflected positive upper edge (and conversely).  No
+    sampled polygon, bounding box, or independently entered mirror geometry
+    participates.  The functions fail closed outside the active theory span;
+    they do not extrapolate into the separate ``y=-2..0`` terminal-trim and
+    mechanical bridge geometry.
+    """
+    if set_name not in {"set_1", "set_2"}:
+        raise CandidateContractError("dual Stripe set name must be set_1 or set_2")
+    if type(reflection_axis_sign) is not int or reflection_axis_sign not in {-1, 1}:
+        raise CandidateContractError("dual Stripe reflection-axis sign must be +1 or -1")
+    stripe = contract.get("dual_stripe")
+    if not isinstance(stripe, dict):
+        raise CandidateContractError("dual Stripe contract is required")
+    theory = stripe.get("theory_profile")
+    if not isinstance(theory, dict) or theory.get("generator") != "theory_bspline_parameterization":
+        raise CandidateContractError("dual Stripe edges need the theory B-spline parameter contract")
+    y_span_values = tuple(
+        _number(value, "dual_stripe.theory_profile.active_y_span_mm")
+        for value in theory.get("active_y_span_mm", [])
+    )
+    if len(y_span_values) != 2 or not y_span_values[0] < y_span_values[1]:
+        raise CandidateContractError("dual Stripe active theory y span must be ordered")
+    y_span = (y_span_values[0], y_span_values[1])
+    definition = theory.get(set_name)
+    if not isinstance(definition, dict):
+        raise CandidateContractError(f"dual Stripe theory profile {set_name} is required")
+    lower_z, lower_derivative, lower_domain = _compile_dual_stripe_native_edge(
+        definition.get("lower_edge"), f"dual Stripe {set_name}.lower_edge",
+    )
+    upper_z, upper_derivative, upper_domain = _compile_dual_stripe_native_edge(
+        definition.get("upper_edge"), f"dual Stripe {set_name}.upper_edge",
+    )
+    for domain in (lower_domain, upper_domain):
+        if domain[0] > y_span[0] + 1e-6 or domain[1] < y_span[1] - 1e-6:
+            raise CandidateContractError(f"dual Stripe {set_name} native edges do not cover the active y span")
+
+    def active_y(y_mm: float) -> float:
+        y_value = _number(y_mm, "dual Stripe physical y")
+        if not y_span[0] <= y_value <= y_span[1]:
+            raise CandidateContractError("dual Stripe native edge is outside its active theory y span")
+        return y_value
+
+    def positive_lower(y_mm: float) -> float:
+        return lower_z(active_y(y_mm))
+
+    def positive_upper(y_mm: float) -> float:
+        return upper_z(active_y(y_mm))
+
+    def positive_lower_derivative(y_mm: float) -> float:
+        return lower_derivative(active_y(y_mm))
+
+    def positive_upper_derivative(y_mm: float) -> float:
+        return upper_derivative(active_y(y_mm))
+
+    if reflection_axis_sign > 0:
+        physical_lower = positive_lower
+        physical_upper = positive_upper
+        physical_lower_derivative = positive_lower_derivative
+        physical_upper_derivative = positive_upper_derivative
+    else:
+        def physical_lower(y_mm: float) -> float:
+            return -positive_upper(y_mm)
+
+        def physical_upper(y_mm: float) -> float:
+            return -positive_lower(y_mm)
+
+        def physical_lower_derivative(y_mm: float) -> float:
+            return -positive_upper_derivative(y_mm)
+
+        def physical_upper_derivative(y_mm: float) -> float:
+            return -positive_lower_derivative(y_mm)
+    return DualStripeNativeEdgeEvaluators(
+        set_name=set_name,
+        reflection_axis_sign=reflection_axis_sign,
+        active_y_span_mm=y_span,
+        lower_z_mm=physical_lower,
+        upper_z_mm=physical_upper,
+        lower_dz_dy=physical_lower_derivative,
+        upper_dz_dy=physical_upper_derivative,
+    )
 
 
 def compile_dual_stripe_path_length_evaluator(
@@ -280,20 +451,14 @@ def compile_dual_stripe_path_length_evaluator(
     """Compile the theory ``S_i(y)`` represented by one frozen profile.
 
     Geometry width and action path length are deliberately separate concepts.
-    The instance contract must state their multiplier explicitly so a mirrored
-    physical electrode pair cannot silently add or remove a factor of two.
+    The action path scale is derived from the same shared-bias physical-instance
+    topology that creates the mirrored electrode solids.
     """
     width_at_y = compile_dual_stripe_width_evaluator(contract, set_name)
-    try:
-        mapping = contract["dual_stripe"]["theory_profile"]["path_length_mapping"]
-        multiplier = _number(mapping["profile_width_to_total_S_multiplier"], "Stripe path-length multiplier")
-    except (KeyError, TypeError) as error:
-        raise CandidateContractError("dual Stripe theory path-length mapping is incomplete") from error
-    if multiplier <= 0.0:
-        raise CandidateContractError("dual Stripe theory path-length multiplier must be positive")
+    total_path_scale = dual_stripe_total_path_scale(contract, set_name)
 
     def path_length_at_y(y_mm: float) -> float:
-        return multiplier * width_at_y(y_mm)
+        return total_path_scale * width_at_y(y_mm)
 
     return path_length_at_y
 
@@ -399,13 +564,256 @@ def _strictly_inside_triangle(point: list[float], triangle: list[list[float]]) -
     return all(value > tolerance for value in signs) or all(value < -tolerance for value in signs)
 
 
-def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
+def _candidate_low_field_reference_section(
+    contract: dict[str, Any],
+    prism_electrodes: list[dict[str, Any]],
+    prism_ground_shields: list[dict[str, Any]],
+    stripe_records: list[dict[str, Any]],
+    positive_mirror_inner_faces_z_mm: list[float],
+) -> dict[str, Any]:
+    """Derive one reference plane while leaving field flatness unqualified."""
+    try:
+        authority = contract["prism_transport"]["two_prism_injection_l0"][
+            "low_field_reference_section"
+        ]
+        target_authority = contract["prism_transport"]["two_prism_injection_l0"][
+            "low_field_angle_and_positive_mirror_turn_authority"
+        ]
+        prism_id = int(authority["second_prism_electrode_id"])
+        shield_id = int(authority["ground_shield_id"])
+        validation = authority["pa_field_plateau_validation"]
+        target_turn_y = _number(
+            target_authority["positive_mirror_turn_target_project_y_mm"],
+            "positive-mirror-turn target y",
+        )
+        function_y_zero = _number(
+            contract["dual_stripe_l0"]["theory_function_coordinate_registration"]
+            ["function_y_zero_project_y_mm"],
+            "Stripe function y origin",
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise CandidateContractError(
+            "two-prism low-field reference-section authority is incomplete"
+        ) from error
+    if (
+        authority.get("status")
+        != "candidate_geometry_derived__pa_field_plateau_validation_pending"
+        or authority.get("axis") != "z"
+        or authority.get("interval_semantics") != "open"
+        or authority.get("lower_boundary_rule")
+        != "positive_z_edge_of_second_prism_ground_shield_clearance"
+        or authority.get("upper_boundary_rule")
+        != "minimum_of_ground_shield_cross_aperture_positive_z_edge_nearest_positive_stripe_terminal_surface_and_positive_grounded_mirror_inner_face"
+        or authority.get("reference_plane_rule") != "midpoint_of_open_candidate_interval"
+    ):
+        raise CandidateContractError(
+            "two-prism low-field reference section must remain a geometry-derived Candidate"
+        )
+    if (
+        target_authority.get("status")
+        != "derived_design_authority__pa_field_plateau_validation_pending"
+        or target_authority.get("low_field_angle_event")
+        != "first_positive_z_crossing_of_resolved_candidate_reference_plane_after_P2"
+        or target_authority.get("positive_mirror_turn_event")
+        != "first_u_z_zero_crossing_after_the_low_field_reference_plane"
+        or target_turn_y != function_y_zero
+    ):
+        raise CandidateContractError(
+            "two-prism targets must be the low-field angle and first positive-mirror-turn y"
+        )
+    if (
+        not isinstance(validation, dict)
+        or validation.get("required") is not True
+        or validation.get("status") != "pending_user_threshold"
+        or validation.get("maximum_field_plateau_variation") is not None
+        or validation.get("validation_nodes_project_z_mm") is not None
+    ):
+        raise CandidateContractError(
+            "low-field Candidate requires PA validation with user-owned threshold and nodes"
+        )
+    prisms = [item for item in prism_electrodes if item["id"] == prism_id]
+    shields = [item for item in prism_ground_shields if item["id"] == shield_id]
+    if len(prisms) != 1 or len(shields) != 1 or prisms[0]["station"] != shields[0]["station"]:
+        raise CandidateContractError(
+            "low-field Candidate requires one station-matched second prism and grounded shield"
+        )
+    shield = shields[0]
+    cross = shield.get("cross_aperture")
+    if not isinstance(cross, dict):
+        raise CandidateContractError("low-field Candidate requires the grounded-shield cross aperture")
+    clearance_positive_z = max(point[1] for point in shield["prism_clearance_polygon_yz_mm"])
+    prism_positive_z = max(
+        point[1] for part in prisms[0]["parts"] for point in part["polygon_yz_mm"]
+    )
+    if prism_positive_z >= clearance_positive_z:
+        raise CandidateContractError(
+            "second prism must remain strictly inside its positive-z clearance boundary"
+        )
+    cross_positive_z = max(
+        _number(value, "low-field cross-aperture z") for value in cross["z_mm"]
+    )
+    positive_terminal_z = [
+        point[1]
+        for stripe in stripe_records
+        if all(point[1] > 0.0 for point in stripe["terminal_polygon_yz_mm"])
+        for point in stripe["terminal_polygon_yz_mm"]
+    ]
+    if not positive_terminal_z or len(positive_mirror_inner_faces_z_mm) != 1:
+        raise CandidateContractError(
+            "low-field Candidate requires positive Stripe terminals and one positive mirror inner face"
+        )
+    upper_candidates = {
+        "ground_shield_cross_aperture_positive_z_edge_mm": cross_positive_z,
+        "nearest_positive_stripe_terminal_surface_z_mm": min(positive_terminal_z),
+        "positive_grounded_mirror_inner_face_z_mm": positive_mirror_inner_faces_z_mm[0],
+    }
+    lower = clearance_positive_z
+    upper = min(upper_candidates.values())
+    if not lower < upper:
+        raise CandidateContractError("derived low-field Candidate interval is empty")
+    reference_z = (lower + upper) / 2.0
+    open_slots = [
+        tuple(_number(value, "low-field grounded-shield slot bound") for value in slot)
+        for slot in shield.get("rectangular_slots_mm", [])
+        if len(slot) == 6 and float(slot[2]) < reference_z < float(slot[5])
+    ]
+    if not open_slots:
+        raise CandidateContractError(
+            "derived low-field Candidate plane has no grounded-shield transit aperture"
+        )
+    x_intersection = [max(slot[0] for slot in open_slots), min(slot[3] for slot in open_slots)]
+    y_intervals = sorted((slot[1], slot[4]) for slot in open_slots)
+    merged_y = [list(y_intervals[0])]
+    for y_min, y_max in y_intervals[1:]:
+        if y_min > merged_y[-1][1]:
+            raise CandidateContractError(
+                "low-field grounded-shield transit slots are disconnected in project y"
+            )
+        merged_y[-1][1] = max(merged_y[-1][1], y_max)
+    if not x_intersection[0] < x_intersection[1] or len(merged_y) != 1:
+        raise CandidateContractError(
+            "low-field grounded-shield transit aperture is empty or disconnected"
+        )
+    return {
+        "status": authority["status"],
+        "qualification": "candidate_reference_section__not_a_zero_field_claim",
+        "axis": "z",
+        "open_project_z_interval_mm": [lower, upper],
+        "reference_plane_project_z_mm": reference_z,
+        "transit_aperture_project_mm": {
+            "x_mm": x_intersection,
+            "y_mm": merged_y[0],
+            "source": "union_of_ground_shield_rectangular_slots_open_at_reference_plane",
+        },
+        "derivation": {
+            "lower_boundary": {
+                "source": "second_prism_ground_shield_clearance_positive_z_edge",
+                "ground_shield_id": shield_id,
+                "second_prism_electrode_id": prism_id,
+                "second_prism_positive_z_extent_mm": prism_positive_z,
+                "value_mm": lower,
+            },
+            "upper_boundary_candidates_mm": upper_candidates,
+            "selected_upper_boundary_mm": upper,
+        },
+        "pa_field_plateau_validation": copy.deepcopy(validation),
+        "operating_targets": {
+            "low_field_angle_condition": target_authority["angle_condition"],
+            "first_positive_mirror_turn_target_project_y_mm": target_turn_y,
+        },
+    }
+
+
+def _inherit_dual_stripe_topology(
+    geometry_contract: dict[str, Any], topology_contract: dict[str, Any],
+) -> dict[str, Any]:
+    """Project current topology/event authority onto frozen reviewed geometry.
+
+    The GUI-reviewed r51 geometry predates the topology-derived path convention
+    and therefore carries the retired single-profile multiplier ``1``.  That
+    field never changed the generated solids.  Accept exactly that known legacy
+    marker, remove it, and let the current four-instance authority derive
+    ``S_i = 2 w_i``.  Any other legacy multiplier remains an incompatible
+    physical contract and fails closed.
+    """
+    result = copy.deepcopy(geometry_contract)
+    try:
+        target = result["dual_stripe"]
+        source = topology_contract["dual_stripe"]
+        target_mapping = target["theory_profile"]["path_length_mapping"]
+        source_mapping = source["theory_profile"]["path_length_mapping"]
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError(
+            "dual Stripe topology inheritance needs complete geometry and authority blocks"
+        ) from error
+    for name in ("physical_electrode_count", "theoretical_response_count"):
+        if target.get(name) != source.get(name):
+            raise CandidateContractError(
+                f"dual Stripe topology inheritance changes {name}"
+            )
+    source_legacy_scale = source_mapping.get("profile_width_to_total_S_multiplier")
+    if source_legacy_scale is not None:
+        raise CandidateContractError(
+            "dual Stripe topology authority must derive path length from physical instances"
+        )
+    target_legacy_scale = target_mapping.get("profile_width_to_total_S_multiplier")
+    if target_legacy_scale is not None and float(target_legacy_scale) != 1.0:
+        raise CandidateContractError(
+            "reviewed geometry has an unknown legacy dual Stripe path-length scale"
+        )
+    target_mapping.pop("profile_width_to_total_S_multiplier", None)
+    for name in ("derivation", "shared_bias_physical_instances"):
+        inherited = source_mapping.get(name)
+        existing = target_mapping.get(name)
+        if existing is not None and existing != inherited:
+            raise CandidateContractError(
+                f"reviewed geometry conflicts with inherited dual Stripe {name}"
+            )
+        target_mapping[name] = copy.deepcopy(inherited)
+    try:
+        target_injection = result["prism_transport"]["two_prism_injection_l0"]
+        source_injection = topology_contract["prism_transport"][
+            "two_prism_injection_l0"
+        ]
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError(
+            "two-prism observation-authority inheritance needs complete contracts"
+        ) from error
+    for name in (
+        "low_field_reference_section",
+        "low_field_angle_and_positive_mirror_turn_authority",
+    ):
+        inherited = source_injection.get(name)
+        if not isinstance(inherited, dict):
+            raise CandidateContractError(
+                f"current two-prism authority lacks {name}"
+            )
+        existing = target_injection.get(name)
+        if existing is not None and existing != inherited:
+            raise CandidateContractError(
+                f"reviewed geometry conflicts with inherited two-prism {name}"
+            )
+        target_injection[name] = copy.deepcopy(inherited)
+    # Exercise the full invariant validator before any geometry is generated.
+    dual_stripe_physical_instance_topology(result)
+    return result
+
+
+def resolve_geometry(
+    contract: dict[str, Any],
+    *,
+    inherited_dual_stripe_topology_contract: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Return validated physical primitives for all electrodes.
 
     A Candidate may be a theory-derived design or the existing manufactured
     mirror geometry with a theory-optimized operating point.  In either case,
     the resolved output is solver-neutral and contains no CAD-private entity.
     """
+    if inherited_dual_stripe_topology_contract is not None:
+        contract = _inherit_dual_stripe_topology(
+            contract, inherited_dual_stripe_topology_contract,
+        )
     authority = contract.get("geometry_authority", {})
     if authority.get("model") not in {
         "theory_derived_3d",
@@ -584,17 +992,23 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
         "set_1": max(point[1] for point in set_1) - min(point[1] for point in set_1),
         "set_2": max(point[1] for point in set_2) - min(point[1] for point in set_2),
     }
-    stripe_records = [
-        {"id": 11, "x": [-thickness_x / 2.0, thickness_x / 2.0], "polygon_yz_mm": [list(point) for point in set_1]},
-        {"id": 12, "x": [-thickness_x / 2.0, thickness_x / 2.0], "polygon_yz_mm": [list(point) for point in _mirrored_polygon(set_1)]},
-        {"id": 13, "x": [-thickness_x / 2.0, thickness_x / 2.0], "polygon_yz_mm": [list(point) for point in set_2]},
-        {"id": 14, "x": [-thickness_x / 2.0, thickness_x / 2.0], "polygon_yz_mm": [list(point) for point in _mirrored_polygon(set_2)]},
-    ]
-    for record in stripe_records:
-        set_name = "set_1" if record["id"] in (11, 12) else "set_2"
-        terminal = _terminal_polygon(y_span[0], curve_span[0], stripe["theory_profile"][set_name].get("terminal_z_mm"))
-        record["terminal_polygon_yz_mm"] = (terminal if record["id"] in (11, 13)
-                                             else [list(point) for point in _mirrored_polygon(terminal)])
+    polygons = {"set_1": set_1, "set_2": set_2}
+    stripe_records = []
+    for instance in dual_stripe_physical_instance_topology(contract):
+        polygon = polygons[instance.set_name]
+        terminal = _terminal_polygon(
+            y_span[0], curve_span[0],
+            stripe["theory_profile"][instance.set_name].get("terminal_z_mm"),
+        )
+        if instance.reflection_axis_sign < 0:
+            polygon = _mirrored_polygon(polygon)
+            terminal = _mirrored_polygon(terminal)
+        stripe_records.append({
+            "id": instance.electrode_id,
+            "x": [-thickness_x / 2.0, thickness_x / 2.0],
+            "polygon_yz_mm": [list(point) for point in polygon],
+            "terminal_polygon_yz_mm": [list(point) for point in terminal],
+        })
     stripe_z = [point[1] for record in stripe_records
                 for key in ("polygon_yz_mm", "terminal_polygon_yz_mm") for point in record[key]]
     max_abs_stripe_z = max(abs(value) for value in stripe_z)
@@ -814,6 +1228,13 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
     positive_inner_faces = [float(shield["box"][2]) for shield in mirror_ground_shields if float(shield["box"][2]) > 0.0]
     if len(positive_inner_faces) != 1:
         raise CandidateContractError("detector requires exactly one positive grounded-mirror inner face")
+    low_field_reference_section = _candidate_low_field_reference_section(
+        contract,
+        prism_electrodes,
+        prism_ground_shields,
+        stripe_records,
+        positive_inner_faces,
+    )
     detector_z1 = positive_inner_faces[0] - clearance_z
     detector_z0 = detector_z1 - thickness_z
     if detector_z0 <= placement.repeller_z_mm + repeller_thickness:
@@ -868,6 +1289,34 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
     if accelerator_grid_support_frames[1]["back_z_mm"] >= accelerator_grid_support_frames[0]["front_z_mm"]:
         raise CandidateContractError("accelerator grid supports touch each other")
 
+    validate_detector_return_path(contract)
+    accelerator_repeller_support_frame = {
+        "id": 22,
+        "grid_z_mm": placement.repeller_z_mm,
+        "front_z_mm": placement.repeller_z_mm,
+        "back_z_mm": placement.repeller_z_mm + repeller_thickness,
+        "thickness_z_mm": repeller_thickness,
+        "outer_half_x_mm": accelerator_enclosure.electrode_half_x_mm,
+        "outer_half_y_mm": accelerator_enclosure.electrode_half_y_mm,
+        "aperture_half_x_mm": aperture_x,
+        "aperture_half_y_mm": aperture_y,
+    }
+    accelerator_rear_ground_grid = {
+        "id": 15,
+        "grid_z_mm": accelerator_enclosure.rear_cap_inner_z_mm,
+        "front_z_mm": accelerator_enclosure.rear_cap_inner_z_mm,
+        "back_z_mm": accelerator_enclosure.rear_cap_outer_z_mm,
+        "thickness_z_mm": accelerator_enclosure.guard_wall_mm,
+        "outer_half_x_mm": accelerator_enclosure.guard_half_x_mm,
+        "outer_half_y_mm": accelerator_enclosure.guard_half_y_mm,
+        "aperture_half_x_mm": aperture_x,
+        "aperture_half_y_mm": aperture_y,
+    }
+    for support in (accelerator_repeller_support_frame, accelerator_rear_ground_grid):
+        if not (0.0 < support["aperture_half_x_mm"] < support["outer_half_x_mm"] and
+                0.0 < support["aperture_half_y_mm"] < support["outer_half_y_mm"]):
+            raise CandidateContractError("coaxial return support requires positive material around its aperture")
+
     return {
         "schema_version": 1,
         "project_id": "parallel_mirror_dual_stripe_mr_tof",
@@ -885,8 +1334,11 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
         "cad_body_topology_identity": identity,
         "prism_electrodes": prism_electrodes,
         "prism_ground_shields": prism_ground_shields,
+        "two_prism_low_field_reference_section": low_field_reference_section,
         "accelerator_stage_2_rings": accelerator_stage_2_rings,
         "accelerator_grid_support_frames": accelerator_grid_support_frames,
+        "accelerator_repeller_support_frame": accelerator_repeller_support_frame,
+        "accelerator_rear_ground_grid": accelerator_rear_ground_grid,
         "detector": {"id": 25, "box": detector_box, "normal_project": "+z", "separate_pa": True},
         "metadata": {
             "mirror_slot_width_mm": slot_width,
@@ -920,8 +1372,13 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
 
 
 def geometry_fingerprint(resolved: dict[str, Any]) -> str:
-    """Hash the canonical physical geometry, excluding no solver-local state."""
-    payload = json.dumps(resolved, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    """Hash physical geometry without derived numerical observation surfaces."""
+    physical = copy.deepcopy(resolved)
+    # This section is derived from physical clearances for trajectory sampling;
+    # it adds no conductor or aperture and therefore must not invalidate an
+    # already reviewed PA/IOB geometry identity.
+    physical.pop("two_prism_low_field_reference_section", None)
+    payload = json.dumps(physical, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

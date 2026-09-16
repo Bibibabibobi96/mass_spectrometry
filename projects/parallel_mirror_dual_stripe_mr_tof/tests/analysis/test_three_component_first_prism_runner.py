@@ -24,7 +24,7 @@ class ThreeComponentFirstPrismRunnerTest(unittest.TestCase):
     def test_runner_does_not_claim_a_return_or_resolution(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         self.assertIn("prototype_first_prism_interface_only", source)
-        self.assertIn("No return, K=25, transmission, time focus, or resolution claim", source)
+        self.assertIn("No target-phase return, transmission, time focus, or resolution claim", source)
         self.assertNotIn("build_iob'", source)
 
 

@@ -29,7 +29,10 @@ def materialize(
     receipt_path: Path,
 ) -> dict[str, Any]:
     current = load_contract(contract_path)
-    reviewed = load_contract(reviewed_contract_path)
+    reviewed = load_contract(
+        reviewed_contract_path,
+        inherited_detector_return_path=current["accelerator"]["detector_return_path"],
+    )
     require_reviewed_geometry(current, reviewed)
     current_source = current.get("particle_source", {})
     reviewed_source = reviewed.get("particle_source", {})

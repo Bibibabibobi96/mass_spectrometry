@@ -4,7 +4,11 @@ import copy
 import unittest
 from pathlib import Path
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_l0 import PrismL0Error, derive_first_prism_l0
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_l0 import (
+    PrismL0Error,
+    derive_first_prism_l0,
+    ray_segment_intersection_yz,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
 
 
@@ -31,7 +35,19 @@ class FirstPrismL0Test(unittest.TestCase):
         self.assertEqual(result.target_plane_x_mm, 0.0)
         self.assertEqual(result.target_plane_y_acceptance_mm, (-75.0, -35.0))
         self.assertAlmostEqual(result.hard_boundary_seed_voltage_v, 20000.0**0.5)
-        self.assertEqual(result.second_prism_status, "pre_stripe_injection_pending")
+        self.assertEqual(
+            result.second_prism_status,
+            "low_field_angle_and_positive_mirror_turn_calibration_pending",
+        )
+
+    def test_public_ray_segment_intersection_retains_forward_parameters(self) -> None:
+        self.assertEqual(
+            ray_segment_intersection_yz((0.0, 0.0), (1.0, 0.0), (2.0, -1.0), (2.0, 1.0)),
+            (2.0, 0.5),
+        )
+        self.assertIsNone(
+            ray_segment_intersection_yz((0.0, 0.0), (-1.0, 0.0), (2.0, -1.0), (2.0, 1.0))
+        )
 
     def test_rejects_energy_semantics_angle_convention_and_second_prism_premature_solution(self) -> None:
         for mutate in (

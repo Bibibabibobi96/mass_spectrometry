@@ -23,8 +23,11 @@ local origins={{number(8,'analyser x'),number(9,'analyser y'),number(10,'analyse
 local pa_mode=arg[17+offset] or 'persist_adjusted'
 assert(pa_mode=='persist_adjusted' or pa_mode=='read_only_voltageized', 'invalid PA binding mode')
 assert(seed:match('3_instance_seed%.iob$'), 'must use the repository three-instance IOB seed')
-assert(paths[1]:match('%.pa0$') and paths[2]:match('%.pa0$'), 'analyser and accelerator must be solved pa0 arrays')
-assert(paths[3]:match('%.pa#$'), 'detector must be a raw zero-voltage geometry PA#')
+local canonical_bindings=paths[1]:match('%.pa0$') and paths[2]:match('%.pa0$') and paths[3]:match('%.pa#$')
+local projected_bindings=paths[1]:match('iob_input_analyzer%.pa$')
+  and paths[2]:match('iob_input_accelerator%.pa$') and paths[3]:match('iob_input_detector%.pa$')
+assert(canonical_bindings or (pa_mode=='read_only_voltageized' and projected_bindings),
+  'analyser/accelerator/detector PA bindings are invalid for the selected mode')
 assert(program:match('%.lua$') and output:match('%.iob$'), 'program/output suffixes must be .lua/.iob')
 local operating_point_path=program:gsub('%.lua$','.operating_point.lua')
 local voltage_map_path=program:gsub('%.lua$','.voltage_map.lua')

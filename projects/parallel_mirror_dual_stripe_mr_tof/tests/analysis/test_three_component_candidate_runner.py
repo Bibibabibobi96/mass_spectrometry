@@ -43,12 +43,22 @@ class ThreeComponentCandidateRunnerTests(unittest.TestCase):
 
     def test_runner_serializes_simion_and_writes_a_terminal_record(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
-        self.assertIn("Enter-HostExecutionLease -Role SIMION -RunId $RunId", source)
+        self.assertIn(
+            "Enter-HostExecutionLease -Role SIMION -Stage three_component_iob_prepare",
+            source,
+        )
+        self.assertIn("-Stage three_component_iob_postprocess", source)
+        self.assertNotIn("-Stage pa_prepare", source)
+        self.assertNotIn("-Stage pa_refine", source)
+        self.assertNotIn("-Stage flight", source)
         self.assertIn("Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId", source)
         self.assertEqual(source.count("Complete-FailedRun"), 2)
         self.assertIn("-Status interrupted -FailureStage $failureStage", source)
         self.assertIn("Write-VerifiedRunManifest", source)
-        self.assertLess(source.index("materialize_simion_prototype"), source.index("Enter-HostExecutionLease"))
+        self.assertLess(
+            source.index("Enter-HostExecutionLease"),
+            source.index("capacity_preflight"),
+        )
         self.assertLess(
             source.index("Enter-HostExecutionLease"),
             source.index("Invoke-MrtofSimionStep -Stage 'build_three_component_iob'"),
@@ -56,6 +66,10 @@ class ThreeComponentCandidateRunnerTests(unittest.TestCase):
         self.assertLess(
             source.index("Invoke-MrtofSimionStep -Stage 'inspect_three_component_iob'"),
             source.index("write_geometry_review_receipt"),
+        )
+        self.assertLess(
+            source.index("-Stage three_component_iob_postprocess"),
+            source.index("capacity_terminal"),
         )
         self.assertLess(source.index("capacity_preflight"), source.index("freeze_inputs"))
         self.assertLess(source.index("capacity_terminal"), source.index("Write-VerifiedRunManifest"))

@@ -170,7 +170,8 @@ astral.dual_stripe.parallel_mirrors.v1
   "drift_control": {
     "model": "original_stripe_plus_tilt | dual_stripe_parallel",
     "nominal_drift_length_mm": 335.0,
-    "target_oscillation_count": 25,
+    "target_drift_period_ratio": 25.5,
+    "fast_path_symmetry": "opposite_mirror_turn__z_reflected_nonoverlapping",
     "parameters": {}
   },
   "source": {

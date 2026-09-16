@@ -16,6 +16,7 @@ from scipy.optimize import brentq, least_squares
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
     optimize_fixed_geometry_voltages,
+    step_response_derivative,
     three_point_normalized_period_slopes_per_v,
     three_point_report,
 )
@@ -47,10 +48,15 @@ def _derivatives(z_mm: float, x_mm: float, design: MirrorL0Design) -> tuple[floa
         cos_b = math.cos(b)
         sin_b = math.sin(b)
         denom = cos_b * cos_b + sinh_a * sinh_a
+        axial_derivative = (
+            step_response_derivative(zeta) / h
+            if xi == 0.0
+            else cosh_a * cos_b / (2.0 * h * denom)
+        )
         return (
             0.5 + math.atan(sinh_a / cos_b) / math.pi,
             sinh_a * sin_b / (2.0 * h * denom),
-            cosh_a * cos_b / (2.0 * h * denom),
+            axial_derivative,
         )
 
     previous = 0.0

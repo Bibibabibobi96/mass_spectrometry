@@ -11,11 +11,9 @@ local point={mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   mirror_regions_project={negative={z_min_mm=-20,z_max_mm=-10},positive={z_min_mm=10,z_max_mm=20}},
   prism_regions_project={p1={y_min_mm=-10,y_max_mm=10,z_min_mm=-110,z_max_mm=-90},
     p2={y_min_mm=-10,y_max_mm=10,z_min_mm=90,z_max_mm=110}},
-  patch_interface_planes_project={{name='test',region='central_transport',face='z_test',axis='z',
-    coordinate_mm=0,u_axis='x',u_min_mm=-1,u_max_mm=1,v_axis='y',v_min_mm=-1,v_max_mm=1}},
-  phase_origin_mirror_side=1,
-  runtime_fast_adjust_accelerator_enable=true,
-  target_oscillation_count=25,trajectory_quality=8,maximum_step_us=0.002,
+  runtime_accelerator_field_gate_enable=true,
+  phase_origin_mirror_side=1,return_mirror_side=-1,
+  target_drift_period_ratio=25.5,target_half_oscillation_count=51,trajectory_quality=8,maximum_step_us=0.002,
   full_path_timeout_us=5}
 local function build(value)
   return map(value.mirror_voltages_v,value.stripe_biases_v,
@@ -107,8 +105,8 @@ for id,value in pairs(expected.analyser) do assert(simion.wb.instances[1].pa.val
 for id,value in pairs(expected.accelerator) do assert(simion.wb.instances[2].pa.values[id]==value) end
 calls={};simion.wb.instances={{pa=pa(1)},{pa=pa(2)},{pa=pa(3)}}
 for _,instance in ipairs(simion.wb.instances) do instance._debug_update_size=function() end end
-arg={'virtual/3_instance_seed.iob','virtual/mrtof_analyzer.pa0',
-  'virtual/mrtof_accelerator.pa0','virtual/mrtof_detector.pa#','virtual/read_only.iob',
+arg={'virtual/3_instance_seed.iob','virtual/iob_input_analyzer.pa',
+  'virtual/iob_input_accelerator.pa','virtual/iob_input_detector.pa','virtual/read_only.iob',
   'virtual/source.lua','virtual/source.fly2',0,0,0,0,0,0,0,0,0,'read_only_voltageized'}
 assert(original_loadfile(directory..'build_three_component_iob.lua'))()
 assert(#calls==0,'read-only voltageized PA binding performed Fast Adjust or save')
@@ -120,45 +118,37 @@ assert(loadstring(program_text:gsub('\nadjustable ','\n'),'@virtual/source.lua')
 V_stripe_1,V_stripe_2,V_prism_1,V_prism_2,V_repeller,V_grid1,V_grid2,V_nonaccelerator_scale=-8,12,99,0,44,33,1,0.25
 calls={}
 segment.fast_adjust()
-assert(#calls==0,'saved PA0 flight must not repeat Fast Adjust by default')
+assert(#calls==0,'standalone accelerator field gate must not use PA-family Fast Adjust')
 runtime_fast_adjust_enable=1
 segment.fast_adjust()
+assert(#calls==1 and calls[1]=='adjust1','only the analyser may use runtime Fast Adjust')
 assert(simion.wb.instances[1].pa.values[11]==-2 and simion.wb.instances[1].pa.values[13]==3)
 assert(simion.wb.instances[1].pa.values[16]==99 and simion.wb.instances[1].pa.values[17]==0,
   'runtime prism adjustables were not applied to physical prism IDs')
-assert(simion.wb.instances[2].pa.values[2]==44 and simion.wb.instances[2].pa.values[3]==33)
-assert(simion.wb.instances[2].pa.values[4]==1 and simion.wb.instances[2].pa.values[5]==25,
-  'runtime endpoint adjustables must not silently rederive frozen ring voltages')
+assert(simion.wb.instances[2].pa.values==nil,
+  'standalone accelerator operating PA must remain unmodified')
 point.prism_switch={enabled=true,electrode_id=17,time_us=3,
   injection_voltage_v=point.prism_voltages_v[2],extraction_voltage_v=-12,
   prism_1_extraction_voltage_v=0}
-assert(loadstring(program_text:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
-runtime_fast_adjust_enable=0
-ion_instance,ion_time_of_flight=1,2
-segment.fast_adjust()
-assert(adj_elect17==point.prism_switch.injection_voltage_v,
-  'P2 switch did not preserve its injection voltage before the switch')
-assert(adj_elect16==point.prism_voltages_v[1],
-  'P1 switch did not preserve its injection voltage before the switch')
-ion_time_of_flight=3
-segment.fast_adjust()
-assert(adj_elect17==point.prism_switch.extraction_voltage_v,
-  'P2 switch did not apply its extraction voltage at the switch time')
-assert(adj_elect16==point.prism_switch.prism_1_extraction_voltage_v,
-  'P1 switch did not apply its extraction voltage at the switch time')
-ion_instance,ion_time_of_flight=2,4
-adj_elect17=123
-segment.fast_adjust()
-assert(adj_elect17==123,'P2 switch leaked into a non-analyser PA instance')
-runtime_fast_adjust_enable=1
-assert(not pcall(segment.fast_adjust),
-  'prism extraction switching and full analyser Fast Adjust were allowed together')
+assert(not pcall(function()
+  assert(loadstring(program_text:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+end),'active static MR-TOF Candidate accepted superseded P1/P2 switching')
 point.prism_switch=nil
+point.patch_interface_planes_project={{name='test',region='central_transport',face='z_test',axis='z',
+  coordinate_mm=0,u_axis='x',u_min_mm=-1,u_max_mm=1,v_axis='y',v_min_mm=-1,v_max_mm=1}}
 active_local_config={enabled=true,global_analyzer_instance=1,accelerator_instance=7,detector_instance=8,
   instances={{instance=2,z_max_mm=-131},{instance=3,z_min_mm=-131,z_max_mm=-72},
     {instance=4,z_min_mm=-72,z_max_mm=72},{instance=5,z_min_mm=72,z_max_mm=131},
     {instance=6,z_min_mm=131}}}
+point.accelerator_pulse_mode='initial_exit_triggered_single_center'
 assert(loadstring(program_text:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+simion.wb.instances={}
+for index,name in ipairs({'iob_input_analyzer.pa','iob_input_local_1.pa','iob_input_local_2.pa',
+  'iob_input_local_3.pa','iob_input_local_4.pa','iob_input_local_5.pa',
+  'iob_input_accelerator.pa','iob_input_detector.pa'}) do
+  simion.wb.instances[index]={filename='virtual/'..name,pa=pa(index)}
+end
+segment.initialize_run()
 for _,sample in ipairs({
   {2,-132,2},{2,-131,0},{3,-131,3},{3,-72,0},{4,-72,4},{4,72,0},
   {5,72,5},{5,131,0},{6,131,6},{6,130.999,0},{1,500,1},{7,0,7},{8,0,8}
@@ -167,7 +157,66 @@ for _,sample in ipairs({
   segment.instance_adjust()
   assert(ion_instance==sample[3],string.format('local responsibility mismatch for instance %d at z=%g',sample[1],sample[2]))
 end
-print('CANDIDATE_VOLTAGE_MAP=PASS mapping validation persistence sidecars runtime_adjustables')
+calls={}
+local pulse_events={}
+local pulse_test_print=print
+print=function(message) pulse_events[#pulse_events+1]=message end
+ion_number,ion_instance,ion_time_of_flight,ion_splat=1,7,0,0
+ion_px_mm,ion_py_mm,ion_pz_mm=0,-55,-5
+ion_vx_mm,ion_vy_mm,ion_vz_mm=0,1,-1
+segment.initialize();segment.other_actions()
+ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=1,2,3
+segment.efield_adjust()
+assert(ion_dvoltsx_gu==1 and ion_dvoltsy_gu==2 and ion_dvoltsz_gu==3,
+  'accelerator field must remain energized before its initial exit')
+ion_instance,ion_time_of_flight,ion_pz_mm=1,0.1,-6
+segment.other_actions()
+print=pulse_test_print
+local safe_exit_count,pulse_off_count=0,0
+for _,message in ipairs(pulse_events) do
+  if message:match('MRTOF_EVENT accelerator_safe_exit ') then safe_exit_count=safe_exit_count+1 end
+  if message:match('MRTOF_EVENT accelerator_pulse_off ') then pulse_off_count=pulse_off_count+1 end
+end
+assert(safe_exit_count==1 and pulse_off_count==1,
+  'initial accelerator exit must emit one detector-blind safe-exit event and one N=1 pulse event')
+ion_instance=7
+ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=1,2,3
+segment.efield_adjust()
+assert(ion_dvoltsx_gu==0 and ion_dvoltsy_gu==0 and ion_dvoltsz_gu==0,
+  'accelerator field must be suppressed after its initial exit')
+point.accelerator_pulse_mode='fixed_global_time'
+point.accelerator_pulse_off_time_us=0.2
+assert(loadstring(program_text:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+simion.wb.instances={}
+for index,name in ipairs({'iob_input_analyzer.pa','iob_input_local_1.pa','iob_input_local_2.pa',
+  'iob_input_local_3.pa','iob_input_local_4.pa','iob_input_local_5.pa',
+  'iob_input_accelerator.pa','iob_input_detector.pa'}) do
+  simion.wb.instances[index]={filename='virtual/'..name,pa=pa(index)}
+end
+segment.initialize_run()
+ion_number,ion_instance,ion_time_of_flight,ion_splat=1,7,0.199,0
+ion_px_mm,ion_py_mm,ion_pz_mm=0,-55,-5
+ion_vx_mm,ion_vy_mm,ion_vz_mm=0,1,-1
+ion_time_step=0.01
+segment.tstep_adjust()
+assert(math.abs(ion_time_step-0.001)<1e-12,
+  'fixed global pulse must force an integration boundary at the frozen time')
+ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=1,2,3
+segment.efield_adjust()
+assert(ion_dvoltsx_gu==1 and ion_dvoltsy_gu==2 and ion_dvoltsz_gu==3,
+  'accelerator field must remain energized before the frozen global time')
+ion_time_of_flight=0.2
+segment.other_actions()
+ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=1,2,3
+segment.efield_adjust()
+assert(ion_dvoltsx_gu==0 and ion_dvoltsy_gu==0 and ion_dvoltsz_gu==0,
+  'accelerator field must be suppressed at the frozen global time')
+point.accelerator_pulse_off_time_us=nil
+assert(not pcall(function()
+  assert(loadstring(program_text:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+end),'fixed global pulse without a time was accepted')
+point.accelerator_pulse_mode=nil
+print('CANDIDATE_VOLTAGE_MAP=PASS mapping validation persistence sidecars independent_runtime_adjust pulsed_accelerator fixed_global_pulse')
 
 -- Exercise the real reload inspector with read-only PA getters. A mutating
 -- API is intentionally absent, so an accidental adjust/save fails this test.

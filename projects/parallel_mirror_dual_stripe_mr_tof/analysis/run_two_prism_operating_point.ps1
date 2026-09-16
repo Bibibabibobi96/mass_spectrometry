@@ -65,7 +65,7 @@ try {
     lifecycle_stage = 'single_center_two_prism_phase_space_handoff_audit'
     solver_execution = 'none__consume_verified_SIMION_trials'
     voltage_authority = 'derived_from_trial_observations__not_user_entered'
-    downstream_claim = 'K25_pending'
+    downstream_claim = 'baseline_target_phase_pending'
   }
   for ($index = 0; $index -lt $allManifests.Count; $index++) {
     $manifest = $allManifests[$index]

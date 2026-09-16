@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -24,6 +25,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.split_candidate_geomet
 )
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import derive_shielded_rectangular_enclosure
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+    compile_dual_stripe_edge_evaluators,
+    dual_stripe_width_at_y_mm,
     geometry_fingerprint,
     geometry_receipt,
     resolve_geometry,
@@ -43,6 +46,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.compose_ion_foil_profi
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import analyze_dual_stripe_l0
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
+    axial_potential_gradient_v_per_mm,
     axial_potential_v,
     derive_mirror_l0_slope_tolerance_per_v,
     effective_axial_width_mm,
@@ -66,6 +70,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_pro
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_operating_point_variation import (
     OperatingPointVariationError,
     materialize_variation,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_event_analysis import (
+    static_return_chain,
+    terminal,
 )
 
 
@@ -94,6 +102,25 @@ class TrajectoryProfileTest(unittest.TestCase):
         self.assertEqual(resolve_trajectory_profile(contract)["profile_id"], "screen")
         selected = resolve_trajectory_profile(contract, "precision")
         self.assertEqual(selected["maximum_step_us"], 0.00002)
+
+    def test_legacy_physical_contract_can_only_inherit_current_detector_policy(self) -> None:
+        current_path = PROJECT / "config" / "simion_candidate_two_zone.json"
+        current = load_contract(current_path)
+        legacy = json.loads(current_path.read_text(encoding="utf-8"))
+        del legacy["accelerator"]["detector_return_path"]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.json"
+            path.write_text(json.dumps(legacy), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "detector return"):
+                load_contract(path)
+            rebound = load_contract(
+                path,
+                inherited_detector_return_path=current["accelerator"]["detector_return_path"],
+            )
+        self.assertEqual(
+            rebound["accelerator"]["detector_return_path"],
+            current["accelerator"]["detector_return_path"],
+        )
 
     def test_rejects_unknown_or_malformed_profile(self) -> None:
         contract = {
@@ -205,6 +232,58 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         contract["prisms"]["ground_shields"][1]["cross_aperture"]["boolean_operation"] = "intersection"
         with self.assertRaises(CandidateContractError):
             resolve_geometry(contract)
+
+    def test_reviewed_geometry_inherits_stable_topology_and_observation_authority(self) -> None:
+        authority = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
+        reviewed = copy.deepcopy(authority)
+        mapping = reviewed["dual_stripe"]["theory_profile"]["path_length_mapping"]
+        mapping.pop("derivation")
+        mapping.pop("shared_bias_physical_instances")
+        mapping["profile_width_to_total_S_multiplier"] = 1.0
+        reviewed_injection = reviewed["prism_transport"]["two_prism_injection_l0"]
+        reviewed_injection.pop("low_field_reference_section")
+        reviewed_injection.pop("low_field_angle_and_positive_mirror_turn_authority")
+        expected = geometry_fingerprint(resolve_geometry(authority))
+        inherited = resolve_geometry(
+            reviewed, inherited_dual_stripe_topology_contract=authority,
+        )
+        self.assertEqual(geometry_fingerprint(inherited), expected)
+        self.assertEqual(len(inherited["stripe_electrodes"]), 4)
+        self.assertEqual(
+            inherited["two_prism_low_field_reference_section"],
+            resolve_geometry(authority)["two_prism_low_field_reference_section"],
+        )
+        with TemporaryDirectory() as directory:
+            reviewed_path = Path(directory) / "reviewed.json"
+            reviewed_path.write_text(json.dumps(reviewed), encoding="utf-8")
+            origins = resolve_split_iob_origins(
+                reviewed_path,
+                inherited_dual_stripe_topology_contract=authority,
+            )
+        self.assertEqual(set(origins), {"analyzer", "accelerator", "detector"})
+        incompatible = copy.deepcopy(reviewed)
+        incompatible["dual_stripe"]["theory_profile"]["path_length_mapping"][
+            "profile_width_to_total_S_multiplier"
+        ] = 1.5
+        with self.assertRaisesRegex(CandidateContractError, "unknown legacy"):
+            resolve_geometry(
+                incompatible, inherited_dual_stripe_topology_contract=authority,
+            )
+        conflicting = copy.deepcopy(authority)
+        conflicting["dual_stripe"]["physical_electrode_count"] = 6
+        with self.assertRaises(CandidateContractError):
+            resolve_geometry(
+                reviewed, inherited_dual_stripe_topology_contract=conflicting,
+            )
+        conflicting_observation = copy.deepcopy(reviewed)
+        conflicting_observation["prism_transport"]["two_prism_injection_l0"][
+            "low_field_reference_section"
+        ] = {"status": "stale"}
+        with self.assertRaisesRegex(CandidateContractError, "conflicts with inherited"):
+            resolve_geometry(
+                conflicting_observation,
+                inherited_dual_stripe_topology_contract=authority,
+            )
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
         contract["dual_stripe"]["central_ground_profile"].pop("terminal_profile")
         with self.assertRaises(CandidateContractError):
@@ -217,7 +296,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             base.write_text(
                 "return { mirror_voltages_v = { 0, -10, 20, 30, 50 }, stripe_biases_v = { -4, 6 }, prism_voltages_v = { 141, 0 }, "
                 "accelerator_voltages_v = { 100, 50, 0 }, accelerator_ring_voltages_v = { 40, 30, 20, 10, 0 }, detector_box_mm = { -1, 2, -3, 4, 5, 6 }, "
-                "trajectory_quality = 8, maximum_step_us = 0.002, full_path_timeout_us = 800, nonaccelerator_scale = 1, target_oscillation_count = 25 }\n",
+                "trajectory_quality = 8, maximum_step_us = 0.002, full_path_timeout_us = 800, nonaccelerator_scale = 1, phase_origin_mirror_side = 1, return_mirror_side = -1, target_drift_period_ratio = 25.5, target_half_oscillation_count = 51 }\n",
                 encoding="utf-8",
             )
             overrides = temporary / "overrides.json"
@@ -240,7 +319,8 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             self.assertEqual(result["resolved_operating_point"]["nonaccelerator_scale"], 0.7)
             self.assertEqual(result["resolved_operating_point"]["trajectory_quality"], 2.0)
             self.assertEqual(result["resolved_operating_point"]["maximum_step_us"], 0.05)
-            self.assertEqual(result["resolved_operating_point"]["target_oscillation_count"], 25.0)
+            self.assertEqual(result["resolved_operating_point"]["target_drift_period_ratio"], 25.5)
+            self.assertEqual(result["resolved_operating_point"]["target_half_oscillation_count"], 51.0)
             self.assertTrue(output.exists())
             invalid = temporary / "invalid.json"
             invalid.write_text(json.dumps({"overrides": {"unknown": 1}}), encoding="utf-8")
@@ -349,7 +429,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             )
             self.assertEqual(outputs["program"].name, "mrtof_candidate.lua")
             program = outputs["program"].read_text(encoding="utf-8")
-            self.assertIn("mirror_cycle_counter.new(mirror_regions, phase_origin_mirror_side)", program)
+            self.assertIn("mirror_cycle_counter.new(\n      mirror_regions, phase_origin_mirror_side, return_mirror_side,\n      target_half_oscillation_count)", program)
             self.assertNotIn("target_turns", program)
             self.assertNotIn("turns[ion_number] ==", program)
             self.assertTrue(outputs["first_prism_l0_receipt"].exists())
@@ -424,6 +504,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual(energy.post_acceleration_total_energy_reference_v, 4005.0)
         self.assertEqual(focus.energy_per_charge_v, energy.net_gain_reference_center_v)
         lower, upper = derive_mirror_voltage_bounds(contract)
+        self.assertEqual(lower[:3], (-10000.0, -5000.0, -5000.0))
         self.assertEqual(upper, (3900.0, 3900.0, 3900.0, 10000.0))
         self.assertGreater(lower[-1], 4100.0)
 
@@ -456,6 +537,18 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaisesRegex(CandidateContractError, "B--D maxima"):
             derive_mirror_voltage_bounds(contract)
 
+    def test_mirror_voltage_bounds_intersect_per_electrode_supply_limits(self) -> None:
+        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]
+        envelope["C"]["power_supply_limits_v"]["maximum_inclusive_v"] = 3000.0
+        lower, upper = derive_mirror_voltage_bounds(contract)
+        self.assertEqual(lower, (-10000.0, -5000.0, -5000.0, math.nextafter(4100.0, math.inf)))
+        self.assertEqual(upper, (3900.0, 3000.0, 3900.0, 10000.0))
+
+        envelope["D"]["power_supply_limits_v"]["minimum_inclusive_v"] = 4000.0
+        with self.assertRaisesRegex(CandidateContractError, "resolved mirror voltage envelope is empty"):
+            derive_mirror_voltage_bounds(contract)
+
     def test_split_accelerator_faces_negative_z_and_is_centered_on_declared_y_line(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
         contract["simion_geometry_release_status"] = "cad_topology_and_top_level_pose_qualified"
@@ -469,7 +562,14 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertIn("global focus=(0,-55.328,0)", gem)
         self.assertIn("box3D(-12.5,-12.5,6,12.5,12.5,6)", gem)
         self.assertIn("e(4) { box3D(-22,-20,5.5,22,20,6.5)", gem)
-        self.assertIn("e(2) { box3D(-20,-18,45.6,20,18,47.6) }", gem)
+        self.assertIn(
+            "e(2) { box3D(-20,-18,45.6,20,18,47.6) notin_inside { "
+            "box3D(-12.5,-12.5,43.6,12.5,12.5,49.6) } }",
+            gem,
+        )
+        self.assertIn("e(2) { box3D(-12.5,-12.5,45.6,12.5,12.5,45.6) }", gem)
+        self.assertIn("e(1) { box3D(-12.5,-12.5,52.6,12.5,12.5,52.6) }", gem)
+        self.assertIn("notin_inside { box3D(-12.5,-12.5,50.6,12.5,12.5,56.6) }", gem)
         self.assertIn("rear acceleration gaps", gem)
         self.assertAlmostEqual(origins["accelerator"][1], -87.328)
         self.assertAlmostEqual(
@@ -545,6 +645,34 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         contract["accelerator"]["aperture_width_x_mm"] = contract["accelerator"]["electrode_outer_width_x_mm"]
         with self.assertRaisesRegex(CandidateContractError, "support requires positive material"):
             resolve_geometry(contract)
+
+    def test_separate_detector_return_topology_is_required_and_resolved(self) -> None:
+        contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
+        resolved = resolve_geometry(contract)
+        self.assertEqual(resolved["accelerator_repeller_support_frame"]["id"], 22)
+        self.assertEqual(resolved["accelerator_rear_ground_grid"]["id"], 15)
+        for item in (
+            resolved["accelerator_repeller_support_frame"],
+            resolved["accelerator_rear_ground_grid"],
+        ):
+            self.assertEqual(
+                (item["aperture_half_x_mm"], item["aperture_half_y_mm"]),
+                (12.5, 12.5),
+            )
+        for field, value in (
+            ("detector_half_space", "negative_project_z"),
+            ("detector_surface_normal", "-z"),
+            ("required_hit_direction", "z_positive"),
+            ("accelerator_reentry_after_safe_exit", "allowed"),
+        ):
+            with self.subTest(field=field):
+                changed = json.loads(json.dumps(contract))
+                changed["accelerator"]["detector_return_path"][field] = value
+                with TemporaryDirectory() as directory:
+                    path = Path(directory) / "contract.json"
+                    path.write_text(json.dumps(changed), encoding="utf-8")
+                    with self.assertRaisesRegex(CandidateContractError, "detector return"):
+                        load_contract(path)
 
     def test_shared_shielded_accelerator_topology_keeps_exit_contact_and_repeller_gaps(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
@@ -630,6 +758,37 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual(len(report["turning_points_mm"]), 3)
         self.assertEqual(len(report["effective_axial_widths_mm"]), 3)
         self.assertTrue(all(value > 0.0 for value in report["turning_points_mm"]))
+
+    def test_mirror_axis_gradient_matches_the_existing_symmetric_potential(self) -> None:
+        design = MirrorL0Design(
+            transverse_half_gap_mm=15.0,
+            transition_z_mm=(0.0, 164.5, 226.5, 258.5, 288.5),
+            electrode_voltages_v=(0.0, -500.0, 2000.0, 3500.0, 7000.0),
+            terminal_electrode_plane_z_mm=320.0,
+            terminal_electrode_voltage_v=7000.0,
+        )
+        step_mm = 1.0e-4
+        for z_mm in (20.0, 164.5, 250.0, 319.0):
+            with self.subTest(z_mm=z_mm):
+                finite_difference = (
+                    axial_potential_v(z_mm + step_mm, design)
+                    - axial_potential_v(z_mm - step_mm, design)
+                ) / (2.0 * step_mm)
+                gradient = axial_potential_gradient_v_per_mm(z_mm, design)
+                self.assertAlmostEqual(gradient, finite_difference, places=6)
+                self.assertAlmostEqual(
+                    axial_potential_gradient_v_per_mm(-z_mm, design), -gradient, places=12,
+                )
+        # axial_potential_v mirrors a one-sided expression through abs(z).
+        # Its exact-plane convention is symmetric zero even though the tiny
+        # finite-distance mirror tail has opposite one-sided derivatives.
+        self.assertEqual(axial_potential_gradient_v_per_mm(0.0, design), 0.0)
+        self.assertAlmostEqual(
+            axial_potential_gradient_v_per_mm(-1.0e-8, design),
+            -axial_potential_gradient_v_per_mm(1.0e-8, design),
+            places=12,
+        )
+        self.assertLess(axial_potential_gradient_v_per_mm(164.5, design), 0.0)
 
     def test_mirror_effective_width_is_derived_from_period_not_terminal_spacing(self) -> None:
         self.assertAlmostEqual(effective_axial_width_mm(4000.0, 641.0 / 4000.0 ** 0.5), 641.0)
@@ -889,6 +1048,17 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertIn(f"locate(0,{placement.focus_y_mm:.12g},0)", gem)
         self.assertIn(f"box3D(-24,-22,{placement.exit_grid_z_mm:.12g}", gem)
         self.assertIn(f"box3D(-20,-18,{placement.repeller_z_mm:.12g}", gem)
+        self.assertIn(
+            f"box3D(-12.5,-12.5,{placement.repeller_z_mm:.12g},12.5,12.5,"
+            f"{placement.repeller_z_mm:.12g})",
+            gem,
+        )
+        resolved = resolve_geometry(contract)
+        rear_grid_z = resolved["accelerator_rear_ground_grid"]["grid_z_mm"]
+        self.assertIn(
+            f"box3D(-12.5,-12.5,{rear_grid_z:.12g},12.5,12.5,{rear_grid_z:.12g})",
+            gem,
+        )
         self.assertIn("Whole Ion-Foil-2 with native short cubic", gem)
         self.assertIn("no added bridges", gem)
         self.assertIn("extrude_yz(-12,-2)", gem)
@@ -930,6 +1100,27 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         grounded_2 = resolved["prism_ground_shields"][-1]
         self.assertEqual(grounded_2["topology"], "single_continuous_frame_with_cross_aperture")
         self.assertEqual(grounded_2["cross_aperture"], {"x_mm": [-2.0, 2.0], "y_mm": [-28.0, -6.0], "z_mm": [-40.0, 40.0], "boolean_operation": "union"})
+        low_field = resolved["two_prism_low_field_reference_section"]
+        self.assertEqual(low_field["open_project_z_interval_mm"], [26.0, 40.0])
+        self.assertEqual(low_field["reference_plane_project_z_mm"], 33.0)
+        self.assertEqual(low_field["transit_aperture_project_mm"], {
+            "x_mm": [-2.0, 2.0],
+            "y_mm": [-32.0, 3.0],
+            "source": "union_of_ground_shield_rectangular_slots_open_at_reference_plane",
+        })
+        self.assertEqual(
+            low_field["qualification"],
+            "candidate_reference_section__not_a_zero_field_claim",
+        )
+        self.assertEqual(
+            low_field["pa_field_plateau_validation"],
+            {
+                "required": True,
+                "status": "pending_user_threshold",
+                "maximum_field_plateau_variation": None,
+                "validation_nodes_project_z_mm": None,
+            },
+        )
         self.assertEqual(resolved["detector"]["normal_project"], "+z")
         self.assertEqual(resolved["detector"]["box"], [-25.0, -87.0, 95.0, 25.0, -37.0, 97.0])
         self.assertTrue(resolved["detector"]["separate_pa"])
@@ -986,6 +1177,56 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual([item["id"] for item in resolved["mirror_e_closures"]], [5, 10])
         self.assertTrue(resolved["metadata"]["mirror_stripe_clearance_pass"])
 
+    def test_low_field_reference_section_is_derived_and_thresholds_fail_closed(self) -> None:
+        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        shifted = copy.deepcopy(contract)
+        shifted["prisms"]["ground_shields"][1]["prism_clearance_polygon_yz_mm"][2][1] = 28.0
+        section = resolve_geometry(shifted)["two_prism_low_field_reference_section"]
+        self.assertEqual(section["open_project_z_interval_mm"], [28.0, 40.0])
+        self.assertEqual(section["reference_plane_project_z_mm"], 34.0)
+
+        missing_threshold_authority = copy.deepcopy(contract)
+        validation = missing_threshold_authority["prism_transport"]["two_prism_injection_l0"][
+            "low_field_reference_section"
+        ]["pa_field_plateau_validation"]
+        validation["status"] = "validated"
+        with self.assertRaisesRegex(CandidateContractError, "user-owned threshold and nodes"):
+            resolve_geometry(missing_threshold_authority)
+
+    def test_native_stripe_edge_compiler_preserves_derivatives_width_and_z_mirror(self) -> None:
+        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        derivative_step_mm = 1.0e-4
+        for set_name in ("set_1", "set_2"):
+            positive = compile_dual_stripe_edge_evaluators(contract, set_name, 1)
+            negative = compile_dual_stripe_edge_evaluators(contract, set_name, -1)
+            with self.assertRaisesRegex(CandidateContractError, "active theory y span"):
+                positive.lower_z_mm(-1.0)
+            for y_mm in (25.0, 170.0, 360.0):
+                with self.subTest(set_name=set_name, y_mm=y_mm):
+                    native_width = dual_stripe_width_at_y_mm(contract, set_name, y_mm)
+                    self.assertAlmostEqual(
+                        positive.upper_z_mm(y_mm) - positive.lower_z_mm(y_mm),
+                        native_width,
+                        places=11,
+                    )
+                    self.assertAlmostEqual(
+                        negative.upper_z_mm(y_mm) - negative.lower_z_mm(y_mm),
+                        native_width,
+                        places=11,
+                    )
+                    self.assertAlmostEqual(negative.lower_z_mm(y_mm), -positive.upper_z_mm(y_mm))
+                    self.assertAlmostEqual(negative.upper_z_mm(y_mm), -positive.lower_z_mm(y_mm))
+                    for edge, derivative in (
+                        (positive.lower_z_mm, positive.lower_dz_dy),
+                        (positive.upper_z_mm, positive.upper_dz_dy),
+                    ):
+                        finite_difference = (
+                            edge(y_mm + derivative_step_mm) - edge(y_mm - derivative_step_mm)
+                        ) / (2.0 * derivative_step_mm)
+                        self.assertAlmostEqual(derivative(y_mm), finite_difference, places=7)
+                    self.assertAlmostEqual(negative.lower_dz_dy(y_mm), -positive.upper_dz_dy(y_mm))
+                    self.assertAlmostEqual(negative.upper_dz_dy(y_mm), -positive.lower_dz_dy(y_mm))
+
     def test_resolved_geometry_rejects_crossing_or_unsampled_stripe_edges(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
         contract["dual_stripe"]["theory_profile"]["set_1"]["upper_edge"]["z_mm"] = 40.0
@@ -1007,6 +1248,21 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual(receipt["resolved_geometry_sha256"], geometry_fingerprint(resolved))
         self.assertEqual(receipt["electrode_ids"]["mirrors"], list(range(1, 11)))
         self.assertEqual(receipt["electrode_ids"]["stripes"], [11, 12, 13, 14])
+        # Frozen to the r51 GUI-review Candidate, including both accelerator
+        # support frames.  This identity does not grant Formal qualification.
+        self.assertEqual(
+            geometry_fingerprint(resolved),
+            "b23c47eae454aa0b232f9f9ced0360253c1ef03a846d3f5fec8ec8f696e0a9a2",
+        )
+        self.assertEqual(
+            geometry_fingerprint({"stripe_electrodes": resolved["stripe_electrodes"]}),
+            "699284bf6517ee7a40c70c1a919c7dcbc0378cf1670873ea03f0c4e17d7351e9",
+        )
+        shifted_reference = copy.deepcopy(resolved)
+        shifted_reference["two_prism_low_field_reference_section"][
+            "reference_plane_project_z_mm"
+        ] += 1.0
+        self.assertEqual(geometry_fingerprint(shifted_reference), geometry_fingerprint(resolved))
 
     def test_run_manifest_binds_pa0_family_to_the_resolved_geometry(self) -> None:
         source_contract_path = PROJECT / "config" / "simion_candidate_two_zone.json"
@@ -1043,6 +1299,18 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertIn("refine{solutions={solution}}", builder)
         self.assertNotIn("convergence=", builder)
         self.assertIn("MRTOF_EVENT detector", program)
+        self.assertNotIn("initial-exit-triggered accelerator pulse requires local-refinement", program)
+        self.assertIn("and local_refinement.accelerator_instance or 2", program)
+        self.assertIn("local maximum_instance = local_refinement.enabled and 8 or 3", program)
+        self.assertNotIn("main_drift_exceeded_target_k", program)
+        self.assertNotIn("prism_stage[ion_number] = 'awaiting_return_origin_turn'", program)
+        self.assertIn("target_half_oscillation_count", program)
+        self.assertIn("termination_kind=programmatic_topology_rejection", program)
+        self.assertIn("physical_collision=0", program)
+        self.assertEqual(
+            program.count("prism_stage[ion_number] = 'awaiting_return_p2_entry'"),
+            1,
+        )
         self.assertNotIn("adj_elect25", program)
         self.assertNotIn("adjustable V_repeller = 4480", program)
         self.assertIn("wb:load(seed)", split_iob_builder)
@@ -1053,24 +1321,23 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertIn("simion.command('fly", launcher)
 
     def test_event_analysis_retains_losses_and_refuses_small_sample_fwhm(self) -> None:
-        events = parse_events(
-            "MRTOF_EVENT central_plane ion=1 n=1 t_us=1 x_mm=0 y_mm=0\n"
-            "MRTOF_EVENT detector ion=1 t_us=5 x_mm=0 y_mm=285 z_mm=0\n"
-            "MRTOF_EVENT terminal ion=1 splat=0 t_us=5 x_mm=0 y_mm=285 z_mm=0 vx_mm_us=0 vy_mm_us=0 vz_mm_us=0 turns=50 central_crossings=2\n"
-            "MRTOF_EVENT terminal ion=2 splat=-1 t_us=5.1 x_mm=0 y_mm=3 z_mm=0 vx_mm_us=0 vy_mm_us=0 vz_mm_us=0 turns=48 central_crossings=1\n"
-        )
-        summary = summarize_events(events, target_k=25, reported_splat_count=2, expected_particle_ids=(1, 2))
+        events = [
+            *static_return_chain(1),
+            terminal(1, splat=1, turns=51),
+            terminal(2, splat=-1, turns=48),
+        ]
+        summary = summarize_events(events, target_k=25.5, reported_splat_count=2, expected_particle_ids=(1, 2))
         self.assertEqual(summary["particle_terminal_count"], 2)
         self.assertEqual(summary["detector_hit_count"], 1)
         self.assertEqual(summary["target_k_count"], 1)
         self.assertEqual(summary["electrode_collision_count"], 1)
-        self.assertEqual(summary["splat_code_histogram"], {"-1": 1, "0": 1})
+        self.assertEqual(summary["splat_code_histogram"], {"-1": 1, "1": 1})
         self.assertTrue(summary["all_losses_retained"])
         self.assertIsNone(summary["detector_tof_fwhm_us"])
 
     def test_event_analysis_fails_closed_when_simion_reports_unrecorded_splats(self) -> None:
         events = parse_events("MRTOF_EVENT terminal ion=1 splat=-1 t_us=1 x_mm=0 y_mm=0 z_mm=0 vx_mm_us=0 vy_mm_us=0 vz_mm_us=0 turns=0 central_crossings=0\n")
-        summary = summarize_events(events, target_k=25, reported_splat_count=2, expected_particle_ids=(1, 2))
+        summary = summarize_events(events, target_k=25.5, reported_splat_count=2, expected_particle_ids=(1, 2))
         self.assertEqual(summary["unrecorded_splat_count"], 1)
         self.assertFalse(summary["all_losses_retained"])
         self.assertEqual(summary["status"], "candidate_not_formal__invalid_event_receipt")

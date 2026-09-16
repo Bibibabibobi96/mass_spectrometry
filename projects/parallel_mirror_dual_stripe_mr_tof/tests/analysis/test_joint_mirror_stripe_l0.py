@@ -17,15 +17,20 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     derive_turning_y_from_entry_direction,
     evaluate_joint_l0_trial,
     finite_difference_joint_jacobian,
+    finite_difference_joint_jacobian_rows,
     fit_dimensionless_psi_g_profiles,
     require_exactly_determined,
     reduced_action_delta_mm_sqrt_v,
+    reduced_action_energy_derivative_mm_per_sqrt_v,
     solve_exactly_determined_joint_l0,
     spatial_return_kappa_derivative_residual,
     stripes_from_contract,
     time_platform_derivative_residuals,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design, reduced_period
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+    compile_dual_stripe_width_evaluator,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
     ProjectPhaseSpaceState,
@@ -100,23 +105,26 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertTrue(all(abs(value) < 1e-10 for value in result.psi_coefficients_by_power[1:]))
 
     def test_joint_trial_appends_the_two_three_dimensional_prism_targets(self) -> None:
-        state = ProjectPhaseSpaceState((0.0, 0.0, -10.0), (0.0, 1.0, 0.0))
+        state = ProjectPhaseSpaceState((0.0, 0.0, -10.0), (0.0, 1.0, 20.0))
+        positive_turn = ProjectPhaseSpaceState((0.0, 0.0, 20.0), (0.0, 1.0, 0.0))
         trial = self._trial(-2000.0)
-        slow_energy = 0.5 * 524.0 * 1.66053906660e-27 * (1000.0 ** 2) / 1.602176634e-19
         trial = JointL0Trial(
             **{**trial.__dict__,
-               "prism_target_turn_y_mm": 0.0,
-               "prism_target_slow_kinetic_energy_per_charge_v": slow_energy,
-               "particle_mass_th": 524.0,
-               "charge_state": 1,
-               "two_prism_transport_observation": TwoPrismTransportObservation(state, state, state, True)}
+               "prism_target_positive_mirror_turn_y_mm": 0.0,
+               "prism_target_p2_reference_tangent_ratio": 0.05,
+               "two_prism_transport_observation": TwoPrismTransportObservation(
+                   state, state, state, positive_turn, True,
+               )}
         )
         report = evaluate_joint_l0_trial(trial)
         self.assertEqual(len(report.residuals), 11)
-        self.assertEqual(dict(report.residuals)["P1_P2_phase_origin_turn_y_mm"], 0.0)
+        self.assertEqual(dict(report.residuals)["P1_P2_positive_mirror_turn_y_mm"], 0.0)
 
     def test_partial_prism_transport_input_fails_closed(self) -> None:
-        trial = JointL0Trial(**{**self._trial(-2000.0).__dict__, "prism_target_turn_y_mm": 0.0})
+        trial = JointL0Trial(**{
+            **self._trial(-2000.0).__dict__,
+            "prism_target_positive_mirror_turn_y_mm": 0.0,
+        })
         with self.assertRaises(CandidateContractError):
             evaluate_joint_l0_trial(trial)
 
@@ -127,12 +135,24 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertEqual(len(report.residuals), 9)
         self.assertEqual(classification.status, "locally_incompatible")
 
+        row_report, row_names, rows = finite_difference_joint_jacobian_rows(
+            ("mirror_voltage_b",),
+            (-2000.0,),
+            (1.0,),
+            lambda values: self._trial(values[0]),
+            selected_residual_names=("target_drift_period_ratio", "spatial_return_kappa_prime"),
+        )
+        self.assertEqual(row_report.residual_names(), report.residual_names())
+        self.assertEqual(row_names, ("target_drift_period_ratio", "spatial_return_kappa_prime"))
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(len(row) == 1 for row in rows))
+
         selected_report, selected = finite_difference_joint_jacobian(
             ("mirror_voltage_b",),
             (-2000.0,),
             (1.0,),
             lambda values: self._trial(values[0]),
-            selected_residual_names=("target_oscillation_count", "spatial_return_kappa_prime"),
+            selected_residual_names=("target_drift_period_ratio", "spatial_return_kappa_prime"),
         )
         self.assertEqual(len(selected_report.residuals), 9)
         self.assertEqual(selected.declared_constraint_count, 2)
@@ -181,16 +201,63 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             first.width_mm(y1 + 1.0)
 
-    def test_contract_adapter_applies_the_explicit_geometry_to_path_length_mapping(self) -> None:
+    def test_contract_adapter_derives_total_path_from_both_reflection_axis_bands(self) -> None:
         root = Path(__file__).resolve().parents[2]
         contract = json.loads((root / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8"))
-        nominal_first, _nominal_second = stripes_from_contract(contract, (-40.0, 60.0))
-        doubled = json.loads(json.dumps(contract))
-        doubled["dual_stripe"]["theory_profile"]["path_length_mapping"][
-            "profile_width_to_total_S_multiplier"
-        ] = 2.0
-        doubled_first, _doubled_second = stripes_from_contract(doubled, (-40.0, 60.0))
-        self.assertAlmostEqual(doubled_first.width_mm(0.0), 2.0 * nominal_first.width_mm(0.0))
+        first, second = stripes_from_contract(contract, (-40.0, 60.0))
+        raw_first = compile_dual_stripe_width_evaluator(contract, "set_1")
+        raw_second = compile_dual_stripe_width_evaluator(contract, "set_2")
+        self.assertAlmostEqual(first.width_mm(0.0), 2.0 * raw_first(0.0))
+        self.assertAlmostEqual(second.width_mm(340.0), 2.0 * raw_second(340.0))
+
+        incomplete = json.loads(json.dumps(contract))
+        incomplete["dual_stripe"]["theory_profile"]["path_length_mapping"][
+            "shared_bias_physical_instances"
+        ].pop()
+        with self.assertRaisesRegex(CandidateContractError, "physical topology count"):
+            stripes_from_contract(incomplete, (-40.0, 60.0))
+
+        invalid_cases = (
+            ("duplicate electrode ID", 1, "electrode_id", 11),
+            ("wrong electrode ID", 0, "electrode_id", 21),
+            ("crossed response group", 0, "set_name", "set_2"),
+            ("boolean reflection sign", 0, "reflection_axis_sign", True),
+            ("floating reflection sign", 0, "reflection_axis_sign", 1.0),
+        )
+        for label, index, field, value in invalid_cases:
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(contract))
+                changed["dual_stripe"]["theory_profile"]["path_length_mapping"][
+                    "shared_bias_physical_instances"
+                ][index][field] = value
+                with self.assertRaises(CandidateContractError):
+                    stripes_from_contract(changed, (-40.0, 60.0))
+
+    def test_symmetric_two_band_action_and_derivative_match_closed_contour_count(self) -> None:
+        energy = 4000.0
+        bias = 100.0
+        one_band_width = 12.5
+        total_spatial_width = 2.0 * one_band_width
+        expected_action = 4.0 * one_band_width * (
+            math.sqrt(energy - bias) - math.sqrt(energy)
+        )
+        expected_derivative = 2.0 * one_band_width * (
+            1.0 / math.sqrt(energy - bias) - 1.0 / math.sqrt(energy)
+        )
+        self.assertAlmostEqual(
+            reduced_action_delta_mm_sqrt_v(energy, bias, total_spatial_width),
+            expected_action,
+        )
+        analytic_derivative = reduced_action_energy_derivative_mm_per_sqrt_v(
+            energy, bias, total_spatial_width
+        )
+        self.assertAlmostEqual(analytic_derivative, expected_derivative)
+        step = 1e-3
+        finite_difference = (
+            reduced_action_delta_mm_sqrt_v(energy + step, bias, total_spatial_width)
+            - reduced_action_delta_mm_sqrt_v(energy - step, bias, total_spatial_width)
+        ) / (2.0 * step)
+        self.assertAlmostEqual(analytic_derivative, finite_difference, places=9)
 
     def test_current_hardware_problem_declares_derived_quantities_separately(self) -> None:
         root = Path(__file__).resolve().parents[2]
@@ -222,10 +289,10 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertNotIn("mirror_gamma_90_m11", drift_residuals)
         self.assertEqual(len(drift_residuals), 6)
         self.assertEqual(problem["prism_transport_named_residual_blocks"], [
-            "P1_P2_phase_origin_turn_y_mm",
-            "P1_P2_slow_kinetic_energy_per_charge_v",
+            "P1_P2_positive_mirror_turn_y_mm",
+            "P1_P2_P2_shield_low_field_signed_vy_over_vz",
         ])
-        self.assertIn("stripe_entrance_project_position_mm", problem["derived_not_independent_unknowns"])
+        self.assertIn("first_positive_mirror_turn_project_y_mm", problem["derived_not_independent_unknowns"])
         self.assertNotIn("drift_length_L_mm", problem["derived_not_independent_unknowns"])
         self.assertNotIn(
             "nominal_drift_kinetic_energy_per_charge_v",
@@ -242,12 +309,25 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             "analytic_inverse_from_user_confirmed_manufactured_theory_basis",
         )
         envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]
-        self.assertEqual(envelope["B"]["minimum_inclusive_v"], -10000.0)
+        self.assertEqual(
+            envelope["B"]["power_supply_limits_v"],
+            {"minimum_inclusive_v": -10000.0, "maximum_inclusive_v": 10000.0},
+        )
+        for key in ("C", "D"):
+            self.assertEqual(
+                envelope[key]["power_supply_limits_v"],
+                {"minimum_inclusive_v": -5000.0, "maximum_inclusive_v": 5000.0},
+            )
         self.assertEqual(
             envelope["D"]["maximum_inclusive_v"],
             "minimum_particle_net_acceleration_gain_per_charge_v",
         )
-        self.assertEqual(envelope["E"]["maximum_inclusive_v"], 10000.0)
+        self.assertEqual(
+            envelope["E"]["power_supply_limits_v"],
+            {"minimum_inclusive_v": -10000.0, "maximum_inclusive_v": 10000.0},
+        )
+        self.assertIn("B and E", envelope["hardware_assignment"])
+        self.assertIn("C and D", envelope["hardware_assignment"])
         self.assertIn("mirror.theory_requirements.voltage_envelope_v", initialization["semantics"])
         self.assertIn("historical_mirror_voltage_vector", initialization["forbidden_seed_sources"])
         self.assertIn("independently constructs and ranks", initialization["derivation_chain"][0])
@@ -346,8 +426,16 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             state.coupled_reduced_period_mm_per_sqrt_v * math.sqrt(4000.0),
         )
         self.assertGreater(state.nominal_kappa_1, 0.0)
-        self.assertGreater(state.nominal_injection_angle_rad, 0.0)
-        self.assertGreater(state.paper_normalized_oscillation_count, 0.0)
+        expected_tangent = math.sqrt(state.turning_pseudopotential_v / 4000.0)
+        self.assertAlmostEqual(
+            state.nominal_injection_angle_rad,
+            math.atan(expected_tangent),
+        )
+        self.assertAlmostEqual(
+            state.paper_normalized_oscillation_count,
+            state.drift_length_l_mm * state.nominal_kappa_1
+            / (state.axial_width_w_mm * expected_tangent),
+        )
         self.assertGreater(state.predicted_oscillation_count, 0.0)
 
     def test_stripe_on_fast_phase_uses_local_period_inside_integral(self) -> None:
@@ -435,6 +523,34 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             sample_count=300,
         )
         self.assertAlmostEqual(state.drift_length_l_mm, abs(turning))
+        self.assertAlmostEqual(state.turning_pseudopotential_v, 4000.0 * 0.01**2)
+
+        turning_with_x_component = derive_turning_y_from_entry_direction(
+            mirror_reduced_period_mm_per_sqrt_v=10.0,
+            energy_per_charge_v=4000.0,
+            stripes=stripes,
+            entry_y_mm=0.0,
+            entry_unit_direction_project=(0.3, -0.01, -1.0),
+            search_end_y_mm=-300.0,
+            sample_count=300,
+        )
+        self.assertAlmostEqual(turning_with_x_component, turning)
+
+    def test_entry_direction_requires_nonzero_axial_component(self) -> None:
+        stripes = (
+            StripeHardBoundary(40.0, lambda y: 30.0 - 0.02 * y),
+            StripeHardBoundary(-60.0, lambda y: 20.0 + 0.04 * y),
+        )
+        with self.assertRaisesRegex(CandidateContractError, "axial-z"):
+            derive_turning_y_from_entry_direction(
+                mirror_reduced_period_mm_per_sqrt_v=10.0,
+                energy_per_charge_v=4000.0,
+                stripes=stripes,
+                entry_y_mm=0.0,
+                entry_unit_direction_project=(0.0, -1.0, 0.0),
+                search_end_y_mm=-300.0,
+                sample_count=300,
+            )
 
     def test_nontransmitting_or_nonturning_trials_fail_closed(self) -> None:
         with self.assertRaises(CandidateContractError):

@@ -168,30 +168,49 @@ def derive_operating_energy_envelope(
 def derive_mirror_voltage_bounds(
     contract: dict[str, Any], *, selected_center_v: float | None = None,
 ) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    """Resolve B--E search bounds, including the energy-derived B--D cap."""
+    """Resolve B--E bounds as hardware-supply/physics intersections."""
     energy = derive_operating_energy_envelope(contract, selected_center_v=selected_center_v)
     envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]
     keys = ("B", "C", "D", "E")
     expected_cap = "minimum_particle_net_acceleration_gain_per_charge_v"
     if any(envelope[key].get("maximum_inclusive_v") != expected_cap for key in keys[:3]):
         raise CandidateContractError("mirror B--D maxima must reference the minimum particle net gain")
+    if envelope["E"].get("minimum_exclusive_v") != "maximum_mirror_energy_per_charge_v":
+        raise CandidateContractError("mirror E minimum must reference the maximum mirror energy")
+    supply_bounds = []
+    for key in keys:
+        limits = envelope[key].get("power_supply_limits_v")
+        if not isinstance(limits, dict):
+            raise CandidateContractError(f"mirror {key} power-supply limits are required")
+        supply_low = _number(limits.get("minimum_inclusive_v"), f"mirror {key} supply minimum")
+        supply_high = _number(limits.get("maximum_inclusive_v"), f"mirror {key} supply maximum")
+        if supply_low >= supply_high:
+            raise CandidateContractError(f"mirror {key} power-supply limits are empty")
+        supply_bounds.append((supply_low, supply_high))
     lower = tuple(
-        math.nextafter(max(energy.mirror_energy_nodes_v), math.inf)
-        if key == "E" else _number(envelope[key]["minimum_inclusive_v"], f"mirror {key} minimum")
-        for key in keys
+        max(math.nextafter(max(energy.mirror_energy_nodes_v), math.inf), supply_low)
+        if key == "E" else supply_low
+        for key, (supply_low, _supply_high) in zip(keys, supply_bounds, strict=True)
     )
     upper = tuple(
-        energy.mirror_b_through_d_maximum_v
-        if key != "E" else _number(envelope[key]["maximum_inclusive_v"], "mirror E maximum")
-        for key in keys
+        supply_high if key == "E" else min(energy.mirror_b_through_d_maximum_v, supply_high)
+        for key, (_supply_low, supply_high) in zip(keys, supply_bounds, strict=True)
     )
     if any(low >= high for low, high in zip(lower, upper, strict=True)):
         raise CandidateContractError("resolved mirror voltage envelope is empty")
     return lower, upper
 
 
-def load_contract(path: Path) -> dict[str, Any]:
-    """Load and minimally validate the MR-TOF-only candidate contract."""
+def load_contract(
+    path: Path, *, inherited_detector_return_path: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Load and minimally validate one MR-TOF candidate contract.
+
+    ``inherited_detector_return_path`` is only for rebinding an older, immutable
+    physical artifact whose contract predates the detector-return policy.  The
+    supplied policy must itself be current and valid; an existing upstream
+    policy is never overwritten.  Default loading remains fail-closed.
+    """
     data = json.loads(path.read_text(encoding="utf-8"))
     if data.get("project_id") != "parallel_mirror_dual_stripe_mr_tof":
         raise CandidateContractError("project_id must identify the MR-TOF project")
@@ -219,13 +238,45 @@ def load_contract(path: Path) -> dict[str, Any]:
         raise CandidateContractError("stripe widths must remain positive")
     if _number(stripe["maximum_width_mm"], "maximum_width_mm") < _number(stripe["minimum_width_mm"], "minimum_width_mm"):
         raise CandidateContractError("maximum stripe width must be >= minimum width")
+    accelerator = data.get("accelerator")
+    if (
+        inherited_detector_return_path is not None
+        and isinstance(accelerator, dict)
+        and accelerator.get("detector_return_path") is None
+    ):
+        policy_holder = {"accelerator": {"detector_return_path": inherited_detector_return_path}}
+        validate_detector_return_path(policy_holder)
+        accelerator["detector_return_path"] = dict(inherited_detector_return_path)
+    validate_detector_return_path(data)
     derive_operating_energy_envelope(data)
     derive_mirror_voltage_bounds(data)
     return data
 
 
-def derive_two_zone_focus(contract: dict[str, Any]) -> TwoZoneFocus:
-    """Derive the first-order temporal focus of the two uniform-field regions."""
+def validate_detector_return_path(contract: dict[str, Any]) -> dict[str, Any]:
+    """Validate the separate positive-z detector-return branch."""
+    accelerator = contract.get("accelerator")
+    if not isinstance(accelerator, dict):
+        raise CandidateContractError("accelerator contract is required")
+    return_path = accelerator.get("detector_return_path")
+    required = {
+        "status": "required_separate_from_accelerator",
+        "detector_half_space": "positive_project_z",
+        "detector_surface_normal": "+z",
+        "required_hit_direction": "z_negative",
+        "accelerator_reentry_after_safe_exit": "forbidden",
+    }
+    if not isinstance(return_path, dict) or any(return_path.get(key) != value for key, value in required.items()):
+        raise CandidateContractError(
+            "detector return must remain at z>0, hit toward -z, and forbid accelerator re-entry"
+        )
+    return return_path
+
+
+def derive_two_zone_focus(
+    contract: dict[str, Any], *, require_downstream_focus: bool = True,
+) -> TwoZoneFocus:
+    """Derive the signed ideal focus, downstream-only by default."""
     frame = contract.get("coordinate_system", {})
     if frame.get("frame_id") != "astral.xyz.reflection_z.drift_y.transverse_x.v2":
         raise CandidateContractError("candidate must use the documented Astral coordinate frame")
@@ -240,6 +291,7 @@ def derive_two_zone_focus(contract: dict[str, Any]) -> TwoZoneFocus:
             release_position_in_gap_1_mm=_number(
                 accelerator["release_position_in_gap_1_mm"], "release_position_in_gap_1_mm"
             ),
+            require_downstream_focus=require_downstream_focus,
         )
     except TwoZoneTheoryError as error:
         raise CandidateContractError(str(error)) from error
@@ -302,14 +354,17 @@ def derive_two_zone_placement(contract: dict[str, Any]) -> TwoZonePlacement:
     return TwoZonePlacement(repeller, grid_1, exit_grid, focus_y, focus_z)
 
 
-def derive_stage_2_ring_layout(contract: dict[str, Any]) -> UniformRingPlaneLayout:
+def derive_stage_2_ring_layout(
+    contract: dict[str, Any], *, placement_contract: dict[str, Any] | None = None,
+) -> UniformRingPlaneLayout:
     """Return the physical second-zone ring planes in project ``z`` order.
 
     The long second field region extends from grid1 toward the lower-``z``
     exit grid.  Ring count and thickness are project inputs; their equal pitch
     is solver-neutral shared geometry derived from the two endpoint planes.
     """
-    accelerator = contract.get("accelerator")
+    layout_contract = contract if placement_contract is None else placement_contract
+    accelerator = layout_contract.get("accelerator")
     if not isinstance(accelerator, dict):
         raise CandidateContractError("stage-2 rings require an accelerator contract")
     rings = accelerator.get("stage_2_rings")
@@ -322,7 +377,7 @@ def derive_stage_2_ring_layout(contract: dict[str, Any]) -> UniformRingPlaneLayo
         raise CandidateContractError("stage-2 rings must inherit the declared accelerator frame and aperture")
     if rings.get("voltage_rule") != "linear_interpolation_from_grid1_to_exit":
         raise CandidateContractError("stage-2 ring voltage rule must interpolate the two field endpoints")
-    placement = derive_two_zone_placement(contract)
+    placement = derive_two_zone_placement(layout_contract)
     try:
         return derive_uniform_ring_planes(
             placement.grid_1_z_mm,
@@ -334,10 +389,14 @@ def derive_stage_2_ring_layout(contract: dict[str, Any]) -> UniformRingPlaneLayo
         raise CandidateContractError(str(error)) from error
 
 
-def derive_stage_2_ring_voltages(contract: dict[str, Any]) -> tuple[float, ...]:
+def derive_stage_2_ring_voltages(
+    contract: dict[str, Any], *, placement_contract: dict[str, Any] | None = None,
+) -> tuple[float, ...]:
     """Linearly interpolate stage-2 ring voltages from grid1 to the exit grid."""
     accelerator = contract["accelerator"]
-    layout = derive_stage_2_ring_layout(contract)
+    layout = derive_stage_2_ring_layout(
+        contract, placement_contract=placement_contract,
+    )
     grid_1 = _number(accelerator["intermediate_grid_v"], "intermediate_grid_v")
     exit_grid = _number(accelerator["exit_grid_v"], "exit_grid_v")
     return tuple(

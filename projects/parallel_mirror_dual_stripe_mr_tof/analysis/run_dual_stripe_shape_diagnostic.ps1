@@ -68,6 +68,7 @@ try {
     'common\contracts\file_identity.py',
     'common\contracts\verify_run_manifest.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\drift_phase_contract.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_shape_diagnostic.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_geometry_parameters.py',

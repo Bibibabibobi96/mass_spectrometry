@@ -54,7 +54,8 @@ def write_fixture(root: Path) -> dict[str, Path]:
     source_root.mkdir()
     contract = {
         "particle_source": {"center_particle_count": 1},
-        "nominal": {"target_oscillation_count": 25},
+        "nominal": {"target_drift_period_ratio": 25.5,
+                    "fast_path_symmetry": "opposite_mirror_turn__z_reflected_nonoverlapping"},
     }
     contract_path = source_root / "simion_prototype_contract.json"
     contract_path.write_text(json.dumps(contract), encoding="utf-8")

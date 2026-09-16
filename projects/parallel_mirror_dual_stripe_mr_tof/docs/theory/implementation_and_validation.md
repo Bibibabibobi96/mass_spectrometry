@@ -73,7 +73,8 @@ space_charge
   "nominal": {
     "energy_per_charge_V": 4000.0,
     "mirror_period_definition": "full_two_mirror_oscillation",
-    "target_oscillation_count": 25,
+    "target_drift_period_ratio": 25.5,
+    "fast_path_symmetry": "opposite_mirror_turn__z_reflected_nonoverlapping",
     "drift_length_mm": 335.0
   },
   "mirror_model": {},

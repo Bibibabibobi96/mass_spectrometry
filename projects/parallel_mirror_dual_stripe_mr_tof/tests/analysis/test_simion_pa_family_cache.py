@@ -11,7 +11,9 @@ from common.simion.pa_family_cache import (
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_pa_family_cache import (
+    accelerator_standalone_response_contract,
     build_pa_family_identity,
+    component_pa_cache_filenames,
     materialize_component_pa_cache,
     pa_family_filenames,
     probe_component_pa_cache,
@@ -37,7 +39,7 @@ class SimionPAFamilyCacheAdapterTest(unittest.TestCase):
             source = root / "source"
             source.mkdir()
             (source / "mrtof_accelerator.gem").write_bytes(gem.read_bytes())
-            for name in pa_family_filenames("accelerator"):
+            for name in component_pa_cache_filenames("accelerator"):
                 (source / name).write_bytes(name.encode("ascii"))
             (source / "frozen_input.lua").write_text("sidecar", encoding="utf-8")
             cache = root / "cache"
@@ -45,6 +47,18 @@ class SimionPAFamilyCacheAdapterTest(unittest.TestCase):
             expected_mesh = json.loads(contract.read_text(encoding="utf-8"))["simion"]["component_mesh_mm_per_gu"]["accelerator"]
             self.assertEqual(identity["mesh"]["mm_per_gu"], expected_mesh)
             self.assertEqual(identity["basis_namespace"]["stable_local_ids"], list(range(1, 10)))
+            standalone = accelerator_standalone_response_contract()
+            self.assertEqual(standalone["base_filename"], "mrtof_accelerator.base.pa")
+            self.assertEqual(
+                [item["electrode_id"] for item in standalone["responses"]],
+                list(range(1, 10)),
+            )
+            self.assertEqual(
+                identity["refine_policy"]["standalone_response_export"], standalone
+            )
+            self.assertIn("standalone_response_exporter_sha256", identity["builder_identity"])
+            self.assertIn("zero_base_exporter_sha256", identity["builder_identity"])
+            self.assertIn("basis_normalization_measurement_sha256", identity["builder_identity"])
             _, miss = probe_component_pa_cache(cache, contract, "accelerator", gem, executable, "SIMION test")
             self.assertEqual(miss.disposition, CacheDisposition.MISS)
             published = publish_component_pa_cache(cache, contract, "accelerator", gem, source, executable, "SIMION test")
@@ -58,8 +72,15 @@ class SimionPAFamilyCacheAdapterTest(unittest.TestCase):
             self.assertEqual(materialized["disposition"], "materialized")
             self.assertTrue((destination / "mrtof_accelerator.gem").is_file())
             self.assertEqual(
-                sorted(item["name"] for item in materialized["files"]), sorted(pa_family_filenames("accelerator")),
+                sorted(item["name"] for item in materialized["files"]),
+                sorted(component_pa_cache_filenames("accelerator")),
             )
+            self.assertEqual(materialized["standalone_response_contract"], standalone)
+
+    def test_analyzer_payload_remains_only_its_native_family(self) -> None:
+        self.assertEqual(
+            component_pa_cache_filenames("analyzer"), pa_family_filenames("analyzer")
+        )
 
     def test_publication_rejects_a_pa_directory_without_its_exact_source_gem(self) -> None:
         contract = PROJECT / "config" / "simion_candidate_two_zone.json"
@@ -81,6 +102,12 @@ class SimionPAFamilyCacheAdapterTest(unittest.TestCase):
             with self.assertRaisesRegex(PAFamilyCacheError, "source GEM differs"):
                 publish_component_pa_cache(
                     root / "cache", contract, "accelerator", gem, source, executable, "SIMION test"
+                )
+            (source / "mrtof_accelerator.gem").write_bytes(gem.read_bytes())
+            with self.assertRaisesRegex(PAFamilyCacheError, "source PA family is incomplete"):
+                publish_component_pa_cache(
+                    root / "cache", contract, "accelerator", gem, source, executable,
+                    "SIMION test",
                 )
 
     def test_identity_rejects_noncanonical_gem_and_changes_with_mesh(self) -> None:

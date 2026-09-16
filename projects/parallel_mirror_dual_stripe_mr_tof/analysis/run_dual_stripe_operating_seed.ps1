@@ -43,6 +43,7 @@ $qualification = if ($authorityOnly) {
   'analytic_manufactured_basis_voltage_inverse__finite_3d_tuning_pending'
 }
 
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
@@ -108,9 +109,11 @@ try {
     'common\contracts\verify_run_manifest.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\drift_phase_contract.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\joint_mirror_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_exact_k_operating_point.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\native_stripe_shape_adapter.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_geometry_parameters.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l1.py',
@@ -172,7 +175,15 @@ try {
       '--output', $summary
     )
   }
-  Invoke-ProjectPython -LogPath $logPath -Arguments $pythonArguments
+  $theoryLease = $null
+  try {
+    if (-not $authorityOnly) {
+      $theoryLease = Enter-HostExecutionLease -Role GATE -Stage theory_compute -RunId $RunId
+    }
+    Invoke-ProjectPython -LogPath $logPath -Arguments $pythonArguments
+  } finally {
+    if ($theoryLease) { Exit-HostExecutionLease -Lease $theoryLease }
+  }
   foreach ($pair in $sourceChecks) {
     if (-not (Test-RunFilesIdentical -Left $pair.source -Right $pair.frozen)) { throw "Analytic source changed during execution: $($pair.source)" }
   }

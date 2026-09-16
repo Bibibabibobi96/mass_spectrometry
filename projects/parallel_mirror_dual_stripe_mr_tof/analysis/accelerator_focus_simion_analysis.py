@@ -10,6 +10,8 @@ from typing import Any
 
 import numpy as np
 
+from common.contracts.file_identity import file_sha256
+from common.contracts.particle_physics import kinetic_energy_ev
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_focus_voltage_trial import (
     require_reviewed_geometry,
@@ -39,6 +41,82 @@ def _events(path: Path) -> dict[int, dict[str, dict[str, float]]]:
     return result
 
 
+def _single_center_focus_state(
+    records: dict[int, dict[str, dict[str, float]]],
+    *,
+    expected_count: int,
+    contract: dict[str, Any],
+    contract_path: Path,
+    reviewed_contract_path: Path,
+    log_path: Path,
+    selected_energy_per_charge_v: float,
+    target_focus_z_mm: float,
+) -> dict[str, Any] | None:
+    """Publish only a fully recorded one-ion focus crossing, never a nominal substitute."""
+    if expected_count != 1 or "focus" not in records.get(1, {}):
+        return None
+    focus = records[1]["focus"]
+    required = ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
+    if any(name not in focus for name in required):
+        raise ValueError("single-center focus event lacks complete recorded position or velocity")
+    values = {name: float(focus[name]) for name in required}
+    if not all(np.isfinite(value) for value in values.values()):
+        raise ValueError("single-center focus event position and velocity must be finite")
+    if values["vz_mm_us"] >= 0.0:
+        raise ValueError("single-center focus event must cross toward negative project z")
+    # Reuse the established project-frame interface-location tolerance used by
+    # the adjacent P1/focus hand-off checks; this is not a physics acceptance
+    # threshold or a replacement for the recorded event coordinate.
+    if abs(values["z_mm"] - target_focus_z_mm) > 1.0e-9:
+        raise ValueError("single-center focus event is not on the declared focus plane")
+    species = contract.get("particle_source", {}).get("species")
+    if not isinstance(species, dict):
+        raise ValueError("single-center accelerator output requires source species identity")
+    try:
+        mass_th = float(species["mass_th"])
+        charge_e = float(species["charge_e"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("single-center accelerator output has invalid species identity") from error
+    if not np.isfinite(mass_th) or not np.isfinite(charge_e) or mass_th <= 0.0 or charge_e == 0.0:
+        raise ValueError("single-center accelerator output has invalid species identity")
+    velocity = [values[name] for name in ("vx_mm_us", "vy_mm_us", "vz_mm_us")]
+    component_energy_ev = [
+        kinetic_energy_ev(
+            mass_th,
+            *(1000.0 * velocity[index] if index == axis else 0.0 for index in range(3)),
+        )
+        for axis in range(3)
+    ]
+    return {
+        "schema_version": 1,
+        "status": "published_from_recorded_single_center_focus_event",
+        "qualification": "accelerator_focus_diagnostic_state_only__not_full_mr_source",
+        "event": "negative_going_project_z_focus_plane_crossing",
+        "ion_number": 1,
+        "time_us": values["t_us"],
+        "position_project_mm": [values[name] for name in ("x_mm", "y_mm", "z_mm")],
+        "velocity_project_mm_per_us": velocity,
+        "recorded_kinetic_energy_components_ev": {
+            "x": component_energy_ev[0],
+            "y": component_energy_ev[1],
+            "z": component_energy_ev[2],
+            "total": sum(component_energy_ev),
+        },
+        "species": {"mass_th": mass_th, "charge_e": charge_e},
+        "selected_net_gain_center_per_charge_v": float(selected_energy_per_charge_v),
+        "input_identity": {
+            "focus_log_sha256": file_sha256(log_path),
+            "contract_sha256": file_sha256(contract_path),
+            "reviewed_geometry_contract_sha256": file_sha256(reviewed_contract_path),
+        },
+        "semantics": (
+            "All position and velocity components come from the recorded SIMION focus event. "
+            "This zero-initial-KE accelerator diagnostic does not fabricate the separate 5-eV "
+            "slow component required by the future complete MR source."
+        ),
+    }
+
+
 def analyze(
     log_path: Path, contract_path: Path, expected_count: int,
     reviewed_contract_path: Path | None = None,
@@ -46,7 +124,10 @@ def analyze(
     if expected_count <= 0:
         raise ValueError("expected particle count must be positive")
     contract = load_contract(contract_path)
-    reviewed = contract if reviewed_contract_path is None else load_contract(reviewed_contract_path)
+    reviewed = contract if reviewed_contract_path is None else load_contract(
+        reviewed_contract_path,
+        inherited_detector_return_path=contract["accelerator"]["detector_return_path"],
+    )
     require_reviewed_geometry(contract, reviewed)
     records = _events(log_path)
     expected_ids = list(range(1, expected_count + 1))
@@ -56,7 +137,7 @@ def analyze(
         raise ValueError("every accelerator-focus particle needs source and terminal events")
     reached = [ion for ion in expected_ids if "focus" in records[ion]]
     placement = derive_two_zone_placement(reviewed)
-    trial_focus = derive_two_zone_focus(contract)
+    trial_focus = derive_two_zone_focus(contract, require_downstream_focus=False)
     accelerator = contract["accelerator"]
     species = contract["particle_source"]["species"]
     z0 = np.asarray([records[ion]["source"]["z_mm"] for ion in reached], dtype=float)
@@ -102,6 +183,17 @@ def analyze(
     else:
         timing = None
     analytic_focus_project_z_mm = placement.exit_grid_z_mm - trial_focus.focus_after_exit_mm
+    reviewed_path = contract_path if reviewed_contract_path is None else reviewed_contract_path
+    single_center_state = _single_center_focus_state(
+        records,
+        expected_count=expected_count,
+        contract=contract,
+        contract_path=contract_path,
+        reviewed_contract_path=reviewed_path,
+        log_path=log_path,
+        selected_energy_per_charge_v=trial_focus.energy_per_charge_v,
+        target_focus_z_mm=placement.focus_z_mm,
+    )
     return {
         "schema_version": 1,
         "role": "mrtof_two_zone_accelerator_first_time_focus_simion",
@@ -114,9 +206,11 @@ def analyze(
         "target_plane_project_z_mm": placement.focus_z_mm,
         "analytic_trial_focus_project_z_mm": analytic_focus_project_z_mm,
         "analytic_trial_focus_plane_residual_z_mm": analytic_focus_project_z_mm - placement.focus_z_mm,
+        "single_center_focus_state": single_center_state,
         "timing": timing,
         "limitations": [
             "This isolates the static two-zone accelerator and stops particles at z=0.",
+            "The recorded single-center state belongs to the zero-initial-KE focus diagnostic; it does not include the complete MR source's separate slow-energy component.",
             "It does not qualify prism transport, MR oscillations, detector arrival, or mass resolution.",
         ],
     }
