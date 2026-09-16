@@ -4,6 +4,8 @@
 
 ## 公共机制与执行资源
 
+- [2026-09-16 代码规模、重复与复杂度深审](history/20260916__code-size-and-complexity-audit.md)
+
 - [2026-09-16 文件保留、容量与处置审计](history/20260916__file-retention-and-storage-audit.md)
 
 - [2026-09-14 轻重任务阶段调度与真实验收](history/20260914__heavy-light-stage-scheduler.md)
