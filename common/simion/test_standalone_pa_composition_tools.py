@@ -10,11 +10,19 @@ import unittest
 ROOT = Path(__file__).resolve().parent
 FAST_ADJUST_EXPORTER = ROOT / "export_fast_adjusted_standalone_pa.lua"
 COMPOSER = ROOT / "compose_standalone_pa.lua"
+DIRICHLET_OPERATING_PATCH = ROOT / "build_dirichlet_patch_operating_pa.lua"
 SIMION = Path(os.environ.get("SIMION_EXE", r"C:\Program Files\SIMION-2020\simion.exe"))
 SOLVER_AUTHORIZED = os.environ.get("SIMION_SOLVER_TEST_AUTHORIZED") == "1"
 
 
 class StandalonePaToolStaticContractTest(unittest.TestCase):
+    def test_dirichlet_operating_patch_accepts_solved_standalone_parent(self) -> None:
+        source = DIRICHLET_OPERATING_PATCH.read_text(encoding="utf-8")
+        self.assertIn("SOURCE_OPERATING_PA_OR_PA0", source)
+        self.assertIn("source_path:match('%.pa0$') or source_path:match('%.pa$')", source)
+        self.assertIn("source:potential_vc", source)
+        self.assertIn("solved:refine()", source)
+
     def test_fast_adjust_export_contract_is_fail_closed_and_does_not_refine(self) -> None:
         source = FAST_ADJUST_EXPORTER.read_text(encoding="utf-8")
         self.assertIn("source_pa:fast_adjust(voltages)", source)
@@ -39,7 +47,8 @@ class StandalonePaToolStaticContractTest(unittest.TestCase):
 
     def test_composer_uses_standalone_inputs_and_preserves_base_flags(self) -> None:
         source = COMPOSER.read_text(encoding="utf-8")
-        self.assertIn("must use the standalone .pa suffix", source)
+        self.assertIn("must use a standalone .pa or neutral .bin suffix", source)
+        self.assertIn("neutral temporary name", source)
         self.assertIn("output_pa:copy(base_pa)", source)
         self.assertIn("output_pa:potential_add(x, y, z, delta)", source)
         self.assertIn("potential + delta, is_electrode", source)

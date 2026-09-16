@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $script:ShortPaCopies=@{}
+$script:ShortPaSourceGuards=@{}
 $script:ShortPaUnbufferedThresholdBytes=8MB
 
 function Copy-StandalonePaBytes {
@@ -47,6 +48,8 @@ function New-ShortPaCopy {
     [Parameter(Mandatory)][string]$Destination,
     [int64]$ExpectedBytes=-1,
     [string]$ExpectedSha256='',
+    [switch]$MarkDestinationReadOnly,
+    [switch]$GuardDestinationReadOnly,
     [ValidateRange(1,10)][int]$VerificationAttempts=3
   )
   if([IO.Path]::GetFileName($Source)-match '\.pa[1-9][0-9]*$'){
@@ -64,25 +67,42 @@ function New-ShortPaCopy {
   if(-not(Test-Path -LiteralPath $parent -PathType Container)){
     New-Item -ItemType Directory -Path $parent|Out-Null
   }
-  # Keep a no-write/no-delete sharing handle open for the complete lifetime of
-  # the disposable copy.  This proves that a cache payload cannot be changed
-  # by another solver or maintenance process between preflight and cleanup.
-  $sourceGuard=[IO.File]::Open(
-    $sourcePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read
-  )
-  $sourceLength=[int64]$sourceGuard.Length
-  $sourceHash=Get-OpenPaStreamSha256 -Stream $sourceGuard
+  # A batch campaign can need many private copies of the same multi-gigabyte
+  # PA.  Share one no-write/no-delete source guard and one frozen source hash
+  # across those copies.  Each destination is still a distinct verified file;
+  # only redundant source hashing is removed.
+  $newSourceGuard=$false
+  if($script:ShortPaSourceGuards.ContainsKey($sourcePath)){
+    $sourceGuardRecord=$script:ShortPaSourceGuards[$sourcePath]
+  }else{
+    $sourceGuard=[IO.File]::Open(
+      $sourcePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read
+    )
+    try{
+      $sourceGuardRecord=[pscustomobject]@{
+        stream=$sourceGuard
+        length=[int64]$sourceGuard.Length
+        sha256=Get-OpenPaStreamSha256 -Stream $sourceGuard
+        reference_count=0
+      }
+      $script:ShortPaSourceGuards[$sourcePath]=$sourceGuardRecord
+      $newSourceGuard=$true
+    }catch{$sourceGuard.Dispose();throw}
+  }
+  $sourceGuard=$sourceGuardRecord.stream
+  $sourceLength=[int64]$sourceGuardRecord.length
+  $sourceHash=[string]$sourceGuardRecord.sha256
   if($ExpectedBytes-ge 0 -and $sourceLength-ne$ExpectedBytes){
-    $sourceGuard.Dispose()
+    if($newSourceGuard){$sourceGuard.Dispose();$script:ShortPaSourceGuards.Remove($sourcePath)}
     throw "Short PA source byte length differs from its frozen identity: $sourcePath"
   }
   if(-not[string]::IsNullOrWhiteSpace($ExpectedSha256)){
     if($ExpectedSha256-notmatch '^[A-Fa-f0-9]{64}$'){
-      $sourceGuard.Dispose()
+      if($newSourceGuard){$sourceGuard.Dispose();$script:ShortPaSourceGuards.Remove($sourcePath)}
       throw 'Expected short PA source SHA256 is invalid.'
     }
     if($sourceHash-ne$ExpectedSha256){
-      $sourceGuard.Dispose()
+      if($newSourceGuard){$sourceGuard.Dispose();$script:ShortPaSourceGuards.Remove($sourcePath)}
       throw "Short PA source SHA256 differs from its frozen identity: $sourcePath"
     }
   }
@@ -109,22 +129,23 @@ function New-ShortPaCopy {
       try{$flushStream.Flush($true)}finally{$flushStream.Dispose()}
       $destinationItem=Get-Item -LiteralPath $destinationPath -Force
       $destinationHash=(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
-      $sourceLengthAfter=[int64]$sourceGuard.Length
-      $sourceHashAfter=Get-OpenPaStreamSha256 -Stream $sourceGuard
       if([int64]$destinationItem.Length-eq$sourceLength -and
-         $sourceLengthAfter-eq$sourceLength -and
-         $destinationHash-eq$sourceHash -and $sourceHashAfter-eq$sourceHash){
+         [int64]$sourceGuard.Length-eq$sourceLength -and
+         $destinationHash-eq$sourceHash){
         $verified=$true
         break
       }
-      $lastFailure="attempt=$attempt source_bytes=$sourceLengthAfter destination_bytes=$($destinationItem.Length) source_stable=$($sourceHashAfter-eq$sourceHash) destination_matches=$($destinationHash-eq$sourceHash) source_sha256=$sourceHash destination_sha256=$destinationHash"
+      $lastFailure="attempt=$attempt source_bytes=$($sourceGuard.Length) destination_bytes=$($destinationItem.Length) destination_matches=$($destinationHash-eq$sourceHash) source_sha256=$sourceHash destination_sha256=$destinationHash"
       if($attempt-lt$VerificationAttempts){Start-Sleep -Milliseconds 200}
     }
     if(-not$verified){
       throw "Short PA copy verification failed after $VerificationAttempts attempts: $destinationPath ($lastFailure)"
     }
   } catch {
-    $sourceGuard.Dispose()
+    if($newSourceGuard-and[int]$sourceGuardRecord.reference_count-eq0){
+      $sourceGuard.Dispose()
+      $script:ShortPaSourceGuards.Remove($sourcePath)
+    }
     if(Test-Path -LiteralPath $destinationPath -PathType Leaf){
       $attributes=[IO.File]::GetAttributes($destinationPath)
       [IO.File]::SetAttributes($destinationPath,$attributes-band(-bnot[IO.FileAttributes]::ReadOnly))
@@ -132,12 +153,90 @@ function New-ShortPaCopy {
     }
     throw
   }
-  $script:ShortPaCopies[$destinationPath]=[pscustomobject]@{
-    source=$sourcePath
-    source_sha256=$sourceHash
-    source_guard=$sourceGuard
+  $destinationGuard=$null
+  try{
+    if($MarkDestinationReadOnly-or$GuardDestinationReadOnly){
+      $attributes=[IO.File]::GetAttributes($destinationPath)
+      [IO.File]::SetAttributes($destinationPath,$attributes-bor[IO.FileAttributes]::ReadOnly)
+    }
+    if($GuardDestinationReadOnly){
+      # A live read-only handle shared only for reads is a stronger invariant
+      # than a filesystem attribute: no solver process can reopen this PA for
+      # writing or deletion until the owning runner releases the guard.
+      $destinationGuard=[IO.File]::Open(
+        $destinationPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read
+      )
+    }
+    $sourceGuardRecord.reference_count=[int]$sourceGuardRecord.reference_count+1
+    $script:ShortPaCopies[$destinationPath]=[pscustomobject]@{
+      source=$sourcePath
+      source_sha256=$sourceHash
+      source_bytes=$sourceLength
+      source_guard_key=$sourcePath
+      destination_guard=$destinationGuard
+      destination_write_guarded=[bool]$GuardDestinationReadOnly
+      destination_marked_read_only=[bool]($MarkDestinationReadOnly-or$GuardDestinationReadOnly)
+    }
+  }catch{
+    if($null-ne$destinationGuard){$destinationGuard.Dispose()}
+    if($newSourceGuard-and[int]$sourceGuardRecord.reference_count-eq0){
+      $sourceGuard.Dispose();$script:ShortPaSourceGuards.Remove($sourcePath)
+    }
+    throw
   }
   $destinationPath
+}
+
+function Get-ShortPaCopyIdentity {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+  $destination=[IO.Path]::GetFullPath($Path)
+  if(-not$script:ShortPaCopies.ContainsKey($destination)){
+    throw "Short PA copy is not registered: $destination"
+  }
+  $record=$script:ShortPaCopies[$destination]
+  $attributes=[IO.File]::GetAttributes($destination)
+  $attributeReadOnly=[bool]($attributes-band[IO.FileAttributes]::ReadOnly)
+  if([bool]$record.destination_marked_read_only-and-not$attributeReadOnly){
+    throw "Short PA destination lost its read-only attribute: $destination"
+  }
+  if([bool]$record.destination_write_guarded){
+    if($null-eq$record.destination_guard-or-not$record.destination_guard.CanRead){
+      throw "Short PA destination write guard is not live: $destination"
+    }
+    if([int64]$record.destination_guard.Length-ne[int64]$record.source_bytes){
+      throw "Guarded short PA length changed: $destination"
+    }
+  }
+  [pscustomobject]@{
+    path=$destination
+    bytes=[int64]$record.source_bytes
+    sha256=[string]$record.source_sha256
+    destination_read_only=$attributeReadOnly
+    destination_write_guarded=[bool]$record.destination_write_guarded
+  }
+}
+
+function Protect-ShortPaCopyDestination {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+  $destination=[IO.Path]::GetFullPath($Path)
+  if(-not$script:ShortPaCopies.ContainsKey($destination)){
+    throw "Short PA copy is not registered: $destination"
+  }
+  $record=$script:ShortPaCopies[$destination]
+  if($null-ne$record.destination_guard){
+    throw "Short PA destination is already write guarded: $destination"
+  }
+  $attributes=[IO.File]::GetAttributes($destination)
+  [IO.File]::SetAttributes($destination,$attributes-bor[IO.FileAttributes]::ReadOnly)
+  $guard=[IO.File]::Open(
+    $destination,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read
+  )
+  $record.destination_guard=$guard
+  $record.destination_write_guarded=$true
+  $record.destination_marked_read_only=$true
+  Get-ShortPaCopyIdentity -Path $destination
 }
 
 function Remove-ShortPaCopy {
@@ -150,7 +249,15 @@ function Remove-ShortPaCopy {
     throw "Short PA copy is not registered: $destination"
   }
   $record=$script:ShortPaCopies[$destination]
+  if(-not$script:ShortPaSourceGuards.ContainsKey([string]$record.source_guard_key)){
+    throw "Short PA source guard is missing: $($record.source_guard_key)"
+  }
+  $sourceGuardRecord=$script:ShortPaSourceGuards[[string]$record.source_guard_key]
   try {
+    if($null-ne$record.destination_guard){
+      $record.destination_guard.Dispose()
+      $record.destination_guard=$null
+    }
     if(Test-Path -LiteralPath $destination -PathType Leaf){
       $attributes=[IO.File]::GetAttributes($destination)
       [IO.File]::SetAttributes($destination,$attributes-band(-bnot[IO.FileAttributes]::ReadOnly))
@@ -158,20 +265,29 @@ function Remove-ShortPaCopy {
     }
   } finally {
     try {
-      if(Test-Path -LiteralPath $record.source -PathType Leaf){
-        $sourceHashAfter=Get-OpenPaStreamSha256 -Stream $record.source_guard
-        if($sourceHashAfter-ne$record.source_sha256){
-          throw "Short PA source changed while a disposable copy was in use: $($record.source)"
+      $script:ShortPaCopies.Remove($destination)
+      $sourceGuardRecord.reference_count=[int]$sourceGuardRecord.reference_count-1
+      if([int]$sourceGuardRecord.reference_count-lt0){
+        throw "Short PA source guard reference count became negative: $($record.source)"
+      }
+      if([int]$sourceGuardRecord.reference_count-eq0){
+        try{
+          if(Test-Path -LiteralPath $record.source -PathType Leaf){
+            $sourceHashAfter=Get-OpenPaStreamSha256 -Stream $sourceGuardRecord.stream
+            if($sourceHashAfter-ne$record.source_sha256){
+              throw "Short PA source changed while disposable copies were in use: $($record.source)"
+            }
+          }
+        }finally{
+          $sourceGuardRecord.stream.Dispose()
+          $script:ShortPaSourceGuards.Remove([string]$record.source_guard_key)
         }
       }
-    } finally {
-      $record.source_guard.Dispose()
-      $script:ShortPaCopies.Remove($destination)
-    }
+    } finally {}
   }
 }
 
-function Remove-ShortPaCopyDirectory {
+function Remove-ShortPaCopiesUnderDirectory {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Path,
@@ -187,6 +303,16 @@ function Remove-ShortPaCopyDirectory {
     if(-not $destination.StartsWith($directory+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){continue}
     Remove-ShortPaCopy -Path $destination
   }
+}
+
+function Remove-ShortPaCopyDirectory {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [string]$ExpectedNamePrefix='simion_pa_links_'
+  )
+  $directory=[IO.Path]::GetFullPath($Path)
+  Remove-ShortPaCopiesUnderDirectory -Path $directory -ExpectedNamePrefix $ExpectedNamePrefix
   if(Test-Path -LiteralPath $directory -PathType Container){
     if((Get-ChildItem -LiteralPath $directory -Force|Measure-Object).Count-ne0){
       throw "Short-PA link directory contains an unregistered entry: $directory"

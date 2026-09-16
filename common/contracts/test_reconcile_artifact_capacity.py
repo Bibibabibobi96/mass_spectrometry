@@ -1,24 +1,315 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, Mock, patch
 from pathlib import Path
 
+from common.contracts import reconcile_artifact_capacity as capacity
 from common.contracts.reconcile_artifact_capacity import (
+    CapacityProtectionLeaseError,
     _current_generation_pointers,
     _directory_bytes,
     apply,
+    create_capacity_protection_lease,
+    main,
     plan,
     snapshot_published_pa_cache_keys,
 )
 
 
 class ArtifactCapacityPlanTest(unittest.TestCase):
+    def _success_build_run(self, root: Path, name: str) -> tuple[Path, Path, Path]:
+        run = root / "projects" / "p" / "runs" / name
+        run.mkdir(parents=True)
+        config = run / "run_config.json"
+        summary = run / "summary.json"
+        recorded = run / "recorded.pa0"
+        removable = run / "unrecorded.pa0"
+        config.write_text(json.dumps({"schema_version": 2, "run_id": name}), encoding="utf-8")
+        summary.write_text(json.dumps({"status": "success"}), encoding="utf-8")
+        recorded.write_bytes(b"recorded")
+        removable.write_bytes(b"rebuildable")
+        def record(path: Path) -> dict[str, object]:
+            return {
+                "path": path.name,
+                "bytes": path.stat().st_size,
+                "sha256": capacity.file_sha256(path),
+            }
+        (run / "run_manifest.json").write_text(json.dumps({
+            "status": "success", "recorded_at_utc": "2026-01-01T00:00:00Z",
+            "run_config": record(config),
+            "outputs": [record(summary), record(recorded)], "inputs": {},
+        }), encoding="utf-8")
+        return run, recorded, removable
+
+    def test_old_unmanaged_run_is_first_but_recent_or_actively_referenced_is_protected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runs = root / "projects" / "p" / "runs"
+            old = runs / "old-unmanaged"
+            old.mkdir(parents=True)
+            (old / "payload.bin").write_bytes(b"old")
+            referenced = runs / "referenced-unmanaged"
+            referenced.mkdir()
+            (referenced / "payload.bin").write_bytes(b"referenced")
+            active = runs / "active"
+            active.mkdir()
+            (active / "run_manifest.json").write_text(
+                json.dumps({"status": "checkpoint", "source_run_id": referenced.name}),
+                encoding="utf-8",
+            )
+            policy = json.loads(Path(capacity.POLICY_PATH).read_text(encoding="utf-8"))
+            policy["unmanaged_run_grace_seconds"] = 0
+            with patch.object(capacity, "_capacity_policy", return_value=policy):
+                receipt = plan(root, target_bytes=0)
+            selected = [item for item in receipt["planned"] if item["reason"] == "old_unmanaged_unreferenced_run"]
+            self.assertEqual([item["path"] for item in selected], [str(old)])
+            self.assertEqual(selected[0]["deletion_priority"], policy["unmanaged_run_deletion_priority"])
+
+    def test_success_build_payload_requires_explicit_run_and_excludes_manifest_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run, recorded, removable = self._success_build_run(
+                root, "20260101_000000__build__simion__rebuildable"
+            )
+            self.assertEqual(plan(root, target_bytes=0)["planned"], [])
+            receipt = plan(
+                root, target_bytes=0, rebuildable_success_build_runs=[run]
+            )
+            selected = next(
+                item for item in receipt["planned"]
+                if item["reason"] == "explicit_rebuildable_unreferenced_success_build_payload"
+            )
+            self.assertEqual(selected["bytes"], removable.stat().st_size)
+            self.assertEqual([item["path"] for item in selected["removable"]], [removable.name])
+            self.assertNotEqual(recorded, removable)
+
+    def test_unmanaged_run_with_any_summary_is_not_treated_as_evidence_free(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run = root / "projects" / "p" / "runs" / "summary-only"
+            run.mkdir(parents=True)
+            (run / "summary.json").write_text(
+                json.dumps({"status": "success"}), encoding="utf-8"
+            )
+            (run / "payload.bin").write_bytes(b"evidence")
+            policy = json.loads(Path(capacity.POLICY_PATH).read_text(encoding="utf-8"))
+            policy["unmanaged_run_grace_seconds"] = 0
+
+            with patch.object(capacity, "_capacity_policy", return_value=policy):
+                receipt = plan(root, target_bytes=0)
+
+            self.assertNotIn(str(run), [item["path"] for item in receipt["planned"]])
+
+    def test_explicit_success_nonbuild_run_remains_protected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run, _, _ = self._success_build_run(
+                root, "20260101_000000__simulate__simion__scientific-result"
+            )
+
+            receipt = plan(
+                root, target_bytes=0, rebuildable_success_build_runs=[run]
+            )
+
+            self.assertNotIn(str(run), [item["path"] for item in receipt["planned"]])
+
+    def test_active_run_reference_blocks_explicit_success_build_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run, _, _ = self._success_build_run(
+                root, "20260101_000000__build__simion__in-use"
+            )
+            active = root / "projects" / "p" / "runs" / "active"
+            active.mkdir()
+            (active / "run_manifest.json").write_text(
+                json.dumps({"status": "checkpoint", "source_run_id": run.name}),
+                encoding="utf-8",
+            )
+            receipt = plan(
+                root, target_bytes=0, rebuildable_success_build_runs=[run]
+            )
+            self.assertNotIn(str(run), [item["path"] for item in receipt["planned"]])
+
+    def test_apply_preserves_receipts_for_unmanaged_run_and_success_build_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            unmanaged = root / "projects" / "p" / "runs" / "unmanaged"
+            unmanaged.mkdir(parents=True)
+            (unmanaged / "payload.bin").write_bytes(b"unmanaged")
+            run, recorded, removable = self._success_build_run(
+                root, "20260101_000000__build__simion__retire"
+            )
+            policy = json.loads(Path(capacity.POLICY_PATH).read_text(encoding="utf-8"))
+            policy["unmanaged_run_grace_seconds"] = 0
+            with patch.object(capacity, "_capacity_policy", return_value=policy):
+                receipt = plan(
+                    root, target_bytes=0,
+                    rebuildable_success_build_runs=[run],
+                )
+                applied = apply(receipt)
+            self.assertFalse(unmanaged.exists())
+            unmanaged_action = next(
+                item for item in applied["removed"] if item["path"] == str(unmanaged)
+            )
+            disposal = json.loads(Path(unmanaged_action["disposal_receipt"]).read_text(encoding="utf-8"))
+            self.assertEqual(disposal["status"], "complete")
+            self.assertRegex(disposal["files"][0]["sha256"], r"^[0-9A-F]{64}$")
+            self.assertTrue(recorded.exists())
+            self.assertFalse(removable.exists())
+            retirement = json.loads((run / "capacity_retirement_actions.json").read_text(encoding="utf-8"))
+            self.assertEqual(retirement["status"], "complete")
+            self.assertRegex(retirement["removed"][0]["sha256"], r"^[0-9A-F]{64}$")
+
+    def test_multiple_owner_leases_union_cache_keys_and_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = self._cache(root, "role", "6" * 64, age=time.time() - 100)
+            run = self._run(
+                root, "protected-failure", status="failed", age=time.time() - 200
+            )
+            create_capacity_protection_lease(
+                root, lease_id="owner-a", owner="run-a", ttl_seconds=3600,
+                protected_cache_keys=["6" * 64],
+            )
+            create_capacity_protection_lease(
+                root, lease_id="owner-b", owner="run-b", ttl_seconds=3600,
+                protected_paths=[run],
+            )
+
+            receipt = plan(root, target_bytes=0)
+
+            planned = {item["path"] for item in receipt["planned"]}
+            self.assertNotIn(str(cache), planned)
+            self.assertNotIn(str(run), planned)
+            self.assertIn("6" * 64, receipt["protected_cache_keys"])
+            self.assertIn(str(run.resolve()), receipt["protected_paths"])
+            self.assertEqual(
+                [item["status"] for item in receipt["protection_lease_audit"]],
+                ["active", "active"],
+            )
+
+    def test_expired_lease_is_ignored_and_audited(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = self._cache(root, "role", "7" * 64, age=time.time() - 100)
+            create_capacity_protection_lease(
+                root, lease_id="expired", owner="dead-run", ttl_seconds=1,
+                protected_cache_keys=["7" * 64],
+                now=datetime(2000, 1, 1, tzinfo=timezone.utc),
+            )
+
+            receipt = plan(root, target_bytes=0)
+
+            self.assertIn(str(cache), [item["path"] for item in receipt["planned"]])
+            self.assertEqual(
+                receipt["protection_lease_audit"][0]["status"], "expired_ignored"
+            )
+
+    def test_malformed_active_lease_fails_closed_with_cli_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            lease = create_capacity_protection_lease(
+                root, lease_id="malformed", owner="run", ttl_seconds=3600,
+                protected_cache_keys=["8" * 64],
+            )
+            path = Path(lease["path"])
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["unexpected"] = True
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaises(CapacityProtectionLeaseError) as raised:
+                plan(root, target_bytes=0)
+            self.assertEqual(raised.exception.audit["status"], "invalid")
+
+            stderr = io.StringIO()
+            with patch("sys.argv", [
+                "reconcile_artifact_capacity", "--artifact-root", str(root),
+                "--target-gib", "1", "--minimum-free-gib", "0",
+            ]), redirect_stderr(stderr), self.assertRaises(SystemExit) as exited:
+                main()
+            self.assertEqual(exited.exception.code, 2)
+            self.assertIn("artifact_capacity_protection_lease_audit", stderr.getvalue())
+
+    def test_pinned_cache_survives_unsatisfied_apply(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = self._cache(root, "role", "9" * 64, age=time.time() - 100)
+            create_capacity_protection_lease(
+                root, lease_id="pin", owner="active-run", ttl_seconds=3600,
+                protected_cache_keys=["9" * 64],
+            )
+
+            receipt = plan(root, target_bytes=0)
+            self.assertFalse(receipt["satisfied"])
+            self.assertEqual(receipt["planned"], [])
+            applied = apply(receipt)
+
+            self.assertTrue(cache.exists())
+            self.assertEqual(applied["removed"], [])
+            self.assertFalse(applied["satisfied_after_apply"])
+
+    def test_apply_refreshes_leases_created_after_the_initial_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = self._cache(root, "role", "b" * 64, age=time.time() - 100)
+            receipt = plan(root, target_bytes=0)
+            self.assertIn(str(cache), [item["path"] for item in receipt["planned"]])
+            create_capacity_protection_lease(
+                root, lease_id="late-pin", owner="new-run", ttl_seconds=3600,
+                protected_cache_keys=["b" * 64],
+            )
+
+            applied = apply(receipt)
+
+            self.assertTrue(cache.exists())
+            self.assertEqual(applied["removed"], [])
+
+    def test_cli_creates_and_deletes_named_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = io.StringIO()
+            with patch("sys.argv", [
+                "reconcile_artifact_capacity", "--artifact-root", temporary,
+                "--create-protection-lease", "cli-run", "--lease-owner", "test",
+                "--lease-ttl-seconds", "60", "--protect-cache-key", "a" * 64,
+            ]), redirect_stdout(output):
+                main()
+            created = json.loads(output.getvalue())
+            self.assertTrue(Path(created["path"]).is_file())
+
+            output = io.StringIO()
+            with patch("sys.argv", [
+                "reconcile_artifact_capacity", "--artifact-root", temporary,
+                "--delete-protection-lease", "cli-run",
+            ]), redirect_stdout(output):
+                main()
+            deleted = json.loads(output.getvalue())
+            self.assertTrue(deleted["deleted"])
+            self.assertFalse(Path(created["path"]).exists())
+
+    def test_cli_apply_requires_shared_host_execution_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "sys.argv",
+            [
+                "reconcile_artifact_capacity",
+                "--artifact-root",
+                temporary,
+                "--apply",
+            ],
+        ), patch.dict(
+            os.environ,
+            {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": ""},
+        ), self.assertRaises(SystemExit) as raised:
+            main()
+        self.assertEqual(raised.exception.code, 2)
+
     def test_pa_snapshot_skips_child_removed_before_recursive_scandir(self) -> None:
         root = Path("capacity-root").absolute()
         child = Mock(path=str(root / "temporary"), name="temporary")
@@ -244,6 +535,26 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             receipt = plan(root, target_bytes=0)
             self.assertNotIn(str(run), [item["path"] for item in receipt["planned"]])
 
+    def test_terminal_failure_summary_makes_older_checkpoint_run_disposable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run = self._run(
+                root, "checkpoint-then-failed", status="failed",
+                age=time.time() - 1000,
+            )
+            (run / "run_manifest.json").write_text(
+                json.dumps({"status": "checkpoint", "formal_eligible": False}),
+                encoding="utf-8",
+            )
+            receipt = plan(root, target_bytes=0)
+            selected = next(
+                item for item in receipt["planned"] if item["path"] == str(run)
+            )
+            self.assertEqual(selected["level"], "RUN")
+            self.assertEqual(
+                selected["run_statuses"], ["checkpoint", "failed"]
+            )
+
     def test_nonterminal_manifest_protects_referenced_key(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -411,6 +722,29 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             applied = apply(receipt)
             self.assertTrue(candidate.exists())
             self.assertEqual(applied["removed"], [])
+
+    def test_apply_tolerates_an_independent_gate_removing_the_same_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            candidate = self._cache(root, "role", "8" * 64, age=time.time() - 100)
+            receipt = plan(root, target_bytes=0, staging_grace_seconds=0)
+            self.assertIn(str(candidate), [item["path"] for item in receipt["planned"]])
+
+            original_rmtree = shutil.rmtree
+
+            def concurrent_remove(path: Path, *, onerror: object) -> None:
+                original_rmtree(path)
+                raise FileNotFoundError(path)
+
+            with patch(
+                "common.contracts.reconcile_artifact_capacity.shutil.rmtree",
+                side_effect=concurrent_remove,
+            ):
+                applied = apply(receipt)
+
+            self.assertFalse(candidate.exists())
+            self.assertEqual(applied["removed"], [])
+            self.assertTrue(applied["satisfied_after_apply"])
 
     def test_safe_launch_receipt_avoids_the_exhaustive_walk(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

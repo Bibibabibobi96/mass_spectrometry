@@ -81,6 +81,21 @@ LEGACY_POLICY = {
 }
 INTEGRATION_CACHE_ROLES = {
     "simion_single_flight_frontend": {"simion_single_flight_frontend_pa_cache"},
+    "simion_single_flight_upstream_bridge": {
+        "simion_single_flight_upstream_bridge_pa_cache"
+    },
+    "simion_single_flight_connector_collision": {
+        "simion_single_flight_connector_collision_pa_cache"
+    },
+    "simion_single_flight_accelerator_main": {
+        "simion_single_flight_accelerator_main_pa_cache"
+    },
+    "simion_single_flight_accelerator_entrance_local": {
+        "simion_single_flight_accelerator_entrance_local_pa_cache"
+    },
+    "simion_single_flight_accelerator_entrance_zone_collision": {
+        "simion_single_flight_accelerator_entrance_zone_collision_pa_cache"
+    },
     "simion_accelerator_overlay": {
         "simion_accelerator_overlay_pa_cache",
         "simion_accelerator_entrance_overlay_pa_cache",
@@ -207,9 +222,62 @@ def verify_integration_cache_entry(
         or entry.name != actual_generation_sha256
     ):
         raise AssertionError(f"{entry}: generation path differs from immutable identity")
+    upstream_solution_ids: list[int] | None = None
+    if expected_role == "simion_single_flight_upstream_bridge_pa_cache":
+        declared_solution_ids = critical_options.get("solution_ids")
+        if (
+            not isinstance(declared_solution_ids, list)
+            or not declared_solution_ids
+            or any(
+                not isinstance(electrode, int)
+                or isinstance(electrode, bool)
+                or electrode < 0
+                for electrode in declared_solution_ids
+            )
+            or declared_solution_ids
+            != list(range(declared_solution_ids[-1] + 1))
+        ):
+            raise AssertionError(f"{entry}: reusable cache solution identity differs")
+        upstream_solution_ids = declared_solution_ids
     required_by_role = {
         "simion_single_flight_frontend_pa_cache": {
             "frontend.gem", "frontend.pa#", "frontend.pa0"
+        },
+        "simion_single_flight_upstream_bridge_pa_cache": {
+            "upstream_bridge.gem",
+            "upstream_bridge.pa#",
+            "basis_build.json",
+            "refinement_complete.json",
+            *(
+                f"upstream_bridge.pa{electrode}"
+                for electrode in upstream_solution_ids or ()
+            ),
+        },
+        "simion_single_flight_connector_collision_pa_cache": {
+            "connector_collision.gem",
+            "connector_collision.pa0",
+        },
+        "simion_single_flight_accelerator_main_pa_cache": {
+            "accelerator_main.gem",
+            "accelerator_main.pa#",
+            "accelerator_main.pa+",
+            "accelerator_main.pa0",
+            "basis_build.json",
+            "refinement_complete.json",
+            *(f"accelerator_main.pa{electrode}" for electrode in range(36, 44)),
+        },
+        "simion_single_flight_accelerator_entrance_local_pa_cache": {
+            "accelerator_entrance_local.gem",
+            "accelerator_entrance_local.pa#",
+            "accelerator_entrance_local.pa+",
+            "accelerator_entrance_local.pa0",
+            "basis_build.json",
+            "refinement_complete.json",
+            *(f"accelerator_entrance_local.pa{electrode}" for electrode in range(36, 44)),
+        },
+        "simion_single_flight_accelerator_entrance_zone_collision_pa_cache": {
+            "accelerator_main.gem",
+            "accelerator_main.pa0",
         },
         "simion_accelerator_overlay_pa_cache": {
             "accelerator_overlay.gem",
@@ -239,6 +307,17 @@ def verify_integration_cache_entry(
     required = required_by_role.get(expected_role)
     if required is None or not required.issubset(payload):
         raise AssertionError(f"{entry}: reusable cache PA family is incomplete")
+    if upstream_solution_ids is not None:
+        declared_family = {
+            f"upstream_bridge.pa{electrode}" for electrode in upstream_solution_ids
+        }
+        actual_family = {
+            name
+            for name in payload
+            if re.fullmatch(r"upstream_bridge\.pa\d+", name) is not None
+        }
+        if actual_family != declared_family:
+            raise AssertionError(f"{entry}: reusable cache solution inventory differs")
     return manifest
 
 
@@ -247,10 +326,22 @@ def _verify_integration_content_caches(
 ) -> None:
     """Verify registered integration PA entries, including visible legacy entries."""
 
+    generation_only_roots = {
+        "simion_single_flight_upstream_bridge",
+        "simion_single_flight_connector_collision",
+        "simion_single_flight_accelerator_main",
+        "simion_single_flight_accelerator_entrance_local",
+        "simion_single_flight_accelerator_entrance_zone_collision",
+    }
     for cache_name, required_name in (
         ("simion_accelerator_overlay", "accelerator_overlay.pa0"),
         ("simion_oatof_downstream_pa", None),
         ("simion_single_flight_frontend", "frontend.pa0"),
+        ("simion_single_flight_upstream_bridge", None),
+        ("simion_single_flight_connector_collision", None),
+        ("simion_single_flight_accelerator_main", None),
+        ("simion_single_flight_accelerator_entrance_local", None),
+        ("simion_single_flight_accelerator_entrance_zone_collision", None),
     ):
         content_root = cache / cache_name
         if not content_root.exists():
@@ -297,6 +388,8 @@ def _verify_integration_content_caches(
                     verify_hashes=verify_hashes,
                 )
                 continue
+            if cache_name in generation_only_roots:
+                raise AssertionError(f"{entry}: reusable cache generation pointer is missing")
             files = {item.name for item in entry.iterdir() if item.is_file()}
             manifest_path = entry / "cache_manifest.json"
             manifest = (
@@ -442,13 +535,7 @@ def verify_cache(project: Path, verify_hashes: bool = False) -> None:
     cache = project / "cache"
     if not cache.exists():
         return
-    allowed = {
-        "simion_accelerator_overlay",
-        "simion_pa_basis",
-        "simion_oatof_downstream_pa",
-        "simion_single_flight_frontend",
-        "verified_pulse",
-    }
+    allowed = set(INTEGRATION_CACHE_ROLES) | {"simion_pa_basis"}
     unexpected = {entry.name for entry in cache.iterdir()} - allowed
     if unexpected:
         raise AssertionError(f"{project.name}: unexpected cache entries: {sorted(unexpected)}")
@@ -802,12 +889,27 @@ def verify_artifacts_root(projects: Path) -> None:
         )
     common = artifacts / "common"
     if common.exists():
-        if not common.is_dir() or {item.name for item in common.iterdir()} != {"simion"}:
+        allowed_common = {"simion", "capacity_protection_leases"}
+        if (
+            not common.is_dir()
+            or ({item.name for item in common.iterdir()} - allowed_common)
+        ):
             raise AssertionError("artifacts/common: unexpected common artifact entries")
         simion = common / "simion"
-        if not simion.is_dir() or {item.name for item in simion.iterdir()} != {"pa_family_cache"}:
-            raise AssertionError("artifacts/common/simion: unexpected common SIMION artifact entries")
-        verify_common_pa_family_cache(simion / "pa_family_cache")
+        if simion.exists():
+            if not simion.is_dir() or {item.name for item in simion.iterdir()} != {"pa_family_cache"}:
+                raise AssertionError("artifacts/common/simion: unexpected common SIMION artifact entries")
+            verify_common_pa_family_cache(simion / "pa_family_cache")
+        leases = common / "capacity_protection_leases"
+        if leases.exists():
+            try:
+                from common.contracts.reconcile_artifact_capacity import (
+                    CapacityProtectionLeaseError,
+                    _load_capacity_protection_leases,
+                )
+                _load_capacity_protection_leases(artifacts)
+            except CapacityProtectionLeaseError as exc:
+                raise AssertionError(str(exc)) from exc
 
 
 def main() -> None:
@@ -824,8 +926,11 @@ def main() -> None:
     parser.add_argument("--allow-noncurrent-generation", action="store_true")
     args = parser.parse_args()
     projects = args.root.resolve()
-    verify_artifacts_root(projects)
     if args.cache_entry is not None:
+        if projects.name != "projects" or not projects.is_dir():
+            raise AssertionError(
+                "artifact layout root must be the artifacts/projects directory"
+            )
         required = (
             args.expected_cache_role,
             args.expected_cache_key,
@@ -888,6 +993,7 @@ def main() -> None:
             f"ROLE={args.expected_cache_role} KEY={args.expected_cache_key}"
         )
         return
+    verify_artifacts_root(projects)
     repository_root = args.repository_root.resolve() if args.repository_root else None
     project_dirs = [project for project in projects.iterdir() if project.is_dir()]
     if args.project:

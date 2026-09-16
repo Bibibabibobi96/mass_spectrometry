@@ -52,6 +52,12 @@ probe|publish|materialize --cache-root <root> --identity <identity.json> --filen
 `--source-directory`，物化另给`--destination-directory`。identity JSON和文件清单由器件适配层派生，
 该CLI不接受或推断物理参数，命中／缺失的建场决定也仍属于调用方。
 
+当运行只消费同一 generation 中已经独立导出的 standalone 成员时，Python 调用方可使用
+`validate_pa_family_cache_subset(...)`：它仍验证 generation manifest、cache key、身份元数据和 generation
+record 摘要，但只打开调用方明确列出的文件并逐字节核验，避免为了读取 standalone 子集而重新打开未使用的
+原生 `.paN` 兄弟文件。返回值明确标记 `complete_native_generation_qualified=false`；该接口只证明所列子集可安全
+消费，不能替代完整 generation probe，也不能据此宣布整个原生 family 健康。
+
 局部Dirichlet PA使用
 [`build_dirichlet_patch_basis.lua`](build_dirichlet_patch_basis.lua)从一个或多个已解父basis复制六面边界响应。
 局部活动实体必须与父basis使用同一激励归一化；构建器从父PA的非零实体节点读取并交叉核对该值，不假定
@@ -60,7 +66,8 @@ probe|publish|materialize --cache-root <root> --identity <identity.json> --filen
 [`compare_pa_fields_at_samples.lua`](compare_pa_fields_at_samples.lua)在调用方提供的项目坐标样点比较两个
 已解PA的电势和三分量场，并允许两个PA分别选择严格`z`反射；旧的仅B侧反射调用仍兼容。它不选择局部域、
 轨迹portal、实例优先级或接受阈值。
-[`build_dirichlet_patch_operating_pa.lua`](build_dirichlet_patch_operating_pa.lua)从一个已解父工作点PA直接采样
+[`build_dirichlet_patch_operating_pa.lua`](build_dirichlet_patch_operating_pa.lua)从一个已解父工作点 standalone
+`.pa` 或一次性 `.pa0` 直接采样
 六面Dirichlet边界，把调用方明确给出的局部电极电压写入同源raw局部几何并只Refine一个工作点。它用于局部
 响应文件不能由SIMION原生Fast Adjust电极计数安全表达的情况；不推导电压、区域、原点、网格或Workbench
 优先级，也不把父场与局部场相加。

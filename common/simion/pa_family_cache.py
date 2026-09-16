@@ -277,6 +277,74 @@ def validate_pa_family_cache_generation(
     return manifest
 
 
+def validate_pa_family_cache_subset(
+    generation_directory: str | Path,
+    filenames: Sequence[str],
+    *,
+    expected_cache_key: str | None = None,
+) -> dict[str, Any]:
+    """Validate an independently consumable subset without opening native siblings.
+
+    SIMION native ``.paN`` members are build-stage payloads and can be finalized
+    after the visible solver process exits.  A caller that consumes only detached
+    standalone ``.pa`` outputs must not reopen those native siblings merely to
+    validate files it will never use.  This function still validates the complete
+    manifest metadata and generation identity, then hashes every requested file
+    against its unique manifest record.  Unrequested payload bytes are deliberately
+    not read and this function does not qualify the complete generation as intact.
+    """
+
+    root = Path(generation_directory)
+    manifest_path = root / MANIFEST_NAME
+    if not manifest_path.is_file():
+        raise PAFamilyCacheError(f"PA cache manifest is missing: {manifest_path}")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PAFamilyCacheError(f"PA cache manifest is unreadable: {manifest_path}") from exc
+    required = {"schema_version", "role", "cache_key", "identity", "generation_sha256", "files"}
+    if not isinstance(manifest, dict) or set(manifest) != required:
+        raise PAFamilyCacheError("PA cache manifest fields differ")
+    if manifest["schema_version"] != SCHEMA_VERSION or manifest["role"] != ROLE:
+        raise PAFamilyCacheError("PA cache manifest identity differs")
+    identity = _canonical_identity(manifest["identity"])
+    cache_key = manifest["cache_key"]
+    if not isinstance(cache_key, str) or not SHA256.fullmatch(cache_key):
+        raise PAFamilyCacheError("PA cache key is invalid")
+    if canonical_pa_family_cache_key(identity) != cache_key:
+        raise PAFamilyCacheError("PA cache key differs from identity")
+    if expected_cache_key is not None and cache_key != expected_cache_key:
+        raise PAFamilyCacheError("PA cache key differs from requested identity")
+    records = manifest["files"]
+    if not isinstance(records, list) or not records:
+        raise PAFamilyCacheError("PA cache family inventory is empty")
+    names: list[str] = []
+    records_by_name: dict[str, Mapping[str, Any]] = {}
+    for record in records:
+        if not isinstance(record, dict) or set(record) != {"name", "bytes", "sha256"}:
+            raise PAFamilyCacheError("PA cache inventory record fields differ")
+        name = _safe_name(record["name"])
+        if not isinstance(record["bytes"], int) or isinstance(record["bytes"], bool) or record["bytes"] < 0:
+            raise PAFamilyCacheError("PA cache inventory byte count is invalid")
+        if not isinstance(record["sha256"], str) or not SHA256.fullmatch(record["sha256"]):
+            raise PAFamilyCacheError("PA cache inventory SHA-256 is invalid")
+        names.append(name)
+        records_by_name[name] = record
+    if names != sorted(names) or len(names) != len(set(names)):
+        raise PAFamilyCacheError("PA cache inventory filenames are not sorted and unique")
+    if manifest["generation_sha256"] != _generation_sha256(cache_key, records):
+        raise PAFamilyCacheError("PA cache generation identity differs")
+    selected = _family_names(filenames)
+    missing = [name for name in selected if name not in records_by_name]
+    if missing:
+        raise PAFamilyCacheError(
+            "PA cache subset is absent from the generation manifest: " + ", ".join(missing)
+        )
+    for name in selected:
+        _verify_payload_record(root, records_by_name[name])
+    return manifest
+
+
 def probe_pa_family_cache(
     cache_root: str | Path,
     identity: Mapping[str, Any],

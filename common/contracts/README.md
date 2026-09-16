@@ -4,6 +4,8 @@
 单位是否完整；Python语义层判断项目选择、能力成熟度、模式、指标、设计变量和约束是否成立。
 二者不能互相取代。
 
+## 运行身份与生命周期
+
 `canonical_clock_authority.py`与同名Schema定义跨项目事件链唯一instrument clock权威：求解器局部时钟
 从零累计，adapter仅一次物化`epoch + elapsed`，handoff保留时间戳；新run不得使用legacy相对时钟旁路。
 
@@ -19,12 +21,19 @@
 `artifacts/.../runs/<run_id>`；运行器把短路径仅作为进程工作路径，并在终态后调用
 `Remove-RunPackageExecutionAlias`清理它。实际文件从未搬离最终run，Python manifest解析 junction 后记录真实
 artifact路径，因此run ID、输入/输出身份、SHA和历史引用不变。不能以复制后回迁或只缩短某个求解器子目录
-替代该合同。
+替代该合同。该 junction 仅指向本次可写 run；SIMION 外部只读 PA 输入另用[已验证普通副本机制](../../docs/SIMION_REFERENCE.md#长pa输入路径)，不得用此别名暴露不可变 PA 源。
 `file_identity.py`是SHA-256身份的唯一共享实现，固定返回大写十六进制。`file_sha256`按原始字节标识
 manifest、正式资产和外部artifact；`repository_text_sha256`只用于Git治理的文本依赖，先把行尾规范为
 LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍负责路径范围、字节数和证据资格。
 
-`artifact_retention.json`和`artifact_retention.py`实现根README的run产物保留合同。迁移到manifest v2的
+`verify_run_manifest.py`默认且在发布时始终复核run config、全部输入、全部输出和适用的保留合同。已经冻结的
+历史run若有不再被下游读取的大型记录丢失或损坏，下游可用具名`--consumer-projection-id`，并逐项提供
+`--consumed-input NAME PATH`／`--consumed-output PATH`；入口仍复核manifest状态、run config、项目／模式等
+约束，并把每个实际消费路径唯一绑定到manifest记录后核对字节数和SHA-256。投影不得用于发布或宣称整个
+上游run仍完整有效；消费run必须在自己的run config记录投影ID、记录名、路径以及未断言其余记录。选择器
+缺少投影ID、空投影、路径不一致、重复记录或消费记录漂移均失败关闭。
+
+`artifact_retention.json`和`artifact_retention.py`实现[生命周期](../../docs/LIFECYCLE.md)的run产物保留合同。迁移到manifest v2的
 入口必须显式启用公共生命周期retention，启用后的默认类是`compact`；`qualification/solver_review`
 必须在运行前给出理由。终态前`apply`只清除本次未闭合run中策略禁止的可重建文件并写
 `retention_actions.json`，不会处理既有最终run。manifest schema v2记录保留类和每项输出角色；
@@ -34,13 +43,43 @@ writer/verifier同时扫描未列出的重型文件，防止通过漏报output�
 `reconcile_artifact_capacity.py`与`artifact_capacity_policy.json`是唯一的跨项目容量清理政策；
 `Invoke-ArtifactCapacityGate`是`run_artifact_support.ps1`提供的PowerShell生命周期适配器。运行器必须由
 冻结或实际测得的新增字节、显式受保护run路径和缓存键调用它，并把返回的 applied receipt 作为run输出；
-该适配器不定义项目缓存角色、物理参数或第二套删除优先级。候选发现同时识别项目`cache/<role>/<key>`
+适配器自动取得或继承公共`HostExecutionLease`，因此容量删除不会与SIMION/COMSOL正在消费缓存的阶段并发；
+Python入口的`--apply`拒绝没有该租约标记的直接调用，snapshot和只读plan不受影响。该适配器不定义项目缓存角色、物理参数或第二套删除优先级。候选发现同时识别项目`cache/<role>/<key>`
 的`generation_relative_path`指针和已注册公共SIMION PA-family cache的`generation_sha256`指针；二者都必须
 形成pointer→selected generation→manifest的闭合身份链，损坏或未发布节点只能按L1处理。
+跨run或跨项目需要在终态manifest之外临时保留可重建缓存/运行目录时，使用同一Python入口在
+`artifacts/common/capacity_protection_leases/<lease-id>.json`创建TTL保护租约：
+`--create-protection-lease <id> --lease-owner <owner> --lease-ttl-seconds <seconds>`，并以可重复的
+`--protect-cache-key`或`--protect-path`声明目标；结束后用`--delete-protection-lease <id>`释放。
+每次plan/apply都会自动合并所有owner尚未过期的租约。过期租约只保留审计记录而不再保护，仍有效但
+损坏、路径越界或格式错误的租约会令容量门禁失败关闭；因此进程崩溃不会把可重建大缓存永久钉住。
+超过策略宽限期、没有summary/manifest且不被活动run引用的旧run-shaped目录按L1处理，删除前在
+`artifacts/common/capacity_disposal_receipts/`保存逐文件身份。成功run默认始终受保护；仅当调用者通过
+`Invoke-ArtifactCapacityGate -RebuildableSuccessBuildRuns <exact-run-path>`逐项授权时，门禁才检查该对象
+确为非Formal success `build`、没有活动引用，并只清理manifest未记录的重型副本。原三件套、全部已记录
+输出和带SHA-256的`capacity_retirement_actions.json`保留，普通成功仿真或分析run不能通过该参数准入。
 
 `artifact_identity_archive.py`只读解析已经完成的行政改名归档：它校验冻结的逐文件身份、归档包装、
 裁剪journal和唯一活动位置，并把旧manifest中的绝对路径按精确前缀映射到归档payload。仓库不再提供
 迁移、回滚或裁剪命令；现有归档保持不可变，`archived_verified`也不提供旧顶层路径fallback。
+
+### solver_review 被取代后的重型载荷退休
+
+`solver_review_retirement.py`是既有成功 `solver_review` run 被明确更新成功运行取代后，退休其可重建
+求解器原生载荷的唯一公共入口。它不是普通容量清理：默认只生成plan；apply必须通过
+`invoke_solver_review_retirement.ps1`取得共享 `HostExecutionLease`，并逐个精确给出target、replacement
+和人工审阅后的兼容性说明，并逐项声明本设计线判定兼容所需的输入角色。入口失败关闭检查两端均为
+非Formal success、replacement更新、项目与mode一致、两端均具备调用者声明的角色、target没有Git
+Markdown或下游run_config引用，且不受活动容量保护租约
+覆盖；只删除`solver_native_binary`和`dense_trajectory`，不删除轻量IOB、报告或三件套。
+
+apply前先在target内原子写入pending receipt，逐文件验证原始SHA-256后删除，最后写成
+`superseded_payload_retired`。receipt保存原完整逐文件清单、被删/保留集合、原manifest身份和替代run绑定。
+原`run_manifest.json`保持不可变，但删除后不再代表当前磁盘完整性，也不得交给普通manifest verifier或
+下游消费者；只能用`--verify <retired-run>`验证“历史成功身份 + 明确被取代 + 重型载荷已退休”的新语义。
+pending receipt表示中断处置，必须人工恢复，不能当作完成或重新自动删除。
+
+## 阶段复用
 
 `stage_reuse.py`提供跨项目、单父run的阶段续跑合同。它不是缓存或DAG调度器，也不定义项目阶段顺序。
 未来原生runner只可用`write_stage_receipt`为summary中明确标为`success`的阶段写
@@ -65,12 +104,14 @@ manifest。旧manifest若记录绝对路径，只有仍位于原路径且全部�
 公共层不复制大文件、不解释器件参数或物理判据，也不允许不同父run拼接。项目层仍负责声明可复用阶段、
 把实际文件映射为三类上下文、执行未复用阶段并完成本项目最终验收。
 
+## 粒子状态与坐标
+
 粒子状态分为两个不同边界。`particle_state.py`验证单个多极杆组件内部的17列
 `source/rod_exit/handoff/terminal`事件账本，其轴向/横向字段仍表达该组件局部坐标。这四个值是事件
 角色而不是四个可互换平面：`source`记录从粒子源合同在源释放面产生的初始事件，`rod_exit`记录杆端
 事件，`handoff`记录跨组件交接事件，`terminal`记录求解器终止、撞壁、超时等最终分类。公共事件
 角色不定义任何器件表面；具体技术域必须在本域机器合同和README中定义事件绑定的物理对象。多极杆
-绑定只按[`../multipole/README.md`](../multipole/README.md#轴向部件与物理面术语)解释。
+绑定只按[`../multipole/README.md`](../multipole/README.md#统一术语)解释。
 `component_particle_state.py`及
 [`schemas/component_particle_state.schema.json`](schemas/component_particle_state.schema.json)
 定义跨组件转移使用的version 1 canonical状态：每个粒子一行，严格按Schema中的
@@ -120,7 +161,7 @@ SHA-256、组件到仪器frame的pose、唯一source-to-target相对变换，以
 Euler顺序或器件参数反写到公共刚体语义。供应商局部坐标映射可以留在薄适配器，但不能成为跨组件pose
 或粒子状态的第二权威。
 
-`particle_count_policy.json`是根README“正式证据粒子数口径”对应的机器合同。它约束Candidate和Formal
+`particle_count_policy.json`是[操作指南的粒子数口径](../../docs/OPERATIONS.md#通用验证口径)对应的机器合同。它约束Candidate和Formal
 基线，不限制探索运行的正整数样本量；本目录不重复定义正式档位，项目也不得复制后修改该规范。
 
 ## 项目发现

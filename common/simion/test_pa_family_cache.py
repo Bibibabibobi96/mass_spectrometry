@@ -22,6 +22,7 @@ from common.simion.pa_family_cache import (
     probe_pa_family_cache,
     publish_pa_family_cache,
     validate_pa_family_cache_generation,
+    validate_pa_family_cache_subset,
 )
 
 
@@ -91,6 +92,33 @@ class PAFamilyCacheTest(unittest.TestCase):
         self.assertEqual(probe.disposition, CacheDisposition.CORRUPT)
         with self.assertRaisesRegex(PAFamilyCacheError, "refusing to overwrite corrupt"):
             publish_pa_family_cache(self.cache, identity(), self.source, self.names)
+
+    def test_detached_subset_does_not_open_corrupt_unrequested_native_member(self) -> None:
+        published = publish_pa_family_cache(self.cache, identity(), self.source, self.names)
+        native = published.generation_directory / "field.pa1"
+        native.chmod(native.stat().st_mode | stat.S_IWUSR)
+        native.write_bytes(b"changed")
+        manifest = validate_pa_family_cache_subset(
+            published.generation_directory,
+            ("field.pa#", "field.pa0"),
+            expected_cache_key=published.cache_key,
+        )
+        self.assertEqual(manifest["generation_sha256"], published.generation_sha256)
+        with self.assertRaisesRegex(PAFamilyCacheError, "field.pa1"):
+            validate_pa_family_cache_subset(
+                published.generation_directory,
+                ("field.pa1",),
+                expected_cache_key=published.cache_key,
+            )
+
+    def test_detached_subset_requires_manifest_membership(self) -> None:
+        published = publish_pa_family_cache(self.cache, identity(), self.source, self.names)
+        with self.assertRaisesRegex(PAFamilyCacheError, "absent from the generation manifest"):
+            validate_pa_family_cache_subset(
+                published.generation_directory,
+                ("standalone.pa",),
+                expected_cache_key=published.cache_key,
+            )
 
     def test_transient_payload_read_requires_two_consecutive_manifest_matches(self) -> None:
         published = publish_pa_family_cache(self.cache, identity(), self.source, self.names)

@@ -66,7 +66,13 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
         return publication.generation_directory
 
     def write_reusable_cache(
-        self, entry: Path, role: str, project_id: str, names: tuple[str, ...]
+        self,
+        entry: Path,
+        role: str,
+        project_id: str,
+        names: tuple[str, ...],
+        *,
+        critical_options: dict | None = None,
     ) -> Path:
         identity = {
             "schema_version": 2,
@@ -77,7 +83,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                 "product_version": "2020",
                 "executable_sha256": "E" * 64,
             },
-            "critical_options": {"refine_convergence": "5e-7"},
+            "critical_options": critical_options or {"refine_convergence": "5e-7"},
         }
         key_input = json.dumps(identity, separators=(",", ":"))
         cache_key = hashlib.sha256(key_input.encode()).hexdigest()
@@ -162,6 +168,28 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             family.chmod(family.stat().st_mode | 0o200)
             family.write_text("tampered\n", encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "generation differs"):
+                verify_artifacts_root(projects)
+
+    def test_artifacts_root_accepts_capacity_protection_leases(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            from common.contracts.reconcile_artifact_capacity import (
+                create_capacity_protection_lease,
+            )
+            create_capacity_protection_lease(
+                artifacts, lease_id="layout", owner="test", ttl_seconds=60,
+                protected_cache_keys=["a" * 64],
+            )
+
+            verify_artifacts_root(projects)
+
+            lease = artifacts / "common" / "capacity_protection_leases" / "layout.json"
+            document = json.loads(lease.read_text(encoding="utf-8"))
+            document["unexpected"] = True
+            lease.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "active lease fields differ"):
                 verify_artifacts_root(projects)
 
     def test_common_pa_family_cache_accepts_lowercase_key_and_generation_paths(self) -> None:
@@ -324,6 +352,275 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             (entry / "frontend.pa0").write_text("changed\n", encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "byte count differs"):
                 verify_cache(project, verify_hashes=True)
+
+    def test_cli_cache_entry_ignores_unrelated_tree_damage_but_checks_pointer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            projects = root / "artifacts" / "projects"
+            project = projects / "integration"
+            entry = self.write_reusable_cache(
+                project / "cache" / "simion_single_flight_frontend" / ("e" * 64),
+                "simion_single_flight_frontend_pa_cache",
+                project.name,
+                ("frontend.gem", "frontend.pa#", "frontend.pa0"),
+            )
+            unrelated_staging = (
+                root
+                / "artifacts"
+                / "common"
+                / "simion"
+                / "pa_family_cache"
+                / ".staging"
+                / "b-corrupt-unrelated"
+            )
+            unrelated_staging.mkdir(parents=True)
+            argv = [
+                "verify_artifact_layout.py",
+                str(projects),
+                "--cache-entry",
+                str(entry),
+                "--expected-cache-role",
+                "simion_single_flight_frontend_pa_cache",
+                "--expected-cache-key",
+                entry.parents[1].name,
+                "--expected-cache-project",
+                project.name,
+            ]
+
+            output = io.StringIO()
+            with patch.object(sys, "argv", argv), redirect_stdout(output):
+                main()
+            self.assertIn("CACHE_ENTRY=PASS", output.getvalue())
+
+            pointer_path = entry.parents[1] / "current_generation.json"
+            pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+            pointer["generation_sha256"] = "F" * 64
+            write_json(pointer_path, pointer)
+            with patch.object(sys, "argv", argv), self.assertRaisesRegex(
+                AssertionError, "cache generation pointer differs"
+            ):
+                main()
+
+    def test_cli_cache_entry_accepts_registered_domain_split_main_role(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            projects = Path(directory) / "artifacts" / "projects"
+            project = projects / "integration"
+            entry = self.write_reusable_cache(
+                project
+                / "cache"
+                / "simion_single_flight_accelerator_main"
+                / ("a" * 64),
+                "simion_single_flight_accelerator_main_pa_cache",
+                project.name,
+                (
+                    "accelerator_main.gem",
+                    "accelerator_main.pa#",
+                    "accelerator_main.pa+",
+                    "accelerator_main.pa0",
+                    "basis_build.json",
+                    "refinement_complete.json",
+                    *(f"accelerator_main.pa{electrode}" for electrode in range(36, 44)),
+                ),
+            )
+            argv = [
+                "verify_artifact_layout.py",
+                str(projects),
+                "--cache-entry",
+                str(entry),
+                "--expected-cache-role",
+                "simion_single_flight_accelerator_main_pa_cache",
+                "--expected-cache-key",
+                entry.parents[1].name,
+                "--expected-cache-project",
+                project.name,
+            ]
+            output = io.StringIO()
+            with patch.object(sys, "argv", argv), redirect_stdout(output):
+                main()
+            self.assertIn("CACHE_ENTRY=PASS", output.getvalue())
+
+    def test_full_tree_accepts_all_domain_split_cache_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "integration"
+            upstream_ids = list(range(21))
+            cases = (
+                (
+                    "simion_single_flight_upstream_bridge",
+                    "simion_single_flight_upstream_bridge_pa_cache",
+                    (
+                        "upstream_bridge.gem",
+                        "upstream_bridge.pa#",
+                        "basis_build.json",
+                        "refinement_complete.json",
+                        *(f"upstream_bridge.pa{electrode}" for electrode in upstream_ids),
+                    ),
+                    {"solution_ids": upstream_ids},
+                ),
+                (
+                    "simion_single_flight_connector_collision",
+                    "simion_single_flight_connector_collision_pa_cache",
+                    ("connector_collision.gem", "connector_collision.pa0"),
+                    None,
+                ),
+                (
+                    "simion_single_flight_accelerator_main",
+                    "simion_single_flight_accelerator_main_pa_cache",
+                    (
+                        "accelerator_main.gem",
+                        "accelerator_main.pa#",
+                        "accelerator_main.pa+",
+                        "accelerator_main.pa0",
+                        "basis_build.json",
+                        "refinement_complete.json",
+                        *(f"accelerator_main.pa{electrode}" for electrode in range(36, 44)),
+                    ),
+                    None,
+                ),
+                (
+                    "simion_single_flight_accelerator_entrance_local",
+                    "simion_single_flight_accelerator_entrance_local_pa_cache",
+                    (
+                        "accelerator_entrance_local.gem",
+                        "accelerator_entrance_local.pa#",
+                        "accelerator_entrance_local.pa+",
+                        "accelerator_entrance_local.pa0",
+                        "basis_build.json",
+                        "refinement_complete.json",
+                        *(
+                            f"accelerator_entrance_local.pa{electrode}"
+                            for electrode in range(36, 44)
+                        ),
+                    ),
+                    None,
+                ),
+                (
+                    "simion_single_flight_accelerator_entrance_zone_collision",
+                    "simion_single_flight_accelerator_entrance_zone_collision_pa_cache",
+                    ("accelerator_main.gem", "accelerator_main.pa0"),
+                    None,
+                ),
+            )
+            entries = []
+            for cache_root, role, names, critical_options in cases:
+                entries.append(
+                    self.write_reusable_cache(
+                        project / "cache" / cache_root / ("a" * 64),
+                        role,
+                        project.name,
+                        names,
+                        critical_options=critical_options,
+                    )
+                )
+
+            verify_cache(project, verify_hashes=True)
+            (entries[-1] / "accelerator_main.pa0").write_text(
+                "changed\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(AssertionError, "byte count differs"):
+                verify_cache(project, verify_hashes=True)
+
+    def test_upstream_family_follows_declared_solution_ids_exactly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "integration"
+            declared_ids = list(range(21))
+            base_names = (
+                "upstream_bridge.gem",
+                "upstream_bridge.pa#",
+                "basis_build.json",
+                "refinement_complete.json",
+            )
+            entry = self.write_reusable_cache(
+                project
+                / "cache"
+                / "simion_single_flight_upstream_bridge"
+                / ("a" * 64),
+                "simion_single_flight_upstream_bridge_pa_cache",
+                project.name,
+                (*base_names, *(f"upstream_bridge.pa{item}" for item in declared_ids)),
+                critical_options={"solution_ids": declared_ids},
+            )
+            verify_integration_cache_entry(
+                entry,
+                expected_role="simion_single_flight_upstream_bridge_pa_cache",
+                expected_key=entry.parents[1].name,
+                expected_project_id=project.name,
+            )
+
+            incomplete_declaration = declared_ids[:-1]
+            extra_entry = self.write_reusable_cache(
+                project
+                / "cache"
+                / "simion_single_flight_upstream_bridge"
+                / ("b" * 64),
+                "simion_single_flight_upstream_bridge_pa_cache",
+                project.name,
+                (*base_names, *(f"upstream_bridge.pa{item}" for item in declared_ids)),
+                critical_options={"solution_ids": incomplete_declaration},
+            )
+            with self.assertRaisesRegex(AssertionError, "solution inventory differs"):
+                verify_integration_cache_entry(
+                    extra_entry,
+                    expected_role="simion_single_flight_upstream_bridge_pa_cache",
+                    expected_key=extra_entry.parents[1].name,
+                    expected_project_id=project.name,
+                )
+
+    def test_cli_cache_entry_accepts_local_and_collision_roles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            projects = Path(directory) / "artifacts" / "projects"
+            project = projects / "integration"
+            cases = (
+                (
+                    "simion_single_flight_accelerator_entrance_local",
+                    "simion_single_flight_accelerator_entrance_local_pa_cache",
+                    (
+                        "accelerator_entrance_local.gem",
+                        "accelerator_entrance_local.pa#",
+                        "accelerator_entrance_local.pa+",
+                        "accelerator_entrance_local.pa0",
+                        "basis_build.json",
+                        "refinement_complete.json",
+                        *(
+                            f"accelerator_entrance_local.pa{electrode}"
+                            for electrode in range(36, 44)
+                        ),
+                    ),
+                ),
+                (
+                    "simion_single_flight_connector_collision",
+                    "simion_single_flight_connector_collision_pa_cache",
+                    ("connector_collision.gem", "connector_collision.pa0"),
+                ),
+                (
+                    "simion_single_flight_accelerator_entrance_zone_collision",
+                    "simion_single_flight_accelerator_entrance_zone_collision_pa_cache",
+                    ("accelerator_main.gem", "accelerator_main.pa0"),
+                ),
+            )
+            for cache_root, role, names in cases:
+                with self.subTest(role=role):
+                    entry = self.write_reusable_cache(
+                        project / "cache" / cache_root / ("a" * 64),
+                        role,
+                        project.name,
+                        names,
+                    )
+                    argv = [
+                        "verify_artifact_layout.py",
+                        str(projects),
+                        "--cache-entry",
+                        str(entry),
+                        "--expected-cache-role",
+                        role,
+                        "--expected-cache-key",
+                        entry.parents[1].name,
+                        "--expected-cache-project",
+                        project.name,
+                    ]
+                    output = io.StringIO()
+                    with patch.object(sys, "argv", argv), redirect_stdout(output):
+                        main()
+                    self.assertIn("CACHE_ENTRY=PASS", output.getvalue())
 
     def test_reusable_downstream_cache_role_must_match_registered_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

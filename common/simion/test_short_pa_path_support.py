@@ -202,6 +202,7 @@ try {
   $writer=[IO.File]::Open($env:PA_SOURCE,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
   $writer.Dispose()
 } catch [IO.IOException] {$write_blocked=$true}
+catch [UnauthorizedAccessException] {$write_blocked=$true}
 Remove-ShortPaCopy -Path $copy
 $writer=[IO.File]::Open($env:PA_SOURCE,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
 $writer.Dispose()
@@ -232,6 +233,147 @@ $writer.Dispose()
             self.assertTrue(result["destination_removed"])
         finally:
             shutil.rmtree(root, ignore_errors=False)
+
+    def test_multiple_copies_share_one_source_guard_until_last_removal(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_pa_shared_source_guard_"))
+        source = root / "source.pa"
+        first = root / "copy_1.pa"
+        second = root / "copy_2.pa"
+        source.write_bytes(b"shared-immutable-source")
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$first=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_FIRST
+$second=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_SECOND
+$one_guard=($script:ShortPaSourceGuards.Count-eq1)
+$two_references=([int]@($script:ShortPaSourceGuards.Values)[0].reference_count-eq2)
+Remove-ShortPaCopy -Path $first
+$write_still_blocked=$false
+try {
+  $writer=[IO.File]::Open($env:PA_SOURCE,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
+  $writer.Dispose()
+} catch [IO.IOException] {$write_still_blocked=$true}
+Remove-ShortPaCopy -Path $second
+$writer=[IO.File]::Open($env:PA_SOURCE,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
+$writer.Dispose()
+[pscustomobject]@{
+  one_guard=$one_guard
+  two_references=$two_references
+  write_still_blocked=$write_still_blocked
+  guards_after=$script:ShortPaSourceGuards.Count
+  copies_after=$script:ShortPaCopies.Count
+}|ConvertTo-Json -Compress
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=HELPER.parent, check=True, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                env={
+                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    "PA_FIRST": str(first), "PA_SECOND": str(second),
+                }, timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertTrue(result["one_guard"])
+            self.assertTrue(result["two_references"])
+            self.assertTrue(result["write_still_blocked"])
+            self.assertEqual(result["guards_after"], 0)
+            self.assertEqual(result["copies_after"], 0)
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+
+    def test_destination_write_guard_proves_copy_immutable_without_rehash(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_pa_destination_guard_"))
+        source = root / "source.pa"
+        destination = root / "copy.pa"
+        source.write_bytes(b"guarded-private-pa")
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION -GuardDestinationReadOnly
+$identity=Get-ShortPaCopyIdentity -Path $copy
+$write_blocked=$false
+try {
+  $writer=[IO.File]::Open($copy,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
+  $writer.Dispose()
+} catch [IO.IOException] {$write_blocked=$true}
+catch [UnauthorizedAccessException] {$write_blocked=$true}
+Remove-ShortPaCopy -Path $copy
+[pscustomobject]@{
+  write_guarded=$identity.destination_write_guarded
+  identity_bytes=$identity.bytes
+  identity_sha256=$identity.sha256
+  write_blocked=$write_blocked
+  destination_removed=-not(Test-Path -LiteralPath $copy)
+}|ConvertTo-Json -Compress
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=HELPER.parent, check=True, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                env={
+                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    "PA_DESTINATION": str(destination),
+                }, timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertTrue(result["write_guarded"])
+            self.assertTrue(result["write_blocked"])
+            self.assertTrue(result["destination_removed"])
+            self.assertEqual(result["identity_bytes"], len(b"guarded-private-pa"))
+            self.assertEqual(
+                result["identity_sha256"].lower(),
+                hashlib.sha256(b"guarded-private-pa").hexdigest(),
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+
+    def test_read_only_copy_directory_can_move_before_write_guard(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_pa_read_only_move_"))
+        source = root / "source.pa"
+        source.write_bytes(b"portable-read-only-pa")
+        bundle = Path(tempfile.gettempdir()) / f"simion_pa_links_test_{uuid.uuid4().hex}"
+        moved = Path(str(bundle) + "_hidden")
+        bundle.mkdir()
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination (Join-Path $env:BUNDLE 'copy.pa') -MarkDestinationReadOnly
+$before=Get-ShortPaCopyIdentity -Path $copy
+Move-Item -LiteralPath $env:BUNDLE -Destination $env:MOVED
+Move-Item -LiteralPath $env:MOVED -Destination $env:BUNDLE
+$protected=Protect-ShortPaCopyDestination -Path $copy
+Remove-ShortPaCopyDirectory -Path $env:BUNDLE -ExpectedNamePrefix 'simion_pa_links_test_'
+[pscustomobject]@{
+  read_only_before=$before.destination_read_only
+  guarded_after=$protected.destination_write_guarded
+  directory_removed=-not(Test-Path -LiteralPath $env:BUNDLE)
+}|ConvertTo-Json -Compress
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", env={
+                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    "BUNDLE": str(bundle), "MOVED": str(moved),
+                }, timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertTrue(result["read_only_before"])
+            self.assertTrue(result["guarded_after"])
+            self.assertTrue(result["directory_removed"])
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+            if bundle.exists():
+                shutil.rmtree(bundle, ignore_errors=False)
+            if moved.exists():
+                shutil.rmtree(moved, ignore_errors=False)
 
     def test_projects_long_read_only_pa_as_isolated_copy_and_removes_it(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="simion_long_pa_source_"))
@@ -293,6 +435,49 @@ $after=[IO.File]::GetAttributes($env:PA_SOURCE)
             shutil.rmtree(root, ignore_errors=False)
             if link_dir.exists():
                 shutil.rmtree(link_dir, ignore_errors=False)
+
+    def test_removes_registered_batch_pa_copies_but_retains_companions(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_batch_copy_source_"))
+        source = root / "source.pa"
+        source.write_bytes(b"batch-private-pa")
+        batch_dir = Path(tempfile.gettempdir()) / f"batch_{uuid.uuid4().hex}"
+        batch_dir.mkdir()
+        companion = batch_dir / "mrtof_batch.iob"
+        companion.write_text("portable companion", encoding="utf-8")
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination (Join-Path $env:BATCH_DIR 'iob_input_analyzer.pa')
+Remove-ShortPaCopiesUnderDirectory -Path $env:BATCH_DIR -ExpectedNamePrefix 'batch_'
+[pscustomobject]@{
+  pa_removed=-not(Test-Path -LiteralPath $copy)
+  companion_retained=Test-Path -LiteralPath (Join-Path $env:BATCH_DIR 'mrtof_batch.iob')
+  directory_retained=Test-Path -LiteralPath $env:BATCH_DIR -PathType Container
+  guards_after=$script:ShortPaSourceGuards.Count
+  copies_after=$script:ShortPaCopies.Count
+}|ConvertTo-Json -Compress
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=HELPER.parent, check=True, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                env={
+                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    "BATCH_DIR": str(batch_dir),
+                }, timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertTrue(result["pa_removed"])
+            self.assertTrue(result["companion_retained"])
+            self.assertTrue(result["directory_retained"])
+            self.assertEqual(result["guards_after"], 0)
+            self.assertEqual(result["copies_after"], 0)
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+            if batch_dir.exists():
+                shutil.rmtree(batch_dir, ignore_errors=False)
 
 
 if __name__ == "__main__":

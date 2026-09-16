@@ -2,7 +2,9 @@
 --
 -- Usage:
 --   simion --nogui --noprompt lua compose_standalone_pa.lua \
---     BASE.pa OUTPUT.pa RESPONSE.pa,COEFFICIENT [RESPONSE.pa,COEFFICIENT ...]
+--     BASE.{pa|bin} OUTPUT.pa RESPONSE.{pa|bin},COEFFICIENT [...]
+-- `.bin` is a neutral temporary name for already verified standalone PA
+-- bytes; it prevents background PA-family handling of disposable inputs.
 
 local base_path = assert(arg[1], 'standalone BASE.pa required')
 local output_path = assert(arg[2], 'new standalone OUTPUT.pa required')
@@ -25,10 +27,15 @@ local function finite_number(text, label)
 end
 
 local function require_standalone_input(path, role)
-  assert(path:match('%.[pP][aA]$'), role .. ' must use the standalone .pa suffix')
+  local standalone_suffix=path:match('%.[pP][aA]$')
+  local neutral_suffix=path:match('%.[bB][iI][nN]$')
+  assert(standalone_suffix or neutral_suffix,
+         role .. ' must use a standalone .pa or neutral .bin suffix')
   assert(file_exists(path), role .. ' does not exist')
-  assert(not file_exists(standalone_surface_path(path)),
-         role .. ' uses unsupported surface metadata; surface=none is required')
+  if standalone_suffix then
+    assert(not file_exists(standalone_surface_path(path)),
+           role .. ' uses unsupported surface metadata; surface=none is required')
+  end
 end
 
 assert(base_path ~= output_path, 'composition must not overwrite its base')

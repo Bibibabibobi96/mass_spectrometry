@@ -22,6 +22,37 @@ function Invoke-RunToolRootContext {
   }
 }
 
+function Get-VerifiedRunManifestInputRecord {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][System.Collections.IDictionary]$Records,
+    [Parameter(Mandatory)][string]$Name,
+    [Parameter(Mandatory)][string]$Label
+  )
+  if(-not$Records.Contains($Name)-or-not($Records[$Name]-is[System.Collections.IDictionary])){
+    throw "Run manifest lacks the required $Label input record."
+  }
+  $record=$Records[$Name]
+  if(-not$record.exists-or[string]::IsNullOrWhiteSpace([string]$record.path)-or
+     [string]::IsNullOrWhiteSpace([string]$record.sha256)){
+    throw "Run manifest has an incomplete $Label input record."
+  }
+  return $record
+}
+
+function Assert-VerifiedRunRecordHash {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][System.Collections.IDictionary]$Record,
+    [Parameter(Mandatory)][string]$Label
+  )
+  $actual=(Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+  if($actual-ne([string]$Record.sha256).ToUpperInvariant()){
+    throw "Frozen $Label differs from the verified parent run manifest."
+  }
+}
+
 function Invoke-ArtifactCapacityGate {
   <# Invoke the repository-owned artifact reconciler and require an applied
      receipt.  This is deliberately a lifecycle adapter: projects supply their
@@ -36,6 +67,7 @@ function Invoke-ArtifactCapacityGate {
     [long]$RequiredHeadroomBytes=0,
     [string[]]$ProtectedPaths=@(),
     [string[]]$ProtectedCacheKeys=@(),
+    [string[]]$RebuildableSuccessBuildRuns=@(),
     [Nullable[long]]$KnownMeasuredBytes=$null,
     [Nullable[long]]$MaximumNewArtifactBytes=$null
   )
@@ -64,6 +96,11 @@ function Invoke-ArtifactCapacityGate {
   foreach($key in @($ProtectedCacheKeys|Select-Object -Unique)){
     if($key-notmatch '^[0-9a-fA-F]{64}$'){throw 'Protected cache key must be one SHA-256 key.'}
     $arguments+=@('--protect-cache-key',$key)
+  }
+  foreach($runPath in @($RebuildableSuccessBuildRuns|Where-Object{
+      -not [string]::IsNullOrWhiteSpace($_)
+    }|Select-Object -Unique)){
+    $arguments+=@('--rebuildable-success-build-run',$runPath)
   }
   if($null-ne$KnownMeasuredBytes){
     [int64]$knownMeasuredBytesValue=$KnownMeasuredBytes

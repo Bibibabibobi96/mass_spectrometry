@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -138,6 +139,20 @@ def is_recoverable_simion_batch_log(path: Path) -> bool:
         path.parent.name.lower() == "logs"
         and fnmatch.fnmatch(path.name.lower(), "simion__batch*.stdout.log")
     )
+
+
+def _unlink_rebuildable_file(path: Path) -> None:
+    """Delete a governed rebuildable file, including read-only cache copies."""
+
+    try:
+        path.unlink()
+    except PermissionError:
+        # Verified PA-family inputs are deliberately read-only.  A run-private
+        # copy can retain that Windows attribute even after the solver exits;
+        # its retention classification and run-root containment were already
+        # validated before this helper is called.
+        path.chmod(path.stat().st_mode | stat.S_IWRITE)
+        path.unlink()
 
 
 def _has_native_completion_sentinel(path: Path) -> bool:
@@ -291,7 +306,7 @@ def apply_retention(
                 "retention_role": role,
                 "action": "removed_incomplete_native_trace_before_terminal_manifest",
             }
-            path.unlink()
+            _unlink_rebuildable_file(path)
             removed.append(record)
             continue
         if path.resolve() in preserved_paths:
@@ -314,7 +329,7 @@ def apply_retention(
             "retention_role": role,
             "action": "removed_before_terminal_manifest",
         }
-        path.unlink()
+        _unlink_rebuildable_file(path)
         removed.append(record)
     action = {
         "schema_version": 1,

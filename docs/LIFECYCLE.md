@@ -60,6 +60,7 @@ artifacts/projects/<project>/
 | cache根 | 注册角色 |
 |---|---|
 | `artifacts/common/simion/pa_family_cache/<cache-key>/generations/<generation-sha256>/` | `simion_pa_family_cache`；公共可重建PA性能缓存，键与当前代均由 manifest 和完整 payload 校验 |
+| `artifacts/common/capacity_protection_leases/<lease-id>.json` | 公共容量TTL保护租约；只临时钉住精确cache key或artifact-root相对路径，过期自动失效，损坏则门禁失败关闭 |
 | `cache/simion_pa_basis/<cache-key>/generations/<generation-sha256>/` | `simion_pa_family_cache`（multipole PA-basis 适配器） |
 | `cache/simion_single_flight_frontend/<SHA-256>/` | `simion_single_flight_frontend_pa_cache` |
 | `cache/simion_single_flight_upstream_bridge/<SHA-256>/` | `simion_single_flight_upstream_bridge_pa_cache` |
@@ -124,6 +125,9 @@ SIMION IOB 可能嵌入 PA 的绝对路径，移动工作区后必须重新打�
 原始报告、CSV、模型、图像和崩溃日志是manifest列出的输出，不替代summary。运行器用
 `common/contracts/write_run_manifest.py`写manifest，再用`verify_run_manifest.py`重新计算全部记录；
 没有通过manifest复核的目录只能留在scratch，不能被正式文档引用。
+这里的“全部记录”是run发布门禁，不能用消费投影代替。下游只读取历史run的严格子集时，可按
+[公共合同](../common/contracts/README.md#运行身份与生命周期)使用具名、路径绑定的消费投影；该投影只证明
+被读取记录及上游身份，不恢复或宣称未消费记录有效，并须由下游run config冻结其范围。
 
 ### run产物保留合同
 
@@ -234,10 +238,18 @@ run生成阶段的自动保留行为只按上文预注册的run产物保留合�
 cache generation 发布时刻；run 采用终态记录时刻，scratch 采用创建时刻。不得用易受索引或备份影响的文件访问时间，
 也不得因文件更大而跳过较旧对象：
 
-1. 无 manifest 的 scratch、临时 staging 与损坏/不完整 cache generation；
+1. 无 manifest 的 scratch、临时 staging、损坏/不完整 cache generation，以及超过公共宽限期、无
+   summary/manifest、未被活动run引用的旧 `runs/<id>` 非证据目录；删除前须把逐文件身份写入树外处置receipt；
 2. 未被活动实验引用、可由冻结输入重建的非 Formal cache；
 3. `compact` 类中断 run 的可重建重型 payload（仅 PA、轨迹和其他 retention 合同允许移除的文件），保留冻结输入、日志、summary、manifest 与处置 receipt；
 4. 仅在用户针对精确对象明确授权后，处置不再被文档/manifest引用且已有替代证据的非 Formal run 重型副本。
+   对已成功的 `build` run，授权只能移除manifest未记录、未被活动run引用且由保留策略判定为可重建的
+   重型副本；必须保留原success三件套、全部manifest记录输出及带逐文件SHA-256的处置receipt。普通成功
+   仿真/分析结果不接受该授权，也不因容量不足自动成为候选。
+   唯一例外是明确被更新成功run取代的`solver_review`：公共退休入口在用户逐run授权、无Git文档或下游
+   run_config引用、非Formal、同项目/同用途且几何审查拓扑兼容时，可移除manifest已记录的求解器原生
+   重型载荷。必须保留原三件套、轻量IOB/报告、删除前完整逐文件SHA-256清单和replacement绑定；原manifest
+   不改写，退休receipt明确宣告其不再适用普通完整性验证，改由专用`superseded_payload_retired`验证语义。
 
 `formal/`、`archive/`、活动 cache generation、当前实验引用的 cache、唯一来源输入及任何被当前文档引用的科学结果
 始终禁止由容量治理删除。历史 run 内已冻结的 cache manifest 是重建 provenance，不把相应非活动、可重建 cache

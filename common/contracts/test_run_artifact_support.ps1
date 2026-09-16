@@ -80,8 +80,33 @@ try {
     -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0
   Assert-Equal $capacityReceipt.role 'artifact_capacity_gate' 'Capacity gate role changed.'
   Assert-Equal $capacityReceipt.satisfied_after_apply $true 'Capacity gate did not publish a satisfied receipt.'
-  Assert-Equal ($capacityReceipt -is [pscustomobject]) $true `
+  $explicitBuildRun=Join-Path $capacityRoot `
+    'projects\p\runs\20260101_000000__build__simion__rebuildable'
+  $capacityExplicitBuildReceipt=Invoke-ArtifactCapacityGate -Python $python `
+    -RepoRoot $repoRoot -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0 `
+    -RebuildableSuccessBuildRuns @($explicitBuildRun)
+  Assert-Equal ($capacityExplicitBuildReceipt -is [pscustomobject]) $true `
     'Capacity gate must return the JSON object without a collection wrapper.'
+  Assert-Equal @($capacityExplicitBuildReceipt.explicit_rebuildable_success_build_runs).Count 1 `
+    'Capacity gate did not preserve explicit success-build authorization.'
+  Assert-Equal ([IO.Path]::GetFullPath(
+      [string]$capacityExplicitBuildReceipt.explicit_rebuildable_success_build_runs[0])) `
+    ([IO.Path]::GetFullPath($explicitBuildRun)) `
+    'Capacity gate changed the explicit success-build run path.'
+  $secondExplicitBuildRun=Join-Path $capacityRoot `
+    'projects\p\runs\20260101_000001__build__simion__second-rebuildable'
+  $multipleBuildReceipt=Invoke-ArtifactCapacityGate -Python $python `
+    -RepoRoot $repoRoot -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0 `
+    -RebuildableSuccessBuildRuns @($explicitBuildRun,$secondExplicitBuildRun)
+  Assert-Equal @($multipleBuildReceipt.explicit_rebuildable_success_build_runs).Count 2 `
+    'Capacity gate changed the multiple-path authorization count.'
+  $actualBuildPaths=@($multipleBuildReceipt.explicit_rebuildable_success_build_runs | ForEach-Object {
+    [IO.Path]::GetFullPath([string]$_)
+  })
+  foreach($expectedBuildPath in @($explicitBuildRun,$secondExplicitBuildRun)) {
+    Assert-Equal ($actualBuildPaths -contains [IO.Path]::GetFullPath($expectedBuildPath)) $true `
+      'Capacity gate split or changed one of the multiple authorized paths.'
+  }
   $capacityFastReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0 `
     -KnownMeasuredBytes 0 -MaximumNewArtifactBytes 0

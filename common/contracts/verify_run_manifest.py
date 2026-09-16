@@ -1,9 +1,10 @@
-"""Recompute every file record in a simulation run manifest."""
+"""Verify a complete run manifest or an explicit downstream-consumer projection."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +69,29 @@ def require_equal(name: str, actual: Any, expected: str, *, sha256: bool = False
         raise AssertionError(f"{name} is {actual!r}, expected {expected!r}")
 
 
+def _consumed_input(value: list[str]) -> tuple[str, Path]:
+    name, path_text = value
+    if not name or name.strip() != name:
+        raise argparse.ArgumentTypeError("consumed input name must be nonempty and trimmed")
+    return name, Path(path_text).resolve()
+
+
+def _select_consumed_output(
+    records: list[dict], expected_path: Path, *, base_dir: Path
+) -> tuple[int, dict]:
+    matches = [
+        (index, record)
+        for index, record in enumerate(records, start=1)
+        if record_path(record, base_dir=base_dir) == expected_path
+    ]
+    if len(matches) != 1:
+        raise AssertionError(
+            "consumer projection output is not uniquely declared by the manifest: "
+            f"{expected_path}"
+        )
+    return matches[0]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("manifest", type=Path)
@@ -79,7 +103,38 @@ def main() -> None:
     parser.add_argument("--require-design-profile-id")
     parser.add_argument("--require-parent-resolved-design-sha256")
     parser.add_argument("--require-particle-source-sha256")
+    parser.add_argument("--consumer-projection-id")
+    parser.add_argument(
+        "--consumed-input",
+        action="append",
+        nargs=2,
+        default=[],
+        metavar=("NAME", "PATH"),
+        help="verify and path-bind one manifest input in a named consumer projection",
+    )
+    parser.add_argument(
+        "--consumed-output",
+        action="append",
+        type=Path,
+        default=[],
+        metavar="PATH",
+        help="verify and path-bind one manifest output in a named consumer projection",
+    )
     args = parser.parse_args()
+    projection_selected = args.consumer_projection_id is not None
+    if projection_selected:
+        if not re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}", args.consumer_projection_id):
+            parser.error(
+                "--consumer-projection-id must be a stable lowercase identifier"
+            )
+        if not args.consumed_input and not args.consumed_output:
+            parser.error(
+                "a consumer projection requires --consumed-input or --consumed-output"
+            )
+    elif args.consumed_input or args.consumed_output:
+        parser.error(
+            "consumed record selectors require --consumer-projection-id"
+        )
     manifest_path = args.manifest.resolve()
     manifest_dir = manifest_path.parent
     manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
@@ -144,20 +199,68 @@ def main() -> None:
             args.require_particle_source_sha256,
             sha256=True,
         )
-    for name, record in manifest.get("inputs", {}).items():
-        verify_record(f"input {name}", record, base_dir=manifest_dir)
-    for index, record in enumerate(manifest.get("outputs", []), start=1):
-        verify_record(f"output {index}", record, base_dir=manifest_dir)
-        if retention is not None:
-            expected_role = classify_file(
-                record_path(record, base_dir=manifest_dir),
-                bytes_count=int(record["bytes"]),
-            )
-            if record.get("retention_role") != expected_role:
+    manifest_inputs = manifest.get("inputs", {})
+    manifest_outputs = manifest.get("outputs", [])
+    if not isinstance(manifest_inputs, dict):
+        raise AssertionError("manifest inputs must be an object")
+    if not isinstance(manifest_outputs, list):
+        raise AssertionError("manifest outputs must be an array")
+    if projection_selected:
+        consumed_inputs = [_consumed_input(value) for value in args.consumed_input]
+        input_names = [name for name, _ in consumed_inputs]
+        if len(input_names) != len(set(input_names)):
+            raise AssertionError("consumer projection repeats an input name")
+        output_paths = [path.resolve() for path in args.consumed_output]
+        if len(output_paths) != len(set(output_paths)):
+            raise AssertionError("consumer projection repeats an output path")
+        for name, expected_path in consumed_inputs:
+            if name not in manifest_inputs:
                 raise AssertionError(
-                    f"output {index} retention_role differs: {record.get('retention_role')!r}"
+                    f"consumer projection input is not declared by the manifest: {name}"
                 )
-    if retention is not None and manifest.get("status") not in {"interrupted", "checkpoint"}:
+            record = manifest_inputs[name]
+            actual_path = record_path(record, base_dir=manifest_dir)
+            if actual_path != expected_path:
+                raise AssertionError(
+                    f"consumer projection input {name} path is {actual_path}, "
+                    f"expected {expected_path}"
+                )
+            verify_record(f"consumed input {name}", record, base_dir=manifest_dir)
+        for expected_path in output_paths:
+            index, record = _select_consumed_output(
+                manifest_outputs, expected_path, base_dir=manifest_dir
+            )
+            verify_record(f"consumed output {index}", record, base_dir=manifest_dir)
+            if retention is not None:
+                expected_role = classify_file(
+                    record_path(record, base_dir=manifest_dir),
+                    bytes_count=int(record["bytes"]),
+                )
+                if record.get("retention_role") != expected_role:
+                    raise AssertionError(
+                        f"output {index} retention_role differs: "
+                        f"{record.get('retention_role')!r}"
+                    )
+    else:
+        for name, record in manifest_inputs.items():
+            verify_record(f"input {name}", record, base_dir=manifest_dir)
+        for index, record in enumerate(manifest_outputs, start=1):
+            verify_record(f"output {index}", record, base_dir=manifest_dir)
+            if retention is not None:
+                expected_role = classify_file(
+                    record_path(record, base_dir=manifest_dir),
+                    bytes_count=int(record["bytes"]),
+                )
+                if record.get("retention_role") != expected_role:
+                    raise AssertionError(
+                        f"output {index} retention_role differs: "
+                        f"{record.get('retention_role')!r}"
+                    )
+    if (
+        not projection_selected
+        and retention is not None
+        and manifest.get("status") not in {"interrupted", "checkpoint"}
+    ):
         run_files = [
             path
             for path in manifest_dir.rglob("*")
@@ -171,9 +274,18 @@ def main() -> None:
             else set()
         )
         validate_retained_files(retention, run_files, exempt_paths=exemptions)
+    scope = "consumer_projection" if projection_selected else "full"
+    projection_text = (
+        f" PROJECTION={args.consumer_projection_id} "
+        f"CONSUMED_INPUTS={len(args.consumed_input)} "
+        f"CONSUMED_OUTPUTS={len(args.consumed_output)}"
+        if projection_selected
+        else f" OUTPUTS={len(manifest_outputs)}"
+    )
     print(
-        f"RUN_MANIFEST_VERIFY=PASS PROJECT={manifest.get('project')} "
-        f"RUN_ID={manifest.get('run_id')} OUTPUTS={len(manifest.get('outputs', []))}"
+        f"RUN_MANIFEST_VERIFY=PASS SCOPE={scope} "
+        f"PROJECT={manifest.get('project')} RUN_ID={manifest.get('run_id')}"
+        f"{projection_text}"
     )
 
 
