@@ -1,4 +1,4 @@
-function result = test_wien_filter(mass_amu, KE_eV, label)
+function result = test_wien_filter(runDir, mass_amu, KE_eV, label)
 % Wien filter (velocity selector): crossed uniform E and B fields,
 % E perpendicular to B, both perpendicular to the beam axis (z). For a
 % charged particle moving along z at speed v, force balance requires
@@ -16,11 +16,11 @@ function result = test_wien_filter(mass_amu, KE_eV, label)
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-if nargin < 3, label = sprintf('%gamu_%geV', mass_amu, KE_eV); end
+if nargin < 4, label = sprintf('%gamu_%geV', mass_amu, KE_eV); end
 
 if any(strcmp(cell(ModelUtil.tags()), 'ModelWien'))
     ModelUtil.remove('ModelWien');

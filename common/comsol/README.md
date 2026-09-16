@@ -88,3 +88,18 @@ launcher 启动后立即登记 PID；等待报告和长时间 Compute 期间持�
 
 这些文件是组件验证基线，不是生产脚本，也不代表任一正式仪器已经完成。新的共享测试必须有
 明确理论对照或开启/关闭对照，生成GUI可检查的MPH节点，并说明适用边界。
+
+### 组件测试的输出上下文
+
+使用 `common_artifact_paths` 的组件测试以 `runDir` 为第一个必填参数，其余物理参数及默认值不变。
+调用方先准备已有的 `artifacts/projects/<project>/runs/<run_id>` 或 `scratch/<task_id>` 容器；
+测试仅在其 `comsol/` 保存模型、`results/` 保存图表，不再写共享 `common/models`、`common/results`。
+求解器启动仍使用上述统一入口，launcher 的 `TaskScript` 脚本负责传入该上下文，不新增启动器。
+
+同一测试链的构建和消费阶段必须传入同一个目录，例如任务脚本中的
+`test_multipole_geometry(runDir, 4); test_multipole_es(runDir, 4);`。
+Einzel 和 LIT 的构建、CPT阶段同样共享上下文，以读取该次生成的模型；不得从全局目录选取旧模型。
+独立试验使用不同容器，禁止向已发布终态run追加或覆盖模型。可引用运行仍由调用方按
+[生命周期](../../docs/LIFECYCLE.md)冻结输入、summary与manifest；临时测试在scratch执行后按该规则清理。
+`common/paths/test_common_artifact_paths_contract.py`检查这16个入口的显式参数与路径路由，属于静态验证，
+不代表MATLAB路径行为或真实COMSOL求解已验收。

@@ -43,17 +43,19 @@ writer/verifier同时扫描未列出的重型文件，防止通过漏报output�
 `reconcile_artifact_capacity.py`与`artifact_capacity_policy.json`是唯一的跨项目容量清理政策；
 `Invoke-ArtifactCapacityGate`是`run_artifact_support.ps1`提供的PowerShell生命周期适配器。运行器必须由
 冻结或实际测得的新增字节、显式受保护run路径和缓存键调用它，并把返回的 applied receipt 作为run输出；
-适配器自动取得或继承公共`HostExecutionLease`，因此容量删除不会与SIMION/COMSOL正在消费缓存的阶段并发；
-Python入口的`--apply`拒绝没有该租约标记的直接调用，snapshot和只读plan不受影响。该适配器不定义项目缓存角色、物理参数或第二套删除优先级。候选发现同时识别项目`cache/<role>/<key>`
+适配器自动取得或继承公共`HostExecutionLease`；轻重任务可并行，因此主机许可本身不保证缓存消费与
+容量清理互斥。调用方必须保护实际消费路径和缓存键，跨任务使用下述TTL容量保护租约；无法确认其他
+活动消费者时不得执行删除。Python入口的`--apply`拒绝没有主机租约标记的直接调用，snapshot和只读plan
+不受影响。该适配器不定义项目缓存角色、物理参数或第二套删除优先级。候选发现同时识别项目`cache/<role>/<key>`
 的`generation_relative_path`指针和已注册公共SIMION PA-family cache的`generation_sha256`指针；二者都必须
-形成pointer→selected generation→manifest的闭合身份链，损坏或未发布节点只能按L1处理。
+形成pointer→selected generation→manifest的闭合身份链；无manifest的staging需人工确认归属后处置，不能仅凭年龄自动删除。
 跨run或跨项目需要在终态manifest之外临时保留可重建缓存/运行目录时，使用同一Python入口在
 `artifacts/common/capacity_protection_leases/<lease-id>.json`创建TTL保护租约：
 `--create-protection-lease <id> --lease-owner <owner> --lease-ttl-seconds <seconds>`，并以可重复的
 `--protect-cache-key`或`--protect-path`声明目标；结束后用`--delete-protection-lease <id>`释放。
 每次plan/apply都会自动合并所有owner尚未过期的租约。过期租约只保留审计记录而不再保护，仍有效但
 损坏、路径越界或格式错误的租约会令容量门禁失败关闭；因此进程崩溃不会把可重建大缓存永久钉住。
-超过策略宽限期、没有summary/manifest且不被活动run引用的旧run-shaped目录按L1处理，删除前在
+超过策略宽限期、没有run_config/summary/manifest且不被活动run引用的旧run-shaped目录按L1处理，删除前在
 `artifacts/common/capacity_disposal_receipts/`保存逐文件身份。成功run默认始终受保护；仅当调用者通过
 `Invoke-ArtifactCapacityGate -RebuildableSuccessBuildRuns <exact-run-path>`逐项授权时，门禁才检查该对象
 确为非Formal success `build`、没有活动引用，并只清理manifest未记录的重型副本。原三件套、全部已记录
@@ -71,7 +73,8 @@ Python入口的`--apply`拒绝没有该租约标记的直接调用，snapshot和
 和人工审阅后的兼容性说明，并逐项声明本设计线判定兼容所需的输入角色。入口失败关闭检查两端均为
 非Formal success、replacement更新、项目与mode一致、两端均具备调用者声明的角色、target没有Git
 Markdown或下游run_config引用，且不受活动容量保护租约
-覆盖；只删除`solver_native_binary`和`dense_trajectory`，不删除轻量IOB、报告或三件套。
+覆盖；两端完整manifest记录与config/summary/输入绑定必须通过字节数和SHA验证，apply前再次复核。
+只删除`solver_native_binary`和`dense_trajectory`，不删除轻量IOB、报告或三件套。
 
 apply前先在target内原子写入pending receipt，逐文件验证原始SHA-256后删除，最后写成
 `superseded_payload_retired`。receipt保存原完整逐文件清单、被删/保留集合、原manifest身份和替代run绑定。

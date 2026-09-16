@@ -17,7 +17,7 @@ $errors = [Collections.Generic.List[string]]::new()
 $allowedWorkspaceEntries = @(
   '.agents','.claude','.codex','.comsol_runtime','.comsol_server_config','.git','.idea',
   '.matlab_pref','.matlab_pref25','.mcp.json','.tools','AGENTS.md','CLAUDE.md',
-  'README.md','artifacts','integrations','simulation_repo','scratch'
+  'README.md','artifacts','simulation_repo'
 )
 $workspaceManaged =
   (Split-Path -Leaf $repoRoot) -eq 'simulation_repo' -or
@@ -60,14 +60,17 @@ if ($workspaceManaged) {
   Write-Output 'WORKSPACE_HYGIENE=SKIP REASON=standalone_repository_checkout'
 }
 
-foreach ($directoryName in @('.tmp', 'scratch')) {
-  $directory = Join-Path $repoRoot $directoryName
-  if (Test-Path -LiteralPath $directory) {
-    $errors.Add("repository root must not contain temporary directory: $directoryName")
+$allowedRepositoryDirectories = @(
+  '.agents','.git','.githooks','.github','.venv','.ruff_cache','.pytest_cache','.mypy_cache',
+  'common','config','docs','integrations','official_docs','projects'
+)
+foreach ($directory in Get-ChildItem -Force -Directory -LiteralPath $repoRoot) {
+  if ($directory.Name -notin $allowedRepositoryDirectories) {
+    $errors.Add("repository root contains unregistered directory: $($directory.Name)")
   }
 }
 
-$rootDebrisPatterns = @('hs_err_pid*.log','java_error_in_*.log','matlab_crash_dump.*','core.*','*.dmp')
+$rootDebrisPatterns = @('*.log','matlab_crash_dump.*','core.*','*.dmp')
 foreach ($pattern in $rootDebrisPatterns) {
   foreach ($file in @(Get-ChildItem -LiteralPath $repoRoot -File -Filter $pattern -ErrorAction SilentlyContinue)) {
     $errors.Add("repository-root tool artifact must be archived outside Git: $($file.Name)")

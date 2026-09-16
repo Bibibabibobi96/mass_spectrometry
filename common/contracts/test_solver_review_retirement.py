@@ -107,6 +107,59 @@ class SolverReviewRetirementTest(unittest.TestCase):
             apply_retirement(plan)
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_plan_rejects_missing_or_changed_recorded_evidence(self, _scan: mock.Mock) -> None:
+        for run in (self.target, self.replacement):
+            payload = run / "simion" / "analyzer.pa0"
+            original = payload.read_bytes()
+            for mutation in (None, b"drift!"):
+                with self.subTest(run=run.name, mutation=mutation):
+                    if mutation is None:
+                        payload.unlink()
+                    else:
+                        payload.write_bytes(mutation)
+                    with self.assertRaisesRegex(RetirementError, "identity differs"):
+                        plan_retirement(
+                            self.artifacts, self.repo, self.target, self.replacement,
+                            "compatible", self.compatibility_roles,
+                        )
+                    payload.write_bytes(original)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_replacement_cannot_omit_compatibility_input_record(self, _scan: mock.Mock) -> None:
+        path = self.replacement / "run_manifest.json"
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        del manifest["inputs"]["analyzer_pa0"]
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(RetirementError, "does not bind configured input"):
+            plan_retirement(
+                self.artifacts, self.repo, self.target, self.replacement,
+                "compatible", self.compatibility_roles,
+            )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_apply_rechecks_evidence_before_any_removal(self, _scan: mock.Mock) -> None:
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "compatible", self.compatibility_roles,
+        )
+        for run, relative in (
+            (self.replacement, "simion/analyzer.pa0"),
+            (self.target, "summary.json"),
+            (self.replacement, "run_manifest.json"),
+        ):
+            path = run / relative
+            original = path.read_bytes()
+            with self.subTest(run=run.name, relative=relative):
+                path.write_bytes(original + b" ")
+                with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                    with self.assertRaises(RetirementError):
+                        apply_retirement(plan)
+                self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
+                for item in plan["removed_files"]:
+                    self.assertTrue((self.target / item["path"]).is_file())
+                path.write_bytes(original)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_pending_receipt_resumes_only_recorded_partial_removal(self, _scan: mock.Mock) -> None:
         plan = plan_retirement(
             self.artifacts, self.repo, self.target, self.replacement,

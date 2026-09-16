@@ -14,6 +14,10 @@ MATLAB状态。`.tools/`当前只允许`cloc/2.10/cloc.exe`及其官方回退脚
 `projects/`及下表明确注册的`common/`职责；项目run、scratch、cache、archive和formal仍按下节的唯一结构管理。新增顶层职责必须先
 修改本节和现有卫生门禁，不能通过临时命名或扩大通配符绕过。
 
+工作区外层不得保存第二份`integrations/`源码或`scratch/`；已有副本应核对与规范位置的内容和引用后
+清理或迁入所属项目。源码根目录只接受卫生门禁登记的职责目录和开发环境缓存，包含空目录在内的
+`tmp/`、`new/`、`artifacts/`及任意未登记输出目录均须处理；普通测试日志也不能因被Git忽略而留在源码根。
+
 ### Git / artifacts 边界
 
 Git 只管理可复现、可审阅的轻量源码与文档。MPH、PA/PA#、IOB、SolidWorks 文件、运行日志、
@@ -61,13 +65,9 @@ artifacts/projects/<project>/
 |---|---|
 | `artifacts/common/simion/pa_family_cache/<cache-key>/generations/<generation-sha256>/` | `simion_pa_family_cache`；公共可重建PA性能缓存，键与当前代均由 manifest 和完整 payload 校验 |
 | `artifacts/common/capacity_protection_leases/<lease-id>.json` | 公共容量TTL保护租约；只临时钉住精确cache key或artifact-root相对路径，过期自动失效，损坏则门禁失败关闭 |
+| `artifacts/common/capacity_disposal_receipts/*.json` | 容量或卫生处置收据；保存精确路径、身份、原因和结果，仅允许直接JSON记录，不存放求解器载荷；保留在被清理树之外 |
 | `cache/simion_pa_basis/<cache-key>/generations/<generation-sha256>/` | `simion_pa_family_cache`（multipole PA-basis 适配器） |
-| `cache/simion_single_flight_frontend/<SHA-256>/` | `simion_single_flight_frontend_pa_cache` |
-| `cache/simion_single_flight_upstream_bridge/<SHA-256>/` | `simion_single_flight_upstream_bridge_pa_cache` |
-| `cache/simion_single_flight_accelerator_main/<SHA-256>/` | `simion_single_flight_accelerator_main_pa_cache` |
-| `cache/simion_accelerator_overlay/<SHA-256>/` | `simion_accelerator_overlay_pa_cache` |
-| `cache/simion_oatof_downstream_pa/<SHA-256>/` | `simion_oatof_flight_tube_pa_cache`或`simion_oatof_reflectron_pa_cache`，由entry manifest唯一消歧 |
-| `cache/verified_pulse/<SHA-256>/` | `rf_oatof_verified_pulse_timing_receipt`；仅保存相同内容身份下已通过完整pulse-on飞行确认的可删除时刻收据 |
+| `cache/<registered-role>/<SHA-256>/` | 集成PA及已验证脉冲收据；目录名与允许角色的唯一对应表为[`verify_artifact_layout.py`](../common/contracts/verify_artifact_layout.py)的`INTEGRATION_CACHE_ROLES`，新增角色同步机器校验及测试，不在文档抄写第二份名单 |
 
 不得在`cache/`保存唯一输入、canonical结果、正式资产或未登记的任意文件。所有`formal/` PA无条件按
 正式资产合同保留，禁止作为cache清理；当前实验仍引用的cache PA和无法由冻结输入重建的唯一来源同样
@@ -147,10 +147,13 @@ schema v2冻结保留类别；默认类别是`compact`。保留类别在`run_con
 缓存工作副本、临时曲线和调试输出必须在写终态manifest前清理，不能因文件较小、运行中断或已经写入
 初始manifest而留下。非`compact`类别才可额外保留重型或可重建输出，并须在运行合同中事先说明理由。
 
-`finite_3d_transport.mph`、`.pa#/.paN/.pa-surf`、完整`trajectory_samples*`以及达到策略阈值的其他大文件
+canonical粒子状态、事件、metrics和summary属于必需证据，不因超过大文件阈值改变保留角色。
+`finite_3d_transport.mph`、`.pa#/.paN/.pa_/.pa-surf`、完整`trajectory_samples*`（含压缩文件）以及达到策略阈值的其他可选大文件
 属于可选重型或可重建临时输出，不是每个成功run的必需证据。`compact`运行可在求解期间生成它们，但须在
 终态manifest前由公共retention执行器移除，并用`retention_actions.json`记录相对路径、字节数、原SHA-256
-和处置原因；执行器只能作用于尚无最终manifest的本次`runs/<run_id>`。writer和verifier会扫描未列出的
+和处置原因；执行器只接受无manifest或checkpoint的本次`runs/<run_id>`，先写pending收据再删除，完成后标记complete；
+既有收据不得覆盖，部分失败不能当成完成。最终interrupted须走专用reconcile，只处理未被manifest记录的可弃载荷并复核容量保护。
+writer和verifier会扫描未列出的
 重型文件并失败关闭，因此不能靠遗漏`--output`绕过。资格或GUI复核若确实需要重型文件，必须显式选择
 非compact类别；从compact run晋升时应重跑冻结输入，不得事后补造缺失资产。
 普通及中间网格/时间步收敛点仍使用`compact`：先从完整轨迹生成冻结metrics，再保留canonical states、
@@ -230,16 +233,34 @@ Markdown入口。这里的“载荷”表示只读原始证据，不限于二进
 “已进入history”“已被superseded”或“manifest已生成”本身均不授权删除原始证据。
 run生成阶段的自动保留行为只按上文预注册的run产物保留合同执行；它不授权事后清理既有run。
 
+`failed/interrupted/cancelled/aborted`只说明运行终态，不能单独成为整目录删除条件。容量规划必须先保护
+失败根因、冻结输入和引用链，只按下节裁剪符合合同的可重建载荷；清理工具不得以状态过滤替代证据判断。
+
+### 仓库外临时文件与清理闭环
+
+清理范围包括已确认由本仓库生成的系统Temp、求解器临时工作目录和本机工具日志；不扩展到用户其他
+项目、应用安装、许可证或配置。目录名前缀、文件年龄、Git忽略状态和低CPU占用都只能用于发现候选。
+执行前核对内容与创建用途、活动进程及run引用；无法确认归属或含唯一输入的对象保留并报告原因。
+不跟随目录链接递归清理，不因父目录可清理而删除其中新出现的文件。
+
+任务结束时清理可弃工作副本、空壳目录和一次性实现，把需要保留的收据放入上述公共收据目录，避免
+清理任务本身留下新的顶层杂物。清理报告分别列出文件逻辑大小、磁盘可用空间变化及未处置对象；
+硬链接、稀疏文件和并行写入会使两种容量数字不同。500 GiB水位线只针对artifacts树，另须检查所在卷
+余量和已知外部临时副本；低于水位线不表示临时文件可无限积累，也不要求为了达到某个容量而删除证据。
+
 ### 工作区容量水位线
 
-工作区`artifacts/`的目标上限为 **500 GiB**。当该树的实占用即将达到或超过此水位线时，运行器不得继续
+工作区`artifacts/`的目标上限为 **500 GiB**。当前实现按普通文件逻辑字节总量计量，不等同NTFS实际分配空间。
+目标上限和所在卷最小空闲量由[`artifact_capacity_policy.json`](../common/contracts/artifact_capacity_policy.json)
+分别配置为`target_gib`和`minimum_free_gib`；后者目前也为500 GiB，但含义是整盘保留量，不是第二个artifact上限。
+新增运行另声明瞬态新增容量；不能把逻辑大小、整盘空闲和瞬态预算混为一个数字。当该树即将达到或超过水位线时，运行器不得继续
 发布会使其越线的重型载荷；必须先按本节的必要性顺序执行可审计处置。**同一必要性等级内严格按时间从旧到新**：
 可重建 cache 优先采用其在成功/完成 run manifest 中记录的最后一次实际消费时刻，缺失该可信记录才回退到
 cache generation 发布时刻；run 采用终态记录时刻，scratch 采用创建时刻。不得用易受索引或备份影响的文件访问时间，
 也不得因文件更大而跳过较旧对象：
 
-1. 无 manifest 的 scratch、临时 staging、损坏/不完整 cache generation，以及超过公共宽限期、无
-   summary/manifest、未被活动run引用的旧 `runs/<id>` 非证据目录；删除前须把逐文件身份写入树外处置receipt；
+1. 已确认无活动消费者、无唯一证据且可弃的scratch、临时 staging、损坏/不完整 cache generation，以及超过公共宽限期、无
+   run_config/summary/manifest、未被活动run引用的旧 `runs/<id>` 非证据目录；删除前须把逐文件身份写入树外处置receipt；
 2. 未被活动实验引用、可由冻结输入重建的非 Formal cache；
 3. `compact` 类中断 run 的可重建重型 payload（仅 PA、轨迹和其他 retention 合同允许移除的文件），保留冻结输入、日志、summary、manifest 与处置 receipt；
 4. 仅在用户针对精确对象明确授权后，处置不再被文档/manifest引用且已有替代证据的非 Formal run 重型副本。
@@ -250,12 +271,19 @@ cache generation 发布时刻；run 采用终态记录时刻，scratch 采用创
    run_config引用、非Formal、同项目/同用途且几何审查拓扑兼容时，可移除manifest已记录的求解器原生
    重型载荷。必须保留原三件套、轻量IOB/报告、删除前完整逐文件SHA-256清单和replacement绑定；原manifest
    不改写，退休receipt明确宣告其不再适用普通完整性验证，改由专用`superseded_payload_retired`验证语义。
+   规划和执行前均须验证目标与替代run的完整manifest记录、config/summary及输入绑定；替代目录存在或manifest声称success不够。
 
 `formal/`、`archive/`、活动 cache generation、当前实验引用的 cache、唯一来源输入及任何被当前文档引用的科学结果
 始终禁止由容量治理删除。历史 run 内已冻结的 cache manifest 是重建 provenance，不把相应非活动、可重建 cache
 提升为不可删除证据。每次处置必须先验证对象身份、活动引用、终态、可重建性和精确路径，随后
 写入日期化审计与处置 receipt（路径、字节数、SHA-256、理由、删除后可用空间）；水位线不是放宽证据保护
 或删除权限的例外。
+
+上述顺序是经核实后的处置优先级，不是按目录名自动删除的许可。公共容量工具不自动清理scratch，
+包括其中嵌套的`cache/runs`；未发布的`b-*` staging也不再仅凭年龄自动清理。
+人工确认可弃后按精确文件清单处置。缺少manifest本身不能证明没有科学价值，config-only准备运行也须保护其缓存引用。
+保护名单只记录精确对象、拥有者、用途和退出条件；活动临时保护使用已有TTL租约，不再追加长期无期限
+的人工名单。Formal、唯一输入和冻结证据的保留不依赖TTL；过期只解除临时保护，不能证明对象可删。
 
 模型生成代码不能自动替代正式二进制：代码描述构建过程，`.mph`、SolidWorks装配体和SIMION交付包
 还承载已验收的节点、选择、网格、解或外部引用状态。每个项目只保留一套通过门禁的当前正式发布；

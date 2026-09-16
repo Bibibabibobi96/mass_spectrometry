@@ -889,12 +889,25 @@ def verify_artifacts_root(projects: Path) -> None:
         )
     common = artifacts / "common"
     if common.exists():
-        allowed_common = {"simion", "capacity_protection_leases"}
+        allowed_common = {"simion", "capacity_protection_leases", "capacity_disposal_receipts"}
         if (
             not common.is_dir()
             or ({item.name for item in common.iterdir()} - allowed_common)
         ):
             raise AssertionError("artifacts/common: unexpected common artifact entries")
+        receipts = common / "capacity_disposal_receipts"
+        if receipts.exists():
+            if not receipts.is_dir() or receipts.is_symlink():
+                raise AssertionError("capacity disposal receipts must be a regular directory")
+            for receipt in receipts.iterdir():
+                if not receipt.is_file() or receipt.is_symlink() or receipt.suffix != ".json":
+                    raise AssertionError("capacity disposal receipts permit only direct JSON records")
+                try:
+                    document = json.loads(receipt.read_text(encoding="utf-8-sig"))
+                except (OSError, ValueError) as exc:
+                    raise AssertionError(f"invalid capacity disposal receipt: {receipt.name}") from exc
+                if not isinstance(document, dict):
+                    raise AssertionError("capacity disposal receipt must be a JSON object")
         simion = common / "simion"
         if simion.exists():
             if not simion.is_dir() or {item.name for item in simion.iterdir()} != {"pa_family_cache"}:

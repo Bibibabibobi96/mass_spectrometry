@@ -1,4 +1,4 @@
-function test_multipole_geometry(Npoles)
+function test_multipole_geometry(runDir, Npoles)
 % Builds an N-pole rod array (quadrupole N=4, hexapole N=6, octupole N=8)
 % centered on the z-axis: N cylindrical rods evenly spaced in azimuth,
 % each rod's surface closest point at radius r0 from the axis. Adjacent
@@ -6,12 +6,12 @@ function test_multipole_geometry(Npoles)
 % electrostatics with a unit RF amplitude and reports on-axis field
 % (should be ~0 at the exact center for an ideal multipole) plus
 % off-axis field growth to sanity-check the multipole order.
-if nargin < 1
+if nargin < 2
     Npoles = 4;
 end
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

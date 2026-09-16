@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -25,7 +26,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from common.contracts import reconcile_interrupted_compact_runs as compact
-from common.contracts.artifact_retention import apply_retention, classify_file
+from common.contracts.artifact_retention import classify_file
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import verify_record
 
@@ -33,7 +34,6 @@ GIB = 1024**3
 # Run manifests in this repository publish successful solver work as
 # ``success``. Terminal runs cannot keep a reconstructible cache active.
 TERMINAL = {"success", "completed", "failed", "interrupted", "cancelled", "aborted"}
-DISPOSABLE_TERMINAL_RUNS = {"failed", "interrupted", "cancelled", "aborted"}
 CACHE_KEY = re.compile(r"\b[a-f0-9]{64}\b", re.IGNORECASE)
 LEASE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 POLICY_PATH = Path(__file__).with_name("artifact_capacity_policy.json")
@@ -167,12 +167,17 @@ def _capacity_policy() -> dict[str, Any]:
     policy = _load_object(POLICY_PATH)
     if policy is None or int(policy.get("schema_version", 0)) != 1:
         raise RuntimeError(f"invalid artifact-capacity policy: {POLICY_PATH}")
+    for field in ("target_gib", "minimum_free_gib"):
+        value = policy.get(field)
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or value < 0
+                or (field == "target_gib" and value == 0)):
+            raise RuntimeError(f"invalid {field} in {POLICY_PATH}")
     roles = policy.get("l2_role_deletion_priorities")
     if not isinstance(roles, dict):
         raise RuntimeError(f"invalid L2 role priorities in {POLICY_PATH}")
     for field in (
         "unmanaged_run_deletion_priority",
-        "terminal_nonformal_run_deletion_priority",
         "explicit_success_build_payload_deletion_priority",
         "default_l2_deletion_priority",
         "l1_deletion_priority",
@@ -191,8 +196,6 @@ def _capacity_policy() -> dict[str, Any]:
 def _deletion_priority(*, level: str, cache_role: str | None, policy: dict[str, Any]) -> int:
     """Return a policy-owned priority; unknown published roles stay conservative."""
 
-    if level == "RUN":
-        return int(policy["terminal_nonformal_run_deletion_priority"])
     if level == "L1":
         return int(policy["l1_deletion_priority"])
     if level == "L3":
@@ -254,18 +257,12 @@ def _load_object(path: Path) -> dict[str, Any] | None:
 
 
 def _active_cache_keys(root: Path) -> set[str]:
-    """Keys mentioned by a non-terminal run are protected from L2 cleanup."""
-
-    protected: set[str] = set()
-    for manifest in root.rglob("run_manifest.json"):
-        document = _load_object(manifest)
-        if document is None or str(document.get("status", "")).lower() in TERMINAL:
-            continue
-        try:
-            protected.update(CACHE_KEY.findall(manifest.read_text(encoding="utf-8-sig")))
-        except (OSError, UnicodeDecodeError):
-            continue
-    return {key.lower() for key in protected}
+    """Protect keys in both manifest and frozen inputs of non-terminal runs."""
+    return {
+        key.lower()
+        for _, text in _active_run_reference_texts(root)
+        for key in CACHE_KEY.findall(text)
+    }
 
 
 def _utc_timestamp(value: object) -> tuple[float, str] | None:
@@ -490,10 +487,10 @@ def _last_successful_cache_uses(root: Path) -> dict[str, tuple[float, str]]:
     return latest
 
 
-def _is_immutable_lifecycle_path(path: Path) -> bool:
-    """Formal releases and archived evidence are never cleanup candidates."""
+def _is_capacity_excluded_path(path: Path) -> bool:
+    """Exclude preserved evidence and scratch requiring object-specific review."""
 
-    return any(part.lower() in {"formal", "archive"} for part in path.parts)
+    return any(part.lower() in {"formal", "archive", "scratch"} for part in path.parts)
 
 
 def _protected(path: Path, protected_paths: Iterable[Path]) -> bool:
@@ -501,14 +498,17 @@ def _protected(path: Path, protected_paths: Iterable[Path]) -> bool:
 
 
 def _active_run_reference_texts(root: Path) -> tuple[tuple[Path, str], ...]:
-    """Load the frozen identity text of every non-terminal run once."""
+    """Protect frozen preparation inputs as well as non-terminal manifests."""
 
     values: list[tuple[Path, str]] = []
-    for manifest_path in root.rglob("run_manifest.json"):
+    run_dirs = {path.parent.absolute() for name in ("run_manifest.json", "run_config.json")
+                for path in root.rglob(name)}
+    for run_dir in sorted(run_dirs):
+        manifest_path = run_dir / "run_manifest.json"
         manifest = _load_object(manifest_path)
-        if manifest is None or str(manifest.get("status", "")).lower() in TERMINAL:
+        state = manifest if manifest is not None else _load_object(run_dir / "summary.json")
+        if state is not None and str(state.get("status", "")).lower() in TERMINAL:
             continue
-        run_dir = manifest_path.parent.absolute()
         text_parts: list[str] = []
         for path in (manifest_path, run_dir / "run_config.json"):
             try:
@@ -536,19 +536,16 @@ def _has_active_run_reference(
 
 
 def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], last_successful_uses: dict[str, tuple[float, str]],
-                     now: float, staging_grace_seconds: int,
                      protected_paths: Iterable[Path], directory_bytes: dict[Path, int],
                      policy: dict[str, Any]) -> dict[str, Any] | None:
-    if _is_immutable_lifecycle_path(cache_key_dir) or _protected(cache_key_dir, protected_paths):
+    if _is_capacity_excluded_path(cache_key_dir) or _protected(cache_key_dir, protected_paths):
         return None
     name = cache_key_dir.name.lower()
     mtime = cache_key_dir.stat().st_mtime
     payload = {"path": str(cache_key_dir), "bytes": directory_bytes.get(cache_key_dir, 0), "timestamp": mtime}
     if name.startswith("b-") and not (cache_key_dir / "cache_manifest.json").exists():
-        if now - mtime >= staging_grace_seconds:
-            payload.update(level="L1", reason="old_unpublished_cache_staging",
-                           deletion_priority=_deletion_priority(level="L1", cache_role=None, policy=policy))
-            return payload
+        # Age alone does not establish that a staging writer has stopped or
+        # that its unpublished bytes are reconstructible. Review it explicitly.
         return None
     if not CACHE_KEY.fullmatch(name) or name in protected_keys:
         return None
@@ -606,23 +603,22 @@ def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], last_success
 
 
 def _cache_candidates(root: Path, protected_keys: set[str], last_successful_uses: dict[str, tuple[float, str]],
-                      now: float, staging_grace_seconds: int,
-                      protected_paths: Iterable[Path], directory_bytes: dict[Path, int],
+                       protected_paths: Iterable[Path], directory_bytes: dict[Path, int],
                       policy: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for cache_root in root.rglob("cache"):
-        if not cache_root.is_dir() or _is_immutable_lifecycle_path(cache_root):
+        if not cache_root.is_dir() or _is_capacity_excluded_path(cache_root):
             continue
         for role_dir in cache_root.iterdir():
-            if not role_dir.is_dir() or _is_immutable_lifecycle_path(role_dir):
+            if not role_dir.is_dir() or _is_capacity_excluded_path(role_dir):
                 continue
             for child in role_dir.iterdir():
                 if child.is_dir():
-                    candidate = _cache_candidate(child, protected_keys, last_successful_uses, now, staging_grace_seconds, protected_paths, directory_bytes, policy)
+                    candidate = _cache_candidate(child, protected_keys, last_successful_uses, protected_paths, directory_bytes, policy)
                     if candidate:
                         candidates.append(candidate)
     common_pa_family_cache = root / "common" / "simion" / "pa_family_cache"
-    if common_pa_family_cache.is_dir() and not _is_immutable_lifecycle_path(
+    if common_pa_family_cache.is_dir() and not _is_capacity_excluded_path(
         common_pa_family_cache
     ):
         for child in common_pa_family_cache.iterdir():
@@ -631,8 +627,6 @@ def _cache_candidates(root: Path, protected_keys: set[str], last_successful_uses
                     child,
                     protected_keys,
                     last_successful_uses,
-                    now,
-                    staging_grace_seconds,
                     protected_paths,
                     directory_bytes,
                     policy,
@@ -645,7 +639,7 @@ def _cache_candidates(root: Path, protected_keys: set[str], last_successful_uses
 def _compact_candidates(root: Path, protected_paths: Iterable[Path], policy: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for run_root in root.rglob("runs"):
-        if not run_root.is_dir() or _is_immutable_lifecycle_path(run_root):
+        if not run_root.is_dir() or _is_capacity_excluded_path(run_root):
             continue
         for run_dir in run_root.iterdir():
             if not run_dir.is_dir() or _protected(run_dir, protected_paths):
@@ -672,7 +666,7 @@ def _unmanaged_run_candidates(
     candidates: list[dict[str, Any]] = []
     grace = int(policy["unmanaged_run_grace_seconds"])
     for run_root in root.rglob("runs"):
-        if not run_root.is_dir() or _is_immutable_lifecycle_path(run_root):
+        if not run_root.is_dir() or _is_capacity_excluded_path(run_root):
             continue
         for run_dir in run_root.iterdir():
             if (
@@ -680,6 +674,7 @@ def _unmanaged_run_candidates(
                 or _protected(run_dir, protected_paths)
                 or (run_dir / "run_manifest.json").exists()
                 or (run_dir / "summary.json").exists()
+                or (run_dir / "run_config.json").exists()
                 or _has_active_run_reference(run_dir, active_references)
                 or _unmanaged_run_receipt_path(root, run_dir).exists()
             ):
@@ -737,7 +732,7 @@ def _success_build_payload_candidate(
     if (
         run_dir.parent.name != "runs"
         or not run_dir.is_dir()
-        or _is_immutable_lifecycle_path(run_dir)
+        or _is_capacity_excluded_path(run_dir)
         or _protected(run_dir, protected_paths)
         or _has_active_run_reference(run_dir, active_references)
         or (run_dir / "capacity_retirement_actions.json").exists()
@@ -833,26 +828,69 @@ def _remove_file(path: Path) -> None:
         path.unlink()
 
 
-def _remove_unmanaged_run_with_receipt(root: Path, run_dir: Path) -> tuple[Path, int]:
-    files = sorted(
-        path for path in run_dir.rglob("*") if path.is_file() and not path.is_symlink()
-    )
-    records = _file_disposal_records(run_dir, files)
-    receipt_path = _unmanaged_run_receipt_path(root, run_dir)
+def _remove_tree_with_receipt(root: Path, target: Path, *, reason: str,
+                              receipt_path: Path) -> tuple[Path, int]:
+    """Freeze every regular file before removing an audited candidate tree."""
+    target.resolve().relative_to(root.resolve())
+    if target == root or _is_capacity_excluded_path(target):
+        raise ValueError("capacity disposal target is protected")
+    if receipt_path.exists():
+        raise ValueError("capacity disposal receipt already exists; review prior disposition")
+    entries = sorted(target.rglob("*"))
+    if target.is_symlink() or any(path.is_symlink() for path in entries):
+        raise ValueError("capacity disposal tree contains a symbolic link")
+    directories = [path for path in entries if path.is_dir()]
+    files = [path for path in entries if path.is_file()]
+    records = _file_disposal_records(target, files)
     receipt = {
         "schema_version": 1,
         "role": "artifact_capacity_disposal_receipt",
         "status": "pending",
-        "reason": "old_unmanaged_unreferenced_run",
-        "target_path": str(run_dir),
+        "reason": reason,
+        "target_path": str(target),
         "files": records,
         "removed_bytes": sum(int(item["bytes"]) for item in records),
     }
     _write_json_atomic(receipt_path, receipt)
-    _remove_tree(run_dir)
+    removed_bytes = 0
+    for record in records:
+        path = target / record["path"]
+        if not path.exists():
+            continue
+        if (path.is_symlink() or path.stat().st_size != record["bytes"]
+                or file_sha256(path) != record["sha256"]):
+            raise ValueError(f"capacity disposal file changed: {path}")
+        try:
+            _remove_file(path)
+        except FileNotFoundError:
+            continue
+        removed_bytes += int(record["bytes"])
+    # Remove only the preflight directories, non-recursively. New files keep
+    # their parent alive and leave the receipt pending for manual review.
+    for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True) + [target]:
+        try:
+            directory.rmdir()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            if directory.exists():
+                continue
+            raise
+    receipt["removed_bytes"] = removed_bytes
+    if target.exists():
+        receipt["reason_incomplete"] = "unlisted_files_or_nonempty_directories_remain"
+        _write_json_atomic(receipt_path, receipt)
+        raise ValueError(f"capacity disposal retained unlisted files: {target}")
     receipt["status"] = "complete"
     _write_json_atomic(receipt_path, receipt)
-    return receipt_path, int(receipt["removed_bytes"])
+    return receipt_path, removed_bytes
+
+
+def _remove_unmanaged_run_with_receipt(root: Path, run_dir: Path) -> tuple[Path, int]:
+    return _remove_tree_with_receipt(
+        root, run_dir, reason="old_unmanaged_unreferenced_run",
+        receipt_path=_unmanaged_run_receipt_path(root, run_dir),
+    )
 
 
 def _retire_success_build_payload(run_dir: Path, removable: Iterable[dict[str, Any]]) -> tuple[Path, int]:
@@ -878,71 +916,15 @@ def _retire_success_build_payload(run_dir: Path, removable: Iterable[dict[str, A
     return receipt_path, int(receipt["removed_bytes"])
 
 
-def _terminal_run_candidate(run_dir: Path, protected_paths: Iterable[Path],
-                            directory_bytes: dict[Path, int], policy: dict[str, Any]) -> dict[str, Any] | None:
-    """Return a whole-run eviction candidate only for failed, non-formal work.
-
-    A completed run can still be useful evidence, so it is never removed here.
-    Historical interrupted runs sometimes predate a manifest; in that case a
-    terminal ``summary.json`` is sufficient.  When both records exist, any
-    success/completed or formal marker wins conservatively.
-    """
-
-    if _is_immutable_lifecycle_path(run_dir) or _protected(run_dir, protected_paths):
-        return None
-    manifest = _load_object(run_dir / "run_manifest.json")
-    summary = _load_object(run_dir / "summary.json")
-    documents = tuple(document for document in (manifest, summary) if document is not None)
-    if not documents:
-        return None
-    if any(bool(document.get("formal_eligible")) for document in documents):
-        return None
-    statuses = {str(document.get("status", "")).lower() for document in documents}
-    nonterminal_statuses = statuses - TERMINAL
-    # A checkpoint manifest is an intermediate durability record, not a final
-    # outcome.  Some older governed runs published that checkpoint after their
-    # child had already written a terminal failed/interrupted summary.  Treat
-    # that specific combination as disposable; genuinely live states such as
-    # ``running`` still protect the entire run.
-    if (
-        nonterminal_statuses - {"checkpoint"}
-        or statuses & {"success", "completed"}
-        or not (statuses & DISPOSABLE_TERMINAL_RUNS)
-    ):
-        return None
-    return {
-        "level": "RUN",
-        "operation": "remove_tree",
-        "reason": "terminal_nonformal_failed_or_interrupted_run",
-        "path": str(run_dir),
-        "bytes": directory_bytes.get(run_dir, 0),
-        "timestamp": run_dir.stat().st_mtime,
-        "run_statuses": sorted(statuses),
-        "deletion_priority": _deletion_priority(level="RUN", cache_role=None, policy=policy),
-    }
-
-
-def _terminal_run_candidates(root: Path, protected_paths: Iterable[Path],
-                             directory_bytes: dict[Path, int], policy: dict[str, Any]) -> list[dict[str, Any]]:
-    candidates: list[dict[str, Any]] = []
-    for run_root in root.rglob("runs"):
-        if not run_root.is_dir() or _is_immutable_lifecycle_path(run_root):
-            continue
-        for run_dir in run_root.iterdir():
-            if run_dir.is_dir():
-                candidate = _terminal_run_candidate(run_dir, protected_paths, directory_bytes, policy)
-                if candidate:
-                    candidates.append(candidate)
-    return candidates
-
-
-def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
-         minimum_free_bytes: int = 0,
-         staging_grace_seconds: int = 900, protected_paths: Iterable[Path] = (),
+def plan(root: Path, *, target_bytes: int, minimum_free_bytes: int,
+         required_headroom_bytes: int = 0,
+         protected_paths: Iterable[Path] = (),
          protected_cache_keys: Iterable[str] = (),
          rebuildable_success_build_runs: Iterable[Path] = (),
          known_measured_bytes: int | None = None,
          maximum_new_artifact_bytes: int | None = None) -> dict[str, Any]:
+    """Plan disposal with explicit byte budgets; CLI defaults belong to policy."""
+
     # Keep the caller's absolute spelling.  On Windows, resolve() can rewrite
     # an 8.3 temporary-root path to its long form, making the receipt disagree
     # with the paths accepted by the caller despite denoting the same cache.
@@ -1004,7 +986,7 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
             "artifact_root": str(root), "target_bytes": target_bytes,
             "required_headroom_bytes": required_headroom_bytes,
             "minimum_free_bytes": minimum_free_bytes,
-            "free_bytes_before": free_bytes, "staging_grace_seconds": staging_grace_seconds,
+            "free_bytes_before": free_bytes,
             **protection_fields,
             "measurement_mode": "SAFE_NO_RECONCILIATION",
             "known_measured_bytes": known_measured_bytes,
@@ -1033,7 +1015,7 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
             "artifact_root": str(root), "target_bytes": target_bytes,
             "required_headroom_bytes": required_headroom_bytes,
             "minimum_free_bytes": minimum_free_bytes,
-            "free_bytes_before": free_bytes, "staging_grace_seconds": staging_grace_seconds,
+            "free_bytes_before": free_bytes,
             **protection_fields,
             "measurement_mode": "FULL_NO_RECONCILIATION",
             "free_deficit_bytes": 0, "measured_bytes": measured,
@@ -1047,11 +1029,12 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
     last_successful_uses = _last_successful_cache_uses(root)
     active_references = _active_run_reference_texts(root)
     active_keys.update(leased_and_explicit_keys)
-    candidates = _terminal_run_candidates(root, protected, directory_bytes, policy)
-    candidates.extend(_unmanaged_run_candidates(
+    # Failed/interrupted runs remain evidence; only the registered compact
+    # payload path may retire their reconstructible heavy outputs.
+    candidates = _unmanaged_run_candidates(
         root, protected, directory_bytes, active_references, now, policy
-    ))
-    candidates.extend(_cache_candidates(root, active_keys, last_successful_uses, now, staging_grace_seconds, protected, directory_bytes, policy))
+    )
+    candidates.extend(_cache_candidates(root, active_keys, last_successful_uses, protected, directory_bytes, policy))
     candidates.extend(_compact_candidates(root, protected, policy))
     for run_dir in explicit_success_build_runs:
         candidate = _success_build_payload_candidate(
@@ -1076,7 +1059,6 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
     return {"schema_version": 1, "role": "artifact_capacity_gate", "artifact_root": str(root),
             "target_bytes": target_bytes, "required_headroom_bytes": required_headroom_bytes,
             "minimum_free_bytes": minimum_free_bytes, "free_bytes_before": free_bytes,
-            "staging_grace_seconds": staging_grace_seconds,
             "explicit_protected_paths": protection_fields["explicit_protected_paths"],
             "explicit_protected_cache_keys": protection_fields["explicit_protected_cache_keys"],
             "explicit_rebuildable_success_build_runs": protection_fields[
@@ -1089,35 +1071,6 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
             "measured_bytes": measured, "limit_bytes": limit, "active_cache_key_count": len(active_keys),
             "candidate_count": len(candidates), "planned": planned, "projected_bytes": projected,
             "satisfied": projected <= limit}
-
-
-def _remove_tree(path: Path) -> bool:
-    """Remove one planned tree, tolerating another gate winning the race.
-
-    Capacity reconciliation deliberately refreshes its plan immediately before
-    applying it, but independent solver launches may still choose the same
-    rebuildable candidate.  An already-absent path is therefore a successful
-    no-op, not evidence that the surviving artifact set is inconsistent.
-    """
-
-    missing = False
-
-    def onerror(function: Any, value: str, error: Any) -> None:
-        nonlocal missing
-        if isinstance(error[1], FileNotFoundError):
-            missing = True
-            return
-        try:
-            os.chmod(value, stat.S_IWRITE)
-            function(value)
-        except FileNotFoundError:
-            missing = True
-
-    try:
-        shutil.rmtree(path, onerror=onerror)
-    except FileNotFoundError:
-        missing = True
-    return not missing
 
 
 def apply(receipt: dict[str, Any]) -> dict[str, Any]:
@@ -1158,7 +1111,6 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
         target_bytes=int(receipt["target_bytes"]),
         required_headroom_bytes=int(receipt["required_headroom_bytes"]),
         minimum_free_bytes=int(receipt["minimum_free_bytes"]),
-        staging_grace_seconds=int(receipt.get("staging_grace_seconds", 900)),
         protected_paths=(
             Path(path) for path in receipt.get(
                 "explicit_protected_paths", receipt.get("protected_paths", ())
@@ -1192,15 +1144,21 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
                 "retirement_receipt": str(receipt_path),
             })
             continue
-        if item.get("operation") == "remove_tree" or item["level"] in {"L1", "L2"}:
-            if not _remove_tree(path):
-                continue
+        if item["level"] in {"L1", "L2"}:
+            identity = hashlib.sha256(str(path.absolute()).encode("utf-8")).hexdigest()[:16]
+            receipt_path = root / DISPOSAL_RECEIPT_DIRECTORY / f"cache_{identity}_{time.time_ns()}.json"
+            receipt_path, removed_bytes = _remove_tree_with_receipt(
+                root, path, reason=item["reason"], receipt_path=receipt_path,
+            )
+            if removed_bytes:
+                removed.append({"path": str(path), "level": item["level"], "bytes": removed_bytes,
+                                "disposal_receipt": str(receipt_path)})
+            continue
         else:
-            actions = apply_retention(path / "run_config.json")
+            actions = compact.apply_run(path)
             removed.append({"path": str(path), "level": item["level"], "bytes": item["bytes"],
                             "retention_actions": str(actions)})
             continue
-        removed.append({"path": str(path), "level": item["level"], "bytes": item["bytes"]})
     receipt = dict(receipt)
     receipt["applied"] = True
     receipt["removed"] = removed
@@ -1217,6 +1175,7 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    policy = _capacity_policy()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-root", required=True, type=Path)
     parser.add_argument("--snapshot-published-pa-cache-keys", action="store_true")
@@ -1225,10 +1184,9 @@ def main() -> None:
     lease_actions.add_argument("--delete-protection-lease")
     parser.add_argument("--lease-owner")
     parser.add_argument("--lease-ttl-seconds", type=int)
-    parser.add_argument("--target-gib", type=float, default=500.0)
+    parser.add_argument("--target-gib", type=float, default=policy["target_gib"])
     parser.add_argument("--required-headroom-bytes", type=int, default=0)
-    parser.add_argument("--minimum-free-gib", type=float, default=500.0)
-    parser.add_argument("--staging-grace-seconds", type=int, default=900)
+    parser.add_argument("--minimum-free-gib", type=float, default=policy["minimum_free_gib"])
     parser.add_argument("--protect-path", action="append", type=Path, default=[])
     parser.add_argument("--protect-cache-key", action="append", default=[])
     parser.add_argument(
@@ -1271,7 +1229,7 @@ def main() -> None:
         print(json.dumps(deleted, indent=2))
         return
     if (args.target_gib <= 0 or args.required_headroom_bytes < 0 or
-            args.minimum_free_gib < 0 or args.staging_grace_seconds < 0):
+            args.minimum_free_gib < 0):
         parser.error("capacity values must be nonnegative and target positive")
     if args.apply and not os.environ.get(
         "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"
@@ -1284,7 +1242,7 @@ def main() -> None:
         receipt = plan(args.artifact_root, target_bytes=int(args.target_gib * GIB),
                        required_headroom_bytes=args.required_headroom_bytes,
                        minimum_free_bytes=int(args.minimum_free_gib * GIB),
-                       staging_grace_seconds=args.staging_grace_seconds, protected_paths=args.protect_path,
+                       protected_paths=args.protect_path,
                        protected_cache_keys=args.protect_cache_key,
                        rebuildable_success_build_runs=args.rebuildable_success_build_run,
                        known_measured_bytes=args.known_measured_bytes,

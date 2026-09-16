@@ -1,4 +1,4 @@
-function test_lit_geometry_es()
+function test_lit_geometry_es(runDir)
 % Linear ion trap: quadrupole rods (RF radial confinement, same as
 % test_multipole_geometry(4)) + two DC end-cap aperture plates (axial
 % confinement) -- the simplified "end-lens" LIT model (real commercial
@@ -18,7 +18,7 @@ function test_lit_geometry_es()
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

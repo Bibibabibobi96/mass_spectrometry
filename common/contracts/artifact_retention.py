@@ -5,10 +5,16 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
+
+if __package__:
+    from .file_identity import file_sha256
+else:
+    from file_identity import file_sha256
 
 POLICY_PATH = Path(__file__).with_name("artifact_retention.json")
 
@@ -108,8 +114,6 @@ def classify_file(
         and size >= int(policy["large_file_threshold_bytes"])
     ):
         return "required_evidence"
-    if size is not None and size >= int(policy["large_file_threshold_bytes"]):
-        return "large_optional"
     if (
         name in {"run_config.json", "summary.json", "run_manifest.json"}
         or name.endswith("_summary.json")
@@ -117,8 +121,11 @@ def classify_file(
         or "particle_state" in name
         or "particle_events" in name
         or name == "retention_actions.json"
-        or suffix in {".log", ".txt"}
     ):
+        return "required_evidence"
+    if size is not None and size >= int(policy["large_file_threshold_bytes"]):
+        return "large_optional"
+    if suffix in {".log", ".txt"}:
         return "required_evidence"
     return "lightweight_optional"
 
@@ -189,6 +196,7 @@ def load_failed_recovery_exemptions(
         action.get("schema_version") != 1
         or action.get("role") != "artifact_retention_actions"
         or action.get("retention_class") != retention.class_id
+        or action.get("status", "complete") != "complete"
         or not isinstance(action.get("preserved", []), list)
     ):
         raise ValueError("failed-run retention actions differ")
@@ -261,6 +269,50 @@ def load_run_retention(run_config_path: Path) -> tuple[Path, Retention]:
     return resolved.parent, validate_retention(document.get("artifact_retention"))
 
 
+def _execute_removals(
+    run_dir: Path, retention: Retention, removed: list[dict[str, Any]],
+    preserved: list[dict[str, Any]],
+) -> Path:
+    """Persist deletion identities before touching a preflighted file list."""
+    action_path = run_dir / "retention_actions.json"
+    if action_path.exists():
+        raise ValueError("run already has a retention reconciliation receipt")
+    for item in removed:
+        path = run_dir / item["path"]
+        path.resolve().relative_to(run_dir.resolve())
+        if path.is_symlink() or path.stat().st_size != item["bytes"]:
+            raise ValueError(f"retention file identity changed: {path}")
+        item["sha256"] = file_sha256(path)
+    action = {
+        "schema_version": 1, "role": "artifact_retention_actions",
+        "retention_class": retention.class_id, "status": "pending",
+        "removed_file_count": 0, "removed_bytes": 0,
+        "removed": removed, "preserved": preserved,
+    }
+
+    def publish() -> None:
+        temporary = action_path.with_suffix(".json.pending")
+        with temporary.open("w", encoding="utf-8", newline="\n") as stream:
+            json.dump(action, stream, indent=2, ensure_ascii=False)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, action_path)
+
+    publish()
+    for item in removed:
+        path = run_dir / item["path"]
+        if path.stat().st_size != item["bytes"] or file_sha256(path) != item["sha256"]:
+            raise ValueError(f"retention file identity changed: {path}")
+        _unlink_rebuildable_file(path)
+        action["removed_file_count"] += 1
+        action["removed_bytes"] += item["bytes"]
+        publish()
+    action["status"] = "complete"
+    publish()
+    return action_path
+
+
 def apply_retention(
     run_config_path: Path, *, preserve_paths: Iterable[Path] = (),
     remove_paths: Iterable[Path] = (),
@@ -273,7 +325,7 @@ def apply_retention(
     manifest_path = run_dir / "run_manifest.json"
     if manifest_path.is_file():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
-        if manifest.get("status") in {"success", "failed", "superseded"}:
+        if manifest.get("status") != "checkpoint":
             raise ValueError("retention cannot modify a run with a terminal manifest")
     policy = load_policy()
     allowed = set(policy["classes"][retention.class_id]["allowed_roles"])
@@ -306,7 +358,6 @@ def apply_retention(
                 "retention_role": role,
                 "action": "removed_incomplete_native_trace_before_terminal_manifest",
             }
-            _unlink_rebuildable_file(path)
             removed.append(record)
             continue
         if path.resolve() in preserved_paths:
@@ -329,21 +380,8 @@ def apply_retention(
             "retention_role": role,
             "action": "removed_before_terminal_manifest",
         }
-        _unlink_rebuildable_file(path)
         removed.append(record)
-    action = {
-        "schema_version": 1,
-        "role": "artifact_retention_actions",
-        "retention_class": retention.class_id,
-        "removed_file_count": len(removed),
-        "removed_bytes": sum(int(item["bytes"]) for item in removed),
-        "removed": removed,
-        "preserved": preserved,
-    }
-    action_path.write_text(
-        json.dumps(action, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
-    return action_path
+    return _execute_removals(run_dir, retention, removed, preserved)
 
 
 def main() -> None:

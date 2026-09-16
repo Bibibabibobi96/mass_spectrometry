@@ -170,6 +170,24 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "generation differs"):
                 verify_artifacts_root(projects)
 
+    def test_artifacts_root_preserves_disposal_receipts_but_rejects_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            receipts = artifacts / "common" / "capacity_disposal_receipts"
+            receipt = receipts / "cleanup.json"
+            write_json(receipt, {"role": "artifact_capacity_disposal_receipt", "status": "complete"})
+            verify_artifacts_root(projects)
+            payload = receipts / "array.pa"
+            payload.write_bytes(b"not an audit record")
+            with self.assertRaisesRegex(AssertionError, "only direct JSON"):
+                verify_artifacts_root(projects)
+            payload.unlink()
+            receipt.write_text("invalid JSON", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "invalid capacity disposal receipt"):
+                verify_artifacts_root(projects)
+
     def test_artifacts_root_accepts_capacity_protection_leases(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory) / "artifacts"

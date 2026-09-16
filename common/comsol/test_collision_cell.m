@@ -1,4 +1,4 @@
-function result = test_collision_cell(Nd_val, KE_eV, label)
+function result = test_collision_cell(runDir, Nd_val, KE_eV, label)
 % Collision cell / ion source: a straight cylindrical tube filled with
 % background gas (CPT 'Collisions' feature), with a small axial DC field
 % to sweep ions through (like a real CID/collision-cell drift field), no
@@ -11,13 +11,13 @@ function result = test_collision_cell(Nd_val, KE_eV, label)
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-if nargin < 1, Nd_val = 1e20; end
-if nargin < 2, KE_eV = 10; end
-if nargin < 3, label = sprintf('Nd%.0e_KE%geV', Nd_val, KE_eV); end
+if nargin < 2, Nd_val = 1e20; end
+if nargin < 3, KE_eV = 10; end
+if nargin < 4, label = sprintf('Nd%.0e_KE%geV', Nd_val, KE_eV); end
 
 if any(strcmp(cell(ModelUtil.tags()), 'ModelCollCell'))
     ModelUtil.remove('ModelCollCell');

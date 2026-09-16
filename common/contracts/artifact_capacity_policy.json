@@ -4,11 +4,10 @@
   "description": "Reconstructible artifact eviction policy. Lower deletion_priority is evicted first; equal priorities are ordered by oldest successful cache consumption when recorded, otherwise oldest generation publication time.",
   "unmanaged_run_deletion_priority": 5,
   "unmanaged_run_grace_seconds": 86400,
-  "terminal_nonformal_run_deletion_priority": 0,
   "explicit_success_build_payload_deletion_priority": 200,
   "default_l2_deletion_priority": 100,
   "l1_deletion_priority": 10,
-  "l3_deletion_priority": 20,
+  "l3_deletion_priority": 150,
   "l2_role_deletion_priorities": {
     "simion_single_flight_accelerator_entrance_zone_collision_pa_cache": 30,
     "simion_single_flight_accelerator_entrance_local_pa_cache": 50,
@@ -16,5 +15,7 @@
     "simion_oatof_flight_tube_pa_cache": 70,
     "simion_single_flight_upstream_bridge_pa_cache": 80,
     "simion_single_flight_accelerator_main_pa_cache": 90
-  }
+  },
+  "target_gib": 500,
+  "minimum_free_gib": 500
 }

@@ -186,8 +186,8 @@ class LightweightGateIntegrationTests(unittest.TestCase):
             / "tests"
             / "test_family_source_closure_workflow.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("@('.tmp', 'scratch')", hygiene)
-        self.assertIn("repository root must not contain temporary directory", hygiene)
+        self.assertIn("$allowedRepositoryDirectories", hygiene)
+        self.assertIn("repository root contains unregistered directory", hygiene)
         self.assertNotIn('REPO_ROOT / ".tmp"', adapter_test)
         self.assertNotIn('REPO_ROOT / ".tmp"', family_test)
 
@@ -251,6 +251,24 @@ class LightweightGateIntegrationTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("standalone_repository_checkout", completed.stdout)
             self.assertIn("REPOSITORY_HYGIENE=PASS", completed.stdout)
+            for name in ("tmp", "new", "artifacts", "scratch", "unregistered-output"):
+                with self.subTest(directory=name):
+                    debris = checkout / name
+                    debris.mkdir()
+                    rejected = subprocess.run(
+                        ["pwsh", "-NoProfile", "-File", str(script)],
+                        cwd=checkout, capture_output=True, text=True, timeout=30,
+                    )
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn("unregistered directory", rejected.stderr)
+                    debris.rmdir()
+            (checkout / "debug.log").write_text("failed test output", encoding="utf-8")
+            rejected = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(script)],
+                cwd=checkout, capture_output=True, text=True, timeout=30,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("tool artifact", rejected.stderr)
 
 
 if __name__ == "__main__":

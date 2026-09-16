@@ -10,6 +10,7 @@ from unittest.mock import patch
 from common.contracts.file_identity import file_sha256
 from common.contracts import reconcile_interrupted_compact_runs as reconciliation
 from common.contracts.reconcile_interrupted_compact_runs import reconcile, summarize
+from common.contracts.reconcile_artifact_capacity import create_capacity_protection_lease
 
 
 class InterruptedCompactReconciliationTests(unittest.TestCase):
@@ -46,6 +47,32 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         self.assertFalse(trajectory.exists())
         self.assertTrue((self.run / "summary.json").exists())
         self.assertTrue((self.run / "retention_actions.json").exists())
+
+    def test_active_capacity_lease_blocks_reconciliation(self) -> None:
+        payload = self.run / "field.pa0"
+        payload.write_bytes(b"solver")
+        create_capacity_protection_lease(
+            self.runs.parent, lease_id="retention-test", owner="unit test",
+            ttl_seconds=3600, protected_paths=[self.run],
+        )
+        report = reconcile(self.runs, apply=False)[0]
+        self.assertFalse(report["eligible"])
+        self.assertIn("capacity protection lease", report["reason"])
+        with self.assertRaisesRegex(ValueError, "capacity protection lease"):
+            reconciliation.apply_run(self.run)
+        self.assertTrue(payload.exists())
+
+    def test_apply_rechecks_newly_recorded_payload(self) -> None:
+        payload = self.run / "field.pa0"
+        payload.write_bytes(b"solver")
+        self.assertTrue(reconcile(self.runs, apply=False)[0]["eligible"])
+        path = self.run / "run_manifest.json"
+        manifest = json.loads(path.read_text())
+        manifest["outputs"].append({"path": payload.name, "bytes": 6, "sha256": file_sha256(payload)})
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "manifest-recorded"):
+            reconciliation.apply_run(self.run)
+        self.assertTrue(payload.exists())
 
     def test_refuses_non_interrupted_or_manifest_recorded_payload(self) -> None:
         manifest_path = self.run / "run_manifest.json"

@@ -1,4 +1,4 @@
-function test_icr_cell()
+function test_icr_cell(runDir)
 % FTICR/ICR trap: combines a uniform axial magnetic field (radial
 % confinement via cyclotron motion, same mechanism as
 % test_cpt_magnetic_force.m/test_magnetic_sector.m) with DC trapping
@@ -11,7 +11,7 @@ function test_icr_cell()
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

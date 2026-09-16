@@ -1,16 +1,16 @@
-function test_multipole_es(Npoles)
+function test_multipole_es(runDir, Npoles)
 % Loads the N-pole rod array geometry, assigns alternating +/-V_rf to
 % adjacent rods (valid for even N), solves electrostatics with a unit RF
 % amplitude, and checks: (a) potential/field ~0 at the exact center
 % (true for an ideal balanced multipole), (b) field magnitude growing
 % with radius along a line toward a rod (multipole field scales like
 % r^(N/2-1), e.g. quadrupole E~r linear, to sanity-check pole order).
-if nargin < 1
+if nargin < 2
     Npoles = 4;
 end
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

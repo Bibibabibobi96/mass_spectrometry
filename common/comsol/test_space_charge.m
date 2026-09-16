@@ -1,4 +1,4 @@
-function result = test_space_charge(useInteraction, label)
+function result = test_space_charge(runDir, useInteraction, label)
 % Space charge / Coulomb repulsion test: a tight cluster of identical
 % ions (100amu, +1, released from a small on-axis sub-volume with the
 % SAME initial velocity) drifts down a field-free tube. With
@@ -15,12 +15,12 @@ function result = test_space_charge(useInteraction, label)
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-if nargin < 1, useInteraction = true; end
-if nargin < 2, label = sprintf('interaction_%d', useInteraction); end
+if nargin < 2, useInteraction = true; end
+if nargin < 3, label = sprintf('interaction_%d', useInteraction); end
 
 if any(strcmp(cell(ModelUtil.tags()), 'ModelSpaceCharge'))
     ModelUtil.remove('ModelSpaceCharge');

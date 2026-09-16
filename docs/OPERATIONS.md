@@ -127,6 +127,12 @@ PID与创建时间继续识别后代，确认相关进程退出才回收。状�
 
 ### artifact结构门禁
 
+清理时先运行卫生门禁检查源码与工作区顶层，再按[生命周期](LIFECYCLE.md#保留与清理策略)盘点产物、
+活动引用和相关系统临时目录。`reconcile_artifact_capacity.py --artifact-root ..\artifacts`默认只给出
+容量plan；未核对候选不得追加`--apply`。清理收据统一放在
+`artifacts/common/capacity_disposal_receipts/`，不留在工作区顶层。主机资源许可不替代容量保护租约，
+调用与保护参数见[公共容量合同](../common/contracts/README.md#运行身份与生命周期)。
+
 本机存在artifacts时运行：
 
 ```powershell

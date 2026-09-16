@@ -1,4 +1,4 @@
-function test_quadrupole_stability(Vamp, label)
+function test_quadrupole_stability(runDir, Vamp, label)
 % Runs a CPT stability test in the quadrupole rod array (Multipole4.mph,
 % already ES-solved with rod potentials at +/-100V, see
 % test_multipole_es.m). The RF electric force is built manually as
@@ -20,7 +20,7 @@ function test_quadrupole_stability(Vamp, label)
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

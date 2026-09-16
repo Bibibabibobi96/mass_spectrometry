@@ -1,4 +1,4 @@
-function test_lit_cpt()
+function test_lit_cpt(runDir)
 % Combines the RF (radial, quadrupole) and DC (axial, end-cap) unit-field
 % solves from test_lit_geometry_es.m into one CPT force: E(t) =
 % scale_rf(t)*es.Ex + scale_dc*es2.Ex. IMPORTANT: the physics interfaces
@@ -11,7 +11,7 @@ function test_lit_cpt()
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

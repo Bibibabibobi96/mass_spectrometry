@@ -1,4 +1,4 @@
-function test_einzel_lens()
+function test_einzel_lens(runDir)
 % Einzel lens: 3 coaxial aperture disks (grounded-lens-grounded), same
 % "aperture disk" technique validated for the electron gun's Wehnelt/
 % anode plates. Middle disk held at a large negative voltage (decel-mode
@@ -8,7 +8,7 @@ function test_einzel_lens()
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

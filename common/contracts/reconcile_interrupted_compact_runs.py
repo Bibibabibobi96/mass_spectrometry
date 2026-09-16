@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.artifact_retention import (
-    apply_retention,
+    _execute_removals,
     classify_file,
     load_run_retention,
 )
@@ -52,6 +52,17 @@ def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[s
     run_dir = run_dir.resolve()
     if run_dir.parent.name != "runs":
         raise ValueError("run directory must be a direct child of runs/")
+    # Import at the maintenance boundary: capacity itself uses inspect_run.
+    from common.contracts.reconcile_artifact_capacity import (
+        _load_capacity_protection_leases, _protected,
+    )
+    artifact_root = (
+        run_dir.parents[3] if run_dir.parents[2].name == "projects"
+        else run_dir.parent.parent
+    )
+    leases = _load_capacity_protection_leases(artifact_root)
+    if _protected(run_dir, leases["protected_paths"]):
+        raise ValueError("run is covered by an active capacity protection lease")
     config_path = run_dir / "run_config.json"
     summary_path = run_dir / "summary.json"
     manifest_path = run_dir / "run_manifest.json"
@@ -123,6 +134,17 @@ def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[s
     }
 
 
+def apply_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> Path:
+    """Recheck one interrupted run and remove only unrecorded heavy files."""
+    report = inspect_run(run_dir, permit_manifest_drift=permit_manifest_drift)
+    directory, retention = load_run_retention(run_dir / "run_config.json")
+    removed = [
+        {**item, "action": "removed_unrecorded_interrupted_payload"}
+        for item in report["removable"]
+    ]
+    return _execute_removals(directory, retention, removed, [])
+
+
 def reconcile(run_root: Path, *, apply: bool, permit_manifest_drift: bool = False, max_apply_runs: int | None = None) -> list[dict[str, Any]]:
     """Inspect every direct run child; optionally apply only safe plans."""
 
@@ -140,7 +162,7 @@ def reconcile(run_root: Path, *, apply: bool, permit_manifest_drift: bool = Fals
             reports.append({"run_dir": str(child), "eligible": False, "reason": str(error)})
             continue
         if apply and report["removable_file_count"] and (max_apply_runs is None or applied_count < max_apply_runs):
-            action_path = apply_retention(child / "run_config.json")
+            action_path = apply_run(child, permit_manifest_drift=permit_manifest_drift)
             action = _load(action_path)
             report["applied"] = True
             report["retention_actions"] = str(action_path)

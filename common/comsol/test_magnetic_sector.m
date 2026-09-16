@@ -1,4 +1,4 @@
-function result = test_magnetic_sector(mass_amu, KE_eV, label)
+function result = test_magnetic_sector(runDir, mass_amu, KE_eV, label)
 % Magnetic sector mass analyzer: reuses the already-validated CPT
 % MagneticForce cyclotron-motion mechanism (test_cpt_magnetic_force.m),
 % but in the mass-spec convention -- ions are accelerated to a FIXED
@@ -9,11 +9,11 @@ function result = test_magnetic_sector(mass_amu, KE_eV, label)
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-if nargin < 3, label = sprintf('%gamu_%geV', mass_amu, KE_eV); end
+if nargin < 4, label = sprintf('%gamu_%geV', mass_amu, KE_eV); end
 if any(strcmp(cell(ModelUtil.tags()), 'ModelMagSector'))
     ModelUtil.remove('ModelMagSector');
 end

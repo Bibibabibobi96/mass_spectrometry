@@ -80,6 +80,14 @@ try {
     -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0
   Assert-Equal $capacityReceipt.role 'artifact_capacity_gate' 'Capacity gate role changed.'
   Assert-Equal $capacityReceipt.satisfied_after_apply $true 'Capacity gate did not publish a satisfied receipt.'
+  $policy=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'artifact_capacity_policy.json') -Raw |
+    ConvertFrom-Json
+  $defaultTargetReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot $capacityRoot -MinimumFreeGiB 0
+  Assert-Equal $defaultTargetReceipt.target_bytes ([int64]$policy.target_gib * 1GB) `
+    'Omitted target must use the shared capacity policy.'
+  Assert-Equal $defaultTargetReceipt.minimum_free_bytes 0 `
+    'Explicit zero disk reserve must override the shared default.'
   $explicitBuildRun=Join-Path $capacityRoot `
     'projects\p\runs\20260101_000000__build__simion__rebuildable'
   $capacityExplicitBuildReceipt=Invoke-ArtifactCapacityGate -Python $python `

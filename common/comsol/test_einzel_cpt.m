@@ -1,4 +1,4 @@
-function test_einzel_cpt()
+function test_einzel_cpt(runDir)
 % Loads the solved Einzel lens (test_einzel_lens.m) and traces a beam of
 % 100amu, +1 ions released from the small entrance sub-volume
 % ('geom1_relvol_dom', r<1.5mm just before disk1), checking whether the
@@ -13,7 +13,7 @@ function test_einzel_cpt()
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

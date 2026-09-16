@@ -1,4 +1,4 @@
-function test_cpt_magnetic_force()
+function test_cpt_magnetic_force(runDir)
 % Reference/validation script: charged particle tracing under a uniform
 % user-defined magnetic field via the CPT 'MagneticForce' feature.
 % Releases an electron with pure transverse velocity into a uniform Bz
@@ -14,7 +14,7 @@ function test_cpt_magnetic_force()
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

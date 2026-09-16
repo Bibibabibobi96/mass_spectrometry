@@ -22,6 +22,7 @@ from common.contracts.reconcile_artifact_capacity import (
     _load_capacity_protection_leases,
     _protected,
 )
+from common.contracts.verify_run_manifest import record_path, verify_record
 
 RECEIPT_NAME = "solver_review_retirement_receipt.json"
 HEAVY_ROLES = {"solver_native_binary", "dense_trajectory"}
@@ -129,23 +130,42 @@ def _downstream_references(artifact_root: Path, target: Path, run_id: str) -> li
     return sorted(references)
 
 
-def _manifest_records(run: dict[str, Any]) -> dict[Path, dict[str, Any]]:
+def _manifest_records(
+    run: dict[str, Any], *, retired_paths: Iterable[Path] = (),
+) -> dict[Path, dict[str, Any]]:
+    """Verify every recorded identity, except receipt-bound partial removals."""
     result: dict[Path, dict[str, Any]] = {}
+    retired = set(retired_paths)
     manifest = run["manifest"]
     entries: list[tuple[str, dict[str, Any]]] = [("run_config", manifest.get("run_config", {}))]
     entries.extend((f"input:{name}", record) for name, record in manifest.get("inputs", {}).items())
     entries.extend((f"output:{index}", record) for index, record in enumerate(manifest.get("outputs", [])))
     for role, record in entries:
-        if not isinstance(record, dict) or not record.get("exists"):
-            continue
-        path = Path(str(record.get("path", ""))).resolve()
+        if not isinstance(record, dict) or record.get("exists") is not True:
+            raise RetirementError(f"invalid manifest record: {role}")
+        try:
+            path = record_path(record, base_dir=run["dir"])
+            if path not in retired:
+                verify_record(role, record, base_dir=run["dir"])
+        except (AssertionError, KeyError, OSError) as exc:
+            raise RetirementError(f"run evidence identity differs: {role}: {exc}") from exc
         result[path] = {"manifest_role": role, "bytes": record.get("bytes"), "sha256": record.get("sha256")}
+    if record_path(manifest["run_config"], base_dir=run["dir"]) != run["dir"] / "run_config.json":
+        raise RetirementError("manifest does not bind the local run config")
+    if run["dir"] / "summary.json" not in result:
+        raise RetirementError("manifest does not bind the local summary")
+    for name, configured_path in run["config"].get("inputs", {}).items():
+        record = manifest.get("inputs", {}).get(name)
+        if not isinstance(record, dict) or record_path(record, base_dir=run["dir"]) != record_path(
+            {"path": configured_path}, base_dir=run["dir"],
+        ):
+            raise RetirementError(f"manifest does not bind configured input: {name}")
     return result
 
 
-def _file_inventory(run: dict[str, Any]) -> list[dict[str, Any]]:
+def _file_inventory(run: dict[str, Any], *, retired_paths: Iterable[Path] = ()) -> list[dict[str, Any]]:
     root: Path = run["dir"]
-    records = _manifest_records(run)
+    records = _manifest_records(run, retired_paths=retired_paths)
     inventory: list[dict[str, Any]] = []
     for path in sorted((item for item in root.rglob("*") if item.is_file()), key=lambda item: item.as_posix()):
         if path.name == RECEIPT_NAME:
@@ -154,6 +174,8 @@ def _file_inventory(run: dict[str, Any]) -> list[dict[str, Any]]:
         bytes_count = path.stat().st_size
         manifest_sha = str(record.get("sha256")).upper() if record and record.get("sha256") else None
         actual_sha = _sha(path)
+        if record and (record["bytes"] != bytes_count or manifest_sha != actual_sha):
+            raise RetirementError(f"manifest identity changed: {path}")
         inventory.append({
             "path": path.relative_to(root).as_posix(),
             "bytes": bytes_count,
@@ -225,6 +247,13 @@ def plan_retirement(
         prior_pending_sha = _sha(target_run / RECEIPT_NAME)
     target = _load_run(target_run)
     replacement = _load_run(replacement_run)
+    _manifest_records(replacement)
+    if prior_pending_sha and (
+        prior["target_manifest"]["sha256"] != _sha(target_run / "run_manifest.json")
+        or prior["replacement_manifest"]["sha256"] != _sha(replacement_run / "run_manifest.json")
+        or prior["replacement_run_path"] != str(replacement_run)
+    ):
+        raise RetirementError("pending retirement manifest identity changed")
     if _recorded_at(replacement) <= _recorded_at(target):
         raise RetirementError("replacement is not newer than target")
     if target["config"].get("project") != replacement["config"].get("project"):
@@ -239,7 +268,9 @@ def plan_retirement(
     if _protected(target_run, leases["protected_paths"]):
         raise RetirementError("target is covered by an active capacity protection lease")
     topology = _topology_compatible(target, replacement, compatibility_input_roles)
-    inventory = _file_inventory(target)
+    inventory = _file_inventory(
+        target, retired_paths=[_under(target_run / item["path"], target_run) for item in prior_removed_missing],
+    )
     removed_current = [item for item in inventory if item["retention_role"] in HEAVY_ROLES]
     removed = prior_removed_missing + removed_current
     if not removed:
@@ -271,6 +302,17 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
     if not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
         raise RetirementError("apply requires the shared HostExecutionLease")
     target = Path(plan["target_run_path"])
+    replacement = Path(plan["replacement_run_path"])
+    for label, path in (("target", target), ("replacement", replacement)):
+        if _sha(path / "run_manifest.json") != plan[f"{label}_manifest"]["sha256"]:
+            raise RetirementError(f"{label} run manifest changed before apply")
+    _manifest_records(_load_run(replacement))
+    _file_inventory(
+        _load_run(target), retired_paths=[
+            _under(target / item["path"], target)
+            for item in plan["removed_files"] if item.get("already_removed_before_resume")
+        ],
+    )
     receipt_path = target / RECEIPT_NAME
     pending = {
         **plan,
@@ -326,7 +368,7 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
     if _sha(run_dir / "run_manifest.json") != receipt["target_manifest"]["sha256"]:
         raise RetirementError("original run manifest changed")
     replacement = Path(receipt["replacement_run_path"])
-    _load_run(replacement)
+    _manifest_records(_load_run(replacement))
     if _sha(replacement / "run_manifest.json") != receipt["replacement_manifest"]["sha256"]:
         raise RetirementError("replacement run manifest changed")
     for item in receipt["removed_files"]:

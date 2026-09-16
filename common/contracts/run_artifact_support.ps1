@@ -62,8 +62,8 @@ function Invoke-ArtifactCapacityGate {
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$ArtifactRoot,
-    [double]$TargetGiB=500.0,
-    [double]$MinimumFreeGiB=500.0,
+    [Nullable[double]]$TargetGiB=$null,
+    [Nullable[double]]$MinimumFreeGiB=$null,
     [long]$RequiredHeadroomBytes=0,
     [string[]]$ProtectedPaths=@(),
     [string[]]$ProtectedCacheKeys=@(),
@@ -71,7 +71,8 @@ function Invoke-ArtifactCapacityGate {
     [Nullable[long]]$KnownMeasuredBytes=$null,
     [Nullable[long]]$MaximumNewArtifactBytes=$null
   )
-  if($TargetGiB-le 0 -or $MinimumFreeGiB-lt 0 -or $RequiredHeadroomBytes-lt 0){
+  if(($null-ne$TargetGiB -and $TargetGiB-le 0) -or
+     ($null-ne$MinimumFreeGiB -and $MinimumFreeGiB-lt 0) -or $RequiredHeadroomBytes-lt 0){
     throw 'Artifact capacity gate requires nonnegative watermarks and headroom.'
   }
   if(($null-eq$KnownMeasuredBytes)-ne($null-eq$MaximumNewArtifactBytes)){
@@ -85,11 +86,12 @@ function Invoke-ArtifactCapacityGate {
   $arguments=@(
     '-m','common.contracts.reconcile_artifact_capacity',
     '--artifact-root',$ArtifactRoot,
-    '--target-gib',([string]$TargetGiB),
-    '--minimum-free-gib',([string]$MinimumFreeGiB),
     '--required-headroom-bytes',([string]$RequiredHeadroomBytes),
     '--apply'
   )
+  # Omitted watermarks are resolved once by Python from artifact_capacity_policy.json.
+  if($null-ne$TargetGiB){$arguments+=@('--target-gib',([string]$TargetGiB))}
+  if($null-ne$MinimumFreeGiB){$arguments+=@('--minimum-free-gib',([string]$MinimumFreeGiB))}
   foreach($path in @($ProtectedPaths|Where-Object{ -not [string]::IsNullOrWhiteSpace($_) }|Select-Object -Unique)){
     $arguments+=@('--protect-path',$path)
   }

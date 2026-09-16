@@ -1,4 +1,4 @@
-function result = test_esa(KE_eV, label)
+function result = test_esa(runDir, KE_eV, label)
 % Electrostatic Sector Analyzer (ESA): concentric cylindrical capacitor.
 % An ion moving tangentially at the mean radius R0 needs centripetal
 % force m*v^2/R0 = q*E(R0); for a coaxial cylindrical capacitor,
@@ -11,11 +11,11 @@ function result = test_esa(KE_eV, label)
 
 commonDir = fileparts(mfilename('fullpath'));
 addpath(commonDir);
-paths = common_artifact_paths();
+paths = common_artifact_paths(runDir);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
-if nargin < 2, label = sprintf('KE%geV', KE_eV); end
+if nargin < 3, label = sprintf('KE%geV', KE_eV); end
 
 if any(strcmp(cell(ModelUtil.tags()), 'ModelESA'))
     ModelUtil.remove('ModelESA');
