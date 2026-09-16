@@ -95,6 +95,46 @@ def emit_grounded_enclosure(
     )
 
 
+def emit_grounded_enclosure_with_rear_aperture(
+    enclosure: ShieldedRectangularEnclosure, *, exit_z_mm: float,
+    aperture_half_x_mm: float, aperture_half_y_mm: float,
+    cut_padding_mm: float,
+) -> str:
+    """Emit the same shell with an axial aperture through its rear cap.
+
+    This is an explicit instrument-selected topology for a coaxial return path.
+    It does not change :func:`emit_grounded_enclosure`, which remains the
+    closed-rear default.  The caller must separately emit the grounded ideal
+    grid that spans the opening and state which cap face owns that grid plane.
+    """
+    if not exit_z_mm < enclosure.rear_cap_inner_z_mm < enclosure.rear_cap_outer_z_mm:
+        raise TwoZoneGeometryError("exit must precede the rear cap in the -z accelerating frame")
+    if not (0 < aperture_half_x_mm < enclosure.guard_inner_half_x_mm and
+            0 < aperture_half_y_mm < enclosure.guard_inner_half_y_mm and
+            cut_padding_mm > 0):
+        raise TwoZoneGeometryError(
+            "rear aperture requires positive clearance to the grounded enclosure"
+        )
+    x, y = enclosure.guard_half_x_mm, enclosure.guard_half_y_mm
+    ix, iy = enclosure.guard_inner_half_x_mm, enclosure.guard_inner_half_y_mm
+    # The return-path variant must retain the cavity's exact inner-wall nodes:
+    # otherwise an ordinary ``notin`` removes the support ring in the same raw
+    # row as the grounded ideal grid and leaves the numerical grid floating.
+    shell = (
+        f"box3D(-{_number(x)},-{_number(y)},{_number(exit_z_mm)},"
+        f"{_number(x)},{_number(y)},{_number(enclosure.rear_cap_outer_z_mm)}) notin_inside {{ "
+        f"box3D(-{_number(ix)},-{_number(iy)},{_number(exit_z_mm)},"
+        f"{_number(ix)},{_number(iy)},{_number(enclosure.rear_cap_inner_z_mm)}) }}"
+    )
+    return (
+        f"{shell} notin_inside {{ box3D(-{_number(aperture_half_x_mm)},"
+        f"-{_number(aperture_half_y_mm)},"
+        f"{_number(enclosure.rear_cap_inner_z_mm-cut_padding_mm)},"
+        f"{_number(aperture_half_x_mm)},{_number(aperture_half_y_mm)},"
+        f"{_number(enclosure.rear_cap_outer_z_mm+cut_padding_mm)}) }}"
+    )
+
+
 def _check_id(electrode_id: int) -> None:
     if isinstance(electrode_id, bool) or not isinstance(electrode_id, int) or electrode_id < 1:
         raise TwoZoneGeometryError("electrode_id must be a positive integer")

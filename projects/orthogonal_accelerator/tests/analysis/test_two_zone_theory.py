@@ -55,3 +55,19 @@ class TwoZoneTheoryTest(unittest.TestCase):
                 repeller_v=100.0, intermediate_v=100.0, exit_v=0.0,
                 gap_1_mm=1.0, gap_2_mm=1.0, release_position_in_gap_1_mm=0.5,
             )
+
+    def test_signed_upstream_focus_requires_explicit_diagnostic_opt_in(self) -> None:
+        arguments = {
+            "repeller_v": 4482.0,
+            "intermediate_v": 3518.0,
+            "exit_v": 0.0,
+            "gap_1_mm": 6.0,
+            "gap_2_mm": 33.6,
+            "release_position_in_gap_1_mm": 3.0,
+        }
+        with self.assertRaisesRegex(TwoZoneTheoryError, "upstream"):
+            derive_two_zone_time_focus(**arguments)
+        result = derive_two_zone_time_focus(
+            **arguments, require_downstream_focus=False,
+        )
+        self.assertLess(result.focus_after_exit_mm, 0.0)

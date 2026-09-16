@@ -31,19 +31,23 @@ class TwoZoneTimeFocus:
 def derive_two_zone_time_focus(
     *, repeller_v: float, intermediate_v: float, exit_v: float,
     gap_1_mm: float, gap_2_mm: float, release_position_in_gap_1_mm: float,
+    require_downstream_focus: bool = True,
 ) -> TwoZoneTimeFocus:
     """Return the first-order focus of two uniform accelerating fields.
 
     Potentials are expressed in volts, lengths in millimetres, and the release
     coordinate is measured from the repeller into the first gap.  The returned
     focus distance is measured beyond the grounded/reference exit plane.  No
-    device-coordinate placement is implied by this result.
+    device-coordinate placement is implied by this result.  Set
+    ``require_downstream_focus=False`` only to retain a signed mathematical
+    reference for an already fixed physical geometry.
     """
     try:
         state = accelerator_state(
             repeller_v, intermediate_v, gap_1_mm, gap_2_mm,
             exit_v=exit_v,
             release_position_mm=release_position_in_gap_1_mm,
+            require_downstream_focus=require_downstream_focus,
             zero_tolerance_mm=0.0,
         )
     except PhysicsContractError as error:

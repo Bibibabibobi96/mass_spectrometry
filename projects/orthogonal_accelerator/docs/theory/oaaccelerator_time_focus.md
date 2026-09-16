@@ -286,6 +286,24 @@ D_A=
 \right].
 ```
 
+### 固定净增益的首区压降灵敏度
+
+对零初始轴能，固定净增益 $E$、两区长度 $d_1,d_2$、释放距 repeller 的位置 $s$ 和出口电位，
+只改变首区压降 $\Delta$。记 $\rho=(d_1-s)/d_1$、$B=E-\rho\Delta$、
+$a=\sqrt{2\rho\Delta}$、$b=\sqrt{2E}$，则前式可写成
+
+```math
+D(\Delta)=b^3\left[\frac{d_1}{\Delta a}+\frac{d_2}{B}\left(\frac1b-\frac1a\right)\right],
+\qquad
+\frac{dD}{d\Delta}=b^3\left[-\frac{3d_1}{2\Delta^2a}
++\frac{d_2}{B^2}\left(\frac{B}{2\Delta a}+\rho\left(\frac1b-\frac1a\right)\right)\right].
+```
+
+适用域为 $E>0$、$0<s<d_1$、$d_2>0$、$0<\Delta<E/\rho$。长度使用 mm 时导数为 mm/V。
+`fixed_energy_gap1_focus_sensitivity` 复用既有状态计算并返回有符号数学焦距及此解析导数，不引入差分
+步长。它不决定仪器坐标的符号，不授予下游焦点资格，也不保证真实三维场具有相同导数。
+仪器对三维残差使用该导数时只能声明理论 Jacobian 的试验建议，须独立冻结来源并重新验证飞行。
+
 ### 7.1 聚焦面而不是固定出口面
 
 下式使用与局部提取方向同向的装配轴 $z_A$，不是任一整机的全局 $z$。定义：

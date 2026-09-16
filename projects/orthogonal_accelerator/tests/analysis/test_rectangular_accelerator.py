@@ -10,6 +10,7 @@ from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
 )
 from projects.orthogonal_accelerator.simion.rectangular_accelerator import (
     emit_grounded_enclosure,
+    emit_grounded_enclosure_with_rear_aperture,
     emit_ideal_grid,
     emit_open_rectangular_frame,
 )
@@ -38,6 +39,33 @@ class RectangularAcceleratorTest(unittest.TestCase):
                          "box3D(-24,-24,6,24,24,54.6) notin { box3D(-22,-22,6,22,22,52.6) }")
         with self.assertRaises(TwoZoneGeometryError):
             emit_grounded_enclosure(replace(enclosure, rear_cap_inner_z_mm=5.0), exit_z_mm=6.0)
+
+    def test_rear_aperture_is_explicit_and_does_not_change_closed_default(self) -> None:
+        enclosure = derive_shielded_rectangular_enclosure(
+            electrode_outer_width_x_mm=40.0, electrode_outer_height_y_mm=40.0,
+            guard_outer_width_x_mm=48.0, guard_outer_height_y_mm=48.0,
+            guard_wall_thickness_mm=2.0, lateral_clearance_mm=2.0,
+            repeller_z_mm=45.6, repeller_thickness_z_mm=2.0, rear_gap_mm=5.0,
+        )
+        self.assertEqual(
+            emit_grounded_enclosure_with_rear_aperture(
+                enclosure, exit_z_mm=6.0,
+                aperture_half_x_mm=12.5, aperture_half_y_mm=12.5,
+                cut_padding_mm=2.0,
+            ),
+            "box3D(-24,-24,6,24,24,54.6) notin_inside { box3D(-22,-22,6,22,22,52.6) } "
+            "notin_inside { box3D(-12.5,-12.5,50.6,12.5,12.5,56.6) }",
+        )
+        self.assertNotIn(
+            "notin_inside",
+            emit_grounded_enclosure(enclosure, exit_z_mm=6.0),
+        )
+        with self.assertRaises(TwoZoneGeometryError):
+            emit_grounded_enclosure_with_rear_aperture(
+                enclosure, exit_z_mm=6.0,
+                aperture_half_x_mm=22.0, aperture_half_y_mm=12.5,
+                cut_padding_mm=2.0,
+            )
 
     def test_invalid_solid_and_grid_fail_closed(self) -> None:
         for invalid in (0, -1, True, 1.5):

@@ -52,6 +52,15 @@ class AcceleratorState:
 
 
 @dataclass(frozen=True)
+class FixedEnergyGap1FocusSensitivity:
+    """Signed ideal focus and its slope along a fixed-energy voltage family."""
+
+    accelerator_state: AcceleratorState
+    gap1_voltage_drop_v: float
+    focus_drift_derivative_mm_per_v: float
+
+
+@dataclass(frozen=True)
 class PhaseSpaceMatchedVoltagePair:
     """Fixed-geometry voltage pair matched to a measured axial phase-space slope."""
 
@@ -265,6 +274,75 @@ def focus_drift_mm(
         require_downstream_focus=require_downstream_focus,
         zero_tolerance_mm=zero_tolerance_mm,
     ).first_order_focus_drift_mm
+
+
+def fixed_energy_gap1_focus_sensitivity(
+    nominal_energy_per_charge_v: float,
+    gap1_voltage_drop_v: float,
+    gap1_mm: float,
+    gap2_mm: float,
+    release_position_mm: float,
+) -> FixedEnergyGap1FocusSensitivity:
+    """Return signed focus and analytic voltage sensitivity at fixed final energy.
+
+    Only the first-gap voltage drop varies.  The final energy per charge,
+    geometry, release position, and exit-potential reference remain fixed.
+    The returned focus distance may be negative: that is a mathematical
+    upstream focus, not qualification as a usable downstream drift focus.
+    """
+    energy = _as_finite_float(
+        nominal_energy_per_charge_v, "nominal_energy_per_charge_v"
+    )
+    voltage_drop = _as_finite_float(
+        gap1_voltage_drop_v, "gap1_voltage_drop_v"
+    )
+    gap1 = _as_finite_float(gap1_mm, "gap1_mm")
+    gap2 = _as_finite_float(gap2_mm, "gap2_mm")
+    release = _as_finite_float(release_position_mm, "release_position_mm")
+    for value, name in (
+        (energy, "nominal_energy_per_charge_v"),
+        (voltage_drop, "gap1_voltage_drop_v"),
+        (gap1, "gap1_mm"),
+        (gap2, "gap2_mm"),
+    ):
+        _require_positive(value, name)
+    if not 0.0 < release < gap1:
+        raise PhysicsContractError(
+            "release_position_mm must lie strictly inside the first gap"
+        )
+
+    remaining_fraction = (gap1 - release) / gap1
+    repeller_relative = energy + voltage_drop * release / gap1
+    intermediate_relative = energy - remaining_fraction * voltage_drop
+    state = accelerator_state(
+        repeller_relative,
+        intermediate_relative,
+        gap1,
+        gap2,
+        release_position_mm=release,
+        require_downstream_focus=False,
+        zero_tolerance_mm=0.0,
+    )
+
+    velocity_after_region1 = math.sqrt(
+        2.0 * state.energy_after_region1_per_charge_v
+    )
+    velocity_at_exit = math.sqrt(2.0 * state.nominal_energy_per_charge_v)
+    inverse_velocity_after_region1 = 1.0 / velocity_after_region1
+    intermediate = state.intermediate_relative_v
+    derivative = velocity_at_exit**3 * (
+        -1.5 * gap1 * inverse_velocity_after_region1 / voltage_drop**2
+        + gap2
+        * (
+            intermediate * inverse_velocity_after_region1 / (2.0 * voltage_drop)
+            + remaining_fraction
+            * (1.0 / velocity_at_exit - inverse_velocity_after_region1)
+        )
+        / intermediate**2
+    )
+    if not math.isfinite(derivative):
+        raise PhysicsContractError("fixed-energy focus sensitivity is not finite")
+    return FixedEnergyGap1FocusSensitivity(state, voltage_drop, derivative)
 
 
 def normalized_time_to_plane_mm_sqrt_v(

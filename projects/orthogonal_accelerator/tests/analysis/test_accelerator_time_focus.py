@@ -6,6 +6,7 @@ import unittest
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     accelerator_state,
     derive,
+    fixed_energy_gap1_focus_sensitivity,
     focus_drift_mm,
     linear_phase_space_timing_coefficients,
     match_finite_phase_space_interval,
@@ -15,6 +16,126 @@ from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
 
 
 class AcceleratorTimeFocusTest(unittest.TestCase):
+    def test_fixed_energy_gap1_focus_sensitivity_matches_independent_fixture(self) -> None:
+        result = fixed_energy_gap1_focus_sensitivity(
+            4198.879726494095,
+            1007.7311343585827,
+            6.0,
+            33.6,
+            3.0,
+        )
+        self.assertAlmostEqual(
+            result.accelerator_state.first_order_focus_drift_mm,
+            0.2583736068220352,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            result.focus_drift_derivative_mm_per_v,
+            -0.12496596999073907,
+            places=12,
+        )
+
+    def test_fixed_energy_gap1_focus_matches_existing_focus_api(self) -> None:
+        energy = 2000.0
+        voltage_drop = 480.0
+        gap1 = 3.0
+        gap2 = 16.8
+        release = 1.5
+        result = fixed_energy_gap1_focus_sensitivity(
+            energy, voltage_drop, gap1, gap2, release,
+        )
+        repeller = energy + voltage_drop * release / gap1
+        intermediate = repeller - voltage_drop
+        expected = focus_drift_mm(
+            repeller,
+            intermediate,
+            gap1,
+            gap2,
+            release_position_mm=release,
+            require_downstream_focus=False,
+            zero_tolerance_mm=0.0,
+        )
+        self.assertEqual(result.accelerator_state.first_order_focus_drift_mm, expected)
+
+    def test_fixed_energy_gap1_focus_sensitivity_obeys_voltage_homogeneity(self) -> None:
+        baseline = fixed_energy_gap1_focus_sensitivity(
+            2000.0, 480.0, 3.0, 16.8, 1.5,
+        )
+        scale = 2.75
+        scaled = fixed_energy_gap1_focus_sensitivity(
+            scale * 2000.0, scale * 480.0, 3.0, 16.8, 1.5,
+        )
+        self.assertAlmostEqual(
+            scaled.accelerator_state.first_order_focus_drift_mm,
+            baseline.accelerator_state.first_order_focus_drift_mm,
+            places=12,
+        )
+        self.assertAlmostEqual(
+            scaled.focus_drift_derivative_mm_per_v,
+            baseline.focus_drift_derivative_mm_per_v / scale,
+            places=12,
+        )
+
+    def test_fixed_energy_gap1_focus_sensitivity_matches_independent_central_difference(self) -> None:
+        energy = 2500.0
+        voltage_drop = 600.0
+        gap1 = 4.0
+        gap2 = 20.0
+        release = 1.3
+        result = fixed_energy_gap1_focus_sensitivity(
+            energy, voltage_drop, gap1, gap2, release,
+        )
+
+        def fixed_energy_focus(drop: float) -> float:
+            repeller = energy + drop * release / gap1
+            intermediate = repeller - drop
+            return focus_drift_mm(
+                repeller,
+                intermediate,
+                gap1,
+                gap2,
+                release_position_mm=release,
+                require_downstream_focus=False,
+                zero_tolerance_mm=0.0,
+            )
+
+        fixture_step_v = 1.0e-3
+        numerical_derivative = (
+            fixed_energy_focus(voltage_drop + fixture_step_v)
+            - fixed_energy_focus(voltage_drop - fixture_step_v)
+        ) / (2.0 * fixture_step_v)
+        self.assertAlmostEqual(
+            result.focus_drift_derivative_mm_per_v,
+            numerical_derivative,
+            places=9,
+        )
+
+    def test_fixed_energy_gap1_focus_sensitivity_retains_signed_upstream_focus(self) -> None:
+        result = fixed_energy_gap1_focus_sensitivity(
+            4198.879726494095,
+            1010.0000186926505,
+            6.0,
+            33.6,
+            3.0,
+        )
+        self.assertLess(result.accelerator_state.first_order_focus_drift_mm, 0.0)
+        self.assertFalse(result.accelerator_state.focus_is_downstream)
+
+    def test_fixed_energy_gap1_focus_sensitivity_rejects_invalid_domain(self) -> None:
+        cases = (
+            (0.0, 480.0, 3.0, 16.8, 1.5),
+            (2000.0, 0.0, 3.0, 16.8, 1.5),
+            (2000.0, 480.0, 0.0, 16.8, 1.5),
+            (2000.0, 480.0, 3.0, 0.0, 1.5),
+            (2000.0, 480.0, 3.0, 16.8, 0.0),
+            (2000.0, 480.0, 3.0, 16.8, 3.0),
+            (2000.0, 5000.0, 3.0, 16.8, 1.5),
+        )
+        for arguments in cases:
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(ValueError):
+                    fixed_energy_gap1_focus_sensitivity(*arguments)
+
     def test_reference_assertion_keeps_accelerator_length_diagnostic(self) -> None:
         from projects.orthogonal_accelerator.analysis.accelerator_time_focus import _assert_expected
 
