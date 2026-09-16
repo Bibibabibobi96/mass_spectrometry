@@ -482,7 +482,7 @@ function Start-RepositoryScheduledProcess {
   Assert-RepositoryProcessSpecification -Specification $Specification
   # A prepared batch may need small Workbench-local assets immediately before
   # launch.  Do not materialize those while an earlier SIMION process still
-  # scans the same runtime directory after its 45-second observation window.
+  # scans the same runtime directory after its frozen observation window.
   if($Specification.PSObject.Properties.Name-contains'prepare'-and
       $null-ne$Specification.prepare){
     $null=& $Specification.prepare $Specification
@@ -563,6 +563,18 @@ function Get-SystemCpuPercent {
   }catch{return $null}
 }
 
+function Assert-RepositoryDispatchLimits {
+  param([Parameter(Mandatory)]$Limits, [Parameter(Mandatory)][string[]]$PositiveIntegers)
+  foreach($name in $PositiveIntegers){
+    $value=$Limits.$name
+    if($value-is[bool]-or$value-is[string]-or$null-eq$value-or
+       [double]::IsNaN([double]$value)-or[double]::IsInfinity([double]$value)-or
+       [double]$value-lt 1-or[math]::Truncate([double]$value)-ne[double]$value){
+      throw "Repository dispatch limit $name must be a positive integer."
+    }
+  }
+}
+
 function Start-ObservedFormalProcess {
   <# Start the first formal batch, retain it, and observe the fixed first window. #>
   [CmdletBinding()]
@@ -577,24 +589,22 @@ function Start-ObservedFormalProcess {
     throw 'Formal observation requires an unknown-identity repository plan.'
   }
   $seconds=[int]$plan.limits.formal_observation_seconds
-  if($seconds-ne 45){throw 'Repository formal observation duration must be 45 seconds.'}
+  Assert-RepositoryDispatchLimits -Limits $plan.limits -PositiveIntegers @(
+    'formal_observation_seconds','memory_critical_reserve_bytes','memory_critical_seconds')
+  $criticalBytes=[int64]$plan.limits.memory_critical_reserve_bytes
+  $criticalSeconds=[int]$plan.limits.memory_critical_seconds
   $record=Start-RepositoryScheduledProcess -Specification $ProcessSpecification
   Write-RepositorySchedulerEvent -Event 'BATCH_STARTED' -Record $record -ActiveCount 1 `
     -Details @{OBSERVATION_SECONDS=$seconds;MEASUREMENT='FIRST_FORMAL_BATCH'}
   $previousTicks=[int64]0;$previousAt=$record.started_at
   $peakCpu=[double]0;$peakBackground=[double]0;$systemCpu=[double]0;$lastSystemAt=$null
-  $criticalBytes=[int64]$plan.limits.memory_critical_reserve_bytes
-  $criticalSeconds=[int]$plan.limits.memory_critical_seconds
-  if($criticalBytes-ne512MB-or$criticalSeconds-ne15){
-    throw 'Repository first-formal memory-danger policy differs from the public invariant.'
-  }
   $criticalSince=$null;$resourceBudgetExceeded=$false
   $observationComplete=$false;$completedDuringObservation=$false
-  # The formal first batch remains alive after the fixed 45 s observation.  Its
+  # The formal first batch remains alive after the frozen observation window.  Its
   # measured peak determines the initial lane count; subsequent live admission
   # and the existing memory-danger state machine protect against later growth.
   # Waiting for natural completion here would serialize every otherwise
-  # parallel run and would make the 45 s observation meaningless.
+  # parallel run and would make the observation window meaningless.
   while($record.active){
     $now=Get-RepositoryUtcNow
     $sampleArgs=@{RootProcessIds=@($record.root_process_id);TrackedProcessIds=$record.tracked_process_ids}
@@ -722,11 +732,13 @@ function Invoke-ResourceBudgetedProcesses {
   }
   $limits=$plan.limits;$maximumConcurrency=[int]$limits.maximum_concurrency
   if($maximumConcurrency-lt 1){throw 'Repository maximum concurrency must be positive.'}
-  if([int]$limits.launch_stagger_seconds-ne 5-or[int]$limits.memory_critical_seconds-ne 15-or
-     [int]$limits.memory_recovery_stable_seconds-ne 45-or
-     [int]$limits.maximum_memory_recovery_attempts-ne 2-or
-     [int]$limits.maximum_memory_danger_termination_attempts-ne 2){
-    throw 'Repository launch and memory-danger policy differs from the public invariant.'
+  Assert-RepositoryDispatchLimits -Limits $limits -PositiveIntegers @(
+    'maximum_concurrency','launch_stagger_seconds','memory_critical_seconds',
+    'memory_recovery_stable_seconds','maximum_memory_recovery_attempts',
+    'maximum_memory_danger_termination_attempts','memory_admission_reserve_bytes',
+    'memory_critical_reserve_bytes')
+  if([int]$limits.maximum_memory_recovery_attempts-lt[int]$limits.maximum_memory_danger_termination_attempts){
+    throw 'Every permitted memory-danger interruption requires a recovery attempt.'
   }
   $pending=[Collections.ArrayList]::new()
   foreach($spec in $ProcessSpecifications){Assert-RepositoryProcessSpecification $spec;$null=$pending.Add($spec)}
@@ -757,8 +769,8 @@ function Invoke-ResourceBudgetedProcesses {
   $recoveryStableSeconds=[int]$limits.memory_recovery_stable_seconds
   $maximumRecoveryAttempts=[int]$limits.maximum_memory_recovery_attempts
   $maximumDangerTerminations=[int]$limits.maximum_memory_danger_termination_attempts
-  if($warningBytes-ne 1GB-or$criticalBytes-ne 512MB){
-    throw 'Repository memory reserves must be 1 GiB admission and 0.5 GiB critical.'
+  if($warningBytes-le$criticalBytes){
+    throw 'Repository admission memory reserve must exceed the critical reserve.'
   }
   $estimation=$plan.estimation
   $plannedMemoryBudget=[int64]0
@@ -896,7 +908,7 @@ function Invoke-ResourceBudgetedProcesses {
     # A dispatch plan limits lanes from the first formal peak.  Before every
     # later launch, also reserve one expected process footprint based on the
     # highest live peak seen so far.  This tightens admission immediately if
-    # SIMION grows after the 45-second observation, without a project-local
+    # SIMION grows after the frozen observation window, without a project-local
     # RAM setting or an unnecessary calibration run.
     $livePeak=[int64]0
     foreach($record in @($running)){
@@ -908,10 +920,10 @@ function Invoke-ResourceBudgetedProcesses {
     # A single lane still needs the same measured safety margin as a wave.
     $launchAdmissionBytes=$dynamicAdmissionBytes
     if($available-lt$criticalBytes){if($null-eq$criticalSince){$criticalSince=$now}}else{$criticalSince=$null}
-    if($null-ne$criticalSince-and($now-$criticalSince).TotalSeconds-ge 15-and$running.Count-gt 0){
+    if($null-ne$criticalSince-and($now-$criticalSince).TotalSeconds-ge[int]$limits.memory_critical_seconds-and$running.Count-gt 0){
       if($dangerTerminationAttempts-ge$maximumDangerTerminations){
-        # Two individual newest-worker interventions have already been
-        # measured.  A third critical window means the run cannot be made safe
+        # The permitted newest-worker interventions are exhausted.
+        # Another critical window means the run cannot be made safe
         # by another incremental reduction: terminate its remaining managed
         # workers and preserve a failed receipt rather than letting Windows
         # thrash indefinitely.
@@ -941,15 +953,16 @@ function Invoke-ResourceBudgetedProcesses {
         -Details @{AVAILABLE_MEMORY_BYTES=$available;CRITICAL_SECONDS=$limits.memory_critical_seconds;CRITICAL_THRESHOLD_BYTES=$criticalBytes;REMAINING_TERMINATION_ATTEMPTS=($maximumDangerTerminations-$dangerTerminationAttempts)}
       $null=$terminationEvents.Add([ordered]@{
         process=$name;at_utc=$now.ToString('o')
-        reason='available_memory_below_0p5_gib_for_15_seconds'
+        reason='available_memory_below_critical_reserve'
+        critical_reserve_bytes=$criticalBytes; critical_seconds=[int]$limits.memory_critical_seconds
         requeued=$true;requeue_priority='front';new_maximum_concurrency=$maximumConcurrency
       })
       # A requeued worker must not immediately restart after a danger kill,
       # including at one lane where reducing maximumConcurrency has no effect.
-      # It receives the same 45-second stable-admission observation as a
+      # It receives the same policy-defined stable-admission observation as a
       # restored multi-lane worker.
       $criticalSince=$null;$recoverySafeSince=$null;$dangerRecoveryPending=$true
-      $nextLaunch=$now.AddSeconds(5);Start-Sleep -Seconds 5;continue
+      $nextLaunch=$now.AddSeconds([int]$limits.launch_stagger_seconds);Start-Sleep -Milliseconds 500;continue
     }
     $recoveryAdmissionSafe=$available-ge($warningBytes+$dynamicAdmissionBytes)-and
       ($systemCpu+$estimatedProcessCpu-lt[double]$limits.cpu_admission_percent)
@@ -1010,7 +1023,7 @@ function Invoke-ResourceBudgetedProcesses {
       Write-RepositorySchedulerEvent -Event 'BATCH_STARTED' -Record $launched `
         -ActiveCount $running.Count -PendingCount $pending.Count `
         -Details @{MAXIMUM_CONCURRENCY=$maximumConcurrency}
-      $nextLaunch=(Get-RepositoryUtcNow).AddSeconds(5)
+      $nextLaunch=(Get-RepositoryUtcNow).AddSeconds([int]$limits.launch_stagger_seconds)
     }elseif($pending.Count-gt 0-and$running.Count-lt$maximumConcurrency){
       if($pauseEvents.Count-eq 0-or($now-[datetimeoffset]$pauseEvents[$pauseEvents.Count-1].at_utc).TotalSeconds-ge 5){
         $reason=$(if($exclusiveResourceBlocked){'exclusive_resource_in_use'}elseif($dangerRecoveryPending){'post_danger_recovery_observation'}elseif(

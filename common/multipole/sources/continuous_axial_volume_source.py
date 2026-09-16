@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import math
 import random
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 
 COLUMNS = (
@@ -25,14 +25,6 @@ COLUMNS = (
 )
 ROLE = "continuous_axial_volume_ion_beam_source"
 METHOD = "independent_spatial_velocity_ion_source_snapshot_v1"
-
-
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest().upper()
 
 
 def _number(value: Any, name: str, *, positive: bool = False) -> float:
@@ -162,7 +154,7 @@ def materialize(spec_path: Path, output_path: Path, receipt_path: Path) -> dict[
         writer.writeheader(); writer.writerows(materialized)
     receipt["particle_source"] = {
         "path": output_path.name,
-        "sha256": _file_sha256(output_path),
+        "sha256": file_sha256(output_path),
         "particle_count": int(spec["particle_count"]),
         "sampling_mode": "continuous_injection_full_population",
     }

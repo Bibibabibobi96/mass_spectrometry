@@ -21,7 +21,37 @@ OCT = "rf_octupole_ion_optics"
 HOST_PERMIT_FIXTURE = "function Assert-HostResourceHeavyStage {};"
 
 
+def dispatch_limits(**overrides: int | float) -> dict[str, int | float]:
+    """Deterministic process fixtures; production defaults belong to the policy."""
+    return {
+        "maximum_concurrency": 2, "launch_stagger_seconds": 5,
+        "memory_critical_seconds": 15, "memory_recovery_stable_seconds": 45,
+        "maximum_memory_recovery_attempts": 2,
+        "maximum_memory_danger_termination_attempts": 2,
+        "memory_admission_reserve_bytes": 1024**3,
+        "memory_critical_reserve_bytes": 512 * 1024**2,
+        "cpu_admission_percent": 95.0, **overrides,
+    }
+
+
 class ResourceBudgetTests(unittest.TestCase):
+    def test_dispatch_limits_reject_invalid_values_before_launch(self) -> None:
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        script = f". '{support}';" + r"""
+foreach($value in @($null,$true,'5',0,-1,1.5,[double]::NaN,[double]::PositiveInfinity)){
+ $rejected=$false
+ try{Assert-RepositoryDispatchLimits -Limits @{duration=$value} -PositiveIntegers duration}
+ catch{$rejected=$true}
+ if(-not$rejected){throw "Invalid limit accepted: $value"}
+}
+Assert-RepositoryDispatchLimits -Limits @{duration=7;bytes=[int64]3221225472} -PositiveIntegers duration,bytes
+"""
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_single_simion_native_verbs_require_heavy_only_for_refine_and_fly(self) -> None:
         """Known construction steps reach launch under light; solving cannot."""
         with tempfile.TemporaryDirectory() as directory:
@@ -226,30 +256,6 @@ if($scenario-eq'inherited_light'){
         ):
             self.assertIn(token, completed.stdout)
 
-    def test_repository_scheduler_owns_stagger_and_latest_first_memory_recovery(self) -> None:
-        source = (REPO_ROOT / "common/multipole/resource_budget_support.ps1").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("$seconds-ne 45", source)
-        self.assertIn("$now.AddSeconds(5)", source)
-        self.assertIn("Sort-Object started_at -Descending", source)
-        self.assertIn("available_memory_below_0p5_gib_for_15_seconds", source)
-        self.assertIn("$warningBytes-ne 1GB-or$criticalBytes-ne 512MB", source)
-        self.assertIn("maximum_memory_danger_termination_attempts-ne 2", source)
-        self.assertIn("$dangerTerminationAttempts-ge$maximumDangerTerminations", source)
-        self.assertIn("PrivateMemorySize64", source)
-        self.assertIn("peak_process_tree_managed_memory_bytes", source)
-        self.assertIn("$dangerRecoveryPending=$true", source)
-        self.assertIn("-not$dangerRecoveryPending", source)
-        self.assertIn("available_memory_below_dynamic_admission", source)
-        self.assertIn("$pending.Insert(0,$victim.specification)", source)
-        self.assertIn("requeue_priority='front'", source)
-        self.assertIn("$maximumConcurrency-1", source)
-        self.assertIn("$observedPerProcessManagedPeak", source)
-        self.assertIn("[math]::Max($livePeak,$observedPerProcessManagedPeak)", source)
-        self.assertNotIn("$maximumConcurrency+=1", source)
-        self.assertIn("effective_maximum_concurrency=$maximumConcurrency", source)
-        self.assertNotIn("CalibrationDurationSeconds", source)
 
     def test_scheduler_suppresses_checkpoint_callback_pipeline_output(self) -> None:
         """A manifest-publishing callback must not turn the wave receipt into an array."""
@@ -314,7 +320,7 @@ if($scenario-eq'inherited_light'){
                         "role": "simion_repository_dispatch_plan",
                         "estimation": {"kind": "formal_first_batch_observation"},
                         "limits": {
-                            "formal_observation_seconds": 45,
+                            "formal_observation_seconds": 7,
                             "memory_critical_reserve_bytes": 512 * 1024**2,
                             "memory_critical_seconds": 15,
                         },
@@ -371,16 +377,7 @@ if($scenario-eq'inherited_light'){
                     "per_process_memory_budget_bytes": 123456,
                     "memory_safety_factor": 1.0,
                 },
-                "limits": {
-                    "maximum_concurrency": 1, "launch_stagger_seconds": 5,
-                    "memory_critical_seconds": 15,
-                    "memory_recovery_stable_seconds": 45,
-                    "maximum_memory_recovery_attempts": 2,
-                    "maximum_memory_danger_termination_attempts": 2,
-                    "memory_admission_reserve_bytes": 1024**3,
-                    "memory_critical_reserve_bytes": 512 * 1024**2,
-                    "cpu_admission_percent": 95.0,
-                },
+                "limits": dispatch_limits(maximum_concurrency=1),
             }), encoding="utf-8")
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
@@ -412,82 +409,80 @@ if($scenario-eq'inherited_light'){
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_scheduler_recovers_twice_then_fails_closed_after_third_danger(self) -> None:
-        """Exercise the 15 s danger, 45 s recovery, and terminal-fail state machine."""
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            dispatch, usage = root / "dispatch.json", root / "usage.json"
-            dispatch.write_text(
-                json.dumps(
-                    {
-                        "role": "simion_repository_dispatch_plan",
-                        "estimation": {
-                            "kind": "exact_resource_profile",
-                            "per_process_memory_budget_bytes": 1024**3,
-                            "memory_safety_factor": 1.10,
-                        },
-                        "limits": {
-                            "maximum_concurrency": 2,
-                            "launch_stagger_seconds": 5,
-                            "memory_critical_seconds": 15,
-                            "memory_recovery_stable_seconds": 45,
-                            "maximum_memory_recovery_attempts": 2,
-                            "maximum_memory_danger_termination_attempts": 2,
-                            "memory_admission_reserve_bytes": 1024**3,
-                            "memory_critical_reserve_bytes": 512 * 1024**2,
-                            "cpu_admission_percent": 95.0,
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
-            command = (
-                f". '{support}';{HOST_PERMIT_FIXTURE}"
-                "$script:now=[datetimeoffset]'2026-08-26T00:00:00Z';$script:nextPid=100;"
-                "function Get-RepositoryUtcNow {$script:now};"
-                "function Start-Sleep {param([int]$Seconds=0,[int]$Milliseconds=0);"
-                "$script:now=$script:now.AddSeconds($Seconds+($Milliseconds/1000.0))};"
-                "function Get-RepositoryAvailableMemoryBytes {"
-                "$seconds=($script:now-[datetimeoffset]'2026-08-26T00:00:00Z').TotalSeconds;"
-                "if(($seconds-ge1-and$seconds-lt17)-or($seconds-ge72-and$seconds-lt88)-or$seconds-ge138){return [int64](256MB)};"
-                "return [int64](8GB)};"
-                "function Get-SystemCpuPercent {[double]0};"
-                "function Start-RepositoryScheduledProcess {param($Specification);$script:nextPid+=1;"
-                "[pscustomobject]@{name=[string]$Specification.name;specification=$Specification;process=$null;"
-                "root_process_id=$script:nextPid;started_at=(Get-RepositoryUtcNow);tracked_process_ids=@($script:nextPid);"
-                "active=$true;completed=$false;exit_code=$null;peak_working_set_bytes=[int64]0;"
-                "peak_managed_memory_bytes=[int64]0;pressure_terminated=$false}};"
-                "function Get-ManagedSolverProcessSample {param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds);"
-                "[pscustomobject]@{tracked_process_ids=@($RootProcessIds[0]);active_process_ids=@($RootProcessIds[0]);"
-                "working_set_bytes=1073741824;private_bytes=2147483648;managed_memory_bytes=2147483648;"
-                "total_processor_time_ticks=0}};"
-                "function Stop-ManagedSolverProcesses {param([int[]]$ProcessIds)};"
-                "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path='unused';argument_list=@();"
-                "stdout='unused';stderr='unused';environment=@{};working_directory=''}});"
-                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
-                f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
-                "if(-not$r.resource_budget_exceeded){exit 3};"
-                f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
-                "if($receipt.status-ne'resource_pressure_failed' -or"
-                "$receipt.failure_class-ne'memory_danger_recovery_attempts_exhausted' -or"
-                "$receipt.scheduler_receipt.termination_requeue_events.Count-ne2 -or"
-                "$receipt.scheduler_receipt.recovery_relaunch_events.Count-ne2 -or"
-                "$receipt.scheduler_receipt.recovery_relaunch_events[0].attempt-ne1 -or"
-                "$receipt.scheduler_receipt.recovery_relaunch_events[1].attempt-ne2){exit 4};"
-                "if(([datetimeoffset]$receipt.scheduler_receipt.recovery_relaunch_events[0].at_utc-"
-                "[datetimeoffset]$receipt.scheduler_receipt.termination_requeue_events[0].at_utc).TotalSeconds-lt45){exit 5}"
-            )
-            completed = subprocess.run(
-                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT,
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=20,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        """Frozen timing and reserve changes drive the same pressure state machine."""
+        for scale in (1, 2):
+            with self.subTest(policy_scale=scale):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    dispatch, usage = root / "dispatch.json", root / "usage.json"
+                    dispatch.write_text(
+                        json.dumps(
+                            {
+                                "role": "simion_repository_dispatch_plan",
+                                "estimation": {
+                                    "kind": "exact_resource_profile",
+                                    "per_process_memory_budget_bytes": 1024**3,
+                                    "memory_safety_factor": 1.10,
+                                },
+                                "limits": dispatch_limits(
+                                    launch_stagger_seconds=5 * scale,
+                                    memory_critical_seconds=15 * scale,
+                                    memory_recovery_stable_seconds=45 * scale,
+                                    memory_admission_reserve_bytes=1024**3 * scale,
+                                    memory_critical_reserve_bytes=512 * 1024**2 * scale,
+                                ),
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+                    command = (
+                        f". '{support}';{HOST_PERMIT_FIXTURE}$script:policyScale={scale};"
+                        "$script:now=[datetimeoffset]'2026-08-26T00:00:00Z';$script:nextPid=100;"
+                        "function Get-RepositoryUtcNow {$script:now};"
+                        "function Start-Sleep {param([int]$Seconds=0,[int]$Milliseconds=0);"
+                        "$script:now=$script:now.AddSeconds($Seconds+($Milliseconds/1000.0))};"
+                        "function Get-RepositoryAvailableMemoryBytes {"
+                        "$seconds=($script:now-[datetimeoffset]'2026-08-26T00:00:00Z').TotalSeconds/$script:policyScale;"
+                        "if(($seconds-ge1-and$seconds-lt17)-or($seconds-ge72-and$seconds-lt88)-or$seconds-ge138){return [int64](256MB)};"
+                        "return [int64](8GB)};"
+                        "function Get-SystemCpuPercent {[double]0};"
+                        "function Start-RepositoryScheduledProcess {param($Specification);$script:nextPid+=1;"
+                        "[pscustomobject]@{name=[string]$Specification.name;specification=$Specification;process=$null;"
+                        "root_process_id=$script:nextPid;started_at=(Get-RepositoryUtcNow);tracked_process_ids=@($script:nextPid);"
+                        "active=$true;completed=$false;exit_code=$null;peak_working_set_bytes=[int64]0;"
+                        "peak_managed_memory_bytes=[int64]0;pressure_terminated=$false}};"
+                        "function Get-ManagedSolverProcessSample {param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds);"
+                        "[pscustomobject]@{tracked_process_ids=@($RootProcessIds[0]);active_process_ids=@($RootProcessIds[0]);"
+                        "working_set_bytes=1073741824;private_bytes=2147483648;managed_memory_bytes=2147483648;"
+                        "total_processor_time_ticks=0}};"
+                        "function Stop-ManagedSolverProcesses {param([int[]]$ProcessIds)};"
+                        "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path='unused';argument_list=@();"
+                        "stdout='unused';stderr='unused';environment=@{};working_directory=''}});"
+                        f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                        f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
+                        "if(-not$r.resource_budget_exceeded){exit 3};"
+                        f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
+                        "if($receipt.status-ne'resource_pressure_failed' -or"
+                        "$receipt.failure_class-ne'memory_danger_recovery_attempts_exhausted' -or"
+                        "$receipt.scheduler_receipt.termination_requeue_events.Count-ne2 -or"
+                        "$receipt.scheduler_receipt.recovery_relaunch_events.Count-ne2 -or"
+                        "$receipt.scheduler_receipt.recovery_relaunch_events[0].attempt-ne1 -or"
+                        "$receipt.scheduler_receipt.recovery_relaunch_events[1].attempt-ne2){exit 4};"
+                        "if(([datetimeoffset]$receipt.scheduler_receipt.recovery_relaunch_events[0].at_utc-"
+                        "[datetimeoffset]$receipt.scheduler_receipt.termination_requeue_events[0].at_utc).TotalSeconds-lt(45*$script:policyScale)){exit 5}"
+                    )
+                    completed = subprocess.run(
+                        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                        cwd=REPO_ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        timeout=20,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_failed_batch_cancels_its_wave_without_claiming_resource_pressure(self) -> None:
         """A solver failure stops siblings and queued work, preserving its cause."""
@@ -503,17 +498,7 @@ if($scenario-eq'inherited_light'){
                             "per_process_memory_budget_bytes": 1024**2,
                             "memory_safety_factor": 1.10,
                         },
-                        "limits": {
-                            "maximum_concurrency": 2,
-                            "launch_stagger_seconds": 5,
-                            "memory_critical_seconds": 15,
-                            "memory_recovery_stable_seconds": 45,
-                            "maximum_memory_recovery_attempts": 2,
-                            "maximum_memory_danger_termination_attempts": 2,
-                            "memory_admission_reserve_bytes": 1024**3,
-                            "memory_critical_reserve_bytes": 512 * 1024**2,
-                            "cpu_admission_percent": 95.0,
-                        },
+                        "limits": dispatch_limits(),
                     }
                 ),
                 encoding="utf-8",
@@ -523,6 +508,13 @@ if($scenario-eq'inherited_light'){
                 f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "function Get-SystemCpuPercent {[double]0};"
                 "function Get-RepositoryAvailableMemoryBytes {[int64](32GB)};"
+                # These workers execute directly: keep this failure test independent
+                # of machine-wide WMI latency; descendant tracking has its own tests.
+                "function Get-ManagedSolverProcessSample {param($RootProcessIds,$TrackedProcessIds);"
+                "$live=@(Get-Process -Id $RootProcessIds -ErrorAction SilentlyContinue);"
+                "[pscustomobject]@{tracked_process_ids=@($RootProcessIds);"
+                "active_process_ids=@($live|ForEach-Object Id);working_set_bytes=[int64]1MB;"
+                "managed_memory_bytes=[int64]1MB;total_processor_time_ticks=[int64]0}};"
                 "$exe=(Get-Process -Id $PID).Path;"
                 "$specs=@("
                 "[pscustomobject]@{name='fails';file_path=$exe;"
@@ -568,17 +560,7 @@ if($scenario-eq'inherited_light'){
                             "per_process_memory_budget_bytes": 1024**2,
                             "memory_safety_factor": 1.10,
                         },
-                        "limits": {
-                            "maximum_concurrency": 2,
-                            "launch_stagger_seconds": 5,
-                            "memory_critical_seconds": 15,
-                            "memory_recovery_stable_seconds": 45,
-                            "maximum_memory_recovery_attempts": 2,
-                            "maximum_memory_danger_termination_attempts": 2,
-                            "memory_admission_reserve_bytes": 1024**3,
-                            "memory_critical_reserve_bytes": 512 * 1024**2,
-                            "cpu_admission_percent": 95.0,
-                        },
+                        "limits": dispatch_limits(),
                     }
                 ),
                 encoding="utf-8",
@@ -628,17 +610,7 @@ if($scenario-eq'inherited_light'){
                             "per_process_memory_budget_bytes": 5 * 1024**3,
                             "memory_safety_factor": 1.10,
                         },
-                        "limits": {
-                            "maximum_concurrency": 2,
-                            "launch_stagger_seconds": 5,
-                            "memory_critical_seconds": 15,
-                            "memory_recovery_stable_seconds": 45,
-                            "maximum_memory_recovery_attempts": 2,
-                            "maximum_memory_danger_termination_attempts": 2,
-                            "memory_admission_reserve_bytes": 1024**3,
-                            "memory_critical_reserve_bytes": 512 * 1024**2,
-                            "cpu_admission_percent": 95.0,
-                        },
+                        "limits": dispatch_limits(),
                     }
                 ),
                 encoding="utf-8",
@@ -690,17 +662,7 @@ if($scenario-eq'inherited_light'){
                             "per_process_memory_budget_bytes": int(observed_peak * 1.10),
                             "memory_safety_factor": 1.10,
                         },
-                        "limits": {
-                            "maximum_concurrency": 1,
-                            "launch_stagger_seconds": 5,
-                            "memory_critical_seconds": 15,
-                            "memory_recovery_stable_seconds": 45,
-                            "maximum_memory_recovery_attempts": 2,
-                            "maximum_memory_danger_termination_attempts": 2,
-                            "memory_admission_reserve_bytes": 1024**3,
-                            "memory_critical_reserve_bytes": 512 * 1024**2,
-                            "cpu_admission_percent": 95.0,
-                        },
+                        "limits": dispatch_limits(maximum_concurrency=1),
                     }
                 ),
                 encoding="utf-8",
@@ -1569,16 +1531,7 @@ if($scenario-eq'inherited_light'){
                 "role": "simion_repository_dispatch_plan",
                 "particle_count": 1,
                 "estimation": {"kind": "exact_resource_profile"},
-                "limits": {
-                    "maximum_concurrency": 1, "launch_stagger_seconds": 5,
-                    "memory_critical_seconds": 15,
-                    "memory_recovery_stable_seconds": 45,
-                    "maximum_memory_recovery_attempts": 2,
-                    "maximum_memory_danger_termination_attempts": 2,
-                    "memory_admission_reserve_bytes": 1024**3,
-                    "memory_critical_reserve_bytes": 512 * 1024**2,
-                    "cpu_admission_percent": 95.0,
-                },
+                "limits": dispatch_limits(maximum_concurrency=1),
             }), encoding="utf-8")
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
@@ -1624,16 +1577,7 @@ if($scenario-eq'inherited_light'){
                 "role": "simion_repository_dispatch_plan",
                 "particle_count": 1,
                 "estimation": {"kind": "exact_resource_profile"},
-                "limits": {
-                    "maximum_concurrency": 1, "launch_stagger_seconds": 5,
-                    "memory_critical_seconds": 15,
-                    "memory_recovery_stable_seconds": 45,
-                    "maximum_memory_recovery_attempts": 2,
-                    "maximum_memory_danger_termination_attempts": 2,
-                    "memory_admission_reserve_bytes": 1024**3,
-                    "memory_critical_reserve_bytes": 512 * 1024**2,
-                    "cpu_admission_percent": 95.0,
-                },
+                "limits": dispatch_limits(maximum_concurrency=1),
             }), encoding="utf-8")
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (

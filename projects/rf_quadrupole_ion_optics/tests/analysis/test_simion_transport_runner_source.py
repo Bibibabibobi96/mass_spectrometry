@@ -67,6 +67,73 @@ def write_canonical_source(path: Path) -> None:
 
 
 class SimionTransportRunnerSourceTests(unittest.TestCase):
+    def test_adaptive_wave_retains_first_batch_and_failure_inventory(self) -> None:
+        """Execute the shared lifecycle with native work replaced at its boundary."""
+        support = PROJECT_ROOT / "runtime/simion_execution.ps1"
+        script = r"""
+$ErrorActionPreference='Stop'
+. $env:RF_EXECUTION_SUPPORT
+function Initialize-RfSimionPaBasis { "PA build diagnostics" }
+function Initialize-RfSimionPreparedBatch { "IOB build diagnostics" }
+function New-RfSimionFlyProcessSpecification {}
+function Start-ObservedFormalProcess { $script:events+='observe'; return @{process_record='first'} }
+function Update-RfSimionDispatchAfterFormalObservation {
+ $script:events+='replan'
+ if($fail-eq'replan'){throw 'replan-failed'}
+ return @{batches=@{batch_count=2}}
+}
+function Invoke-RfSimionParticleBatchWave {
+ param($BatchRuns,$ExistingProcessRecords=@(),[switch]$Prepared)
+ $script:events+='wave'
+ if($unknown-and(-not$Prepared-or$ExistingProcessRecords.Count-ne1-or$ExistingProcessRecords[0]-ne'first')){throw 'first batch lost'}
+ if(-not$unknown-and($Prepared-or$ExistingProcessRecords.Count)){throw 'unexpected observed batch'}
+ if($fail-eq'wave'){throw 'wave-failed'}
+ return @{ok=$true}
+}
+function Update-HostResourceStage { param($Stage) $script:events+=$Stage; return @{token='same'} }
+function Get-HostResourceBudget { return @{} }
+function Complete-ResourceUsage { $script:events+='usage' }
+function Invoke-FixturePython { $script:events+='publish'; $global:LASTEXITCODE=0; 'profile publication diagnostics' }
+foreach($unknown in @($false,$true)){
+ foreach($fail in @('none','wave','replan')){
+  $script:events=@();$batches=@(@{name='first';config=@{iob='iob';fly2='fly';trajectory_quality=1;rf_steps_per_period=1};lua='lua';log_dir='log'});$caught=$null
+  $kind=if($unknown){'formal_first_batch_observation'}else{'exact_resource_profile'}
+  $run=@{run_id='fixture';execution_batch_count=1}
+  $wave=@{BatchRuns=$batches;PythonExe='Invoke-FixturePython';RepositoryRoot=$PWD;
+   UsagePath=(Join-Path $env:RF_TEST_TEMP 'usage.json');RunDir=$env:RF_TEST_TEMP;
+   DispatchPlanPath='dispatch';BatchPlanPath='batches';HostLease=@{token='same'};
+   SimionExe='fixture';CandidateDir=$PWD;IobPath='iob';RootFly2Path='fly';IobBuilderScript='builder';
+   ProgramSourcePath='program';RootRunConfigLua='lua';InspectScript='inspect';IobReport='report';LogDir='log'}
+  try {
+   $result=Invoke-RfSimionAdaptiveBatchWave -WaveArguments $wave -BatchRuns ([ref]$batches) `
+    -DispatchPlan @{estimation=@{kind=$kind}} -DispatchRequestPath request -ResourceProfilesPath profiles `
+    -RunConfig $run -RunConfigPath (Join-Path $env:RF_TEST_TEMP 'run_config.json') `
+    -PrepareReplannedBatches {param($plan) if($plan.batch_count-ne2){throw 'wrong plan'}; @('first','second')}
+  } catch { $caught=$_.Exception.Message }
+  $expected=if($fail-eq'wave'){'wave-failed'}elseif($unknown-and$fail-eq'replan'){'replan-failed'}else{$null}
+  if($caught-ne$expected){throw "Unexpected error: $caught expected $expected"}
+  if($unknown-and$fail-ne'replan'){
+   if($batches.Count-ne2-or$run.execution_batch_count-ne2){throw 'failure inventory lost replanned batches'}
+  }elseif($batches.Count-ne1){throw 'unobserved batch changed'}
+  $events=@();if($unknown){$events+=@('flight','observe','replan')}
+  if(-not($unknown-and$fail-eq'replan')){$events+='wave'}
+  if(-not$expected){
+   if(@($result).Count-ne1-or-not$result.receipt.ok){throw 'diagnostics polluted return value'}
+   $events+=@('postprocess','usage');if($unknown){$events+='publish'}
+  }
+  if(($script:events-join ',')-ne($events-join ',')){throw "Wrong lifecycle: $script:events"}
+ }
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                cwd=REPO_ROOT, env={**os.environ, "RF_EXECUTION_SUPPORT": str(support),
+                                   "RF_TEST_TEMP": directory},
+                capture_output=True, text=True, encoding="utf-8", timeout=20,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_runner_host_permission_lifecycle_without_solver(self) -> None:
         # Execute the production acquisition/finally AST with an isolated ledger.
         # Only the scientific body and host pressure are fixtures.
@@ -88,8 +155,8 @@ if ($outer.Count -ne 1) { throw 'Expected one protected runner body' }
 $acquire=@($outer[0].Body.Statements | Where-Object { $_.Extent.Text -match '^\$hostExecutionLease = Enter-HostExecutionLease' })
 if ($acquire.Count -ne 1) { throw 'Host acquisition must be inside the protected body' }
 $calls=@($outer[0].Body.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and
-    $n.GetCommandName() -in @('Start-RfSimionFormalFirstBatch','Invoke-RfSimionParticleBatchWave')},$true))
-if ($calls.Count -ne 2 -or @($calls | Where-Object { $_.Extent.StartOffset -lt $acquire[0].Extent.StartOffset }).Count) {
+    $n.GetCommandName() -in @('Invoke-RfSimionAdaptiveBatchWave')},$true))
+if ($calls.Count -ne 1 -or @($calls | Where-Object { $_.Extent.StartOffset -lt $acquire[0].Extent.StartOffset }).Count) {
     throw 'Every solver branch must follow host acquisition'
 }
 $package=@{};$RunId='rf-lease-fixture'
@@ -254,7 +321,7 @@ $hostExecutionOutcome='success'
             for token in (
                 "New-RfSimionCoreRunConfig",
                 "ConvertTo-RfSimionLuaConfig",
-                "Invoke-RfSimionParticleBatchWave",
+                "Invoke-RfSimionAdaptiveBatchWave",
                 "Copy-VerifiedRunInput",
                 "Write-RunDirectoryChecksumInventory",
                 "parent_resolved_design_sha256 = $coreConfig.parent_resolved_design_sha256",

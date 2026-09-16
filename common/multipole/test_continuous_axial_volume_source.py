@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import statistics
 import tempfile
@@ -51,8 +52,9 @@ class ContinuousAxialVolumeSourceTest(unittest.TestCase):
             spec_path = root / "source.json"
             spec_path.write_text(json.dumps(spec()), encoding="utf-8")
             receipt = materialize(spec_path, root / "source.csv", root / "receipt.json")
+            self.assertEqual(receipt["particle_source"]["sha256"],
+                             hashlib.sha256((root / "source.csv").read_bytes()).hexdigest().upper())
         self.assertEqual(receipt["particle_source"]["particle_count"], 5000)
-        self.assertRegex(receipt["particle_source"]["sha256"], r"^[A-F0-9]{64}$")
 
 
 if __name__ == "__main__":

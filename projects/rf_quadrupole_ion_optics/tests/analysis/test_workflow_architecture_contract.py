@@ -94,7 +94,7 @@ EXECUTION_SUPPORT_FUNCTIONS = {
     "Invoke-RfSimionFlyWave",
     "Invoke-RfSimionPreparedBatch",
     "Invoke-RfSimionParticleBatchWave",
-    "Start-RfSimionFormalFirstBatch",
+    "Invoke-RfSimionAdaptiveBatchWave",
     "Update-RfSimionDispatchAfterFormalObservation",
     "Invoke-RfSimionCoreRun",
 }
@@ -462,7 +462,7 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
             for function in (
                 "New-RfSimionCoreRunConfig",
                 "ConvertTo-RfSimionLuaConfig",
-                "Invoke-RfSimionParticleBatchWave",
+                "Invoke-RfSimionAdaptiveBatchWave",
                 "Resolve-MultipoleSimionLayoutTemplate",
                 "Copy-VerifiedRunInput",
                 "Write-RunDirectoryChecksumInventory",
@@ -513,14 +513,12 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
         for runner_path in DEDICATED_RUNNERS:
             runner = _read(runner_path)
             for function in (
-                "Invoke-RfSimionParticleBatchWave",
-                "Start-RfSimionFormalFirstBatch",
-                "Update-RfSimionDispatchAfterFormalObservation",
+                "Invoke-RfSimionAdaptiveBatchWave",
                 "Write-RunDirectoryChecksumInventory",
             ):
                 self.assertRegex(runner, rf"\b{function}\b")
-            self.assertIn("formal_first_batch_observation", runner)
-            self.assertIn("Complete-ResourceUsage", runner)
+            self.assertIn("formal_first_batch_observation", execution_support)
+            self.assertIn("Complete-ResourceUsage", execution_support)
             for retired_control in (
                 "reserve_available_memory_bytes",
                 "memory_safety_numerator",

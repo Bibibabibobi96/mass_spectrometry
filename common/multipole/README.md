@@ -81,6 +81,10 @@ SHA 由项目 `particle_source_profiles.json` 绑定；粒子数等级由公共�
 哈希互相绑定的连续轴向体积快照：它表示离子源内部的一个同一时刻圆柱体状态，位置与三向速度独立采样，
 不预设`z-vz`相关；它不能被解释为已经通过多极杆后的出口束流。
 
+普通 runtime profile 与 campaign 共用 `runtime_profile.py` 的源身份、数值注册表和设计序列化实现；
+普通 profile 在一次解析中只读一次 runtime 注册表。连续体积源的文件字节身份复用
+`common/contracts/file_identity.py`，不另维护哈希算法。
+
 公开生产wrapper只接受`RuntimeProfileId`。runtime profile一次绑定design、particle source、
 solver numerics、资源预算和保留类；CLI不得覆盖几何、RF/DC、源能量或网格物理语义。
 
@@ -141,6 +145,9 @@ SIMION 的输入复制、GEM→PA、已确认仅构建 IOB 的 Lua、cache 物�
 重任务 `flight` 阶段，随后重新准入普通轻任务 `postprocess`。轻任务仍遵守现有资源预算与实时压力检查，
 未知峰值不作为判重依据。case 间的合并和指标分析保留 flight 许可，避免重复切换。
 有 dispatch plan 的单批 flight 也通过公共批执行器检查实时 CPU 和完整内存安全预算，临时不足时等待。
+观察时长、启动间隔、内存余量和恢复次数由 `common/simion/resource_scheduler.py` 生成的冻结
+dispatch plan 传递；PowerShell 检查合法范围及恢复闭合关系，不另锁定默认数值。资源压力回执记录
+实际 critical 阈值和持续时间。
 内部批次复用外层重任务许可，不增加 allocation 文件或
 逐 case 重规划；首批正式进程只在所属 case 内复用，不能跳过后续 control 的首批。
 

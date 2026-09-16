@@ -7,9 +7,10 @@ particle work is divided evenly across those concurrent lanes; no arbitrary
 per-process particle ceiling is imposed.  The same public mechanism also
 schedules a fixed set of independent SIMION jobs (for example, PA basis
 refinements) without inventing project-local CPU or memory controls. With no
-exact resource profile, the first work item is formal work: it has a minimum
-45-second observation, completes its whole lifecycle, and its result is
-retained before sibling work is admitted.
+exact resource profile, the first work item is retained formal work. After the
+configured observation window (or an earlier natural completion), its measured
+peak informs replanning. An active first item continues and counts toward the
+concurrency limit while live resource admission controls sibling starts.
 """
 
 from __future__ import annotations
@@ -48,10 +49,10 @@ MAXIMUM_MEMORY_RECOVERY_ATTEMPTS = 2
 # unresponsive.
 MAXIMUM_MEMORY_DANGER_TERMINATION_ATTEMPTS = 2
 KNOWN_MEMORY_SAFETY_FACTOR = 1.10
-# A formal batch has a minimum 45-second observation and then runs to natural
-# completion before siblings can be admitted.  Its full-lifecycle peak receives
-# the same 10% headroom as an exact historical profile; admission continues to
-# be guarded by the 1 GiB system reserve and live peak checks in the executor.
+# The first formal batch's observed peak receives the same headroom as an
+# exact historical profile. It can remain active after the observation window;
+# the executor retains it and guards sibling admission with the system reserve
+# and live peak checks, including growth beyond the initial observed peak.
 OBSERVED_MEMORY_SAFETY_FACTOR = 1.10
 RESOURCE_IDENTITY_KEYS = (
     "solver", "field_kind", "frontend_grid_profile_id",
@@ -415,7 +416,10 @@ def plan_simion_dispatch(
                 "requires_observation_before_remaining_launches": work_count > first["count"],
                 "observation_seconds": FORMAL_OBSERVATION_SECONDS,
                 "first_batch_result_retained": True,
-                "terminal_action": "observe_first_formal_batch_for_45_seconds_then_replan_remaining_particles",
+                "terminal_action": (
+                    f"observe_first_formal_batch_for_{FORMAL_OBSERVATION_SECONDS}"
+                    "_seconds_then_replan_remaining_particles"
+                ),
             },
             "host": host, "limits": _public_limits(1, 1, 1),
             "waves": [{
@@ -457,7 +461,10 @@ def plan_simion_dispatch(
                 "requires_observation_before_remaining_launches": work_count > first["count"],
                 "observation_seconds": FORMAL_OBSERVATION_SECONDS,
                 "first_batch_result_retained": True,
-                "terminal_action": "observe_first_formal_batch_for_45_seconds_then_replan_remaining_particles",
+                "terminal_action": (
+                    f"observe_first_formal_batch_for_{FORMAL_OBSERVATION_SECONDS}"
+                    "_seconds_then_replan_remaining_particles"
+                ),
             },
             "host": host, "limits": _public_limits(1, 1, 1),
             "waves": [{

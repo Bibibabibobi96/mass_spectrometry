@@ -197,7 +197,7 @@ function Invoke-RfSimionPreparedBatch {
     Initialize-RfSimionPreparedBatch `
         -SimionExe $SimionExe -CandidateDir $CandidateDir -IobPath $IobPath -Fly2Path $Fly2Path `
         -IobBuilderScript $IobBuilderScript -ProgramSourcePath $ProgramSourcePath `
-        -RunConfigLua $RunConfigLua -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir
+        -RunConfigLua $RunConfigLua -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir | Write-Host
     $flySpecification = New-RfSimionFlyProcessSpecification `
         -Name 'batch_001' -SimionExe $SimionExe -CandidateDir $CandidateDir -IobPath $IobPath `
         -Fly2Path $Fly2Path -RunConfigLua $RunConfigLua -IobReport $IobReport -LogDir $LogDir `
@@ -234,11 +234,11 @@ function Invoke-RfSimionParticleBatchWave {
 
     if ($BatchRuns.Count -eq 0) { throw 'SIMION particle batch wave requires at least one batch.' }
     if (-not $Prepared) {
-        Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir -HostLease $HostLease
+        Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir -HostLease $HostLease | Write-Host
         Initialize-RfSimionPreparedBatch -SimionExe $SimionExe -CandidateDir $CandidateDir `
             -IobPath $IobPath -Fly2Path $RootFly2Path -IobBuilderScript $IobBuilderScript `
             -ProgramSourcePath $ProgramSourcePath -RunConfigLua $RootRunConfigLua `
-            -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir
+            -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir | Write-Host
     }
     if (-not $Prepared) {
         $HostLease = Update-HostResourceStage -Lease $HostLease -Stage flight `
@@ -283,42 +283,6 @@ function Invoke-RfSimionParticleBatchWave {
     return $receipt
 }
 
-function Start-RfSimionFormalFirstBatch {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]$HostLease,
-        [Parameter(Mandatory = $true)][string]$SimionExe,
-        [Parameter(Mandatory = $true)][string]$CandidateDir,
-        [Parameter(Mandatory = $true)][string]$IobPath,
-        [Parameter(Mandatory = $true)][string]$RootFly2Path,
-        [Parameter(Mandatory = $true)][string]$IobBuilderScript,
-        [Parameter(Mandatory = $true)][string]$ProgramSourcePath,
-        [Parameter(Mandatory = $true)][string]$RootRunConfigLua,
-        [Parameter(Mandatory = $true)][string]$InspectScript,
-        [Parameter(Mandatory = $true)][string]$IobReport,
-        [Parameter(Mandatory = $true)][string]$LogDir,
-        [Parameter(Mandatory = $true)][int]$TrajectoryQuality,
-        [Parameter(Mandatory = $true)][int]$RfStepsPerPeriod,
-        [Parameter(Mandatory = $true)]$FirstBatchRun,
-        [Parameter(Mandatory = $true)][string]$DispatchPlanPath
-    )
-    Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir -HostLease $HostLease
-    Initialize-RfSimionPreparedBatch -SimionExe $SimionExe -CandidateDir $CandidateDir `
-        -IobPath $IobPath -Fly2Path $RootFly2Path -IobBuilderScript $IobBuilderScript `
-        -ProgramSourcePath $ProgramSourcePath -RunConfigLua $RootRunConfigLua `
-        -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir
-    $HostLease = Update-HostResourceStage -Lease $HostLease -Stage flight `
-      -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
-    $specification = New-RfSimionFlyProcessSpecification -Name ([string]$FirstBatchRun.name) `
-        -SimionExe $SimionExe -CandidateDir $CandidateDir -IobPath ([string]$FirstBatchRun.config.iob) `
-        -Fly2Path ([string]$FirstBatchRun.config.fly2) -RunConfigLua ([string]$FirstBatchRun.lua) `
-        -IobReport $IobReport -LogDir ([string]$FirstBatchRun.log_dir) `
-        -TrajectoryQuality ([int]$FirstBatchRun.config.trajectory_quality) `
-        -RfStepsPerPeriod ([int]$FirstBatchRun.config.rf_steps_per_period)
-    return Start-ObservedFormalProcess -DispatchPlanPath $DispatchPlanPath `
-        -ProcessSpecification $specification
-}
-
 function Update-RfSimionDispatchAfterFormalObservation {
     [CmdletBinding()]
     param(
@@ -356,6 +320,66 @@ function Update-RfSimionDispatchAfterFormalObservation {
     return [pscustomobject]@{
         dispatch = Get-Content -LiteralPath $DispatchPlanPath -Raw -Encoding UTF8 | ConvertFrom-Json
         batches = Get-Content -LiteralPath $BatchPlanPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+}
+
+function Invoke-RfSimionAdaptiveBatchWave {
+    <# Preserve the first formal batch across replanning; workflows own batch inputs. #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][hashtable]$WaveArguments,
+        [Parameter(Mandatory)][ref]$BatchRuns,
+        [Parameter(Mandatory)]$DispatchPlan,
+        [Parameter(Mandatory)][string]$DispatchRequestPath,
+        [Parameter(Mandatory)][string]$ResourceProfilesPath,
+        [Parameter(Mandatory)][scriptblock]$PrepareReplannedBatches,
+        [Parameter(Mandatory)]$RunConfig,
+        [Parameter(Mandatory)][string]$RunConfigPath
+    )
+    $arguments = $WaveArguments.Clone()
+    $observed = [string]$DispatchPlan.estimation.kind -eq 'formal_first_batch_observation'
+    if ($observed) {
+        Initialize-RfSimionPaBasis -SimionExe $arguments.SimionExe -CandidateDir $arguments.CandidateDir -HostLease $arguments.HostLease | Write-Host
+        Initialize-RfSimionPreparedBatch -SimionExe $arguments.SimionExe -CandidateDir $arguments.CandidateDir `
+            -IobPath $arguments.IobPath -Fly2Path $arguments.RootFly2Path -IobBuilderScript $arguments.IobBuilderScript `
+            -ProgramSourcePath $arguments.ProgramSourcePath -RunConfigLua $arguments.RootRunConfigLua `
+            -InspectScript $arguments.InspectScript -IobReport $arguments.IobReport -LogDir $arguments.LogDir | Write-Host
+        $arguments.HostLease = Update-HostResourceStage -Lease $arguments.HostLease -Stage flight `
+            -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
+        $first = $arguments.BatchRuns[0]
+        $spec = New-RfSimionFlyProcessSpecification -Name $first.name `
+            -SimionExe $arguments.SimionExe -CandidateDir $arguments.CandidateDir -IobPath $first.config.iob `
+            -Fly2Path $first.config.fly2 -RunConfigLua $first.lua -IobReport $arguments.IobReport -LogDir $first.log_dir `
+            -TrajectoryQuality $first.config.trajectory_quality -RfStepsPerPeriod $first.config.rf_steps_per_period
+        $observation = Start-ObservedFormalProcess -DispatchPlanPath $arguments.DispatchPlanPath -ProcessSpecification $spec
+        $replanned = Update-RfSimionDispatchAfterFormalObservation `
+            -PythonExe $arguments.PythonExe -RepositoryRoot $arguments.RepositoryRoot `
+            -DispatchRequestPath $DispatchRequestPath -ResourceProfilesPath $ResourceProfilesPath `
+            -DispatchPlanPath $arguments.DispatchPlanPath -BatchPlanPath $arguments.BatchPlanPath `
+            -Observation $observation
+        $arguments.BatchRuns = @(& $PrepareReplannedBatches $replanned.batches)
+        $BatchRuns.Value = $arguments.BatchRuns
+        $arguments.ExistingProcessRecords = @($observation.process_record)
+        $arguments.Prepared = $true
+        $RunConfig.execution_batch_count = [int]$replanned.batches.batch_count
+        $RunConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $RunConfigPath -Encoding UTF8
+    }
+    $receipt = Invoke-RfSimionParticleBatchWave @arguments
+    $lease = Update-HostResourceStage -Lease $arguments.HostLease -Stage postprocess `
+        -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
+    Complete-ResourceUsage -RunDir $arguments.RunDir -UsagePath $arguments.UsagePath | Out-Null
+    $profile = $null
+    if ($observed) {
+        $profile = Join-Path (Split-Path -Parent $arguments.UsagePath) 'simion_resource_profile.json'
+        Push-Location $arguments.RepositoryRoot
+        try {
+            & $arguments.PythonExe -m common.simion.resource_profile publish --run-id $RunConfig.run_id `
+                --resource-usage $arguments.UsagePath --dispatch-plan $arguments.DispatchPlanPath --output $profile | Write-Host
+            if ($LASTEXITCODE -ne 0) { throw 'SIMION resource profile publication failed.' }
+        } finally { Pop-Location }
+    }
+    return [pscustomobject]@{
+        receipt = $receipt; lease = $lease; batches = $arguments.BatchRuns; resource_profile = $profile
     }
 }
 

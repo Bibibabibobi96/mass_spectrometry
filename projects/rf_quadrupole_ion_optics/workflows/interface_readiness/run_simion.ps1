@@ -498,49 +498,23 @@ function New-InterfaceBatchRuns {
 }
 $batchRuns=@(New-InterfaceBatchRuns -PlanDocument $batchPlanDocument)
 $resourceUsage = Join-Path $resultDir 'simion_resource_usage.json'
-$resourceIdentityWasUnknown=([string]$dispatchPlanDocument.estimation.kind-eq'formal_first_batch_observation')
-$existingProcessRecords=@()
-# One token follows preparation, refinement, flight and publication.
 $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
-if($resourceIdentityWasUnknown){
-  $observation=Start-RfSimionFormalFirstBatch -HostLease $hostExecutionLease -SimionExe $simion -CandidateDir $candidateDir `
-    -IobPath ([string]$coreConfig.iob) -RootFly2Path ([string]$coreConfig.fly2) `
-    -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource -RootRunConfigLua $runConfigLua `
-    -InspectScript $inspectScript -IobReport $iobReport -LogDir $logDir `
-    -TrajectoryQuality ([int]$coreConfig.trajectory_quality) -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period) `
-    -FirstBatchRun $batchRuns[0] -DispatchPlanPath $dispatchPlan
-  $replanned=Update-RfSimionDispatchAfterFormalObservation -PythonExe $python `
-    -RepositoryRoot $repoRoot -DispatchRequestPath $dispatchRequest `
-    -ResourceProfilesPath $resourceProfiles -DispatchPlanPath $dispatchPlan `
-    -BatchPlanPath $batchPlan -Observation $observation
-  $dispatchPlanDocument=$replanned.dispatch;$batchPlanDocument=$replanned.batches
-  $batchRuns=@(New-InterfaceBatchRuns -PlanDocument $batchPlanDocument -ReuseFirst $true)
-  $existingProcessRecords=@($observation.process_record)
-  $runConfig.execution_batch_count=[int]$batchPlanDocument.batch_count
-  $runConfig|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfigPath -Encoding UTF8
+$waveArguments = @{
+    HostLease=$hostExecutionLease; SimionExe=$simion; CandidateDir=$candidateDir
+    IobPath=[string]$coreConfig.iob; RootFly2Path=[string]$coreConfig.fly2
+    IobBuilderScript=$iobBuilder; ProgramSourcePath=$programSource; RootRunConfigLua=$runConfigLua
+    InspectScript=$inspectScript; IobReport=$iobReport; LogDir=$logDir
+    TrajectoryQuality=[int]$coreConfig.trajectory_quality; RfStepsPerPeriod=[int]$coreConfig.rf_steps_per_period
+    BatchRuns=$batchRuns; BatchPlanPath=$batchPlan; DispatchPlanPath=$dispatchPlan
+    RunDir=$runDir; UsagePath=$resourceUsage; PythonExe=$python; RepositoryRoot=$repoRoot
 }
-$waveReceipt = Invoke-RfSimionParticleBatchWave -HostLease $hostExecutionLease -SimionExe $simion -CandidateDir $candidateDir `
-    -IobPath ([string]$coreConfig.iob) -RootFly2Path ([string]$coreConfig.fly2) `
-    -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource -RootRunConfigLua $runConfigLua `
-    -InspectScript $inspectScript -IobReport $iobReport -LogDir $logDir `
-    -TrajectoryQuality ([int]$coreConfig.trajectory_quality) -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period) `
-    -BatchRuns $batchRuns -BatchPlanPath $batchPlan -DispatchPlanPath $dispatchPlan `
-    -RunDir $runDir -UsagePath $resourceUsage -PythonExe $python -RepositoryRoot $repoRoot `
-    -ExistingProcessRecords $existingProcessRecords -Prepared:$resourceIdentityWasUnknown
-$hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
-  -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
-Complete-ResourceUsage -RunDir $runDir -UsagePath $resourceUsage | Out-Null
-
-$resourceProfile = $null
-if ($resourceIdentityWasUnknown) {
-    $resourceProfile = Join-Path $resultDir 'simion_resource_profile.json'
-    Push-Location $repoRoot
-    try {
-        & $python -m common.simion.resource_profile publish --run-id $RunId `
-            --resource-usage $resourceUsage --dispatch-plan $dispatchPlan --output $resourceProfile
-        if ($LASTEXITCODE -ne 0) { throw 'SIMION resource profile publication failed.' }
-    } finally { Pop-Location }
-}
+$wave = Invoke-RfSimionAdaptiveBatchWave -WaveArguments $waveArguments -BatchRuns ([ref]$batchRuns) `
+    -DispatchPlan $dispatchPlanDocument `
+    -DispatchRequestPath $dispatchRequest -ResourceProfilesPath $resourceProfiles `
+    -RunConfig $runConfig -RunConfigPath $runConfigPath `
+    -PrepareReplannedBatches { param($plan) New-InterfaceBatchRuns -PlanDocument $plan -ReuseFirst $true }
+$hostExecutionLease=$wave.lease; $batchRuns=@($wave.batches)
+$waveReceipt=$wave.receipt; $resourceProfile=$wave.resource_profile
 
 $summary = Get-Content -LiteralPath $summaryJson -Raw | ConvertFrom-Json
 if ($summary.particles -ne $expectedParticles -or $summary.collision_model -ne 'none' -or

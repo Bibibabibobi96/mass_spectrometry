@@ -568,6 +568,26 @@ class RuntimeProfileTests(unittest.TestCase):
                 ).read_text(encoding="utf-8-sig")
                 self.assertNotIn("config\\baseline.json", source)
 
+    def test_runtime_registry_is_read_once_and_rejects_nontext_paths(self) -> None:
+        project = "rf_hexapole_ion_optics"
+        path = REPO_ROOT / "projects" / project / "config/runtime_profiles.json"
+        original_load = runtime_profile._load
+        for value in (None, 123, [], True, "config/comsol_solver_numerics.json"):
+            calls = []
+            def load(selected: Path) -> dict:
+                document = original_load(selected)
+                if selected == path:
+                    calls.append(selected)
+                    document["solver_numerics_registry_paths"] = {"comsol": value}
+                return document
+            with self.subTest(value=value), patch.object(runtime_profile, "_load", side_effect=load):
+                if isinstance(value, str):
+                    resolve_runtime_profile(REPO_ROOT, project, "no_acceleration_full_length")
+                else:
+                    with self.assertRaisesRegex(ValueError, "registry path is invalid"):
+                        resolve_runtime_profile(REPO_ROOT, project, "no_acceleration_full_length")
+                self.assertEqual(len(calls), 1)
+
     def test_unknown_runtime_profile_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "unknown runtime profile"):
             resolve_runtime_profile(

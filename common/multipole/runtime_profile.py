@@ -81,96 +81,17 @@ def resolve_runtime_profile(
     if stop_stage not in {"transport", "mesh_build", "field_solve"}:
         raise ValueError(f"unsupported runtime stop stage: {stop_stage}")
     design = resolve_design_profile(repo_root, project_id, profile["design_profile_id"])
-    design_serializable = {
-        **design,
-        "project_root": str(design["project_root"]),
-        "descriptor_path": str(design["descriptor_path"]),
-        "registry_path": str(design["registry_path"]),
-        "profiles_path": str(design["profiles_path"]),
-        "paths": {key: str(value) for key, value in design["paths"].items()},
-    }
-
-    source_registry_path = project_root / "config" / "particle_source_profiles.json"
-    source_registry = _load(source_registry_path)
-    _require_keys(
-        source_registry,
-        {"schema_version", "role", "project_id", "profiles"},
-        "particle-source registry",
+    design_serializable = _serializable_design(design)
+    source = _resolve_particle_source(
+        repo_root, project_root, project_id, profile["particle_source_profile_id"]
     )
-    if (
-        source_registry["schema_version"] != 1
-        or source_registry["role"] != "multipole_particle_source_profiles"
-        or source_registry["project_id"] != project_id
-    ):
-        raise ValueError("particle-source registry identity differs")
-    source_id = profile["particle_source_profile_id"]
-    source_profile = source_registry["profiles"].get(source_id)
-    if not isinstance(source_profile, dict):
-        raise ValueError(f"unknown particle-source profile: {source_id}")
-    if not isinstance(source_profile, dict) or set(source_profile) not in (
-        {"path", "sha256"}, {"path", "sha256", "volume_snapshot_receipt"}
-    ):
-        raise ValueError("particle-source profile keys differ")
-    source_path = (repo_root / source_profile["path"]).resolve()
-    if not source_path.is_relative_to(repo_root.resolve()):
-        raise ValueError("particle-source profile escapes the repository")
-    if _sha256(source_path) != str(source_profile["sha256"]).upper():
-        raise ValueError("particle-source SHA-256 differs from its profile")
-    source_snapshot_receipt: dict[str, str] | None = None
-    if "volume_snapshot_receipt" in source_profile:
-        receipt_profile = source_profile["volume_snapshot_receipt"]
-        if not isinstance(receipt_profile, dict) or set(receipt_profile) != {"path", "sha256"}:
-            raise ValueError("volume-source receipt profile is invalid")
-        receipt_path = (repo_root / receipt_profile["path"]).resolve()
-        if not receipt_path.is_relative_to(repo_root.resolve()) or not receipt_path.is_file():
-            raise ValueError("volume-source receipt profile escapes the repository")
-        receipt_sha256 = _sha256(receipt_path)
-        if receipt_sha256 != str(receipt_profile["sha256"]).upper():
-            raise ValueError("volume-source receipt SHA-256 differs from its profile")
-        source_snapshot_receipt = {"path": str(receipt_path), "sha256": receipt_sha256}
-
-    numerics: dict[str, Any] = {}
-    numerics_paths: dict[str, str] = {}
-    configured_paths = registry.get("solver_numerics_registry_paths", {})
-    if not isinstance(configured_paths, dict) or set(configured_paths) - {
-        "comsol",
-        "simion",
-    }:
-        raise ValueError("solver-numerics registry paths are invalid")
-    for solver in ("comsol", "simion"):
-        relative_path = configured_paths.get(
-            solver, f"config/{solver}_solver_numerics.json"
+    registry_paths, _, _ = _solver_registry_paths(project_root, project_id, registry)
+    numerics = {
+        solver: _resolve_solver_profile(
+            path, project_id, solver, profile[f"{solver}_solver_numerics_profile_id"]
         )
-        if not isinstance(relative_path, str):
-            raise ValueError(f"{solver} solver-numerics registry path is invalid")
-        path = (project_root / relative_path).resolve()
-        if not path.is_relative_to(project_root.resolve()):
-            raise ValueError(f"{solver} solver-numerics registry escapes the project")
-        contract = _load(path)
-        _require_keys(
-            contract,
-            {"schema_version", "role", "project_id", "profiles"},
-            f"{solver} solver-numerics registry",
-        )
-        expected_role = f"multipole_{solver}_solver_numerics_profiles"
-        if (
-            contract["schema_version"] != 1
-            or contract["role"] != expected_role
-            or contract["project_id"] != project_id
-        ):
-            raise ValueError(f"{solver} solver-numerics registry identity differs")
-        profile_id = profile[f"{solver}_solver_numerics_profile_id"]
-        selected = contract["profiles"].get(profile_id)
-        if not isinstance(selected, dict):
-            raise ValueError(f"unknown {solver} solver-numerics profile: {profile_id}")
-        if solver == "simion":
-            selected = normalize_simion_solver_numerics(selected)
-        numerics[solver] = {
-            "profile_id": profile_id,
-            "values": selected,
-            "registry_sha256": _sha256(path),
-        }
-        numerics_paths[solver] = str(path.resolve())
+        for solver, path in registry_paths.items()
+    }
 
     budget_relative_path = profile.get(
         "engineering_budget_path",
@@ -194,17 +115,11 @@ def resolve_runtime_profile(
         "stop_stage": stop_stage,
         "design_profile_id": profile["design_profile_id"],
         "design_profile_resolution": design_serializable,
-        "particle_source": {
-            "profile_id": source_id,
-            "path": str(source_path),
-            "sha256": _sha256(source_path),
-            "registry_path": str(source_registry_path.resolve()),
-            "registry_sha256": _sha256(source_registry_path),
-            **({"volume_snapshot_receipt": source_snapshot_receipt}
-               if source_snapshot_receipt is not None else {}),
-        },
+        "particle_source": source,
         "solver_numerics": numerics,
-        "solver_numerics_registry_paths": numerics_paths,
+        "solver_numerics_registry_paths": {
+            solver: str(path) for solver, path in registry_paths.items()
+        },
         "engineering_budget": {
             "path": str(budget_path),
             "sha256": _sha256(budget_path),
@@ -357,10 +272,11 @@ def _resolve_particle_source(
 
 
 def _solver_registry_paths(
-    project_root: Path, project_id: str
+    project_root: Path, project_id: str, runtime_registry: dict[str, Any] | None = None
 ) -> tuple[dict[str, Path], dict[str, Any], Path]:
     runtime_registry_path = project_root / "config" / "runtime_profiles.json"
-    runtime_registry = _load(runtime_registry_path)
+    if runtime_registry is None:
+        runtime_registry = _load(runtime_registry_path)
     if (
         runtime_registry.get("schema_version") != 2
         or runtime_registry.get("role") != "multipole_transport_runtime_profiles"
@@ -370,6 +286,9 @@ def _solver_registry_paths(
     configured = runtime_registry.get("solver_numerics_registry_paths", {})
     if not isinstance(configured, dict) or set(configured) - {"comsol", "simion"}:
         raise ValueError("solver-numerics registry paths are invalid")
+    for solver, value in configured.items():
+        if not isinstance(value, str):
+            raise ValueError(f"{solver} solver-numerics registry path is invalid")
     paths = {
         solver: _project_file(
             project_root,
