@@ -101,5 +101,5 @@ launcher 启动后立即登记 PID；等待报告和长时间 Compute 期间持�
 Einzel 和 LIT 的构建、CPT阶段同样共享上下文，以读取该次生成的模型；不得从全局目录选取旧模型。
 独立试验使用不同容器，禁止向已发布终态run追加或覆盖模型。可引用运行仍由调用方按
 [生命周期](../../docs/LIFECYCLE.md)冻结输入、summary与manifest；临时测试在scratch执行后按该规则清理。
-`common/paths/test_common_artifact_paths_contract.py`检查这16个入口的显式参数与路径路由，属于静态验证，
-不代表MATLAB路径行为或真实COMSOL求解已验收。
+[路径回归说明](../paths/README.md)提供组件显式上下文的静态检查和独立 MATLAB 路径行为测试；
+两者均不代表真实 COMSOL 求解已经验收。
