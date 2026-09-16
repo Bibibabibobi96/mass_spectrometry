@@ -66,7 +66,7 @@ class ChangedGateContractTests(unittest.TestCase):
             ],
             cwd=REPO_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
             timeout=30,
             check=False,
         )
@@ -144,7 +144,7 @@ class ChangedGateContractTests(unittest.TestCase):
         result = subprocess.run([pwsh, "-NoProfile", "-File", str(CHANGED_GATE), "-PythonExe", sys.executable,
                                  "-PlanOnly", "-ChangedPath", "common/host_resource_python.ps1"],
                                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
-                                errors="replace", timeout=30)
+                                timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
         self.assertIsNotNone(selected, result.stdout)
@@ -154,7 +154,7 @@ class ChangedGateContractTests(unittest.TestCase):
                   "$stages=@($routes|Where-Object repository_integration_group -eq 'fast'|ForEach-Object stage);"
                   "ConvertTo-Json -Compress -InputObject $stages")
         result = subprocess.run([pwsh, "-NoProfile", "-Command", script], cwd=REPO_ROOT,
-                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+                                capture_output=True, text=True, encoding="utf-8", timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout).count(stage), 1)
 
@@ -180,11 +180,11 @@ class ChangedGateContractTests(unittest.TestCase):
             ],
             cwd=REPO_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
             timeout=90,
             check=False,
         )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn(
             "GATE_STAGE=RUN NAME=rf_multipole_to_single_reflection_"
             "oatof_integration REASON=integration_test_modules_changed",
@@ -214,7 +214,7 @@ class ChangedGateContractTests(unittest.TestCase):
             ],
             cwd=REPO_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
             timeout=30,
             check=False,
         )
@@ -290,7 +290,7 @@ class ChangedGateContractTests(unittest.TestCase):
                 ],
                 cwd=REPO_ROOT,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8",
                 timeout=30,
                 check=False,
             )
@@ -326,7 +326,7 @@ class ChangedGateContractTests(unittest.TestCase):
             ],
             cwd=REPO_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
             timeout=30,
             check=False,
         )
@@ -529,7 +529,7 @@ class ChangedGateContractTests(unittest.TestCase):
                 )
                 completed = subprocess.run(
                     [pwsh, "-NoProfile", "-Command", command], cwd=REPO_ROOT,
-                    capture_output=True, text=True, timeout=30, check=False,
+                    capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
                 )
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
