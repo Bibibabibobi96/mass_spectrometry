@@ -20,7 +20,8 @@ end
 
 local operation_order={}
 local function pa(label,nx,ny,nz,dx,dy,dz)
-  local value={nx=nx,ny=ny,nz=nz,dx_mm=dx,dy_mm=dy,dz_mm=dz,calls={},load_calls={}}
+  local value={nx=nx,ny=ny,nz=nz,dx_mm=dx,dy_mm=dy,dz_mm=dz,
+    symmetry='3dplanar',potential_type='electrostatic',calls={},load_calls={},field_calls={}}
   function value:fast_adjust(voltages)
     operation_order[#operation_order+1]=label..':fast_adjust'
     self.calls[#self.calls+1]=copy_table(voltages)
@@ -32,6 +33,11 @@ local function pa(label,nx,ny,nz,dx,dy,dz)
       self.owner.filename=path:gsub('\\','/'):match('([^/]+)$')
     end
   end
+  function value:field_vc(x,y,z)
+    assert(self.field_value,'field_vc called on a non-response PA')
+    self.field_calls[#self.field_calls+1]={x=x,y=y,z=z}
+    return self.field_value[1],self.field_value[2],self.field_value[3]
+  end
   return value
 end
 
@@ -41,6 +47,40 @@ local instances={
   {filename='accelerator.pa0',scale=1,pa=pa('accelerator',101,101,101,1,1,1)},
   {filename='detector_ground.pa0',scale=1,pa=pa('detector',3,3,8,1,1,0.05)},
 }
+local standalone_dynamic=run_mode=='successor_standalone_dynamic'
+local standalone_sidecars={}
+if standalone_dynamic then
+  local dynamic_directory='C:/rf_oatof_operating_pa_test'
+  instances={
+    {filename='flight_tube_ground.pa0',scale=1,pa=pa('flight',2001,501,2,1,1,1)},
+    {filename=dynamic_directory..'/coarse_frontend__off_static.pa',scale=1,
+      pa=pa('coarse',101,101,101,1,1,1)},
+    {filename=dynamic_directory..'/accelerator_main__off_static.pa',scale=1,
+      pa=pa('accelerator',101,101,101,1,1,1)},
+    {filename=dynamic_directory..'/upstream_bridge__off_static.pa',scale=1,
+      pa=pa('upstream',101,101,101,1,1,1)},
+    {filename='reflectron.pa0',scale=1,pa=pa('reflectron',2001,501,2,1,1,1)},
+    {filename=dynamic_directory..'/accelerator_entrance_local__off_static.pa',scale=1,
+      pa=pa('local',101,101,101,1,1,1)},
+    {filename='detector_ground.pa0',scale=1,pa=pa('detector',3,3,8,1,1,0.05)},
+  }
+  local carriers={
+    coarse_frontend=instances[2].pa,
+    accelerator_main=instances[3].pa,
+    upstream_bridge=instances[4].pa,
+    accelerator_entrance_local=instances[6].pa,
+  }
+  for role,carrier in pairs(carriers) do
+    local rf=pa(role..'_rf',carrier.nx,carrier.ny,carrier.nz,
+      carrier.dx_mm,carrier.dy_mm,carrier.dz_mm)
+    rf.field_value={1,2,3}
+    standalone_sidecars[dynamic_directory..'/'..role..'__rf_differential.pa']=rf
+    local pulse=pa(role..'_pulse',carrier.nx,carrier.ny,carrier.nz,
+      carrier.dx_mm,carrier.dy_mm,carrier.dz_mm)
+    pulse.field_value={4,5,6}
+    standalone_sidecars[dynamic_directory..'/'..role..'__pulse_delta.pa']=pulse
+  end
+end
 if run_mode:match('^successor_overlay') then
   instances[5]={filename='accelerator_overlay.pa0',scale=1,
     pa=pa('overlay',101,101,101,1,1,1)}
@@ -57,11 +97,15 @@ for index,instance in ipairs(instances) do
     operation_order[#operation_order+1]=(index==3 and 'accelerator' or tostring(index))..':debug_update_size'
   end
   function instance:inside_wc(_,_,_) return false end
+  function instance:wb_to_pa_coords(x,y,z) return x,y,z end
 end
 simion={
   workbench_program=function() end,
   early_access=function(_) end,
   wb={instances=instances},
+  pas={open=function(_,path)
+    return assert(standalone_sidecars[path],'unknown standalone sidecar '..tostring(path))
+  end},
 }
 
 assert(dofile(program_path)==nil, 'combined Program unexpectedly returned a value')
@@ -108,11 +152,64 @@ elseif successor then
   callbacks.__successor_test_set_adjustable('handoff_pulse_width_us',0.5)
 end
 callbacks.initialize_run()
+if standalone_dynamic then
+  for _,index in ipairs({2,3,4,6}) do
+    assert(#instances[index].pa.calls==0,
+      'standalone carrier received native fast_adjust at instance '..index)
+  end
+  local function field_count(role,kind)
+    return #standalone_sidecars['C:/rf_oatof_operating_pa_test/'..role..'__'..kind..'.pa'].field_calls
+  end
+  adj_elect=setmetatable({}, {__newindex=function(table,key,value)
+    error('standalone dynamic instance wrote adj_elect '..tostring(key))
+  end})
+  ion_number=1; ion_instance=6; ion_time_of_flight=0.8
+  ion_px_mm=1; ion_py_mm=2; ion_pz_mm=3
+  ion_dvoltsx_gu=10; ion_dvoltsy_gu=20; ion_dvoltsz_gu=30
+  callbacks.fast_adjust()
+  callbacks.efield_adjust()
+  local coefficient1=100*math.cos(2*math.pi*1.05)
+  assert(math.abs(ion_dvoltsx_gu-(10-coefficient1-4))<1e-8)
+  assert(math.abs(ion_dvoltsy_gu-(20-2*coefficient1-5))<1e-8)
+  assert(math.abs(ion_dvoltsz_gu-(30-3*coefficient1-6))<1e-8)
+  assert(field_count('accelerator_entrance_local','rf_differential')==1 and
+    field_count('accelerator_entrance_local','pulse_delta')==1,
+    'local step did not use exactly RF plus pulse-delta responses')
+  assert(field_count('accelerator_main','rf_differential')==0 and
+    field_count('accelerator_main','pulse_delta')==0,
+    'local field incorrectly superimposed accelerator-main responses')
+
+  ion_number=2; ion_instance=6; ion_time_of_flight=0.8
+  ion_dvoltsx_gu=10; ion_dvoltsy_gu=20; ion_dvoltsz_gu=30
+  callbacks.efield_adjust()
+  local coefficient2=100*math.cos(2*math.pi*1.8)
+  assert(math.abs(ion_dvoltsx_gu-(10-coefficient2))<1e-8,
+    'standalone RF coefficient did not use particle canonical time')
+  assert(field_count('accelerator_entrance_local','rf_differential')==2 and
+    field_count('accelerator_entrance_local','pulse_delta')==1,
+    'standalone callback exceeded RF plus optional pulse-delta queries per step')
+  print('SUCCESSOR_STANDALONE_DYNAMIC_FIELDS=PASS')
+  return
+end
 if time_series then
   assert(#instances[2].pa.calls==0,
     'pre-pulse time-series adjusted the reflectron PA')
   assert(#instances[3].pa.calls==2,
     'pre-pulse time-series accelerator/frontend adjustment count changed')
+  local order={}
+  adj_elect=setmetatable({}, {__newindex=function(table,key,value)
+    order[#order+1]=key; rawset(table,key,value)
+  end})
+  ion_number=1; ion_instance=3; ion_time_of_flight=0.001
+  callbacks.fast_adjust()
+  assert(#order==8 and order[1]==1 and order[8]==8,
+    'pre-pulse time-series did not update all RF rods')
+  local phase=100*math.cos(2*math.pi*0.251)
+  for electrode=1,8 do
+    local expected=electrode%2==0 and phase or -phase
+    assert(math.abs(adj_elect[electrode]-expected)<=1e-8,
+      'pre-pulse time-series RF phase changed at electrode '..electrode)
+  end
   print('SUCCESSOR_TIME_SERIES_HELD_OFF_MODE=PASS')
   return
 end
@@ -166,12 +263,19 @@ local function run_fast(instance_id, elapsed_us, mode)
   return adj_elect,order
 end
 
-local pre,pre_order=run_fast(3,0,1)
--- This callback fixture has no RF source.  The static off-state was seeded in
--- initialize_run, so a continuous callback before the pulse must do no work.
-assert(#pre_order==0,'pre-pulse callback rewrote initialized static electrodes')
-for electrode=1,19 do assert(pre[electrode]==nil,
-  'pre-pulse callback rewrote electrode '..electrode) end
+local pre,pre_order=run_fast(3,0.001,1)
+-- The RF object is shared by initialize_run and later callbacks.  A pulse-off
+-- continuous ion must therefore update all eight rods at its actual phase;
+-- a function-local shadow in initialize_run would incorrectly make this empty.
+assert(#pre_order==8 and pre_order[1]==1 and pre_order[8]==8,
+  'pre-pulse RF electrode write order changed')
+local pre_phase=100*math.cos(2*math.pi*0.251)
+for electrode=1,8 do
+  near(pre[electrode],electrode%2==0 and pre_phase or -pre_phase,
+    'pre-pulse RF electrode '..electrode,1e-8)
+end
+for electrode=9,19 do assert(pre[electrode]==nil,
+  'pre-pulse callback rewrote static electrode '..electrode) end
 
 local active,active_order=run_fast(3,0.75,1)
 assert(#active_order==19 and active_order[1]==1 and active_order[19]==19,
@@ -209,18 +313,19 @@ end
 set_callback_value('handoff_pulse_mode',1)
 set_callback_value('handoff_pulse_time_us',1)
 set_callback_value('handoff_pulse_width_us',0.5)
+set_callback_value('handoff_pulse_mode',2)
+set_particle(1,3,0.501,100,1,1)
+callbacks.tstep_adjust()
+near(ion_time_step,0.00525,'continuous absolute RF-grid landing cap',1e-12)
+
+set_particle(1,1,0.501,100,1,1)
+callbacks.tstep_adjust()
+near(ion_time_step,0.00525,'global continuous RF-grid landing cap',1e-12)
+
+set_callback_value('handoff_pulse_mode',1)
 set_particle(1,1,0.65,100,1,1)
 callbacks.tstep_adjust()
-near(ion_time_step,0.1,'pulse rising-edge timestep',1e-12)
-
-set_callback_value('handoff_pulse_mode',2)
-set_particle(1,3,0.75,100,1,1)
-callbacks.tstep_adjust()
-near(ion_time_step,0.00625,'RF 160-step cap',1e-12)
-
-set_particle(1,1,0.75,100,1,1)
-callbacks.tstep_adjust()
-near(ion_time_step,1,'non-frontend timestep must not receive RF cap',1e-12)
+near(ion_time_step,0.00625,'RF grid before pulse rising edge',1e-12)
 set_callback_value('handoff_pulse_mode',1)
 set_particle(1,1,90.7,100,1,1)
 callbacks.tstep_adjust()

@@ -94,6 +94,7 @@ $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
 . $runtime.run_artifact_support
 . (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+. (Join-Path $repoRoot 'common\simion\short_pa_path_support.ps1')
 
 function Invoke-SingleFlightPython {
   param(
@@ -117,6 +118,294 @@ function Invoke-SingleFlightPython {
   } finally { Restore-RunEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE') -Snapshot $saved }
 }
 
+function Resolve-RfNativeOperatingPaCompanion {
+  <# Build operating points only while the native PA0 family is still in its
+     writable pre-publication staging.  On published family members are never
+     accepted as a synthesis source. #>
+  param(
+    [Parameter(Mandatory)][string]$Name,
+    [Parameter(Mandatory)][string]$ControllerBasename,
+    [Parameter(Mandatory)][string]$FamilyRole,
+    [Parameter(Mandatory)][string]$FamilyCacheKey,
+    [Parameter(Mandatory)][string]$FamilyDirectory,
+    [Parameter(Mandatory)][string]$OperatingCacheRoot,
+    [Parameter(Mandatory)][string]$Exporter,
+    [Parameter(Mandatory)][string]$Adapter,
+    [Parameter(Mandatory)][string]$Upstream,
+    [Parameter(Mandatory)][string]$Frontend,
+    [Parameter(Mandatory)][string]$Oatof,
+    [Parameter(Mandatory)][string]$RegionField,
+    [Parameter(Mandatory)][string]$AcceleratorMain,
+    [switch]$AllowSynthesis
+  )
+  $identityPath = Join-Path $package.input_dir ($Name + '_native_operating_pa_identity.json')
+  Invoke-SingleFlightPython -Arguments @(
+    '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.native_operating_pa_family',
+    '--action','identity','--output',$identityPath,'--exporter',$Exporter,
+    '--role',$Name,'--source-family-role',$FamilyRole,
+    '--source-family-cache-key',$FamilyCacheKey,
+    '--controller-basename',$ControllerBasename,
+    '--upstream',$Upstream,'--frontend',$Frontend,'--oatof',$Oatof,
+    '--region-field',$RegionField,'--accelerator-main',$AcceleratorMain
+  ) -Failure "Native operating PA identity failed: $Name"
+  $identityDocument = Get-Content -LiteralPath $identityPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $operatingKey = ([string]$identityDocument.cache_key).ToLowerInvariant()
+  Add-RfArtifactCapacityProtectedCacheKey -CacheKey $operatingKey
+  $probePath = Join-Path $package.log_dir ($Name + '_native_operating_pa_probe.json')
+  Invoke-SingleFlightPython -Arguments @(
+    '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.native_operating_pa_family',
+    '--action','probe','--identity',$identityPath,'--cache-root',$OperatingCacheRoot,
+    '--output',$probePath
+  ) -Failure "Native operating PA cache probe failed: $Name"
+  $probe = Get-Content -LiteralPath $probePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ([string]$probe.disposition -eq 'corrupt') {
+    throw "Native operating PA cache is corrupt and will not be overwritten: $Name key=$operatingKey"
+  }
+  if ([string]$probe.disposition -eq 'miss') {
+    if (-not $AllowSynthesis) {
+      throw "Native operating PA companion is missing; published PA families are forbidden synthesis sources: $Name key=$operatingKey"
+    }
+    $operatingRole = 'simion_native_family_operating_pa_group'
+    $operatingStaging = New-RfCacheStagingDirectory -CacheRoot $OperatingCacheRoot `
+      -RecoveryCacheKey $operatingKey -RecoveryRole $operatingRole
+    $completion = Join-Path $operatingStaging 'operating_export_complete.json'
+    $expectedOutputs = @(
+      Join-Path $operatingStaging ($Name + '.carrier_off.pa')
+      Join-Path $operatingStaging ($Name + '.pulse_delta.pa')
+      Join-Path $operatingStaging ($Name + '.rf_differential.pa')
+    )
+    $expectedReceipts = @($expectedOutputs | ForEach-Object {
+      $_ + '.boundary_mask_restoration.json'
+    })
+    $exportVerification = Join-Path $operatingStaging 'operating_export_verification.json'
+    $complete = $false
+    if ((Test-Path -LiteralPath $completion -PathType Leaf) -and
+        (Test-Path -LiteralPath $exportVerification -PathType Leaf) -and
+        @($expectedOutputs + $expectedReceipts | Where-Object {
+          -not (Test-Path -LiteralPath $_ -PathType Leaf)
+        }).Count -eq 0) {
+      try {
+        $completionDocument = Get-Content -LiteralPath $completion -Raw -Encoding UTF8 |
+          ConvertFrom-Json
+        $complete = [int]$completionDocument.schema_version -eq 2 -and
+          [string]$completionDocument.role -ceq
+            'rf_oatof_native_operating_pa_export_completion' -and
+          [string]$completionDocument.cache_key -ceq $operatingKey -and
+          [string]$completionDocument.boundary_mask_policy_id -ceq
+            'physical_geometry_boundary_flags_v1' -and
+          [string]$completionDocument.verification_sha256 -ceq
+            (Get-FileHash -LiteralPath $exportVerification -Algorithm SHA256).Hash
+      } catch { $complete = $false }
+    }
+    if (-not $complete) {
+      $partial = @($expectedOutputs + $expectedReceipts + @($exportVerification,$completion) |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+      if ($partial.Count -gt 0) {
+        # These are disposable derivatives, not refined basis members.  A
+        # crashed export can therefore restart the three-state set without
+        # repeating the family Refine.  Remove only the three identity-bound
+        # direct outputs and their evidence inside the recovered b-* staging.
+        foreach ($partialOutput in $partial) {
+          Remove-Item -LiteralPath $partialOutput -Force
+        }
+      }
+      $exportPlanPath = Join-Path $package.input_dir ($Name + '_native_operating_pa_export_plan.json')
+      Invoke-SingleFlightPython -Arguments @(
+        '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.native_operating_pa_family',
+        '--action','export-plan','--identity',$identityPath,'--output',$exportPlanPath,
+        '--staging-directory',$FamilyDirectory,'--operating-directory',$operatingStaging,
+        '--exporter',$Exporter
+      ) -Failure "Native operating PA export planning failed: $Name"
+      $exportPlan = Get-Content -LiteralPath $exportPlanPath -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+      foreach ($export in @($exportPlan.exports)) {
+        $arguments = @('--nogui','--noprompt','lua',[string]$export.exporter,
+          [string]$export.source_controller,[string]$export.output,[string]$export.receipt) +
+          @($export.voltage_arguments | ForEach-Object { [string]$_ })
+        $kind = [IO.Path]::GetFileNameWithoutExtension([string]$export.output)
+        $result = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+          -RunDir $package.run_dir `
+          -UsagePath (Join-Path $package.log_dir ($kind + '_resource_usage.json')) `
+          -FilePath $SimionExe -WorkingDirectory $FamilyDirectory `
+          -RedirectStandardOutput (Join-Path $package.log_dir ($kind + '.stdout.log')) `
+          -RedirectStandardError (Join-Path $package.log_dir ($kind + '.stderr.log')) `
+          -ArgumentList $arguments
+        if ($result.resource_budget_exceeded -or $result.exit_code -ne 0 -or
+            -not (Test-Path -LiteralPath ([string]$export.output) -PathType Leaf) -or
+            -not (Test-Path -LiteralPath ([string]$export.receipt) -PathType Leaf)) {
+          throw "Native operating PA export failed: $Name $kind"
+        }
+      }
+      Invoke-SingleFlightPython -Arguments @(
+        '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.native_operating_pa_family',
+        '--action','verify-exports','--identity',$identityPath,
+        '--source-directory',$operatingStaging,'--output',$exportVerification
+      ) -Failure "Native operating PA export verification failed: $Name"
+      Write-RunJson -Path $completion -Depth 4 -Value ([ordered]@{
+        schema_version=2; role='rf_oatof_native_operating_pa_export_completion'
+        cache_key=$operatingKey
+        boundary_mask_policy_id='physical_geometry_boundary_flags_v1'
+        verification=(Split-Path -Leaf $exportVerification)
+        verification_sha256=(Get-FileHash -LiteralPath $exportVerification -Algorithm SHA256).Hash
+        outputs=@($expectedOutputs | ForEach-Object { Split-Path -Leaf $_ })
+        receipts=@($expectedReceipts | ForEach-Object { Split-Path -Leaf $_ })
+      })
+    }
+    Assert-RfArtifactCapacityBeforeCachePublication -Python $python -RepoRoot $repoRoot `
+      -WorkspaceRoot $workspaceRoot -StagingDirectory $operatingStaging `
+      -ProtectedPaths $artifactCapacityProtectedPaths `
+      -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys | Out-Null
+    $publicationPath = Join-Path $package.log_dir ($Name + '_native_operating_pa_publication.json')
+    Invoke-SingleFlightPython -Arguments @(
+      '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.native_operating_pa_family',
+      '--action','publish','--identity',$identityPath,'--cache-root',$OperatingCacheRoot,
+      '--source-directory',$operatingStaging,'--output',$publicationPath
+    ) -Failure "Native operating PA cache publication failed: $Name"
+    $probe = Get-Content -LiteralPath $publicationPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $resolvedOperatingRoot = [IO.Path]::GetFullPath($OperatingCacheRoot).TrimEnd(
+      [IO.Path]::DirectorySeparatorChar)
+    $resolvedOperatingStaging = [IO.Path]::GetFullPath($operatingStaging)
+    if (-not (Split-Path -Parent $resolvedOperatingStaging).Equals(
+        $resolvedOperatingRoot,[StringComparison]::OrdinalIgnoreCase) -or
+        -not [IO.Path]::GetFileName($resolvedOperatingStaging).StartsWith(
+          'b-',[StringComparison]::Ordinal)) {
+      throw 'Native operating PA staging cleanup target escaped its cache root.'
+    }
+    Remove-Item -LiteralPath $resolvedOperatingStaging -Recurse -Force
+  }
+  return [pscustomobject]@{
+    cache_key=$operatingKey
+    disposition=[string]$probe.disposition
+    generation_directory=[string]$probe.generation_directory
+    identity_path=$identityPath
+  }
+}
+
+function Export-RfStandalonePaResponses {
+  <# Export solved native members only inside writable build staging, then
+     write the receipt that binds every native/standalone byte pair. #>
+  param(
+    [Parameter(Mandatory)][string]$Directory,
+    [Parameter(Mandatory)][string]$Prefix,
+    [Parameter(Mandatory)][int[]]$SolutionIds,
+    [Parameter(Mandatory)][string]$ExporterSource,
+    [Parameter(Mandatory)][string]$LogStem
+  )
+  $stagedExporter = Join-Path $Directory 'export_standalone_pa.lua'
+  Copy-Item -LiteralPath $ExporterSource -Destination $stagedExporter -Force
+  foreach ($solutionId in $SolutionIds) {
+    $native = Join-Path $Directory ("{0}.pa{1}" -f $Prefix,[int]$solutionId)
+    $standalone = Join-Path $Directory ("{0}.response_{1}.pa" -f $Prefix,[int]$solutionId)
+    if (-not (Test-Path -LiteralPath $standalone -PathType Leaf)) {
+      $export = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+        -RunDir $package.run_dir `
+        -UsagePath (Join-Path $package.log_dir ("{0}_export_pa{1}_resource_usage.json" -f $LogStem,[int]$solutionId)) `
+        -FilePath $SimionExe -WorkingDirectory $Directory `
+        -RedirectStandardOutput (Join-Path $package.log_dir ("{0}_export_pa{1}.stdout.log" -f $LogStem,[int]$solutionId)) `
+        -RedirectStandardError (Join-Path $package.log_dir ("{0}_export_pa{1}.stderr.log" -f $LogStem,[int]$solutionId)) `
+        -ArgumentList @('--nogui','--noprompt','lua',$stagedExporter,$native,$standalone)
+      if ($export.resource_budget_exceeded -or $export.exit_code -ne 0 -or
+          -not (Test-Path -LiteralPath $standalone -PathType Leaf)) {
+        throw "Standalone PA response export failed: $Prefix mode $solutionId"
+      }
+    }
+  }
+  $receipt = Join-Path $Directory 'standalone_response_set.json'
+  if (-not (Test-Path -LiteralPath $receipt -PathType Leaf)) {
+    Invoke-SingleFlightPython -Arguments @(
+      '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.standalone_pa_family',
+      '--action','write-receipt','--directory',$Directory,'--prefix',$Prefix,
+      '--response-ids',($SolutionIds -join ','),'--exporter',$stagedExporter
+    ) -Failure "Standalone PA response receipt failed: $Prefix"
+  }
+  return $receipt
+}
+
+function Select-RfStandalonePaResponses {
+  <# Validate a published receipt against its immutable generation manifest and
+     expose only standalone .pa paths to downstream boundary builders. #>
+  param(
+    [Parameter(Mandatory)][string]$Directory,
+    [Parameter(Mandatory)][string]$Manifest,
+    [Parameter(Mandatory)][string]$Prefix,
+    [Parameter(Mandatory)][int[]]$SolutionIds,
+    [Parameter(Mandatory)][string]$SelectionPath,
+    [Parameter(Mandatory)][string]$ModeMapPath
+  )
+  Invoke-SingleFlightPython -Arguments @(
+    '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.standalone_pa_family',
+    '--action','select','--directory',$Directory,'--prefix',$Prefix,
+    '--response-ids',($SolutionIds -join ','),'--manifest',$Manifest,
+    '--output',$SelectionPath,'--mode-map',$ModeMapPath
+  ) -Failure "Published standalone PA response selection failed: $Prefix"
+  return [pscustomobject]@{
+    standalone_selection_path=$SelectionPath
+    standalone_mode_map=$ModeMapPath
+  }
+}
+
+function New-RfStandaloneBoundarySourceProjection {
+  <# SIMION 2020's Lua file API cannot reliably open the immutable cache's
+     long paths.  Project each already receipt-verified standalone response
+     through the common disposable-copy API, then give the boundary builder a
+     short mode map.  Native .paN members never enter this path. #>
+  param(
+    [Parameter(Mandatory)][string]$SelectionPath,
+    [Parameter(Mandatory)][string]$ExpectedPrefix,
+    [Parameter(Mandatory)][int[]]$ExpectedResponseIds,
+    [Parameter(Mandatory)][string]$Label
+  )
+  $selection = Get-Content -LiteralPath $SelectionPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ([int]$selection.schema_version -ne 1 -or
+      [string]$selection.role -ne 'rf_oatof_standalone_pa_response_selection' -or
+      [string]$selection.prefix -ne $ExpectedPrefix) {
+    throw "Standalone boundary-source selection is invalid: $SelectionPath"
+  }
+  $records = @($selection.records)
+  $actualResponseIds = @($records | ForEach-Object { [int]$_.response_id })
+  if ($records.Count -eq 0 -or
+      @($actualResponseIds | Select-Object -Unique).Count -ne $records.Count -or
+      ($actualResponseIds -join ',') -ne ($ExpectedResponseIds -join ',')) {
+    throw "Standalone boundary-source selection is empty or ambiguous: $SelectionPath"
+  }
+  $safeLabel = $Label -replace '[^A-Za-z0-9_-]','_'
+  $directory = Join-Path ([IO.Path]::GetTempPath()) (
+    'simion_pa_links_{0}_{1}' -f $safeLabel,[guid]::NewGuid().ToString('N').Substring(0,12))
+  New-Item -ItemType Directory -Path $directory | Out-Null
+  $modeMap = Join-Path $directory 'm.tsv'
+  try {
+    $lines = [System.Collections.Generic.List[string]]::new()
+    [void]$lines.Add('standalone_pa_mode_map_v1')
+    foreach ($record in $records) {
+      $responseId = [int]$record.response_id
+      $shortPa = New-ShortPaCopy -Source ([string]$record.path) `
+        -Destination (Join-Path $directory ("r{0}.pa" -f $responseId)) `
+        -ExpectedBytes ([int64]$record.bytes) `
+        -ExpectedSha256 ([string]$record.sha256)
+      [void]$lines.Add(("{0}`t{1}" -f $responseId,$shortPa))
+    }
+    [IO.File]::WriteAllText($modeMap,($lines -join "`n") + "`n",
+      [Text.UTF8Encoding]::new($false))
+    return [pscustomobject]@{directory=$directory;mode_map=$modeMap}
+  } catch {
+    if (Test-Path -LiteralPath $modeMap -PathType Leaf) {
+      Remove-Item -LiteralPath $modeMap -Force
+    }
+    Remove-ShortPaCopyDirectory -Path $directory
+    throw
+  }
+}
+
+function Remove-RfStandaloneBoundarySourceProjection {
+  param([Parameter(Mandatory)][psobject]$Projection)
+  if (Test-Path -LiteralPath ([string]$Projection.mode_map) -PathType Leaf) {
+    Remove-Item -LiteralPath ([string]$Projection.mode_map) -Force
+  }
+  Remove-ShortPaCopyDirectory -Path ([string]$Projection.directory)
+}
+
 function Get-RfProcessDiagnosticTail {
   param([Parameter(Mandatory)][string]$Path,[int]$MaximumCharacters=4000)
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -130,6 +419,182 @@ function Get-RfProcessDiagnosticTail {
     return ('<truncated> ' + $text.Substring($text.Length - $MaximumCharacters))
   }
   return $text.Trim()
+}
+
+function Write-RfAtomicJsonFile {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)]$Value,
+    [int]$Depth = 8
+  )
+  $resolvedPath = [IO.Path]::GetFullPath($Path)
+  $directory = Split-Path -Parent $resolvedPath
+  if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+    throw "Atomic JSON destination directory is missing: $directory"
+  }
+  $temporaryPath = Join-Path $directory (
+    ([IO.Path]::GetFileName($resolvedPath)) + '.tmp-' + [Guid]::NewGuid().ToString('N')
+  )
+  try {
+    $json = $Value | ConvertTo-Json -Depth $Depth
+    [IO.File]::WriteAllText($temporaryPath,$json + "`n",[Text.UTF8Encoding]::new($false))
+    [IO.File]::Move($temporaryPath,$resolvedPath,$true)
+  } finally {
+    if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
+      Remove-Item -LiteralPath $temporaryPath -Force
+    }
+  }
+}
+
+function Get-RfPaRefineModeReceiptPath {
+  param(
+    [Parameter(Mandatory)][string]$BuildDirectory,
+    [Parameter(Mandatory)][int]$SolutionId
+  )
+  return Join-Path $BuildDirectory ("refine_mode_{0}_complete.json" -f $SolutionId)
+}
+
+function Test-RfPaPlusBasisBuildReceipt {
+  param(
+    [Parameter(Mandatory)][string]$BasisReport,
+    [Parameter(Mandatory)][int]$ExpectedModeCount
+  )
+  if (-not (Test-Path -LiteralPath $BasisReport -PathType Leaf) -or
+      [int64](Get-Item -LiteralPath $BasisReport).Length -lt 1) {
+    return $false
+  }
+  try {
+    $basis = Get-Content -LiteralPath $BasisReport -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+    return [int]$basis.schema_version -eq 1 -and
+      [string]$basis.role -eq 'simion_accelerator_pa_plus_basis_build' -and
+      [string]$basis.status -eq 'pass' -and
+      [string]$basis.source_response_policy -eq 'standalone_mode_map_v1' -and
+      [string]$basis.boundary_traversal -eq 'disjoint_six_faces_v1' -and
+      [int64]$basis.duplicate_boundary_writes -eq 0 -and
+      [int]$basis.mode_count -eq $ExpectedModeCount -and
+      [int64]$basis.boundary_point_write_count -gt 0
+  } catch {
+    return $false
+  }
+}
+
+function Write-RfPaRefineModeReceipt {
+  <# Persist one solver completion only after its worker naturally exits zero.
+     The PA byte identity is checked again on every later run before the mode
+     can be skipped. #>
+  param(
+    [Parameter(Mandatory)][string]$BuildDirectory,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$FamilyRole,
+    [Parameter(Mandatory)][string]$PaPrefix,
+    [Parameter(Mandatory)][int]$SolutionId,
+    [Parameter(Mandatory)][string]$BasisReport,
+    [Parameter(Mandatory)][int]$ExitCode
+  )
+  if ($ExitCode -ne 0) {
+    throw "Refusing to receipt a nonzero PA refine exit: $PaPrefix mode $SolutionId"
+  }
+  if ($CacheKey -notmatch '^[a-f0-9]{64}$' -or
+      [string]::IsNullOrWhiteSpace($FamilyRole) -or
+      [string]::IsNullOrWhiteSpace($PaPrefix)) {
+    throw 'PA refine mode receipt identity is incomplete.'
+  }
+  $resolvedBuildDirectory = [IO.Path]::GetFullPath($BuildDirectory).TrimEnd(
+    [IO.Path]::DirectorySeparatorChar)
+  $resolvedBasisReport = [IO.Path]::GetFullPath($BasisReport)
+  $paPath = [IO.Path]::GetFullPath((Join-Path $resolvedBuildDirectory (
+    "{0}.pa{1}" -f $PaPrefix,$SolutionId)))
+  if (-not (Split-Path -Parent $paPath).Equals(
+      $resolvedBuildDirectory,[StringComparison]::OrdinalIgnoreCase) -or
+      -not (Test-Path -LiteralPath $resolvedBasisReport -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $paPath -PathType Leaf) -or
+      [int64](Get-Item -LiteralPath $paPath).Length -lt 1) {
+    throw "PA refine mode output is missing or empty: $PaPrefix mode $SolutionId"
+  }
+  $receipt = [ordered]@{
+    schema_version=1
+    role='rf_oatof_pa_refine_mode_receipt'
+    family_role=$FamilyRole
+    cache_key=$CacheKey
+    pa_prefix=$PaPrefix
+    solution_id=$SolutionId
+    completion_kind='natural_exit_zero_v1'
+    solver_exit_code=0
+    basis_build_sha256=(Get-FileHash -LiteralPath $resolvedBasisReport -Algorithm SHA256).Hash
+    pa=[ordered]@{
+      basename=[IO.Path]::GetFileName($paPath)
+      bytes=[int64](Get-Item -LiteralPath $paPath).Length
+      sha256=(Get-FileHash -LiteralPath $paPath -Algorithm SHA256).Hash
+    }
+  }
+  $receiptPath = Get-RfPaRefineModeReceiptPath -BuildDirectory $resolvedBuildDirectory `
+    -SolutionId $SolutionId
+  Write-RfAtomicJsonFile -Path $receiptPath -Value $receipt -Depth 8
+  return $receiptPath
+}
+
+function Test-RfPaRefineModeReceipt {
+  param(
+    [Parameter(Mandatory)][string]$BuildDirectory,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$FamilyRole,
+    [Parameter(Mandatory)][string]$PaPrefix,
+    [Parameter(Mandatory)][int]$SolutionId,
+    [Parameter(Mandatory)][string]$BasisReport
+  )
+  $receiptPath = Get-RfPaRefineModeReceiptPath -BuildDirectory $BuildDirectory `
+    -SolutionId $SolutionId
+  $paPath = Join-Path $BuildDirectory ("{0}.pa{1}" -f $PaPrefix,$SolutionId)
+  if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $BasisReport -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $paPath -PathType Leaf) -or
+      [int64](Get-Item -LiteralPath $paPath).Length -lt 1) {
+    return $false
+  }
+  try {
+    $receipt = Get-Content -LiteralPath $receiptPath -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+    $pa = Get-Item -LiteralPath $paPath
+    return [int]$receipt.schema_version -eq 1 -and
+      [string]$receipt.role -eq 'rf_oatof_pa_refine_mode_receipt' -and
+      [string]$receipt.family_role -ceq $FamilyRole -and
+      [string]$receipt.cache_key -ceq $CacheKey -and
+      [string]$receipt.pa_prefix -ceq $PaPrefix -and
+      [int]$receipt.solution_id -eq $SolutionId -and
+      [string]$receipt.completion_kind -ceq 'natural_exit_zero_v1' -and
+      [int]$receipt.solver_exit_code -eq 0 -and
+      [string]$receipt.basis_build_sha256 -ceq
+        (Get-FileHash -LiteralPath $BasisReport -Algorithm SHA256).Hash -and
+      [string]$receipt.pa.basename -ceq [IO.Path]::GetFileName($paPath) -and
+      [int64]$receipt.pa.bytes -eq [int64]$pa.Length -and
+      [string]$receipt.pa.sha256 -ceq
+        (Get-FileHash -LiteralPath $paPath -Algorithm SHA256).Hash
+  } catch {
+    return $false
+  }
+}
+
+function Get-RfPaRefineResumeState {
+  param(
+    [Parameter(Mandatory)][string]$BuildDirectory,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$FamilyRole,
+    [Parameter(Mandatory)][string]$PaPrefix,
+    [Parameter(Mandatory)][int[]]$SolutionIds,
+    [Parameter(Mandatory)][string]$BasisReport
+  )
+  $completed = @($SolutionIds | Where-Object {
+    Test-RfPaRefineModeReceipt -BuildDirectory $BuildDirectory `
+      -CacheKey $CacheKey -FamilyRole $FamilyRole -PaPrefix $PaPrefix `
+      -SolutionId ([int]$_) -BasisReport $BasisReport
+  })
+  return [pscustomobject]@{
+    completed_solution_ids=@($completed | ForEach-Object { [int]$_ })
+    pending_solution_ids=@($SolutionIds | Where-Object {
+      [int]$_ -notin $completed
+    } | ForEach-Object { [int]$_ })
+  }
 }
 
 function Get-RfSingleFlightParticleLines {
@@ -208,9 +673,9 @@ function Assert-RfThreeZoneArgumentSet {
 }
 
 function Test-RfPaPlusModeFamily {
-  <# A PA+ mapping is usable only together with every referenced solution
-     array.  Cache manifests prove identity, but this cheap structural check
-     keeps a partially copied or manually damaged family from becoming a hit. #>
+  <# A published PA+ generation is usable only when every staging-native mode,
+     detached response and their receipt are present.  Downstream builders
+     select only the receipt-verified standalone responses. #>
   param(
     [Parameter(Mandatory)][string]$Directory,
     [Parameter(Mandatory)][string]$Prefix,
@@ -226,8 +691,12 @@ function Test-RfPaPlusModeFamily {
   if (-not (Test-Path -LiteralPath (Join-Path $Directory ($Prefix + '.pa0')) -PathType Leaf)) {
     return $false
   }
+  if (-not (Test-Path -LiteralPath (Join-Path $Directory 'standalone_response_set.json') -PathType Leaf)) {
+    return $false
+  }
   return @($SolutionIds | Where-Object {
-    -not (Test-Path -LiteralPath (Join-Path $Directory ($Prefix + '.pa' + [int]$_)) -PathType Leaf)
+    -not (Test-Path -LiteralPath (Join-Path $Directory ($Prefix + '.pa' + [int]$_)) -PathType Leaf) -or
+    -not (Test-Path -LiteralPath (Join-Path $Directory ("{0}.response_{1}.pa" -f $Prefix,[int]$_)) -PathType Leaf)
   }).Count -eq 0
 }
 
@@ -572,24 +1041,6 @@ function Resolve-RfBoundGenerationDirectory {
   }
   return $generationDirectory
 }
-function New-RfSimionShortPathJunction {
-  param(
-    [Parameter(Mandatory)][string]$TargetDirectory,
-    [Parameter(Mandatory)][string]$Label
-  )
-  if (-not (Test-Path -LiteralPath $TargetDirectory -PathType Container)) {
-    throw "SIMION short-path junction target is missing: $TargetDirectory"
-  }
-  # SIMION 2020 cannot reliably open PA files beyond the legacy MAX_PATH
-  # boundary.  A junction preserves the immutable cache-generation identity
-  # without copying a multi-GiB PA family into the local build directory.
-  $junctionRoot = 'C:\tmp\ms\simion-pa-source'
-  New-Item -ItemType Directory -Path $junctionRoot -Force | Out-Null
-  $safeLabel = ($Label -replace '[^A-Za-z0-9_-]', '_')
-  $junction = Join-Path $junctionRoot ($safeLabel + '-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
-  New-Item -ItemType Junction -Path $junction -Target $TargetDirectory -ErrorAction Stop | Out-Null
-  return $junction
-}
 $prePulseTimeSeriesContractFrozen = $null
 $prePulseTimeSeries = $null
 if ($isPrePulseTimeSeriesScreening) {
@@ -654,7 +1105,8 @@ function Write-RfPreCacheRunConfiguration {
 }
 
 function Resolve-RfSemanticallyEquivalentFineCache {
-  <# Reuse only the proven old boundary loop with unchanged physical identity. #>
+  <# Retained only for existing overlay callers.  Schema-v3 standalone fine
+     families deliberately do not consult this legacy compatibility path. #>
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Python,
@@ -688,6 +1140,7 @@ function Resolve-RfSemanticallyEquivalentFineCache {
   }
   return $null
 }
+
 Write-RfPreCacheRunConfiguration `
   -LifecycleStage 'pa_cache_policy_pending_budget_validation'
 
@@ -707,6 +1160,7 @@ $materializerStdout = $null
 $materializerStderr = $null
 $artifactCapacityState = $null
 $publishedPaCacheProtectionSnapshotReady = $false
+$standaloneDynamicExecutionDir = $null
 try {
   # Freeze the stage budget before making the capacity decision: its transient
   # footprint is the only run-specific launch headroom authority.
@@ -767,22 +1221,12 @@ try {
   # above prevents speculative deletion of every already-published family.
   # Both receipts are frozen with this run, making protection and every
   # automatic removal auditable.
-  $artifactCapacityStartupArguments = @(
-    '-m','common.contracts.reconcile_artifact_capacity',
-    '--artifact-root',(Join-Path $workspaceRoot 'artifacts'),'--target-gib','500',
-    '--minimum-free-gib',$artifactCapacityLaunchMinimumFreeGiB,'--apply'
-  )
-  foreach ($protectedPath in $artifactCapacityProtectedPaths) {
-    $artifactCapacityStartupArguments += @('--protect-path',$protectedPath)
-  }
-  foreach ($cacheKey in $artifactCapacityProtectedCacheKeys) {
-    $artifactCapacityStartupArguments += @('--protect-cache-key',$cacheKey)
-  }
-  $artifactCapacityStartup = Invoke-SingleFlightPython `
-    -Arguments $artifactCapacityStartupArguments `
-    -Failure 'Artifact capacity gate failed at SIMION startup.'
-  $artifactCapacityStartupReceipt = @($artifactCapacityStartup) -join "`n" |
-    ConvertFrom-Json
+  $artifactCapacityStartupReceipt = Invoke-ArtifactCapacityGate `
+    -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -TargetGiB 500 `
+    -MinimumFreeGiB ([double]$artifactCapacityLaunchMinimumFreeGiB) `
+    -ProtectedPaths $artifactCapacityProtectedPaths `
+    -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys
   if (-not [bool]$artifactCapacityStartupReceipt.satisfied_after_apply) {
     throw 'Artifact capacity gate did not reach the frozen transient-staging launch watermark.'
   }
@@ -1102,9 +1546,10 @@ try {
     if (-not $acceleratorEntranceLocalEnabled) {
       throw 'Continuous pre-pulse requires the field-bearing entrance-local replacement PA.'
     }
-    # The entrance-local PA must reproduce continuous full flight exactly;
-    # the zero-field carrier remains only underneath it as the first-zone
-    # downstream collision corridor.
+    # The entrance-local PA and the already-refined accelerator-main family
+    # must reproduce continuous full flight exactly.  Reuse main from cache;
+    # a zero-field first-zone carrier changes the RF/DC fringe field after an
+    # ion leaves the small entrance-local replacement.
     $overlayEnabled = $false
     $paCacheDispositions.accelerator_entrance_local.disposition = 'pending_cache_decision'
     if ([math]::Abs($acceleratorMainCellMmX - 0.5) -gt 1.0e-12 -or
@@ -1383,8 +1828,6 @@ try {
   $acceleratorMainGem = if ($domainSplitEnabled) { Join-Path $package.input_dir 'accelerator_main.gem' } else { $null }
   $acceleratorMainContract = if ($domainSplitEnabled) { Join-Path $package.input_dir 'accelerator_main_contract.json' } else { $null }
   $acceleratorMainDomainPolicy = if ($domainSplitEnabled) { Join-Path $package.input_dir 'accelerator_main_domain_policy.json' } else { $null }
-  $prePulseEntranceZoneCollisionGem = if ($prePulseEntranceZoneCollision) { Join-Path $package.input_dir 'accelerator_entrance_zero_field.gem' } else { $null }
-  $prePulseEntranceZoneCollisionContract = if ($prePulseEntranceZoneCollision) { Join-Path $package.input_dir 'accelerator_entrance_zero_field_contract.json' } else { $null }
   $acceleratorEntranceLocalGem = if ($domainSplitEnabled -and $acceleratorEntranceLocalEnabled) { Join-Path $package.input_dir 'accelerator_entrance_local.gem' } else { $null }
   $acceleratorEntranceLocalContract = if ($domainSplitEnabled -and $acceleratorEntranceLocalEnabled) { Join-Path $package.input_dir 'accelerator_entrance_local_contract.json' } else { $null }
   $acceleratorEntranceLocalDomainPolicy = if ($domainSplitEnabled -and $acceleratorEntranceLocalEnabled) { Join-Path $package.input_dir 'accelerator_entrance_local_domain_policy.json' } else { $null }
@@ -1428,9 +1871,10 @@ try {
     )
   }
   if ($domainSplitEnabled) {
-    # The coarse bridge is always the per-shape, fixed reference-aperture PA.
-    # A pre-pulse collision carrier is separate zero-field geometry, so it may
-    # use the scanned aperture without multiplying that shared coarse cache.
+    # The coarse bridge and accelerator main are always the per-shape,
+    # fixed-reference-aperture families.  The scanned opening belongs only to
+    # the small entrance-local replacement, so neither shared cache multiplies
+    # across aperture heights.
     $coarseBridgeReferenceAperture = $executionProfile.accelerator_main_reference_aperture_mm
     $acceleratorMainCompileAperture = $executionProfile.accelerator_main_reference_aperture_mm
     if ($null -ne $coarseBridgeReferenceAperture) {
@@ -1472,14 +1916,6 @@ try {
           '--accelerator-entrance-local-aperture-height-mm',([string]$AcceleratorEntranceLocalApertureHeightMm)
         )
       }
-    }
-    if ($prePulseEntranceZoneCollision) {
-      $frontendCompileArguments += @(
-        '--pre-pulse-entrance-zone-collision-gem',$prePulseEntranceZoneCollisionGem,
-        '--pre-pulse-entrance-zone-collision-contract',$prePulseEntranceZoneCollisionContract,
-        '--pre-pulse-entrance-zone-aperture-width-mm',([string]$AcceleratorEntranceLocalApertureWidthMm),
-        '--pre-pulse-entrance-zone-aperture-height-mm',([string]$AcceleratorEntranceLocalApertureHeightMm)
-      )
     }
   }
   if ($prePulseTerminalHandoffCollision) {
@@ -1550,6 +1986,52 @@ try {
     )) {
     throw 'Domain-split coarse frontend PA grid differs from the declared coarse-bridge grid.'
   }
+  $standaloneExporterSource = Join-Path $repoRoot 'common\simion\export_standalone_pa.lua'
+  $nativeOperatingExporterSource = Join-Path $repoRoot `
+    'common\simion\export_fast_adjusted_standalone_pa.lua'
+  $nativeOperatingAdapterSource = Join-Path $PSScriptRoot `
+    'native_operating_pa_family.py'
+  $standaloneFamilyAdapterSource = Join-Path $PSScriptRoot 'standalone_pa_family.py'
+  $standaloneReceiptPolicySource = Join-Path $repoRoot `
+    'common\simion\standalone_pa_response_set.py'
+  foreach ($requiredStandaloneImplementation in @(
+      $standaloneExporterSource,$nativeOperatingExporterSource,
+      $nativeOperatingAdapterSource,$standaloneFamilyAdapterSource,
+      $standaloneReceiptPolicySource
+    )) {
+    if (-not (Test-Path -LiteralPath $requiredStandaloneImplementation -PathType Leaf)) {
+      throw "Standalone PA publication implementation is missing: $requiredStandaloneImplementation"
+    }
+  }
+  $sharedPaPlusModel = $null
+  $sharedPaPlusSolutionIds = @()
+  $sharedPaPlusModeSpec = $null
+  $nativeOperatingCacheRoot = Join-Path $workspaceRoot `
+    "artifacts\projects\$runProjectId\cache\simion_native_operating_pa"
+  if ($domainSplitEnabled) {
+    $acceleratorMainGeometry = Get-Content -LiteralPath $acceleratorMainContract `
+      -Raw -Encoding UTF8 | ConvertFrom-Json
+    $sharedPaPlusModel = $acceleratorMainGeometry.pa_plus_solution_model
+    $sharedPaPlusSolutionIds = @(
+      $sharedPaPlusModel.mode_ids | ForEach-Object { [int]$_ }
+    )
+    $sharedPaPlusModeSpec = @($sharedPaPlusModel.modes | ForEach-Object {
+      $terms = @($_.physical_electrode_coefficients.psobject.Properties |
+        Sort-Object { [int]$_.Name } | ForEach-Object {
+          '{0}={1}' -f $_.Name,([double]$_.Value).ToString(
+            'R',[cultureinfo]::InvariantCulture)
+        })
+      '{0}:{1}' -f ([int]$_.mode_id),($terms -join ',')
+    }) -join ';'
+    if ([string]$sharedPaPlusModel.model_id -ne
+        'three_zone_linear_ring_octupole_symmetry_pa_plus_v2' -or
+        [string]$sharedPaPlusModel.field_loading_policy_id -ne
+        'octupole_common_differential_pa_plus_v2' -or
+        ($sharedPaPlusSolutionIds -join ',') -ne '36,37,38,39,40,41,42,43' -or
+        [string]::IsNullOrWhiteSpace($sharedPaPlusModeSpec)) {
+      throw 'Shared frontend/fine PA+ solution model is invalid.'
+    }
+  }
   $frontendElectrodeTopologyContract = Join-Path $package.input_dir 'frontend_electrode_topology.json'
   Invoke-SingleFlightPython -Arguments @(
     '-m',
@@ -1572,6 +2054,11 @@ try {
       ($frontendBasisElectrodeIds -join ',') -ne
       ($expectedFrontendBasisElectrodeIds -join ',')) {
     throw 'Resolved frontend electrode topology is invalid or non-contiguous.'
+  }
+  $frontendSolutionIds = if ($domainSplitEnabled) {
+    @($sharedPaPlusSolutionIds)
+  } else {
+    @($frontendBasisElectrodeIds)
   }
   if ($hasThreeZoneCandidate) {
     if (-not [string]::IsNullOrWhiteSpace($TheoryWorkingPoint)) {
@@ -1657,6 +2144,16 @@ try {
   . $apertureTopologySupport
   $apertureTopologyReport = Join-Path $package.result_dir 'frontend_aperture_topology_check.json'
   $frontendHash = (Get-FileHash -LiteralPath $frontendCacheGem -Algorithm SHA256).Hash
+  $standaloneFieldBearingRuntime = $domainSplitEnabled -and
+    -not $prePulseTerminalHandoffCollision -and
+    -not $postPulseHandoffMinimal -and
+    -not $domainSplitMainPaOnlyAxisField -and
+    -not $domainSplitLocalAxisField -and
+    $acceleratorEntranceLocalEnabled
+  $frontendStandaloneSelectionPath = $null
+  $frontendStandaloneModeMap = $null
+  $frontendFamilyBuild = $null
+  $frontendOperatingCompanion = $null
   if ($postPulseHandoffMinimal -and $PaCachePolicy -eq 'require_existing') {
     # A strict reuse-only consumer needs the frontend cache key only to
     # identify its already-refined accelerator-main generation.  A declared
@@ -1672,17 +2169,26 @@ try {
       -Destination $frontendBasisInitializerFrozen -Role 'frontend fast-adjust PA basis initializer' | Out-Null
     $frontendCacheRole = 'simion_single_flight_frontend_pa_cache'
     $frontendCacheIdentity = [ordered]@{
-      schema_version=2; role=$frontendCacheRole
+      schema_version=3; role=$frontendCacheRole
       project_id=$runProjectId; solver=$simionSolverCacheIdentity
       inputs=[ordered]@{
         frontend_gem_sha256=$frontendHash
         basis_initializer_sha256=(Get-FileHash -LiteralPath $frontendBasisInitializerFrozen -Algorithm SHA256).Hash
+        standalone_exporter_sha256=(Get-FileHash -LiteralPath $standaloneExporterSource -Algorithm SHA256).Hash
+        native_operating_exporter_sha256=(Get-FileHash -LiteralPath $nativeOperatingExporterSource -Algorithm SHA256).Hash
+        native_operating_adapter_sha256=(Get-FileHash -LiteralPath $nativeOperatingAdapterSource -Algorithm SHA256).Hash
+        standalone_family_adapter_sha256=(Get-FileHash -LiteralPath $standaloneFamilyAdapterSource -Algorithm SHA256).Hash
+        standalone_receipt_policy_sha256=(Get-FileHash -LiteralPath $standaloneReceiptPolicySource -Algorithm SHA256).Hash
       }
       critical_options=[ordered]@{
         gem2pa=@('--nogui','--noprompt','gem2pa','frontend.gem','frontend.pa#')
         basis_initialization=@('lua','initialize_fast_adjust_pa_basis.lua','frontend.pa#')
-        refine_mode='fast_adjust_template_single_refine_v1'
+        pa_plus_solution_model=$sharedPaPlusModel
+        solution_ids=@($frontendSolutionIds)
+        refine_mode='pa_plus_official_default_single_refine_v2'
         refinement_convergence='simion_official_default'
+        publication_policy='native_staging_plus_responses_plus_prepublication_operating_companion_v2'
+        standalone_receipt_policy='new_pa_object_export_surface_none_v1'
       }
     }
     $frontendCacheKey = Get-RfContentIdentitySha256 -Identity $frontendCacheIdentity
@@ -1717,17 +2223,26 @@ try {
     -Destination $frontendBasisInitializerFrozen -Role 'frontend fast-adjust PA basis initializer' | Out-Null
   $frontendCacheRole = 'simion_single_flight_frontend_pa_cache'
   $frontendCacheIdentity = [ordered]@{
-    schema_version=2; role=$frontendCacheRole
+    schema_version=3; role=$frontendCacheRole
     project_id=$runProjectId; solver=$simionSolverCacheIdentity
     inputs=[ordered]@{
       frontend_gem_sha256=$frontendHash
       basis_initializer_sha256=(Get-FileHash -LiteralPath $frontendBasisInitializerFrozen -Algorithm SHA256).Hash
+      standalone_exporter_sha256=(Get-FileHash -LiteralPath $standaloneExporterSource -Algorithm SHA256).Hash
+      native_operating_exporter_sha256=(Get-FileHash -LiteralPath $nativeOperatingExporterSource -Algorithm SHA256).Hash
+      native_operating_adapter_sha256=(Get-FileHash -LiteralPath $nativeOperatingAdapterSource -Algorithm SHA256).Hash
+      standalone_family_adapter_sha256=(Get-FileHash -LiteralPath $standaloneFamilyAdapterSource -Algorithm SHA256).Hash
+      standalone_receipt_policy_sha256=(Get-FileHash -LiteralPath $standaloneReceiptPolicySource -Algorithm SHA256).Hash
     }
     critical_options=[ordered]@{
       gem2pa=@('--nogui','--noprompt','gem2pa','frontend.gem','frontend.pa#')
       basis_initialization=@('lua','initialize_fast_adjust_pa_basis.lua','frontend.pa#')
-      refine_mode='fast_adjust_template_single_refine_v1'
+      pa_plus_solution_model=$sharedPaPlusModel
+      solution_ids=@($frontendSolutionIds)
+      refine_mode='pa_plus_official_default_single_refine_v2'
       refinement_convergence='simion_official_default'
+      publication_policy='native_staging_plus_responses_plus_prepublication_operating_companion_v2'
+      standalone_receipt_policy='new_pa_object_export_surface_none_v1'
     }
   }
   $frontendCacheKey = Get-RfContentIdentitySha256 -Identity $frontendCacheIdentity
@@ -1749,18 +2264,22 @@ try {
   $cacheDir = Resolve-RfBoundGenerationDirectory -CacheRoot $cacheRoot `
     -CacheKey $frontendCacheKey -Role $frontendCacheRole `
     -ReusableDirectory $cacheDir
-  # A coarse PA family is a basis family, not merely a summed .pa0.  Fine
-  # domains read every electrode basis to impose their outer Dirichlet
-  # boundary.  A detached publisher or capacity action must therefore never
-  # make a partial family reusable.
+  # The domain-split coarse field uses the same compact PA+ namespace as every
+  # child.  Native members remain publication evidence only; boundary builders
+  # receive the manifest/receipt-verified standalone mode map below.
   $requiredFrontendBasisFiles = @()
   if (-not [string]::IsNullOrWhiteSpace($cacheDir)) {
-    $requiredFrontendBasisFiles = @(0..$maximumFrontendElectrodeId |
+    $requiredFrontendBasisFiles = @($frontendSolutionIds |
       ForEach-Object { Join-Path $cacheDir ("frontend.pa{0}" -f $_) })
   }
   if (-not [string]::IsNullOrWhiteSpace($cacheDir) -and @($requiredFrontendBasisFiles | Where-Object {
         -not (Test-Path -LiteralPath $_ -PathType Leaf)
       }).Count -gt 0) {
+    $cacheDir = $null
+  }
+  if ($domainSplitEnabled -and -not [string]::IsNullOrWhiteSpace($cacheDir) -and
+      -not (Test-RfPaPlusModeFamily -Directory $cacheDir -Prefix 'frontend' `
+        -SolutionIds $frontendSolutionIds)) {
     $cacheDir = $null
   }
   $frontendCacheHit = -not [string]::IsNullOrWhiteSpace($cacheDir)
@@ -1778,16 +2297,19 @@ try {
     try {
     $cacheGem = Join-Path $frontendBuildDir 'frontend.gem'
     $cachePaSharp = Join-Path $frontendBuildDir 'frontend.pa#'
+    $cachePaPlus = Join-Path $frontendBuildDir 'frontend.pa+'
     $cacheBasisInitializer = Join-Path $frontendBuildDir 'initialize_fast_adjust_pa_basis.lua'
     $frontendCompletionReceipt = Join-Path $frontendBuildDir 'refinement_complete.json'
     $frontendComplete = $false
     if (Test-Path -LiteralPath $frontendCompletionReceipt -PathType Leaf) {
       try {
         $receipt = Get-Content -LiteralPath $frontendCompletionReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
-        $frontendComplete = [int]$receipt.schema_version -eq 1 -and
+        $receiptIds = @($receipt.solution_ids | ForEach-Object { [int]$_ })
+        $frontendComplete = [int]$receipt.schema_version -eq 2 -and
           [string]$receipt.role -eq 'simion_single_flight_frontend_pa_refinement' -and
           [string]$receipt.cache_key -eq $frontendCacheKey -and
-          [int]$receipt.maximum_electrode_id -eq $maximumFrontendElectrodeId
+          ($receiptIds -join ',') -eq ($frontendSolutionIds -join ',') -and
+          (Test-Path -LiteralPath (Join-Path $frontendBuildDir 'standalone_response_set.json') -PathType Leaf)
       } catch { $frontendComplete = $false }
     }
     if (-not $frontendComplete) {
@@ -1800,8 +2322,14 @@ try {
       -ArgumentList @('--nogui','--noprompt','gem2pa',$cacheGem,$cachePaSharp)
     if ($gem2pa.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Frontend GEM conversion exceeded its resource budget.' }
     if ($gem2pa.exit_code -ne 0) { throw 'Frontend GEM conversion failed.' }
+    if ($domainSplitEnabled) {
+      Invoke-SingleFlightPython -Arguments @(
+        '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract',
+        '--pa-plus-contract',$acceleratorMainContract,'--pa-plus-output',$cachePaPlus
+      ) -Failure 'Coarse frontend PA+ file rendering failed.'
+    }
     $frontendProjectedFamilyBytes = [int64]((Get-Item -LiteralPath $cachePaSharp).Length) *
-      [int64]($maximumFrontendElectrodeId + 1)
+      [int64](2 * $frontendSolutionIds.Count + 2)
     Assert-RfArtifactCapacityBeforeCachePublication -Python $python -RepoRoot $repoRoot `
       -WorkspaceRoot $workspaceRoot -StagingDirectory $frontendBuildDir `
       -ProtectedPaths $artifactCapacityProtectedPaths `
@@ -1829,18 +2357,34 @@ try {
     # template is refined.  Refining frontend.pa0..paN again would repeat the
     # same official-default solve without changing either the basis values or
     # the coarse Dirichlet boundary supplied to fine domains.
-    $missingFrontendBasisFiles = @(0..$maximumFrontendElectrodeId | ForEach-Object {
+    $missingFrontendBasisFiles = @($frontendSolutionIds | ForEach-Object {
       Join-Path $frontendBuildDir ("frontend.pa{0}" -f $_)
     } | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
     if ($missingFrontendBasisFiles.Count -gt 0) {
       throw ('Frontend PA refinement produced an incomplete basis family: ' +
         ($missingFrontendBasisFiles -join ','))
     }
+    if ($domainSplitEnabled) {
+      $frontendStandaloneReceipt = Export-RfStandalonePaResponses `
+        -Directory $frontendBuildDir -Prefix 'frontend' `
+        -SolutionIds $frontendSolutionIds `
+        -ExporterSource $standaloneExporterSource -LogStem 'frontend'
+    }
     Write-RunJson -Path $frontendCompletionReceipt -Depth 5 -Value ([ordered]@{
-      schema_version=1; role='simion_single_flight_frontend_pa_refinement'
-      cache_key=$frontendCacheKey; maximum_electrode_id=$maximumFrontendElectrodeId
+      schema_version=2; role='simion_single_flight_frontend_pa_refinement'
+      cache_key=$frontendCacheKey; solution_ids=@($frontendSolutionIds)
+      standalone_receipt=$(if($domainSplitEnabled){Split-Path -Leaf $frontendStandaloneReceipt}else{$null})
     })
     }
+    $frontendOperatingCompanion = Resolve-RfNativeOperatingPaCompanion `
+      -Name 'coarse_frontend' -ControllerBasename 'frontend.pa0' `
+      -FamilyRole $frontendCacheRole `
+      -FamilyCacheKey $frontendCacheKey -FamilyDirectory $frontendBuildDir `
+      -OperatingCacheRoot $nativeOperatingCacheRoot `
+      -Exporter $nativeOperatingExporterSource -Adapter $nativeOperatingAdapterSource `
+      -Upstream $upstreamFrozen -Frontend $frontendContract -Oatof $oatofGeometry `
+      -RegionField $resolvedRegionFieldContractFrozen `
+      -AcceleratorMain $acceleratorMainContract -AllowSynthesis
     $cacheDir = Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot `
       -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $cacheRoot `
       -CacheKey $frontendCacheKey -Role $frontendCacheRole -Identity $frontendCacheIdentity `
@@ -1893,14 +2437,51 @@ try {
   # which exact PA generation this run consumed.
   $frontendCacheManifestInput = Copy-RfCacheManifestInput -CacheEntry $cacheDir `
     -Destination (Join-Path $package.input_dir 'frontend_pa_cache_manifest.json')
-  $frontendWorkingDir = Join-Path $package.run_dir 'simion\frontend_cache_copy'
-  New-Item -ItemType Directory -Path $frontendWorkingDir -Force | Out-Null
-  foreach ($source in Get-ChildItem -LiteralPath $cacheDir -Filter 'frontend.pa*' -File) {
-    $target = Join-Path $frontendWorkingDir $source.Name
-    Copy-Item -LiteralPath $source.FullName -Destination $target -Force
-    Set-RfMaterializedCacheFileWritable -Path $target
+  $frontendStandaloneSelectionPath = $null
+  $frontendStandaloneModeMap = $null
+  if ($domainSplitEnabled) {
+    if ($null -eq $frontendOperatingCompanion) {
+      $frontendOperatingCompanion = Resolve-RfNativeOperatingPaCompanion `
+        -Name 'coarse_frontend' -ControllerBasename 'frontend.pa0' `
+        -FamilyRole $frontendCacheRole `
+        -FamilyCacheKey $frontendCacheKey -FamilyDirectory $cacheDir `
+        -OperatingCacheRoot $nativeOperatingCacheRoot `
+        -Exporter $nativeOperatingExporterSource -Adapter $nativeOperatingAdapterSource `
+        -Upstream $upstreamFrozen -Frontend $frontendContract -Oatof $oatofGeometry `
+        -RegionField $resolvedRegionFieldContractFrozen `
+        -AcceleratorMain $acceleratorMainContract
+    }
+    $frontendStandaloneSelectionPath = Join-Path $package.input_dir `
+      'frontend_standalone_response_selection.json'
+    $frontendStandaloneModeMap = Join-Path $package.input_dir `
+      'frontend_standalone_mode_map.tsv'
+    $frontendStandaloneSelection = Select-RfStandalonePaResponses `
+      -Directory $cacheDir -Manifest $frontendCacheManifestInput -Prefix 'frontend' `
+      -SolutionIds $frontendSolutionIds `
+      -SelectionPath $frontendStandaloneSelectionPath `
+      -ModeMapPath $frontendStandaloneModeMap
   }
-  $frontendWorkingPa0 = Join-Path $frontendWorkingDir 'frontend.pa0'
+  $frontendFamilyBuild = [pscustomobject]@{
+    name='frontend'; cache_role=$frontendCacheRole; cache_key=$frontendCacheKey
+    cache_dir=$cacheDir; solution_ids=@($frontendSolutionIds)
+    cache_manifest_input=$frontendCacheManifestInput
+    standalone_selection_path=$frontendStandaloneSelectionPath
+    standalone_mode_map=$frontendStandaloneModeMap
+    operating_companion=$frontendOperatingCompanion
+  }
+  if (-not $standaloneFieldBearingRuntime) {
+    $frontendWorkingDir = Join-Path $package.run_dir 'simion\frontend_cache_copy'
+    New-Item -ItemType Directory -Path $frontendWorkingDir -Force | Out-Null
+    foreach ($source in Get-ChildItem -LiteralPath $cacheDir -Filter 'frontend.pa*' -File) {
+      $target = Join-Path $frontendWorkingDir $source.Name
+      Copy-Item -LiteralPath $source.FullName -Destination $target -Force
+      Set-RfMaterializedCacheFileWritable -Path $target
+    }
+    $frontendWorkingPa0 = Join-Path $frontendWorkingDir 'frontend.pa0'
+  } else {
+    $frontendWorkingDir = $null
+    $frontendWorkingPa0 = $null
+  }
   }
 
   # A positive long gap retains the coarse frontend PA as the common outer
@@ -1930,12 +2511,11 @@ try {
           $paCacheDispositions[$DispositionKey].disposition='built_and_published'
         } catch { if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }; throw }
       } else { $paCacheDispositions[$DispositionKey].disposition='cache_hit' }
-      return [pscustomobject]@{name=$Name;gem=$Gem;contract=$Contract;geometry=$geometry;cache_role=$Role;disposition_key=$DispositionKey;cache_key=$key;cache_dir=$entry;pa0=(Join-Path $entry "$Name.pa0");basis_builder=$null;refiner=$null;basis_report=$null}
+      return [pscustomobject]@{name=$Name;gem=$Gem;contract=$Contract;geometry=$geometry;cache_role=$Role;disposition_key=$DispositionKey;cache_key=$key;cache_dir=$entry;pa0=(Join-Path $entry "$Name.pa0");basis_builder=$null;refiner=$null;basis_report=$null;cache_manifest_input=$null;standalone_selection_path=$null;standalone_mode_map=$null}
     }
     $domainSplitFineBuilds += Build-RawPrePulseCollisionPa -Name 'connector_collision' -Gem $prePulseConnectorCollisionGem -Contract $prePulseConnectorCollisionContract -Role 'simion_single_flight_connector_collision_pa_cache' -DispositionKey 'connector_collision' -CacheLeaf 'simion_single_flight_connector_collision'
     $domainSplitFineBuilds += Build-RawPrePulseCollisionPa -Name 'accelerator_main' -Gem $acceleratorMainGem -Contract $acceleratorMainContract -Role 'simion_single_flight_accelerator_entrance_zone_collision_pa_cache' -DispositionKey 'accelerator_entrance_zone_collision' -CacheLeaf 'simion_single_flight_accelerator_entrance_zone_collision'
   } elseif ($domainSplitEnabled) {
-    $basisBuilderSource = Join-Path $PSScriptRoot 'build_accelerator_overlay_basis.lua'
     $acceleratorMainBasisBuilderSource = Join-Path $PSScriptRoot 'build_accelerator_pa_plus_basis.lua'
     $paPlusInitializerSource = Join-Path $PSScriptRoot 'initialize_fast_adjust_pa_basis.lua'
     $refinerSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\reflectron\refine_single_pa.lua'
@@ -1951,34 +2531,35 @@ try {
     }
     $fineDefinitions += [pscustomobject]@{ name='accelerator_main'; disposition_key='accelerator_main'; role='simion_single_flight_accelerator_main_pa_cache'; cache_leaf='simion_single_flight_accelerator_main'; gem=$acceleratorMainGem; contract=$acceleratorMainContract }
     foreach ($fineDefinition in $fineDefinitions) {
-      # Accelerator main is the only large fine domain.  Its specialized
-      # builder preserves every coarse-basis Dirichlet value while avoiding
-      # repeated edge/corner writes; upstream retains its cache identity.
-      $fineBasisBuilderSource = if ($fineDefinition.name -eq 'accelerator_main') {
-        $acceleratorMainBasisBuilderSource
-      } else {
-        $basisBuilderSource
-      }
+      # Every field-bearing domain uses the same eight PA+ modes.  The shared
+      # builder consumes only the parent's receipt-verified standalone map.
+      $fineBasisBuilderSource = $acceleratorMainBasisBuilderSource
       $fineGeometry = Get-Content -LiteralPath $fineDefinition.contract -Raw -Encoding UTF8 | ConvertFrom-Json
-      $fineUsesPaPlus = $fineDefinition.name -eq 'accelerator_main'
-      $fineSolutionIds = if ($fineUsesPaPlus) {
-        @($fineGeometry.pa_plus_solution_model.mode_ids | ForEach-Object { [int]$_ })
-      } else { $frontendBasisElectrodeIds }
+      $fineUsesPaPlus = $true
+      $fineSolutionIds = @($sharedPaPlusSolutionIds)
+      $fineOperatingCompanion = $null
       if ($fineSolutionIds.Count -eq 0 -or @($fineSolutionIds | Select-Object -Unique).Count -ne $fineSolutionIds.Count) {
         throw "Domain-split $($fineDefinition.name) solution namespace is invalid."
       }
-      $finePaPlusModeSpec = if ($fineUsesPaPlus) {
-        @($fineGeometry.pa_plus_solution_model.modes | ForEach-Object {
-          $terms = @($_.physical_electrode_coefficients.psobject.Properties | Sort-Object { [int]$_.Name } |
-            ForEach-Object { '{0}={1}' -f $_.Name,([double]$_.Value).ToString('R',[cultureinfo]::InvariantCulture) })
-          '{0}:{1}' -f ([int]$_.mode_id),($terms -join ',')
-        }) -join ';'
-      } else { $null }
-      if ($fineUsesPaPlus -and ([string]$fineGeometry.pa_plus_solution_model.model_id -ne 'three_zone_linear_ring_octupole_symmetry_pa_plus_v2' -or
-          [string]$fineGeometry.pa_plus_solution_model.field_loading_policy_id -ne 'octupole_common_differential_pa_plus_v2' -or
-          $fineSolutionIds.Count -ne [int]$fineGeometry.pa_plus_solution_model.mode_count -or
-          [string]::IsNullOrWhiteSpace($finePaPlusModeSpec))) {
-        throw 'Accelerator-main PA+ solution model is invalid.'
+      # The published frontend responses are already the eight compressed
+      # PA+ modes.  Boundary propagation is therefore mode-for-mode identity;
+      # the physical-electrode coefficient expansion was consumed only while
+      # constructing the frontend family itself.
+      $finePaPlusModeSpec = @($fineSolutionIds | ForEach-Object {
+        '{0}:{0}=1' -f [int]$_
+      }) -join ';'
+      $fineModelProperty =
+        $fineGeometry.PSObject.Properties['pa_plus_solution_model']
+      $fineModel = if ($null -eq $fineModelProperty) {
+        $null
+      } else {
+        $fineModelProperty.Value
+      }
+      if ($null -ne $fineModel -and (
+          [string]$fineModel.model_id -ne [string]$sharedPaPlusModel.model_id -or
+          (@($fineModel.mode_ids | ForEach-Object { [int]$_ }) -join ',') -ne
+            ($fineSolutionIds -join ','))) {
+        throw "$($fineDefinition.name) PA+ solution model differs from the shared model."
       }
       if ([string]::IsNullOrWhiteSpace([string]$fineGeometry.instance_origin_mm.x) -or
           [string]::IsNullOrWhiteSpace([string]$fineGeometry.instance_origin_mm.y) -or
@@ -1986,17 +2567,26 @@ try {
         throw "Domain-split $($fineDefinition.name) contract is missing its workbench origin."
       }
       $fineIdentity = [ordered]@{
-        schema_version=2; role=$fineDefinition.role; project_id=$runProjectId; solver=$simionSolverCacheIdentity
+        schema_version=3; role=$fineDefinition.role; project_id=$runProjectId; solver=$simionSolverCacheIdentity
         inputs=[ordered]@{
           fine_gem_sha256=(Get-FileHash -LiteralPath $fineDefinition.gem -Algorithm SHA256).Hash
           coarse_frontend_cache_key=$frontendCacheKey
           basis_builder_sha256=(Get-FileHash -LiteralPath $fineBasisBuilderSource -Algorithm SHA256).Hash
-          pa_plus_initializer_sha256=$(if($fineUsesPaPlus){(Get-FileHash -LiteralPath $paPlusInitializerSource -Algorithm SHA256).Hash}else{$null})
+          pa_plus_initializer_sha256=(Get-FileHash -LiteralPath $paPlusInitializerSource -Algorithm SHA256).Hash
           refiner_sha256=(Get-FileHash -LiteralPath $refinerSource -Algorithm SHA256).Hash
+          standalone_exporter_sha256=(Get-FileHash -LiteralPath $standaloneExporterSource -Algorithm SHA256).Hash
+          native_operating_exporter_sha256=(Get-FileHash -LiteralPath $nativeOperatingExporterSource -Algorithm SHA256).Hash
+          native_operating_adapter_sha256=(Get-FileHash -LiteralPath $nativeOperatingAdapterSource -Algorithm SHA256).Hash
+          standalone_family_adapter_sha256=(Get-FileHash -LiteralPath $standaloneFamilyAdapterSource -Algorithm SHA256).Hash
+          standalone_receipt_policy_sha256=(Get-FileHash -LiteralPath $standaloneReceiptPolicySource -Algorithm SHA256).Hash
         }
         critical_options=[ordered]@{
-          domain_split_role=$fineDefinition.name; boundary_mode='coarse_electrode_basis_dirichlet_v1'
-          solution_ids=$fineSolutionIds; pa_plus_solution_model=$(if($fineUsesPaPlus){$fineGeometry.pa_plus_solution_model}else{$null}); refinement_convergence='simion_official_default'
+          domain_split_role=$fineDefinition.name
+          boundary_mode='manifest_bound_standalone_parent_modes_dirichlet_v1'
+          solution_ids=$fineSolutionIds; pa_plus_solution_model=$sharedPaPlusModel
+          refinement_convergence='simion_official_default'
+          publication_policy='native_staging_plus_responses_plus_prepublication_operating_companion_v2'
+          standalone_receipt_policy='new_pa_object_export_surface_none_v1'
         }
       }
       $fineKey = Get-RfContentIdentitySha256 -Identity $fineIdentity
@@ -2007,18 +2597,6 @@ try {
         -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $fineCacheRoot `
         -CacheKey $fineKey -Role $fineDefinition.role -Identity $fineIdentity `
         -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'})
-      if ([string]::IsNullOrWhiteSpace($fineCacheDir)) {
-        $compatibleFineCache = Resolve-RfSemanticallyEquivalentFineCache -Python $python `
-          -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
-          -CacheRoot $fineCacheRoot -Role $fineDefinition.role -Identity $fineIdentity `
-          -CurrentBuilderSha256 $fineIdentity.inputs.basis_builder_sha256
-        if ($null -ne $compatibleFineCache) {
-          $fineCacheDir = [string]$compatibleFineCache.cache_directory
-          $fineKey = [string]$compatibleFineCache.cache_key
-          $paCacheDispositions[$fineDefinition.disposition_key].disposition =
-            'cache_hit_semantically_equivalent_boundary_builder'
-        }
-      }
       $fineCacheDir = Resolve-RfBoundGenerationDirectory -CacheRoot $fineCacheRoot -CacheKey $fineKey `
         -Role $fineDefinition.role -ReusableDirectory $fineCacheDir
       if ($fineUsesPaPlus -and -not [string]::IsNullOrWhiteSpace($fineCacheDir) -and
@@ -2042,19 +2620,28 @@ try {
             Join-Path $fineBuildDir ($fineDefinition.name + '.pa+')
           } else { $null }
           $finePa0 = Join-Path $fineBuildDir ($fineDefinition.name + '.pa0')
-          $fineBasisFiles = @($fineSolutionIds | ForEach-Object {
-            Join-Path $fineBuildDir ("{0}.pa{1}" -f $fineDefinition.name,[int]$_)
-          })
+          $fineBasisBuiltThisRun = $false
           # A staging directory is identity-bound before any solver work.  A
-          # completed basis receipt plus every solution array proves that the
+          # A strict completed basis receipt plus PA#/PA+/PA0 proves that the
           # same immutable coarse boundary has already been copied; rerunning
           # GEM conversion or the six-face traversal would only overwrite the
           # same values after an external interruption.
-          $fineBasisComplete = (Test-Path -LiteralPath $fineBasisReport -PathType Leaf) -and
-            @($fineBasisFiles | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }).Count -eq 0 -and
+          $fineBasisComplete = (Test-RfPaPlusBasisBuildReceipt `
+              -BasisReport $fineBasisReport -ExpectedModeCount $fineSolutionIds.Count) -and
+            (Test-Path -LiteralPath $fineBuildSharp -PathType Leaf) -and
+            [int64](Get-Item -LiteralPath $fineBuildSharp).Length -gt 0 -and
             ($null -eq $finePaPlus -or ((Test-Path -LiteralPath $finePaPlus -PathType Leaf) -and
-              (Test-Path -LiteralPath $finePa0 -PathType Leaf)))
+              [int64](Get-Item -LiteralPath $finePaPlus).Length -gt 0 -and
+              (Test-Path -LiteralPath $finePa0 -PathType Leaf) -and
+              [int64](Get-Item -LiteralPath $finePa0).Length -gt 0))
           if (-not $fineBasisComplete) {
+            # Validate and shorten every parent path before starting GEM/PA+
+            # work, so an input-copy failure cannot waste those solver stages.
+            $fineBoundaryProjection = New-RfStandaloneBoundarySourceProjection `
+              -SelectionPath $frontendStandaloneSelectionPath `
+              -ExpectedPrefix 'frontend' -ExpectedResponseIds $fineSolutionIds `
+              -Label ("frontend_to_{0}" -f $fineDefinition.name)
+            try {
             Copy-Item -LiteralPath $fineDefinition.gem -Destination $fineBuildGem
             $gem2pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
               -UsagePath (Join-Path $package.log_dir ($fineDefinition.name + '_gem2pa_resource_usage.json')) `
@@ -2066,8 +2653,8 @@ try {
             if ($fineUsesPaPlus) {
               Invoke-SingleFlightPython -Arguments @('-m',
                 'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract',
-                '--pa-plus-contract',$fineDefinition.contract,'--pa-plus-output',$finePaPlus) `
-                -Failure 'Accelerator-main PA+ file rendering failed.'
+                '--pa-plus-contract',$acceleratorMainContract,'--pa-plus-output',$finePaPlus) `
+                -Failure "$($fineDefinition.name) PA+ file rendering failed."
               $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
                 -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
               $paPlusInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
@@ -2083,24 +2670,20 @@ try {
                 throw "$($fineDefinition.name) PA+ controller initialization failed."
               }
             }
-            if ($fineDefinition.name -ne 'accelerator_main') {
-              $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
-                -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+              $basis = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+                -UsagePath (Join-Path $package.log_dir ($fineDefinition.name + '_basis_resource_usage.json')) `
+                -FilePath $SimionExe -WorkingDirectory $fineBuildDir `
+                -RedirectStandardOutput (Join-Path $package.log_dir ($fineDefinition.name + '_basis.stdout.log')) `
+                -RedirectStandardError (Join-Path $package.log_dir ($fineDefinition.name + '_basis.stderr.log')) `
+                -ArgumentList @('--nogui','--noprompt','lua',$fineBasisBuilderSource,$fineBoundaryProjection.mode_map,$fineBuildSharp,
+                  ([string]$frontendBoundaryGeometry.instance_origin_mm.x),([string]$frontendBoundaryGeometry.instance_origin_mm.y),([string]$frontendBoundaryGeometry.instance_origin_mm.z),
+                  ([string]$fineGeometry.instance_origin_mm.x),([string]$fineGeometry.instance_origin_mm.y),([string]$fineGeometry.instance_origin_mm.z),
+                  $(if($fineUsesPaPlus){$finePaPlusModeSpec}else{[string]$maximumFrontendElectrodeId}),$fineBasisReport)
+              if ($basis.resource_budget_exceeded -or $basis.exit_code -ne 0) { throw "$($fineDefinition.name) basis transfer failed." }
+              $fineBasisBuiltThisRun = $true
+            } finally {
+              Remove-RfStandaloneBoundarySourceProjection -Projection $fineBoundaryProjection
             }
-            $basis = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
-              -UsagePath (Join-Path $package.log_dir ($fineDefinition.name + '_basis_resource_usage.json')) `
-              -FilePath $SimionExe -WorkingDirectory $fineBuildDir `
-              -RedirectStandardOutput (Join-Path $package.log_dir ($fineDefinition.name + '_basis.stdout.log')) `
-              -RedirectStandardError (Join-Path $package.log_dir ($fineDefinition.name + '_basis.stderr.log')) `
-              -ArgumentList @('--nogui','--noprompt','lua',$fineBasisBuilderSource,$frontendWorkingPa0,$fineBuildSharp,
-                ([string]$frontendBoundaryGeometry.instance_origin_mm.x),([string]$frontendBoundaryGeometry.instance_origin_mm.y),([string]$frontendBoundaryGeometry.instance_origin_mm.z),
-                ([string]$fineGeometry.instance_origin_mm.x),([string]$fineGeometry.instance_origin_mm.y),([string]$fineGeometry.instance_origin_mm.z),
-                $(if($fineUsesPaPlus){$finePaPlusModeSpec}else{[string]$maximumFrontendElectrodeId}),$fineBasisReport)
-            if ($fineDefinition.name -ne 'accelerator_main') {
-              $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
-                -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
-            }
-            if ($basis.resource_budget_exceeded -or $basis.exit_code -ne 0) { throw "$($fineDefinition.name) basis transfer failed." }
           }
           # A cache publication gate can fail after every PA+ member has
           # already been refined.  Persist that completed solver boundary in
@@ -2112,12 +2695,22 @@ try {
             try {
               $refinement = Get-Content -LiteralPath $fineRefinementReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
               $receiptIds = @($refinement.solution_ids | ForEach-Object { [int]$_ })
-              $fineRefinementComplete = [int]$refinement.schema_version -eq 1 -and
-                [string]$refinement.role -eq 'simion_single_flight_fine_pa_refinement' -and
-                [string]$refinement.cache_key -eq $fineKey -and
-                [string]$refinement.pa_prefix -eq $fineDefinition.name -and
-                [string]$refinement.basis_build_sha256 -eq (Get-FileHash -LiteralPath $fineBasisReport -Algorithm SHA256).Hash -and
-                ($receiptIds -join ',') -eq ($fineSolutionIds -join ',')
+              $expectedModeReceipts = @($fineSolutionIds | ForEach-Object {
+                "refine_mode_{0}_complete.json" -f [int]$_
+              })
+              $modeResumeState = Get-RfPaRefineResumeState `
+                -BuildDirectory $fineBuildDir -CacheKey $fineKey `
+                -FamilyRole $fineDefinition.role -PaPrefix $fineDefinition.name `
+                -SolutionIds $fineSolutionIds -BasisReport $fineBasisReport
+              $fineRefinementComplete = [int]$refinement.schema_version -eq 2 -and
+                [string]$refinement.role -ceq 'simion_single_flight_fine_pa_refinement' -and
+                [string]$refinement.cache_key -ceq $fineKey -and
+                [string]$refinement.pa_prefix -ceq $fineDefinition.name -and
+                [string]$refinement.basis_build_sha256 -ceq (Get-FileHash -LiteralPath $fineBasisReport -Algorithm SHA256).Hash -and
+                ($receiptIds -join ',') -eq ($fineSolutionIds -join ',') -and
+                (@($refinement.mode_receipts) -join ',') -ceq
+                  ($expectedModeReceipts -join ',') -and
+                @($modeResumeState.pending_solution_ids).Count -eq 0
             } catch { $fineRefinementComplete = $false }
           }
           # The basis transfer has completed; each electrode PA can now be
@@ -2125,6 +2718,60 @@ try {
           # convergence (the refiner remains `pa:refine{}`), while delegating
           # only process concurrency to the repository scheduler.
           if (-not $fineRefinementComplete) {
+          $fineResumeState = Get-RfPaRefineResumeState `
+            -BuildDirectory $fineBuildDir -CacheKey $fineKey `
+            -FamilyRole $fineDefinition.role -PaPrefix $fineDefinition.name `
+            -SolutionIds $fineSolutionIds -BasisReport $fineBasisReport
+          $finePendingSolutionIds = @($fineResumeState.pending_solution_ids)
+          if (-not $fineBasisBuiltThisRun -and $finePendingSolutionIds.Count -gt 0) {
+            # A missing/invalid receipt cannot distinguish an untouched basis
+            # from a worker interrupted after mutating its PA.  Recreate only
+            # those modes from the completed PA+/basis template and the same
+            # verified parent boundary before dispatching them again.
+            $fineRepairBoundaryProjection = New-RfStandaloneBoundarySourceProjection `
+              -SelectionPath $frontendStandaloneSelectionPath `
+              -ExpectedPrefix 'frontend' -ExpectedResponseIds $fineSolutionIds `
+              -Label ("frontend_repair_{0}" -f $fineDefinition.name)
+            try {
+              foreach ($solutionId in $finePendingSolutionIds) {
+                $modeReceipt = Get-RfPaRefineModeReceiptPath `
+                  -BuildDirectory $fineBuildDir -SolutionId $solutionId
+                $modePa = Join-Path $fineBuildDir (
+                  "{0}.pa{1}" -f $fineDefinition.name,$solutionId)
+                foreach ($disposable in @($modeReceipt,$modePa)) {
+                  if (Test-Path -LiteralPath $disposable -PathType Leaf) {
+                    Remove-Item -LiteralPath $disposable -Force
+                  }
+                }
+                $repairReport = Join-Path $fineBuildDir (
+                  "basis_repair_pa{0}.json" -f $solutionId)
+                $repairModeSpec = '{0}:{0}=1' -f $solutionId
+                $repair = Invoke-ResourceBudgetedProcess `
+                  -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+                  -UsagePath (Join-Path $package.log_dir (
+                    "{0}_basis_repair_pa{1}_resource_usage.json" -f $fineDefinition.name,$solutionId)) `
+                  -FilePath $SimionExe -WorkingDirectory $fineBuildDir `
+                  -RedirectStandardOutput (Join-Path $package.log_dir (
+                    "{0}_basis_repair_pa{1}.stdout.log" -f $fineDefinition.name,$solutionId)) `
+                  -RedirectStandardError (Join-Path $package.log_dir (
+                    "{0}_basis_repair_pa{1}.stderr.log" -f $fineDefinition.name,$solutionId)) `
+                  -ArgumentList @('--nogui','--noprompt','lua',$fineBasisBuilderSource,
+                    $fineRepairBoundaryProjection.mode_map,$fineBuildSharp,
+                    ([string]$frontendBoundaryGeometry.instance_origin_mm.x),([string]$frontendBoundaryGeometry.instance_origin_mm.y),([string]$frontendBoundaryGeometry.instance_origin_mm.z),
+                    ([string]$fineGeometry.instance_origin_mm.x),([string]$fineGeometry.instance_origin_mm.y),([string]$fineGeometry.instance_origin_mm.z),
+                    $repairModeSpec,$repairReport)
+                if ($repair.resource_budget_exceeded -or $repair.exit_code -ne 0 -or
+                    -not (Test-Path -LiteralPath $modePa -PathType Leaf) -or
+                    [int64](Get-Item -LiteralPath $modePa).Length -lt 1) {
+                  throw "$($fineDefinition.name) mode $solutionId basis repair failed."
+                }
+              }
+            } finally {
+              Remove-RfStandaloneBoundarySourceProjection `
+                -Projection $fineRepairBoundaryProjection
+            }
+          }
+          if ($finePendingSolutionIds.Count -gt 0) {
           $fineRefineDispatchRequest = Join-Path $package.input_dir (
             "$($fineDefinition.name)_refine_dispatch_request.json")
           $fineRefineDispatchPlan = Join-Path $package.input_dir (
@@ -2133,7 +2780,7 @@ try {
             "$($fineDefinition.name)_refine_resource_usage.json")
           $fineRefineIdentity = [ordered]@{
             solver='SIMION';field_kind='electrostatic'
-            work_item_count=$fineSolutionIds.Count
+            work_item_count=$finePendingSolutionIds.Count
             independent_work_items=$true
             frontend_grid_profile_id=$selectedGridProfileId
             oatof_numerical_profile_id=$selectedOatofNumericalProfileId
@@ -2150,23 +2797,35 @@ try {
           $fineRefineRuntimePlan = Get-Content -LiteralPath $fineRefineDispatchPlan `
             -Raw -Encoding UTF8 | ConvertFrom-Json
           if ([string]$fineRefineRuntimePlan.dispatch_unit -ne 'independent_work_items' -or
-              [int]$fineRefineRuntimePlan.work_item_count -ne $fineSolutionIds.Count -or
+              [int]$fineRefineRuntimePlan.work_item_count -ne $finePendingSolutionIds.Count -or
               [int]$fineRefineRuntimePlan.limits.maximum_concurrency -lt 1) {
             throw "$($fineDefinition.name) refinement dispatch plan is invalid."
           }
-          $fineRefineSpecifications = @($fineSolutionIds | ForEach-Object {
+          $fineRefineSpecifications = @($finePendingSolutionIds | ForEach-Object {
             $electrode = [int]$_
             [pscustomobject]@{
               name=("{0}_refine_pa{1}" -f $fineDefinition.name,$electrode)
+              solution_id=$electrode
               file_path=$SimionExe;working_directory=$fineBuildDir
               stdout=(Join-Path $package.log_dir ("{0}_refine_pa{1}.stdout.log" -f $fineDefinition.name,$electrode))
               stderr=(Join-Path $package.log_dir ("{0}_refine_pa{1}.stderr.log" -f $fineDefinition.name,$electrode))
               environment=@{}
               argument_list=[string[]]@('--nogui','--noprompt','lua',$refinerSource,
                 (Join-Path $fineBuildDir ("{0}.pa{1}" -f $fineDefinition.name,$electrode)))
-              scheduler_batch=[pscustomobject]@{index=($fineSolutionIds.IndexOf($electrode)+1);total_batches=$fineSolutionIds.Count;work_item_id_min=($fineSolutionIds.IndexOf($electrode)+1);work_item_id_max=($fineSolutionIds.IndexOf($electrode)+1);count=1;execution_unit='independent_work_items'}
+              scheduler_batch=[pscustomobject]@{index=($finePendingSolutionIds.IndexOf($electrode)+1);total_batches=$finePendingSolutionIds.Count;work_item_id_min=($finePendingSolutionIds.IndexOf($electrode)+1);work_item_id_max=($finePendingSolutionIds.IndexOf($electrode)+1);count=1;execution_unit='independent_work_items'}
             }
           })
+          $fineModeCompletionAction = {
+            param($completedRecord)
+            if ($null -eq $completedRecord.exit_code -or
+                [int]$completedRecord.exit_code -ne 0) { return }
+            Write-RfPaRefineModeReceipt -BuildDirectory $fineBuildDir `
+              -CacheKey $fineKey -FamilyRole $fineDefinition.role `
+              -PaPrefix $fineDefinition.name `
+              -SolutionId ([int]$completedRecord.specification.solution_id) `
+              -BasisReport $fineBasisReport -ExitCode ([int]$completedRecord.exit_code) |
+              Out-Null
+          }
           $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
             -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
           $fineExistingProcessRecords = @()
@@ -2201,19 +2860,47 @@ try {
             -DispatchPlanPath $fineRefineDispatchPlan -RunDir $package.run_dir `
             -UsagePath $fineRefineResourceUsage `
             -ProcessSpecifications $fineRefineSpecifications `
-            -ExistingProcessRecords $fineExistingProcessRecords
+            -ExistingProcessRecords $fineExistingProcessRecords `
+            -OnProcessCompleted $fineModeCompletionAction
           $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
             -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
           if ($fineRefineWave.resource_budget_exceeded -or
               @($fineRefineWave.processes | Where-Object { [int]$_.exit_code -ne 0 }).Count -ne 0) {
             throw "$($fineDefinition.name) PA refinement failed."
           }
-          Write-RunJson -Path $fineRefinementReceipt -Depth 6 -Value ([ordered]@{
-            schema_version=1; role='simion_single_flight_fine_pa_refinement'
+          }
+          $fineClosedState = Get-RfPaRefineResumeState `
+            -BuildDirectory $fineBuildDir -CacheKey $fineKey `
+            -FamilyRole $fineDefinition.role -PaPrefix $fineDefinition.name `
+            -SolutionIds $fineSolutionIds -BasisReport $fineBasisReport
+          if (@($fineClosedState.pending_solution_ids).Count -ne 0) {
+            throw "$($fineDefinition.name) PA refinement mode receipts are incomplete."
+          }
+          Write-RfAtomicJsonFile -Path $fineRefinementReceipt -Depth 6 -Value ([ordered]@{
+            schema_version=2; role='simion_single_flight_fine_pa_refinement'
             cache_key=$fineKey; pa_prefix=$fineDefinition.name; solution_ids=@($fineSolutionIds)
             basis_build_sha256=(Get-FileHash -LiteralPath $fineBasisReport -Algorithm SHA256).Hash
+            mode_receipts=@($fineSolutionIds | ForEach-Object {
+              Split-Path -Leaf (Get-RfPaRefineModeReceiptPath `
+                -BuildDirectory $fineBuildDir -SolutionId ([int]$_))
+            })
           })
           }
+          $fineStandaloneReceipt = Export-RfStandalonePaResponses `
+            -Directory $fineBuildDir -Prefix $fineDefinition.name `
+            -SolutionIds $fineSolutionIds `
+            -ExporterSource $standaloneExporterSource `
+            -LogStem $fineDefinition.name
+          $fineOperatingCompanion = Resolve-RfNativeOperatingPaCompanion `
+            -Name $fineDefinition.name `
+            -ControllerBasename ($fineDefinition.name + '.pa0') `
+            -FamilyRole $fineDefinition.role `
+            -FamilyCacheKey $fineKey -FamilyDirectory $fineBuildDir `
+            -OperatingCacheRoot $nativeOperatingCacheRoot `
+            -Exporter $nativeOperatingExporterSource -Adapter $nativeOperatingAdapterSource `
+            -Upstream $upstreamFrozen -Frontend $frontendContract -Oatof $oatofGeometry `
+            -RegionField $resolvedRegionFieldContractFrozen `
+            -AcceleratorMain $acceleratorMainContract -AllowSynthesis
           $fineCacheDir = Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot `
             -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $fineCacheRoot `
             -CacheKey $fineKey -Role $fineDefinition.role -Identity $fineIdentity `
@@ -2224,14 +2911,14 @@ try {
             -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
           $paCacheDispositions[$fineDefinition.disposition_key].disposition = 'built_and_published'
         } catch {
-          # Preserve identity-bound stage checkpoints as well as a completed
-          # publication candidate.  The basis builder writes a receipt only
-          # after SIMION has saved that individual PA member, so a subsequent
-          # run safely resumes the remaining bases rather than discarding
-          # completed solver work after an interruption.
+          # Preserve only the identity-bound staging family after the complete
+          # basis report (the durable boundary before the parallel Refine
+          # wave), or after a publication manifest exists.  Boundary copying
+          # has no partial checkpoint; after that boundary, strict per-mode
+          # receipts preserve only naturally completed Refine workers.
           $recoverableFineStaging = (Test-Path -LiteralPath (Join-Path $fineBuildDir '.rf_cache_staging.json') -PathType Leaf) -and
             ((Test-Path -LiteralPath (Join-Path $fineBuildDir 'cache_manifest.json') -PathType Leaf) -or
-              @((Get-ChildItem -LiteralPath $fineBuildDir -Filter 'basis_build.json.basis_*.complete' -File -ErrorAction SilentlyContinue)).Count -gt 0)
+              (Test-Path -LiteralPath (Join-Path $fineBuildDir 'basis_build.json') -PathType Leaf))
           if ((Test-Path -LiteralPath $fineBuildDir) -and -not $recoverableFineStaging) {
             Remove-Item -LiteralPath $fineBuildDir -Recurse -Force
           }
@@ -2240,11 +2927,39 @@ try {
       } elseif ($paCacheDispositions[$fineDefinition.disposition_key].disposition -eq 'not_applicable') {
         $paCacheDispositions[$fineDefinition.disposition_key].disposition = 'cache_hit'
       }
+      $fineManifestInput = Copy-RfCacheManifestInput -CacheEntry $fineCacheDir `
+        -Destination (Join-Path $package.input_dir `
+          ($fineDefinition.name + '_pa_cache_manifest.json'))
+      $fineStandaloneSelectionPath = Join-Path $package.input_dir `
+        ($fineDefinition.name + '_standalone_response_selection.json')
+      $fineStandaloneModeMap = Join-Path $package.input_dir `
+        ($fineDefinition.name + '_standalone_mode_map.tsv')
+      $fineStandaloneSelection = Select-RfStandalonePaResponses `
+        -Directory $fineCacheDir -Manifest $fineManifestInput `
+        -Prefix $fineDefinition.name -SolutionIds $fineSolutionIds `
+        -SelectionPath $fineStandaloneSelectionPath `
+        -ModeMapPath $fineStandaloneModeMap
+      if ($null -eq $fineOperatingCompanion) {
+        $fineOperatingCompanion = Resolve-RfNativeOperatingPaCompanion `
+          -Name $fineDefinition.name `
+          -ControllerBasename ($fineDefinition.name + '.pa0') `
+          -FamilyRole $fineDefinition.role `
+          -FamilyCacheKey $fineKey -FamilyDirectory $fineCacheDir `
+          -OperatingCacheRoot $nativeOperatingCacheRoot `
+          -Exporter $nativeOperatingExporterSource -Adapter $nativeOperatingAdapterSource `
+          -Upstream $upstreamFrozen -Frontend $frontendContract -Oatof $oatofGeometry `
+          -RegionField $resolvedRegionFieldContractFrozen `
+          -AcceleratorMain $acceleratorMainContract
+      }
       $domainSplitFineBuilds += [pscustomobject]@{
         name=$fineDefinition.name; gem=$fineDefinition.gem; contract=$fineDefinition.contract; geometry=$fineGeometry
         cache_role=$fineDefinition.role; disposition_key=$fineDefinition.disposition_key; cache_key=$fineKey; cache_dir=$fineCacheDir; pa0=$null
         basis_builder=$fineBasisBuilderSource; refiner=$refinerSource
         basis_report=(Join-Path $fineCacheDir 'basis_build.json')
+        cache_manifest_input=$fineManifestInput
+        standalone_selection_path=$fineStandaloneSelectionPath
+        standalone_mode_map=$fineStandaloneModeMap
+        operating_companion=$fineOperatingCompanion
       }
     }
     if ($acceleratorEntranceLocalEnabled) {
@@ -2279,21 +2994,29 @@ try {
       $localPaPlusModeSpec = @($localSolutionIds | ForEach-Object { '{0}:{0}=1' -f $_ }) -join ';'
       $localBasisBuilderSource = $acceleratorMainBasisBuilderSource
       $localRole = 'simion_single_flight_accelerator_entrance_local_pa_cache'
+      $localOperatingCompanion = $null
       $localIdentity = [ordered]@{
-        schema_version=2; role=$localRole; project_id=$runProjectId; solver=$simionSolverCacheIdentity
+        schema_version=3; role=$localRole; project_id=$runProjectId; solver=$simionSolverCacheIdentity
         inputs=[ordered]@{
           local_gem_sha256=(Get-FileHash -LiteralPath $acceleratorEntranceLocalGem -Algorithm SHA256).Hash
           accelerator_main_cache_key=$mainBuild.cache_key
           basis_builder_sha256=(Get-FileHash -LiteralPath $localBasisBuilderSource -Algorithm SHA256).Hash
           pa_plus_initializer_sha256=(Get-FileHash -LiteralPath $paPlusInitializerSource -Algorithm SHA256).Hash
           refiner_sha256=(Get-FileHash -LiteralPath $refinerSource -Algorithm SHA256).Hash
+          standalone_exporter_sha256=(Get-FileHash -LiteralPath $standaloneExporterSource -Algorithm SHA256).Hash
+          native_operating_exporter_sha256=(Get-FileHash -LiteralPath $nativeOperatingExporterSource -Algorithm SHA256).Hash
+          native_operating_adapter_sha256=(Get-FileHash -LiteralPath $nativeOperatingAdapterSource -Algorithm SHA256).Hash
+          standalone_family_adapter_sha256=(Get-FileHash -LiteralPath $standaloneFamilyAdapterSource -Algorithm SHA256).Hash
+          standalone_receipt_policy_sha256=(Get-FileHash -LiteralPath $standaloneReceiptPolicySource -Algorithm SHA256).Hash
         }
         critical_options=[ordered]@{
           domain_split_role='accelerator_entrance_local'
-          boundary_mode='accelerator_main_electrode_basis_dirichlet_v1'
+          boundary_mode='manifest_bound_standalone_parent_modes_dirichlet_v1'
           solution_ids=$localSolutionIds; pa_plus_solution_model=$localPaPlusModel
           replacement_semantics='highest_priority_complete_local_replacement_v1'
           refinement_convergence='simion_official_default'
+          publication_policy='native_staging_plus_responses_plus_prepublication_operating_companion_v2'
+          standalone_receipt_policy='new_pa_object_export_surface_none_v1'
         }
       }
       $localKey = Get-RfContentIdentitySha256 -Identity $localIdentity
@@ -2331,14 +3054,26 @@ try {
           $localBasisFiles = @($localSolutionIds | ForEach-Object {
             Join-Path $localBuildDir ("accelerator_entrance_local.pa{0}" -f [int]$_)
           })
-          # As in the shared main fine domain, a completed basis receipt and
-          # every solution array prove that retrying conversion/Dirichlet
+          $localBasisBuiltThisRun = $false
+          # As in the shared main fine domain, a strict basis receipt and its
+          # PA#/PA+/PA0 controller prove that retrying conversion/Dirichlet
           # projection would only overwrite an identity-bound staging family.
-          $localBasisComplete = (Test-Path -LiteralPath $localBasisReport -PathType Leaf) -and
-            @($localBasisFiles | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }).Count -eq 0 -and
+          $localBasisComplete = (Test-RfPaPlusBasisBuildReceipt `
+              -BasisReport $localBasisReport -ExpectedModeCount $localSolutionIds.Count) -and
+            (Test-Path -LiteralPath $localBuildSharp -PathType Leaf) -and
+            [int64](Get-Item -LiteralPath $localBuildSharp).Length -gt 0 -and
             (Test-Path -LiteralPath $localPaPlus -PathType Leaf) -and
-            (Test-Path -LiteralPath $localPa0 -PathType Leaf)
+            [int64](Get-Item -LiteralPath $localPaPlus).Length -gt 0 -and
+            (Test-Path -LiteralPath $localPa0 -PathType Leaf) -and
+            [int64](Get-Item -LiteralPath $localPa0).Length -gt 0
           if (-not $localBasisComplete) {
+            # Prove the main-family source and establish its short paths before
+            # doing any local-family solver work.
+            $localBoundaryProjection = New-RfStandaloneBoundarySourceProjection `
+              -SelectionPath $mainBuild.standalone_selection_path `
+              -ExpectedPrefix 'accelerator_main' -ExpectedResponseIds $localSolutionIds `
+              -Label 'main_to_accelerator_entrance_local'
+            try {
             Copy-Item -LiteralPath $acceleratorEntranceLocalGem -Destination $localBuildGem
             $gem2pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
               -UsagePath (Join-Path $package.log_dir 'accelerator_entrance_local_gem2pa_resource_usage.json') `
@@ -2375,27 +3110,21 @@ try {
               } | ConvertTo-Json -Compress
               throw "$localPaPlusInitializationFailure $localPaPlusInitializationDetail"
             }
-            $mainSourceJunction = $null
-            try {
-              $mainSourceJunction = New-RfSimionShortPathJunction -TargetDirectory $mainBuild.cache_dir `
-                -Label 'accelerator-main'
-              $mainSourcePa0 = Join-Path $mainSourceJunction 'accelerator_main.pa0'
               $basis = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
                 -UsagePath (Join-Path $package.log_dir 'accelerator_entrance_local_basis_resource_usage.json') `
                 -FilePath $SimionExe -WorkingDirectory $localBuildDir `
                 -RedirectStandardOutput (Join-Path $package.log_dir 'accelerator_entrance_local_basis.stdout.log') `
                 -RedirectStandardError (Join-Path $package.log_dir 'accelerator_entrance_local_basis.stderr.log') `
-                -ArgumentList @('--nogui','--noprompt','lua',$localBasisBuilderSource,$mainSourcePa0,$localBuildSharp,
+                -ArgumentList @('--nogui','--noprompt','lua',$localBasisBuilderSource,$localBoundaryProjection.mode_map,$localBuildSharp,
                   ([string]$mainBuild.geometry.instance_origin_mm.x),([string]$mainBuild.geometry.instance_origin_mm.y),([string]$mainBuild.geometry.instance_origin_mm.z),
                   ([string]$localGeometry.instance_origin_mm.x),([string]$localGeometry.instance_origin_mm.y),([string]$localGeometry.instance_origin_mm.z),
                   $localPaPlusModeSpec,$localBasisReport)
               if ($basis.resource_budget_exceeded -or $basis.exit_code -ne 0) {
                 throw 'Accelerator entrance-local basis transfer failed.'
               }
+              $localBasisBuiltThisRun = $true
             } finally {
-              if ($null -ne $mainSourceJunction -and (Test-Path -LiteralPath $mainSourceJunction)) {
-                Remove-Item -LiteralPath $mainSourceJunction -Force
-              }
+              Remove-RfStandaloneBoundarySourceProjection -Projection $localBoundaryProjection
             }
           }
           # A publication capacity gate may fail after all local PA+ members
@@ -2407,15 +3136,76 @@ try {
             try {
               $refinement = Get-Content -LiteralPath $localRefinementReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
               $receiptIds = @($refinement.solution_ids | ForEach-Object { [int]$_ })
-              $localRefinementComplete = [int]$refinement.schema_version -eq 1 -and
-                [string]$refinement.role -eq 'simion_single_flight_accelerator_entrance_local_pa_refinement' -and
-                [string]$refinement.cache_key -eq $localKey -and
-                [string]$refinement.pa_prefix -eq 'accelerator_entrance_local' -and
-                [string]$refinement.basis_build_sha256 -eq (Get-FileHash -LiteralPath $localBasisReport -Algorithm SHA256).Hash -and
-                ($receiptIds -join ',') -eq ($localSolutionIds -join ',')
+              $expectedModeReceipts = @($localSolutionIds | ForEach-Object {
+                "refine_mode_{0}_complete.json" -f [int]$_
+              })
+              $localModeResumeState = Get-RfPaRefineResumeState `
+                -BuildDirectory $localBuildDir -CacheKey $localKey `
+                -FamilyRole $localRole -PaPrefix 'accelerator_entrance_local' `
+                -SolutionIds $localSolutionIds -BasisReport $localBasisReport
+              $localRefinementComplete = [int]$refinement.schema_version -eq 2 -and
+                [string]$refinement.role -ceq 'simion_single_flight_accelerator_entrance_local_pa_refinement' -and
+                [string]$refinement.cache_key -ceq $localKey -and
+                [string]$refinement.pa_prefix -ceq 'accelerator_entrance_local' -and
+                [string]$refinement.basis_build_sha256 -ceq (Get-FileHash -LiteralPath $localBasisReport -Algorithm SHA256).Hash -and
+                ($receiptIds -join ',') -eq ($localSolutionIds -join ',') -and
+                (@($refinement.mode_receipts) -join ',') -ceq
+                  ($expectedModeReceipts -join ',') -and
+                @($localModeResumeState.pending_solution_ids).Count -eq 0
             } catch { $localRefinementComplete = $false }
           }
           if (-not $localRefinementComplete) {
+          $localResumeState = Get-RfPaRefineResumeState `
+            -BuildDirectory $localBuildDir -CacheKey $localKey `
+            -FamilyRole $localRole -PaPrefix 'accelerator_entrance_local' `
+            -SolutionIds $localSolutionIds -BasisReport $localBasisReport
+          $localPendingSolutionIds = @($localResumeState.pending_solution_ids)
+          if (-not $localBasisBuiltThisRun -and $localPendingSolutionIds.Count -gt 0) {
+            $localRepairBoundaryProjection = New-RfStandaloneBoundarySourceProjection `
+              -SelectionPath $mainBuild.standalone_selection_path `
+              -ExpectedPrefix 'accelerator_main' `
+              -ExpectedResponseIds $localSolutionIds `
+              -Label 'main_repair_accelerator_entrance_local'
+            try {
+              foreach ($solutionId in $localPendingSolutionIds) {
+                $modeReceipt = Get-RfPaRefineModeReceiptPath `
+                  -BuildDirectory $localBuildDir -SolutionId $solutionId
+                $modePa = Join-Path $localBuildDir (
+                  "accelerator_entrance_local.pa{0}" -f $solutionId)
+                foreach ($disposable in @($modeReceipt,$modePa)) {
+                  if (Test-Path -LiteralPath $disposable -PathType Leaf) {
+                    Remove-Item -LiteralPath $disposable -Force
+                  }
+                }
+                $repairReport = Join-Path $localBuildDir (
+                  "basis_repair_pa{0}.json" -f $solutionId)
+                $repairModeSpec = '{0}:{0}=1' -f $solutionId
+                $repair = Invoke-ResourceBudgetedProcess `
+                  -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+                  -UsagePath (Join-Path $package.log_dir (
+                    "accelerator_entrance_local_basis_repair_pa{0}_resource_usage.json" -f $solutionId)) `
+                  -FilePath $SimionExe -WorkingDirectory $localBuildDir `
+                  -RedirectStandardOutput (Join-Path $package.log_dir (
+                    "accelerator_entrance_local_basis_repair_pa{0}.stdout.log" -f $solutionId)) `
+                  -RedirectStandardError (Join-Path $package.log_dir (
+                    "accelerator_entrance_local_basis_repair_pa{0}.stderr.log" -f $solutionId)) `
+                  -ArgumentList @('--nogui','--noprompt','lua',$localBasisBuilderSource,
+                    $localRepairBoundaryProjection.mode_map,$localBuildSharp,
+                    ([string]$mainBuild.geometry.instance_origin_mm.x),([string]$mainBuild.geometry.instance_origin_mm.y),([string]$mainBuild.geometry.instance_origin_mm.z),
+                    ([string]$localGeometry.instance_origin_mm.x),([string]$localGeometry.instance_origin_mm.y),([string]$localGeometry.instance_origin_mm.z),
+                    $repairModeSpec,$repairReport)
+                if ($repair.resource_budget_exceeded -or $repair.exit_code -ne 0 -or
+                    -not (Test-Path -LiteralPath $modePa -PathType Leaf) -or
+                    [int64](Get-Item -LiteralPath $modePa).Length -lt 1) {
+                  throw "Accelerator entrance-local mode $solutionId basis repair failed."
+                }
+              }
+            } finally {
+              Remove-RfStandaloneBoundarySourceProjection `
+                -Projection $localRepairBoundaryProjection
+            }
+          }
+          if ($localPendingSolutionIds.Count -gt 0) {
           # Each basis has its fixed main-domain Dirichlet boundary before
           # refinement, so these solves are independent. Reuse the repository
           # scheduler instead of serializing every local-aperture basis.
@@ -2427,7 +3217,7 @@ try {
             'accelerator_entrance_local_refine_resource_usage.json'
           $localRefineIdentity = [ordered]@{
             solver='SIMION';field_kind='electrostatic'
-            work_item_count=$localSolutionIds.Count
+            work_item_count=$localPendingSolutionIds.Count
             independent_work_items=$true
             oatof_numerical_profile_id=$selectedOatofNumericalProfileId
             accelerator_field_profile_id=$selectedFieldProfileId
@@ -2441,23 +3231,35 @@ try {
           $localRefineRuntimePlan = Get-Content -LiteralPath $localRefineDispatchPlan `
             -Raw -Encoding UTF8 | ConvertFrom-Json
           if ([string]$localRefineRuntimePlan.dispatch_unit -ne 'independent_work_items' -or
-              [int]$localRefineRuntimePlan.work_item_count -ne $localSolutionIds.Count -or
+              [int]$localRefineRuntimePlan.work_item_count -ne $localPendingSolutionIds.Count -or
               [int]$localRefineRuntimePlan.limits.maximum_concurrency -lt 1) {
             throw 'Accelerator entrance-local refinement dispatch plan is invalid.'
           }
-          $localRefineSpecifications = @($localSolutionIds | ForEach-Object {
+          $localRefineSpecifications = @($localPendingSolutionIds | ForEach-Object {
             $electrode = [int]$_
             [pscustomobject]@{
               name=("accelerator_entrance_local_refine_pa{0}" -f $electrode)
+              solution_id=$electrode
               file_path=$SimionExe; working_directory=$localBuildDir
               stdout=(Join-Path $package.log_dir ("accelerator_entrance_local_refine_pa{0}.stdout.log" -f $electrode))
               stderr=(Join-Path $package.log_dir ("accelerator_entrance_local_refine_pa{0}.stderr.log" -f $electrode))
               environment=@{}
               argument_list=[string[]]@('--nogui','--noprompt','lua',$refinerSource,
                 (Join-Path $localBuildDir ("accelerator_entrance_local.pa{0}" -f $electrode)))
-              scheduler_batch=[pscustomobject]@{index=($localSolutionIds.IndexOf($electrode)+1);total_batches=$localSolutionIds.Count;work_item_id_min=($localSolutionIds.IndexOf($electrode)+1);work_item_id_max=($localSolutionIds.IndexOf($electrode)+1);count=1;execution_unit='independent_work_items'}
+              scheduler_batch=[pscustomobject]@{index=($localPendingSolutionIds.IndexOf($electrode)+1);total_batches=$localPendingSolutionIds.Count;work_item_id_min=($localPendingSolutionIds.IndexOf($electrode)+1);work_item_id_max=($localPendingSolutionIds.IndexOf($electrode)+1);count=1;execution_unit='independent_work_items'}
             }
           })
+          $localModeCompletionAction = {
+            param($completedRecord)
+            if ($null -eq $completedRecord.exit_code -or
+                [int]$completedRecord.exit_code -ne 0) { return }
+            Write-RfPaRefineModeReceipt -BuildDirectory $localBuildDir `
+              -CacheKey $localKey -FamilyRole $localRole `
+              -PaPrefix 'accelerator_entrance_local' `
+              -SolutionId ([int]$completedRecord.specification.solution_id) `
+              -BasisReport $localBasisReport `
+              -ExitCode ([int]$completedRecord.exit_code) | Out-Null
+          }
           $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
             -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
           $localExistingProcessRecords = @()
@@ -2492,19 +3294,47 @@ try {
             -DispatchPlanPath $localRefineDispatchPlan -RunDir $package.run_dir `
             -UsagePath $localRefineResourceUsage `
             -ProcessSpecifications $localRefineSpecifications `
-            -ExistingProcessRecords $localExistingProcessRecords
+            -ExistingProcessRecords $localExistingProcessRecords `
+            -OnProcessCompleted $localModeCompletionAction
           $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage prepare `
             -Budget (Get-HostResourceBudget -Role SIMION -Stage prepare) -RetainedMemoryBytes 0
           if ($localRefineWave.resource_budget_exceeded -or
               @($localRefineWave.processes | Where-Object { [int]$_.exit_code -ne 0 }).Count -ne 0) {
             throw 'Accelerator entrance-local PA refinement failed.'
           }
-          Write-RunJson -Path $localRefinementReceipt -Depth 6 -Value ([ordered]@{
-            schema_version=1; role='simion_single_flight_accelerator_entrance_local_pa_refinement'
+          }
+          $localClosedState = Get-RfPaRefineResumeState `
+            -BuildDirectory $localBuildDir -CacheKey $localKey `
+            -FamilyRole $localRole -PaPrefix 'accelerator_entrance_local' `
+            -SolutionIds $localSolutionIds -BasisReport $localBasisReport
+          if (@($localClosedState.pending_solution_ids).Count -ne 0) {
+            throw 'Accelerator entrance-local PA refinement mode receipts are incomplete.'
+          }
+          Write-RfAtomicJsonFile -Path $localRefinementReceipt -Depth 6 -Value ([ordered]@{
+            schema_version=2; role='simion_single_flight_accelerator_entrance_local_pa_refinement'
             cache_key=$localKey; pa_prefix='accelerator_entrance_local'; solution_ids=@($localSolutionIds)
             basis_build_sha256=(Get-FileHash -LiteralPath $localBasisReport -Algorithm SHA256).Hash
+            mode_receipts=@($localSolutionIds | ForEach-Object {
+              Split-Path -Leaf (Get-RfPaRefineModeReceiptPath `
+                -BuildDirectory $localBuildDir -SolutionId ([int]$_))
+            })
           })
           }
+          $localStandaloneReceipt = Export-RfStandalonePaResponses `
+            -Directory $localBuildDir -Prefix 'accelerator_entrance_local' `
+            -SolutionIds $localSolutionIds `
+            -ExporterSource $standaloneExporterSource `
+            -LogStem 'accelerator_entrance_local'
+          $localOperatingCompanion = Resolve-RfNativeOperatingPaCompanion `
+            -Name 'accelerator_entrance_local' `
+            -ControllerBasename 'accelerator_entrance_local.pa0' `
+            -FamilyRole $localRole `
+            -FamilyCacheKey $localKey -FamilyDirectory $localBuildDir `
+            -OperatingCacheRoot $nativeOperatingCacheRoot `
+            -Exporter $nativeOperatingExporterSource -Adapter $nativeOperatingAdapterSource `
+            -Upstream $upstreamFrozen -Frontend $frontendContract -Oatof $oatofGeometry `
+            -RegionField $resolvedRegionFieldContractFrozen `
+            -AcceleratorMain $acceleratorMainContract -AllowSynthesis
           $localCacheDir = Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot `
             -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $localCacheRoot `
             -CacheKey $localKey -Role $localRole -Identity $localIdentity `
@@ -2515,13 +3345,12 @@ try {
             -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
           $paCacheDispositions.accelerator_entrance_local.disposition = 'built_and_published'
         } catch {
-          # Preserve only an exact, identity-bound staging family that has
-          # reached a durable basis or publication boundary.  This mirrors the
-          # main fine-domain rule and prevents an interrupted local Refine from
-          # discarding reusable solver work, without accepting unknown files.
+          # Preserve only an exact, identity-bound staging family that reached
+          # the complete basis or publication boundary.  Boundary copying has
+          # no partial checkpoint; strict mode receipts begin after it closes.
           $recoverableLocalStaging = (Test-Path -LiteralPath (Join-Path $localBuildDir '.rf_cache_staging.json') -PathType Leaf) -and
             ((Test-Path -LiteralPath (Join-Path $localBuildDir 'cache_manifest.json') -PathType Leaf) -or
-              @((Get-ChildItem -LiteralPath $localBuildDir -Filter 'basis_build.json.basis_*.complete' -File -ErrorAction SilentlyContinue)).Count -gt 0)
+              (Test-Path -LiteralPath (Join-Path $localBuildDir 'basis_build.json') -PathType Leaf))
           if ((Test-Path -LiteralPath $localBuildDir) -and -not $recoverableLocalStaging) {
             Remove-Item -LiteralPath $localBuildDir -Recurse -Force
           }
@@ -2530,81 +3359,39 @@ try {
       } else {
         $paCacheDispositions.accelerator_entrance_local.disposition = 'cache_hit'
       }
+      $localManifestInput = Copy-RfCacheManifestInput -CacheEntry $localCacheDir `
+        -Destination (Join-Path $package.input_dir `
+          'accelerator_entrance_local_pa_cache_manifest.json')
+      $localStandaloneSelectionPath = Join-Path $package.input_dir `
+        'accelerator_entrance_local_standalone_response_selection.json'
+      $localStandaloneModeMap = Join-Path $package.input_dir `
+        'accelerator_entrance_local_standalone_mode_map.tsv'
+      $localStandaloneSelection = Select-RfStandalonePaResponses `
+        -Directory $localCacheDir -Manifest $localManifestInput `
+        -Prefix 'accelerator_entrance_local' -SolutionIds $localSolutionIds `
+        -SelectionPath $localStandaloneSelectionPath `
+        -ModeMapPath $localStandaloneModeMap
+      if ($null -eq $localOperatingCompanion) {
+        $localOperatingCompanion = Resolve-RfNativeOperatingPaCompanion `
+          -Name 'accelerator_entrance_local' `
+          -ControllerBasename 'accelerator_entrance_local.pa0' `
+          -FamilyRole $localRole `
+          -FamilyCacheKey $localKey -FamilyDirectory $localCacheDir `
+          -OperatingCacheRoot $nativeOperatingCacheRoot `
+          -Exporter $nativeOperatingExporterSource -Adapter $nativeOperatingAdapterSource `
+          -Upstream $upstreamFrozen -Frontend $frontendContract -Oatof $oatofGeometry `
+          -RegionField $resolvedRegionFieldContractFrozen `
+          -AcceleratorMain $acceleratorMainContract
+      }
       $domainSplitFineBuilds += [pscustomobject]@{
         name='accelerator_entrance_local'; gem=$acceleratorEntranceLocalGem; contract=$acceleratorEntranceLocalContract
         geometry=$localGeometry; cache_role=$localRole; disposition_key='accelerator_entrance_local'
         cache_key=$localKey; cache_dir=$localCacheDir; pa0=$null; basis_builder=$localBasisBuilderSource
         refiner=$refinerSource; basis_report=(Join-Path $localCacheDir 'basis_build.json')
-      }
-    }
-    if ($prePulseEntranceZoneCollision) {
-      $entranceZoneGeometry = Get-Content -LiteralPath $prePulseEntranceZoneCollisionContract -Raw -Encoding UTF8 | ConvertFrom-Json
-      if ([string]$entranceZoneGeometry.boundary_condition.mode -ne 'geometry_collision_zero_field_v1' -or
-          -not [bool]$entranceZoneGeometry.boundary_condition.direct_refinement_prohibited -or
-          [string]$entranceZoneGeometry.local_geometry_coverage -ne 'pre_pulse_connector_side_first_zone_collision_v1') {
-        throw 'Pre-pulse accelerator entrance-zone collision contract is invalid.'
-      }
-      $entranceZoneRole = 'simion_single_flight_accelerator_entrance_zone_collision_pa_cache'
-      $entranceZoneAssetName = 'accelerator_entrance_zero_field'
-      $entranceZoneIdentity = [ordered]@{
-        schema_version=1; role=$entranceZoneRole; project_id=$runProjectId; solver=$simionSolverCacheIdentity
-        inputs=[ordered]@{fine_gem_sha256=(Get-FileHash -LiteralPath $prePulseEntranceZoneCollisionGem -Algorithm SHA256).Hash}
-        critical_options=[ordered]@{
-          geometry_role='connector_side_repeller_to_first_grid_v1'
-          field_mode='zero'; refine=$false
-          gem2pa=@('--nogui','--noprompt','gem2pa',"$entranceZoneAssetName.gem","$entranceZoneAssetName.pa0")
-        }
-      }
-      $entranceZoneKey = Get-RfContentIdentitySha256 -Identity $entranceZoneIdentity
-      $paCacheDispositions.accelerator_entrance_zone_collision.key = $entranceZoneKey
-      $entranceZoneCacheRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId\cache\simion_single_flight_accelerator_entrance_zone_collision"
-      $entranceZoneCacheDir = Resolve-RfReusableCacheDirectory -Python $python -RepoRoot $repoRoot `
-        -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $entranceZoneCacheRoot `
-        -CacheKey $entranceZoneKey -Role $entranceZoneRole -Identity $entranceZoneIdentity `
-        -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'})
-      $entranceZoneCacheDir = Resolve-RfBoundGenerationDirectory -CacheRoot $entranceZoneCacheRoot `
-        -CacheKey $entranceZoneKey -Role $entranceZoneRole -ReusableDirectory $entranceZoneCacheDir
-      if ([string]::IsNullOrWhiteSpace($entranceZoneCacheDir)) {
-        if ($PaCachePolicy -eq 'require_existing') {
-          $paCacheDispositions.accelerator_entrance_zone_collision.disposition = 'cache_miss_required_existing'
-          throw "Required PA cache MISS or damage: role=accelerator_entrance_zone_collision key=$entranceZoneKey"
-        }
-        $paCacheDispositions.accelerator_entrance_zone_collision.disposition = 'cache_miss_build_authorized'
-        $entranceZoneBuildDir = New-RfCacheStagingDirectory -CacheRoot $entranceZoneCacheRoot
-        try {
-          $entranceZoneBuildGem = Join-Path $entranceZoneBuildDir ($entranceZoneAssetName + '.gem')
-          $entranceZoneBuildPa0 = Join-Path $entranceZoneBuildDir ($entranceZoneAssetName + '.pa0')
-          Copy-Item -LiteralPath $prePulseEntranceZoneCollisionGem -Destination $entranceZoneBuildGem
-          $entranceZoneGem2Pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
-            -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'accelerator_entrance_zone_collision_gem2pa_resource_usage.json') `
-            -FilePath $SimionExe -WorkingDirectory $entranceZoneBuildDir `
-            -RedirectStandardOutput (Join-Path $package.log_dir 'accelerator_entrance_zone_collision_gem2pa.stdout.log') `
-            -RedirectStandardError (Join-Path $package.log_dir 'accelerator_entrance_zone_collision_gem2pa.stderr.log') `
-            -ArgumentList @('--nogui','--noprompt','gem2pa',$entranceZoneBuildGem,$entranceZoneBuildPa0)
-          if ($entranceZoneGem2Pa.resource_budget_exceeded -or $entranceZoneGem2Pa.exit_code -ne 0) {
-            throw 'Pre-pulse accelerator entrance-zone GEM conversion failed.'
-          }
-          $entranceZoneCacheDir = Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot `
-            -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $entranceZoneCacheRoot `
-            -CacheKey $entranceZoneKey -Role $entranceZoneRole -Identity $entranceZoneIdentity `
-            -StagingDirectory $entranceZoneBuildDir -ProviderRunId $RunId `
-            -ArtifactCapacityState $artifactCapacityState `
-            -ProtectedPaths $artifactCapacityProtectedPaths `
-            -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
-            -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
-          $paCacheDispositions.accelerator_entrance_zone_collision.disposition = 'built_and_published'
-        } catch {
-          if (Test-Path -LiteralPath $entranceZoneBuildDir) { Remove-Item -LiteralPath $entranceZoneBuildDir -Recurse -Force }
-          throw
-        }
-      } else {
-        $paCacheDispositions.accelerator_entrance_zone_collision.disposition = 'cache_hit'
-      }
-      $domainSplitFineBuilds += [pscustomobject]@{
-        name=$entranceZoneAssetName; gem=$prePulseEntranceZoneCollisionGem; contract=$prePulseEntranceZoneCollisionContract; geometry=$entranceZoneGeometry
-        cache_role=$entranceZoneRole; disposition_key='accelerator_entrance_zone_collision'; cache_key=$entranceZoneKey; cache_dir=$entranceZoneCacheDir; pa0=$null
-        topology_pa=(Join-Path $entranceZoneCacheDir ($entranceZoneAssetName + '.pa0'))
-        basis_builder=$null; refiner=$null; basis_report=$null
+        cache_manifest_input=$localManifestInput
+        standalone_selection_path=$localStandaloneSelectionPath
+        standalone_mode_map=$localStandaloneModeMap
+        operating_companion=$localOperatingCompanion
       }
     }
   }
@@ -3091,7 +3878,7 @@ try {
   $runtimeDir = Join-Path $package.run_dir 'simion'
   # Detector-blind pre-pulse screening never reaches downstream hardware.  Its
   # compact IOB contains exactly four roles: coarse bridge, upstream fine PA,
-  # zero-field first-zone collision geometry, and the same field-bearing local
+  # the already-refined accelerator-main PA, and the same field-bearing local
   # replacement used by full flight.  Flight-tube,
   # reflectron, and detector PA families are not materialized.  Field export is
   # an explicit full-geometry construction operation and therefore keeps the
@@ -3241,12 +4028,123 @@ try {
     })
   } elseif ($prePulseEntranceZoneCollision) {
     @($domainSplitFineBuilds | Where-Object {
-      $_.name -in @('upstream_bridge','accelerator_entrance_zero_field','accelerator_entrance_local')
+      $_.name -in @('upstream_bridge','accelerator_main','accelerator_entrance_local')
     })
   } else {
     @($domainSplitFineBuilds)
   }
+  $standaloneDynamicFieldBank = $null
+  $standaloneDynamicFieldPlan = $null
+  $standaloneDynamicOperatingReceipt = $null
   $maskRestorer = $null
+  if ($standaloneFieldBearingRuntime) {
+    # Operating-point PAs are large, reproducible derivatives of the verified
+    # response banks.  Keep them in a direct-child execution directory rather
+    # than the canonical run tree: counting three 2.2 GiB main-field states as
+    # retained artifacts can trip the 500 GiB gate before flight even though
+    # compact retention removes them at terminal publication.
+    $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd(
+      [IO.Path]::DirectorySeparatorChar,
+      [IO.Path]::AltDirectorySeparatorChar
+    )
+    $standaloneDynamicExecutionDir = [IO.Path]::GetFullPath((Join-Path `
+      $temporaryRoot ('rf_oatof_operating_pa_' + [Guid]::NewGuid().ToString('N'))))
+    if (-not (Split-Path -Parent $standaloneDynamicExecutionDir).Equals(
+        $temporaryRoot,[StringComparison]::OrdinalIgnoreCase)) {
+      throw 'Standalone dynamic execution directory escapes the system temporary root.'
+    }
+    New-Item -ItemType Directory -Path $standaloneDynamicExecutionDir | Out-Null
+    $roleRows = if ($prePulseEntranceZoneCollision) {
+      @(
+        [pscustomobject]@{role='coarse_frontend';index=1;build=$frontendFamilyBuild},
+        [pscustomobject]@{role='accelerator_main';index=2;build=@($domainSplitRuntimeBuilds | Where-Object name -eq 'accelerator_main')[0]},
+        [pscustomobject]@{role='upstream_bridge';index=3;build=@($domainSplitRuntimeBuilds | Where-Object name -eq 'upstream_bridge')[0]},
+        [pscustomobject]@{role='accelerator_entrance_local';index=4;build=@($domainSplitRuntimeBuilds | Where-Object name -eq 'accelerator_entrance_local')[0]}
+      )
+    } else {
+      @(
+        [pscustomobject]@{role='coarse_frontend';index=2;build=$frontendFamilyBuild},
+        [pscustomobject]@{role='accelerator_main';index=3;build=@($domainSplitRuntimeBuilds | Where-Object name -eq 'accelerator_main')[0]},
+        [pscustomobject]@{role='upstream_bridge';index=4;build=@($domainSplitRuntimeBuilds | Where-Object name -eq 'upstream_bridge')[0]},
+        [pscustomobject]@{role='accelerator_entrance_local';index=6;build=@($domainSplitRuntimeBuilds | Where-Object name -eq 'accelerator_entrance_local')[0]}
+      )
+    }
+    if (@($roleRows | Where-Object {
+          $null -eq $_.build -or $null -eq $_.build.operating_companion -or
+          [string]::IsNullOrWhiteSpace(
+            [string]$_.build.operating_companion.generation_directory)
+        }).Count -gt 0) {
+      throw 'Standalone dynamic field runtime lacks a native operating PA companion.'
+    }
+    $standaloneDynamicFieldPlan = Join-Path $package.input_dir `
+      'standalone_native_operating_pa_materialization_plan.json'
+    $standaloneDynamicFieldBank = Join-Path $package.input_dir `
+      'standalone_dynamic_field_bank.json'
+    $standaloneDynamicOperatingReceipt = Join-Path $package.input_dir `
+      'standalone_dynamic_operating_pa_receipt.json'
+    $materializationRecords = @()
+    $dynamicRoles = @()
+    foreach ($roleRow in $roleRows) {
+      $companion = $roleRow.build.operating_companion
+      $inputStem = ([string]$roleRow.role) -replace '[^A-Za-z0-9_]', '_'
+      $materializationReceipt = Join-Path $package.log_dir `
+        ($inputStem + '_native_operating_pa_materialization.json')
+      Invoke-SingleFlightPython -Arguments @(
+        '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.native_operating_pa_family',
+        '--action','materialize','--identity',([string]$companion.identity_path),
+        '--cache-root',$nativeOperatingCacheRoot,
+        '--generation',([string]$companion.generation_directory),
+        '--destination-directory',$standaloneDynamicExecutionDir,
+        '--output',$materializationReceipt
+      ) -Failure "Native operating PA materialization failed: $($roleRow.role)"
+      $sourceManifest = Join-Path ([string]$companion.generation_directory) `
+        'cache_manifest.json'
+      $frozenManifest = Join-Path $package.input_dir `
+        ($inputStem + '_native_operating_pa_cache_manifest.json')
+      Copy-RfStableFile -SourceRunRoot $workspaceRoot -SourcePath $sourceManifest `
+        -Destination $frozenManifest -Role 'native operating PA cache manifest' | Out-Null
+      $materializationRecords += [ordered]@{
+        role=[string]$roleRow.role
+        cache_key=[string]$companion.cache_key
+        generation_directory=[string]$companion.generation_directory
+        cache_manifest=$frozenManifest
+        identity=[string]$companion.identity_path
+        materialization_receipt=$materializationReceipt
+      }
+      $dynamicRoles += [ordered]@{
+        role=[string]$roleRow.role
+        instance_index=[int]$roleRow.index
+        carrier_pa_basename=([string]$roleRow.role + '.carrier_off.pa')
+        rf_differential_pa_basename=([string]$roleRow.role + '.rf_differential.pa')
+        pulse_delta_pa_basename=([string]$roleRow.role + '.pulse_delta.pa')
+      }
+    }
+    Write-RunJson -Path $standaloneDynamicFieldBank -Depth 6 -Value ([ordered]@{
+      schema_version=1; role='rf_oatof_simion_standalone_dynamic_field_bank'
+      runtime_representation='standalone_operating_pa_explicit_dynamic_v1'
+      dynamic_roles=@($dynamicRoles | Sort-Object instance_index)
+    })
+    Write-RunJson -Path $standaloneDynamicFieldPlan -Depth 7 -Value ([ordered]@{
+      schema_version=1; role='rf_oatof_native_operating_pa_materialization_plan'
+      records=$materializationRecords
+    })
+    Write-RunJson -Path $standaloneDynamicOperatingReceipt -Depth 7 -Value ([ordered]@{
+      schema_version=2; role='rf_oatof_standalone_dynamic_operating_pa_receipt'
+      runtime_representation='standalone_operating_pa_explicit_dynamic_v1'
+      materialization_plan_sha256=(Get-FileHash -LiteralPath $standaloneDynamicFieldPlan -Algorithm SHA256).Hash
+      field_bank_sha256=(Get-FileHash -LiteralPath $standaloneDynamicFieldBank -Algorithm SHA256).Hash
+      records=$materializationRecords
+    })
+    $composer = $null
+    $frontendWorkingPa0 = Join-Path $standaloneDynamicExecutionDir `
+      'coarse_frontend.carrier_off.pa'
+    foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds) {
+      $domainSplitFineBuild.pa0 = Join-Path $standaloneDynamicExecutionDir (
+        $domainSplitFineBuild.name + '.carrier_off.pa')
+      $domainSplitFineBuild | Add-Member -NotePropertyName topology_pa -Force `
+        -NotePropertyValue $domainSplitFineBuild.pa0
+    }
+  } else {
   foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds) {
     $runtimeProjectionIds = @(if ($postPulseHandoffMinimal -and
         $domainSplitFineBuild.name -in @('accelerator_main','accelerator_entrance_local')) {
@@ -3315,6 +4213,7 @@ try {
     }
     $domainSplitFineBuild | Add-Member -NotePropertyName topology_pa -Force `
       -NotePropertyValue $topologyPa
+  }
   }
   $reflectronBuilderFrozen = $null
   $reflectronGemFrozen = $null
@@ -3487,7 +4386,7 @@ try {
     $cacheKeys = if ([int]$prePulseTimeSeries.schema_version -in @(2, 3, 4, 5, 6, 7)) {
       $roles = $prePulseTimeSeries.pa_cache_roles
       $expectedPrePulseRoles = if ([int]$prePulseTimeSeries.schema_version -in @(5, 6, 7)) {
-        'fine_upstream,accelerator_main,accelerator_entrance_zone_collision,accelerator_entrance_local'
+        'fine_upstream,accelerator_main,accelerator_entrance_local'
       } elseif ($domainSplitEnabled) {
         'full_coarse_bridge,fine_upstream,accelerator_main,accelerator_intermediate2_overlay'
       } elseif ($overlayLayout -eq 'two_local_v1') {
@@ -3503,15 +4402,13 @@ try {
       if ([int]$prePulseTimeSeries.schema_version -in @(5, 6, 7)) {
         $domainFineUpstream = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'upstream_bridge' })
         $domainFineMain = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'accelerator_main' })
-        $domainEntranceZone = @($domainSplitFineBuilds | Where-Object { $_.disposition_key -eq 'accelerator_entrance_zone_collision' })
         $domainEntranceLocal = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'accelerator_entrance_local' })
         if ($domainFineUpstream.Count -ne 1 -or $domainFineMain.Count -ne 1 -or
-            $domainEntranceZone.Count -ne 1 -or $domainEntranceLocal.Count -ne 1) {
-          throw 'Pre-pulse entrance-zone PA family is incomplete.'
+            $domainEntranceLocal.Count -ne 1) {
+          throw 'Pre-pulse real-field PA family is incomplete.'
         }
         $resolvedCacheKeys.fine_upstream = $domainFineUpstream[0].cache_key
         $resolvedCacheKeys.accelerator_main = $domainFineMain[0].cache_key
-        $resolvedCacheKeys.accelerator_entrance_zone_collision = $domainEntranceZone[0].cache_key
         $resolvedCacheKeys.accelerator_entrance_local = $domainEntranceLocal[0].cache_key
       } elseif ($domainSplitEnabled) {
         $domainProgramOverlay = @($twoLocalOverlayBuilds | Where-Object { $_.overlay_id -eq 'accelerator_intermediate_overlay' })
@@ -3576,7 +4473,8 @@ try {
       # absent current-build receipts for a physics-identity change.
       $recoveryCacheReceipts = @(
         @{name='upstream_bridge_pa_cache_manifest.json';role='simion_single_flight_upstream_bridge_pa_cache'},
-        @{name='accelerator_entrance_zero_field_pa_cache_manifest.json';role='simion_single_flight_accelerator_entrance_zone_collision_pa_cache'}
+        @{name='accelerator_main_pa_cache_manifest.json';role='simion_single_flight_accelerator_main_pa_cache'},
+        @{name='accelerator_entrance_local_pa_cache_manifest.json';role='simion_single_flight_accelerator_entrance_local_pa_cache'}
       )
       $prePulseCacheIdentityMatches = @($recoveryCacheReceipts | Where-Object {
         $receiptPath = Join-Path $ResumePrePulseFromRun ('inputs\' + $_.name)
@@ -4227,17 +5125,19 @@ try {
       Copy-RfStableFile -SourceRunRoot $repoRoot `
         -SourcePath (Join-Path $PSScriptRoot 'build_single_flight_pre_pulse_iob.lua') `
         -Destination $prePulseIobBuilder -Role 'compact four-instance pre-pulse IOB builder' | Out-Null
-      $domainEntranceZone = @($domainSplitFineBuilds | Where-Object {
-        $_.name -eq 'accelerator_entrance_zero_field'
+      $domainMain = @($domainSplitFineBuilds | Where-Object {
+        $_.name -eq 'accelerator_main'
       })
       $domainUpstream = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'upstream_bridge' })
       $entranceLocalBuild = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'accelerator_entrance_local' })
-      if ($domainEntranceZone.Count -ne 1 -or $domainUpstream.Count -ne 1 -or
+      if ($domainMain.Count -ne 1 -or $domainUpstream.Count -ne 1 -or
           $entranceLocalBuild.Count -ne 1) {
-        throw 'Continuous pre-pulse requires one zero-field entrance PA, one upstream RF PA, and one field-bearing entrance-local PA.'
+        throw 'Continuous pre-pulse requires one accelerator-main PA, one upstream RF PA, and one field-bearing entrance-local PA.'
       }
-      Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'frontend' -DestinationPrefix 'coarse_frontend' `
-        -SourceDirectory $frontendWorkingDir
+      if (-not $standaloneFieldBearingRuntime) {
+        Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'frontend' -DestinationPrefix 'coarse_frontend' `
+          -SourceDirectory $frontendWorkingDir
+      }
       # SIMION 2020 does not expose a supported Lua API for deleting arbitrary
       # Workbench instances.  Load the GUI-authored four-instance seed, then
       # replace every consecutive slot with the real PA families.
@@ -4246,17 +5146,17 @@ try {
       }
       # The seed and all of its distinct slot placeholders are copied together
       # because SIMION resolves them while opening the container.  The Lua
-      # builder immediately replaces all four instances with the real coarse,
-      # upstream, zero-field entrance, and field-bearing local PA families.
+      # builder immediately replaces all four instances in the same overlap
+      # priority as full flight: coarse, accelerator-main, upstream, local.
       Get-ChildItem -LiteralPath $iobSeedDirectory -File |
         Copy-Item -Destination $runtimeDir
       $prePulseRuntimeContainer = Join-Path $runtimeDir '4_instance_seed.iob'
       $prePulseIobArguments = @('--nogui','--noprompt','lua',$prePulseIobBuilder,
         $prePulseRuntimeContainer,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),
-        (Join-Path $runtimeDir 'coarse_frontend.pa0'),$domainUpstream[0].pa0,$domainEntranceZone[0].pa0,$entranceLocalBuild[0].pa0,
+        $(if($standaloneFieldBearingRuntime){$frontendWorkingPa0}else{Join-Path $runtimeDir 'coarse_frontend.pa0'}),$domainMain[0].pa0,$domainUpstream[0].pa0,$entranceLocalBuild[0].pa0,
         ([string]$frontendBoundaryGeometry.instance_origin_mm.x),([string]$frontendBoundaryGeometry.instance_origin_mm.y),([string]$frontendBoundaryGeometry.instance_origin_mm.z),
+        ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
         ([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),
-        ([string]$domainEntranceZone[0].geometry.instance_origin_mm.x),([string]$domainEntranceZone[0].geometry.instance_origin_mm.y),([string]$domainEntranceZone[0].geometry.instance_origin_mm.z),
         ([string]$entranceLocalBuild[0].geometry.instance_origin_mm.x),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.y),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.z))
       $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'pre_pulse_compact_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'pre_pulse_compact_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'pre_pulse_compact_iob_build.stderr.log') -ArgumentList $prePulseIobArguments
       if ($built.resource_budget_exceeded -or $built.exit_code -ne 0) { throw 'Compact pre-pulse IOB build failed.' }
@@ -4334,10 +5234,14 @@ try {
     # Materialize the coarse frontend alias without mutating immutable PA cache
     # generations.  Keep accelerator-main under its own name so opening the
     # formal IOB cannot resolve it in place of the formal accelerator PA.
-    Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'frontend' -DestinationPrefix 'coarse_frontend' `
-      -SourceDirectory $frontendWorkingDir
-    $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator_main.pa0'
-    $coarseFrontendRuntimePa0 = Join-Path $runtimeDir 'coarse_frontend.pa0'
+    if (-not $standaloneFieldBearingRuntime) {
+      Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'frontend' -DestinationPrefix 'coarse_frontend' `
+        -SourceDirectory $frontendWorkingDir
+    }
+    $acceleratorMainRuntimePa0 = $domainMain[0].pa0
+    $coarseFrontendRuntimePa0 = if ($standaloneFieldBearingRuntime) {
+      $frontendWorkingPa0
+    } else { Join-Path $runtimeDir 'coarse_frontend.pa0' }
     Get-ChildItem -LiteralPath $fullFlightSeedDir -File | Copy-Item -Destination $runtimeDir
     $runtimeContainer = Join-Path $runtimeDir '7_instance_seed.iob'
     $fullFlightIobArguments = @('--nogui','--noprompt','lua',$fullFlightIobBuilder,
@@ -4345,7 +5249,7 @@ try {
       (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$coarseFrontendRuntimePa0,
       $domainUpstream[0].pa0,$acceleratorMainRuntimePa0,
       (Join-Path $runtimeDir 'flight_tube_ground.pa0'),(Join-Path $runtimeDir 'reflectron.pa0'),
-      (Join-Path $runtimeDir 'accelerator_entrance_local.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),
+      $entranceLocalBuild[0].pa0,(Join-Path $runtimeDir 'detector_ground.pa0'),
       ([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),
       ([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),
       ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
@@ -4382,10 +5286,13 @@ try {
   $domainSplitFineCacheManifestInputs = @()
   if ($domainSplitEnabled) {
     foreach ($domainSplitFineBuild in $domainSplitFineBuilds) {
+      # Each fine-family manifest was frozen immediately after resolving or
+      # publishing that immutable generation.  Reuse that exact input here;
+      # copying it again would target the same run-input path and correctly
+      # trip Copy-RfCacheManifestInput's no-overwrite guard.
       $domainSplitFineCacheManifestInputs += [pscustomobject]@{
         disposition=$paCacheDispositions[$domainSplitFineBuild.disposition_key]
-        path=(Copy-RfCacheManifestInput -CacheEntry $domainSplitFineBuild.cache_dir `
-          -Destination (Join-Path $package.input_dir ($domainSplitFineBuild.name + '_pa_cache_manifest.json')))
+        path=$domainSplitFineBuild.cache_manifest_input
       }
     }
   }
@@ -4494,9 +5401,6 @@ try {
     } elseif (-not $prePulseEntranceZoneCollision -and -not $domainSplitMainPaOnlyAxisField) {
       $programArguments += @('--intermediate-accelerator-overlay-contract',$domainProgramOverlay[0].contract)
     }
-    if ($prePulseEntranceZoneCollision) {
-      $programArguments += @('--pre-pulse-entrance-zone-collision-contract',$prePulseEntranceZoneCollisionContract)
-    }
     if ($domainSplitMainPaOnlyAxisField) { $programArguments += '--domain-split-main-pa-only-axis-field' }
     if ($domainSplitLocalAxisField) { $programArguments += '--domain-split-local-axis-field' }
   }
@@ -4505,6 +5409,10 @@ try {
   }
   if ($null -ne $restartContext) {
     $programArguments += @('--restart-context',$restartContext)
+  }
+  if (-not [string]::IsNullOrWhiteSpace([string]$standaloneDynamicFieldBank)) {
+    $programArguments += @(
+      '--standalone-dynamic-field-bank',$standaloneDynamicFieldBank)
   }
   if ($isPrePulseTimeSeriesScreening) {
     $programArguments += @(
@@ -4576,6 +5484,31 @@ try {
   $runConfiguration.parameters.accelerator_provider_source_identity =
     $acceleratorDependencyIdentities
   $runConfiguration.parameters.post_pulse_observation_window_us = $postPulseObservationWindowUs
+  if ($standaloneFieldBearingRuntime) {
+    $runConfiguration.inputs.standalone_dynamic_field_materialization_plan =
+      $standaloneDynamicFieldPlan
+    $runConfiguration.inputs.standalone_dynamic_field_bank =
+      $standaloneDynamicFieldBank
+    $runConfiguration.inputs.standalone_dynamic_operating_pa_receipt =
+      $standaloneDynamicOperatingReceipt
+    foreach ($roleRow in $roleRows) {
+      $inputStem = ([string]$roleRow.role) -replace '[^A-Za-z0-9_]', '_'
+      $matchingMaterialization = @($materializationRecords | Where-Object {
+        [string]$_.role -eq [string]$roleRow.role
+      })
+      if ($matchingMaterialization.Count -ne 1) {
+        throw "Native operating PA materialization receipt differs: $($roleRow.role)"
+      }
+      $runConfiguration.inputs["standalone_${inputStem}_operating_cache_manifest"] =
+        [string]$matchingMaterialization[0].cache_manifest
+      $runConfiguration.inputs["standalone_${inputStem}_operating_identity"] =
+        [string]$matchingMaterialization[0].identity
+    }
+    $runConfiguration.parameters.standalone_dynamic_runtime_representation =
+      'standalone_operating_pa_explicit_dynamic_v1'
+    $runConfiguration.parameters.standalone_dynamic_operating_pa_receipt_sha256 =
+      (Get-FileHash -LiteralPath $standaloneDynamicOperatingReceipt -Algorithm SHA256).Hash
+  }
   $runConfiguration.parameters.accelerator_overlay_layout = $overlayLayout
   $runConfiguration.parameters.accelerator_entrance_local_enabled = $acceleratorEntranceLocalEnabled
   $runConfiguration.parameters.accelerator_main_reference_aperture_mm = $executionProfile.accelerator_main_reference_aperture_mm
@@ -4591,8 +5524,6 @@ try {
   $runConfiguration.inputs.accelerator_entrance_local_gem = $acceleratorEntranceLocalGem
   $runConfiguration.inputs.accelerator_entrance_local_contract = $acceleratorEntranceLocalContract
   $runConfiguration.inputs.accelerator_entrance_local_domain_policy = $acceleratorEntranceLocalDomainPolicy
-  $runConfiguration.inputs.pre_pulse_entrance_zone_collision_gem = $prePulseEntranceZoneCollisionGem
-  $runConfiguration.inputs.pre_pulse_entrance_zone_collision_contract = $prePulseEntranceZoneCollisionContract
   $runConfiguration.parameters.domain_split_main_pa_only_axis_field = $domainSplitMainPaOnlyAxisField
   $runConfiguration.parameters.domain_split_local_axis_field = $domainSplitLocalAxisField
   $runConfiguration.parameters.domain_split_iob_instance_count = $(
@@ -5318,7 +6249,7 @@ try {
         -Outputs @($prePulseCheckpointOutputs) | Out-Null
     }
   }
-  if ($processSpecifications.Count -eq 0) {
+  if ($processSpecifications.Count -eq 0 -and $existingProcessRecords.Count -eq 0) {
     # A later immutable recovery run may inherit an entirely completed batch
     # set and only need deterministic merge/analysis.  Do not manufacture a
     # solver process merely to satisfy the dispatch helper's non-empty input.
@@ -5327,6 +6258,10 @@ try {
       processes = @($existingProcessRecords)
     }
   } else {
+    # A formal-first batch can finish during the 45 s probe and leave no
+    # pending specifications (notably N=1).  Still pass that completed record
+    # through the shared scheduler so its completion callback appends the
+    # governed TRACE sentinel and publishes the reusable checkpoint.
     $waveResult = Invoke-ResourceBudgetedProcesses `
       -DispatchPlanPath $runtimeDispatchPlanPath `
       -RunDir $package.run_dir -UsagePath $resourceUsage `
@@ -5615,6 +6550,17 @@ try {
   }
   throw $originalFailure
 } finally {
+  try {
+    if (-not [string]::IsNullOrWhiteSpace($standaloneDynamicExecutionDir) -and
+        (Test-Path -LiteralPath $standaloneDynamicExecutionDir -PathType Container)) {
+      Remove-PrivatePaFamilyDirectory -Path $standaloneDynamicExecutionDir `
+        -ExpectedNamePrefix 'rf_oatof_operating_pa_'
+    }
+  } catch {
+    # Cleanup is best-effort at this boundary.  Do not mask the scientific
+    # outcome or skip the terminal capacity gate and lease release.
+    Write-Warning "Standalone dynamic execution cleanup failed: $($_.Exception.Message)"
+  }
   # The startup gate protects an incoming run.  Once its terminal manifest is
   # immutable, repeat the governed L1/L2/L3 reconciliation before returning
   # the shared lease so compact output cannot leave the workspace below its
@@ -5637,31 +6583,24 @@ try {
     # alias. The canonical artifact directory remains valid for reconciliation.
     $terminalCapacityMaximumNewArtifactBytes = [int64]((Get-ChildItem -LiteralPath $package.artifact_run_dir -File -Recurse |
       Measure-Object -Property Length -Sum).Sum)
-    $terminalCapacityArguments = @(
-      '-m','common.contracts.reconcile_artifact_capacity',
-      '--artifact-root',(Join-Path $workspaceRoot 'artifacts'),
-      '--target-gib','500','--minimum-free-gib','500',
-      '--apply'
-    )
-    foreach ($protectedPath in $artifactCapacityProtectedPaths) {
-      $terminalCapacityArguments += @('--protect-path',$protectedPath)
+    $terminalCapacityParameters = @{
+      Python=$python; RepoRoot=$repoRoot
+      ArtifactRoot=(Join-Path $workspaceRoot 'artifacts')
+      TargetGiB=500; MinimumFreeGiB=500
+      ProtectedPaths=$artifactCapacityProtectedPaths
+      ProtectedCacheKeys=$artifactCapacityProtectedCacheKeys
     }
     # An early startup failure has no measured baseline.  Omit the fast-path
     # pair in that case so terminal reconciliation performs its normal scan;
     # neither half of the pair is meaningful alone. Never invent a zero
     # baseline or mask the original failure in StrictMode.
     if ($null -ne $artifactCapacityState) {
-      $terminalCapacityArguments += @(
-        '--known-measured-bytes',([string][int64]$artifactCapacityState.known_measured_bytes),
-        '--maximum-new-artifact-bytes',([string]$terminalCapacityMaximumNewArtifactBytes)
-      )
+      $terminalCapacityParameters.KnownMeasuredBytes =
+        [int64]$artifactCapacityState.known_measured_bytes
+      $terminalCapacityParameters.MaximumNewArtifactBytes =
+        $terminalCapacityMaximumNewArtifactBytes
     }
-    foreach ($cacheKey in $artifactCapacityProtectedCacheKeys) {
-      $terminalCapacityArguments += @('--protect-cache-key',$cacheKey)
-    }
-    $terminalCapacity = Invoke-SingleFlightPython -Arguments $terminalCapacityArguments `
-      -Failure 'Artifact capacity gate failed after the SIMION terminal manifest.'
-    $terminalCapacityReceipt = @($terminalCapacity) -join "`n" | ConvertFrom-Json
+    $terminalCapacityReceipt = Invoke-ArtifactCapacityGate @terminalCapacityParameters
     if (-not [bool]$terminalCapacityReceipt.satisfied_after_apply) {
       throw 'Artifact capacity gate did not restore the 500 GiB repository watermark after terminal publication.'
     }

@@ -1,5 +1,9 @@
 # Single-flight 硬限制审计
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
+本页就地冻结为 2026-08-31 历史审计，保留原路径；原记录未提供被审代码 SHA，以下行号不代表当前源码，候选处置未在本次重新验证。当前操作见[RUNNING](RUNNING.md)，当前状态见[INTEGRATION](INTEGRATION.md)。
+
 审计日期：2026-08-31。范围是 `runtime/run_single_flight.ps1` 的生产失败关闭；目标不是增加门禁，
 而是区分不可继续的证据/物理错误与可以结构化处理的正常状态。
 

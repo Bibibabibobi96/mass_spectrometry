@@ -342,11 +342,14 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
             "identity_source": "runner_materialized_verified_pa_cache_receipt",
             "required": [
                 "fine_upstream", "accelerator_main",
-                "accelerator_entrance_zone_collision", "accelerator_entrance_local",
+                "accelerator_entrance_local",
             ],
             "prohibited": ["flight_tube", "reflectron"],
         }
         dispositions = _cache_dispositions()
+        # A legacy terminal-handoff collision carrier can coexist in the run
+        # configuration, but it is not part of the continuous-source screen's
+        # physical PA identity.
         dispositions["accelerator_entrance_zone_collision"] = {
             "role": "simion_single_flight_accelerator_entrance_zone_collision_pa_cache",
             "key": "7" * 64,
@@ -360,7 +363,6 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
                 "parameters": {"pa_cache_dispositions": dispositions}
             }),
             {"fine_upstream": "5" * 64, "accelerator_main": "6" * 64,
-             "accelerator_entrance_zone_collision": "7" * 64,
              "accelerator_entrance_local": "8" * 64,
              "flight_tube": None, "reflectron": None},
         )

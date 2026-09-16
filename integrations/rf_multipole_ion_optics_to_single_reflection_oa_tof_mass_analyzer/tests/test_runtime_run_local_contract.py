@@ -56,23 +56,19 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("'--oatof-geometry',$oatofGeometry", runner[export:retention])
         self.assertIn("total_axis_field_theory_comparison", runner[retention:retention + 2500])
 
-    def test_host_stages_wrap_refine_and_flight_without_changing_internal_scheduling(self) -> None:
-        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("Enter-HostExecutionLease -Role SIMION -Stage prepare", runner)
-        for stage in ("pa_refine", "flight", "postprocess"):
-            self.assertIn(f"Update-HostResourceStage -Lease $hostExecutionLease -Stage {stage}", runner)
-        flight = runner.index("Update-HostResourceStage -Lease $hostExecutionLease -Stage flight")
-        observation = runner.index("$formalObservation = Start-ObservedFormalProcess", flight)
-        wave = runner.index("$waveResult = Invoke-ResourceBudgetedProcesses", observation)
-        self.assertNotIn("Update-HostResourceStage", runner[observation:wave])
-
     def test_terminal_capacity_gate_uses_actual_protected_run_upper_bound(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        terminal = runner.index("$terminalCapacityArguments = @(")
-        terminal_block = runner[terminal:runner.index("$terminalCapacity =", terminal)]
-        self.assertIn("--known-measured-bytes", terminal_block)
+        terminal = runner.index("$terminalCapacityParameters = @{")
+        terminal_block = runner[
+            terminal:runner.index(
+                "$terminalCapacityReceipt = Invoke-ArtifactCapacityGate", terminal
+            )
+        ]
+        self.assertIn("$terminalCapacityParameters.KnownMeasuredBytes", terminal_block)
         self.assertIn("$artifactCapacityState.known_measured_bytes", terminal_block)
-        self.assertIn("--maximum-new-artifact-bytes", terminal_block)
+        self.assertIn(
+            "$terminalCapacityParameters.MaximumNewArtifactBytes", terminal_block
+        )
         self.assertIn("$terminalCapacityMaximumNewArtifactBytes", terminal_block)
         self.assertNotIn("$stageBudgetDocument.limits.transient_run_directory_bytes", terminal_block)
         self.assertIn(
@@ -84,12 +80,10 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
     def test_terminal_capacity_survives_removed_execution_alias(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         start = runner.index("$terminalCapacityMaximumNewArtifactBytes =")
-        end = runner.index("foreach ($cacheKey in $artifactCapacityProtectedCacheKeys)", start)
+        end = runner.index(
+            "$terminalCapacityReceipt = Invoke-ArtifactCapacityGate", start
+        )
         preparation = runner[start:end]
-        helper = runner[runner.index("function Invoke-SingleFlightPython {"):]
-        helper = helper[:helper.index("function Get-RfProcessDiagnosticTail")]
-        self.assertIn("Push-Location -LiteralPath $repoRoot", helper)
-        self.assertNotIn("$package.", helper)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "summary.json").write_bytes(b"12345")
@@ -99,16 +93,16 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
                 f"$workspaceRoot='{quoted}'; "
                 f"$package=[pscustomobject]@{{artifact_run_dir='{quoted}';"
                 f"run_dir='{quoted}/removed_alias'}}; "
+                "$python='python'; $repoRoot=$workspaceRoot; "
                 "$artifactCapacityProtectedPaths=[System.Collections.Generic.List[string]]::new(); "
+                "$artifactCapacityProtectedCacheKeys=[System.Collections.Generic.List[string]]::new(); "
                 "[void]$artifactCapacityProtectedPaths.Add($package.artifact_run_dir); "
                 "$artifactCapacityState=@{known_measured_bytes=100}; "
                 + preparation
                 + "if($terminalCapacityMaximumNewArtifactBytes -ne 5){throw 'wrong payload size'}; "
-                "$i=[array]::IndexOf($terminalCapacityArguments,'--protect-path'); "
-                "if($terminalCapacityArguments[$i+1] -ne $package.artifact_run_dir){throw 'wrong protected path'}; "
-                "$known=[array]::IndexOf($terminalCapacityArguments,'--known-measured-bytes'); "
-                "$maximum=[array]::IndexOf($terminalCapacityArguments,'--maximum-new-artifact-bytes'); "
-                "if($known -lt 0 -or $maximum -lt 0){throw 'known fast-path pair missing'}; "
+                "if($terminalCapacityParameters.ProtectedPaths[0] -ne $package.artifact_run_dir){throw 'wrong protected path'}; "
+                "if(-not $terminalCapacityParameters.ContainsKey('KnownMeasuredBytes') -or "
+                "-not $terminalCapacityParameters.ContainsKey('MaximumNewArtifactBytes')){throw 'known fast-path pair missing'}; "
                 "Write-Output 'TERMINAL_CANONICAL_PATH=PASS'"
             )
             completed = subprocess.run(
@@ -123,13 +117,14 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
                 f"$workspaceRoot='{quoted}'; "
                 f"$package=[pscustomobject]@{{artifact_run_dir='{quoted}';"
                 f"run_dir='{quoted}/removed_alias'}}; "
+                "$python='python'; $repoRoot=$workspaceRoot; "
                 "$artifactCapacityProtectedPaths=[System.Collections.Generic.List[string]]::new(); "
+                "$artifactCapacityProtectedCacheKeys=[System.Collections.Generic.List[string]]::new(); "
                 "[void]$artifactCapacityProtectedPaths.Add($package.artifact_run_dir); "
                 "$artifactCapacityState=$null; "
                 + preparation
-                + "$known=[array]::IndexOf($terminalCapacityArguments,'--known-measured-bytes'); "
-                "$maximum=[array]::IndexOf($terminalCapacityArguments,'--maximum-new-artifact-bytes'); "
-                "if($known -ge 0 -or $maximum -ge 0){throw 'orphan fast-path argument'}; "
+                + "if($terminalCapacityParameters.ContainsKey('KnownMeasuredBytes') -or "
+                "$terminalCapacityParameters.ContainsKey('MaximumNewArtifactBytes')){throw 'orphan fast-path argument'}; "
                 "Write-Output 'TERMINAL_EARLY_FAILURE_PAIR=PASS'"
             )
             early_failure = subprocess.run(
@@ -155,10 +150,10 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "pre_pulse_entrance_zone_collision_v1",
             runner[declaration:compilation],
         )
-        collision_compilation = runner.index(
-            "'--pre-pulse-entrance-zone-collision-contract'", compilation
+        self.assertNotIn(
+            "'--pre-pulse-entrance-zone-collision-contract'",
+            runner,
         )
-        self.assertGreater(collision_compilation, compilation)
 
     def test_adapter_accepts_one_manifest_bound_pre_pulse_restart_authority(self) -> None:
         adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
@@ -303,6 +298,27 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("[void]$prePulseCheckpointOutputs.Add($path)", checkpoint_block)
         self.assertIn("-Outputs @($prePulseCheckpointOutputs) | Out-Null", checkpoint_block)
 
+    def test_completed_formal_first_batch_still_runs_checkpoint_callback(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        zero_work = runner.index(
+            "$processSpecifications.Count -eq 0 -and "
+            "$existingProcessRecords.Count -eq 0"
+        )
+        scheduler = runner.index("Invoke-ResourceBudgetedProcesses", zero_work)
+        block = runner[zero_work:scheduler + 500]
+        self.assertIn("-ExistingProcessRecords $existingProcessRecords", block)
+        self.assertIn("-OnProcessCompleted $prePulseCheckpointAction", block)
+
+    def test_capacity_apply_is_serialized_by_the_shared_lease_adapter(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertLess(
+            runner.index("Enter-HostExecutionLease -Role SIMION -Stage prepare"),
+            runner.index("Invoke-ArtifactCapacityGate"),
+        )
+        self.assertNotIn(
+            "'common.contracts.reconcile_artifact_capacity'", runner
+        )
+
     def test_failed_pre_pulse_materialization_preserves_current_trace_files(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         failure_recovery = runner[runner.index("} catch {", runner.index("SIMION_SINGLE_FLIGHT=PASS")):]
@@ -445,17 +461,16 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
 
     def test_terminal_capacity_reconciliation_protects_the_just_published_run_and_cache_keys(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        terminal_gate = runner.index("$terminalCapacityArguments = @(")
+        terminal_gate = runner.index("$terminalCapacityParameters = @{")
         manifest = runner.rindex("Write-RunManifest", 0, terminal_gate)
         release = runner.index("Exit-HostExecutionLease", terminal_gate)
         gate = runner[terminal_gate:release]
         self.assertLess(manifest, terminal_gate)
         self.assertIn("ARTIFACT_CAPACITY_TERMINAL=PASS", gate)
-        self.assertIn("--minimum-free-gib','500'", gate)
-        self.assertIn("foreach ($protectedPath in $artifactCapacityProtectedPaths)", gate)
-        self.assertIn("@('--protect-path',$protectedPath)", gate)
-        self.assertIn("foreach ($cacheKey in $artifactCapacityProtectedCacheKeys)", gate)
-        self.assertIn("--protect-cache-key',$cacheKey", gate)
+        self.assertIn("MinimumFreeGiB=500", gate)
+        self.assertIn("ProtectedPaths=$artifactCapacityProtectedPaths", gate)
+        self.assertIn("ProtectedCacheKeys=$artifactCapacityProtectedCacheKeys", gate)
+        self.assertIn("Invoke-ArtifactCapacityGate @terminalCapacityParameters", gate)
         self.assertIn("if (-not $publishedPaCacheProtectionSnapshotReady)", runner)
         self.assertIn("terminal cleanup is prohibited", runner)
         self.assertIn("satisfied_after_apply", gate)
@@ -483,11 +498,12 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         budget = runner.index("$budget = Initialize-RfIntegrationStageBudget")
         snapshot = runner.index("New-PublishedPaCacheProtectionSnapshot")
-        capacity = runner.index("$artifactCapacityStartup = Invoke-SingleFlightPython")
+        capacity = runner.index(
+            "$artifactCapacityStartupReceipt = Invoke-ArtifactCapacityGate"
+        )
         self.assertLess(budget, snapshot)
         self.assertLess(snapshot, capacity)
-        gate_start = runner.index("$artifactCapacityStartupArguments = @(")
-        gate = runner[gate_start:runner.index("$interruptedReconciliation", capacity)]
+        gate = runner[capacity:runner.index("$interruptedReconciliation", capacity)]
         self.assertIn(
             "$artifactCapacityLaunchMinimumFreeBytes =\n"
             "    [int64](500GB) + [int64]$stageBudgetDocument.limits.transient_run_directory_bytes",
@@ -497,8 +513,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertNotIn("'--known-measured-bytes'", gate)
         self.assertNotIn("'--maximum-new-artifact-bytes'", gate)
         self.assertIn("$artifactCapacityLaunchMinimumFreeGiB", gate)
-        self.assertIn("foreach ($protectedPath in $artifactCapacityProtectedPaths)", gate)
-        self.assertIn("@('--protect-path',$protectedPath)", gate)
+        self.assertIn("-ProtectedPaths $artifactCapacityProtectedPaths", gate)
         self.assertIn(
             "Add-RfArtifactCapacityProtectedRunPath -Path $package.artifact_run_dir",
             runner,
@@ -510,15 +525,21 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             runner[snapshot:capacity],
         )
         self.assertIn("$publishedPaCacheProtectionSnapshotReady = $true", runner[snapshot:capacity])
-        self.assertIn("foreach ($cacheKey in $artifactCapacityProtectedCacheKeys)", gate)
-        self.assertIn("@('--protect-cache-key',$cacheKey)", gate)
+        self.assertIn("-ProtectedCacheKeys $artifactCapacityProtectedCacheKeys", gate)
         artifacts = (INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1").read_text(
             encoding="utf-8"
         )
-        self.assertIn("[string[]]$ProtectedPaths = @()", artifacts)
-        self.assertIn("foreach ($path in @($ProtectedPaths | Select-Object -Unique))", artifacts)
-        self.assertIn("-ProtectedPaths $ProtectedPaths", artifacts)
-        self.assertIn("-ProtectedCacheKeys $ProtectedCacheKeys", artifacts)
+        publication_gate = artifacts[
+            artifacts.index("function Assert-RfArtifactCapacityBeforeCachePublication"):
+            artifacts.index("function Wait-RfCacheStagingWriterExit")
+        ]
+        self.assertIn("[string[]]$ProtectedPaths = @()", publication_gate)
+        self.assertIn("Invoke-ArtifactCapacityGate", publication_gate)
+        self.assertIn(
+            "-ProtectedPaths (@($StagingDirectory) + @($ProtectedPaths))",
+            publication_gate,
+        )
+        self.assertIn("-ProtectedCacheKeys $ProtectedCacheKeys", publication_gate)
         self.assertNotIn("'--minimum-free-gib','550'", gate)
 
     def test_continuation_predecessor_is_capacity_protected_only_when_resuming(self) -> None:
@@ -602,7 +623,9 @@ Write-Output 'CONTINUATION_CAPACITY_PROTECTION=PASS'
         artifacts = (INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1").read_text(
             encoding="utf-8"
         )
-        startup = runner.index("$artifactCapacityStartup = Invoke-SingleFlightPython")
+        startup = runner.index(
+            "$artifactCapacityStartupReceipt = Invoke-ArtifactCapacityGate"
+        )
         publication_state = runner.index(
             "$cachePublicationAdditionalArtifactBytes = 0", startup
         )
@@ -618,7 +641,10 @@ Write-Output 'CONTINUATION_CAPACITY_PROTECTION=PASS'
             artifacts.index("function Assert-RfArtifactCapacityBeforeCachePublication"):
             artifacts.index("function Wait-RfCacheStagingWriterExit")
         ]
-        self.assertIn("'--required-headroom-bytes',([string]$RequiredHeadroomBytes)", publication_gate)
+        self.assertIn("Invoke-ArtifactCapacityGate", publication_gate)
+        self.assertIn(
+            "-RequiredHeadroomBytes $RequiredHeadroomBytes", publication_gate
+        )
         self.assertNotIn("'--known-measured-bytes'", publication_gate)
         self.assertNotIn("'--maximum-new-artifact-bytes'", publication_gate)
         self.assertIn("Publication is a same-volume Move-Item", publication_gate)
@@ -1459,6 +1485,58 @@ foreach ($entry in $commands) {{
         ):
             self.assertIn(input_name, runner)
 
+    def test_cache_publication_waits_for_host_wide_simion_quiescence(self) -> None:
+        artifacts = (INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1").read_text(
+            encoding="utf-8"
+        )
+        wait_start = artifacts.index("function Wait-RfCacheStagingWriterExit")
+        publish_start = artifacts.index("function Publish-RfVerifiedCacheEntry")
+        wait_block = artifacts[wait_start:publish_start]
+        self.assertIn("$_.Name -ieq 'simion.exe'", wait_block)
+        self.assertNotIn("$_.CommandLine", wait_block)
+        self.assertIn("[int]$QuietSeconds = 3", wait_block)
+        self.assertIn("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID", wait_block)
+        self.assertIn("$TimeoutSeconds -lt $QuietSeconds", wait_block)
+        self.assertIn("$quietSince = $null", wait_block)
+        self.assertIn("$quietSince = $now", wait_block)
+        self.assertIn("$observedWriter = $true", wait_block)
+        self.assertIn("$FailIfWriterObserved -and $observedWriter", wait_block)
+
+        publish_end = artifacts.index("function Copy-RfCacheManifestInput", publish_start)
+        publish_block = artifacts[publish_start:publish_end]
+        wait_calls = [
+            index
+            for index in range(len(publish_block))
+            if publish_block.startswith(
+                "Wait-RfCacheStagingWriterExit -StagingDirectory $staging", index
+            )
+        ]
+        inventory = publish_block.index("common.simion.cache_generation")
+        self.assertIn("--require-stable-inventory", publish_block)
+        capacity = publish_block.index(
+            "Assert-RfArtifactCapacityBeforeCachePublication"
+        )
+        move = publish_block.index("Move-Item -LiteralPath $staging -Destination $target")
+        self.assertEqual(len(wait_calls), 2)
+        self.assertLess(wait_calls[0], inventory)
+        self.assertLess(capacity, wait_calls[1])
+        self.assertLess(wait_calls[1], move)
+        self.assertIn(
+            "Wait-RfCacheStagingWriterExit -StagingDirectory $staging "
+            "-FailIfWriterObserved",
+            publish_block,
+        )
+        self.assertNotIn(
+            "-FailIfWriterObserved", publish_block[wait_calls[0]:inventory]
+        )
+        self.assertIn(
+            "-FailIfWriterObserved", publish_block[wait_calls[1]:move]
+        )
+        remove = publish_block.index(
+            "Remove-Item -LiteralPath $staging -Recurse -Force"
+        )
+        self.assertLess(wait_calls[1], remove)
+
     def test_cache_publication_protects_planned_consumer_keys(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         artifacts = (INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1").read_text(
@@ -1471,8 +1549,12 @@ foreach ($entry in $commands) {{
             runner.count("-ProtectedCacheKeys $artifactCapacityProtectedCacheKeys"), 8
         )
         self.assertIn("[string[]]$ProtectedCacheKeys = @()", artifacts)
-        self.assertIn("'--protect-cache-key',$key", artifacts)
-        self.assertIn("-ProtectedCacheKeys $ProtectedCacheKeys", artifacts)
+        publication_gate = artifacts[
+            artifacts.index("function Assert-RfArtifactCapacityBeforeCachePublication"):
+            artifacts.index("function Wait-RfCacheStagingWriterExit")
+        ]
+        self.assertIn("Invoke-ArtifactCapacityGate", publication_gate)
+        self.assertIn("-ProtectedCacheKeys $ProtectedCacheKeys", publication_gate)
 
     def test_interrupted_fine_cache_staging_resumes_only_with_its_identity_marker(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
@@ -1488,9 +1570,11 @@ foreach ($entry in $commands) {{
 
     def test_interrupted_fine_cache_staging_does_not_repeat_completed_basis_transfer(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("$fineBasisComplete = (Test-Path -LiteralPath $fineBasisReport", runner)
+        self.assertIn("function Test-RfPaPlusBasisBuildReceipt", runner)
+        self.assertIn("$fineBasisComplete = (Test-RfPaPlusBasisBuildReceipt", runner)
+        self.assertIn("-BasisReport $fineBasisReport -ExpectedModeCount $fineSolutionIds.Count", runner)
         self.assertIn("if (-not $fineBasisComplete)", runner)
-        self.assertIn("$fineBasisFiles = @($fineSolutionIds", runner)
+        self.assertIn("[int64](Get-Item -LiteralPath $finePa0).Length -gt 0", runner)
         self.assertLess(
             runner.index("if (-not $fineBasisComplete)"),
             runner.index("$fineRefineDispatchRequest"),

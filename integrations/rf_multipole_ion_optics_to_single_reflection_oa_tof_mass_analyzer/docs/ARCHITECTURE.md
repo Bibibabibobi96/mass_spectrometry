@@ -1,17 +1,29 @@
 # 当前执行身份与失效域
 
-本页只描述活动集成的机器合同边界。历史 campaign、完成结果和被替代的执行路径位于
+本页只描述活动集成的机器合同边界。当前状态见[INTEGRATION](INTEGRATION.md)，操作见[RUNNING](RUNNING.md)。历史 campaign、完成结果和被替代的执行路径位于
 [`HISTORY.md`](HISTORY.md)，不构成当前授权。
 
-| 参数类别 | 唯一 authoring authority | resolver / consumer | 失效域 | 不应影响 |
-|---|---|---|---|---|
-| 几何、连接间隙、坐标/单位/frame | `config/connection_profiles.json` 与两端 port 合同 | Python `prepare.py` → resolved connection → adapter / SIMION | 下游布局、PA basis、结果与证据 | 无关 campaign 的运行控制 |
-| 源状态、粒子 ID、species、charge、质量、clock/event | 上游 manifest 和 campaign 的 source / population 声明 | Python source resolver → resolved source/population contract | handoff、下游粒子初态、结果 | batch、并发、内存、retention |
-| 脉冲前 checkpoint | manifest-bound restart receipt | `materialize_manifest_bound_pre_pulse_restart.py` → single-flight runner | consumer 初态和消费者结果 | producer 的后续数值 profile |
-| 下游 field、mesh/grid、trajectory quality、dt | campaign 的 `single_flight_*_profile_id` | Python prepare → runner arguments → SIMION | 仅消费者数值结果、数值资格和对应 cache | 已冻结的 upstream handoff 状态 |
-| 分析与 qualification | campaign preregistration / analysis contract | Python 分析器和 result receipt | analysis result、资格声明 | solver 输入、几何和 particle handoff |
-| batch、CPU、内存、timeout、retention | 公共执行策略（不由 campaign 覆盖） | Python resource scheduler → `resolved_engineering_budget.json` → runner | dispatch、运行 receipt 和资源使用证据；只有 manifest-verified 单批画像可估算并发，无画像时为单批 bootstrap；画像身份包含已解析的 grid、reflectron cell、overlay cell、trajectory quality 和 RF 步数 | campaign/PA/物理 handoff identity |
-| 活动 campaign 授权 | `config/diagnostics/lifecycle_registry.json` | `execute.ps1`、prepare | 注册路径和状态决定正式启动资格；prepare 冻结完整 resolved row、来源身份与 execution receipt | 历史 JSON 原始字节、历史结果；探索不能正式发布 |
+## 参数权威与影响范围
+
+| 参数 | 作者权威 | 影响与隔离边界 |
+|---|---|---|
+| 几何、间隙、坐标 | [连接配置](../config/connection_profiles.json)及两端 port 合同 | 改变下游布局、PA、结果；不改变无关 campaign 的运行控制 |
+| 源状态、人口、时钟 | 上游 manifest 及 campaign 的 source/population 声明 | 改变 handoff、初态和结果；不绑定 batch、并发、内存、retention |
+| 脉冲前 checkpoint | manifest 绑定的 restart receipt | 决定消费者初态和结果；不反写 producer 后续数值 profile |
+| 场、网格、轨迹精度、dt | campaign 的具名数值 profile | 改变消费者结果、数值资格及 cache；不改变已冻结上游 handoff |
+| 分析与资格 | 预注册分析与资格合同 | 改变分析和声明；不改变 solver 输入、几何、handoff |
+| batch、资源、timeout、retention | 公共执行策略 | 改变调度、运行收据及资源证据；不改变 campaign、PA 或物理 handoff 身份 |
+| 正式 campaign 授权 | [生命周期注册](../config/diagnostics/lifecycle_registry.json) | 注册路径和状态决定正式启动资格；保留历史字节，探索不能正式发布 |
+
+Python prepare 将几何交给 resolved connection、源与人口交给各自 resolver，再由 adapter 消费。
+脉冲前 restart 由 `materialize_manifest_bound_pre_pulse_restart.py` 物化；下游数值选择来自
+`single_flight_*_profile_id`。分析器只消费冻结输入并发布 result receipt。
+
+公共 resource scheduler 经 `resolved_engineering_budget.json` 向 runner 传递预算，campaign 不覆盖
+该策略。只有 manifest 核验的单批画像可估算并发，无画像时从单批 bootstrap 开始；画像包含已解析的
+grid、reflectron/overlay cell、trajectory quality 与 RF 步数。公开 `execute.ps1` 和 prepare
+复核正式授权并冻结 resolved row、来源身份与 execution receipt。
+
 
 单飞行分辨率分析从冻结的 `single_flight_initial_global_state.csv` 读取唯一的正 `mass_amu`，不由
 PowerShell 或恢复路径另行默认。混合质量需要显式的目标物种分析合同；在该合同存在前，分析会拒绝而不以任意质量计算。
@@ -35,13 +47,8 @@ runner 不提供会绕过该合同的逐项数值覆盖入口。
 
 分辨率资格由 Python 分析器在显式分析/晋升合同中判定；单飞 runner 不含未被公开 workflow 消费的资格开关。
 
-MATLAB/COMSOL 脚本中的 direct-KDE mass spectrum 仅保留为本地可视化诊断，不是资格或发布指标。
-其旧 1001 点网格算法已在 2026-08-25 用 `COMSOL-pre-pulse-replay` 的同一 90 粒子 CSV
-（SHA-256 `1F2861CCCCA53FD406106E25772EFFAB38BF208F77899C883B613EF566F87526`）与
-Python `AnalysisSettings(grid_points=1001)` 逐值复现：FWHM 为
-`0.0332642671768326 Da`、R 为 `3006.22886018804`。Python canonical 默认 4001 点网格的
-FWHM 为 `0.033263494636671 Da`，是同一 KDE 定义的网格收敛结果；只有 Python 结果可进入
-analysis/qualification receipt。
+MATLAB/COMSOL的direct-KDE仅作本地可视化；资格指标由Python发布。历史数值对照见
+[全仓参考收口](../../../docs/history/20260911__reference-documentation-consolidation.md)，不在接口合同中重复。
 
 仅服务于本 integration 的 `rf_oatof_*` campaign、resolved plan 与 receipt Schema 均同置于
 `config/schemas/`；它们表达该项目的理论审计与运行证据结构，不属于跨项目公共合同。

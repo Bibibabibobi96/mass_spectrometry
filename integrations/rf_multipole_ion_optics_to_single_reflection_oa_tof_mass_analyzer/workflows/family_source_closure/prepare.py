@@ -770,7 +770,6 @@ def compile_pre_pulse_time_series_contract(
         active_pa_cache_roles = [
             "fine_upstream",
             "accelerator_main",
-            "accelerator_entrance_zone_collision",
             "accelerator_entrance_local",
         ]
     elif overlay_layout == "whole_accelerator_v1":
@@ -791,8 +790,8 @@ def compile_pre_pulse_time_series_contract(
     if natural_trajectory_archive:
         # The archive clock is independent of a proposed pulse.  It is the
         # native RF grid from the instrument-clock origin, and every ion is
-        # propagated through the same field-bearing entrance-local PA used by
-        # full flight, with a zero-field first-zone carrier underneath it.
+        # propagated through the same field-bearing accelerator-main and
+        # entrance-local PAs used by full flight.
         # This makes later pulse policies pure post-processing without changing
         # the pre-pulse entrance trajectory.
         grid_origin_us = 0.0

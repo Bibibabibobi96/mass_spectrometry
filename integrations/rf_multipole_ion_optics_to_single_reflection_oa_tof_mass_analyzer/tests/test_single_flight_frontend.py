@@ -1007,8 +1007,16 @@ class SingleFlightFrontendTests(unittest.TestCase):
             aperture["coarse_frontend_discretization_is_non_authoritative"]
         )
 
-    def test_long_connector_split_leaves_the_middle_sleeve_to_the_coarse_pa(self) -> None:
-        frontend = {"source_exit_center_mm": {"x": 100.0}}
+    def test_upstream_fine_domain_extends_ten_mm_past_the_perforated_terminal(self) -> None:
+        frontend = {
+            "source_exit_center_mm": {"x": 100.0},
+            "connector_terminal": {
+                "present": True,
+                "thickness_mm": 4.0,
+                "aperture": {"shape": "rectangle", "full_width_mm": 1.0,
+                             "full_height_mm": 1.0},
+            },
+        }
         extents = {
             "upstream_fine_extent_mm": 10.0,
             "accelerator_fine_extent_mm": 10.0,
@@ -1023,10 +1031,14 @@ class SingleFlightFrontendTests(unittest.TestCase):
         )
         self.assertIsNotNone(split)
         assert split is not None
-        self.assertAlmostEqual(split["terminal_end_x_mm"], 1.6)
-        self.assertAlmostEqual(split["upstream_end_x_mm"], 11.6)
+        self.assertAlmostEqual(split["connector_entrance_x_mm"], 1.6)
+        self.assertAlmostEqual(split["terminal_end_x_mm"], 5.6)
+        self.assertAlmostEqual(split["upstream_end_x_mm"], 15.6)
+        self.assertAlmostEqual(
+            split["upstream_end_x_mm"] - split["terminal_end_x_mm"], 10.0
+        )
         self.assertAlmostEqual(split["accelerator_start_x_mm"], 90.0)
-        self.assertAlmostEqual(split["coarse_sleeve_x_min_mm"], 11.6)
+        self.assertAlmostEqual(split["coarse_sleeve_x_min_mm"], 15.6)
         self.assertAlmostEqual(split["coarse_sleeve_x_max_mm"], 90.0)
         self.assertEqual(split["upstream_fine_extent_mm"], 10.0)
         self.assertEqual(split["accelerator_fine_extent_mm"], 10.0)

@@ -78,7 +78,7 @@
             {"const": ["frontend", "accelerator_overlay"]},
             {"const": ["frontend", "accelerator_entrance_overlay", "accelerator_intermediate_overlay"]},
             {"const": ["full_coarse_bridge", "fine_upstream", "accelerator_main", "accelerator_intermediate2_overlay"]},
-            {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_zone_collision", "accelerator_entrance_local"]}
+            {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_local"]}
           ]
         },
         "prohibited": {"const": ["flight_tube", "reflectron"]}
@@ -188,7 +188,7 @@
         "schema_version": {"const": 5},
         "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v2"},
         "identities": {"properties": {"spatial_window_profile_id": {"const": "layout_resolved_axial_provisional_xy2_v1"}}},
-        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_zone_collision", "accelerator_entrance_local"]}}}
+        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_local"]}}}
       },
       "required": ["pa_cache_roles"],
       "not": {"required": ["pa_cache_keys"]}
@@ -198,7 +198,7 @@
         "schema_version": {"const": 6},
         "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v3"},
         "identities": {"properties": {"spatial_window_profile_id": {"const": "layout_resolved_axial_provisional_xy2_v1"}}},
-        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_zone_collision", "accelerator_entrance_local"]}}}
+        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_local"]}}}
       },
       "required": ["pa_cache_roles"],
       "not": {"required": ["pa_cache_keys"]}
@@ -207,7 +207,7 @@
       "properties": {
         "schema_version": {"const": 7},
         "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v4"},
-        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_zone_collision", "accelerator_entrance_local"]}}},
+        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_local"]}}},
         "terminate_at_window_end": {"const": false}
       },
       "required": ["pa_cache_roles", "trace_policy", "terminate_at_window_end", "selection_order"],

@@ -2,7 +2,7 @@
   "schema_version": 7,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "campaign_id": "square_h100_continuous_functional_smoke_8mode_n1",
+  "campaign_id": "square_h100_continuous_functional_smoke_8mode_20260912_n1",
   "status": "exploration",
   "claim_limit": "FUNCTIONAL_SMOKE_ONLY. One fixed first row of the frozen ordered N=5000 continuous mother validates runtime plumbing only; it grants no transport, resolution, aperture-comparison, or population claim.",
   "experiments": {
@@ -92,8 +92,8 @@
       },
       "continuous_functional_smoke_authority": {
         "source_campaign": {
-          "path": "simulation_repo/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/square_h100_handoff_continuous_control_8mode_current_n5000.json",
-          "sha256": "CC89F76E8E322FFC65C2B7C3BD7AC6307EA6F0FD76D55D6C1E6090A49259BBE2"
+          "path": "simulation_repo/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/square_h100_handoff_continuous_control_8mode_20260912_n5000.json",
+          "sha256": "D40A6DA69D320CE5A5B2C408C0003EE85F43EA7EB3A49B94F12C055B018D54F1"
         },
         "mother_population": {
           "population_id": "ideal_acceptance_300mm_aperture_height_complete_ordered_entrance_n5000",
@@ -154,35 +154,35 @@
         "continuous_full_flight_comparator_authority": {
           "authority_mode": "manifest_bound_continuous_full_flight_comparator_v1",
           "pre_pulse_producer_manifest": {
-            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_131548__sim__cross__ideal-acceptance-300mm-port-h100-pre-pulse-n5000__n5000/run_manifest.json",
-            "sha256": "22516CCA2EA68B89965EC7C8CD49FAAA77841DBAA14E66A78253D987CD7B7A12"
+            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_184716__sim__cross__ideal-acceptance-300mm-port-h100-pre-pulse-n5000__n5000/run_manifest.json",
+            "sha256": "CB990825C1A95AE0A4CFDD95FE5442C55207D2E0D6CCCC850DDDF29AB06DF2BD"
           },
           "pre_pulse_mother_particle_source": {
-            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_131548__sim__simion__rf-oatof-single-flight-gap102p4__n5000/inputs/mother_particle_source.csv",
+            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_184716__sim__simion__rf-oatof-single-flight-gap102p4__n5000/inputs/mother_particle_source.csv",
             "sha256": "88C5BD19E33D1F88F032BAEEAE869930E4CB10AA227B2A45A52C3519114B6941"
           },
           "compact_receipt": {
-            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_131548__sim__simion__rf-oatof-single-flight-gap102p4__n5000/results/pre_pulse_compact_handoff_receipt.json",
-            "sha256": "724BF74EBBC5FBD2736B62361A93014A77136368E8337E8BDAF72807F34EEEB7"
+            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_184716__sim__simion__rf-oatof-single-flight-gap102p4__n5000/results/pre_pulse_compact_handoff_receipt.json",
+            "sha256": "42096C4CF512B52B9A9C182BB3CDFA0631DDE28B7B10D04685D0D661DD6F0438"
           },
           "producer_manifest": {
-            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_133007__sim__cross__ideal-acceptance-300m-pre-pulse-n5000-post-pulse__n59/run_manifest.json",
-            "sha256": "4C7983D4037159DB750EFB949449DE2977265E88FDA4416333AB9DF71448E496"
+            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260912_082221__sim__cross__ideal-acceptance-300m-pre-pulse-n5000-post-pulse__n397/run_manifest.json",
+            "sha256": "1AC062790B7C9E9B46EEC2DD1205807C5FB8FA0F55440FD5E8EB6956444BF78F"
           },
           "producer_frozen_experiment": {
-            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_133007__sim__cross__ideal-acceptance-300m-pre-pulse-n5000-post-pulse__n59/inputs/frozen_campaign_experiment.json",
-            "sha256": "162EE83E271CD93B0C60AE98A06E476E7410E65BB4CE40D5195BDD985AB4A990"
+            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260912_082221__sim__cross__ideal-acceptance-300m-pre-pulse-n5000-post-pulse__n397/inputs/frozen_campaign_experiment.json",
+            "sha256": "50A59D96F8B22FD1516988385FAF6A8BC45B4D700A447E72377786984BB3AFC9"
           },
           "producer_pulse_schedule": {
-            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_133007__sim__simion__rf-oatof-single-flight-gap102p4__n59/inputs/resolved_single_flight_pulse_schedule.json",
-            "sha256": "9966E3AE5857EEA6A356151F79E2D431E58D1CAE92BC6AF5CD35CA82C595E7CB"
+            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260912_082221__sim__simion__rf-oatof-single-flight-gap102p4__n397/inputs/resolved_single_flight_pulse_schedule.json",
+            "sha256": "4F26E48DD94821F932458306E78D2889D60659FE0CB35CC8DB909224D55BD87A"
           },
           "producer_configuration": {
-            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_133007__sim__simion__rf-oatof-single-flight-gap102p4__n59/inputs/simion_single_flight.json",
+            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260912_082221__sim__simion__rf-oatof-single-flight-gap102p4__n397/inputs/simion_single_flight.json",
             "sha256": "A746378E34FBF1D05E4C89080866EEFE1EDD7686DD314D8348B2253494CF887C"
           },
           "producer_region_field_contract": {
-            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260911_133007__sim__simion__rf-oatof-single-flight-gap102p4__n59/inputs/resolved_region_field_contract.json",
+            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260912_082221__sim__simion__rf-oatof-single-flight-gap102p4__n397/inputs/resolved_region_field_contract.json",
             "sha256": "60079D676812DE43FFEAF7A257297F88A9D929F3DC852DBEDC0E88FD7E2B8D85"
           },
           "producer_frontend_grid_profile_id": "frontend_xy025_z010_coarse100_full_bore_main_local_xy050_z010"

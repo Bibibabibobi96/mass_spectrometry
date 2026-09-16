@@ -177,7 +177,6 @@ def _validate_screening_receipt(
         required = (
             "fine_upstream",
             "accelerator_main",
-            "accelerator_entrance_zone_collision",
             "accelerator_entrance_local",
         )
     else:

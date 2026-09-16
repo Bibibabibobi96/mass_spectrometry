@@ -272,6 +272,36 @@ class PulseReuseIdentityProjectionTests(unittest.TestCase):
             build_verified_pulse_reuse_projection(**varied)[1],
         )
 
+    def test_continuous_source_reachable_minimum_uses_three_pa_keys(self) -> None:
+        fixture = _fixture()
+        fixture["pa_cache_keys"] = {
+            "fine_upstream": "upstream-key",
+            "accelerator_main": "main-key",
+            "accelerator_entrance_local": "entrance-key",
+            "flight_tube": None,
+            "reflectron": None,
+        }
+        basis, _ = build_verified_pulse_reuse_projection(**fixture)
+        self.assertEqual(basis["pa_cache_keys"], {
+            "fine_upstream": "upstream-key",
+            "accelerator_main": "main-key",
+            "accelerator_entrance_local": "entrance-key",
+        })
+
+    def test_terminal_handoff_collision_only_identity_remains_independent(self) -> None:
+        fixture = _fixture()
+        fixture["pa_cache_keys"] = {
+            "connector_collision": "connector-collision-key",
+            "accelerator_entrance_zone_collision": "entrance-collision-key",
+            "flight_tube": None,
+            "reflectron": None,
+        }
+        basis, _ = build_verified_pulse_reuse_projection(**fixture)
+        self.assertEqual(basis["pa_cache_keys"], {
+            "connector_collision": "connector-collision-key",
+            "accelerator_entrance_zone_collision": "entrance-collision-key",
+        })
+
     def test_consumer_numerics_do_not_enter_post_pulse_handoff_identity(self) -> None:
         experiment = {
             "connection_profile_id": "gap_51p2",

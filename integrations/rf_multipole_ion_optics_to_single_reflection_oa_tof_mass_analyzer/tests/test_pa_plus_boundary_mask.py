@@ -6,6 +6,12 @@ from pathlib import Path
 
 
 RUNTIME = Path(__file__).resolve().parents[1] / "runtime"
+COMMON_EXPORTER = (
+    Path(__file__).resolve().parents[3]
+    / "common"
+    / "simion"
+    / "export_fast_adjusted_standalone_pa.lua"
+)
 
 
 class PaPlusBoundaryMaskContractTests(unittest.TestCase):
@@ -17,7 +23,9 @@ class PaPlusBoundaryMaskContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         cls.runner = (RUNTIME / "run_single_flight.ps1").read_text(encoding="utf-8")
+        cls.standalone = COMMON_EXPORTER.read_text(encoding="utf-8")
         cls.code = re.sub(r"--[^\n]*", "", cls.lua)
+        cls.standalone_code = re.sub(r"--[^\n]*", "", cls.standalone)
 
     def test_restoration_never_refines_or_rewrites_potential(self) -> None:
         self.assertNotRegex(self.code, r":refine\s*\(")
@@ -67,11 +75,38 @@ class PaPlusBoundaryMaskContractTests(unittest.TestCase):
         ):
             self.assertIn(field, self.code)
 
+    def test_legacy_and_standalone_paths_restore_equivalent_physical_flags(self) -> None:
+        for source in (self.code, self.standalone_code):
+            compact = re.sub(r"\s+", "", source)
+            self.assertIn('"policy_id":"physical_geometry_boundary_flags_v1"', source)
+            self.assertIn("assert(notphysicalor", compact)
+            self.assertIn(":electrode(ix,iy,iz,false)", compact)
+            self.assertIn("2*", compact)
+            self.assertNotIn("seen=", compact)
+        standalone = re.sub(r"\s+", "", self.standalone_code)
+        self.assertIn("localtemplate_path=source:gsub('0$','#')", standalone)
+        self.assertIn("localphysical=template_pa:electrode(ix,iy,iz)", standalone)
+        self.assertIn("localexported=output_pa:electrode(ix,iy,iz)", standalone)
+        self.assertIn("output_pa:electrode(ix,iy,iz,false)", standalone)
+        self.assertLess(
+            self.standalone_code.index("output_pa:electrode(ix, iy, iz, false)"),
+            self.standalone_code.index("output_pa:save(output)"),
+        )
+
     def test_runner_restores_only_materialized_field_bearing_pa_plus_before_iob(self) -> None:
-        start = self.runner.index("foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds)")
+        start = self.runner.index(
+            "foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds)",
+            self.runner.index("$maskRestorer = $null"),
+        )
+        start = self.runner.index(
+            "foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds)", start + 1
+        )
         end = self.runner.index("$domainSplitFineBuild.pa0 =", start)
         block = self.runner[start:end]
-        self.assertLess(block.index("Copy-RfPaCacheFamilyToRuntime"), block.index("$maskRestorer ="))
+        self.assertLess(
+            block.index("Copy-RfPaCacheFamilyToRuntime"),
+            block.index("$maskRestorer ="),
+        )
         self.assertIn("'geometry_collision_zero_field_v1' -and", block)
         self.assertIn("$null -ne $domainSplitFineBuild.geometry.pa_plus_solution_model", block)
         self.assertIn("if ($runtimeProjectionIds.Count -gt 0)", block)
@@ -86,8 +121,15 @@ class PaPlusBoundaryMaskContractTests(unittest.TestCase):
         self.assertNotIn("Publish-RfVerifiedCacheEntry", block)
 
     def test_main_and_local_domains_share_one_frozen_restorer(self) -> None:
-        loop = self.runner.index("foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds)")
-        self.assertRegex(self.runner[:loop], r"\$maskRestorer = \$null\s*$")
+        mask_declaration = self.runner.index("$maskRestorer = $null")
+        loop = self.runner.index(
+            "foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds)",
+            mask_declaration,
+        )
+        loop = self.runner.index(
+            "foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds)", loop + 1
+        )
+        self.assertLess(mask_declaration, loop)
         end = self.runner.index("$maskSolutionIds =", loop)
         freeze = self.runner[loop:end]
         guard = freeze.index("if ($null -eq $maskRestorer) {")

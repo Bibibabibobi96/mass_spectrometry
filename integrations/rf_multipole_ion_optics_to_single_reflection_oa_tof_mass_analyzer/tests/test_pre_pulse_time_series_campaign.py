@@ -458,7 +458,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
         )
 
-    def test_long_gap_selects_schema_v5_zero_field_collision_pa_roles(self) -> None:
+    def test_long_gap_selects_schema_v5_continuous_source_pa_roles(self) -> None:
         row = self.campaign["experiments"][0]
         contract = compile_pre_pulse_time_series_contract(
             campaign=self.campaign, experiment=row, experiment_row_sha256="A" * 64,
@@ -478,7 +478,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         self.assertEqual(contract["schema_version"], 5)
         self.assertEqual(contract["pa_cache_roles"]["required"], [
             "fine_upstream", "accelerator_main",
-            "accelerator_entrance_zone_collision", "accelerator_entrance_local",
+            "accelerator_entrance_local",
         ])
         self.assertEqual(contract["rf_time_grid"]["sample_stride_rf_steps"], 40)
         self.assertEqual(contract["rf_time_grid"]["sample_count"], 7)

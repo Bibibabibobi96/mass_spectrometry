@@ -790,9 +790,6 @@ def _cache_keys(
         {
             "fine_upstream": "simion_single_flight_upstream_bridge_pa_cache",
             "accelerator_main": "simion_single_flight_accelerator_main_pa_cache",
-            "accelerator_entrance_zone_collision": (
-                "simion_single_flight_accelerator_entrance_zone_collision_pa_cache"
-            ),
             "accelerator_entrance_local": (
                 "simion_single_flight_accelerator_entrance_local_pa_cache"
             ),

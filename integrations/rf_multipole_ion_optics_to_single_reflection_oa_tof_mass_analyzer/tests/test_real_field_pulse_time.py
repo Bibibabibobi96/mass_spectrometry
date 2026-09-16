@@ -599,7 +599,6 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                 "pa_cache_keys": {
                     "fine_upstream": "A" * 64,
                     "accelerator_main": "B" * 64,
-                    "accelerator_entrance_zone_collision": "C" * 64,
                     "accelerator_entrance_local": "D" * 64,
                     "flight_tube": None,
                     "reflectron": None,
@@ -777,7 +776,6 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             self.assertEqual(receipt["pa_cache_keys"], {
                 "fine_upstream": "A" * 64,
                 "accelerator_main": "B" * 64,
-                "accelerator_entrance_zone_collision": "C" * 64,
                 "accelerator_entrance_local": "D" * 64,
                 "flight_tube": None,
                 "reflectron": None,

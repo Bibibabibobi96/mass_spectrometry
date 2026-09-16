@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
+import sys
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -32,6 +35,78 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = RUNNER.read_text(encoding="utf-8")
         cls.adapter_source = ADAPTER.read_text(encoding="utf-8")
+
+    def test_host_phases_cover_hidden_refiners_and_keep_observed_waves_together(self) -> None:
+        stages = list(re.finditer(r"\$hostExecutionLease = Update-HostResourceStage .*?-Stage (\w+)", self.source))
+        def active_stage(offset: int) -> str:
+            return next((m[1] for m in reversed(stages) if m.start() < offset), "prepare")
+        for variable in ("basisInitialization", "paPlusInitialization", "localPaPlusInitialization",
+                         "overlayBuild", "flightTubeBuild", "reflectronBuild", "singleRefine",
+                         "fineRefineWave", "localRefineWave", "overlayRefineWave", "refineWave"):
+            with self.subTest(variable=variable):
+                self.assertEqual(active_stage(self.source.index(f"${variable} = Invoke-ResourceBudgeted")), "pa_refine")
+        for observation, wave in (("fineObservation", "fineRefineWave"),
+                                  ("localObservation", "localRefineWave"),
+                                  ("overlayObservation", "overlayRefineWave"),
+                                  ("formalObservation", "waveResult")):
+            begin = self.source.index(f"${observation} = Start-ObservedFormalProcess")
+            end = self.source.index(f"${wave} = Invoke-ResourceBudgetedProcesses", begin)
+            self.assertFalse(any(begin < m.start() < end for m in stages), observation)
+        self.assertEqual(active_stage(self.source.index("$formalObservation = Start-ObservedFormalProcess")), "flight")
+        self.assertIn("if ($processSpecifications.Count -gt 0) {\n    $hostExecutionLease = Update-HostResourceStage", self.source)
+        self.assertIn("Enter-HostExecutionLease -Role SIMION -Stage prepare", self.source)
+        self.assertEqual(active_stage(self.source.index("$axisFieldResult = Invoke-ResourceBudgetedProcess")), "prepare")
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_extracted_host_boundaries_use_one_private_token_and_reject_light_parent_upgrade(self) -> None:
+        commands = re.findall(
+            r"(?m)^ *\$hostExecutionLease = Update-HostResourceStage[^\n]+\n *-Budget[^\n]+", self.source)
+        sequence = []
+        for stage in ("pa_refine", "prepare", "flight", "postprocess"):
+            sequence.append(next(command for command in commands if f"-Stage {stage} `" in command))
+        def quote(path: Path) -> str:
+            return "'" + str(path).replace("'", "''") + "'"
+        with tempfile.TemporaryDirectory(prefix="integration_host_phases_") as directory:
+            script = (
+                f"$env:SIMULATION_PYTHON_EXE={quote(Path(sys.executable))};"
+                "$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='';"
+                f"$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH={quote(Path(directory)/'host.sqlite3')};"
+                f". {quote(REPO/'common/host_execution_lease.ps1')};"
+                "function Get-HostResourceSnapshot {return @{complete=$true;observed_at_ticks=[DateTime]::UtcNow.Ticks;"
+                "logical_processors=8;cpu_percent=0;total_memory_bytes=32GB;available_memory_bytes=24GB;io_pressure=$false;"
+                "processes=@(@{pid=$PID;parent_pid=0;started='0000000000000000001';memory_bytes=64MB})}};"
+                "$hostExecutionLease=Enter-HostExecutionLease -Role SIMION -Stage prepare;"
+                "$token=$hostExecutionLease.token;try {\n"
+                + "\n".join(sequence)
+                + "\nif($hostExecutionLease.token-ne$token){throw 'token changed'};"
+                "Assert-HostResourceHeavyStage -Lease $hostExecutionLease"
+                "}catch{if($_.Exception.Message-notmatch 'heavy stage'){throw}}"
+                "finally{Exit-HostExecutionLease -Lease $hostExecutionLease};"
+                "$parent=Enter-HostExecutionLease -Role SIMION -Stage prepare;"
+                "try{$hostExecutionLease=Enter-HostExecutionLease -Role SIMION -Stage prepare;"
+                "$rejected=$false;try{\n" + sequence[0]
+                + "\n}catch{if($_.Exception.Message-notmatch 'heavy stage'){throw};$rejected=$true};"
+                "if(-not$rejected){throw 'light parent upgraded'};Exit-HostExecutionLease -Lease $hostExecutionLease"
+                "}finally{Exit-HostExecutionLease -Lease $parent};"
+                "if(@((Get-HostResourceStatus -StatePath $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH).records).Count){throw 'leaked'}"
+            )
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=45)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def _run_refine_receipt_functions(self, body: str) -> object:
+        start = self.source.index("function Write-RfAtomicJsonFile {")
+        end = self.source.index("function Get-RfSingleFlightParticleLines", start)
+        script = self.source[start:end] + "\n" + body
+        completed = subprocess.run(
+            [shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+            cwd=REPO,
+        )
+        return json.loads(completed.stdout)
 
     def test_runner_derives_radii_from_frozen_geometry_without_scalar_duplicates(self) -> None:
         self.assertIn("architecture generation identity differs", self.source)
@@ -107,10 +182,12 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertNotIn("examples\\sims", self.source)
         self.assertIn("Versioned four-instance pre-pulse IOB seed", self.source)
         self.assertIn("Compact pre-pulse IOB build failed.", self.source)
-        self.assertIn("accelerator_entrance_zone_collision", self.source)
-        self.assertIn("'fine_upstream,accelerator_main,accelerator_entrance_zone_collision,accelerator_entrance_local'", self.source)
-        self.assertIn("geometry_role='connector_side_repeller_to_first_grid_v1'", self.source)
-        self.assertIn("field_mode='zero'; refine=$false", self.source)
+        self.assertIn(
+            "'fine_upstream,accelerator_main,accelerator_entrance_local'",
+            self.source,
+        )
+        self.assertIn("accelerator_main_pa_cache_manifest.json", self.source)
+        self.assertIn("accelerator_entrance_local_pa_cache_manifest.json", self.source)
         self.assertIn("pre_pulse_iob_omitted_roles", self.source)
         self.assertIn(
             "$paCacheDispositions.accelerator_entrance_local.disposition = 'pending_cache_decision'",
@@ -125,6 +202,62 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
             self.source,
         )
 
+    def test_pre_pulse_iob_preserves_full_flight_overlap_priority(self) -> None:
+        start = self.source.index("$prePulseIobArguments = @(")
+        end = self.source.index("$built = Invoke-ResourceBudgetedProcess", start)
+        arguments = self.source[start:end]
+        ordered_tokens = [
+            "$(if($standaloneFieldBearingRuntime){$frontendWorkingPa0}else{Join-Path $runtimeDir 'coarse_frontend.pa0'})",
+            "$domainMain[0].pa0",
+            "$domainUpstream[0].pa0",
+            "$entranceLocalBuild[0].pa0",
+            "$frontendBoundaryGeometry.instance_origin_mm.x",
+            "$frontendBoundaryGeometry.instance_origin_mm.y",
+            "$frontendBoundaryGeometry.instance_origin_mm.z",
+            "$domainMain[0].geometry.instance_origin_mm.x",
+            "$domainMain[0].geometry.instance_origin_mm.y",
+            "$domainMain[0].geometry.instance_origin_mm.z",
+            "$domainUpstream[0].geometry.instance_origin_mm.x",
+            "$domainUpstream[0].geometry.instance_origin_mm.y",
+            "$domainUpstream[0].geometry.instance_origin_mm.z",
+            "$entranceLocalBuild[0].geometry.instance_origin_mm.x",
+            "$entranceLocalBuild[0].geometry.instance_origin_mm.y",
+            "$entranceLocalBuild[0].geometry.instance_origin_mm.z",
+        ]
+        for left, right in zip(ordered_tokens, ordered_tokens[1:]):
+            self.assertLess(arguments.index(left), arguments.index(right))
+
+    def test_full_flight_iob_arguments_match_the_seven_slot_builder_contract(self) -> None:
+        start = self.source.index("$fullFlightIobArguments = @(")
+        end = self.source.index("$built = Invoke-ResourceBudgetedProcess", start)
+        arguments = self.source[start:end]
+        # The full builder API receives reusable families as coarse/upstream/main,
+        # then maps them to priority slots 2/4/3 respectively.  Keep its four
+        # dynamic origins paired to the same API role order.
+        ordered_tokens = [
+            "$coarseFrontendRuntimePa0",
+            "$domainUpstream[0].pa0",
+            "$acceleratorMainRuntimePa0",
+            "(Join-Path $runtimeDir 'flight_tube_ground.pa0')",
+            "(Join-Path $runtimeDir 'reflectron.pa0')",
+            "$entranceLocalBuild[0].pa0",
+            "(Join-Path $runtimeDir 'detector_ground.pa0')",
+            "$frontendGeometry.instance_origin_mm.x",
+            "$frontendGeometry.instance_origin_mm.y",
+            "$frontendGeometry.instance_origin_mm.z",
+            "$domainUpstream[0].geometry.instance_origin_mm.x",
+            "$domainUpstream[0].geometry.instance_origin_mm.y",
+            "$domainUpstream[0].geometry.instance_origin_mm.z",
+            "$domainMain[0].geometry.instance_origin_mm.x",
+            "$domainMain[0].geometry.instance_origin_mm.y",
+            "$domainMain[0].geometry.instance_origin_mm.z",
+            "$entranceLocalBuild[0].geometry.instance_origin_mm.x",
+            "$entranceLocalBuild[0].geometry.instance_origin_mm.y",
+            "$entranceLocalBuild[0].geometry.instance_origin_mm.z",
+        ]
+        for left, right in zip(ordered_tokens, ordered_tokens[1:]):
+            self.assertLess(arguments.index(left), arguments.index(right))
+
     def test_detector_blind_pre_pulse_reuses_full_flight_coarse_and_upstream_families(self) -> None:
         self.assertNotIn("pre_pulse_coarse_bridge", self.source)
         self.assertNotIn("pre_pulse_upstream_bridge", self.source)
@@ -133,19 +266,17 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("gem=$upstreamBridgeGem", self.source)
         self.assertIn("contract=$upstreamBridgeContract", self.source)
         self.assertIn(
-            "Only the downstream entrance is replaced by an independent zero-field",
-            self.source,
+            "the already-refined accelerator-main family", self.source
         )
 
     def test_pre_pulse_native_grid_honors_the_frozen_sampling_stride(self) -> None:
         self.assertIn("$sampleStrideRfSteps = if ($null -eq $rfGrid.sample_stride_rf_steps)", self.source)
         self.assertIn("$index * $sampleStrideRfSteps", self.source)
 
-    def test_zero_field_entrance_contract_requires_refinement_to_be_prohibited(self) -> None:
-        self.assertIn(
-            "-not [bool]$entranceZoneGeometry.boundary_condition.direct_refinement_prohibited",
-            self.source,
-        )
+    def test_zero_field_geometry_is_limited_to_terminal_handoff_collision(self) -> None:
+        self.assertIn("if ($domainSplitEnabled -and $prePulseTerminalHandoffCollision)", self.source)
+        self.assertIn("Build-RawPrePulseCollisionPa", self.source)
+        self.assertNotIn("$entranceZoneGeometry", self.source)
 
     def test_domain_split_prohibits_monolithic_accelerator_override(self) -> None:
         self.assertIn("if ($domainSplitEnabled)", self.source)
@@ -190,8 +321,10 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("@('coarse_frontend','upstream_bridge')", omitted)
 
     def test_coarse_frontend_refines_fast_adjust_template_once_for_fine_boundaries(self) -> None:
-        self.assertIn("refine_mode='fast_adjust_template_single_refine_v1'", self.source)
+        self.assertIn("refine_mode='pa_plus_official_default_single_refine_v2'", self.source)
         self.assertIn("initialize_fast_adjust_pa_basis.lua", self.source)
+        self.assertIn("Coarse frontend PA+ file rendering failed.", self.source)
+        self.assertIn("-Prefix 'frontend'", self.source)
         self.assertIn("SIMION refines every member of a fast-adjust .pa# family", self.source)
         self.assertNotIn("frontend_refine_pa{0}_resource_usage.json", self.source)
 
@@ -251,7 +384,7 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
             self.source.index("$recoverableLocalStaging"):
             self.source.index("throw", self.source.index("$recoverableLocalStaging"))
         ]
-        self.assertIn("basis_build.json.basis_*.complete", local_catch)
+        self.assertIn("(Join-Path $localBuildDir 'basis_build.json')", local_catch)
         self.assertIn("-not $recoverableLocalStaging", local_catch)
 
     def test_local_pa_plus_family_materializes_its_controller_before_basis_transfer(self) -> None:
@@ -260,12 +393,17 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("$localPaPlusInitialization = Invoke-ResourceBudgetedProcess", self.source)
         self.assertIn("Accelerator entrance-local PA+ controller initialization failed.", self.source)
 
-    def test_local_basis_reads_the_immutable_main_generation_through_a_short_junction(self) -> None:
-        self.assertIn("function New-RfSimionShortPathJunction", self.source)
-        self.assertIn("SIMION 2020 cannot reliably open PA files beyond the legacy MAX_PATH", self.source)
-        self.assertIn("-TargetDirectory $mainBuild.cache_dir", self.source)
-        self.assertIn("Join-Path $mainSourceJunction 'accelerator_main.pa0'", self.source)
-        self.assertIn("Remove-Item -LiteralPath $mainSourceJunction -Force", self.source)
+    def test_local_basis_uses_only_a_short_verified_main_standalone_projection(self) -> None:
+        self.assertNotIn("New-RfSimionShortPathJunction", self.source)
+        self.assertNotIn("-ItemType Junction", self.source)
+        local_basis_block = self.source[
+            self.source.index("$basis = Invoke-ResourceBudgetedProcess", self.source.index("$localPaPlusInitialization")):
+            self.source.index("$localRefinementReceipt", self.source.index("$localPaPlusInitialization"))
+        ]
+        self.assertIn("$localBoundaryProjection.mode_map", local_basis_block)
+        self.assertNotIn("common.simion.cache_generation", local_basis_block)
+        self.assertNotIn("accelerator_main.pa0", local_basis_block)
+        self.assertNotIn(".paN", local_basis_block)
 
     def test_post_pulse_materializes_only_the_main_and_local_accelerator_families(self) -> None:
         self.assertIn(
@@ -309,30 +447,56 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         first_domain_copy = self.source.index("foreach ($domainSplitFineBuild in $domainSplitFineBuilds)")
         self.assertLess(definition, first_domain_copy)
 
+    def test_flight_binding_reuses_each_already_frozen_fine_manifest(self) -> None:
+        start = self.source.index("$domainSplitFineCacheManifestInputs = @()")
+        end = self.source.index("$twoLocalOverlayCacheManifestInputs = @()", start)
+        binding = self.source[start:end]
+        self.assertIn("path=$domainSplitFineBuild.cache_manifest_input", binding)
+        self.assertNotIn("path=(Copy-RfCacheManifestInput", binding)
+
+    def test_native_operating_field_bank_uses_program_contract_identity(self) -> None:
+        self.assertIn(
+            "role='rf_oatof_simion_standalone_dynamic_field_bank'", self.source
+        )
+        self.assertNotIn("role='rf_oatof_standalone_dynamic_field_bank'", self.source)
+
     def test_interrupted_compact_reconciliation_is_advisory_but_capacity_is_mandatory(self) -> None:
+        startup_capacity = self.source.index(
+            "$artifactCapacityStartupReceipt = Invoke-ArtifactCapacityGate"
+        )
         reconciliation = self.source.index("reconcile_interrupted_compact_runs")
         capacity_check = self.source.index("Test-RepositoryDiskCapacity")
+        self.assertLess(startup_capacity, reconciliation)
         self.assertLess(reconciliation, capacity_check)
         reconciliation_block = self.source[reconciliation:capacity_check]
         self.assertIn("try {", reconciliation_block)
         self.assertIn("INTERRUPTED_COMPACT_RECONCILIATION=WARN", reconciliation_block)
         self.assertIn("catch {", reconciliation_block)
-        self.assertIn("Artifact capacity gate failed at SIMION startup.", self.source)
+        self.assertIn(
+            "Artifact capacity gate did not reach the frozen transient-staging launch watermark.",
+            self.source,
+        )
 
     def test_early_capacity_failure_does_not_supply_an_unknown_measurement(self) -> None:
         self.assertLess(
             self.source.index("$artifactCapacityState = $null"),
-            self.source.index("$artifactCapacityStartup = Invoke-SingleFlightPython"),
+            self.source.index(
+                "$artifactCapacityStartupReceipt = Invoke-ArtifactCapacityGate"
+            ),
         )
-        terminal = self.source[self.source.index("$terminalCapacityArguments = @("):]
+        terminal = self.source[self.source.index("$terminalCapacityParameters = @{"):]
         guard = terminal.index("if ($null -ne $artifactCapacityState)")
-        hint = terminal.index("'--known-measured-bytes'")
-        maximum = terminal.index("'--maximum-new-artifact-bytes'")
+        hint = terminal.index("$terminalCapacityParameters.KnownMeasuredBytes")
+        maximum = terminal.index(
+            "$terminalCapacityParameters.MaximumNewArtifactBytes"
+        )
         self.assertLess(guard, hint)
         self.assertLess(guard, maximum)
-        self.assertNotIn("known_measured_bytes", terminal[:guard])
-        self.assertNotIn("'--maximum-new-artifact-bytes'", terminal[:guard])
-        self.assertIn("'--apply'", terminal[:guard])
+        self.assertNotIn("KnownMeasuredBytes", terminal[:guard])
+        self.assertNotIn("MaximumNewArtifactBytes", terminal[:guard])
+        self.assertIn(
+            "Invoke-ArtifactCapacityGate @terminalCapacityParameters", terminal
+        )
 
     def test_domain_split_aperture_check_uses_the_authoritative_local_or_main_pa(self) -> None:
         self.assertIn("Domain-split aperture topology check requires exactly one authoritative aperture PA.", self.source)
@@ -353,15 +517,16 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         )
         self.assertIn("-PaPath $apertureTopologyPa", self.source)
 
-    def test_pre_pulse_collision_aperture_gate_uses_its_materialized_raw_pa0(self) -> None:
-        self.assertIn("geometry_collision_zero_field_v1", self.source)
-        self.assertIn("not infer", self.source)
-        self.assertIn("$entranceZoneAssetName = 'accelerator_entrance_zero_field'", self.source)
-        self.assertIn("$domainEntranceZone[0].pa0", self.source)
-        self.assertIn("topology_pa=(Join-Path $entranceZoneCacheDir ($entranceZoneAssetName + '.pa0'))", self.source)
+    def test_pre_pulse_iob_reuses_the_materialized_main_pa0(self) -> None:
+        self.assertIn("the already-refined accelerator-main PA", self.source)
+        self.assertIn("$domainMain[0].pa0", self.source)
+        self.assertIn(
+            "$_.name -in @('upstream_bridge','accelerator_main','accelerator_entrance_local')",
+            self.source,
+        )
         self.assertIn("if ($acceleratorEntranceLocalEnabled) {'accelerator_entrance_local'}", self.source)
         self.assertNotIn(
-            "$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_main.pa0')",
+            "$programArguments += @('--pre-pulse-entrance-zone-collision-contract'",
             self.source,
         )
 
@@ -428,6 +593,43 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("[string]$SourceDirectory=$runtimeDir", self.source)
         self.assertIn("-SourceDirectory $frontendWorkingDir", self.source)
 
+    def test_standalone_runtime_materializes_prepublication_operating_cache(self) -> None:
+        copy_assignment = self.source.index("$frontendWorkingDir = Join-Path")
+        copy_guard = self.source.rindex(
+            "if (-not $standaloneFieldBearingRuntime)", 0, copy_assignment
+        )
+        frontend_copy = self.source[
+            copy_guard : self.source.index("# A positive long gap")
+        ]
+        self.assertIn("if (-not $standaloneFieldBearingRuntime)", frontend_copy)
+        dynamic = self.source[
+            self.source.index("if ($standaloneFieldBearingRuntime) {") : self.source.index(
+                "$reflectronBuilderFrozen = $null"
+            )
+        ]
+        self.assertIn("--action','materialize'", dynamic)
+        self.assertIn("$roleRow.build.operating_companion", dynamic)
+        self.assertIn("native_operating_pa_cache_manifest.json", dynamic)
+        self.assertIn("$standaloneDynamicExecutionDir", dynamic)
+        self.assertIn("'rf_oatof_operating_pa_'", dynamic)
+        self.assertIn("'--destination-directory',$standaloneDynamicExecutionDir", dynamic)
+        self.assertNotIn("New-ShortPaCopy", dynamic)
+        self.assertNotIn("compose_standalone_pa.lua", dynamic)
+        self.assertIn("Remove-PrivatePaFamilyDirectory", self.source)
+        self.assertIn(
+            "-ExpectedNamePrefix 'rf_oatof_operating_pa_'", self.source
+        )
+        self.assertNotIn("$fieldPlan.rf_copies", dynamic)
+        self.assertIn("standalone_dynamic_operating_pa_receipt.json", dynamic)
+        for name in (
+            "standalone_dynamic_field_materialization_plan",
+            "standalone_dynamic_field_bank",
+            "standalone_dynamic_operating_pa_receipt",
+            "standalone_${inputStem}_operating_cache_manifest",
+            "standalone_${inputStem}_operating_identity",
+        ):
+            self.assertIn(name, self.source)
+
     def test_domain_split_program_does_not_require_the_unrelated_entrance_overlay(self) -> None:
         self.assertIn("} elseif ($overlayEnabled -and -not $domainSplitEnabled) {", self.source)
 
@@ -436,16 +638,26 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("$prePulseConnectorCollisionContract", self.source)
         self.assertIn("'--upstream-bridge-contract',$programUpstreamContract", self.source)
 
-    def test_accelerator_main_uses_the_disjoint_boundary_builder_only_for_that_large_domain(self) -> None:
+    def test_all_fine_domains_use_the_shared_pa_plus_builder_and_namespace(self) -> None:
         self.assertIn("build_accelerator_pa_plus_basis.lua", self.source)
-        self.assertIn("$fineDefinition.name -eq 'accelerator_main'", self.source)
-        self.assertIn("$fineUsesPaPlus", self.source)
-        self.assertIn("$finePaPlusModeSpec", self.source)
+        self.assertIn("$fineBasisBuilderSource = $acceleratorMainBasisBuilderSource", self.source)
+        self.assertIn("$fineSolutionIds = @($sharedPaPlusSolutionIds)", self.source)
+        self.assertIn("$finePaPlusModeSpec = @($fineSolutionIds | ForEach-Object", self.source)
+        self.assertIn("'{0}:{0}=1' -f [int]$_", self.source)
+        self.assertIn(
+            "$fineGeometry.PSObject.Properties['pa_plus_solution_model']",
+            self.source,
+        )
+        self.assertNotIn(
+            "$fineModel = $fineGeometry.pa_plus_solution_model", self.source
+        )
+        self.assertIn("'36,37,38,39,40,41,42,43'", self.source)
         self.assertIn("Test-RfPaPlusModeFamily", self.source)
         self.assertIn("$finePa0 = Join-Path $fineBuildDir", self.source)
         self.assertIn("PA+ controller initialization failed", self.source)
         self.assertIn("basis_builder_sha256=(Get-FileHash -LiteralPath $fineBasisBuilderSource", self.source)
         self.assertIn("pa_plus_initializer_sha256", self.source)
+        self.assertIn("$fineBoundaryProjection.mode_map,$fineBuildSharp", self.source)
 
     def test_accelerator_main_builder_covers_six_faces_without_duplicate_key_tracking(self) -> None:
         builder = RUNNER.with_name("build_accelerator_main_basis_fast.lua").read_text(encoding="utf-8")
@@ -484,26 +696,205 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertNotIn("boundary_readback", builder)
         self.assertNotIn("potential(ix,iy,iz)", builder)
 
-    def test_upstream_basis_builder_checkpoints_each_saved_basis_for_safe_resume(self) -> None:
-        builder = RUNNER.with_name("build_accelerator_overlay_basis.lua").read_text(encoding="utf-8")
-        self.assertIn(".basis_", builder)
-        self.assertIn("has_receipt", builder)
-        self.assertIn("write_receipt(basis)", builder)
-        self.assertLess(builder.index("fine:save()"), builder.index("write_receipt(basis)"))
-        self.assertIn("resumed=true", builder)
-        self.assertIn("interrupted basis family is missing a materialized member", builder)
-        self.assertIn("initializer:refine{}", builder)
+    def test_parent_boundary_sources_are_manifest_verified_standalone_maps(self) -> None:
+        self.assertIn("function Select-RfStandalonePaResponses", self.source)
+        self.assertIn("--action','select'", self.source)
+        self.assertIn("--manifest',$Manifest", self.source)
+        self.assertIn("--mode-map',$ModeMapPath", self.source)
+        self.assertIn(
+            "standalone_selection_path=$frontendStandaloneSelectionPath",
+            self.source,
+        )
+        self.assertIn("standalone_mode_map=$frontendStandaloneModeMap", self.source)
+        self.assertIn("standalone_selection_path=$fineStandaloneSelectionPath", self.source)
+        self.assertIn("standalone_mode_map=$fineStandaloneModeMap", self.source)
+        self.assertIn("standalone_selection_path=$localStandaloneSelectionPath", self.source)
+        self.assertIn("standalone_mode_map=$localStandaloneModeMap", self.source)
 
-    def test_interrupted_fine_cache_staging_keeps_per_basis_checkpoints(self) -> None:
-        self.assertIn("basis_build.json.basis_*.complete", self.source)
-        self.assertIn("completed solver work after an interruption", self.source)
+    def test_boundary_builder_uses_verified_short_copies_and_always_cleans_them(self) -> None:
+        helper = self.source[
+            self.source.index("function New-RfStandaloneBoundarySourceProjection"):
+            self.source.index("function Get-RfProcessDiagnosticTail")
+        ]
+        self.assertIn("New-ShortPaCopy", helper)
+        self.assertIn("[Parameter(Mandatory)][string]$ExpectedPrefix", helper)
+        self.assertIn("[Parameter(Mandatory)][int[]]$ExpectedResponseIds", helper)
+        self.assertIn("[string]$selection.prefix -ne $ExpectedPrefix", helper)
+        self.assertIn("($actualResponseIds -join ',') -ne ($ExpectedResponseIds -join ',')", helper)
+        self.assertIn("-ExpectedBytes ([int64]$record.bytes)", helper)
+        self.assertIn("-ExpectedSha256 ([string]$record.sha256)", helper)
+        self.assertIn("simion_pa_links_", helper)
+        self.assertIn("Remove-ShortPaCopyDirectory", helper)
+        self.assertIn("[Text.UTF8Encoding]::new($false)", helper)
+        fine_basis = self.source[
+            self.source.index("$fineBoundaryProjection ="):
+            self.source.index("$fineRefinementReceipt")
+        ]
+        self.assertIn("finally {", fine_basis)
+        self.assertIn(
+            "Remove-RfStandaloneBoundarySourceProjection -Projection $fineBoundaryProjection",
+            fine_basis,
+        )
+        local_basis = self.source[
+            self.source.index("$localBoundaryProjection ="):
+            self.source.index("$localRefinementReceipt")
+        ]
+        self.assertIn("finally {", local_basis)
+        self.assertIn(
+            "Remove-RfStandaloneBoundarySourceProjection -Projection $localBoundaryProjection",
+            local_basis,
+        )
 
-    def test_semantically_equivalent_boundary_builder_cache_is_reused(self) -> None:
+    def test_interrupted_refine_keeps_only_complete_basis_staging(self) -> None:
+        self.assertNotIn("basis_build.json.basis_*.complete", self.source)
+        self.assertIn("basis_build.json", self.source)
+        self.assertIn("(Join-Path $fineBuildDir 'basis_build.json')", self.source)
+        self.assertIn("(Join-Path $localBuildDir 'basis_build.json')", self.source)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required for runner behavior")
+    def test_mode_receipt_rejects_zero_bytes_wrong_identity_and_changed_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = str(Path(directory).resolve()).replace("'", "''")
+            result = self._run_refine_receipt_functions(
+                f"""
+$root = '{root}'
+$basis = Join-Path $root 'basis_build.json'
+[IO.File]::WriteAllText($basis,'basis',[Text.UTF8Encoding]::new($false))
+$pa = Join-Path $root 'main.pa36'
+[IO.File]::WriteAllBytes($pa,[byte[]](1,2,3,4))
+$key = 'a' * 64
+Write-RfPaRefineModeReceipt -BuildDirectory $root -CacheKey $key `
+  -FamilyRole 'main_role' -PaPrefix 'main' -SolutionId 36 `
+  -BasisReport $basis -ExitCode 0 | Out-Null
+$valid = Test-RfPaRefineModeReceipt -BuildDirectory $root -CacheKey $key `
+  -FamilyRole 'main_role' -PaPrefix 'main' -SolutionId 36 -BasisReport $basis
+$wrongKey = Test-RfPaRefineModeReceipt -BuildDirectory $root -CacheKey ('b' * 64) `
+  -FamilyRole 'main_role' -PaPrefix 'main' -SolutionId 36 -BasisReport $basis
+$wrongRole = Test-RfPaRefineModeReceipt -BuildDirectory $root -CacheKey $key `
+  -FamilyRole 'local_role' -PaPrefix 'main' -SolutionId 36 -BasisReport $basis
+[IO.File]::WriteAllBytes($pa,[byte[]](4,3,2,1))
+$changedHash = Test-RfPaRefineModeReceipt -BuildDirectory $root -CacheKey $key `
+  -FamilyRole 'main_role' -PaPrefix 'main' -SolutionId 36 -BasisReport $basis
+[IO.File]::WriteAllBytes($pa,[byte[]]@())
+$zeroBytes = Test-RfPaRefineModeReceipt -BuildDirectory $root -CacheKey $key `
+  -FamilyRole 'main_role' -PaPrefix 'main' -SolutionId 36 -BasisReport $basis
+[ordered]@{{valid=$valid;wrong_key=$wrongKey;wrong_role=$wrongRole;changed_hash=$changedHash;zero_bytes=$zeroBytes}} | ConvertTo-Json -Compress
+"""
+            )
+        self.assertEqual(
+            result,
+            {
+                "valid": True,
+                "wrong_key": False,
+                "wrong_role": False,
+                "changed_hash": False,
+                "zero_bytes": False,
+            },
+        )
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required for runner behavior")
+    def test_resume_state_schedules_existing_legacy_pa_without_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = str(Path(directory).resolve()).replace("'", "''")
+            result = self._run_refine_receipt_functions(
+                f"""
+$root = '{root}'
+$basis = Join-Path $root 'basis_build.json'
+[IO.File]::WriteAllText($basis,'basis',[Text.UTF8Encoding]::new($false))
+$key = 'c' * 64
+[IO.File]::WriteAllBytes((Join-Path $root 'main.pa36'),[byte[]](1,2))
+Write-RfPaRefineModeReceipt -BuildDirectory $root -CacheKey $key `
+  -FamilyRole 'main_role' -PaPrefix 'main' -SolutionId 36 `
+  -BasisReport $basis -ExitCode 0 | Out-Null
+[IO.File]::WriteAllBytes((Join-Path $root 'main.pa37'),[byte[]](9,8,7))
+[IO.File]::WriteAllBytes((Join-Path $root 'main.pa38'),[byte[]]@())
+$state = Get-RfPaRefineResumeState -BuildDirectory $root -CacheKey $key `
+  -FamilyRole 'main_role' -PaPrefix 'main' -SolutionIds @(36,37,38,39) `
+  -BasisReport $basis
+$state | ConvertTo-Json -Compress
+"""
+            )
+        self.assertEqual(result["completed_solution_ids"], [36])
+        self.assertEqual(result["pending_solution_ids"], [37, 38, 39])
+
+    def test_main_and_local_refine_resume_are_symmetric_and_pending_only(self) -> None:
+        fine = self.source[
+            self.source.index("$fineRefinementReceipt =") :
+            self.source.index("$fineStandaloneReceipt =")
+        ]
+        local = self.source[
+            self.source.index("$localRefinementReceipt =") :
+            self.source.index("$localStandaloneReceipt =")
+        ]
+        for block, pending, prefix in (
+            (fine, "$finePendingSolutionIds", "$fineDefinition.name"),
+            (local, "$localPendingSolutionIds", "'accelerator_entrance_local'"),
+        ):
+            self.assertIn("Get-RfPaRefineResumeState", block)
+            self.assertIn("Write-RfPaRefineModeReceipt", block)
+            self.assertIn("-OnProcessCompleted", block)
+            self.assertIn(f"work_item_count={pending}.Count", block)
+            self.assertIn(f"@({pending} | ForEach-Object", block)
+            self.assertIn("basis repair failed", block)
+            self.assertIn("refinement mode receipts are incomplete", block)
+            self.assertIn("schema_version=2", block)
+            self.assertIn("mode_receipts=@(", block)
+            self.assertIn(f"-PaPrefix {prefix}", block)
+
+    def test_legacy_semantic_reuse_is_not_used_for_schema_three_fine_families(self) -> None:
         self.assertIn("function Resolve-RfSemanticallyEquivalentFineCache", self.source)
-        self.assertIn("8236707F574393E796DC4CF0A75C4CA79C13AFD86992C75C0F8199551084B73D", self.source)
-        self.assertIn("399BA109A1559BD8BE90E1725BB0A8138435628D5AFD70A6113C1FB0B3ED3C17", self.source)
-        self.assertIn("cache_hit_semantically_equivalent_boundary_builder", self.source)
-        self.assertIn("$candidateIdentity.inputs.basis_builder_sha256 = $CurrentBuilderSha256", self.source)
+        fine_block = self.source[
+            self.source.index("$fineIdentity = [ordered]@{"):
+            self.source.index(
+                "if ($acceleratorEntranceLocalEnabled)",
+                self.source.index("$fineIdentity = [ordered]@{"),
+            )
+        ]
+        self.assertIn("schema_version=3", fine_block)
+        self.assertNotIn("Resolve-RfSemanticallyEquivalentFineCache", fine_block)
+        self.assertNotIn("cache_hit_semantically_equivalent_boundary_builder", fine_block)
+
+    def test_every_pa_plus_family_exports_and_receipts_standalone_modes(self) -> None:
+        self.assertIn("function Export-RfStandalonePaResponses", self.source)
+        self.assertIn("common\\simion\\export_standalone_pa.lua", self.source)
+        self.assertIn("--action','write-receipt'", self.source)
+        self.assertIn("standalone_response_set.json", self.source)
+        self.assertIn('"{0}.response_{1}.pa"', self.source)
+        self.assertIn("Export-RfStandalonePaResponses", self.source)
+        self.assertGreaterEqual(self.source.count("Export-RfStandalonePaResponses `"), 3)
+        self.assertIn("standalone_exporter_sha256", self.source)
+        self.assertIn("standalone_receipt_policy_sha256", self.source)
+        self.assertIn("new_pa_object_export_surface_none_v1", self.source)
+        self.assertIn(
+            "native_staging_plus_responses_plus_prepublication_operating_companion_v2",
+            self.source,
+        )
+        self.assertIn("Resolve-RfNativeOperatingPaCompanion", self.source)
+        self.assertIn("export_fast_adjusted_standalone_pa.lua", self.source)
+
+    def test_operating_companions_are_synthesized_only_before_family_publication(self) -> None:
+        for receipt, publication in (
+            ("$frontendStandaloneReceipt =", "$cacheDir = Publish-RfVerifiedCacheEntry"),
+            ("$fineStandaloneReceipt =", "$fineCacheDir = Publish-RfVerifiedCacheEntry"),
+            ("$localStandaloneReceipt =", "$localCacheDir = Publish-RfVerifiedCacheEntry"),
+        ):
+            start = self.source.index(receipt)
+            end = self.source.index(publication, start)
+            block = self.source[start:end]
+            self.assertIn("Resolve-RfNativeOperatingPaCompanion", block)
+            self.assertIn("-AllowSynthesis", block)
+        helper = self.source[
+            self.source.index("function Resolve-RfNativeOperatingPaCompanion") :
+            self.source.index("function Export-RfStandalonePaResponses")
+        ]
+        self.assertIn("if (-not $AllowSynthesis)", helper)
+        self.assertIn("published PA families are forbidden synthesis sources", helper)
+        self.assertIn("Add-RfArtifactCapacityProtectedCacheKey", helper)
+        self.assertIn("[string]$export.receipt", helper)
+        self.assertIn("'--action','verify-exports'", helper)
+        self.assertIn("physical_geometry_boundary_flags_v1", helper)
+        self.assertIn("verification_sha256", helper)
+        self.assertIn("schema_version=2", helper)
 
     def test_disjoint_face_partition_is_the_same_complete_boundary_as_the_legacy_loops(self) -> None:
         # Small non-cubic dimensions exercise each edge/corner ownership rule.

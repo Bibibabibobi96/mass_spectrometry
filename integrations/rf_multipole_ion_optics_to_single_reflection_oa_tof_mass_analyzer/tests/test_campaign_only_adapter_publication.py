@@ -679,34 +679,47 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             self.assertEqual((second_entry / "frontend.pa0").read_text(encoding="utf-8"), "second:frontend.pa0")
             self.assertEqual(len(list((key_directory / "generations").iterdir())), 2)
 
-    def test_real_cache_writer_guard_rejects_matching_and_ignores_unrelated_writers(self) -> None:
+    def test_real_cache_writer_guard_rejects_late_and_persistent_writers(self) -> None:
         # Exercise the production guard separately from generation publication.
         with tempfile.TemporaryDirectory() as directory:
             command = f". '{RUN_ARTIFACTS_PATH}'; " + r"""
 $ErrorActionPreference='Stop'
+$script:writerSamples=0
 function Get-CimInstance {
     param($ClassName,$ErrorAction)
-    [pscustomobject]@{Name='simion.exe';ProcessId=456;CommandLine=('simion.exe refine "' + $env:WRITER_FIXTURE_DIRECTORY + '/frontend.pa#"')}
+    $script:writerSamples++
+    if($script:writerSamples -eq 1){[pscustomobject]@{Name='simion.exe';ProcessId=123}}
 }
 $rejected=$false
 try {
     Wait-RfCacheStagingWriterExit -StagingDirectory $env:WRITER_FIXTURE_DIRECTORY `
-        -TimeoutSeconds 1
+        -QuietSeconds 1 -TimeoutSeconds 5 -FailIfWriterObserved
+} catch {
+    if($_.Exception.Message -notlike '*writer appeared after the cache inventory*'){throw}
+    $rejected=$true
+}
+if(-not $rejected){throw 'Late writer was accepted'}
+function Get-CimInstance {
+    param($ClassName,$ErrorAction)
+    [pscustomobject]@{Name='simion.exe';ProcessId=456}
+}
+$rejected=$false
+try {
+    Wait-RfCacheStagingWriterExit -StagingDirectory $env:WRITER_FIXTURE_DIRECTORY `
+        -QuietSeconds 1 -TimeoutSeconds 1
 } catch {
     if($_.Exception.Message -notlike '*Timed out waiting for SIMION staging writer(s): 456*'){throw}
     $rejected=$true
 }
-if(-not $rejected){throw 'Matching persistent writer was accepted'}
-function Get-CimInstance {
-    param($ClassName,$ErrorAction)
-    [pscustomobject]@{Name='simion.exe';ProcessId=789;CommandLine='simion.exe refine unrelated-fixture.pa#'}
-}
-Wait-RfCacheStagingWriterExit -StagingDirectory $env:WRITER_FIXTURE_DIRECTORY -TimeoutSeconds 0
+if(-not $rejected){throw 'Persistent writer was accepted'}
 Write-Output 'WRITER_GUARDS=PASS'
 """
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
-                env=dict(os.environ, WRITER_FIXTURE_DIRECTORY=str(Path(directory).resolve())),
+                    env=dict(
+                        os.environ,
+                        WRITER_FIXTURE_DIRECTORY=str(Path(directory).resolve()),
+                    ),
                 check=False, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=30,
             )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -37,6 +38,22 @@ class DomainSplitIobBuilderTests(unittest.TestCase):
         self.assertIn("seven-instance container IOB is required", source)
         self.assertIn("full-flight container must contain exactly seven instances", source)
         self.assertIn("for index=1,7 do", source)
+        self.assertIn(
+            "local pa_paths={flight_path,coarse_path,main_path,upstream_path,reflectron_path,local_path,detector_path}",
+            source,
+        )
+        self.assertEqual(
+            re.findall(
+                r"local (coarse|upstream|main|local)_origin=origin\((\d+), '([^']+)'\)",
+                source,
+            ),
+            [
+                ("coarse", "11", "coarse frontend"),
+                ("upstream", "14", "upstream bridge"),
+                ("main", "17", "accelerator main"),
+                ("local", "20", "accelerator entrance local"),
+            ],
+        )
         self.assertIn("[2]=coarse_origin,[3]=main_origin,[4]=upstream_origin,[6]=local_origin", source)
         self.assertIn("for formal_index,slot in pairs({[1]=1,[2]=5,[4]=7})", source)
         self.assertIn(
@@ -52,10 +69,43 @@ class DomainSplitIobBuilderTests(unittest.TestCase):
         )
         self.assertIn("pre-pulse container must contain exactly four instances", source)
         self.assertIn("for index=1,4 do", source)
+        self.assertEqual(
+            re.findall(
+                r"assert\(arg\[(\d+)\], '([^']+ PA0 is required)'\)", source
+            ),
+            [
+                ("3", "coarse frontend PA0 is required"),
+                ("4", "accelerator-main PA0 is required"),
+                ("5", "upstream bridge PA0 is required"),
+                ("6", "field-bearing entrance-local PA0 is required"),
+            ],
+        )
+        self.assertEqual(
+            re.findall(
+                r"assert\(tonumber\(arg\[(\d+)\]\), '([^']+ origin [xyz] is invalid)'\)",
+                source,
+            ),
+            [
+                (str(index), f"{role} origin {axis} is invalid")
+                for role, first_index in (
+                    ("coarse", 7),
+                    ("accelerator-main", 10),
+                    ("upstream", 13),
+                    ("entrance-local", 16),
+                )
+                for index, axis in zip(range(first_index, first_index + 3), "xyz")
+            ],
+        )
         self.assertIn(
-            "ROLES=coarse_frontend,upstream_bridge,accelerator_entrance_zero_field,accelerator_entrance_aperture_local",
+            "ROLES=coarse_frontend,accelerator_main,upstream_bridge,accelerator_entrance_aperture_local",
             source,
         )
+        self.assertIn("coarse < main <\n-- upstream < local priority", source)
+        self.assertLess(
+            source.index("'accelerator-main PA0 is required'"),
+            source.index("'upstream bridge PA0 is required'"),
+        )
+        self.assertIn("the already-refined accelerator-main PA", source)
         self.assertNotIn("reflectron PA0", source)
         self.assertNotIn("detector PA0", source)
 

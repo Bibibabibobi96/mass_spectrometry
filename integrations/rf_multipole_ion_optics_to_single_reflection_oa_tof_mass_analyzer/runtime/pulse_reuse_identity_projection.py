@@ -136,11 +136,11 @@ def build_verified_pulse_reuse_projection(
             for value in (
                 fine_upstream_key,
                 accelerator_main_key,
-                entrance_zone_collision_key,
                 entrance_local_key,
             )
         )
         and connector_collision_key is None
+        and entrance_zone_collision_key is None
         and coarse_bridge_key is None
         and intermediate2_key is None
     )
@@ -206,7 +206,6 @@ def build_verified_pulse_reuse_projection(
         cache_key_projection = {
             "fine_upstream": fine_upstream_key,
             "accelerator_main": accelerator_main_key,
-            "accelerator_entrance_zone_collision": entrance_zone_collision_key,
             "accelerator_entrance_local": entrance_local_key,
         }
     else:

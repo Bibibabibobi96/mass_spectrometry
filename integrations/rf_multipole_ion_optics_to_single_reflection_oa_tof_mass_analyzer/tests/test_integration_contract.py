@@ -118,6 +118,19 @@ class IntegrationProfileContractTests(unittest.TestCase):
                         repo_root=REPO_ROOT,
                     )
 
+    def test_all_102p4mm_profiles_freeze_ten_mm_beyond_the_terminal(self) -> None:
+        long_gap_profiles = {
+            profile_id: profile
+            for profile_id, profile in self.profiles.items()
+            if profile["connector"]["length_mm"] == 102.4
+        }
+        self.assertEqual(len(long_gap_profiles), 8)
+        for profile_id, profile in sorted(long_gap_profiles.items()):
+            with self.subTest(profile_id=profile_id):
+                connector = profile["connector"]
+                self.assertEqual(connector["upstream_fine_extent_mm"], 10.0)
+                self.assertEqual(connector["accelerator_fine_extent_mm"], 10.0)
+
     def test_aperture_height_screen_has_one_resolved_aperture_authority(self) -> None:
         """Keep the detector-blind four-arm screen a height-only comparison."""
         campaign = load_json(APERTURE_HEIGHT_CAMPAIGN_PATH)

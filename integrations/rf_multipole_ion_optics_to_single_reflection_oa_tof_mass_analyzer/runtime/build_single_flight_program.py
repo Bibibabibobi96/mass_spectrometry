@@ -8,7 +8,7 @@ import json
 import math
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Mapping
 
 from common.contracts.file_identity import file_sha256
 from common.multipole.grounded_shield import require_grounded_potential
@@ -17,6 +17,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     ROD_ELECTRODE_IDS,
     PA_PLUS_FIELD_LOADING_POLICY_ID,
     THREE_ZONE_PA_PLUS_MODEL_ID,
+    project_pa_plus_mode_voltages,
     require_published_frontend_electrodes,
     resolve_frontend_electrode_topology,
     resolve_post_pulse_pa_plus_solution_projection,
@@ -35,6 +36,30 @@ SOURCE_RELEASE_MODES = (
     "pre_pulse_restart",
 )
 
+STANDALONE_DYNAMIC_FIELD_BANK_ROLE = (
+    "rf_oatof_simion_standalone_dynamic_field_bank"
+)
+STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION = (
+    "standalone_operating_pa_explicit_dynamic_v1"
+)
+DOWNSTREAM_STATIC_STANDALONE_CARRIER_ROLE = (
+    "rf_oatof_simion_downstream_static_standalone_carriers"
+)
+DOWNSTREAM_STATIC_STANDALONE_RUNTIME_REPRESENTATION = (
+    "standalone_voltageized_static_pa_v1"
+)
+_DOWNSTREAM_STATIC_STANDALONE_ROLES = {
+    "flight_tube",
+    "reflectron",
+    "detector",
+}
+_STANDALONE_DYNAMIC_ROLE_TO_IOB_ROLE = {
+    "coarse_frontend": "coarse_frontend",
+    "accelerator_main": "accelerator",
+    "upstream_bridge": "upstream_bridge",
+    "accelerator_entrance_local": "accelerator_entrance_aperture_local",
+}
+
 
 def _load(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -50,70 +75,283 @@ def _lua_number(value: float) -> str:
     return format(result, ".17g")
 
 
-def _entrance_aperture_overlap_identity(contract: dict[str, Any]) -> dict[str, Any]:
-    """Return only geometry that must agree where carrier and local PA overlap."""
+def _ordinary_standalone_pa_basename(value: object, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or "/" in value
+        or "\\" in value
+        or re.fullmatch(r"[^/\\]+\.[pP][aA]", value) is None
+    ):
+        raise ValueError(f"{label} must be one ordinary standalone .pa basename")
+    return value
 
-    aperture = contract.get("accelerator_port_aperture")
-    discretization = (
-        aperture.get("discretization") if isinstance(aperture, dict) else None
-    )
-    alignment = (
-        discretization.get("grid_alignment")
-        if isinstance(discretization, dict)
-        else None
-    )
-    if not isinstance(discretization, dict) or not isinstance(alignment, dict):
-        raise ValueError("accelerator entrance aperture discretization is incomplete")
-    scalar_keys = (
-        "mechanical_width_mm",
-        "mechanical_height_mm",
-        "numerical_carve_width_mm",
-        "numerical_carve_height_mm",
-        "flange_x_min_mm",
-        "flange_x_max_mm",
-    )
+
+def _resolve_standalone_dynamic_field_bank(
+    contract: dict[str, Any], expected_role_indices: dict[str, int]
+) -> list[dict[str, Any]]:
+    """Validate one explicit standalone field bank against the active IOB roles."""
+
+    if set(contract) != {
+        "schema_version",
+        "role",
+        "runtime_representation",
+        "dynamic_roles",
+    } or (
+        contract.get("schema_version") != 1
+        or contract.get("role") != STANDALONE_DYNAMIC_FIELD_BANK_ROLE
+        or contract.get("runtime_representation")
+        != STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION
+    ):
+        raise ValueError("standalone dynamic field bank identity differs")
+    rows = contract.get("dynamic_roles")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("standalone dynamic field bank roles are missing")
+    normalized: list[dict[str, Any]] = []
+    seen_roles: set[str] = set()
+    seen_indices: set[int] = set()
+    seen_basenames: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict) or not {
+            "role",
+            "instance_index",
+            "carrier_pa_basename",
+            "rf_differential_pa_basename",
+        }.issubset(row) or not set(row).issubset(
+            {
+                "role",
+                "instance_index",
+                "carrier_pa_basename",
+                "rf_differential_pa_basename",
+                "pulse_delta_pa_basename",
+            }
+        ):
+            raise ValueError("standalone dynamic field bank role fields differ")
+        role = row["role"]
+        index = row["instance_index"]
+        if (
+            not isinstance(role, str)
+            or role not in expected_role_indices
+            or isinstance(index, bool)
+            or not isinstance(index, int)
+            or index != expected_role_indices[role]
+            or role in seen_roles
+            or index in seen_indices
+        ):
+            raise ValueError("standalone dynamic field bank role/index differs")
+        carrier = _ordinary_standalone_pa_basename(
+            row["carrier_pa_basename"], f"standalone {role} carrier"
+        )
+        rf_differential = _ordinary_standalone_pa_basename(
+            row["rf_differential_pa_basename"],
+            f"standalone {role} RF differential",
+        )
+        raw_pulse_delta = row.get("pulse_delta_pa_basename")
+        pulse_delta = (
+            None
+            if raw_pulse_delta is None
+            else _ordinary_standalone_pa_basename(
+                raw_pulse_delta, f"standalone {role} pulse delta"
+            )
+        )
+        basenames = [carrier, rf_differential, *([pulse_delta] if pulse_delta else [])]
+        if len(set(basenames)) != len(basenames) or any(
+            basename in seen_basenames for basename in basenames
+        ):
+            raise ValueError("standalone dynamic field bank PA basenames are not unique")
+        seen_roles.add(role)
+        seen_indices.add(index)
+        seen_basenames.update(basenames)
+        normalized.append(
+            {
+                "role": role,
+                "instance_index": index,
+                "carrier_pa_basename": carrier,
+                "rf_differential_pa_basename": rf_differential,
+                "pulse_delta_pa_basename": pulse_delta,
+            }
+        )
+    if seen_roles != set(expected_role_indices):
+        raise ValueError("standalone dynamic field bank active roles differ")
+    return sorted(normalized, key=lambda row: int(row["instance_index"]))
+
+
+def _resolve_downstream_static_standalone_carriers(
+    contract: dict[str, Any], expected_role_indices: dict[str, int]
+) -> list[dict[str, Any]]:
+    """Validate voltageized downstream carriers against their exact IOB slots."""
+
+    if set(contract) != {
+        "schema_version",
+        "role",
+        "runtime_representation",
+        "static_roles",
+    } or (
+        contract.get("schema_version") != 1
+        or contract.get("role") != DOWNSTREAM_STATIC_STANDALONE_CARRIER_ROLE
+        or contract.get("runtime_representation")
+        != DOWNSTREAM_STATIC_STANDALONE_RUNTIME_REPRESENTATION
+    ):
+        raise ValueError("downstream static standalone carrier identity differs")
+    rows = contract.get("static_roles")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("downstream static standalone carrier roles are missing")
+    normalized: list[dict[str, Any]] = []
+    seen_roles: set[str] = set()
+    seen_indices: set[int] = set()
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {
+            "role",
+            "instance_index",
+            "carrier_pa_basename",
+        }:
+            raise ValueError("downstream static standalone carrier fields differ")
+        role = row["role"]
+        index = row["instance_index"]
+        if (
+            not isinstance(role, str)
+            or role not in _DOWNSTREAM_STATIC_STANDALONE_ROLES
+            or role not in expected_role_indices
+            or role in seen_roles
+            or isinstance(index, bool)
+            or not isinstance(index, int)
+            or index != expected_role_indices[role]
+            or index in seen_indices
+        ):
+            raise ValueError("downstream static standalone carrier role/index differs")
+        normalized.append(
+            {
+                "role": role,
+                "instance_index": index,
+                "carrier_pa_basename": _ordinary_standalone_pa_basename(
+                    row["carrier_pa_basename"],
+                    f"downstream static {role} carrier",
+                ),
+            }
+        )
+        seen_roles.add(role)
+        seen_indices.add(index)
+    return sorted(normalized, key=lambda row: int(row["instance_index"]))
+
+
+def resolve_standalone_dynamic_operating_coefficients(
+    pa_plus_model: Mapping[str, Any],
+    upstream: Mapping[str, Any],
+    *,
+    accelerator_off_physical_voltages_v: Mapping[int, float],
+    accelerator_on_physical_voltages_v: Mapping[int, float],
+) -> dict[str, Any]:
+    """Project the frozen operating states onto mode-36..43 responses.
+
+    The off carrier includes the rods' common-mode and group-DC voltages.  The
+    RF vector is normalized per volt returned by ``differential_at(time)``;
+    the pulse vector is the exact on-minus-off difference.
+    """
+
+    if (
+        pa_plus_model.get("model_id") != THREE_ZONE_PA_PLUS_MODEL_ID
+        or pa_plus_model.get("mode_ids") != list(range(36, 44))
+        or not isinstance(pa_plus_model.get("modes"), list)
+        or len(pa_plus_model["modes"]) != 8
+    ):
+        raise ValueError(
+            "standalone dynamic operating projection requires modes 36 through 43"
+        )
     try:
-        scalars = {key: float(discretization[key]) for key in scalar_keys}
+        rod_rows = upstream["segmentation"]["segmented_rod_array"]["electrodes"]
+        common_rows = upstream["axial_dc"]["rod_electrodes"]
+        group_dc = float(upstream["drive"]["dc_amplitude_V_per_group"])
+        groups = {
+            int(item["electrode_id"]): int(item["electrode_group"])
+            for item in rod_rows
+        }
+        common = {
+            int(item["electrode_id"]): float(item["potential_V"])
+            for item in common_rows
+        }
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError(
-            "accelerator entrance aperture discretization is incomplete"
+            "standalone dynamic operating rod contract is incomplete"
         ) from error
-    if any(not math.isfinite(value) for value in scalars.values()):
-        raise ValueError("accelerator entrance aperture discretization is incomplete")
-    cell = discretization.get("cell_mm_xyz")
-    edges = alignment.get("edges_on_grid_nodes")
+    rod_ids = set(ROD_ELECTRODE_IDS)
     if (
-        not isinstance(cell, dict)
-        or not isinstance(edges, dict)
-        or set(edges) != {"y_min", "y_max", "z_min", "z_max"}
-        or any(value is not True for value in edges.values())
+        set(groups) != rod_ids
+        or set(common) != rod_ids
+        or any(group not in {1, 2} for group in groups.values())
+        or not math.isfinite(group_dc)
+        or any(not math.isfinite(value) for value in common.values())
     ):
-        raise ValueError("accelerator entrance aperture grid alignment is incomplete")
+        raise ValueError("standalone dynamic operating rod contract differs")
+
+    try:
+        required_physical_ids = {
+            int(electrode_id)
+            for mode in pa_plus_model["modes"]
+            for electrode_id in mode["physical_electrode_coefficients"]
+        }
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            "standalone dynamic operating PA+ model is incomplete"
+        ) from error
+    nonrod_ids = required_physical_ids - rod_ids
+
+    def finite_plan(
+        raw: Mapping[int, float], label: str
+    ) -> dict[int, float]:
+        try:
+            plan = {int(key): float(value) for key, value in raw.items()}
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{label} physical voltage plan is invalid") from error
+        if set(plan) != nonrod_ids or any(
+            not math.isfinite(value) for value in plan.values()
+        ):
+            raise ValueError(f"{label} physical voltage plan differs")
+        return plan
+
+    off_nonrod = finite_plan(
+        accelerator_off_physical_voltages_v, "accelerator off"
+    )
+    on_nonrod = finite_plan(
+        accelerator_on_physical_voltages_v, "accelerator on"
+    )
+    rod_static = {
+        electrode_id: common[electrode_id]
+        + (group_dc if groups[electrode_id] == 1 else -group_dc)
+        for electrode_id in ROD_ELECTRODE_IDS
+    }
+    off_physical = {**rod_static, **off_nonrod}
+    on_physical = {**rod_static, **on_nonrod}
+    rf_physical = {
+        electrode_id: (
+            1.0 if groups[electrode_id] == 1 else -1.0
+        )
+        for electrode_id in ROD_ELECTRODE_IDS
+    }
+    rf_physical.update({electrode_id: 0.0 for electrode_id in nonrod_ids})
+
+    off_modes = project_pa_plus_mode_voltages(pa_plus_model, off_physical)
+    on_modes = project_pa_plus_mode_voltages(pa_plus_model, on_physical)
+    rf_modes = project_pa_plus_mode_voltages(pa_plus_model, rf_physical)
+    if any(
+        not math.isclose(value, 0.0, abs_tol=1e-12)
+        for mode_id, value in rf_modes.items()
+        if mode_id != 37
+    ) or not math.isclose(abs(rf_modes[37]), 1.0, abs_tol=1e-12):
+        raise ValueError("PA+ rod differential normalization differs")
     return {
-        "frame_id": contract.get("frame_id"),
-        "cross_section": contract.get("cross_section"),
-        "cell_mm_xyz": contract.get("cell_mm_xyz"),
-        "electrodes": contract.get("electrodes"),
-        "cylindrical_sideport": contract.get("cylindrical_sideport"),
-        "discretization": {
-            **scalars,
-            "cell_mm_xyz": cell,
-            "boolean_boundary_policy": discretization.get(
-                "boolean_boundary_policy"
-            ),
-            "compiled_pa_open_column_check_required": discretization.get(
-                "compiled_pa_open_column_check_required"
-            ),
-            "width_cells": alignment.get("width_cells"),
-            "height_cells": alignment.get("height_cells"),
-            "width_is_integer_cell_multiple": alignment.get(
-                "width_is_integer_cell_multiple"
-            ),
-            "height_is_integer_cell_multiple": alignment.get(
-                "height_is_integer_cell_multiple"
-            ),
-            "edges_on_grid_nodes": edges,
-            "warnings": alignment.get("warnings"),
+        "schema_version": 1,
+        "role": "rf_oatof_standalone_dynamic_operating_coefficients",
+        "pa_plus_model_id": THREE_ZONE_PA_PLUS_MODEL_ID,
+        "mode_ids": list(range(36, 44)),
+        "carrier_off_mode_coefficients_v": {
+            str(mode_id): off_modes[mode_id] for mode_id in range(36, 44)
+        },
+        "rf_differential_mode_coefficients_per_v": {
+            str(mode_id): rf_modes[mode_id] for mode_id in range(36, 44)
+        },
+        "pulse_delta_mode_coefficients_v": {
+            str(mode_id): on_modes[mode_id] - off_modes[mode_id]
+            for mode_id in range(36, 44)
         },
     }
 
@@ -537,8 +775,9 @@ def build_successor_program(
     overlay: dict[str, Any] | None = None,
     intermediate_overlay: dict[str, Any] | None = None,
     accelerator_entrance_local: dict[str, Any] | None = None,
-    pre_pulse_entrance_collision: dict[str, Any] | None = None,
     domain_split: dict[str, Any] | None = None,
+    standalone_dynamic_field_bank: dict[str, Any] | None = None,
+    downstream_static_standalone_carriers: dict[str, Any] | None = None,
     domain_split_main_pa_only_axis_field: bool = False,
     domain_split_local_axis_field: bool = False,
     rf_steps_per_period: int = 160,
@@ -611,7 +850,6 @@ def build_successor_program(
         screening
         and domain_split is not None
         and source_release_mode == "continuous_frontend"
-        and pre_pulse_entrance_collision is not None
         and accelerator_entrance_local is not None
     )
     pre_pulse_accelerator_zero_field = (
@@ -777,29 +1015,6 @@ def build_successor_program(
             raise ValueError(
                 "accelerator entrance local and legacy intermediate2 overlay are mutually exclusive"
             )
-    if pre_pulse_entrance_collision is not None:
-        collision = pre_pulse_entrance_collision
-        if (
-            not pre_pulse_entry_geometry
-            or collision.get("role") != "rf_oatof_simion_accelerator_main_contract"
-            or collision.get("domain_policy", {}).get("policy_id")
-            != "pre_pulse_entrance_zone_collision_v1"
-            or collision.get("local_geometry_coverage")
-            != "pre_pulse_connector_side_first_zone_collision_v1"
-            or collision.get("boundary_condition", {}).get("mode")
-            != "geometry_collision_zero_field_v1"
-            or collision.get("boundary_condition", {}).get("refinement_required")
-            is not False
-            or collision.get("boundary_condition", {}).get("uniform_potential_v")
-            != 0.0
-        ):
-            raise ValueError("pre-pulse entrance-zone collision contract is invalid")
-        if (
-            accelerator_entrance_local is None
-            or _entrance_aperture_overlap_identity(collision)
-            != _entrance_aperture_overlap_identity(accelerator_entrance_local)
-        ):
-            raise ValueError("pre-pulse entrance-zone collision geometry differs from entrance local")
     if intermediate_overlay is not None and domain_split is None:
         if overlay is None:
             raise ValueError("intermediate accelerator overlay requires an entrance overlay")
@@ -945,10 +1160,9 @@ def build_successor_program(
         )["basis_electrode_ids"]
         if int(electrode_id) not in {0, grounded_shield_id}
     ]
-    # The pre-pulse entrance zone is intentionally geometry-only: its
-    # accelerator-main contract retains the reusable PA+ model as metadata,
-    # but sets it to null because no accelerator field is loaded.  Do not
-    # dereference or wire PA+ modes in this legitimate zero-field phase.
+    # Only the schema-5 terminal-handoff collision run is geometry-only.
+    # Continuous-source screening must load the same accelerator-main PA+
+    # solution as continuous full flight so its pulse-clock state is physical.
     pa_plus_model = (
         None
         if pre_pulse_accelerator_zero_field
@@ -989,12 +1203,12 @@ def build_successor_program(
     if pre_pulse_entry_geometry:
         # In the pre-pulse-only IOB there is no downstream flight hardware.
         # Keep the four loaded PA instances contiguous in priority order:
-        # coarse frontend, upstream RF fine PA, zero-field entrance carrier,
-        # then the field-bearing entrance-local replacement.
+        # coarse frontend, accelerator main, upstream RF fine PA, then the
+        # field-bearing entrance-local replacement.
         analyzer_config["instance_roles"] = {
             "flight_tube": 1,
-            "reflectron": 2,
-            "accelerator": 3,
+            "reflectron": 3,
+            "accelerator": 2,
             "detector": 4,
         }
     if (
@@ -1002,6 +1216,7 @@ def build_successor_program(
         and not pre_pulse_accelerator_zero_field
         and not domain_split_main_pa_only_axis_field
         and not reduced_post_accelerator_iob
+        and not pre_pulse_entry_geometry
     ):
         # SIMION resolves overlapping electric PAs by instance priority.  Keep
         # the broad flight tube below every frontend field, the coarse bridge
@@ -1073,20 +1288,15 @@ def build_successor_program(
         str(item["role"]): int(item["instance_index"])
         for item in overlay_specs
     }
-    overlay_filenames = {
-        str(item["role"]): str(item["filename"])
-        for item in overlay_specs
-    }
     domain_active_roles = (
-        # A continuous source retains the coarse and upstream RF domains and
-        # reaches the field-bearing entrance-local PA over the raw zero-field
-        # first-zone collision carrier.  A terminal
-        # handoff has already left the multipole, so it uses just the two raw
-        # geometry domains.  The continuous source loads the refined local
-        # field; only terminal-handoff collision mode remains geometry-only.
+        # A continuous source retains the coarse frontend, accelerator main,
+        # upstream RF fine domain and field-bearing entrance-local PA in their
+        # exact Workbench priority order.  A terminal handoff has already left
+        # the multipole, so it uses only the two accelerator geometry domains;
+        # only terminal-handoff collision mode remains geometry-only.
         ["accelerator", "upstream_bridge"]
         if pre_pulse_collision_only
-        else ["coarse_frontend", "upstream_bridge", "accelerator", *overlay_roles]
+        else ["coarse_frontend", "accelerator", "upstream_bridge", *overlay_roles]
         if pre_pulse_entry_geometry
         else ["accelerator", *overlay_roles]
         if reduced_post_accelerator_iob
@@ -1094,13 +1304,74 @@ def build_successor_program(
         if domain_split is not None
         else ["accelerator", *overlay_roles]
     )
-    domain_accelerator_filename = (
-        "accelerator_entrance_zero_field.pa0"
-        if pre_pulse_accelerator_zero_field or pre_pulse_entry_geometry
-        else "accelerator_main.pa0"
-        if domain_split is not None
-        else "accelerator.pa0"
-    )
+    standalone_dynamic_specs: list[dict[str, Any]] = []
+    if standalone_dynamic_field_bank is not None:
+        if domain_split is None or not rf_enabled or pre_pulse_collision_only:
+            raise ValueError(
+                "standalone dynamic field bank requires a field-bearing RF domain split"
+            )
+        iob_role_indices = {
+            "coarse_frontend": 1 if pre_pulse_entry_geometry else 2,
+            "accelerator": 2 if pre_pulse_entry_geometry else 3,
+            "upstream_bridge": 3 if pre_pulse_entry_geometry else 4,
+            **overlay_roles,
+        }
+        iob_to_standalone_role = {
+            iob_role: standalone_role
+            for standalone_role, iob_role in _STANDALONE_DYNAMIC_ROLE_TO_IOB_ROLE.items()
+        }
+        if any(role not in iob_to_standalone_role for role in domain_active_roles):
+            raise ValueError(
+                "standalone dynamic field bank does not support an active IOB role"
+            )
+        expected_role_indices = {
+            iob_to_standalone_role[role]: int(iob_role_indices[role])
+            for role in domain_active_roles
+        }
+        standalone_dynamic_specs = _resolve_standalone_dynamic_field_bank(
+            standalone_dynamic_field_bank, expected_role_indices
+        )
+    standalone_carriers = {
+        str(item["role"]): str(item["carrier_pa_basename"])
+        for item in standalone_dynamic_specs
+    }
+    downstream_static_specs: list[dict[str, Any]] = []
+    if downstream_static_standalone_carriers is not None:
+        if screening:
+            raise ValueError(
+                "downstream static standalone carriers require a downstream flight run"
+            )
+        expected_downstream_indices = {
+            role: int(analyzer_config["instance_roles"][role])
+            for role in _DOWNSTREAM_STATIC_STANDALONE_ROLES
+        }
+        downstream_static_specs = _resolve_downstream_static_standalone_carriers(
+            downstream_static_standalone_carriers,
+            expected_downstream_indices,
+        )
+    downstream_static_carriers = {
+        str(item["role"]): str(item["carrier_pa_basename"])
+        for item in downstream_static_specs
+    }
+    for role, filename in downstream_static_carriers.items():
+        analyzer_config["instance_filenames"][role] = filename
+    for item in overlay_specs:
+        if item["role"] == "accelerator_entrance_aperture_local" and (
+            "accelerator_entrance_local" in standalone_carriers
+        ):
+            item["filename"] = standalone_carriers["accelerator_entrance_local"]
+    overlay_filenames = {
+        str(item["role"]): str(item["filename"])
+        for item in overlay_specs
+    }
+    if pre_pulse_accelerator_zero_field:
+        domain_accelerator_filename = "accelerator_entrance_zero_field.pa0"
+    elif domain_split is not None:
+        domain_accelerator_filename = standalone_carriers.get(
+            "accelerator_main", "accelerator_main.pa0"
+        )
+    else:
+        domain_accelerator_filename = "accelerator.pa0"
     # The analyzer component validates the physical Workbench payload before
     # the Program's separate role map is consulted.  Keep both views derived
     # from the same resolved domain contract.
@@ -1111,22 +1382,30 @@ def build_successor_program(
         {
             "instance_roles": {
                 "coarse_frontend": 1,
-                "upstream_bridge": 2,
-                "accelerator": 3,
+                "accelerator": 2,
+                "upstream_bridge": 3,
                 "accelerator_entrance_aperture_local": 4,
             },
             "instance_filenames": {
-                "coarse_frontend": "coarse_frontend.pa0",
+                "coarse_frontend": standalone_carriers.get(
+                    "coarse_frontend", "coarse_frontend.pa0"
+                ),
                 "accelerator": domain_accelerator_filename,
-                "upstream_bridge": "upstream_bridge.pa0",
-                "accelerator_entrance_aperture_local": "accelerator_entrance_local.pa0",
+                "upstream_bridge": standalone_carriers.get(
+                    "upstream_bridge", "upstream_bridge.pa0"
+                ),
+                "accelerator_entrance_aperture_local": standalone_carriers.get(
+                    "accelerator_entrance_local", "accelerator_entrance_local.pa0"
+                ),
             },
             "pre_pulse_active_roles": domain_active_roles,
             "accelerator_overlays": [
                 {
                     "role": "accelerator_entrance_aperture_local",
                     "instance_index": 4,
-                    "filename": "accelerator_entrance_local.pa0",
+                    "filename": standalone_carriers.get(
+                        "accelerator_entrance_local", "accelerator_entrance_local.pa0"
+                    ),
                 }
             ],
         }
@@ -1149,17 +1428,29 @@ def build_successor_program(
         },
         "instance_filenames": {
             **(
-                {"flight_tube": "flight_tube_ground.pa0"}
+                {"flight_tube": downstream_static_carriers.get(
+                    "flight_tube", "flight_tube_ground.pa0"
+                )}
                 if reduced_post_accelerator_iob or domain_split is None
                 else {
-                    "coarse_frontend": "coarse_frontend.pa0",
-                    "upstream_bridge": "upstream_bridge.pa0",
-                    "flight_tube": "flight_tube_ground.pa0",
+                    "coarse_frontend": standalone_carriers.get(
+                        "coarse_frontend", "coarse_frontend.pa0"
+                    ),
+                    "upstream_bridge": standalone_carriers.get(
+                        "upstream_bridge", "upstream_bridge.pa0"
+                    ),
+                    "flight_tube": downstream_static_carriers.get(
+                        "flight_tube", "flight_tube_ground.pa0"
+                    ),
                 }
             ),
-            "reflectron": "reflectron.pa0",
+            "reflectron": downstream_static_carriers.get(
+                "reflectron", "reflectron.pa0"
+            ),
             "accelerator": domain_accelerator_filename,
-            "detector": "detector_ground.pa0",
+            "detector": downstream_static_carriers.get(
+                "detector", "detector_ground.pa0"
+            ),
             **overlay_filenames,
         },
         "pre_pulse_active_roles": domain_active_roles,
@@ -1176,6 +1467,24 @@ def build_successor_program(
     formal_iob_config_lua = _lua_value(formal_iob_config)
     if build_metadata is not None:
         build_metadata["instance_roles"] = dict(formal_iob_config["instance_roles"])
+        build_metadata["runtime_representation"] = (
+            STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION
+            if standalone_dynamic_specs
+            else DOWNSTREAM_STATIC_STANDALONE_RUNTIME_REPRESENTATION
+            if downstream_static_specs
+            else "native_pa_family_fast_adjust_v1"
+        )
+        build_metadata["standalone_dynamic_field_roles"] = [
+            str(item["role"]) for item in standalone_dynamic_specs
+        ]
+        build_metadata["downstream_static_standalone_roles"] = [
+            str(item["role"]) for item in downstream_static_specs
+        ]
+        build_metadata["downstream_static_runtime_representation"] = (
+            DOWNSTREAM_STATIC_STANDALONE_RUNTIME_REPRESENTATION
+            if downstream_static_specs
+            else None
+        )
     analyzer_config_static = dict(analyzer_config)
     analyzer_config_static.pop("diagnostics")
     analyzer_config_lua = _lua_value(analyzer_config_static)[:-1] + (
@@ -1220,7 +1529,7 @@ def build_successor_program(
         else ""
     )
     electrodes = frontend["electrodes"]
-    accelerator_instance_index = 3
+    accelerator_instance_index = 2 if pre_pulse_entry_geometry else 3
     detector_instance_index = 4
     origin = (
         domain_split["accelerator_origin_mm"]
@@ -1229,7 +1538,7 @@ def build_successor_program(
     )
     active_field_instance_indices = (
         ([] if pre_pulse_collision_only else
-        [1, 2, 4] if pre_pulse_entry_geometry else
+        [1, 2, 3, 4] if pre_pulse_entry_geometry else
          [accelerator_instance_index, *[int(item["instance_index"]) for item in overlay_specs]]
          if reduced_post_accelerator_iob else
          [2, 4, 3, *[int(item["instance_index"]) for item in overlay_specs]])
@@ -1242,9 +1551,7 @@ def build_successor_program(
     # particular instance, so one fast-adjust callback can drive both families
     # without coupling their geometry or duplicating a voltage schedule.
     pa_plus_instance_indices = (
-        ([int(item["instance_index"]) for item in overlay_specs]
-         if pre_pulse_entry_geometry else
-         [accelerator_instance_index, *[int(item["instance_index"]) for item in overlay_specs]])
+        ([accelerator_instance_index, *[int(item["instance_index"]) for item in overlay_specs]])
         if pa_plus_modes
         else []
     )
@@ -1252,6 +1559,10 @@ def build_successor_program(
         [1, 2, 3, 4] if pre_pulse_entry_geometry else active_field_instance_indices
     )
     overlay_specs_lua = _lua_value(overlay_specs)
+    standalone_dynamic_specs_lua = _lua_value(standalone_dynamic_specs)
+    downstream_static_instance_indices_lua = _lua_value(
+        [int(item["instance_index"]) for item in downstream_static_specs]
+    )
     active_field_instance_indices_lua = _lua_value(active_field_instance_indices)
     pre_pulse_scope_instance_indices_lua = _lua_value(pre_pulse_scope_instance_indices)
     entrance_reference_v = float(
@@ -1296,7 +1607,7 @@ def build_successor_program(
         if rf_enabled and screening else ""
     )
     rf_initializer = (
-        f"""    rf=single_flight_rf_kernel.new{{waveform={json.dumps(drive['waveform'])},frequency_hz=single_flight_frequency_hz,
+        f"""    single_flight_rf=single_flight_rf_kernel.new{{waveform={json.dumps(drive['waveform'])},frequency_hz=single_flight_frequency_hz,
       phase_rad=single_flight_phase_rad,rf_amplitude_v=single_flight_rf_peak_v,rf_scale=single_flight_rf_scale,
       common_mode_scale=single_flight_common_mode_scale,group_dc_v={{[1]=single_flight_dc_amplitude_v,[2]=-single_flight_dc_amplitude_v}},
       rf_steps_per_period=single_flight_rf_steps,electrodes={_lua_value(rf_electrodes)}}}
@@ -1304,10 +1615,10 @@ def build_successor_program(
         if rf_enabled else ""
     )
     rf_static_apply = (
-        "    rf.apply_static(function(id,value) initial[id]=value end)\n"
+        "    single_flight_rf.apply_static(function(id,value) initial[id]=value end)\n"
         if rf_enabled else ""
     )
-    rf_config = "rf" if rf_enabled else "false"
+    rf_config = "single_flight_rf" if rf_enabled else "false"
     global_setup = (
         "\nsimion.early_access(8.2)\nsim_segment_global=1"
         if effective_global_segments
@@ -1361,7 +1672,7 @@ local single_flight_pre_pulse_scope_instances={pre_pulse_scope_instance_indices_
 local single_flight_domain_split_enabled={1 if domain_split is not None else 0}
 local single_flight_pre_pulse_collision_only={1 if pre_pulse_collision_only else 0}
 local single_flight_pre_pulse_accelerator_zero_field={1 if pre_pulse_accelerator_zero_field else 0}
-local single_flight_accelerator_instance_index=3
+local single_flight_accelerator_instance_index={accelerator_instance_index}
 local single_flight_flight_tube_instance_index={int(analyzer_config['instance_roles']['flight_tube'])}
 local single_flight_reflectron_instance_index={int(analyzer_config['instance_roles']['reflectron'])}
 local single_flight_detector_instance_index={int(analyzer_config['instance_roles']['detector'])}
@@ -1369,12 +1680,20 @@ local single_flight_post_pulse_handoff_minimal={1 if reduced_post_accelerator_io
 local single_flight_analyzer=nil
 local single_flight_pulse=nil
 local single_flight_frontend=nil
+local single_flight_rf=false
 local single_flight_particle_state={{}}
 local single_flight_analyzer_initialized={{}}
 local single_flight_previous={{}}
 local single_flight_reported={{}}
 local single_flight_accelerator_pa_override=os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE')
 local single_flight_accelerator_pa_override_loaded=false
+local single_flight_downstream_static_instances={downstream_static_instance_indices_lua}
+local function single_flight_is_downstream_static_instance(index)
+  for _,static_index in ipairs(single_flight_downstream_static_instances) do
+    if index==static_index then return true end
+  end
+  return false
+end
 local function single_flight_source_row_index()
   return ion_number+single_flight_particle_id_offset
 end
@@ -1392,6 +1711,77 @@ handoff_instrument_time_us=single_flight_instrument_time_us
 local single_flight_pa_plus_modes={pa_plus_modes_lua}
 local single_flight_pa_plus_instance_indices={_lua_value(pa_plus_instance_indices)}
 local single_flight_pa_plus_source={{}}
+local function single_flight_exact_basename(value,label)
+  assert(type(value)=='string',label..' filename must be a string')
+  local basename=value:gsub('\\\\','/'):match('([^/]+)$')
+  assert(basename and basename~='',label..' basename is missing')
+  return basename
+end
+local function single_flight_same_directory_path(value,basename,label)
+  assert(single_flight_exact_basename(basename,label)==basename,
+    label..' must be a basename')
+  local directory=value:gsub('\\\\','/'):match('^(.*)/[^/]+$')
+  assert(directory and directory~='',label..' carrier directory is missing')
+  return directory..'/'..basename
+end
+local single_flight_standalone_dynamic_specs={standalone_dynamic_specs_lua}
+local single_flight_standalone_dynamic_by_instance={{}}
+local function single_flight_is_standalone_dynamic_instance(index)
+  return single_flight_standalone_dynamic_by_instance[index]~=nil
+end
+local function single_flight_assert_matching_response(carrier,response,label)
+  local source=carrier.pa
+  assert(response.nx==source.nx and response.ny==source.ny and response.nz==source.nz,
+    label..' dimensions differ from carrier')
+  assert(response.dx_mm==source.dx_mm and response.dy_mm==source.dy_mm and
+    response.dz_mm==source.dz_mm,label..' grid spacing differs from carrier')
+  assert(response.symmetry==source.symmetry,label..' symmetry differs from carrier')
+  assert(response.potential_type==source.potential_type,
+    label..' potential type differs from carrier')
+end
+local function single_flight_initialize_standalone_dynamic_fields()
+  for _,spec in ipairs(single_flight_standalone_dynamic_specs) do
+    assert(single_flight_standalone_dynamic_by_instance[spec.instance_index]==nil,
+      'standalone dynamic field instance is duplicated')
+    local carrier=assert(simion.wb.instances[spec.instance_index],
+      'standalone dynamic field carrier instance is missing')
+    assert(single_flight_exact_basename(carrier.filename,spec.role)==spec.carrier_pa_basename,
+      'standalone dynamic field carrier filename differs for '..spec.role)
+    spec.rf_differential_pa=assert(simion.pas:open(single_flight_same_directory_path(
+      carrier.filename,spec.rf_differential_pa_basename,spec.role..' RF differential')),
+      'cannot open RF differential standalone PA for '..spec.role)
+    single_flight_assert_matching_response(carrier,spec.rf_differential_pa,
+      spec.role..' RF differential response')
+    if spec.pulse_delta_pa_basename~=nil then
+      spec.pulse_delta_pa=assert(simion.pas:open(single_flight_same_directory_path(
+        carrier.filename,spec.pulse_delta_pa_basename,spec.role..' pulse delta')),
+        'cannot open pulse-delta standalone PA for '..spec.role)
+      single_flight_assert_matching_response(carrier,spec.pulse_delta_pa,
+        spec.role..' pulse-delta response')
+    end
+    single_flight_standalone_dynamic_by_instance[spec.instance_index]=spec
+  end
+end
+local function single_flight_apply_standalone_dynamic_field(instance,time)
+  local spec=single_flight_standalone_dynamic_by_instance[ion_instance]
+  if spec==nil then return end
+  local x,y,z=instance:wb_to_pa_coords(ion_px_mm,ion_py_mm,ion_pz_mm)
+  local ex,ey,ez=spec.rf_differential_pa:field_vc(x,y,z)
+  assert(ex~=nil and ey~=nil and ez~=nil,
+    'RF differential standalone field is undefined for '..spec.role)
+  local coefficient=single_flight_rf.differential_at(time)
+  ion_dvoltsx_gu=ion_dvoltsx_gu-coefficient*ex
+  ion_dvoltsy_gu=ion_dvoltsy_gu-coefficient*ey
+  ion_dvoltsz_gu=ion_dvoltsz_gu-coefficient*ez
+  if spec.pulse_delta_pa~=nil and single_flight_pulse.is_active_at(time) then
+    ex,ey,ez=spec.pulse_delta_pa:field_vc(x,y,z)
+    assert(ex~=nil and ey~=nil and ez~=nil,
+      'pulse-delta standalone field is undefined for '..spec.role)
+    ion_dvoltsx_gu=ion_dvoltsx_gu-ex
+    ion_dvoltsy_gu=ion_dvoltsy_gu-ey
+    ion_dvoltsz_gu=ion_dvoltsz_gu-ez
+  end
+end
 local function single_flight_is_pa_plus_instance(index)
   for _,pa_plus_index in ipairs(single_flight_pa_plus_instance_indices) do
     if index==pa_plus_index then return true end
@@ -1464,12 +1854,6 @@ local function single_flight_apply_plan(pa,plan)
   local values={{}}
   for _,item in ipairs(plan) do values[item.electrode_id]=item.voltage_v end
   pa:fast_adjust(values)
-end
-local function single_flight_exact_basename(value,label)
-  assert(type(value)=='string',label..' filename must be a string')
-  local basename=value:gsub('\\\\','/'):match('([^/]+)$')
-  assert(basename and basename~='',label..' basename is missing')
-  return basename
 end
 local function single_flight_assert_formal_iob_roles(config)
   if single_flight_pre_pulse_time_series~=0 then
@@ -1563,6 +1947,7 @@ function segment.initialize_run()
   local analyzer_config={analyzer_config_lua}
   local formal_iob_config={formal_iob_config_lua}
   single_flight_assert_formal_iob_roles(formal_iob_config)
+  single_flight_initialize_standalone_dynamic_fields()
   local ai=simion.wb.instances[analyzer_config.instance_roles.accelerator]
   if single_flight_domain_split_enabled~=0 then
     assert(not single_flight_accelerator_pa_override or
@@ -1601,10 +1986,10 @@ function segment.initialize_run()
   if single_flight_pre_pulse_accelerator_zero_field==0 and #single_flight_pa_plus_modes==0 then
     single_flight_apply_plan(ai.pa,initialized.static_electrode_plans.legacy_accelerator_characterization)
   end
-  if single_flight_pre_pulse_time_series==0 then
+  if single_flight_pre_pulse_time_series==0 and
+      not single_flight_is_downstream_static_instance(single_flight_reflectron_instance_index) then
     single_flight_apply_plan(simion.wb.instances[single_flight_reflectron_instance_index].pa,initialized.static_electrode_plans.reflectron)
   end
-  local rf=false
 {rf_initializer}
     single_flight_pulse=single_flight_pulse_component.new{{canonical_clock=single_flight_instrument_time_us,
       pulse_time_us=handoff_pulse_time_us,pulse_width_us=handoff_pulse_width_us,pulse_mode=function() return handoff_pulse_mode end}}
@@ -1633,8 +2018,10 @@ function segment.initialize_run()
     for _,index in ipairs(single_flight_active_field_instances) do
       local active_instance=assert(simion.wb.instances[index],
         'active domain field instance is missing')
-      active_instance.pa:fast_adjust(
-        single_flight_is_pa_plus_instance(index) and initial_pa_plus or initial)
+      if not single_flight_is_standalone_dynamic_instance(index) then
+        active_instance.pa:fast_adjust(
+          single_flight_is_pa_plus_instance(index) and initial_pa_plus or initial)
+      end
     end
     for _,overlay in ipairs(single_flight_overlays) do
       local oi=assert(simion.wb.instances[overlay.instance_index],
@@ -1660,10 +2047,12 @@ function segment.efield_adjust()
     assert(single_flight_is_pre_pulse_scope_instance(ion_instance),
       'pre-pulse screening particle escaped its frontend/accelerator active scope')
   end
+  local time=single_flight_instrument_time_us()
+  single_flight_apply_standalone_dynamic_field(instance,time)
   local state={{z_mm=ion_pz_mm,instance_id=ion_instance,instance_dx_mm=instance.pa.dx_mm,
     instance_dz_mm=instance.pa.dz_mm,instance_scale=instance.scale}}
   local base=single_flight_analyzer.efield_adjust(state)
-  state.pulse_active=single_flight_pulse.is_active_at(single_flight_instrument_time_us())
+  state.pulse_active=single_flight_pulse.is_active_at(time)
   local result=single_flight_region_field.apply(base,state)
   if result then
     if result.replace_all then ion_dvoltsx_gu=0; ion_dvoltsy_gu=0; ion_dvoltsz_gu=0 end
@@ -1673,6 +2062,7 @@ function segment.efield_adjust()
   end
 end
 function segment.fast_adjust()
+  if single_flight_is_standalone_dynamic_instance(ion_instance) then return end
   if single_flight_is_active_field_instance(ion_instance) then
     -- The detector-blind pre-pulse contract holds the extraction pulse off.
     -- Its accelerator and grounded-boundary voltages were consequently
@@ -1684,7 +2074,9 @@ function segment.fast_adjust()
     -- full flight switches to the complete pulse-dependent electrode plan.
     local time=single_flight_instrument_time_us()
     if single_flight_pre_pulse_time_series~=0 or time<handoff_pulse_time_us then
-      if rf then rf.apply_at(time,single_flight_set_electrode) end
+      if single_flight_rf then
+        single_flight_rf.apply_at(time,single_flight_set_electrode)
+      end
     else
       single_flight_frontend.apply_at(time,single_flight_set_electrode)
     end
@@ -1777,7 +2169,8 @@ function segment.tstep_adjust()
   -- RF nodes and changes which ions reach the aperture.  Persist the next
   -- discrete index per ion; derive it from floating point time only once at
   -- release, then advance monotonically at exact landings.
-  if rf and single_flight_pre_pulse_time_series==0 and time<handoff_pulse_time_us then
+  if single_flight_rf and single_flight_pre_pulse_time_series==0 and
+      time<handoff_pulse_time_us then
     local next_index=single_flight_continuous_rf_next_sample[ion_number] or 1
     if next_index==1 then
       next_index=math.floor(time/single_flight_continuous_rf_grid_step_us)+2
@@ -2033,7 +2426,8 @@ end
         else "local rf=false"
     )
     exporter_workbench_initialization = (
-        """-- Domain split keeps accelerator_main in slot 3.  Do not replay the
+        """-- Domain split uses the accelerator slot declared by the generated
+-- instance-role contract.  Do not replay the
 -- legacy whole-accelerator PA override here: that PA is absent by design.
 local function instance_state(instance)
   return {filename=instance.filename,nx=instance.pa.nx,ny=instance.pa.ny,
@@ -2293,9 +2687,10 @@ def main() -> int:
     parser.add_argument("--accelerator-overlay-contract", type=Path)
     parser.add_argument("--intermediate-accelerator-overlay-contract", type=Path)
     parser.add_argument("--accelerator-entrance-local-contract", type=Path)
-    parser.add_argument("--pre-pulse-entrance-zone-collision-contract", type=Path)
     parser.add_argument("--upstream-bridge-contract", type=Path)
     parser.add_argument("--accelerator-main-contract", type=Path)
+    parser.add_argument("--standalone-dynamic-field-bank", type=Path)
+    parser.add_argument("--downstream-static-standalone-carriers", type=Path)
     parser.add_argument("--domain-split-main-pa-only-axis-field", action="store_true")
     parser.add_argument("--domain-split-local-axis-field", action="store_true")
     parser.add_argument("--oatof", required=True, type=Path)
@@ -2338,6 +2733,16 @@ def main() -> int:
         if args.pre_pulse_time_series_contract is not None
         else None
     )
+    standalone_dynamic_field_bank = (
+        _load(args.standalone_dynamic_field_bank)
+        if args.standalone_dynamic_field_bank is not None
+        else None
+    )
+    downstream_static_standalone_carriers = (
+        _load(args.downstream_static_standalone_carriers)
+        if args.downstream_static_standalone_carriers is not None
+        else None
+    )
     effective_global_segments = (
         args.global_segments
         or domain_split is not None
@@ -2377,12 +2782,11 @@ def main() -> int:
             if args.accelerator_entrance_local_contract is not None
             else None
         ),
-        pre_pulse_entrance_collision=(
-            _load(args.pre_pulse_entrance_zone_collision_contract)
-            if args.pre_pulse_entrance_zone_collision_contract is not None
-            else None
-        ),
         domain_split=domain_split,
+        standalone_dynamic_field_bank=standalone_dynamic_field_bank,
+        downstream_static_standalone_carriers=(
+            downstream_static_standalone_carriers
+        ),
         domain_split_main_pa_only_axis_field=args.domain_split_main_pa_only_axis_field,
         domain_split_local_axis_field=args.domain_split_local_axis_field,
         rf_steps_per_period=args.rf_steps_per_period,
@@ -2429,11 +2833,6 @@ def main() -> int:
             if args.accelerator_entrance_local_contract is not None
             else None
         ),
-        "pre_pulse_entrance_zone_collision_contract_sha256": (
-            file_sha256(args.pre_pulse_entrance_zone_collision_contract)
-            if args.pre_pulse_entrance_zone_collision_contract is not None
-            else None
-        ),
         "upstream_bridge_contract_sha256": (
             file_sha256(args.upstream_bridge_contract)
             if args.upstream_bridge_contract is not None
@@ -2444,6 +2843,26 @@ def main() -> int:
             if args.accelerator_main_contract is not None
             else None
         ),
+        "standalone_dynamic_field_bank_sha256": (
+            file_sha256(args.standalone_dynamic_field_bank)
+            if args.standalone_dynamic_field_bank is not None
+            else None
+        ),
+        "downstream_static_standalone_carriers_sha256": (
+            file_sha256(args.downstream_static_standalone_carriers)
+            if args.downstream_static_standalone_carriers is not None
+            else None
+        ),
+        "runtime_representation": build_metadata["runtime_representation"],
+        "standalone_dynamic_field_roles": build_metadata[
+            "standalone_dynamic_field_roles"
+        ],
+        "downstream_static_standalone_roles": build_metadata[
+            "downstream_static_standalone_roles"
+        ],
+        "downstream_static_runtime_representation": build_metadata[
+            "downstream_static_runtime_representation"
+        ],
         "domain_split_main_pa_only_axis_field": (
             args.domain_split_main_pa_only_axis_field
         ),

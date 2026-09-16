@@ -303,8 +303,9 @@ function Test-RfPublishedCacheGeneration {
   Verify the cheap post-publication invariants.  Publication has just hashed
   every staging payload file, then atomically moved that exact directory into
   its content-addressed generation.  Re-hashing the same multi-gigabyte
-  payload twice here is therefore redundant.  Ordinary later consumers still
-  call Test-RfReusableCacheEntry and perform the full byte/hash verification.
+  payload again here is therefore redundant.  Ordinary later consumers verify
+  the immutable pointer, manifest, inventory and lengths; explicit artifact
+  audits retain the independent full byte/hash verification path.
   #>
   [CmdletBinding()]
   param(
@@ -614,63 +615,57 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
   # current measurement: a startup snapshot may already include a recovered
   # staging family, and adding it again falsely rejects a valid publication
   # near the 500 GiB watermark.
-  $savedPythonPath = $env:PYTHONPATH
-  $savedNoUserSite = $env:PYTHONNOUSERSITE
-  try {
-    $env:PYTHONPATH = $RepoRoot; $env:PYTHONNOUSERSITE = '1'
-    Push-Location -LiteralPath $RepoRoot
-    try {
-      $capacityArguments = @(
-        '-m','common.contracts.reconcile_artifact_capacity',
-        '--artifact-root',(Join-Path $WorkspaceRoot 'artifacts'),'--target-gib','500',
-        '--minimum-free-gib',([string]$MinimumFreeGiB),
-        '--required-headroom-bytes',([string]$RequiredHeadroomBytes),
-        '--protect-path',$StagingDirectory,'--apply'
-      )
-      foreach ($path in @($ProtectedPaths | Select-Object -Unique)) {
-        $capacityArguments += @('--protect-path',$path)
-      }
-      foreach ($key in @($ProtectedCacheKeys | Select-Object -Unique)) {
-        if ($key -notmatch '^[0-9a-f]{64}$') {
-          throw 'Protected cache key must be one SHA-256 key.'
-        }
-        $capacityArguments += @('--protect-cache-key',$key)
-      }
-      $output = & $Python @capacityArguments
-      if ($LASTEXITCODE -ne 0) { throw "artifact capacity gate exit_code=$LASTEXITCODE" }
-      $receipt = @($output) -join "`n" | ConvertFrom-Json
-      if (-not [bool]$receipt.satisfied_after_apply) {
-        throw 'artifact capacity gate could not satisfy the 500 GiB watermark'
-      }
-      return $receipt
-    } finally { Pop-Location }
-  } finally {
-    $env:PYTHONPATH = $savedPythonPath; $env:PYTHONNOUSERSITE = $savedNoUserSite
-  }
+  return Invoke-ArtifactCapacityGate -Python $Python -RepoRoot $RepoRoot `
+    -ArtifactRoot (Join-Path $WorkspaceRoot 'artifacts') -TargetGiB 500 `
+    -MinimumFreeGiB $MinimumFreeGiB -RequiredHeadroomBytes $RequiredHeadroomBytes `
+    -ProtectedPaths (@($StagingDirectory) + @($ProtectedPaths)) `
+    -ProtectedCacheKeys $ProtectedCacheKeys
 }
 
 function Wait-RfCacheStagingWriterExit {
   <# The resource wrapper normally waits for its direct child.  This final
-     fail-closed guard also detects a detached SIMION child before Move-Item
-     changes the directory it is still refining.  The shared host lease means
-     a matching SIMION command line is necessarily part of this publication. #>
+     fail-closed guard also detects a detached or delayed SIMION child before
+     cache bytes are hashed or moved.  The shared host lease makes every
+     SIMION process on the host relevant: a manually launched out-of-lease
+     process must block publication rather than evade a path-based filter. #>
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$StagingDirectory,
-    [int]$TimeoutSeconds = 7200
+    [ValidateRange(1,7200)][int]$TimeoutSeconds = 7200,
+    [ValidateRange(1,60)][int]$QuietSeconds = 3,
+    [switch]$FailIfWriterObserved
   )
-  $needle = [IO.Path]::GetFullPath($StagingDirectory).TrimEnd('\\').ToLowerInvariant()
+  if (-not $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID) {
+    throw 'SIMION cache-publication quiescence requires the shared host execution lease.'
+  }
+  if ($TimeoutSeconds -lt $QuietSeconds) {
+    throw 'SIMION cache-publication timeout must cover its quiet window.'
+  }
+  $null = [IO.Path]::GetFullPath($StagingDirectory)
   $deadline = [datetimeoffset]::UtcNow.AddSeconds($TimeoutSeconds)
+  $quietSince = $null
+  $observedWriter = $false
   while ($true) {
     try {
       $writers = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
-        $_.Name -ieq 'simion.exe' -and -not [string]::IsNullOrWhiteSpace($_.CommandLine) -and
-        $_.CommandLine.ToLowerInvariant().Contains($needle)
+        $_.Name -ieq 'simion.exe'
       })
     } catch {
       throw "Cannot prove SIMION released cache staging: $($_.Exception.Message)"
     }
-    if ($writers.Count -eq 0) { return }
+    $now = [datetimeoffset]::UtcNow
+    if ($writers.Count -eq 0) {
+      if ($null -eq $quietSince) { $quietSince = $now }
+      if (($now - $quietSince).TotalSeconds -ge $QuietSeconds) {
+        if ($FailIfWriterObserved -and $observedWriter) {
+          throw 'SIMION writer appeared after the cache inventory was frozen; publication must be retried.'
+        }
+        return
+      }
+    } else {
+      $observedWriter = $true
+      $quietSince = $null
+    }
     if ([datetimeoffset]::UtcNow -ge $deadline) {
       throw ('Timed out waiting for SIMION staging writer(s): ' +
         (($writers | ForEach-Object { $_.ProcessId }) -join ','))
@@ -711,6 +706,7 @@ function Publish-RfVerifiedCacheEntry {
   # The device-neutral inventory/payload/generation calculation has one shared
   # implementation.  This adapter retains the integration-owned cache schema,
   # capacity admission, recovery marker and SIMION writer lifecycle.
+  Wait-RfCacheStagingWriterExit -StagingDirectory $staging
   $savedPythonPath = $env:PYTHONPATH
   $savedNoUserSite = $env:PYTHONNOUSERSITE
   try {
@@ -719,7 +715,8 @@ function Publish-RfVerifiedCacheEntry {
     try {
       $descriptionOutput = @(& $Python -m common.simion.cache_generation `
         --directory $staging --cache-key $CacheKey --provider-run-id $ProviderRunId `
-        --exclude 'cache_manifest.json' --exclude '.rf_cache_staging.json')
+        --exclude 'cache_manifest.json' --exclude '.rf_cache_staging.json' `
+        --require-stable-inventory)
       $descriptionExitCode = $LASTEXITCODE
       if ($descriptionExitCode -ne 0) { throw "Shared PA cache generation calculation failed: exit_code=$descriptionExitCode" }
       $description = ($descriptionOutput -join "`n") | ConvertFrom-Json -AsHashtable
@@ -744,12 +741,15 @@ function Publish-RfVerifiedCacheEntry {
     cache_key_input=$cacheKeyInput; identity=$Identity; payload_sha256=$payloadSha256
     generation_sha256=$generationSha256; generation_input=$generationInput; files=$records
   })
-  Wait-RfCacheStagingWriterExit -StagingDirectory $staging
   $capacityReceipt = Assert-RfArtifactCapacityBeforeCachePublication -Python $Python `
     -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -StagingDirectory $staging `
     -ProtectedPaths $ProtectedPaths `
     -ProtectedCacheKeys $ProtectedCacheKeys `
     -MinimumFreeGiB $MinimumFreeGiB
+  # Recheck after the fallible hashing and capacity stages.  This closes the
+  # exposure window if a delayed SIMION child appeared after the first quiet
+  # interval and before the atomic directory publication.
+  Wait-RfCacheStagingWriterExit -StagingDirectory $staging -FailIfWriterObserved
   # Retain the identity marker until all fallible publication gates have
   # completed.  A capacity warning/failure then leaves a complete, reusable
   # staging family rather than forcing its field solve to be repeated.

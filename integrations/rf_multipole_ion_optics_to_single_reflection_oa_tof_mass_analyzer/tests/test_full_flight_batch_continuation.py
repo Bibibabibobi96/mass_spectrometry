@@ -198,7 +198,10 @@ class FullFlightBatchContinuationTests(unittest.TestCase):
         self.assertIn("[string]$ResumeFullFlightFromRun = ''", runner)
         self.assertIn("full_flight_batch_continuation", runner)
         self.assertIn("$analysisBatchRecords", runner)
-        self.assertIn("if ($processSpecifications.Count -eq 0)", runner)
+        self.assertIn(
+            "if ($processSpecifications.Count -eq 0 -and $existingProcessRecords.Count -eq 0)",
+            runner,
+        )
         self.assertIn("only need deterministic merge/analysis", runner)
         self.assertIn("function Resolve-RfFullFlightContinuationChild", adapter)
         self.assertIn("simion_batch_continuation_plan", adapter)

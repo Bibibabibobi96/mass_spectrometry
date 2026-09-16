@@ -1,9 +1,17 @@
 # 集成历史索引
 
+- [2026-08-31 硬限制审计（就地冻结，旧行号非当前定位）](HARD_LIMIT_AUDIT.md)
+
 本目录保存 RF 多极杆到单反射 oaTOF 集成的历史记录。历史结论只按其记录日期解释；活动合同、
 `INTEGRATION.md` 和已授权 campaign 是当前执行权威。
 
 ## 归档条目
+
+- [单飞集成收口与失效对照快照](history/20260911__single-flight-documentation-and-invalidated-comparisons.md)
+
+<details>
+<summary>展开完整历史索引</summary>
+
 
 - [20260904__campaign-readonly-authority-gate](history/20260904__campaign-readonly-authority-gate.md)
 - [20260904__handoff-comparator-diagnostic-coverage](history/20260904__handoff-comparator-diagnostic-coverage.md)
@@ -57,3 +65,5 @@
 - [20260822__post-pulse-no-rf-per-gap-theory-field-matrix](history/20260822__post-pulse-no-rf-per-gap-theory-field-matrix.md)
 - [20260831__five-ring-prepulse-and-field-diagnostics](history/20260831__five-ring-prepulse-and-field-diagnostics.md)
 - [retired_campaigns](history/retired_campaigns.md)
+
+</details>
