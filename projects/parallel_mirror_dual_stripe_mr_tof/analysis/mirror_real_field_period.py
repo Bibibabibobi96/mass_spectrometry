@@ -66,9 +66,24 @@ def load_exact_k_point(run_dir: Path) -> dict[str, Any]:
     summary = _object(summary_path, "exact-K summary")
     point = summary.get("selected_operating_point")
     roots = summary.get("roots")
-    if not isinstance(point, dict) or not isinstance(roots, list) or len(roots) != 1:
-        raise CandidateContractError("exact-K summary lacks one selected mirror root")
-    receipt = roots[0].get("refined_mirror_receipt")
+    root_index = summary.get("selected_root_index")
+    if (
+        not isinstance(point, dict)
+        or not isinstance(roots, list)
+        or not roots
+        or not isinstance(root_index, int)
+        or isinstance(root_index, bool)
+        or not 0 <= root_index < len(roots)
+    ):
+        raise CandidateContractError("exact-K summary lacks an explicit selected mirror root")
+    selected_root = roots[root_index]
+    root_point = selected_root.get("point") if isinstance(selected_root, dict) else None
+    if (
+        not isinstance(root_point, dict)
+        or any(point.get(key) != value for key, value in root_point.items())
+    ):
+        raise CandidateContractError("exact-K selected root and operating point differ")
+    receipt = selected_root.get("refined_mirror_receipt")
     l0 = receipt.get("l0_receipt") if isinstance(receipt, dict) else None
     if not isinstance(l0, dict):
         raise CandidateContractError("exact-K summary lacks its L0 mirror receipt")

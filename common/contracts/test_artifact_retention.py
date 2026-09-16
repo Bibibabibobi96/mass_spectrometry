@@ -412,6 +412,7 @@ class ArtifactRetentionTests(unittest.TestCase):
             "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_local_operating_pa_prewarm.ps1",
             "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_mirror_period_validation.ps1",
             "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_mirror_real_field_profile.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_mirror_real_field_voltage_family.ps1",
             "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_mirror_turn_fixed_grid_validation.ps1",
             "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_two_prism_trial.ps1",
         }

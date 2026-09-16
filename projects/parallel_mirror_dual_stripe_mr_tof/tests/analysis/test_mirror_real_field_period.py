@@ -1,16 +1,43 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_period import (
     analyze_log,
+    load_exact_k_point,
     write_fly2,
 )
 
 
 class MirrorRealFieldPeriodTest(unittest.TestCase):
+    def test_loads_explicit_selection_from_multiple_exact_k_roots(self) -> None:
+        point = {"mirror_voltages_v": [0.0, -1.0, -2.0, 3.0, 4.0]}
+        l0 = {"electrode_voltages_v": point["mirror_voltages_v"]}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            summary = root / "summary.json"
+            summary.write_text(json.dumps({
+                "selected_root_index": 1,
+                "selected_operating_point": point,
+                "roots": [
+                    {"point": {"mirror_voltages_v": [0.0] * 5}},
+                    {"point": point, "refined_mirror_receipt": {"l0_receipt": l0}},
+                ],
+            }), encoding="utf-8")
+            (root / "run_manifest.json").write_text(json.dumps({
+                "project": "parallel_mirror_dual_stripe_mr_tof",
+                "status": "success",
+                "outputs": [{"path": str(summary)}],
+            }), encoding="utf-8")
+
+            loaded = load_exact_k_point(root)
+
+        self.assertEqual(loaded["point"], point)
+        self.assertEqual(loaded["l0"], l0)
+
     def _contract(self) -> dict:
         particles = []
         energies = [99.0, 100.0, 101.0, 199.0, 200.0, 201.0, 299.0, 300.0, 301.0]

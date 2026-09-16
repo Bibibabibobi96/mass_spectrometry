@@ -358,6 +358,14 @@ run config；只改变积分控制，不改变 PA 几何或位姿。
 `instance_adjust` 只在合同从重叠区导出的半开责任区内接管；portal 真空穿越、非 portal 不穿越、电势/法向场、
 事件拓扑和固定粒子轨迹必须分别验证。当前中心接口证据不能替代束团包络或第三档网格，每档须重新求中心根。
 
+[run_mirror_real_field_voltage_family.ps1](run_mirror_real_field_voltage_family.ps1)只服务制造镜 B--E 的真实场
+L0 电压族。首次模式显式传入一个成功的局域工作台，用 SIMION 从五个 `0.5 mm` family 的四组 standalone
+镜响应采样同一轴线；后续模式显式传入成功的 response-basis run，验证其 manifest、输出哈希、网格和
+cache generation 后直接复用 CSV，不再打开 PA 或调用 SIMION。两种模式都从 baseline 的
+`real_3d_l0_voltage_family_profile` 读取采样间距、`y` 截面、E 切片数和求解数值参数，run-local 冻结该
+baseline；runner 不提供同义数值 CLI。输出资格固定为轴向 `0.5 mm` surrogate，只能生成 L0 一维族，
+不能替代真实轨迹的稳定性、`gamma`、`Tbar_xx`、峰值场或最终 `0.25 mm` 固定点复核。
+
 `analyzer_local_z_compression_plan.py`是只读规划器：
 
 ```powershell

@@ -117,6 +117,15 @@
         "status": "three_scale_probe_convergence_required_before_selection",
         "semantics": "Numerical L1 screening profile for the complete L0-accepted family. Every stable seed is independently refined against the three mirror-only L0 slopes plus the L1 gamma selector, and distinct converged roots are retained rather than collapsing to the closest initial bracket. The deduplication tolerance is only a numerical root-identity threshold. The finite-difference probes are not physical beam widths; the active base and two larger scales must satisfy the declared adjacent gamma and Tbar convergence gates. Peak-field and three-dimensional validation remain separate."
       },
+      "real_3d_l0_voltage_family_profile": {
+        "response_grid_spacing_mm": 0.5,
+        "axis_probe_y_mm": 280.0,
+        "e_voltage_slice_count": 65,
+        "voltage_jacobian_scheme": "three_point_central",
+        "voltage_jacobian_relative_step": 0.0001,
+        "maximum_function_evaluations_per_e_slice": 120,
+        "semantics": "Numerical controls for solving the manufactured finite-3-D mirror B--E L0 family from the retained 0.5-mm standalone PA response basis. The axis surrogate is only an L0 family generator; stability, gamma, phase-averaged transverse time aberration, peak field and native trajectory checks remain downstream gates."
+      },
       "exact_k_operating_point_selection": {
         "status": "native_fixed_geometry_stripe_on_period_selection_over_mirror_qualified_energy_family",
         "energy_bracket_node_count": 9,
