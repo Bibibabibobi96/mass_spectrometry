@@ -108,6 +108,34 @@ class AcceleratorExitSimionAnalysisTests(unittest.TestCase):
         result = self._materialize()
         self.assertEqual(result["selected_axial_energy_per_charge_v"], target)
 
+    def test_materializes_the_trial_selected_near_five_ev_slow_energy(self) -> None:
+        trial = json.loads(self.trial.read_text(encoding="utf-8"))
+        axial = trial["nominal"]["energy_per_charge_v"]
+        slow = 4.961131691875478
+        trial["candidate_derivation"].update({
+            "target_axial_energy_per_charge_v": axial,
+            "selected_slow_energy_per_charge_v": slow,
+        })
+        trial["prism_transport"]["energy_partition"] = {
+            "fast_reflection_kinetic_energy_ev": axial,
+            "drift_kinetic_energy_ev": slow,
+            "total_kinetic_energy_ev": axial + slow,
+        }
+        self._write(self.trial, trial)
+        result = self._materialize()
+        self.assertEqual(result["source_slow_kinetic_energy_per_charge_v"], slow)
+        self.assertTrue(math.isclose(
+            result["source_release_state"]["kinetic_energy_ev"], slow,
+            rel_tol=0.0, abs_tol=1e-12,
+        ))
+        fly2_text = self.fly2.read_text(encoding="utf-8")
+        kinetic_line = next(line for line in fly2_text.splitlines() if "ke =" in line)
+        self.assertTrue(math.isclose(
+            float(kinetic_line.split("=", 1)[1].rstrip(", ")),
+            slow,
+            rel_tol=0.0, abs_tol=1e-12,
+        ))
+
     def test_materialization_rejects_unreviewed_or_changed_source_contract(self) -> None:
         trial = json.loads(self.trial.read_text(encoding="utf-8"))
         del trial["candidate_derivation"]

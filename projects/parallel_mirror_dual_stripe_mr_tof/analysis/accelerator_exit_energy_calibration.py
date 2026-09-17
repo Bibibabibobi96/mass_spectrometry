@@ -12,6 +12,9 @@ from common.host_resource_python import ensure_heavy_entry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point import (
     load_managed_exact_k_operating_point,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point import (
+    load_fixed_mirror_stripe_operating_point,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
     axial_potential_v,
@@ -90,7 +93,7 @@ def derive_unity_response_correction(
         "correction_increment_v": correction_increment_v,
         "proposed_cumulative_correction_v": proposed_v,
         "required_next_action": (
-            "apply the proposed voltage-command correction without changing the exact-K target, "
+            "apply the proposed voltage-command correction without changing the operating axial target, "
             "then measure one new real accelerator exit"
         ),
     }
@@ -105,25 +108,41 @@ def main() -> int:
     )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contract", type=Path, required=True)
-    parser.add_argument("--exact-k-manifest", type=Path, required=True)
+    authority = parser.add_mutually_exclusive_group(required=True)
+    authority.add_argument("--exact-k-manifest", type=Path)
+    authority.add_argument("--fixed-mirror-stripe-manifest", type=Path)
     parser.add_argument("--accelerator-exit-observation", type=Path, required=True)
     parser.add_argument("--previous-cumulative-correction-v", type=float, default=0.0)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    managed = load_managed_exact_k_operating_point(args.exact_k_manifest, args.contract)
+    if args.fixed_mirror_stripe_manifest is not None:
+        managed = load_fixed_mirror_stripe_operating_point(
+            args.fixed_mirror_stripe_manifest,
+        )
+        authority_path = args.fixed_mirror_stripe_manifest
+        authority_kind = "fixed_grid_mirror_variable_slow_energy_stripe"
+        mirror_design = managed.mirror_design
+        target_axial_energy = managed.axial_energy_per_charge_v
+    else:
+        managed = load_managed_exact_k_operating_point(args.exact_k_manifest, args.contract)
+        authority_path = args.exact_k_manifest
+        authority_kind = "analytic_mirror_exact_k"
+        mirror_design = managed.design
+        target_axial_energy = managed.axial_energy_per_charge_v
     try:
         observation = json.loads(args.accelerator_exit_observation.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise CandidateContractError("accelerator-exit observation is not readable JSON") from error
     result = derive_unity_response_correction(
         observation,
-        mirror_design=managed.design,
-        target_axial_energy_per_charge_v=managed.axial_energy_per_charge_v,
+        mirror_design=mirror_design,
+        target_axial_energy_per_charge_v=target_axial_energy,
         previous_cumulative_correction_v=args.previous_cumulative_correction_v,
     )
     result["inputs"] = {
         "contract_sha256": file_sha256(args.contract).lower(),
-        "exact_k_manifest_sha256": file_sha256(args.exact_k_manifest).lower(),
+        "operating_authority_kind": authority_kind,
+        "operating_authority_manifest_sha256": file_sha256(authority_path).lower(),
         "accelerator_exit_observation_sha256": file_sha256(
             args.accelerator_exit_observation
         ).lower(),

@@ -17,6 +17,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     derive_stage_2_ring_voltages,
     derive_two_zone_placement,
     load_contract,
+    mirror_power_supply_limits,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
     EVENT,
@@ -47,13 +48,20 @@ def materialize_source(
     *, contract_path: Path, reviewed_contract_path: Path, voltage_trial_path: Path,
     fly2_path: Path, receipt_path: Path,
 ) -> dict[str, Any]:
-    """Freeze the contract-owned +y, 5-eV centre release for one real exit flight."""
+    """Freeze the selected +y slow-energy centre release for one real exit flight."""
     contract = load_contract(contract_path)
     detector_policy = contract["accelerator"]["detector_return_path"]
+    supply_limits = mirror_power_supply_limits(contract)
     reviewed = load_contract(
-        reviewed_contract_path, inherited_detector_return_path=detector_policy,
+        reviewed_contract_path,
+        inherited_detector_return_path=detector_policy,
+        inherited_mirror_power_supply_limits_v=supply_limits,
     )
-    trial = load_contract(voltage_trial_path, inherited_detector_return_path=detector_policy)
+    trial = load_contract(
+        voltage_trial_path,
+        inherited_detector_return_path=detector_policy,
+        inherited_mirror_power_supply_limits_v=supply_limits,
+    )
     require_reviewed_geometry(contract, reviewed)
     require_reviewed_geometry(trial, reviewed)
     derivation = trial.get("candidate_derivation")
@@ -74,11 +82,6 @@ def materialize_source(
         raise CandidateContractError("accelerator exit diagnostic requires the current +1 source")
     partition = contract.get("prism_transport", {}).get("energy_partition")
     trial_partition = trial.get("prism_transport", {}).get("energy_partition")
-    if not isinstance(partition, dict) or trial_partition != partition:
-        raise CandidateContractError("voltage trial changed the current orthogonal energy partition")
-    slow_energy = _finite(partition.get("drift_kinetic_energy_ev"), "source slow energy")
-    if slow_energy <= 0.0:
-        raise CandidateContractError("source slow energy must be positive")
     selected_energy = _finite(
         derivation.get(
             "target_axial_energy_per_charge_v",
@@ -88,6 +91,27 @@ def materialize_source(
     )
     if selected_energy <= 0.0:
         raise CandidateContractError("selected axial energy must be positive")
+    if not isinstance(partition, dict) or not isinstance(trial_partition, dict):
+        raise CandidateContractError("current and voltage-trial energy partitions are required")
+    slow_energy = _finite(
+        trial_partition.get("drift_kinetic_energy_ev"), "selected source slow energy",
+    )
+    trial_fast_energy = _finite(
+        trial_partition.get("fast_reflection_kinetic_energy_ev"),
+        "voltage-trial fast energy",
+    )
+    trial_total_energy = _finite(
+        trial_partition.get("total_kinetic_energy_ev"), "voltage-trial total energy",
+    )
+    if (
+        slow_energy <= 0.0
+        or trial_fast_energy != selected_energy
+        or not math.isclose(
+            trial_total_energy, slow_energy + selected_energy, rel_tol=0.0, abs_tol=1e-12,
+        )
+        or derivation.get("selected_slow_energy_per_charge_v") not in (None, slow_energy)
+    ):
+        raise CandidateContractError("voltage-trial orthogonal energy partition is inconsistent")
 
     placement = derive_two_zone_placement(reviewed)
     release = _finite(

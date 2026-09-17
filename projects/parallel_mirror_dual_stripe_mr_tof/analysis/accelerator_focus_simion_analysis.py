@@ -20,6 +20,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     derive_two_zone_focus,
     derive_two_zone_placement,
     load_contract,
+    mirror_power_supply_limits,
 )
 
 _EVENT = re.compile(r"MRTOF_ACCELERATOR_FOCUS_EVENT\s+(?P<kind>\w+)\s+(?P<fields>.*)")
@@ -127,6 +128,7 @@ def analyze(
     reviewed = contract if reviewed_contract_path is None else load_contract(
         reviewed_contract_path,
         inherited_detector_return_path=contract["accelerator"]["detector_return_path"],
+        inherited_mirror_power_supply_limits_v=mirror_power_supply_limits(contract),
     )
     require_reviewed_geometry(contract, reviewed)
     records = _events(log_path)

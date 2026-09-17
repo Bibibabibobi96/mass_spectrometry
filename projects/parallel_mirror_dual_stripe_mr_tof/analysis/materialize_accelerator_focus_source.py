@@ -14,7 +14,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_focus_volt
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import (
     accelerator_focus_fly2,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+    load_contract,
+    mirror_power_supply_limits,
+)
 
 
 def _sha256(path: Path) -> str:
@@ -32,6 +35,7 @@ def materialize(
     reviewed = load_contract(
         reviewed_contract_path,
         inherited_detector_return_path=current["accelerator"]["detector_return_path"],
+        inherited_mirror_power_supply_limits_v=mirror_power_supply_limits(current),
     )
     require_reviewed_geometry(current, reviewed)
     current_source = current.get("particle_source", {})

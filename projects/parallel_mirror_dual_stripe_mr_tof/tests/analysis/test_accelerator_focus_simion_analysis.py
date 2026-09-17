@@ -72,6 +72,23 @@ class AcceleratorFocusSimionAnalysisTest(unittest.TestCase):
             accelerator_geometry_contract(baseline["accelerator"]),
         )
 
+    def test_voltage_trial_materializes_selected_slow_energy_partition(self) -> None:
+        baseline = load_contract(CONTRACT)
+        axial = 4372.010347796059
+        slow = 4.961131691875478
+
+        trial, receipt = derive_voltage_trial(
+            baseline, baseline, 958.0,
+            selected_net_gain_center_v=axial,
+            selected_slow_energy_per_charge_v=slow,
+        )
+
+        partition = trial["prism_transport"]["energy_partition"]
+        self.assertEqual(partition["fast_reflection_kinetic_energy_ev"], axial)
+        self.assertEqual(partition["drift_kinetic_energy_ev"], slow)
+        self.assertEqual(partition["total_kinetic_energy_ev"], axial + slow)
+        self.assertEqual(receipt["selected_slow_energy_per_charge_v"], slow)
+
     def test_finite_3d_gain_correction_preserves_target_but_offsets_voltage_command(self) -> None:
         baseline = load_contract(CONTRACT)
         selected = 4198.824969860909

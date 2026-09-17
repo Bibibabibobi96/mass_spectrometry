@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory)][string]$ExactKRunManifest,
+  [string]$ExactKRunManifest = '',
+  [string]$FixedMirrorStripeRunManifest = '',
   [Parameter(Mandatory)][string]$AcceleratorExitRunManifest,
   [double]$PreviousCumulativeCorrectionV = 0.0,
   [string]$ContractPath = '',
@@ -22,7 +23,17 @@ $contract = if ($ContractPath) {
 } else {
   (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json')).Path
 }
-$exactManifest = (Resolve-Path -LiteralPath $ExactKRunManifest).Path
+$authorityCount = [int](-not [string]::IsNullOrWhiteSpace($ExactKRunManifest)) + [int](-not [string]::IsNullOrWhiteSpace($FixedMirrorStripeRunManifest))
+if ($authorityCount -ne 1) { throw 'Provide exactly one operating authority manifest.' }
+$authorityManifest = if ($FixedMirrorStripeRunManifest) {
+  (Resolve-Path -LiteralPath $FixedMirrorStripeRunManifest).Path
+} else { (Resolve-Path -LiteralPath $ExactKRunManifest).Path }
+$authorityMode = if ($FixedMirrorStripeRunManifest) {
+  'dual_stripe_fixed_grid_native_downstream_seed'
+} else { 'analytic_mirror_exact_k_operating_point' }
+$authorityKind = if ($FixedMirrorStripeRunManifest) {
+  'fixed_grid_mirror_variable_slow_energy_stripe'
+} else { 'analytic_mirror_exact_k' }
 $exitManifest = (Resolve-Path -LiteralPath $AcceleratorExitRunManifest).Path
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mrtof-accelerator-exit-energy-calibration'
@@ -86,36 +97,36 @@ try {
   $failureStage = 'capacity_startup'
   $startup = Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
-    -ProtectedPaths @($package.artifact_run_dir, (Split-Path -Parent $exactManifest), (Split-Path -Parent $exitManifest)) `
+    -ProtectedPaths @($package.artifact_run_dir, (Split-Path -Parent $authorityManifest), (Split-Path -Parent $exitManifest)) `
     -RequiredHeadroomBytes 1048576
   $startupPath = Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $startupPath -Depth 14 -Value $startup
 
   $failureStage = 'verify_parent_manifests'
-  $exactVerifyLog = Join-Path $logDir 'exact_k_manifest_verification.log'
+  $authorityVerifyLog = Join-Path $logDir 'operating_authority_manifest_verification.log'
   Invoke-ProjectPython -Arguments @(
-    '-m', 'common.contracts.verify_run_manifest', $exactManifest,
+    '-m', 'common.contracts.verify_run_manifest', $authorityManifest,
     '--require-status', 'success', '--require-project', $projectId
-  ) -LogPath $exactVerifyLog
+  ) -LogPath $authorityVerifyLog
   $exitVerifyLog = Join-Path $logDir 'accelerator_exit_manifest_verification.log'
   Invoke-ProjectPython -Arguments @(
     '-m', 'common.contracts.verify_run_manifest', $exitManifest,
     '--require-status', 'success', '--require-project', $projectId
   ) -LogPath $exitVerifyLog
 
-  $exactRun = Get-Content -LiteralPath $exactManifest -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-  if ($exactRun.mode -ne 'analytic_mirror_exact_k_operating_point' -or $exactRun.status -ne 'success') {
-    throw 'Exact-K parent must be a successful analytic_mirror_exact_k_operating_point run.'
+  $authorityRun = Get-Content -LiteralPath $authorityManifest -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+  if ($authorityRun.mode -ne $authorityMode -or $authorityRun.status -ne 'success') {
+    throw "Operating authority must be a successful $authorityMode run."
   }
-  $exactSummaryRecords = @(
-    $exactRun.outputs | Where-Object {
+  $authoritySummaryRecords = @(
+    $authorityRun.outputs | Where-Object {
       $_.exists -and [IO.Path]::GetFileName([string]$_.path) -eq 'summary.json'
     }
   )
-  if ($exactSummaryRecords.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$exactSummaryRecords[0].sha256)) {
-    throw 'Exact-K manifest must publish exactly one SHA-256-bound summary.json.'
+  if ($authoritySummaryRecords.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$authoritySummaryRecords[0].sha256)) {
+    throw 'Operating authority manifest must publish exactly one SHA-256-bound summary.json.'
   }
-  $exactSummaryRecord = $exactSummaryRecords[0]
+  $authoritySummaryRecord = $authoritySummaryRecords[0]
   $exitRun = Get-Content -LiteralPath $exitManifest -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
   if ($exitRun.mode -ne 'accelerator_source_to_safe_exit' -or $exitRun.status -ne 'success') {
     throw 'Accelerator-exit parent must be a successful accelerator_source_to_safe_exit run.'
@@ -134,23 +145,23 @@ try {
   }
 
   $failureStage = 'freeze_inputs'
-  $exactManifestSha = (Get-FileHash -LiteralPath $exactManifest -Algorithm SHA256).Hash
+  $authorityManifestSha = (Get-FileHash -LiteralPath $authorityManifest -Algorithm SHA256).Hash
   $exitManifestSha = (Get-FileHash -LiteralPath $exitManifest -Algorithm SHA256).Hash
   $contractSha = (Get-FileHash -LiteralPath $contract -Algorithm SHA256).Hash
   $frozenContract = Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
-  $frozenExact = Copy-VerifiedRunInput -Source $exactManifest -Destination (Join-Path $inputDir 'parent_exact_k_run_manifest.json')
-  $frozenExactSummary = Copy-VerifiedRunInput -Source ([string]$exactSummaryRecord.path) -Destination (Join-Path $inputDir 'parent_exact_k_summary.json')
+  $frozenAuthority = Copy-VerifiedRunInput -Source $authorityManifest -Destination (Join-Path $inputDir 'parent_operating_authority_run_manifest.json')
+  $frozenAuthoritySummary = Copy-VerifiedRunInput -Source ([string]$authoritySummaryRecord.path) -Destination (Join-Path $inputDir 'parent_operating_authority_summary.json')
   $frozenExit = Copy-VerifiedRunInput -Source $exitManifest -Destination (Join-Path $inputDir 'parent_accelerator_exit_run_manifest.json')
   $frozenObservation = Copy-VerifiedRunInput -Source ([string]$observationRecord.path) -Destination (Join-Path $inputDir 'accelerator_exit_observation.json')
   Assert-FrozenHash -Path $frozenContract -ExpectedSha256 $contractSha -Label 'candidate contract'
-  Assert-FrozenHash -Path $frozenExact -ExpectedSha256 $exactManifestSha -Label 'exact-K manifest'
-  Assert-FrozenHash -Path $frozenExactSummary -ExpectedSha256 ([string]$exactSummaryRecord.sha256) -Label 'exact-K summary'
+  Assert-FrozenHash -Path $frozenAuthority -ExpectedSha256 $authorityManifestSha -Label 'operating authority manifest'
+  Assert-FrozenHash -Path $frozenAuthoritySummary -ExpectedSha256 ([string]$authoritySummaryRecord.sha256) -Label 'operating authority summary'
   Assert-FrozenHash -Path $frozenExit -ExpectedSha256 $exitManifestSha -Label 'accelerator-exit manifest'
   Assert-FrozenHash -Path $frozenObservation -ExpectedSha256 ([string]$observationRecord.sha256) -Label 'accelerator-exit observation'
   $inputChecks = @(
     [pscustomobject]@{ source = $contract; frozen = $frozenContract; label = 'candidate contract' },
-    [pscustomobject]@{ source = $exactManifest; frozen = $frozenExact; label = 'exact-K manifest' },
-    [pscustomobject]@{ source = [string]$exactSummaryRecord.path; frozen = $frozenExactSummary; label = 'exact-K summary' },
+    [pscustomobject]@{ source = $authorityManifest; frozen = $frozenAuthority; label = 'operating authority manifest' },
+    [pscustomobject]@{ source = [string]$authoritySummaryRecord.path; frozen = $frozenAuthoritySummary; label = 'operating authority summary' },
     [pscustomobject]@{ source = $exitManifest; frozen = $frozenExit; label = 'accelerator-exit manifest' },
     [pscustomobject]@{ source = [string]$observationRecord.path; frozen = $frozenObservation; label = 'accelerator-exit observation' }
   )
@@ -166,6 +177,8 @@ try {
     'common\host_resource_scheduler.py',
     'common\host_resource_policy.json',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\accelerator_exit_energy_calibration.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_mirror_stripe_operating_point.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_grid_mirror_stripe_handoff.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_exact_k_operating_point.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\drift_phase_contract.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
@@ -191,14 +204,15 @@ try {
   $configuration = Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
   $configuration.inputs = [ordered]@{
     candidate_contract = $frozenContract
-    parent_exact_k_run_manifest = $frozenExact
-    parent_exact_k_summary = $frozenExactSummary
+    parent_operating_authority_run_manifest = $frozenAuthority
+    parent_operating_authority_summary = $frozenAuthoritySummary
     parent_accelerator_exit_run_manifest = $frozenExit
     accelerator_exit_observation = $frozenObservation
   }
   foreach ($entry in $sourceInputs.GetEnumerator()) { $configuration.inputs[$entry.Key] = $entry.Value }
   $configuration.parameters = [ordered]@{
     previous_cumulative_correction_v = $PreviousCumulativeCorrectionV
+    operating_authority_kind = $authorityKind
     response_model = 'unity_first_response'
     solver_execution = 'none'
     qualification = 'finite_3d_energy_command_proposal_only__new_real_simion_exit_required'
@@ -214,11 +228,15 @@ try {
   $arguments = @(
     '-m', 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_exit_energy_calibration',
     '--contract', $frozenContract,
-    '--exact-k-manifest', $frozenExact,
     '--accelerator-exit-observation', $frozenObservation,
     '--previous-cumulative-correction-v', $PreviousCumulativeCorrectionV.ToString('R', $culture),
     '--output', $proposalPath
   )
+  if ($FixedMirrorStripeRunManifest) {
+    $arguments += @('--fixed-mirror-stripe-manifest', $frozenAuthority)
+  } else {
+    $arguments += @('--exact-k-manifest', $frozenAuthority)
+  }
   $lease = $null
   try {
     $lease = Enter-HostExecutionLease -Role GATE -Stage theory_compute -RunId $RunId
@@ -248,7 +266,8 @@ try {
   }
   if (
     [string]$proposal.inputs.contract_sha256 -ne $contractSha.ToLowerInvariant() -or
-    [string]$proposal.inputs.exact_k_manifest_sha256 -ne $exactManifestSha.ToLowerInvariant() -or
+    [string]$proposal.inputs.operating_authority_manifest_sha256 -ne $authorityManifestSha.ToLowerInvariant() -or
+    [string]$proposal.inputs.operating_authority_kind -ne $authorityKind -or
     [string]$proposal.inputs.accelerator_exit_observation_sha256 -ne ([string]$observationRecord.sha256).ToLowerInvariant()
   ) {
     throw 'Energy-calibration proposal input identity differs from the frozen run inputs.'
@@ -278,7 +297,7 @@ try {
   Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success `
     -Software @('Python 3.11', 'SciPy') `
-    -Outputs @($summary, $proposalPath, $startupPath, $terminalPath, $retention, $exactVerifyLog, $exitVerifyLog, $analysisLog)
+    -Outputs @($summary, $proposalPath, $startupPath, $terminalPath, $retention, $authorityVerifyLog, $exitVerifyLog, $analysisLog)
   $terminalized = $true
   Write-Host "MRTOF_ACCELERATOR_EXIT_ENERGY_CALIBRATION=PASS RUN_ID=$RunId PROPOSAL=$proposalPath"
 } catch {

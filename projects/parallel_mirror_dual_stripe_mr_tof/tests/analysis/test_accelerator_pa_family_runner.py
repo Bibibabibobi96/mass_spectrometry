@@ -81,6 +81,20 @@ class AcceleratorPAFamilyRunnerTest(unittest.TestCase):
         self.assertLess(source.index("-Stage accelerator_pa_prepare", builder_call), native_gate)
         self.assertLess(source.index("-Stage accelerator_pa_postprocess"), source.index("capacity_terminal"))
 
+    def test_runner_can_republish_a_verified_native_family_without_refine(self) -> None:
+        source = (PROJECT / "simion/run_accelerator_pa_family.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("[string]$RecoverySourceRunPath=''", source)
+        self.assertIn("--require-mode accelerator_pa_family_build", source)
+        self.assertIn("Assert-ManifestOutputIdentity -Manifest $recoveryManifest", source)
+        self.assertIn("Recovery-source numerical identity differs at $field.", source)
+        self.assertIn("Recovery-source refine policy differs at $field.", source)
+        self.assertIn("Recovery-source builder identity differs at $field.", source)
+        self.assertIn("if(-not$recoverySourceRun){", source)
+        self.assertIn("native_family_source=if($recoveryUsed)", source)
+        self.assertIn("if($recoverySourceRun){@($recoverySourceRun)}", source)
+
 
 if __name__ == "__main__":
     unittest.main()

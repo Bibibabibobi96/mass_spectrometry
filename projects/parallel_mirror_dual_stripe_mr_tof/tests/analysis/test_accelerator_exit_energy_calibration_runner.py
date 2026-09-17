@@ -21,11 +21,14 @@ class AcceleratorExitEnergyCalibrationRunnerTest(unittest.TestCase):
 
     def test_runner_consumes_only_the_two_parent_manifests_and_current_contract(self) -> None:
         for token in (
-            "[Parameter(Mandatory)][string]$ExactKRunManifest",
+            "[string]$ExactKRunManifest = ''",
+            "[string]$FixedMirrorStripeRunManifest = ''",
             "[Parameter(Mandatory)][string]$AcceleratorExitRunManifest",
             "[double]$PreviousCumulativeCorrectionV = 0.0",
             "simion_candidate_two_zone.json",
             "analytic_mirror_exact_k_operating_point",
+            "dual_stripe_fixed_grid_native_downstream_seed",
+            "Provide exactly one operating authority manifest.",
             "accelerator_source_to_safe_exit",
         ):
             self.assertIn(token, self.source)
@@ -41,8 +44,8 @@ class AcceleratorExitEnergyCalibrationRunnerTest(unittest.TestCase):
             "$observationRecords.Count -ne 1",
             "Copy-VerifiedRunInput",
             "Assert-FrozenHash",
-            "parent_exact_k_run_manifest.json",
-            "parent_exact_k_summary.json",
+            "parent_operating_authority_run_manifest.json",
+            "parent_operating_authority_summary.json",
             "parent_accelerator_exit_run_manifest.json",
             "Test-RunFilesIdentical",
         ):
@@ -60,7 +63,7 @@ class AcceleratorExitEnergyCalibrationRunnerTest(unittest.TestCase):
             "artifact_capacity_gate_terminal.json",
         ):
             self.assertIn(token, self.source)
-        self.assertIn("(Split-Path -Parent $exactManifest)", self.source)
+        self.assertIn("(Split-Path -Parent $authorityManifest)", self.source)
         self.assertIn("(Split-Path -Parent $exitManifest)", self.source)
 
     def test_only_analysis_call_is_inside_the_resource_lease(self) -> None:
@@ -83,6 +86,7 @@ class AcceleratorExitEnergyCalibrationRunnerTest(unittest.TestCase):
             "projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_exit_energy_calibration",
             "'--contract'",
             "'--exact-k-manifest'",
+            "'--fixed-mirror-stripe-manifest'",
             "'--accelerator-exit-observation'",
             "'--previous-cumulative-correction-v'",
             "'--output'",

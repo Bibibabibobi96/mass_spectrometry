@@ -90,7 +90,7 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") -RunId $RunId `
   -Project $projectId -Mode 'accelerator_source_to_safe_exit' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled -RetentionClass solver_review `
-  -RetentionReason 'N=1 real 5-eV slow source through the first negative-z accelerator exit, with GUI-reviewable unchanged standalone PAs.' `
+  -RetentionReason 'N=1 focus-selected near-5-eV slow source through the first negative-z accelerator exit, with GUI-reviewable unchanged standalone PAs.' `
   -AdditionalDirectories @('simion') -UseShortExecutionPath
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion';$runConfig=$package.run_config
@@ -231,10 +231,14 @@ module.validate_positive_particle_count(int(sys.argv[2]))
   $sourceIdentity=Get-Content -LiteralPath $sourceReceipt -Raw -Encoding UTF8|ConvertFrom-Json -Depth 20
   $currentValue=Get-Content -LiteralPath $currentContract -Raw -Encoding UTF8|ConvertFrom-Json -Depth 40
   $contractSlowEnergy=[double]$currentValue.prism_transport.energy_partition.drift_kinetic_energy_ev
-  if(-not[double]::IsFinite($contractSlowEnergy)-or$contractSlowEnergy-le0-or
+  $selectedSlowProperty=$focusSummary.PSObject.Properties['selected_slow_energy_per_charge_v']
+  $selectedSlowEnergy=if($null-ne$selectedSlowProperty){
+    [double]$selectedSlowProperty.Value
+  }else{$contractSlowEnergy}
+  if(-not[double]::IsFinite($selectedSlowEnergy)-or$selectedSlowEnergy-le0-or
       $sourceIdentity.status-ne'materialized'-or$sourceIdentity.source_particle_count-ne1-or
-      [double]$sourceIdentity.source_slow_kinetic_energy_per_charge_v-ne$contractSlowEnergy){
-    throw 'exit source must be the one-particle real +y source at the contract slow energy'
+      [double]$sourceIdentity.source_slow_kinetic_energy_per_charge_v-ne$selectedSlowEnergy){
+    throw 'exit source must be the one-particle real +y source at the focus-selected slow energy'
   }
   if(@($sourceIdentity.source_direction_project).Count-ne3-or
       [double]$sourceIdentity.source_direction_project[0]-ne0.0-or
@@ -382,7 +386,7 @@ Path(sys.argv[3]).write_text(json.dumps(module.load_operating_point(Path(sys.arg
     qualification='source_to_accelerator_exit_diagnostic_only';particle_count=1
     accelerator_layout=$observation.accelerator_layout;source_release_state=$observation.source_release_state
     safe_exit_state=$observation.safe_exit_state
-    reason='One real +y 5-eV centre ion reached its first measured negative-z accelerator PA exit; no downstream transport claim is made.'
+    reason='One real +y focus-selected near-5-eV centre ion reached its first measured negative-z accelerator PA exit; no downstream transport claim is made.'
   })
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig (Get-ArtifactPath $runConfig)
   $failureStage='capacity_terminal'

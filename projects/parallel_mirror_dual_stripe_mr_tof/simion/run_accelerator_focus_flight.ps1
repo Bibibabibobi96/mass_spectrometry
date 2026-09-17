@@ -12,6 +12,7 @@ param(
   [string]$ExactKRunManifest='',
   [Nullable[double]]$SelectedNetGainCenterV=$null,
   [double]$Finite3dGainCorrectionV=0.0,
+  [string]$FixedMirrorStripeRunManifest='',
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe=''
@@ -71,8 +72,9 @@ if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){throw "SIMION executable
 $baselinePath=if($BaselineContractPath){(Resolve-Path -LiteralPath $BaselineContractPath).Path}else{Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\config\simion_candidate_two_zone.json'}
 $baseline=Get-Content -LiteralPath $baselinePath -Raw -Encoding UTF8|ConvertFrom-Json
 $exactKManifestPath=if($ExactKRunManifest){(Resolve-Path -LiteralPath $ExactKRunManifest).Path}else{''}
-if($exactKManifestPath -and $null-ne$SelectedNetGainCenterV){throw 'exact-K manifest binding and a manual selected net-gain centre are mutually exclusive'}
-if(-not $exactKManifestPath -and $null-eq$SelectedNetGainCenterV){throw 'provide an exact-K manifest or one explicit selected net-gain centre'}
+$fixedMirrorStripeManifestPath=if($FixedMirrorStripeRunManifest){(Resolve-Path -LiteralPath $FixedMirrorStripeRunManifest).Path}else{''}
+$energyAuthorityCount=[int](-not[string]::IsNullOrWhiteSpace($exactKManifestPath))+[int](-not[string]::IsNullOrWhiteSpace($fixedMirrorStripeManifestPath))+[int]($null-ne$SelectedNetGainCenterV)
+if($energyAuthorityCount-ne1){throw 'provide exactly one energy authority: exact-K manifest, fixed-mirror Stripe manifest, or explicit component-diagnostic centre'}
 if($null-ne$SelectedNetGainCenterV -and (-not([double]::IsFinite([double]$SelectedNetGainCenterV)) -or [double]$SelectedNetGainCenterV -le 0)){throw 'selected net-gain centre must be finite and positive'}
 if(-not([double]::IsFinite($Finite3dGainCorrectionV))){throw 'finite-3D gain correction must be finite'}
 $countKey=if($SourceKey-eq'accelerator_focus_center_fly2'){'center_particle_count'}else{'candidate_bunch_particle_count'}
@@ -103,6 +105,7 @@ $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result
 $runConfig=$package.run_config;$summary=$package.summary;$artifactRoot=Join-Path $workspaceRoot 'artifacts';$cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
 $terminalized=$false;$failureStage='preflight';$hostExecutionOutcome='failed';$lease=$null
 $basisLinkDir=$null;$operatingBuildDir=$null
+$selectedSlowEnergyPerChargeV=$null;$fixedMirrorStripeAuthorityPath=$null
 try{
   $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
   foreach($upstream in @(
@@ -112,7 +115,7 @@ try{
     & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') (Join-Path $upstream[0] 'run_manifest.json') --require-status success --require-project $projectId --require-mode $upstream[1]
     if($LASTEXITCODE-ne0){throw "$($upstream[2]) manifest verification failed"}
   }
-  $selectedEnergySource=if($exactKManifestPath){'verified_exact_k_manifest'}else{'explicit_component_diagnostic'}
+  $selectedEnergySource=if($exactKManifestPath){'verified_exact_k_manifest'}elseif($fixedMirrorStripeManifestPath){'verified_fixed_mirror_stripe_manifest'}else{'explicit_component_diagnostic'}
   if($exactKManifestPath){
     & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $exactKManifestPath --require-status success --require-project $projectId --require-mode analytic_mirror_exact_k_operating_point
     if($LASTEXITCODE-ne0){throw 'exact-K manifest verification failed'}
@@ -127,6 +130,20 @@ try{
     }
     $SelectedNetGainCenterV=[double]$exactKSummary.selected_operating_point.energy_per_charge_v
     if(-not([double]::IsFinite([double]$SelectedNetGainCenterV)) -or [double]$SelectedNetGainCenterV-le0){throw 'exact-K selected axial energy must be finite and positive'}
+  }
+  if($fixedMirrorStripeManifestPath){
+    & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $fixedMirrorStripeManifestPath --require-status success --require-project $projectId --require-mode dual_stripe_fixed_grid_native_downstream_seed
+    if($LASTEXITCODE-ne0){throw 'fixed-mirror Stripe manifest verification failed'}
+    $fixedMirrorStripeAuthorityPath=Join-Path $resultDir 'fixed_mirror_stripe_downstream_authority.json'
+    Invoke-ProjectPython -Arguments @(
+      '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point',
+      '--manifest',$fixedMirrorStripeManifestPath,'--output',$fixedMirrorStripeAuthorityPath
+    )
+    $fixedAuthority=Get-Content -LiteralPath $fixedMirrorStripeAuthorityPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 20
+    if($fixedAuthority.status-ne'success'-or$fixedAuthority.role-ne'mrtof_fixed_mirror_stripe_downstream_operating_authority'){throw 'fixed-mirror Stripe authority receipt is invalid'}
+    $SelectedNetGainCenterV=[double]$fixedAuthority.axial_energy_per_charge_v
+    $selectedSlowEnergyPerChargeV=[double]$fixedAuthority.slow_energy_per_charge_v
+    if(-not([double]::IsFinite([double]$SelectedNetGainCenterV))-or[double]$SelectedNetGainCenterV-le0-or-not([double]::IsFinite([double]$selectedSlowEnergyPerChargeV))-or[double]$selectedSlowEnergyPerChargeV-le0){throw 'fixed-mirror Stripe energy partition must be finite and positive'}
   }
   $selectedEnergyText=([double]$SelectedNetGainCenterV).ToString('R',[Globalization.CultureInfo]::InvariantCulture)
   if($calibrationRun){
@@ -182,10 +199,10 @@ try{
   $geometryCompatibilityCode=@'
 import sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract,mirror_power_supply_limits
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_focus_voltage_trial import require_reviewed_geometry
 current=load_contract(Path(sys.argv[1]))
-family=load_contract(Path(sys.argv[2]),inherited_detector_return_path=current["accelerator"]["detector_return_path"])
+family=load_contract(Path(sys.argv[2]),inherited_detector_return_path=current["accelerator"]["detector_return_path"],inherited_mirror_power_supply_limits_v=mirror_power_supply_limits(current))
 require_reviewed_geometry(current,family)
 '@
   Invoke-ProjectPython -Arguments @('-c',$geometryCompatibilityCode,$baselinePath,$familyContract)
@@ -209,13 +226,15 @@ require_reviewed_geometry(current,family)
   if(-not(Test-Path -LiteralPath $standaloneReviewed -PathType Leaf)){throw 'standalone component reviewed geometry contract is missing'}
   if(-not(Test-RunFilesIdentical -Left $standaloneReviewed -Right (Join-Path $geometrySimion 'simion_prototype_contract.json'))){throw 'standalone components and the reviewed focus assembly do not share one geometry contract'}
   $familyAdapter=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\simion_pa_family_cache.py'
+  $fixedMirrorStripeLoaderPath=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_mirror_stripe_operating_point.py'
+  $fixedGridHandoffPath=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_grid_mirror_stripe_handoff.py'
   $standaloneBankValidator=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\simion_standalone_bank.py'
   $commonFamilyCache=Join-Path $repoRoot 'common\simion\pa_family_cache.py'
   $composerPath=Join-Path $repoRoot 'common\simion\compose_standalone_pa.lua'
   $iobBuilderPath=Join-Path $PSScriptRoot 'build_three_component_iob.lua'
   $iobSeedPath=Join-Path $repoRoot 'common\simion\assets\iob_instance_seeds\3_instance_seed.iob'
   $sources=@($sourceManifestPath,$baselinePath,$geometryReview,$structureReport,$sourceBuilderPath,$baseOperatingPoint,
-    $trialBuilderPath,$focusTheoryPath,$operatingPointAdapterPath,$phaseContractPath,$familyAdapter,$standaloneBankValidator,$commonFamilyCache,$composerPath,$iobBuilderPath,$iobSeedPath,$familyContract,$familyGem,$familyPublication,
+    $trialBuilderPath,$focusTheoryPath,$operatingPointAdapterPath,$phaseContractPath,$familyAdapter,$fixedMirrorStripeLoaderPath,$fixedGridHandoffPath,$standaloneBankValidator,$commonFamilyCache,$composerPath,$iobBuilderPath,$iobSeedPath,$familyContract,$familyGem,$familyPublication,
     $standaloneManifestPath,(Join-Path $standaloneComponentRun 'run_config.json'),$standaloneReviewed,$sourceAnalyzer,$sourceDetector,
     (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\mrtof_accelerator_focus.lua'),
     (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\mirror_cycle_counter.lua'),
@@ -225,6 +244,7 @@ require_reviewed_geometry(current,family)
   if($calibrationRun){$sources+=@($calibrationManifestPath,$calibrationTrialPath,$calibrationAnalysisPath)}
   if($energyCalibrationRun){$sources+=@($energyCalibrationManifestPath,$energyCalibrationProposalPath)}
   if($exactKManifestPath){$sources+=@($exactKManifestPath,$exactKSummaryPath)}
+  if($fixedMirrorStripeManifestPath){$sources+=$fixedMirrorStripeManifestPath}
   [int64]$copyBytes=0
   foreach($path in $sources){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "focus input is missing: $path"};$copyBytes+=(Get-Item -LiteralPath $path).Length}
   # The reviewed standalone accelerator is not consumed, but its size is a
@@ -235,6 +255,7 @@ require_reviewed_geometry(current,family)
   if($calibrationRun){$startupProtected+=$calibrationRun}
   if($energyCalibrationRun){$startupProtected+=$energyCalibrationRun}
   if($exactKManifestPath){$startupProtected+=(Split-Path -Parent $exactKManifestPath)}
+  if($fixedMirrorStripeManifestPath){$startupProtected+=(Split-Path -Parent $fixedMirrorStripeManifestPath)}
   $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $copyBytes -ProtectedPaths $startupProtected
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
   $failureStage='freeze_reviewed_pa_iob'
@@ -251,6 +272,8 @@ require_reviewed_geometry(current,family)
   $frozenBaseOperatingPoint=Copy-RequiredInput $baseOperatingPoint (Join-Path $inputDir 'reviewed_operating_point.lua') 'reviewed operating point'
   $frozenOperatingPointAdapter=Copy-RequiredInput $operatingPointAdapterPath (Join-Path $inputDir 'simion_operating_point_variation.py') 'operating-point adapter'
   $frozenPhaseContract=Copy-RequiredInput $phaseContractPath (Join-Path $inputDir 'drift_phase_contract.py') 'drift-phase contract resolver'
+  $frozenFixedMirrorStripeLoader=Copy-RequiredInput $fixedMirrorStripeLoaderPath (Join-Path $inputDir 'fixed_mirror_stripe_operating_point.py') 'fixed-mirror Stripe authority loader'
+  $frozenFixedGridHandoff=Copy-RequiredInput $fixedGridHandoffPath (Join-Path $inputDir 'fixed_grid_mirror_stripe_handoff.py') 'fixed-grid mirror handoff loader'
   if($energyCalibrationRun){
     $frozenEnergyCalibrationManifest=Copy-RequiredInput $energyCalibrationManifestPath (Join-Path $inputDir 'energy_calibration_run_manifest.json') 'energy-calibration run manifest'
     $frozenEnergyCalibrationProposal=Copy-RequiredInput $energyCalibrationProposalPath (Join-Path $inputDir 'energy_calibration_proposal.json') 'energy-calibration proposal'
@@ -258,6 +281,10 @@ require_reviewed_geometry(current,family)
   if($exactKManifestPath){
     $frozenExactKManifest=Copy-RequiredInput $exactKManifestPath (Join-Path $inputDir 'exact_k_run_manifest.json') 'exact-K run manifest'
     $frozenExactKSummary=Copy-RequiredInput $exactKSummaryPath (Join-Path $inputDir 'exact_k_summary.json') 'exact-K summary'
+  }
+  if($fixedMirrorStripeManifestPath){
+    $frozenFixedMirrorStripeManifest=Copy-RequiredInput $fixedMirrorStripeManifestPath (Join-Path $inputDir 'fixed_mirror_stripe_run_manifest.json') 'fixed-mirror Stripe run manifest'
+    $frozenFixedMirrorStripeAuthority=Copy-RequiredInput $fixedMirrorStripeAuthorityPath (Join-Path $inputDir 'fixed_mirror_stripe_downstream_authority.json') 'fixed-mirror Stripe downstream authority'
   }
   $frozenBaseline=Copy-RequiredInput $baselinePath (Join-Path $solverDir 'simion_candidate_two_zone.json') 'current baseline contract'
   $sourceBuilder=Copy-RequiredInput $sourceBuilderPath (Join-Path $solverDir 'materialize_accelerator_focus_source.py') 'focus source builder'
@@ -271,10 +298,10 @@ require_reviewed_geometry(current,family)
 import json,sys
 import hashlib
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract,mirror_power_supply_limits
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_focus_voltage_trial import derive_zero_extraction_energy_focus_seed
 current=load_contract(Path(sys.argv[1]))
-reviewed=load_contract(Path(sys.argv[2]),inherited_detector_return_path=current["accelerator"]["detector_return_path"])
+reviewed=load_contract(Path(sys.argv[2]),inherited_detector_return_path=current["accelerator"]["detector_return_path"],inherited_mirror_power_supply_limits_v=mirror_power_supply_limits(current))
 _,receipt=derive_zero_extraction_energy_focus_seed(current,reviewed,float(sys.argv[3]))
 receipt["source_contract_sha256"]=hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest()
 receipt["reviewed_contract_sha256"]=hashlib.sha256(Path(sys.argv[2]).read_bytes()).hexdigest()
@@ -290,12 +317,12 @@ Path(sys.argv[4]).write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n",en
     $calibrationCode=@'
 import hashlib,json,sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract,mirror_power_supply_limits
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_focus_voltage_trial import derive_focus_calibration_proposal
 current_path,reviewed_path,previous_path,analysis_path,trial_path,receipt_path,theory_path=map(Path,sys.argv[1:8])
 current=load_contract(current_path)
-reviewed=load_contract(reviewed_path,inherited_detector_return_path=current["accelerator"]["detector_return_path"])
-previous=load_contract(previous_path)
+reviewed=load_contract(reviewed_path,inherited_detector_return_path=current["accelerator"]["detector_return_path"],inherited_mirror_power_supply_limits_v=mirror_power_supply_limits(current))
+previous=load_contract(previous_path,inherited_mirror_power_supply_limits_v=mirror_power_supply_limits(current))
 trial,receipt=derive_focus_calibration_proposal(current,reviewed,previous,json.loads(analysis_path.read_text(encoding="utf-8")),selected_net_gain_center_v=float(sys.argv[8]))
 trial_path.write_text(json.dumps(trial,indent=2)+"\n",encoding="utf-8")
 receipt["input_identity"]={name:hashlib.sha256(path.read_bytes()).hexdigest() for name,path in (("current_contract",current_path),("reviewed_contract",reviewed_path),("previous_trial",previous_path),("previous_analysis",analysis_path),("focus_theory",theory_path))}
@@ -309,7 +336,13 @@ receipt_path.write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n",encodin
   }
   if(-not([double]::IsFinite($firstGapDrop)) -or $firstGapDrop -le 0){throw 'first-gap voltage drop must be finite and positive'}
   $firstGapDropText=$firstGapDrop.ToString('R',[Globalization.CultureInfo]::InvariantCulture)
-  if(-not $calibrationRun){$failureStage='derive_voltage_trial';Invoke-ProjectPython -Arguments @($trialBuilder,'--current',$frozenBaseline,'--reviewed',$reviewedContract,'--first-gap-drop-v',$firstGapDropText,'--selected-net-gain-center-v',$selectedEnergyText,'--finite-3d-gain-correction-v',$gainCorrectionText,'--output',$trialContract,'--receipt',$trialReceipt)}
+  if(-not $calibrationRun){
+    $failureStage='derive_voltage_trial'
+    $trialArguments=@($trialBuilder,'--current',$frozenBaseline,'--reviewed',$reviewedContract,'--first-gap-drop-v',$firstGapDropText,'--selected-net-gain-center-v',$selectedEnergyText,'--finite-3d-gain-correction-v',$gainCorrectionText)
+    if($null-ne$selectedSlowEnergyPerChargeV){$trialArguments+=@('--selected-slow-energy-per-charge-v',([double]$selectedSlowEnergyPerChargeV).ToString('R',[Globalization.CultureInfo]::InvariantCulture))}
+    $trialArguments+=@('--output',$trialContract,'--receipt',$trialReceipt)
+    Invoke-ProjectPython -Arguments $trialArguments
+  }
   # wb:save() rewrites same-basename Workbench companions.  Keep the generated
   # source at a distinct frozen path so the IOB builder can restore it only
   # after saving the seed-derived Workbench.
@@ -483,6 +516,8 @@ print(json.dumps({"disposition":publication.disposition.value,"cache_key":public
   $focusOperatingPointIdentity=Get-Content -LiteralPath $focusOperatingPointReceipt -Raw -Encoding UTF8|ConvertFrom-Json
   $config.inputs.focus_theory=ConvertTo-ArtifactRunPath $frozenFocusTheory
   $config.inputs.voltage_trial_builder=ConvertTo-ArtifactRunPath $trialBuilder
+  $config.inputs.fixed_mirror_stripe_authority_loader=ConvertTo-ArtifactRunPath $frozenFixedMirrorStripeLoader
+  $config.inputs.fixed_grid_mirror_handoff_loader=ConvertTo-ArtifactRunPath $frozenFixedGridHandoff
   if($calibrationRun){
     if($sourceIdentity.fly2_sha256-ne$calibrationSourceSha){throw 'focus calibration must retain the previous frozen particle source'}
     $config.inputs.focus_calibration_manifest=ConvertTo-ArtifactRunPath $frozenCalibrationManifest
@@ -497,7 +532,11 @@ print(json.dumps({"disposition":publication.disposition.value,"cache_key":public
     $config.inputs.exact_k_run_manifest=ConvertTo-ArtifactRunPath $frozenExactKManifest
     $config.inputs.exact_k_summary=ConvertTo-ArtifactRunPath $frozenExactKSummary
   }
-  $config.parameters.source_key=$SourceKey;$config.parameters.particle_count=$expectedCount;$config.parameters.source_sha256=$sourceIdentity.fly2_sha256;$config.parameters.first_gap_drop_v=$firstGapDrop;$config.parameters.first_gap_drop_selection=$firstGapSelection;$config.parameters.selected_net_gain_center_v=[double]$SelectedNetGainCenterV;$config.parameters.selected_net_gain_center_source=$selectedEnergySource;$config.parameters.finite_3d_gain_correction_v=$Finite3dGainCorrectionV
+  if($fixedMirrorStripeManifestPath){
+    $config.inputs.fixed_mirror_stripe_run_manifest=ConvertTo-ArtifactRunPath $frozenFixedMirrorStripeManifest
+    $config.inputs.fixed_mirror_stripe_downstream_authority=ConvertTo-ArtifactRunPath $frozenFixedMirrorStripeAuthority
+  }
+  $config.parameters.source_key=$SourceKey;$config.parameters.particle_count=$expectedCount;$config.parameters.source_sha256=$sourceIdentity.fly2_sha256;$config.parameters.first_gap_drop_v=$firstGapDrop;$config.parameters.first_gap_drop_selection=$firstGapSelection;$config.parameters.selected_net_gain_center_v=[double]$SelectedNetGainCenterV;$config.parameters.selected_slow_energy_per_charge_v=$selectedSlowEnergyPerChargeV;$config.parameters.selected_net_gain_center_source=$selectedEnergySource;$config.parameters.finite_3d_gain_correction_v=$Finite3dGainCorrectionV
   $config.parameters.finite_3d_gain_correction_selection=if($energyCalibrationRun){'verified_accelerator_exit_energy_calibration_proposal'}else{'explicit_or_zero'}
   $config.parameters.trajectory_profile_id=[string]$focusOperatingPointIdentity.trajectory_profile.profile_id
   $config.parameters.trajectory_quality=[double]$focusOperatingPointIdentity.trajectory_profile.trajectory_quality
@@ -515,7 +554,7 @@ print(json.dumps({"disposition":publication.disposition.value,"cache_key":public
   $rawLog=Join-Path $logDir 'native_accelerator_focus.log';$analysis=Join-Path $resultDir 'accelerator_focus_analysis.json'
   $failureStage='focus_analysis';Invoke-ProjectPython -Arguments @($analyzer,$rawLog,$trialContract,$analysis,'--expected-count',"$expectedCount",'--reviewed-contract',$reviewedContract)
   $analysisValue=Get-Content -LiteralPath $analysis -Raw -Encoding UTF8|ConvertFrom-Json
-  Write-RunJson -Path $summary -Value ([ordered]@{schema_version=1;role='mrtof_two_zone_accelerator_first_time_focus';status='success';qualification='candidate_prototype_numeric_focus_only';particle_count=$expectedCount;focus_particle_count=$analysisValue.focus_particle_count;selected_net_gain_center_v=[double]$SelectedNetGainCenterV;selected_net_gain_center_source=$selectedEnergySource;finite_3d_gain_correction_v=$Finite3dGainCorrectionV;finite_3d_gain_correction_selection=if($energyCalibrationRun){'verified_accelerator_exit_energy_calibration_proposal'}else{'explicit_or_zero'};first_gap_drop_v=$firstGapDrop;first_gap_drop_selection=$firstGapSelection;analytic_trial_focus_plane_residual_z_mm=$analysisValue.analytic_trial_focus_plane_residual_z_mm;timing=$analysisValue.timing})
+  Write-RunJson -Path $summary -Value ([ordered]@{schema_version=1;role='mrtof_two_zone_accelerator_first_time_focus';status='success';qualification='candidate_prototype_numeric_focus_only';particle_count=$expectedCount;focus_particle_count=$analysisValue.focus_particle_count;selected_net_gain_center_v=[double]$SelectedNetGainCenterV;selected_slow_energy_per_charge_v=$selectedSlowEnergyPerChargeV;selected_net_gain_center_source=$selectedEnergySource;finite_3d_gain_correction_v=$Finite3dGainCorrectionV;finite_3d_gain_correction_selection=if($energyCalibrationRun){'verified_accelerator_exit_energy_calibration_proposal'}else{'explicit_or_zero'};first_gap_drop_v=$firstGapDrop;first_gap_drop_selection=$firstGapSelection;analytic_trial_focus_plane_residual_z_mm=$analysisValue.analytic_trial_focus_plane_residual_z_mm;timing=$analysisValue.timing})
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal';$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
   $terminalProtected=@($package.artifact_run_dir,$geometryRun);[int64]$publishedOperatingCacheBytes=0
@@ -528,7 +567,7 @@ print(json.dumps({"disposition":publication.disposition.value,"cache_key":public
   }
   $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths $terminalProtected -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
-  $manifestOutputs=@($summary,$rawLog,$analysis,$theorySeedReceipt,$trialReceipt,$focusOperatingPointReceipt,$sourceReceipt,$familyProbePath,$compositionSpec,$operatingIdentity,$operatingCacheReceipt,$posePath,$operatingIob,(Join-Path $solverDir 'mrtof_three_component_candidate.lua'),$focusOperatingPoint,(Join-Path $solverDir 'mrtof_three_component_candidate.voltage_map.lua'),$focusFly2,$acceleratorPa,$localAnalyzer,$localDetector,$startupPath,$terminalPath,$retention)|ForEach-Object{ConvertTo-ArtifactRunPath $_}
+  $manifestOutputs=(@($summary,$rawLog,$analysis,$theorySeedReceipt,$trialReceipt,$focusOperatingPointReceipt,$sourceReceipt,$familyProbePath,$compositionSpec,$operatingIdentity,$operatingCacheReceipt,$posePath,$operatingIob,(Join-Path $solverDir 'mrtof_three_component_candidate.lua'),$focusOperatingPoint,(Join-Path $solverDir 'mrtof_three_component_candidate.voltage_map.lua'),$focusFly2,$acceleratorPa,$localAnalyzer,$localDetector,$startupPath,$terminalPath,$retention)+$(if($fixedMirrorStripeAuthorityPath){@($fixedMirrorStripeAuthorityPath)}else{@()}))|ForEach-Object{ConvertTo-ArtifactRunPath $_}
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig (ConvertTo-ArtifactRunPath $runConfig) -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
   $terminalized=$true;$hostExecutionOutcome='success';Write-Host "MRTOF_ACCELERATOR_FOCUS_FLIGHT=PASS RUN_ID=$RunId"
 }catch{

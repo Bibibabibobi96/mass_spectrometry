@@ -157,6 +157,26 @@ CAD 原生双 Stripe 空间返回理论，而不是旧的印刷多项式近似�
 不得再驱动镜重求。下一门禁是在真实三维场中验证该慢能中心、Stripe 返回和离散 K 拓扑；P1/P2 与
 完整整机飞行仍待定。
 
+该 handoff 已继续贯通到独立加速器。`20260917_235000__sim__simion__mrtof-accelerator-focus-variable-slow-n100-r3`
+以同一轴向能量和慢向选择生成电压 trial，N=100 全部达到 `z=0`；峰峰时间宽度为 `0.04247649 ns`，
+有限三维一阶焦面残差为 `-0.28354650 mm`，故只标为 prototype 数值时焦。随后
+`20260918_003000__sim__simion__mrtof-accelerator-exit-variable-slow-n1-r3` 用
+`4.96113169188 eV` 的真实 `+y` 源完成负 `z` 首出口：轴向能量为 `4371.23515646 eV`，慢向分量为
+`5.14014078 eV`，总动能为 `4376.37529785 eV`。该结果证明“近 5 eV 可调慢能”已经传到实际 Fly2，
+且 run 摘要与保留合同均使用 `focus-selected near-5-eV` 语义；该首出口尚不证明 Stripe、P1/P2、
+K 拓扑或探测器命中。
+
+首出口给出的有限三维净增益修正 `+0.775418133671 V` 已在不改变镜轴向目标和慢向选择的条件下
+回灌。`20260918_011000__sim__simion__mrtof-accelerator-focus-energy-corrected-variable-slow-n100-r2`
+保持 N=100 全部到达焦面，峰峰时间宽度为 `0.04387994 ns`，一阶焦面残差为
+`-0.30588390 mm`。其后的真实出口
+`20260918_012000__sim__simion__mrtof-accelerator-exit-energy-corrected-variable-slow-n1-r5`
+记录轴向动能 `4372.010484814043 eV`；计入出口处镜势 `-0.000226801765 V` 后，轴向
+Hamiltonian 为 `4372.010258012278 eV/q`，相对 `4372.010347796059 eV/q` 目标只差
+`-8.97838e-5 eV/q`。r2 校准收据仍按 fail-closed 规则给出下一次 `+8.97838e-5 V` 建议，
+但该量已经远低于当前网格、几何和三维场误差尺度，因此本阶段不再为压低这一数值残差重复 Refine
+或飞行；这不是整机能量/分辨率 Formal 验收。
+
 同一中心粒子、同一冻结几何/PA/电压/源/程序/脉冲和自然回程拓扑的三档时间步实跑已由
 `20260916_013500__analysis__python__mrtof-single-center-timestep-convergence-r1` 绑定：最大步长依次为
 `0.002、0.0002、0.00002 us`，探测器 TOF 分别为

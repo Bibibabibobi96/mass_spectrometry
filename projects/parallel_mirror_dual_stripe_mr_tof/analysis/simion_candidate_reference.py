@@ -201,15 +201,36 @@ def derive_mirror_voltage_bounds(
     return lower, upper
 
 
+def mirror_power_supply_limits(contract: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """Return the current per-electrode supply policy for legacy artifact rebinding."""
+    envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]
+    result: dict[str, dict[str, float]] = {}
+    for key in ("B", "C", "D", "E"):
+        limits = envelope[key].get("power_supply_limits_v")
+        if not isinstance(limits, dict):
+            raise CandidateContractError(f"mirror {key} power-supply limits are required")
+        result[key] = {
+            "minimum_inclusive_v": _number(
+                limits.get("minimum_inclusive_v"), f"mirror {key} supply minimum",
+            ),
+            "maximum_inclusive_v": _number(
+                limits.get("maximum_inclusive_v"), f"mirror {key} supply maximum",
+            ),
+        }
+    return result
+
+
 def load_contract(
     path: Path, *, inherited_detector_return_path: dict[str, Any] | None = None,
+    inherited_mirror_power_supply_limits_v: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     """Load and minimally validate one MR-TOF candidate contract.
 
-    ``inherited_detector_return_path`` is only for rebinding an older, immutable
-    physical artifact whose contract predates the detector-return policy.  The
-    supplied policy must itself be current and valid; an existing upstream
-    policy is never overwritten.  Default loading remains fail-closed.
+    The two ``inherited_*`` arguments are only for rebinding an older, immutable
+    physical artifact whose contract predates a non-geometric policy.  Supplied
+    policy must itself be current and valid; an existing upstream policy is
+    never overwritten or allowed to disagree.  Default loading remains
+    fail-closed.
     """
     data = json.loads(path.read_text(encoding="utf-8"))
     if data.get("project_id") != "parallel_mirror_dual_stripe_mr_tof":
@@ -238,6 +259,30 @@ def load_contract(
         raise CandidateContractError("stripe widths must remain positive")
     if _number(stripe["maximum_width_mm"], "maximum_width_mm") < _number(stripe["minimum_width_mm"], "minimum_width_mm"):
         raise CandidateContractError("maximum stripe width must be >= minimum width")
+    if inherited_mirror_power_supply_limits_v is not None:
+        holder = {
+            "mirror": {
+                "theory_requirements": {
+                    "voltage_envelope_v": {
+                        key: {"power_supply_limits_v": dict(value)}
+                        for key, value in inherited_mirror_power_supply_limits_v.items()
+                    },
+                },
+            },
+        }
+        inherited_limits = mirror_power_supply_limits(holder)
+        envelope = mirror.get("theory_requirements", {}).get("voltage_envelope_v", {})
+        for key, limits in inherited_limits.items():
+            electrode = envelope.get(key)
+            if not isinstance(electrode, dict):
+                raise CandidateContractError(f"mirror {key} voltage envelope is required")
+            existing = electrode.get("power_supply_limits_v")
+            if existing is None:
+                electrode["power_supply_limits_v"] = dict(limits)
+            elif existing != limits:
+                raise CandidateContractError(
+                    f"mirror {key} inherited power-supply limits disagree with the artifact"
+                )
     accelerator = data.get("accelerator")
     if (
         inherited_detector_return_path is not None

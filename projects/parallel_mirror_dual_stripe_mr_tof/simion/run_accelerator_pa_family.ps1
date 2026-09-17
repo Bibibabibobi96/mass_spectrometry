@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$ContractPath='',
+  [string]$RecoverySourceRunPath='',
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe=''
@@ -42,6 +43,20 @@ function Invoke-SimionStage {
   } finally {Pop-Location}
 }
 
+function Assert-ManifestOutputIdentity {
+  param([Parameter(Mandatory)]$Manifest,[Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][string]$Label)
+  $resolved=(Resolve-Path -LiteralPath $Path).Path
+  $records=@($Manifest.outputs|Where-Object{
+    [string]::Equals([IO.Path]::GetFullPath([string]$_.path),$resolved,[StringComparison]::OrdinalIgnoreCase)
+  })
+  if($records.Count-ne1){throw "$Label is not uniquely frozen by the recovery manifest: $resolved"}
+  $item=Get-Item -LiteralPath $resolved -Force
+  $hash=(Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash
+  if([int64]$records[0].bytes-ne[int64]$item.Length-or[string]$records[0].sha256-ne$hash){
+    throw "$Label differs from its recovery manifest identity: $resolved"
+  }
+}
+
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'accelerator_pa_family_build' `
@@ -54,6 +69,9 @@ $logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion';$runConfig=$packa
 $artifactRoot=Join-Path $workspaceRoot 'artifacts';$cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
 $lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight'
 $temporaryFamily=$null;$stabilityReceiptPath=$null
+$recoverySourceRun=if($RecoverySourceRunPath){(Resolve-Path -LiteralPath $RecoverySourceRunPath).Path}else{''}
+$frozenRecoveryManifest=$null;$frozenRecoveryIdentity=$null
+$recoveryUsed=$false
 
 # New-RunPackage may expose a short execution alias for SIMION. Persist only
 # the corresponding canonical artifact path because the alias is removed in
@@ -105,7 +123,7 @@ try {
   $startupProtectedCacheKeys=if($cacheDisposition-eq'hit'){@([string]$probe.cache_key)}else{@()}
   $failureStage='capacity_preflight'
   $capacityStartup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-    -RequiredHeadroomBytes $requiredBytes -ProtectedPaths @($package.artifact_run_dir) `
+    -RequiredHeadroomBytes $requiredBytes -ProtectedPaths (@($package.artifact_run_dir)+$(if($recoverySourceRun){@($recoverySourceRun)}else{@()})) `
     -ProtectedCacheKeys $startupProtectedCacheKeys
   $capacityStartupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $capacityStartupPath -Depth 14 -Value $capacityStartup
@@ -119,21 +137,64 @@ try {
     $failureStage='build_pa_family'
     $temporaryFamily=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_accelerator_pa_family_'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $temporaryFamily|Out-Null
-    Copy-VerifiedRunInput -Source $gem -Destination (Join-Path $temporaryFamily 'mrtof_accelerator.gem')|Out-Null
+    if($recoverySourceRun){
+      $failureStage='verify_recovery_source_family'
+      $recoveryManifestPath=Join-Path $recoverySourceRun 'run_manifest.json'
+      & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $recoveryManifestPath `
+        --require-status success --require-project $projectId --require-mode accelerator_pa_family_build
+      if($LASTEXITCODE-ne0){throw 'Accelerator recovery-source run manifest verification failed.'}
+      $recoveryManifest=Get-Content -LiteralPath $recoveryManifestPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 40
+      $recoveryIdentityPath=Join-Path $recoverySourceRun 'results\pa_family_cache_identity.json'
+      Assert-ManifestOutputIdentity -Manifest $recoveryManifest -Path $recoveryIdentityPath -Label 'recovery cache identity'
+      $recoveryIdentity=Get-Content -LiteralPath $recoveryIdentityPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 40
+      foreach($field in @('geometry','gem','basis_namespace','mesh','grid_phase','surface','simion_identity')){
+        $old=($recoveryIdentity.$field|ConvertTo-Json -Depth 30 -Compress)
+        $current=($probe.identity.$field|ConvertTo-Json -Depth 30 -Compress)
+        if($old-ne$current){throw "Recovery-source numerical identity differs at $field."}
+      }
+      foreach($field in @('mode','convergence_override','solutions')){
+        if(($recoveryIdentity.refine_policy.$field|ConvertTo-Json -Compress)-ne($probe.identity.refine_policy.$field|ConvertTo-Json -Compress)){
+          throw "Recovery-source refine policy differs at $field."
+        }
+      }
+      foreach($field in @('build_component_pa_lua_sha256','build_component_basis_lua_sha256')){
+        if([string]$recoveryIdentity.builder_identity.$field-ne[string]$probe.identity.builder_identity.$field){
+          throw "Recovery-source builder identity differs at $field."
+        }
+      }
+      $sourceGem=Join-Path $recoverySourceRun 'simion\mrtof_accelerator.gem'
+      if((Get-FileHash -LiteralPath $sourceGem -Algorithm SHA256).Hash-ne(Get-FileHash -LiteralPath $gem -Algorithm SHA256).Hash){
+        throw 'Recovery-source GEM differs from the current canonical accelerator GEM.'
+      }
+      $nativeNames=@('mrtof_accelerator.pa#','mrtof_accelerator.pa0')+@(1..9|ForEach-Object{"mrtof_accelerator.pa$_"})
+      foreach($name in @('mrtof_accelerator.gem')+$nativeNames){
+        $source=Join-Path $recoverySourceRun "simion\$name"
+        Assert-ManifestOutputIdentity -Manifest $recoveryManifest -Path $source -Label "recovery native member $name"
+        Copy-VerifiedRunInput -Source $source -Destination (Join-Path $temporaryFamily $name)|Out-Null
+      }
+      $frozenRecoveryManifest=Copy-VerifiedRunInput -Source $recoveryManifestPath -Destination (Join-Path $inputDir 'recovery_source_run_manifest.json')
+      $frozenRecoveryIdentity=Copy-VerifiedRunInput -Source $recoveryIdentityPath -Destination (Join-Path $inputDir 'recovery_source_cache_identity.json')
+      $recoveryUsed=$true
+      $cacheDisposition='recovered_source_publish_pending'
+    } else {
+      Copy-VerifiedRunInput -Source $gem -Destination (Join-Path $temporaryFamily 'mrtof_accelerator.gem')|Out-Null
+    }
     $raw=Join-Path $temporaryFamily 'mrtof_accelerator.pa#'
-    $lease=Update-HostResourceStage -Lease $lease -Stage pa_refine `
-      -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
-    try {
-      Invoke-SimionStage -Stage 'build_accelerator_family' -Arguments @(
-        '--nogui','--noprompt','lua',$frozenBuilder,$gem,$raw,
-        ([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$mesh[0])),
-        ([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$mesh[1])),
-        ([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$mesh[2])),
-        '1,2,3,4,5,6,7,8,9','1','1','9'
-      )
-    } finally {
-      $lease=Update-HostResourceStage -Lease $lease -Stage accelerator_pa_prepare `
-        -Budget (Get-HostResourceBudget -Role SIMION -Stage accelerator_pa_prepare) -RetainedMemoryBytes 0
+    if(-not$recoverySourceRun){
+      $lease=Update-HostResourceStage -Lease $lease -Stage pa_refine `
+        -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
+      try {
+        Invoke-SimionStage -Stage 'build_accelerator_family' -Arguments @(
+          '--nogui','--noprompt','lua',$frozenBuilder,$gem,$raw,
+          ([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$mesh[0])),
+          ([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$mesh[1])),
+          ([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$mesh[2])),
+          '1,2,3,4,5,6,7,8,9','1','1','9'
+        )
+      } finally {
+        $lease=Update-HostResourceStage -Lease $lease -Stage accelerator_pa_prepare `
+          -Budget (Get-HostResourceBudget -Role SIMION -Stage accelerator_pa_prepare) -RetainedMemoryBytes 0
+      }
     }
     $failureStage='native_geometry'
     Invoke-SimionStage -Stage 'native_geometry' -Arguments @('--nogui','--noprompt','lua',$frozenNativeTest,$raw,$samples)
@@ -214,7 +275,11 @@ try {
     zero_base_exporter=ConvertTo-ArtifactRunPath $frozenZeroBaseExporter
     basis_normalization_measurement=ConvertTo-ArtifactRunPath $frozenBasisMeasurement
   }
-  $config.parameters=[ordered]@{component='accelerator';mesh_mm_per_gu=$mesh;grid_shape=$summaryValue.grid_shape;basis_ids=1..9;cache_key=[string]$publication.cache_key;standalone_response_contract=$publication.standalone_response_contract}
+  if($null-ne$frozenRecoveryManifest){
+    $config.inputs.recovery_source_run_manifest=ConvertTo-ArtifactRunPath $frozenRecoveryManifest
+    $config.inputs.recovery_source_cache_identity=ConvertTo-ArtifactRunPath $frozenRecoveryIdentity
+  }
+  $config.parameters=[ordered]@{component='accelerator';mesh_mm_per_gu=$mesh;grid_shape=$summaryValue.grid_shape;basis_ids=1..9;cache_key=[string]$publication.cache_key;standalone_response_contract=$publication.standalone_response_contract;native_family_source=if($recoveryUsed){'verified_immutable_prior_run_copy'}elseif($cacheDisposition-eq'hit'){'content_addressed_cache_hit'}else{'native_refine'}}
   Write-RunJson -Path $runConfig -Depth 30 -Value $config
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal'

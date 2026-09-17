@@ -21,6 +21,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     derive_two_zone_focus,
     derive_two_zone_placement,
     load_contract,
+    mirror_power_supply_limits,
 )
 
 _VOLTAGE_FIELDS = frozenset({"repeller_v", "intermediate_grid_v", "exit_grid_v"})
@@ -210,6 +211,7 @@ def derive_voltage_trial(
     current: dict[str, Any], reviewed: dict[str, Any], first_gap_drop_v: float,
     selected_net_gain_center_v: float | None = None,
     finite_3d_gain_correction_v: float = 0.0,
+    selected_slow_energy_per_charge_v: float | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Derive endpoint/ring voltages while preserving the reviewed physical placement."""
     require_reviewed_geometry(current, reviewed)
@@ -245,6 +247,14 @@ def derive_voltage_trial(
     trial["accelerator_energy_contract"][
         "net_gain_reference_center_per_charge_v"
     ] = commanded_energy_per_charge_v
+    if selected_slow_energy_per_charge_v is not None:
+        slow_energy = float(selected_slow_energy_per_charge_v)
+        if not math.isfinite(slow_energy) or slow_energy <= 0.0:
+            raise CandidateContractError("selected slow-axis energy must be finite and positive")
+        partition = trial["prism_transport"]["energy_partition"]
+        partition["drift_kinetic_energy_ev"] = slow_energy
+        partition["fast_reflection_kinetic_energy_ev"] = target_energy_per_charge_v
+        partition["total_kinetic_energy_ev"] = slow_energy + target_energy_per_charge_v
     repeller_v = exit_v + commanded_energy_per_charge_v + drop * release / gap_1
     intermediate_v = repeller_v - drop
     accelerator["repeller_v"] = repeller_v
@@ -259,6 +269,7 @@ def derive_voltage_trial(
         "energy_per_charge_v": commanded_energy_per_charge_v,
         "target_axial_energy_per_charge_v": target_energy_per_charge_v,
         "finite_3d_gain_correction_v": correction_v,
+        "selected_slow_energy_per_charge_v": selected_slow_energy_per_charge_v,
         "energy_selection": (
             "explicit_selected_net_gain_center"
             if selected_net_gain_center_v is not None
@@ -274,6 +285,7 @@ def derive_voltage_trial(
         "energy_per_charge_v": commanded_energy_per_charge_v,
         "target_axial_energy_per_charge_v": target_energy_per_charge_v,
         "finite_3d_gain_correction_v": correction_v,
+        "selected_slow_energy_per_charge_v": selected_slow_energy_per_charge_v,
         "energy_selection": trial["candidate_derivation"]["energy_selection"],
         "endpoint_voltages_v": [repeller_v, intermediate_v, exit_v],
         "ring_voltages_v": rings,
@@ -407,15 +419,19 @@ def materialize(
     output_path: Path, receipt_path: Path,
     selected_net_gain_center_v: float | None = None,
     finite_3d_gain_correction_v: float = 0.0,
+    selected_slow_energy_per_charge_v: float | None = None,
 ) -> dict[str, Any]:
     current = load_contract(current_path)
     detector_return_path = current["accelerator"]["detector_return_path"]
     reviewed = load_contract(
-        reviewed_path, inherited_detector_return_path=detector_return_path,
+        reviewed_path,
+        inherited_detector_return_path=detector_return_path,
+        inherited_mirror_power_supply_limits_v=mirror_power_supply_limits(current),
     )
     trial, receipt = derive_voltage_trial(
         current, reviewed, first_gap_drop_v, selected_net_gain_center_v,
         finite_3d_gain_correction_v,
+        selected_slow_energy_per_charge_v,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(trial, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -436,6 +452,7 @@ def main() -> int:
     parser.add_argument("--first-gap-drop-v", required=True, type=float)
     parser.add_argument("--selected-net-gain-center-v", type=float)
     parser.add_argument("--finite-3d-gain-correction-v", type=float, default=0.0)
+    parser.add_argument("--selected-slow-energy-per-charge-v", type=float)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--receipt", required=True, type=Path)
     arguments = parser.parse_args()
@@ -443,6 +460,7 @@ def main() -> int:
         arguments.current, arguments.reviewed, arguments.first_gap_drop_v,
         arguments.output, arguments.receipt, arguments.selected_net_gain_center_v,
         arguments.finite_3d_gain_correction_v,
+        arguments.selected_slow_energy_per_charge_v,
     )
     print(f"MRTOF_ACCELERATOR_VOLTAGE_TRIAL=PASS drop_v={receipt['first_gap_drop_v']:.12g}")
     return 0

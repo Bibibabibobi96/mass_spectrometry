@@ -122,6 +122,43 @@ class TrajectoryProfileTest(unittest.TestCase):
             current["accelerator"]["detector_return_path"],
         )
 
+    def test_legacy_geometry_can_inherit_but_not_override_current_supply_policy(self) -> None:
+        current_path = PROJECT / "config" / "simion_candidate_two_zone.json"
+        current = load_contract(current_path)
+        limits = {
+            key: dict(
+                current["mirror"]["theory_requirements"]["voltage_envelope_v"][key][
+                    "power_supply_limits_v"
+                ]
+            )
+            for key in ("B", "C", "D", "E")
+        }
+        legacy = json.loads(current_path.read_text(encoding="utf-8"))
+        for key in limits:
+            del legacy["mirror"]["theory_requirements"]["voltage_envelope_v"][key][
+                "power_supply_limits_v"
+            ]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.json"
+            path.write_text(json.dumps(legacy), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "power-supply limits"):
+                load_contract(path)
+            rebound = load_contract(
+                path, inherited_mirror_power_supply_limits_v=limits,
+            )
+            legacy["mirror"]["theory_requirements"]["voltage_envelope_v"]["B"][
+                "power_supply_limits_v"
+            ] = {"minimum_inclusive_v": -9000.0, "maximum_inclusive_v": 9000.0}
+            path.write_text(json.dumps(legacy), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "disagree"):
+                load_contract(path, inherited_mirror_power_supply_limits_v=limits)
+        self.assertEqual(
+            rebound["mirror"]["theory_requirements"]["voltage_envelope_v"]["E"][
+                "power_supply_limits_v"
+            ],
+            limits["E"],
+        )
+
     def test_rejects_unknown_or_malformed_profile(self) -> None:
         contract = {
             "simion": {

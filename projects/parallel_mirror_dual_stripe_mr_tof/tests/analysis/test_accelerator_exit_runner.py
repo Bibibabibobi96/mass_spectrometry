@@ -103,6 +103,8 @@ class AcceleratorExitRunnerTest(unittest.TestCase):
             "load_operating_point",
             "spec_from_file_location",
             "drift_kinetic_energy_ev",
+            "selected_slow_energy_per_charge_v",
+            "focus-selected slow energy",
             "voltage_trial_sha256",
             "source_fly2_sha256",
             "refine_performed=$false",

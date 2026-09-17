@@ -261,7 +261,9 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 构建 staging 中 Refine 并导出后发布，不能打开旧缓存补导出。准备与合成属轻量阶段；只有原生离子
 飞行切换到 `flight` 重阶段，子进程退出后再切回轻量 `postprocess` 做分析与证据发布。
 该入口显式接受 `GeometryReviewRunPath`、`AcceleratorFamilyRunPath`、`StandaloneComponentRunPath`
-和 `SelectedNetGainCenterV`；首区压降缺省由理想二区时焦种子派生。生成源独立冻结，IOB 保存后再
+和一个能量权威。当前整机链使用 `FixedMirrorStripeRunManifest`，同时绑定固定镜轴向能量和由 exact-K
+关系选出的近 5-eV 慢向能量；`SelectedNetGainCenterV` 只保留为组件诊断显式输入。首区压降缺省由
+理想二区时焦种子派生。生成源独立冻结，IOB 保存后再
 复制为工作台伴随 Fly2，并在飞行前核对源字节及 receipt 哈希，防止模板源覆写。
 
 加速器首出口入口以 `-CalibratedFocusRunPath <run>` 消费已验证焦点运行的三份 standalone PA、
@@ -270,7 +272,7 @@ reviewed 几何、实际电压 trial、装配位姿及积分控制；不重新 R
 相空间重建，读取冻结合同的质量、电荷和加速前慢能，生成沿 `+y` 的 N=1 释放。独立
 [mrtof_accelerator_exit.lua](mrtof_accelerator_exit.lua)从实际 IOB 唯一识别加速器 PA，并核对源所在的
 实际实例；负 `z` 出口面从 PA 网格及坐标变换派生，不固定为某个实例号或手填坐标。
-分析同时核对实测出生状态、唯一安全出口、终止顺序和原生 Fly 完成记录。下游只消费插值出口事件的
+分析同时核对实测出生状态、focus run 选定的慢向能量、唯一安全出口、终止顺序和原生 Fly 完成记录。下游只消费插值出口事件的
 完整位置、速度、时间及物种，不用 terminate 回调状态替代，也不向零初能焦点记录补慢向速度。
 该工作流保留可 GUI 重开的 IOB，但成功仅代表中心源至加速器出口；不证明时焦导数、P1/P2 输运、
 完整返回、束团时钟或质量分辨率。实际运行证据与限制只在 PROJECT 登记。
