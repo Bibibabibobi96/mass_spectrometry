@@ -1,7 +1,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-if (-not (Get-Command Assert-HostResourceHeavyStage -ErrorAction SilentlyContinue)) {
+if (-not (Get-Command Assert-HostResourceHeavyStage -ErrorAction SilentlyContinue) -or
+    -not (Get-Command Test-HostResourceConsoleProcess -ErrorAction SilentlyContinue)) {
   . (Join-Path $PSScriptRoot '..\host_execution_lease.ps1')
 }
 
@@ -167,6 +168,7 @@ function Get-ManagedSolverProcessSample {
     }
   }
   $parentByChild=@{}
+  $systemConsoleHostProcessIds=[Collections.Generic.HashSet[int]]::new()
   # Get-Process.Parent fails once a short-lived launcher has exited, even
   # while its solver child is still active.  Win32_Process retains the child
   # record's ParentProcessId, so use it first to keep that child in this
@@ -174,11 +176,26 @@ function Get-ManagedSolverProcessSample {
   try{
     foreach($process in @(Get-CimInstance Win32_Process -ErrorAction Stop)){
       $parentByChild[[int]$process.ProcessId]=[int]$process.ParentProcessId
+      if($process.PSObject.Properties.Name -contains 'ExecutablePath' -and
+          (Test-HostResourceConsoleProcess -ImagePath ([string]$process.ExecutablePath))){
+        $null=$systemConsoleHostProcessIds.Add([int]$process.ProcessId)
+      }
     }
   }catch{
     foreach($process in $processes){
       try{$parentByChild[[int]$process.Id]=[int]$process.Parent.Id}catch{}
     }
+  }
+  # Some Win32_Process rows may omit ExecutablePath even though Get-Process can
+  # resolve it for this user.  The shared classifier still requires an exact
+  # Windows system-image path; a same-name executable never receives the
+  # lifecycle exception.
+  foreach($process in $processes){
+    try{
+      if(Test-HostResourceConsoleProcess -ImagePath ([string]$process.Path)){
+        $null=$systemConsoleHostProcessIds.Add([int]$process.Id)
+      }
+    }catch{}
   }
   $changed=$true
   while($changed){
@@ -193,10 +210,14 @@ function Get-ManagedSolverProcessSample {
   $managedBytes=[int64]0
   $cpuTicks=[int64]0
   $trackedStartTicks=@{}
+  $activeSystemConsoleHostProcessIds=@()
   foreach($processId in $known){
     if($byId.ContainsKey([int]$processId)){
       $process=$byId[[int]$processId]
       $active+=[int]$processId
+      if($systemConsoleHostProcessIds.Contains([int]$processId)){
+        $activeSystemConsoleHostProcessIds+=[int]$processId
+      }
       try{$trackedStartTicks[[string]$processId]=[int64]$process.StartTime.ToUniversalTime().Ticks}catch{}
       $workingSet=[int64]$process.WorkingSet64
       # Windows may trim a SIMION process's resident working set while its
@@ -214,6 +235,7 @@ function Get-ManagedSolverProcessSample {
     tracked_process_ids=@($known|Sort-Object)
     tracked_process_started_at_utc_ticks=$trackedStartTicks
     active_process_ids=@($active|Sort-Object)
+    system_console_host_process_ids=@($activeSystemConsoleHostProcessIds|Sort-Object)
     working_set_bytes=$bytes
     private_bytes=$privateBytes
     managed_memory_bytes=$managedBytes
@@ -258,8 +280,10 @@ function Test-RepositorySimionProcessSpecification {
 
 function Test-RepositoryManagedProcessIsActive {
   <# Direct SIMION launches end with the exact root process identity.  Other
-     executables may be launchers, so their process-tree sample remains the
-     completion authority. #>
+     executables may be launchers, so their non-console process-tree sample
+     remains the completion authority.  A verified Windows system conhost is
+     retained in process and memory accounting but cannot keep completed work
+     alive by itself. #>
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)]$Specification,
@@ -271,7 +295,18 @@ function Test-RepositoryManagedProcessIsActive {
     return Test-ManagedRootProcessIsLive -ProcessId $RootProcessId `
       -ExpectedStartedAtUtcTicks $RootProcessStartedAtUtcTicks
   }
-  return @($Sample.active_process_ids).Count -gt 0
+  $activeProcessIds=@($Sample.active_process_ids)
+  if(-not($Sample.PSObject.Properties.Name -contains 'system_console_host_process_ids')){
+    # Preserve the older sample contract for live upgrades and test seams.
+    return $activeProcessIds.Count -gt 0
+  }
+  $systemConsoleHostProcessIds=[Collections.Generic.HashSet[int]]::new()
+  foreach($processId in @($Sample.system_console_host_process_ids)){
+    $null=$systemConsoleHostProcessIds.Add([int]$processId)
+  }
+  return @($activeProcessIds|Where-Object{
+    -not $systemConsoleHostProcessIds.Contains([int]$_)
+  }).Count -gt 0
 }
 
 function Stop-ManagedSolverProcesses {
@@ -837,12 +872,9 @@ function Invoke-ResourceBudgetedProcesses {
         -Specification $record.specification -RootProcessId ([int]$record.root_process_id) `
         -RootProcessStartedAtUtcTicks $recordRootStartedAtUtcTicks `
         -Sample $sample
-      # SIMION is launched directly by every repository worker.  Its root
-      # process is therefore the writer and authoritative completion fact.
-      # Do not let a leftover console/helper process (observed after SIMION
-      # exits on Windows) make a completed PA wave wait forever.  A different
-      # executable can be a short-lived launcher, so it keeps the existing
-      # descendant-based completion behavior.
+      # Direct SIMION uses its exact root identity.  Launchers retain ordinary
+      # descendants as completion authorities, while a verified Windows
+      # system conhost remains accounted but cannot strand a completed batch.
       $record.peak_working_set_bytes=[math]::Max(
         [int64]$record.peak_working_set_bytes,[int64]$sample.working_set_bytes)
       $record.peak_managed_memory_bytes=[math]::Max(

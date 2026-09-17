@@ -309,6 +309,128 @@ if($scenario-eq'inherited_light'){
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    def test_launcher_completion_ignores_only_classified_system_console_hosts(self) -> None:
+        """Console infrastructure cannot strand work or hide a real descendant."""
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = (
+            f". '{support}';{HOST_PERMIT_FIXTURE}"
+            "$spec=[pscustomobject]@{file_path=(Get-Process -Id $PID).Path};"
+            "$old=[pscustomobject]@{active_process_ids=@(41)};"
+            "if(-not(Test-RepositoryManagedProcessIsActive -Specification $spec "
+            "-RootProcessId $PID -RootProcessStartedAtUtcTicks 0 -Sample $old)){exit 3};"
+            "$consoleOnly=[pscustomobject]@{active_process_ids=@(41);"
+            "system_console_host_process_ids=@(41)};"
+            "if(Test-RepositoryManagedProcessIsActive -Specification $spec "
+            "-RootProcessId $PID -RootProcessStartedAtUtcTicks 0 -Sample $consoleOnly){exit 4};"
+            "$ordinaryChild=[pscustomobject]@{active_process_ids=@(41,42);"
+            "system_console_host_process_ids=@(41)};"
+            "if(-not(Test-RepositoryManagedProcessIsActive -Specification $spec "
+            "-RootProcessId $PID -RootProcessStartedAtUtcTicks 0 -Sample $ordinaryChild)){exit 5}"
+        )
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    @unittest.skipUnless(sys.platform == "win32" and shutil.which("pwsh"), "Windows PowerShell 7 required")
+    def test_process_sample_classifies_real_hidden_console_without_removing_accounting(self) -> None:
+        """The executor recognizes the protected conhost path and still meters it."""
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = (
+            f". '{support}';{HOST_PERMIT_FIXTURE}"
+            "$child=Start-Process -FilePath (Get-Process -Id $PID).Path "
+            "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 5') "
+            "-WindowStyle Hidden -PassThru;"
+            "try{"
+            "$ticks=[int64]$child.StartTime.ToUniversalTime().Ticks;$sample=$null;"
+            "foreach($attempt in 1..30){"
+            "$sample=Get-ManagedSolverProcessSample -RootProcessIds @($child.Id) "
+            "-RootProcessStartedAtUtcTicks @{([string]$child.Id)=$ticks};"
+            "if(@($sample.system_console_host_process_ids).Count-gt0){break};"
+            "Start-Sleep -Milliseconds 100};"
+            "$consoleIds=@($sample.system_console_host_process_ids);"
+            "if($consoleIds.Count-eq0){exit 3};"
+            "foreach($id in $consoleIds){"
+            "if(@($sample.active_process_ids)-notcontains$id){exit 4};"
+            "if(@($sample.tracked_process_ids)-notcontains$id){exit 5}};"
+            "if([int64]$sample.managed_memory_bytes-le0){exit 6}"
+            "}finally{if(-not$child.HasExited){Stop-Process -Id $child.Id -Force};$child.Dispose()}"
+        )
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_parallel_wave_advances_after_launcher_has_only_system_console_host(self) -> None:
+        """A completed wrapper cannot strand the next queued work item."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch = root / "dispatch.json"
+            usage = root / "usage.json"
+            dispatch.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan",
+                "dispatch_unit": "independent_work_items",
+                "work_item_count": 2,
+                "estimation": {"kind": "exact_resource_profile"},
+                "limits": dispatch_limits(maximum_concurrency=1, launch_stagger_seconds=1),
+            }), encoding="utf-8")
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Get-RepositoryAvailableMemoryBytes{return [int64](64GB)};"
+                "function Get-SystemCpuPercent{return [double]0};"
+                "function Get-ManagedSolverProcessSample{"
+                "param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds,"
+                "[hashtable]$RootProcessStartedAtUtcTicks,[hashtable]$TrackedProcessStartedAtUtcTicks);"
+                "$rootId=[int]$RootProcessIds[0];$rootLive=$null-ne(Get-Process -Id $rootId -ErrorAction SilentlyContinue);"
+                "$active=$(if($rootLive){@($rootId,900001)}else{@(900001)});"
+                "[pscustomobject]@{tracked_process_ids=@($rootId,900001);"
+                "tracked_process_started_at_utc_ticks=@{};active_process_ids=$active;"
+                "system_console_host_process_ids=@(900001);working_set_bytes=0;private_bytes=0;"
+                "managed_memory_bytes=0;total_processor_time_ticks=0}};"
+                "$pwsh=(Get-Process -Id $PID).Path;"
+                f"$root='{root}';"
+                "$specs=@(1,2|ForEach-Object{[pscustomobject]@{name=\"worker$_\";file_path=$pwsh;"
+                "argument_list=@('-NoProfile','-Command','exit 0');"
+                "stdout=(Join-Path $root \"worker$_.stdout.log\");stderr=(Join-Path $root \"worker$_.stderr.log\");"
+                "environment=@{};working_directory=$root;scheduler_batch=[pscustomobject]@{"
+                "execution_unit='independent_work_items';index=$_;total_batches=2;"
+                "work_item_id_min=$_;work_item_id_max=$_;count=1}}});"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
+                "if($r.resource_budget_exceeded-or$r.processes.Count-ne2){exit 3};"
+                "if(($r.processes.name-join',')-ne'worker1,worker2'){exit 4};"
+                "if(@($r.processes|Where-Object exit_code -ne 0).Count-ne0){exit 5}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            measured = json.loads(usage.read_text(encoding="utf-8-sig"))
+            self.assertEqual(measured["execution_wave"]["process_count"], 2)
+            self.assertEqual(measured["execution_wave"]["peak_concurrency"], 1)
+
     def test_formal_observation_exports_conservative_managed_peak(self) -> None:
         """A trimmed working set must not lower the profile passed to admission."""
         with tempfile.TemporaryDirectory() as directory:
