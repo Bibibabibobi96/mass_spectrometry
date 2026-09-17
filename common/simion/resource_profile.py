@@ -73,10 +73,18 @@ def publish_resource_profile(
     identity = plan.get("resource_identity")
     if not isinstance(identity, dict) or identity.get("solver") != "SIMION":
         raise ValueError("dispatch plan has no SIMION resource identity")
-    peak = (
-        first_observation.get("peak_working_set_bytes")
-        if is_new else usage.get("peak_process_tree_working_set_bytes")
-    )
+    # Admission tracks the managed process tree, not merely its resident set:
+    # a SIMION child may have large committed/private memory that is not visible
+    # in the root working-set sample.  Older receipts lack the managed field,
+    # so retain their historical working-set fallback.
+    if is_new:
+        peak = first_observation.get("peak_managed_memory_bytes")
+        if not isinstance(peak, int) or isinstance(peak, bool) or peak < 1:
+            peak = first_observation.get("peak_working_set_bytes")
+    else:
+        peak = usage.get("peak_process_tree_managed_memory_bytes")
+        if not isinstance(peak, int) or isinstance(peak, bool) or peak < 1:
+            peak = usage.get("peak_process_tree_working_set_bytes")
     batches = waves[0].get("batches")
     if not isinstance(batches, list) or not batches or not isinstance(batches[0], dict):
         raise ValueError("dispatch plan has no observed batch work-unit count")

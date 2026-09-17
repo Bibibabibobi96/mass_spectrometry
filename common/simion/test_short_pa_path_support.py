@@ -284,6 +284,50 @@ $writer.Dispose()
         finally:
             shutil.rmtree(root, ignore_errors=False)
 
+    def test_cleanup_retries_transient_source_hash_read_without_weakening_identity(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_pa_transient_hash_"))
+        source = root / "source.pa"
+        destination = root / "copy.pa"
+        source.write_bytes(b"immutable-source-with-transient-read")
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION
+$script:realHashCommand=${function:Get-OpenPaStreamSha256}
+$script:hashCalls=0
+function Get-OpenPaStreamSha256 {
+  param([Parameter(Mandatory)][IO.FileStream]$Stream)
+  $script:hashCalls++
+  if($script:hashCalls-eq1){return ('0'*64)}
+  & $script:realHashCommand -Stream $Stream
+}
+Remove-ShortPaCopy -Path $copy
+[pscustomobject]@{
+  hash_calls=$script:hashCalls
+  destination_removed=-not(Test-Path -LiteralPath $copy)
+  source_sha256=(Get-FileHash -LiteralPath $env:PA_SOURCE -Algorithm SHA256).Hash
+}|ConvertTo-Json -Compress
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", env={
+                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    "PA_DESTINATION": str(destination),
+                }, timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(result["hash_calls"], 2)
+            self.assertTrue(result["destination_removed"])
+            self.assertEqual(
+                result["source_sha256"].lower(),
+                hashlib.sha256(source.read_bytes()).hexdigest(),
+            )
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+
     def test_destination_write_guard_proves_copy_immutable_without_rehash(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="simion_pa_destination_guard_"))
         source = root / "source.pa"

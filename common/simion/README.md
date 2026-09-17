@@ -137,7 +137,7 @@ surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SI
 
 | API | 输入与职责 |
 |---|---|
-| `New-ShortPaCopy -Source <PA> -Destination <short.pa>` | 持有禁止写入/删除源文件的共享句柄，以 `WriteThrough` 流式建立目标不存在的短名独立普通副本；拒绝 `.paN` 响应成员；默认最多三次完整重复制，每次核对源复制前后与目标大小／SHA-256 |
+| `New-ShortPaCopy -Source <PA> -Destination <short.pa>` | 持有禁止写入/删除源文件的共享句柄，以 `WriteThrough` 流式建立目标不存在的短名独立普通副本；拒绝 `.paN` 响应成员；默认最多三次完整重复制，每次核对源与目标大小／SHA-256；释放最后一个副本时对受护源流最多三次重读，仍必须精确命中冻结 SHA-256 |
 | `Remove-ShortPaCopyDirectory -Path <directory>` | 仅清理系统临时目录下匹配前缀的目录，并再次核对已登记源 SHA-256；默认前缀为 `simion_pa_links_` |
 
 短副本恢复为可写，但“改名”不能证明来源于 family 的响应已经失去 `.paN` 语义。已发布 cache 中的

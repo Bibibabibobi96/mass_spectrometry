@@ -50,6 +50,33 @@ class ResourceProfileTests(unittest.TestCase):
         self.assertEqual(profiles[0]["observed_batch_work_units"], 1)
         self.assertEqual(profiles[0]["resource_identity"]["field_kind"], "rf")
 
+    def test_formal_profile_uses_conservative_managed_memory_peak(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "formal"
+            (run / "inputs").mkdir(parents=True)
+            (run / "results").mkdir()
+            plan = {
+                "role": "simion_repository_dispatch_plan",
+                "resource_identity": {"solver": "SIMION", "field_kind": "electrostatic"},
+                "waves": [{"kind": "scheduled", "batch_count": 1, "batches": [{"count": 1}]}],
+            }
+            usage = {
+                "role": "multipole_resource_usage", "status": "completed",
+                "first_formal_observation": {
+                    "peak_working_set_bytes": 100,
+                    "peak_managed_memory_bytes": 250,
+                },
+            }
+            plan_path = run / "inputs" / "dispatch.json"
+            usage_path = run / "results" / "usage.json"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            usage_path.write_text(json.dumps(usage), encoding="utf-8")
+            profile = publish_resource_profile(
+                run_id="formal", resource_usage_path=usage_path, dispatch_plan_path=plan_path
+            )
+        self.assertEqual(profile["per_batch_peak_working_set_bytes"], 250)
+
     def test_historical_missing_loading_policy_remains_unspecified(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

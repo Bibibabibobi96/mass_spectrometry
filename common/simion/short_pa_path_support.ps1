@@ -34,6 +34,22 @@ function Get-OpenPaStreamSha256 {
   }
 }
 
+function Confirm-OpenPaStreamSha256 {
+  param(
+    [Parameter(Mandatory)][IO.FileStream]$Stream,
+    [Parameter(Mandatory)][string]$ExpectedSha256,
+    [ValidateRange(1,10)][int]$VerificationAttempts=3
+  )
+  $observed=@()
+  for($attempt=1;$attempt-le$VerificationAttempts;$attempt++){
+    $actual=Get-OpenPaStreamSha256 -Stream $Stream
+    $observed+=$actual
+    if($actual-eq$ExpectedSha256){return $true}
+    if($attempt-lt$VerificationAttempts){Start-Sleep -Milliseconds 200}
+  }
+  throw "Open PA source SHA256 did not return to its frozen identity after $VerificationAttempts attempts: expected=$ExpectedSha256 observed=$($observed-join',')"
+}
+
 function New-ShortPaCopy {
   <#
     Expose a verified PA input to legacy SIMION through a short same-volume
@@ -273,9 +289,11 @@ function Remove-ShortPaCopy {
       if([int]$sourceGuardRecord.reference_count-eq0){
         try{
           if(Test-Path -LiteralPath $record.source -PathType Leaf){
-            $sourceHashAfter=Get-OpenPaStreamSha256 -Stream $sourceGuardRecord.stream
-            if($sourceHashAfter-ne$record.source_sha256){
-              throw "Short PA source changed while disposable copies were in use: $($record.source)"
+            try {
+              Confirm-OpenPaStreamSha256 -Stream $sourceGuardRecord.stream `
+                -ExpectedSha256 $record.source_sha256 -VerificationAttempts 3|Out-Null
+            } catch {
+              throw "Short PA source changed while disposable copies were in use: $($record.source) ($($_.Exception.Message))"
             }
           }
         }finally{
