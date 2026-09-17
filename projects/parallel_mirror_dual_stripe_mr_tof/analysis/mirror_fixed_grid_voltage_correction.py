@@ -16,7 +16,7 @@ import math
 import os
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 from scipy.optimize import brentq, least_squares, root as scipy_root
@@ -419,6 +419,119 @@ def _native_gamma_trace(
     return float(sum(traces) / len(traces))
 
 
+def _source_fixed_grid_gamma_trace(source: Mapping[str, Any]) -> float:
+    """Return the frozen base selector measured by the source correction.
+
+    A secant must compare the same measurement operator at both endpoints.
+    In particular, a native-SIMION base selector cannot be silently replaced
+    by the older sampled-field L1 diagnostic merely because both report a
+    trace-half value.
+    """
+
+    value = source.get("fixed_grid_mean_directional_trace_half")
+    if value is None or not math.isfinite(float(value)):
+        raise CandidateContractError(
+            "source correction lacks its authoritative fixed-grid gamma trace"
+        )
+    return float(value)
+
+
+NATIVE_GAMMA_OPERATOR_ID = "native_simion_transverse_l1_mean_directional_trace_half_v1"
+SAMPLED_GAMMA_OPERATOR_ID = "sampled_fixed_operating_field_l1_mean_directional_trace_half_v1"
+
+
+def _source_gamma_operator_id(source: Mapping[str, Any]) -> str:
+    """Return the frozen endpoint operator, with explicit legacy inference."""
+
+    value = source.get("fixed_grid_gamma_operator_id")
+    if value is None:
+        inputs = source.get("inputs")
+        if not isinstance(inputs, Mapping):
+            raise CandidateContractError("source correction lacks its gamma operator identity")
+        has_native = bool(inputs.get("native_l1_sha256")) and bool(
+            inputs.get("native_l1_probe_sha256")
+        )
+        value = NATIVE_GAMMA_OPERATOR_ID if has_native else SAMPLED_GAMMA_OPERATOR_ID
+    if value not in {NATIVE_GAMMA_OPERATOR_ID, SAMPLED_GAMMA_OPERATOR_ID}:
+        raise CandidateContractError("source correction gamma operator identity is unsupported")
+    return str(value)
+
+
+def _l1_gamma_operator_id(l1: Mapping[str, Any], has_native_probe: bool) -> str:
+    """Classify one measured L1 endpoint without permitting mixed semantics."""
+
+    if l1.get("role") == "mrtof_native_simion_transverse_l1_analysis":
+        if not has_native_probe:
+            raise CandidateContractError("native L1 endpoint requires its frozen probe")
+        return NATIVE_GAMMA_OPERATOR_ID
+    if has_native_probe:
+        raise CandidateContractError("sampled-field L1 endpoint cannot carry a native probe")
+    return SAMPLED_GAMMA_OPERATOR_ID
+
+
+def _measured_chord_gamma_root(
+    *,
+    base_voltages: np.ndarray,
+    secant_voltages: np.ndarray,
+    base_slopes: np.ndarray,
+    secant_slopes: np.ndarray,
+    base_gamma: float,
+    secant_gamma: float,
+    slope_gate: float,
+    lower_bounds: np.ndarray,
+    upper_bounds: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Interpolate a bounded gamma root only between two measured fine-grid points."""
+
+    denominator = secant_gamma - base_gamma
+    if not math.isfinite(denominator) or abs(denominator) <= 1e-15:
+        raise CandidateContractError("measured fixed-grid chord has no gamma leverage")
+    fraction = -base_gamma / denominator
+    if not 0.0 < fraction < 1.0:
+        raise CandidateContractError("measured fixed-grid chord does not bracket gamma zero")
+    proposal = base_voltages + fraction * (secant_voltages - base_voltages)
+    slopes = base_slopes + fraction * (secant_slopes - base_slopes)
+    if (
+        np.any(proposal < lower_bounds)
+        or np.any(proposal > upper_bounds)
+        or float(np.max(np.abs(slopes))) > slope_gate
+    ):
+        raise CandidateContractError(
+            "measured fixed-grid gamma chord root violates voltage or physical L0 gates"
+        )
+    return proposal, slopes, float(fraction)
+
+
+def _bounded_physical_gate_secant(
+    *, source_voltages: np.ndarray, tangent_per_e: np.ndarray, direction: float,
+    initial_e_step_v: float, shrink_factor: float, maximum_shrinks: int,
+    lower_bounds_v: np.ndarray, upper_bounds_v: np.ndarray,
+    maximum_voltage_step_v: float, slope_gate_per_v: float,
+    slope_model: Callable[[np.ndarray], np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, float, int]:
+    """Choose a local diagnostic tangent step without forcing numerical zero."""
+    if (
+        source_voltages.shape != (4,) or tangent_per_e.shape != (4,)
+        or direction not in (-1.0, 1.0) or initial_e_step_v <= 0.0
+        or not 0.0 < shrink_factor < 1.0 or maximum_shrinks < 0
+        or maximum_voltage_step_v <= 0.0 or slope_gate_per_v <= 0.0
+    ):
+        raise CandidateContractError("diagnostic corrected-L0 secant controls are invalid")
+    delta_e = direction * initial_e_step_v
+    for shrink_count in range(maximum_shrinks + 1):
+        trial = source_voltages + tangent_per_e * delta_e
+        slopes = np.asarray(slope_model(trial), dtype=float)
+        if (
+            slopes.shape == (3,) and np.all(np.isfinite(trial)) and np.all(np.isfinite(slopes))
+            and np.all(trial >= lower_bounds_v) and np.all(trial <= upper_bounds_v)
+            and float(np.max(np.abs(trial - source_voltages))) <= maximum_voltage_step_v
+            and float(np.max(np.abs(slopes))) <= slope_gate_per_v
+        ):
+            return trial, slopes, float(delta_e), shrink_count
+        delta_e *= shrink_factor
+    raise CandidateContractError("no bounded physical-gate corrected-L0 diagnostic secant exists")
+
+
 def build_correction_proposal(
     *,
     refinement_path: Path,
@@ -464,7 +577,6 @@ def build_correction_proposal(
     roots = refinement.get("roots")
     if not isinstance(roots, list) or not 0 <= root_index < len(roots):
         raise CandidateContractError("fixed-grid probe does not select one coarse root")
-    root = roots[root_index]
     voltages_a_e = [float(value) for value in probe.get("mirror_voltages_v", [])]
     if (
         len(voltages_a_e) != 5
@@ -626,6 +738,10 @@ def build_correction_proposal(
         if native_l1 is not None and native_probe is not None
         else _fine_gamma_trace(fixed_l1, float(energies[1]))
     )
+    gamma_operator_id = _l1_gamma_operator_id(
+        native_l1 if native_l1 is not None else fixed_l1,
+        native_probe is not None,
+    )
     correction = decompose_l0_l1_correction(
         slope_jacobian, gamma_gradient, fine_slopes, fine_gamma,
     )
@@ -647,7 +763,6 @@ def build_correction_proposal(
     )
     l0_start = np.clip(voltages[:3] + linear_delta[:3], lower[:3], upper[:3])
     l0_relative_step = float(family["numerics"]["voltage_jacobian_relative_step"])
-    l0_tolerance = float(family["numerics"]["least_squares_relative_tolerance"])
     l0_maximum_function_evaluations = int(
         family["numerics"]["maximum_function_evaluations_per_e_slice"]
     )
@@ -675,6 +790,8 @@ def build_correction_proposal(
     initial_half_width = float(profile["family_bracket_initial_half_width_v"])
     expansion_factor = float(profile["family_bracket_expansion_factor"])
     maximum_expansions = int(profile["family_bracket_maximum_expansions"])
+    secant_shrink_factor = float(profile["diagnostic_secant_shrink_factor"])
+    secant_maximum_shrinks = int(profile["diagnostic_secant_maximum_shrinks"])
     if initial_half_width <= 0.0 or expansion_factor <= 1.0 or maximum_expansions < 0:
         raise CandidateContractError("nonlinear family bracket controls are invalid")
     e_candidates = {float(voltages[3]), min(float(upper[3]), max(float(lower[3]), linear_e))}
@@ -723,36 +840,21 @@ def build_correction_proposal(
         tangent_per_e = null / float(null[3])
         gamma_per_e = float(gamma_gradient @ tangent_per_e)
         secant_direction = -1.0 if fine_gamma * gamma_per_e > 0.0 else 1.0
-        secant_delta_e = secant_direction * initial_half_width
-        secant_e = float(voltages[3] + secant_delta_e)
-        secant_start = voltages[:3] + tangent_per_e[:3] * secant_delta_e
-        secant_solution = least_squares(
-            lambda values: 1.0e7 * np.asarray(normalized_slopes(
-                axis_basis,
-                np.asarray((*values, secant_e), dtype=float),
-                energies,
-                derivative_step,
-            )),
-            np.clip(secant_start, lower[:3], upper[:3]),
-            bounds=(lower[:3], upper[:3]),
-            x_scale=np.maximum(upper[:3] - lower[:3], 1.0),
-            jac="3-point",
-            diff_step=float(family["numerics"]["voltage_jacobian_relative_step"]),
-            ftol=float(family["numerics"]["least_squares_relative_tolerance"]),
-            xtol=float(family["numerics"]["least_squares_relative_tolerance"]),
-            gtol=float(family["numerics"]["least_squares_relative_tolerance"]),
-            max_nfev=int(family["numerics"]["maximum_function_evaluations_per_e_slice"]),
+        secant_voltages, secant_corrected_slopes, secant_delta_e, secant_shrinks = (
+            _bounded_physical_gate_secant(
+                source_voltages=voltages, tangent_per_e=tangent_per_e,
+                direction=secant_direction, initial_e_step_v=initial_half_width,
+                shrink_factor=secant_shrink_factor,
+                maximum_shrinks=secant_maximum_shrinks,
+                lower_bounds_v=lower, upper_bounds_v=upper,
+                maximum_voltage_step_v=maximum_step,
+                slope_gate_per_v=float(family["maximum_abs_normalized_period_slope_per_v"]),
+                slope_model=corrected_slopes,
+            )
         )
-        secant_voltages = np.asarray((*secant_solution.x, secant_e), dtype=float)
         secant_coarse_slopes = np.asarray(normalized_slopes(
             axis_basis, secant_voltages, energies, derivative_step,
         ))
-        if (
-            not secant_solution.success
-            or np.max(np.abs(secant_coarse_slopes))
-            > float(family["maximum_abs_normalized_period_slope_per_v"])
-        ):
-            raise CandidateContractError("coarse L0-family secant point did not close")
         result = {
             "schema_version": 1,
             "role": "mrtof_fixed_grid_multifidelity_voltage_correction",
@@ -769,12 +871,15 @@ def build_correction_proposal(
             "fixed_grid_normalized_period_slopes_per_v": fine_slopes.tolist(),
             "fixed_minus_coarse_slope_discrepancy_per_v": slope_discrepancy.tolist(),
             "fixed_grid_mean_directional_trace_half": fine_gamma,
+            "fixed_grid_gamma_operator_id": gamma_operator_id,
             "coarse_gamma_gradient_per_v": gamma_gradient.tolist(),
             "recommended_secant_fixed_grid_point": {
-                "purpose": "measure_fixed_minus_coarse_discrepancy_along_the_coarse_L0_family",
+                "purpose": "measure_fixed_minus_coarse_discrepancy_along_the_corrected_L0_family",
                 "mirror_voltages_v": [0.0, *secant_voltages.tolist()],
                 "mirror_E_step_from_source_v": secant_delta_e,
                 "coarse_normalized_period_slopes_per_v": secant_coarse_slopes.tolist(),
+                "predicted_corrected_normalized_period_slopes_per_v": secant_corrected_slopes.tolist(),
+                "diagnostic_secant_shrink_count": secant_shrinks,
                 "predicted_linear_mean_trace_half": float(
                     fine_gamma + gamma_gradient @ (secant_voltages - voltages)
                 ),
@@ -842,39 +947,21 @@ def build_correction_proposal(
             raise CandidateContractError("coarse L0-family tangent has no E coordinate")
         tangent_per_e = null / float(null[3])
         secant_direction = 1.0 if root_e > voltages[3] else -1.0
-        secant_delta_e = secant_direction * initial_half_width
-        secant_e = float(voltages[3] + secant_delta_e)
-        if not lower[3] <= secant_e <= upper[3]:
-            raise CandidateContractError("bounded coarse L0 secant E voltage is out of bounds")
-        secant_start = voltages[:3] + tangent_per_e[:3] * secant_delta_e
-        secant_solution = least_squares(
-            lambda values: 1.0e7 * np.asarray(normalized_slopes(
-                axis_basis, np.asarray((*values, secant_e), dtype=float),
-                energies, derivative_step,
-            )),
-            np.clip(secant_start, lower[:3], upper[:3]),
-            bounds=(lower[:3], upper[:3]),
-            x_scale=np.maximum(upper[:3] - lower[:3], 1.0),
-            jac="3-point",
-            diff_step=l0_relative_step,
-            ftol=l0_tolerance,
-            xtol=l0_tolerance,
-            gtol=l0_tolerance,
-            max_nfev=l0_maximum_function_evaluations,
+        secant_voltages, secant_corrected_slopes, secant_delta_e, secant_shrinks = (
+            _bounded_physical_gate_secant(
+                source_voltages=voltages, tangent_per_e=tangent_per_e,
+                direction=secant_direction, initial_e_step_v=initial_half_width,
+                shrink_factor=secant_shrink_factor,
+                maximum_shrinks=secant_maximum_shrinks,
+                lower_bounds_v=lower, upper_bounds_v=upper,
+                maximum_voltage_step_v=maximum_step,
+                slope_gate_per_v=float(family["maximum_abs_normalized_period_slope_per_v"]),
+                slope_model=corrected_slopes,
+            )
         )
-        secant_voltages = np.asarray((*secant_solution.x, secant_e), dtype=float)
         secant_coarse_slopes = np.asarray(normalized_slopes(
             axis_basis, secant_voltages, energies, derivative_step,
         ))
-        if (
-            not np.all(np.isfinite(secant_voltages))
-            or np.any(secant_voltages[:3] < lower[:3])
-            or np.any(secant_voltages[:3] > upper[:3])
-            or np.max(np.abs(secant_coarse_slopes))
-            > float(family["maximum_abs_normalized_period_slope_per_v"])
-            or float(np.max(np.abs(secant_voltages - voltages))) > maximum_step
-        ):
-            raise CandidateContractError("bounded coarse L0 secant point did not close")
         secant_gamma = float(fine_gamma + gamma_gradient @ (secant_voltages - voltages))
         result = {
             "schema_version": 1,
@@ -890,10 +977,12 @@ def build_correction_proposal(
             "recommended_secant_fixed_grid_point": {
                 "purpose": "measure_fixed_minus_coarse_discrepancy_before_extrapolating_the_gamma_selector",
                 "mirror_voltages_v": [0.0, *secant_voltages.tolist()],
-                "mirror_E_step_from_source_v": float(secant_e - voltages[3]),
+                "mirror_E_step_from_source_v": secant_delta_e,
                 "coarse_normalized_period_slopes_per_v": secant_coarse_slopes.tolist(),
+                "predicted_corrected_normalized_period_slopes_per_v": secant_corrected_slopes.tolist(),
                 "predicted_linear_mean_trace_half": secant_gamma,
-                "coarse_l0_solver_reported_success": bool(secant_solution.success),
+                "physical_l0_gate_satisfied": True,
+                "diagnostic_secant_shrink_count": secant_shrinks,
                 "qualification": "diagnostic_secant_point_only__not_a_candidate_operating_point",
             },
             "energy_centers_ev": list(energies),
@@ -902,6 +991,7 @@ def build_correction_proposal(
             "fixed_grid_normalized_period_slopes_per_v": fine_slopes.tolist(),
             "fixed_minus_coarse_slope_discrepancy_per_v": slope_discrepancy.tolist(),
             "fixed_grid_mean_directional_trace_half": fine_gamma,
+            "fixed_grid_gamma_operator_id": gamma_operator_id,
             "coarse_gamma_gradient_per_v": gamma_gradient.tolist(),
             "nonlinear_l0_family_gamma_bracket_e_voltage_v": list(bracket),
             "nonlinear_l0_family_evaluated_points": [
@@ -972,6 +1062,7 @@ def build_correction_proposal(
         "fixed_minus_coarse_slope_discrepancy_per_v": slope_discrepancy.tolist(),
         "predicted_corrected_normalized_period_slopes_per_v": predicted_corrected_slopes.tolist(),
         "fixed_grid_mean_directional_trace_half": fine_gamma,
+        "fixed_grid_gamma_operator_id": gamma_operator_id,
         "coarse_gamma_gradient_per_v": gamma_gradient.tolist(),
         "predicted_corrected_mean_directional_trace_half": predicted_gamma,
         "nonlinear_l0_family_gamma_bracket_e_voltage_v": list(bracket),
@@ -1036,6 +1127,7 @@ def build_secant_correction_proposal(
     secant_probe_path: Path,
     secant_period_path: Path,
     secant_l1_path: Path,
+    secant_l1_probe_path: Path | None,
     secant_project_contract_path: Path,
     project_contract_path: Path,
     output_path: Path,
@@ -1047,12 +1139,18 @@ def build_secant_correction_proposal(
     source = _object(source_correction_path, "one-point correction")
     base_probe = _object(base_probe_path, "base fixed-grid probe")
     base_period = _object(base_period_path, "base fixed-grid period result")
-    base_l1 = _object(base_l1_path, "base fixed-grid L1 result")
+    _object(base_l1_path, "base fixed-grid L1 provenance result")
     base_contract = _object(base_project_contract_path, "base fixed-grid contract")
     point = _object(secant_point_path, "secant point receipt")
     secant_probe = _object(secant_probe_path, "secant fixed-grid probe")
     secant_period = _object(secant_period_path, "secant fixed-grid period result")
     secant_l1 = _object(secant_l1_path, "secant fixed-grid L1 result")
+    secant_l1_probe = (
+        _object(secant_l1_probe_path, "secant native L1 probe")
+        if secant_l1_probe_path is not None else None
+    )
+    if secant_l1_probe is not None:
+        secant_l1_probe["_path"] = str(secant_l1_probe_path)
     secant_contract = _object(secant_project_contract_path, "secant fixed-grid contract")
     contract = _object(project_contract_path, "project contract")
     requirements = contract["mirror"]["theory_requirements"]
@@ -1235,8 +1333,25 @@ def build_secant_correction_proposal(
         axis_basis, base_voltages, energies, derivative_step, relative_step,
     )
     model_jacobian = coarse_jacobian + discrepancy_jacobian
-    fine_gamma_base = _fine_gamma_trace(base_l1, energies[1])
-    fine_gamma_secant = _fine_gamma_trace(secant_l1, energies[1])
+    fine_gamma_base = _source_fixed_grid_gamma_trace(source)
+    source_gamma_operator_id = _source_gamma_operator_id(source)
+    secant_gamma_operator_id = _l1_gamma_operator_id(
+        secant_l1, secant_l1_probe is not None,
+    )
+    if secant_gamma_operator_id != source_gamma_operator_id:
+        raise CandidateContractError(
+            "fixed-grid secant endpoints use different gamma measurement operators"
+        )
+    if secant_l1.get("role") == "mrtof_native_simion_transverse_l1_analysis":
+        if secant_l1_probe is None:
+            raise CandidateContractError("secant native L1 requires its frozen probe contract")
+        fine_gamma_secant = _native_gamma_trace(
+            secant_l1, secant_l1_probe, energies[1],
+        )
+    else:
+        if secant_l1_probe is not None:
+            raise CandidateContractError("secant fixed-field L1 cannot carry a native probe")
+        fine_gamma_secant = _fine_gamma_trace(secant_l1, energies[1])
     if first_chord:
         source_gamma_gradient = np.asarray(source["coarse_gamma_gradient_per_v"], dtype=float)
         fine_gamma_gradient = rank_one_secant_update(
@@ -1284,9 +1399,10 @@ def build_secant_correction_proposal(
     def gamma_model(trial: np.ndarray) -> float:
         return float(fine_gamma_base + fine_gamma_gradient @ (trial - base_voltages))
 
+    proposal_slope_gate = solver_gate if first_chord else slope_gate
     solution = least_squares(
         lambda trial: np.concatenate((
-            corrected_slopes(trial) / slope_gate,
+            corrected_slopes(trial) / proposal_slope_gate,
             np.asarray((gamma_model(trial) / gamma_gate,)),
         )),
         np.clip(linear_start, lower, upper),
@@ -1302,13 +1418,28 @@ def build_secant_correction_proposal(
     proposal = np.asarray(solution.x, dtype=float)
     predicted_slopes = corrected_slopes(proposal)
     predicted_gamma = gamma_model(proposal)
-    proposal_slope_gate = solver_gate if first_chord else slope_gate
+    proposal_strategy = "coarse_jacobian_plus_measured_rank_one_discrepancy"
     if (
         not solution.success
         or np.max(np.abs(predicted_slopes)) > proposal_slope_gate
         or abs(predicted_gamma) > gamma_gate
     ):
-        raise CandidateContractError("fixed-grid proposal did not close its declared gates")
+        proposal, predicted_slopes, chord_fraction = _measured_chord_gamma_root(
+            base_voltages=base_voltages,
+            secant_voltages=secant_voltages,
+            base_slopes=fine_base,
+            secant_slopes=fine_secant,
+            base_gamma=fine_gamma_base,
+            secant_gamma=fine_gamma_secant,
+            slope_gate=slope_gate,
+            lower_bounds=lower,
+            upper_bounds=upper,
+        )
+        predicted_gamma = 0.0
+        proposal_slope_gate = slope_gate
+        proposal_strategy = "measured_fixed_grid_chord_gamma_root"
+    else:
+        chord_fraction = None
     if proposal[3] <= max(energies):
         raise CandidateContractError("two-point proposal does not retain the E reflection margin")
     correction = proposal - base_voltages
@@ -1340,8 +1471,11 @@ def build_secant_correction_proposal(
         "predicted_corrected_normalized_period_slopes_per_v": predicted_slopes.tolist(),
         "base_fixed_grid_mean_directional_trace_half": fine_gamma_base,
         "fixed_grid_mean_directional_trace_half": fine_gamma_base,
+        "fixed_grid_gamma_operator_id": source_gamma_operator_id,
         "secant_fixed_grid_mean_directional_trace_half": fine_gamma_secant,
         "predicted_corrected_mean_directional_trace_half": predicted_gamma,
+        "proposal_strategy": proposal_strategy,
+        "measured_chord_fraction": chord_fraction,
         "coarse_slope_jacobian_per_v2": coarse_jacobian.tolist(),
         "discrepancy_jacobian_per_v2": discrepancy_jacobian.tolist(),
         "rank_one_discrepancy_jacobian_per_v2": (
@@ -1373,9 +1507,13 @@ def build_secant_correction_proposal(
             "maximum_abs_corrected_l0_solver_residual_per_v": solver_gate,
             "proposal_slope_acceptance_gate_per_v": proposal_slope_gate,
             "proposal_slope_gate_semantics": (
-                "single_chord_internal_numerical_closure"
-                if first_chord
-                else "physical_L0_gate_pending_independent_fixed_grid_validation"
+                "physical_L0_gate_on_interpolated_measured_fixed_grid_chord"
+                if proposal_strategy == "measured_fixed_grid_chord_gamma_root"
+                else (
+                    "single_chord_internal_numerical_closure"
+                    if first_chord
+                    else "physical_L0_gate_pending_independent_fixed_grid_validation"
+                )
             ),
             "trust_region_maximum_absolute_voltage_step_v": maximum_step,
             "least_squares_evaluations": int(solution.nfev),
@@ -1395,6 +1533,10 @@ def build_secant_correction_proposal(
             "secant_probe_sha256": file_sha256(secant_probe_path),
             "secant_period_sha256": file_sha256(secant_period_path),
             "secant_l1_sha256": file_sha256(secant_l1_path),
+            "secant_l1_probe_sha256": (
+                file_sha256(secant_l1_probe_path)
+                if secant_l1_probe_path is not None else None
+            ),
             "secant_project_contract_sha256": file_sha256(secant_project_contract_path),
             "project_contract_sha256": file_sha256(project_contract_path),
         },
@@ -1434,6 +1576,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--gamma-gradient-source", type=Path)
     parser.add_argument("--native-l1", type=Path)
     parser.add_argument("--native-l1-probe", type=Path)
+    parser.add_argument("--secant-l1-probe", type=Path)
     for name in (
         "source-correction", "secant-point", "secant-probe-contract",
         "secant-period", "secant-l1", "secant-project-contract",
@@ -1460,6 +1603,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             secant_probe_path=args.secant_probe_contract,
             secant_period_path=args.secant_period,
             secant_l1_path=args.secant_l1,
+            secant_l1_probe_path=args.secant_l1_probe,
             secant_project_contract_path=args.secant_project_contract,
             project_contract_path=args.project_contract,
             output_path=args.output,

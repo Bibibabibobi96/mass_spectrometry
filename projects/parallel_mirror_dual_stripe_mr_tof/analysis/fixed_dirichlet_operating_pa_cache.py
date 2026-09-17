@@ -15,11 +15,13 @@ from typing import Any, Mapping, Sequence
 from common.contracts.file_identity import file_sha256
 from common.simion.pa_family_cache import (
     CacheDisposition,
+    CacheProbe,
     PAFamilyCacheError,
     canonical_pa_family_cache_key,
     materialize_pa_family_cache,
     probe_pa_family_cache,
     publish_pa_family_cache,
+    validate_pa_family_cache_generation,
 )
 
 
@@ -202,17 +204,39 @@ def materialize_fixed_dirichlet_operating_pa_cache(
     identity: Mapping[str, Any],
     output_name: str,
     destination_directory: Path,
+    expected_generation_sha256: str | None = None,
 ):
     """Materialize an exact cache hit as a writable private PA."""
     name = _output_name(output_name)
-    probe = probe_pa_family_cache(cache_root, identity, expected_filenames=(name,))
-    if probe.disposition is not CacheDisposition.HIT or probe.generation_directory is None:
-        raise PAFamilyCacheError(
-            f"cannot materialize fixed operating PA {probe.cache_key}: "
-            f"{probe.disposition.value}: {probe.detail}"
+    cache_key = canonical_pa_family_cache_key(identity)
+    if expected_generation_sha256 is None:
+        probe = probe_pa_family_cache(cache_root, identity, expected_filenames=(name,))
+        if probe.disposition is not CacheDisposition.HIT or probe.generation_directory is None:
+            raise PAFamilyCacheError(
+                f"cannot materialize fixed operating PA {probe.cache_key}: "
+                f"{probe.disposition.value}: {probe.detail}"
+            )
+        generation = probe.generation_directory
+    else:
+        generation_sha256 = str(expected_generation_sha256).upper()
+        if len(generation_sha256) != 64 or any(
+            character not in "0123456789ABCDEF" for character in generation_sha256
+        ):
+            raise PAFamilyCacheError("expected fixed operating PA generation SHA-256 is invalid")
+        generation = Path(cache_root) / cache_key / "generations" / generation_sha256
+        manifest = validate_pa_family_cache_generation(
+            generation, expected_cache_key=cache_key, expected_filenames=(name,)
+        )
+        if str(manifest["generation_sha256"]).upper() != generation_sha256:
+            raise PAFamilyCacheError("fixed operating PA generation identity differs")
+        probe = CacheProbe(
+            CacheDisposition.HIT,
+            cache_key,
+            generation_directory=generation,
+            detail="pinned_generation_verified",
         )
     return probe, materialize_pa_family_cache(
-        probe.generation_directory,
+        generation,
         destination_directory,
         expected_filenames=(name,),
     )
@@ -240,6 +264,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-name", required=True)
     parser.add_argument("--source-directory", type=Path)
     parser.add_argument("--destination-directory", type=Path)
+    parser.add_argument("--expected-generation-sha256")
     args = parser.parse_args(arguments)
     identity = build_fixed_dirichlet_operating_pa_identity(
         args.local_family_contract,
@@ -249,8 +274,12 @@ def main(arguments: Sequence[str] | None = None) -> int:
         args.output_name,
     )
     if args.action == "probe":
-        if args.source_directory is not None or args.destination_directory is not None:
-            parser.error("probe accepts neither --source-directory nor --destination-directory")
+        if (
+            args.source_directory is not None
+            or args.destination_directory is not None
+            or args.expected_generation_sha256 is not None
+        ):
+            parser.error("probe accepts no source, destination, or expected generation")
         result = probe_fixed_dirichlet_operating_pa_cache(
             args.cache_root, identity, args.output_name
         )
@@ -264,8 +293,12 @@ def main(arguments: Sequence[str] | None = None) -> int:
             "detail": result.detail,
         }
     elif args.action == "publish":
-        if args.source_directory is None or args.destination_directory is not None:
-            parser.error("publish requires --source-directory and forbids --destination-directory")
+        if (
+            args.source_directory is None
+            or args.destination_directory is not None
+            or args.expected_generation_sha256 is not None
+        ):
+            parser.error("publish requires --source-directory and forbids destination or expected generation")
         result = publish_fixed_dirichlet_operating_pa_cache(
             args.cache_root, identity, args.output_name, args.source_directory
         )
@@ -280,12 +313,17 @@ def main(arguments: Sequence[str] | None = None) -> int:
         if args.destination_directory is None or args.source_directory is not None:
             parser.error("materialize requires --destination-directory and forbids --source-directory")
         probe, result = materialize_fixed_dirichlet_operating_pa_cache(
-            args.cache_root, identity, args.output_name, args.destination_directory
+            args.cache_root,
+            identity,
+            args.output_name,
+            args.destination_directory,
+            args.expected_generation_sha256,
         )
         document = {
             "identity": identity,
             "disposition": "materialized",
             "cache_key": probe.cache_key,
+            "generation_sha256": probe.generation_directory.name,
             "generation_directory": str(probe.generation_directory),
             "destination_directory": str(result.destination_directory),
             "files": list(result.files),

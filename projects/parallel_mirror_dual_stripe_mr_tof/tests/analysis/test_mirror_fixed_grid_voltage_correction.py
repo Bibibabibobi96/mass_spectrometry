@@ -10,7 +10,14 @@ import numpy as np
 
 from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_fixed_grid_voltage_correction import (
+    NATIVE_GAMMA_OPERATOR_ID,
+    SAMPLED_GAMMA_OPERATOR_ID,
+    _bounded_physical_gate_secant,
+    _l1_gamma_operator_id,
+    _measured_chord_gamma_root,
     _native_gamma_trace,
+    _source_fixed_grid_gamma_trace,
+    _source_gamma_operator_id,
     _solve_corrected_l0_slice,
     constrained_secant_update,
     decompose_l0_l1_correction,
@@ -22,6 +29,73 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 
 class FixedGridVoltageCorrectionTests(unittest.TestCase):
+    def test_measured_chord_gamma_root_stays_between_physical_l0_endpoints(self) -> None:
+        proposal, slopes, fraction = _measured_chord_gamma_root(
+            base_voltages=np.asarray([1.0, 2.0, 3.0, 4.0]),
+            secant_voltages=np.asarray([2.0, 4.0, 6.0, 8.0]),
+            base_slopes=np.asarray([4e-8, -2e-8, 1e-8]),
+            secant_slopes=np.asarray([5e-8, 1e-8, -3e-8]),
+            base_gamma=-0.25,
+            secant_gamma=0.75,
+            slope_gate=5e-8,
+            lower_bounds=np.zeros(4),
+            upper_bounds=np.full(4, 10.0),
+        )
+        self.assertEqual(fraction, 0.25)
+        np.testing.assert_allclose(proposal, [1.25, 2.5, 3.75, 5.0])
+        np.testing.assert_allclose(slopes, [4.25e-8, -1.25e-8, 0.0])
+
+    def test_secant_base_uses_the_source_corrections_frozen_gamma_operator(self) -> None:
+        source = {"fixed_grid_mean_directional_trace_half": -4.12e-4}
+        self.assertEqual(_source_fixed_grid_gamma_trace(source), -4.12e-4)
+        with self.assertRaisesRegex(CandidateContractError, "authoritative"):
+            _source_fixed_grid_gamma_trace({})
+
+    def test_gamma_operator_identity_is_explicit_or_legacy_inferred(self) -> None:
+        self.assertEqual(
+            _source_gamma_operator_id({"fixed_grid_gamma_operator_id": NATIVE_GAMMA_OPERATOR_ID}),
+            NATIVE_GAMMA_OPERATOR_ID,
+        )
+        self.assertEqual(
+            _source_gamma_operator_id({"inputs": {
+                "native_l1_sha256": "A", "native_l1_probe_sha256": "B",
+            }}),
+            NATIVE_GAMMA_OPERATOR_ID,
+        )
+        self.assertEqual(
+            _source_gamma_operator_id({"inputs": {"fixed_l1_sha256": "A"}}),
+            SAMPLED_GAMMA_OPERATOR_ID,
+        )
+
+    def test_gamma_operator_classifier_fails_closed_on_mixed_endpoint(self) -> None:
+        native = {"role": "mrtof_native_simion_transverse_l1_analysis"}
+        sampled = {"role": "mrtof_fixed_operating_field_l1_analysis"}
+        self.assertEqual(_l1_gamma_operator_id(native, True), NATIVE_GAMMA_OPERATOR_ID)
+        self.assertEqual(_l1_gamma_operator_id(sampled, False), SAMPLED_GAMMA_OPERATOR_ID)
+        with self.assertRaisesRegex(CandidateContractError, "requires its frozen probe"):
+            _l1_gamma_operator_id(native, False)
+        with self.assertRaisesRegex(CandidateContractError, "cannot carry a native probe"):
+            _l1_gamma_operator_id(sampled, True)
+
+    def test_diagnostic_secant_shrinks_to_the_physical_l0_gate(self) -> None:
+        voltage, slopes, delta_e, shrink_count = _bounded_physical_gate_secant(
+            source_voltages=np.zeros(4),
+            tangent_per_e=np.asarray([4.0, 0.0, 0.0, 1.0]),
+            direction=1.0,
+            initial_e_step_v=0.5,
+            shrink_factor=0.5,
+            maximum_shrinks=3,
+            lower_bounds_v=np.full(4, -10.0),
+            upper_bounds_v=np.full(4, 10.0),
+            maximum_voltage_step_v=10.0,
+            slope_gate_per_v=5e-8,
+            slope_model=lambda trial: np.asarray([4e-8 + abs(trial[3]) * 4e-8, 0.0, 0.0]),
+        )
+        self.assertEqual(shrink_count, 1)
+        self.assertEqual(delta_e, 0.25)
+        np.testing.assert_allclose(voltage, [1.0, 0.0, 0.0, 0.25])
+        self.assertAlmostEqual(float(np.max(np.abs(slopes))), 5e-8)
+
     def test_independent_corrected_l0_slice_closes_three_equations(self) -> None:
         def linear_slopes(_basis, voltages, _energies, _step):
             return np.asarray(voltages[:3], dtype=float) - np.asarray([1.0, -2.0, 3.0])

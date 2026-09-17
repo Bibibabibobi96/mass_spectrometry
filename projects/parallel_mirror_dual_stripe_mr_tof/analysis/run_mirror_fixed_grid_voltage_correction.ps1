@@ -86,14 +86,44 @@ try {
       )
     }
     if ($sourceCorrection) {
+      $secantNativeL1 = Join-Path $secantFixed 'results\native_transverse_l1.json'
+      $secantNativeProbe = Join-Path $secantFixed 'results\native_transverse_l1_probe_contract.json'
+      $sourceCorrectionResult = Join-Path $sourceCorrection 'results\fixed_grid_multifidelity_voltage_correction.json'
+      $sourceCorrectionValue = Get-Content -LiteralPath $sourceCorrectionResult -Raw | ConvertFrom-Json -Depth 40
+      $gammaOperator = if ($sourceCorrectionValue.PSObject.Properties['fixed_grid_gamma_operator_id']) {
+        [string]$sourceCorrectionValue.fixed_grid_gamma_operator_id
+      } elseif (
+        $sourceCorrectionValue.inputs.PSObject.Properties['native_l1_sha256'] -and
+        $sourceCorrectionValue.inputs.PSObject.Properties['native_l1_probe_sha256']
+      ) {
+        'native_simion_transverse_l1_mean_directional_trace_half_v1'
+      } else {
+        'sampled_fixed_operating_field_l1_mean_directional_trace_half_v1'
+      }
+      $secantL1 = switch ($gammaOperator) {
+        'native_simion_transverse_l1_mean_directional_trace_half_v1' {
+          if (-not (Test-Path -LiteralPath $secantNativeL1 -PathType Leaf) -or
+              -not (Test-Path -LiteralPath $secantNativeProbe -PathType Leaf)) {
+            throw 'Native gamma operator requires secant native L1 and its frozen probe contract.'
+          }
+          $secantNativeL1
+        }
+        'sampled_fixed_operating_field_l1_mean_directional_trace_half_v1' {
+          Join-Path $secantFixed 'results\fixed_operating_field_l1.json'
+        }
+        default { throw "Unsupported source gamma operator identity: $gammaOperator" }
+      }
       $arguments += @(
         '--source-correction', (Join-Path $sourceCorrection 'results\fixed_grid_multifidelity_voltage_correction.json'),
         '--secant-point', (Join-Path $secantFixed 'results\fixed_grid_voltage_point.json'),
         '--secant-probe-contract', (Join-Path $secantFixed 'results\mirror_period_probe_contract.json'),
         '--secant-period', (Join-Path $secantFixed 'results\mirror_real_field_period_comparison.json'),
-        '--secant-l1', (Join-Path $secantFixed 'results\fixed_operating_field_l1.json'),
+        '--secant-l1', $secantL1,
         '--secant-project-contract', (Join-Path $secantFixed 'inputs\simion_candidate_two_zone.json')
       )
+      if ($gammaOperator -eq 'native_simion_transverse_l1_mean_directional_trace_half_v1') {
+        $arguments += @('--secant-l1-probe', $secantNativeProbe)
+      }
     }
     $lease = Enter-HostExecutionLease -Role GATE -Stage theory_compute -RunId $RunId
     $analysisLog = Join-Path $logDir 'analysis_python.log'

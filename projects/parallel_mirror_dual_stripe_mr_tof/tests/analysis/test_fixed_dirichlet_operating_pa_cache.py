@@ -9,7 +9,11 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from common.simion.pa_family_cache import CacheDisposition, canonical_pa_family_cache_key
+from common.simion.pa_family_cache import (
+    CacheDisposition,
+    PAFamilyCacheError,
+    canonical_pa_family_cache_key,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_dirichlet_operating_pa_cache import (
     MIRROR_GROUPS,
     build_fixed_dirichlet_operating_pa_identity,
@@ -145,6 +149,26 @@ class FixedDirichletOperatingPACacheTest(unittest.TestCase):
         self.assertEqual(materialized_probe.cache_key, publication.cache_key)
         self.assertEqual((destination / output_name).read_bytes(), b"solved-quarter-mm-pa")
         self.assertEqual(len(materialized.files), 1)
+
+        pinned_destination = self.root / "pinned" / "simion"
+        pinned_probe, pinned = materialize_fixed_dirichlet_operating_pa_cache(
+            cache,
+            identity,
+            output_name,
+            pinned_destination,
+            publication.generation_sha256,
+        )
+        self.assertEqual(pinned_probe.generation_directory.name, publication.generation_sha256)
+        self.assertEqual((pinned_destination / output_name).read_bytes(), b"solved-quarter-mm-pa")
+        self.assertEqual(len(pinned.files), 1)
+        with self.assertRaisesRegex(PAFamilyCacheError, "generation"):
+            materialize_fixed_dirichlet_operating_pa_cache(
+                cache,
+                identity,
+                output_name,
+                self.root / "wrong-generation",
+                "F" * 64,
+            )
 
     def test_cli_supports_probe_publish_and_materialize(self) -> None:
         cache = self.root / "cache"

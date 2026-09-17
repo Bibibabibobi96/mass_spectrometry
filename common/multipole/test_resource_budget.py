@@ -441,6 +441,7 @@ if($scenario-eq'inherited_light'){
                     {
                         "role": "simion_repository_dispatch_plan",
                         "estimation": {"kind": "formal_first_batch_observation"},
+                        "host": {"logical_processors": 16},
                         "limits": {
                             "formal_observation_seconds": 7,
                             "memory_critical_reserve_bytes": 512 * 1024**2,
@@ -483,6 +484,66 @@ if($scenario-eq'inherited_light'){
                 timeout=15,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_formal_observation_does_not_charge_a_new_childs_historical_cpu(self) -> None:
+        """Late process-tree discovery establishes a baseline instead of a CPU spike."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch = root / "dispatch.json"
+            dispatch.write_text(
+                json.dumps({
+                    "role": "simion_repository_dispatch_plan",
+                    "estimation": {"kind": "formal_first_batch_observation"},
+                    "host": {"logical_processors": 16},
+                    "limits": {
+                        "formal_observation_seconds": 7,
+                        "memory_critical_reserve_bytes": 512 * 1024**2,
+                        "memory_critical_seconds": 15,
+                    },
+                }),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            stdout, stderr = root / "stdout.log", root / "stderr.log"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Get-RepositoryAvailableMemoryBytes{return [int64](64GB)};"
+                "function Get-SystemCpuPercent{return [double]0};"
+                "$script:sampleCalls=0;$script:now=[datetime]'2026-09-17T00:00:00Z';"
+                "function Get-RepositoryUtcNow{return $script:now};"
+                "function Start-Sleep {param([int]$Milliseconds);"
+                "$script:now=$script:now.AddMilliseconds($Milliseconds)};"
+                "function Get-ManagedSolverProcessSample {"
+                "param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds);"
+                "$script:sampleCalls+=1;$root=[string]$RootProcessIds[0];"
+                "$active=$(if($script:sampleCalls-lt4){@([int]$root)}else{@()});"
+                "$ticks=$(if($script:sampleCalls-eq1){@{$root=[int64]10000000}}"
+                "elseif($script:sampleCalls-eq2){@{$root=[int64]11000000;'900001'=[int64]900000000000}}"
+                "elseif($script:sampleCalls-eq3){@{$root=[int64]21000000;'900001'=[int64]900030000000}}"
+                "else{@{}});"
+                "[pscustomobject]@{tracked_process_ids=@([int]$root,900001);"
+                "active_process_ids=$active;working_set_bytes=1;private_bytes=1;managed_memory_bytes=1;"
+                "total_processor_time_ticks=($ticks.Values|Measure-Object -Sum).Sum;"
+                "processor_time_ticks_by_process_id=$ticks}"
+                "};"
+                "$spec=[pscustomobject]@{name='formal';file_path=(Get-Process -Id $PID).Path;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 1');"
+                f"stdout='{stdout}';stderr='{stderr}';environment=@{{}};working_directory='{root}'}};"
+                f"$r=Start-ObservedFormalProcess -DispatchPlanPath '{dispatch}' -ProcessSpecification $spec;"
+                "if([math]::Abs([double]$r.observed_process_cpu_percent-50.0)-gt0.001){"
+                "Write-Error ('unexpected observed CPU: '+$r.observed_process_cpu_percent);exit 3}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_completed_first_formal_observation_still_writes_admission_receipt(self) -> None:
         """A naturally completed N=1 observation skips the dispatch loop safely."""

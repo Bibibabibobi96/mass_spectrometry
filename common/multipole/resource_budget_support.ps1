@@ -209,6 +209,7 @@ function Get-ManagedSolverProcessSample {
   $privateBytes=[int64]0
   $managedBytes=[int64]0
   $cpuTicks=[int64]0
+  $cpuTicksByProcessId=@{}
   $trackedStartTicks=@{}
   $activeSystemConsoleHostProcessIds=@()
   foreach($processId in $known){
@@ -228,7 +229,11 @@ function Get-ManagedSolverProcessSample {
       $bytes+=$workingSet
       $privateBytes+=$private
       $managedBytes+=[math]::Max($workingSet,$private)
-      try{$cpuTicks+=[int64]$process.TotalProcessorTime.Ticks}catch{}
+      try{
+        $processCpuTicks=[int64]$process.TotalProcessorTime.Ticks
+        $cpuTicks+=$processCpuTicks
+        $cpuTicksByProcessId[[string]$processId]=$processCpuTicks
+      }catch{}
     }
   }
   return [pscustomobject]@{
@@ -240,6 +245,7 @@ function Get-ManagedSolverProcessSample {
     private_bytes=$privateBytes
     managed_memory_bytes=$managedBytes
     total_processor_time_ticks=$cpuTicks
+    processor_time_ticks_by_process_id=$cpuTicksByProcessId
   }
 }
 
@@ -628,10 +634,16 @@ function Start-ObservedFormalProcess {
     'formal_observation_seconds','memory_critical_reserve_bytes','memory_critical_seconds')
   $criticalBytes=[int64]$plan.limits.memory_critical_reserve_bytes
   $criticalSeconds=[int]$plan.limits.memory_critical_seconds
+  $logicalProcessors=[int][Environment]::ProcessorCount
+  if($plan.PSObject.Properties.Name-contains'host'-and
+      $plan.host.PSObject.Properties.Name-contains'logical_processors'-and
+      [int]$plan.host.logical_processors-gt0){
+    $logicalProcessors=[int]$plan.host.logical_processors
+  }
   $record=Start-RepositoryScheduledProcess -Specification $ProcessSpecification
   Write-RepositorySchedulerEvent -Event 'BATCH_STARTED' -Record $record -ActiveCount 1 `
     -Details @{OBSERVATION_SECONDS=$seconds;MEASUREMENT='FIRST_FORMAL_BATCH'}
-  $previousTicks=[int64]0;$previousAt=$record.started_at
+  $previousTicks=[int64]0;$previousTicksByProcessId=@{};$previousAt=$record.started_at
   $peakCpu=[double]0;$peakBackground=[double]0;$systemCpu=[double]0;$lastSystemAt=$null
   $criticalSince=$null;$resourceBudgetExceeded=$false
   $observationComplete=$false;$completedDuringObservation=$false
@@ -680,9 +692,21 @@ function Start-ObservedFormalProcess {
       }
     }else{$criticalSince=$null}
     $elapsed=($now-$previousAt).TotalSeconds
-    if($previousTicks-gt 0-and$elapsed-gt 0){
-      $cpu=100.0*(([int64]$sample.total_processor_time_ticks-$previousTicks)/1.0e7)/
-        ($elapsed*[Environment]::ProcessorCount)
+    if($elapsed-gt 0){
+      $cpuDeltaTicks=[int64]0
+      if($sample.PSObject.Properties.Name-contains'processor_time_ticks_by_process_id'){
+        foreach($entry in $sample.processor_time_ticks_by_process_id.GetEnumerator()){
+          $key=[string]$entry.Key
+          if($previousTicksByProcessId.ContainsKey($key)){
+            $cpuDeltaTicks+=[math]::Max([int64]0,[int64]$entry.Value-[int64]$previousTicksByProcessId[$key])
+          }
+        }
+      }elseif($previousTicks-gt 0){
+        # Compatibility seam for older tests and an in-memory caller loaded
+        # before per-process CPU accounting was added.
+        $cpuDeltaTicks=[math]::Max([int64]0,[int64]$sample.total_processor_time_ticks-$previousTicks)
+      }
+      $cpu=100.0*($cpuDeltaTicks/1.0e7)/($elapsed*$logicalProcessors)
       $peakCpu=[math]::Max($peakCpu,[math]::Max(0.0,$cpu))
       if($null-eq$lastSystemAt-or($now-$lastSystemAt).TotalSeconds-ge 2){
         $observedSystemCpu=Get-SystemCpuPercent
@@ -691,7 +715,14 @@ function Start-ObservedFormalProcess {
       }
       $peakBackground=[math]::Max($peakBackground,[math]::Max(0.0,$systemCpu-$cpu))
     }
-    $previousTicks=[int64]$sample.total_processor_time_ticks;$previousAt=$now
+    $previousTicks=[int64]$sample.total_processor_time_ticks
+    if($sample.PSObject.Properties.Name-contains'processor_time_ticks_by_process_id'){
+      $previousTicksByProcessId=@{}
+      foreach($entry in $sample.processor_time_ticks_by_process_id.GetEnumerator()){
+        $previousTicksByProcessId[[string]$entry.Key]=[int64]$entry.Value
+      }
+    }
+    $previousAt=$now
     if($record.pressure_terminated){
       $record.process.WaitForExit();$record.active=$false;break
     }
