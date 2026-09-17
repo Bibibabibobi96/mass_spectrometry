@@ -285,6 +285,12 @@ reviewed 几何、实际电压 trial、装配位姿及积分控制；不重新 R
 中固定某个 K。当前 25.5 自动对应 51 个半周期和负镜返回；改为另一正半整数不需要修改代码。
 解析电压链使用 `analysis/run_target_operating_point_chain.ps1`，从同一 baseline 自动串接镜 exact-K
 工作点和双 Stripe 反演；SIMION 只消费其后 materialize 的电压 receipt，不另存几何或 K 参数。
+P1/P2 继续复用已有的
+`analysis/run_two_prism_segmented_coverage.ps1`、`analysis/run_two_prism_segmented_continuation.ps1` 和
+`analysis/run_two_prism_operating_point.ps1`。coverage 可直接消费固定三维镜/可变慢能 Stripe manifest，
+默认从 baseline 读取初始有符号电压域；continuation 只追踪 coverage 冻结的单一事件签名；真实三维
+trial 的两个单轴扰动和后续迭代由 operating-point 审计检查秩与共同冻结输入。不得为当前镜点另写第二套
+P1/P2 搜索器，也不得把理论覆盖点直接称为三维工作点。
 中央 `z=0` 穿越及提前出现的 `y=0` 只报告诊断，达到目标负镜转折才产生严格相位返回事件。实际坐标
 残差与相位返回分开报告，目标事件不切换棱镜电压。
 P1/P2 始终保持注入态；trial runner 已删除棱镜提取态与切换时刻公开参数，Lua 与分析器仍会对旧 receipt/sidecar 中非空切换字段失败关闭。

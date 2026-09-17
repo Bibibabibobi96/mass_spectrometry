@@ -263,11 +263,13 @@ def resolve_split_iob_origins(
     *,
     inherited_detector_return_path: dict[str, object] | None = None,
     inherited_dual_stripe_topology_contract: dict[str, object] | None = None,
+    inherited_mirror_power_supply_limits_v: dict[str, object] | None = None,
 ) -> dict[str, tuple[float, float, float]]:
     """Return the sole allowed project-to-Workbench translations for both PAs."""
     contract = load_contract(
         contract_path,
         inherited_detector_return_path=inherited_detector_return_path,
+        inherited_mirror_power_supply_limits_v=inherited_mirror_power_supply_limits_v,
     )
     _require_release(contract)
     analyzer_span = _span(contract, "analyzer_pa_span_mm")

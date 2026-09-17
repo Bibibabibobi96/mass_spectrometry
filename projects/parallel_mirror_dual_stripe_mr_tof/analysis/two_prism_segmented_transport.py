@@ -120,6 +120,40 @@ def validate_two_prism_voltage_polarity_domain(
     }
 
 
+def two_prism_initial_search_bounds(
+    contract: Mapping[str, Any], *, charge_state: int,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Return the contract-owned initial discovery window for the ion charge."""
+    try:
+        authority = contract["prism_transport"]["two_prism_injection_l0"][
+            "voltage_polarity_contract"
+        ]
+        window = authority["current_initial_search_window_v"]
+        p1 = tuple(_finite_bias(value, "P1 initial bound") for value in window["prism_1"])
+        p2 = tuple(_finite_bias(value, "P2 initial bound") for value in window["prism_2"])
+        reference_charge = authority["reference_charge_state_e"]
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError(
+            "two-prism initial search window is missing from the polarity contract"
+        ) from error
+    if len(p1) != 2 or len(p2) != 2:
+        raise CandidateContractError("two-prism initial search windows must have two bounds")
+    if type(charge_state) is not int or charge_state == 0:
+        raise CandidateContractError("two-prism initial search needs a nonzero integer charge")
+    if type(reference_charge) is not int or reference_charge == 0:
+        raise CandidateContractError("two-prism reference charge state is invalid")
+    if charge_state * reference_charge < 0:
+        p1 = (-p1[1], -p1[0])
+        p2 = (-p2[1], -p2[0])
+    validate_two_prism_voltage_polarity_domain(
+        contract,
+        charge_state=charge_state,
+        p1_bounds_v=(p1[0], p1[1]),
+        p2_bounds_v=(p2[0], p2[1]),
+    )
+    return (p1[0], p1[1]), (p2[0], p2[1])
+
+
 def _exact_bias_map(
     values: Mapping[Any, Any], expected_keys: set[Any], label: str,
 ) -> dict[Any, float]:

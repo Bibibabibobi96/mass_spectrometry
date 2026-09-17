@@ -19,6 +19,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial
     _patch_interface_diagnostics,
     _patch_interface_planes,
     _resolve_trial_geometry,
+    _fixed_mirror_stripe_source_state,
     _schema5_native_source_state,
     _single_center_source_state,
     _single_center_source_fly2,
@@ -228,6 +229,59 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         self.assertIn("charge = -2,", fly2)
         self.assertIn("direction = vector(0, 1, 0),", fly2)
         self.assertNotIn("4.955863026", fly2)
+
+    def test_fixed_mirror_stripe_authority_selects_near_five_ev_source(self) -> None:
+        _, contract = self._schema5_source_fixture()
+        axial = 4372.010347796059
+        slow = 4.961131691875478
+        target_k = 25.5
+        biases = [-25.223218746120438, 50.18222992863684]
+        voltages = [0.0, -4799.0, 3811.0, 4998.0, 7931.0]
+        materialized = {
+            "axial_energy_per_charge_v": axial,
+            "source_slow_energy_per_charge_v": slow,
+            "stripe_biases_v": list(biases),
+        }
+        seed = {
+            "selected_axial_energy_per_charge_v": axial,
+            "selected_exact_K_slow_energy_per_charge_v": slow,
+            "target_drift_period_ratio": target_k,
+            "predicted_continuous_oscillation_count": target_k,
+            "nominal_injection_angle_degrees": math.degrees(math.atan(math.sqrt(slow / axial))),
+            "stripe_biases_v": list(biases),
+            "native_spatial_return_materialization": materialized,
+        }
+        stripe = {
+            "schema_version": 3,
+            "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
+            "status": "fixed_grid_native_mirror_exact_K_slow_energy_and_spatial_return_inverse_complete",
+            "selected_seed": seed,
+        }
+        mirror = {
+            "schema_version": 1,
+            "role": "mrtof_mirror_turn_fixed_grid_validation",
+            "status": "success",
+        }
+        authority = {
+            "schema_version": 1,
+            "role": "mrtof_fixed_mirror_stripe_downstream_operating_authority",
+            "status": "success",
+            "axial_energy_per_charge_v": axial,
+            "slow_energy_per_charge_v": slow,
+            "target_period_ratio": target_k,
+            "predicted_period_ratio": target_k,
+            "mirror_voltages_v": list(voltages),
+            "stripe_biases_v": list(biases),
+        }
+        selected = _fixed_mirror_stripe_source_state(
+            authority, mirror, stripe, contract,
+        )
+        self.assertIs(selected[0], seed)
+        self.assertEqual(selected[1:], (slow, axial, voltages, target_k))
+        invalid = copy.deepcopy(authority)
+        invalid["slow_energy_per_charge_v"] = 5.0
+        with self.assertRaisesRegex(CandidateContractError, "differs from its source summary"):
+            _fixed_mirror_stripe_source_state(invalid, mirror, stripe, contract)
 
     def test_schema5_native_source_accepts_selected_exact_k_energy_within_search_envelope(self) -> None:
         summary, contract = self._schema5_source_fixture()

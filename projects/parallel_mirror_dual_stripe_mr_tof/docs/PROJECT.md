@@ -177,6 +177,33 @@ Hamiltonian 为 `4372.010258012278 eV/q`，相对 `4372.010347796059 eV/q` 目�
 但该量已经远低于当前网格、几何和三维场误差尺度，因此本阶段不再为压低这一数值残差重复 Refine
 或飞行；这不是整机能量/分辨率 Formal 验收。
 
+P1/P2 没有另建求解器。既有 `two_prism_segmented_coverage →
+two_prism_segmented_voltage_continuation → two_prism_operating_point` 链现已修复为同时支持旧二维 exact-K
+资产和当前“固定三维镜 + 自动反算慢能量”的权威输入；默认发现域直接读取合同中的
+`P1=+100...+300 V、P2=-300...-100 V`，显式覆盖仍须通过极性门禁。受管覆盖
+`20260918_022500__analysis__python__mrtof-fixed-mirror-two-prism-coverage-1024-r2` 使用 r130/r3 和校正后的
+加速器出口，在 1024 个 Sobol 点与 25 个局部点中得到 375 个正确拓扑点；唯一同时包围两个残差零点的
+主分支含 307 点。延拓 run
+`20260918_024500__analysis__python__mrtof-fixed-mirror-two-prism-continuation-r1` 在 41 次传播后给出硬边界种子
+`P1=+190.3125 V、P2=-193.4375 V`，位置/角度残差分别为 `-0.006339 mm` 和约 `-0.00655 deg`，满足
+当前 `0.01 mm/0.01 deg` 目标；它仍只是一枚求解器无关种子。
+
+该种子的真实三维中心离子 run
+`20260918_030000__sim__simion__mrtof-fixed-mirror-auto-prism-theory-seed-r1` 已保持正确注入拓扑并完成
+`K=25.5` 漂移，但 P2 后首次正镜转折/角度残差为 `-0.272341 mm/-0.0290 deg`。围绕同一冻结问题的
+P1、P2 各 `+1 V` 单轴扰动形成满秩 2x2 Jacobian；首个 Newton 点
+`20260918_033000__sim__simion__mrtof-fixed-mirror-auto-prism-newton1-r1` 取
+`P1=+191.305854187 V、P2=-191.751172129 V`，把两个残差降到
+`-8.7758e-5 mm` 和约 `-1.91e-5 deg`。收据
+`20260918_034000__analysis__python__mrtof-fixed-mirror-two-prism-operating-point-r1` 已验证该系统为
+square-exact。审计器同时修复为接受包含所需早期状态的 `full_drift_observed` 等更完整终态，不再出现
+“轨迹走得更完整反而不能构建 Jacobian”的倒置行为。
+
+当前 P1/P2 注入条件已闭合，但整机仍未闭合：上述 Newton 点在目标 `K=25.5` 负镜转折的慢向返回残差为
+`+20.1831 mm`，随后因意外的回程镜转折被程序拒绝。该偏差属于固定镜之后的有限三维 Stripe/慢相位校正，
+不得反向重求已经合格的镜 B--E 电压。下一步是在固定镜和已闭合 P1/P2 入口条件下校正 Stripe 偏压/
+实际慢能相位，再验证自然 P2 回程与探测器命中；当前结果不是整机 Candidate 或分辨率证据。
+
 同一中心粒子、同一冻结几何/PA/电压/源/程序/脉冲和自然回程拓扑的三档时间步实跑已由
 `20260916_013500__analysis__python__mrtof-single-center-timestep-convergence-r1` 绑定：最大步长依次为
 `0.002、0.0002、0.00002 us`，探测器 TOF 分别为

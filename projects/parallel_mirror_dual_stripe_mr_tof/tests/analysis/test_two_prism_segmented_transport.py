@@ -26,6 +26,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_tr
     build_two_prism_segmented_potential_regions,
     evaluate_two_prism_segmented_voltage_pair,
     predict_p2_ideal_bias_for_reference_tangent_ratio,
+    two_prism_initial_search_bounds,
     validate_two_prism_voltage_polarity_domain,
     _propagate_to_first_complete_positive_stripe_pass,
     _propagate_to_first_positive_mirror_turn,
@@ -56,6 +57,17 @@ NUMERICS = TransportNumerics(
 
 
 class PrismVoltagePolarityContractTests(unittest.TestCase):
+    def test_initial_search_window_is_contract_owned_and_charge_aware(self) -> None:
+        contract = load_contract(CONTRACT)
+        self.assertEqual(
+            two_prism_initial_search_bounds(contract, charge_state=1),
+            ((100.0, 300.0), (-300.0, -100.0)),
+        )
+        self.assertEqual(
+            two_prism_initial_search_bounds(contract, charge_state=-1),
+            ((-300.0, -100.0), (100.0, 300.0)),
+        )
+
     def test_positive_ion_requires_positive_p1_and_negative_p2(self) -> None:
         receipt = validate_two_prism_voltage_polarity_domain(
             load_contract(CONTRACT),

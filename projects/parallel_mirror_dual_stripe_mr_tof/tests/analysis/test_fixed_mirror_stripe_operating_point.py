@@ -37,6 +37,21 @@ class FixedMirrorStripeOperatingPointTests(unittest.TestCase):
         self.assertEqual(len(point.mirror_voltages_v), 5)
         self.assertEqual(len(point.stripe_biases_v), 2)
 
+    def test_rebinds_only_the_authorized_slow_energy_policy_to_current_contract(self) -> None:
+        current_contract = PROJECT / "config" / "simion_candidate_two_zone.json"
+        point = load_fixed_mirror_stripe_operating_point(MANIFEST, current_contract)
+
+        self.assertEqual(
+            point.contract["prism_transport"]["two_prism_injection_l0"]
+            ["voltage_polarity_contract"]["first_prism_required_sign"],
+            "positive",
+        )
+        self.assertEqual(
+            point.contract["prism_transport"]["two_prism_injection_l0"]
+            ["voltage_polarity_contract"]["second_prism_required_sign"],
+            "negative",
+        )
+
     def test_rejects_nonterminal_manifest_before_reading_values(self) -> None:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8-sig"))
         manifest["status"] = "checkpoint"

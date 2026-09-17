@@ -78,7 +78,12 @@ def _trial(manifest_path: Path) -> dict[str, Any]:
     materialization_path = _manifest_output(manifest_path, "two_prism_trial_materialization.json")
     observation = _load_object(observation_path)
     materialization = _load_object(materialization_path)
-    if observation.get("status") != "p2_low_field_and_positive_mirror_turn_observed":
+    if observation.get("status") not in {
+        "p2_low_field_and_positive_mirror_turn_observed",
+        "full_drift_observed",
+        "target_phase_observed",
+        "detected",
+    }:
         raise CandidateContractError(
             f"P1/P2 trial did not observe its P2 low-field state and positive mirror turn: {manifest_path}"
         )

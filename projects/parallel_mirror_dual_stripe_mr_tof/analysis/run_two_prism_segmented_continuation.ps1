@@ -115,8 +115,13 @@ try {
     throw 'Parent run must be a successful two-prism segmented coverage run.'
   }
   $contractRecord = Get-VerifiedRunManifestInputRecord -Records $coverageRun.inputs -Name 'downstream_contract' -Label 'contract'
-  $exactRecord = Get-VerifiedRunManifestInputRecord -Records $coverageRun.inputs -Name 'parent_exact_k_run_manifest' -Label 'exact-K manifest'
-  $stripeRecord = Get-VerifiedRunManifestInputRecord -Records $coverageRun.inputs -Name 'parent_stripe_seed_run_manifest' -Label 'Stripe manifest'
+  $fixedMode = $coverageRun.inputs.ContainsKey('parent_fixed_mirror_stripe_run_manifest')
+  if ($fixedMode) {
+    $fixedMirrorStripeRecord = Get-VerifiedRunManifestInputRecord -Records $coverageRun.inputs -Name 'parent_fixed_mirror_stripe_run_manifest' -Label 'fixed mirror/Stripe manifest'
+  } else {
+    $exactRecord = Get-VerifiedRunManifestInputRecord -Records $coverageRun.inputs -Name 'parent_exact_k_run_manifest' -Label 'exact-K manifest'
+    $stripeRecord = Get-VerifiedRunManifestInputRecord -Records $coverageRun.inputs -Name 'parent_stripe_seed_run_manifest' -Label 'Stripe manifest'
+  }
   $observationRecord = Get-VerifiedRunManifestInputRecord -Records $coverageRun.inputs -Name 'accelerator_exit_observation' -Label 'accelerator observation'
   $sourceReceiptRecord = Get-VerifiedRunManifestInputRecord -Records $coverageRun.inputs -Name 'accelerator_exit_source_receipt' -Label 'accelerator source receipt'
   $coverageSummaryRecords = @(
@@ -130,14 +135,22 @@ try {
   $frozenCoverageManifest = Copy-VerifiedRunInput -Source $coverageManifest -Destination (Join-Path $inputDir 'parent_coverage_run_manifest.json')
   $frozenCoverageSummary = Copy-VerifiedRunInput -Source ([string]$coverageSummaryRecords[0].path) -Destination (Join-Path $inputDir 'parent_coverage_summary.json')
   $frozenContract = Copy-VerifiedRunInput -Source ([string]$contractRecord.path) -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
-  $frozenExact = Copy-VerifiedRunInput -Source ([string]$exactRecord.path) -Destination (Join-Path $inputDir 'parent_exact_k_run_manifest.json')
-  $frozenStripe = Copy-VerifiedRunInput -Source ([string]$stripeRecord.path) -Destination (Join-Path $inputDir 'parent_stripe_seed_run_manifest.json')
+  if ($fixedMode) {
+    $frozenFixedMirrorStripe = Copy-VerifiedRunInput -Source ([string]$fixedMirrorStripeRecord.path) -Destination (Join-Path $inputDir 'parent_fixed_mirror_stripe_run_manifest.json')
+  } else {
+    $frozenExact = Copy-VerifiedRunInput -Source ([string]$exactRecord.path) -Destination (Join-Path $inputDir 'parent_exact_k_run_manifest.json')
+    $frozenStripe = Copy-VerifiedRunInput -Source ([string]$stripeRecord.path) -Destination (Join-Path $inputDir 'parent_stripe_seed_run_manifest.json')
+  }
   $frozenObservation = Copy-VerifiedRunInput -Source ([string]$observationRecord.path) -Destination (Join-Path $inputDir 'accelerator_exit_observation.json')
   $frozenExitSourceReceipt = Copy-VerifiedRunInput -Source ([string]$sourceReceiptRecord.path) -Destination (Join-Path $inputDir 'accelerator_exit_source_receipt.json')
   Assert-VerifiedRunRecordHash -Path $frozenCoverageSummary -Record $coverageSummaryRecords[0] -Label 'coverage summary'
   Assert-VerifiedRunRecordHash -Path $frozenContract -Record $contractRecord -Label 'contract'
-  Assert-VerifiedRunRecordHash -Path $frozenExact -Record $exactRecord -Label 'exact-K manifest'
-  Assert-VerifiedRunRecordHash -Path $frozenStripe -Record $stripeRecord -Label 'Stripe manifest'
+  if ($fixedMode) {
+    Assert-VerifiedRunRecordHash -Path $frozenFixedMirrorStripe -Record $fixedMirrorStripeRecord -Label 'fixed mirror/Stripe manifest'
+  } else {
+    Assert-VerifiedRunRecordHash -Path $frozenExact -Record $exactRecord -Label 'exact-K manifest'
+    Assert-VerifiedRunRecordHash -Path $frozenStripe -Record $stripeRecord -Label 'Stripe manifest'
+  }
   Assert-VerifiedRunRecordHash -Path $frozenObservation -Record $observationRecord -Label 'accelerator observation'
   Assert-VerifiedRunRecordHash -Path $frozenExitSourceReceipt -Record $sourceReceiptRecord -Label 'accelerator source receipt'
 
@@ -155,6 +168,9 @@ try {
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_handoff.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\prism_mirror_transport.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_exact_k_operating_point.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_mirror_stripe_operating_point.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_grid_mirror_stripe_handoff.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\joint_mirror_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
@@ -188,10 +204,14 @@ try {
     parent_coverage_run_manifest = $frozenCoverageManifest
     parent_coverage_summary = $frozenCoverageSummary
     downstream_contract = $frozenContract
-    parent_exact_k_run_manifest = $frozenExact
-    parent_stripe_seed_run_manifest = $frozenStripe
     accelerator_exit_observation = $frozenObservation
     accelerator_exit_source_receipt = $frozenExitSourceReceipt
+  }
+  if ($fixedMode) {
+    $configuration.inputs.parent_fixed_mirror_stripe_run_manifest = $frozenFixedMirrorStripe
+  } else {
+    $configuration.inputs.parent_exact_k_run_manifest = $frozenExact
+    $configuration.inputs.parent_stripe_seed_run_manifest = $frozenStripe
   }
   foreach ($entry in $sourceInputs.GetEnumerator()) { $configuration.inputs[$entry.Key] = $entry.Value }
   $configuration.parameters = [ordered]@{
@@ -235,8 +255,6 @@ try {
   $arguments = @(
     '-m', 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_voltage_continuation',
     '--contract', $frozenContract,
-    '--exact-k-manifest', $frozenExact,
-    '--stripe-seed-manifest', $frozenStripe,
     '--accelerator-exit-observation', $frozenObservation,
     '--accelerator-exit-source-receipt', $frozenExitSourceReceipt,
     '--coverage-summary', $frozenCoverageSummary,
@@ -276,6 +294,11 @@ try {
     '--stage-a-maximum-reduced-time', $StageAMaximumReducedTimeMmPerSqrtV.ToString('R', $culture),
     '--stage-b-maximum-reduced-time', $StageBMaximumReducedTimeMmPerSqrtV.ToString('R', $culture)
   )
+  if ($fixedMode) {
+    $arguments += @('--fixed-mirror-stripe-manifest', $frozenFixedMirrorStripe)
+  } else {
+    $arguments += @('--exact-k-manifest', $frozenExact, '--stripe-seed-manifest', $frozenStripe)
+  }
   $lease = $null
   try {
     $lease = Enter-HostExecutionLease -Role GATE -Stage theory_compute -RunId $RunId

@@ -1,12 +1,13 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory)][string]$ExactKRunManifest,
-  [Parameter(Mandatory)][string]$StripeSeedRunManifest,
+  [string]$ExactKRunManifest = '',
+  [string]$StripeSeedRunManifest = '',
+  [string]$FixedMirrorStripeRunManifest = '',
   [Parameter(Mandatory)][string]$AcceleratorExitRunManifest,
-  [Parameter(Mandatory)][double]$P1MinimumV,
-  [Parameter(Mandatory)][double]$P1MaximumV,
-  [Parameter(Mandatory)][double]$P2MinimumV,
-  [Parameter(Mandatory)][double]$P2MaximumV,
+  [Nullable[double]]$P1MinimumV = $null,
+  [Nullable[double]]$P1MaximumV = $null,
+  [Nullable[double]]$P2MinimumV = $null,
+  [Nullable[double]]$P2MaximumV = $null,
   [Parameter(Mandatory)][int]$SobolSampleCount,
   [Parameter(Mandatory)][double[]]$LocalP1ValuesV,
   [Parameter(Mandatory)][double[]]$LocalP2ValuesV,
@@ -32,8 +33,28 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json' }
-$exactManifest = (Resolve-Path -LiteralPath $ExactKRunManifest).Path
-$stripeManifest = (Resolve-Path -LiteralPath $StripeSeedRunManifest).Path
+$fixedMode = -not [string]::IsNullOrWhiteSpace($FixedMirrorStripeRunManifest)
+$legacyMode = (
+  -not [string]::IsNullOrWhiteSpace($ExactKRunManifest) -or
+  -not [string]::IsNullOrWhiteSpace($StripeSeedRunManifest)
+)
+if ($fixedMode -eq $legacyMode) {
+  throw 'Specify either -FixedMirrorStripeRunManifest or both -ExactKRunManifest and -StripeSeedRunManifest.'
+}
+if ($legacyMode -and (
+  [string]::IsNullOrWhiteSpace($ExactKRunManifest) -or
+  [string]::IsNullOrWhiteSpace($StripeSeedRunManifest)
+)) {
+  throw 'Legacy mode requires both -ExactKRunManifest and -StripeSeedRunManifest.'
+}
+$exactManifest = if ($legacyMode) { (Resolve-Path -LiteralPath $ExactKRunManifest).Path } else { '' }
+$stripeManifest = if ($legacyMode) { (Resolve-Path -LiteralPath $StripeSeedRunManifest).Path } else { '' }
+$fixedMirrorStripeManifest = if ($fixedMode) { (Resolve-Path -LiteralPath $FixedMirrorStripeRunManifest).Path } else { '' }
+$boundValues = @($P1MinimumV, $P1MaximumV, $P2MinimumV, $P2MaximumV)
+$explicitBoundCount = @($boundValues | Where-Object { $null -ne $_ }).Count
+if ($explicitBoundCount -ne 0 -and $explicitBoundCount -ne 4) {
+  throw 'Supply all four P1/P2 bound overrides, or omit all four to use the contract-owned initial window.'
+}
 $exitManifest = (Resolve-Path -LiteralPath $AcceleratorExitRunManifest).Path
 if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mrtof-two-prism-segmented-coverage' }
 
@@ -83,8 +104,12 @@ try {
 
   $failureStage = 'freeze_inputs'
   $frozenContract = Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
-  $frozenExact = Copy-VerifiedRunInput -Source $exactManifest -Destination (Join-Path $inputDir 'parent_exact_k_run_manifest.json')
-  $frozenStripe = Copy-VerifiedRunInput -Source $stripeManifest -Destination (Join-Path $inputDir 'parent_stripe_seed_run_manifest.json')
+  if ($fixedMode) {
+    $frozenFixedMirrorStripe = Copy-VerifiedRunInput -Source $fixedMirrorStripeManifest -Destination (Join-Path $inputDir 'parent_fixed_mirror_stripe_run_manifest.json')
+  } else {
+    $frozenExact = Copy-VerifiedRunInput -Source $exactManifest -Destination (Join-Path $inputDir 'parent_exact_k_run_manifest.json')
+    $frozenStripe = Copy-VerifiedRunInput -Source $stripeManifest -Destination (Join-Path $inputDir 'parent_stripe_seed_run_manifest.json')
+  }
   $frozenExit = Copy-VerifiedRunInput -Source $exitManifest -Destination (Join-Path $inputDir 'parent_accelerator_exit_run_manifest.json')
   $frozenObservation = Copy-VerifiedRunInput -Source $observation -Destination (Join-Path $inputDir 'accelerator_exit_observation.json')
   $frozenExitSourceReceipt = Copy-VerifiedRunInput -Source $exitSourceReceipt -Destination (Join-Path $inputDir 'accelerator_exit_source_receipt.json')
@@ -100,6 +125,9 @@ try {
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_handoff.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\prism_mirror_transport.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_exact_k_operating_point.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_mirror_stripe_operating_point.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_grid_mirror_stripe_handoff.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\joint_mirror_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
@@ -128,10 +156,19 @@ try {
     $sourceChecks += [pscustomobject]@{ source=$source; frozen=$destination }
   }
   $configuration = Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-  $configuration.inputs = [ordered]@{ downstream_contract=$frozenContract; parent_exact_k_run_manifest=$frozenExact; parent_stripe_seed_run_manifest=$frozenStripe; parent_accelerator_exit_run_manifest=$frozenExit; accelerator_exit_observation=$frozenObservation; accelerator_exit_source_receipt=$frozenExitSourceReceipt }
+  $configuration.inputs = [ordered]@{ downstream_contract=$frozenContract; parent_accelerator_exit_run_manifest=$frozenExit; accelerator_exit_observation=$frozenObservation; accelerator_exit_source_receipt=$frozenExitSourceReceipt }
+  if ($fixedMode) {
+    $configuration.inputs.parent_fixed_mirror_stripe_run_manifest = $frozenFixedMirrorStripe
+  } else {
+    $configuration.inputs.parent_exact_k_run_manifest = $frozenExact
+    $configuration.inputs.parent_stripe_seed_run_manifest = $frozenStripe
+  }
   foreach ($entry in $sourceInputs.GetEnumerator()) { $configuration.inputs[$entry.Key] = $entry.Value }
   $configuration.parameters = [ordered]@{
-    p1_bounds_v=@($P1MinimumV,$P1MaximumV); p2_bounds_v=@($P2MinimumV,$P2MaximumV); sobol_sample_count=$SobolSampleCount
+    requested_p1_bounds_v=if ($explicitBoundCount -eq 4) { @($P1MinimumV,$P1MaximumV) } else { $null }
+    requested_p2_bounds_v=if ($explicitBoundCount -eq 4) { @($P2MinimumV,$P2MaximumV) } else { $null }
+    voltage_domain_source=if ($explicitBoundCount -eq 4) { 'explicit_signed_override' } else { 'contract_current_initial_search_window' }
+    sobol_sample_count=$SobolSampleCount
     local_p1_values_v=$LocalP1ValuesV; local_p2_values_v=$LocalP2ValuesV; worker_count=$WorkerCount
     transport_numerics=[ordered]@{ relative_tolerance=$RelativeTolerance; absolute_tolerance=$AbsoluteTolerance; maximum_step_mm_per_sqrt_v=$MaximumStepMmPerSqrtV; event_samples_per_step=$EventSamplesPerStep; root_time_tolerance_mm_per_sqrt_v=$RootTimeToleranceMmPerSqrtV; boundary_root_tolerance_mm=$BoundaryRootToleranceMm; momentum_tolerance_sqrt_v=$MomentumToleranceSqrtV; normal_energy_tolerance_v=$NormalEnergyToleranceV; maximum_steps=$MaximumSteps }
     stage_a_maximum_reduced_time_mm_per_sqrt_v=$StageAMaximumReducedTimeMmPerSqrtV; stage_b_maximum_reduced_time_mm_per_sqrt_v=$StageBMaximumReducedTimeMmPerSqrtV
@@ -146,12 +183,10 @@ try {
   $localP1 = ($LocalP1ValuesV | ForEach-Object { $_.ToString('R',$culture) }) -join ','
   $localP2 = ($LocalP2ValuesV | ForEach-Object { $_.ToString('R',$culture) }) -join ','
   $args = @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_coverage',
-    '--contract',$frozenContract,'--exact-k-manifest',$frozenExact,'--stripe-seed-manifest',$frozenStripe,
+    '--contract',$frozenContract,
     '--accelerator-exit-observation',$frozenObservation,'--expected-observation-sha256',$expectedObservationSha,
     '--accelerator-exit-source-receipt',$frozenExitSourceReceipt,
     '--source-receipt-output',$sourceReceipt,'--output',$summary,
-    '--p1-min-v',$P1MinimumV.ToString('R',$culture),'--p1-max-v',$P1MaximumV.ToString('R',$culture),
-    '--p2-min-v',$P2MinimumV.ToString('R',$culture),'--p2-max-v',$P2MaximumV.ToString('R',$culture),
     '--sobol-sample-count',[string]$SobolSampleCount,"--local-p1-values-v=$localP1","--local-p2-values-v=$localP2",'--worker-count',[string]$WorkerCount,
     '--relative-tolerance',$RelativeTolerance.ToString('R',$culture),'--absolute-tolerance',$AbsoluteTolerance.ToString('R',$culture),
     '--max-step',$MaximumStepMmPerSqrtV.ToString('R',$culture),'--event-samples-per-step',[string]$EventSamplesPerStep,
@@ -159,6 +194,19 @@ try {
     '--momentum-tolerance',$MomentumToleranceSqrtV.ToString('R',$culture),'--normal-energy-tolerance',$NormalEnergyToleranceV.ToString('R',$culture),
     '--maximum-steps',[string]$MaximumSteps,'--stage-a-maximum-reduced-time',$StageAMaximumReducedTimeMmPerSqrtV.ToString('R',$culture),
     '--stage-b-maximum-reduced-time',$StageBMaximumReducedTimeMmPerSqrtV.ToString('R',$culture))
+  if ($fixedMode) {
+    $args += @('--fixed-mirror-stripe-manifest',$frozenFixedMirrorStripe)
+  } else {
+    $args += @('--exact-k-manifest',$frozenExact,'--stripe-seed-manifest',$frozenStripe)
+  }
+  if ($explicitBoundCount -eq 4) {
+    $args += @(
+      '--p1-min-v',$P1MinimumV.Value.ToString('R',$culture),
+      '--p1-max-v',$P1MaximumV.Value.ToString('R',$culture),
+      '--p2-min-v',$P2MinimumV.Value.ToString('R',$culture),
+      '--p2-max-v',$P2MaximumV.Value.ToString('R',$culture)
+    )
+  }
   $lease = $null
   try { $lease = Enter-HostExecutionLease -Role GATE -Stage theory_compute -RunId $RunId; Invoke-ProjectPython -Arguments $args -LogPath $logPath }
   finally { if ($lease) { Exit-HostExecutionLease -Lease $lease } }

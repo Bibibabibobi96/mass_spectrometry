@@ -234,6 +234,7 @@ $dispatchRequestPath=$null;$resourceProfilesPath=$null;$runtimeDispatchPlanPath=
 $batchPlanPath=$null;$batchResourceUsagePath=$null;$resourceProfilePath=$null
 $batchCapacityReceipts=@();$batchWaveResult=$null
 $earlyOperatingCacheProbe=$null;$earlyOperatingCacheHit=$false;$earlyChangedIndexCount=0
+$fixedMirrorStripeAuthority=$null;$fixedMirrorStripeAuthorityLocal=$null
 try{
   $sourceAnalyzer=Join-Path $geometrySimion 'mrtof_analyzer.pa0'
   $acceleratorConfig=Get-Content -Raw -LiteralPath (Join-Path $acceleratorRun 'run_config.json')|ConvertFrom-Json -Depth 40
@@ -319,6 +320,7 @@ try{
   $mirrorSummary=Join-Path $mirrorRun 'summary.json'
   $stripeSummary=Join-Path $stripeRun 'summary.json'
   $acceleratorReceipt=Join-Path $acceleratorRun 'results\accelerator_focus_voltage_trial_receipt.json'
+  $fixedMirrorStripeLoader=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_mirror_stripe_operating_point.py'
   $trialTool=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_simion_trial.py'
   $batchTool=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mrtof_batch_flight.py'
   $voltageizerSource=Join-Path $PSScriptRoot 'voltageize_analyzer_pa0.lua'
@@ -333,12 +335,31 @@ try{
   $counterSource=Join-Path $PSScriptRoot 'mirror_cycle_counter.lua'
   $mapSource=Join-Path $PSScriptRoot 'candidate_voltage_map.lua'
   $launcherSource=Join-Path $PSScriptRoot 'run_iob_flight.lua'
-  foreach($path in @($sourceAnalyzer,$sourceAccelerator,$sourceDetector,$reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$batchTool,$voltageizerSource,$iobBuilderSource,$localIobBuilderSource,$localIobInspectorSource,$standaloneComposerSource,$iobSeedSource,$localIobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){
+  foreach($path in @($sourceAnalyzer,$sourceAccelerator,$sourceDetector,$reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$fixedMirrorStripeLoader,$trialTool,$batchTool,$voltageizerSource,$iobBuilderSource,$localIobBuilderSource,$localIobInspectorSource,$standaloneComposerSource,$iobSeedSource,$localIobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){
     if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required P1/P2 trial input is missing: $path"}
+  }
+  $stripeRunConfig=Get-Content -Raw -LiteralPath (Join-Path $stripeRun 'run_config.json')|ConvertFrom-Json -Depth 40
+  if([string]$stripeRunConfig.mode-eq'dual_stripe_fixed_grid_native_downstream_seed'){
+    $fixedMirrorStripeAuthority=Join-Path $resultDir 'fixed_mirror_stripe_downstream_authority.json'
+    Invoke-ProjectPython -Arguments @(
+      '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point',
+      '--manifest',$stripeManifest,'--output',$fixedMirrorStripeAuthority
+    )|Out-Host
+    $authority=Get-Content -Raw -LiteralPath $fixedMirrorStripeAuthority|ConvertFrom-Json -Depth 30
+    $mirrorManifestDocument=Get-Content -Raw -LiteralPath $mirrorManifest|ConvertFrom-Json -Depth 30
+    $stripeManifestDocument=Get-Content -Raw -LiteralPath $stripeManifest|ConvertFrom-Json -Depth 30
+    if($authority.status-ne'success'-or$authority.role-ne'mrtof_fixed_mirror_stripe_downstream_operating_authority'){
+      throw 'Fixed mirror/Stripe downstream authority is invalid.'
+    }
+    if([string]$authority.source_fixed_grid_run_id-ne[string]$mirrorManifestDocument.run_id-or
+       [string]$authority.source_stripe_run_id-ne[string]$stripeManifestDocument.run_id){
+      throw 'MirrorRunPath or StripeRunPath differs from the fixed mirror/Stripe downstream authority.'
+    }
   }
   $failureStage='capacity_preflight'
   [int64]$requiredBytes=0;[int64]$transientBytes=0
-  foreach($path in @($reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$batchTool,$voltageizerSource,$iobBuilderSource,$localIobBuilderSource,$localIobInspectorSource,$standaloneComposerSource,$iobSeedSource,$localIobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){$requiredBytes+=[int64](Get-Item -LiteralPath $path).Length}
+  foreach($path in @($reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$fixedMirrorStripeLoader,$trialTool,$batchTool,$voltageizerSource,$iobBuilderSource,$localIobBuilderSource,$localIobInspectorSource,$standaloneComposerSource,$iobSeedSource,$localIobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){$requiredBytes+=[int64](Get-Item -LiteralPath $path).Length}
+  if($null-ne$fixedMirrorStripeAuthority){$requiredBytes+=[int64](Get-Item -LiteralPath $fixedMirrorStripeAuthority).Length}
   if($null-ne$bunchSourceReceipt){$requiredBytes+=[int64](Get-Item -LiteralPath $bunchSourceReceipt).Length}
   # RequiredHeadroomBytes governs retained artifact growth. Temporary solver
   # PAs instead raise the physical-free-space floor and are deleted before a
@@ -397,6 +418,7 @@ try{
   $reviewed=Copy-RequiredInput $reviewedContract (Join-Path $solverDir 'simion_prototype_contract.json') 'reviewed geometry contract'
   $mirrorLocal=Copy-RequiredInput $mirrorSummary (Join-Path $solverDir 'mirror_exact_k_summary.json') 'exact-K mirror summary'
   $stripeLocal=Copy-RequiredInput $stripeSummary (Join-Path $solverDir 'dual_stripe_exact_k_summary.json') 'exact-K Stripe summary'
+  $fixedMirrorStripeAuthorityLocal=if($null-eq$fixedMirrorStripeAuthority){$null}else{Copy-RequiredInput $fixedMirrorStripeAuthority (Join-Path $solverDir 'fixed_mirror_stripe_downstream_authority.json') 'fixed mirror/Stripe downstream authority'}
   $acceleratorLocal=Copy-RequiredInput $acceleratorReceipt (Join-Path $solverDir 'accelerator_focus_voltage_trial_receipt.json') 'accelerator voltage receipt'
   $bunchSourceLocal=if($null-eq$bunchSourceReceipt){$null}else{Copy-RequiredInput $bunchSourceReceipt (Join-Path $solverDir 'bunch_source_receipt.json') 'bunch source receipt'}
   foreach($pair in @(
@@ -429,6 +451,7 @@ try{
     $materializeArguments+=@('--stripe-1-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$Stripe1VoltageV)),
       '--stripe-2-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$Stripe2VoltageV)))
   }
+  if($null-ne$fixedMirrorStripeAuthorityLocal){$materializeArguments+=@('--fixed-mirror-stripe-authority',$fixedMirrorStripeAuthorityLocal)}
   if($null-ne$bunchSourceLocal){$materializeArguments+=@('--bunch-source-receipt',$bunchSourceLocal)}
   if($bunchSelectionRequested){$materializeArguments+=@('--bunch-particle-id-min',([string]$BunchParticleIdMin),'--bunch-particle-id-max',([string]$BunchParticleIdMax))}
   if($TrajectoryStepScale-ne1){$materializeArguments+=@('--trajectory-step-scale',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$TrajectoryStepScale)))}
@@ -458,7 +481,7 @@ try{
   $temporaryAnalyzer=if($reuseFrozenWorkbenchAnalyzer){$workbenchAnalyzer}else{Join-Path $temporarySolverDir 'analyzer_operating.pa0'}
   $temporaryIob=Join-Path $temporarySolverDir 'mrtof_three_component_candidate.iob'
   $posePath=Join-Path $resultDir 'resolved_iob_pose.json'
-  $poseCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.split_candidate_geometry import resolve_split_iob_origins; p=Path(sys.argv[1]); active=load_contract(Path(sys.argv[2])); c=json.loads(p.read_text(encoding='utf-8')); policy=active['accelerator']['detector_return_path']; Path(sys.argv[3]).write_text(json.dumps({'origins_mm':resolve_split_iob_origins(p,inherited_detector_return_path=policy,inherited_dual_stripe_topology_contract=active),'mesh_mm_per_gu':c['simion']['component_mesh_mm_per_gu'],'detector_return_policy_authority':'current_trajectory_contract'},indent=2)+'\n',encoding='utf-8')"
+  $poseCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract,mirror_power_supply_limits; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.split_candidate_geometry import resolve_split_iob_origins; p=Path(sys.argv[1]); active=load_contract(Path(sys.argv[2])); c=json.loads(p.read_text(encoding='utf-8')); policy=active['accelerator']['detector_return_path']; limits=mirror_power_supply_limits(active); Path(sys.argv[3]).write_text(json.dumps({'origins_mm':resolve_split_iob_origins(p,inherited_detector_return_path=policy,inherited_dual_stripe_topology_contract=active,inherited_mirror_power_supply_limits_v=limits),'mesh_mm_per_gu':c['simion']['component_mesh_mm_per_gu'],'detector_return_policy_authority':'current_trajectory_contract'},indent=2)+'\n',encoding='utf-8')"
   Invoke-ProjectPython -Arguments @('-c',$poseCode,$reviewed,$trajectoryContract,$posePath)
   $pose=Get-Content -LiteralPath $posePath -Raw -Encoding UTF8|ConvertFrom-Json
   $originArguments=@()
@@ -1001,7 +1024,7 @@ try{
   $observedExtraction=if($null-ne$observed.PSObject.Properties['extraction_diagnostic']){$observed.extraction_diagnostic}else{$null}
   $detectorHit=($null-ne$observedExtraction-and$observedExtraction.status-eq'detector_hit')
   $pulseClause=if($PulseAcceleratorUntilInitialExit){' The accelerator remained energized through the first exit and was then grounded using the measured single-centre exit event; this event-triggered schedule is not valid for a bunch.'}elseif($null-ne$acceleratorPulseSchedule){' The frozen source consumed one schema-2 global pulse-off schedule bound to the complete cohort safe-exit envelope.'}else{' The accelerator remained static.'}
-  $summaryReason=if($bunchSelectionRequested){"The contiguous frozen source interval $BunchParticleIdMin..$BunchParticleIdMax was replayed as a diagnostic without filtering its outcomes."+$pulseClause+' Detection and collision evidence remain Candidate diagnostics.'}elseif($null-ne$bunchSourceContract){'The complete frozen N>1 cohort was flown without filtering losses.'+$pulseClause+' Detection, target-K, overtone and TOF statistics remain Candidate evidence.'}elseif($detectorHit){'The fixed reviewed geometry was flown once from the physical 5-eV pre-acceleration state with unchanged static prism voltages.'+$pulseClause+' A natural non-retracing detector hit proves only the single-centre event chain; target-K closure remains independently required.'}else{'The fixed reviewed geometry was flown once from the physical 5-eV pre-acceleration state with unchanged static prism voltages.'+$pulseClause+' No natural non-retracing detector hit was observed, so the prototype event chain remains open.'}
+  $summaryReason=if($bunchSelectionRequested){"The contiguous frozen source interval $BunchParticleIdMin..$BunchParticleIdMax was replayed as a diagnostic without filtering its outcomes."+$pulseClause+' Detection and collision evidence remain Candidate diagnostics.'}elseif($null-ne$bunchSourceContract){'The complete frozen N>1 cohort was flown without filtering losses.'+$pulseClause+' Detection, target-K, overtone and TOF statistics remain Candidate evidence.'}elseif($detectorHit){'The fixed reviewed geometry was flown once from the mirror-derived near-5-eV pre-acceleration state with unchanged static prism voltages.'+$pulseClause+' A natural non-retracing detector hit proves only the single-centre event chain; target-K closure remains independently required.'}else{'The fixed reviewed geometry was flown once from the mirror-derived near-5-eV pre-acceleration state with unchanged static prism voltages.'+$pulseClause+' No natural non-retracing detector hit was observed, so the prototype event chain remains open.'}
   $cohortAnalysis=if($null-ne$observed.PSObject.Properties['cohort_analysis']){$observed.cohort_analysis}else{$null}
   $dispatchSummary=$null
   if($isBunchFlight){
@@ -1047,6 +1070,7 @@ try{
     geometry_run_manifest=$geometryManifest
     mirror_run_manifest=$mirrorManifest
     stripe_run_manifest=$stripeManifest
+    fixed_mirror_stripe_downstream_authority=if($null-eq$fixedMirrorStripeAuthority){$null}else{Join-Path $artifactResultDir 'fixed_mirror_stripe_downstream_authority.json'}
     accelerator_run_manifest=$acceleratorManifest
     accelerator_family_run_manifest=$null
     accelerator_pulse_schedule=$acceleratorPulseSchedule
@@ -1102,6 +1126,7 @@ try{
     -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   $manifestOutputs=@($summary,$rawLog,$observation,$trialReceipt,$voltageReceipt,$posePath,$startupPath,$terminalPath,$retention)
+  if($null-ne$fixedMirrorStripeAuthority){$manifestOutputs+=$fixedMirrorStripeAuthority}
   foreach($path in @($dispatchRequestPath,$resourceProfilesPath,$runtimeDispatchPlanPath,$batchPlanPath,$batchResourceUsagePath,$batchMergeReceipt,$resourceProfilePath)+@($batchCapacityReceipts)){if($null-ne$path-and(Test-Path -LiteralPath $path -PathType Leaf)){$manifestOutputs+=$path}}
   if($null-ne$batchBundleReceiptPath-and(Test-Path -LiteralPath $batchBundleReceiptPath -PathType Leaf)){$manifestOutputs+=$batchBundleReceiptPath}
   $batchRelocatedInspectionReport=Join-Path $resultDir 'batch_iob_relocated_structure.txt'

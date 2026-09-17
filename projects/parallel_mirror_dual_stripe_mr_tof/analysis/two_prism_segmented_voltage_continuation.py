@@ -950,9 +950,6 @@ def main() -> None:
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_exit_transport_source import (
         materialize_accelerator_exit_transport_source,
     )
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point import (
-        load_managed_exact_k_operating_point,
-    )
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_mirror_transport import (
         TransportNumerics,
     )
@@ -962,7 +959,7 @@ def main() -> None:
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_coverage import (
         _evaluate,
         _initialize_worker,
-        _load_stripe_seed,
+        load_segmented_operating_authority,
         validate_accelerator_exit_source_binding,
     )
 
@@ -973,11 +970,15 @@ def main() -> None:
     )
     parser = argparse.ArgumentParser()
     for name in (
-        "contract", "exact-k-manifest", "stripe-seed-manifest",
+        "contract",
         "accelerator-exit-observation", "accelerator-exit-source-receipt",
         "coverage-summary", "source-receipt-output", "output",
     ):
         parser.add_argument(f"--{name}", type=Path, required=True)
+    authority = parser.add_mutually_exclusive_group(required=True)
+    authority.add_argument("--exact-k-manifest", type=Path)
+    authority.add_argument("--fixed-mirror-stripe-manifest", type=Path)
+    parser.add_argument("--stripe-seed-manifest", type=Path)
     parser.add_argument("--expected-observation-sha256", required=True)
     parser.add_argument("--expected-topology-signature-sha256", required=True)
     parser.add_argument(
@@ -1023,15 +1024,42 @@ def main() -> None:
     expected_inputs = coverage.get("inputs", {})
     for label, path, expected in (
         ("contract", args.contract, expected_inputs.get("contract_sha256")),
-        ("exact-K manifest", args.exact_k_manifest, expected_inputs.get("exact_k_manifest_sha256")),
-        ("Stripe manifest", args.stripe_seed_manifest, expected_inputs.get("stripe_seed", {}).get("manifest_sha256")),
         ("accelerator exit observation", args.accelerator_exit_observation, expected_inputs.get("accelerator_exit_observation_sha256")),
         ("accelerator exit source receipt", args.accelerator_exit_source_receipt, expected_inputs.get("accelerator_exit_source_receipt", {}).get("sha256")),
     ):
         if file_sha256(path).lower() != str(expected).lower():
             raise CandidateContractError(f"{label} differs from the coverage input")
-
-    managed = load_managed_exact_k_operating_point(args.exact_k_manifest, args.contract)
+    authority_path = (
+        args.fixed_mirror_stripe_manifest
+        if args.fixed_mirror_stripe_manifest is not None
+        else args.exact_k_manifest
+    )
+    expected_authority_sha = expected_inputs.get(
+        "operating_authority_manifest_sha256",
+        expected_inputs.get("exact_k_manifest_sha256"),
+    )
+    if file_sha256(authority_path).lower() != str(expected_authority_sha).lower():
+        raise CandidateContractError("operating authority differs from the coverage input")
+    if args.fixed_mirror_stripe_manifest is None:
+        if args.stripe_seed_manifest is None:
+            raise CandidateContractError("legacy continuation requires its Stripe manifest")
+        if file_sha256(args.stripe_seed_manifest).lower() != str(
+            expected_inputs.get("stripe_seed", {}).get("manifest_sha256")
+        ).lower():
+            raise CandidateContractError("Stripe manifest differs from the coverage input")
+    elif args.stripe_seed_manifest is not None:
+        raise CandidateContractError(
+            "fixed mirror/Stripe continuation forbids a second Stripe manifest"
+        )
+    (
+        managed, stripe_biases, slow_energy, target_tangent_ratio,
+        stripe_identity, operating_authority_kind, _,
+    ) = load_segmented_operating_authority(
+        contract_path=args.contract,
+        exact_k_manifest_path=args.exact_k_manifest,
+        stripe_seed_manifest_path=args.stripe_seed_manifest,
+        fixed_mirror_stripe_manifest_path=args.fixed_mirror_stripe_manifest,
+    )
     species = managed.contract.get("particle_source", {}).get("species", {})
     mass = float(species.get("mass_th"))
     charge = species.get("charge_e")
@@ -1046,10 +1074,6 @@ def main() -> None:
     source_binding = validate_accelerator_exit_source_binding(
         source_receipt_path=args.accelerator_exit_source_receipt,
         source_handoff_receipt=source_receipt, managed=managed,
-    )
-    stripe_biases, slow_energy, target_tangent_ratio, stripe_identity = _load_stripe_seed(
-        args.stripe_seed_manifest, exact_k_manifest_path=args.exact_k_manifest,
-        managed=managed,
     )
     prism_ids = (
         int(managed.contract["prism_transport"]["first_prism"]["electrode_id"]),
@@ -1113,7 +1137,8 @@ def main() -> None:
         "inputs": {
             "coverage_summary_sha256": file_sha256(args.coverage_summary).lower(),
             "contract_sha256": file_sha256(args.contract).lower(),
-            "exact_k_manifest_sha256": file_sha256(args.exact_k_manifest).lower(),
+            "operating_authority_kind": operating_authority_kind,
+            "operating_authority_manifest_sha256": file_sha256(authority_path).lower(),
             "stripe_seed": stripe_identity,
             "accelerator_exit_source_receipt": source_binding,
             "materialized_source_receipt_sha256": file_sha256(args.source_receipt_output).lower(),

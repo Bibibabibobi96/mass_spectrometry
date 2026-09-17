@@ -23,12 +23,13 @@ class TwoPrismSegmentedContinuationRunnerTests(unittest.TestCase):
         self.assertNotIn("[Parameter(Mandatory)][string]$AcceleratorExitRunManifest", text)
         for record_name in (
             "downstream_contract",
-            "parent_exact_k_run_manifest",
-            "parent_stripe_seed_run_manifest",
             "accelerator_exit_observation",
             "accelerator_exit_source_receipt",
         ):
             self.assertIn(f"-Name '{record_name}'", text)
+        self.assertIn("parent_fixed_mirror_stripe_run_manifest", text)
+        self.assertIn("parent_exact_k_run_manifest", text)
+        self.assertIn("parent_stripe_seed_run_manifest", text)
         self.assertIn("two_prism_segmented_voltage_branch_coverage", text)
         self.assertIn("coverage_manifest_verification.log", text)
         self.assertIn("parent_coverage_summary.json", text)
@@ -114,7 +115,7 @@ class TwoPrismSegmentedContinuationRunnerTests(unittest.TestCase):
         self.assertIn('role="GATE", stage="theory_compute"', source)
         self.assertIn("MRTOF_TWO_PRISM_SEGMENTED_CONTINUATION=PASS", source)
         self.assertIn(
-            "stripe_biases, slow_energy, target_tangent_ratio, stripe_identity = _load_stripe_seed(",
+            "load_segmented_operating_authority(",
             source,
         )
         self.assertIn('"target_tangent_ratio": target_tangent_ratio', source)

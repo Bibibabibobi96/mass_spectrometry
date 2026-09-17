@@ -71,6 +71,7 @@ def _finite(value: Any, label: str) -> float:
 
 def load_fixed_mirror_stripe_operating_point(
     stripe_manifest_path: Path,
+    downstream_contract_path: Path | None = None,
 ) -> FixedMirrorStripeOperatingPoint:
     """Verify and join the r130-style mirror evidence with its r3-style Stripe seed."""
     path = stripe_manifest_path.resolve()
@@ -104,7 +105,12 @@ def load_fixed_mirror_stripe_operating_point(
     summary_path = record_path(summary_record, base_dir=root)
     parent_manifest = _object(parent_path, "fixed-grid parent manifest")
     summary = _object(summary_path, "fixed-mirror Stripe summary")
-    mirror = load_fixed_grid_mirror_point(parent_path, contract_path)
+    mirror = load_fixed_grid_mirror_point(
+        parent_path,
+        downstream_contract_path.resolve()
+        if downstream_contract_path is not None
+        else contract_path,
+    )
     if (
         summary.get("schema_version") != 3
         or summary.get("role")

@@ -1,10 +1,10 @@
 """Materialize and analyze one finite-3D P1/P2 voltage trial.
 
 The trial reuses the reviewed PA geometry.  It combines the independently
-derived exact-K mirror/Stripe point and the separately calibrated accelerator
-focus point, then changes only the two prism voltages.  The source starts in
-accelerator gap 1 with the user-declared 5 eV slow kinetic energy in +project-y;
-the accelerator field supplies the fast -project-z energy.
+derived mirror/Stripe point and the separately calibrated accelerator focus
+point, then changes only the two prism voltages.  The source starts in
+accelerator gap 1 with the mirror/Stripe-selected near-5-eV slow kinetic energy
+in +project-y; the accelerator field supplies the fast -project-z energy.
 """
 from __future__ import annotations
 
@@ -45,6 +45,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     CandidateContractError,
     derive_two_zone_placement,
     load_contract,
+    mirror_power_supply_limits,
     resolve_trajectory_profile,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
@@ -235,6 +236,92 @@ def load_schema5_native_source_state(
 ) -> tuple[dict[str, Any], float]:
     """Public strict loader for the contract-bound schema-5 native Stripe source."""
     return _schema5_native_source_state(stripe_summary, contract, selected_energy_v)
+
+
+def _fixed_mirror_stripe_source_state(
+    authority: dict[str, Any],
+    mirror_summary: dict[str, Any],
+    stripe_summary: dict[str, Any],
+    contract: dict[str, Any],
+) -> tuple[dict[str, Any], float, float, list[float], float]:
+    """Validate the fixed-grid mirror/variable-slow-energy downstream receipt."""
+    if (
+        authority.get("schema_version") != 1
+        or authority.get("role")
+        != "mrtof_fixed_mirror_stripe_downstream_operating_authority"
+        or authority.get("status") != "success"
+    ):
+        raise CandidateContractError("fixed mirror/Stripe downstream authority is invalid")
+    if (
+        mirror_summary.get("schema_version") != 1
+        or mirror_summary.get("role") != "mrtof_mirror_turn_fixed_grid_validation"
+        or mirror_summary.get("status") != "success"
+    ):
+        raise CandidateContractError("fixed mirror summary identity is invalid")
+    if (
+        stripe_summary.get("schema_version") != 3
+        or stripe_summary.get("role")
+        != "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family"
+        or stripe_summary.get("status")
+        != "fixed_grid_native_mirror_exact_K_slow_energy_and_spatial_return_inverse_complete"
+    ):
+        raise CandidateContractError("fixed-mirror Stripe summary identity is invalid")
+    seed = stripe_summary.get("selected_seed")
+    materialized = (
+        seed.get("native_spatial_return_materialization")
+        if isinstance(seed, dict) else None
+    )
+    if not isinstance(seed, dict) or not isinstance(materialized, dict):
+        raise CandidateContractError("fixed-mirror Stripe summary lacks its materialization")
+    axial = _finite(authority.get("axial_energy_per_charge_v"), "fixed mirror axial energy")
+    slow = _finite(authority.get("slow_energy_per_charge_v"), "selected slow energy")
+    target_k = _finite(authority.get("target_period_ratio"), "fixed mirror/Stripe target K")
+    predicted_k = _finite(
+        authority.get("predicted_period_ratio"), "fixed mirror/Stripe predicted K",
+    )
+    mirror_voltages = _vector(
+        authority.get("mirror_voltages_v"), 5, "fixed-grid mirror voltages",
+    )
+    stripe_biases = _vector(
+        authority.get("stripe_biases_v"), 2, "fixed-mirror Stripe biases",
+    )
+    if slow <= 0.0 or axial <= 0.0 or not math.isclose(
+        target_k, predicted_k, rel_tol=0.0, abs_tol=1e-12,
+    ):
+        raise CandidateContractError("fixed mirror/Stripe energy or K identity is invalid")
+    expected = (
+        _finite(seed.get("selected_axial_energy_per_charge_v"), "Stripe axial energy"),
+        _finite(seed.get("selected_exact_K_slow_energy_per_charge_v"), "Stripe slow energy"),
+        _finite(seed.get("target_drift_period_ratio"), "Stripe target K"),
+        _finite(seed.get("predicted_continuous_oscillation_count"), "Stripe predicted K"),
+    )
+    materialized_biases = _vector(
+        materialized.get("stripe_biases_v"), 2, "materialized Stripe biases",
+    )
+    if (
+        expected != (axial, slow, target_k, predicted_k)
+        or _vector(seed.get("stripe_biases_v"), 2, "Stripe seed biases") != stripe_biases
+        or materialized_biases != stripe_biases
+        or _finite(materialized.get("axial_energy_per_charge_v"), "materialized axial energy")
+        != axial
+        or _finite(materialized.get("source_slow_energy_per_charge_v"), "materialized slow energy")
+        != slow
+    ):
+        raise CandidateContractError("fixed mirror/Stripe authority differs from its source summary")
+    energy_contract = contract.get("accelerator_energy_contract")
+    if not isinstance(energy_contract, dict):
+        raise CandidateContractError("MR-TOF contract lacks its accelerator energy envelope")
+    reference = _finite(
+        energy_contract.get("net_gain_reference_center_per_charge_v"),
+        "contract net-gain reference centre",
+    )
+    half_range = _finite(
+        energy_contract.get("net_gain_center_search_half_range_per_charge_v"),
+        "contract net-gain search half-range",
+    )
+    if not reference - half_range <= axial <= reference + half_range:
+        raise CandidateContractError("fixed-grid mirror energy is outside the contract search envelope")
+    return seed, slow, axial, mirror_voltages, target_k
 
 
 def _p2_handoff_targets(
@@ -914,6 +1001,7 @@ def materialize_trial(
     reviewed_contract_path: Path,
     mirror_summary_path: Path,
     stripe_summary_path: Path,
+    fixed_mirror_stripe_authority_path: Path | None,
     accelerator_receipt_path: Path,
     prism_1_v: float,
     prism_2_v: float,
@@ -935,33 +1023,53 @@ def materialize_trial(
         raise CandidateContractError("workbench accelerator instance must be 2 or 7")
     trajectory_contract = load_contract(trajectory_contract_path)
     detector_return_policy = trajectory_contract["accelerator"]["detector_return_path"]
+    mirror_supply_limits = mirror_power_supply_limits(trajectory_contract)
     contract = load_contract(
         contract_path, inherited_detector_return_path=detector_return_policy,
+        inherited_mirror_power_supply_limits_v=mirror_supply_limits,
     )
     reviewed_contract = load_contract(
         reviewed_contract_path, inherited_detector_return_path=detector_return_policy,
+        inherited_mirror_power_supply_limits_v=mirror_supply_limits,
     )
     mirror = _load(mirror_summary_path)
     stripe = _load(stripe_summary_path)
     accelerator = _load(accelerator_receipt_path)
-    if mirror.get("status") != "success" and mirror.get("status") != "exact_k_operating_point_selected":
-        # Current exact-K summary uses a richer role-specific status.  Require
-        # the selected point below instead of accepting arbitrary summaries.
-        if not isinstance(mirror.get("selected_operating_point"), dict):
-            raise CandidateContractError("mirror summary has no selected exact-K operating point")
-    selected_mirror = mirror.get("selected_operating_point")
-    selected_stripe = stripe.get("selected_exact_k_operating_point")
-    if not all(isinstance(value, dict) for value in (selected_mirror, selected_stripe)):
-        raise CandidateContractError("mirror/Stripe summaries do not expose the selected exact-K point")
-    energy = _finite(selected_mirror.get("energy_per_charge_v"), "mirror selected energy")
-    seed, slow_energy = _schema5_native_source_state(stripe, contract, energy)
+    fixed_authority = (
+        _load(fixed_mirror_stripe_authority_path)
+        if fixed_mirror_stripe_authority_path is not None else None
+    )
+    if fixed_authority is not None:
+        seed, slow_energy, energy, mirror_voltages, authority_target_k = (
+            _fixed_mirror_stripe_source_state(
+                fixed_authority, mirror, stripe, contract,
+            )
+        )
+    else:
+        if mirror.get("status") not in {"success", "exact_k_operating_point_selected"}:
+            # Current exact-K summary uses a richer role-specific status.  Require
+            # the selected point below instead of accepting arbitrary summaries.
+            if not isinstance(mirror.get("selected_operating_point"), dict):
+                raise CandidateContractError("mirror summary has no selected exact-K operating point")
+        selected_mirror = mirror.get("selected_operating_point")
+        selected_stripe = stripe.get("selected_exact_k_operating_point")
+        if not all(isinstance(value, dict) for value in (selected_mirror, selected_stripe)):
+            raise CandidateContractError("mirror/Stripe summaries do not expose the selected exact-K point")
+        energy = _finite(selected_mirror.get("energy_per_charge_v"), "mirror selected energy")
+        seed, slow_energy = _schema5_native_source_state(stripe, contract, energy)
+        if abs(
+            _finite(selected_stripe.get("axial_energy_per_charge_v"), "Stripe selected energy")
+            - energy
+        ) > 1e-9:
+            raise CandidateContractError("mirror and Stripe selected energies differ")
+        mirror_voltages = _vector(
+            selected_mirror.get("mirror_voltages_v"), 5, "mirror voltages",
+        )
+        authority_target_k = None
     target_turn_y, target_angle_degrees, target_tangent_ratio = (
         _p2_handoff_targets(seed, contract)
     )
-    if abs(_finite(selected_stripe.get("axial_energy_per_charge_v"), "Stripe selected energy") - energy) > 1e-9:
-        raise CandidateContractError("mirror and Stripe selected energies differ")
     accelerator_energy = _accelerator_energy_binding(accelerator, energy)
-    mirror_voltages = _vector(selected_mirror.get("mirror_voltages_v"), 5, "mirror voltages")
     stripe_biases = _vector(seed.get("stripe_biases_v"), 2, "Stripe biases")
     if stripe_biases_override_v is not None:
         stripe_biases = [
@@ -974,6 +1082,10 @@ def materialize_trial(
     p2 = _finite(prism_2_v, "P2 voltage")
     phase_contract = resolve_drift_phase_contract(contract)
     target_k = phase_contract.target_period_ratio
+    if authority_target_k is not None and not math.isclose(
+        authority_target_k, target_k, rel_tol=0.0, abs_tol=1e-12,
+    ):
+        raise CandidateContractError("fixed mirror/Stripe authority target K differs from the contract")
     pulse_schedule = _load_frozen_accelerator_pulse_schedule(
         accelerator_pulse_schedule_path
     )
@@ -1260,6 +1372,11 @@ def materialize_trial(
             "reviewed_contract_sha256": _sha256(reviewed_contract_path),
             "mirror_summary_sha256": _sha256(mirror_summary_path),
             "stripe_summary_sha256": _sha256(stripe_summary_path),
+            **({
+                "fixed_mirror_stripe_authority_sha256": _sha256(
+                    fixed_mirror_stripe_authority_path
+                ),
+            } if fixed_mirror_stripe_authority_path is not None else {}),
             "accelerator_receipt_sha256": _sha256(accelerator_receipt_path),
             **({
                 "accelerator_pulse_schedule_sha256": _sha256(
@@ -1568,6 +1685,7 @@ def main() -> int:
     materialize.add_argument("--reviewed-contract", required=True, type=Path)
     materialize.add_argument("--mirror-summary", required=True, type=Path)
     materialize.add_argument("--stripe-summary", required=True, type=Path)
+    materialize.add_argument("--fixed-mirror-stripe-authority", type=Path)
     materialize.add_argument("--accelerator-receipt", required=True, type=Path)
     materialize.add_argument("--prism-1-v", required=True, type=float)
     materialize.add_argument("--prism-2-v", required=True, type=float)
@@ -1605,6 +1723,7 @@ def main() -> int:
             reviewed_contract_path=args.reviewed_contract,
             mirror_summary_path=args.mirror_summary,
             stripe_summary_path=args.stripe_summary,
+            fixed_mirror_stripe_authority_path=args.fixed_mirror_stripe_authority,
             accelerator_receipt_path=args.accelerator_receipt,
             prism_1_v=args.prism_1_v,
             prism_2_v=args.prism_2_v,

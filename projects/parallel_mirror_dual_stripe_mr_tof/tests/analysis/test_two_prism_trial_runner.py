@@ -134,6 +134,11 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
             "analyzer_voltageizer=if($reuseFrozenWorkbenchAnalyzer)",
             "basis_adjuster=Join-Path $artifactSolverDir",
             "basis_voltage_measurement=$null",
+            "fixed_mirror_stripe_operating_point",
+            "fixed_mirror_stripe_downstream_authority.json",
+            "--fixed-mirror-stripe-authority",
+            "MirrorRunPath or StripeRunPath differs from the fixed mirror/Stripe downstream authority",
+            "mirror-derived near-5-eV pre-acceleration state",
         ):
             self.assertIn(token, source)
         self.assertNotIn("ContinueMainDrift", source)

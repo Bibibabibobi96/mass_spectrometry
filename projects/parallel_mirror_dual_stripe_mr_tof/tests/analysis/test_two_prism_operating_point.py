@@ -32,7 +32,10 @@ class TwoPrismOperatingPointTest(unittest.TestCase):
             "sha256": file_sha256(path),
         }
 
-    def _trial(self, name: str, voltage: list[float], residual: list[float]) -> Path:
+    def _trial(
+        self, name: str, voltage: list[float], residual: list[float],
+        *, status: str = "p2_low_field_and_positive_mirror_turn_observed",
+    ) -> Path:
         run = self.root / name
         results = run / "results"
         results.mkdir(parents=True)
@@ -40,7 +43,7 @@ class TwoPrismOperatingPointTest(unittest.TestCase):
         run_config.write_text("{}\n", encoding="utf-8")
         observation = results / "two_prism_trial_observation.json"
         observation.write_text(json.dumps({
-            "status": "p2_low_field_and_positive_mirror_turn_observed",
+            "status": status,
             "prism_voltages_v": voltage,
             "residuals": {
                 "P1_P2_positive_mirror_turn_y_mm": residual[0],
@@ -116,6 +119,24 @@ class TwoPrismOperatingPointTest(unittest.TestCase):
                 "P1_P2_P2_shield_low_field_signed_vy_over_vz",
             ],
         )
+
+    def test_full_drift_observation_remains_valid_for_its_earlier_handoff_states(self) -> None:
+        seed = self._trial(
+            "seed", [100.0, -100.0], [-4.0, 0.05], status="full_drift_observed",
+        )
+        p1 = self._trial("p1", [102.0, -100.0], [-3.6, 0.19])
+        p2 = self._trial("p2", [100.0, -98.0], [-3.86, 0.18])
+        final = self._trial("final", [133.0, -134.0], [1e-5, 2e-5])
+
+        result = audit_operating_point(
+            contract_path=self.contract,
+            seed_manifest=seed,
+            prism_1_perturbation_manifest=p1,
+            prism_2_perturbation_manifest=p2,
+            iteration_manifests=[final],
+        )
+
+        self.assertEqual(result["classification"]["status"], "square_exact")
 
     def test_rejects_mixed_frozen_problem_or_wrong_axis_perturbation(self) -> None:
         seed = self._trial("seed", [100.0, -100.0], [-4.0, 0.05])

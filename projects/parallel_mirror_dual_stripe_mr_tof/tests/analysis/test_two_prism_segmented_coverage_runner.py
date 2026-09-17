@@ -24,13 +24,19 @@ class TwoPrismSegmentedCoverageRunnerTests(unittest.TestCase):
     def test_scientific_controls_are_explicit_parameters(self) -> None:
         text = RUNNER.read_text(encoding="utf-8-sig")
         for name in (
-            "P1MinimumV", "P1MaximumV", "P2MinimumV", "P2MaximumV",
             "SobolSampleCount", "WorkerCount", "RelativeTolerance",
             "MaximumStepMmPerSqrtV", "StageAMaximumReducedTimeMmPerSqrtV",
             "StageBMaximumReducedTimeMmPerSqrtV",
         ):
             self.assertIn("[Parameter(Mandatory)]", text)
             self.assertIn(f"${name}", text)
+
+    def test_current_fixed_mirror_mode_and_contract_voltage_window_are_supported(self) -> None:
+        text = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("FixedMirrorStripeRunManifest", text)
+        self.assertIn("--fixed-mirror-stripe-manifest", text)
+        self.assertIn("contract_current_initial_search_window", text)
+        self.assertIn("Supply all four P1/P2 bound overrides, or omit all four", text)
 
     def test_python_entry_requires_theory_compute_grant(self) -> None:
         source = (RUNNER.parent / "two_prism_segmented_coverage.py").read_text(

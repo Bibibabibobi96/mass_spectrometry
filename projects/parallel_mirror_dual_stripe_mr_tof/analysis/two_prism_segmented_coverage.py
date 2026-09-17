@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 import math
@@ -19,11 +19,15 @@ from common.host_resource_python import ensure_heavy_entry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_exit_transport_source import (
     materialize_accelerator_exit_transport_source,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point import (
+    load_fixed_mirror_stripe_operating_point,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point import (
     ManagedExactKOperatingPoint,
     load_managed_exact_k_operating_point,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import axial_potential_v
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_mirror_transport import (
     TransportNumerics,
 )
@@ -36,6 +40,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_po
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_transport import (
     evaluate_two_prism_segmented_voltage_pair,
+    two_prism_initial_search_bounds,
+    validate_two_prism_voltage_polarity_domain,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_voltage_seed import (
     selected_positive_mirror_turn_identity,
@@ -45,6 +51,15 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_vo
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
     load_schema5_native_source_state,
 )
+
+
+@dataclass(frozen=True)
+class SegmentedOperatingContext:
+    """Minimal verified mirror authority consumed by segmented P1/P2 transport."""
+
+    design: MirrorL0Design
+    axial_energy_per_charge_v: float
+    contract: dict[str, Any]
 
 
 def _finite(value: Any, label: str) -> float:
@@ -132,9 +147,78 @@ def _load_stripe_seed(
     )
 
 
+def load_segmented_operating_authority(
+    *,
+    contract_path: Path,
+    exact_k_manifest_path: Path | None = None,
+    stripe_seed_manifest_path: Path | None = None,
+    fixed_mirror_stripe_manifest_path: Path | None = None,
+) -> tuple[
+    SegmentedOperatingContext, tuple[float, float], float, float,
+    dict[str, Any], str, Path,
+]:
+    """Load either supported upstream authority into one P1/P2 context."""
+    fixed_mode = fixed_mirror_stripe_manifest_path is not None
+    legacy_mode = exact_k_manifest_path is not None or stripe_seed_manifest_path is not None
+    if fixed_mode == legacy_mode:
+        raise CandidateContractError(
+            "select exactly one fixed-mirror Stripe or legacy exact-K authority"
+        )
+    if fixed_mode:
+        fixed = load_fixed_mirror_stripe_operating_point(
+            fixed_mirror_stripe_manifest_path,
+            contract_path,
+        )
+        context = SegmentedOperatingContext(
+            design=fixed.mirror_design,
+            axial_energy_per_charge_v=fixed.axial_energy_per_charge_v,
+            contract=fixed.contract,
+        )
+        slow_energy = fixed.slow_energy_per_charge_v
+        return (
+            context,
+            fixed.stripe_biases_v,
+            slow_energy,
+            math.sqrt(slow_energy / fixed.axial_energy_per_charge_v),
+            {
+                "authority_kind": "fixed_grid_mirror_variable_slow_energy_stripe",
+                "manifest_sha256": file_sha256(
+                    fixed_mirror_stripe_manifest_path
+                ).lower(),
+                "source_fixed_grid_run_id": fixed.fixed_grid_run_id,
+                "source_stripe_run_id": fixed.stripe_run_id,
+            },
+            "fixed_grid_mirror_variable_slow_energy_stripe",
+            fixed_mirror_stripe_manifest_path,
+        )
+    if exact_k_manifest_path is None or stripe_seed_manifest_path is None:
+        raise CandidateContractError(
+            "legacy exact-K mode requires both mirror and Stripe manifests"
+        )
+    legacy = load_managed_exact_k_operating_point(
+        exact_k_manifest_path, contract_path,
+    )
+    biases, slow_energy, tangent, identity = _load_stripe_seed(
+        stripe_seed_manifest_path,
+        exact_k_manifest_path=exact_k_manifest_path,
+        managed=legacy,
+    )
+    return (
+        SegmentedOperatingContext(
+            design=legacy.design,
+            axial_energy_per_charge_v=legacy.axial_energy_per_charge_v,
+            contract=legacy.contract,
+        ),
+        biases,
+        slow_energy,
+        tangent,
+        identity,
+        "analytic_mirror_exact_k",
+        exact_k_manifest_path,
+    )
 def validate_accelerator_exit_source_binding(
     *, source_receipt_path: Path, source_handoff_receipt: dict[str, Any],
-    managed: ManagedExactKOperatingPoint,
+    managed: ManagedExactKOperatingPoint | SegmentedOperatingContext,
 ) -> dict[str, Any]:
     """Bind source identity and report, without hiding, its measured exact-K mismatch."""
     try:
@@ -367,17 +451,19 @@ def main() -> None:
     )
     parser = argparse.ArgumentParser()
     parser.add_argument("--contract", type=Path, required=True)
-    parser.add_argument("--exact-k-manifest", type=Path, required=True)
-    parser.add_argument("--stripe-seed-manifest", type=Path, required=True)
+    authority = parser.add_mutually_exclusive_group(required=True)
+    authority.add_argument("--exact-k-manifest", type=Path)
+    authority.add_argument("--fixed-mirror-stripe-manifest", type=Path)
+    parser.add_argument("--stripe-seed-manifest", type=Path)
     parser.add_argument("--accelerator-exit-observation", type=Path, required=True)
     parser.add_argument("--accelerator-exit-source-receipt", type=Path, required=True)
     parser.add_argument("--expected-observation-sha256", required=True)
     parser.add_argument("--source-receipt-output", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--p1-min-v", type=float, required=True)
-    parser.add_argument("--p1-max-v", type=float, required=True)
-    parser.add_argument("--p2-min-v", type=float, required=True)
-    parser.add_argument("--p2-max-v", type=float, required=True)
+    parser.add_argument("--p1-min-v", type=float)
+    parser.add_argument("--p1-max-v", type=float)
+    parser.add_argument("--p2-min-v", type=float)
+    parser.add_argument("--p2-max-v", type=float)
     parser.add_argument("--sobol-sample-count", type=int, required=True)
     parser.add_argument("--local-p1-values-v", required=True)
     parser.add_argument("--local-p2-values-v", required=True)
@@ -395,12 +481,42 @@ def main() -> None:
     parser.add_argument("--stage-b-maximum-reduced-time", type=float, required=True)
     args = parser.parse_args()
 
-    managed = load_managed_exact_k_operating_point(args.exact_k_manifest, args.contract)
+    (
+        managed, stripe_biases, source_energy, target_tangent_ratio,
+        stripe_identity, operating_authority_kind, operating_authority_path,
+    ) = load_segmented_operating_authority(
+        contract_path=args.contract,
+        exact_k_manifest_path=args.exact_k_manifest,
+        stripe_seed_manifest_path=args.stripe_seed_manifest,
+        fixed_mirror_stripe_manifest_path=args.fixed_mirror_stripe_manifest,
+    )
     species = managed.contract.get("particle_source", {}).get("species", {})
     mass = _finite(species.get("mass_th"), "contract particle mass")
     charge = species.get("charge_e")
     if type(charge) is not int or charge == 0:
         raise CandidateContractError("contract particle charge must be a nonzero integer")
+    explicit_bounds = (
+        args.p1_min_v, args.p1_max_v, args.p2_min_v, args.p2_max_v,
+    )
+    if all(value is None for value in explicit_bounds):
+        p1_bounds, p2_bounds = two_prism_initial_search_bounds(
+            managed.contract, charge_state=charge,
+        )
+        voltage_domain_source = "contract_current_initial_search_window"
+    elif any(value is None for value in explicit_bounds):
+        raise CandidateContractError(
+            "explicit P1/P2 coverage bounds must supply all four endpoints"
+        )
+    else:
+        p1_bounds = (args.p1_min_v, args.p1_max_v)
+        p2_bounds = (args.p2_min_v, args.p2_max_v)
+        validate_two_prism_voltage_polarity_domain(
+            managed.contract,
+            charge_state=charge,
+            p1_bounds_v=p1_bounds,
+            p2_bounds_v=p2_bounds,
+        )
+        voltage_domain_source = "explicit_signed_override"
     source, source_receipt = materialize_accelerator_exit_transport_source(
         observation_path=args.accelerator_exit_observation,
         expected_observation_sha256=args.expected_observation_sha256,
@@ -410,9 +526,6 @@ def main() -> None:
     source_binding = validate_accelerator_exit_source_binding(
         source_receipt_path=args.accelerator_exit_source_receipt,
         source_handoff_receipt=source_receipt, managed=managed,
-    )
-    stripe_biases, source_energy, target_tangent_ratio, stripe_identity = _load_stripe_seed(
-        args.stripe_seed_manifest, exact_k_manifest_path=args.exact_k_manifest, managed=managed,
     )
     prism_ids = (
         int(managed.contract["prism_transport"]["first_prism"]["electrode_id"]),
@@ -435,7 +548,7 @@ def main() -> None:
         "residual_scales": tuple(residual_scales),
     }
     sobol_pairs = deterministic_sobol_voltage_pairs(
-        p1_bounds_v=(args.p1_min_v, args.p1_max_v), p2_bounds_v=(args.p2_min_v, args.p2_max_v),
+        p1_bounds_v=p1_bounds, p2_bounds_v=p2_bounds,
         sample_count=args.sobol_sample_count,
     )
     local_p1 = _csv_floats(args.local_p1_values_v, "local P1 voltage")
@@ -449,7 +562,10 @@ def main() -> None:
         "qualification": "solver_neutral_topology_coverage_only__not_a_voltage_solution",
         "inputs": {
             "contract_sha256": file_sha256(args.contract).lower(),
-            "exact_k_manifest_sha256": file_sha256(args.exact_k_manifest).lower(),
+            "operating_authority_kind": operating_authority_kind,
+            "operating_authority_manifest_sha256": file_sha256(
+                operating_authority_path
+            ).lower(),
             "stripe_seed": stripe_identity,
             "accelerator_exit_observation_sha256": file_sha256(args.accelerator_exit_observation).lower(),
             "accelerator_exit_source_receipt": source_binding,
@@ -463,7 +579,7 @@ def main() -> None:
             "source_observation_input": source_receipt["input"],
         },
         "controls": {
-            "sobol": {"scramble": False, "sample_count": len(sobol_pairs), "p1_bounds_v": [args.p1_min_v, args.p1_max_v], "p2_bounds_v": [args.p2_min_v, args.p2_max_v]},
+            "sobol": {"scramble": False, "sample_count": len(sobol_pairs), "p1_bounds_v": list(p1_bounds), "p2_bounds_v": list(p2_bounds), "voltage_domain_source": voltage_domain_source},
             "local_cartesian_values_v": {"p1": list(local_p1), "p2": list(local_p2)},
             "worker_count": args.worker_count, "transport_numerics": asdict(numerics),
             "stage_a_maximum_reduced_time_mm_per_sqrt_v": args.stage_a_maximum_reduced_time,
