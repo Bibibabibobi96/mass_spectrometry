@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import common.simion.cache_generation as cache_generation
 import common.simion.pa_family_cache as pa_family_cache
 
 from common.simion.pa_family_cache import (
@@ -80,6 +81,145 @@ class PAFamilyCacheTest(unittest.TestCase):
         self.assertEqual(local.files, tuple(manifest["files"]))
         self.assertEqual(pa_family_inventory(local.destination_directory, self.names), manifest["files"])
         self.assertTrue((local.destination_directory / "field.pa1").stat().st_mode & stat.S_IWUSR)
+
+    def test_materialization_copy_failure_removes_partial_destination_and_staging(self) -> None:
+        """A real partial copy must leave neither consumer payload nor staging state."""
+
+        published = publish_pa_family_cache(self.cache, identity(), self.source, self.names)
+        source_manifest = validate_pa_family_cache_generation(
+            published.generation_directory,
+            expected_cache_key=published.cache_key,
+            expected_filenames=self.names,
+        )
+        destination = self.root / "run" / "simion"
+        real_copy_verified_file = cache_generation.copy_verified_file
+        copy_count = 0
+
+        def fail_third_copy(source: Path, target: Path) -> dict[str, object]:
+            nonlocal copy_count
+            copy_count += 1
+            if copy_count == 3:
+                raise OSError("injected third copy failure")
+            return real_copy_verified_file(source, target)
+
+        with patch.object(
+            cache_generation, "copy_verified_file", side_effect=fail_third_copy
+        ):
+            with self.assertRaisesRegex(RuntimeError, "copy failed: name=field.pa1"):
+                materialize_pa_family_cache(
+                    published.generation_directory,
+                    destination,
+                    expected_filenames=self.names,
+                )
+
+        self.assertEqual(copy_count, 3)
+        self.assertFalse(destination.exists())
+        self.assertEqual(
+            list(destination.parent.glob(f".{destination.name}.staging-*")), []
+        )
+        self.assertEqual(
+            validate_pa_family_cache_generation(
+                published.generation_directory,
+                expected_cache_key=published.cache_key,
+                expected_filenames=self.names,
+            ),
+            source_manifest,
+        )
+        self.assertEqual(
+            probe_pa_family_cache(
+                self.cache, identity(), expected_filenames=self.names
+            ).disposition,
+            CacheDisposition.HIT,
+        )
+
+    def test_explicit_generation_never_follows_current_pointer_drift(self) -> None:
+        """Pinned generation validation/materialization never substitutes current."""
+
+        generation_a = publish_pa_family_cache(self.cache, identity(), self.source, self.names)
+        alternate = self.root / "alternate"
+        alternate.mkdir()
+        for name in self.names:
+            (alternate / name).write_bytes(f"alternate-{name}".encode("ascii"))
+        alternate_records = pa_family_inventory(alternate, self.names)
+        manifest_b = pa_family_cache._manifest(
+            generation_a.cache_key, identity(), alternate_records
+        )
+        generation_b = (
+            generation_a.generation_directory.parent / manifest_b["generation_sha256"]
+        )
+        generation_b.mkdir()
+        for name in self.names:
+            cache_generation.copy_verified_file(alternate / name, generation_b / name)
+        (generation_b / "cache_manifest.json").write_text(
+            json.dumps(manifest_b, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+        pa_family_cache._seal_generation_files(generation_b, manifest_b)
+        self.assertNotEqual(
+            generation_a.generation_sha256, manifest_b["generation_sha256"]
+        )
+        self.assertEqual(
+            validate_pa_family_cache_generation(
+                generation_b,
+                expected_cache_key=generation_a.cache_key,
+                expected_filenames=self.names,
+            ),
+            manifest_b,
+        )
+
+        pointer = generation_a.generation_directory.parents[1] / "current_generation.json"
+        pointer.write_text(
+            json.dumps(
+                {
+                    "cache_key": generation_a.cache_key,
+                    "generation_sha256": manifest_b["generation_sha256"],
+                }
+            ),
+            encoding="utf-8",
+        )
+        current = probe_pa_family_cache(
+            self.cache, identity(), expected_filenames=self.names
+        )
+        self.assertEqual(current.disposition, CacheDisposition.HIT)
+        self.assertEqual(current.generation_directory, generation_b)
+
+        pinned_destination = self.root / "pinned-a"
+        pinned_a = validate_pa_family_cache_generation(
+            generation_a.generation_directory,
+            expected_cache_key=generation_a.cache_key,
+            expected_filenames=self.names,
+        )
+        materialized = materialize_pa_family_cache(
+            generation_a.generation_directory,
+            pinned_destination,
+            expected_filenames=self.names,
+        )
+        self.assertEqual(materialized.files, tuple(pinned_a["files"]))
+        self.assertEqual(pa_family_inventory(pinned_destination, self.names), pinned_a["files"])
+        self.assertNotEqual(materialized.files, tuple(manifest_b["files"]))
+
+        corrupted_a = generation_a.generation_directory / "field.pa1"
+        corrupted_a.chmod(corrupted_a.stat().st_mode | stat.S_IWUSR)
+        corrupted_a.write_bytes(b"corrupt-a")
+        with self.assertRaisesRegex(PAFamilyCacheError, "field.pa1"):
+            validate_pa_family_cache_generation(
+                generation_a.generation_directory,
+                expected_cache_key=generation_a.cache_key,
+                expected_filenames=self.names,
+            )
+        failed_destination = self.root / "pinned-a-fails"
+        with self.assertRaisesRegex(PAFamilyCacheError, "field.pa1"):
+            materialize_pa_family_cache(
+                generation_a.generation_directory,
+                failed_destination,
+                expected_filenames=self.names,
+            )
+        self.assertFalse(failed_destination.exists())
+        self.assertEqual(
+            probe_pa_family_cache(
+                self.cache, identity(), expected_filenames=self.names
+            ).generation_directory,
+            generation_b,
+        )
 
     def test_missing_or_corrupt_generation_is_never_a_hit_or_overwritten(self) -> None:
         self.assertEqual(probe_pa_family_cache(self.cache, identity()).disposition, CacheDisposition.MISS)
