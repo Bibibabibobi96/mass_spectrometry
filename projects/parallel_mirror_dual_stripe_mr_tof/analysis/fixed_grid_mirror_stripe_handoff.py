@@ -30,6 +30,27 @@ def _record(records: object, name: str) -> dict[str, Any]:
     if len(found) != 1: raise CandidateContractError(f"fixed-grid manifest must bind exactly one {name}")
     return found[0]
 
+def _same_physics_except_slow_energy_policy(
+    fixed_contract_path: Path, downstream_contract_path: Path,
+) -> bool:
+    """Allow the explicit 5-eV policy clarification without changing physics."""
+    fixed = _obj(fixed_contract_path, "fixed-grid frozen contract")
+    downstream = _obj(downstream_contract_path, "downstream contract")
+    try:
+        fixed_partition = fixed["prism_transport"]["energy_partition"]
+        downstream_partition = downstream["prism_transport"]["energy_partition"]
+        fixed_policy = fixed_partition.pop("candidate_operating_partition")
+        downstream_policy = downstream_partition.pop("candidate_operating_partition")
+    except (KeyError, TypeError) as exc:
+        raise CandidateContractError("slow-energy policy fields are incomplete") from exc
+    return (
+        fixed_policy
+        == "fixed nominal input for analytic initialization; measured or simulated source spread is added later without replacing this centre"
+        and downstream_policy
+        == "5 eV is the nominal adjustable slow-axis source seed, not a fixed equality. For a qualified fixed mirror, the native Stripe spatial-return inverse and T_D/T_0=K analytically select the nearby slow-energy centre and both Stripe biases; measured or simulated source spread is added around that selected centre."
+        and fixed == downstream
+    )
+
 def load_fixed_grid_mirror_point(manifest_path: Path, downstream_contract: Path) -> FixedHardwareMirrorPoint:
     """Fail closed unless the native r130-style fixed-grid evidence is complete."""
     manifest_path = manifest_path.resolve(); manifest = _obj(manifest_path, "fixed-grid manifest")
@@ -46,8 +67,22 @@ def load_fixed_grid_mirror_point(manifest_path: Path, downstream_contract: Path)
     probe_rec = _record(manifest["outputs"], "native_transverse_l1_probe_contract.json")
     contract = load_contract(downstream_contract)
     point, period, native, probe = (_obj(record_path(r, base_dir=manifest_path.parent), label) for r, label in ((point_rec,"point"),(period_rec,"period"),(native_rec,"native L1"),(probe_rec,"native probe")))
-    if file_sha256(downstream_contract.resolve()) != str(point.get("source_contract_sha256", "")).upper():
-        raise CandidateContractError("downstream contract differs from fixed-grid frozen contract identity")
+    source_contract_sha = str(point.get("source_contract_sha256", "")).upper()
+    if file_sha256(downstream_contract.resolve()) != source_contract_sha:
+        fixed_contract_path = (
+            record_path(manifest["run_config"], base_dir=manifest_path.parent).parent
+            / "inputs" / "simion_candidate_two_zone.json"
+        )
+        if (
+            not fixed_contract_path.is_file()
+            or file_sha256(fixed_contract_path) != source_contract_sha
+            or not _same_physics_except_slow_energy_policy(
+                fixed_contract_path, downstream_contract.resolve(),
+            )
+        ):
+            raise CandidateContractError(
+                "downstream contract changes more than the explicit slow-energy policy"
+            )
     if point.get("role") != "mrtof_fixed_grid_mirror_voltage_point" or period.get("role") != "mrtof_bare_mirror_real_field_period_comparison" or native.get("role") != "mrtof_native_simion_transverse_l1_analysis" or probe.get("role") != "mrtof_native_simion_transverse_l1_probe":
         raise CandidateContractError("fixed-grid evidence roles differ")
     if native.get("source_native_l1_probe_contract_sha256") != str(probe_rec["sha256"]).upper(): raise CandidateContractError("native L1 does not bind its probe")

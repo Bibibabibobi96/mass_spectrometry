@@ -975,6 +975,31 @@ def materialize_native_stripe_spatial_return_root(
     )
 
 
+def exact_k_slow_energy_per_charge_v(
+    shape_root: NativeStripeSpatialShapeRoot,
+    *,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+    target_period_ratio: float,
+) -> float:
+    """Derive the slow-axis energy that closes ``T_D/T_0=K`` at a fixed mirror.
+
+    Since ``W=T0bar*sqrt(Ez)`` and ``tan(theta)=sqrt(Ey/Ez)``, the axial
+    energy cancels from ``K=L*kappa/(W*tan(theta))``.  This is therefore a
+    Stripe/source partition selector and does not modify the qualified mirror.
+    """
+    if not isinstance(shape_root, NativeStripeSpatialShapeRoot):
+        raise CandidateContractError("exact-K slow-energy selection requires a spatial shape root")
+    period = _finite(mirror_reduced_period_mm_per_sqrt_v, "mirror reduced period")
+    target = _finite(target_period_ratio, "target drift period ratio")
+    if period <= 0.0 or target <= 0.0:
+        raise CandidateContractError("exact-K slow-energy selection needs positive period and K")
+    numerator = shape_root.drift_length_l_mm * shape_root.kappa_1
+    energy = (numerator / (period * target)) ** 2
+    if not math.isfinite(energy) or energy <= 0.0:
+        raise CandidateContractError("derived exact-K slow energy is not positive and finite")
+    return energy
+
+
 def endpoint_regularized_tau_g(
     psi_at_eta: Callable[[float], float], g_at_eta: Callable[[float], float], eta_turn: float,
     *, initial_panels: int = 32, max_refinements: int = 12, relative_tolerance: float = 1e-8,

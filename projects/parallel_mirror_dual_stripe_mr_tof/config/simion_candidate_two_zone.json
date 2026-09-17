@@ -2062,7 +2062,7 @@
       "fast_reflection_kinetic_energy_ev": 4000,
       "derivation": "The source starts with 5 eV in the drift direction and the orthogonal accelerator adds a nominal 4000 eV in the fast reflection direction. The mirror and finite-bias Stripe axial action use 4000 eV; the direction vector is normalized with the 4005 eV total.",
       "qualification": "user_confirmed_nominal_source_and_acceleration_partition__analytic_initialization_only__finite_3d_verification_pending",
-      "candidate_operating_partition": "fixed nominal input for analytic initialization; measured or simulated source spread is added later without replacing this centre"
+      "candidate_operating_partition": "5 eV is the nominal adjustable slow-axis source seed, not a fixed equality. For a qualified fixed mirror, the native Stripe spatial-return inverse and T_D/T_0=K analytically select the nearby slow-energy centre and both Stripe biases; measured or simulated source spread is added around that selected centre."
     },
     "first_prism": {
       "electrode_id": 16,

@@ -300,7 +300,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         )
         partition = contract["prism_transport"]["energy_partition"]
         self.assertIn("initialization_only", partition["qualification"])
-        self.assertIn("fixed nominal input", partition["candidate_operating_partition"])
+        self.assertIn("nominal adjustable slow-axis source seed", partition["candidate_operating_partition"])
         self.assertEqual(partition["total_kinetic_energy_ev"], 4005)
         self.assertEqual(partition["fast_reflection_kinetic_energy_ev"], 4000)
         initialization = problem["voltage_initialization"]

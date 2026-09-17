@@ -67,6 +67,15 @@ class FixedGridMirrorStripeHandoffTests(unittest.TestCase):
         self.assertGreater(point.nominal_reduced_period_mm_per_sqrt_v, 0.0)
         self.assertGreater(point.nominal_axial_width_w_mm, 0.0)
 
+    def test_slow_energy_policy_compatibility_does_not_allow_numeric_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            altered = json.loads(CONTRACT.read_text(encoding="utf-8-sig"))
+            altered["prism_transport"]["energy_partition"]["drift_kinetic_energy_ev"] = 4.9
+            contract = Path(temporary) / "contract.json"
+            contract.write_text(json.dumps(altered, indent=2) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "changes more than"):
+                load_fixed_grid_mirror_point(R130_MANIFEST, contract)
+
     def test_selected_center_energy_nodes_must_match_contract_envelope(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             manifest = self._manifest_with_output_mutation(

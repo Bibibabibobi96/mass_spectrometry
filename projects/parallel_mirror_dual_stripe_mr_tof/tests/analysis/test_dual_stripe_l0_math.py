@@ -18,6 +18,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
     endpoint_regularized_kappa,
     endpoint_regularized_kappa_at_turn,
     endpoint_regularized_tau_g,
+    exact_k_slow_energy_per_charge_v,
     gauss_legendre_rule,
     identify_fixed_cad_component_shapes,
     identify_manufactured_basis_path_scales,
@@ -74,6 +75,28 @@ CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 
 
 class DualStripeL0MathTest(unittest.TestCase):
+    def test_exact_k_selects_slow_energy_without_changing_fixed_mirror(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        shape = build_native_stripe_shape_selection(contract).shape_root
+        reduced_period_mm_per_sqrt_v = 8.913211876315327
+        target_k = 25.5
+
+        slow_energy = exact_k_slow_energy_per_charge_v(
+            shape,
+            mirror_reduced_period_mm_per_sqrt_v=reduced_period_mm_per_sqrt_v,
+            target_period_ratio=target_k,
+        )
+        result = materialize_native_stripe_spatial_return_root(
+            shape,
+            source_slow_energy_per_charge_v=slow_energy,
+            mirror_reduced_period_mm_per_sqrt_v=reduced_period_mm_per_sqrt_v,
+            axial_energy_per_charge_v=4372.010347796059,
+        )
+
+        self.assertAlmostEqual(slow_energy, 4.9611316919, places=9)
+        self.assertAlmostEqual(result.continuous_oscillation_count, target_k, places=12)
+        self.assertAlmostEqual(result.turning_pseudopotential_v, slow_energy, places=12)
+
     def test_gauss_legendre_rule_is_cached_read_only_and_exact_for_cubic(self) -> None:
         nodes, weights = gauss_legendre_rule(8)
         cached_nodes, cached_weights = gauss_legendre_rule(8)

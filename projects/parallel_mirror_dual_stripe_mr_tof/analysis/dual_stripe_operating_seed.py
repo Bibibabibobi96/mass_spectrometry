@@ -32,6 +32,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract i
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     analyze_dual_stripe_l0,
     derive_manufactured_basis_voltage_seed,
+    exact_k_slow_energy_per_charge_v,
     identify_fixed_cad_component_shapes,
     materialize_native_stripe_spatial_return_root,
     paper_dimensionless_condition_residuals,
@@ -2011,11 +2012,11 @@ def build_operating_seed_report_from_fixed_grid(
 ) -> dict[str, Any]:
     """Apply the native spatial-return inverse to one verified 3-D mirror point.
 
-    The fixed mirror point owns ``W``.  It is therefore wrong to reject that
-    point merely because a separate legacy two-equation voltage search cannot
-    move ``W`` to close exact K.  Publish the native-geometry two-Stripe inverse and
-    expose its K residual; selection of another mirror-family member, if
-    needed, is a later mirror-owned gate.
+    The fixed mirror point owns ``T0bar`` and remains unchanged.  The nominal
+    5-eV slow energy is adjustable by the upstream multipole/source transport,
+    so exact K selects that slow-energy partition.  The two Stripe biases are
+    then still determined analytically by the spatial-return and turning-energy
+    equations; Stripe never back-fits the independent mirror voltages.
     """
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stripe_handoff import load_fixed_grid_mirror_point
     mirror = load_fixed_grid_mirror_point(fixed_grid_manifest, downstream_contract)
@@ -2025,42 +2026,51 @@ def build_operating_seed_report_from_fixed_grid(
         contract["prism_transport"]["energy_partition"]["drift_kinetic_energy_ev"],
         "source target slow energy",
     )
-    materialized = materialize_native_stripe_spatial_return_root(
+    nominal_materialized = materialize_native_stripe_spatial_return_root(
         shape_selection.shape_root,
         source_slow_energy_per_charge_v=source_slow_energy,
         mirror_reduced_period_mm_per_sqrt_v=mirror.nominal_reduced_period_mm_per_sqrt_v,
         axial_energy_per_charge_v=mirror.nominal_energy_per_charge_v,
     )
     target_k = resolve_drift_phase_contract(contract).target_period_ratio
-    predicted_k = materialized.continuous_oscillation_count
-    constant_width_energy_estimate = (
-        mirror.nominal_energy_per_charge_v * (target_k / predicted_k) ** 2
+    selected_slow_energy = exact_k_slow_energy_per_charge_v(
+        shape_selection.shape_root,
+        mirror_reduced_period_mm_per_sqrt_v=mirror.nominal_reduced_period_mm_per_sqrt_v,
+        target_period_ratio=target_k,
     )
+    materialized = materialize_native_stripe_spatial_return_root(
+        shape_selection.shape_root,
+        source_slow_energy_per_charge_v=selected_slow_energy,
+        mirror_reduced_period_mm_per_sqrt_v=mirror.nominal_reduced_period_mm_per_sqrt_v,
+        axial_energy_per_charge_v=mirror.nominal_energy_per_charge_v,
+    )
+    predicted_k = materialized.continuous_oscillation_count
     seed = {
-        "status": "native_spatial_return_voltage_inverse_at_fixed_grid_mirror_point",
+        "status": "native_spatial_return_and_exact_K_slow_energy_inverse_at_fixed_grid_mirror_point",
         "qualification": "solver_neutral_hard_boundary_initialization__exact_K_and_finite_3d_pending",
         "manufactured_design_drift_length_L_mm": shape_selection.shape_root.drift_length_l_mm,
         "mirror_owned_axial_width_W_mm": mirror.nominal_axial_width_w_mm,
         "selected_axial_energy_per_charge_v": mirror.nominal_energy_per_charge_v,
         "target_drift_period_ratio": target_k,
+        "nominal_source_slow_energy_per_charge_v": source_slow_energy,
+        "nominal_slow_energy_predicted_continuous_oscillation_count": (
+            nominal_materialized.continuous_oscillation_count
+        ),
+        "selected_exact_K_slow_energy_per_charge_v": selected_slow_energy,
+        "selected_minus_nominal_slow_energy_per_charge_v": (
+            selected_slow_energy - source_slow_energy
+        ),
         "predicted_continuous_oscillation_count": predicted_k,
         "oscillation_count_residual": predicted_k - target_k,
         "mirror_axial_width_required_for_exact_K_mm": (
-            mirror.nominal_axial_width_w_mm * predicted_k / target_k
+            mirror.nominal_axial_width_w_mm
+            * nominal_materialized.continuous_oscillation_count / target_k
         ),
-        "first_order_exact_K_energy_proposal_per_charge_v": {
-            "estimated_center_v": constant_width_energy_estimate,
-            "delta_from_current_v": (
-                constant_width_energy_estimate - mirror.nominal_energy_per_charge_v
-            ),
-            "model": "hold_native_3d_mirror_W_locally_constant_and_use_K_proportional_to_sqrt_Ez",
-            "qualification": "continuation_seed_only__independent_mirror_voltage_and_fixed_grid_validation_required",
-        },
         "nominal_kappa_1": shape_selection.shape_root.kappa_1,
         "spatial_return_kappa_prime": shape_selection.shape_root.kappa_prime,
         "derived_drift_kinetic_energy_per_charge_v": materialized.turning_pseudopotential_v,
         "nominal_injection_angle_degrees": math.degrees(math.atan(math.sqrt(
-            source_slow_energy / mirror.nominal_energy_per_charge_v
+            selected_slow_energy / mirror.nominal_energy_per_charge_v
         ))),
         "stripe_biases_v": list(materialized.stripe_biases_v),
         "native_spatial_return_materialization": asdict(materialized),
@@ -2074,8 +2084,8 @@ def build_operating_seed_report_from_fixed_grid(
     report = {
         "schema_version": 3,
         "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
-        "status": "fixed_grid_native_mirror_spatial_return_voltage_inverse_complete",
-        "qualification": "solver_neutral_nominal_initialization__exact_K_and_finite_3d_pending",
+        "status": "fixed_grid_native_mirror_exact_K_slow_energy_and_spatial_return_inverse_complete",
+        "qualification": "solver_neutral_exact_K_slow_energy_initialization__finite_3d_pending",
         "fixed_grid_manifest_sha256": file_sha256(fixed_grid_manifest.resolve()),
         "mirror_input_mode": "fixed_grid_native_real_field",
         "mirror_period_authority": {
@@ -2092,13 +2102,13 @@ def build_operating_seed_report_from_fixed_grid(
         "two_prism_voltage_definition": audit_two_prism_voltage_definition(contract),
         "selected_seed": seed,
         "next_gate": (
-            "Evaluate the reported K residual. If it is outside the physical budget, select "
-            "another independently qualified mirror-family member; do not fit Stripe voltage "
-            "to conceal a mirror-owned W mismatch."
+            "Keep the independently qualified mirror point fixed, apply the analytically "
+            "selected slow-energy partition and Stripe biases, then validate K and spatial "
+            "return in the finite-three-dimensional field."
         ),
         "limitations": [
             "The two Stripe voltages are an analytic hard-boundary initialization, not a finite-3-D optimum.",
-            "The fixed-grid mirror point determines W; this handoff reports rather than suppresses its exact-K residual.",
+            "The selected slow energy is an analytic exact-K centre; the realizable multipole/source adjustment and spread remain to be validated.",
             "P1/P2 transport, finite-three-dimensional flight, and resolution remain pending.",
         ],
     }

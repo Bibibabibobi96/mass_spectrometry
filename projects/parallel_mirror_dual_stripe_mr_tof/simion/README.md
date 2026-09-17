@@ -496,5 +496,9 @@ pwsh -NoProfile -File projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_d
 This mode verifies the complete fixed-grid manifest, selected-energy voltage envelope, all three
 period-slope gates, both native stability maps, and the `0.01 deg` gamma gate.  It derives W from
 the average of the two native full periods and applies the native CAD-curve spatial-return inverse
-to obtain S1/S2.  It reports the remaining K residual and a first-order energy continuation seed;
-it does not alter geometry, qualify P1/P2, or publish an exact-K three-dimensional operating point.
+to obtain S1/S2.  The nominal 5-eV slow-axis source energy is adjustable by the upstream
+multipole/source transport: with the qualified mirror fixed, the analytic `T_D/T_0=K` relation
+selects the nearby slow-energy centre, and the spatial-return/turning-energy inverse then selects
+both Stripe biases.  The active r3 handoff gives `4.96113169188 eV`,
+`v1=-25.22321875 V`, `v2=+50.18222993 V`, and analytic `K=25.5` without changing B--E.
+It does not alter geometry, qualify P1/P2, or publish an exact-K three-dimensional operating point.
