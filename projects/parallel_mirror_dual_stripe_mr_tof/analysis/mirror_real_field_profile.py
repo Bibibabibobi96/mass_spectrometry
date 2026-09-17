@@ -94,16 +94,37 @@ def _rms(values: list[float]) -> float:
     return math.sqrt(sum(value * value for value in values) / len(values))
 
 
-def analyze(contract_path: Path, exact_k_run: Path, samples_directory: Path, output: Path) -> dict[str, Any]:
+def analyze(
+    contract_path: Path,
+    exact_k_run: Path,
+    samples_directory: Path,
+    output: Path,
+    *,
+    voltage_contract_path: Path | None = None,
+) -> dict[str, Any]:
     contract = _object(contract_path)
     loaded = load_exact_k_point(exact_k_run)
     l0 = loaded["l0"]
+    voltage_source = "exact_k_analytic_2d"
+    voltages = tuple(float(v) for v in l0["electrode_voltages_v"])
+    if voltage_contract_path is not None:
+        voltage_contract = _object(voltage_contract_path)
+        raw_voltages = voltage_contract.get("mirror_voltages_v")
+        if (
+            voltage_contract.get("role") != "mrtof_bare_mirror_real_field_period_probe"
+            or not isinstance(raw_voltages, list)
+            or len(raw_voltages) != 5
+            or float(raw_voltages[0]) != 0.0
+        ):
+            raise CandidateContractError("field-profile voltage contract is invalid")
+        voltages = tuple(float(value) for value in raw_voltages)
+        voltage_source = "selected_real_field_l1_root"
     design = MirrorL0Design(
         transverse_half_gap_mm=float(l0["transverse_half_gap_mm"]),
         transition_z_mm=tuple(float(v) for v in l0["transition_z_mm"]),
-        electrode_voltages_v=tuple(float(v) for v in l0["electrode_voltages_v"]),
+        electrode_voltages_v=voltages,
         terminal_electrode_plane_z_mm=float(l0["terminal_electrode_plane_z_mm"]),
-        terminal_electrode_voltage_v=float(l0["electrode_voltages_v"][-1]),
+        terminal_electrode_voltage_v=float(voltages[-1]),
     )
     rows: list[dict[str, Any]] = []
     for region in contract["regions"]:
@@ -167,6 +188,7 @@ def analyze(contract_path: Path, exact_k_run: Path, samples_directory: Path, out
         "fine_mesh_mm_per_gu": contract["fine_mesh_mm_per_gu"],
         "mesh_by_region_mm_per_gu": contract.get("mesh_by_region_mm_per_gu"),
         "mirror_voltages_v": list(design.electrode_voltages_v),
+        "mirror_voltage_source": voltage_source,
         "global_metrics": metrics(rows),
         "region_metrics": {region: metrics([row for row in rows if row["region"] == region]) for region, *_ in REGIONS},
         "samples": rows,
@@ -194,6 +216,7 @@ def main() -> int:
     analyze_parser = subparsers.add_parser("analyze")
     analyze_parser.add_argument("--contract", type=Path, required=True)
     analyze_parser.add_argument("--exact-k-run", type=Path, required=True)
+    analyze_parser.add_argument("--voltage-contract", type=Path)
     analyze_parser.add_argument("--samples-directory", type=Path, required=True)
     analyze_parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -204,7 +227,13 @@ def main() -> int:
         )
         print("MRTOF_MIRROR_FIELD_PROFILE_PREPARE=PASS")
     else:
-        analyze(args.contract, args.exact_k_run, args.samples_directory, args.output)
+        analyze(
+            args.contract,
+            args.exact_k_run,
+            args.samples_directory,
+            args.output,
+            voltage_contract_path=args.voltage_contract,
+        )
         print("MRTOF_MIRROR_FIELD_PROFILE_ANALYZE=PASS")
     return 0
 

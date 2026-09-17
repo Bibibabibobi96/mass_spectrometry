@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -19,11 +21,82 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+REPOSITORY = PROJECT.parents[1]
 CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 RUNNER = PROJECT / "simion" / "run_analyzer_local_workbench.ps1"
+FAMILY_SUPPORT = PROJECT / "simion" / "analyzer_local_family_support.ps1"
 
 
 class AnalyzerLocalPaFamilyTest(unittest.TestCase):
+    def test_local_family_support_pins_frozen_publication_generation(self) -> None:
+        source = FAMILY_SUPPORT.read_text(encoding="utf-8-sig")
+        self.assertIn("function Resolve-AnalyzerLocalFrozenPublicationGeneration", source)
+        self.assertEqual(
+            source.count("Resolve-AnalyzerLocalFrozenPublicationGeneration -Family $Family -CacheRoot $CacheRoot"),
+            3,
+        )
+        self.assertIn("$publication.generation_sha256", source)
+        self.assertIn("$publication.generation_directory", source)
+        self.assertIn("Frozen local PA-family publication generation is missing", source)
+        self.assertNotIn("current_generation.json", source)
+
+    def test_local_family_support_ignores_a_drifted_current_pointer(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache_key = "A" * 64
+            generation_sha256 = "B" * 64
+            generation = root / "cache" / cache_key / "generations" / generation_sha256
+            generation.mkdir(parents=True)
+            raw = generation / "family.pa#"
+            raw.write_bytes(b"frozen raw geometry")
+            raw.chmod(0o444)
+            manifest = generation / "cache_manifest.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "role": "simion_pa_family_cache",
+                "cache_key": cache_key,
+                "generation_sha256": generation_sha256,
+                "files": [{
+                    "name": raw.name,
+                    "bytes": raw.stat().st_size,
+                    "sha256": __import__("hashlib").sha256(raw.read_bytes()).hexdigest().upper(),
+                }],
+            }), encoding="utf-8")
+            manifest.chmod(0o444)
+            publication = root / "publication.json"
+            publication.write_text(json.dumps({
+                "cache_key": cache_key,
+                "generation_sha256": generation_sha256,
+                "generation_directory": str(generation),
+            }), encoding="utf-8")
+            (root / "cache" / cache_key / "current_generation.json").write_text(
+                json.dumps({"cache_key": cache_key, "generation_sha256": "C" * 64}),
+                encoding="utf-8",
+            )
+            script = root / "probe.ps1"
+            script.write_text(
+                "& {\n"
+                f". '{FAMILY_SUPPORT}'\n"
+                "$family=[pscustomobject]@{label='fixture';cache_key='" + cache_key + "';"
+                "frozen_publication='" + str(publication) + "';"
+                "generation_directory='';contract=[pscustomobject]@{family_prefix='family'}}\n"
+                "$result=Resolve-AnalyzerLocalRawGeometry -Family $family -CacheRoot '" + str(root / "cache") + "'\n"
+                "if($result.path -ne '" + str(raw) + "'){throw 'wrong frozen generation'}\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(script)],
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+                cwd=REPOSITORY,
+                timeout=20,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_gui_workbench_publishes_a_semantic_iob_name(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         self.assertIn("mrtof_complete_3d_candidate_gui_review.iob", source)
@@ -379,6 +452,62 @@ class AnalyzerLocalPaFamilyTest(unittest.TestCase):
         self.assertIn("-RequiredHeadroomBytes $requiredBuildHeadroom", source)
         self.assertIn("-ProtectedCacheKeys $startupProtectedCacheKeys", source)
 
+    def test_local_family_runner_requires_prepared_standalone_receipt_before_lease(self) -> None:
+        source = (PROJECT / "simion" / "run_analyzer_local_pa_family.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("analyzer_prepared_source_support.ps1", source)
+        self.assertIn("PreparedSourceReceiptPath is required", source)
+        self.assertIn("New-PreparedAnalyzerSourceBinding", source)
+        self.assertLess(
+            source.index("Get-PreparedAnalyzerSourceReceipt -Path"),
+            source.index("Enter-HostExecutionLease -Role SIMION"),
+        )
+
+    def test_local_family_runner_reserves_two_complete_published_families(self) -> None:
+        source = (PROJECT / "simion" / "run_analyzer_local_pa_family.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("$refineArrayCount-ne10-or$estimatedRefineFamilyBytes%$refineArrayCount-ne0", source)
+        self.assertIn("$filenames.Count-ne18", source)
+        self.assertIn("$estimatedPublishedFamilyBytes", source)
+        self.assertIn("2*$estimatedPublishedFamilyBytes", source)
+        self.assertNotIn("2*$estimatedRefineFamilyBytes", source)
+
+    def test_local_family_runner_stages_and_rechecks_prepared_standalone_sources(self) -> None:
+        source = (PROJECT / "simion" / "run_analyzer_local_pa_family.ps1").read_text(
+            encoding="utf-8"
+        )
+        support = (PROJECT / "simion" / "analyzer_prepared_source_support.ps1").read_text(encoding="utf-8")
+        self.assertIn("analyzer_prepared_source_support.ps1", source)
+        self.assertIn("function New-PreparedAnalyzerSourceBinding", support)
+        self.assertIn("New-ShortPaCopy -Source $source", support)
+        self.assertIn("Prepared analyzer copy identity differs", support)
+        self.assertLess(source.index("derive_family_contract"), source.index("stage_prepared_analyzer_source"))
+        self.assertLess(source.index("verify_prepared_analyzer_consumer_copies"), source.index("publish_local_family_cache"))
+        self.assertIn("2*$estimatedPublishedFamilyBytes", source)
+        self.assertIn("$sourceStagingBytes+2*$estimatedPublishedFamilyBytes", source)
+        self.assertIn("simion_pa_links_mrtof_prepared_", source)
+        self.assertIn("if($cacheDisposition-ne'hit'){", source)
+        self.assertIn("$requiredBuildHeadroom=if($cacheDisposition-eq'hit'){0}", source)
+        self.assertLess(
+            source.index("stage_prepared_analyzer_source"),
+            source.index("Enter-HostExecutionLease -Role SIMION"),
+        )
+        self.assertLess(
+            source.index("Enter-HostExecutionLease -Role SIMION"),
+            source.index("Invoke-SimionStage -Stage 'compile_local_patch_gem'"),
+        )
+
+    def test_source_staging_capacity_sums_object_member_bytes(self) -> None:
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", "$inventory=[ordered]@{members=@([ordered]@{bytes=7},[ordered]@{bytes=11})}; [int64]$sum=0; foreach($member in @($inventory.members)){$sum+=[int64]$member['bytes']}; $sum"],
+            text=True, encoding="utf-8", errors="replace", capture_output=True, check=False,
+            cwd=REPOSITORY, timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.strip(), "18")
+
     def fixture(self, root: Path) -> tuple[Path, Path, Path]:
         gem = root / "central.gem"
         gem.write_text(
@@ -435,6 +564,181 @@ class AnalyzerLocalPaFamilyTest(unittest.TestCase):
              "mrtof_analyzer_local_mirror_turn_positive.response1.pa",
              "mrtof_analyzer_local_mirror_turn_positive.response2.pa"),
         )
+
+    def test_prepared_receipt_probe_is_path_independent_and_payload_free(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            gem, family, executable = self.fixture(root)
+            ids = sorted(int(path.name.removeprefix("mrtof_analyzer.pa")) for path in family.glob("mrtof_analyzer.pa[0-9]*"))
+            def record(path: Path, physical_id: int | None = None) -> dict[str, object]:
+                value = {"name": path.name, "bytes": path.stat().st_size,
+                         "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper()}
+                if physical_id is not None:
+                    value["physical_id"] = physical_id
+                    value["name"] = f"prepared_response_{physical_id}.pa"
+                return value
+            prepared = root / "immutable-prepared"; raw = root / "immutable-raw"
+            receipt = {
+                "role": "mrtof_reviewed_analyzer_source_cache_receipt", "status": "success",
+                "prepared_standalone_generation": {
+                    "cache_key": "A" * 64, "generation_sha256": "B" * 64,
+                    "generation_directory": str(prepared), "inventory": [record(family / f"mrtof_analyzer.pa{i}", i) for i in ids],
+                    "responses_by_physical_id": {str(i): record(family / f"mrtof_analyzer.pa{i}", i) for i in ids},
+                },
+                "raw_geometry_generation": {
+                    "cache_key": "C" * 64, "generation_sha256": "D" * 64,
+                    "generation_directory": str(raw), "inventory": [record(family / "mrtof_analyzer.pa#")],
+                    "raw_geometry": record(family / "mrtof_analyzer.pa#"),
+                },
+            }
+            receipt_path = root / "receipt.json"; receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            result = derive_local_pa_family_contract(CONTRACT, "central_transport", 1.0, gem, family, executable, "SIMION 2020", receipt_path)
+            self.assertEqual(result["identity"]["geometry"]["prepared_source"]["prepared_standalone_generation"]["cache_key"], "A" * 64)
+            # No generation payload exists: successful derivation proves the
+            # cache probe consumes receipt metadata only.
+            self.assertFalse(prepared.exists())
+            self.assertFalse(raw.exists())
+
+    def test_bound_prepared_copies_preserve_probe_identity(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            gem, family, executable = self.fixture(root)
+            ids = sorted(int(path.name.removeprefix("mrtof_analyzer.pa")) for path in family.glob("mrtof_analyzer.pa[0-9]*"))
+            prepared, raw, copies = root / "prepared", root / "raw", root / "copies"
+            prepared.mkdir(); raw.mkdir(); copies.mkdir()
+            def response(i: int) -> dict[str, object]:
+                payload = f"standalone-{i}".encode(); name = f"response_{i}.pa"
+                (prepared / name).write_bytes(payload); (copies / name).write_bytes(payload)
+                return {"physical_id": i, "name": name, "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest().upper()}
+            raw_payload = b"raw"; (raw / "mrtof_analyzer.pa#").write_bytes(raw_payload); (copies / "mrtof_analyzer.pa#").write_bytes(raw_payload)
+            responses = {str(i): response(i) for i in ids}
+            receipt = {"role": "mrtof_reviewed_analyzer_source_cache_receipt", "status": "success",
+                "prepared_standalone_generation": {"cache_key": "A" * 64, "generation_sha256": "B" * 64, "generation_directory": str(prepared), "inventory": list(responses.values()), "responses_by_physical_id": responses},
+                "raw_geometry_generation": {"cache_key": "C" * 64, "generation_sha256": "D" * 64, "generation_directory": str(raw), "inventory": [{"name": "mrtof_analyzer.pa#", "bytes": 3, "sha256": hashlib.sha256(raw_payload).hexdigest().upper()}], "raw_geometry": {"name": "mrtof_analyzer.pa#", "bytes": 3, "sha256": hashlib.sha256(raw_payload).hexdigest().upper()}}}
+            receipt_path = root / "receipt.json"; receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            binding = {"role": "mrtof_prepared_analyzer_source_binding", "status": "success",
+                "prepared_standalone_generation": {"cache_key": "A" * 64, "generation_sha256": "B" * 64},
+                "raw_geometry_generation": {"cache_key": "C" * 64, "generation_sha256": "D" * 64},
+                "responses_by_physical_id": {str(i): {**responses[str(i)], "binding_path": str((copies / responses[str(i)]["name"]).resolve())} for i in ids},
+                "raw_geometry": {**receipt["raw_geometry_generation"]["raw_geometry"], "binding_path": str((copies / "mrtof_analyzer.pa#").resolve())}}
+            binding_path = root / "binding.json"; binding_path.write_text(json.dumps(binding), encoding="utf-8")
+            initial = derive_local_pa_family_contract(CONTRACT, "central_transport", 1.0, gem, family, executable, "SIMION 2020", receipt_path)
+            bound = derive_local_pa_family_contract(CONTRACT, "central_transport", 1.0, gem, family, executable, "SIMION 2020", receipt_path, binding_path)
+            self.assertEqual(initial["identity"], bound["identity"])
+            self.assertEqual(Path(bound["coarse_raw_pa_path"]), copies / "mrtof_analyzer.pa#")
+
+    def test_consumer_runner_has_no_native_or_per_region_staging_path(self) -> None:
+        source = (PROJECT / "simion" / "run_analyzer_local_pa_family.ps1").read_text(encoding="utf-8-sig")
+        support = (PROJECT / "simion" / "analyzer_prepared_source_support.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("Get-PreparedAnalyzerSourceReceipt", support)
+        self.assertIn("New-PreparedAnalyzerSourceBinding", support)
+        self.assertIn("Assert-PreparedAnalyzerSourceBinding", support)
+        self.assertIn("-GuardDestinationReadOnly", support)
+        self.assertNotIn("Assert-ReviewedAnalyzerFamilyIdentity", source)
+        self.assertNotIn("New-ReviewedAnalyzerSourceStaging", source)
+        self.assertNotIn("mrtof_analyzer.pa1..PA20", source)
+        self.assertLess(source.index("--action','probe'"), source.index("capacity_preflight"))
+        self.assertIn("if($cacheDisposition-eq'hit'){0}", source)
+
+    def test_batch_keeps_one_guarded_binding_in_the_calling_powershell_process(self) -> None:
+        batch = (PROJECT / "simion" / "run_analyzer_local_family_batch.ps1").read_text(encoding="utf-8-sig")
+        planner = (PROJECT / "analysis" / "analyzer_local_family_batch_plan.py").read_text(encoding="utf-8-sig")
+        runner = (PROJECT / "simion" / "run_analyzer_local_pa_family.ps1").read_text(encoding="utf-8-sig")
+        support = (PROJECT / "simion" / "analyzer_prepared_source_support.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("New-PreparedAnalyzerSourceBinding", batch)
+        self.assertIn("Assert-PreparedAnalyzerSourceBinding", batch)
+        self.assertIn("-PreparedSourceBindingPath $bindingPath", batch)
+        self.assertIn("if($misses.Count-eq0)", batch)
+        self.assertIn("-RequiredHeadroomBytes $copyBytes", batch)
+        self.assertIn("mrtof_prepared_analyzer_binding_", batch)
+        self.assertIn("prepared_standalone_generation.cache_key", batch)
+        self.assertIn("raw_geometry_generation.cache_key", batch)
+        self.assertIn("-ProtectedCacheKeys $protected", batch)
+        self.assertIn("PreparedSourceBindingPath", runner)
+        self.assertIn("Get-ShortPaCopyIdentity -Path $path", support)
+        self.assertNotIn("Start-Process", batch)
+        self.assertIn("Get-BatchChildRunId", batch)
+        self.assertIn("unverified_hit_candidate", planner)
+        self.assertNotIn("probe_pa_family_cache", planner)
+        self.assertLess(runner.index("Assert-PreparedAnalyzerGeometrySource"), runner.index("Copy-VerifiedRunInput"))
+        self.assertNotIn("verify_run_manifest.py') $geometryManifest", runner)
+
+    def test_prepared_binding_cleans_prior_copies_when_later_copy_fails(self) -> None:
+        support = PROJECT / "simion" / "analyzer_prepared_source_support.ps1"
+        common = PROJECT.parents[1] / "common"
+        short_support = common / "simion" / "short_pa_path_support.ps1"
+        artifact_support = common / "contracts" / "run_artifact_support.ps1"
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            sources = root / "sources"; sources.mkdir()
+            records = []
+            for name, payload, physical_id in (
+                ("mrtof_analyzer.pa#", b"raw", None),
+                ("prepared_response_2.pa", b"two", 2),
+                ("prepared_response_3.pa", b"three", 3),
+            ):
+                path = sources / name; path.write_bytes(payload)
+                records.append({
+                    "kind": "raw" if physical_id is None else "response",
+                    "physical_id": physical_id,
+                    "name": name,
+                    "bytes": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest().upper(),
+                    "source_directory": str(sources),
+                })
+            records[-1]["sha256"] = "0" * 64
+            receipt_path = root / "receipt.json"
+            receipt_path.write_text(json.dumps({"members": records}), encoding="utf-8")
+            copy_dir = Path(subprocess.check_output(
+                ["pwsh", "-NoProfile", "-Command", "[IO.Path]::GetTempPath()"],
+                text=True,
+                cwd=REPOSITORY,
+                timeout=20,
+            ).strip()) / "simion_pa_links_mrtof_prepared_fixture_copy_failure"
+            binding_path = root / "binding.json"
+            command = (
+                f". '{artifact_support}'; . '{short_support}'; . '{support}'; "
+                f"$r=Get-Content -Raw '{receipt_path}'|ConvertFrom-Json -Depth 20; "
+                f"try{{New-PreparedAnalyzerSourceBinding -Receipt $r -Directory '{copy_dir}' -Output '{binding_path}';exit 9}}"
+                "catch{if((Test-Path -LiteralPath '" + str(copy_dir) + "')-or(Test-Path -LiteralPath '" + str(binding_path) + "')){exit 8};exit 0}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command], text=True,
+                capture_output=True, encoding="utf-8", errors="replace",
+                cwd=REPOSITORY, timeout=20,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual([path.read_bytes() for path in sorted(sources.iterdir())], [b"raw", b"two", b"three"])
+
+    def test_external_binding_fails_without_the_creator_process_registry(self) -> None:
+        support = PROJECT / "simion" / "analyzer_prepared_source_support.ps1"
+        short_support = PROJECT.parents[1] / "common" / "simion" / "short_pa_path_support.ps1"
+        with TemporaryDirectory() as directory:
+            root = Path(directory); copies = root / "copies"; copies.mkdir()
+            records, responses = [], {}
+            for index, physical_id in enumerate((2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17), start=1):
+                path = copies / f"response_{physical_id}.pa"; payload = bytes([index]); path.write_bytes(payload)
+                record = {"name": path.name, "bytes": 1, "sha256": hashlib.sha256(payload).hexdigest().upper(), "binding_path": str(path)}
+                responses[str(physical_id)] = record
+                records.append({"kind": "response", "physical_id": physical_id, **record, "source_directory": str(copies)})
+            raw = copies / "mrtof_analyzer.pa#"; raw.write_bytes(b"r")
+            raw_record = {"name": raw.name, "bytes": 1, "sha256": hashlib.sha256(b"r").hexdigest().upper(), "binding_path": str(raw)}
+            records.insert(0, {"kind": "raw", "physical_id": None, **raw_record, "source_directory": str(copies)})
+            receipt = {"members": records}
+            binding = {"role": "mrtof_prepared_analyzer_source_binding", "status": "success", "responses_by_physical_id": responses, "raw_geometry": raw_record}
+            receipt_path = root / "receipt.json"; binding_path = root / "binding.json"
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8"); binding_path.write_text(json.dumps(binding), encoding="utf-8")
+            command = (
+                f". '{short_support}'; . '{support}'; "
+                f"$r=Get-Content -Raw '{receipt_path}'|ConvertFrom-Json -Depth 20; "
+                f"try{{Assert-PreparedAnalyzerSourceBinding -Receipt $r -BindingPath '{binding_path}';exit 9}}catch{{if($_.Exception.Message -match 'not registered'){{exit 0}};throw}}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command], text=True,
+                capture_output=True, encoding="utf-8", errors="replace",
+                cwd=REPOSITORY, timeout=20,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_rejects_noncanonical_gem(self) -> None:
         with TemporaryDirectory() as directory:

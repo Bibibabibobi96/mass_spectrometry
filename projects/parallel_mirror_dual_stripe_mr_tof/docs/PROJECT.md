@@ -60,6 +60,85 @@ r11 仍只是实际三维 PA 响应的轴向 surrogate，不是可飞行 operati
 `Tbar_xx` 收敛和采样峰值场，再只对选出的固定成员做原生 SIMION L0/L1 轨迹复核。只有完成该筛选后，
 才能用新镜电压重新计算真实 `T0/W` 并继续 Stripe 与 P1/P2。
 
+轴向权威随后修正为对采样 `Ez` 的分段线性积分，不再使用势节点三次样条。受管 run
+`20260917_001500__analysis__python__mrtof-real-field-mirror-l0-field-consistent-r14` 在 66 个切片中得到
+7 个连续可行成员，E 覆盖 `5681.258...6113.132 V`；全部满足 `5e-8 V^-1` 轴向代理门禁、
+分路电源包络和反射条件。离散 L1 筛查
+`20260917_020000__analysis__python__mrtof-real-field-mirror-l1-screen-r5` 在成员 18--19 之间夹住一条
+`gamma=90 deg` 根。连续精化
+`20260917_024500__analysis__python__mrtof-real-field-mirror-l1-continuous-refinement-r7` 得到
+`[A,B,C,D,E]=[0,-5912.243657,-2659.600722,+4203.057613,+6044.757100] V`；轴向代理三斜率为
+`[+1.92,-3.07,+2.19]e-9 V^-1`，双方向 gamma 为 `89.999332/89.998071 deg`，物理 `0.01 deg`
+门禁通过。该根只因 0.5-mm 探针的 gamma/Tbar 相邻尺度数值收敛未过而被允许交接到
+固定 0.25-mm 验证；这不等于候选工作点通过。
+
+同一电压的原生 SIMION 对照已由
+`20260917_061500__sim__simion__mrtof-real-field-mirror-root-native-0p5mm-r78` 和
+`20260917_044500__sim__simion__mrtof-real-field-mirror-root-fixed-0p25mm-r77` 闭合。二者均使用 9 个确定性
+能量探针、`0.00002 us` 最大步长，Stripe/P1/P2 全部接地。0.5-mm 的三斜率为
+`[-11.34,-10.04,+0.734]e-8 V^-1`，只把两个镜转折区改为 0.25 mm 后变为
+`[+1.13,-3.44,+6.09]e-8 V^-1`。因此该点的周期导数尚未空间网格收敛，且 0.25-mm 高能节点仍超过
+`5e-8 V^-1`；r77 只是 validation diagnostic，不是 Candidate 资格。下一步在不改几何、不放宽门禁的
+前提下，用粗网格响应 Jacobian 和少量固定细网格点修正 B--E，并同时复核 gamma/Tbar。
+
+该少量固定点修正随后形成了可追溯的多保真闭环。固定源点
+`20260917_171500__sim__simion__mrtof-real-field-mirror-root-fixed-l1-parallel10-0p25mm-r86`
+确认三斜率为 `[+1.126,-3.442,+6.091]e-8 V^-1`，名义能量最大探针尺度双方向 gamma 为
+`90.19282/90.19156 deg`。一固定点常偏差模型
+`20260918_014500__analysis__python__mrtof-fixed-grid-voltage-correction-r92` 没有在声明的局部信赖域内取得
+同时闭合 L0 与 gamma 的根，因此只发布粗 L0 族上的第二个诊断点；其固定场实跑
+`20260918_023000__sim__simion__mrtof-fixed-grid-secant-point-r93` 得到三斜率
+`[+2.841,-2.873,+6.714]e-8 V^-1`，mean trace-half 从 r86 的 `-0.00335428` 变为
+`+0.01219956`，实际跨过 gamma selector。r86--r93 的 B--E chord 长 `21.165 V`，但粗局部 Jacobian
+对该 chord 的中能斜率变化预测与实际粗变化相差约三个数量级；所以该信息只能形成秩一
+fine-minus-coarse discrepancy 更新，不能宣称已经辨识完整 0.25-mm Jacobian 或响应族。
+
+秩一修正 run
+`20260918_051500__analysis__python__mrtof-fixed-grid-secant-correction-r95` 保持三条 L0 方程、四个 B--E
+电压和一维零空间，提出
+`[A,B,C,D,E]=[0,-5921.853221,-2641.460665,+4202.848817,+6046.273846] V`；模型内三斜率为
+`[+0.366,-1.329,+0.939]e-8 V^-1`，gamma selector 接近零。独立固定 0.25-mm 复核
+`20260918_054500__sim__simion__mrtof-fixed-grid-secant-proposal-r96` 否定了其完整通过：原生三斜率实际为
+`[+4.449,-6.226,+0.993]e-8 V^-1`，中能节点仍超过 `5e-8 V^-1`；但最大探针尺度双方向 gamma 已改善为
+`90.00540/90.00261 deg`，满足物理 `0.01 deg` 门槛，三能量双方向映射也全部稳定。当前 screen 仍因
+双方向 gamma 相邻探针尺度变化超过数值 `0.001 deg`，且 Tbar 相邻尺度未收敛而失败。r96 因而是有用的
+第三个 fixed-grid 校准点，不是工作点；下一步应把它作为独立第二 chord 更新局部 discrepancy，再做
+一个固定点验证，而不是放宽物理门禁或建立完整 0.25-mm PA family。
+
+四 chord 修正 `20260918_120000__analysis__python__mrtof-fixed-grid-four-chord-correction-r104` 提出的
+`[0,-5920.037680,-2613.065403,+4190.491862,+6029.179798] V` 已由完整终态 run
+`20260917_113000__sim__simion__mrtof-fixed-grid-four-chord-proposal-r107` 复核。原生三点周期斜率为
+`[+4.0630,-0.2336,+4.5258]e-8 V^-1`，均低于 `5e-8 V^-1`；三能量双向稳定，最小 margin 为 `0.91747`，
+最大 `gamma` 残差为 `0.003399 deg`，也低于物理 `0.01 deg` 门槛。然而相邻探针尺度的 gamma 变化约
+`0.00185 deg`、Tbar 相对变化约 `0.67/1.14`，未过当前数值收敛门禁。因此 r107 是成功、可追溯的
+固定场校准 run，而不是镜 Candidate；不得据此开始 Stripe/P1/P2 或宣称 100k 分辨率。
+为避免把这一数值门禁转交给缓慢的 solver-neutral 全轨迹积分，固定场 runner 现可选地在同一 IOB 内
+运行十个原生 SIMION 横向探针：首次返回定义线性传输矩阵，完整返回定义时间二阶项。该原生复核只有在
+manifest 成功、两方向全部事件完整后才可用于判定 r107 式工作点的 $\gamma$/$\overline T_{xx}$ 门禁；它
+仍不改变三个能量斜率、几何或电压，也不直接升级 Candidate。
+固定镜 PA 构建现按缓存缺失项调度：两个镜都缺失时，负/正镜在隔离目录中经公共 formal-first 资源调度器
+决定是否并行；命中项不重建；任一失败会停止同一波次；全部成功后才按固定顺序串行发布 cache。单镜缺失也
+受同一调度和资源画像治理。该机制只并行独立 PA 构建，不拆开后续完整双镜 L1 映射或周期飞行。
+
+局域分析器 PA family 的重建输入也已收口。r135 把 r41 的 reviewed 原生 family 一次验证后转换为 14 个
+standalone 电极响应和一个独立 raw-geometry generation；单区/批量 runner 不再逐区复制和反复哈希整套
+约 14.7 GB 原生 family。r137 已真实完成负镜转折区 `0.5 mm` 的“准备输入、Refine、发布”，r138 与 r140
+分别从单区和 batch 入口命中同一 cache，均未再次复制或 Refine。批量缺失构建只创建一批 15 件受写保护副本，
+供同一进程内各缺失区串行复用；中途复制失败、消费期副本变化和源 generation 变化均失败关闭并清理临时文件。
+这只修复构建完整性与效率，不改变局域几何、电压或任何物理资格。r51 当前 22/22 native 成员与冻结 manifest
+一致；历史瞬时读差异尚无可确认写者。若未来出现带时间戳的 pa9 变更证据，最小重验范围是明确直接绑定 r51
+pa0 family 的八个成功飞行，而不是仅引用其几何证据的 222 个后续 run。
+
+同一 r107 电压点的十粒子原生横向复核现由
+`20260921_200000__sim__simion__mrtof-fixed-grid-four-chord-native-l1-r112` 完成并通过 success manifest
+校验。两方向均稳定（margin `0.999578/0.999598`，map determinant
+`0.99999513/0.99999524`），
+$\overline T_{xx}=0.0025663/0.0023179\ \mathrm{us/mm^2}$；但直接由首次返回矩阵得到的
+$\gamma=90.024179/90.023025^\circ$，超过物理 `0.01 deg` 门槛。r112 同时再次确认三点周期斜率为
+`[+4.0630,-0.2336,+4.5258]e-8 V^-1`，故当前矛盾不是三点等时或事件完整性，而是该固定细网格电压点的
+真实三维横向相位推进。该负结果冻结为下一轮真实场 B--E 校正的约束；不得以 r107 的旧 solver-neutral
+gamma 或放宽截面事件容差来提升该点资格。
+
 同一中心粒子、同一冻结几何/PA/电压/源/程序/脉冲和自然回程拓扑的三档时间步实跑已由
 `20260916_013500__analysis__python__mrtof-single-center-timestep-convergence-r1` 绑定：最大步长依次为
 `0.002、0.0002、0.00002 us`，探测器 TOF 分别为

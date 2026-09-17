@@ -52,6 +52,9 @@ GEM直接编译的默认网格也由同一component mesh合同生成，不能留
 [`run_mirror_turn_fixed_grid_validation.ps1`](run_mirror_turn_fixed_grid_validation.ps1)从已解 0.5-mm
 standalone 父场复制六面 Dirichlet 边界，只求当前镜电压的两个 0.25-mm 工作点；compact retention
 保留场比较、周期结果和日志，不保留多 GB PA。该入口服务网格诊断，不提供 Fast Adjust 或正式飞行 IOB。
+该入口的可选 `-NativeTransverseL1` 重用同一次固定场 IOB，以十个冻结横向探针直接在 SIMION 中记录
+首次中央面返回的传输矩阵以及完整两镜返回的时间二阶项。它只复核 bare-mirror 的
+稳定性、γ 与 $\overline T_{xx}$，不调整电压、不取代三能量等时验证，也不授予 Candidate 资格。
 生成PA时检查的物理ID则由geometry receipt给出，不能把不存在的物理电极当作必需实体。
 加速器使用独立的局部ID：
 `ground/repeller/grid1/exit/rings = 1/2/3/4/5..9`，映射自项目ID
@@ -352,9 +355,18 @@ run config；只改变积分控制，不改变 PA 几何或位姿。
 六面边界从同源全局响应插值。正负局域场分别构建，不能因机械镜对称复用受离轴棱镜影响的场。
 
 [run_analyzer_local_pa_family.ps1](run_analyzer_local_pa_family.ps1)调用公共缓存与 Dirichlet 原语。
-每个原生 `.paN` 响应只在一次性 build staging 内产生；发布前由公共 exporter 写成真正 standalone 的
-`.responseN.pa`，并与原生 family 一起进入同一 cache manifest。工作台和飞行器只读取这些 standalone
-响应，不重新打开 cache 中的 `.paN`。
+入口不再直接消费 reviewed run 中的原生 `.paN`。先由
+[run_prepare_reviewed_analyzer_source.ps1](run_prepare_reviewed_analyzer_source.ps1)一次性验证 22 件原生 family，
+把实际需要的 14 个物理电极响应导出为 standalone `.responseN.pa`；原始 `.pa#` 作为独立、同源绑定的
+只读 generation 发布。局域 family 缺失时仅从这 15 件冻结输入建立带活跃只读句柄的短路径副本，发布前和
+清理前都复核实际被 SIMION 消费的副本；命中时不复制、不租用 SIMION、也不 Refine。
+
+[run_analyzer_local_family_batch.ps1](run_analyzer_local_family_batch.ps1)用于同一批五区：先只根据 receipt 元数据
+派生全部 cache key；缺失区共享同一批 15 件受保护输入副本，任一复制中途失败由创建函数立即清理此前副本。
+每个局域 generation 只在其子 runner 中完整哈希一次，batch 预计划不再重复读取多 GB 命中 payload；各区仍按
+自身几何分别 Refine，已命中区直接复用。容量门禁在清理前同时保护 reviewed standalone、raw geometry 和本批
+全部局域 cache key。几何 provider 的 manifest 由 prepared receipt 的冻结哈希绑定，子 runner 只复核实际消费的
+resolved contract、GEM 与 geometry review，不再为未消费的 14.7 GB 原生 family 重复全量哈希。
 `instance_adjust` 只在合同从重叠区导出的半开责任区内接管；portal 真空穿越、非 portal 不穿越、电势/法向场、
 事件拓扑和固定粒子轨迹必须分别验证。当前中心接口证据不能替代束团包络或第三档网格，每档须重新求中心根。
 
@@ -413,6 +425,12 @@ success manifest，并额外核对 prewarm 的四电压向量和局域工作台�
 容量预检和终态门禁保护所有使用中的 generation 与 cache key，清理规则只由公共层维护；见
 [公共 SIMION](../../../common/simion/README.md)与[运行规范](../../../docs/OPERATIONS.md)。
 长 PA 输入和缓存回归只证明执行路径，不授予任何物理性能。
+
+该链的真实闭环证据为：r135 成功发布/命中 reviewed source generations；r137 从同一 15 件受保护输入完成
+`mirror_turn_negative, scale=0.5` 的 Refine 与发布；r138 直接命中同一局域 cache；r140 又经 batch 入口完成
+同一区命中，未复制源、未调用 SIMION 或 Refine。r133 的空电极 19 导出错误和 r134 的 retention 输入错误均为
+已修正的失败证据，不得写成成功。当前 r51 的 22 件 native family 只读复核为 22/22 与冻结记录一致；先前瞬时
+读差异没有已确认写者，也不能归因于 SIMION。r41 继续作为本链可靠完成验证的 provider。
 
 当前受管重建链为 r88--r90 的三个逐字节复现 generation、r91/r92 的两个 cache-hit provider，以及工作台
 `20260917_010000__build__simion__mrtof-local-r55-detached-r94`。r94 的 IOB 仍只含全局分析器、五局域替代、

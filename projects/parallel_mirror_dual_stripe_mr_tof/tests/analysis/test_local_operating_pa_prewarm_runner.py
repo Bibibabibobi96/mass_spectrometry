@@ -47,6 +47,15 @@ class LocalOperatingPAPrewarmRunnerTest(unittest.TestCase):
         self.assertIn("$probe.disposition-eq'corrupt'", self.source)
         self.assertIn("did not verify as an exact hit after prewarm", self.source)
 
+    def test_optional_mirror_adjustment_is_all_or_none_and_contract_bound(self) -> None:
+        for name in (
+            "MirrorBVoltageV", "MirrorCVoltageV", "MirrorDVoltageV", "MirrorEVoltageV",
+        ):
+            self.assertIn(name, self.source)
+        self.assertIn("$mirrorValueCount-notin@(0,4)", self.source)
+        self.assertIn("--target-mirror-voltages-v=$mirrorText", self.source)
+        self.assertIn("target_mirror_voltage_vector_v=", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

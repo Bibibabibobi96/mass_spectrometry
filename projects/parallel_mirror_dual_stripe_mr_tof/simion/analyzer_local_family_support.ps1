@@ -48,21 +48,55 @@ function Resolve-AnalyzerLocalFamilyCacheGeneration {
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$CacheRoot
   )
+  $generation=Resolve-AnalyzerLocalFrozenPublicationGeneration -Family $Family -CacheRoot $CacheRoot
   $names=@($Family.contract.family_filenames|ForEach-Object{[string]$_})
   Push-Location -LiteralPath $RepoRoot
   $saved=$env:PYTHONPATH
   try {
     $env:PYTHONPATH=$RepoRoot
-    $lines=& $PythonExe -m common.simion.pa_family_cache --action probe `
-      --cache-root $CacheRoot --identity $Family.frozen_identity --filenames ($names-join ',')
-    if($LASTEXITCODE-ne 0){throw "PA-family cache probe failed: $($Family.label)"}
+    $code='from common.simion.pa_family_cache import validate_pa_family_cache_generation; import json,sys; print(json.dumps(validate_pa_family_cache_generation(sys.argv[1], expected_cache_key=sys.argv[2], expected_filenames=sys.argv[3].split(",")), sort_keys=True))'
+    $lines=& $PythonExe -c $code $generation ([string]$Family.cache_key) ($names-join ',')
+    if($LASTEXITCODE-ne 0){throw "Frozen local PA-family generation validation failed: $($Family.label)"}
   } finally {$env:PYTHONPATH=$saved;Pop-Location}
-  $probe=(@($lines)-join "`n")|ConvertFrom-Json
-  if($probe.disposition-ne'hit' -or [string]$probe.cache_key-ne$Family.cache_key){
-    throw "Required local PA family is not an intact cache hit: $($Family.label); disposition=$($probe.disposition); detail=$($probe.detail)"
+  $manifest=(@($lines)-join "`n")|ConvertFrom-Json -Depth 40
+  if([string]$manifest.generation_sha256 -ne [IO.Path]::GetFileName($generation)){
+    throw "Frozen local PA-family manifest generation differs: $($Family.label)"
   }
-  $Family.generation_directory=[string]$probe.generation_directory
+  $Family.generation_directory=$generation
   return $Family.generation_directory
+}
+
+function Resolve-AnalyzerLocalFrozenPublicationGeneration {
+  <#
+    Follow the immutable generation explicitly published by the source run.
+    A cache key may acquire newer equivalent or replacement generations; the
+    mutable current pointer is therefore never evidence for a frozen run.
+  #>
+  param(
+    [Parameter(Mandatory)]$Family,
+    [Parameter(Mandatory)][string]$CacheRoot
+  )
+  $publicationPath=[string]$Family.frozen_publication
+  if(-not(Test-Path -LiteralPath $publicationPath -PathType Leaf)){
+    throw "Frozen local PA-family publication is missing: $($Family.label)"
+  }
+  $publication=Get-Content -Raw -LiteralPath $publicationPath|ConvertFrom-Json
+  $key=[string]$Family.cache_key
+  $generationSha=[string]$publication.generation_sha256
+  if($key-notmatch'^[0-9A-Fa-f]{64}$'-or
+     [string]$publication.cache_key-ne$key-or
+     $generationSha-notmatch'^[0-9A-Fa-f]{64}$'){
+    throw "Frozen local PA-family publication identity differs: $($Family.label)"
+  }
+  $expected=[IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetFullPath($CacheRoot)) ("{0}\\generations\\{1}"-f$key,$generationSha)))
+  $published=[IO.Path]::GetFullPath([string]$publication.generation_directory)
+  if(-not[string]::Equals($published,$expected,[StringComparison]::OrdinalIgnoreCase)){
+    throw "Frozen local PA-family publication directory differs from its cache key and generation: $($Family.label)"
+  }
+  if(-not(Test-Path -LiteralPath $expected -PathType Container)){
+    throw "Frozen local PA-family publication generation is missing: $($Family.label)"
+  }
+  return $expected
 }
 
 function Assert-AnalyzerLocalFamilyCacheReadOnly {
@@ -95,20 +129,12 @@ function Resolve-AnalyzerLocalStandaloneResponseSubset {
     [Parameter(Mandatory)][string]$CacheRoot
   )
   $key=[string]$Family.cache_key
-  if($key-notmatch '^[0-9A-Fa-f]{64}$'){throw "Local-family cache key is invalid: $($Family.label)"}
-  $keyRoot=Join-Path ([IO.Path]::GetFullPath($CacheRoot)) $key
-  $pointerPath=Join-Path $keyRoot 'current_generation.json'
-  if(-not(Test-Path -LiteralPath $pointerPath -PathType Leaf)){throw "Local-family current pointer is missing: $($Family.label)"}
-  $pointer=Get-Content -Raw -LiteralPath $pointerPath|ConvertFrom-Json
-  if([string]$pointer.cache_key-ne$key-or[string]$pointer.generation_sha256-notmatch'^[0-9A-Fa-f]{64}$'){
-    throw "Local-family current pointer identity differs: $($Family.label)"
-  }
-  $generation=Join-Path $keyRoot ("generations\{0}"-f[string]$pointer.generation_sha256)
+  $generation=Resolve-AnalyzerLocalFrozenPublicationGeneration -Family $Family -CacheRoot $CacheRoot
   $manifestPath=Join-Path $generation 'cache_manifest.json'
   if(-not(Test-Path -LiteralPath $manifestPath -PathType Leaf)){throw "Local-family cache manifest is missing: $($Family.label)"}
   $manifest=Get-Content -Raw -LiteralPath $manifestPath|ConvertFrom-Json -Depth 40
   if([int]$manifest.schema_version-ne1-or[string]$manifest.role-ne'simion_pa_family_cache'-or
-     [string]$manifest.cache_key-ne$key-or[string]$manifest.generation_sha256-ne[string]$pointer.generation_sha256){
+     [string]$manifest.cache_key-ne$key-or[string]$manifest.generation_sha256 -ne [IO.Path]::GetFileName($generation)){
     throw "Local-family cache manifest identity differs: $($Family.label)"
   }
   $selected=@()
@@ -150,19 +176,11 @@ function Resolve-AnalyzerLocalRawGeometry {
     [Parameter(Mandatory)][string]$CacheRoot
   )
   $key=[string]$Family.cache_key
-  if($key-notmatch'^[0-9A-Fa-f]{64}$'){throw "Local-family cache key is invalid: $($Family.label)"}
-  $keyRoot=Join-Path ([IO.Path]::GetFullPath($CacheRoot)) $key
-  $pointerPath=Join-Path $keyRoot 'current_generation.json'
-  if(-not(Test-Path -LiteralPath $pointerPath -PathType Leaf)){throw "Local-family current pointer is missing: $($Family.label)"}
-  $pointer=Get-Content -Raw -LiteralPath $pointerPath|ConvertFrom-Json
-  if([string]$pointer.cache_key-ne$key-or[string]$pointer.generation_sha256-notmatch'^[0-9A-Fa-f]{64}$'){
-    throw "Local-family current pointer identity differs: $($Family.label)"
-  }
-  $generation=Join-Path $keyRoot ("generations\{0}"-f[string]$pointer.generation_sha256)
+  $generation=Resolve-AnalyzerLocalFrozenPublicationGeneration -Family $Family -CacheRoot $CacheRoot
   $manifestPath=Join-Path $generation 'cache_manifest.json'
   $manifest=Get-Content -Raw -LiteralPath $manifestPath|ConvertFrom-Json -Depth 40
   if([int]$manifest.schema_version-ne1-or[string]$manifest.role-ne'simion_pa_family_cache'-or
-     [string]$manifest.cache_key-ne$key-or[string]$manifest.generation_sha256-ne[string]$pointer.generation_sha256){
+     [string]$manifest.cache_key-ne$key-or[string]$manifest.generation_sha256 -ne [IO.Path]::GetFileName($generation)){
     throw "Local-family cache manifest identity differs: $($Family.label)"
   }
   $name=([string]$Family.contract.family_prefix)+'.pa#'

@@ -823,6 +823,41 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             derive_mirror_l0_slope_tolerance_per_v(50_000, 1.0, (3900.0, 4000.0, 4200.0))
 
+    def test_real_3d_l1_screen_reuses_frozen_l0_grid_and_l1_probes(self) -> None:
+        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        requirements = contract["mirror"]["theory_requirements"]
+        profile = requirements["real_3d_l1_screen_profile"]
+        self.assertEqual(
+            profile["field_response_grid_spacing_source"],
+            "mirror.theory_requirements.real_3d_l0_voltage_family_profile.response_grid_spacing_mm",
+        )
+        self.assertEqual(
+            profile["probe_amplitudes_source"],
+            "mirror.theory_requirements.l1_screen_profile position_probe_mm, angle_probe_rad and probe_convergence_scale_factors",
+        )
+        self.assertEqual(profile["launch_directions_project_z"], [-1, 1])
+        self.assertEqual(profile["screen_trajectory_profile_id"], "center_screening")
+        self.assertEqual(profile["native_validation_trajectory_profile_id"], "center_precision")
+        self.assertEqual(profile["fixed_grid_l1_trajectory_profile_id"], "center_refined")
+        l0_profile = requirements["real_3d_l0_voltage_family_profile"]
+        self.assertEqual(l0_profile["axis_basis_schema_version"], 2)
+        self.assertEqual(
+            l0_profile["axis_period_authority"], "integrated_piecewise_linear_sampled_Ez",
+        )
+        self.assertEqual(
+            profile["axis_period_authority_source"],
+            "mirror.theory_requirements.real_3d_l0_voltage_family_profile.axis_period_authority",
+        )
+        self.assertEqual(profile["maximum_axis_potential_node_mismatch_v"], 1e-8)
+        self.assertEqual(profile["maximum_axis_field_node_mismatch_v_per_mm"], 1e-8)
+        self.assertIsNone(profile["peak_field_acceptance_threshold_v_per_mm"])
+
+    def test_mirror_gamma_uses_physical_angle_tolerance_not_probe_convergence(self) -> None:
+        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        profile = contract["mirror"]["theory_requirements"]["l1_screen_profile"]
+        self.assertEqual(profile["maximum_gamma_target_residual_degrees"], 0.01)
+        self.assertEqual(profile["maximum_adjacent_gamma_change_degrees"], 0.001)
+
     def test_mirror_l0_does_not_add_an_unsupported_grounded_outer_transition(self) -> None:
         design = MirrorL0Design(
             transverse_half_gap_mm=15.0,

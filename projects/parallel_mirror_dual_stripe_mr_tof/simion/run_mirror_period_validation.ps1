@@ -3,6 +3,8 @@ param(
   [Parameter(Mandatory)][string]$ExactKRunPath,
   [Parameter(Mandatory)][string]$LocalWorkbenchRunPath,
   [Parameter(Mandatory)][string]$MirrorOnlyPrewarmRunPath,
+  [string]$RealFieldL1RunPath='',
+  [string]$AxisResponseRunPath='',
   [double]$ProbeYmm=280.0,
   [string]$RunId='',
   [string]$SimionExe='',
@@ -19,6 +21,10 @@ foreach($path in @($python,$simion)){if(-not(Test-Path -LiteralPath $path -PathT
 $exactK=(Resolve-Path -LiteralPath $ExactKRunPath).Path
 $workbench=(Resolve-Path -LiteralPath $LocalWorkbenchRunPath).Path
 $prewarm=(Resolve-Path -LiteralPath $MirrorOnlyPrewarmRunPath).Path
+$useRealField=-not[string]::IsNullOrWhiteSpace($RealFieldL1RunPath)
+if($useRealField-ne(-not[string]::IsNullOrWhiteSpace($AxisResponseRunPath))){throw 'RealFieldL1RunPath and AxisResponseRunPath must be supplied together.'}
+$realFieldL1=if($useRealField){(Resolve-Path -LiteralPath $RealFieldL1RunPath).Path}else{$null}
+$axisResponse=if($useRealField){(Resolve-Path -LiteralPath $AxisResponseRunPath).Path}else{$null}
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__mrtof-bare-mirror-real-field-period'}
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
@@ -59,7 +65,8 @@ try{
   foreach($binding in @(
     @($exactK,'exact-K',''),@($workbench,'local workbench','analyzer_local_replacement_workbench'),
     @($prewarm,'mirror-only prewarm','local_operating_pa_cache_prewarm')
-  )){
+  )+$(if($useRealField){@(@($realFieldL1,'real-field L1 refinement','real_3d_mirror_l1_continuous_refinement'),@($axisResponse,'axis response basis','real_3d_mirror_l0_voltage_family'))}else{@()})
+  ){
     $manifest=Join-Path $binding[0] 'run_manifest.json'
     $arguments=@($manifest,'--require-status','success','--require-project',$projectId)
     if($binding[2]){$arguments+=@('--require-mode',$binding[2])}
@@ -81,9 +88,20 @@ try{
   $prewarmManifest=Copy-VerifiedRunInput -Source (Join-Path $prewarm 'run_manifest.json') -Destination (Join-Path $inputDir 'mirror_only_prewarm_run_manifest.json')
   $probeContract=Join-Path $resultDir 'mirror_period_probe_contract.json'
   $sourceFly2=Join-Path $solverDir 'mirror_period_source.fly2'
-  Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_period','prepare',
-    '--exact-k-run',$exactK,'--probe-y-mm',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$ProbeYmm)),
-    '--contract-output',$probeContract,'--fly2-output',$sourceFly2)
+  $selectionReceipt=$null
+  if($useRealField){
+    $selectionReceipt=Join-Path $resultDir 'fixed_grid_validation_selection.json'
+    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_l1_refine','select-fixed-grid',
+      '--refinement',(Join-Path $realFieldL1 'results\real_3d_mirror_l1_continuous_refinement.json'),'--contract',(Join-Path $repoRoot "projects\$projectId\config\simion_candidate_two_zone.json"),'--output',$selectionReceipt)
+    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_period','prepare-real-field',
+      '--refinement-run',$realFieldL1,'--axis-response-run',$axisResponse,'--selection-receipt',$selectionReceipt,
+      '--probe-y-mm',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$ProbeYmm)),
+      '--contract-output',$probeContract,'--fly2-output',$sourceFly2)
+  }else{
+    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_period','prepare',
+      '--exact-k-run',$exactK,'--probe-y-mm',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$ProbeYmm)),
+      '--contract-output',$probeContract,'--fly2-output',$sourceFly2)
+  }
   $contract=Get-Content -Raw $probeContract|ConvertFrom-Json -Depth 30
   $probeSidecar=Join-Path $solverDir 'mirror_period_probe.lua'
   $entries=@($contract.particles|ForEach-Object{'  [{0}]={1:R}'-f[int]$_.particle_id,[double]$_.target_energy_ev})
@@ -160,8 +178,8 @@ try{
     center_period_residual_ppm=@($comparison.center_period_residual_ppm)
   })
   $configuration=Get-Content -Raw $runConfig|ConvertFrom-Json -AsHashtable
-  $configuration.inputs=[ordered]@{exact_k_run_manifest=$exactManifest;local_workbench_run_manifest=$workbenchManifest;mirror_only_prewarm_run_manifest=$prewarmManifest}
-  $configuration.parameters=[ordered]@{probe_y_mm=$ProbeYmm;particle_count=@($contract.particles).Count;stripe_biases_v=@(0.0,0.0);prism_voltages_v=@(0.0,0.0);trajectory_quality=8.0;maximum_step_us=0.00002;lifecycle_stage='terminal'}
+  $configuration.inputs=[ordered]@{exact_k_run_manifest=$exactManifest;local_workbench_run_manifest=$workbenchManifest;mirror_only_prewarm_run_manifest=$prewarmManifest;real_field_l1_manifest=if($useRealField){Join-Path $realFieldL1 'run_manifest.json'}else{$null};axis_response_manifest=if($useRealField){Join-Path $axisResponse 'run_manifest.json'}else{$null};fixed_grid_selection_receipt=$selectionReceipt}
+  $configuration.parameters=[ordered]@{probe_y_mm=$ProbeYmm;particle_count=@($contract.particles).Count;stripe_biases_v=@(0.0,0.0);prism_voltages_v=@(0.0,0.0);mirror_voltage_source=if($useRealField){'selected_real_field_l1_root'}else{'exact_k_analytic_2d'};trajectory_quality=8.0;maximum_step_us=0.00002;lifecycle_stage='terminal'}
   Write-RunJson -Path $runConfig -Depth 20 -Value $configuration
   foreach($guard in $localGuards){$guard.Dispose()}
   $localGuards=@()
@@ -170,7 +188,7 @@ try{
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths @($package.artifact_run_dir,$exactK,$workbench,$prewarm)
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
-  $outputs=@($summary,$probeContract,$materializeReceipt,$analysis,$flightLog,$startupPath,$terminalPath,$retention)|ForEach-Object{ConvertTo-ArtifactRunPath $_}
+  $outputs=@($summary,$probeContract,$materializeReceipt,$analysis,$flightLog,$startupPath,$terminalPath,$retention)+$(if($selectionReceipt){@($selectionReceipt)}else{@()})|ForEach-Object{ConvertTo-ArtifactRunPath $_}
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs|Out-Null
   $terminalized=$true;$hostOutcome='success'
   Write-Host "MRTOF_MIRROR_REAL_FIELD_PERIOD=PASS RUN_ID=$RunId"

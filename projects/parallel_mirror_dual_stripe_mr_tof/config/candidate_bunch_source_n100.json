@@ -17,7 +17,7 @@
   ],
   "center_authority": {
     "method": "derived_two_zone_placement_repeller_minus_gap1_release",
-    "geometry_contract_sha256": "a2a87758482aa34b583d99deb53a5f53561090ddbdad9555826152b8f048eeb9"
+    "geometry_contract_sha256": "ef83743355f3d8266c3fad661c3ab075cc340c9d8b75a7b2bffe7455fd19322f"
   },
   "particle_count": 100,
   "mother_particle_count": 1000,

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_period import (
     analyze_log,
+    fixed_grid_point_qualification,
     load_exact_k_point,
     write_fly2,
 )
@@ -107,6 +108,17 @@ class MirrorRealFieldPeriodTest(unittest.TestCase):
             log.write_text("status,Fly'm complete. Splats: 9\n", encoding="utf-8")
             with self.assertRaises(Exception):
                 analyze_log(contract, log)
+
+    def test_fixed_grid_point_qualification_is_not_collapsed_to_secant_diagnostic(self) -> None:
+        qualification = "secant_model_proposal_fixed_grid_validation_only__not_accepted"
+        self.assertEqual(
+            fixed_grid_point_qualification({"qualification": qualification}),
+            qualification,
+        )
+
+    def test_unknown_fixed_grid_point_qualification_fails_closed(self) -> None:
+        with self.assertRaisesRegex(Exception, "qualification"):
+            fixed_grid_point_qualification({"qualification": "candidate"})
 
 
 if __name__ == "__main__":

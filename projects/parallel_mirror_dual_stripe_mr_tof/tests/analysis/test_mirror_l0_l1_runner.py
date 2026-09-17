@@ -74,7 +74,7 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
                     "gamma_target_continuation": {
                         "status": GAMMA_SELECTION_STATUS,
                         "gamma_residual_degrees": 2e-8,
-                        "maximum_gamma_residual_degrees": 0.001,
+                        "maximum_gamma_residual_degrees": 0.01,
                         "l0_receipt": {
                             "electrode_voltages_v": list(VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES),
                             "normalized_period_slopes_per_v": [2e-9, -4e-9, 3e-9],
@@ -122,7 +122,7 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             l0, l1 = self._receipts(Path(temporary))
             document = json.loads(l1.read_text(encoding="utf-8"))
-            document["gamma_target_continuation"]["maximum_gamma_residual_degrees"] = 0.01
+            document["gamma_target_continuation"]["maximum_gamma_residual_degrees"] = 0.001
             l1.write_text(json.dumps(document), encoding="utf-8")
             with self.assertRaisesRegex(CandidateContractError, "differs from the frozen contract"):
                 validate_and_summarize(CONTRACT, l0, l1)

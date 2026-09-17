@@ -79,11 +79,20 @@ try{
       scientific_status=[string]$family.status;qualification=[string]$family.qualification;
       feasible_member_count=[int]$family.feasible_member_count;member_count=[int]$family.member_count;
       energy_centers_ev=@($family.energy_centers_ev);voltage_bounds_v=$family.voltage_bounds_v;
+      axis_period_authority=[string]$family.axis_period_authority;
+      axis_basis_schema_version=[int]$family.axis_basis_schema_version;
+      uniform_e_slice_count=[int]$family.uniform_e_slice_count;
+      actual_e_slice_count=[int]$family.actual_e_slice_count;
+      inserted_seed_e_voltage_v=[double]$family.inserted_seed_e_voltage_v;
       response_basis_reused=$true;source_response_basis_run_id=[string]$family.source_response_basis_run_id
     })
     $configuration=Get-Content -Raw $runConfig|ConvertFrom-Json -AsHashtable
     $configuration.inputs=[ordered]@{exact_k_run_manifest=$exactManifest;response_basis_run_manifest=$basisManifest;baseline_contract=(ArtifactPath $frozenContract)}
-    $configuration.parameters=[ordered]@{response_basis_reused=$true;lifecycle_stage='terminal'}
+    $configuration.parameters=[ordered]@{
+      response_basis_reused=$true;axis_period_authority=[string]$family.axis_period_authority;
+      axis_basis_schema_version=[int]$family.axis_basis_schema_version;
+      actual_e_slice_count=[int]$family.actual_e_slice_count;lifecycle_stage='terminal'
+    }
     Write-RunJson -Path $runConfig -Depth 20 -Value $configuration
     $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
     $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths $protectedPaths
@@ -157,6 +166,10 @@ try{
     basis_normalization_v=[double]$plan.basis_normalization_v;energy_centers_ev=@($plan.energy_centers_ev);
     period_slope_derivative_step_ev=[double]$plan.period_slope_derivative_step_ev;
     maximum_abs_normalized_period_slope_per_v=[double]$plan.maximum_abs_normalized_period_slope_per_v;
+    axis_basis_schema_version=[int]$plan.axis_basis_schema_version;
+    axis_period_authority=[string]$plan.axis_period_authority;
+    sampled_axis_quantities=@($plan.sampled_axis_quantities);
+    source_contract_sha256=[string]$plan.source_contract_sha256;
     cache_generations=@($plan.regions|ForEach-Object{[ordered]@{region=[string]$_.region;cache_key=[string]$_.cache_key;generation_sha256=[string]$_.generation_sha256;sample_count=[int]$_.sample_count}})
   }
   Write-RunJson -Path $publishedPlan -Depth 12 -Value $receipt
@@ -164,12 +177,23 @@ try{
     schema_version=1;role='mrtof_real_3d_mirror_l0_voltage_family';status='success';
     scientific_status=[string]$family.status;qualification=[string]$family.qualification;
     feasible_member_count=[int]$family.feasible_member_count;member_count=[int]$family.member_count;
-    energy_centers_ev=@($family.energy_centers_ev);voltage_bounds_v=$family.voltage_bounds_v
+    energy_centers_ev=@($family.energy_centers_ev);voltage_bounds_v=$family.voltage_bounds_v;
+    axis_period_authority=[string]$family.axis_period_authority;
+    axis_basis_schema_version=[int]$family.axis_basis_schema_version;
+    uniform_e_slice_count=[int]$family.uniform_e_slice_count;
+    actual_e_slice_count=[int]$family.actual_e_slice_count;
+    inserted_seed_e_voltage_v=[double]$family.inserted_seed_e_voltage_v
   })
   $configuration=Get-Content -Raw $runConfig|ConvertFrom-Json -AsHashtable
   $configuration.inputs=[ordered]@{exact_k_run_manifest=$exactManifest;local_workbench_run_manifest=$workbenchManifest;baseline_contract=(ArtifactPath $frozenContract)}
   if($baselinePeriodManifest){$configuration.inputs.baseline_period_run_manifest=$baselinePeriodManifest}
-  $configuration.parameters=[ordered]@{probe_y_mm=[double]$plan.probe_y_mm;sample_step_mm=[double]$plan.sample_step_mm;response_group_count=4;region_count=5;protected_cache_keys=$protectedCacheKeys;lifecycle_stage='terminal'}
+  $configuration.parameters=[ordered]@{
+    probe_y_mm=[double]$plan.probe_y_mm;sample_step_mm=[double]$plan.sample_step_mm;
+    response_group_count=4;region_count=5;protected_cache_keys=$protectedCacheKeys;
+    axis_period_authority=[string]$family.axis_period_authority;
+    axis_basis_schema_version=[int]$family.axis_basis_schema_version;
+    actual_e_slice_count=[int]$family.actual_e_slice_count;lifecycle_stage='terminal'
+  }
   Write-RunJson -Path $runConfig -Depth 20 -Value $configuration
   $basisPath=Join-Path $resultDir 'real_3d_mirror_axis_response_basis.csv'
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig

@@ -5,6 +5,10 @@ param(
   [Parameter(Mandatory)][double]$Stripe2VoltageV,
   [Parameter(Mandatory)][double]$Prism1VoltageV,
   [Parameter(Mandatory)][double]$Prism2VoltageV,
+  [Nullable[double]]$MirrorBVoltageV=$null,
+  [Nullable[double]]$MirrorCVoltageV=$null,
+  [Nullable[double]]$MirrorDVoltageV=$null,
+  [Nullable[double]]$MirrorEVoltageV=$null,
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe=''
@@ -97,13 +101,21 @@ $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   $lanePlans=@()
   $publication=$null
 try{
+  $mirrorValues=@($MirrorBVoltageV,$MirrorCVoltageV,$MirrorDVoltageV,$MirrorEVoltageV)
+  $mirrorValueCount=@($mirrorValues|Where-Object{$null-ne$_}).Count
+  if($mirrorValueCount-notin@(0,4)){throw 'Mirror B--E voltages must be supplied together or omitted together.'}
   $targetText=@($Stripe1VoltageV,$Stripe2VoltageV,$Prism1VoltageV,$Prism2VoltageV)|ForEach-Object{Format-InvariantNumber $_}
   $targetText=$targetText-join','
-  Invoke-ProjectPython -Arguments @(
+  $planArguments=@(
     '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.local_operating_pa_cache',
     '--action','plan','--local-workbench-run',$localWorkbench,"--target-voltages-v=$targetText",
     '--cache-root',$cacheRoot,'--identity-output',$identityPath,'--plan-output',$sourcePlanPath
-  )|Out-Null
+  )
+  if($mirrorValueCount-eq4){
+    $mirrorText=(@($mirrorValues)|ForEach-Object{Format-InvariantNumber ([double]$_)})-join','
+    $planArguments+="--target-mirror-voltages-v=$mirrorText"
+  }
+  Invoke-ProjectPython -Arguments $planArguments|Out-Null
   $probe=(@(Invoke-ProjectPython -Arguments @(
     '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.local_operating_pa_cache',
     '--action','probe','--identity-input',$identityPath,'--cache-root',$cacheRoot
@@ -179,6 +191,7 @@ try{
   }
   $configuration.parameters=[ordered]@{
     target_voltage_vector_v=@($Stripe1VoltageV,$Stripe2VoltageV,$Prism1VoltageV,$Prism2VoltageV)
+    target_mirror_voltage_vector_v=$(if($mirrorValueCount-eq4){@($mirrorValues|ForEach-Object{[double]$_})}else{$null})
     initial_disposition=[string]$probe.disposition
     composition_lane_count=$lanePlans.Count
     cache_key=$cacheKey
