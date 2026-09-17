@@ -473,3 +473,28 @@ Before initial materialization and again after a formal-first replan, the
 capacity gate reserves the total byte size of every planned private PA set.
 The run manifest binds the source run manifest, scheduler request/profile/plan,
 particle batch plan, resource usage, merge receipt, and retained raw logs.
+
+### Fixed-grid mirror handoff to Stripe theory
+
+`run_mirror_turn_fixed_grid_validation.ps1` consumes the reviewed analyzer GEM from the geometry
+evidence run and the detached standalone source generation from the prepared-source run.  It does
+not bind or reuse the mutable PA family from the geometry evidence run.  Fixed 0.25-mm operating
+PA cache hits are materialized from the exact pinned generation recorded by the probe/publish
+receipt; a later generation with the same logical key cannot silently replace it.  Snapshot-only
+upstream run directories are not protected as multi-GB cache roots after their required evidence
+has been copied into the run package.
+
+The current successful mirror handoff is
+`20260917_223000__sim__simion__mrtof-measured-chord-root-fixed-grid-r130`.  Its native period and L1
+evidence can be consumed without rebuilding PA files:
+
+```powershell
+pwsh -NoProfile -File projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_dual_stripe_operating_seed.ps1 `
+  -FixedGridRunManifest <r130-run-manifest>
+```
+
+This mode verifies the complete fixed-grid manifest, selected-energy voltage envelope, all three
+period-slope gates, both native stability maps, and the `0.01 deg` gamma gate.  It derives W from
+the average of the two native full periods and applies the native CAD-curve spatial-return inverse
+to obtain S1/S2.  It reports the remaining K residual and a first-order energy continuation seed;
+it does not alter geometry, qualify P1/P2, or publish an exact-K three-dimensional operating point.

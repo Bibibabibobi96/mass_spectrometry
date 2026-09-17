@@ -211,6 +211,18 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         ):
             self.assertIn(token, source)
 
+    def test_operating_seed_runner_has_a_distinct_fixed_grid_input_mode(self) -> None:
+        source = OPERATING_SEED_RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "FixedGridRunManifest",
+            "parent_fixed_grid_run_manifest.json",
+            "dual_stripe_fixed_grid_native_downstream_seed",
+            "--fixed-grid-manifest",
+            "fixed_grid_mirror_stripe_handoff.py",
+            "MRTOF_DUAL_STRIPE_FIXED_GRID_OPERATING_SEED",
+        ):
+            self.assertIn(token, source)
+
     def test_exact_k_runner_is_managed_and_does_not_modify_solver_geometry(self) -> None:
         source = EXACT_K_RUNNER.read_text(encoding="utf-8-sig")
         for token in (

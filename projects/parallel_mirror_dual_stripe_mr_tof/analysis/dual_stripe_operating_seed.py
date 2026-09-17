@@ -65,6 +65,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     derive_mirror_l0_slope_tolerance_per_v,
     reduced_period,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
+    build_native_stripe_shape_selection,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     compile_dual_stripe_path_length_evaluator,
     dual_stripe_total_path_scale,
@@ -2003,6 +2006,105 @@ def _evaluate_exact_k_seed_consistency(
     }
 
 
+def build_operating_seed_report_from_fixed_grid(
+    fixed_grid_manifest: Path, downstream_contract: Path,
+) -> dict[str, Any]:
+    """Apply the native spatial-return inverse to one verified 3-D mirror point.
+
+    The fixed mirror point owns ``W``.  It is therefore wrong to reject that
+    point merely because a separate legacy two-equation voltage search cannot
+    move ``W`` to close exact K.  Publish the native-geometry two-Stripe inverse and
+    expose its K residual; selection of another mirror-family member, if
+    needed, is a later mirror-owned gate.
+    """
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stripe_handoff import load_fixed_grid_mirror_point
+    mirror = load_fixed_grid_mirror_point(fixed_grid_manifest, downstream_contract)
+    contract = mirror.contract
+    shape_selection = build_native_stripe_shape_selection(contract)
+    source_slow_energy = _finite(
+        contract["prism_transport"]["energy_partition"]["drift_kinetic_energy_ev"],
+        "source target slow energy",
+    )
+    materialized = materialize_native_stripe_spatial_return_root(
+        shape_selection.shape_root,
+        source_slow_energy_per_charge_v=source_slow_energy,
+        mirror_reduced_period_mm_per_sqrt_v=mirror.nominal_reduced_period_mm_per_sqrt_v,
+        axial_energy_per_charge_v=mirror.nominal_energy_per_charge_v,
+    )
+    target_k = resolve_drift_phase_contract(contract).target_period_ratio
+    predicted_k = materialized.continuous_oscillation_count
+    constant_width_energy_estimate = (
+        mirror.nominal_energy_per_charge_v * (target_k / predicted_k) ** 2
+    )
+    seed = {
+        "status": "native_spatial_return_voltage_inverse_at_fixed_grid_mirror_point",
+        "qualification": "solver_neutral_hard_boundary_initialization__exact_K_and_finite_3d_pending",
+        "manufactured_design_drift_length_L_mm": shape_selection.shape_root.drift_length_l_mm,
+        "mirror_owned_axial_width_W_mm": mirror.nominal_axial_width_w_mm,
+        "selected_axial_energy_per_charge_v": mirror.nominal_energy_per_charge_v,
+        "target_drift_period_ratio": target_k,
+        "predicted_continuous_oscillation_count": predicted_k,
+        "oscillation_count_residual": predicted_k - target_k,
+        "mirror_axial_width_required_for_exact_K_mm": (
+            mirror.nominal_axial_width_w_mm * predicted_k / target_k
+        ),
+        "first_order_exact_K_energy_proposal_per_charge_v": {
+            "estimated_center_v": constant_width_energy_estimate,
+            "delta_from_current_v": (
+                constant_width_energy_estimate - mirror.nominal_energy_per_charge_v
+            ),
+            "model": "hold_native_3d_mirror_W_locally_constant_and_use_K_proportional_to_sqrt_Ez",
+            "qualification": "continuation_seed_only__independent_mirror_voltage_and_fixed_grid_validation_required",
+        },
+        "nominal_kappa_1": shape_selection.shape_root.kappa_1,
+        "spatial_return_kappa_prime": shape_selection.shape_root.kappa_prime,
+        "derived_drift_kinetic_energy_per_charge_v": materialized.turning_pseudopotential_v,
+        "nominal_injection_angle_degrees": math.degrees(math.atan(math.sqrt(
+            source_slow_energy / mirror.nominal_energy_per_charge_v
+        ))),
+        "stripe_biases_v": list(materialized.stripe_biases_v),
+        "native_spatial_return_materialization": asdict(materialized),
+    }
+    seed["dual_stripe_l0_response"] = analyze_dual_stripe_l0(
+        contract,
+        seed["stripe_biases_v"],
+        axial_energy_per_charge_v=mirror.nominal_energy_per_charge_v,
+    )
+    dimensionless_target = solve_dimensionless_paper_target(contract)
+    report = {
+        "schema_version": 3,
+        "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
+        "status": "fixed_grid_native_mirror_spatial_return_voltage_inverse_complete",
+        "qualification": "solver_neutral_nominal_initialization__exact_K_and_finite_3d_pending",
+        "fixed_grid_manifest_sha256": file_sha256(fixed_grid_manifest.resolve()),
+        "mirror_input_mode": "fixed_grid_native_real_field",
+        "mirror_period_authority": {
+            "source": "native_SIMION_center_full_two_mirror_period_direction_average",
+            "full_period_reduced_mm_per_sqrt_v": mirror.nominal_reduced_period_mm_per_sqrt_v,
+            "axial_width_W_mm": mirror.nominal_axial_width_w_mm,
+            "selected_axial_energy_per_charge_v": mirror.nominal_energy_per_charge_v,
+        },
+        "native_stripe_spatial_shape_selection": asdict(shape_selection),
+        "project_custom_node_solution": dimensionless_target,
+        "exact_original_time_component_emulation_audit": (
+            audit_exact_paper_component_emulation_by_static_stripes(dimensionless_target)
+        ),
+        "two_prism_voltage_definition": audit_two_prism_voltage_definition(contract),
+        "selected_seed": seed,
+        "next_gate": (
+            "Evaluate the reported K residual. If it is outside the physical budget, select "
+            "another independently qualified mirror-family member; do not fit Stripe voltage "
+            "to conceal a mirror-owned W mismatch."
+        ),
+        "limitations": [
+            "The two Stripe voltages are an analytic hard-boundary initialization, not a finite-3-D optimum.",
+            "The fixed-grid mirror point determines W; this handoff reports rather than suppresses its exact-K residual.",
+            "P1/P2 transport, finite-three-dimensional flight, and resolution remain pending.",
+        ],
+    }
+    return report
+
+
 def build_operating_seed_report_from_exact_k(
     exact_k_manifest: Path, downstream_contract: Path,
 ) -> dict[str, Any]:
@@ -2099,6 +2201,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mirror-manifest", type=Path)
     parser.add_argument("--exact-k-manifest", type=Path)
+    parser.add_argument("--fixed-grid-manifest", type=Path)
     parser.add_argument("--downstream-contract", type=Path)
     parser.add_argument("--source-operating-seed-manifest", type=Path)
     parser.add_argument("--output", required=True, type=Path)
@@ -2107,6 +2210,7 @@ def main() -> int:
         if (
             arguments.mirror_manifest is not None
             or arguments.exact_k_manifest is not None
+            or arguments.fixed_grid_manifest is not None
             or arguments.downstream_contract is not None
         ):
             parser.error("authority-only mode cannot also accept mirror or downstream inputs")
@@ -2115,13 +2219,16 @@ def main() -> int:
     else:
         if arguments.downstream_contract is None:
             parser.error("seed modes require --downstream-contract")
-        if (arguments.mirror_manifest is None) == (arguments.exact_k_manifest is None):
-            parser.error("specify exactly one of --mirror-manifest or --exact-k-manifest")
+        if sum(value is not None for value in (arguments.mirror_manifest, arguments.exact_k_manifest, arguments.fixed_grid_manifest)) != 1:
+            parser.error("specify exactly one mirror, exact-k, or fixed-grid manifest")
         if arguments.exact_k_manifest is not None:
             report = build_operating_seed_report_from_exact_k(
                 arguments.exact_k_manifest, arguments.downstream_contract,
             )
             marker = "MRTOF_DUAL_STRIPE_EXACT_K_OPERATING_SEED"
+        elif arguments.fixed_grid_manifest is not None:
+            report = build_operating_seed_report_from_fixed_grid(arguments.fixed_grid_manifest, arguments.downstream_contract)
+            marker = "MRTOF_DUAL_STRIPE_FIXED_GRID_OPERATING_SEED"
         else:
             report = build_operating_seed_report(arguments.mirror_manifest, arguments.downstream_contract)
             marker = "MRTOF_DUAL_STRIPE_OPERATING_SEED"
