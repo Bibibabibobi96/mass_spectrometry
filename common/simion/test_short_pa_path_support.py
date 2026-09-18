@@ -17,6 +17,302 @@ HELPER = Path(__file__).with_name("short_pa_path_support.ps1")
 
 @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell test")
 class ShortPaPathSupportTest(unittest.TestCase):
+    def test_immutable_source_guard_blocks_write_delete_and_replace_until_release(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.pa"
+            replacement = root / "replacement.pa"
+            payload = b"immutable-source"
+            source.write_bytes(payload)
+            replacement.write_bytes(b"replacement")
+            script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes ([int64]$env:PA_BYTES) `
+  -ExpectedSha256 $env:PA_SHA|Out-Null
+$writeBlocked=$false;$deleteBlocked=$false;$replaceBlocked=$false
+try{$writer=[IO.File]::Open($env:PA_SOURCE,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite);$writer.Dispose()}
+catch [IO.IOException]{$writeBlocked=$true}catch [UnauthorizedAccessException]{$writeBlocked=$true}
+try{[IO.File]::Delete($env:PA_SOURCE)}catch [IO.IOException]{$deleteBlocked=$true}catch [UnauthorizedAccessException]{$deleteBlocked=$true}
+try{[IO.File]::Move($env:PA_REPLACEMENT,$env:PA_SOURCE,$true)}
+catch [IO.IOException]{$replaceBlocked=$true}catch [UnauthorizedAccessException]{$replaceBlocked=$true}
+Unprotect-ImmutablePaSource -Source $env:PA_SOURCE|Out-Null
+[IO.File]::WriteAllText($env:PA_SOURCE,'released')
+[pscustomobject]@{write_blocked=$writeBlocked;delete_blocked=$deleteBlocked;replace_blocked=$replaceBlocked;after_release=[IO.File]::ReadAllText($env:PA_SOURCE)}|ConvertTo-Json -Compress
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                     "PA_REPLACEMENT": str(replacement), "PA_BYTES": str(len(payload)),
+                     "PA_SHA": hashlib.sha256(payload).hexdigest()}, timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertTrue(result["write_blocked"])
+            self.assertTrue(result["delete_blocked"])
+            self.assertTrue(result["replace_blocked"])
+            self.assertEqual(result["after_release"], "released")
+
+    def test_immutable_source_guard_is_process_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.pa"
+            payload = b"idempotent-source"
+            source.write_bytes(payload)
+            script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$first=Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 $env:PA_SHA
+$second=Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 $env:PA_SHA
+$count=$global:MassSpectrometryImmutablePaSourceGuards.Count
+Unprotect-ImmutablePaSource -Source $env:PA_SOURCE|Out-Null
+[pscustomobject]@{first_existing=$first.already_protected;second_existing=$second.already_protected;count=$count;remaining=$global:MassSpectrometryImmutablePaSourceGuards.Count}|ConvertTo-Json -Compress
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                     "PA_BYTES": str(len(payload)), "PA_SHA": hashlib.sha256(payload).hexdigest()},
+                timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertFalse(result["first_existing"])
+            self.assertTrue(result["second_existing"])
+            self.assertEqual(result["count"], 1)
+            self.assertEqual(result["remaining"], 0)
+
+    def test_immutable_source_guard_rejects_wrong_hash_without_leaking_handle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.pa"
+            payload = b"wrong-hash-source"
+            source.write_bytes(payload)
+            script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$global:MassSpectrometryShortPaUnbufferedThresholdBytes=1
+$failed=$false
+try{Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 ('0'*64)|Out-Null}catch{$failed=$true}
+[IO.File]::WriteAllText($env:PA_SOURCE,'writable-after-failure')
+[pscustomobject]@{failed=$failed;remaining=$global:MassSpectrometryImmutablePaSourceGuards.Count;value=[IO.File]::ReadAllText($env:PA_SOURCE)}|ConvertTo-Json -Compress
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                     "PA_BYTES": str(len(payload))}, timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertTrue(result["failed"])
+            self.assertEqual(result["remaining"], 0)
+            self.assertEqual(result["value"], "writable-after-failure")
+
+    def test_immutable_source_guard_uses_unbuffered_private_probe_for_large_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.pa"
+            payload = b"manifest-view-from-unbuffered-probe"
+            source.write_bytes(payload)
+            script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$global:MassSpectrometryShortPaUnbufferedThresholdBytes=1
+function Get-OpenPaStreamSha256 {param([IO.FileStream]$Stream);throw 'buffered source hash must not be used'}
+$probeCountBefore=@(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'immutable_pa_source_probe_*').Count
+$identity=Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 $env:PA_SHA
+$probeCountAfter=@(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'immutable_pa_source_probe_*').Count
+Unprotect-ImmutablePaSource -Source $env:PA_SOURCE|Out-Null
+[pscustomobject]@{sha=$identity.sha256;probe_delta=$probeCountAfter-$probeCountBefore;remaining=$global:MassSpectrometryImmutablePaSourceGuards.Count}|ConvertTo-Json -Compress
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                     "PA_BYTES": str(len(payload)), "PA_SHA": hashlib.sha256(payload).hexdigest()},
+                timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(result["sha"].lower(), hashlib.sha256(payload).hexdigest())
+            self.assertEqual(result["probe_delta"], 0)
+            self.assertEqual(result["remaining"], 0)
+
+    def test_short_copy_with_large_manifest_identity_verifies_locked_source_hash(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_manifest_unbuffered_copy_"))
+        source = root / "source.pa"
+        payload = b"manifest-backed-private-copy"
+        source.write_bytes(payload)
+        copy_dir = Path(tempfile.gettempdir()) / f"simion_pa_links_test_{uuid.uuid4().hex}"
+        destination = copy_dir / "copy.pa"
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$global:MassSpectrometryShortPaUnbufferedThresholdBytes=1
+$script:realHashCommand=${function:Get-OpenPaStreamSha256}
+$script:sourceHashCalls=0
+function Get-OpenPaStreamSha256 {
+  param([IO.FileStream]$Stream)
+  $script:sourceHashCalls++
+  & $script:realHashCommand -Stream $Stream
+}
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION `
+  -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 $env:PA_SHA
+$actual=(Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash
+Remove-ShortPaCopyDirectory -Path $env:PA_COPY_DIR -ExpectedNamePrefix 'simion_pa_links_test_'
+[pscustomobject]@{sha=$actual;source_hash_calls=$script:sourceHashCalls;removed=-not(Test-Path -LiteralPath $env:PA_COPY_DIR)}|ConvertTo-Json -Compress
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                     "PA_DESTINATION": str(destination), "PA_COPY_DIR": str(copy_dir),
+                     "PA_BYTES": str(len(payload)), "PA_SHA": hashlib.sha256(payload).hexdigest()},
+                timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(result["sha"].lower(), hashlib.sha256(payload).hexdigest())
+            self.assertEqual(result["source_hash_calls"], 0)
+            self.assertTrue(result["removed"])
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+            if copy_dir.exists():
+                shutil.rmtree(copy_dir, ignore_errors=False)
+
+    def test_published_cache_source_requires_complete_manifest_identity(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_published_cache_source_"))
+        generation = root / "generation"
+        generation.mkdir()
+        source = generation / "response.pa"
+        payload = b"published-cache-response"
+        source.write_bytes(payload)
+        (generation / "cache_manifest.json").write_text(
+            json.dumps(
+                {
+                    "files": [
+                        {
+                            "name": source.name,
+                            "bytes": len(payload),
+                            "sha256": hashlib.sha256(payload).hexdigest().upper(),
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        copy_dir = Path(tempfile.gettempdir()) / f"simion_pa_links_test_{uuid.uuid4().hex}"
+        destination = copy_dir / "response.bin"
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$rejected=$false
+try{New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION|Out-Null}catch{$rejected=$true}
+if(-not$rejected){throw 'published cache source without manifest identity was accepted'}
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION `
+  -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 $env:PA_SHA
+Remove-ShortPaCopyDirectory -Path $env:PA_COPY_DIR -ExpectedNamePrefix 'simion_pa_links_test_'
+[pscustomobject]@{rejected=$rejected;removed=-not(Test-Path -LiteralPath $env:PA_COPY_DIR)}|ConvertTo-Json -Compress
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                     "PA_DESTINATION": str(destination), "PA_COPY_DIR": str(copy_dir),
+                     "PA_BYTES": str(len(payload)), "PA_SHA": hashlib.sha256(payload).hexdigest()},
+                timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertTrue(result["rejected"])
+            self.assertTrue(result["removed"])
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+            if copy_dir.exists():
+                shutil.rmtree(copy_dir, ignore_errors=False)
+
+    def test_immutable_source_guards_release_by_directory_and_all(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_dir = root / "first"
+            second_dir = root / "second"
+            first_dir.mkdir()
+            second_dir.mkdir()
+            sources = [first_dir / "a.pa", first_dir / "b.pa", second_dir / "c.pa"]
+            for index, source in enumerate(sources):
+                source.write_bytes(f"source-{index}".encode())
+            identities = [{"path": str(source), "bytes": source.stat().st_size,
+                           "sha": hashlib.sha256(source.read_bytes()).hexdigest()} for source in sources]
+            script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$items=Get-Content -Raw $env:PA_IDENTITIES|ConvertFrom-Json
+foreach($item in $items){Protect-ImmutablePaSource -Source $item.path -ExpectedBytes ([int64]$item.bytes) -ExpectedSha256 $item.sha|Out-Null}
+$directoryCount=Unprotect-ImmutablePaSourcesUnderDirectory -Path $env:PA_FIRST_DIR
+$afterDirectory=$global:MassSpectrometryImmutablePaSourceGuards.Count
+$allCount=Unprotect-AllImmutablePaSources
+foreach($item in $items){[IO.File]::Open($item.path,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None).Dispose()}
+[pscustomobject]@{directory_count=$directoryCount;after_directory=$afterDirectory;all_count=$allCount;remaining=$global:MassSpectrometryImmutablePaSourceGuards.Count}|ConvertTo-Json -Compress
+"""
+            identity_path = root / "identities.json"
+            identity_path.write_text(json.dumps(identities), encoding="utf-8")
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_IDENTITIES": str(identity_path),
+                     "PA_FIRST_DIR": str(first_dir)}, timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(result["directory_count"], 2)
+            self.assertEqual(result["after_directory"], 1)
+            self.assertEqual(result["all_count"], 1)
+            self.assertEqual(result["remaining"], 0)
+
+    def test_existing_read_only_copy_can_be_verified_and_registered_in_new_process(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_imported_short_pa_"))
+        source = root / "source.pa"
+        destination = root / "shared.pa"
+        payload = b"cross-process-verified-pa"
+        source.write_bytes(payload)
+        destination.write_bytes(payload)
+        destination.chmod(stat.S_IREAD)
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$identity=Import-ExistingShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION `
+  -ExpectedBytes ([int64]$env:PA_EXPECTED_BYTES) -ExpectedSha256 $env:PA_EXPECTED_SHA256
+$writeBlocked=$false
+try{
+  $writer=[IO.File]::Open($env:PA_DESTINATION,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
+  $writer.Dispose()
+}catch [IO.IOException]{$writeBlocked=$true}
+catch [UnauthorizedAccessException]{$writeBlocked=$true}
+Remove-ShortPaCopy -Path $env:PA_DESTINATION
+[pscustomobject]@{bytes=$identity.bytes;sha256=$identity.sha256;write_blocked=$writeBlocked;removed=-not(Test-Path -LiteralPath $env:PA_DESTINATION)}|ConvertTo-Json -Compress
+"""
+        expected = hashlib.sha256(payload).hexdigest()
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", env={
+                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    "PA_DESTINATION": str(destination),
+                    "PA_EXPECTED_BYTES": str(len(payload)), "PA_EXPECTED_SHA256": expected,
+                }, timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(result["bytes"], len(payload))
+            self.assertEqual(result["sha256"].lower(), expected)
+            self.assertTrue(result["write_blocked"])
+            self.assertTrue(result["removed"])
+        finally:
+            destination.chmod(stat.S_IWRITE | stat.S_IREAD) if destination.exists() else None
+            shutil.rmtree(root, ignore_errors=False)
+
     def test_seed_placeholder_cleanup_is_exact_and_retains_seed_iob(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -148,7 +444,7 @@ New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION|Out-Null
         finally:
             shutil.rmtree(root, ignore_errors=False)
 
-    def test_large_pa_uses_verified_write_through_stream_copy(self) -> None:
+    def test_large_pa_uses_verified_unbuffered_copy(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="simion_unbuffered_pa_"))
         source = root / "source.pa"
         destination = root / "copy.pa"
@@ -183,6 +479,59 @@ $result|ConvertTo-Json -Compress
             result = json.loads(completed.stdout.strip().splitlines()[-1])
             self.assertEqual(result["hash"].lower(), expected)
             self.assertEqual(result["staging_count"], 0)
+            self.assertFalse(destination.exists())
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+
+    def test_manifest_backed_large_source_is_hashed_before_copy(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_manifest_source_hash_"))
+        generation = root / "generation"
+        generation.mkdir()
+        source = generation / "response.pa"
+        destination = root / "copy.pa"
+        source.write_bytes(b"originaL-source-bytes")
+        expected_payload = b"original-source-bytes"
+        (generation / "cache_manifest.json").write_text(
+            json.dumps(
+                {
+                    "files": [
+                        {
+                            "name": source.name,
+                            "bytes": len(expected_payload),
+                            "sha256": hashlib.sha256(expected_payload).hexdigest().upper(),
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+$global:MassSpectrometryShortPaUnbufferedThresholdBytes=1
+. $env:PA_HELPER
+New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION `
+  -ExpectedBytes ([int64]$env:PA_EXPECTED_BYTES) -ExpectedSha256 $env:PA_EXPECTED_SHA256|Out-Null
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={
+                    **os.environ,
+                    "PA_HELPER": str(HELPER),
+                    "PA_SOURCE": str(source),
+                    "PA_DESTINATION": str(destination),
+                    "PA_EXPECTED_BYTES": str(len(source.read_bytes())),
+                    "PA_EXPECTED_SHA256": hashlib.sha256(expected_payload).hexdigest(),
+                },
+                timeout=30,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(
+                "Locked immutable PA source differs from its manifest",
+                completed.stdout + completed.stderr,
+            )
             self.assertFalse(destination.exists())
         finally:
             shutil.rmtree(root, ignore_errors=False)
@@ -284,7 +633,7 @@ $writer.Dispose()
         finally:
             shutil.rmtree(root, ignore_errors=False)
 
-    def test_cleanup_retries_transient_source_hash_read_without_weakening_identity(self) -> None:
+    def test_cleanup_releases_guard_without_rehashing_source(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="simion_pa_transient_hash_"))
         source = root / "source.pa"
         destination = root / "copy.pa"
@@ -299,7 +648,6 @@ $script:hashCalls=0
 function Get-OpenPaStreamSha256 {
   param([Parameter(Mandatory)][IO.FileStream]$Stream)
   $script:hashCalls++
-  if($script:hashCalls-eq1){return ('0'*64)}
   & $script:realHashCommand -Stream $Stream
 }
 Remove-ShortPaCopy -Path $copy
@@ -319,7 +667,7 @@ Remove-ShortPaCopy -Path $copy
                 }, timeout=30,
             )
             result = json.loads(completed.stdout.strip().splitlines()[-1])
-            self.assertEqual(result["hash_calls"], 2)
+            self.assertEqual(result["hash_calls"], 0)
             self.assertTrue(result["destination_removed"])
             self.assertEqual(
                 result["source_sha256"].lower(),
@@ -522,6 +870,109 @@ Remove-ShortPaCopiesUnderDirectory -Path $env:BATCH_DIR -ExpectedNamePrefix 'bat
             shutil.rmtree(root, ignore_errors=False)
             if batch_dir.exists():
                 shutil.rmtree(batch_dir, ignore_errors=False)
+
+    def test_copy_registry_survives_nested_script_scope(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_nested_scope_source_"))
+        source = root / "source.pa"
+        source.write_bytes(b"nested-scope-pa")
+        copy_dir = Path(tempfile.gettempdir()) / f"simion_pa_links_test_{uuid.uuid4().hex}"
+        child = root / "child.ps1"
+        child.write_text(
+            "Set-StrictMode -Version Latest\n"
+            "$identity=Get-ShortPaCopyIdentity -Path $env:PA_DESTINATION\n"
+            "if($identity.bytes -ne 15){throw 'nested identity length differs'}\n",
+            encoding="utf-8",
+        )
+        destination = copy_dir / "copy.pa"
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION|Out-Null
+& $env:PA_CHILD
+Remove-ShortPaCopyDirectory -Path $env:PA_COPY_DIR -ExpectedNamePrefix 'simion_pa_links_test_'
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=HELPER.parent, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                env={
+                    **os.environ,
+                    "PA_HELPER": str(HELPER),
+                    "PA_SOURCE": str(source),
+                    "PA_DESTINATION": str(destination),
+                    "PA_CHILD": str(child),
+                    "PA_COPY_DIR": str(copy_dir),
+                }, timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(copy_dir.exists())
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+            if copy_dir.exists():
+                shutil.rmtree(copy_dir, ignore_errors=False)
+
+    def test_confirm_short_copy_hashes_the_registered_destination(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_confirm_copy_source_"))
+        source = root / "source.pa"
+        source.write_bytes(b"confirmed-private-copy")
+        copy_dir = Path(tempfile.gettempdir()) / f"simion_pa_links_test_{uuid.uuid4().hex}"
+        destination = copy_dir / "copy.bin"
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION -GuardDestinationReadOnly
+$identity=Confirm-ShortPaCopyIdentity -Path $copy -VerificationAttempts 3
+Remove-ShortPaCopyDirectory -Path $env:PA_COPY_DIR -ExpectedNamePrefix 'simion_pa_links_test_'
+[pscustomobject]@{bytes=$identity.bytes;removed=-not(Test-Path -LiteralPath $env:PA_COPY_DIR)}|ConvertTo-Json -Compress
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                     "PA_DESTINATION": str(destination), "PA_COPY_DIR": str(copy_dir)}, timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(result["bytes"], len(b"confirmed-private-copy"))
+            self.assertTrue(result["removed"])
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+            if copy_dir.exists():
+                shutil.rmtree(copy_dir, ignore_errors=False)
+
+    def test_confirm_short_copy_rejects_persistent_destination_change(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_confirm_changed_source_"))
+        source = root / "source.pa"
+        source.write_bytes(b"original-private-copy")
+        copy_dir = Path(tempfile.gettempdir()) / f"simion_pa_links_test_{uuid.uuid4().hex}"
+        destination = copy_dir / "copy.bin"
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION
+[IO.File]::WriteAllText($copy,'changed-private-copy')
+$failed=$false
+try{Confirm-ShortPaCopyIdentity -Path $copy -VerificationAttempts 3|Out-Null}catch{$failed=$true}
+Remove-ShortPaCopyDirectory -Path $env:PA_COPY_DIR -ExpectedNamePrefix 'simion_pa_links_test_'
+if(-not$failed){throw 'persistent destination change was accepted'}
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                     "PA_DESTINATION": str(destination), "PA_COPY_DIR": str(copy_dir)}, timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(copy_dir.exists())
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+            if copy_dir.exists():
+                shutil.rmtree(copy_dir, ignore_errors=False)
 
 
 if __name__ == "__main__":

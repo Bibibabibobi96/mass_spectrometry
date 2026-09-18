@@ -53,7 +53,7 @@ def _published_pa_cache_key(pointer_path: Path) -> str | None:
     key = pointer_path.parent.name.lower()
     if not protection.CACHE_KEY.fullmatch(key):
         return None
-    pointer = _load_object(pointer_path)
+    pointer = _load_cache_identity_object(pointer_path)
     if pointer is None:
         return None
     declared_key = pointer.get("cache_key")
@@ -71,7 +71,7 @@ def _published_pa_cache_key(pointer_path: Path) -> str | None:
         manifest_path = (
             pointer_path.parent / "generations" / generation / "cache_manifest.json"
         )
-    manifest = _load_object(manifest_path)
+    manifest = _load_cache_identity_object(manifest_path)
     if manifest is None:
         return None
     role = str(manifest.get("role", ""))
@@ -239,6 +239,28 @@ def _load_object(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def _load_cache_identity_object(path: Path) -> dict[str, Any] | None:
+    """Read a deletion-governing cache identity without hiding I/O denial.
+
+    Missing or malformed JSON is an incomplete cache identity.  Permission
+    errors and other storage failures are different: treating them as a
+    damaged L1 cache could authorize deletion of a valid publication whose
+    pointer or manifest merely could not be inspected.
+    """
+
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError):
+        raise
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def _active_cache_keys(root: Path) -> set[str]:
     """Protect keys in both manifest and frozen inputs of non-terminal runs."""
     return {
@@ -337,7 +359,7 @@ def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], last_success
     pointer = cache_key_dir / "current_generation.json"
     if not pointer.is_file():
         return None
-    selected = _load_object(pointer)
+    selected = _load_cache_identity_object(pointer)
     relative = selected.get("generation_relative_path") if selected else None
     if isinstance(relative, str):
         generation = Path(relative).name
@@ -350,7 +372,11 @@ def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], last_success
             if generation
             else None
         )
-    manifest = _load_object(published) if published and published.is_file() else None
+    manifest = (
+        _load_cache_identity_object(published)
+        if published and published.is_file()
+        else None
+    )
     role = str(manifest.get("role", "")) if manifest else ""
     schema_version = int(manifest.get("schema_version", 0)) if manifest else 0
     verified = bool(

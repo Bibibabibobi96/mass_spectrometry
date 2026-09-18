@@ -15,6 +15,8 @@ import argparse
 from pathlib import Path
 import shutil
 import stat
+import subprocess
+import time
 from typing import Any, Iterable, Mapping
 from uuid import uuid4
 
@@ -145,20 +147,186 @@ def _make_file_writable(path: Path) -> None:
     path.chmod(path.stat().st_mode | stat.S_IWUSR)
 
 
-def copy_verified_file(source: Path, destination: Path) -> dict[str, Any]:
-    """Copy and hash one file in the same flushed byte stream."""
+_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES = 8 * 1024 * 1024
 
-    digest = hashlib.sha256()
-    size = 0
-    with source.open("rb") as read_handle, destination.open("wb") as write_handle:
+
+def _flush_writable_source(path: Path) -> None:
+    """Commit delayed producer writes before an unbuffered Windows read.
+
+    Fresh SIMION PAs remain writable until cache publication.  A normal hash
+    can observe their dirty cache pages while ``robocopy /J`` correctly bypasses
+    that cache and therefore sees older disk pages.  Committing the writable
+    producer file closes that gap.  Immutable read-only cache sources are
+    already persisted and need no write handle.
+    """
+
+    if not path.stat().st_mode & stat.S_IWUSR:
+        return
+    with path.open("r+b", buffering=0) as handle:
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _copy_file_bytes(
+    source: Path,
+    destination: Path,
+    *,
+    flush_writable_source: bool,
+) -> None:
+    """Copy bytes without relying on the Windows buffered large-file path.
+
+    Ordinary Python sequential I/O is retained for small files and non-Windows
+    hosts.  On this Windows SIMION host, repeated 2.75-GiB PA copies made with
+    that path had the right length but different persisted bytes.  ``robocopy
+    /J`` uses unbuffered I/O and is independently re-hashed by
+    :func:`copy_verified_file` before publication.
+    """
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt" and source.stat().st_size >= _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES:
+        if flush_writable_source:
+            _flush_writable_source(source)
+        copy_directory = destination.parent
+        temporary_directory: Path | None = None
+        if source.name != destination.name:
+            temporary_directory = destination.parent / f".robocopy-{uuid4().hex}"
+            temporary_directory.mkdir()
+            copy_directory = temporary_directory
+        completed = subprocess.run(
+            [
+                "robocopy",
+                str(source.parent),
+                str(copy_directory),
+                source.name,
+                "/J",
+                "/COPY:DAT",
+                "/R:0",
+                "/W:0",
+                "/NFL",
+                "/NDL",
+                "/NJH",
+                "/NJS",
+                "/NP",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=source.parent,
+            timeout=6 * 60 * 60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if completed.returncode > 7:
+            if temporary_directory is not None:
+                _remove_tree_writable(temporary_directory)
+            detail = (completed.stderr or completed.stdout).strip()
+            raise OSError(
+                f"robocopy /J failed with exit code {completed.returncode}: {detail}"
+            )
+        copied_path = copy_directory / source.name
+        if temporary_directory is not None:
+            os.replace(copied_path, destination)
+            temporary_directory.rmdir()
+        return
+
+    with source.open("rb", buffering=0) as read_handle, destination.open(
+        "wb", buffering=0
+    ) as write_handle:
         while chunk := read_handle.read(8 * 1024 * 1024):
-            write_handle.write(chunk)
-            digest.update(chunk)
-            size += len(chunk)
+            remaining = memoryview(chunk)
+            while remaining:
+                written = write_handle.write(remaining)
+                if written is None or written <= 0:
+                    raise OSError("cache copy write made no progress")
+                remaining = remaining[written:]
         write_handle.flush()
         os.fsync(write_handle.fileno())
+
+
+def copy_verified_file(source: Path, destination: Path) -> dict[str, Any]:
+    """Copy one file and return the persisted destination identity.
+
+    Hashing bytes while they are written only proves what the process submitted
+    to the filesystem.  Small/non-Windows copies therefore re-read and compare
+    both paths.  Large Windows PA sources can expose a stale buffered view while
+    ``robocopy /J`` exposes the persisted view; in that branch only the new
+    unbuffered snapshot is authoritative.  Callers validating an immutable
+    source must compare the returned identity with its manifest.
+    """
+
+    observations: list[str] = []
+    unbuffered_windows_copy = (
+        os.name == "nt"
+        and source.stat().st_size >= _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES
+    )
+    for attempt in range(1, 4):
+        _copy_file_bytes(source, destination, flush_writable_source=True)
+        source_size = source.stat().st_size
+        destination_size = destination.stat().st_size
+        destination_sha256 = file_sha256(destination)
+        # Large Windows PA files have reproduced two simultaneous views: the
+        # normal buffered source read can retain stale mapped pages while
+        # robocopy /J reads the persisted bytes that SIMION will receive in a
+        # fresh private file.  In that branch the verified destination is the
+        # canonical snapshot; comparing it to the stale buffered source view
+        # turns a valid cache hit into a false corruption report.
+        source_sha256 = None if unbuffered_windows_copy else file_sha256(source)
+        observations.append(
+            f"attempt={attempt},source_bytes={source_size},"
+            f"destination_bytes={destination_size},"
+            f"source_sha256={source_sha256},"
+            f"destination_sha256={destination_sha256}"
+        )
+        if (
+            source_size == destination_size
+            and (unbuffered_windows_copy or source_sha256 == destination_sha256)
+        ):
+            _make_file_writable(destination)
+            return {
+                "name": source.name,
+                "bytes": destination_size,
+                "sha256": destination_sha256,
+            }
+        if attempt < 3:
+            time.sleep(0.2)
+    raise ValueError(
+        "persisted cache copy differs from source after 3 attempts: "
+        f"{source.name} observations=[{' ; '.join(observations)}]"
+    )
+
+
+def snapshot_immutable_file(
+    source: Path,
+    destination: Path,
+    expected_record: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Materialize one immutable source without ever opening it for writing.
+
+    The expected manifest is the byte authority.  On Windows a large file is
+    read through ``robocopy /J`` into a new private path; only that persisted
+    snapshot is hashed.  This deliberately never calls
+    :func:`_flush_writable_source`, even if an immutable file accidentally lost
+    its read-only attribute.
+    """
+
+    expected = validate_direct_inventory([expected_record])[0]
+    if source.name != expected["name"]:
+        raise ValueError("immutable snapshot source name differs from manifest")
+    if not source.is_file() or source.stat().st_size != expected["bytes"]:
+        raise ValueError(f"immutable source length differs from manifest: {source}")
+    if destination.exists() or destination.is_symlink():
+        raise ValueError(f"immutable snapshot would overwrite destination: {destination}")
+    _copy_file_bytes(source, destination, flush_writable_source=False)
+    actual = {
+        "name": source.name,
+        "bytes": destination.stat().st_size,
+        "sha256": file_sha256(destination),
+    }
+    if actual != expected:
+        _make_file_writable(destination)
+        destination.unlink(missing_ok=True)
+        raise ValueError(f"immutable source differs from its manifest: {source.name}")
     _make_file_writable(destination)
-    return {"name": source.name, "bytes": size, "sha256": digest.hexdigest().upper()}
+    return actual
 
 
 def _remove_tree_writable(path: Path) -> None:
@@ -205,7 +373,7 @@ def materialize_direct_inventory(
             if not source_path.is_file():
                 raise ValueError(f"declared cache file is missing: {source_path}")
             try:
-                copied_record = copy_verified_file(source_path, stage / name)
+                copied_record = snapshot_immutable_file(source_path, stage / name, record)
             except Exception as exc:
                 raise RuntimeError(
                     "cache materialization copy failed: "

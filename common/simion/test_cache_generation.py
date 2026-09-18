@@ -122,7 +122,7 @@ class CacheGenerationTests(unittest.TestCase):
             (source / "family.pa0").write_bytes(b"original")
             records = inventory_direct_files(source)
             (source / "family.pa0").write_bytes(b"changed")
-            with self.assertRaisesRegex(ValueError, "differs"):
+            with self.assertRaisesRegex(RuntimeError, "differs"):
                 materialize_direct_inventory(source, root / "run", records)
 
     def test_materialization_publishes_the_complete_directory_in_one_rename(self) -> None:
@@ -156,14 +156,16 @@ class CacheGenerationTests(unittest.TestCase):
             payload = source / "family.pa0"
             payload.write_bytes(b"original")
             records = inventory_direct_files(source)
-            real_copy = cache_generation.copy_verified_file
+            real_copy = cache_generation.snapshot_immutable_file
 
-            def mutate_then_copy(old: Path, new: Path) -> dict[str, object]:
+            def mutate_then_copy(
+                old: Path, new: Path, record: dict[str, object]
+            ) -> dict[str, object]:
                 old.write_bytes(b"changed")
-                return real_copy(old, new)
+                return real_copy(old, new, record)
 
-            with patch.object(cache_generation, "copy_verified_file", side_effect=mutate_then_copy):
-                with self.assertRaisesRegex(ValueError, "differs from its manifest"):
+            with patch.object(cache_generation, "snapshot_immutable_file", side_effect=mutate_then_copy):
+                with self.assertRaisesRegex(RuntimeError, "differs from manifest"):
                     materialize_direct_inventory(source, destination, records)
             self.assertFalse(destination.exists())
             self.assertEqual(list((root / "run").glob(".*.staging-*")), [])
@@ -187,6 +189,115 @@ class CacheGenerationTests(unittest.TestCase):
                     materialize_direct_inventory(source, destination, records)
             self.assertFalse(destination.exists())
             self.assertEqual(list((root / "run").glob(".*.staging-*")), [])
+
+    def test_persisted_copy_mismatch_fails_closed_and_cleans_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            destination = root / "run" / "family"
+            source.mkdir()
+            (source / "family.pa0").write_bytes(b"source bytes")
+            records = inventory_direct_files(source)
+
+            def corrupt_stream_copy(
+                old: Path, new: Path, *, flush_writable_source: bool
+            ) -> None:
+                del old, flush_writable_source
+                new.write_bytes(b"wrong bytes!")
+
+            with patch.object(
+                cache_generation, "_copy_file_bytes", side_effect=corrupt_stream_copy
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "immutable source differs from its manifest"
+                ):
+                    materialize_direct_inventory(source, destination, records)
+            self.assertFalse(destination.exists())
+            self.assertEqual(list((root / "run").glob(".*.staging-*")), [])
+
+    def test_persisted_copy_retries_one_late_source_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.pa"
+            destination = root / "destination.pa"
+            source.write_bytes(b"settled bytes")
+            real_copy = cache_generation._copy_file_bytes
+            calls = 0
+
+            def stale_then_stream(
+                old: Path, new: Path, *, flush_writable_source: bool
+            ) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    new.write_bytes(b"stale bytes!!")
+                else:
+                    real_copy(
+                        old, new, flush_writable_source=flush_writable_source
+                    )
+
+            with patch.object(
+                cache_generation, "_copy_file_bytes", side_effect=stale_then_stream
+            ):
+                record = cache_generation.copy_verified_file(source, destination)
+            self.assertEqual(calls, 2)
+            self.assertEqual(destination.read_bytes(), source.read_bytes())
+            self.assertEqual(
+                record["sha256"], hashlib.sha256(source.read_bytes()).hexdigest().upper()
+            )
+
+    @unittest.skipUnless(__import__("os").name == "nt", "Windows copy regression")
+    def test_windows_large_file_path_uses_unbuffered_robocopy(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.pa"
+            destination = root / "published" / "source.pa"
+            source.write_bytes(b"large-path-fixture")
+            real_run = cache_generation.subprocess.run
+            real_flush = cache_generation._flush_writable_source
+            real_hash = cache_generation.file_sha256
+
+            def destination_hash_only(path: Path) -> str:
+                if path == source:
+                    raise AssertionError("large Windows source used its buffered hash view")
+                return real_hash(path)
+
+            with patch.object(
+                cache_generation, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 0
+            ), patch.object(
+                cache_generation.subprocess, "run", wraps=real_run
+            ) as run, patch.object(
+                cache_generation, "_flush_writable_source", wraps=real_flush
+            ) as flush, patch.object(
+                cache_generation, "file_sha256", side_effect=destination_hash_only
+            ) as hash_file:
+                record = cache_generation.copy_verified_file(source, destination)
+            command = run.call_args.args[0]
+            self.assertIn("/J", command)
+            flush.assert_called_once_with(source)
+            self.assertGreaterEqual(hash_file.call_count, 1)
+            self.assertEqual(destination.read_bytes(), source.read_bytes())
+            self.assertEqual(record["bytes"], len(b"large-path-fixture"))
+
+    @unittest.skipUnless(__import__("os").name == "nt", "Windows copy regression")
+    def test_immutable_snapshot_never_flushes_source_that_lost_readonly_bit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.pa"
+            destination = root / "snapshot" / source.name
+            source.write_bytes(b"immutable-payload")
+            record = inventory_direct_files(root)[0]
+            with patch.object(
+                cache_generation, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 0
+            ), patch.object(
+                cache_generation,
+                "_flush_writable_source",
+                side_effect=AssertionError("immutable source opened for write"),
+            ):
+                actual = cache_generation.snapshot_immutable_file(
+                    source, destination, record
+                )
+            self.assertEqual(actual, record)
 
     def test_inventory_and_v3_digests_match_frozen_compact_json_protocol(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

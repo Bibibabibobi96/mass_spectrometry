@@ -19,6 +19,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.reviewed_analyzer_sour
     export_plan,
     inspect_reviewed_sources,
     publish_prepared,
+    publish_raw_from_reviewed,
     receipt_from_hit,
     stage_native_source,
 )
@@ -38,11 +39,14 @@ class ReviewedAnalyzerSourceCacheTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.provider = self._make_run("r41", b"provider-pa0")
         self.reviewed = self._make_run("r51", b"reviewed-pa0", create_payload=False)
+        self.controller = self.root / "preserved-provider-controller.pa0"
+        shutil.copyfile(self.provider / "simion" / "mrtof_analyzer.pa0", self.controller)
         self.simion = self.root / "simion.exe"
         self.simion.write_bytes(b"synthetic-simion-2020")
         self.cache = self.root / "cache"
         self.inspection = inspect_reviewed_sources(
-            self.provider, self.reviewed, self.simion, "SIMION 2020", self.cache
+            self.provider, self.reviewed, self.simion, "SIMION 2020", self.cache,
+            self.controller,
         )
         self.inspection_path = self.root / "inspection.json"
         self.inspection_path.write_text(json.dumps(self.inspection), encoding="utf-8")
@@ -63,8 +67,8 @@ class ReviewedAnalyzerSourceCacheTest(unittest.TestCase):
         raw.write_bytes(b"same-raw")
         contract.write_text(json.dumps({"simion": {"component_mesh_mm_per_gu": {"analyzer": [1.0, 1.0, 1.0]}}}), encoding="utf-8")
         pa0_path = simion / "mrtof_analyzer.pa0"
+        pa0_path.write_bytes(pa0)
         if create_payload:
-            pa0_path.write_bytes(pa0)
             for identifier in range(1, 21):
                 (simion / f"mrtof_analyzer.pa{identifier}").write_bytes(
                     f"basis-{identifier}".encode()
@@ -185,8 +189,19 @@ class ReviewedAnalyzerSourceCacheTest(unittest.TestCase):
 
     def test_inspection_excludes_pa0_and_builds_fourteen_one_hot_members(self) -> None:
         self.assertFalse(self.inspection["evidence"]["compatibility"]["pa0_equal"])
-        self.assertEqual(self.inspection["evidence"]["compatibility"]["explicitly_excluded"], ["analyzer_pa0"])
+        self.assertEqual(
+            self.inspection["evidence"]["compatibility"]["explicitly_excluded"],
+            ["reviewed_analyzer_pa0"],
+        )
+        self.assertTrue(self.inspection["evidence"]["controller_pa0"]["matches_provider_frozen_record"])
+        self.assertEqual(self.inspection["evidence"]["controller_pa0"]["path"], str(self.controller.resolve()))
         self.assertEqual(len(self.inspection["source_inventory"]), len(NATIVE_FILENAMES))
+        pa0 = next(
+            record
+            for record in self.inspection["source_inventory"]
+            if record["name"] == "mrtof_analyzer.pa0"
+        )
+        self.assertEqual(pa0["sha256"], file_sha256(self.provider / "simion" / "mrtof_analyzer.pa0"))
         members = self.inspection["operating_identity"]["members"]
         self.assertEqual(len(members), 14)
         for member in members:
@@ -194,6 +209,14 @@ class ReviewedAnalyzerSourceCacheTest(unittest.TestCase):
             self.assertEqual(len(table), 19)
             self.assertNotIn(19, table)
             self.assertEqual(sum(table.values()), 1.0)
+
+    def test_inspection_rejects_same_length_wrong_controller_pa0(self) -> None:
+        self.controller.write_bytes(b"X" * self.controller.stat().st_size)
+        with self.assertRaisesRegex(PAFamilyCacheError, "Fast Adjust controller PA0 differs"):
+            inspect_reviewed_sources(
+                self.provider, self.reviewed, self.simion, "SIMION 2020",
+                self.cache, self.controller,
+            )
 
     def test_publish_rejects_equal_length_staging_tamper_before_either_generation(self) -> None:
         staging, outputs = self._stage_and_outputs()
@@ -212,10 +235,39 @@ class ReviewedAnalyzerSourceCacheTest(unittest.TestCase):
         self.assertEqual(receipt["raw_geometry_generation"]["raw_geometry"]["name"], "mrtof_analyzer.pa#")
         self.assertEqual(len(receipt["prepared_standalone_generation"]["export_receipts"]), 14)
 
+    def test_raw_only_repair_reuses_prepared_generation_without_native_staging(self) -> None:
+        staging, outputs = self._stage_and_outputs()
+        original = publish_prepared(self.cache, self.inspection_path, staging, outputs)
+        raw_root = self.cache / self.inspection["raw_cache_key"]
+        for path in raw_root.rglob("*"):
+            if path.is_file():
+                path.chmod(path.stat().st_mode | stat.S_IWUSR)
+        shutil.rmtree(raw_root)
+        repair_inspection = inspect_reviewed_sources(
+            self.provider, self.reviewed, self.simion, "SIMION 2020", self.cache,
+            self.controller,
+        )
+        self.assertEqual(repair_inspection["cache_probe"]["prepared"]["disposition"], "hit")
+        self.assertEqual(repair_inspection["cache_probe"]["raw"]["disposition"], "miss")
+        repaired = publish_raw_from_reviewed(self.cache, repair_inspection)
+        self.assertEqual(repaired["prepared_standalone_generation"]["disposition"], "hit")
+        self.assertEqual(repaired["raw_geometry_generation"]["disposition"], "published")
+        self.assertEqual(
+            repaired["prepared_standalone_generation"]["generation_sha256"],
+            original["prepared_standalone_generation"]["generation_sha256"],
+        )
+        self.assertEqual(
+            repaired["raw_geometry_generation"]["raw_geometry"],
+            original["raw_geometry_generation"]["raw_geometry"],
+        )
+
     def test_hit_receipt_uses_pinned_generation_and_never_follows_new_current(self) -> None:
         staging, outputs = self._stage_and_outputs()
         publish_prepared(self.cache, self.inspection_path, staging, outputs)
-        pinned = inspect_reviewed_sources(self.provider, self.reviewed, self.simion, "SIMION 2020", self.cache)
+        pinned = inspect_reviewed_sources(
+            self.provider, self.reviewed, self.simion, "SIMION 2020", self.cache,
+            self.controller,
+        )
         prepared_pin = pinned["cache_probe"]["prepared"]
         generation_a = Path(prepared_pin["generation_directory"])
         generation_b_stage = self.root / "generation-b"
@@ -268,6 +320,20 @@ class ReviewedAnalyzerSourceCacheTest(unittest.TestCase):
         runner = repository / "projects" / "parallel_mirror_dual_stripe_mr_tof" / "simion" / "run_prepare_reviewed_analyzer_source.ps1"
         support = repository / "common" / "contracts" / "run_artifact_support.ps1"
         text = runner.read_text(encoding="utf-8")
+        self.assertIn("[Nullable[double]]$CapacityTargetGiB=$null", text)
+        self.assertIn("[string]$ControllerPa0=''", text)
+        self.assertIn("'--controller-pa0',$controller", text)
+        self.assertIn("controller_pa0=$inspection.evidence.controller_pa0", text)
+        self.assertEqual(text.count("-TargetGiB $CapacityTargetGiB"), 1)
+        self.assertIn("TargetGiB=$CapacityTargetGiB", text)
+        self.assertIn("CapacityKnownMeasuredBytes", text)
+        self.assertIn("freeze_prepared_responses_after_all_exports", text)
+        self.assertIn("mrtof_reviewed_analyzer_frozen_", text)
+        self.assertIn("-VerificationAttempts 3|Out-Null", text)
+        self.assertIn("3*$responseBytes", text)
+        self.assertIn("$rawOnlyRepair=($preparedDisposition-eq'hit'", text)
+        self.assertIn("'--action','publish-raw'", text)
+        self.assertIn("elseif($rawOnlyRepair){2*$rawBytes+1GB}", text)
         self.assertNotIn("provider_run=$provider", text)
         self.assertNotIn("reviewed_run=$reviewed", text)
         for key in (

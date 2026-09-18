@@ -40,15 +40,19 @@ oaTOF、single-flight或具体电极编号。
 [`pa_family_cache.py`](pa_family_cache.py)提供完整静电PA-family的内容寻址复用：调用方必须给出完整的
 数值身份（resolved geometry、GEM、basis namespace、xyz网格、网格相位、surface、SIMION可执行文件身份、
 Refine策略和构建器身份）以及精确文件清单。它只缓存并逐字节核验`.pa#`、`.pa0`和basis数组；新发布的
-generation payload和manifest同时设为文件系统只读。同一身份命中时可原子复制到新的run-local目录，
+generation payload和manifest同时设为文件系统只读。schema v2为每组等长payload发布一份流式XOR冗余；单文件
+组的XOR即完整副本，因此所有payload都具备单成员恢复能力。同一身份命中时可原子复制到新的run-local目录，
 但完整 family 物化只服务字节审计、迁移或受控 build 边界，不授权供应商进程再次打开其中的 `.paN`；
 SIMION 运行必须消费构建 staging 导出的 standalone `.pa`。任一缺失、额外、哈希不同或损坏 generation
 均失败关闭。IOB、Fast Adjust
 工作点、程序和Fly2从不作为缓存几何真值：每个run必须重新装配、重新保存并在本次manifest中绑定。该层不理解
 器件、坐标或电极含义，项目仍拥有其ID和几何合同。发布过程按cache key持有短生命周期目录锁；并发发布同一
-key只允许一个写者，遗留锁失败关闭并需按artifact保留规则审计后处置，绝不由缓存代码猜测为可删除。
+key只允许一个写者，并同时建立容量门禁可见的TTL保护租约；遗留锁失败关闭并需按artifact保留规则审计后处置，
+绝不由缓存代码猜测为可删除。v1迁移或v2单成员恢复均发布到新的successor generation，manifest将前一代SHA-256
+冻结为`predecessor_generation_sha256`，完整验证新payload和parity后最后切换pointer；旧generation不原位修改，
+也不因失去current身份就自动删除。
 非Python消费者使用唯一命令行桥接：`python -m common.simion.pa_family_cache --action
-probe|publish|materialize --cache-root <root> --identity <identity.json> --filenames <name,...>`；发布另给
+probe|publish|repair|materialize --cache-root <root> --identity <identity.json> --filenames <name,...>`；发布另给
 `--source-directory`，物化另给`--destination-directory`。identity JSON和文件清单由器件适配层派生，
 该CLI不接受或推断物理参数，命中／缺失的建场决定也仍属于调用方。
 
@@ -137,8 +141,9 @@ surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SI
 
 | API | 输入与职责 |
 |---|---|
-| `New-ShortPaCopy -Source <PA> -Destination <short.pa>` | 持有禁止写入/删除源文件的共享句柄，以 `WriteThrough` 流式建立目标不存在的短名独立普通副本；拒绝 `.paN` 响应成员；默认最多三次完整重复制，每次核对源与目标大小／SHA-256；释放最后一个副本时对受护源流最多三次重读，仍必须精确命中冻结 SHA-256 |
-| `Remove-ShortPaCopyDirectory -Path <directory>` | 仅清理系统临时目录下匹配前缀的目录，并再次核对已登记源 SHA-256；默认前缀为 `simion_pa_links_` |
+| `New-ShortPaCopy -Source <PA> -Destination <short.pa> -ExpectedBytes <n> -ExpectedSha256 <sha>` | 持有禁止写入/删除/替换源文件的句柄并建立目标不存在的独立普通副本；拒绝 `.paN` 响应成员。Windows 大 PA 使用 `robocopy /J`，以私有目标的长度／SHA-256直接核对 manifest，不再用可能滞后的缓冲源视图否决正确落盘字节；较小文件仍核对同一受护源流和目标 |
+| `Protect-ImmutablePaSource ...` / `Unprotect-*` | 为确需直接只读检查的 immutable 源建立进程期 `FileShare.Read` 保护；大 PA 同样以一次 `/J` 私有探针核对 manifest。它不是把公共 cache 路径交给 SIMION 的许可 |
+| `Remove-ShortPaCopyDirectory -Path <directory>` | 仅清理系统临时目录下匹配前缀的已登记独立副本并释放源句柄；默认前缀为 `simion_pa_links_` |
 
 短副本恢复为可写，但“改名”不能证明来源于 family 的响应已经失去 `.paN` 语义。已发布 cache 中的
 family 成员即使完整物化到私有目录也不得再次交给供应商进程；`r66` 证明复制后的成员仍可能导致原 cache
@@ -206,21 +211,34 @@ standalone 响应的全部 SHA-256 均不改变。该链已在公共租约
 
 ## 完整 family 的物化原语
 
-`inventory_named_files`和`copy_verified_file`同时供PA-family发布与通用物化使用，统一逐字节库存与
-flush复制；各缓存协议继续拥有排序、generation身份、只读属性和错误语义。
+`inventory_named_files`和`copy_verified_file`供可写build staging发布；`snapshot_immutable_file`专供已发布
+cache消费。二者禁止混用：前者可在发布前flush仍可写的生产者文件，后者永远只读源，并在Windows大PA上仅以
+`robocopy /J`生成的私有快照对manifest验明持久字节，即使源意外丢失只读属性也绝不以`r+b`打开。
 
 [`cache_generation.py`](cache_generation.py)统一提供不同 PA-family 缓存协议共有的直接文件清单、payload/
 immutable generation 摘要，以及按 manifest 文件清单完整物化为可写 run-local 副本的原子复制原语。物化先拒绝
-既有目标，再在一次流式复制中对实际读取并写入的同一字节计算 SHA-256、逐文件核对 manifest、flush/fsync，最后
+既有目标，再对私有持久快照计算 SHA-256、逐文件核对 manifest、flush/fsync，最后
 原子发布整个目录；不为同一大型 family 重复执行源预哈希、staging 复哈希和发布后复哈希。目标副本不继承只读源
 的时间戳或只读属性。它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的哈希频率。公共 PA-family
 cache 与集成项目 v3 cache 共用该物化原语，同时分别保留自身的 identity、provider-run、断点恢复和 SIMION 写者
 生命周期安全策略。对于刚完成求解、准备进入不可变缓存的 staging family，调用方使用
 `--require-stable-inventory`要求连续两次完整字节清单一致；这覆盖 SIMION 可见进程退出后仍可能发生的延迟 PA
 落盘。稳定性确认仅发生在一次性发布边界，普通缓存命中不会因此重复读取整个大型 family。
-普通命中仍只读取每个 payload 一次；若某个大文件首次读取与 manifest 不一致，则只重读该文件，并且必须连续
-两次恢复为 manifest 的长度与 SHA-256 才接受。三次机会内不能取得连续两次一致即保持 `corrupt`，错误详情记录
-期望身份和每次观测值；这处理瞬时读取不稳定，不允许未知字节或持续损坏通过。
+普通命中仍先读取每个 payload 一次。Windows 大 PA 若普通缓冲读取与 manifest 不一致，则在不写、不 flush
+源文件的前提下建立一次 `/J` 私有快照；只有快照长度和 SHA-256 精确命中 manifest 才接受。快照仍不匹配时保持
+`corrupt`。这明确处理同一路径的缓冲视图／持久视图分叉，禁止对已发布源以 ReadWrite 打开或原位“修复”。
+
+Windows上的独立大PA投影由[`short_pa_path_support.ps1`](short_pa_path_support.ps1)在`8 MiB`及以上使用
+`robocopy /J`非缓冲复制，再核对目标SHA-256；较小文件仍使用受写穿透保护的流式复制。本机已复现普通
+缓存式复制在同长度约3 GB PA中产生单字节差异，而同一来源经`/J`得到冻结SHA，因此不得把重复普通复制
+或增加哈希次数当作恢复办法。临时staging只在目标目录内创建，成功后同卷重命名，异常路径删除该具名前缀目录。
+
+PA-family 首次发布不再重复库存刚复制的 staging：`copy_verified_file` 返回已落盘目标的清单，发布器直接用它
+生成 manifest、封存并原子重命名。小文件仍比较源／目标；Windows 大文件先 flush 仍可写的 build staging，随后
+以 `/J` 目标快照为发布字节权威。缓存消费者则必须把该返回身份与既有 manifest 比较，不能自行接受未知字节。
+同次发布再按等长组生成`immutable_pa_xor_parity`，主manifest绑定每份parity manifest和payload的SHA-256。
+恢复时所有大输入先以只读`/J`快照确认持久视图；仅恰好一个payload损坏且parity完整时才允许重建。多成员损坏、
+parity损坏、pointer并发漂移或新generation任一验证失败均保持旧pointer并失败关闭。
 
 ## 调度与恢复
 

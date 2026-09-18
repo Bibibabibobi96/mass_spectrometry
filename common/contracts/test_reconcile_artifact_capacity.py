@@ -353,6 +353,14 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             ), self.assertRaises(error_type):
                 _current_generation_pointers(root)
 
+    def test_cache_identity_reader_does_not_downgrade_permission_error(self) -> None:
+        path = Path("cache") / "current_generation.json"
+        for error_type in (PermissionError, OSError):
+            with self.subTest(error=error_type), patch.object(
+                Path, "read_text", side_effect=error_type("identity unreadable")
+            ), self.assertRaises(error_type):
+                capacity._load_cache_identity_object(path)
+
     def test_measurement_skips_child_removed_before_recursive_scandir(self) -> None:
         root = Path("capacity-root").absolute()
         child = Mock(path=str(root / "temporary"))

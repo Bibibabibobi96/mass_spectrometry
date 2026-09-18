@@ -2,9 +2,12 @@
 param(
   [string]$ProviderRun='',
   [string]$ReviewedRun='',
+  [string]$ControllerPa0='',
   [string]$RunId='',
   [string]$SimionExe='',
-  [string]$PythonExe=''
+  [string]$PythonExe='',
+  [Nullable[double]]$CapacityTargetGiB=$null,
+  [Nullable[long]]$CapacityKnownMeasuredBytes=$null
 )
 
 Set-StrictMode -Version Latest
@@ -19,8 +22,10 @@ $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRo
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
 $provider=if($ProviderRun){(Resolve-Path -LiteralPath $ProviderRun).Path}else{Join-Path $projectRuns '20260916_001500__build__simion__mrtof-return-grid-three-component-iob-r41'}
 $reviewed=if($ReviewedRun){(Resolve-Path -LiteralPath $ReviewedRun).Path}else{Join-Path $projectRuns '20260916_124000__build__simion__mrtof-return-grid-three-component-iob-r51'}
+$controller=if($ControllerPa0){(Resolve-Path -LiteralPath $ControllerPa0).Path}else{Join-Path $provider 'simion\mrtof_analyzer.pa0'}
 foreach($path in @($python,$simion)){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required file is missing: $path"}}
 foreach($path in @($provider,$reviewed)){if(-not(Test-Path -LiteralPath $path -PathType Container)){throw "Required run is missing: $path"}}
+if(-not(Test-Path -LiteralPath $controller -PathType Leaf)){throw "Required controller PA0 is missing: $controller"}
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-reviewed-analyzer-source'}
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
@@ -61,7 +66,7 @@ $cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
 $adapter=Join-Path $projectRoot 'analysis\reviewed_analyzer_source_cache.py'
 $exporter=Join-Path $repoRoot 'common\simion\export_fast_adjusted_standalone_pa.lua'
 $lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight'
-$nativeStaging=$null;$preparedOutputs=$null;$stageReceiptPath=$null
+$nativeStaging=$null;$preparedOutputs=$null;$frozenPreparedOutputs=$null;$stageReceiptPath=$null
 $inspectionPath=$null;$receiptPath=$null;$capacityStartupPath=$null
 $retentionReceiptPath=Join-Path (Split-Path -Parent $runConfig) 'retention_actions.json'
 
@@ -77,7 +82,7 @@ try {
   $inspectionText=Invoke-ProjectPython -Arguments @(
     '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.reviewed_analyzer_source_cache',
     '--action','inspect','--cache-root',$cacheRoot,'--provider-run',$provider,'--reviewed-run',$reviewed,
-    '--simion-executable',$simion,'--simion-release','SIMION 2020'
+    '--controller-pa0',$controller,'--simion-executable',$simion,'--simion-release','SIMION 2020'
   )
   $inspection=$inspectionText|ConvertFrom-Json -Depth 60
   Write-RunJson -Path $inspectionPath -Depth 60 -Value $inspection
@@ -87,15 +92,24 @@ try {
     throw "Reviewed source cache is corrupt: prepared=$preparedDisposition raw=$rawDisposition"
   }
   $cacheHit=($preparedDisposition-eq'hit' -and $rawDisposition-eq'hit')
+  $rawOnlyRepair=($preparedDisposition-eq'hit' -and $rawDisposition-eq'miss')
   [int64]$sourceBytes=[int64](@($inspection.source_inventory)|Measure-Object -Property bytes -Sum).Sum
   [int64]$rawBytes=[int64]$inspection.evidence.provider.analyzer_raw_pa.bytes
   [int64]$responseBytes=14*[int64]$inspection.evidence.provider.basis_arrays.'2'.bytes
-  [int64]$requiredBytes=if($cacheHit){0}else{$sourceBytes+2*($rawBytes+$responseBytes)+1GB}
+  [int64]$requiredBytes=if($cacheHit){0}elseif($rawOnlyRepair){2*$rawBytes+1GB}else{$sourceBytes+2*$rawBytes+3*$responseBytes+1GB}
   $protectedCacheKeys=@([string]$inspection.prepared_cache_key,[string]$inspection.raw_cache_key)
   $failureStage='capacity_startup'
-  $capacityStartup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-    -RequiredHeadroomBytes $requiredBytes -ProtectedPaths @($package.artifact_run_dir,$provider,$reviewed) `
-    -ProtectedCacheKeys $protectedCacheKeys
+  $capacityStartupParameters=@{
+    Python=$python;RepoRoot=$repoRoot;ArtifactRoot=$artifactRoot
+    RequiredHeadroomBytes=$requiredBytes
+    ProtectedPaths=@($package.artifact_run_dir,$provider,$reviewed,(Split-Path -Parent $controller))
+    ProtectedCacheKeys=$protectedCacheKeys;TargetGiB=$CapacityTargetGiB
+  }
+  if($null-ne$CapacityKnownMeasuredBytes){
+    $capacityStartupParameters.KnownMeasuredBytes=[int64]$CapacityKnownMeasuredBytes
+    $capacityStartupParameters.MaximumNewArtifactBytes=[int64]0
+  }
+  $capacityStartup=Invoke-ArtifactCapacityGate @capacityStartupParameters
   $capacityStartupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $capacityStartupPath -Depth 20 -Value $capacityStartup
 
@@ -106,13 +120,21 @@ try {
       '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.reviewed_analyzer_source_cache',
       '--action','receipt-from-hit','--cache-root',$cacheRoot,'--inspection',$inspectionPath
     )
+  } elseif($rawOnlyRepair) {
+    $failureStage='publish_raw_cache'
+    $receiptText=Invoke-ProjectPython -Arguments @(
+      '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.reviewed_analyzer_source_cache',
+      '--action','publish-raw','--cache-root',$cacheRoot,'--inspection',$inspectionPath
+    )
   } else {
     $lease=Enter-HostExecutionLease -Role SIMION -Stage mrtof_pa_prepare -RunId $RunId
-    # Assign both cleanup-visible variables before creating either directory.
+    # Assign all cleanup-visible variables before creating any directory.
     $nativeStaging=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_reviewed_analyzer_native_'+[guid]::NewGuid().ToString('N'))
     $preparedOutputs=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_reviewed_analyzer_prepared_'+[guid]::NewGuid().ToString('N'))
+    $frozenPreparedOutputs=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_reviewed_analyzer_frozen_'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $nativeStaging|Out-Null
     New-Item -ItemType Directory -Path $preparedOutputs|Out-Null
+    New-Item -ItemType Directory -Path $frozenPreparedOutputs|Out-Null
     $failureStage='stage_reviewed_native_source'
     $stageText=Invoke-ProjectPython -Arguments @(
       '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.reviewed_analyzer_source_cache',
@@ -133,11 +155,21 @@ try {
       $failureStage="export_physical_response_$([int]$export.physical_id)"
       Invoke-SimionExport -PhysicalId ([int]$export.physical_id) -LuaArguments @($export.lua_arguments|ForEach-Object{[string]$_})
     }
+    $failureStage='freeze_prepared_responses_after_all_exports'
+    foreach($export in @($plan.exports)){
+      $outputName=[string]$export.output_name
+      foreach($name in @($outputName,"$outputName.boundary_mask_restoration.json")){
+        Copy-VerifiedRunInput -Source (Join-Path $preparedOutputs $name) `
+          -Destination (Join-Path $frozenPreparedOutputs $name) -VerificationAttempts 3|Out-Null
+      }
+    }
+    Remove-GateTemporaryDirectory -Path $preparedOutputs -ExpectedNamePrefix 'mrtof_reviewed_analyzer_prepared_'
+    $preparedOutputs=$null
     $failureStage='publish_prepared_cache'
     $receiptText=Invoke-ProjectPython -Arguments @(
       '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.reviewed_analyzer_source_cache',
       '--action','publish-prepared','--cache-root',$cacheRoot,'--inspection',$inspectionPath,
-      '--staging-directory',$nativeStaging,'--output-directory',$preparedOutputs
+      '--staging-directory',$nativeStaging,'--output-directory',$frozenPreparedOutputs
     )
   }
   $receipt=$receiptText|ConvertFrom-Json -Depth 80
@@ -156,7 +188,7 @@ try {
     reviewed_run_manifest=$frozenReviewedManifest;reviewed_geometry_review=$frozenReviewedReview
     adapter=$frozenAdapter;standalone_exporter=$frozenExporter
   }
-  $config.parameters=[ordered]@{mesh_mm_per_gu=@($inspection.mesh.mm_per_gu);source_member_count=22;native_generation_published=$false;physical_response_ids=@(2,3,4,5,7,8,9,10,11,12,13,14,16,17);prepared_cache_key=[string]$inspection.prepared_cache_key;raw_cache_key=[string]$inspection.raw_cache_key}
+  $config.parameters=[ordered]@{mesh_mm_per_gu=@($inspection.mesh.mm_per_gu);source_member_count=22;native_generation_published=$false;physical_response_ids=@(2,3,4,5,7,8,9,10,11,12,13,14,16,17);controller_pa0=$inspection.evidence.controller_pa0;prepared_cache_key=[string]$inspection.prepared_cache_key;raw_cache_key=[string]$inspection.raw_cache_key}
   Write-RunJson -Path $runConfig -Depth 40 -Value $config
   $failureStage='retention'
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
@@ -174,8 +206,9 @@ try {
     }
   }
   $capacityTerminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-    -ProtectedPaths @($package.artifact_run_dir,$provider,$reviewed) -ProtectedCacheKeys $protectedCacheKeys `
-    -KnownMeasuredBytes ([int64]$capacityStartup.measured_after_bytes) -MaximumNewArtifactBytes ($runBytes+$publishedCacheBytes)
+    -ProtectedPaths @($package.artifact_run_dir,$provider,$reviewed,(Split-Path -Parent $controller)) -ProtectedCacheKeys $protectedCacheKeys `
+    -KnownMeasuredBytes ([int64]$capacityStartup.measured_after_bytes) -MaximumNewArtifactBytes ($runBytes+$publishedCacheBytes) `
+    -TargetGiB $CapacityTargetGiB
   $capacityTerminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $capacityTerminalPath -Depth 20 -Value $capacityTerminal
   $outputs=@($summary,$inspectionPath,$receiptPath,$capacityStartupPath,$capacityTerminalPath,$retention)
@@ -212,6 +245,9 @@ try {
 } finally {
   if($null-ne$preparedOutputs -and(Test-Path -LiteralPath $preparedOutputs -PathType Container)){
     Remove-GateTemporaryDirectory -Path $preparedOutputs -ExpectedNamePrefix 'mrtof_reviewed_analyzer_prepared_'
+  }
+  if($null-ne$frozenPreparedOutputs -and(Test-Path -LiteralPath $frozenPreparedOutputs -PathType Container)){
+    Remove-GateTemporaryDirectory -Path $frozenPreparedOutputs -ExpectedNamePrefix 'mrtof_reviewed_analyzer_frozen_'
   }
   if($null-ne$nativeStaging -and(Test-Path -LiteralPath $nativeStaging -PathType Container)){
     Remove-GateTemporaryDirectory -Path $nativeStaging -ExpectedNamePrefix 'mrtof_reviewed_analyzer_native_'
