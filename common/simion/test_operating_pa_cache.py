@@ -133,6 +133,17 @@ class OperatingPACacheTest(unittest.TestCase):
             published.generation_directory, expected_identity=self.identity
         )
         self.assertEqual([record["name"] for record in manifest["files"]], ["zone-a.pa", "zone-b.pa"])
+        self.assertEqual(
+            manifest["redundancy"],
+            {"algorithm": "none_reconstructible", "groups": []},
+        )
+        self.assertFalse(
+            (
+                published.generation_directory.parents[1]
+                / "recovery"
+                / published.generation_sha256
+            ).exists()
+        )
         for name in ("zone-a.pa", "zone-b.pa", "cache_manifest.json"):
             self.assertFalse((published.generation_directory / name).stat().st_mode & stat.S_IWUSR)
         second = publish_operating_pa_cache(self.cache, self.identity, self.outputs)

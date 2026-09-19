@@ -22,6 +22,7 @@ from common.simion.pa_family_cache import (
     MaterializedFamily,
     PAFamilyCacheError,
     canonical_pa_family_cache_key,
+    ensure_pa_family_cache,
     materialize_pa_family_cache,
     probe_pa_family_cache,
     publish_pa_family_cache,
@@ -338,6 +339,25 @@ def probe_operating_pa_cache(cache_root: str | Path, identity: Mapping[str, obje
     return probe_pa_family_cache(cache_root, _backend_identity(identity), expected_filenames=_filenames(identity))
 
 
+def ensure_operating_pa_cache(
+    cache_root: str | Path,
+    identity: Mapping[str, object],
+    *,
+    lock_timeout_s: float = 30.0,
+) -> CacheProbe:
+    """Return a usable operating-PA cache state, repairing one v2 member."""
+
+    try:
+        return ensure_pa_family_cache(
+            cache_root,
+            _backend_identity(identity),
+            expected_filenames=_filenames(identity),
+            lock_timeout_s=lock_timeout_s,
+        )
+    except PAFamilyCacheError as exc:
+        raise OperatingPACacheError(str(exc)) from exc
+
+
 def validate_operating_pa_cache_generation(
     generation_directory: str | Path, *, expected_identity: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
@@ -369,6 +389,7 @@ def publish_operating_pa_cache(
         return publish_pa_family_cache(
             cache_root, _backend_identity(canonical), source_directory, _filenames(canonical),
             lock_timeout_s=lock_timeout_s,
+            recovery_policy="none",
         )
     except PAFamilyCacheError as exc:
         raise OperatingPACacheError(str(exc)) from exc
@@ -380,12 +401,19 @@ def materialize_operating_pa_cache(
 ) -> MaterializedFamily:
     """Copy a validated group to a writable private run directory."""
 
-    manifest = validate_operating_pa_cache_generation(generation_directory, expected_identity=expected_identity)
-    names = tuple(record["name"] for record in manifest["files"])
     try:
-        return materialize_pa_family_cache(
+        if expected_identity is None:
+            manifest = validate_operating_pa_cache_generation(generation_directory)
+            names = tuple(record["name"] for record in manifest["files"])
+        else:
+            names = _filenames(expected_identity)
+        result = materialize_pa_family_cache(
             generation_directory, destination_directory, expected_filenames=names
         )
+        validate_operating_pa_cache_generation(
+            result.source_generation_directory, expected_identity=expected_identity
+        )
+        return result
     except PAFamilyCacheError as exc:
         raise OperatingPACacheError(str(exc)) from exc
 
@@ -394,7 +422,7 @@ __all__ = [
     "CacheDisposition", "LINEAR_BASIS_ALGORITHM_FORMAT_VERSION", "LINEAR_BASIS_ALGORITHM_ID",
     "OperatingPACacheError", "canonical_operating_pa_cache_key",
     "canonical_operating_pa_identity", "content_identity_from_verified_record",
-    "file_content_identity", "materialize_operating_pa_cache",
+    "ensure_operating_pa_cache", "file_content_identity", "materialize_operating_pa_cache",
     "linear_basis_operating_pa_group_identity", "operating_pa_group_identity",
     "operating_pa_member_identity", "probe_operating_pa_cache", "publish_operating_pa_cache",
     "validate_operating_pa_cache_generation",

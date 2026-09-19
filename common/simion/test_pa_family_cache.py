@@ -17,7 +17,9 @@ from common.simion.pa_family_cache import (
     CacheDisposition,
     PAFamilyCacheError,
     canonical_pa_family_cache_key,
+    ensure_pa_family_cache,
     materialize_pa_family_cache,
+    migrate_current_pa_family_cache,
     main,
     pa_family_inventory,
     probe_pa_family_cache,
@@ -25,6 +27,7 @@ from common.simion.pa_family_cache import (
     repair_pa_family_cache_generation,
     validate_pa_family_cache_generation,
     validate_pa_family_cache_subset,
+    validate_pa_family_cache_subset_with_repair,
 )
 
 
@@ -105,6 +108,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         repaired = repair_pa_family_cache_generation(
             published.generation_directory
         )
+        self.assertTrue(repaired.current_pointer_advanced)
         self.assertEqual(repaired.repaired_member, "field.pa1")
         self.assertEqual(repaired.predecessor_directory, published.generation_directory)
         self.assertTrue(repaired.predecessor_directory.is_dir())
@@ -119,6 +123,97 @@ class PAFamilyCacheTest(unittest.TestCase):
         self.assertEqual(
             (repaired.generation_directory / "field.pa1").read_bytes(), b"one"
         )
+        repeated = repair_pa_family_cache_generation(published.generation_directory)
+        self.assertEqual(repeated.generation_directory, repaired.generation_directory)
+        self.assertFalse(repeated.current_pointer_advanced)
+        self.assertTrue(repeated.receipt_path.is_file())
+
+    def test_reconstructible_publication_omits_xor_but_keeps_atomic_hash_validation(self) -> None:
+        published = publish_pa_family_cache(
+            self.cache,
+            identity(),
+            self.source,
+            self.names,
+            recovery_policy="none",
+        )
+        self.assertEqual(
+            published.manifest["redundancy"],
+            {"algorithm": "none_reconstructible", "groups": []},
+        )
+        recovery_root = (
+            published.generation_directory.parents[1]
+            / "recovery"
+            / published.generation_sha256
+        )
+        self.assertFalse(recovery_root.exists())
+        self.assertEqual(
+            validate_pa_family_cache_generation(
+                published.generation_directory, expected_filenames=self.names
+            )["files"],
+            pa_family_inventory(self.source, self.names),
+        )
+
+    def test_ensure_repairs_one_member_and_returns_successor_hit(self) -> None:
+        published = publish_pa_family_cache(
+            self.cache, identity(), self.source, self.names
+        )
+        damaged = published.generation_directory / "field.pa1"
+        damaged.chmod(damaged.stat().st_mode | stat.S_IWUSR)
+        damaged.write_bytes(b"bad")
+
+        ensured = ensure_pa_family_cache(
+            self.cache, identity(), expected_filenames=self.names
+        )
+
+        self.assertEqual(ensured.disposition, CacheDisposition.HIT)
+        self.assertIsNotNone(ensured.generation_directory)
+        self.assertNotEqual(ensured.generation_directory, published.generation_directory)
+        self.assertEqual(
+            (ensured.generation_directory / "field.pa1").read_bytes(), b"one"
+        )
+        self.assertTrue(published.generation_directory.is_dir())
+
+    def test_subset_validation_repairs_selected_member_and_reports_lineage(self) -> None:
+        published = publish_pa_family_cache(
+            self.cache, identity(), self.source, self.names
+        )
+        damaged = published.generation_directory / "field.pa1"
+        damaged.chmod(damaged.stat().st_mode | stat.S_IWUSR)
+        damaged.write_bytes(b"bad")
+
+        validated = validate_pa_family_cache_subset_with_repair(
+            published.generation_directory,
+            ["field.pa1"],
+            expected_cache_key=published.cache_key,
+        )
+
+        self.assertEqual(
+            validated.predecessor_generation_directory,
+            published.generation_directory,
+        )
+        self.assertIsNotNone(validated.repair_receipt_path)
+        self.assertEqual(
+            (validated.generation_directory / "field.pa1").read_bytes(), b"one"
+        )
+        self.assertEqual(
+            validated.manifest["predecessor_generation_sha256"],
+            published.generation_sha256,
+        )
+
+    def test_ensure_preserves_miss_and_fails_closed_without_generation(self) -> None:
+        self.assertEqual(
+            ensure_pa_family_cache(
+                self.cache, identity(), expected_filenames=self.names
+            ).disposition,
+            CacheDisposition.MISS,
+        )
+        key_root = self.cache / canonical_pa_family_cache_key(identity())
+        key_root.mkdir(parents=True)
+        (key_root / "current_generation.json").write_text("{}", encoding="utf-8")
+        with self.assertRaisesRegex(PAFamilyCacheError, "cannot ensure PA cache"):
+            ensure_pa_family_cache(
+                self.cache, identity(), expected_filenames=self.names
+            )
 
     def test_v2_parity_corruption_is_detected_and_never_repairs_payload(self) -> None:
         published = publish_pa_family_cache(
@@ -143,7 +238,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         self.assertEqual(pointer.read_bytes(), before)
         self.assertTrue(published.generation_directory.is_dir())
 
-    def test_publish_migrates_valid_v1_to_distinct_v2_successor(self) -> None:
+    def test_migrate_snapshots_valid_v1_to_distinct_v2_successor(self) -> None:
         key = canonical_pa_family_cache_key(identity())
         records = pa_family_inventory(self.source, self.names)
         legacy_manifest = pa_family_cache._manifest(key, identity(), records)
@@ -161,8 +256,8 @@ class PAFamilyCacheTest(unittest.TestCase):
             legacy.parents[1], key, legacy_manifest["generation_sha256"]
         )
 
-        migrated = publish_pa_family_cache(
-            self.cache, identity(), self.source, self.names
+        migrated = migrate_current_pa_family_cache(
+            self.cache, identity(), self.names
         )
         self.assertEqual(migrated.manifest["schema_version"], 2)
         self.assertNotEqual(migrated.generation_directory, legacy)
@@ -305,14 +400,32 @@ class PAFamilyCacheTest(unittest.TestCase):
                 expected_cache_key=generation_a.cache_key,
                 expected_filenames=self.names,
             )
-        failed_destination = self.root / "pinned-a-fails"
-        with self.assertRaisesRegex(PAFamilyCacheError, "field.pa1"):
-            materialize_pa_family_cache(
-                generation_a.generation_directory,
-                failed_destination,
+        recovered_destination = self.root / "pinned-a-recovered"
+        recovered_a = materialize_pa_family_cache(
+            generation_a.generation_directory,
+            recovered_destination,
+            expected_filenames=self.names,
+        )
+        self.assertEqual(
+            recovered_a.predecessor_generation_directory,
+            generation_a.generation_directory,
+        )
+        self.assertIsNotNone(recovered_a.repair_receipt_path)
+        self.assertEqual(
+            validate_pa_family_cache_generation(
+                recovered_a.source_generation_directory,
+                expected_cache_key=generation_a.cache_key,
                 expected_filenames=self.names,
-            )
-        self.assertFalse(failed_destination.exists())
+            )["predecessor_generation_sha256"],
+            generation_a.generation_sha256,
+        )
+        self.assertEqual(
+            json.loads(pointer.read_text(encoding="utf-8"))["generation_sha256"],
+            manifest_b["generation_sha256"],
+        )
+        self.assertEqual(
+            (recovered_destination / "field.pa1").read_bytes(), b"one"
+        )
         self.assertEqual(
             probe_pa_family_cache(
                 self.cache, identity(), expected_filenames=self.names
@@ -378,6 +491,75 @@ class PAFamilyCacheTest(unittest.TestCase):
             )
         self.assertEqual(manifest["generation_sha256"], published.generation_sha256)
         self.assertEqual(target_reads, 3)
+
+    def test_subset_revalidates_when_repair_scan_finds_no_damage(self) -> None:
+        published = publish_pa_family_cache(self.cache, identity(), self.source, self.names)
+        real_validate = pa_family_cache.validate_pa_family_cache_subset
+        calls = 0
+
+        def transient_validation(*args: object, **kwargs: object) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise PAFamilyCacheError("transient payload view")
+            return real_validate(*args, **kwargs)
+
+        with patch.object(
+            pa_family_cache,
+            "validate_pa_family_cache_subset",
+            side_effect=transient_validation,
+        ), patch.object(
+            pa_family_cache,
+            "repair_pa_family_cache_generation",
+            side_effect=PAFamilyCacheError(
+                "PA cache parity repair requires exactly one damaged payload; observed=0"
+            ),
+        ):
+            validated = validate_pa_family_cache_subset_with_repair(
+                published.generation_directory,
+                ("field.pa1",),
+                expected_cache_key=published.cache_key,
+            )
+
+        self.assertEqual(calls, 2)
+        self.assertEqual(validated.generation_directory, published.generation_directory)
+        self.assertIsNone(validated.predecessor_generation_directory)
+        self.assertIsNone(validated.repair_receipt_path)
+
+    def test_publication_retries_transient_redundancy_member_view(self) -> None:
+        real_create = pa_family_cache.create_xor_parity_bundle
+        calls = 0
+
+        def transient_members(*args: object, **kwargs: object) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            manifest = real_create(*args, **kwargs)
+            if calls == 1:
+                manifest = json.loads(json.dumps(manifest))
+                manifest["members"][0]["sha256"] = "D" * 64
+            return manifest
+
+        with patch.object(
+            pa_family_cache,
+            "create_xor_parity_bundle",
+            side_effect=transient_members,
+        ), patch.object(
+            pa_family_cache,
+            "PAYLOAD_VERIFICATION_RETRY_DELAY_S",
+            0,
+        ):
+            published = publish_pa_family_cache(
+                self.cache, identity(), self.source, self.names
+            )
+
+        # The three-file fixture has two size groups: the first group is
+        # retried once and the second succeeds on its first read.
+        self.assertEqual(calls, 3)
+        validate_pa_family_cache_generation(
+            published.generation_directory,
+            expected_cache_key=published.cache_key,
+            expected_filenames=self.names,
+        )
 
     @unittest.skipUnless(__import__("os").name == "nt", "Windows PA snapshot recovery")
     def test_large_payload_accepts_manifest_backed_unbuffered_snapshot(self) -> None:

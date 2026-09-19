@@ -16,6 +16,7 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
+import tempfile
 import time
 from typing import Any, Iterable, Mapping
 from uuid import uuid4
@@ -94,8 +95,9 @@ def stable_inventory_direct_files(
     *,
     exclude: Iterable[str] = (),
     passes: int = 2,
+    maximum_attempts: int = 4,
 ) -> list[dict[str, Any]]:
-    """Require identical consecutive full-byte inventories.
+    """Require identical consecutive full-byte inventories within a small retry window.
 
     SIMION can finish its visible process before Windows exposes the final PA
     bytes consistently to a later reader. Metadata and a process quiet window
@@ -105,14 +107,21 @@ def stable_inventory_direct_files(
 
     if passes < 2:
         raise ValueError("stable cache inventory requires at least two passes")
+    if maximum_attempts < passes:
+        raise ValueError("stable cache inventory attempts are fewer than required passes")
     excluded = tuple(exclude)
     previous = inventory_direct_files(directory, exclude=excluded)
-    for _ in range(1, passes):
+    consecutive = 1
+    for _ in range(1, maximum_attempts):
         current = inventory_direct_files(directory, exclude=excluded)
-        if current != previous:
-            raise ValueError("cache inventory changed between stability passes")
+        if current == previous:
+            consecutive += 1
+            if consecutive >= passes:
+                return current
+        else:
+            consecutive = 1
         previous = current
-    return previous
+    raise ValueError("cache inventory did not stabilize within the retry window")
 
 
 def inventory_declared_files(
@@ -148,6 +157,7 @@ def _make_file_writable(path: Path) -> None:
 
 
 _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES = 8 * 1024 * 1024
+_PERSISTED_COPY_MAX_ATTEMPTS = 6
 
 
 def _flush_writable_source(path: Path) -> None:
@@ -248,9 +258,10 @@ def copy_verified_file(source: Path, destination: Path) -> dict[str, Any]:
     Hashing bytes while they are written only proves what the process submitted
     to the filesystem.  Small/non-Windows copies therefore re-read and compare
     both paths.  Large Windows PA sources can expose a stale buffered view while
-    ``robocopy /J`` exposes the persisted view; in that branch only the new
-    unbuffered snapshot is authoritative.  Callers validating an immutable
-    source must compare the returned identity with its manifest.
+    ``robocopy /J`` exposes the persisted view.  In that branch two consecutive
+    unbuffered snapshots must agree; the second snapshot is authoritative.
+    Callers validating an immutable source must compare the returned identity
+    with its manifest.
     """
 
     observations: list[str] = []
@@ -258,38 +269,70 @@ def copy_verified_file(source: Path, destination: Path) -> dict[str, Any]:
         os.name == "nt"
         and source.stat().st_size >= _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES
     )
-    for attempt in range(1, 4):
+    previous_persisted_sha256: str | None = None
+    for attempt in range(1, _PERSISTED_COPY_MAX_ATTEMPTS + 1):
+        if destination.exists():
+            _make_file_writable(destination)
+            destination.unlink()
         _copy_file_bytes(source, destination, flush_writable_source=True)
         source_size = source.stat().st_size
         destination_size = destination.stat().st_size
         destination_sha256 = file_sha256(destination)
-        # Large Windows PA files have reproduced two simultaneous views: the
-        # normal buffered source read can retain stale mapped pages while
-        # robocopy /J reads the persisted bytes that SIMION will receive in a
-        # fresh private file.  In that branch the verified destination is the
-        # canonical snapshot; comparing it to the stale buffered source view
-        # turns a valid cache hit into a false corruption report.
         source_sha256 = None if unbuffered_windows_copy else file_sha256(source)
+        persisted_destination_sha256 = destination_sha256
+        if unbuffered_windows_copy:
+            # A just-finished SIMION PA can expose two same-length views on
+            # Windows: an ordinary buffered hash and the bytes a fresh /J copy
+            # receives.  Never publish either transient view.  Project the
+            # candidate once more through the unbuffered path.  The ordinary
+            # source/destination hashes are not authoritative in this branch:
+            # requiring them to converge reproduced an endless two-view loop
+            # after otherwise successful SIMION Refine jobs.  Two consecutive
+            # /J snapshots from the source must instead name the same bytes.
+            with tempfile.TemporaryDirectory(
+                prefix=".persisted-pa-probe-", dir=destination.parent
+            ) as temporary:
+                persisted = Path(temporary) / destination.name
+                _copy_file_bytes(
+                    destination, persisted, flush_writable_source=False
+                )
+                persisted_destination_sha256 = file_sha256(persisted)
         observations.append(
             f"attempt={attempt},source_bytes={source_size},"
             f"destination_bytes={destination_size},"
             f"source_sha256={source_sha256},"
-            f"destination_sha256={destination_sha256}"
+            f"destination_sha256={destination_sha256},"
+            f"persisted_destination_sha256={persisted_destination_sha256}"
         )
-        if (
-            source_size == destination_size
-            and (unbuffered_windows_copy or source_sha256 == destination_sha256)
-        ):
+        stable_persisted_snapshot = (
+            unbuffered_windows_copy
+            and destination_size == source_size
+            and destination_sha256 == persisted_destination_sha256
+            and previous_persisted_sha256 == destination_sha256
+        )
+        ordinary_copy_matches = (
+            not unbuffered_windows_copy
+            and source_size == destination_size
+            and source_sha256 == destination_sha256
+        )
+        if stable_persisted_snapshot or ordinary_copy_matches:
             _make_file_writable(destination)
             return {
                 "name": source.name,
                 "bytes": destination_size,
                 "sha256": destination_sha256,
             }
-        if attempt < 3:
-            time.sleep(0.2)
+        previous_persisted_sha256 = (
+            destination_sha256
+            if unbuffered_windows_copy
+            and destination_sha256 == persisted_destination_sha256
+            else None
+        )
+        if attempt < _PERSISTED_COPY_MAX_ATTEMPTS:
+            time.sleep(0.5)
     raise ValueError(
-        "persisted cache copy differs from source after 3 attempts: "
+        "persisted cache copy differs from source after "
+        f"{_PERSISTED_COPY_MAX_ATTEMPTS} attempts: "
         f"{source.name} observations=[{' ; '.join(observations)}]"
     )
 

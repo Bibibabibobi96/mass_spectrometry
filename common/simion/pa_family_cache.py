@@ -28,7 +28,7 @@ from common.simion.cache_generation import (
     _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES,
     _remove_tree_writable,
     materialize_direct_inventory, inventory_named_files, copy_verified_file,
-    snapshot_immutable_file,
+    snapshot_immutable_file, stable_inventory_direct_files,
 )
 from common.simion.immutable_pa_parity import (
     ALGORITHM as PARITY_ALGORITHM,
@@ -58,6 +58,8 @@ CACHE_KEY_FIELDS = (
     "builder_identity",
 )
 SHA256 = re.compile(r"^[0-9A-F]{64}$")
+REDUNDANCY_CREATION_MAX_ATTEMPTS = 3
+NO_REDUNDANCY_ALGORITHM = "none_reconstructible"
 PAYLOAD_VERIFICATION_ATTEMPTS = 3
 PAYLOAD_RECOVERY_CONSECUTIVE_MATCHES = 2
 PAYLOAD_VERIFICATION_RETRY_DELAY_S = 0.2
@@ -97,6 +99,9 @@ class CachePublication:
 class MaterializedFamily:
     destination_directory: Path
     files: tuple[dict[str, Any], ...]
+    source_generation_directory: Path
+    predecessor_generation_directory: Path | None = None
+    repair_receipt_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +112,15 @@ class CacheRepair:
     generation_directory: Path
     predecessor_directory: Path
     receipt_path: Path
+    current_pointer_advanced: bool
+
+
+@dataclass(frozen=True)
+class ValidatedFamilySubset:
+    manifest: dict[str, Any]
+    generation_directory: Path
+    predecessor_generation_directory: Path | None = None
+    repair_receipt_path: Path | None = None
 
 
 def _set_file_read_only(path: Path) -> None:
@@ -325,13 +339,28 @@ def _create_redundancy(
     groups: list[dict[str, Any]] = []
     for plan in _redundancy_groups(records):
         bundle = recovery_stage / str(plan["bundle"])
-        parity_manifest = create_xor_parity_bundle(
-            generation_stage, list(plan["members"]), bundle
-        )
         expected_members = [records_by_name[name] for name in plan["members"]]
-        if parity_manifest["members"] != expected_members:
+        parity_manifest: dict[str, Any] | None = None
+        observed_members: list[object] = []
+        for attempt in range(1, REDUNDANCY_CREATION_MAX_ATTEMPTS + 1):
+            if bundle.exists():
+                _remove_tree_writable(bundle)
+            candidate = create_xor_parity_bundle(
+                generation_stage, list(plan["members"]), bundle
+            )
+            observed_members.append(candidate["members"])
+            if candidate["members"] == expected_members:
+                parity_manifest = candidate
+                break
+            if attempt < REDUNDANCY_CREATION_MAX_ATTEMPTS:
+                time.sleep(PAYLOAD_VERIFICATION_RETRY_DELAY_S)
+        if parity_manifest is None:
+            if bundle.exists():
+                _remove_tree_writable(bundle)
             raise PAFamilyCacheError(
-                "PA redundancy read differs from the just-published payload identity"
+                "PA redundancy read differs from the just-published payload identity "
+                f"after {REDUNDANCY_CREATION_MAX_ATTEMPTS} attempts: "
+                f"members={plan['members']} observations={observed_members}"
             )
         groups.append(
             {
@@ -347,6 +376,13 @@ def _validate_redundancy_metadata(root: Path, manifest: Mapping[str, Any]) -> No
     redundancy = manifest.get("redundancy")
     if not isinstance(redundancy, dict) or set(redundancy) != {"algorithm", "groups"}:
         raise PAFamilyCacheError("PA cache redundancy metadata differs")
+    if redundancy["algorithm"] == NO_REDUNDANCY_ALGORITHM:
+        if redundancy["groups"] != []:
+            raise PAFamilyCacheError("reconstructible PA cache must not declare recovery groups")
+        recovery_root = root.parents[1] / RECOVERY_DIRECTORY / manifest["generation_sha256"]
+        if recovery_root.exists():
+            raise PAFamilyCacheError("reconstructible PA cache has an unexpected recovery bundle")
+        return
     if redundancy["algorithm"] != PARITY_ALGORITHM or not isinstance(
         redundancy["groups"], list
     ):
@@ -556,6 +592,57 @@ def validate_pa_family_cache_subset(
     return manifest
 
 
+def validate_pa_family_cache_subset_with_repair(
+    generation_directory: str | Path,
+    filenames: Sequence[str],
+    *,
+    expected_cache_key: str | None = None,
+    lock_timeout_s: float = 30.0,
+) -> ValidatedFamilySubset:
+    """Validate an exact subset, recovering its pinned generation if possible."""
+
+    source = Path(generation_directory)
+    try:
+        manifest = validate_pa_family_cache_subset(
+            source,
+            filenames,
+            expected_cache_key=expected_cache_key,
+        )
+        return ValidatedFamilySubset(manifest, source.resolve())
+    except PAFamilyCacheError as original_error:
+        try:
+            repair = repair_pa_family_cache_generation(
+                source, lock_timeout_s=lock_timeout_s
+            )
+        except PAFamilyCacheError as repair_error:
+            # The repair scan re-verifies every payload.  A transient Windows
+            # large-file view can therefore make the first subset check fail
+            # while the immediately following repair scan observes no damaged
+            # member.  Re-run the requested subset once before preserving the
+            # original failure; this accepts only a complete manifest-backed
+            # verification and never publishes a repair for intact bytes.
+            try:
+                manifest = validate_pa_family_cache_subset(
+                    source,
+                    filenames,
+                    expected_cache_key=expected_cache_key,
+                )
+            except PAFamilyCacheError:
+                raise original_error from repair_error
+            return ValidatedFamilySubset(manifest, source.resolve())
+        manifest = validate_pa_family_cache_subset(
+            repair.generation_directory,
+            filenames,
+            expected_cache_key=expected_cache_key,
+        )
+        return ValidatedFamilySubset(
+            manifest,
+            repair.generation_directory,
+            repair.predecessor_directory,
+            repair.receipt_path,
+        )
+
+
 def probe_pa_family_cache(
     cache_root: str | Path,
     identity: Mapping[str, Any],
@@ -586,12 +673,52 @@ def probe_pa_family_cache(
     return CacheProbe(CacheDisposition.HIT, key, directory)
 
 
+def ensure_pa_family_cache(
+    cache_root: str | Path,
+    identity: Mapping[str, Any],
+    *,
+    expected_filenames: Sequence[str] | None = None,
+    lock_timeout_s: float = 30.0,
+) -> CacheProbe:
+    """Return a usable hit or miss, repairing one damaged v2 payload once.
+
+    This is the production-consumer counterpart to the read-only ``probe``.
+    It never builds a missing family.  A recoverable current generation is
+    replaced by a fully validated immutable successor; every other corruption
+    remains fail-closed.
+    """
+
+    result = probe_pa_family_cache(
+        cache_root, identity, expected_filenames=expected_filenames
+    )
+    if (
+        result.disposition is CacheDisposition.CORRUPT
+        and result.generation_directory is not None
+    ):
+        repair_pa_family_cache_generation(
+            result.generation_directory, lock_timeout_s=lock_timeout_s
+        )
+        result = probe_pa_family_cache(
+            cache_root, identity, expected_filenames=expected_filenames
+        )
+    if result.disposition is CacheDisposition.CORRUPT:
+        raise PAFamilyCacheError(
+            f"cannot ensure PA cache {result.cache_key}: {result.detail}"
+        )
+    return result
+
+
 def repair_pa_family_cache_generation(
     generation_directory: str | Path,
     *,
     lock_timeout_s: float = 30.0,
 ) -> CacheRepair:
-    """Recover one damaged payload into a new immutable successor generation."""
+    """Recover one damaged payload into a new immutable successor generation.
+
+    If ``generation_directory`` is still current, the pointer advances with a
+    compare-under-lock update.  A frozen older generation can also be repaired;
+    its successor is returned without regressing a newer current pointer.
+    """
 
     source = Path(generation_directory).resolve()
     if source.parent.name != "generations" or not source.is_dir():
@@ -649,8 +776,15 @@ def repair_pa_family_cache_generation(
             pointer = json.loads((key_root / POINTER_NAME).read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError) as exc:
             raise PAFamilyCacheError("PA cache repair pointer is unreadable") from exc
-        if pointer != {"cache_key": cache_key, "generation_sha256": source.name}:
-            raise PAFamilyCacheError("PA cache repair pointer changed before publication")
+        if (
+            not isinstance(pointer, dict)
+            or set(pointer) != {"cache_key", "generation_sha256"}
+            or pointer.get("cache_key") != cache_key
+            or not isinstance(pointer.get("generation_sha256"), str)
+            or not SHA256.fullmatch(pointer["generation_sha256"])
+        ):
+            raise PAFamilyCacheError("PA cache repair pointer is invalid")
+        source_is_current = pointer["generation_sha256"] == source.name
         stage_parent = cache_root / STAGING_DIRECTORY
         stage_parent.mkdir(exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix="pa-repair-", dir=stage_parent))
@@ -658,7 +792,8 @@ def repair_pa_family_cache_generation(
         replacement = stage / "generation"
         published_generation: Path | None = None
         published_recovery: Path | None = None
-        pointer_published = False
+        publication_committed = False
+        pointer_advanced = False
         try:
             result = verify_and_recover_xor_parity(
                 source,
@@ -702,23 +837,40 @@ def repair_pa_family_cache_generation(
             recovery_destination = (
                 key_root / RECOVERY_DIRECTORY / successor_manifest["generation_sha256"]
             )
-            if successor.exists() or recovery_destination.exists():
-                raise PAFamilyCacheError("PA cache repair successor already exists")
-            recovery_destination.parent.mkdir(parents=True, exist_ok=True)
-            for bundle in recovery_stage.iterdir():
-                for item in bundle.iterdir():
-                    _set_file_read_only(item)
-            os.replace(recovery_stage, recovery_destination)
-            published_recovery = recovery_destination
-            os.replace(replacement, successor)
-            published_generation = successor
-            validate_pa_family_cache_generation(
-                successor,
-                expected_cache_key=cache_key,
-                expected_filenames=[record["name"] for record in records],
-            )
-            _publish_pointer(key_root, cache_key, successor_manifest["generation_sha256"])
-            pointer_published = True
+            if successor.exists() != recovery_destination.exists():
+                raise PAFamilyCacheError(
+                    "PA cache repair successor is only partially published"
+                )
+            if successor.exists():
+                incumbent = validate_pa_family_cache_generation(
+                    successor,
+                    expected_cache_key=cache_key,
+                    expected_filenames=[record["name"] for record in records],
+                )
+                if incumbent != successor_manifest:
+                    raise PAFamilyCacheError(
+                        "existing PA cache repair successor identity differs"
+                    )
+            else:
+                recovery_destination.parent.mkdir(parents=True, exist_ok=True)
+                for bundle in recovery_stage.iterdir():
+                    for item in bundle.iterdir():
+                        _set_file_read_only(item)
+                os.replace(recovery_stage, recovery_destination)
+                published_recovery = recovery_destination
+                os.replace(replacement, successor)
+                published_generation = successor
+                validate_pa_family_cache_generation(
+                    successor,
+                    expected_cache_key=cache_key,
+                    expected_filenames=[record["name"] for record in records],
+                )
+            publication_committed = True
+            if source_is_current:
+                _publish_pointer(
+                    key_root, cache_key, successor_manifest["generation_sha256"]
+                )
+                pointer_advanced = True
             receipt_directory = key_root / "repair_receipts"
             receipt_directory.mkdir(exist_ok=True)
             receipt = receipt_directory / f"{time.time_ns()}-{uuid4().hex}.json"
@@ -731,6 +883,7 @@ def repair_pa_family_cache_generation(
                     "generation_sha256": successor.name,
                     "predecessor_generation_sha256": source.name,
                     "repaired_member": damaged_record["name"],
+                    "current_pointer_advanced": pointer_advanced,
                     "files": copied,
                 },
             )
@@ -741,9 +894,10 @@ def repair_pa_family_cache_generation(
                 successor,
                 source,
                 receipt,
+                pointer_advanced,
             )
         finally:
-            if not pointer_published:
+            if not publication_committed:
                 if published_generation is not None and published_generation.exists():
                     _remove_tree_writable(published_generation)
                 if published_recovery is not None and published_recovery.exists():
@@ -765,11 +919,14 @@ def _copy_payload(source: Path, destination: Path, filenames: Sequence[str]) -> 
     if missing:
         raise PAFamilyCacheError("source PA family is incomplete: " + ", ".join(missing))
     destination.mkdir(parents=True, exist_ok=False)
-    records: list[dict[str, Any]] = []
     for name in names:
-        records.append(copy_verified_file(source / name, destination / name))
+        copy_verified_file(source / name, destination / name)
         shutil.copystat(source / name, destination / name)
-    return records
+    # Bind the generation identity to two consecutive reads of the private
+    # persisted snapshot.  On Windows, a just-created large PA can otherwise
+    # expose a transient buffered view to the first hash while the following
+    # parity pass sees the durable bytes and correctly rejects publication.
+    return stable_inventory_direct_files(destination, passes=2)
 
 
 def _publish_pointer(key_root: Path, cache_key: str, generation_sha256: str) -> None:
@@ -818,9 +975,8 @@ class _PAFamilyCacheKeyLock:
 
 
 @contextmanager
-def _protected_key_lock(cache_root: Path, cache_key: str, timeout_s: float):
-    """Hold both the publisher lock and cleanup-visible capacity protection."""
-
+def _capacity_protected_key(cache_root: Path, cache_key: str):
+    """Protect one cache key from governed cleanup for a bounded operation."""
     artifact_root = next(
         (path for path in (cache_root, *cache_root.parents) if path.name.lower() == "artifacts"),
         None,
@@ -836,13 +992,21 @@ def _protected_key_lock(cache_root: Path, cache_key: str, timeout_s: float):
             protected_cache_keys=[cache_key],
         )
     try:
-        with _PAFamilyCacheKeyLock(cache_root, cache_key, timeout_s):
-            yield
+        yield
     finally:
         if lease_id is not None:
             capacity_protection.delete_capacity_protection_lease(
                 artifact_root, lease_id=lease_id
             )
+
+
+@contextmanager
+def _protected_key_lock(cache_root: Path, cache_key: str, timeout_s: float):
+    """Hold both the publisher lock and cleanup-visible capacity protection."""
+
+    with _capacity_protected_key(cache_root, cache_key):
+        with _PAFamilyCacheKeyLock(cache_root, cache_key, timeout_s):
+            yield
 
 
 def publish_pa_family_cache(
@@ -852,6 +1016,7 @@ def publish_pa_family_cache(
     filenames: Sequence[str],
     *,
     lock_timeout_s: float = 30.0,
+    recovery_policy: str = "xor",
 ) -> CachePublication:
     """Copy, verify, and atomically publish one complete PA family generation.
 
@@ -861,6 +1026,8 @@ def publish_pa_family_cache(
     never silently overwritten: callers must investigate or use a new identity.
     """
 
+    if recovery_policy not in {"xor", "none"}:
+        raise PAFamilyCacheError("PA cache recovery policy must be 'xor' or 'none'")
     key = canonical_pa_family_cache_key(identity)
     root = Path(cache_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -868,7 +1035,14 @@ def publish_pa_family_cache(
         existing = probe_pa_family_cache(root, identity, expected_filenames=filenames)
         if existing.disposition is CacheDisposition.HIT:
             manifest = validate_pa_family_cache_generation(existing.generation_directory, expected_cache_key=key, expected_filenames=filenames)
-            if manifest["schema_version"] == SCHEMA_VERSION:
+            existing_algorithm = (
+                manifest.get("redundancy", {}).get("algorithm")
+                if manifest["schema_version"] == SCHEMA_VERSION
+                else None
+            )
+            if manifest["schema_version"] == SCHEMA_VERSION and (
+                recovery_policy == "none" or existing_algorithm == PARITY_ALGORITHM
+            ):
                 return CachePublication(CacheDisposition.HIT, key, manifest["generation_sha256"], existing.generation_directory, manifest)
             # A v1 generation has no recoverable redundancy.  Re-publish the
             # caller's verified source as v2 instead of silently extending the
@@ -904,7 +1078,11 @@ def publish_pa_family_cache(
             generation_stage = staging / "generation"
             records = _copy_payload(Path(source_directory), generation_stage, filenames)
             recovery_stage = staging / "recovery"
-            redundancy = _create_redundancy(generation_stage, recovery_stage, records)
+            redundancy = (
+                _create_redundancy(generation_stage, recovery_stage, records)
+                if recovery_policy == "xor"
+                else {"algorithm": NO_REDUNDANCY_ALGORITHM, "groups": []}
+            )
             manifest = _manifest(
                 key,
                 identity,
@@ -957,6 +1135,61 @@ def publish_pa_family_cache(
                 _remove_tree_writable(staging)
 
 
+def migrate_current_pa_family_cache(
+    cache_root: str | Path,
+    identity: Mapping[str, Any],
+    filenames: Sequence[str],
+    *,
+    lock_timeout_s: float = 30.0,
+) -> CachePublication:
+    """Migrate the current healthy v1 generation to recoverable schema v2.
+
+    The legacy generation is consumed only through immutable snapshots into a
+    disposable writable staging directory.  Publication then follows the same
+    v2 atomic path as a normal build, without SIMION or Refine.
+    """
+
+    root = Path(cache_root)
+    key = canonical_pa_family_cache_key(identity)
+    with _capacity_protected_key(root, key):
+        probe = probe_pa_family_cache(
+            root, identity, expected_filenames=filenames
+        )
+        if probe.disposition is not CacheDisposition.HIT or probe.generation_directory is None:
+            raise PAFamilyCacheError(
+                f"cannot migrate PA cache {key}: {probe.disposition.value}: {probe.detail}"
+            )
+        manifest = validate_pa_family_cache_generation(
+            probe.generation_directory,
+            expected_cache_key=key,
+            expected_filenames=filenames,
+        )
+        if manifest["schema_version"] == SCHEMA_VERSION:
+            return CachePublication(
+                CacheDisposition.HIT,
+                key,
+                manifest["generation_sha256"],
+                probe.generation_directory,
+                manifest,
+            )
+        if manifest["schema_version"] != LEGACY_SCHEMA_VERSION:
+            raise PAFamilyCacheError("PA cache migration source schema is unsupported")
+        with tempfile.TemporaryDirectory(prefix="pa-family-migrate-") as temporary:
+            staging = Path(temporary)
+            materialize_pa_family_cache(
+                probe.generation_directory,
+                staging,
+                expected_filenames=filenames,
+            )
+            return publish_pa_family_cache(
+                root,
+                identity,
+                staging,
+                filenames,
+                lock_timeout_s=lock_timeout_s,
+            )
+
+
 def materialize_pa_family_cache(
     generation_directory: str | Path,
     destination_directory: str | Path,
@@ -972,7 +1205,20 @@ def materialize_pa_family_cache(
     """
 
     source = Path(generation_directory)
-    manifest = validate_pa_family_cache_generation(source, expected_filenames=expected_filenames)
+    repair: CacheRepair | None = None
+    try:
+        manifest = validate_pa_family_cache_generation(
+            source, expected_filenames=expected_filenames
+        )
+    except PAFamilyCacheError as original_error:
+        try:
+            repair = repair_pa_family_cache_generation(source)
+        except PAFamilyCacheError as repair_error:
+            raise original_error from repair_error
+        source = repair.generation_directory
+        manifest = validate_pa_family_cache_generation(
+            source, expected_filenames=expected_filenames
+        )
     destination = Path(destination_directory)
     collisions = [
         record["name"] for record in manifest["files"]
@@ -1006,7 +1252,13 @@ def materialize_pa_family_cache(
                     shutil.rmtree(temporary)
     except ValueError as exc:
         raise PAFamilyCacheError(str(exc)) from exc
-    return MaterializedFamily(destination.resolve(), tuple(copied))
+    return MaterializedFamily(
+        destination.resolve(),
+        tuple(copied),
+        source.resolve(),
+        repair.predecessor_directory if repair is not None else None,
+        repair.receipt_path if repair is not None else None,
+    )
 
 
 def _cli_identity(path: Path) -> dict[str, Any]:
@@ -1032,7 +1284,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--action", choices=("probe", "publish", "repair", "materialize"), required=True
+        "--action", choices=("probe", "ensure", "publish", "migrate", "repair", "materialize"), required=True
     )
     parser.add_argument("--cache-root", required=True, type=Path)
     parser.add_argument("--identity", required=True, type=Path)
@@ -1043,10 +1295,23 @@ def main(arguments: Sequence[str] | None = None) -> int:
     args = parser.parse_args(arguments)
     identity = _cli_identity(args.identity)
     filenames = _cli_filenames(args.filenames)
-    if args.action == "probe":
+    if args.action in {"probe", "ensure"}:
         if args.source_directory is not None or args.destination_directory is not None:
-            parser.error("probe accepts neither --source-directory nor --destination-directory")
-        result = probe_pa_family_cache(args.cache_root, identity, expected_filenames=filenames)
+            parser.error(
+                f"{args.action} accepts neither --source-directory nor --destination-directory"
+            )
+        result = (
+            probe_pa_family_cache(
+                args.cache_root, identity, expected_filenames=filenames
+            )
+            if args.action == "probe"
+            else ensure_pa_family_cache(
+                args.cache_root,
+                identity,
+                expected_filenames=filenames,
+                lock_timeout_s=args.lock_timeout_s,
+            )
+        )
         document: dict[str, Any] = {"disposition": result.disposition.value, "cache_key": result.cache_key,
                                     "generation_sha256": result.generation_directory.name if result.generation_directory else None,
                                     "generation_directory": str(result.generation_directory) if result.generation_directory else None,
@@ -1060,6 +1325,25 @@ def main(arguments: Sequence[str] | None = None) -> int:
         document = {"disposition": result.disposition.value, "cache_key": result.cache_key,
                     "generation_sha256": result.generation_sha256,
                     "generation_directory": str(result.generation_directory)}
+    elif args.action == "migrate":
+        if args.source_directory is not None or args.destination_directory is not None:
+            parser.error("migrate accepts neither --source-directory nor --destination-directory")
+        result = migrate_current_pa_family_cache(
+            args.cache_root,
+            identity,
+            filenames,
+            lock_timeout_s=args.lock_timeout_s,
+        )
+        document = {
+            "disposition": result.disposition.value,
+            "cache_key": result.cache_key,
+            "generation_sha256": result.generation_sha256,
+            "generation_directory": str(result.generation_directory),
+            "schema_version": result.manifest["schema_version"],
+            "predecessor_generation_sha256": result.manifest.get(
+                "predecessor_generation_sha256"
+            ),
+        }
     elif args.action == "repair":
         if args.source_directory is not None or args.destination_directory is not None:
             parser.error("repair accepts neither --source-directory nor --destination-directory")
@@ -1088,24 +1372,26 @@ def main(arguments: Sequence[str] | None = None) -> int:
     else:
         if args.destination_directory is None or args.source_directory is not None:
             parser.error("materialize requires --destination-directory and forbids --source-directory")
-        probe = probe_pa_family_cache(args.cache_root, identity, expected_filenames=filenames)
-        if (
-            probe.disposition is CacheDisposition.CORRUPT
-            and probe.generation_directory is not None
-        ):
-            repair_pa_family_cache_generation(
-                probe.generation_directory, lock_timeout_s=args.lock_timeout_s
-            )
-            probe = probe_pa_family_cache(
-                args.cache_root, identity, expected_filenames=filenames
-            )
+        probe = ensure_pa_family_cache(
+            args.cache_root,
+            identity,
+            expected_filenames=filenames,
+            lock_timeout_s=args.lock_timeout_s,
+        )
         if probe.disposition is not CacheDisposition.HIT or probe.generation_directory is None:
             raise PAFamilyCacheError(f"cannot materialize PA cache {probe.cache_key}: {probe.disposition.value}: {probe.detail}")
         result = materialize_pa_family_cache(
             probe.generation_directory, args.destination_directory, expected_filenames=filenames,
         )
         document = {"disposition": "materialized", "cache_key": probe.cache_key,
-                    "generation_directory": str(probe.generation_directory),
+                    "generation_directory": str(result.source_generation_directory),
+                    "predecessor_generation_directory": (
+                        str(result.predecessor_generation_directory)
+                        if result.predecessor_generation_directory else None
+                    ),
+                    "repair_receipt_path": (
+                        str(result.repair_receipt_path) if result.repair_receipt_path else None
+                    ),
                     "destination_directory": str(result.destination_directory), "files": list(result.files)}
     print(json.dumps(document, ensure_ascii=False, sort_keys=True))
     return 0

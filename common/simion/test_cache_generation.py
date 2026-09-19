@@ -24,17 +24,29 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 class CacheGenerationTests(unittest.TestCase):
-    def test_stable_inventory_requires_two_identical_full_passes(self) -> None:
+    def test_stable_inventory_accepts_a_transient_first_view(self) -> None:
         first = [{"name": "family.pa0", "bytes": 1, "sha256": "A" * 64}]
         second = [{"name": "family.pa0", "bytes": 1, "sha256": "B" * 64}]
         with patch.object(
             cache_generation,
             "inventory_direct_files",
-            side_effect=[first, second],
+            side_effect=[first, second, [dict(second[0])]],
         ) as inventory:
-            with self.assertRaisesRegex(ValueError, "changed between stability passes"):
-                stable_inventory_direct_files("unused", exclude=("manifest.json",))
-        self.assertEqual(inventory.call_count, 2)
+            stable = stable_inventory_direct_files("unused", exclude=("manifest.json",))
+        self.assertEqual(stable, second)
+        self.assertEqual(inventory.call_count, 3)
+
+    def test_stable_inventory_rejects_a_continuously_changing_view(self) -> None:
+        first = [{"name": "family.pa0", "bytes": 1, "sha256": "A" * 64}]
+        second = [{"name": "family.pa0", "bytes": 1, "sha256": "B" * 64}]
+        with patch.object(
+            cache_generation,
+            "inventory_direct_files",
+            side_effect=[first, second, first, second],
+        ) as inventory:
+            with self.assertRaisesRegex(ValueError, "did not stabilize"):
+                stable_inventory_direct_files("unused")
+        self.assertEqual(inventory.call_count, 4)
 
     def test_stable_inventory_returns_the_second_matching_pass(self) -> None:
         records = [{"name": "family.pa0", "bytes": 1, "sha256": "A" * 64}]
@@ -255,29 +267,87 @@ class CacheGenerationTests(unittest.TestCase):
             source.write_bytes(b"large-path-fixture")
             real_run = cache_generation.subprocess.run
             real_flush = cache_generation._flush_writable_source
-            real_hash = cache_generation.file_sha256
-
-            def destination_hash_only(path: Path) -> str:
-                if path == source:
-                    raise AssertionError("large Windows source used its buffered hash view")
-                return real_hash(path)
-
             with patch.object(
                 cache_generation, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 0
             ), patch.object(
                 cache_generation.subprocess, "run", wraps=real_run
             ) as run, patch.object(
                 cache_generation, "_flush_writable_source", wraps=real_flush
-            ) as flush, patch.object(
-                cache_generation, "file_sha256", side_effect=destination_hash_only
-            ) as hash_file:
+            ) as flush:
                 record = cache_generation.copy_verified_file(source, destination)
-            command = run.call_args.args[0]
-            self.assertIn("/J", command)
-            flush.assert_called_once_with(source)
-            self.assertGreaterEqual(hash_file.call_count, 1)
+            self.assertGreaterEqual(run.call_count, 2)
+            self.assertTrue(all("/J" in call.args[0] for call in run.call_args_list))
+            self.assertEqual(flush.call_count, 2)
+            self.assertTrue(all(call.args == (source,) for call in flush.call_args_list))
             self.assertEqual(destination.read_bytes(), source.read_bytes())
             self.assertEqual(record["bytes"], len(b"large-path-fixture"))
+
+    @unittest.skipUnless(__import__("os").name == "nt", "Windows copy regression")
+    def test_windows_large_copy_retries_when_buffered_and_persisted_views_differ(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.pa"
+            destination = root / "published" / "source.pa"
+            source.write_bytes(b"settled-large-payload")
+            real_copy = cache_generation._copy_file_bytes
+            calls = 0
+
+            def stale_first_persisted_projection(
+                old: Path, new: Path, *, flush_writable_source: bool
+            ) -> None:
+                nonlocal calls
+                calls += 1
+                real_copy(old, new, flush_writable_source=flush_writable_source)
+                if calls == 2:
+                    new.write_bytes(b"different-durable-view")
+
+            with patch.object(
+                cache_generation, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 0
+            ), patch.object(
+                cache_generation,
+                "_copy_file_bytes",
+                side_effect=stale_first_persisted_projection,
+            ):
+                record = cache_generation.copy_verified_file(source, destination)
+            self.assertEqual(calls, 6)
+            self.assertEqual(destination.read_bytes(), source.read_bytes())
+            self.assertEqual(
+                record["sha256"], hashlib.sha256(source.read_bytes()).hexdigest().upper()
+            )
+
+    @unittest.skipUnless(__import__("os").name == "nt", "Windows copy regression")
+    def test_windows_large_copy_can_settle_after_three_transient_projections(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.pa"
+            destination = root / "published" / "source.pa"
+            source.write_bytes(b"eventually-settled-large-payload")
+            real_copy = cache_generation._copy_file_bytes
+            calls = 0
+
+            def three_stale_persisted_projections(
+                old: Path, new: Path, *, flush_writable_source: bool
+            ) -> None:
+                nonlocal calls
+                calls += 1
+                real_copy(old, new, flush_writable_source=flush_writable_source)
+                if calls in {2, 4, 6}:
+                    new.write_bytes(f"transient-{calls}".encode())
+
+            with patch.object(
+                cache_generation, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 0
+            ), patch.object(
+                cache_generation,
+                "_copy_file_bytes",
+                side_effect=three_stale_persisted_projections,
+            ), patch.object(cache_generation.time, "sleep") as sleep:
+                record = cache_generation.copy_verified_file(source, destination)
+            self.assertEqual(calls, 10)
+            self.assertEqual(sleep.call_count, 4)
+            self.assertEqual(destination.read_bytes(), source.read_bytes())
+            self.assertEqual(
+                record["sha256"], hashlib.sha256(source.read_bytes()).hexdigest().upper()
+            )
 
     @unittest.skipUnless(__import__("os").name == "nt", "Windows copy regression")
     def test_immutable_snapshot_never_flushes_source_that_lost_readonly_bit(self) -> None:
