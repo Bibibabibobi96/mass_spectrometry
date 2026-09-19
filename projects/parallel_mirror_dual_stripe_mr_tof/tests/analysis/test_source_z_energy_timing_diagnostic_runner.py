@@ -22,6 +22,7 @@ class SourceZEnergyTimingDiagnosticRunnerTests(unittest.TestCase):
             "Apply-RunArtifactRetention",
             "Write-VerifiedRunManifest",
             "source_z_energy_timing_diagnostic",
+            "terminal_plane_diagnostic=$data.terminal_plane_diagnostic",
             "solver_execution='none'",
             "source_or_peak_filtering='none'",
             "-RetentionClass compact",

@@ -124,6 +124,21 @@ def _fixture(root: Path, *, omit_event: tuple[str, int] | None = None) -> Path:
                 f"z_mm={280 + 0.5 * (ion - 1)} vx_mm_us=0 vy_mm_us=-3 vz_mm_us=0",
             )
             add(
+                "terminal_bridge_exit",
+                f"MRTOF_EVENT patch_interface ion={local_id} "
+                "name=handoff_positive_bridge_to_mirror__z_plane region=local_handoff "
+                f"face=z_plane n=54 direction=-1 t_us={13.8 + 4 * (ion - 1) / 100} "
+                "x_mm=0 y_mm=-47 z_mm=105 vx_mm_us=0 vy_mm_us=-3 "
+                f"vz_mm_us={-40 - 0.1 * (ion - 1)}",
+            )
+            add(
+                "terminal_detector_plane",
+                f"MRTOF_EVENT detector_plane ion={local_id} direction_z=-1 "
+                f"t_us={14 + 5 * (ion - 1) / 100} x_mm=0 y_mm=-48 z_mm=97 "
+                "vx_mm_us=0 vy_mm_us=-3 "
+                f"vz_mm_us={-40 - 0.1 * (ion - 1)}",
+            )
+            add(
                 "detector",
                 f"MRTOF_EVENT detector ion={local_id} direction_z=-1 "
                 f"t_us={14 + 5 * (ion - 1) / 100} x_mm=0 y_mm=-48 z_mm=97",
@@ -199,6 +214,20 @@ class SourceZEnergyTimingDiagnosticTests(unittest.TestCase):
             0.999,
         )
         self.assertEqual(result["event_coverage"]["target_k_phase_sample"], 4)
+        terminal = result["terminal_plane_diagnostic"]
+        self.assertEqual(terminal["positive_mirror_bridge_exit"]["z_mm"], 105.0)
+        self.assertEqual(terminal["detector_plane"]["z_mm"], 97.0)
+        self.assertAlmostEqual(
+            terminal["positive_mirror_bridge_exit"]["absolute_time"]
+            ["initial_z_association"]["slope"],
+            0.04,
+        )
+        self.assertLess(
+            terminal["local_ballistic_model_from_bridge_exit"]
+            ["actual_detector_plane_projection"]["prediction_minus_observation"]
+            ["maximum_absolute_us"],
+            0.03,
+        )
 
     def test_missing_downstream_event_for_detector_hit_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -210,6 +239,12 @@ class SourceZEnergyTimingDiagnosticTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             run = _fixture(Path(directory), omit_event=("accelerator_safe_exit", 4))
             with self.assertRaisesRegex(CandidateContractError, "ion 4.*accelerator_safe_exit"):
+                analyze_source_z_energy_timing(run)
+
+    def test_missing_terminal_bridge_exit_for_detector_hit_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run = _fixture(Path(directory), omit_event=("terminal_bridge_exit", 2))
+            with self.assertRaisesRegex(CandidateContractError, "ion 2.*terminal patch_interface"):
                 analyze_source_z_energy_timing(run)
 
 

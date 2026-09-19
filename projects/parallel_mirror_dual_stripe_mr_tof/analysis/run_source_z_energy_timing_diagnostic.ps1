@@ -103,6 +103,7 @@ try{
     safe_exit=$data.safe_exit
     stages=$data.stages
     derived_transfer=$data.derived_transfer
+    terminal_plane_diagnostic=$data.terminal_plane_diagnostic
     state_dispersion=$data.state_dispersion
     event_coverage=$data.event_coverage
     interpretation=[string]$data.interpretation

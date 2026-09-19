@@ -42,8 +42,11 @@ _CHAIN = (
     ("detector", "detector"),
 )
 _SELECTED_EVENT_KINDS = {
-    "accelerator_safe_exit", "terminal", *(kind for _, kind in _CHAIN),
+    "accelerator_safe_exit", "terminal", "patch_interface", "detector_plane",
+    *(kind for _, kind in _CHAIN),
 }
+
+_POSITIVE_BRIDGE_MIRROR_INTERFACE = "handoff_positive_bridge_to_mirror__z_plane"
 
 
 def _sha256(path: Path) -> str:
@@ -287,6 +290,177 @@ def _event_values(
     return values
 
 
+def _one_terminal_plane_event(
+    events: dict[tuple[str, int], list[dict[str, Any]]],
+    *,
+    ion: int,
+    kind: str,
+    after_time_us: float,
+) -> dict[str, Any]:
+    matches = []
+    for event in events.get((kind, ion), []):
+        if float(event["t_us"]) <= after_time_us:
+            continue
+        if kind == "patch_interface" and not (
+            event.get("name") == _POSITIVE_BRIDGE_MIRROR_INTERFACE
+            and event.get("direction") == -1
+        ):
+            continue
+        if kind == "detector_plane" and event.get("direction_z") != -1:
+            continue
+        matches.append(event)
+    if len(matches) != 1:
+        raise CandidateContractError(
+            f"ion {ion} does not have exactly one terminal {kind} event after the positive mirror turn"
+        )
+    return matches[0]
+
+
+def _covariance_sum(xs: list[float], ys: list[float]) -> float:
+    if len(xs) != len(ys) or len(xs) < 2:
+        raise CandidateContractError("covariance vectors must contain at least two paired values")
+    mean_x, mean_y = sum(xs) / len(xs), sum(ys) / len(ys)
+    return sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True))
+
+
+def _terminal_plane_diagnostic(
+    *,
+    events: dict[tuple[str, int], list[dict[str, Any]]],
+    hit_ids: list[int],
+    hit_source_z: list[float],
+) -> dict[str, Any]:
+    turns = [_one(events, "return_positive_mirror_turn", ion) for ion in hit_ids]
+    bridge_exit = [
+        _one_terminal_plane_event(
+            events,
+            ion=ion,
+            kind="patch_interface",
+            after_time_us=float(turn["t_us"]),
+        )
+        for ion, turn in zip(hit_ids, turns, strict=True)
+    ]
+    detector_plane = [
+        _one_terminal_plane_event(
+            events,
+            ion=ion,
+            kind="detector_plane",
+            after_time_us=float(turn["t_us"]),
+        )
+        for ion, turn in zip(hit_ids, turns, strict=True)
+    ]
+    turn_times = [float(event["t_us"]) for event in turns]
+    bridge_times = [float(event["t_us"]) for event in bridge_exit]
+    detector_times = [float(event["t_us"]) for event in detector_plane]
+    bridge_z = [float(event["z_mm"]) for event in bridge_exit]
+    detector_z = [float(event["z_mm"]) for event in detector_plane]
+    if max(bridge_z) - min(bridge_z) > 1e-3 or max(detector_z) - min(detector_z) > 1e-3:
+        raise CandidateContractError("terminal diagnostic planes are not fixed physical z planes")
+    reference_z = statistics.median(bridge_z)
+    actual_detector_z = statistics.median(detector_z)
+    inverse_vz = []
+    for event in bridge_exit:
+        velocity = float(event["vz_mm_us"])
+        if not math.isfinite(velocity) or velocity >= 0.0:
+            raise CandidateContractError("terminal bridge exit must have finite negative vz")
+        inverse_vz.append(1.0 / velocity)
+
+    inverse_vz_variance = _covariance_sum(inverse_vz, inverse_vz)
+    source_inverse_vz_covariance = _covariance_sum(hit_source_z, inverse_vz)
+    variance_minimum_delta_z = (
+        None if inverse_vz_variance == 0.0
+        else -_covariance_sum(bridge_times, inverse_vz) / inverse_vz_variance
+    )
+    source_decorrelation_delta_z = (
+        None if source_inverse_vz_covariance == 0.0
+        else -_covariance_sum(hit_source_z, bridge_times) / source_inverse_vz_covariance
+    )
+
+    def projected(delta_z: float) -> list[float]:
+        return [
+            time + delta_z * inverse_velocity
+            for time, inverse_velocity in zip(bridge_times, inverse_vz, strict=True)
+        ]
+
+    def projected_plane(delta_z: float | None, undefined_reason: str) -> dict[str, Any]:
+        if delta_z is None:
+            return {"status": "undefined", "reason": undefined_reason}
+        times = projected(delta_z)
+        return {
+            "status": "defined",
+            "z_mm": reference_z + delta_z,
+            "time": _distribution(
+                hit_source_z, times, value_unit="us", slope_unit="us/mm",
+            ),
+        }
+
+    detector_delta_z = actual_detector_z - reference_z
+    projected_detector_times = projected(detector_delta_z)
+    projection_errors = [
+        predicted - actual
+        for predicted, actual in zip(projected_detector_times, detector_times, strict=True)
+    ]
+    return {
+        "qualification": (
+            "observed_terminal_planes_plus_local_first_order_ballistic_extrapolation__"
+            "diagnostic_only__not_detector_relocation_authority"
+        ),
+        "positive_mirror_turn": {
+            "z": _distribution(
+                hit_source_z,
+                [float(event["z_mm"]) for event in turns],
+                value_unit="mm",
+                slope_unit="mm/mm",
+            ),
+            "absolute_time": _distribution(
+                hit_source_z, turn_times, value_unit="us", slope_unit="us/mm",
+            ),
+        },
+        "positive_mirror_bridge_exit": {
+            "z_mm": reference_z,
+            "absolute_time": _distribution(
+                hit_source_z, bridge_times, value_unit="us", slope_unit="us/mm",
+            ),
+            "increment_from_positive_mirror_turn": _distribution(
+                hit_source_z,
+                [value - start for value, start in zip(bridge_times, turn_times, strict=True)],
+                value_unit="us",
+                slope_unit="us/mm",
+            ),
+        },
+        "detector_plane": {
+            "z_mm": actual_detector_z,
+            "absolute_time": _distribution(
+                hit_source_z, detector_times, value_unit="us", slope_unit="us/mm",
+            ),
+            "increment_from_positive_mirror_bridge_exit": _distribution(
+                hit_source_z,
+                [value - start for value, start in zip(detector_times, bridge_times, strict=True)],
+                value_unit="us",
+                slope_unit="us/mm",
+            ),
+        },
+        "local_ballistic_model_from_bridge_exit": {
+            "reference_z_mm": reference_z,
+            "state_variable": "observed_t_us_and_inverse_vz_us_per_mm_at_positive_bridge_mirror_interface",
+            "variance_minimum_plane": projected_plane(
+                variance_minimum_delta_z,
+                "inverse_vz_is_invariant_at_the_reference_plane",
+            ),
+            "source_z_decorrelation_plane": projected_plane(
+                source_decorrelation_delta_z,
+                "source_z_and_inverse_vz_are_uncorrelated_at_the_reference_plane",
+            ),
+            "actual_detector_plane_projection": {
+                **projected_plane(detector_delta_z, "not_applicable"),
+                "prediction_minus_observation": {
+                    "median_us": statistics.median(projection_errors),
+                    "maximum_absolute_us": max(abs(value) for value in projection_errors),
+                },
+            },
+        },
+    }
+
+
 def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
     """Validate and analyze one complete N>1 MR-TOF flight run."""
     run_dir = run_dir.resolve()
@@ -401,6 +575,11 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
         None if detector_slope in (None, 0.0) or target_slope is None
         else (detector_slope - target_slope) / detector_slope
     )
+    terminal_plane_diagnostic = _terminal_plane_diagnostic(
+        events=events,
+        hit_ids=hit_ids,
+        hit_source_z=hit_source_z,
+    )
     return {
         "schema_version": 1,
         "role": "mrtof_source_z_energy_timing_diagnostic",
@@ -430,6 +609,7 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
             "fraction_of_detector_dt_dz_accumulated_after_target_k": downstream_fraction,
             "fraction_definition": "(detector absolute dt/dz - target-K absolute dt/dz) / detector absolute dt/dz",
         },
+        "terminal_plane_diagnostic": terminal_plane_diagnostic,
         "state_dispersion": {
             "return_p2_pass_y": _distribution(
                 hit_source_z, p2_y, value_unit="mm", slope_unit="mm/mm",
