@@ -855,6 +855,73 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             self.assertEqual(receipt["status"], "pending")
             self.assertNotIn(added.name, [record["path"] for record in receipt["files"]])
 
+    def test_resume_pending_cache_disposal_removes_only_recorded_survivors(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            candidate = self._cache(root, "role", "7" * 64, age=time.time() - 100)
+            receipt_path = (
+                root / capacity.DISPOSAL_RECEIPT_DIRECTORY / "cache_interrupted.json"
+            )
+            files = capacity._file_disposal_records(
+                candidate, sorted(path for path in candidate.rglob("*") if path.is_file())
+            )
+            # Reproduce an interrupted removal: one recorded file is already
+            # gone, while another remains with its frozen identity.
+            (candidate / files[0]["path"]).unlink()
+            receipt_path.parent.mkdir(parents=True)
+            capacity._write_json_atomic(
+                receipt_path,
+                {
+                    "schema_version": 1,
+                    "role": "artifact_capacity_disposal_receipt",
+                    "status": "pending",
+                    "reason": "inactive_reconstructible_published_cache",
+                    "target_path": str(candidate),
+                    "files": files,
+                    "removed_bytes": sum(item["bytes"] for item in files),
+                },
+            )
+
+            resumed = capacity.resume_pending_disposals(root)
+
+            self.assertEqual(len(resumed), 1)
+            self.assertFalse(candidate.exists())
+            receipt = json.loads(receipt_path.read_text())
+            self.assertEqual(receipt["status"], "complete")
+            self.assertIn("resumed_at_utc", receipt)
+
+    def test_resume_pending_cache_disposal_rejects_unlisted_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            candidate = self._cache(root, "role", "6" * 64, age=time.time() - 100)
+            files = capacity._file_disposal_records(
+                candidate, sorted(path for path in candidate.rglob("*") if path.is_file())
+            )
+            receipt_path = (
+                root / capacity.DISPOSAL_RECEIPT_DIRECTORY / "cache_interrupted.json"
+            )
+            receipt_path.parent.mkdir(parents=True)
+            capacity._write_json_atomic(
+                receipt_path,
+                {
+                    "schema_version": 1,
+                    "role": "artifact_capacity_disposal_receipt",
+                    "status": "pending",
+                    "reason": "inactive_reconstructible_published_cache",
+                    "target_path": str(candidate),
+                    "files": files,
+                    "removed_bytes": sum(item["bytes"] for item in files),
+                },
+            )
+            added = candidate / "new_evidence.txt"
+            added.write_text("preserve", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "retained unlisted files"):
+                capacity.resume_pending_disposals(root)
+
+            self.assertEqual(added.read_text(encoding="utf-8"), "preserve")
+            self.assertEqual(json.loads(receipt_path.read_text())["status"], "pending")
+
     def test_safe_launch_receipt_avoids_the_exhaustive_walk(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

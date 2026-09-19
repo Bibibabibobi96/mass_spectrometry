@@ -672,6 +672,78 @@ def _remove_tree_with_receipt(root: Path, target: Path, *, reason: str,
     return receipt_path, removed_bytes
 
 
+def resume_pending_disposals(root: Path) -> list[dict[str, Any]]:
+    """Finish exact, identity-bound capacity removals interrupted by file locks.
+
+    The original pending receipt is the sole deletion authority.  Missing
+    recorded files are treated as already removed; surviving files must still
+    match their frozen size and SHA-256.  New or unlisted files keep the target
+    and receipt pending for review.
+    """
+
+    root = root.resolve()
+    receipt_root = root / DISPOSAL_RECEIPT_DIRECTORY
+    if not receipt_root.is_dir():
+        return []
+    leases = protection.load_capacity_protection_leases(root)
+    completed: list[dict[str, Any]] = []
+    for receipt_path in sorted(receipt_root.glob("*.json")):
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("role") != "artifact_capacity_disposal_receipt"
+            or receipt.get("status") != "pending"
+        ):
+            continue
+        target = Path(str(receipt.get("target_path", ""))).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("pending capacity disposal target escapes artifact root") from exc
+        if target == root or _is_capacity_excluded_path(target):
+            raise ValueError("pending capacity disposal target is protected")
+        if protection.path_is_protected(target, leases["protected_paths"]):
+            raise ValueError(f"pending capacity disposal target has an active path lease: {target}")
+        if target.name.lower() in leases["protected_cache_keys"]:
+            raise ValueError(f"pending capacity disposal cache key has an active lease: {target.name}")
+        records = receipt.get("files")
+        if not isinstance(records, list) or any(
+            not isinstance(record, dict)
+            or set(record) != {"path", "bytes", "sha256"}
+            for record in records
+        ):
+            raise ValueError(f"pending capacity disposal inventory is invalid: {receipt_path}")
+        for _ in remove_recorded_files(target, records, missing_ok=True):
+            pass
+        if target.exists():
+            entries = sorted(target.rglob("*"), key=lambda path: len(path.parts), reverse=True)
+            if any(path.is_symlink() or path.is_file() for path in entries):
+                raise ValueError(f"pending capacity disposal retained unlisted files: {target}")
+            for directory in [path for path in entries if path.is_dir()] + [target]:
+                try:
+                    directory.rmdir()
+                except FileNotFoundError:
+                    continue
+        if target.exists():
+            raise ValueError(f"pending capacity disposal target remains nonempty: {target}")
+        complete = {
+            **receipt,
+            "status": "complete",
+            "removed_bytes": sum(int(record["bytes"]) for record in records),
+            "resumed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        complete.pop("reason_incomplete", None)
+        _write_json_atomic(receipt_path, complete)
+        completed.append(
+            {
+                "receipt": str(receipt_path),
+                "target_path": str(target),
+                "removed_bytes": complete["removed_bytes"],
+            }
+        )
+    return completed
+
+
 def _remove_unmanaged_run_with_receipt(root: Path, run_dir: Path) -> tuple[Path, int]:
     return _remove_tree_with_receipt(
         root, run_dir, reason="old_unmanaged_unreferenced_run",
@@ -965,6 +1037,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-root", required=True, type=Path)
     parser.add_argument("--snapshot-published-pa-cache-keys", action="store_true")
+    parser.add_argument("--resume-pending-disposals", action="store_true")
     lease_actions = parser.add_mutually_exclusive_group()
     lease_actions.add_argument("--create-protection-lease")
     lease_actions.add_argument("--delete-protection-lease")
@@ -982,6 +1055,18 @@ def main() -> None:
     parser.add_argument("--maximum-new-artifact-bytes", type=int)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
+    if args.resume_pending_disposals:
+        if (
+            args.apply
+            or args.snapshot_published_pa_cache_keys
+            or args.create_protection_lease
+            or args.delete_protection_lease
+        ):
+            parser.error("pending disposal resume is a standalone action")
+        if not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
+            parser.error("pending disposal resume requires the shared HostExecutionLease")
+        print(json.dumps({"resumed": resume_pending_disposals(args.artifact_root)}, indent=2))
+        return
     if args.snapshot_published_pa_cache_keys:
         if args.apply:
             parser.error("published PA cache protection snapshot is read-only")
