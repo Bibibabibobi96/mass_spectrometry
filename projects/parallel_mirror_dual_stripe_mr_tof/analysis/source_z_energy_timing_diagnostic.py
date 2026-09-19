@@ -43,6 +43,7 @@ _CHAIN = (
 )
 _SELECTED_EVENT_KINDS = {
     "accelerator_safe_exit", "terminal", "patch_interface", "detector_plane",
+    "central_plane_directional",
     *(kind for _, kind in _CHAIN),
 }
 
@@ -461,6 +462,51 @@ def _terminal_plane_diagnostic(
     }
 
 
+def _central_plane_focus_history(
+    *,
+    events: dict[tuple[str, int], list[dict[str, Any]]],
+    hit_ids: list[int],
+    hit_source_z: list[float],
+) -> dict[str, Any]:
+    groups: dict[tuple[int, int], dict[int, dict[str, Any]]] = {}
+    for ion in hit_ids:
+        for event in events.get(("central_plane_directional", ion), []):
+            identity = (int(event["n"]), int(event["direction_z"]))
+            if ion in groups.setdefault(identity, {}):
+                raise CandidateContractError(
+                    f"ion {ion} has duplicate central-plane identity {identity}"
+                )
+            groups[identity][ion] = event
+    complete = []
+    for (index, direction), group in sorted(groups.items()):
+        if len(group) != len(hit_ids):
+            continue
+        times = [float(group[ion]["t_us"]) for ion in hit_ids]
+        complete.append({
+            "crossing_index": index,
+            "direction_z": direction,
+            "absolute_time": _distribution(
+                hit_source_z, times, value_unit="us", slope_unit="us/mm",
+            ),
+        })
+    if not complete:
+        return {
+            "status": "unavailable",
+            "reason": "no_central_plane_directional_identity_covers_every_detector_hit",
+        }
+    return {
+        "status": "observed",
+        "plane_z_mm": 0.0,
+        "complete_crossing_count": len(complete),
+        "last_complete_crossing": complete[-1],
+        "last_ten_complete_crossings": complete[-10:],
+        "qualification": (
+            "observed_pre_extraction_central_plane_history__supports_but_does_not_replace_"
+            "a_transparent_terminal_plane_counterfactual"
+        ),
+    }
+
+
 def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
     """Validate and analyze one complete N>1 MR-TOF flight run."""
     run_dir = run_dir.resolve()
@@ -580,6 +626,11 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
         hit_ids=hit_ids,
         hit_source_z=hit_source_z,
     )
+    central_plane_focus_history = _central_plane_focus_history(
+        events=events,
+        hit_ids=hit_ids,
+        hit_source_z=hit_source_z,
+    )
     return {
         "schema_version": 1,
         "role": "mrtof_source_z_energy_timing_diagnostic",
@@ -610,6 +661,7 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
             "fraction_definition": "(detector absolute dt/dz - target-K absolute dt/dz) / detector absolute dt/dz",
         },
         "terminal_plane_diagnostic": terminal_plane_diagnostic,
+        "central_plane_focus_history": central_plane_focus_history,
         "state_dispersion": {
             "return_p2_pass_y": _distribution(
                 hit_source_z, p2_y, value_unit="mm", slope_unit="mm/mm",

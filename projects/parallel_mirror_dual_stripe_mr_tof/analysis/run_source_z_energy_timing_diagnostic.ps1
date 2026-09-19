@@ -104,6 +104,7 @@ try{
     stages=$data.stages
     derived_transfer=$data.derived_transfer
     terminal_plane_diagnostic=$data.terminal_plane_diagnostic
+    central_plane_focus_history=$data.central_plane_focus_history
     state_dispersion=$data.state_dispersion
     event_coverage=$data.event_coverage
     interpretation=[string]$data.interpretation

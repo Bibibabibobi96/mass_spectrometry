@@ -95,6 +95,12 @@ def _fixture(root: Path, *, omit_event: tuple[str, int] | None = None) -> Path:
                 f"vx_mm_us=0 vy_mm_us=1.3 vz_mm_us={-40 - ion / 10}",
             )
             add(
+                "central_plane_directional",
+                f"MRTOF_EVENT central_plane_directional ion={local_id} n=51 direction_z=-1 "
+                f"t_us={9.5 + 2 * (ion - 1) / 100} x_mm=0 y_mm=-20 "
+                "vx_mm_us=0 vy_mm_us=-3 vz_mm_us=-40",
+            )
+            add(
                 "target_k_phase_sample",
                 f"MRTOF_EVENT target_k_phase_sample ion={local_id} k=25.5 half_cycles=51 "
                 f"t_us={10 + (ion - 1) / 100} x_mm=0 y_mm=0 z_mm=-282 "
@@ -227,6 +233,15 @@ class SourceZEnergyTimingDiagnosticTests(unittest.TestCase):
             ["actual_detector_plane_projection"]["prediction_minus_observation"]
             ["maximum_absolute_us"],
             0.03,
+        )
+        central = result["central_plane_focus_history"]
+        self.assertEqual(central["status"], "observed")
+        self.assertEqual(central["last_complete_crossing"]["crossing_index"], 51)
+        self.assertEqual(central["last_complete_crossing"]["direction_z"], -1)
+        self.assertAlmostEqual(
+            central["last_complete_crossing"]["absolute_time"]
+            ["initial_z_association"]["slope"],
+            0.02,
         )
 
     def test_missing_downstream_event_for_detector_hit_fails_closed(self) -> None:

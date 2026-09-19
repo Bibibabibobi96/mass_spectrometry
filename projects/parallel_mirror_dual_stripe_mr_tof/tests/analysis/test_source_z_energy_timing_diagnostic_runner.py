@@ -23,6 +23,7 @@ class SourceZEnergyTimingDiagnosticRunnerTests(unittest.TestCase):
             "Write-VerifiedRunManifest",
             "source_z_energy_timing_diagnostic",
             "terminal_plane_diagnostic=$data.terminal_plane_diagnostic",
+            "central_plane_focus_history=$data.central_plane_focus_history",
             "solver_execution='none'",
             "source_or_peak_filtering='none'",
             "-RetentionClass compact",
