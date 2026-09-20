@@ -45,7 +45,9 @@ def _under(path: Path, root: Path) -> Path:
     return resolved
 
 
-def _load_run(run: Path) -> dict[str, Any]:
+def _load_run(
+    run: Path, *, allowed_statuses: Iterable[str] = ("success",), label: str = "run",
+) -> dict[str, Any]:
     required = {name: _json(run / name) for name in ("run_config.json", "summary.json", "run_manifest.json")}
     config, summary, manifest = required.values()
     run_id = run.name
@@ -53,8 +55,15 @@ def _load_run(run: Path) -> dict[str, Any]:
         raise RetirementError(f"run identity mismatch: {run}")
     if summary.get("run_id") not in {None, run_id}:
         raise RetirementError(f"summary run identity mismatch: {run}")
-    if manifest.get("status") != "success" or summary.get("status") != "success":
-        raise RetirementError(f"run is not a complete success: {run_id}")
+    allowed = set(allowed_statuses)
+    manifest_status = manifest.get("status")
+    summary_status = summary.get("status")
+    if manifest_status not in allowed or summary_status != manifest_status:
+        expected = "/".join(sorted(allowed))
+        raise RetirementError(
+            f"{label} is not a complete {expected} run: {run_id} "
+            f"(manifest={manifest_status!r}, summary={summary_status!r})"
+        )
     if config.get("formal_gate_passed") is not False or manifest.get("formal_eligible") is not False:
         raise RetirementError(f"Formal or ambiguously non-Formal run cannot be retired: {run_id}")
     retention = validate_retention(config.get("artifact_retention"))
@@ -127,12 +136,57 @@ def _manifest_records(
         raise RetirementError("manifest does not bind the local run config")
     if run["dir"] / "summary.json" not in result:
         raise RetirementError("manifest does not bind the local summary")
-    for name, configured_path in run["config"].get("inputs", {}).items():
-        record = manifest.get("inputs", {}).get(name)
-        if not isinstance(record, dict) or record_path(record, base_dir=run["dir"]) != record_path(
-            {"path": configured_path}, base_dir=run["dir"],
+    def configured_paths(value: Any, *, name: str) -> list[Path]:
+        if value is None or value == "":
+            return []
+        if isinstance(value, str):
+            return [record_path({"path": value}, base_dir=run["dir"])]
+        if isinstance(value, (list, tuple)):
+            return [
+                path for index, member in enumerate(value)
+                for path in configured_paths(member, name=f"{name}[{index}]")
+            ]
+        if isinstance(value, dict):
+            return [
+                path for key, member in value.items()
+                for path in configured_paths(member, name=f"{name}.{key}")
+            ]
+        raise RetirementError(f"configured input has an invalid shape: {name}")
+
+    def is_bound_path(configured: Path, recorded: Path) -> bool:
+        if configured == recorded:
+            return True
+        try:
+            relative = recorded.relative_to(run["dir"])
+        except ValueError:
+            return False
+        # Short execution aliases can disappear after publication.  Accept
+        # their durable artifact copy only when the role record is inside this
+        # run and the complete multi-component relative suffix agrees.  An
+        # existing divergent source remains ambiguous and fails closed.
+        return (
+            not configured.exists()
+            and len(relative.parts) >= 2
+            and tuple(part.lower() for part in configured.parts[-len(relative.parts):])
+            == tuple(part.lower() for part in relative.parts)
+        )
+
+    for name, configured_value in run["config"].get("inputs", {}).items():
+        paths = configured_paths(configured_value, name=name)
+        if isinstance(configured_value, str) and configured_value:
+            record = manifest.get("inputs", {}).get(name)
+            if (
+                not isinstance(record, dict)
+                or not is_bound_path(
+                    paths[0], record_path(record, base_dir=run["dir"])
+                )
+            ):
+                raise RetirementError(f"manifest does not bind configured input: {name}")
+        elif any(
+            not any(is_bound_path(path, recorded) for recorded in result)
+            for path in paths
         ):
-            raise RetirementError(f"manifest does not bind configured input: {name}")
+            raise RetirementError(f"manifest does not bind configured input collection: {name}")
     return result
 
 
@@ -166,13 +220,25 @@ def _topology_compatible(
     target: dict[str, Any],
     replacement: dict[str, Any],
     required_input_roles: Iterable[str],
+    input_role_mappings: Iterable[tuple[str, str]],
 ) -> dict[str, Any]:
     for field in ("project", "mode"):
         if target["config"].get(field) != replacement["config"].get(field):
             raise RetirementError(f"replacement {field} differs")
     required_roles = {role.strip() for role in required_input_roles if role.strip()}
-    if not required_roles:
-        raise RetirementError("at least one compatibility input role is required")
+    mappings = [(target_role.strip(), replacement_role.strip())
+                for target_role, replacement_role in input_role_mappings]
+    if not required_roles and not mappings:
+        raise RetirementError(
+            "at least one compatibility input role or role mapping is required"
+        )
+    if any(not target_role or not replacement_role for target_role, replacement_role in mappings):
+        raise RetirementError("compatibility input role mappings must name both roles")
+    if (
+        len({target_role for target_role, _ in mappings}) != len(mappings)
+        or len({replacement_role for _, replacement_role in mappings}) != len(mappings)
+    ):
+        raise RetirementError("compatibility input role mappings must be one-to-one")
     target_roles = set(target["config"].get("inputs", {}))
     replacement_roles = set(replacement["config"].get("inputs", {}))
     missing_target = required_roles - target_roles
@@ -182,13 +248,45 @@ def _topology_compatible(
             f"three-component geometry identity roles missing: target={sorted(missing_target)}, "
             f"replacement={sorted(missing_replacement)}"
         )
+    verified_mappings: list[dict[str, Any]] = []
+    for target_role, replacement_role in mappings:
+        if target_role not in target_roles or replacement_role not in replacement_roles:
+            raise RetirementError(
+                "compatibility input mapping roles missing: "
+                f"target={target_role!r}, replacement={replacement_role!r}"
+            )
+        target_record = target["manifest"].get("inputs", {}).get(target_role)
+        replacement_record = replacement["manifest"].get("inputs", {}).get(replacement_role)
+        if not isinstance(target_record, dict) or not isinstance(replacement_record, dict):
+            raise RetirementError(
+                "compatibility input mapping lacks manifest records: "
+                f"target={target_role!r}, replacement={replacement_role!r}"
+            )
+        target_identity = (target_record.get("bytes"), str(target_record.get("sha256", "")).upper())
+        replacement_identity = (
+            replacement_record.get("bytes"),
+            str(replacement_record.get("sha256", "")).upper(),
+        )
+        if target_identity != replacement_identity or not target_identity[1]:
+            raise RetirementError(
+                "compatibility input mapping identity differs: "
+                f"target={target_role!r}, replacement={replacement_role!r}"
+            )
+        verified_mappings.append({
+            "target_role": target_role,
+            "replacement_role": replacement_role,
+            "bytes": target_identity[0],
+            "sha256": target_identity[1],
+        })
     return {
         "project": target["config"]["project"],
         "mode": target["config"]["mode"],
         "required_input_roles": sorted(required_roles),
         "replacement_role_superset": required_roles.issubset(replacement_roles),
+        "verified_input_role_mappings": verified_mappings,
         "semantics": (
-            "same project/mode and caller-declared compatibility input roles; "
+            "same project/mode, caller-declared compatibility input roles, and "
+            "identity-equal explicitly mapped legacy roles; "
             "domain-specific topology semantics remain outside the common retirement layer"
         ),
     }
@@ -197,6 +295,7 @@ def _topology_compatible(
 def plan_retirement(
     artifact_root: Path, repository_root: Path, target_run: Path, replacement_run: Path,
     compatibility_assertion: str, compatibility_input_roles: Iterable[str],
+    compatibility_input_role_mappings: Iterable[tuple[str, str]] = (),
 ) -> dict[str, Any]:
     artifact_root = artifact_root.resolve()
     repository_root = repository_root.resolve()
@@ -218,8 +317,10 @@ def plan_retirement(
             if not (target_run / item["path"]).is_file()
         ]
         prior_pending_sha = file_sha256(target_run / RECEIPT_NAME)
-    target = _load_run(target_run)
-    replacement = _load_run(replacement_run)
+    target = _load_run(
+        target_run, allowed_statuses=("success", "failed"), label="target"
+    )
+    replacement = _load_run(replacement_run, label="replacement")
     _manifest_records(replacement)
     if prior_pending_sha and (
         prior["target_manifest"]["sha256"] != file_sha256(target_run / "run_manifest.json")
@@ -240,7 +341,10 @@ def plan_retirement(
     leases = protection.load_capacity_protection_leases(artifact_root)
     if protection.path_is_protected(target_run, leases["protected_paths"]):
         raise RetirementError("target is covered by an active capacity protection lease")
-    topology = _topology_compatible(target, replacement, compatibility_input_roles)
+    topology = _topology_compatible(
+        target, replacement, compatibility_input_roles,
+        compatibility_input_role_mappings,
+    )
     inventory = _file_inventory(
         target, retired_paths=[_under(target_run / item["path"], target_run) for item in prior_removed_missing],
     )
@@ -257,8 +361,11 @@ def plan_retirement(
         "target_run_path": str(target_run),
         "replacement_run_id": replacement_run.name,
         "replacement_run_path": str(replacement_run),
+        "artifact_root": str(artifact_root),
+        "repository_root": str(repository_root),
         "compatibility_assertion": compatibility_assertion.strip(),
         "compatibility_checks": topology,
+        "target_terminal_status": target["manifest"]["status"],
         "target_manifest": {"bytes": (target_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(target_run / "run_manifest.json")},
         "replacement_manifest": {"bytes": (replacement_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(replacement_run / "run_manifest.json")},
         "original_file_inventory": inventory,
@@ -274,14 +381,55 @@ def plan_retirement(
 def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
     if not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
         raise RetirementError("apply requires the shared HostExecutionLease")
-    target = Path(plan["target_run_path"])
-    replacement = Path(plan["replacement_run_path"])
+    try:
+        artifact_root = Path(plan["artifact_root"]).resolve()
+        repository_root = Path(plan["repository_root"]).resolve()
+        target = _under(Path(plan["target_run_path"]), artifact_root)
+        replacement = _under(Path(plan["replacement_run_path"]), artifact_root)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RetirementError("retirement plan lacks governed root identity") from exc
     for label, path in (("target", target), ("replacement", replacement)):
         if file_sha256(path / "run_manifest.json") != plan[f"{label}_manifest"]["sha256"]:
             raise RetirementError(f"{label} run manifest changed before apply")
-    _manifest_records(_load_run(replacement))
+    replacement_state = _load_run(replacement, label="replacement")
+    _manifest_records(replacement_state)
+    target_state = _load_run(
+        target, allowed_statuses=("success", "failed"), label="target"
+    )
+    if plan.get("target_terminal_status") != target_state["manifest"]["status"]:
+        raise RetirementError("target terminal status changed before apply")
+    if _recorded_at(replacement_state) <= _recorded_at(target_state):
+        raise RetirementError("replacement is not newer than target before apply")
+    checks = plan.get("compatibility_checks")
+    if not isinstance(checks, dict):
+        raise RetirementError("retirement plan lacks compatibility checks")
+    mapped = checks.get("verified_input_role_mappings", [])
+    if not isinstance(mapped, list) or any(not isinstance(item, dict) for item in mapped):
+        raise RetirementError("retirement plan compatibility mappings are invalid")
+    refreshed_topology = _topology_compatible(
+        target_state, replacement_state,
+        checks.get("required_input_roles", ()),
+        [
+            (str(item.get("target_role", "")), str(item.get("replacement_role", "")))
+            for item in mapped
+        ],
+    )
+    if refreshed_topology != checks:
+        raise RetirementError("retirement compatibility changed before apply")
+    document_refs = _git_document_references(repository_root, target.name)
+    downstream_refs = _downstream_references(artifact_root, target, target.name)
+    if document_refs or downstream_refs:
+        raise RetirementError(
+            f"target gained active references before apply: "
+            f"git_documents={document_refs}, downstream={downstream_refs}"
+        )
+    leases = protection.load_capacity_protection_leases(artifact_root)
+    if protection.path_is_protected(target, leases["protected_paths"]):
+        raise RetirementError(
+            "target gained an active capacity protection lease before apply"
+        )
     _file_inventory(
-        _load_run(target), retired_paths=[
+        target_state, retired_paths=[
             _under(target / item["path"], target)
             for item in plan["removed_files"] if item.get("already_removed_before_resume")
         ],
@@ -292,6 +440,7 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
         "role": "solver_review_retirement_receipt",
         "lifecycle_status": "retirement_pending",
         "started_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "apply_capacity_protection_audit": leases["audit"],
     }
     _atomic_json(receipt_path, pending)
     removed_bytes = 0
@@ -316,8 +465,9 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
             "removed_bytes": removed_bytes,
             "bytes_released_this_apply": plan["bytes_to_release"],
             "verification_semantics": (
-                "The immutable original run manifest describes the pre-retirement success and is intentionally no longer "
-                "complete on disk. Consumers must reject it and use this receipt verifier for historical provenance only."
+                "The immutable original run manifest describes the pre-retirement terminal run and is intentionally no "
+                "longer complete on disk. Consumers must reject it and use this receipt verifier for historical "
+                "provenance only."
             ),
         }
         _atomic_json(receipt_path, complete)
@@ -338,8 +488,18 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
             raise RetirementError(f"required historical record missing: {name}")
     if file_sha256(run_dir / "run_manifest.json") != receipt["target_manifest"]["sha256"]:
         raise RetirementError("original run manifest changed")
+    # Receipts written before failed-target retirement existed can only have
+    # described successful targets, so preserve their verification contract.
+    target_status = receipt.get("target_terminal_status", "success")
+    if target_status not in {"success", "failed"}:
+        raise RetirementError("retirement target terminal status is invalid")
+    if (
+        _json(run_dir / "run_manifest.json").get("status") != target_status
+        or _json(run_dir / "summary.json").get("status") != target_status
+    ):
+        raise RetirementError("retirement target terminal status differs")
     replacement = Path(receipt["replacement_run_path"])
-    _manifest_records(_load_run(replacement))
+    _manifest_records(_load_run(replacement, label="replacement"))
     if file_sha256(replacement / "run_manifest.json") != receipt["replacement_manifest"]["sha256"]:
         raise RetirementError("replacement run manifest changed")
     for item in receipt["removed_files"]:
@@ -354,6 +514,7 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
         "role": "solver_review_retirement_verification",
         "status": "PASS",
         "run_id": run_dir.name,
+        "target_terminal_status": target_status,
         "replacement_run_id": receipt["replacement_run_id"],
         "removed_bytes": receipt["removed_bytes"],
     }
@@ -367,6 +528,10 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--replacement-run", type=Path)
     parser.add_argument("--compatibility-assertion")
     parser.add_argument("--compatibility-input-role", action="append", default=[])
+    parser.add_argument(
+        "--compatibility-input-role-map", action="append", default=[],
+        metavar="TARGET_ROLE=REPLACEMENT_ROLE",
+    )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--verify", type=Path)
     args = parser.parse_args(argv)
@@ -376,10 +541,34 @@ def main(argv: Iterable[str] | None = None) -> int:
         else:
             if not all((args.artifact_root, args.repository_root, args.target_run, args.replacement_run, args.compatibility_assertion)):
                 parser.error("plan/apply requires artifact root, repository root, target, replacement, and compatibility assertion")
+            compatibility_roles: list[str] = []
+            mapping_values = list(args.compatibility_input_role_map)
+            for value in args.compatibility_input_role:
+                # The PowerShell lease-owning wrapper predates the dedicated
+                # map switch and forwards this repeatable option.  Accept the
+                # same explicit TARGET=REPLACEMENT syntax here so mapped-only
+                # retirements still use that governed apply entrypoint.
+                if "=" in value:
+                    mapping_values.append(value)
+                else:
+                    compatibility_roles.append(value)
+            mappings: list[tuple[str, str]] = []
+            for value in mapping_values:
+                if "=" not in value:
+                    raise RetirementError(
+                        "compatibility input role mapping must use TARGET_ROLE=REPLACEMENT_ROLE"
+                    )
+                target_role, replacement_role = value.split("=", 1)
+                if not target_role.strip() or not replacement_role.strip():
+                    raise RetirementError(
+                        "compatibility input role mapping must name both roles"
+                    )
+                mappings.append((target_role, replacement_role))
             result = plan_retirement(
                 args.artifact_root, args.repository_root, args.target_run,
                 args.replacement_run, args.compatibility_assertion,
-                args.compatibility_input_role,
+                compatibility_roles,
+                mappings,
             )
             if args.apply:
                 result = apply_retirement(result)

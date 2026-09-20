@@ -1,16 +1,18 @@
 """Reconcile externally interrupted compact runs without discarding evidence.
 
-An external stop can prevent a solver runner's normal compact-retention step.
-This tool deliberately accepts only a verified, terminal ``interrupted`` run
-whose frozen retention class is ``compact``.  It removes only files forbidden
-by that class (for example PA arrays and dense trajectories), retains the
-input/summary/log/manifest evidence, and records every removal.
+An external stop or failed runner can prevent the normal compact-retention
+step.  This tool deliberately accepts only a verified, terminal ``failed`` or
+``interrupted`` run whose frozen retention class is ``compact``.  It removes
+only files forbidden by that class (for example PA arrays and dense
+trajectories), retains the input/summary/log/manifest evidence, and records
+every removal.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,10 @@ from common.contracts.artifact_retention import (
     load_run_retention,
 )
 from common.contracts.verify_run_manifest import record_path, verify_record
+
+
+TERMINAL_RECONCILABLE_STATUSES = frozenset({"failed", "interrupted"})
+HOST_LEASE_OWNER_ENV = "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"
 
 
 def assert_no_active_simion() -> None:
@@ -47,16 +53,27 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
+def _artifact_root_for_run(run_dir: Path) -> Path:
+    """Validate and return the artifact root for one top-level project run."""
+
+    if (
+        not run_dir.is_dir()
+        or len(run_dir.parents) < 4
+        or run_dir.parent.name != "runs"
+        or run_dir.parents[2].name != "projects"
+    ):
+        raise ValueError(
+            "run directory must be an existing top-level "
+            "projects/<project>/runs/<run_id> directory"
+        )
+    return run_dir.parents[3]
+
+
 def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[str, Any]:
-    """Return a fail-closed reconciliation plan for one interrupted run."""
+    """Return a fail-closed reconciliation plan for one terminal compact run."""
 
     run_dir = run_dir.resolve()
-    if run_dir.parent.name != "runs":
-        raise ValueError("run directory must be a direct child of runs/")
-    artifact_root = (
-        run_dir.parents[3] if run_dir.parents[2].name == "projects"
-        else run_dir.parent.parent
-    )
+    artifact_root = _artifact_root_for_run(run_dir)
     leases = protection.load_capacity_protection_leases(artifact_root)
     if protection.path_is_protected(run_dir, leases["protected_paths"]):
         raise ValueError("run is covered by an active capacity protection lease")
@@ -66,11 +83,17 @@ def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[s
     if not config_path.is_file() or not summary_path.is_file() or not manifest_path.is_file():
         raise ValueError("run requires run_config.json, summary.json, and run_manifest.json")
     manifest = _load(manifest_path)
-    if manifest.get("status") != "interrupted":
-        raise ValueError("only terminal interrupted runs may be reconciled")
+    manifest_status = manifest.get("status")
+    if manifest_status not in TERMINAL_RECONCILABLE_STATUSES:
+        raise ValueError(
+            "run_manifest status must be terminal failed or interrupted; "
+            "checkpoint runs require normal terminalization first"
+        )
     summary = _load(summary_path)
-    if summary.get("status") != "interrupted":
-        raise ValueError("summary status must be interrupted before reconciliation")
+    if summary.get("status") != manifest_status:
+        raise ValueError(
+            "summary status must match the terminal failed/interrupted manifest status"
+        )
     integrity = "verified"
     try:
         verify_record("run_config", manifest["run_config"], base_dir=run_dir)
@@ -126,13 +149,18 @@ def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[s
             forbidden.append({"path": path.relative_to(run_dir).as_posix(), "bytes": path.stat().st_size, "retention_role": role})
     return {
         "run_dir": str(run_dir), "run_id": config_path.parent.name,
-        "eligible": True, "manifest_integrity": integrity, "removable_file_count": len(forbidden),
+        "eligible": True, "terminal_status": manifest_status,
+        "manifest_integrity": integrity, "removable_file_count": len(forbidden),
         "removable_bytes": sum(int(item["bytes"]) for item in forbidden), "removable": forbidden,
     }
 
 
 def apply_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> Path:
-    """Recheck one interrupted run and remove only unrecorded heavy files."""
+    """Recheck one terminal run and remove only unrecorded heavy files."""
+
+    if not os.environ.get(HOST_LEASE_OWNER_ENV):
+        raise RuntimeError("apply requires the shared HostExecutionLease")
+    assert_no_active_simion()
     report = inspect_run(run_dir, permit_manifest_drift=permit_manifest_drift)
     directory, retention = load_run_retention(run_dir / "run_config.json")
     removed = [
@@ -148,8 +176,6 @@ def reconcile(run_root: Path, *, apply: bool, permit_manifest_drift: bool = Fals
     root = run_root.resolve()
     if not root.is_dir() or root.name != "runs":
         raise ValueError("run_root must be an existing runs directory")
-    if apply:
-        assert_no_active_simion()
     reports: list[dict[str, Any]] = []
     applied_count = 0
     for child in sorted(path for path in root.iterdir() if path.is_dir()):
@@ -192,15 +218,55 @@ def summarize(reports: list[dict[str, Any]], *, apply: bool) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-root", required=True, type=Path)
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--run-root", type=Path)
+    target.add_argument(
+        "--run-dir", type=Path,
+        help="inspect or apply only this projects/<project>/runs/<run_id>",
+    )
     parser.add_argument("--apply", action="store_true", help="perform the preflighted removals")
-    parser.add_argument("--permit-manifest-drift", action="store_true", help="allow an interrupted compact run whose manifest hashes drifted; still refuses manifest-recorded heavy files")
+    parser.add_argument("--permit-manifest-drift", action="store_true", help="allow a terminal compact run whose manifest hashes drifted; still refuses manifest-recorded heavy files")
     parser.add_argument("--max-apply-runs", type=int, help="apply at most this many eligible runs in one invocation")
     parser.add_argument("--summary-only", action="store_true", help="emit only aggregate scan/removal counts; suitable for every solver startup")
     args = parser.parse_args()
     if args.max_apply_runs is not None and (not args.apply or args.max_apply_runs < 1):
         parser.error("--max-apply-runs requires --apply and a positive value")
-    reports = reconcile(args.run_root, apply=args.apply, permit_manifest_drift=args.permit_manifest_drift, max_apply_runs=args.max_apply_runs)
+    if args.run_dir is not None and args.max_apply_runs is not None:
+        parser.error("--max-apply-runs is only valid with --run-root")
+    if args.run_dir is not None:
+        try:
+            report = inspect_run(
+                args.run_dir, permit_manifest_drift=args.permit_manifest_drift
+            )
+            if args.apply and report["removable_file_count"]:
+                action_path = apply_run(
+                    args.run_dir, permit_manifest_drift=args.permit_manifest_drift
+                )
+                action = _load(action_path)
+                report.update({
+                    "applied": True,
+                    "retention_actions": str(action_path),
+                    "removed_file_count": action["removed_file_count"],
+                    "removed_bytes": action["removed_bytes"],
+                })
+            else:
+                report["applied"] = False
+        except (AssertionError, KeyError, ValueError) as error:
+            if args.apply:
+                raise
+            report = {
+                "run_dir": str(args.run_dir.resolve()),
+                "eligible": False,
+                "reason": str(error),
+                "applied": False,
+            }
+        reports = [report]
+    else:
+        reports = reconcile(
+            args.run_root, apply=args.apply,
+            permit_manifest_drift=args.permit_manifest_drift,
+            max_apply_runs=args.max_apply_runs,
+        )
     receipt = summarize(reports, apply=args.apply)
     receipt["permit_manifest_drift"] = args.permit_manifest_drift
     if not args.summary_only:

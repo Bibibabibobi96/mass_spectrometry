@@ -58,14 +58,35 @@ solver-review退休和布局检查直接复用；命令仍只由容量入口提�
 跨run或跨项目需要在终态manifest之外临时保留可重建缓存/运行目录时，使用同一Python入口在
 `artifacts/common/capacity_protection_leases/<lease-id>.json`创建TTL保护租约：
 `--create-protection-lease <id> --lease-owner <owner> --lease-ttl-seconds <seconds>`，并以可重复的
-`--protect-cache-key`或`--protect-path`声明目标；结束后用`--delete-protection-lease <id>`释放。
+`--protect-cache-key`或`--protect-path`声明目标。生产者结束、消费者尚未启动的空窗继续使用同一lease ID；
+长任务须在到期前调用
+`--renew-protection-lease <id> --lease-owner <same-owner> --lease-ttl-seconds <seconds>`续租，续租只原子延长
+同一owner和同一保护范围，保留原`created_at_utc`且不能缩短到期时间，也不能增加key或path；跨步骤链
+明确完成、被替代或放弃后才用
+`--delete-protection-lease <id>`释放。过期租约不能续租，避免已经出现保护空窗后伪装成连续租约；此时须先
+重新核实目标仍存在且未被处置，再创建新ID。
 每次plan/apply都会自动合并所有owner尚未过期的租约。过期租约只保留审计记录而不再保护，仍有效但
 损坏、路径越界或格式错误的租约会令容量门禁失败关闭；因此进程崩溃不会把可重建大缓存永久钉住。
+容量工具只把pointer、selected generation与cache manifest身份闭合的真实cache key和活动run引用取交集；
+run文本中的普通文件SHA-256不会被计为活动cache key。
+容量审计只枚举`projects/<project>/runs/<run_id>`直接子目录，不把archive、scratch或run内部的嵌套结果误认成
+活动run。若遗留run的summary已写`success/failed/interrupted`等终态而manifest仍为`checkpoint`或缺失，运行：
+`--audit-checkpoint-terminalization`取得只读清单。容量治理继续按manifest将它视为活动run，不根据summary、
+日期或进程缺失自动释放；负责人核实实际进程、输出、引用和provenance后，必须复用
+`Write-VerifiedRunManifest`或`Write-TerminalRunRecord`发布验证过的终态manifest。容量工具不提供第二套
+terminalize命令，也不自动改写三件套。
 超过策略宽限期、没有run_config/summary/manifest且不被活动run引用的旧run-shaped目录按L1处理，删除前在
 `artifacts/common/capacity_disposal_receipts/`保存逐文件身份。成功run默认始终受保护；仅当调用者通过
 `Invoke-ArtifactCapacityGate -RebuildableSuccessBuildRuns <exact-run-path>`逐项授权时，门禁才检查该对象
-确为非Formal success `build`、没有活动引用，并只清理manifest未记录的重型副本。原三件套、全部已记录
-输出和带SHA-256的`capacity_retirement_actions.json`保留，普通成功仿真或分析run不能通过该参数准入。
+确为非Formal success `build`、没有活动引用，并只清理manifest未记录的重型副本。历史`solver_review`
+允许逐字段完全匹配旧初始化模板的checkpoint summary与success manifest并存；manifest保持终态权威，summary
+仍保留且任何模板漂移均拒绝。原三件套、全部已记录输出和带SHA-256的
+`capacity_retirement_actions.json`保留，普通成功仿真或分析run不能通过该参数准入。
+
+`reconcile_interrupted_compact_runs.py --run-dir <exact-run>`提供单run plan/apply；只接受正规终态且
+manifest/summary一致的`failed`或`interrupted` compact run。apply必须持有共享`HostExecutionLease`且确认
+没有活动SIMION，只删除manifest未记录并由retention合同判为可重建的重型文件。checkpoint不能由该入口
+推断终态。
 
 `artifact_identity_archive.py`只读解析已经完成的行政改名归档：它校验冻结的逐文件身份、归档包装、
 裁剪journal和唯一活动位置，并把旧manifest中的绝对路径按精确前缀映射到归档payload。仓库不再提供
@@ -73,11 +94,13 @@ solver-review退休和布局检查直接复用；命令仍只由容量入口提�
 
 ### solver_review 被取代后的重型载荷退休
 
-`solver_review_retirement.py`是既有成功 `solver_review` run 被明确更新成功运行取代后，退休其可重建
+`solver_review_retirement.py`是既有完整terminal `success`或`failed`的 `solver_review` run 被明确更新成功运行取代后，退休其可重建
 求解器原生载荷的唯一公共入口。它不是普通容量清理：默认只生成plan；apply必须通过
 `invoke_solver_review_retirement.ps1`取得共享 `HostExecutionLease`，并逐个精确给出target、replacement
-和人工审阅后的兼容性说明，并逐项声明本设计线判定兼容所需的输入角色。入口失败关闭检查两端均为
-非Formal success、replacement更新、项目与mode一致、两端均具备调用者声明的角色、target没有Git
+和人工审阅后的兼容性说明，并逐项声明本设计线判定兼容所需的同名输入角色；历史角色改名则用
+`TARGET_ROLE=REPLACEMENT_ROLE`逐项映射，两端manifest记录的字节数和SHA-256必须相同。入口失败关闭检查
+target为一致的success/failed终态、replacement为success、两端均非Formal、replacement更新、项目与mode一致、
+两端均具备调用者声明的角色、target没有Git
 Markdown或下游run_config引用，且不受活动容量保护租约
 覆盖；两端完整manifest记录与config/summary/输入绑定必须通过字节数和SHA验证，apply前再次复核。
 只删除`solver_native_binary`和`dense_trajectory`，不删除轻量IOB、报告或三件套。
@@ -85,7 +108,7 @@ Markdown或下游run_config引用，且不受活动容量保护租约
 apply前先在target内原子写入pending receipt，逐文件验证原始SHA-256后删除，最后写成
 `superseded_payload_retired`。receipt保存原完整逐文件清单、被删/保留集合、原manifest身份和替代run绑定。
 原`run_manifest.json`保持不可变，但删除后不再代表当前磁盘完整性，也不得交给普通manifest verifier或
-下游消费者；只能用`--verify <retired-run>`验证“历史成功身份 + 明确被取代 + 重型载荷已退休”的新语义。
+下游消费者；只能用`--verify <retired-run>`验证“历史终态身份 + 明确被取代 + 重型载荷已退休”的新语义。
 pending receipt表示中断处置，必须人工恢复，不能当作完成或重新自动删除。
 
 ## 阶段复用

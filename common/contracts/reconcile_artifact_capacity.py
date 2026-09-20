@@ -25,7 +25,7 @@ from typing import Any, Iterable
 
 from common.contracts import capacity_protection as protection
 from common.contracts import reconcile_interrupted_compact_runs as compact
-from common.contracts.artifact_retention import classify_file
+from common.contracts.artifact_retention import classify_file, validate_retention
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic as _write_json_atomic
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import verify_record
@@ -37,17 +37,22 @@ TERMINAL = {"success", "completed", "failed", "interrupted", "cancelled", "abort
 POLICY_PATH = Path(__file__).with_name("artifact_capacity_policy.json")
 DISPOSAL_RECEIPT_DIRECTORY = Path("common") / "capacity_disposal_receipts"
 HEAVY_RETENTION_ROLES = {"solver_native_binary", "dense_trajectory", "large_optional"}
+LEGACY_INITIALIZATION_SUMMARY = {
+    "schema_version": 1,
+    "role": "run_package_initialization_summary",
+    "status": "checkpoint",
+    "reason": "Run package initialized; task-specific inputs are not frozen yet.",
+}
 
 
-def _published_pa_cache_key(pointer_path: Path) -> str | None:
-    """Return one valid current PA-family key without hashing its large payload.
+def _published_cache_identity(pointer_path: Path) -> tuple[str, str] | None:
+    """Return one closed current cache identity without hashing its payload.
 
-    The repository has two published PA-family pointer schemas: the shared
-    device-neutral cache and the older integration adapter.  Both publish the
-    pointer last.  A key is therefore protected only when that pointer selects
-    an existing generation manifest with matching key and generation identity.
-    Unpublished staging directories and damaged/failed publications have no
-    such closed chain and are deliberately excluded.
+    Both registered pointer schemas publish the pointer last.  A hexadecimal
+    token is therefore a cache key only when the containing key directory,
+    pointer, selected generation, and manifest form one matching identity
+    chain.  This prevents unrelated file SHA-256 values in active run records
+    from pinning cache entries.
     """
 
     key = pointer_path.parent.name.lower()
@@ -62,6 +67,8 @@ def _published_pa_cache_key(pointer_path: Path) -> str | None:
     relative = pointer.get("generation_relative_path")
     if isinstance(relative, str):
         relative_path = Path(relative)
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            return None
         generation = relative_path.name
         manifest_path = pointer_path.parent / relative_path / "cache_manifest.json"
     else:
@@ -76,17 +83,28 @@ def _published_pa_cache_key(pointer_path: Path) -> str | None:
         return None
     role = str(manifest.get("role", ""))
     schema_version = manifest.get("schema_version")
-    if (
-        isinstance(schema_version, bool)
-        or not isinstance(schema_version, int)
-        or schema_version < 1
-        or (role != "simion_pa_family_cache" and not role.endswith("_pa_cache"))
-    ):
+    if isinstance(schema_version, bool) or not isinstance(schema_version, int):
         return None
     if (
         str(manifest.get("cache_key", "")).lower() != key
         or str(manifest.get("generation_sha256", "")) != generation
     ):
+        return None
+    if schema_version < 3 and not (
+        schema_version >= 1 and role == "simion_pa_family_cache"
+    ):
+        return None
+    return key, role
+
+
+def _published_pa_cache_key(pointer_path: Path) -> str | None:
+    """Return a closed published key only when it is a PA-family cache."""
+
+    identity = _published_cache_identity(pointer_path)
+    if identity is None:
+        return None
+    key, role = identity
+    if role != "simion_pa_family_cache" and not role.endswith("_pa_cache"):
         return None
     return key
 
@@ -141,6 +159,38 @@ def snapshot_published_pa_cache_keys(root: Path) -> dict[str, Any]:
         "captured_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "protected_cache_keys": keys,
         "protected_cache_key_count": len(keys),
+    }
+
+
+def _is_registered_cache_pointer(root: Path, pointer: Path) -> bool:
+    """Return whether a pointer occupies one registered cache-key location."""
+
+    try:
+        relative = pointer.absolute().relative_to(root.absolute())
+    except ValueError:
+        return False
+    parts = tuple(part.lower() for part in relative.parts)
+    if len(parts) == 6 and (
+        parts[0] == "projects"
+        and parts[2] == "cache"
+        and parts[-1] == "current_generation.json"
+    ):
+        return True
+    return (
+        len(parts) == 5
+        and parts[:3] == ("common", "simion", "pa_family_cache")
+        and parts[-1] == "current_generation.json"
+    )
+
+
+def _published_cache_keys(root: Path) -> set[str]:
+    """Return cache keys backed by a registered closed publication identity."""
+
+    return {
+        identity[0]
+        for pointer in _current_generation_pointers(root)
+        if _is_registered_cache_pointer(root, pointer)
+        if (identity := _published_cache_identity(pointer)) is not None
     }
 
 
@@ -261,16 +311,27 @@ def _load_cache_identity_object(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _active_cache_keys(root: Path) -> set[str]:
-    """Protect keys in both manifest and frozen inputs of non-terminal runs."""
-    return {
+def _active_cache_keys(
+    root: Path, published_cache_keys: set[str] | None = None,
+) -> set[str]:
+    """Protect real published keys referenced by non-terminal run identity."""
+
+    published = (
+        _published_cache_keys(root)
+        if published_cache_keys is None
+        else published_cache_keys
+    )
+    referenced = {
         key.lower()
         for _, text in _active_run_reference_texts(root)
         for key in protection.CACHE_KEY.findall(text)
     }
+    return referenced & published
 
 
-def _last_successful_cache_uses(root: Path) -> dict[str, tuple[float, str]]:
+def _last_successful_cache_uses(
+    root: Path, published_cache_keys: set[str] | None = None,
+) -> dict[str, tuple[float, str]]:
     """Return each cache key's latest successful, manifest-recorded consumer.
 
     Filesystem atime is frequently disabled or changed by backup/indexing, so
@@ -280,8 +341,14 @@ def _last_successful_cache_uses(root: Path) -> dict[str, tuple[float, str]]:
     necessary.
     """
 
+    published = (
+        _published_cache_keys(root)
+        if published_cache_keys is None
+        else published_cache_keys
+    )
     latest: dict[str, tuple[float, str]] = {}
-    for manifest in root.rglob("run_manifest.json"):
+    for run_dir in _run_directories(root):
+        manifest = run_dir / "run_manifest.json"
         document = _load_object(manifest)
         if document is None or str(document.get("status", "")).lower() not in {"success", "completed"}:
             continue
@@ -292,7 +359,7 @@ def _last_successful_cache_uses(root: Path) -> dict[str, tuple[float, str]]:
             keys = {key.lower() for key in protection.CACHE_KEY.findall(manifest.read_text(encoding="utf-8-sig"))}
         except (OSError, UnicodeDecodeError):
             continue
-        for key in keys:
+        for key in keys & published:
             if key not in latest or observed[0] > latest[key][0]:
                 latest[key] = observed
     return latest
@@ -304,17 +371,41 @@ def _is_capacity_excluded_path(path: Path) -> bool:
     return any(part.lower() in {"formal", "archive", "scratch"} for part in path.parts)
 
 
+def _run_directories(root: Path) -> tuple[Path, ...]:
+    """Return only registered ``projects/<project>/runs/<run_id>`` directories."""
+
+    projects_root = root.absolute() / "projects"
+    if not projects_root.is_dir():
+        return ()
+    runs: list[Path] = []
+    for project_dir in projects_root.iterdir():
+        run_root = project_dir / "runs"
+        if not project_dir.is_dir() or not run_root.is_dir():
+            continue
+        runs.extend(
+            run_dir.absolute()
+            for run_dir in run_root.iterdir()
+            if run_dir.is_dir() and not run_dir.is_symlink()
+        )
+    return tuple(sorted(runs))
+
+
 def _active_run_reference_texts(root: Path) -> tuple[tuple[Path, str], ...]:
-    """Protect frozen preparation inputs as well as non-terminal manifests."""
+    """Protect frozen preparation inputs until a terminal manifest exists."""
 
     values: list[tuple[Path, str]] = []
-    run_dirs = {path.parent.absolute() for name in ("run_manifest.json", "run_config.json")
-                for path in root.rglob(name)}
-    for run_dir in sorted(run_dirs):
+    for run_dir in _run_directories(root):
+        if not any(
+            (run_dir / name).is_file()
+            for name in ("run_manifest.json", "run_config.json")
+        ):
+            continue
         manifest_path = run_dir / "run_manifest.json"
         manifest = _load_object(manifest_path)
-        state = manifest if manifest is not None else _load_object(run_dir / "summary.json")
-        if state is not None and str(state.get("status", "")).lower() in TERMINAL:
+        if (
+            manifest is not None
+            and str(manifest.get("status", "")).lower() in TERMINAL
+        ):
             continue
         text_parts: list[str] = []
         for path in (manifest_path, run_dir / "run_config.json"):
@@ -327,6 +418,77 @@ def _active_run_reference_texts(root: Path) -> tuple[tuple[Path, str], ...]:
                 continue
         values.append((run_dir, "\n".join(text_parts)))
     return tuple(values)
+
+
+def audit_checkpoint_terminalization(root: Path) -> dict[str, Any]:
+    """Report terminal summaries that still lack a terminal manifest.
+
+    This is deliberately read-only.  Summary status and process absence are
+    not terminalization authority; the owning runner must review the actual
+    outputs and use the existing verified run-manifest entrypoint.
+    """
+
+    root = root.absolute()
+    if not root.is_dir():
+        raise ValueError("artifact root must exist")
+    findings: list[dict[str, Any]] = []
+    for run_dir in _run_directories(root):
+        summary = _load_object(run_dir / "summary.json")
+        if summary is None:
+            continue
+        summary_status = str(summary.get("status", "")).lower()
+        manifest_path = run_dir / "run_manifest.json"
+        manifest = _load_object(manifest_path)
+        if manifest is not None:
+            manifest_status = (
+                str(manifest.get("status", "")).lower()
+                or "invalid_or_missing_status"
+            )
+        elif manifest_path.exists():
+            manifest_status = "unreadable_or_invalid"
+        else:
+            manifest_status = "missing"
+        if manifest_status in TERMINAL and summary_status not in TERMINAL:
+            findings.append(
+                {
+                    "run_path": str(run_dir),
+                    "summary_status": summary_status or "invalid_or_missing_status",
+                    "manifest_status": manifest_status,
+                    "status": "terminal_manifest_summary_status_debt",
+                    "reason": (
+                        "terminal manifest remains authoritative; the present non-terminal "
+                        "summary is legacy status debt requiring explicit review"
+                    ),
+                }
+            )
+            continue
+        if summary_status not in TERMINAL:
+            continue
+        if manifest_status in TERMINAL:
+            continue
+        findings.append(
+            {
+                "run_path": str(run_dir),
+                "summary_status": summary_status,
+                "manifest_status": manifest_status,
+                "status": "explicit_terminalization_required",
+                "terminalization_entrypoint": (
+                    "Write-VerifiedRunManifest/Write-TerminalRunRecord"
+                ),
+                "reason": (
+                    "terminal summary is diagnostic only; inspect the actual run, "
+                    "outputs, references, and provenance before verified manifest "
+                    "terminalization"
+                ),
+            }
+        )
+    return {
+        "schema_version": 1,
+        "role": "artifact_checkpoint_terminalization_audit",
+        "artifact_root": str(root),
+        "finding_count": len(findings),
+        "findings": findings,
+    }
 
 
 def _has_active_run_reference(
@@ -449,21 +611,18 @@ def _cache_candidates(root: Path, protected_keys: set[str], last_successful_uses
 
 def _compact_candidates(root: Path, protected_paths: Iterable[Path], policy: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
-    for run_root in root.rglob("runs"):
-        if not run_root.is_dir() or _is_capacity_excluded_path(run_root):
+    for run_dir in _run_directories(root):
+        if protection.path_is_protected(run_dir, protected_paths):
             continue
-        for run_dir in run_root.iterdir():
-            if not run_dir.is_dir() or protection.path_is_protected(run_dir, protected_paths):
-                continue
-            try:
-                report = compact.inspect_run(run_dir)
-            except (AssertionError, KeyError, TypeError, ValueError):
-                continue
-            if report["removable_bytes"]:
-                candidates.append({"level": "L3", "reason": "verified_interrupted_compact_payload",
-                                   "path": str(run_dir), "bytes": int(report["removable_bytes"]),
-                                   "timestamp": run_dir.stat().st_mtime, "compact_report": report,
-                                   "deletion_priority": _deletion_priority(level="L3", cache_role=None, policy=policy)})
+        try:
+            report = compact.inspect_run(run_dir)
+        except (AssertionError, KeyError, TypeError, ValueError):
+            continue
+        if report["removable_bytes"]:
+            candidates.append({"level": "L3", "reason": "verified_interrupted_compact_payload",
+                               "path": str(run_dir), "bytes": int(report["removable_bytes"]),
+                               "timestamp": run_dir.stat().st_mtime, "compact_report": report,
+                               "deletion_priority": _deletion_priority(level="L3", cache_role=None, policy=policy)})
     return candidates
 
 
@@ -476,33 +635,29 @@ def _unmanaged_run_candidates(
 
     candidates: list[dict[str, Any]] = []
     grace = int(policy["unmanaged_run_grace_seconds"])
-    for run_root in root.rglob("runs"):
-        if not run_root.is_dir() or _is_capacity_excluded_path(run_root):
+    for run_dir in _run_directories(root):
+        if (
+            protection.path_is_protected(run_dir, protected_paths)
+            or (run_dir / "run_manifest.json").exists()
+            or (run_dir / "summary.json").exists()
+            or (run_dir / "run_config.json").exists()
+            or _has_active_run_reference(run_dir, active_references)
+            or _unmanaged_run_receipt_path(root, run_dir).exists()
+        ):
             continue
-        for run_dir in run_root.iterdir():
-            if (
-                not run_dir.is_dir()
-                or protection.path_is_protected(run_dir, protected_paths)
-                or (run_dir / "run_manifest.json").exists()
-                or (run_dir / "summary.json").exists()
-                or (run_dir / "run_config.json").exists()
-                or _has_active_run_reference(run_dir, active_references)
-                or _unmanaged_run_receipt_path(root, run_dir).exists()
-            ):
-                continue
-            created = run_dir.stat().st_ctime
-            if now - created < grace:
-                continue
-            candidates.append({
-                "level": "L1",
-                "operation": "remove_unmanaged_run_with_receipt",
-                "reason": "old_unmanaged_unreferenced_run",
-                "path": str(run_dir),
-                "bytes": directory_bytes.get(run_dir, 0),
-                "timestamp": created,
-                "eviction_time_basis": "run_directory_creation_time",
-                "deletion_priority": int(policy["unmanaged_run_deletion_priority"]),
-            })
+        created = run_dir.stat().st_ctime
+        if now - created < grace:
+            continue
+        candidates.append({
+            "level": "L1",
+            "operation": "remove_unmanaged_run_with_receipt",
+            "reason": "old_unmanaged_unreferenced_run",
+            "path": str(run_dir),
+            "bytes": directory_bytes.get(run_dir, 0),
+            "timestamp": created,
+            "eviction_time_basis": "run_directory_creation_time",
+            "deletion_priority": int(policy["unmanaged_run_deletion_priority"]),
+        })
     return candidates
 
 
@@ -533,6 +688,15 @@ def _manifest_recorded_paths(run_dir: Path, manifest: dict[str, Any]) -> set[Pat
     return recorded
 
 
+def _is_solver_review_retention(value: object) -> bool:
+    """Return whether one retention object is a valid solver-review contract."""
+
+    try:
+        return validate_retention(value).class_id == "solver_review"
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def _success_build_payload_candidate(
     run_dir: Path, protected_paths: Iterable[Path], directory_bytes: dict[Path, int],
     active_references: Iterable[tuple[Path, str]], policy: dict[str, Any],
@@ -554,9 +718,15 @@ def _success_build_payload_candidate(
     config = _load_object(run_dir / "run_config.json")
     if manifest is None or summary is None or config is None:
         return None
+    summary_status = str(summary.get("status", "")).lower()
+    legacy_solver_review = (
+        summary == LEGACY_INITIALIZATION_SUMMARY
+        and _is_solver_review_retention(config.get("artifact_retention"))
+        and _is_solver_review_retention(manifest.get("artifact_retention"))
+    )
     if (
         manifest.get("status") != "success"
-        or summary.get("status") != "success"
+        or (summary_status != "success" and not legacy_solver_review)
         or bool(manifest.get("formal_eligible"))
         or bool(summary.get("formal_eligible"))
         or bool(config.get("formal_gate_passed"))
@@ -824,6 +994,7 @@ def plan(root: Path, *, target_bytes: int, minimum_free_bytes: int,
         "protected_paths": [str(path) for path in protected],
         "protected_cache_keys": sorted(leased_and_explicit_keys),
         "protection_lease_audit": leases["audit"],
+        "checkpoint_terminalization_audit": audit_checkpoint_terminalization(root),
     }
     # A launch receipt plus its governed maximum transient footprint supplies
     # a conservative upper bound while the shared solver lease excludes a
@@ -883,8 +1054,9 @@ def plan(root: Path, *, target_bytes: int, minimum_free_bytes: int,
         }
     now = time.time()
     policy = _capacity_policy()
-    active_keys = _active_cache_keys(root)
-    last_successful_uses = _last_successful_cache_uses(root)
+    published_cache_keys = _published_cache_keys(root)
+    active_keys = _active_cache_keys(root, published_cache_keys)
+    last_successful_uses = _last_successful_cache_uses(root, published_cache_keys)
     active_references = _active_run_reference_texts(root)
     active_keys.update(leased_and_explicit_keys)
     # Failed/interrupted runs remain evidence; only the registered compact
@@ -894,7 +1066,10 @@ def plan(root: Path, *, target_bytes: int, minimum_free_bytes: int,
     )
     candidates.extend(_cache_candidates(root, active_keys, last_successful_uses, protected, directory_bytes, policy))
     candidates.extend(_compact_candidates(root, protected, policy))
+    registered_run_dirs = set(_run_directories(root))
     for run_dir in explicit_success_build_runs:
+        if run_dir not in registered_run_dirs:
+            continue
         candidate = _success_build_payload_candidate(
             run_dir, protected, directory_bytes, active_references, policy
         )
@@ -925,6 +1100,9 @@ def plan(root: Path, *, target_bytes: int, minimum_free_bytes: int,
             "protected_paths": [str(path) for path in protected],
             "protected_cache_keys": sorted(active_keys),
             "protection_lease_audit": leases["audit"],
+            "checkpoint_terminalization_audit": protection_fields[
+                "checkpoint_terminalization_audit"
+            ],
             "free_deficit_bytes": free_deficit,
             "measured_bytes": measured, "limit_bytes": limit, "active_cache_key_count": len(active_keys),
             "candidate_count": len(candidates), "planned": planned, "projected_bytes": projected,
@@ -1036,11 +1214,17 @@ def main() -> None:
     policy = _capacity_policy()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-root", required=True, type=Path)
-    parser.add_argument("--snapshot-published-pa-cache-keys", action="store_true")
-    parser.add_argument("--resume-pending-disposals", action="store_true")
-    lease_actions = parser.add_mutually_exclusive_group()
-    lease_actions.add_argument("--create-protection-lease")
-    lease_actions.add_argument("--delete-protection-lease")
+    standalone_actions = parser.add_mutually_exclusive_group()
+    standalone_actions.add_argument(
+        "--snapshot-published-pa-cache-keys", action="store_true"
+    )
+    standalone_actions.add_argument(
+        "--audit-checkpoint-terminalization", action="store_true"
+    )
+    standalone_actions.add_argument("--resume-pending-disposals", action="store_true")
+    standalone_actions.add_argument("--create-protection-lease")
+    standalone_actions.add_argument("--renew-protection-lease")
+    standalone_actions.add_argument("--delete-protection-lease")
     parser.add_argument("--lease-owner")
     parser.add_argument("--lease-ttl-seconds", type=int)
     parser.add_argument("--target-gib", type=float, default=policy["target_gib"])
@@ -1059,7 +1243,9 @@ def main() -> None:
         if (
             args.apply
             or args.snapshot_published_pa_cache_keys
+            or args.audit_checkpoint_terminalization
             or args.create_protection_lease
+            or args.renew_protection_lease
             or args.delete_protection_lease
         ):
             parser.error("pending disposal resume is a standalone action")
@@ -1072,6 +1258,11 @@ def main() -> None:
             parser.error("published PA cache protection snapshot is read-only")
         print(json.dumps(snapshot_published_pa_cache_keys(args.artifact_root), indent=2))
         return
+    if args.audit_checkpoint_terminalization:
+        if args.apply or args.snapshot_published_pa_cache_keys:
+            parser.error("checkpoint terminalization audit is read-only and standalone")
+        print(json.dumps(audit_checkpoint_terminalization(args.artifact_root), indent=2))
+        return
     if args.create_protection_lease:
         if args.apply or not args.lease_owner or args.lease_ttl_seconds is None:
             parser.error("lease creation requires owner and TTL, and cannot use --apply")
@@ -1083,6 +1274,20 @@ def main() -> None:
                 ttl_seconds=args.lease_ttl_seconds,
                 protected_cache_keys=args.protect_cache_key,
                 protected_paths=args.protect_path,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(json.dumps(lease, indent=2))
+        return
+    if args.renew_protection_lease:
+        if args.apply or not args.lease_owner or args.lease_ttl_seconds is None:
+            parser.error("lease renewal requires owner and TTL, and cannot use --apply")
+        try:
+            lease = protection.renew_capacity_protection_lease(
+                args.artifact_root,
+                lease_id=args.renew_protection_lease,
+                owner=args.lease_owner,
+                ttl_seconds=args.lease_ttl_seconds,
             )
         except ValueError as exc:
             parser.error(str(exc))

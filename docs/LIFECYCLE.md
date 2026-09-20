@@ -262,16 +262,20 @@ cache generation 发布时刻；run 采用终态记录时刻，scratch 采用创
 1. 已确认无活动消费者、无唯一证据且可弃的scratch、临时 staging、损坏/不完整 cache generation，以及超过公共宽限期、无
    run_config/summary/manifest、未被活动run引用的旧 `runs/<id>` 非证据目录；删除前须把逐文件身份写入树外处置receipt；
 2. 未被活动实验引用、可由冻结输入重建的非 Formal cache；
-3. `compact` 类中断 run 的可重建重型 payload（仅 PA、轨迹和其他 retention 合同允许移除的文件），保留冻结输入、日志、summary、manifest 与处置 receipt；
+3. `compact` 类已经正规终态化为 `failed` 或 `interrupted` 的 run 中，可重建重型 payload（仅 PA、轨迹和其他 retention 合同允许移除的未记录文件），保留冻结输入、日志、summary、manifest 与处置 receipt；checkpoint 必须先由责任运行器完成终态闭环；
 4. 仅在用户针对精确对象明确授权后，处置不再被文档/manifest引用且已有替代证据的非 Formal run 重型副本。
    对已成功的 `build` run，授权只能移除manifest未记录、未被活动run引用且由保留策略判定为可重建的
-   重型副本；必须保留原success三件套、全部manifest记录输出及带逐文件SHA-256的处置receipt。普通成功
+   重型副本；必须保留原success三件套、全部manifest记录输出及带逐文件SHA-256的处置receipt。历史
+   `solver_review`若success manifest仍配有逐字段完全匹配的旧初始化checkpoint summary，可在相同逐run显式
+   授权下按manifest终态处理；summary本身保留，任何字段漂移均失败关闭。普通成功
    仿真/分析结果不接受该授权，也不因容量不足自动成为候选。
-   唯一例外是明确被更新成功run取代的`solver_review`：公共退休入口在用户逐run授权、无Git文档或下游
+   唯一例外是明确被更新成功run取代的`solver_review`：target可为完整一致的success或failed终态，replacement
+   必须为success；公共退休入口在用户逐run授权、无Git文档或下游
    run_config引用、非Formal、同项目/同用途且几何审查拓扑兼容时，可移除manifest已记录的求解器原生
    重型载荷。必须保留原三件套、轻量IOB/报告、删除前完整逐文件SHA-256清单和replacement绑定；原manifest
    不改写，退休receipt明确宣告其不再适用普通完整性验证，改由专用`superseded_payload_retired`验证语义。
-   规划和执行前均须验证目标与替代run的完整manifest记录、config/summary及输入绑定；替代目录存在或manifest声称success不够。
+   规划和执行前均须验证目标与替代run的完整manifest记录、config/summary及输入绑定；历史角色改名必须
+   逐项声明旧角色到新角色的映射，且两端manifest中的字节数和SHA-256完全相同。替代目录存在或manifest声称success不够。
 
 `formal/`、`archive/`、活动 cache generation、当前实验引用的 cache、唯一来源输入及任何被当前文档引用的科学结果
 始终禁止由容量治理删除。历史 run 内已冻结的 cache manifest 是重建 provenance，不把相应非活动、可重建 cache

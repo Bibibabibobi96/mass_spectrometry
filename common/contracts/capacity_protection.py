@@ -6,7 +6,9 @@ This module owns lease schema and path coverage; the capacity CLI owns commands.
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -73,7 +75,7 @@ def create_capacity_protection_lease(
     protected_cache_keys: Iterable[str] = (), protected_paths: Iterable[Path] = (),
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Create one immutable TTL protection lease below ``artifacts/common``."""
+    """Create one TTL protection lease below ``artifacts/common``."""
 
     root = root.absolute()
     if not root.is_dir():
@@ -110,6 +112,66 @@ def create_capacity_protection_lease(
     except FileExistsError as exc:
         raise ValueError(f"protection lease already exists: {lease_id}") from exc
     return {**document, "path": str(path)}
+
+
+def renew_capacity_protection_lease(
+    root: Path, *, lease_id: str, owner: str, ttl_seconds: int,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Atomically extend an active lease without changing its protected scope.
+
+    Renewal must happen before expiry.  Requiring the same owner and retaining
+    the exact key/path lists prevents a handoff from silently broadening an
+    already reviewed protection scope.
+    """
+
+    root = root.absolute()
+    if not root.is_dir():
+        raise ValueError("artifact root must exist")
+    lease_id = _validated_lease_id(lease_id)
+    if not isinstance(owner, str) or not owner.strip():
+        raise ValueError("lease owner must be nonempty")
+    if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or ttl_seconds <= 0:
+        raise ValueError("lease TTL seconds must be a positive integer")
+    observed = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    leases = load_capacity_protection_leases(root, now=observed)
+    audit = next(
+        (item for item in leases["audit"] if item.get("lease_id") == lease_id),
+        None,
+    )
+    if audit is None:
+        raise ValueError(f"protection lease does not exist: {lease_id}")
+    if audit.get("status") != "active":
+        raise ValueError(
+            f"protection lease is expired and cannot be renewed: {lease_id}"
+        )
+    path = _lease_path(root, lease_id)
+    document = json.loads(path.read_text(encoding="utf-8-sig"))
+    if document["owner"] != owner.strip():
+        raise ValueError("protection lease owner differs")
+    current_expiry = parse_utc_timestamp(document.get("expires_at_utc"))
+    if current_expiry is None:
+        raise ValueError("protection lease expiry is invalid")
+    expires = datetime.fromtimestamp(observed.timestamp() + ttl_seconds, timezone.utc)
+    if expires.timestamp() <= current_expiry[0]:
+        raise ValueError("protection lease renewal must extend its expiry")
+    renewed = {
+        **document,
+        "expires_at_utc": expires.isoformat().replace("+00:00", "Z"),
+    }
+    temporary = path.with_name(
+        f".{path.name}.{os.getpid()}.{time.time_ns()}.renewing"
+    )
+    try:
+        with temporary.open("x", encoding="utf-8", newline="\n") as stream:
+            json.dump(renewed, stream, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return {**renewed, "path": str(path), "renewed": True}
 
 
 def delete_capacity_protection_lease(root: Path, *, lease_id: str) -> dict[str, Any]:

@@ -12,12 +12,18 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, Mock, patch
 from pathlib import Path
 
-from common.contracts.capacity_protection import CapacityProtectionLeaseError, create_capacity_protection_lease
+from common.contracts.capacity_protection import (
+    CapacityProtectionLeaseError,
+    create_capacity_protection_lease,
+    load_capacity_protection_leases,
+    renew_capacity_protection_lease,
+)
 from common.contracts import reconcile_artifact_capacity as capacity
 from common.contracts.reconcile_artifact_capacity import (
     _current_generation_pointers,
     _directory_bytes,
     apply,
+    audit_checkpoint_terminalization,
     main,
     plan,
     snapshot_published_pa_cache_keys,
@@ -71,6 +77,39 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
         }), encoding="utf-8")
         return run, recorded, removable
 
+    def _legacy_solver_review_build(
+        self, root: Path, name: str
+    ) -> tuple[Path, Path, Path]:
+        run, recorded, removable = self._success_build_run(root, name)
+        retention = {
+            "policy_version": 1,
+            "class": "solver_review",
+            "reason": "Legacy solver review retained for exact authorized retirement.",
+        }
+        config_path = run / "run_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["artifact_retention"] = retention
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        summary_path = run / "summary.json"
+        summary_path.write_text(
+            json.dumps(capacity.LEGACY_INITIALIZATION_SUMMARY), encoding="utf-8"
+        )
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["artifact_retention"] = retention
+        manifest["run_config"] = {
+            "path": config_path.name,
+            "bytes": config_path.stat().st_size,
+            "sha256": capacity.file_sha256(config_path),
+        }
+        manifest["outputs"] = [
+            record
+            for record in manifest["outputs"]
+            if Path(record["path"]).name != summary_path.name
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return run, recorded, removable
+
     def test_old_unmanaged_run_is_first_but_recent_or_actively_referenced_is_protected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -113,6 +152,103 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             self.assertEqual([item["path"] for item in selected["removable"]], [removable.name])
             self.assertNotEqual(recorded, removable)
 
+    def test_explicit_legacy_solver_review_build_allows_verified_checkpoint_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run, recorded, removable = self._legacy_solver_review_build(
+                root, "20260101_000000__build__simion__legacy-review"
+            )
+            manifest = json.loads(
+                (run / "run_manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertNotIn(
+                "summary.json",
+                {Path(record["path"]).name for record in manifest["outputs"]},
+            )
+
+            receipt = plan(
+                root,
+                minimum_free_bytes=0,
+                target_bytes=0,
+                rebuildable_success_build_runs=[run],
+            )
+
+            selected = next(
+                item
+                for item in receipt["planned"]
+                if item["reason"]
+                == "explicit_rebuildable_unreferenced_success_build_payload"
+            )
+            self.assertEqual(
+                [item["path"] for item in selected["removable"]], [removable.name]
+            )
+            self.assertTrue(recorded.is_file())
+            debt = receipt["checkpoint_terminalization_audit"]["findings"]
+            self.assertEqual(debt[0]["status"], "terminal_manifest_summary_status_debt")
+            self.assertEqual(debt[0]["manifest_status"], "success")
+            self.assertEqual(debt[0]["summary_status"], "checkpoint")
+
+    def test_legacy_checkpoint_requires_exact_initialization_summary_and_solver_review(self) -> None:
+        cases = (
+            "config_not_solver_review",
+            "manifest_not_solver_review",
+            "summary_extra_field",
+            "summary_reason_changed",
+            "summary_role_changed",
+            "summary_schema_changed",
+            "summary_running",
+            "formal_manifest",
+            "formal_config",
+        )
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                run, _, _ = self._legacy_solver_review_build(
+                    root, f"20260101_000000__build__simion__{case}"
+                )
+                config_path = run / "run_config.json"
+                summary_path = run / "summary.json"
+                manifest_path = run / "run_manifest.json"
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if case == "config_not_solver_review":
+                    config["artifact_retention"]["class"] = "compact"
+                elif case == "manifest_not_solver_review":
+                    manifest["artifact_retention"]["class"] = "compact"
+                elif case.startswith("summary_"):
+                    summary = dict(capacity.LEGACY_INITIALIZATION_SUMMARY)
+                    if case == "summary_extra_field":
+                        summary["unexpected"] = True
+                    elif case == "summary_reason_changed":
+                        summary["reason"] = f"{summary['reason']} "
+                    elif case == "summary_role_changed":
+                        summary["role"] = "run_package_checkpoint_summary"
+                    elif case == "summary_schema_changed":
+                        summary["schema_version"] = 2
+                    elif case == "summary_running":
+                        summary["status"] = "running"
+                    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+                elif case == "formal_manifest":
+                    manifest["formal_eligible"] = True
+                elif case == "formal_config":
+                    config["formal_gate_passed"] = True
+                config_path.write_text(json.dumps(config), encoding="utf-8")
+                manifest["run_config"] = {
+                    "path": config_path.name,
+                    "bytes": config_path.stat().st_size,
+                    "sha256": capacity.file_sha256(config_path),
+                }
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+                receipt = plan(
+                    root,
+                    minimum_free_bytes=0,
+                    target_bytes=0,
+                    rebuildable_success_build_runs=[run],
+                )
+
+                self.assertNotIn(str(run), [item["path"] for item in receipt["planned"]])
+
     def test_unmanaged_run_with_any_summary_is_not_treated_as_evidence_free(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -130,6 +266,94 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
 
             self.assertNotIn(str(run), [item["path"] for item in receipt["planned"]])
 
+    def test_run_enumeration_uses_only_direct_project_run_children(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            direct = root / "projects" / "p" / "runs" / "direct"
+            direct.mkdir(parents=True)
+            (direct / "summary.json").write_text(
+                json.dumps({"status": "checkpoint"}), encoding="utf-8"
+            )
+            nested = direct / "results" / "runs" / "nested"
+            nested.mkdir(parents=True)
+            (nested / "summary.json").write_text(
+                json.dumps({"status": "success"}), encoding="utf-8"
+            )
+            archived = root / "projects" / "p" / "archive" / "runs" / "archived"
+            archived.mkdir(parents=True)
+            (archived / "summary.json").write_text(
+                json.dumps({"status": "failed"}), encoding="utf-8"
+            )
+
+            audit = audit_checkpoint_terminalization(root)
+
+            self.assertEqual(audit["findings"], [])
+            policy = capacity._capacity_policy()
+            with patch.object(
+                capacity.compact,
+                "inspect_run",
+                return_value={"removable_bytes": 0},
+            ) as inspected:
+                capacity._compact_candidates(root, (), policy)
+            self.assertEqual(
+                [call.args[0] for call in inspected.call_args_list], [direct.absolute()]
+            )
+
+    def test_nested_and_archived_run_records_do_not_create_active_references(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            key = "8" * 64
+            cache = self._cache(root, "role", key, age=time.time() - 100)
+            direct = root / "projects" / "p" / "runs" / "terminal"
+            nested = direct / "results"
+            nested.mkdir(parents=True)
+            (direct / "run_manifest.json").write_text(
+                json.dumps({"status": "success"}), encoding="utf-8"
+            )
+            (nested / "run_config.json").write_text(
+                json.dumps({"input_cache_key": key}), encoding="utf-8"
+            )
+            archived = root / "projects" / "p" / "archive" / "runs" / "old"
+            archived.mkdir(parents=True)
+            (archived / "run_config.json").write_text(
+                json.dumps({"input_cache_key": key}), encoding="utf-8"
+            )
+
+            receipt = plan(root, minimum_free_bytes=0, target_bytes=0)
+
+            self.assertIn(str(cache), [item["path"] for item in receipt["planned"]])
+            self.assertNotIn(key, receipt["protected_cache_keys"])
+
+    def test_nested_and_archived_runs_are_not_unmanaged_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            direct = root / "projects" / "p" / "runs" / "direct-unmanaged"
+            direct.mkdir(parents=True)
+            (direct / "payload.bin").write_bytes(b"direct")
+            container = root / "projects" / "p" / "runs" / "container"
+            container.mkdir()
+            (container / "summary.json").write_text(
+                json.dumps({"status": "checkpoint"}), encoding="utf-8"
+            )
+            nested = container / "results" / "runs" / "nested-unmanaged"
+            nested.mkdir(parents=True)
+            (nested / "payload.bin").write_bytes(b"nested")
+            archived = root / "projects" / "p" / "archive" / "runs" / "archived"
+            archived.mkdir(parents=True)
+            (archived / "payload.bin").write_bytes(b"archived")
+            policy = capacity._capacity_policy()
+            policy["unmanaged_run_grace_seconds"] = 0
+
+            with patch.object(capacity, "_capacity_policy", return_value=policy):
+                receipt = plan(root, minimum_free_bytes=0, target_bytes=0)
+
+            candidates = {
+                item["path"]
+                for item in receipt["planned"]
+                if item["reason"] == "old_unmanaged_unreferenced_run"
+            }
+            self.assertEqual(candidates, {str(direct)})
+
     def test_explicit_success_nonbuild_run_remains_protected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -139,6 +363,22 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
 
             receipt = plan(
                 root, minimum_free_bytes=0, target_bytes=0, rebuildable_success_build_runs=[run]
+            )
+
+            self.assertNotIn(str(run), [item["path"] for item in receipt["planned"]])
+
+    def test_explicit_success_build_outside_registered_run_root_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run, _, _ = self._success_build_run(
+                root / "staging", "20260101_000000__build__simion__unregistered"
+            )
+
+            receipt = plan(
+                root,
+                minimum_free_bytes=0,
+                target_bytes=0,
+                rebuildable_success_build_runs=[run],
             )
 
             self.assertNotIn(str(run), [item["path"] for item in receipt["planned"]])
@@ -235,6 +475,77 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 receipt["protection_lease_audit"][0]["status"], "expired_ignored"
             )
 
+    def test_active_lease_renews_atomically_without_scope_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            protected = root / "projects" / "p" / "runs" / "handoff"
+            protected.mkdir(parents=True)
+            started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            created = create_capacity_protection_lease(
+                root,
+                lease_id="cross-step",
+                owner="producer-consumer-chain",
+                ttl_seconds=120,
+                protected_cache_keys=["a" * 64],
+                protected_paths=[protected],
+                now=started,
+            )
+
+            renewed = renew_capacity_protection_lease(
+                root,
+                lease_id="cross-step",
+                owner="producer-consumer-chain",
+                ttl_seconds=300,
+                now=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+            )
+
+            self.assertTrue(renewed["renewed"])
+            self.assertEqual(
+                renewed["protected_cache_keys"], created["protected_cache_keys"]
+            )
+            self.assertEqual(renewed["protected_paths"], created["protected_paths"])
+            self.assertEqual(renewed["created_at_utc"], created["created_at_utc"])
+            self.assertEqual(renewed["expires_at_utc"], "2026-01-01T00:06:00Z")
+            loaded = load_capacity_protection_leases(
+                root, now=datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc)
+            )
+            self.assertEqual(loaded["audit"][0]["status"], "active")
+            self.assertEqual(loaded["protected_cache_keys"], {"a" * 64})
+
+    def test_lease_renewal_rejects_wrong_owner_and_expired_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            create_capacity_protection_lease(
+                root, lease_id="owned", owner="chain", ttl_seconds=60,
+                protected_cache_keys=["a" * 64], now=started,
+            )
+            with self.assertRaisesRegex(ValueError, "owner differs"):
+                renew_capacity_protection_lease(
+                    root, lease_id="owned", owner="other", ttl_seconds=60,
+                    now=datetime(2026, 1, 1, 0, 0, 30, tzinfo=timezone.utc),
+                )
+            with self.assertRaisesRegex(ValueError, "expired"):
+                renew_capacity_protection_lease(
+                    root, lease_id="owned", owner="chain", ttl_seconds=60,
+                    now=datetime(2026, 1, 1, 0, 2, tzinfo=timezone.utc),
+                )
+
+    def test_lease_renewal_cannot_shorten_existing_expiry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            create_capacity_protection_lease(
+                root, lease_id="long-lived", owner="chain", ttl_seconds=600,
+                protected_cache_keys=["a" * 64], now=started,
+            )
+
+            with self.assertRaisesRegex(ValueError, "must extend"):
+                renew_capacity_protection_lease(
+                    root, lease_id="long-lived", owner="chain", ttl_seconds=60,
+                    now=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+                )
+
     def test_malformed_active_lease_fails_closed_with_cli_audit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -293,7 +604,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             self.assertTrue(cache.exists())
             self.assertEqual(applied["removed"], [])
 
-    def test_cli_creates_and_deletes_named_lease(self) -> None:
+    def test_cli_creates_renews_and_deletes_named_lease(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             output = io.StringIO()
             with patch("sys.argv", [
@@ -304,6 +615,19 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 main()
             created = json.loads(output.getvalue())
             self.assertTrue(Path(created["path"]).is_file())
+
+            output = io.StringIO()
+            with patch("sys.argv", [
+                "reconcile_artifact_capacity", "--artifact-root", temporary,
+                "--renew-protection-lease", "cli-run", "--lease-owner", "test",
+                "--lease-ttl-seconds", "120",
+            ]), redirect_stdout(output):
+                main()
+            renewed = json.loads(output.getvalue())
+            self.assertTrue(renewed["renewed"])
+            self.assertEqual(
+                renewed["protected_cache_keys"], created["protected_cache_keys"]
+            )
 
             output = io.StringIO()
             with patch("sys.argv", [
@@ -619,6 +943,105 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             refreshed = plan(root, minimum_free_bytes=0, target_bytes=0)
             self.assertNotIn(str(run), [item["path"] for item in refreshed["planned"]])
 
+    def test_terminal_summary_without_terminal_manifest_stays_active_and_is_audited(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            key = "c" * 64
+            cache = self._cache(root, "role", key, age=time.time() - 100)
+            run = root / "projects" / "p" / "runs" / "summary-only-terminal"
+            run.mkdir(parents=True)
+            (run / "run_config.json").write_text(
+                json.dumps({"input_cache_key": key}), encoding="utf-8"
+            )
+            (run / "summary.json").write_text(
+                json.dumps({"status": "failed"}), encoding="utf-8"
+            )
+
+            receipt = plan(root, minimum_free_bytes=0, target_bytes=0)
+
+            self.assertNotIn(str(cache), [item["path"] for item in receipt["planned"]])
+            audit = receipt["checkpoint_terminalization_audit"]
+            self.assertEqual(audit["finding_count"], 1)
+            self.assertEqual(audit["findings"][0]["manifest_status"], "missing")
+            self.assertEqual(
+                audit["findings"][0]["status"],
+                "explicit_terminalization_required",
+            )
+
+            (run / "run_manifest.json").write_text(
+                json.dumps({"status": "failed"}), encoding="utf-8"
+            )
+            terminal = plan(root, minimum_free_bytes=0, target_bytes=0)
+            self.assertIn(str(cache), [item["path"] for item in terminal["planned"]])
+            self.assertEqual(
+                terminal["checkpoint_terminalization_audit"]["finding_count"], 0
+            )
+
+    def test_checkpoint_terminalization_audit_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run = root / "projects" / "p" / "runs" / "legacy-checkpoint"
+            run.mkdir(parents=True)
+            manifest = run / "run_manifest.json"
+            manifest.write_text(
+                json.dumps({"status": "checkpoint"}), encoding="utf-8"
+            )
+            (run / "summary.json").write_text(
+                json.dumps({"status": "success"}), encoding="utf-8"
+            )
+
+            report = audit_checkpoint_terminalization(root)
+
+            self.assertEqual(report["finding_count"], 1)
+            self.assertEqual(report["findings"][0]["manifest_status"], "checkpoint")
+            self.assertEqual(
+                json.loads(manifest.read_text(encoding="utf-8"))["status"],
+                "checkpoint",
+            )
+
+    def test_checkpoint_terminalization_audit_distinguishes_invalid_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run = root / "projects" / "p" / "runs" / "invalid-manifest"
+            run.mkdir(parents=True)
+            (run / "run_manifest.json").write_text("{", encoding="utf-8")
+            (run / "summary.json").write_text(
+                json.dumps({"status": "failed"}), encoding="utf-8"
+            )
+
+            report = audit_checkpoint_terminalization(root)
+
+            self.assertEqual(report["finding_count"], 1)
+            self.assertEqual(
+                report["findings"][0]["manifest_status"],
+                "unreadable_or_invalid",
+            )
+
+    def test_no_reconciliation_report_still_includes_terminalization_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run = root / "projects" / "p" / "runs" / "legacy-checkpoint"
+            run.mkdir(parents=True)
+            (run / "run_manifest.json").write_text(
+                json.dumps({"status": "checkpoint"}), encoding="utf-8"
+            )
+            (run / "summary.json").write_text(
+                json.dumps({"status": "success"}), encoding="utf-8"
+            )
+
+            report = plan(
+                root,
+                target_bytes=1024,
+                minimum_free_bytes=0,
+                known_measured_bytes=0,
+                maximum_new_artifact_bytes=0,
+            )
+
+            self.assertEqual(report["measurement_mode"], "SAFE_NO_RECONCILIATION")
+            self.assertEqual(
+                report["checkpoint_terminalization_audit"]["finding_count"], 1
+            )
+
     def test_nonterminal_manifest_protects_referenced_key(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -629,6 +1052,57 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             (run / "run_manifest.json").write_text(json.dumps({"status": "running", "cache_key": key}), encoding="utf-8")
             receipt = plan(root, minimum_free_bytes=0, target_bytes=0)
             self.assertNotIn(str(protected), [item["path"] for item in receipt["planned"]])
+
+    def test_active_hashes_are_intersected_with_closed_cache_identities(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            real_key = "d" * 64
+            ordinary_file_sha = "e" * 64
+            protected = self._cache(root, "role", real_key, age=time.time() - 100)
+            run = root / "projects" / "p" / "runs" / "live"
+            run.mkdir(parents=True)
+            (run / "run_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "checkpoint",
+                        "cache_key": real_key,
+                        "input_file_sha256": ordinary_file_sha,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            receipt = plan(root, minimum_free_bytes=0, target_bytes=0)
+
+            self.assertNotIn(str(protected), [item["path"] for item in receipt["planned"]])
+            self.assertEqual(receipt["active_cache_key_count"], 1)
+            self.assertIn(real_key, receipt["protected_cache_keys"])
+            self.assertNotIn(ordinary_file_sha, receipt["protected_cache_keys"])
+
+    def test_closed_pointer_outside_registered_cache_location_is_not_a_cache_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            key = "f" * 64
+            entry = root / "projects" / "p" / "scratch" / "task" / "cache" / "role" / key
+            generation = entry / "generations" / "g"
+            generation.mkdir(parents=True)
+            (generation / "cache_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 3,
+                        "role": "role",
+                        "cache_key": key,
+                        "generation_sha256": "g",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (entry / "current_generation.json").write_text(
+                json.dumps({"generation_relative_path": "generations/g"}),
+                encoding="utf-8",
+            )
+
+            self.assertNotIn(key, capacity._published_cache_keys(root))
 
     def test_startup_snapshot_protects_only_valid_published_pa_families(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
