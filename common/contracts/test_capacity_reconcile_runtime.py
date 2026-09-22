@@ -55,6 +55,31 @@ class DailyCapacityReconcileTest(unittest.TestCase):
             receipt = next((root / "common" / "capacity_disposal_receipts").glob("atomic-ledger-temp-*.json"))
             self.assertEqual(json.loads(receipt.read_text(encoding="utf-8"))["status"], "retired")
 
+    def test_pa_runtime_directories_become_ready_without_removal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = sorted(capacity_ledger.PA_RUNTIME_STATE_RELATIVE_PATHS)
+            for relative in paths:
+                (root / relative).mkdir(parents=True)
+            (root / paths[1] / "key.lock").write_bytes(b"lock")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": relative,
+                "class": "rebuildable_payload",
+                "bytes": 4 if relative == paths[1] else 0,
+                "status": "writing", "pin": False,
+                "owner": "common.simion.pa_family_cache",
+                "recovery_reason": "pa_runtime_state_recovery_required",
+                "review_deadline": "2026-10-22",
+            } for relative in paths])
+            outcome = capacity_ledger.reconcile_pa_runtime_state(root)
+            self.assertEqual(outcome["ready_count"], 3)
+            self.assertEqual(outcome["ready_bytes"], 4)
+            self.assertTrue((root / paths[1] / "key.lock").exists())
+            self.assertTrue(all(
+                item["status"] == "ready" and item["class"] == "light_evidence"
+                for item in capacity_ledger.load_capacity_ledger(root)["objects"]
+            ))
+
     def test_loading_calibrated_ledger_does_not_resolve_payload_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

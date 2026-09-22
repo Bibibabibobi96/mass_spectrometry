@@ -22,6 +22,11 @@ from common.contracts.recorded_file_removal import write_json_atomic
 CAPACITY_LEDGER_RELATIVE_PATH = Path("common") / "capacity_ledger.json"
 STALE_ATOMIC_TEMP_PREFIX = ".capacity_ledger.json."
 STALE_ATOMIC_TEMP_MINIMUM_AGE_SECONDS = 1.0
+PA_RUNTIME_STATE_RELATIVE_PATHS = {
+    "common/simion/pa_family_cache/.build-locks",
+    "common/simion/pa_family_cache/.locks",
+    "common/simion/pa_family_cache/.staging",
+}
 LEDGER_CLASSES = {"light_evidence", "published_cache", "rebuildable_payload"}
 LEDGER_STATUSES = {"writing", "ready", "retirement_pending", "retired"}
 EXTERNAL_SCOPE_ROLES = {
@@ -1010,6 +1015,52 @@ def recover_stale_atomic_ledger_temps(root: Path) -> dict[str, int]:
             write_json_atomic(resolve_ledger_path(root), ledger)
             result["retired_count"] += 1
             result["removed_bytes"] += int(entry["bytes"])
+    return result
+
+
+def reconcile_pa_runtime_state(root: Path) -> dict[str, int]:
+    """Mark the cache's reusable lock and staging directories as ready state.
+
+    They are small cache-runtime directories, not interrupted PA payloads.
+    Reclassification preserves their owner and bytes, performs no removal, and
+    prevents a durable lock file from appearing as an unbounded recovery job.
+    """
+
+    root = root.resolve(strict=False)
+    result = {"checked_count": 0, "ready_count": 0, "ready_bytes": 0, "invalid_count": 0}
+    with protection.capacity_decision_lock(root):
+        ledger = load_capacity_ledger(root)
+        if ledger is None:
+            raise ValueError("capacity ledger is missing or invalid")
+        changed = False
+        for entry in ledger["objects"]:
+            if entry.get("path") not in PA_RUNTIME_STATE_RELATIVE_PATHS:
+                continue
+            result["checked_count"] += 1
+            target, _ = capacity_object_path(root, entry["path"])
+            if target.is_symlink() or not target.is_dir():
+                result["invalid_count"] += 1
+                continue
+            if entry.get("status") == "ready" and entry.get("class") == "light_evidence":
+                continue
+            if not (
+                entry.get("status") == "writing"
+                and entry.get("class") == "rebuildable_payload"
+                and entry.get("owner") == "common.simion.pa_family_cache"
+                and entry.get("recovery_reason") == "pa_runtime_state_recovery_required"
+            ):
+                result["invalid_count"] += 1
+                continue
+            entry["status"] = "ready"
+            entry["class"] = "light_evidence"
+            entry.pop("recovery_reason", None)
+            entry.pop("recovery_task", None)
+            entry.pop("recovery_evidence_paths", None)
+            result["ready_count"] += 1
+            result["ready_bytes"] += int(entry["bytes"])
+            changed = True
+        if changed:
+            write_json_atomic(resolve_ledger_path(root), ledger)
     return result
 
 

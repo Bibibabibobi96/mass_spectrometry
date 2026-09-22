@@ -84,6 +84,8 @@ maintenance 以固定顺序调用 owner continuation；某一历史 owner 的 JS
 compact retention receipt 时使用该 receipt，没有旧 retention 合同时也只允许这一无删除的轻量收敛。
 有效 ledger 旁、超过原子发布重试窗口的截断 ledger 临时文件由 capacity owner 以 pending receipt 续做退休；
 它只核对精确路径、字节数和租约，不读取或哈希该临时内容。
+PA cache 的锁、build-lock 与 staging 目录则是可复用 runtime state：PA owner 将其登记为 ready 的轻量范围，
+不把锁文件错误当成待恢复 PA payload，也不会删除它们。
 
 维护摘要将历史`writing`分为三类：有**当前租约明确覆盖**的消费者、唯一`current_*`已收据的 GUI
 检查包，或被该 GUI 收据直接引用的 source run 是正常受管保留，并给出租约关闭或 owner 处置的退出路径；已有 sealed owner disposition 的已放弃

@@ -3765,7 +3765,14 @@ def audit_pa_transaction_maintenance(cache_root: str | Path) -> dict[str, int]:
     root = Path(cache_root)
     directory = root / TRANSACTION_DIRECTORY
     result = {"checked_count": 0, "replayable_count": 0, "awaiting_verification_count": 0,
-              "missing_failure_evidence_count": 0, "invalid_count": 0}
+              "missing_failure_evidence_count": 0, "invalid_count": 0,
+              "runtime_ready_count": 0, "runtime_ready_bytes": 0}
+    artifact_root = _artifact_root_for_cache(root)
+    if artifact_root is not None:
+        runtime = capacity_ledger.reconcile_pa_runtime_state(artifact_root)
+        result["runtime_ready_count"] = runtime["ready_count"]
+        result["runtime_ready_bytes"] = runtime["ready_bytes"]
+        result["invalid_count"] += runtime["invalid_count"]
     if not directory.exists():
         return result
     if not directory.is_dir() or directory.is_symlink():
