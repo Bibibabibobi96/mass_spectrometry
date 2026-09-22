@@ -963,6 +963,7 @@ def _compact_maintenance_output(receipt: dict[str, Any]) -> dict[str, Any]:
         "free_bytes": receipt.get("free_bytes_after", receipt.get("free_bytes_before")),
         "capacity_gap_bytes": summary["capacity_gap_bytes"],
         "satisfied": receipt.get("satisfied_after_apply", receipt.get("satisfied")),
+        "satisfied_after_apply": receipt.get("satisfied_after_apply", receipt.get("satisfied")),
         "blocking_reason": receipt.get("blocking_reason"),
         "planned": {
             "object_count": len(receipt.get("planned", [])),

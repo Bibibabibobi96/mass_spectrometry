@@ -195,6 +195,7 @@ class MaintenanceTargetCliTest(unittest.TestCase):
                 applied = normal_capacity.apply(receipt)
 
             compact = normal_capacity._compact_maintenance_output(applied)
+            self.assertEqual(compact["satisfied_after_apply"], applied["satisfied_after_apply"])
             self.assertEqual(compact["planned_vs_actual"], {
                 "planned_object_count": 1, "planned_bytes": 7,
                 "actual_removed_object_count": 0, "actual_removed_bytes": 0,

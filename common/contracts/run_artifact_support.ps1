@@ -66,8 +66,12 @@ function Invoke-ArtifactCapacityGate {
     [string[]]$ProtectedPaths=@(),
     [string[]]$ProtectedCacheKeys=@(),
     [string]$CapacityProtectionLeaseId='',
-    [ValidateSet('startup','maintenance')][string]$ExecutionMode='startup'
+    [ValidateSet('startup','maintenance')][string]$ExecutionMode='startup',
+    [Nullable[double]]$MaintenanceTargetGiB=$null
   )
+  if($null-ne$MaintenanceTargetGiB-and$ExecutionMode-ne'maintenance'){
+    throw 'MaintenanceTargetGiB requires maintenance execution mode.'
+  }
   if($ExecutionMode-eq'startup'-and[string]::IsNullOrWhiteSpace($CapacityProtectionLeaseId)){
     throw 'Artifact capacity startup requires CapacityProtectionLeaseId.'
   }
@@ -83,6 +87,9 @@ function Invoke-ArtifactCapacityGate {
     '--capacity-ledger',(Join-Path $ArtifactRoot 'common\capacity_ledger.json'),
     '--apply'
   )
+  if($null-ne$MaintenanceTargetGiB){
+    $arguments+=@('--maintenance-target-gib',([string]$MaintenanceTargetGiB.Value))
+  }
   foreach($path in @($ProtectedPaths|Where-Object{ -not [string]::IsNullOrWhiteSpace($_) }|Select-Object -Unique)){
     $arguments+=@('--protect-path',$path)
   }
