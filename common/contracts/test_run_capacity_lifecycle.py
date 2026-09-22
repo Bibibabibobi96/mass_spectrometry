@@ -147,12 +147,15 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             # its manifest and completed compact retention receipt are real.
             legacy_config = json.loads(config.read_text(encoding="utf-8"))
             legacy_config.pop("capacity_ledger_lifecycle")
+            legacy_config.pop("artifact_retention")
             config.write_text(json.dumps(legacy_config), encoding="utf-8")
             (run / "retention_actions.json").write_text(json.dumps({
                 "schema_version": 1, "role": "artifact_retention_actions",
                 "status": "complete", "retention_class": "compact",
             }), encoding="utf-8")
-            (run / "run_manifest.json").write_text(json.dumps({"status": "success"}), encoding="utf-8")
+            (run / "run_manifest.json").write_text(json.dumps({
+                "status": "success", "artifact_retention": {"class": "compact"},
+            }), encoding="utf-8")
             payload = run / "results.json"
             payload.write_text("{}", encoding="utf-8")
             entries = []

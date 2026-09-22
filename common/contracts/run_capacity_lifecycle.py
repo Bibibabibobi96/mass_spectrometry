@@ -205,9 +205,15 @@ def _legacy_terminal_run_entries(
         retention = _load_json(run_dir / "retention_actions.json", "retention receipt")
     except ValueError:
         return None
+    retention_class = config.get("artifact_retention", {}).get("class")
+    if retention_class is None:
+        # Older run configs predate the retention contract, while their v2
+        # terminal manifests still freeze the chosen class.  Consume that
+        # sealed record instead of asking the user to reconstruct it.
+        retention_class = manifest.get("artifact_retention", {}).get("class")
     if (
         manifest.get("status") not in TERMINAL_STATUSES
-        or config.get("artifact_retention", {}).get("class") != "compact"
+        or retention_class != "compact"
         or retention.get("role") != "artifact_retention_actions"
         or retention.get("status") != "complete"
         or retention.get("retention_class") != "compact"
