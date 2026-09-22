@@ -62,6 +62,9 @@ current已指向别代则绝不回退pointer，返回值必须把predecessor与r
 位于仓库`artifacts/`下的 PA family 禁止调用旧的`publish_pa_family_cache`直发 helper：它只保留给非受管的
 临时／fixture cache；受管资产必须由`advance_pa_family_cache_transaction`取得唯一 owner、写入登记、验证证据
 和发布／ledger handoff，避免出现可见却无人能恢复或退役的 generation。
+历史校准若只能从 pointer／manifest 证明字节身份、却找不到该 owner transaction，则把该 key 登记为带 owner
+和期限的`writing`恢复对象，而非 ready published cache；它不能消费或退休，直到真实 owner 恢复事务或通过授权
+disposition 收尾，校准不会伪造 transaction。
 builder把每个成员先写到返回的确定性scratch，再以原子改名落入`payload`；common看到完整精确清单后建立连续稳定的
 持久化视图并封存，返回`verify`。调用方提交绑定cache key与inventory的SIMION验证证据后，common在同一事务内
 完成parity、generation原子发布、pointer和容量ledger交接。中断后重复`advance-transaction`从同一状态收敛，
