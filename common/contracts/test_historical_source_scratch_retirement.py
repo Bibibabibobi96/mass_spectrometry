@@ -70,6 +70,13 @@ class SourceScratchRetirementTests(unittest.TestCase):
         self.assertFalse(obsolete.exists())
         self.assertTrue((self.source / "current-accelerator" / "keep.bin").exists())
 
+    def test_empty_source_root_is_removed_after_all_authorized_children(self):
+        (self.source / "current-accelerator" / "keep.bin").unlink()
+        (self.source / "current-accelerator").rmdir()
+        done = apply(self.disposition())
+        self.assertEqual(done["status"], "complete")
+        self.assertFalse(self.source.exists())
+
     def test_requires_exact_normalized_and_nonoverlapping_authorized_targets(self):
         for targets, reason in [(["old-five-zone/.."], "normalized"),
                                 (["old-five-zone", "old-five-zone/nested"], "overlap"),

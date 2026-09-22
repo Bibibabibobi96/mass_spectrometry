@@ -205,6 +205,13 @@ def _remove_empty_target(source: Path, target_name: str) -> None:
     target.rmdir()
 
 
+def _remove_empty_source_root(source: Path) -> None:
+    """Remove only an empty scratch root after every direct child was retired."""
+
+    if source.exists() and source.is_dir() and not source.is_symlink() and not any(source.iterdir()):
+        source.rmdir()
+
+
 def _update_external_scope(receipt: dict[str, Any]) -> None:
     root, source = Path(receipt["artifact_root"]), Path(receipt["source_root"])
     before, after = int(receipt["external_scope_bytes_before"]), int(receipt["external_scope_bytes_after"])
@@ -220,6 +227,7 @@ def _update_external_scope(receipt: dict[str, Any]) -> None:
 def apply(plan_: dict[str, Any]) -> dict[str, Any]:
     receipt = _load_or_create_receipt(plan_)
     if receipt.get("status") == "complete":
+        _remove_empty_source_root(Path(receipt["source_root"]))
         return receipt
     if receipt.get("status") != "pending":
         raise ValueError("source scratch disposition receipt is not resumable")
@@ -249,6 +257,7 @@ def apply(plan_: dict[str, Any]) -> dict[str, Any]:
         write_json_atomic(receipt_path, receipt)
     for target in receipt["targets"]:
         _remove_empty_target(source, target)
+    _remove_empty_source_root(source)
     _update_external_scope(receipt)
     complete = {**receipt, "status": "complete"}
     write_json_atomic(receipt_path, complete)
