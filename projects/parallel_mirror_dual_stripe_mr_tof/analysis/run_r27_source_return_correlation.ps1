@@ -23,20 +23,22 @@ if([string]::IsNullOrWhiteSpace($RunId)){
 $artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'r27_source_return_correlation' `
-  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact
+  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `
+  -CapacityLedgerLifecycleEnabled
 $runConfig=$package.run_config;$summary=$package.summary;$resultDir=$package.result_dir;$logDir=$package.log_dir
-$terminalized=$false;$failureStage='preflight'
+$terminalized=$false;$failureStage='preflight';$capacitySession=$null
 try{
+  $failureStage='capacity_startup'
+  $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes 4194304 -ProtectedPaths @($package.artifact_run_dir,$sourceRun) `
+    -Owner "mrtof-r27-source-return-correlation:$RunId"
+  $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
+  Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
+  $failureStage='verify_source'
   & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $sourceManifest `
     --require-status success --require-project $projectId --require-mode finite_3d_two_prism_voltage_trial
   if($LASTEXITCODE-ne 0){throw 'R27 source manifest failed full verification.'}
-
-  $failureStage='capacity_startup'
-  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
-    -ProtectedPaths @($package.artifact_run_dir,$sourceRun) -RequiredHeadroomBytes 2097152
-  $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
-  Write-RunJson -Path $startupPath -Depth 14 -Value $startup
 
   $failureStage='freeze_inputs'
   $frozenManifest=Copy-VerifiedRunInput -Source $sourceManifest `
@@ -82,11 +84,9 @@ try{
     interpretation=[string]$data.interpretation
   })
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
-  $maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
-  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
-    -ProtectedPaths @($package.artifact_run_dir,$sourceRun) `
-    -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
+  $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -RemainingCommittedNewBytes 0
+  $capacitySession=$terminal.session
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   $failureStage='publish_success_manifest'
@@ -103,10 +103,14 @@ try{
   }
   throw
 }finally{
-  if(-not$terminalized-and(Test-Path -LiteralPath $runConfig)){
-    Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
-      -SummaryRole 'mrtof_r27_source_return_correlation_run_summary' `
-      -Reason 'R27 source-return correlation stopped before terminal publication.' `
-      -Software @('Python 3.11') -Status interrupted -FailureStage $failureStage
+  try{
+    if(-not$terminalized-and(Test-Path -LiteralPath $runConfig)){
+      Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
+        -SummaryRole 'mrtof_r27_source_return_correlation_run_summary' `
+        -Reason 'R27 source-return correlation stopped before terminal publication.' `
+        -Software @('Python 3.11') -Status interrupted -FailureStage $failureStage
+    }
+  }finally{
+    if($null-ne$capacitySession){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession}
   }
 }

@@ -29,7 +29,8 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'analytic_mirror_exact_k_operating_point' `
-  -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled -RetentionClass compact
+  -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled -RetentionClass compact `
+  -CapacityLedgerLifecycleEnabled
 $inputDir = $package.input_dir
 $resultDir = $package.result_dir
 $logDir = $package.log_dir
@@ -37,6 +38,7 @@ $runConfig = $package.run_config
 $summary = $package.summary
 $terminalized = $false
 $failureStage = 'preflight'
+$capacitySession = $null
 
 function Invoke-ProjectPython {
   param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogPath)
@@ -68,11 +70,12 @@ function Invoke-ProjectPython {
 
 try {
   $failureStage = 'capacity_startup'
-  $startup = Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -ProtectedPaths @($package.artifact_run_dir) `
-    -RequiredHeadroomBytes 2097152
+  $capacitySession = Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes 2097152 -ProtectedPaths @($package.artifact_run_dir) `
+    -Owner "mrtof-mirror-exact-k-operating-point:$RunId"
   $startupPath = Join-Path $resultDir 'artifact_capacity_gate_startup.json'
-  Write-RunJson -Path $startupPath -Depth 14 -Value $startup
+  Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
 
   $failureStage = 'freeze_inputs'
   $frozenContract = Copy-VerifiedRunInput -Source $contract `
@@ -150,10 +153,9 @@ try {
   $failureStage = 'retention'
   $retention = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage = 'capacity_terminal'
-  $maximumBytes = [int64]((Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File | Measure-Object Length -Sum).Sum)
-  $terminal = Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -ProtectedPaths @($package.artifact_run_dir) `
-    -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximumBytes
+  $terminal = Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -RemainingCommittedNewBytes 0
+  $capacitySession = $terminal.session
   $terminalPath = Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success `
@@ -170,10 +172,14 @@ try {
   }
   throw
 } finally {
-  if (-not $terminalized -and (Test-Path -LiteralPath $runConfig -PathType Leaf)) {
-    Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
-      -SummaryRole 'mrtof_exact_k_mirror_energy_operating_point' `
-      -Reason 'Runner stopped before terminal exact-K evidence publication.' `
-      -Software @('Python 3.11', 'SciPy') -Status interrupted -FailureStage $failureStage
+  try {
+    if (-not $terminalized -and (Test-Path -LiteralPath $runConfig -PathType Leaf)) {
+      Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
+        -SummaryRole 'mrtof_exact_k_mirror_energy_operating_point' `
+        -Reason 'Runner stopped before terminal exact-K evidence publication.' `
+        -Software @('Python 3.11', 'SciPy') -Status interrupted -FailureStage $failureStage
+    }
+  } finally {
+    if ($null -ne $capacitySession) { $null = Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession }
   }
 }

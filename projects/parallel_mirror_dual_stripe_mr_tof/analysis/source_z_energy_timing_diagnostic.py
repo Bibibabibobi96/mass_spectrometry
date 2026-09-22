@@ -19,6 +19,9 @@ from typing import Any, Iterable
 
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
+    resolve_bunch_source_interval,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.r27_source_return_correlation import (
     _pearson,
 )
@@ -109,11 +112,8 @@ def _load_source_rows(
     if (
         receipt.get("role") != "mrtof_deterministic_ideal_bunch_source"
         or receipt.get("status") != "materialized"
-        or receipt.get("particle_count") != expected_count
-        or receipt.get("expected_particle_ids") != expected_ids
-        or str(receipt.get("expected_particle_ids_sha256", "")).lower() != expected_ids_sha256
     ):
-        raise CandidateContractError("source receipt identity or particle cohort differs from the flight run")
+        raise CandidateContractError("source receipt identity differs from the flight run")
     source_manifest = _load_object(source_manifest_path, "bunch-source run manifest")
     if (
         source_manifest.get("project") != _PROJECT
@@ -140,10 +140,47 @@ def _load_source_rows(
     with state_path.open("r", encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
     ids = [int(row["particle_id"]) for row in rows]
-    if ids != expected_ids:
-        raise CandidateContractError("source table does not preserve the complete ordered cohort")
+    run_config_path = record_path(manifest["run_config"], base_dir=run_dir)
+    run_config = _load_object(run_config_path, "flight run config")
+    parameters = run_config.get("parameters")
+    selection = parameters.get("source_selection") if isinstance(parameters, dict) else None
+    if selection is None:
+        if (
+            receipt.get("particle_count") != expected_count
+            or receipt.get("expected_particle_ids") != expected_ids
+            or str(receipt.get("expected_particle_ids_sha256", "")).lower()
+            != expected_ids_sha256
+            or ids != expected_ids
+        ):
+            raise CandidateContractError(
+                "source receipt identity or particle cohort differs from the flight run"
+            )
+        selected_rows = rows
+    else:
+        if not isinstance(selection, dict):
+            raise CandidateContractError("source selection must be an object")
+        try:
+            particle_id_min = int(selection["particle_id_min"])
+            particle_id_max = int(selection["particle_id_max"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise CandidateContractError("source selection interval is incomplete") from error
+        resolved = resolve_bunch_source_interval(
+            receipt_path=receipt_path,
+            particle_id_min=particle_id_min,
+            particle_id_max=particle_id_max,
+        )
+        resolved_selection = resolved["source_cohort"]["selection"]
+        if (
+            len(resolved["particle_ids"]) != expected_count
+            or selection != resolved_selection
+            or parameters.get("source_cohort") != resolved["source_cohort"]
+        ):
+            raise CandidateContractError(
+                "source selection identity or particle cohort differs from the flight run"
+            )
+        selected_rows = rows[particle_id_min - 1:particle_id_max]
     parsed: dict[int, dict[str, float]] = {}
-    for ion, row in zip(ids, rows, strict=True):
+    for ion, row in zip(expected_ids, selected_rows, strict=True):
         try:
             values = {name: float(row[name]) for name in ("z_mm", "mass_th")}
         except (KeyError, TypeError, ValueError) as error:

@@ -239,10 +239,12 @@ def _mirrored_branch_turn_diagnostics(
     coordinate satisfy ``z_return=-z_outbound``.  The diagnostic deliberately
     reports residuals without inventing a numerical acceptance tolerance.
     """
-    ions = sorted({int(event["ion"]) for event in events})
+    events_by_ion: dict[int, list[dict[str, Any]]] = {}
+    for event in events:
+        events_by_ion.setdefault(int(event["ion"]), []).append(event)
     diagnostics: list[dict[str, Any]] = []
-    for ion in ions:
-        particle = [event for event in events if int(event["ion"]) == ion]
+    for ion in sorted(events_by_ion):
+        particle = events_by_ion[ion]
         origins = [event for event in particle if event["kind"] == "drift_phase_origin"]
         returns = [
             event for event in particle
@@ -354,6 +356,12 @@ def summarize_events(
     if any(event["kind"] == "nonmirror_reversal" for event in events):
         errors.append("nonmirror_vz_reversal_observed")
     expected = set(expected_particle_ids or ())
+    events_by_ion: dict[int, list[dict[str, Any]]] = {}
+    events_by_ion_kind: dict[tuple[int, str], list[dict[str, Any]]] = {}
+    for event in events:
+        ion = int(event["ion"])
+        events_by_ion.setdefault(ion, []).append(event)
+        events_by_ion_kind.setdefault((ion, str(event["kind"])), []).append(event)
     observed = {int(event["ion"]) for event in events}
     unknown = sorted(observed - expected) if expected_particle_ids is not None else []
     if unknown:
@@ -400,10 +408,9 @@ def summarize_events(
         errors.append("target_k_phase_sample_differs_from_source_contract")
     for detector_event in detector:
         ion = int(detector_event["ion"])
-        particle_events = [event for event in events if int(event.get("ion", -1)) == ion]
+        particle_events = events_by_ion.get(ion, [])
         chain = {
-            kind: [event for event in events
-                   if event["kind"] == kind and int(event["ion"]) == ion]
+            kind: events_by_ion_kind.get((ion, kind), [])
             for kind in STATIC_RETURN_KINDS
         }
         valid_chain = all(len(chain[kind]) == 1 for kind in STATIC_RETURN_KINDS)
@@ -453,11 +460,9 @@ def summarize_events(
             final = by_terminal.get(ion)
             valid_chain = valid_chain and final is not None and int(final["splat"]) == 1
             valid_chain = valid_chain and not any(
-                int(event["ion"]) == ion and (
-                    event["kind"] == "post_return_mirror_turn"
-                    or (event["kind"] == "drift_phase_candidate" and float(event["k"]) > target_k)
-                )
-                for event in events
+                event["kind"] == "post_return_mirror_turn"
+                or (event["kind"] == "drift_phase_candidate" and float(event["k"]) > target_k)
+                for event in particle_events
             )
         if not valid_chain:
             errors.append("invalid_static_detector_event_chain")

@@ -13,6 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
+    PhysicsContractError,
+    compact_exit_focus_bound,
+)
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import TwoZoneGeometryError, UniformRingPlaneLayout, derive_uniform_ring_planes
 from projects.orthogonal_accelerator.analysis.two_zone_theory import TwoZoneTheoryError, TwoZoneTimeFocus, derive_two_zone_time_focus
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_geometry_parameters import derive_mirror_boundaries
@@ -293,6 +297,43 @@ def load_contract(
         validate_detector_return_path(policy_holder)
         accelerator["detector_return_path"] = dict(inherited_detector_return_path)
     validate_detector_return_path(data)
+    # Historical frozen geometry contracts may predate this non-geometric
+    # design input. Current contracts that declare it are validated here; the
+    # active project baseline is required by its tests to contain it.
+    if (
+        isinstance(accelerator, dict)
+        and accelerator.get("design_source_acceptance") is not None
+    ):
+        derive_accelerator_design_source_interval(data)
+        acceptance = accelerator["design_source_acceptance"]
+        if (
+            acceptance.get("geometry_rule")
+            == "compact_exit_focus_bound_at_maximum_declared_center__native_uniform_ring_planes"
+            and data.get("candidate_derivation") is None
+        ):
+            design = derive_compact_accelerator_acceptance_design(data)
+            declared = {
+                "gap_1_mm": accelerator.get("gap_1_mm"),
+                "gap_2_mm": accelerator.get("gap_2_mm"),
+                "repeller_v": accelerator.get("repeller_v"),
+                "intermediate_grid_v": accelerator.get("intermediate_grid_v"),
+                "exit_grid_v": accelerator.get("exit_grid_v"),
+            }
+            expected = {
+                "gap_1_mm": design["gap1_mm"],
+                "gap_2_mm": design["gap2_mm"],
+                "repeller_v": design["reference_repeller_v"],
+                "intermediate_grid_v": design["reference_intermediate_grid_v"],
+                "exit_grid_v": design["reference_exit_grid_v"],
+            }
+            for name, expected_value in expected.items():
+                actual = _number(declared[name], f"accelerator {name}")
+                if not math.isclose(
+                    actual, float(expected_value), rel_tol=0.0, abs_tol=1e-9
+                ):
+                    raise CandidateContractError(
+                        f"accelerator {name} differs from its compact declared-source acceptance design"
+                    )
     derive_operating_energy_envelope(data)
     derive_mirror_voltage_bounds(data)
     return data
@@ -316,6 +357,173 @@ def validate_detector_return_path(contract: dict[str, Any]) -> dict[str, Any]:
             "detector return must remain at z>0, hit toward -z, and forbid accelerator re-entry"
         )
     return return_path
+
+
+def derive_accelerator_design_source_interval(
+    contract: dict[str, Any],
+) -> dict[str, float | str]:
+    """Resolve the accelerator-owned finite axial source design interval.
+
+    This is a design/acceptance input, not a sampled particle distribution and
+    not part of any PA-family cache identity. Individual flights remain free
+    to use narrower or otherwise different source profiles.
+    """
+    accelerator = contract.get("accelerator")
+    if not isinstance(accelerator, dict):
+        raise CandidateContractError("accelerator contract is required")
+    acceptance = accelerator.get("design_source_acceptance")
+    if not isinstance(acceptance, dict):
+        raise CandidateContractError("accelerator design source acceptance is required")
+    if acceptance.get("axis") != "z":
+        raise CandidateContractError("accelerator design source acceptance must use project z")
+    if (
+        acceptance.get("spread_definition")
+        != "symmetric_full_width_about_release_position"
+    ):
+        raise CandidateContractError("accelerator design source width semantics differ")
+    if acceptance.get("field_cache_dependency") != "none":
+        raise CandidateContractError(
+            "source acceptance must not enter PA-family cache identity"
+        )
+    width = _number(
+        acceptance.get("axial_full_width_mm"),
+        "accelerator design axial full width",
+    )
+    gap = _number(accelerator.get("gap_1_mm"), "gap_1_mm")
+    release = _number(
+        accelerator.get("release_position_in_gap_1_mm"),
+        "release_position_in_gap_1_mm",
+    )
+    if width <= 0.0:
+        raise CandidateContractError(
+            "accelerator design axial full width must be positive"
+        )
+    lower = release - width / 2.0
+    upper = release + width / 2.0
+    if not 0.0 < lower < upper < gap:
+        raise CandidateContractError(
+            "accelerator design source interval must remain strictly inside gap 1"
+        )
+    return {
+        "axis": "z",
+        "axial_full_width_mm": width,
+        "release_minimum_in_gap_1_mm": lower,
+        "release_maximum_in_gap_1_mm": upper,
+        "spread_definition": "symmetric_full_width_about_release_position",
+        "field_cache_dependency": "none",
+    }
+
+
+def derive_compact_accelerator_acceptance_design(
+    contract: dict[str, Any],
+) -> dict[str, float | str | bool]:
+    """Derive a compact two-zone geometry for the full declared envelope.
+
+    The highest permitted operating centre is the worst case under homogeneous
+    voltage scaling.  Designing that point for the declared per-particle energy
+    half-range guarantees every lower operating centre stays inside the same
+    downstream mirror/Stripe energy envelope.
+    """
+    accelerator = contract.get("accelerator")
+    if not isinstance(accelerator, dict):
+        raise CandidateContractError("accelerator contract is required")
+    interval = derive_accelerator_design_source_interval(contract)
+    energy = derive_operating_energy_envelope(contract)
+    gap1_minimum = _number(accelerator.get("gap_1_mm"), "gap_1_mm")
+    release = _number(
+        accelerator.get("release_position_in_gap_1_mm"),
+        "release_position_in_gap_1_mm",
+    )
+    try:
+        bound = compact_exit_focus_bound(
+            energy.net_gain_center_maximum_v,
+            energy.particle_net_gain_half_range_v,
+            float(interval["axial_full_width_mm"]),
+            gap1_minimum,
+        )
+    except PhysicsContractError as error:
+        raise CandidateContractError(
+            "declared accelerator source/energy envelope has no compact two-zone design"
+        ) from error
+    if not math.isclose(release, float(bound["gap1_mm"]) / 2.0, abs_tol=1e-12):
+        raise CandidateContractError(
+            "compact two-zone acceptance design requires a centered release position"
+        )
+    simion = contract.get("simion")
+    component_mesh = simion.get("component_mesh_mm_per_gu") if isinstance(simion, dict) else None
+    accelerator_mesh = component_mesh.get("accelerator") if isinstance(component_mesh, dict) else None
+    if not isinstance(accelerator_mesh, list) or len(accelerator_mesh) != 3:
+        raise CandidateContractError("accelerator component mesh is required")
+    axial_mesh = _number(accelerator_mesh[2], "accelerator axial mesh")
+    if axial_mesh <= 0.0:
+        raise CandidateContractError("accelerator axial mesh must be positive")
+    ideal_gap2 = float(bound["gap2_mm"])
+    stage_2_rings = accelerator.get("stage_2_rings")
+    if not isinstance(stage_2_rings, dict):
+        raise CandidateContractError("accelerator stage-2 ring contract is required")
+    ring_count_raw = _number(
+        stage_2_rings.get("count"), "accelerator stage-2 ring count"
+    )
+    ring_count = int(ring_count_raw)
+    if ring_count_raw != ring_count:
+        raise CandidateContractError("accelerator stage-2 ring count must be an integer")
+    if ring_count < 0:
+        raise CandidateContractError("accelerator stage-2 ring count must be nonnegative")
+    # Every ideal grid and every uniformly spaced physical ring must land on a
+    # native axial node.  With N interior rings the complete gap therefore has
+    # to be an integer multiple of (N+1)*dz, not merely dz.  Choose the
+    # downstream-focus side; workbench placement transports the resulting
+    # small positive ideal drift to project z=0.
+    gap_quantum = (ring_count + 1) * axial_mesh
+    resolved_gap2 = round(
+        math.floor((ideal_gap2 + 1e-12) / gap_quantum) * gap_quantum,
+        12,
+    )
+    if resolved_gap2 <= 0.0 or ideal_gap2 - resolved_gap2 >= gap_quantum + 1e-12:
+        raise CandidateContractError("accelerator compact gap cannot be resolved on its axial mesh")
+    scale = (
+        energy.net_gain_reference_center_v
+        / energy.net_gain_center_maximum_v
+    )
+    exit_v = _number(accelerator.get("exit_grid_v"), "exit_grid_v")
+    reference_repeller = exit_v + float(bound["repeller_relative_V"]) * scale
+    reference_intermediate = (
+        exit_v + float(bound["intermediate_relative_V"]) * scale
+    )
+    try:
+        resolved_focus = derive_two_zone_time_focus(
+            repeller_v=reference_repeller,
+            intermediate_v=reference_intermediate,
+            exit_v=exit_v,
+            gap_1_mm=float(bound["gap1_mm"]),
+            gap_2_mm=resolved_gap2,
+            release_position_in_gap_1_mm=release,
+            require_downstream_focus=True,
+        )
+    except TwoZoneTheoryError as error:
+        raise CandidateContractError(
+            "solver-aligned compact accelerator has no downstream focus"
+        ) from error
+    return {
+        **bound,
+        "ideal_gap2_mm": ideal_gap2,
+        "gap2_mm": resolved_gap2,
+        "gap2_solver_quantization_mm": resolved_gap2 - ideal_gap2,
+        "gap2_solver_quantum_mm": gap_quantum,
+        "axial_mesh_mm_per_gu": axial_mesh,
+        "resolved_compact_accelerator_length_mm": float(bound["gap1_mm"]) + resolved_gap2,
+        "design_operating_center_rule": "maximum_declared_net_gain_center",
+        "reference_voltage_scaling_rule": "homogeneous_about_exit_grid",
+        "net_gain_center_maximum_v": energy.net_gain_center_maximum_v,
+        "net_gain_reference_center_v": energy.net_gain_reference_center_v,
+        "reference_repeller_v": reference_repeller,
+        "reference_intermediate_grid_v": reference_intermediate,
+        "reference_exit_grid_v": exit_v,
+        "resolved_focus_drift_after_exit_mm": resolved_focus.focus_after_exit_mm,
+        "reference_spatial_energy_half_range_v": (
+            energy.particle_net_gain_half_range_v * scale
+        ),
+    }
 
 
 def derive_two_zone_focus(

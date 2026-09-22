@@ -47,7 +47,8 @@ foreach ($root in $inputRoots) {
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'fixed_grid_multifidelity_voltage_correction' `
-  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact
+  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `
+  -CapacityLedgerLifecycleEnabled
 $runDir = $package.run_dir
 $inputDir = $package.input_dir
 $resultDir = $package.result_dir
@@ -56,7 +57,14 @@ $runConfig = $package.run_config
 $summary = $package.summary
 $terminalized = $false
 $lease = $null
+$capacitySession = $null
 try {
+  $capacitySession = Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes 1048576 -ProtectedPaths $inputRoots `
+    -Owner "mrtof-fixed-grid-voltage-correction:$RunId"
+  $startupPath = Join-Path $resultDir 'artifact_capacity_gate_startup.json'
+  Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
   $contract = Copy-VerifiedRunInput `
     -Source (Join-Path $repoRoot "projects\$projectId\config\simion_candidate_two_zone.json") `
     -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
@@ -167,8 +175,14 @@ try {
   }
   Write-RunJson -Path $runConfig -Depth 20 -Value $config
   $retention = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
+  $terminal = Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -RemainingCommittedNewBytes 0
+  $capacitySession = $terminal.session
+  $terminalPath = Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
+  Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
-    -Status success -Software @('Python 3.11') -Outputs @($summary, $result, $retention) | Out-Null
+    -Status success -Software @('Python 3.11') `
+    -Outputs @($summary, $result, $startupPath, $terminalPath, $retention) | Out-Null
   $terminalized = $true
   Write-Host "MRTOF_FIXED_GRID_VOLTAGE_CORRECTION=PASS RUN_ID=$RunId"
 } catch {
@@ -183,4 +197,8 @@ try {
     $terminalized = $true
   }
   throw
+} finally {
+  if ($null -ne $capacitySession) {
+    $null = Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession
+  }
 }

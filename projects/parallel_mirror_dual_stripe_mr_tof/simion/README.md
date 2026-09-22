@@ -8,6 +8,35 @@
 
 ## 输入、坐标与几何
 
+原生 response-bank 的下游工作点提议由
+[`run_downstream_fixed_grid_workpoint.ps1`](../analysis/run_downstream_fixed_grid_workpoint.ps1)
+消费五个 success manifest：`-BaselineManifest`、`-Stripe1PerturbationManifest`、
+`-Stripe2PerturbationManifest`、`-Prism1PerturbationManifest`、`-Prism2PerturbationManifest`。
+四个扰动必须各自只增加对应电压，并保持同一几何、源、镜、加速器、网格范围、时钟和目标 K。
+界限、尺度和信赖步由 baseline 的 `downstream_fixed_grid_workpoint_profile` 派生，秩阈值复用
+`dual_stripe_l0.determination_numerics`，命令行不接受数值覆盖。入口只读取并冻结观测和物化记录的
+轻量消费投影，不重复哈希无关大 PA；发布完整 run 三件套及满秩、有界的四电压提议。
+提议必须用已有 response 场重跑中心离子确认，既不触发 Refine，也不要求重建几何。
+
+[`run_downstream_workpoint_iteration.ps1`](../analysis/run_downstream_workpoint_iteration.ps1)
+把上述单步提议、已发布的 native response-bank 与 [`run_two_prism_trial.ps1`](run_two_prism_trial.ps1)
+组成受管闭环。入口从一个已验证的 `downstream_fixed_grid_workpoint` manifest 和 native system runtime
+bundle 开始；每轮只在 Fast Adjust 表中更新 S1/S2/P1/P2，执行一个真实中心粒子飞行，再由
+[`downstream_workpoint_iteration.py`](../analysis/downstream_workpoint_iteration.py)解析四残差并选择只更新
+P1/P2 或只更新 S1/S2。每个飞行都是独立 child run 和 manifest；父 workflow 保存前一 manifest、当前
+child manifest、观测、native runtime bundle 身份和决策哈希链。每轮复用同一已封存 PA bank，不创建
+局域工作台或 operating-PA cache。闭环只接受真实 target-K phase 样本及完整静态 detector
+return；碰壁／错误拓扑、缺少 target phase、连续无改善、两点循环、振荡、步长过小、迭代上限、电压
+边界或 solver 失败都会形成具名终态。循环上限、阻尼、接受门槛和停机控制只来自合同的
+`downstream_fixed_grid_workpoint_profile.automatic_iteration`，命令行不能覆盖；该入口没有 Refine 路径。
+若父 workflow 在一个 child 已发布 success manifest 后失败，必须使用新父 `RunId` 显式恢复。只有首轮 child
+时可单独传 `-ResumeSuccessfulChildManifest`；任意后续轮则成对传入 `-ResumeParentCheckpoint`（旧父 run 路径或
+manifest）和作为连续第 N 轮的 `-ResumeSuccessfulChildManifest`。恢复器不信任旧父散落的 decision，而是逐字节
+核对冻结 proposal/Jacobian、合同和初始 manifest，再从连续的 1..N success child manifests 重放控制器并核对
+已有 decision、物化电压、cache evidence 与 fixed-response 模式。新父从 N+1 开始，不重飞 1..N；同时继承最新
+capacity baseline，并用最新 cache 的精确 retirement authorization 走增量容量快路。正常运行每次接受 continue
+后立即写 lineage/history 并刷新 checkpoint manifest，旧父 run 保持原终态不变。
+
 [候选合同](../config/simion_candidate_two_zone.json)提供物理输入和机械约束，
 [resolved_geometry.py](../analysis/resolved_geometry.py)生成求解器无关的毫米几何，
 [split_candidate_geometry.py](../analysis/split_candidate_geometry.py)分别适配三份 GEM。
@@ -21,48 +50,30 @@ GEM、PA、IOB和Workbench GUI只读地接受冻结输入，不持有下一轮�
 Stripe、中央接地件及棱镜屏蔽由完整实体扣除有限矩形槽，端部连接材料自然保留，不能另加任意桥接盒。
 `grounded-1`为单一`e(18)`、`grounded 2`为单一`e(20)`；旧人工拆分ID19/21已退役。
 
-加速器局部理论与可复用几何来自独立`orthogonal_accelerator`项目，依赖通过
-[accelerator_dependency.json](../config/accelerator_dependency.json)声明并随输入冻结。
-MR只负责本项目尺寸、电压、装配变换及整机接口。离子从exit grid沿项目`-z`离开；
-exit、grid1、repeller依次位于更大的`+z`。`y`由出口棱镜站位派生，不能强制为零。
-第一焦距和各电极位置必须使用现行公式重新生成，不能复用旧焦距对应的PA原点。
+加速器局部理论、几何、PA 和电压由独立的
+`orthogonal_accelerator` provider 独占。MR 的
+[accelerator_dependency.json](../config/accelerator_dependency.json)只声明接口需求；完整飞行只
+消费 provider `mrtof_runtime_receipt.json`。离子从 exit grid 沿项目 `-z` 离开，出口、grid1、
+repeller 依次位于更大的 `+z`；OA profile 派生其 y 站位、焦距、网格和 IOB 位姿，MR 不选择端部、
+环、壳体或孔径拓扑。
 
-## 三个独立 PA
+## Native runtime 的四个角色
 
-活动网格的机器权威是候选合同的`simion.component_mesh_mm_per_gu`；以下数值只是当前合同摘要，
-顺序均为项目`x,y,z`，构建与检查入口必须传递实际冻结值，不能从此表手填另一套参数。
-旧单体`2×0.8×8`网格及旧单体构建命令不是活动首轮流程。
+活动轨迹场由同一 native system runtime bundle 组装，优先级固定为
+`global_fallback → native_corridor → accelerator → detector`。它只复用封存输入，不能构建或
+改写 PA。
 
-|组件|一次性 build staging 控制器|活动飞行 IOB 输入|当前网格 mm/gu|构建期求解范围|
-|---|---|---|---|---|
-|五镜双组、四Stripe、中央接地、两棱镜及屏蔽|`mrtof_analyzer.pa0`|`iob_input_analyzer.pa`及五个`iob_input_local_*.pa`|`1,1,1`|`pa1..pa20`|
-|独立屏蔽二区加速器|`mrtof_accelerator.pa0`|`iob_input_accelerator.pa`|`0.25,0.25,0.1`|局部`pa1..pa9`|
-|独立数值终止平板|不适用|`iob_input_detector.pa`|`1,1,1`|无Refine、无PA0、无basis|
+|角色|来源|运行时用途|
+|---|---|---|
+|global fallback|MR 合同派生的只读分析器 PA|完整几何的低优先级兜底|
+|native corridor|MR 全走廊八通道 response-bank|唯一可调的 S1/S2/P1/P2 Fast Adjust 场|
+|accelerator|OA provider receipt|独占的两区 `-z` 加速场|
+|detector|MR detector PA|数值终止面|
 
-分析器basis使用从1到最大ID20的完整命名空间；未使用ID19的零响应数组不是新增物理电极。
-SIMION 2020会拒绝对不存在的ID执行Refine。构建器先扫描原始ID；对范围内的编号空缺以官方
-`pa:potential` setter生成严格全零响应、保留材料掩码并保存为对应PA文件，存在的ID仍按默认Refine求解。
-禁止请求高于物理最大ID的数组，不能为补齐编号增加虚构实体。
-主分析器为`x/y/z=1/1/1 mm/gu`：CAD固定的30-mm镜束槽（边界`x=±15 mm`）与4-mm Stripe／接地／棱镜屏蔽槽（边界`x=±2 mm`）在同一个2-mm网格相位中不可同时精确表示，故`x=1 mm`是几何审查的硬约束；`z=1 mm`也使CAD给定的2-mm grounded-1—镜盖板净距包含真空节点。几何包络与孔槽不变。独立加速器当前为`0.25/0.25/0.1 mm/gu`，其中项目`z`是加速方向；该网格解析1-mm环／栅框厚度，但焦点、边缘场、时间与分辨率结论仍须至少三档网格收敛。
-GEM直接编译的默认网格也由同一component mesh合同生成，不能留存旧`y=2`默认值。
-
-分析器的 `1 mm` 全局 PA 只作几何兜底；当前轨迹所在五个局域替换区通常使用 `0.5 mm`。镜等时网格
-诊断可只把两个镜转折区替换为固定工作点 `0.25 mm` PA，中央和两个桥接区继续复用 `0.5 mm`，不得把
-这一混合工作台误写成完整分析器 0.25-mm family。活动入口
-[`run_mirror_turn_fixed_grid_validation.ps1`](run_mirror_turn_fixed_grid_validation.ps1)从已解 0.5-mm
-standalone 父场复制六面 Dirichlet 边界，只求当前镜电压的两个 0.25-mm 工作点；compact retention
-保留场比较、周期结果和日志，不保留多 GB PA。该入口服务网格诊断，不提供 Fast Adjust 或正式飞行 IOB。
-该入口的可选 `-NativeTransverseL1` 重用同一次固定场 IOB，以十个冻结横向探针直接在 SIMION 中记录
-首次中央面返回的传输矩阵以及完整两镜返回的时间二阶项。它只复核 bare-mirror 的
-稳定性、γ 与 $\overline T_{xx}$，不调整电压、不取代三能量等时验证，也不授予 Candidate 资格。
-生成PA时检查的物理ID则由geometry receipt给出，不能把不存在的物理电极当作必需实体。
-加速器使用独立的局部ID：
-`ground/repeller/grid1/exit/rings = 1/2/3/4/5..9`，映射自项目ID
-`15/22/23/24/26..30`。不得在独立加速器PA中查找`pa22..pa24`。
-
-加速器的repeller及五个第二区加速环是合同派生的开框，当前外形为`x=40 mm、y=36 mm`、束孔25×25 mm；接地壳为`x=48 mm、y=44 mm`。其`y`尺寸从冻结的加速器出口棱镜中心线和CAD grounded-2的上边界共同派生，并由正净距合同拒绝任何再次相交；
-grid1与exit是节点对齐的理想栅。五环位置与电压由区长、环数及端点电压派生。
-它单独Refine，不和镜／Stripe／棱镜共用大PA。
+候选合同仍是 MR 自有几何、镜、Stripe、棱镜和 detector 的机器权威；native corridor 的网格与
+范围直接由 resolved geometry 派生。加速器 provider profile 当前使用实心正 `z` 接地后盖与 repeller、
+负 `z` 理想出口栅，以及紧凑的两区结构。MR 只声明 `r=1 mm/h=1 mm` 圆柱束团、两区时间聚焦、
+`y/z` 紧凑化、数值包络和刚体站位；release 动力学只进入 flight，不进入 PA identity。
 
 探测器GEM先用稳定ID25建立物质掩码；[build_component_pa.lua](build_component_pa.lua)在
 `INITIALIZE=0`时以`pa:potential(x,y,z,0)`把所有节点电势置零、保留电极标志并保存原始PA。
@@ -71,93 +82,212 @@ grid1与exit是节点对齐的理想栅。五环位置与电压由区长、环�
 
 ## 构建与重新加载检查
 
-先用[materialize_simion_prototype.py](../analysis/materialize_simion_prototype.py)冻结候选合同、
-解析L0/L1镜电压receipt、提供者依赖、Program、operating-point sidecar和五份Fly2。
-此步骤不会改变baseline，也不会启动商业求解器。三份GEM分别由同一入口的
-`--component analyzer|accelerator|detector`生成；不再用单体GEM驱动活动装配。
+`run_native_corridor_response_bank.ps1` 是 MR 唯一的 PA 生成入口：它从 resolved geometry 生成
+完整 corridor 的八通道 response-bank，并由公共 transaction 执行 Refine、最终 inventory、封存和发布。
+`build_native_corridor_iob.lua` 只组装已封存的四个角色，在保存/重载时验证角色、位置、网格和优先级。
+OA accelerator 从 provider receipt 读取，MR 没有 accelerator GEM、PA family、build staging 或缓存路径。
 
-[build_component_pa.lua](build_component_pa.lua)接收GEM、PA#、三个网格长度、实际物理ID清单和显式
-`INITIALIZE`。分析器及加速器使用`1`生成PA0，探测器使用`0`；
-[build_component_basis.lua](build_component_basis.lua)随后为前两者生成完整basis。
-所有Refine均使用SIMION官方默认收敛设置，不传入convergence覆盖值。
+#### Single full-flight corridor (current migration authority)
 
-分析器与加速器各自拥有独立的 PA-family 构建缓存身份：在一次性 build staging 的 Refine 前，以冻结的
-resolved geometry、组件 GEM、局部 ID namespace、mesh、PA 相位、`surface=none`、SIMION 可执行身份、
-默认 Refine 策略及构建器哈希向
-[`common/simion/pa_family_cache.py`](../../../common/simion/pa_family_cache.py)查询。原生 `.pa0/.paN` family
-只允许在该新建 staging 中 Refine、Fast Adjust 或导出；发布后即使完整物化到私有目录，也不得再次交给
-SIMION。活动飞行只消费构建期导出的、manifest 绑定的 standalone operating/response `.pa`。任何身份变化、
-清单缺失或损坏均失败关闭并重建相应 build staging。探测器是未 Refine 的零电压终止掩码，不进入
-field-basis 缓存。IOB 绝不复用：每次都从本 run 的 standalone PA 重新装配、保存和重载检查。
+The detached bank runner `run_native_corridor_response_bank.ps1` can continue
+an already-started bank with `-TransactionCacheKey <key>`. It retains that
+transaction's frozen identity only while it is `building` without verification
+or a generation. The current frozen inputs, SIMION identity and all PA-producing
+builders must match; only the response receipt implementation may differ, and
+both identities are retained in the continuation receipt. This exception ends
+at publication and never permits changing physical inputs under an old key.
+After publication, the same explicit key can be reused read-only with matching
+frozen scientific inputs; recovery options are rejected and no build or full
+PA scan is performed. Run finalization still applies the normal retention contract.
+`-RecoverMembers <explicit names>` submits receipt/inventory mismatches to the
+common owner through `advance-transaction --member-recovery`; the owner journals
+the request and invalidates only those members and the dependent receipt.
+Unchanged arrays remain in place. The normal missing-member build path then
+rebuilds native members or re-exports detached members as needed, writes the
+receipt from persisted bytes, seals and verifies the bank before publication.
+Capacity admission initially counts the resident payload once and reserves the
+missing bytes after owner invalidation; it does not request a second full bank.
+New builds and explicit member recovery now pass a response-receipt recipe to
+the existing common transaction owner. The owner flushes and hashes PA data
+once under its lock, makes it read-only, derives the receipt from that same
+inventory, and hashes only the small receipt afterward. Legacy transactions
+already carrying a receipt continue their existing seal; they are not restarted
+to adopt this optimization. SIMION format/response verification remains required.
+Large Windows PA inventories now use the explicit unbuffered SHA reader after
+producer completion and flush, rather than the stale buffered view encountered
+on this host. If retained members disagree with an older valid inventory,
+`-RecoverRetainedInventoryMembers <names>` invokes the common owner's narrowly
+scoped inventory repair: only unchanged members in the original recovery
+journal qualify, each must reproduce its old identity through a read-only `/J`
+snapshot, and only inventory records are updated atomically. No PA/receipt is
+deleted, rewritten or refined; this mode refuses to enter the build path.
 
-这三个构建入口按实际操作细分公共主机阶段：分析器局域 family、加速器 family 与三组件 IOB 的合同冻结、
-缓存、复制、`gem2pa`、原生几何检查和纯 IOB 工作均使用各自未列名的轻量 `*_prepare` 阶段；只有调用内部
-含 `pa:refine` 的 Lua 前切换到公共 `SIMION/pa_refine` 重阶段，并在该调用结束后立即切回轻量 prepare。
-摘要、保留、容量终态和 manifest 发布使用未列名的轻量 `*_postprocess` 阶段。具体预算与并发决定仍只由
-[主机资源调度](../../../docs/OPERATIONS.md#主机资源调度)负责，项目入口不复制容量或并发策略。
+`-CorrectPublishedInventoryMember <exact name>` requests a separate owner
+correction for a published inventory error proven against the original retained
+member journal. It cannot be combined with member rebuilding. The runner passes
+the active capacity lease and preserves the owner's correction proof in its run;
+it must never enter PA construction or reopen published native members in SIMION.
+The prior real format verification is retained as prior evidence, not reported
+as a new solver run. The owner must provide the corrected successor before this
+runner can report success.
 
-缓存的项目适配入口是
-[`simion_pa_family_cache.py`](../analysis/simion_pa_family_cache.py)，而不是另一份PA构建器。它只派生
-本项目的组件ID、PA文件名和project-frame网格相位；内容寻址、逐字节验证和原子物化均由公共层执行。
-每个新run先在已生成本run GEM之后运行`probe`。只有`hit`才运行`materialize`到已有的run-local
-`simion/`目录（允许GEM/Lua/Fly2等无关冻结sidecar，拒绝覆盖任何同名PA）；`miss`才调用SIMION生成
-PA#/PA0/basis，完成后对同一冻结输入运行`publish`。因此旧PA或旧缓存不会因文件名相同被误用。
-发布还要求PA family旁的规范名`mrtof_<component>.gem`与请求GEM逐字节相同；诊断性别名（例如
-`*_closed`）不能被混进规范family。该检查器本身的哈希也进入cache key，较早、未执行此绑定的 generation
-不会被后续代码静默复用。
+`run_two_prism_trial.ps1` consumes a published native bank together with its
+`-NativeSystemRuntimeBundlePath`. The bundle binds the global fallback,
+accelerator, and detector by their verified manifest identities without PA
+copying or rehashing. `native_corridor_runtime_support.ps1` constructs the
+private controller and streams the eight native responses. The four-instance
+IOB uses accelerator instance 3.
 
-```powershell
-$cache = 'C:\Users\Liao\mass_spectrometry\artifacts\common\simion\pa_family_cache'
-$runSimion = 'C:\...\artifacts\projects\parallel_mirror_dual_stripe_mr_tof\runs\<run-id>\simion'
-python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_pa_family_cache `
-  --action probe --cache-root $cache --contract "$runSimion\simion_prototype_contract.json" `
-  --component accelerator --gem "$runSimion\mrtof_accelerator.gem" `
-  --simion-executable 'C:\Program Files\SIMION-2020\simion.exe' --simion-release 'SIMION 2020' `
-  --run-simion-directory $runSimion
-```
+`analysis/run_native_corridor_bunch_screening.ps1` reopens the checkpointed
+native runtime once for the N=100 static pilot and, only after its collection
+gate passes, the N=1000 fixed-clock cohort. A hard-stop first runs the bounded
+theory Stripe pair; if neither candidate clears the gate, it automatically runs
+two independent reverse S-axis probes from the same accepted anchor. P1/P2 stay
+fixed, all completed candidate manifests are reused, and the stage plans,
+ranked observations, and selections remain manifest-bound evidence. Only an
+event-valid candidate above the hard collection minimum can reach the clock and
+N=1000 stages. This continuation does not rebuild, copy, Refine, or materialize
+the native PA family.
 
-替换`--action materialize`或`publish`执行相应的命中物化或Refine后发布。缓存身份绑定实际GEM、resolved几何、
-网格、原点/相位、完整basis命名空间、两份构建Lua、SIMION可执行文件字节及官方默认Refine策略；任一项变化都
-必须miss。当前旧几何审查PA与现行resolved几何receipt不一致时，`probe`的`miss`是预期的安全结果，不是可绕过的错误。
+The existing `analysis/run_downstream_workpoint_iteration.ps1` accepts the same
+bank parameter. Supply either a same-bank `-InitialWorkpointManifest` or
+`-SeedTrialManifest`: the latter reuses only the seed voltage vector, launches a
+new native baseline and four positive single-axis perturbations, then calls the
+existing fixed-grid audit and iteration controller automatically. Its named
+consumer projection verifies and freezes only the voltage materialization and
+run metadata; unused historical seed PA files are not inputs to this workflow.
+Stencil steps
+come from `downstream_fixed_grid_workpoint_profile.forward_stencil_steps_v`,
+initially 0.1 V per axis as used by the successful historical r2 audit. A failed
+child stops the stencil; native bank key/generation bind the Jacobian, children,
+and checkpoint. N100/N1000 source, pulse and batch continuation are not yet
+automatically connected to this parent; the checkpointed bunch-screening
+consumer is the separate continuation boundary.
 
-[build_three_component_iob.lua](build_three_component_iob.lua)加载公共
-`common/simion/assets/iob_instance_seeds/3_instance_seed.iob`及其十个
-`iob_seed_placeholder_*.pa0` companion arrays，再装入上述三个组件的 staging PA。
-它通过`wb:load()`／`wb:save()`保存IOB；三组平移只能由
-`resolve_split_iob_origins()`从本次合同派生。保存IOB后，构建器复制同名的Lua、Fly2、
-operating-point与voltage-map companion；这使包可由唯一飞行入口加载，但保存成功本身
-仍不能作为任何粒子飞行或物理闭合结论。
+The automatic parent owns one private native runtime family across its baseline,
+stencil and iteration children. The family lives inside its owner run; the common
+execution alias supplies its short SIMION path. Nine read-only file handles stay
+open during the workflow. Each child builds its small IOB/companions and applies
+the complete voltage table in memory during flight. The IOB builder validates
+all eight finite voltage entries and reloads the saved IOB for geometry/priority
+checks; it does not perform an unused adjustment before the flight repeats it.
+Save the IOB before Fast Adjust: SIMION
+Workbench save can otherwise attempt to write dirty PAs even with exit code zero.
+The runner rejects the corresponding error log as a failed stage.
+The native flight callback submits the eight-channel voltage table only on its
+first call or when a value changes; a new Fly run resets this comparison. This
+keeps interactive voltage changes and the accelerator field gate active without
+resubmitting unchanged native voltages at every integration callback. Actual
+submissions report `MRTOF_NATIVE_FAST_ADJUST begin/complete`.
+The trial runner drains both solver output streams while running and flushes
+every line to the stage log. The console shows loading, adjustment, turn and
+terminal milestones, plus a 30-second heartbeat with elapsed time, CPU time and
+the latest important event. Routine trajectory records remain in the complete
+log; zero-exit solver error messages still fail the stage.
+Lua flushes output after actual adjustment milestones and each mirror-turn
+event group, using the [standard Lua interface](https://www.lua.org/manual/5.1/manual.html#pdf-io.flush)
+supported by [SIMION](https://simion.com/issue/486); it does not flush each integration step.
 
-仅在同一冻结几何身份的**新建、一次性 build staging** 内，可用
-[run_three_component_candidate.ps1](run_three_component_candidate.ps1)建立可审计的**无飞行**装配包。
-该入口冻结候选合同、镜L0/L1 receipt、两份**精确生成GEM**、两份已解PA0及其原始PA#、零电压探测器PA#和完整十一文件
-IOB seed bundle；它在host execution lease内装配并重载检查IOB。它不构建或发布PA-family缓存，
-也不调用`Fly`，因而只可发布`prototype_geometry_review_only`证据。任何中心粒子或N=100飞行必须由
-后续专用运行器从这个已检查的run-local包开始，先在构建期导出并校验 standalone operating PA，再由
-飞行入口重新绑定实际Fly2、原始日志和事件分析receipt；不得
-以此入口的success manifest声称传输、K=25或分辨率。
+Execution failure retains the family under a nonterminal parent checkpoint,
+records actual bytes through the existing capacity owner, and releases handles,
+alias and lease. The remaining allocation excludes the registered resident
+family. Recovery uses a new parent RunId and `-ResumeParentCheckpoint`; native
+seed bootstrap can recover before its first successful child. The original owner
+path remains protected, without another copy. Recovery checks bank identity,
+the two family-generating Lua scripts, SIMION binary and all nine member hashes
+under read-only guards. IOB code and voltage changes do not invalidate the family.
+Subsequent children in that active session do not repeat the payload hash scan.
+An identity mismatch preserves the payload and stops; it never silently rebuilds.
+After consumption finishes, the owner cleans the family before terminal retention.
+The Jacobian audit inherits the workflow capacity session. Published bank members
+are never runtime targets, and no hard links are used.
 
-在复制大型PA前，该入口通过`common/contracts/run_artifact_support.ps1`的
-`Invoke-ArtifactCapacityGate`以实际待复制的冻结输入字节数预留容量，并保护新run；终态再以启动测量和
-实际run目录大小复核同一水位。两份JSON receipt随run冻结。清理优先级、可删范围和缓存键保护仍只由
-`common/contracts/reconcile_artifact_capacity.py`定义；本入口不定义第二套项目级删除规则。
+The earlier five-cropped-region native experiment is not a valid production
+family: an individual crop can omit physical adjustable IDs.  The only new
+candidate is therefore one full-flight corridor family whose controller
+contains real local IDs 1..8.  `derive_native_corridor_plan` derives its
+preferred box from the resolved patch envelopes; the current candidate is
+`x=[-20,20] mm, y=[-147,463] mm, z=[-330,330] mm`.  The wider
+`x=[-29,29] mm` union is retained only as a probe/comparison profile.
 
-电压映射只由[candidate_voltage_map.lua](candidate_voltage_map.lua)提供：materializer将其冻结为
-`mrtof_candidate.voltage_map.lua`。上述无飞行几何审查入口只在新建 build staging 中让 IOB 构建器按
-operating-point sidecar 对两张 PA0 执行`fast_adjust → save`；不得把已发布 cache family 物化后送入该路径。
-活动飞行则加载已经导出的 standalone operating PA，并保持运行时 Fast Adjust 关闭。
-IOB同名的Program、operating-point与voltage-map三份Lua伴随文件必须一起保留。
-纯Lua回归已验证映射、调用顺序和伴随文件。重载检查器读取原始PA#的物理ID，为全部19个分析器和
-9个加速器电极各检查一个真实材料节点的已存PA0电势；过程中禁止重新Fast Adjust，以免掩盖保存错误。
-探测器检查所有节点严格零电势且存在材料，三个实例还须无旋转、scale=1。真实运行结果以本次报告为准。
+The family is exactly `mrtof_analyzer_corridor.pa#`, `pa0`, and `pa1..pa8`.
+`run_native_corridor_qualification.ps1` is the sole workflow orchestrator.  It asks the common
+PA-family transaction for its next action, emits the physical-ID GEM from the
+resolved geometry, remaps it to local IDs 1..8, and writes only the reported
+missing members through deterministic transaction scratch before atomic member
+placement.  The transaction owns the payload, scratch, inventory, parity,
+publication pointer, capacity-ledger handoff, and cleanup; the project runner
+does not delete or retain a second PA copy.
 
-八实例模板 `8_instance_seed.iob` 及其 `iob_seed_placeholder_*.pa0` 仅用于构建，不是可交付工作台；
-运行结束清理短路径或 placeholder 后，单独打开该 seed 必然不能恢复实际 PA。GUI 审查包必须由
-[run_analyzer_local_workbench.ps1](run_analyzer_local_workbench.ps1) 发布为
-`mrtof_complete_3d_candidate_gui_review.iob`，并在同一 `simion/` 目录保留语义明确的
-`iob_input_analyzer.pa`、五个 `iob_input_local_*.pa`、`iob_input_accelerator.pa` 和
-`iob_input_detector.pa`。既有 r14 的同等持久包沿用历史名 `mrtof_local_replacement.iob`；它是可加载的
-旧命名产物，不应与临时 seed 混淆。
+Physical geometry and the controller remain dependency-ordered serial steps.
+Each missing `pa1..pa8` response then uses its own deterministic scratch
+subdirectory and its own public `SIMION/dirichlet_response_refine` admission;
+all workers may queue together, while the repository host scheduler alone
+decides how many actually run.  A worker atomically moves only its completed
+member into the common transaction payload, so later retries reuse completed
+members and never rebuild the whole family after one sibling fails.
+
+The common transaction has only `building`, `prepared`, `published`, and
+`retired` states.  Every response member is normalized to the native SIMION
+Fast Adjust reference of `10000 V`; a `1 V` response file is not a valid native
+`.paN` member.  The runner first exercises two nonzero eight-electrode voltage
+tables, including close/reopen, on the exact private family.  It then creates
+the final persisted inventory, seals the members read-only, binds that inventory
+to the verification evidence, and atomically publishes the generation.  The
+family is deterministic and reconstructible from the frozen geometry and
+coarse response identity, so it uses the common `none_reconstructible` recovery
+policy rather than keeping an additional XOR payload.  Final inventory is the
+single full-byte publication read; publication itself checks exact names,
+lengths and sealed state without hashing the same multi-gigabyte files again.
+The published generation is pinned with reason `MR-TOF native adjustable
+analyzer PA family; rebuild only on frozen geometry identity change`.
+Repeating the same frozen identity automatically resumes partial building,
+verification, publication, or pointer/ledger completion.  One OS-exclusive
+per-key writer handle spans a cache-miss transaction and is released
+automatically if the process exits; a published cache hit does not acquire it.
+The project carries no second lifecycle metadata, random staging name, or
+manual recovery parameter.
+
+`build_native_corridor_iob.lua` uses the four-instance seed with the explicit
+priority contract `global_fallback → native_corridor → accelerator → detector`.
+The contract table is not treated as proof of GUI priority: after save/reopen,
+the builder probes real overlapping AABBs through `wb:find_at` for
+global∩corridor, corridor∩accelerator, and global∩detector.  SIMION 2020 has no
+documented writable `instance.priority` field in the supported Lua API; if no
+candidate field is exposed, the probe result is the authoritative check.
+The corridor receives the complete Fast Adjust table for IDs 1..8 in one
+operation; no per-crop scalar adjustment, PA save, or Refine is allowed.
+The old five-region handoff and fixed-operating executables have been atomically
+retired.  Historical evidence remains under `docs/history` and prior run records;
+no active entry point can select those paths.
+
+The runner consumes one frozen input directory containing the common-cache
+identity, derived plan, coarse-basis recipe, and freeze manifest.  On a cache
+hit it performs no GEM, basis, Refine, or PA copy.  On a miss it retains only a
+small SIMION verification log and ordinary run evidence; all reusable heavy
+bytes remain under the one common transaction/generation authority.
+
+The first corrected 10-kV-reference Candidate was published as cache key
+`C4F9B280FD7D748BF1AEBC528C038D76FA0E66A142F0D6246B1D7D6AED480BDE`,
+generation
+`6DD407E10A03E4B85BC5775A3351942D9E81CCE4C56D1E8915778942D88735F3`.
+Its 27-probe and two-voltage-table SIMION verification passed.  This establishes
+native-family construction and Fast Adjust semantics only; materialized IOB
+equivalence and flight qualification remain Candidate work.
+
+活动入口只使用 full-corridor native response bank。历史 pilot 组装器及其独立暂存路径已删除；原生
+family 由受据保护的 native runtime 在私有工作目录创建，已发布 generation 从不被 SIMION 原位写入。
+
+原生 response-bank 的唯一项目适配入口是
+[`simion_pa_family_cache.py`](../analysis/simion_pa_family_cache.py)。它只描述 MR 的
+`analyzer_corridor` 完整八通道 family；内容寻址、最终 inventory 和原子发布均由公共 PA
+transaction 执行。加速器不属于此缓存：运行时只消费 OA provider receipt。新的 IOB 只由
+`build_native_corridor_iob.lua` 从已封存的 global fallback、native corridor、provider accelerator
+和 detector 组成四实例系统，并在保存/重载时验证角色、位置、网格与重叠优先级。它不会保存、
+复制、Refine 或重新哈希已发布 PA。
+
+GUI 审查包由 native system runtime bundle 生成，并绑定上述四个冻结输入；不再发布局域五区或
+三组件工作台。
 
 单中心时间步三档对照由
 [single_center_timestep_convergence.py](../analysis/single_center_timestep_convergence.py) 及受管入口
@@ -165,34 +295,6 @@ IOB同名的Program、operating-point与voltage-map三份Lua伴随文件必须�
 分析器要求三个 success run 的几何、PA、电压、源、程序、脉冲和自然回程身份完全相同，只允许最大
 trajectory step 不同；它报告目标 K 返回、正镜回程转折和最终探测终态的完整相空间差值，不自行设置
 通过阈值。当前三档结果见项目状态页。
-
-重新加载检查是必需步骤。[inspect_three_component_iob.lua](inspect_three_component_iob.lua)
-的参数签名如下；A/B/C依次是分析器、加速器和探测器：
-
-```text
-IOB REPORT AX AY AZ BX BY BZ CX CY CZ ADX ADY ADZ BDX BDY BDZ CDX CDY CDZ
-```
-
-必须提供合同派生的9个原点坐标和`component_mesh_mm_per_gu`中的9个网格长度；
-不能只给原点或依赖检查器内部默认网格。负坐标前保留SIMION命令行所需的`--`分隔符。
-检查器核对三个PA basename、三维原点、实际网格并记录数组尺寸，输出
-`iob_structure_report.txt`，其中应有`STATUS=PASS`、`PHYSICAL_MODEL=false`和
-`PARTICLE_FLY_EXECUTED=false`，另要求`POSE_RELOAD=PASS`和`VOLTAGE_RELOAD=PASS`。
-逐电极抽查不表示所有场节点已验证；实例列表顺序也不等于已验证重叠区实际选择，后者仍需最小飞行。
-
-[three_component_simion_run_manifest.py](../analysis/three_component_simion_run_manifest.py)要求
-`--contract --run --iob --structure-report --output`，绑定geometry receipt、两份PA0及其完整basis、
-原始零电压探测器PA#、IOB、三份同名Lua伴随文件和结构报告；报告必须是明确的无飞行PASS。
-它发布的是`prototype_geometry_review_only`，不授予飞行、传输或分辨率资格。
-该receipt的`record_artifact`采用同目录局部文件名，故活动输出必须写入 IOB 所在的run-local `simion/`
-目录；写到`results/`的副本不能作为后续飞行receipt的工作台身份根。
-
-实际飞行完成且`simion_event_analysis.py`已对完整固定粒子集合返回完整性PASS后，
-[three_component_simion_flight_manifest.py](../analysis/three_component_simion_flight_manifest.py)才可把这份
-无飞行几何审查、冻结source manifest/source key、原生SIMION日志和事件分析receipt绑定为一份
-`candidate_prototype_flight_receipt`。该写入器逐字节检查IOB及三份伴随Lua、结构报告的
-`STATUS=PASS`／`PHYSICAL_MODEL=false`／`PARTICLE_FLY_EXECUTED=false`，并拒绝无效事件或任何来源漂移。
-它不复制、推断或发布TOF、传输、K=25比例或分辨率；这些数值仅保留在事件分析receipt中。
 
 ## 粒子来源与事件分析
 
@@ -210,10 +312,13 @@ materializer在schema3的`prototype_input_manifest.json`中为每份具名诊断
 |`first_prism_entry_center_fly2`|`mrtof_first_prism_entry_center.fly2`|两区焦面处的4-keV中心粒子；仅首棱镜有限三维射击诊断|
 |`full_mrtof_center_fly2`|由已审计P1/P2工作点按run局部生成|完整源→P1→负镜预反射→P2→P2后参考截面→正镜转折(`y=0`)→Stripe→静态自然回程→探测器；N=1/N>1均走同一完整三维事件链，仍不授予性能资格|
 
-当前首轮物种为524 Th／+1，中心源N=1、小束团N=100。全分析器小束团半径为0.1 mm；
-加速器焦点束团则把合同的`accelerator_focus_axial_full_width_mm=0.2 mm`均匀离散成100个
-确定的第一区轴向释放位置，每个位置各用一个`n=1` standard beam，避免SIMION随机圆盘分布掩盖轴向导数。
-这些数值只来自`particle_source`合同。
+当前首轮物种为524 Th／+1，中心源N=1、小束团N=100。加速器设计合同把可接受的加速轴
+`z`完整释放宽度冻结为`accelerator.design_source_acceptance.axial_full_width_mm=2.0 mm`，即当前6-mm
+第一区内以3-mm释放点为中心的`2..4 mm`。加速器焦点束团把该完整宽度均匀离散成100个确定释放位置，
+每个位置各用一个`n=1` standard beam，避免SIMION随机圆盘分布掩盖轴向导数。实际整机束团则由独立
+source-definition文件声明`x/y/z`、能量、角度、粒子数和共同出生时刻；改变这些源分布只重建粒子表和
+必要时的脉冲收据，不改变PA-family缓存。若理论重新选择加速器电压，只生成由响应基底线性组合的
+新operating PA缓存，也不重新Refine几何响应族。
 此前100 Th输入仍属独立回归/历史证据，不与新首轮束团混合统计。
 镜内两种源绕过加速器和P1/P2，仅保留为部件隔离诊断，不能用于整机传输、探测TOF或分辨率。
 加速器焦点两种源是静态电压下
@@ -247,35 +352,17 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 
 | 任务 | 受管入口 | 结果范围 |
 |---|---|---|
+| provider-owned N=100 两区组件飞行 | [run_accelerator_component_provider.ps1](run_accelerator_component_provider.ps1) | 只请求并消费 provider 的统一 receipt；不构成 P1/P2、整机返回或分辨率资格 |
 | N=1 或 N>1 完整飞行 | [run_two_prism_trial.ps1](run_two_prism_trial.ps1) | 四残差与 `P2 → 正镜 → z>0,v_z<0` 静态回程观测 |
-| 首棱镜隔离诊断 | [run_three_component_first_prism_flight.ps1](run_three_component_first_prism_flight.ps1) | 首棱镜接口 |
-| 静态第一时间焦点 | [run_accelerator_focus_flight.ps1](run_accelerator_focus_flight.ps1) | 独立加速器焦点，不是束团出口时钟 |
-| 完整中心源的加速器首出口 | [run_accelerator_exit_flight.ps1](run_accelerator_exit_flight.ps1) | 真实源至独立加速器 PA 负向出口，不是 P1/P2 或整机结果 |
 | N=100 冻结束团源发布 | [run_publish_bunch_source.ps1](../analysis/run_publish_bunch_source.ps1) | 只生成 CSV/Fly2/receipt，不运行 SIMION |
 | N=100 全局关断时钟冻结 | [run_freeze_bunch_pulse_schedule.ps1](../analysis/run_freeze_bunch_pulse_schedule.ps1) | 消费同源 static pilot 的完整安全出口队列，不运行 SIMION |
+| N>1 源 z—能量—末段时序诊断 | [run_source_z_energy_timing_diagnostic.ps1](../analysis/run_source_z_energy_timing_diagnostic.ps1) | 只读消费完整 success flight，不启动 SIMION；输出 compact Candidate 诊断 |
 
-局域工作台入口只复制或导出已求解 PA、线性合成 standalone 响应并装配检查 IOB，全程使用未列名的
-轻量 `prepare` 阶段；它既不 `refine` 也不飞行。静态第一时间焦点入口消费已发布 standalone 响应，
-通过公共合成和 operating PA cache 调压，已完成中心粒子实跑；物理验证范围见项目 PROJECT。
-不得使用已发布原生 PA-family 的私有副本执行 Fast Adjust。缺少 standalone 响应时，只能在新的独立
-构建 staging 中 Refine 并导出后发布，不能打开旧缓存补导出。准备与合成属轻量阶段；只有原生离子
-飞行切换到 `flight` 重阶段，子进程退出后再切回轻量 `postprocess` 做分析与证据发布。
-该入口显式接受 `GeometryReviewRunPath`、`AcceleratorFamilyRunPath`、`StandaloneComponentRunPath`
-和一个能量权威。当前整机链使用 `FixedMirrorStripeRunManifest`，同时绑定固定镜轴向能量和由 exact-K
-关系选出的近 5-eV 慢向能量；`SelectedNetGainCenterV` 只保留为组件诊断显式输入。首区压降缺省由
-理想二区时焦种子派生。生成源独立冻结，IOB 保存后再
-复制为工作台伴随 Fly2，并在飞行前核对源字节及 receipt 哈希，防止模板源覆写。
-
-加速器首出口入口以 `-CalibratedFocusRunPath <run>` 消费已验证焦点运行的三份 standalone PA、
-reviewed 几何、实际电压 trial、装配位姿及积分控制；不重新 Refine、调压或移动源。
-[accelerator_exit_simion_analysis.py](../analysis/accelerator_exit_simion_analysis.py)复用既有中心源生成与
-相空间重建，读取冻结合同的质量、电荷和加速前慢能，生成沿 `+y` 的 N=1 释放。独立
-[mrtof_accelerator_exit.lua](mrtof_accelerator_exit.lua)从实际 IOB 唯一识别加速器 PA，并核对源所在的
-实际实例；负 `z` 出口面从 PA 网格及坐标变换派生，不固定为某个实例号或手填坐标。
-分析同时核对实测出生状态、focus run 选定的慢向能量、唯一安全出口、终止顺序和原生 Fly 完成记录。下游只消费插值出口事件的
-完整位置、速度、时间及物种，不用 terminate 回调状态替代，也不向零初能焦点记录补慢向速度。
-该工作流保留可 GUI 重开的 IOB，但成功仅代表中心源至加速器出口；不证明时焦导数、P1/P2 输运、
-完整返回、束团时钟或质量分辨率。实际运行证据与限制只在 PROJECT 登记。
+源 z 诊断入口复用飞行 manifest、冻结源表、原生事件解析、公共容量和 retention 合同；单日志与按 receipt
+重编号的 batch 日志均须完整覆盖 `1..N`。安全出口时间和轴向动能统计使用全部冻结粒子；target-K、
+P2 前后、额外正镜转折和探测器的配对时序只使用具有完整事件链的全部探测命中。碰撞粒子继续进入终态
+计数和事件覆盖，不允许删尾、源筛选、峰筛选或把缺失下游事件补零。输出的斜率、相关、FWHM 和有符号
+增量贡献仅是描述性 Candidate 诊断，不构成因果归因、去趋势许可或分辨率资格。
 
 ## 事件与脉冲合同
 
@@ -318,13 +405,16 @@ ID 在日志合并时严格恢复为原全局 ID，结果标记为非 Formal 的
 固定时钟必须通过 `-AcceleratorPulseSchedulePath` 消费冻结收据，在共同 `tob=0` 的 `ion_time_of_flight`
 上关闭 standalone 加速器实例的电场；`tstep_adjust` 落到计划边界，事件记录实际与计划时刻。电极实体与
 碰撞几何始终由同一 PA 保留。禁止用裸时间参数替代身份收据。
-`run_freeze_accelerator_pulse_schedule.ps1`目前仅能冻结
-成功 N=1 首出口为 `single_center_diagnostic__not_a_bunch_schedule`。它不提供完整束团的最后安全出口与 guard。
 [bunch_source_and_schedule.py](../analysis/bunch_source_and_schedule.py)提供求解器无关的确定性母束团前缀、
 逐粒子唯一 `accelerator_safe_exit` 检查、`max(exit)+guard` 推导和 N 粒子共同关断事件校验。
-[candidate_bunch_source_n100.json](../config/candidate_bunch_source_n100.json)冻结首个 Candidate 小展宽：
-位置半径 `0.1 mm`、加速轴全宽 `0.2 mm`、`5.0 eV` 中心及 `0.1 eV` 全宽、角度 `0.2 deg`
-全宽、`524 Th/+1`、共同 `tob=0`；中心数值必须与同一冻结几何合同自然派生的第一区 release 点一致。
+[candidate_bunch_source_n100.json](../config/candidate_bunch_source_n100.json)冻结当前 Candidate 束团：
+位置半径 `0.1 mm`、加速轴全宽 `2.0 mm`、由固定镜/Stripe exact-K handoff 选择的
+`4.961131692 eV` 慢能中心及 `0.1 eV` 全宽、角度 `0.2 deg`；源中心相对加速器机械轴的
+`y=-1.710934847 mm` 偏移来自真实出口慢向速度割线和独立出口验证。该源定义及其展宽与 PA/cache
+身份完全解耦，改变粒子分布不触发 Refine。
+全宽、`524 Th/+1`、共同 `tob=0`。schema-3 源定义不保存绝对释放坐标或几何哈希；它声明
+`resolved_accelerator_release_position`和相对偏移，发布入口从本次冻结几何解析绝对中心并写入运行收据。
+源定义及其采样状态不参与PA-family或operating-PA缓存身份。
 [run_publish_bunch_source.ps1](../analysis/run_publish_bunch_source.ps1)把完整定义和几何合同复制为 run-local
 输入并发布 N=100 CSV、逐粒子 Fly2 与 receipt，全程不运行 SIMION。该源已由唯一完整飞行入口通过公共
 资源调度器执行 static pilot：100/100 粒子安全出射并达到目标 `K=25.5`，88/100 命中检测器，12 粒子发生
@@ -342,92 +432,20 @@ mirror-cycle-counter 伴随文件；实际源必须与冻结 Fly2 字节一致�
 ## 数值执行边界
 
 积分设置只由候选合同的 `trajectory_profiles` 派生；入口选择 ID，不接受游离时间步。
-`run_accelerator_focus_flight.ps1 -ExactKRunManifest <manifest> -TrajectoryProfileId <id>` 从已验证的
-Stripe-on exact-K 收据自动读取轴向净增益，并从本次冻结 baseline 解析已有积分档位；省略档位时使用
-其 `default_trajectory_profile_id`。`-SelectedNetGainCenterV` 仅保留给明确的部件诊断，和 exact-K manifest
-严格互斥。实际净增益及其来源、quality、最大步长、档位和来源 SHA 写入 operating-point receipt 及
-run config；只改变积分控制，不改变 PA 几何或位姿。
-同一入口的 `-FocusCalibrationRunPath <run>` 消费已验证的完整焦点诊断 run，用器件理论的固定净增益
-解析灵敏度生成一次首区压降建议；与 `-FirstGapDropV` 互斥。上游分析、trial、manifest 和理论源码随
-本次输入冻结，粒子表必须保持相同；建议仍需本次真实飞行验证，不是已接受电压或严格局部焦点结论。
-`center_screening` 用于中心筛查，更细 profile 用于同一物理点的步长敏感性，不能替代 PA 网格收敛。
-静态飞行读取已保存的 standalone operating PA，默认 `runtime_fast_adjust_enable=0`；电压化在飞行前完成，
-不能在每个积分段重算完整 basis。加速器脉冲也只绑定这一份 standalone operating PA：通电阶段保留其原场，
-关断后由 `efield_adjust` 在加速器实例内把场三分量置零，同时保留同一 PA 的电极实体与碰撞几何；运行时不再
-物化、打开或 Fast Adjust 加速器 `.pa#/.pa0/.paN` family。
-
-[analyzer_local_refinement_plan.py](../analysis/analyzer_local_refinement_plan.py)及
-[analyzer_local_patch_geometry.py](../analysis/analyzer_local_patch_geometry.py)从同一 resolved 几何派生局域计划与 GEM。
-全局 1-mm 分析器作为远场回退，五个 0.5-mm 局域替代按合同重叠责任区接管；独立加速器和探测器保持各自 PA。
-局域场替换全局场，不是两个零边界场相加。每区保留镜 B--E、S1/S2、P1/P2 八组响应与实测 basis 归一化，
-六面边界从同源全局响应插值。正负局域场分别构建，不能因机械镜对称复用受离轴棱镜影响的场。
-
-[run_analyzer_local_pa_family.ps1](run_analyzer_local_pa_family.ps1)调用公共缓存与 Dirichlet 原语。
-入口不再直接消费 reviewed run 中的原生 `.paN`。先由
-[run_prepare_reviewed_analyzer_source.ps1](run_prepare_reviewed_analyzer_source.ps1)一次性验证 22 件原生 family，
-把实际需要的 14 个物理电极响应导出为 standalone `.responseN.pa`；原始 `.pa#` 作为独立、同源绑定的
-只读 generation 发布。局域 family 缺失时仅从这 15 件冻结输入建立带活跃只读句柄的短路径副本，发布前和
-清理前都复核实际被 SIMION 消费的副本；命中时不复制、不租用 SIMION、也不 Refine。
-
-[run_analyzer_local_family_batch.ps1](run_analyzer_local_family_batch.ps1)用于同一批五区：先只根据 receipt 元数据
-派生全部 cache key；缺失区共享同一批 15 件受保护输入副本，任一复制中途失败由创建函数立即清理此前副本。
-每个局域 generation 只在其子 runner 中完整哈希一次，batch 预计划不再重复读取多 GB 命中 payload；各区仍按
-自身几何分别 Refine，已命中区直接复用。容量门禁在清理前同时保护 reviewed standalone、raw geometry 和本批
-全部局域 cache key。几何 provider 的 manifest 由 prepared receipt 的冻结哈希绑定，子 runner 只复核实际消费的
-resolved contract、GEM 与 geometry review，不再为未消费的 14.7 GB 原生 family 重复全量哈希。
-`instance_adjust` 只在合同从重叠区导出的半开责任区内接管；portal 真空穿越、非 portal 不穿越、电势/法向场、
-事件拓扑和固定粒子轨迹必须分别验证。当前中心接口证据不能替代束团包络或第三档网格，每档须重新求中心根。
-
-[run_mirror_real_field_voltage_family.ps1](run_mirror_real_field_voltage_family.ps1)只服务制造镜 B--E 的真实场
-L0 电压族。首次模式显式传入一个成功的局域工作台，用 SIMION 从五个 `0.5 mm` family 的四组 standalone
-镜响应采样同一轴线；后续模式显式传入成功的 response-basis run，验证其 manifest、输出哈希、网格和
-cache generation 后直接复用 CSV，不再打开 PA 或调用 SIMION。两种模式都从 baseline 的
-`real_3d_l0_voltage_family_profile` 读取采样间距、`y` 截面、E 切片数和求解数值参数，run-local 冻结该
-baseline；runner 不提供同义数值 CLI。输出资格固定为轴向 `0.5 mm` surrogate，只能生成 L0 一维族，
-不能替代真实轨迹的稳定性、`gamma`、`Tbar_xx`、峰值场或最终 `0.25 mm` 固定点复核。
-
-`analyzer_local_z_compression_plan.py`是只读规划器：
-
-```powershell
-python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_local_z_compression_plan `
-  --contract projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json `
-  --scale-factor 0.5
-```
-
-它不调用 SIMION，不修改 PA/IOB。A 保留五责任区并收紧，B 收紧后合并三区，C 只合并不新增切面；
-B/C 需要新的三局域实例合同。名义轴线真空不等于整面真空，现有实体见证尚未消除，`build_authorized=false`。
-容量估算不授权构建；各向异性网格也须按区域敏感性验证，不能绕过失败接口。
+原生 corridor response-bank 是分析器的唯一可调场输入。它与冻结的加速器和探测器 PA 由系统运行时 bundle
+一起验证和投影；电压调整只复用已发布响应，不重新构建局域分区或合成五份 operating PA。
 
 ## 缓存、短路径与发布
 
-PA-family 与 working-point 缓存分开。`local_operating_pa_cache.py`
-把五个 standalone operating PA 接入公共缓存，身份绑定基准场、响应、实测归一化、完整四电压及公共合成实现。
-命中只物化私有可写 standalone PA；缺失按区流式合成后发布，每区临时响应副本在输出哈希后删除。
-IOB、Fly2 和运行配置每 run 重新装配；相同文件名不构成缓存命中。
+原生 corridor response-bank 是唯一的工作点场缓存；私有 runtime family 仅从其已封存响应装配，
+不再合成或发布五区 standalone operating PA。
 
-需要让同一电压态的多个粒子 cohort 共享局域场时，先运行
-`run_local_operating_pa_prewarm.ps1`，显式给出一个已验证的局域工作台及完整
-`[S1,S2,P1,P2]`。入口在命中时不合成；缺失时通过现有五个 composition lane 只生成一组标准命名 PA，
-原子发布并再次验证为 exact hit。该 run 仅发布执行缓存，不运行离子、不产生物理资格；后续 flight 仍以
-同一局域工作台和逐位相同的四电压调用 `run_two_prism_trial.ps1`。
-
-完整 Stripe 回程灵敏度诊断由
-`analysis/run_stripe_return_sensitivity_campaign.ps1` 统一编排：它冻结 r26--r29、显式电压扰动和成员
-run-id 前缀，先为四个非基线状态各调用一次上述 prewarm，再逐条执行分析计划中的八个 cohort flight，
-最后调用同一 `stripe_return_sensitivity.py` 分析器。基线 ion 1/97/98 直接复用 r27，不重复飞行；campaign
-不设置并发数或第二套资源策略，每个子入口继续服从仓库公共调度器。
-`-ReuseSuccessfulChildren` 只用于恢复已终止的 campaign：它仍逐项验证既有 prewarm/member 的完整
-success manifest，并额外核对 prewarm 的四电压向量和局域工作台身份；未通过时失败关闭，不能用来绕过
-子运行。首个完整发布为 `20260916_070000__analysis__python__stripe-return-sens-d0p25-r2`，复用了同前缀下
-4 个已验证 prewarm 和 8 个已验证成员飞行。其三粒子 `delta=0.25 V` 导数不能代表全束团：后续
-`20260916_073000__sim__simion__mrtof-stripe-s1-plus-d0p25-n100-r30` 在 100/100 达到目标 K 的同时只有
-56/100 命中、44/100 碰撞；其中 36 个为 P2 孔唇，另 8 个已进入中央/Stripe 邻域的不同碰撞支路，
-明确否定将该抽样方向提升为工作点。
-
-只读、硬链接以及完整复制后的 family 都不是 SIMION family 写入的隔离边界。长路径输入通过
-[公共 short_pa_path_support.ps1](../../../common/simion/short_pa_path_support.ps1)生成经过验证、可写、可丢弃且
-无 `.paN` family 语义的短路径副本。原生 family 操作仅允许在新建 family 的一次性 build staging 中发生；
-已发布 cache 及其物化副本中的 `.paN` 均不得由 SIMION 打开。构建/飞行后仍 probe 完整源 generation。
+只读、Junction、硬链接以及完整复制后的 family 都不是 SIMION family 写入的隔离边界。长路径输入通过
+[公共 short_pa_path_support.ps1](../../../common/simion/short_pa_path_support.ps1)生成 manifest-bound、可丢弃且
+无 `.paN` family 语义的独立短路径副本。原生 family 操作仅允许在新建 family 的一次性 build staging 中发生；
+已发布 cache 及其物化副本中的 `.paN` 均不得由 SIMION 打开。interface/portal convergence 也只逐项复制
+standalone response 与中性名 raw mask，绝不把 generation 路径或目录别名交给 SIMION。每次复制都携带 manifest
+的 `bytes/sha256`；Windows 大 PA 以 `/J` 私有目标核验，普通缓冲源哈希只作诊断，不作为持久字节权威。
 同 key 重建后从 `current_generation.json` 解析当前 generation，不修改旧 run 收据，也不依赖其失效的物理目录。
 
 容量预检和终态门禁保护所有使用中的 generation 与 cache key，清理规则只由公共层维护；见
@@ -468,45 +486,11 @@ Each planned batch is one contiguous global particle-ID interval and keeps the
 source's common `tob=0`.  SIMION sees local IDs `1..n`; merge uses only the
 planner's `simion_particle_id_offset`, rejects incomplete/overlapping coverage,
 retains every non-completion line, and emits exactly one global Fly-completion
-sentinel before the ordinary cohort analysis.  Parallel workers receive private
-short-path standalone PA copies and private IOBs.  These copies reuse the one
-already-composed operating field; no batch performs PA composition or Refine.
-The first local-replacement batch assembles the eight-instance IOB once; later
-batches copy that exact IOB and its invariant Lua companions into bundles that
-still contain eight independent writable PA copies and one batch-specific Fly2.
-Before flight, one relocated clone is reloaded while the template directory is
-hidden, and the run receipt binds instance basenames/poses, companion hashes,
-distinct Fly2 hashes, and every private PA hash before and after flight.
-Before initial materialization and again after a formal-first replan, the
-capacity gate reserves the total byte size of every planned private PA set.
-The run manifest binds the source run manifest, scheduler request/profile/plan,
-particle batch plan, resource usage, merge receipt, and retained raw logs.
-
-### Fixed-grid mirror handoff to Stripe theory
-
-`run_mirror_turn_fixed_grid_validation.ps1` consumes the reviewed analyzer GEM from the geometry
-evidence run and the detached standalone source generation from the prepared-source run.  It does
-not bind or reuse the mutable PA family from the geometry evidence run.  Fixed 0.25-mm operating
-PA cache hits are materialized from the exact pinned generation recorded by the probe/publish
-receipt; a later generation with the same logical key cannot silently replace it.  Snapshot-only
-upstream run directories are not protected as multi-GB cache roots after their required evidence
-has been copied into the run package.
-
-The current successful mirror handoff is
-`20260917_223000__sim__simion__mrtof-measured-chord-root-fixed-grid-r130`.  Its native period and L1
-evidence can be consumed without rebuilding PA files:
-
-```powershell
-pwsh -NoProfile -File projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_dual_stripe_operating_seed.ps1 `
-  -FixedGridRunManifest <r130-run-manifest>
-```
-
-This mode verifies the complete fixed-grid manifest, selected-energy voltage envelope, all three
-period-slope gates, both native stability maps, and the `0.01 deg` gamma gate.  It derives W from
-the average of the two native full periods and applies the native CAD-curve spatial-return inverse
-to obtain S1/S2.  The nominal 5-eV slow-axis source energy is adjustable by the upstream
-multipole/source transport: with the qualified mirror fixed, the analytic `T_D/T_0=K` relation
-selects the nearby slow-energy centre, and the spatial-return/turning-energy inverse then selects
-both Stripe biases.  The active r3 handoff gives `4.96113169188 eV`,
-`v1=-25.22321875 V`, `v2=+50.18222993 V`, and analytic `K=25.5` without changing B--E.
-It does not alter geometry, qualify P1/P2, or publish an exact-K three-dimensional operating point.
+sentinel before the ordinary cohort analysis.  Each batch receives a private native runtime bundle and a private IOB with the
+same four roles: global fallback, native corridor, provider accelerator and
+detector.  It reuses the sealed response bank through the runtime family; no
+batch performs PA composition or Refine.  The receipt binds the four role
+identities, poses, program companions and batch-specific Fly2.  Capacity is
+reserved once for the protected runtime family rather than once per worker
+copy.  The run manifest binds the source manifest, scheduler request/profile/
+plan, particle-batch plan, resource usage, merge receipt and retained raw logs.

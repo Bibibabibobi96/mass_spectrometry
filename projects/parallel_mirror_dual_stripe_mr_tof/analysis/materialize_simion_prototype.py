@@ -178,13 +178,16 @@ def accelerator_focus_fly2(
     axial_full_width_mm: float,
     *,
     placement_contract: dict[str, Any] | None = None,
+    slow_energy_per_charge_v: float = 0.0,
+    source_y_offset_mm: float = 0.0,
 ) -> str:
-    """Render a zero-KE release inside zone 1 for the separate focus diagnostic.
+    """Render an axial release interval for accelerator focus validation.
 
     This is deliberately distinct from the 4-keV post-accelerator MR injection
     source.  The analytical two-zone model defines the release plane by its
     distance from the repeller and its potential energy supplies the nominal
-    extraction energy at the zero-volt exit grid.
+    extraction energy at the zero-volt exit grid.  A separately declared slow
+    +y component may be included without changing any PA/cache identity.
     """
     accelerator = contract.get("accelerator")
     if not isinstance(accelerator, dict):
@@ -199,14 +202,22 @@ def accelerator_focus_fly2(
     count = particle_source.get(particle_count_key)
     species = particle_source.get("species")
     width = _finite_number(axial_full_width_mm, "accelerator focus axial full width")
+    slow_energy = _finite_number(slow_energy_per_charge_v, "accelerator focus slow energy")
+    y_offset = _finite_number(source_y_offset_mm, "accelerator focus source y offset")
     if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
         raise CandidateContractError("accelerator focus particle count must be a positive integer")
     if not isinstance(species, dict):
         raise CandidateContractError("accelerator focus source requires a species contract")
     mass = _finite_number(species.get("mass_th"), "particle_source.species.mass_th")
     charge = _finite_number(species.get("charge_e"), "particle_source.species.charge_e")
-    if mass <= 0.0 or charge == 0.0 or width < 0.0:
+    if mass <= 0.0 or charge == 0.0 or width < 0.0 or slow_energy < 0.0:
         raise CandidateContractError("accelerator focus species and axial width are invalid")
+    aperture_half_y = _finite_number(
+        accelerator.get("aperture_height_y_mm"),
+        "accelerator.aperture_height_y_mm",
+    ) / 2.0
+    if abs(y_offset) >= aperture_half_y:
+        raise CandidateContractError("accelerator focus source y offset must remain inside the aperture")
     if count == 1:
         offsets = [0.0]
     else:
@@ -221,11 +232,10 @@ def accelerator_focus_fly2(
             "mass": f"{mass:.17g}",
             "charge": f"{charge:.17g}",
             "x": "0",
-            "y": f"{placement.focus_y_mm:.17g}",
+            "y": f"{placement.focus_y_mm + y_offset:.17g}",
             "z": f"{placement.repeller_z_mm - release - offset:.17g}",
-            "ke": "0",
-            "az": "0",
-            "el": "-90",
+            "ke": f"{slow_energy * abs(charge):.17g}",
+            "direction": ["0", "1", "0"] if slow_energy > 0.0 else ["0", "0", "-1"],
             "cwf": "1",
             "color": "0",
         }
@@ -355,9 +365,12 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
     diagnostic_bunch_fly2 = _particle_fly2(
         particle_source, mirror_diagnostic, "candidate_bunch_particle_count", bunch_radius,
     )
+    accelerator_acceptance = accelerator.get("design_source_acceptance")
+    if not isinstance(accelerator_acceptance, dict):
+        raise CandidateContractError("accelerator.design_source_acceptance must be an object")
     accelerator_focus_width = _finite_number(
-        particle_source.get("accelerator_focus_axial_full_width_mm"),
-        "particle_source.accelerator_focus_axial_full_width_mm",
+        accelerator_acceptance.get("axial_full_width_mm"),
+        "accelerator.design_source_acceptance.axial_full_width_mm",
     )
     accelerator_focus_center_fly2 = accelerator_focus_fly2(
         contract, particle_source, "center_particle_count", 0.0,

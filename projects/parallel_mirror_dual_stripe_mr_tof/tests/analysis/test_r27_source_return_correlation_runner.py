@@ -21,7 +21,12 @@ class R27SourceReturnCorrelationRunnerTests(unittest.TestCase):
             "verify_run_manifest.py",
             "--require-mode finite_3d_two_prism_voltage_trial",
             "Copy-VerifiedRunInput",
-            "Invoke-ArtifactCapacityGate",
+            "-CapacityLedgerLifecycleEnabled",
+            "Enter-ArtifactWorkflowCapacitySession",
+            "Update-ArtifactWorkflowCapacitySession",
+            "Exit-ArtifactWorkflowCapacitySession",
+            "-CommittedNewBytes 4194304",
+            "-RemainingCommittedNewBytes 0",
             "Apply-RunArtifactRetention",
             "Write-VerifiedRunManifest",
             "r27_source_return_correlation",
@@ -34,6 +39,17 @@ class R27SourceReturnCorrelationRunnerTests(unittest.TestCase):
             self.assertIn(token, source)
         self.assertNotIn("SIMION.exe", source)
         self.assertNotIn("refine", source.lower())
+
+    def test_capacity_has_no_legacy_fast_path_or_budget_fields(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        for forbidden in (
+            "Invoke-ArtifactCapacityGate",
+            "CapacityKnownMeasuredBytes",
+            "RequiredHeadroomBytes",
+            "KnownMeasuredBytes",
+            "MaximumNewArtifactBytes",
+        ):
+            self.assertNotIn(forbidden, source)
 
     def test_runner_has_valid_powershell_syntax(self) -> None:
         command = (

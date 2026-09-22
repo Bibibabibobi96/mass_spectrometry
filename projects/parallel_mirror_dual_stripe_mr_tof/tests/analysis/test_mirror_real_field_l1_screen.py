@@ -6,6 +6,7 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -90,8 +91,31 @@ class ResponseBasisTests(unittest.TestCase):
         self.assertEqual(peak["electrode_nodes_excluded"], 1)
         self.assertLess(peak["magnitude_v_per_mm"], 1.0e5)
 
+    def test_electrode_rejection_reports_query_and_sampled_node(self) -> None:
+        field = CombinedField(harmonic_basis(electrode_peak=True), (1.0, 0.0, 0.0, 0.0))
+        with self.assertRaisesRegex(
+            RealFieldL1Error,
+            r"query_x_mm=4.*query_z_mm=18.*nearest_x_mm=4.*nearest_z_mm=18.*grid_index=\(32,144\)",
+        ):
+            field.sample(4.0, 18.0, reject_electrode=True)
+
 
 class TrajectoryTests(unittest.TestCase):
+    def test_l1_probe_reports_failed_probe_identity(self) -> None:
+        field = CombinedField(harmonic_basis(), (1.0, 0.0, 0.0, 0.0))
+        with patch(
+            "projects.parallel_mirror_dual_stripe_mr_tof.analysis."
+            "mirror_real_field_l1_screen.trace_two_mirror_cycle",
+            side_effect=RealFieldL1Error("fixture collision"),
+        ), self.assertRaisesRegex(
+            RealFieldL1Error,
+            r"probe=center, energy_per_charge_v=1, launch_direction_z=-1; fixture collision",
+        ):
+            l1_probe_at_energy(
+                field, energy_per_charge_v=1.0, launch_direction=-1,
+                position_probe_mm=0.01, angle_probe_rad=0.001, trace_controls=TRACE,
+            )
+
     def test_harmonic_field_has_ninety_degree_stable_map(self) -> None:
         field = CombinedField(harmonic_basis(), (1.0, 0.0, 0.0, 0.0))
         result = l1_probe_at_energy(

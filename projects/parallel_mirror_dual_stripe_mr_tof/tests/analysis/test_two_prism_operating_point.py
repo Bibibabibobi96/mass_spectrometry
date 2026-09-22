@@ -15,6 +15,30 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_po
 
 
 class TwoPrismOperatingPointTest(unittest.TestCase):
+    def test_runner_uses_one_capacity_session(self) -> None:
+        runner = (
+            Path(__file__).resolve().parents[2]
+            / "analysis"
+            / "run_two_prism_operating_point.ps1"
+        )
+        source = runner.read_text(encoding="utf-8-sig")
+        for token in (
+            "-CapacityLedgerLifecycleEnabled",
+            "Enter-ArtifactWorkflowCapacitySession",
+            "Update-ArtifactWorkflowCapacitySession",
+            "Exit-ArtifactWorkflowCapacitySession",
+            "-CommittedNewBytes 2097152",
+            "-RemainingCommittedNewBytes 0",
+        ):
+            self.assertIn(token, source)
+        for forbidden in (
+            "Invoke-ArtifactCapacityGate",
+            "RequiredHeadroomBytes",
+            "KnownMeasuredBytes",
+            "MaximumNewArtifactBytes",
+        ):
+            self.assertNotIn(forbidden, source)
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)

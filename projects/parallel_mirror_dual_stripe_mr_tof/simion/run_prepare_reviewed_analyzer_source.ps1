@@ -5,9 +5,7 @@ param(
   [string]$ControllerPa0='',
   [string]$RunId='',
   [string]$SimionExe='',
-  [string]$PythonExe='',
-  [Nullable[double]]$CapacityTargetGiB=$null,
-  [Nullable[long]]$CapacityKnownMeasuredBytes=$null
+  [string]$PythonExe=''
 )
 
 Set-StrictMode -Version Latest
@@ -59,18 +57,23 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -RunId $RunId -Project $projectId -Mode 'reviewed_analyzer_source_prepare' `
   -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled `
   -RetentionClass solver_review `
-  -RetentionReason 'Freeze reviewed analyzer-source cache identities and detached physical response evidence.'
+  -RetentionReason 'Freeze reviewed analyzer-source cache identities and detached physical response evidence.' `
+  -CapacityLedgerLifecycleEnabled
 $inputDir=$package.input_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir
 $runConfig=$package.run_config;$summary=$package.summary
 $cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
 $adapter=Join-Path $projectRoot 'analysis\reviewed_analyzer_source_cache.py'
 $exporter=Join-Path $repoRoot 'common\simion\export_fast_adjusted_standalone_pa.lua'
-$lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight'
+$lease=$null;$capacitySession=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight'
 $nativeStaging=$null;$preparedOutputs=$null;$frozenPreparedOutputs=$null;$stageReceiptPath=$null
 $inspectionPath=$null;$receiptPath=$null;$capacityStartupPath=$null
 $retentionReceiptPath=Join-Path (Split-Path -Parent $runConfig) 'retention_actions.json'
 
 try {
+  $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot $artifactRoot -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 `
+    -ProtectedPaths @($provider,$reviewed,(Split-Path -Parent $controller)) `
+    -Owner "mrtof-reviewed-analyzer-source:$RunId"
   $frozenAdapter=Copy-VerifiedRunInput -Source $adapter -Destination (Join-Path $inputDir 'reviewed_analyzer_source_cache.py')
   $frozenExporter=Copy-VerifiedRunInput -Source $exporter -Destination (Join-Path $inputDir 'export_fast_adjusted_standalone_pa.lua')
   $frozenProviderManifest=Copy-VerifiedRunInput -Source (Join-Path $provider 'run_manifest.json') -Destination (Join-Path $inputDir 'provider_run_manifest.json')
@@ -96,20 +99,29 @@ try {
   [int64]$sourceBytes=[int64](@($inspection.source_inventory)|Measure-Object -Property bytes -Sum).Sum
   [int64]$rawBytes=[int64]$inspection.evidence.provider.analyzer_raw_pa.bytes
   [int64]$responseBytes=14*[int64]$inspection.evidence.provider.basis_arrays.'2'.bytes
-  [int64]$requiredBytes=if($cacheHit){0}elseif($rawOnlyRepair){2*$rawBytes+1GB}else{$sourceBytes+2*$rawBytes+3*$responseBytes+1GB}
+  [int64]$preparedMigrationBytes=if(
+    $preparedDisposition-eq'hit' -and [int]$inspection.cache_probe.prepared.schema_version-eq1
+  ){
+    2*[int64]$inspection.cache_probe.prepared.payload_bytes+
+      [int64]$inspection.cache_probe.prepared.migration_parity_bytes
+  }else{0}
+  [int64]$rawMigrationBytes=if(
+    $rawDisposition-eq'hit' -and [int]$inspection.cache_probe.raw.schema_version-eq1
+  ){
+    2*[int64]$inspection.cache_probe.raw.payload_bytes+
+      [int64]$inspection.cache_probe.raw.migration_parity_bytes
+  }else{0}
+  [int64]$requiredBytes=if($cacheHit){
+    $preparedMigrationBytes+$rawMigrationBytes
+  }elseif($rawOnlyRepair){
+    $preparedMigrationBytes+2*$rawBytes+1GB
+  }else{$sourceBytes+2*$rawBytes+3*$responseBytes+1GB}
   $protectedCacheKeys=@([string]$inspection.prepared_cache_key,[string]$inspection.raw_cache_key)
   $failureStage='capacity_startup'
-  $capacityStartupParameters=@{
-    Python=$python;RepoRoot=$repoRoot;ArtifactRoot=$artifactRoot
-    RequiredHeadroomBytes=$requiredBytes
-    ProtectedPaths=@($package.artifact_run_dir,$provider,$reviewed,(Split-Path -Parent $controller))
-    ProtectedCacheKeys=$protectedCacheKeys;TargetGiB=$CapacityTargetGiB
-  }
-  if($null-ne$CapacityKnownMeasuredBytes){
-    $capacityStartupParameters.KnownMeasuredBytes=[int64]$CapacityKnownMeasuredBytes
-    $capacityStartupParameters.MaximumNewArtifactBytes=[int64]0
-  }
-  $capacityStartup=Invoke-ArtifactCapacityGate @capacityStartupParameters
+  $capacityStartup=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -ProtectedCacheKeys $protectedCacheKeys `
+    -RemainingCommittedNewBytes $requiredBytes
+  $capacitySession=$capacityStartup.session
   $capacityStartupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $capacityStartupPath -Depth 20 -Value $capacityStartup
 
@@ -193,22 +205,9 @@ try {
   $failureStage='retention'
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal'
-  [int64]$runBytes=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
-  [int64]$publishedCacheBytes=0
-  foreach($generation in @($receipt.prepared_standalone_generation,$receipt.raw_geometry_generation)){
-    if([string]$generation.disposition-eq'published'){
-      $generationDirectory=[IO.Path]::GetFullPath([string]$generation.generation_directory)
-      $manifestPath=Join-Path $generationDirectory 'cache_manifest.json'
-      $pointerPath=Join-Path (Split-Path -Parent (Split-Path -Parent $generationDirectory)) 'current_generation.json'
-      $publishedCacheBytes+=[int64](@($generation.inventory)|Measure-Object -Property bytes -Sum).Sum
-      $publishedCacheBytes+=[int64](Get-Item -LiteralPath $manifestPath).Length
-      $publishedCacheBytes+=[int64](Get-Item -LiteralPath $pointerPath).Length
-    }
-  }
-  $capacityTerminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-    -ProtectedPaths @($package.artifact_run_dir,$provider,$reviewed,(Split-Path -Parent $controller)) -ProtectedCacheKeys $protectedCacheKeys `
-    -KnownMeasuredBytes ([int64]$capacityStartup.measured_after_bytes) -MaximumNewArtifactBytes ($runBytes+$publishedCacheBytes) `
-    -TargetGiB $CapacityTargetGiB
+  $capacityTerminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -ProtectedCacheKeys $protectedCacheKeys -RemainingCommittedNewBytes 0
+  $capacitySession=$capacityTerminal.session
   $capacityTerminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $capacityTerminalPath -Depth 20 -Value $capacityTerminal
   $outputs=@($summary,$inspectionPath,$receiptPath,$capacityStartupPath,$capacityTerminalPath,$retention)
@@ -243,15 +242,19 @@ try {
   }
   throw $failure
 } finally {
-  if($null-ne$preparedOutputs -and(Test-Path -LiteralPath $preparedOutputs -PathType Container)){
-    Remove-GateTemporaryDirectory -Path $preparedOutputs -ExpectedNamePrefix 'mrtof_reviewed_analyzer_prepared_'
+  try{
+    if($null-ne$preparedOutputs -and(Test-Path -LiteralPath $preparedOutputs -PathType Container)){
+      Remove-GateTemporaryDirectory -Path $preparedOutputs -ExpectedNamePrefix 'mrtof_reviewed_analyzer_prepared_'
+    }
+    if($null-ne$frozenPreparedOutputs -and(Test-Path -LiteralPath $frozenPreparedOutputs -PathType Container)){
+      Remove-GateTemporaryDirectory -Path $frozenPreparedOutputs -ExpectedNamePrefix 'mrtof_reviewed_analyzer_frozen_'
+    }
+    if($null-ne$nativeStaging -and(Test-Path -LiteralPath $nativeStaging -PathType Container)){
+      Remove-GateTemporaryDirectory -Path $nativeStaging -ExpectedNamePrefix 'mrtof_reviewed_analyzer_native_'
+    }
+    if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome $hostOutcome -RunId $RunId}
+    Remove-RunPackageExecutionAlias -Package $package
+  }finally{
+    if($null-ne$capacitySession){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession}
   }
-  if($null-ne$frozenPreparedOutputs -and(Test-Path -LiteralPath $frozenPreparedOutputs -PathType Container)){
-    Remove-GateTemporaryDirectory -Path $frozenPreparedOutputs -ExpectedNamePrefix 'mrtof_reviewed_analyzer_frozen_'
-  }
-  if($null-ne$nativeStaging -and(Test-Path -LiteralPath $nativeStaging -PathType Container)){
-    Remove-GateTemporaryDirectory -Path $nativeStaging -ExpectedNamePrefix 'mrtof_reviewed_analyzer_native_'
-  }
-  if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome $hostOutcome -RunId $RunId}
-  Remove-RunPackageExecutionAlias -Package $package
 }

@@ -17,6 +17,7 @@ from common.simion.cache_generation import copy_verified_file
 from common.simion.native_fast_adjust_operating_pa_cache import (
     build_native_operating_pa_export_plan,
     canonical_native_operating_pa_cache_key,
+    migrate_native_operating_pa_cache,
     native_operating_pa_group_identity,
     native_operating_pa_member_identity,
     publish_native_operating_pa_cache,
@@ -26,8 +27,10 @@ from common.simion.pa_family_cache import (
     POINTER_NAME,
     PAFamilyCacheError,
     canonical_pa_family_cache_key,
+    migrate_current_pa_family_cache,
     pa_family_inventory,
     publish_pa_family_cache,
+    repair_pa_family_cache_generation,
     validate_pa_family_cache_generation,
 )
 
@@ -64,7 +67,35 @@ def _lightweight_pointer_probe(cache_root: Path, cache_key: str) -> dict[str, An
     directory = cache_root / cache_key / "generations" / generation
     if not directory.is_dir():
         return {"disposition": "corrupt", "generation_sha256": generation, "generation_directory": str(directory), "detail": "generation absent"}
-    return {"disposition": "hit", "generation_sha256": generation, "generation_directory": str(directory.resolve()), "detail": None}
+    try:
+        manifest = _load_json(directory / "cache_manifest.json", "cache manifest")
+        files = manifest["files"]
+        if (
+            manifest.get("cache_key") != cache_key
+            or manifest.get("generation_sha256") != generation
+            or not isinstance(files, list)
+            or any(
+                not isinstance(record, Mapping)
+                or not isinstance(record.get("bytes"), int)
+                or isinstance(record.get("bytes"), bool)
+                or record["bytes"] < 0
+                for record in files
+            )
+        ):
+            raise PAFamilyCacheError("cache manifest identity or file inventory differs")
+        payload_bytes = sum(int(record["bytes"]) for record in files)
+        migration_parity_bytes = sum({int(record["bytes"]) for record in files})
+    except (KeyError, PAFamilyCacheError) as exc:
+        return {"disposition": "corrupt", "generation_sha256": generation, "generation_directory": str(directory), "detail": str(exc)}
+    return {
+        "disposition": "hit",
+        "generation_sha256": generation,
+        "generation_directory": str(directory.resolve()),
+        "schema_version": manifest.get("schema_version"),
+        "payload_bytes": payload_bytes,
+        "migration_parity_bytes": migration_parity_bytes,
+        "detail": None,
+    }
 
 
 def _load_json(path: Path, label: str) -> dict[str, Any]:
@@ -191,7 +222,22 @@ def _load_run_evidence(run_directory: Path) -> dict[str, Any]:
     }
 
 
+def _controller_evidence(path: Path, expected: Mapping[str, Any]) -> dict[str, Any]:
+    controller = path.resolve()
+    _verify_file(controller, expected, "Fast Adjust controller PA0")
+    return {
+        "path": str(controller),
+        "name": controller.name,
+        "bytes": controller.stat().st_size,
+        "sha256": file_sha256(controller),
+        "matches_provider_frozen_record": True,
+    }
+
+
 def _source_inventory(provider: Mapping[str, Any]) -> list[dict[str, Any]]:
+    # The controller is required to be an exact-byte preserved copy of the
+    # provider's frozen pa0.  A geometrically compatible pa0 with a different
+    # operating state changes SIMION's exported one-hot responses.
     records = [provider["analyzer_raw_pa"], provider["analyzer_pa0"]]
     records.extend(provider["basis_arrays"][str(identifier)] for identifier in range(1, 21))
     by_name = {record["name"]: record for record in records}
@@ -215,6 +261,7 @@ def _raw_identity(source_key: str, inspection: Mapping[str, Any]) -> dict[str, A
 def inspect_reviewed_sources(
     provider_run: Path, reviewed_run: Path, simion_executable: Path,
     simion_release: str, cache_root: Path | None = None,
+    controller_pa0: Path | None = None,
 ) -> dict[str, Any]:
     if not simion_release.strip() or not simion_executable.is_file():
         raise PAFamilyCacheError("SIMION release and executable are required")
@@ -228,12 +275,21 @@ def inspect_reviewed_sources(
         raise PAFamilyCacheError("r41/r51 reviewed compatibility differs: " + ", ".join(differences))
     if provider["analyzer_pa0"] == reviewed["analyzer_pa0"]:
         raise PAFamilyCacheError("r41/r51 pa0 must differ and is explicitly excluded from compatibility")
+    controller_path = (
+        controller_pa0
+        if controller_pa0 is not None
+        else Path(provider["run_directory"]) / "simion" / "mrtof_analyzer.pa0"
+    )
+    controller = _controller_evidence(controller_path, provider["analyzer_pa0"])
     evidence = {
         "provider": provider, "reviewed": reviewed,
+        "controller_pa0": controller,
         "compatibility": {
             "equal": ["resolved_geometry_sha256", "analyzer_gem", "analyzer_raw_pa", "analyzer_pa1_through_pa20"],
-            "explicitly_excluded": ["analyzer_pa0"], "provider_pa0": provider["analyzer_pa0"],
+            "explicitly_excluded": ["reviewed_analyzer_pa0"],
+            "provider_pa0": provider["analyzer_pa0"],
             "reviewed_pa0": reviewed["analyzer_pa0"], "pa0_equal": False,
+            "controller_matches_provider_pa0": True,
         },
     }
     source_inventory = _source_inventory(provider)
@@ -291,11 +347,13 @@ def stage_native_source(inspection_path: Path, staging_directory: Path) -> dict[
     if not staging.is_dir() or any(staging.iterdir()):
         raise PAFamilyCacheError("native staging directory must exist and be empty")
     provider_root = Path(inspection["evidence"]["provider"]["run_directory"]) / "simion"
+    controller_pa0 = Path(inspection["evidence"]["controller_pa0"]["path"])
     expected = {record["name"]: record for record in inspection["source_inventory"]}
     copied: list[dict[str, Any]] = []
     for filename in NATIVE_FILENAMES:
+        source = controller_pa0 if filename == "mrtof_analyzer.pa0" else provider_root / filename
         try:
-            record = copy_verified_file(provider_root / filename, staging / filename)
+            record = copy_verified_file(source, staging / filename)
         except OSError as exc:
             raise PAFamilyCacheError(f"cannot stage reviewed provider member {filename}") from exc
         normalized = {"name": filename, "bytes": record["bytes"], "sha256": record["sha256"].upper()}
@@ -376,7 +434,6 @@ def publish_prepared(cache_root: Path, inspection_path: Path, staging_directory:
 
 
 def receipt_from_hit(cache_root: Path, inspection: Mapping[str, Any]) -> dict[str, Any]:
-    del cache_root  # The inspection pins absolute immutable generations; never follow current again.
     probe = inspection.get("cache_probe")
     if not isinstance(probe, Mapping):
         raise PAFamilyCacheError("inspection has no pinned cache probe")
@@ -387,17 +444,65 @@ def receipt_from_hit(cache_root: Path, inspection: Mapping[str, Any]) -> dict[st
         raise PAFamilyCacheError("inspection has no pinned raw generation")
     prepared_directory = Path(str(prepared_pin.get("generation_directory", "")))
     raw_directory = Path(str(raw_pin.get("generation_directory", "")))
-    prepared_manifest = validate_native_operating_pa_cache_generation(
-        prepared_directory, expected_identity=inspection["operating_identity"]
+    expected_prepared = (
+        cache_root
+        / inspection["prepared_cache_key"]
+        / "generations"
+        / str(prepared_pin.get("generation_sha256", ""))
     )
-    raw_manifest = validate_pa_family_cache_generation(
-        raw_directory, expected_cache_key=inspection["raw_cache_key"],
-        expected_filenames=[RAW_GEOMETRY_FILENAME],
+    expected_raw = (
+        cache_root
+        / inspection["raw_cache_key"]
+        / "generations"
+        / str(raw_pin.get("generation_sha256", ""))
     )
-    if prepared_manifest["generation_sha256"] != prepared_pin.get("generation_sha256"):
-        raise PAFamilyCacheError("pinned prepared generation SHA-256 differs")
-    if raw_manifest["generation_sha256"] != raw_pin.get("generation_sha256"):
-        raise PAFamilyCacheError("pinned raw generation SHA-256 differs")
+    if prepared_directory.resolve() != expected_prepared.resolve():
+        raise PAFamilyCacheError("pinned prepared generation escapes its cache key")
+    if raw_directory.resolve() != expected_raw.resolve():
+        raise PAFamilyCacheError("pinned raw generation escapes its cache key")
+    prepared_repair = None
+    raw_repair = None
+    prepared_migration = None
+    raw_migration = None
+    if prepared_pin.get("schema_version") == 1:
+        prepared_migration = migrate_native_operating_pa_cache(
+            cache_root, inspection["operating_identity"]
+        )
+        prepared_directory = prepared_migration.generation_directory
+    if raw_pin.get("schema_version") == 1:
+        raw_migration = migrate_current_pa_family_cache(
+            cache_root,
+            inspection["raw_identity"],
+            [RAW_GEOMETRY_FILENAME],
+        )
+        raw_directory = raw_migration.generation_directory
+    try:
+        prepared_manifest = validate_native_operating_pa_cache_generation(
+            prepared_directory, expected_identity=inspection["operating_identity"]
+        )
+        if prepared_migration is None and prepared_manifest["generation_sha256"] != prepared_pin.get("generation_sha256"):
+            raise PAFamilyCacheError("pinned prepared generation SHA-256 differs")
+    except PAFamilyCacheError:
+        prepared_repair = repair_pa_family_cache_generation(prepared_directory)
+        prepared_directory = prepared_repair.generation_directory
+        prepared_manifest = validate_native_operating_pa_cache_generation(
+            prepared_directory, expected_identity=inspection["operating_identity"]
+        )
+    try:
+        raw_manifest = validate_pa_family_cache_generation(
+            raw_directory, expected_cache_key=inspection["raw_cache_key"],
+            expected_filenames=[RAW_GEOMETRY_FILENAME],
+        )
+        if raw_migration is None and raw_manifest["generation_sha256"] != raw_pin.get("generation_sha256"):
+            raise PAFamilyCacheError("pinned raw generation SHA-256 differs")
+    except PAFamilyCacheError:
+        raw_repair = repair_pa_family_cache_generation(raw_directory)
+        raw_directory = raw_repair.generation_directory
+        raw_manifest = validate_pa_family_cache_generation(
+            raw_directory,
+            expected_cache_key=inspection["raw_cache_key"],
+            expected_filenames=[RAW_GEOMETRY_FILENAME],
+        )
     records = {record["name"]: record for record in prepared_manifest["files"]}
     return {
         "schema_version": SCHEMA_VERSION, "role": "mrtof_reviewed_analyzer_source_cache_receipt",
@@ -406,17 +511,119 @@ def receipt_from_hit(cache_root: Path, inspection: Mapping[str, Any]) -> dict[st
         "source_content_key": inspection["source_content_key"],
         "source_inventory": inspection["source_inventory"], "native_generation_published": False,
         "prepared_standalone_generation": {
-            "disposition": "hit", "cache_key": inspection["prepared_cache_key"],
+            "disposition": (
+                prepared_migration.disposition.value
+                if prepared_migration is not None else "hit"
+            ), "cache_key": inspection["prepared_cache_key"],
             "generation_sha256": prepared_manifest["generation_sha256"],
             "generation_directory": str(prepared_directory.resolve()), "inventory": prepared_manifest["files"],
+            "predecessor_generation_directory": (
+                str(prepared_repair.predecessor_directory)
+                if prepared_repair is not None else None
+            ),
+            "predecessor_generation_sha256": prepared_manifest.get(
+                "predecessor_generation_sha256"
+            ),
+            "repair_receipt_path": (
+                str(prepared_repair.receipt_path) if prepared_repair is not None else None
+            ),
             "responses_by_physical_id": {
                 str(identifier): {"physical_id": identifier, **records[RESPONSE_FILENAMES[identifier]]}
                 for identifier in PHYSICAL_RESPONSE_IDS
             }, "export_receipts": [],
         },
         "raw_geometry_generation": {
-            "disposition": "hit", "cache_key": inspection["raw_cache_key"], "generation_sha256": raw_manifest["generation_sha256"],
+            "disposition": (
+                raw_migration.disposition.value if raw_migration is not None else "hit"
+            ), "cache_key": inspection["raw_cache_key"], "generation_sha256": raw_manifest["generation_sha256"],
             "generation_directory": str(raw_directory.resolve()), "inventory": raw_manifest["files"],
+            "predecessor_generation_directory": (
+                str(raw_repair.predecessor_directory) if raw_repair is not None else None
+            ),
+            "predecessor_generation_sha256": raw_manifest.get(
+                "predecessor_generation_sha256"
+            ),
+            "repair_receipt_path": (
+                str(raw_repair.receipt_path) if raw_repair is not None else None
+            ),
+            "raw_geometry": raw_manifest["files"][0],
+        },
+    }
+
+
+def publish_raw_from_reviewed(cache_root: Path, inspection: Mapping[str, Any]) -> dict[str, Any]:
+    """Repair only the raw-geometry generation while reusing prepared responses."""
+
+    probe = inspection.get("cache_probe")
+    if not isinstance(probe, Mapping):
+        raise PAFamilyCacheError("inspection has no pinned cache probe")
+    prepared_pin, raw_pin = probe.get("prepared"), probe.get("raw")
+    if not isinstance(prepared_pin, Mapping) or prepared_pin.get("disposition") != "hit":
+        raise PAFamilyCacheError("raw-only repair requires a pinned prepared generation")
+    if not isinstance(raw_pin, Mapping) or raw_pin.get("disposition") != "miss":
+        raise PAFamilyCacheError("raw-only repair requires a missing raw generation")
+    pinned_prepared_directory = Path(
+        str(prepared_pin.get("generation_directory", ""))
+    )
+    expected_prepared_directory = (
+        cache_root
+        / inspection["prepared_cache_key"]
+        / "generations"
+        / str(prepared_pin.get("generation_sha256", ""))
+    )
+    if pinned_prepared_directory.resolve() != expected_prepared_directory.resolve():
+        raise PAFamilyCacheError("pinned prepared generation escapes its cache key")
+    prepared_migration = migrate_native_operating_pa_cache(
+        cache_root, inspection["operating_identity"]
+    )
+    prepared_directory = prepared_migration.generation_directory
+    prepared_manifest = validate_native_operating_pa_cache_generation(
+        prepared_directory, expected_identity=inspection["operating_identity"]
+    )
+
+    provider_directory = Path(inspection["evidence"]["provider"]["run_directory"]) / "simion"
+    provider_raw = pa_family_inventory(provider_directory, [RAW_GEOMETRY_FILENAME])
+    if provider_raw != [inspection["evidence"]["provider"]["analyzer_raw_pa"]]:
+        raise PAFamilyCacheError("provider raw geometry differs from reviewed evidence")
+    raw = publish_pa_family_cache(
+        cache_root, inspection["raw_identity"], provider_directory, [RAW_GEOMETRY_FILENAME]
+    )
+    raw_manifest = validate_pa_family_cache_generation(
+        raw.generation_directory,
+        expected_cache_key=inspection["raw_cache_key"],
+        expected_filenames=[RAW_GEOMETRY_FILENAME],
+    )
+    records = {record["name"]: record for record in prepared_manifest["files"]}
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "role": "mrtof_reviewed_analyzer_source_cache_receipt",
+        "status": "success",
+        "qualification": "reviewed_source_cache_only__no_flight_or_focus_claim",
+        "evidence": inspection["evidence"],
+        "simion_identity": inspection["simion_identity"],
+        "source_content_key": inspection["source_content_key"],
+        "source_inventory": inspection["source_inventory"],
+        "native_generation_published": False,
+        "prepared_standalone_generation": {
+            "disposition": prepared_migration.disposition.value,
+            "cache_key": inspection["prepared_cache_key"],
+            "generation_sha256": prepared_manifest["generation_sha256"],
+            "generation_directory": str(prepared_directory.resolve()),
+            "predecessor_generation_sha256": prepared_manifest.get(
+                "predecessor_generation_sha256"
+            ),
+            "inventory": prepared_manifest["files"],
+            "responses_by_physical_id": {
+                str(identifier): {
+                    "physical_id": identifier,
+                    **records[RESPONSE_FILENAMES[identifier]],
+                }
+                for identifier in PHYSICAL_RESPONSE_IDS
+            },
+            "export_receipts": [],
+        },
+        "raw_geometry_generation": {
+            **_generation_receipt(raw, raw_manifest),
             "raw_geometry": raw_manifest["files"][0],
         },
     }
@@ -424,9 +631,17 @@ def receipt_from_hit(cache_root: Path, inspection: Mapping[str, Any]) -> dict[st
 
 def main(arguments: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--action", choices=("inspect", "stage-native", "export-plan", "publish-prepared", "receipt-from-hit"), required=True)
+    parser.add_argument(
+        "--action",
+        choices=(
+            "inspect", "stage-native", "export-plan", "publish-prepared",
+            "publish-raw", "receipt-from-hit",
+        ),
+        required=True,
+    )
     parser.add_argument("--cache-root", type=Path, required=True)
     parser.add_argument("--provider-run", type=Path); parser.add_argument("--reviewed-run", type=Path)
+    parser.add_argument("--controller-pa0", type=Path)
     parser.add_argument("--simion-executable", type=Path); parser.add_argument("--simion-release", default="SIMION 2020")
     parser.add_argument("--inspection", type=Path); parser.add_argument("--staging-directory", type=Path)
     parser.add_argument("--output-directory", type=Path)
@@ -434,12 +649,19 @@ def main(arguments: Sequence[str] | None = None) -> int:
     if args.action == "inspect":
         if args.provider_run is None or args.reviewed_run is None or args.simion_executable is None:
             parser.error("inspect requires provider/reviewed runs and SIMION executable")
-        document = inspect_reviewed_sources(args.provider_run, args.reviewed_run, args.simion_executable, args.simion_release, args.cache_root)
+        document = inspect_reviewed_sources(
+            args.provider_run, args.reviewed_run, args.simion_executable,
+            args.simion_release, args.cache_root, args.controller_pa0,
+        )
     else:
         if args.inspection is None:
             parser.error(f"{args.action} requires --inspection")
         if args.action == "receipt-from-hit":
             document = receipt_from_hit(args.cache_root, _load_json(args.inspection, "inspection"))
+        elif args.action == "publish-raw":
+            document = publish_raw_from_reviewed(
+                args.cache_root, _load_json(args.inspection, "inspection")
+            )
         elif args.action == "stage-native":
             if args.staging_directory is None: parser.error("stage-native requires --staging-directory")
             document = stage_native_source(args.inspection, args.staging_directory)

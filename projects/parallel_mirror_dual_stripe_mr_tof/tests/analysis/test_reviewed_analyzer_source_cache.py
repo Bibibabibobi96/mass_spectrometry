@@ -293,8 +293,17 @@ class ReviewedAnalyzerSourceCacheTest(unittest.TestCase):
         corrupt = generation_a / RESPONSE_FILENAMES[2]
         corrupt.chmod(corrupt.stat().st_mode | stat.S_IWUSR)
         corrupt.write_bytes(b"corrupt-a")
-        with self.assertRaises(PAFamilyCacheError):
-            receipt_from_hit(self.cache, pinned)
+        recovered = receipt_from_hit(self.cache, pinned)
+        prepared = recovered["prepared_standalone_generation"]
+        self.assertEqual(
+            prepared["predecessor_generation_directory"], str(generation_a)
+        )
+        self.assertIsNotNone(prepared["repair_receipt_path"])
+        self.assertNotEqual(prepared["generation_directory"], str(destination))
+        self.assertEqual(
+            json.loads(pointer.read_text(encoding="utf-8"))["generation_sha256"],
+            generation_b,
+        )
 
     def test_runner_parses_and_parallel_gate_cleanup_function_is_callable(self) -> None:
         repository = Path(__file__).resolve().parents[4]
@@ -320,20 +329,29 @@ class ReviewedAnalyzerSourceCacheTest(unittest.TestCase):
         runner = repository / "projects" / "parallel_mirror_dual_stripe_mr_tof" / "simion" / "run_prepare_reviewed_analyzer_source.ps1"
         support = repository / "common" / "contracts" / "run_artifact_support.ps1"
         text = runner.read_text(encoding="utf-8")
-        self.assertIn("[Nullable[double]]$CapacityTargetGiB=$null", text)
+        self.assertIn("-CapacityLedgerLifecycleEnabled", text)
+        self.assertEqual(text.count("Enter-ArtifactWorkflowCapacitySession"), 1)
+        self.assertEqual(text.count("Update-ArtifactWorkflowCapacitySession"), 2)
+        self.assertEqual(text.count("Exit-ArtifactWorkflowCapacitySession"), 1)
+        self.assertIn("-RemainingCommittedNewBytes $requiredBytes", text)
+        self.assertIn("-RemainingCommittedNewBytes 0", text)
+        self.assertNotIn("Invoke-ArtifactCapacityGate", text)
+        self.assertNotIn("CapacityTargetGiB", text)
+        self.assertNotIn("CapacityMinimumFreeGiB", text)
+        self.assertNotIn("CapacityKnownMeasuredBytes", text)
         self.assertIn("[string]$ControllerPa0=''", text)
         self.assertIn("'--controller-pa0',$controller", text)
         self.assertIn("controller_pa0=$inspection.evidence.controller_pa0", text)
-        self.assertEqual(text.count("-TargetGiB $CapacityTargetGiB"), 1)
-        self.assertIn("TargetGiB=$CapacityTargetGiB", text)
-        self.assertIn("CapacityKnownMeasuredBytes", text)
         self.assertIn("freeze_prepared_responses_after_all_exports", text)
         self.assertIn("mrtof_reviewed_analyzer_frozen_", text)
         self.assertIn("-VerificationAttempts 3|Out-Null", text)
         self.assertIn("3*$responseBytes", text)
         self.assertIn("$rawOnlyRepair=($preparedDisposition-eq'hit'", text)
         self.assertIn("'--action','publish-raw'", text)
-        self.assertIn("elseif($rawOnlyRepair){2*$rawBytes+1GB}", text)
+        self.assertIn("$preparedMigrationBytes", text)
+        self.assertIn("$rawMigrationBytes", text)
+        self.assertIn("migration_parity_bytes", text)
+        self.assertIn("$preparedMigrationBytes+2*$rawBytes+1GB", text)
         self.assertNotIn("provider_run=$provider", text)
         self.assertNotIn("reviewed_run=$reviewed", text)
         for key in (

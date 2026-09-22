@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory)][string]$PilotTrialReceiptPath,
   [Parameter(Mandatory)][string]$PilotLogPath,
   [Parameter(Mandatory)][ValidateRange(0.0,[double]::MaxValue)][double]$GuardUs,
+  [Nullable[double]]$PulseOffTimeUs=$null,
   [string]$RunId='',
   [string]$PythonExe=''
 )
@@ -49,10 +50,19 @@ function Get-VerifiedOutputRecord {
 $artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'bunch_global_pulse_schedule_freeze' `
-  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact
+  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `
+  -CapacityLedgerLifecycleEnabled
 $runConfig=$package.run_config;$summary=$package.summary;$resultDir=$package.result_dir;$logDir=$package.log_dir
-$terminalized=$false;$failureStage='preflight'
+$terminalized=$false;$failureStage='preflight';$capacitySession=$null
 try{
+  $failureStage='capacity_startup'
+  $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes 1048576 -ProtectedPaths @($package.artifact_run_dir,$sourceRun,$pilotRun) `
+    -Owner "mrtof-freeze-bunch-pulse-schedule:$RunId"
+  $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
+  Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
+  $failureStage='verify_sources'
   & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $sourceManifest `
     --require-status success --require-project $projectId --require-mode deterministic_bunch_source_materialization
   if($LASTEXITCODE-ne 0){throw 'Bunch source run manifest failed verification.'}
@@ -68,13 +78,6 @@ try{
   Get-VerifiedOutputRecord -Records @($sourceData.outputs) -Path $sourceReceiptPath -Label 'bunch source receipt'|Out-Null
   Get-VerifiedOutputRecord -Records @($pilotData.outputs) -Path $pilotReceipt -Label 'static pilot trial receipt'|Out-Null
   Get-VerifiedOutputRecord -Records @($pilotData.outputs) -Path $pilotLog -Label 'static pilot log'|Out-Null
-
-  $failureStage='capacity_startup'
-  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
-    -ProtectedPaths @($package.artifact_run_dir,$sourceRun,$pilotRun) -RequiredHeadroomBytes 1048576
-  $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
-  Write-RunJson -Path $startupPath -Depth 14 -Value $startup
 
   $failureStage='freeze_inputs'
   $frozenSourceManifest=Copy-VerifiedRunInput -Source $sourceManifest -Destination (Join-Path $package.input_dir 'bunch_source_run_manifest.json')
@@ -93,6 +96,8 @@ try{
   $configuration.parameters=[ordered]@{
     lifecycle_stage='complete_bunch_safe_exit_schedule_freeze'
     guard_us=$GuardUs
+    pulse_off_time_us=$PulseOffTimeUs
+    pulse_off_time_authority=$(if($null-eq$PulseOffTimeUs){'cohort_last_safe_exit_plus_guard'}else{'caller_common_envelope_verified_against_this_cohort'})
     guard_authority='mandatory_cli_value_recorded_in_run_config_and_schedule'
     solver_execution='none'
   }
@@ -104,10 +109,11 @@ try{
   Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
   try{
     $env:PYTHONPATH=$repoRoot
-    & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule `
-      freeze-schedule --source-receipt $frozenSourceReceipt --pilot-log $frozenPilotLog `
-      --pilot-trial-receipt $frozenPilotReceipt --guard-us $GuardUs --output $schedule `
-      2>&1|Tee-Object -FilePath $log
+    $freezeArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule',
+      'freeze-schedule','--source-receipt',$frozenSourceReceipt,'--pilot-log',$frozenPilotLog,
+      '--pilot-trial-receipt',$frozenPilotReceipt,'--guard-us',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$GuardUs)),'--output',$schedule)
+    if($null-ne$PulseOffTimeUs){$freezeArguments+=@('--pulse-off-time-us',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$PulseOffTimeUs)))}
+    & $python @freezeArguments 2>&1|Tee-Object -FilePath $log
     if($LASTEXITCODE-ne 0){throw 'Bunch pulse schedule freeze failed.'}
   }finally{$env:PYTHONPATH=$saved;Pop-Location}
   $scheduleData=Get-Content -LiteralPath $schedule -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
@@ -117,10 +123,9 @@ try{
     schedule=$scheduleData
   })
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
-  $maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
-  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
-    -ProtectedPaths @($package.artifact_run_dir,$sourceRun,$pilotRun) `
-    -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
+  $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -RemainingCommittedNewBytes 0
+  $capacitySession=$terminal.session
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success `
     -Software @('Python 3.11') -Outputs @($summary,$schedule,$startupPath,$terminalPath,$retention,$log)
@@ -130,5 +135,9 @@ try{
   if(-not$terminalized){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary -SummaryRole 'mrtof_bunch_global_pulse_schedule_run_summary' -Reason $_.Exception.Message -Software @('Python 3.11') -Status failed -FailureStage $failureStage;$terminalized=$true}
   throw
 }finally{
-  if(-not$terminalized-and(Test-Path -LiteralPath $runConfig)){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary -SummaryRole 'mrtof_bunch_global_pulse_schedule_run_summary' -Reason 'Bunch pulse schedule freeze stopped before terminal publication.' -Software @('Python 3.11') -Status interrupted -FailureStage $failureStage}
+  try{
+    if(-not$terminalized-and(Test-Path -LiteralPath $runConfig)){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary -SummaryRole 'mrtof_bunch_global_pulse_schedule_run_summary' -Reason 'Bunch pulse schedule freeze stopped before terminal publication.' -Software @('Python 3.11') -Status interrupted -FailureStage $failureStage}
+  }finally{
+    if($null-ne$capacitySession){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession}
+  }
 }

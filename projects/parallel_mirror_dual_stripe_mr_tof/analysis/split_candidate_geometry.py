@@ -10,25 +10,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from projects.orthogonal_accelerator.analysis.two_zone_geometry import derive_shielded_rectangular_enclosure
-from projects.orthogonal_accelerator.simion.rectangular_accelerator import (
-    emit_grounded_enclosure_with_rear_aperture, emit_ideal_grid,
-    emit_open_rectangular_frame,
-)
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.full_candidate_geometry import (
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_candidate_geometry import (
     _box, _central_ground_lines, _extrude_polygon_bands, _mirror_ground_shield_lines, _mirror_lines,
     _number, _prism_ground_shield_lines, _stripe_lines,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
-    CandidateContractError, derive_two_zone_placement, load_contract,
+    CandidateContractError, load_contract,
 )
-
-# A split PA has its own SIMION Fast-Adjust namespace.  Keep the stable project
-# IDs in the resolved contract, but map its local arrays densely so SIMION does
-# not request nonexistent pa1..paN files for a sparse 15/22..30 namespace.
-ACCELERATOR_LOCAL_ELECTRODE_IDS = {15: 1, 22: 2, 23: 3, 24: 4, 26: 5, 27: 6, 28: 7, 29: 8, 30: 9}
-
 
 def _require_release(contract: dict[str, object]) -> None:
     if contract.get("simion_geometry_release_status") != "cad_topology_and_top_level_pose_qualified":
@@ -155,117 +144,15 @@ def build_detector_gem(contract_path: Path) -> str:
     return "\n".join(lines)
 
 
-def build_accelerator_gem(contract_path: Path) -> str:
-    """Build the shielded local two-zone accelerator PA in local millimetres."""
-    contract = load_contract(contract_path)
-    _require_release(contract)
-    resolved = resolve_geometry(contract)
-    accelerator = contract["accelerator"]
-    mesh = contract["simion"]["component_mesh_mm_per_gu"]["accelerator"]
-    span_x, span_y, span_z = _span(contract, "accelerator_pa_span_mm")
-    placement = derive_two_zone_placement(contract)
-    margin_z = float(accelerator["pa_local_margin_z_mm"])
-    if margin_z <= 0:
-        raise CandidateContractError("accelerator.pa_local_margin_z_mm must be positive")
-    repeller_t = float(accelerator["repeller_thickness_z_mm"])
-    local_exit = margin_z
-    local_grid_1 = local_exit + float(accelerator["gap_2_mm"])
-    local_repeller = local_grid_1 + float(accelerator["gap_1_mm"])
-    enclosure = derive_shielded_rectangular_enclosure(
-        electrode_outer_width_x_mm=float(accelerator["electrode_outer_width_x_mm"]),
-        electrode_outer_height_y_mm=float(accelerator["electrode_outer_height_y_mm"]),
-        guard_outer_width_x_mm=float(accelerator["grounded_guard_outer_width_x_mm"]),
-        guard_outer_height_y_mm=float(accelerator["grounded_guard_outer_height_y_mm"]),
-        guard_wall_thickness_mm=float(accelerator["grounded_guard_wall_thickness_mm"]),
-        lateral_clearance_mm=float(accelerator["repeller_to_guard_clearance_mm"]),
-        repeller_z_mm=local_repeller,
-        repeller_thickness_z_mm=repeller_t,
-        rear_gap_mm=float(accelerator["repeller_to_rear_cap_gap_mm"]),
-    )
-    electrode_x, electrode_y = enclosure.electrode_half_x_mm, enclosure.electrode_half_y_mm
-    guard_x, guard_y = enclosure.guard_half_x_mm, enclosure.guard_half_y_mm
-    rear_cap_outer = enclosure.rear_cap_outer_z_mm
-    if rear_cap_outer + margin_z > span_z + 1e-9:
-        raise CandidateContractError("accelerator local PA z span does not enclose both grids and margins")
-    aperture_x = float(accelerator["aperture_width_x_mm"]) / 2.0
-    aperture_y = float(accelerator["aperture_height_y_mm"]) / 2.0
-    if max(guard_x, guard_y) * 2 + 2 * float(accelerator["pa_transverse_margin_mm"]) > min(span_x, span_y) + 1e-9:
-        raise CandidateContractError("accelerator local PA transverse span is too small for grounded enclosure")
-    lines = [
-        "; Local shielded two-zone accelerator PA only; local +z is project +z.",
-        f"; global repeller z={_number(placement.repeller_z_mm)} mm; global focus=(0,{_number(placement.focus_y_mm)},0) mm.",
-        f"# local contract_mmgu_x, contract_mmgu_y, contract_mmgu_z = {_number(mesh[0])}, {_number(mesh[1])}, {_number(mesh[2])}",
-        "# local mmgu_x = _G.var and _G.var.mmgu_x or contract_mmgu_x",
-        "# local mmgu_y = _G.var and _G.var.mmgu_y or contract_mmgu_y",
-        "# local mmgu_z = _G.var and _G.var.mmgu_z or contract_mmgu_z",
-        "# assert(mmgu_x == contract_mmgu_x and mmgu_y == contract_mmgu_y and mmgu_z == contract_mmgu_z, 'runtime mesh must equal frozen Candidate contract')",
-        f"# local x_span, y_span, z_span = {_number(span_x)}, {_number(span_y)}, {_number(span_z)}",
-        "# local nx = math.floor(x_span/mmgu_x + 0.5) + 1",
-        "# local ny = math.floor(y_span/mmgu_y + 0.5) + 1",
-        "# local nz = math.floor(z_span/mmgu_z + 0.5) + 1",
-        "pa_define($(nx),$(ny),$(nz),planar,none,electrostatic,, $(mmgu_x),$(mmgu_y),$(mmgu_z),surface=none)",
-        "locate($(x_span/2),$(y_span/2),0) {",
-        "  ; Finite-wall grounded enclosure with a contract-required gridded rear return aperture.",
-        "  ; The exit grid meets the inner wall; the gridded repeller retains lateral and rear acceleration gaps.",
-        f"  ; Stable project IDs map to local IDs {ACCELERATOR_LOCAL_ELECTRODE_IDS}; this mapping is solver-local only.",
-        f"  e(1) {{ {emit_grounded_enclosure_with_rear_aperture(enclosure, exit_z_mm=local_exit, aperture_half_x_mm=aperture_x, aperture_half_y_mm=aperture_y, cut_padding_mm=enclosure.guard_wall_mm)} notin {{ box3D(-{_number(aperture_x)},-{_number(aperture_y)},{_number(margin_z-1)},{_number(aperture_x)},{_number(aperture_y)},{_number(local_exit+1)}) }} }}",
-        "  ; Open repeller support plus ideal grid preserves the powered plane and the grounded return aperture.",
-        emit_open_rectangular_frame(
-            2, outer_half_x_mm=electrode_x, outer_half_y_mm=electrode_y,
-            aperture_half_x_mm=aperture_x, aperture_half_y_mm=aperture_y,
-            front_z_mm=local_repeller, back_z_mm=local_repeller+repeller_t,
-            cut_padding_mm=repeller_t,
-        ),
-        emit_ideal_grid(2, half_x_mm=aperture_x, half_y_mm=aperture_y, z_mm=local_repeller),
-        "  ; Grounded ideal grid is fixed to the inner face of the open rear support.",
-        emit_ideal_grid(
-            1, half_x_mm=aperture_x, half_y_mm=aperture_y,
-            z_mm=enclosure.rear_cap_inner_z_mm,
-        ),
-    ]
-    for support in resolved["accelerator_grid_support_frames"]:
-        offset_z = local_exit - placement.exit_grid_z_mm
-        electrode_id = ACCELERATOR_LOCAL_ELECTRODE_IDS[support["id"]]
-        lines.extend((
-            "  ; Finite grid support frame; only its aperture contains the zero-thickness ideal grid.",
-            emit_open_rectangular_frame(
-                electrode_id, outer_half_x_mm=support["outer_half_x_mm"],
-                outer_half_y_mm=support["outer_half_y_mm"],
-                aperture_half_x_mm=support["aperture_half_x_mm"],
-                aperture_half_y_mm=support["aperture_half_y_mm"],
-                front_z_mm=support["front_z_mm"]+offset_z,
-                back_z_mm=support["back_z_mm"]+offset_z,
-                cut_padding_mm=support["thickness_z_mm"],
-            ),
-            emit_ideal_grid(
-                electrode_id, half_x_mm=support["aperture_half_x_mm"],
-                half_y_mm=support["aperture_half_y_mm"], z_mm=support["grid_z_mm"]+offset_z,
-            ),
-        ))
-    lines.append("  ; Five physical open acceleration rings uniformly fill the long second field region.")
-    for ring in resolved["accelerator_stage_2_rings"]:
-        half_t = float(ring["thickness_z_mm"]) / 2.0
-        center = float(ring["center_z_mm"]) - placement.exit_grid_z_mm + local_exit
-        lines.append(
-            emit_open_rectangular_frame(
-                ACCELERATOR_LOCAL_ELECTRODE_IDS[int(ring['id'])],
-                outer_half_x_mm=electrode_x, outer_half_y_mm=electrode_y,
-                aperture_half_x_mm=aperture_x, aperture_half_y_mm=aperture_y,
-                front_z_mm=center-half_t, back_z_mm=center+half_t, cut_padding_mm=1.0,
-            )
-        )
-    lines.extend(("}", ""))
-    return "\n".join(lines)
 
-
-def resolve_split_iob_origins(
+def resolve_static_iob_origins(
     contract_path: Path,
     *,
     inherited_detector_return_path: dict[str, object] | None = None,
     inherited_dual_stripe_topology_contract: dict[str, object] | None = None,
     inherited_mirror_power_supply_limits_v: dict[str, object] | None = None,
 ) -> dict[str, tuple[float, float, float]]:
-    """Return the sole allowed project-to-Workbench translations for both PAs."""
+    """Resolve only the MR-owned analyzer and detector poses."""
     contract = load_contract(
         contract_path,
         inherited_detector_return_path=inherited_detector_return_path,
@@ -273,31 +160,24 @@ def resolve_split_iob_origins(
     )
     _require_release(contract)
     analyzer_span = _span(contract, "analyzer_pa_span_mm")
-    accelerator_span = _span(contract, "accelerator_pa_span_mm")
-    accelerator = contract["accelerator"]
-    placement = derive_two_zone_placement(contract)
-    local_exit = float(accelerator["pa_local_margin_z_mm"])
     return {
         "analyzer": _analyzer_origin(contract, analyzer_span),
-        "accelerator": (-accelerator_span[0] / 2.0, placement.focus_y_mm - accelerator_span[1] / 2.0, placement.exit_grid_z_mm - local_exit),
         "detector": _detector_origin(
-            contract,
-            _span(contract, "detector_pa_span_mm"),
+            contract, _span(contract, "detector_pa_span_mm"),
             topology_contract=inherited_dual_stripe_topology_contract,
         ),
     }
 
 
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--contract", required=True, type=Path)
-    parser.add_argument("--component", required=True, choices=("analyzer", "accelerator", "detector"))
+    parser.add_argument("--component", required=True, choices=("analyzer", "detector"))
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
     if arguments.component == "analyzer":
         text = build_analyzer_gem(arguments.contract)
-    elif arguments.component == "accelerator":
-        text = build_accelerator_gem(arguments.contract)
     else:
         text = build_detector_gem(arguments.contract)
     arguments.output.parent.mkdir(parents=True, exist_ok=True)

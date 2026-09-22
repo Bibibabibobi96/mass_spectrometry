@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "role": "repository_ion_release",
+  "frame_id": "orthogonal_accelerator_exit_origin_v1",
+  "particle_count": 100,
+  "mother_particle_count": 1000,
+  "common_time_of_birth_s": 0.0,
+  "geometry": {
+    "shape": "cylinder",
+    "center_mm": [
+      0.0,
+      0.0,
+      32.0
+    ],
+    "axis": "z",
+    "radius_mm": 1.0,
+    "height_mm": 1.0
+  },
+  "species": {
+    "mass_amu": 524.0,
+    "charge_state": 1
+  },
+  "sampling": {
+    "strategy": "center_first_halton_cylinder_v1",
+    "kinetic_energy": {
+      "center_ev": 4.961131691875479,
+      "full_width_ev": 0.1
+    },
+    "nominal_direction": [
+      0.0,
+      1.0,
+      0.0
+    ],
+    "angular_full_width_deg": 0.2
+  }
+}

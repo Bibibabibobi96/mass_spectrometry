@@ -1,0 +1,39 @@
+{
+  "schema_version": 3,
+  "role": "mrtof_ideal_bunch_source_definition",
+  "status": "frozen",
+  "source_profile_id": "current_candidate_full_source_small_spread_n100_z0p1",
+  "frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+  "coordinate_semantics": {
+    "x": "transverse_mirror_focusing",
+    "y": "slow_drift_positive_stripe_function_argument",
+    "z": "fast_reflection_and_acceleration_axis",
+    "workbench_from_project": "identity"
+  },
+  "center_offset_workbench_mm": [
+    0.0,
+    -1.71093484735312,
+    0.0
+  ],
+  "center_offset_authority": {
+    "method": "two_real_exit_velocity_secant_plus_independent_real_exit_validation",
+    "validation_run_id": "20260923_031000__sim__simion__mrtof-accelerator-z2mm-transverse-aligned-n1-r1",
+    "measured_exit_slow_energy_per_charge_v": 4.96899856225662
+  },
+  "center_rule": "resolved_accelerator_release_position",
+  "field_cache_dependency": "none",
+  "particle_count": 100,
+  "mother_particle_count": 1000,
+  "aperture_plane_axes": [0, 1],
+  "acceleration_axis": 2,
+  "position_radius_mm": 0.1,
+  "acceleration_axis_full_width_mm": 0.1,
+  "kinetic_energy_center_ev": 4.961131691875479,
+  "kinetic_energy_full_width_ev": 0.1,
+  "nominal_direction_workbench": [0.0, 1.0, 0.0],
+  "angular_full_width_deg": 0.2,
+  "mass_th": 524.0,
+  "charge_e": 1,
+  "common_time_of_birth_us": 0.0,
+  "qualification": "candidate_z_width_causal_diagnostic_source__not_a_flight_result"
+}

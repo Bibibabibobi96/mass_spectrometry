@@ -231,13 +231,13 @@ class SimionEventAnalysisTest(unittest.TestCase):
     def test_accelerator_pulse_off_event_preserves_instance_transition(self):
         line = (
             "MRTOF_EVENT accelerator_pulse_off ion=1 t_us=1.8675 "
-            "from_instance=7 to_instance=1 x_mm=0 y_mm=-53 z_mm=-5.7\n"
+            "from_instance=3 to_instance=1 x_mm=0 y_mm=-53 z_mm=-5.7\n"
         )
         event = parse_events(line)[0]
         self.assertEqual(event["from_instance"], 7)
         self.assertEqual(event["to_instance"], 1)
         with self.assertRaisesRegex(ValueError, "invalid_instance_number"):
-            parse_events(line.replace("from_instance=7", "from_instance=7.5"))
+            parse_events(line.replace("from_instance=7", "from_instance=3.5"))
 
     def test_accelerator_launch_vz_zero_is_diagnostic_not_nonmirror_reversal(self):
         line = (

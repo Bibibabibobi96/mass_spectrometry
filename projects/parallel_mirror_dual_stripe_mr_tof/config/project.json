@@ -23,10 +23,10 @@
   "family_id": "tof_mass_analyzers",
   "display_name": "开放路径平行镜双条带多次反射飞行时间质量分析器",
   "purpose": "平行等时镜与两套独立偏压、独立形状漂移条带构成的开放路径MR-TOF质量分析",
-  "lifecycle_status": "prototype",
-  "toolchains": ["solidworks"],
+  "lifecycle_status": "candidate",
+  "toolchains": ["python", "simion", "solidworks"],
   "contracts": {
-    "baseline": null,
+    "baseline": "config/simion_candidate_two_zone.json",
     "resolved": null,
     "analysis": null,
     "interface": null,
@@ -38,9 +38,15 @@
     {
       "capability_id": "multiple_reflection_mass_analysis",
       "function": "mass_analysis",
-      "status": "prototype",
+      "status": "candidate",
       "modes": [],
-      "metrics": [],
+      "metrics": [
+        "detection_fraction",
+        "target_oscillation_fraction",
+        "time_of_flight",
+        "mass_resolving_power",
+        "spatial_return_residual"
+      ],
       "design_variables": []
     }
   ],
@@ -50,9 +56,9 @@
     "identity_contract": null
   },
   "known_gaps": [
-    "SolidWorks assembly references and coordinate systems are not audited",
-    "The reviewed dual-stripe theory is not yet bound to baseline and resolved parameter contracts",
-    "COMSOL and SIMION models do not exist",
-    "Performance and formal acceptance contracts are not defined"
+    "Resolved geometry is deterministically derived and frozen per run; no standalone checked-in resolved JSON is promoted as a second authority",
+    "The native corridor PA family still requires real-build equivalence, IOB priority and end-to-end flight qualification",
+    "No independent COMSOL field or trajectory model currently qualifies the three-dimensional SIMION candidate",
+    "Manufacturing tolerances, complete source distributions, space charge and Formal performance acceptance remain open"
   ]
 }

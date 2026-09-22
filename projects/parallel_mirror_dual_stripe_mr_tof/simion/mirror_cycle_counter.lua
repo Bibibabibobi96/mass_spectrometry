@@ -82,8 +82,19 @@ local function slow_coordinate_event(self, events, root, direction)
   self.coordinate_returns = self.coordinate_returns + 1
   local observed = emit(self, events, 'drift_coordinate_return', root)
   observed.direction = direction
-  observed.k_before = self.half_cycles / 2
-  observed.fractional_k = self.half_cycles / 2
+  local phase_turn = self.last_phase_turn
+  observed.k_before = phase_turn and phase_turn.k or self.half_cycles / 2
+  observed.fractional_k = observed.k_before
+  if phase_turn and finite(phase_turn.period_us) and phase_turn.period_us > 0 then
+    local elapsed = root.t_us - phase_turn.t_us
+    if elapsed >= 0 then
+      observed.phase_crossing_t_us = phase_turn.t_us
+      observed.phase_crossing_y_mm = phase_turn.y_mm
+      observed.phase_time_residual_us = elapsed
+      observed.phase_period_us = phase_turn.period_us
+      observed.fractional_k = phase_turn.k + elapsed / phase_turn.period_us
+    end
+  end
   observed.accepted = false
   observed.reason = 'coordinate_return_is_diagnostic_until_target_turn_phase'
 end
@@ -117,6 +128,10 @@ local function mirror_event(self, events, root, before, after)
     self.pre_origin_turns = 1
     self.expected_turn_side = -self.origin_mirror_side
     self.phase_origin_turn = sample_copy(root)
+    self.latest_turn_by_side[side] = {
+      t_us=root.t_us, y_mm=root.y_mm, k=0, side=side
+    }
+    self.last_phase_turn = self.latest_turn_by_side[side]
     event.accepted, event.is_phase_origin_turn, event.is_pre_origin_turn = true, true, true
     local origin = emit(self, events, 'drift_phase_origin', root)
     origin.side, origin.period_ratio = side, 0
@@ -131,6 +146,15 @@ local function mirror_event(self, events, root, before, after)
   self.half_cycles = self.half_cycles + 1
   self.cycles = self.half_cycles / 2
   event.half_cycles, event.k = self.half_cycles, self.cycles
+  local previous_same_side = self.latest_turn_by_side[side]
+  local phase_turn = {
+    t_us=root.t_us, y_mm=root.y_mm, k=self.cycles, side=side
+  }
+  if previous_same_side then
+    phase_turn.period_us = root.t_us - previous_same_side.t_us
+  end
+  self.latest_turn_by_side[side] = phase_turn
+  self.last_phase_turn = phase_turn
   self.expected_turn_side = -self.expected_turn_side
   emit(self, events, 'completed_half_oscillation', root).side = side
   self.accepted_main_turns, event.accepted = self.accepted_main_turns + 1, true
@@ -251,6 +275,7 @@ function M.new(regions, origin_mirror_side, return_mirror_side, target_half_osci
   copy.pre_main_turns, copy.observed_main_turns, copy.post_main_turns = 0, 0, 0
   copy.nonmirror_reversals, copy.central_crossings, copy.sequence_valid = 0, 0, true
   copy.coordinate_returns, copy.coordinate_return_observed = 0, false
+  copy.latest_turn_by_side, copy.last_phase_turn = {}, nil
   return setmetatable(copy, Counter)
 end
 

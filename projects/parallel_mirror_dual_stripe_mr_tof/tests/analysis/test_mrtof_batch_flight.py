@@ -35,7 +35,7 @@ class MrtofBatchFlightTest(unittest.TestCase):
             (root / "receipt.json").write_text("{}\n", encoding="utf-8")
             output = root / "batch.fly2"
             with patch(
-                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight.load_verified_bunch_source_receipt",
+                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule.load_verified_bunch_source_receipt",
                 return_value=receipt,
             ):
                 result = materialize_batch_fly2(
@@ -64,7 +64,7 @@ class MrtofBatchFlightTest(unittest.TestCase):
             }
             (root / "receipt.json").write_text("{}\n", encoding="utf-8")
             with patch(
-                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight.load_verified_bunch_source_receipt",
+                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule.load_verified_bunch_source_receipt",
                 return_value=receipt,
             ):
                 selected = resolve_bunch_source_interval(
@@ -100,7 +100,7 @@ class MrtofBatchFlightTest(unittest.TestCase):
             }
             (root / "receipt.json").write_text("{}\n", encoding="utf-8")
             with patch(
-                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight.load_verified_bunch_source_receipt",
+                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule.load_verified_bunch_source_receipt",
                 return_value=receipt,
             ):
                 selected = resolve_bunch_source_interval(

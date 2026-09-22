@@ -13,11 +13,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simio
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
     _accelerator_energy_binding,
+    _apply_terminal_mirror_variation,
     _apply_trajectory_step_scale,
     _accelerator_safe_exit_observation,
     _load_frozen_accelerator_pulse_schedule,
-    _patch_interface_diagnostics,
-    _patch_interface_planes,
     _resolve_trial_geometry,
     _fixed_mirror_stripe_source_state,
     _schema5_native_source_state,
@@ -38,6 +37,36 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 
 class TwoPrismSimionTrialTest(unittest.TestCase):
+    def test_terminal_mirror_variation_is_authority_bound_and_envelope_checked(self) -> None:
+        contract_path = Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json"
+        contract = two_prism_simion_trial.load_contract(contract_path)
+        base = [0.0, -5920.610006, -2612.981546, 4190.462801, 6029.159820]
+        variation = {
+            "schema_version": 1,
+            "role": "mrtof_terminal_time_mirror_voltage_variation",
+            "status": "screening_candidate_materialized",
+            "qualification": "diagnostic_only__complete_3d_detector_response_pending",
+            "mode": "TE1",
+            "coordinate": 1,
+            "base_mirror_voltages_v": base,
+            "target_mirror_voltages_v": [0.0, base[1] + 2, base[2] - 10, base[3] + 6, base[4] + 5],
+            "voltage_delta_v": [2.0, -10.0, 6.0, 5.0],
+            "source_seed": {"sha256": "a" * 64},
+        }
+        target, identity = _apply_terminal_mirror_variation(
+            variation=variation, base_voltages=base, contract=contract,
+            axial_energy_v=4372.010347796,
+        )
+        self.assertEqual(target, variation["target_mirror_voltages_v"])
+        self.assertEqual(identity["mode"], "TE1")
+        invalid = copy.deepcopy(variation)
+        invalid["base_mirror_voltages_v"][1] += 1
+        with self.assertRaisesRegex(CandidateContractError, "not bound"):
+            _apply_terminal_mirror_variation(
+                variation=invalid, base_voltages=base, contract=contract,
+                axial_energy_v=4372.010347796,
+            )
+
     def test_trajectory_step_scale_derives_0p001_from_screening_profile(self) -> None:
         base = {
             "profile_id": "center_screening", "trajectory_quality": 8,
@@ -471,7 +500,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                     "mode": "initial_exit_triggered_single_center",
                     "pulse_off_event_count": 1,
                     "pulse_off_event": {
-                        "t_us": 1.867, "from_instance": 7, "to_instance": 1,
+                        "t_us": 1.867, "from_instance": 3, "to_instance": 1,
                         "x_mm": 0.0, "y_mm": -55.0, "z_mm": -5.7,
                     },
                 },
@@ -502,49 +531,6 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                 schedule["qualification"], "single_center_diagnostic__not_a_bunch_schedule"
             )
             self.assertIsNone(schedule["derivation"]["bunch_safe_exit_envelope"])
-
-    def test_patch_interface_diagnostic_keeps_crossed_and_uncrossed_faces(self) -> None:
-        declared = [
-            {"name": "central__z_max", "region": "central", "face": "z_max", "axis": "z", "coordinate_mm": 102},
-            {"name": "central__x_min", "region": "central", "face": "x_min", "axis": "x", "coordinate_mm": -29},
-        ]
-        events = [{
-            "kind": "patch_interface", "ion": 1, "name": "central__z_max",
-            "region": "central", "face": "z_max", "n": 1, "direction": 1,
-            "t_us": 2, "x_mm": 0.1, "y_mm": 3, "z_mm": 102,
-            "vx_mm_us": 0, "vy_mm_us": 1, "vz_mm_us": 39,
-        }]
-        result = _patch_interface_diagnostics(events, declared)
-        self.assertEqual(result["total_crossing_count"], 1)
-        self.assertEqual(result["crossed_faces"], ["central__z_max"])
-        self.assertEqual(result["uncrossed_faces"], ["central__x_min"])
-        self.assertTrue(result["only_z_faces_crossed"])
-
-    def test_patch_interfaces_are_derived_for_central_and_both_mirrors(self) -> None:
-        repo = Path(__file__).resolve().parents[4]
-        planes = _patch_interface_planes(
-            repo / "projects" / "parallel_mirror_dual_stripe_mr_tof"
-            / "config" / "simion_candidate_two_zone.json"
-        )
-        self.assertEqual(len(planes), 34)
-        self.assertEqual(
-            {plane["region"] for plane in planes},
-            {
-                "central_transport", "mirror_turn_positive", "mirror_turn_negative",
-                "stripe_mirror_bridge_positive", "stripe_mirror_bridge_negative",
-                "local_handoff",
-            },
-        )
-        by_name = {plane["name"]: plane for plane in planes}
-        self.assertEqual(by_name["mirror_turn_positive__z_min"]["coordinate_mm"], 97.0)
-        self.assertEqual(by_name["mirror_turn_negative__z_max"]["coordinate_mm"], -97.0)
-        self.assertEqual(by_name["central_transport__z_min"]["coordinate_mm"], -105.0)
-        self.assertEqual(by_name["central_transport__z_max"]["coordinate_mm"], 102.0)
-        self.assertEqual(by_name["stripe_mirror_bridge_positive__z_min"]["coordinate_mm"], 42.0)
-        self.assertEqual(by_name["stripe_mirror_bridge_positive__z_max"]["coordinate_mm"], 165.0)
-        self.assertEqual(by_name["stripe_mirror_bridge_negative__z_min"]["coordinate_mm"], -165.0)
-        self.assertEqual(by_name["handoff_positive_central_to_bridge__z_plane"]["coordinate_mm"], 72.0)
-        self.assertEqual(by_name["handoff_negative_bridge_to_mirror__z_plane"]["coordinate_mm"], -131.0)
 
     def test_static_return_requires_unique_ordered_negative_z_detector_hit(self) -> None:
         kinds = (
@@ -696,7 +682,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                     "mode": "initial_exit_triggered_single_center",
                     "qualification": "single_center_only",
                 },
-                "workbench_accelerator_instance": 2,
+                "accelerator_instance": 3,
             }), encoding="utf-8")
             log = root / "flight.log"
             log.write_text("", encoding="utf-8")
@@ -705,7 +691,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                               output_path=root / "missing.json")
             log.write_text(
                 "MRTOF_EVENT accelerator_pulse_off ion=1 t_us=1.86 "
-                "from_instance=2 to_instance=1 x_mm=0 y_mm=-55 z_mm=-5.7\n",
+                "from_instance=3 to_instance=1 x_mm=0 y_mm=-55 z_mm=-5.7\n",
                 encoding="utf-8",
             )
             result = analyze_trial(log_path=log, trial_receipt_path=receipt,
@@ -739,7 +725,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             log = root / "flight.log"
             event = (
                 "MRTOF_EVENT accelerator_global_pulse_applied ion=1 "
-                "t_us=1.86736875912 scheduled_t_us=1.86736875912 instance=7 "
+                "t_us=1.86736875912 scheduled_t_us=1.86736875912 instance=4 "
                 "x_mm=0 y_mm=-55 z_mm=-5.7 trigger=fixed_global_time\n"
             )
             log.write_text(event, encoding="utf-8")
@@ -750,11 +736,62 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             self.assertEqual(
                 result["accelerator_pulse_diagnostic"]["mode"], "fixed_global_time"
             )
+            self.assertEqual(
+                result["accelerator_pulse_diagnostic"]["fixed_global_pulse_validation"]["particle_count"],
+                1,
+            )
             log.write_text(event.replace("1.86736875912 ", "1.88 ", 1), encoding="utf-8")
-            with self.assertRaisesRegex(CandidateContractError, "frozen global time"):
+            with self.assertRaisesRegex(CandidateContractError, "common pulse boundary"):
                 analyze_trial(
                     log_path=log, trial_receipt_path=receipt,
                     output_path=root / "mismatch.json",
+                )
+
+    def test_fixed_global_accelerator_pulse_requires_one_event_per_particle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = root / "trial.json"
+            receipt.write_text(json.dumps({
+                "prism_switch": None,
+                "prism_voltages_v": [10.0, -10.0],
+                "source_position_project_mm": [0.0, -55.0, 50.0],
+                **self._single_center_source_fields(),
+                "source_particle_count": 2,
+                "source_cohort": {"role": "test_selection"},
+                "source_expected_particle_ids": [1, 2],
+                "selected_axial_energy_per_charge_v": 4000.0,
+                "target_positive_mirror_turn_y_mm": 0.0,
+                "target_low_field_tangent_ratio_vy_over_vz": 0.5,
+                "particle_mass_th": 524.0,
+                "charge_state": 1,
+                "target_drift_period_ratio": 25.5,
+                "target_half_oscillation_count": 51,
+                "flight_scope": "complete_three_dimensional_static_return",
+                "accelerator_pulse": {
+                    "mode": "fixed_global_time",
+                    "pulse_off_time_us": 1.82574136731,
+                    "qualification": "complete_bunch_safe_exit_schedule__numerical_convergence_pending",
+                },
+            }), encoding="utf-8")
+            event = (
+                "MRTOF_EVENT accelerator_global_pulse_applied ion={ion} "
+                "t_us=1.82574136731 scheduled_t_us=1.82574136731 instance=4 "
+                "x_mm=0 y_mm=-52.8 z_mm=-5.8 trigger=fixed_global_time\n"
+            )
+            log = root / "flight.log"
+            log.write_text(event.format(ion=1) + event.format(ion=2), encoding="utf-8")
+            result = analyze_trial(
+                log_path=log, trial_receipt_path=receipt,
+                output_path=root / "observed.json",
+            )
+            validation = result["accelerator_pulse_diagnostic"]["fixed_global_pulse_validation"]
+            self.assertEqual(validation["particle_count"], 2)
+            self.assertEqual(validation["event_count"], 2)
+            log.write_text(event.format(ion=1), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "particle 2 must have exactly one"):
+                analyze_trial(
+                    log_path=log, trial_receipt_path=receipt,
+                    output_path=root / "missing.json",
                 )
 
     def test_bunch_analysis_preserves_a_contiguous_global_id_selection(self) -> None:
@@ -883,6 +920,134 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             )
             self.assertAlmostEqual(result["residuals"]["Stripe_slow_turn_y_minus_L_mm"], -81.25)
             self.assertAlmostEqual(result["residuals"]["Stripe_fractional_K_minus_target"], -6.486)
+            self.assertAlmostEqual(
+                result["residuals"]["Stripe_preceding_phase_y_minus_origin_mm"], 0.5
+            )
+            self.assertNotIn("Stripe_target_phase_y_minus_origin_mm", result["residuals"])
+
+    def test_coordinate_return_before_target_phase_is_reported_without_fabricating_sample(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = root / "trial.json"
+            receipt.write_text(json.dumps({
+                "prism_voltages_v": [190.6, -191.94],
+                "source_position_project_mm": [0.0, -55.0, 0.0],
+                **self._single_center_source_fields(),
+                "target_positive_mirror_turn_y_mm": 0.0,
+                "target_low_field_tangent_ratio_vy_over_vz": 0.5,
+                "target_slow_turn_y_mm": 340.0,
+                "target_drift_period_ratio": 25.5,
+                "target_half_oscillation_count": 51,
+                "particle_mass_th": 524.0,
+                "charge_state": 1,
+                "flight_scope": "complete_three_dimensional_static_return",
+            }), encoding="utf-8")
+            log = root / "flight.log"
+            log.write_text("\n".join([
+                "MRTOF_EVENT prism_pass ion=1 n=1 t_us=1 x_mm=0 y_mm=-40 z_mm=-101 vx_mm_us=0 vy_mm_us=1 vz_mm_us=-2",
+                "MRTOF_EVENT pre_injection_mirror_turn ion=1 t_us=2 x_mm=0 y_mm=-30 z_mm=-280 vx_mm_us=0 vy_mm_us=1 vz_mm_us=0",
+                "MRTOF_EVENT prism_pass ion=1 n=2 t_us=3 x_mm=0 y_mm=-10 z_mm=97 vx_mm_us=0 vy_mm_us=1 vz_mm_us=2",
+                "MRTOF_EVENT pre_origin_positive_mirror_turn ion=1 t_us=3.5 x_mm=0 y_mm=0 z_mm=280 vx_mm_us=0 vy_mm_us=1 vz_mm_us=0",
+                "MRTOF_EVENT drift_phase_origin ion=1 t_us=4 x_mm=0 y_mm=0 z_mm=280 vx_mm_us=0 vy_mm_us=1 vz_mm_us=0",
+                "MRTOF_EVENT slow_turn ion=1 n=1 t_us=10 x_mm=0 y_mm=338 z_mm=0",
+                "MRTOF_EVENT drift_coordinate_return ion=1 k_before=25 fractional_k=25 t_us=20 x_mm=0 y_mm=0 z_mm=101 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=-40",
+                "MRTOF_EVENT terminal ion=1 splat=-1 t_us=21 x_mm=0 y_mm=-0.15 z_mm=97 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=-40 turns=50 central_crossings=50",
+            ]) + "\n", encoding="utf-8")
+            result = self._analyze_with_handoff_events(
+                log=log, receipt=receipt, output=root / "observation.json",
+            )
+            self.assertEqual(result["status"], "full_drift_observed", result)
+            self.assertEqual(result["fractional_k"], 25.0)
+            self.assertEqual(result["target_phase_y_mm"], None)
+            self.assertEqual(
+                result["return_topology"], "coordinate_return_before_target_phase"
+            )
+            self.assertEqual(result["residuals"]["Stripe_fractional_K_minus_target"], -0.5)
+            self.assertNotIn("Stripe_target_phase_y_minus_origin_mm", result["residuals"])
+
+    def test_coordinate_return_preserves_later_observed_target_phase_sample(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = root / "trial.json"
+            receipt.write_text(json.dumps({
+                "prism_voltages_v": [190.6, -191.94],
+                "source_position_project_mm": [0.0, -55.0, 0.0],
+                **self._single_center_source_fields(),
+                "target_positive_mirror_turn_y_mm": 0.0,
+                "target_low_field_tangent_ratio_vy_over_vz": 0.5,
+                "target_slow_turn_y_mm": 340.0,
+                "target_drift_period_ratio": 25.5,
+                "target_half_oscillation_count": 51,
+                "particle_mass_th": 524.0,
+                "charge_state": 1,
+                "flight_scope": "complete_three_dimensional_static_return",
+            }), encoding="utf-8")
+            log = root / "flight.log"
+            log.write_text("\n".join([
+                "MRTOF_EVENT prism_pass ion=1 n=1 t_us=1 x_mm=0 y_mm=-40 z_mm=-101 vx_mm_us=0 vy_mm_us=1 vz_mm_us=-2",
+                "MRTOF_EVENT pre_injection_mirror_turn ion=1 t_us=2 x_mm=0 y_mm=-30 z_mm=-280 vx_mm_us=0 vy_mm_us=1 vz_mm_us=0",
+                "MRTOF_EVENT prism_pass ion=1 n=2 t_us=3 x_mm=0 y_mm=-10 z_mm=97 vx_mm_us=0 vy_mm_us=1 vz_mm_us=2",
+                "MRTOF_EVENT pre_origin_positive_mirror_turn ion=1 t_us=3.5 x_mm=0 y_mm=0 z_mm=280 vx_mm_us=0 vy_mm_us=1 vz_mm_us=0",
+                "MRTOF_EVENT drift_phase_origin ion=1 t_us=4 x_mm=0 y_mm=0 z_mm=280 vx_mm_us=0 vy_mm_us=1 vz_mm_us=0",
+                "MRTOF_EVENT slow_turn ion=1 n=1 t_us=10 x_mm=0 y_mm=340.2 z_mm=0",
+                "MRTOF_EVENT drift_coordinate_return ion=1 k_before=25 fractional_k=25.4 phase_crossing_t_us=100 phase_crossing_y_mm=6 phase_time_residual_us=12 phase_period_us=30 t_us=112 x_mm=0 y_mm=0 z_mm=-160 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=-40",
+                "MRTOF_EVENT target_k_phase_sample ion=1 k=25.5 half_cycles=51 t_us=115 x_mm=0 y_mm=-4.5 z_mm=-280 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=0",
+                "MRTOF_EVENT drift_phase_return ion=1 k=25.5 half_cycles=51 slow_coordinate_residual_mm=-4.5 t_us=115 x_mm=0 y_mm=-4.5 z_mm=-280 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=0",
+                "MRTOF_EVENT terminal ion=1 splat=1 t_us=120 x_mm=0 y_mm=-53 z_mm=97 vx_mm_us=0 vy_mm_us=-3 vz_mm_us=-40 turns=51 central_crossings=51",
+            ]) + "\n", encoding="utf-8")
+            result = self._analyze_with_handoff_events(
+                log=log, receipt=receipt, output=root / "observation.json",
+            )
+            self.assertEqual(result["return_topology"], "coordinate_return_before_target_phase")
+            self.assertEqual(result["target_phase_y_mm"], -4.5)
+            self.assertEqual(
+                result["residuals"]["Stripe_target_phase_y_minus_origin_mm"], -4.5
+            )
+
+    def test_old_coordinate_return_log_recovers_continuous_k_from_same_side_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = root / "trial.json"
+            receipt.write_text(json.dumps({
+                "prism_voltages_v": [190.6, -191.94],
+                "source_position_project_mm": [0.0, -55.0, 0.0],
+                **self._single_center_source_fields(),
+                "target_positive_mirror_turn_y_mm": 0.0,
+                "target_low_field_tangent_ratio_vy_over_vz": 0.5,
+                "target_slow_turn_y_mm": 340.0,
+                "target_drift_period_ratio": 25.5,
+                "target_half_oscillation_count": 51,
+                "particle_mass_th": 524.0,
+                "charge_state": 1,
+                "flight_scope": "complete_three_dimensional_static_return",
+            }), encoding="utf-8")
+            log = root / "flight.log"
+            log.write_text("\n".join([
+                "MRTOF_EVENT prism_pass ion=1 n=1 t_us=1 x_mm=0 y_mm=-40 z_mm=-101 vx_mm_us=0 vy_mm_us=1 vz_mm_us=-2",
+                "MRTOF_EVENT pre_injection_mirror_turn ion=1 t_us=2 x_mm=0 y_mm=-30 z_mm=-280 vx_mm_us=0 vy_mm_us=1 vz_mm_us=0",
+                "MRTOF_EVENT prism_pass ion=1 n=2 t_us=3 x_mm=0 y_mm=-10 z_mm=97 vx_mm_us=0 vy_mm_us=1 vz_mm_us=2",
+                "MRTOF_EVENT pre_origin_positive_mirror_turn ion=1 t_us=3.5 x_mm=0 y_mm=0 z_mm=280 vx_mm_us=0 vy_mm_us=1 vz_mm_us=0",
+                "MRTOF_EVENT drift_phase_origin ion=1 t_us=4 x_mm=0 y_mm=0 z_mm=280 vx_mm_us=0 vy_mm_us=1 vz_mm_us=0",
+                "MRTOF_EVENT slow_turn ion=1 n=1 t_us=10 x_mm=0 y_mm=338 z_mm=0",
+                "MRTOF_EVENT drift_phase_candidate ion=1 k=24 half_cycles=48 t_us=70 x_mm=0 y_mm=20 z_mm=280 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=0",
+                "MRTOF_EVENT drift_phase_candidate ion=1 k=24.5 half_cycles=49 t_us=85 x_mm=0 y_mm=15 z_mm=-280 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=0",
+                "MRTOF_EVENT drift_phase_candidate ion=1 k=25 half_cycles=50 t_us=100 x_mm=0 y_mm=6 z_mm=280 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=0",
+                "MRTOF_EVENT drift_coordinate_return ion=1 k_before=25 fractional_k=25 t_us=109 x_mm=0 y_mm=0 z_mm=101 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=-40",
+                "MRTOF_EVENT terminal ion=1 splat=-1 t_us=110 x_mm=0 y_mm=-0.15 z_mm=97 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=-40 turns=50 central_crossings=50",
+            ]) + "\n", encoding="utf-8")
+            result = self._analyze_with_handoff_events(
+                log=log, receipt=receipt, output=root / "observation.json",
+            )
+            self.assertAlmostEqual(result["fractional_k"], 25.3)
+            self.assertIsNone(result["target_phase_y_mm"])
+            self.assertEqual(result["preceding_phase_y_mm"], 6.0)
+            self.assertEqual(
+                result["return_topology"], "coordinate_return_before_target_phase"
+            )
+            self.assertAlmostEqual(
+                result["residuals"]["Stripe_preceding_phase_y_minus_origin_mm"], 6.0
+            )
+            self.assertNotIn("Stripe_target_phase_y_minus_origin_mm", result["residuals"])
 
     def test_exact_target_k_phase_return_is_full_drift_and_reports_static_detector(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -908,7 +1073,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             positive_turn = "x_mm=0 y_mm=0 z_mm=280 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=0"
             log = root / "flight.log"
             log.write_text("\n".join([
-                "MRTOF_EVENT accelerator_safe_exit ion=1 t_us=0.5 from_instance=7 to_instance=1 x_mm=0 y_mm=-55 z_mm=40 vx_mm_us=0 vy_mm_us=0.043 vz_mm_us=-39",
+                "MRTOF_EVENT accelerator_safe_exit ion=1 t_us=0.5 from_instance=3 to_instance=1 x_mm=0 y_mm=-55 z_mm=40 vx_mm_us=0 vy_mm_us=0.043 vz_mm_us=-39",
                 "MRTOF_EVENT prism_entry ion=1 n=1 t_us=0.75 x_mm=0 y_mm=-45 z_mm=-90 vx_mm_us=0 vy_mm_us=0.05 vz_mm_us=-38",
                 "MRTOF_EVENT prism_pass ion=1 n=1 t_us=1 x_mm=0 y_mm=-40 z_mm=-101 vx_mm_us=0 vy_mm_us=1 vz_mm_us=-2",
                 "MRTOF_EVENT pre_injection_mirror_turn ion=1 t_us=2 x_mm=0 y_mm=-30 z_mm=-280 vx_mm_us=0 vy_mm_us=1 vz_mm_us=0",
@@ -938,6 +1103,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             self.assertEqual(result["fractional_k"], 25.5)
             self.assertEqual(result["return_topology"], "exact_target_k_phase_return")
             self.assertEqual(result["residuals"]["Stripe_fractional_K_minus_target"], 0.0)
+            self.assertEqual(result["residuals"]["Stripe_target_phase_y_minus_origin_mm"], 0.0)
             source = result["source_release_state"]
             self.assertAlmostEqual(source["kinetic_energy_per_charge_v"], 5.0)
             self.assertEqual(source["direction_project"], [0.0, 1.0, 0.0])
@@ -1010,7 +1176,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         }
         base = {
             "kind": "accelerator_safe_exit", "ion": 1, "t_us": 0.5,
-            "from_instance": 7, "to_instance": 1,
+            "from_instance": 3, "to_instance": 1,
             "x_mm": 0.0, "y_mm": -55.0, "z_mm": 40.0,
             "vx_mm_us": 0.0, "vy_mm_us": 0.04, "vz_mm_us": -39.0,
         }
@@ -1058,14 +1224,13 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                 pass_only["p1_ordering"],
                 "before_P1_pass_only__P1_entry_not_observed",
             )
-            global_exit = _accelerator_safe_exit_observation(
-                [dict(base, from_instance=2)],
-                {**trial, "workbench_accelerator_instance": 2},
-                log_path=log,
-                trial_receipt_path=receipt,
+            native_exit = _accelerator_safe_exit_observation(
+                [dict(base, from_instance=3, to_instance=2)],
+                {**trial, "accelerator_instance": 3},
+                log_path=log, trial_receipt_path=receipt,
             )
-            self.assertEqual(global_exit["status"], "observed")
-            self.assertEqual(global_exit["state"]["from_instance"], 2)
+            self.assertEqual(native_exit["status"], "observed")
+            self.assertEqual(native_exit["state"]["from_instance"], 3)
             pass_before_exit = _accelerator_safe_exit_observation(
                 [{
                     "kind": "prism_pass", "ion": 1, "n": 1, "t_us": 0.4,

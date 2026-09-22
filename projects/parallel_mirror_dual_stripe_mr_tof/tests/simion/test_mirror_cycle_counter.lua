@@ -67,6 +67,25 @@ test('slow y zero is diagnostic and does not terminate phase counting', function
   assert(c:state().stage == 'main_drift' and c:state().half_cycles == 1)
 end)
 
+test('coordinate return reports continuous K from the latest same-side period', function()
+  local c, step, events = driver(5)
+  arm_and_origin(step)
+  mirror(step, -1, 1, 1)
+  mirror(step, 1, 1, 2)
+  mirror(step, -1, 1, 3)
+  mirror(step, 1, -1, 4)
+  step(5, -1, nil, 0.25, -1)
+  step(4, -1, nil, -0.25, -1)
+  local found
+  for _, event in ipairs(events) do
+    if event.kind == 'drift_coordinate_return' then found = event end
+  end
+  assert(found and found.k_before == 2)
+  assert(found.phase_period_us > 0 and found.phase_time_residual_us > 0)
+  assert(found.fractional_k > 2 and found.fractional_k < 2.5)
+  assert(found.phase_crossing_y_mm == 4)
+end)
+
 test('central crossings are diagnostics only', function()
   local c, step, events = driver(3)
   arm_and_origin(step); step(0, -1, nil, 5, 1)

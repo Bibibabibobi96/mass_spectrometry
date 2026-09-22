@@ -1,18 +1,39 @@
 -- Full MR-TOF Candidate workbench program.  Candidate/prototype only.
 simion.workbench_program()
--- Required by SIMION 2020's documented 8.2 instance_adjust overlap path.
-simion.early_access(8.2)
 -- Native SIMION 2020 regression: retain terminal callbacks outside every PA.
 sim_segment_global = 1
 
 local program_path = debug.getinfo(1, 'S').source:sub(2)
 local operating_point_path = assert(program_path:gsub('%.lua$', '.operating_point.lua'))
 local operating_point = assert(loadfile(operating_point_path), 'missing run-local operating-point sidecar: '..operating_point_path)()
-local local_refinement_path = program_path:gsub('%.lua$', '.local_refinement.lua')
-local local_refinement_loader = loadfile(local_refinement_path)
-local local_refinement = local_refinement_loader and local_refinement_loader() or {enabled=false}
-assert(type(local_refinement) == 'table' and type(local_refinement.enabled) == 'boolean',
-  'local-refinement sidecar must return a table with a boolean enabled field')
+local priority_path = program_path:gsub('%.lua$', '.priority.lua')
+local native_corridor_roles = assert(loadfile(priority_path), 'missing native-corridor priority sidecar: '..priority_path)()
+assert(type(native_corridor_roles) == 'table'
+    and native_corridor_roles.role == 'mrtof_native_corridor_iob_priority_contract'
+    and native_corridor_roles.schema_version == 1,
+  'native-corridor priority sidecar has the wrong role or schema')
+assert(type(native_corridor_roles.instances) == 'table'
+    and #native_corridor_roles.instances == 4,
+  'native-corridor priority sidecar requires exactly four instances')
+local native_corridor_instances = {}
+local expected_roles = {'global_fallback', 'native_corridor', 'accelerator', 'detector'}
+for index, expected_role in ipairs(expected_roles) do
+  local definition = native_corridor_roles.instances[index]
+  assert(type(definition) == 'table'
+      and definition.role == expected_role
+      and definition.priority_number == index,
+    string.format('native-corridor priority instance %d must be role %s', index, expected_role))
+  native_corridor_instances[expected_role] = index
+end
+local native_corridor_voltage_groups = native_corridor_roles.corridor_voltage_groups
+assert(type(native_corridor_voltage_groups) == 'table'
+    and #native_corridor_voltage_groups == 8,
+  'native-corridor priority sidecar requires exactly eight voltage groups')
+for local_id, physical_ids in ipairs(native_corridor_voltage_groups) do
+  assert(type(physical_ids) == 'table' and #physical_ids > 0,
+    'native-corridor voltage group is empty for local ID '..local_id)
+end
+local applied_native_corridor_values
 local voltage_map_path = program_path:gsub('%.lua$', '.voltage_map.lua')
 local voltage_map = assert(loadfile(voltage_map_path), 'missing run-local voltage mapper: '..voltage_map_path)()
 local cycle_counter_path = program_path:gsub('%.lua$', '.mirror_cycle_counter.lua')
@@ -24,13 +45,6 @@ local detector_box = assert(operating_point.detector_box_mm, 'operating point ha
 local first_prism_l0 = assert(operating_point.first_prism_l0, 'operating point has no frozen P1 interface')
 local mirror_regions = assert(operating_point.mirror_regions_project, 'operating point has no resolved mirror regions')
 local prism_regions = assert(operating_point.prism_regions_project, 'operating point has no resolved prism regions')
-local patch_interface_planes
-if local_refinement.enabled then
-  patch_interface_planes = operating_point.patch_interface_planes_project
-    or local_refinement.patch_interface_planes_project
-  assert(type(patch_interface_planes) == 'table',
-    'local refinement has no contract-derived local-PA interface planes')
-end
 local phase_origin_mirror_side = assert(operating_point.phase_origin_mirror_side,
   'operating point has no phase-origin mirror side')
 local return_mirror_side = assert(operating_point.return_mirror_side,
@@ -74,6 +88,10 @@ adjustable V_stripe_1 = stripe_biases[1]
 adjustable V_stripe_2 = stripe_biases[2]
 adjustable V_prism_1 = prism_voltages[1]
 adjustable V_prism_2 = prism_voltages[2]
+adjustable V_mirror_B = mirror_voltages[2]
+adjustable V_mirror_C = mirror_voltages[3]
+adjustable V_mirror_D = mirror_voltages[4]
+adjustable V_mirror_E = mirror_voltages[5]
 adjustable V_repeller = accelerator_voltages[1]
 adjustable V_grid1 = accelerator_voltages[2]
 adjustable V_grid2 = accelerator_voltages[3]
@@ -88,6 +106,9 @@ assert(accelerator_field_gate_requested == nil
   or type(accelerator_field_gate_requested) == 'boolean',
   'runtime_accelerator_field_gate_enable must be boolean when present')
 local accelerator_pulse_mode = operating_point.accelerator_pulse_mode or 'static'
+local accelerator_safe_exit_only = operating_point.accelerator_safe_exit_only or false
+assert(type(accelerator_safe_exit_only) == 'boolean',
+  'accelerator_safe_exit_only must be boolean')
 assert(accelerator_pulse_mode == 'static'
     or accelerator_pulse_mode == 'initial_exit_triggered_single_center'
     or accelerator_pulse_mode == 'fixed_global_time',
@@ -107,19 +128,9 @@ else
 end
 assert(operating_point.prism_switch == nil,
   'active MR-TOF Candidate forbids all P1/P2 voltage switching')
-if local_refinement.enabled then
-  assert(not runtime_fast_adjust_requested,
-    'local replacement PAs presently require saved static working points; full analyser Fast Adjust is unsupported')
-  assert(type(local_refinement.instances) == 'table' and #local_refinement.instances == 5,
-    'local refinement requires five ordered replacement instances')
-  assert(local_refinement.global_analyzer_instance == 1
-      and local_refinement.accelerator_instance == 7
-      and local_refinement.detector_instance == 8,
-    'local-refinement instance roles must be global=1, accelerator=7, detector=8')
-end
--- The standalone accelerator is instance 2 in the reviewed three-component
--- workbench and instance 7 when the five local analyser replacements are
--- present.  Initial-exit gating is valid in either explicit topology.
+-- Legacy verification workbenches retain their existing fixed layouts.  The
+-- preferred native-corridor workbench resolves every instance from the copied
+-- priority sidecar, including the standalone accelerator and detector.
 -- Ordinary reviewed flights consume a manifest-bound standalone operating PA.
 -- Finite-3-D downstream Jacobian trials bind the same standalone analyser
 -- representation and apply their run-local Stripe/P1/P2 coordinates in memory.
@@ -152,39 +163,43 @@ local turns, slow_turns, crossings, y0_crossings, p1_crossings, detected, splat_
 local cycle_counters, target_k_emitted = {}, {}
 local prism_stage = {}
 local return_sequence_error = {}
-local patch_interface_crossings = {}
 local selected_instances = {}
 local accelerator_pulse_complete = {}
 local accelerator_safe_exit_observed = {}
 local p2_low_field_reference_emitted = {}
 
-local function local_instance_definition(instance_number)
-  if not local_refinement.enabled then return nil end
-  for _,definition in ipairs(local_refinement.instances) do
-    if definition.instance == instance_number then return definition end
-  end
-  return nil
+local function role_instance(role)
+  return assert(native_corridor_instances[role],
+    'native-corridor priority sidecar has no role '..tostring(role))
 end
 
-function segment.instance_adjust()
-  if not local_refinement.enabled then return end
-  local definition = local_instance_definition(ion_instance)
-  if definition == nil then return end
-  local lower_ok = definition.z_min_mm == nil or ion_pz_mm >= definition.z_min_mm
-  local upper_ok = definition.z_max_mm == nil or ion_pz_mm < definition.z_max_mm
-  if not (lower_ok and upper_ok) then
-    -- Official SIMION overlap semantics: zero suppresses only the currently
-    -- selected higher-priority instance, then selection resumes below it.
-    ion_instance = 0
-  end
+local function accelerator_instance_number()
+  return role_instance('accelerator')
 end
 
-local function sample_coordinate(sample, axis)
-  if axis == 'x' then return sample.x_mm end
-  if axis == 'y' then return sample.y_mm end
-  if axis == 'z' then return sample.z_mm end
-  error('invalid patch-interface axis: '..tostring(axis))
+local function detector_instance_number()
+  return role_instance('detector')
 end
+
+local function maximum_instance_number()
+  return #native_corridor_roles.instances
+end
+
+local function native_corridor_values(analyser_values)
+  local values = {}
+  for local_id,physical_ids in ipairs(native_corridor_voltage_groups) do
+    local value = assert(analyser_values[physical_ids[1]],
+      'missing physical voltage for native corridor local ID '..local_id)
+    for _,physical_id in ipairs(physical_ids) do
+      assert(analyser_values[physical_id] == value,
+        'physical voltages differ within native corridor local ID '..local_id)
+    end
+    values[local_id] = value
+  end
+  return values
+end
+
+
 
 local function inside_region(event, region)
   return event.y_mm >= region.y_min_mm and event.y_mm <= region.y_max_mm
@@ -207,8 +222,10 @@ local function interpolated_sample(a, b, fraction)
 end
 
 local function emit_cycle_events(events)
+  local has_mirror_turn = false
   for _,event in ipairs(events) do
     if event.kind == 'mirror_turn' then
+      has_mirror_turn = true
       -- The manufactured injection path contains one real negative-mirror
       -- pre-reflection between P1 and P2.  A prism refracts the ray; it must
       -- never be identified from a v_z sign reversal.
@@ -302,9 +319,15 @@ local function emit_cycle_events(events)
         event.t_us, event.x_mm, event.z_mm,
         event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
     elseif event.kind == 'drift_coordinate_return' then
-      print(string.format('MRTOF_EVENT drift_coordinate_return ion=%d k_before=%.12g fractional_k=%.12g t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        ion_number, event.k_before, event.fractional_k, event.t_us, event.x_mm, event.z_mm,
-        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      local phase_fields = ''
+      if event.phase_crossing_t_us then
+        phase_fields = string.format(' phase_crossing_t_us=%.12g phase_crossing_y_mm=%.12g phase_time_residual_us=%.12g phase_period_us=%.12g',
+          event.phase_crossing_t_us, event.phase_crossing_y_mm,
+          event.phase_time_residual_us, event.phase_period_us)
+      end
+      print(string.format('MRTOF_EVENT drift_coordinate_return ion=%d k_before=%.12g fractional_k=%.12g%s t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        ion_number, event.k_before, event.fractional_k, phase_fields,
+        event.t_us, event.x_mm, event.z_mm, event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
     elseif event.kind == 'central_plane' and event.stage == 'main_drift' then
       crossings[ion_number] = (crossings[ion_number] or 0) + 1
       local n = crossings[ion_number]
@@ -315,78 +338,66 @@ local function emit_cycle_events(events)
         event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
     end
   end
+  -- Flush the complete turn event group, never every integration step.
+  if has_mirror_turn then io.flush() end
   local state = cycle_counters[ion_number]:state()
   turns[ion_number] = state.accepted_main_turns
   return state
 end
 
 function segment.initialize_run()
+  applied_native_corridor_values = nil
   sim_trajectory_quality = trajectory_quality
   previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
   turns, slow_turns, crossings, y0_crossings, p1_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}
   cycle_counters, target_k_emitted = {}, {}
   prism_stage = {}
   return_sequence_error = {}
-  patch_interface_crossings = {}
   selected_instances = {}
   accelerator_pulse_complete = {}
   accelerator_safe_exit_observed = {}
-  if local_refinement.enabled then
-    assert(#patch_interface_planes > 0, 'at least one local-PA interface plane is required')
-    for _,plane in ipairs(patch_interface_planes) do
-      assert(type(plane.name) == 'string' and type(plane.region) == 'string'
-        and type(plane.face) == 'string', 'patch-interface identity is incomplete')
-      assert((plane.axis == 'x' or plane.axis == 'y' or plane.axis == 'z')
-        and type(plane.coordinate_mm) == 'number', 'patch-interface coordinate is invalid')
-      assert((plane.u_axis == 'x' or plane.u_axis == 'y' or plane.u_axis == 'z')
-        and (plane.v_axis == 'x' or plane.v_axis == 'y' or plane.v_axis == 'z')
-        and plane.u_axis ~= plane.axis and plane.v_axis ~= plane.axis
-        and plane.u_axis ~= plane.v_axis, 'patch-interface in-plane axes are invalid')
-      assert(plane.u_min_mm < plane.u_max_mm and plane.v_min_mm < plane.v_max_mm,
-        'patch-interface in-plane bounds are invalid')
-    end
-    assert(simion.wb and #simion.wb.instances == 8,
-      'local-refinement flight requires eight contiguous instances')
-    local expected = {
-      {'mrtof_analyzer%.pa0$', 'iob_input_analyzer%.pa$'},
-      {'local_negative_mirror%.pa0$', 'iob_input_local_1%.pa$'},
-      {'local_negative_bridge%.pa0$', 'iob_input_local_2%.pa$'},
-      {'local_central%.pa0$', 'iob_input_local_3%.pa$'},
-      {'local_positive_bridge%.pa0$', 'iob_input_local_4%.pa$'},
-      {'local_positive_mirror%.pa0$', 'iob_input_local_5%.pa$'},
-      {'mrtof_accelerator%.pa0$', 'iob_input_accelerator%.pa$'},
-      {'mrtof_detector%.pa#$', 'iob_input_detector%.pa$'}
-    }
-    for index,patterns in ipairs(expected) do
-      local filename=simion.wb.instances[index].filename
-      assert(filename:match(patterns[1]) or filename:match(patterns[2]),
-        string.format('local-refinement instance %d has the wrong PA role', index))
-    end
-    print('MRTOF_CANDIDATE: status=prototype geometry=three_component_3d local_replacement=enabled')
-  else
-    assert(simion.wb and #simion.wb.instances == 3,
-      'MR-TOF Candidate flight requires analyser, accelerator, and detector instances')
-    assert(simion.wb.instances[1].filename:match('mrtof_analyzer%.pa0$')
-      or simion.wb.instances[1].filename:match('iob_input_analyzer%.pa$'), 'instance 1 must be analyser PA')
-    assert(simion.wb.instances[2].filename:match('mrtof_accelerator%.pa0$')
-      or simion.wb.instances[2].filename:match('iob_input_accelerator%.pa$'), 'instance 2 must be accelerator PA')
-    assert(simion.wb.instances[3].filename:match('mrtof_detector%.pa#$')
-      or simion.wb.instances[3].filename:match('iob_input_detector%.pa$'), 'instance 3 must be detector PA')
-    print('MRTOF_CANDIDATE: status=prototype geometry=three_component_3d')
+  assert(simion.wb and #simion.wb.instances == maximum_instance_number(),
+    'native-corridor flight requires exactly four role-bound instances')
+  local role_patterns = {
+    global_fallback = {'mrtof_analyzer%.pa0$', 'analyzer_operating%.pa0$', 'iob_input_analyzer%.pa$'},
+    native_corridor = {'mrtof_analyzer_corridor%.pa0$', 'iob_input_native_corridor%.pa0$', 'iob_input_corridor%.pa0$'},
+    accelerator = {'orthogonal_accelerator_focus%.pa0$', 'iob_input_accelerator%.pa$'},
+    detector = {'mrtof_detector%.pa#$', 'iob_input_detector%.pa$'},
+  }
+  for role,patterns in pairs(role_patterns) do
+    local instance = role_instance(role)
+    local filename = assert(simion.wb.instances[instance].filename,
+      'native-corridor role '..role..' has no PA filename')
+    local matched = false
+    for _,pattern in ipairs(patterns) do matched = matched or filename:match(pattern) ~= nil end
+    assert(matched,
+      string.format('native-corridor role %s resolved to the wrong PA at instance %d', role, instance))
   end
+  print('MRTOF_CANDIDATE: status=prototype geometry=native_corridor_4_instance fast_adjust=8_channel')
 end
 
 function segment.fast_adjust()
-  if runtime_fast_adjust_enable == 0 then return end
-  local analyser=simion.wb.instances[1].pa
-  local values=voltage_map(mirror_voltages,{V_stripe_1,V_stripe_2},{V_prism_1,V_prism_2},
+  local current_mirror_voltages = {0,V_mirror_B,V_mirror_C,V_mirror_D,V_mirror_E}
+  local values=voltage_map(current_mirror_voltages,{V_stripe_1,V_stripe_2},{V_prism_1,V_prism_2},
     {V_repeller,V_grid1,V_grid2},accelerator_ring_voltages,V_nonaccelerator_scale)
-  if runtime_fast_adjust_enable ~= 0 then analyser:fast_adjust(values.analyser) end
+  local requested = native_corridor_values(values.analyser)
+  local changed = applied_native_corridor_values == nil
+  for local_id = 1,8 do
+    if changed or requested[local_id] ~= applied_native_corridor_values[local_id] then changed = true; break end
+  end
+  if not changed then return end
+  local corridor = simion.wb.instances[role_instance('native_corridor')].pa
+  print('MRTOF_NATIVE_FAST_ADJUST begin channels=8 values='..table.concat(requested, ','))
+  io.flush()
+  corridor:fast_adjust(requested)
+  applied_native_corridor_values = requested
+  print('MRTOF_NATIVE_FAST_ADJUST complete channels=8')
+  io.flush()
 end
 
 function segment.efield_adjust()
   if not accelerator_field_gate_requested then return end
-  local accelerator_instance = local_refinement.enabled and 7 or 2
+  local accelerator_instance = accelerator_instance_number()
   if ion_instance ~= accelerator_instance then return end
   local field_active = true
   if accelerator_pulse_mode == 'initial_exit_triggered_single_center' then
@@ -433,9 +444,8 @@ function segment.other_actions()
       ion_number, ion_time_of_flight, accelerator_pulse_off_time_us, ion_instance,
       ion_px_mm, ion_py_mm, ion_pz_mm))
   end
-  local accelerator_instance = local_refinement.enabled
-    and local_refinement.accelerator_instance or 2
-  local maximum_instance = local_refinement.enabled and 8 or 3
+  local accelerator_instance = accelerator_instance_number()
+  local maximum_instance = maximum_instance_number()
   assert(ion_instance >= 0 and ion_instance <= maximum_instance,
     'SIMION selected an undeclared workbench instance')
   if selected_instances[ion_number] ~= ion_instance then
@@ -446,6 +456,15 @@ function segment.other_actions()
         print(string.format('MRTOF_EVENT accelerator_safe_exit ion=%d t_us=%.12g from_instance=%d to_instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
           ion_number, ion_time_of_flight, selected_instances[ion_number], ion_instance,
           ion_px_mm, ion_py_mm, ion_pz_mm, ion_vx_mm, ion_vy_mm, ion_vz_mm))
+        if accelerator_safe_exit_only then
+          splat_codes[ion_number] = 1
+          splat_event_emitted[ion_number] = true
+          print(string.format('MRTOF_EVENT splat ion=%d code=1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=0 central_crossings=0',
+            ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm))
+          selected_instances[ion_number] = ion_instance
+          ion_splat = 1
+          return
+        end
       end
       if accelerator_safe_exit_observed[ion_number]
           and selected_instances[ion_number] ~= accelerator_instance
@@ -517,33 +536,6 @@ function segment.other_actions()
     local before = cycle_sample(px, py, pz, pvx, pvy, pvz, pt)
     local after = cycle_sample(ion_px_mm, ion_py_mm, ion_pz_mm,
       ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight)
-    if local_refinement.enabled then
-      for _,plane in ipairs(patch_interface_planes) do
-        local before_coordinate = sample_coordinate(before, plane.axis)
-        local after_coordinate = sample_coordinate(after, plane.axis)
-        local delta = after_coordinate-before_coordinate
-        local crosses = (before_coordinate < plane.coordinate_mm
-            and after_coordinate >= plane.coordinate_mm)
-          or (before_coordinate > plane.coordinate_mm
-            and after_coordinate <= plane.coordinate_mm)
-        if crosses and delta ~= 0 then
-          local crossing = interpolated_sample(before, after,
-            (plane.coordinate_mm-before_coordinate)/delta)
-          local u = sample_coordinate(crossing, plane.u_axis)
-          local v = sample_coordinate(crossing, plane.v_axis)
-          if u >= plane.u_min_mm and u <= plane.u_max_mm
-            and v >= plane.v_min_mm and v <= plane.v_max_mm then
-            local key = tostring(ion_number)..':'..plane.name
-            patch_interface_crossings[key] = (patch_interface_crossings[key] or 0)+1
-            print(string.format('MRTOF_EVENT patch_interface ion=%d name=%s region=%s face=%s n=%d direction=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-              ion_number, plane.name, plane.region, plane.face,
-              patch_interface_crossings[key], delta > 0 and 1 or -1,
-              crossing.t_us, crossing.x_mm, crossing.y_mm, crossing.z_mm,
-              crossing.vx_mm_us, crossing.vy_mm_us, crossing.vz_mm_us))
-          end
-        end
-      end
-    end
     if dz > 0 and prism_stage[ion_number] == 'awaiting_p2_entry'
       and pz < prism_regions.p2.z_min_mm and ion_pz_mm >= prism_regions.p2.z_min_mm then
       local entry = interpolated_sample(before, after,

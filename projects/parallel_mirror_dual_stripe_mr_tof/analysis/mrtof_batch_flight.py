@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import json
 import re
@@ -10,9 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
-    load_verified_bunch_source_receipt,
-    render_bunch_fly2,
-    source_cohort_identity,
+    resolve_bunch_source_interval as _resolve_bunch_source_interval,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
     FLY_COMPLETED,
@@ -29,60 +26,12 @@ def _sha256(path: Path) -> str:
 def resolve_bunch_source_interval(
     *, receipt_path: Path, particle_id_min: int, particle_id_max: int,
 ) -> dict[str, Any]:
-    """Resolve one immutable contiguous interval from a verified mother cohort."""
-    receipt = load_verified_bunch_source_receipt(receipt_path)
-    count = int(receipt["particle_count"])
-    if not 1 <= particle_id_min <= particle_id_max <= count:
-        raise ValueError("source particle interval is outside the frozen cohort")
-    with Path(receipt["state_table"]["path"]).open(
-        "r", encoding="utf-8", newline="",
-    ) as stream:
-        rows = list(csv.DictReader(stream))
-    selected = rows[particle_id_min - 1:particle_id_max]
-    particle_ids = list(range(particle_id_min, particle_id_max + 1))
-    if [int(row["particle_id"]) for row in selected] != particle_ids:
-        raise ValueError("source selection is not one contiguous global-ID interval")
-    states = [{
-        "tob_us": float(row["tob_us"]),
-        "mass_th": float(row["mass_th"]),
-        "charge_e": int(row["charge_e"]),
-        "kinetic_energy_ev": float(row["kinetic_energy_ev"]),
-        "position_workbench_mm": [float(row[key]) for key in ("x_mm", "y_mm", "z_mm")],
-        "direction_workbench": [
-            float(row[key]) for key in ("direction_x", "direction_y", "direction_z")
-        ],
-    } for row in selected]
-    fly2 = render_bunch_fly2(states)
-    ids_payload = json.dumps(particle_ids, separators=(",", ":")).encode("utf-8")
-    state_payload = json.dumps(states, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    parent_identity = source_cohort_identity(receipt)
-    cohort_identity = {
-        **parent_identity,
-        "particle_count": len(states),
-        "expected_particle_ids_sha256": hashlib.sha256(ids_payload).hexdigest(),
-        "particle_states_sha256": hashlib.sha256(state_payload).hexdigest(),
-        "selection": {
-            "role": "contiguous_frozen_source_diagnostic_selection",
-            "particle_id_min": particle_id_min,
-            "particle_id_max": particle_id_max,
-            "parent_particle_count": count,
-            "parent_particle_states_sha256": parent_identity["particle_states_sha256"],
-            "source_receipt_sha256": _sha256(receipt_path),
-        },
-    }
-    selected_fly2_sha256 = hashlib.sha256(fly2.encode("utf-8")).hexdigest()
-    cohort_identity["selection"].update({
-        "expected_particle_ids_sha256": cohort_identity["expected_particle_ids_sha256"],
-        "particle_states_sha256": cohort_identity["particle_states_sha256"],
-        "fly2_sha256": selected_fly2_sha256,
-    })
-    return {
-        "particle_ids": particle_ids,
-        "states": states,
-        "fly2": fly2,
-        "fly2_sha256": selected_fly2_sha256,
-        "source_cohort": cohort_identity,
-    }
+    """Compatibility entrypoint for the shared immutable interval resolver."""
+    return _resolve_bunch_source_interval(
+        receipt_path=receipt_path,
+        particle_id_min=particle_id_min,
+        particle_id_max=particle_id_max,
+    )
 
 
 def materialize_batch_fly2(

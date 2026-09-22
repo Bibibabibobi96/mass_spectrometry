@@ -66,6 +66,35 @@
     "target_drift_period_ratio": 25.5,
     "fast_path_symmetry": "opposite_mirror_turn__z_reflected_nonoverlapping"
   },
+  "downstream_fixed_grid_workpoint_profile": {
+    "schema_version": 1,
+    "voltage_bounds_rule": "stripe_seed_energy_envelope_with_baseline_sign__prism_initial_search_window",
+    "parameter_scale_rule": "absolute_baseline_voltage",
+    "position_residual_scale_mm": 0.01,
+    "angle_residual_scale_degrees": 0.01,
+    "slow_turn_residual_scale_mm": 1.0,
+    "return_phase_residual_scale_mm": 1.0,
+    "maximum_abs_step_v": [2.0, 2.0, 2.0, 2.0],
+    "forward_stencil_steps_v": [0.1, 0.1, 0.1, 0.1],
+    "automatic_iteration": {
+      "schema_version": 1,
+      "maximum_iterations": 8,
+      "damping_factor": 0.5,
+      "minimum_step_linf_v": 1e-06,
+      "minimum_relative_improvement": 0.01,
+      "maximum_consecutive_non_improving_iterations": 3,
+      "cycle_voltage_tolerance_v": 1e-08,
+      "oscillation_window": 4,
+      "capacity_protection_ttl_seconds": 14400,
+      "acceptance_tolerances": {
+        "P1_P2_positive_mirror_turn_y_mm": 0.1,
+        "P1_P2_P2_shield_low_field_angle_degrees": 0.01,
+        "Stripe_slow_turn_y_minus_L_mm": 0.1,
+        "Stripe_target_phase_y_minus_origin_mm": 0.1
+      }
+    },
+    "semantics": "One local forward-Jacobian proposal for S1/S2/P1/P2 in that order. Stripe bounds reuse the seed search envelope at the selected axial energy: [-energy,-minimum_bias] and [minimum_bias,nextafter(energy-half_window,-infinity)], preserving the current negative/positive branch. Prism bounds reuse the existing initial discovery window. Parameter scales are absolute baseline voltages. The tangent-ratio scale is derived from the angle scale around the frozen target angle; the two 1-mm downstream scales remain numerical optimization controls. The automatic loop converts the tangent-ratio residual to degrees before applying its named acceptance tolerance; the other three tolerances are in millimetres. It first repairs P1/P2 when their two conditions fail, otherwise changes only S1/S2, and applies the declared damping and existing 2-V trust limits. Rank tolerance is owned by dual_stripe_l0.determination_numerics. Every accepted point and every new step requires a real trajectory on reused response fields; no Refine or PA geometry rebuild is implied."
+  },
   "accelerator_energy_contract": {
     "pre_acceleration_kinetic_energy_per_charge_v": 5,
     "net_gain_reference_center_per_charge_v": 4000,
@@ -2181,6 +2210,11 @@
   "accelerator": {
     "topology": "two_zone_orthogonal_pulsed",
     "axis": "z_negative",
+    "component_source_cylinder": {
+      "radius_mm": 1.0,
+      "height_mm": 1.0,
+      "semantics": "Requested full cylindrical bunch for the accelerator component design interface; this requirement does not itself qualify finite-source transport."
+    },
     "focus_project_position_mm": [
       0,
       null,
@@ -2191,12 +2225,21 @@
       "method": "audited_triangle_y_bounds_midpoint"
     },
     "focus_plane_constraint": "z=0",
-    "repeller_v": 4480,
-    "intermediate_grid_v": 3520,
+    "repeller_v": 4533.333333333333,
+    "intermediate_grid_v": 3466.6666666666665,
     "exit_grid_v": 0,
     "gap_1_mm": 6,
-    "gap_2_mm": 33.6,
+    "gap_2_mm": 30.6,
     "release_position_in_gap_1_mm": 3,
+    "design_source_acceptance": {
+      "axis": "z",
+      "axial_full_width_mm": 1.0,
+      "spread_definition": "symmetric_full_width_about_release_position",
+      "theory_role": "finite_source_interval_design_and_acceptance_input",
+      "geometry_rule": "compact_exit_focus_bound_at_maximum_declared_center__native_uniform_ring_planes",
+      "field_cache_dependency": "none",
+      "voltage_dependency": "derived_operating_voltage_only"
+    },
     "aperture_width_x_mm": 25,
     "aperture_height_y_mm": 25,
     "electrode_outer_width_x_mm": 40,
@@ -2235,7 +2278,7 @@
       "purpose": "independently refined grounded-enclosure accelerator PA; user-selected x/y/z mesh 0.25/0.25/0.1 mm resolves each 1-mm axial ring thickness with ten cells and aligns both ideal-grid planes. Mesh refinement alone does not establish timing, focal-plane, or resolution convergence."
     },
     "focus_plane": "central_z_0_injection_reference_plane",
-    "shape_semantics": "open frame with 40-mm x outer width and 36-mm y outer height, four node-aligned ideal grids, and a 48-mm x by 44-mm y finite-wall grounded shield cavity. The asymmetric physical envelope is derived from the fixed accelerator-exit prism centreline and the CAD grounded-2 y boundary: it retains at least the declared positive y clearance instead of intersecting the long central prism shield. The exit grid spans to and contacts the inner edge of the grounded enclosure. The repeller has the declared 2-mm lateral clearance and a separate declared rear acceleration gap before the grounded rear support; it never touches the shield shell. The exit faces project -z; its analytically derived first time-focus plane is z=0 at the declared nonzero y injection coordinate, and the accelerator body extends toward +z. The support grids belong to initial acceleration only and do not authorize a return trajectory through this PA. The lateral enclosure is deliberately reduced from the rejected 60/72-mm provisional box; it remains a theory-derived Candidate, not a CAD-copy claim."
+    "shape_semantics": "open frame with 40-mm x outer width and 36-mm y outer height, two node-aligned initial-acceleration grids, and a 48-mm x by 44-mm y finite-wall grounded shield cavity. The positive-z grounded rear cap and the repeller are solid plates. The asymmetric physical envelope is derived from the fixed accelerator-exit prism centreline and the CAD grounded-2 y boundary: it retains at least the declared positive y clearance instead of intersecting the long central prism shield. The exit grid spans to and contacts the inner edge of the grounded enclosure. The repeller has the declared 2-mm lateral clearance and a separate declared rear acceleration gap before the grounded rear cap; it never touches the shield shell. The exit faces project -z; its analytically derived first time-focus plane is z=0 at the declared nonzero y injection coordinate, and the accelerator body extends toward +z. The support grids belong to initial acceleration only and do not authorize a return trajectory through this PA. The lateral enclosure is deliberately reduced from the rejected 60/72-mm provisional box; it remains a theory-derived Candidate, not a CAD-copy claim."
   },
   "detector": {
     "id": 25,
@@ -2296,8 +2339,7 @@
     "center_particle_count": 1,
     "candidate_bunch_particle_count": 100,
     "candidate_bunch_radius_mm": 0.1,
-    "accelerator_focus_axial_full_width_mm": 0.2,
-    "initial_spread_status": "source-profile-specific ideal diagnostics; the complete MR-TOF center and its spread are not yet published"
+    "initial_spread_status": "Source distributions are separate run inputs and are excluded from PA-family and operating-PA cache identities. The accelerator design acceptance is declared under accelerator.design_source_acceptance; each flight source independently declares its sampled x/y/z, energy, angle and clock distributions."
   },
   "simion": {
     "component_mesh_mm_per_gu": {
@@ -2373,7 +2415,7 @@
           2,
           2
         ],
-        "purpose": "SIMION GUI geometry and voltage review only. The 33.6-mm two-zone gap cannot be exactly node-aligned at 2 mm/gu, so each ideal-grid plane is quantized by at most 1 mm and the run manifest records the actual raw-row locations. It must never be used for field convergence, timing, flight, or resolution."
+        "purpose": "SIMION GUI geometry and voltage review only. The contract-derived two-zone gap cannot be exactly node-aligned at 2 mm/gu, so each ideal-grid plane is quantized by at most 1 mm and the run manifest records the actual raw-row locations. It must never be used for field convergence, timing, flight, or resolution."
       },
       "analyzer_global_baseline": {
         "mm_per_gu": [
@@ -2383,6 +2425,15 @@
         ],
         "purpose": "current full-envelope analyser mesh; it may define a fixed-grid centre reference only and is not a spatial-convergence result"
       }
+    },
+    "native_corridor": {
+      "mesh_mm_per_gu": [0.25, 0.25, 0.25],
+      "margin_mm": [5.0, 5.0, 5.0],
+      "x_envelope_rule": "mirror_slot_transverse_half_width_plus_margin",
+      "yz_envelope_geometry_roles": ["mirror_electrodes", "mirror_ground_shields", "mirror_e_closures"],
+      "storage_bytes_per_grid_point_estimate": 8,
+      "response_voltage_groups": [[2, 7], [3, 8], [4, 9], [5, 10], [11, 12], [13, 14], [16], [17]],
+      "fixed_zero_electrode_ids": [1, 6, 15, 18, 19, 20]
     },
     "analyzer_spatial_convergence": {
       "status": "two_level_local_dirichlet_pa_required_before_resolution_claim",

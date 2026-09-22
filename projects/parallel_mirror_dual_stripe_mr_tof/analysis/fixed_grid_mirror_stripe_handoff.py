@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -30,12 +31,27 @@ def _record(records: object, name: str) -> dict[str, Any]:
     if len(found) != 1: raise CandidateContractError(f"fixed-grid manifest must bind exactly one {name}")
     return found[0]
 
-def _same_physics_except_slow_energy_policy(
+def _remove_path(value: dict[str, Any], *path: str) -> None:
+    parent: Any = value
+    for key in path[:-1]:
+        if not isinstance(parent, dict):
+            return
+        parent = parent.get(key)
+    if isinstance(parent, dict):
+        parent.pop(path[-1], None)
+
+
+def _same_mirror_physics(
     fixed_contract_path: Path, downstream_contract_path: Path,
 ) -> bool:
-    """Allow the explicit 5-eV policy clarification without changing physics."""
-    fixed = _obj(fixed_contract_path, "fixed-grid frozen contract")
-    downstream = _obj(downstream_contract_path, "downstream contract")
+    """Compare only contract fields that can invalidate frozen mirror evidence.
+
+    Accelerator geometry/source acceptance and run-time source distributions are
+    downstream consumers of the mirror result.  They must not invalidate a
+    measured fixed-mirror voltage point when mirror physics is unchanged.
+    """
+    fixed = deepcopy(_obj(fixed_contract_path, "fixed-grid frozen contract"))
+    downstream = deepcopy(_obj(downstream_contract_path, "downstream contract"))
     try:
         fixed_partition = fixed["prism_transport"]["energy_partition"]
         downstream_partition = downstream["prism_transport"]["energy_partition"]
@@ -43,6 +59,19 @@ def _same_physics_except_slow_energy_policy(
         downstream_policy = downstream_partition.pop("candidate_operating_partition")
     except (KeyError, TypeError) as exc:
         raise CandidateContractError("slow-energy policy fields are incomplete") from exc
+
+    for contract in (fixed, downstream):
+        contract.pop("accelerator", None)
+        contract.pop("particle_source", None)
+        contract.pop("downstream_fixed_grid_workpoint_profile", None)
+        _remove_path(contract, "simion", "accelerator_pa_span_mm")
+        _remove_path(
+            contract,
+            "simion",
+            "numerical_profiles",
+            "geometry_review_isotropic",
+            "purpose",
+        )
     return (
         fixed_policy
         == "fixed nominal input for analytic initialization; measured or simulated source spread is added later without replacing this centre"
@@ -76,7 +105,7 @@ def load_fixed_grid_mirror_point(manifest_path: Path, downstream_contract: Path)
         if (
             not fixed_contract_path.is_file()
             or file_sha256(fixed_contract_path) != source_contract_sha
-            or not _same_physics_except_slow_energy_policy(
+            or not _same_mirror_physics(
                 fixed_contract_path, downstream_contract.resolve(),
             )
         ):

@@ -14,14 +14,11 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     derive_operating_energy_envelope, derive_two_zone_focus, derive_two_zone_placement,
     load_contract, resolve_trajectory_profile, write_gem,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.full_candidate_geometry import (
-    ELECTRODE_IDS,
-    build_full_candidate_gem,
-    resolve_simion_iob_origin,
-)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.split_candidate_geometry import (
-    build_accelerator_gem, build_analyzer_gem, build_detector_gem,
-    resolve_split_iob_origins,
+    build_analyzer_gem, build_detector_gem, resolve_static_iob_origins,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import (
+    build_two_zone_accelerator_requirements,
 )
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import derive_shielded_rectangular_enclosure
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
@@ -35,7 +32,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
     parse_events,
     summarize_events,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_run_manifest import build_manifest
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.cad_pose_contract import (
     load_cad_pose_contract,
     project_to_source,
@@ -197,6 +193,14 @@ def _contains_csg(sections, slots, point, triangle=None):
 
 
 class SimionCandidateReferenceTest(unittest.TestCase):
+    def test_mr_delegates_accelerator_electrode_topology_to_component_owner(self) -> None:
+        source = (PROJECT / "analysis" / "split_candidate_geometry.py").read_text(encoding="utf-8")
+        self.assertIn("compile_closed_two_zone_accelerator", source)
+        self.assertNotIn("render_closed_two_zone_local_pa", source)
+        self.assertNotIn("emit_ideal_grid", source)
+        self.assertNotIn("emit_open_rectangular_frame", source)
+        self.assertNotIn("emit_solid_rectangular_plate", source)
+
     def test_analyzer_gem_mesh_defaults_follow_contract_without_geometry_changes(self) -> None:
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
         contract["simion"]["component_mesh_mm_per_gu"]["analyzer"] = [2, 2, 2]
@@ -293,11 +297,11 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             reviewed_path = Path(directory) / "reviewed.json"
             reviewed_path.write_text(json.dumps(reviewed), encoding="utf-8")
-            origins = resolve_split_iob_origins(
+            origins = resolve_static_iob_origins(
                 reviewed_path,
                 inherited_dual_stripe_topology_contract=authority,
             )
-        self.assertEqual(set(origins), {"analyzer", "accelerator", "detector"})
+        self.assertEqual(set(origins), {"analyzer", "detector"})
         incompatible = copy.deepcopy(reviewed)
         incompatible["dual_stripe"]["theory_profile"]["path_length_mapping"][
             "profile_width_to_total_S_multiplier"
@@ -396,13 +400,20 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             focus_bunch = outputs["accelerator_focus_bunch_fly2"].read_text(encoding="utf-8")
             placement = derive_two_zone_placement(derived)
             self.assertIn("ke = 0", focus_center)
-            self.assertIn("el = -90", focus_center)
-            self.assertIn(f"{placement.focus_y_mm:.17g}", focus_center)
+            self.assertIn("direction = vector(0,0,-1)", focus_center)
+            self.assertIn(f"position = vector(0,{placement.focus_y_mm:.17g},", focus_center)
             self.assertEqual(focus_bunch.count("standard_beam {"), 100)
             self.assertEqual(focus_bunch.count("n = 1"), 100)
             release_center_z = placement.repeller_z_mm - derived["accelerator"]["release_position_in_gap_1_mm"]
-            self.assertIn(f"z = {release_center_z + 0.1:.17g}", focus_bunch)
-            self.assertIn(f"z = {release_center_z - 0.1:.17g}", focus_bunch)
+            accelerator_focus_width = derived["accelerator"]["design_source_acceptance"]["axial_full_width_mm"]
+            self.assertIn(
+                f"position = vector(0,{placement.focus_y_mm:.17g},{release_center_z + accelerator_focus_width / 2.0:.17g})",
+                focus_bunch,
+            )
+            self.assertIn(
+                f"position = vector(0,{placement.focus_y_mm:.17g},{release_center_z - accelerator_focus_width / 2.0:.17g})",
+                focus_bunch,
+            )
             self.assertNotIn("circle_distribution", focus_bunch)
             species = derived["particle_source"]["species"]
             first_prism_entry = outputs["first_prism_entry_center_fly2"].read_text(encoding="utf-8")
@@ -485,7 +496,10 @@ class SimionCandidateReferenceTest(unittest.TestCase):
                 self.assertIn(key, input_manifest)
             derived["simion_geometry_release_status"] = "cad_topology_and_top_level_pose_qualified"
             outputs["contract"].write_text(json.dumps(derived), encoding="utf-8")
-            self.assertIn("analytic_l0_l1_candidate__3d_unvalidated__pa_build_allowed", build_full_candidate_gem(outputs["contract"]))
+            self.assertIn(
+                "MR-TOF analyser PA only",
+                build_analyzer_gem(outputs["contract"]),
+            )
 
     def test_cad_pose_contract_round_trips_and_places_mechanical_midplane_at_x_zero(self) -> None:
         contract = load_cad_pose_contract(PROJECT / "config" / "cad_to_theory_frame.json")
@@ -586,116 +600,8 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaisesRegex(CandidateContractError, "resolved mirror voltage envelope is empty"):
             derive_mirror_voltage_bounds(contract)
 
-    def test_split_accelerator_faces_negative_z_and_is_centered_on_declared_y_line(self) -> None:
-        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
-        contract["simion_geometry_release_status"] = "cad_topology_and_top_level_pose_qualified"
-        with TemporaryDirectory() as temporary_directory:
-            path = Path(temporary_directory) / "contract.json"
-            path.write_text(json.dumps(contract), encoding="utf-8")
-            gem = build_accelerator_gem(path)
-            detector_gem = build_detector_gem(path)
-            origins = resolve_split_iob_origins(path)
-        self.assertIn("local +z is project +z", gem)
-        self.assertIn("global focus=(0,-55.328,0)", gem)
-        self.assertIn("box3D(-12.5,-12.5,6,12.5,12.5,6)", gem)
-        self.assertIn("e(4) { box3D(-22,-20,5.5,22,20,6.5)", gem)
-        self.assertIn(
-            "e(2) { box3D(-20,-18,45.6,20,18,47.6) notin_inside { "
-            "box3D(-12.5,-12.5,43.6,12.5,12.5,49.6) } }",
-            gem,
-        )
-        self.assertIn("e(2) { box3D(-12.5,-12.5,45.6,12.5,12.5,45.6) }", gem)
-        self.assertIn("e(1) { box3D(-12.5,-12.5,52.6,12.5,12.5,52.6) }", gem)
-        self.assertIn("notin_inside { box3D(-12.5,-12.5,50.6,12.5,12.5,56.6) }", gem)
-        self.assertIn("rear acceleration gaps", gem)
-        self.assertAlmostEqual(origins["accelerator"][1], -87.328)
-        self.assertAlmostEqual(
-            origins["accelerator"][2] + float(contract["accelerator"]["pa_local_margin_z_mm"]),
-            derive_two_zone_placement(contract).exit_grid_z_mm,
-        )
-        self.assertIn("detector PA only", detector_gem)
-        self.assertIn("e(25)", detector_gem)
-        detector_box = resolve_geometry(contract)["detector"]["box"]
-        detector_span = contract["simion"]["detector_pa_span_mm"]
-        expected_detector_origin = tuple(
-            (detector_box[index] + detector_box[index + 3] - detector_span[index]) / 2.0
-            for index in range(3)
-        )
-        self.assertEqual(origins["detector"], expected_detector_origin)
-
-    def test_grid_supports_inherit_ring_thickness_and_both_gems_consume_resolved_frames(self) -> None:
-        contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
-        contract["simion_geometry_release_status"] = "cad_topology_and_top_level_pose_qualified"
-        contract["mirror"]["design_status"] = "analytic_l0_l1_candidate__3d_unvalidated__pa_build_allowed"
-        mesh = contract["simion"]["component_mesh_mm_per_gu"]["accelerator"]
-        self.assertEqual(mesh, [0.25, 0.25, 0.1])
-        self.assertAlmostEqual(contract["accelerator"]["stage_2_rings"]["thickness_z_mm"] / mesh[2], 10.0)
-        # Vary the authority, not the emitter: both frames must track every ring.
-        for thickness in (1.0, 1.6):
-            with self.subTest(thickness_mm=thickness):
-                contract["accelerator"]["stage_2_rings"]["thickness_z_mm"] = thickness
-                resolved = resolve_geometry(contract)
-                placement = derive_two_zone_placement(contract)
-                supports = resolved["accelerator_grid_support_frames"]
-                self.assertEqual([item["id"] for item in supports], [23, 24])
-                self.assertEqual([item["grid_z_mm"] for item in supports],
-                                 [placement.grid_1_z_mm, placement.exit_grid_z_mm])
-                self.assertEqual((supports[1]["outer_half_x_mm"], supports[1]["outer_half_y_mm"]),
-                                 (22.0, 20.0))  # Exactly the grounded enclosure inner wall.
-                for support in supports:
-                    self.assertAlmostEqual(support["back_z_mm"] - support["front_z_mm"], thickness)
-                    self.assertEqual(support["thickness_z_mm"], thickness)
-                    self.assertEqual((support["aperture_half_x_mm"], support["aperture_half_y_mm"]),
-                                     (12.5, 12.5))
-                    self.assertTrue(all(abs(support["grid_z_mm"] - ring["center_z_mm"]) > thickness
-                                        for ring in resolved["accelerator_stage_2_rings"]))
-                with TemporaryDirectory() as directory:
-                    path = Path(directory) / "contract.json"
-                    path.write_text(json.dumps(contract), encoding="utf-8")
-                    variants = ((build_full_candidate_gem(path), 0.0, 0),
-                                (build_accelerator_gem(path),
-                                 contract["accelerator"]["pa_local_margin_z_mm"] - placement.exit_grid_z_mm, 20))
-                for gem, offset, id_offset in variants:
-                    if id_offset:
-                        self.assertIn("contract_mmgu_z = 0.25, 0.25, 0.1", gem)
-                    for support in supports:
-                        boxes = [list(map(float, match)) for match in re.findall(
-                            rf"e\({support['id']-id_offset}\) \{{ box3D\(([^)]+)\)", gem
-                        ) for match in [match.split(",")]]
-                        self.assertEqual(len(boxes), 2)
-                        frame, grid = boxes
-                        expected = [-support["outer_half_x_mm"], -support["outer_half_y_mm"],
-                                    support["front_z_mm"]+offset, support["outer_half_x_mm"],
-                                    support["outer_half_y_mm"], support["back_z_mm"]+offset]
-                        for actual, wanted in zip(frame, expected):
-                            self.assertAlmostEqual(actual, wanted, places=9)
-                        self.assertEqual(grid[0:2], [-12.5, -12.5])
-                        self.assertEqual(grid[3:5], [12.5, 12.5])
-                        self.assertAlmostEqual(grid[2], support["grid_z_mm"]+offset, places=9)
-                        self.assertEqual(grid[2], grid[5])
-                        if id_offset:
-                            grid_node = (support["grid_z_mm"] + offset) / mesh[2]
-                            self.assertAlmostEqual(grid_node, round(grid_node))
-
-    def test_grid_support_rejects_aperture_without_material(self) -> None:
-        contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
-        contract["accelerator"]["aperture_width_x_mm"] = contract["accelerator"]["electrode_outer_width_x_mm"]
-        with self.assertRaisesRegex(CandidateContractError, "support requires positive material"):
-            resolve_geometry(contract)
-
     def test_separate_detector_return_topology_is_required_and_resolved(self) -> None:
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
-        resolved = resolve_geometry(contract)
-        self.assertEqual(resolved["accelerator_repeller_support_frame"]["id"], 22)
-        self.assertEqual(resolved["accelerator_rear_ground_grid"]["id"], 15)
-        for item in (
-            resolved["accelerator_repeller_support_frame"],
-            resolved["accelerator_rear_ground_grid"],
-        ):
-            self.assertEqual(
-                (item["aperture_half_x_mm"], item["aperture_half_y_mm"]),
-                (12.5, 12.5),
-            )
         for field, value in (
             ("detector_half_space", "negative_project_z"),
             ("detector_surface_normal", "-z"),
@@ -1092,59 +998,6 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             build_simion_gem(contract)
 
-    def test_full_candidate_has_all_stable_electrodes_and_native_grids(self) -> None:
-        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
-        contract["mirror"]["design_status"] = "theory_l0_validated"
-        contract["dual_stripe"]["central_ground_outline_status"] = "cad_outline_verified_for_candidate"
-        contract["simion_geometry_release_status"] = "cad_topology_and_top_level_pose_qualified"
-        contract["mirror"]["inner_face_z_mm"] = 220.405553
-        with TemporaryDirectory() as temporary_directory:
-            path = Path(temporary_directory) / "contract.json"
-            path.write_text(json.dumps(contract), encoding="utf-8")
-            gem = build_full_candidate_gem(path)
-        self.assertIn("surface=none", gem)
-        for group in ELECTRODE_IDS.values():
-            identifiers = (group,) if isinstance(group, int) else group
-            for identifier in identifiers:
-                self.assertIn(f"e({identifier})", gem)
-        self.assertIn("e(23) { box3D", gem)
-        self.assertIn("e(24) { box3D", gem)
-        self.assertIn("Theory-derived -z two-zone accelerator", gem)
-        self.assertIn("Four physical curved Stripe conductors", gem)
-        self.assertIn("notin_inside { box3D(-15,-132,224.405553,15,448,281.405553) }", gem)
-        self.assertIn("Stripe-facing 5-mm shields have 4-mm slots", gem)
-        self.assertIn("box3D(-62.5,-142,220.405553,62.5,458,225.405553)", gem)
-        self.assertIn("notin_inside { box3D(-2,-132,-226.405553,2,448,226.405553) }", gem)
-        self.assertIn("box3D(-62.5,-142,438.405553,62.5,458,443.405553)", gem)
-        placement = derive_two_zone_placement(contract)
-        self.assertIn(f"locate(0,{placement.focus_y_mm:.12g},0)", gem)
-        self.assertIn(f"box3D(-24,-22,{placement.exit_grid_z_mm:.12g}", gem)
-        self.assertIn(f"box3D(-20,-18,{placement.repeller_z_mm:.12g}", gem)
-        self.assertIn(
-            f"box3D(-12.5,-12.5,{placement.repeller_z_mm:.12g},12.5,12.5,"
-            f"{placement.repeller_z_mm:.12g})",
-            gem,
-        )
-        resolved = resolve_geometry(contract)
-        rear_grid_z = resolved["accelerator_rear_ground_grid"]["grid_z_mm"]
-        self.assertIn(
-            f"box3D(-12.5,-12.5,{rear_grid_z:.12g},12.5,12.5,{rear_grid_z:.12g})",
-            gem,
-        )
-        self.assertIn("Whole Ion-Foil-2 with native short cubic", gem)
-        self.assertIn("no added bridges", gem)
-        self.assertIn("extrude_yz(-12,-2)", gem)
-        self.assertIn("extrude_yz(2,12)", gem)
-        self.assertIn("Two triangular deflection prisms from the resolved CAD-constrained contract", gem)
-        self.assertIn("polyline(-3,-97,-32,-97,-32,97,-3,97,-3,21,3,21,3,-21,-3,-21,-3,-97)", gem)
-        self.assertIn("polyline(-42.828,-65,-67.828,-90,-67.828,-40,-42.828,-65)", gem)
-        self.assertIn("notin_inside { box3D(-2,-28,-97,2,-6,97) }", gem)
-        self.assertIn("notin_inside { box3D(-2,-32,-40,2,3,40) }", gem)
-
-    def test_default_hardware_contract_refuses_pa_geometry_until_pose_and_l0_are_closed(self) -> None:
-        with self.assertRaises(CandidateContractError):
-            build_full_candidate_gem(PROJECT / "config" / "simion_candidate_two_zone.json")
-
     def test_resolved_geometry_has_real_curves_nonoverlapping_stripes_and_bounded_slots(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
         resolved = resolve_geometry(contract)
@@ -1305,14 +1158,6 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             resolve_geometry(contract)
 
-    def test_simion_iob_origin_maps_the_node_aligned_physical_frame(self) -> None:
-        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
-        origin = resolve_simion_iob_origin(contract)
-        span_x, span_y, span_z = contract["simion"]["pa_span_mm"]
-        placement = derive_two_zone_placement(contract)
-        self.assertEqual(origin[:2], (-span_x / 2, -span_y / 2))
-        self.assertAlmostEqual(origin[2], -span_z / 2 + placement.exit_grid_z_mm)
-
     def test_geometry_receipt_fingerprints_only_the_resolved_cross_solver_geometry(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
         resolved = resolve_geometry(contract)
@@ -1336,44 +1181,14 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         ] += 1.0
         self.assertEqual(geometry_fingerprint(shifted_reference), geometry_fingerprint(resolved))
 
-    def test_run_manifest_binds_pa0_family_to_the_resolved_geometry(self) -> None:
-        source_contract_path = PROJECT / "config" / "simion_candidate_two_zone.json"
-        with TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            receipt_path = root / "resolved_geometry_receipt.json"
-            contract = load_contract(source_contract_path)
-            contract_path = root / "verified_contract.json"
-            contract_path.write_text(json.dumps(contract), encoding="utf-8")
-            receipt_path.write_text(json.dumps(geometry_receipt(contract)), encoding="utf-8")
-            pa0 = root / "candidate.pa0"
-            physical_ids = sorted({
-                electrode_id
-                for group in ELECTRODE_IDS.values()
-                for electrode_id in (group if isinstance(group, tuple) else (group,))
-            })
-            for suffix in [".pa#", ".pa0", *[f".pa{index}" for index in physical_ids]]:
-                pa0.with_suffix(suffix).write_bytes(suffix.encode("ascii"))
-            program = root / "candidate.lua"; program.write_text("-- program\n", encoding="utf-8")
-            fly2 = root / "candidate.fly2"; fly2.write_text("particles\n", encoding="utf-8")
-            manifest = build_manifest(contract_path, receipt_path, pa0, program, fly2, None)
-        self.assertEqual(manifest["iob_status"], "not_generated")
-        self.assertEqual(manifest["workbench_instance"]["must_load"], "candidate.pa0")
-        self.assertEqual(len(manifest["artifacts"]["basis_arrays"]), len(physical_ids))
-
-    def test_active_pa_builder_uses_simion_default_refinement(self) -> None:
-        builder = (PROJECT / "simion" / "build_full_candidate_pa.lua").read_text(encoding="utf-8")
-        split_iob_builder = (PROJECT / "simion" / "build_split_candidate_iob.lua").read_text(encoding="utf-8")
-        split_iob_inspector = (PROJECT / "simion" / "inspect_split_candidate_iob.lua").read_text(encoding="utf-8")
+    def test_active_flight_program_and_launcher_contract(self) -> None:
         program = (PROJECT / "simion" / "mrtof_candidate.lua").read_text(encoding="utf-8")
         bunch = (PROJECT / "simion" / "mrtof_candidate.fly2").read_text(encoding="utf-8")
         launcher = (PROJECT / "simion" / "run_iob_flight.lua").read_text(encoding="utf-8")
-        self.assertIn("refine{solutions={0}}", builder)
-        self.assertIn("refine{solutions={solution}}", builder)
-        self.assertNotIn("convergence=", builder)
         self.assertIn("MRTOF_EVENT detector", program)
         self.assertNotIn("initial-exit-triggered accelerator pulse requires local-refinement", program)
-        self.assertIn("and local_refinement.accelerator_instance or 2", program)
-        self.assertIn("local maximum_instance = local_refinement.enabled and 8 or 3", program)
+        self.assertIn("local accelerator_instance = accelerator_instance_number()", program)
+        self.assertIn("local maximum_instance = maximum_instance_number()", program)
         self.assertNotIn("main_drift_exceeded_target_k", program)
         self.assertNotIn("prism_stage[ion_number] = 'awaiting_return_origin_turn'", program)
         self.assertIn("target_half_oscillation_count", program)
@@ -1385,10 +1200,6 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         )
         self.assertNotIn("adj_elect25", program)
         self.assertNotIn("adjustable V_repeller = 4480", program)
-        self.assertIn("wb:load(seed)", split_iob_builder)
-        self.assertIn("iob_seed_placeholder_%02d.pa0", split_iob_builder)
-        self.assertIn("wb:load(iob)", split_iob_inspector)
-        self.assertIn("PARTICLE_FLY_EXECUTED=false", split_iob_inspector)
         self.assertIn("n = 100", bunch)
         self.assertIn("simion.command('fly", launcher)
 

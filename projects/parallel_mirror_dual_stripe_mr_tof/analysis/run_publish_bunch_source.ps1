@@ -22,20 +22,23 @@ if([string]::IsNullOrWhiteSpace($RunId)){
 $artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'deterministic_bunch_source_materialization' `
-  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact
+  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `
+  -CapacityLedgerLifecycleEnabled
 $runConfig=$package.run_config
 $summary=$package.summary
 $resultDir=$package.result_dir
 $logDir=$package.log_dir
 $terminalized=$false
 $failureStage='preflight'
+$capacitySession=$null
 try{
   $failureStage='capacity_startup'
-  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
-    -ProtectedPaths @($package.artifact_run_dir) -RequiredHeadroomBytes 1048576
+  $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes 1048576 -ProtectedPaths @($package.artifact_run_dir) `
+    -Owner "mrtof-publish-bunch-source:$RunId"
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
-  Write-RunJson -Path $startupPath -Depth 14 -Value $startup
+  Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
 
   $failureStage='freeze_inputs'
   $frozenDefinition=Copy-VerifiedRunInput -Source $sourceDefinition `
@@ -81,10 +84,9 @@ try{
   })
 
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
-  $maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
-  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -ProtectedPaths @($package.artifact_run_dir) `
-    -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
+  $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -RemainingCommittedNewBytes 0
+  $capacitySession=$terminal.session
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
@@ -101,10 +103,14 @@ try{
   }
   throw
 }finally{
-  if(-not$terminalized-and(Test-Path -LiteralPath $runConfig)){
-    Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
-      -SummaryRole 'mrtof_deterministic_bunch_source_run_summary' `
-      -Reason 'Bunch source publication stopped before terminal publication.' `
-      -Software @('Python 3.11') -Status interrupted -FailureStage $failureStage
+  try{
+    if(-not$terminalized-and(Test-Path -LiteralPath $runConfig)){
+      Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
+        -SummaryRole 'mrtof_deterministic_bunch_source_run_summary' `
+        -Reason 'Bunch source publication stopped before terminal publication.' `
+        -Software @('Python 3.11') -Status interrupted -FailureStage $failureStage
+    }
+  }finally{
+    if($null-ne$capacitySession){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession}
   }
 }

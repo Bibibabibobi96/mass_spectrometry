@@ -9,6 +9,8 @@ import unittest
 from unittest import mock
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.r27_source_return_correlation import (
+    _linear_detrend,
+    _return_lip_event,
     analyze_r27_source_return_correlation,
     main,
 )
@@ -29,7 +31,7 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
-def _fixture(root: Path) -> Path:
+def _fixture(root: Path, *, collision_count: int = 12) -> Path:
     source = root / "source"
     run = root / "run"
     source.mkdir()
@@ -82,7 +84,7 @@ def _fixture(root: Path) -> Path:
     receipt_copy.write_bytes(receipt_source.read_bytes())
     log = run / "logs" / "native_two_prism_flight.log"
     lines: list[str] = []
-    collisions = set(range(89, 101))
+    collisions = set(range(101 - collision_count, 101))
     for ion in range(1, 101):
         target_y = (ion - 50) / 10
         lip_y = target_y - 6.5
@@ -102,7 +104,23 @@ def _fixture(root: Path) -> Path:
                 "z_mm=-97 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=40"
             )
             lines.append(
-                f"MRTOF_EVENT terminal ion={ion} splat=1 t_us=12 x_mm=0 y_mm=-48 z_mm=97 "
+                f"MRTOF_EVENT return_p2_entry ion={ion} t_us={11.1 + ion / 100000} "
+                "x_mm=0 y_mm=-8 z_mm=-26 vx_mm_us=0 vy_mm_us=-1 vz_mm_us=40"
+            )
+            lines.append(
+                f"MRTOF_EVENT return_p2_pass ion={ion} t_us={11.2 + ion / 200000} "
+                "x_mm=0 y_mm=-11 z_mm=26 vx_mm_us=0 vy_mm_us=-3 vz_mm_us=40"
+            )
+            lines.append(
+                f"MRTOF_EVENT return_positive_mirror_turn ion={ion} t_us={11.6 + ion / 50000} "
+                "x_mm=0 y_mm=-32 z_mm=282 vx_mm_us=0 vy_mm_us=-3 vz_mm_us=0"
+            )
+            lines.append(
+                f"MRTOF_EVENT detector ion={ion} direction_z=-1 t_us={12 + ion / 10000} "
+                "x_mm=0 y_mm=-48 z_mm=97"
+            )
+            lines.append(
+                f"MRTOF_EVENT terminal ion={ion} splat=1 t_us={12 + ion / 10000} x_mm=0 y_mm=-48 z_mm=97 "
                 "vx_mm_us=0 vy_mm_us=-3 vz_mm_us=-40 turns=51 central_crossings=51"
             )
     lines.append("status,Fly completed. 100 splats")
@@ -111,7 +129,8 @@ def _fixture(root: Path) -> Path:
     _write_json(observation, {"cohort_analysis": {
         "event_integrity_passed": True, "expected_particle_count": 100,
         "observed_particle_ids": list(range(1, 101)),
-        "electrode_collision_count": 12, "detector_hit_count": 88,
+        "electrode_collision_count": collision_count,
+        "detector_hit_count": 100 - collision_count,
     }})
     run_config = run / "run_config.json"
     _write_json(run_config, {"schema_version": 1, "role": "test_flight_config"})
@@ -133,6 +152,37 @@ def _fixture(root: Path) -> Path:
 
 
 class R27SourceReturnCorrelationTests(unittest.TestCase):
+    def test_invariant_source_coordinate_retains_raw_width_without_fake_slope(self) -> None:
+        source_value = 36.858373606822035
+        result = _linear_detrend(
+            [source_value, source_value, source_value], [1.0, 1.1, 1.2],
+            mass_resolution_reference_us=1.1,
+        )
+        self.assertEqual(result["status"], "invariant_source_coordinate__detrend_not_defined")
+        self.assertEqual(result["source_value"], source_value)
+        self.assertIsNone(result["slope_us_per_mm"])
+        self.assertIsNone(result["linearly_detrended_fwhm_us"])
+
+    def test_return_lip_interpolates_current_five_region_interfaces(self) -> None:
+        events = [
+            {
+                "kind": "patch_interface", "ion": 1, "t_us": 10.0,
+                "name": "handoff_negative_bridge_to_mirror__z_plane",
+                "z_mm": -105.0, "x_mm": 0.0, "y_mm": -5.0,
+                "vx_mm_us": 0.0, "vy_mm_us": -1.0, "vz_mm_us": 40.0,
+            },
+            {
+                "kind": "patch_interface", "ion": 1, "t_us": 11.0,
+                "name": "handoff_negative_central_to_bridge__z_plane",
+                "z_mm": -72.0, "x_mm": 0.0, "y_mm": -8.3,
+                "vx_mm_us": 0.0, "vy_mm_us": -1.0, "vz_mm_us": 40.0,
+            },
+        ]
+        result = _return_lip_event(events, 1, 9.0)
+        self.assertEqual(result["kind"], "interpolated_patch_interface")
+        self.assertEqual(result["z_mm"], -97.0)
+        self.assertAlmostEqual(result["y_mm"], -5.8)
+
     def test_complete_cohort_and_associations_are_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result = analyze_r27_source_return_correlation(_fixture(Path(directory)))
@@ -145,6 +195,32 @@ class R27SourceReturnCorrelationTests(unittest.TestCase):
         self.assertGreater(result["associations"]["x_mm"]["target_k_y"]["pearson_r"], 0.99)
         self.assertIn("balanced_accuracy",
                       result["associations"]["x_mm"]["terminal_collision"]["leave_one_out_threshold"])
+        self.assertEqual(result["timing_diagnostic"]["stages"]["detector"]["sample_count"], 88)
+        self.assertGreater(
+            result["timing_diagnostic"]["stages"]["detector"]["source_z_pearson_r"],
+            0.99,
+        )
+
+    def test_timing_diagnostic_survives_invariant_or_small_loss_class(self) -> None:
+        for collision_count, expected_status in (
+            (0, "invariant_terminal_class__association_not_defined"),
+            (7, "minority_class_below_10__threshold_not_reported"),
+        ):
+            with self.subTest(collision_count=collision_count), tempfile.TemporaryDirectory() as directory:
+                result = analyze_r27_source_return_correlation(
+                    _fixture(Path(directory), collision_count=collision_count)
+                )
+            terminal = result["associations"]["x_mm"]["terminal_collision"]
+            self.assertEqual(terminal["status"], expected_status)
+            self.assertIsNone(terminal["leave_one_out_threshold"])
+            self.assertEqual(
+                result["timing_diagnostic"]["stages"]["detector"]["sample_count"],
+                100 - collision_count,
+            )
+        self.assertIn(
+            "linearly_detrended_fwhm_us",
+            result["timing_diagnostic"]["detector_tof_vs_source_z"],
+        )
 
     def test_rejects_incomplete_observation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

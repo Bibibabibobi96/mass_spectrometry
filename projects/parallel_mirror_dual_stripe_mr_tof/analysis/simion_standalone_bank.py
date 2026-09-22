@@ -10,7 +10,7 @@ from typing import Any, Sequence
 from common.simion.pa_family_cache import (
     POINTER_NAME,
     PAFamilyCacheError,
-    validate_pa_family_cache_subset,
+    validate_pa_family_cache_subset_with_repair,
 )
 
 
@@ -43,7 +43,9 @@ def validate_accelerator_standalone_bank(
 
     The native family remains a build-stage provenance object.  This validator
     hashes only the base, export receipt, response PAs and normalization receipts
-    that the operating-point composer will actually consume.
+    that the operating-point composer will actually consume.  The returned base
+    and response records carry the exact manifest byte count and SHA-256 so the
+    materializer never has to infer cache identity from a later path read.
     """
 
     publication = _load_document(publication_path, "accelerator family publication")
@@ -104,22 +106,50 @@ def validate_accelerator_standalone_bank(
         )
     if sorted(electrode_ids) != list(range(1, 10)) or len(set(filenames)) != len(filenames):
         raise PAFamilyCacheError("accelerator standalone response IDs or filenames differ")
-    manifest = validate_pa_family_cache_subset(
+    validated = validate_pa_family_cache_subset_with_repair(
         generation,
         filenames,
         expected_cache_key=cache_key,
     )
-    if manifest["generation_sha256"] != generation_sha256:
-        raise PAFamilyCacheError("accelerator standalone manifest generation differs")
+    manifest = validated.manifest
+    generation = validated.generation_directory
+    generation_sha256 = generation.name
+    records_by_name = {record["name"]: record for record in manifest["files"]}
+    base_record = records_by_name[base]
+    response_records = []
+    for response in responses:
+        name = response["standalone_response_filename"]
+        record = records_by_name[name]
+        response_records.append(
+            {
+                "electrode_id": response["electrode_id"],
+                "name": name,
+                "bytes": record["bytes"],
+                "sha256": record["sha256"],
+            }
+        )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "mrtof_accelerator_standalone_bank_validation",
         "disposition": "hit",
         "cache_key": cache_key,
         "generation_sha256": generation_sha256,
         "generation_directory": str(generation),
+        "predecessor_generation_directory": (
+            str(validated.predecessor_generation_directory)
+            if validated.predecessor_generation_directory else None
+        ),
+        "repair_receipt_path": (
+            str(validated.repair_receipt_path) if validated.repair_receipt_path else None
+        ),
         "validated_filenames": sorted(filenames),
         "standalone_response_contract": contract,
+        "base_pa": {
+            "name": base,
+            "bytes": base_record["bytes"],
+            "sha256": base_record["sha256"],
+        },
+        "response_pas": response_records,
         "native_family_members_opened": False,
         "complete_native_generation_qualified": False,
     }

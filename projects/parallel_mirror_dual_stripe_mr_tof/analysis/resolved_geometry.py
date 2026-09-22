@@ -18,13 +18,13 @@ from typing import Any
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
-    derive_stage_2_ring_layout,
-    derive_two_zone_placement,
     validate_detector_return_path,
 )
-from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
-    TwoZoneGeometryError,
-    derive_shielded_rectangular_enclosure,
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import (
+    build_two_zone_accelerator_requirements,
+)
+from projects.orthogonal_accelerator.simion.two_zone_candidate import (
+    compile_closed_two_zone_accelerator,
 )
 
 
@@ -1198,23 +1198,15 @@ def resolve_geometry(
     accelerator = contract.get("accelerator")
     if not isinstance(accelerator, dict) or accelerator.get("axis") != "z_negative":
         raise CandidateContractError("detector placement requires the -z two-zone accelerator")
-    placement = derive_two_zone_placement(contract)
-    try:
-        accelerator_enclosure = derive_shielded_rectangular_enclosure(
-            electrode_outer_width_x_mm=_number(accelerator.get("electrode_outer_width_x_mm"), "accelerator.electrode_outer_width_x_mm"),
-            electrode_outer_height_y_mm=_number(accelerator.get("electrode_outer_height_y_mm"), "accelerator.electrode_outer_height_y_mm"),
-            guard_outer_width_x_mm=_number(accelerator.get("grounded_guard_outer_width_x_mm"), "accelerator.grounded_guard_outer_width_x_mm"),
-            guard_outer_height_y_mm=_number(accelerator.get("grounded_guard_outer_height_y_mm"), "accelerator.grounded_guard_outer_height_y_mm"),
-            guard_wall_thickness_mm=_number(accelerator.get("grounded_guard_wall_thickness_mm"), "accelerator.grounded_guard_wall_thickness_mm"),
-            lateral_clearance_mm=_number(accelerator.get("repeller_to_guard_clearance_mm"), "accelerator.repeller_to_guard_clearance_mm"),
-            repeller_z_mm=placement.repeller_z_mm,
-            repeller_thickness_z_mm=_number(accelerator.get("repeller_thickness_z_mm"), "accelerator.repeller_thickness_z_mm"),
-            rear_gap_mm=_number(accelerator.get("repeller_to_rear_cap_gap_mm"), "accelerator.repeller_to_rear_cap_gap_mm"),
-        )
-    except TwoZoneGeometryError as error:
-        raise CandidateContractError(f"accelerator enclosure is invalid: {error}") from error
+    accelerator_requirements = build_two_zone_accelerator_requirements(contract)
+    accelerator_layout = compile_closed_two_zone_accelerator(accelerator_requirements).layout.to_dict()
+    placement = accelerator_requirements["placement"]
+    if not isinstance(placement, dict):
+        raise CandidateContractError("accelerator provider placement request is invalid")
+    accelerator_focus_y = _number(placement.get("focus_y_mm"), "accelerator provider focus_y_mm")
+    accelerator_exit_z = _number(placement.get("global_exit_z_mm"), "accelerator provider global_exit_z_mm")
     central_shield_y_min = min(point[0] for shield in central_shields for point in shield["outer_polygon_yz_mm"])
-    accelerator_guard_y1 = placement.focus_y_mm + accelerator_enclosure.guard_half_y_mm
+    accelerator_guard_y1 = accelerator_focus_y + float(accelerator_layout["static_minimum_y_extent_mm"]) / 2.0
     accelerator_shield_clearance = central_shield_y_min - accelerator_guard_y1
     required_accelerator_shield_clearance = _number(
         accelerator.get("minimum_clearance_to_central_prism_ground_shield_y_mm"),
@@ -1224,7 +1216,6 @@ def resolve_geometry(
         raise CandidateContractError(
             "accelerator grounded enclosure intersects or lacks its declared clearance to the central prism grounded shield"
         )
-    repeller_thickness = _number(accelerator.get("repeller_thickness_z_mm"), "accelerator.repeller_thickness_z_mm")
     positive_inner_faces = [float(shield["box"][2]) for shield in mirror_ground_shields if float(shield["box"][2]) > 0.0]
     if len(positive_inner_faces) != 1:
         raise CandidateContractError("detector requires exactly one positive grounded-mirror inner face")
@@ -1237,9 +1228,9 @@ def resolve_geometry(
     )
     detector_z1 = positive_inner_faces[0] - clearance_z
     detector_z0 = detector_z1 - thickness_z
-    if detector_z0 <= placement.repeller_z_mm + repeller_thickness:
+    if detector_z0 <= accelerator_exit_z + float(accelerator_layout["static_axial_length_mm"]):
         raise CandidateContractError("detector overlaps the accelerator instead of occupying the grounded-mirror side")
-    detector_y = placement.focus_y_mm
+    detector_y = accelerator_focus_y
     for shield in central_shields:
         shield_x = shield["x"]
         shield_y = [point[0] for point in shield["outer_polygon_yz_mm"]]
@@ -1255,67 +1246,7 @@ def resolve_geometry(
         shield_z = [point[1] for point in shield["outer_polygon_yz_mm"]]
         if detector_box[4] > min(shield_y) - clearance_y and detector_box[2] < max(shield_z) and detector_box[5] > min(shield_z):
             raise CandidateContractError("detector must retain its declared y clearance from the central-prism grounded shield")
-    ring_layout = derive_stage_2_ring_layout(contract)
-    ring_thickness = _number(accelerator["stage_2_rings"]["thickness_z_mm"], "accelerator.stage_2_rings.thickness_z_mm")
-    accelerator_stage_2_rings = [
-        {"id": 26 + index, "center_z_mm": center, "thickness_z_mm": ring_thickness}
-        for index, center in enumerate(ring_layout.centers_mm)
-    ]
-    # Both grid support frames inherit the physical ring thickness.  The ideal
-    # grid remains at its existing plane inside the aperture, not a thick plate.
-    aperture_x = _number(accelerator["aperture_width_x_mm"], "accelerator.aperture_width_x_mm") / 2.0
-    aperture_y = _number(accelerator["aperture_height_y_mm"], "accelerator.aperture_height_y_mm") / 2.0
-    accelerator_grid_support_frames = [
-        {"id": electrode_id, "grid_z_mm": grid_z, "front_z_mm": grid_z-ring_thickness/2.0,
-         "back_z_mm": grid_z+ring_thickness/2.0, "thickness_z_mm": ring_thickness,
-         "outer_half_x_mm": half_x, "outer_half_y_mm": half_y,
-         "aperture_half_x_mm": aperture_x, "aperture_half_y_mm": aperture_y}
-        for electrode_id, grid_z, half_x, half_y in (
-            (23, placement.grid_1_z_mm, accelerator_enclosure.electrode_half_x_mm,
-             accelerator_enclosure.electrode_half_y_mm),
-            (24, placement.exit_grid_z_mm, accelerator_enclosure.guard_inner_half_x_mm,
-             accelerator_enclosure.guard_inner_half_y_mm),
-        )
-    ]
-    for support in accelerator_grid_support_frames:
-        if not (0.0 < aperture_x < support["outer_half_x_mm"] and
-                0.0 < aperture_y < support["outer_half_y_mm"]):
-            raise CandidateContractError("accelerator grid support requires positive material around its aperture")
-        for ring in accelerator_stage_2_rings:
-            if abs(support["grid_z_mm"] - ring["center_z_mm"]) <= ring_thickness:
-                raise CandidateContractError("accelerator grid support touches a differently biased stage-2 ring")
-    if accelerator_grid_support_frames[0]["back_z_mm"] >= placement.repeller_z_mm:
-        raise CandidateContractError("accelerator grid1 support touches the repeller")
-    if accelerator_grid_support_frames[1]["back_z_mm"] >= accelerator_grid_support_frames[0]["front_z_mm"]:
-        raise CandidateContractError("accelerator grid supports touch each other")
-
     validate_detector_return_path(contract)
-    accelerator_repeller_support_frame = {
-        "id": 22,
-        "grid_z_mm": placement.repeller_z_mm,
-        "front_z_mm": placement.repeller_z_mm,
-        "back_z_mm": placement.repeller_z_mm + repeller_thickness,
-        "thickness_z_mm": repeller_thickness,
-        "outer_half_x_mm": accelerator_enclosure.electrode_half_x_mm,
-        "outer_half_y_mm": accelerator_enclosure.electrode_half_y_mm,
-        "aperture_half_x_mm": aperture_x,
-        "aperture_half_y_mm": aperture_y,
-    }
-    accelerator_rear_ground_grid = {
-        "id": 15,
-        "grid_z_mm": accelerator_enclosure.rear_cap_inner_z_mm,
-        "front_z_mm": accelerator_enclosure.rear_cap_inner_z_mm,
-        "back_z_mm": accelerator_enclosure.rear_cap_outer_z_mm,
-        "thickness_z_mm": accelerator_enclosure.guard_wall_mm,
-        "outer_half_x_mm": accelerator_enclosure.guard_half_x_mm,
-        "outer_half_y_mm": accelerator_enclosure.guard_half_y_mm,
-        "aperture_half_x_mm": aperture_x,
-        "aperture_half_y_mm": aperture_y,
-    }
-    for support in (accelerator_repeller_support_frame, accelerator_rear_ground_grid):
-        if not (0.0 < support["aperture_half_x_mm"] < support["outer_half_x_mm"] and
-                0.0 < support["aperture_half_y_mm"] < support["outer_half_y_mm"]):
-            raise CandidateContractError("coaxial return support requires positive material around its aperture")
 
     return {
         "schema_version": 1,
@@ -1335,10 +1266,7 @@ def resolve_geometry(
         "prism_electrodes": prism_electrodes,
         "prism_ground_shields": prism_ground_shields,
         "two_prism_low_field_reference_section": low_field_reference_section,
-        "accelerator_stage_2_rings": accelerator_stage_2_rings,
-        "accelerator_grid_support_frames": accelerator_grid_support_frames,
-        "accelerator_repeller_support_frame": accelerator_repeller_support_frame,
-        "accelerator_rear_ground_grid": accelerator_rear_ground_grid,
+        "accelerator_component_layout": accelerator_layout,
         "detector": {"id": 25, "box": detector_box, "normal_project": "+z", "separate_pa": True},
         "metadata": {
             "mirror_slot_width_mm": slot_width,
@@ -1366,7 +1294,7 @@ def resolve_geometry(
             "detector_to_central_prism_ground_shield_clearance_y_mm": min(point[0] for shield in central_shields for point in shield["outer_polygon_yz_mm"]) - detector_box[4],
             "accelerator_guard_to_central_prism_ground_shield_clearance_y_mm": accelerator_shield_clearance,
             "required_accelerator_guard_to_central_prism_ground_shield_clearance_y_mm": required_accelerator_shield_clearance,
-            "accelerator_stage_2_ring_pitch_mm": ring_layout.pitch_mm,
+            "accelerator_component_geometry_profile_id": accelerator_layout["geometry_profile_id"],
         },
     }
 
@@ -1399,7 +1327,6 @@ def geometry_receipt(contract: dict[str, Any]) -> dict[str, Any]:
             "central_ground": [15],
             "prisms": [16, 17],
             "prism_ground_shields": [18, 20],
-            "accelerator": [22, 23, 24, *[item["id"] for item in resolved["accelerator_stage_2_rings"]]],
             "detector": [25],
         },
         "mechanical_invariants_mm": resolved["metadata"],

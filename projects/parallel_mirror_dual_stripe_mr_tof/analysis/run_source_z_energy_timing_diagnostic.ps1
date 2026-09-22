@@ -2,10 +2,7 @@
 param(
   [Parameter(Mandatory)][string]$FlightRunPath,
   [string]$RunId='',
-  [string]$PythonExe='',
-  [Nullable[long]]$CapacityKnownMeasuredBytes=$null,
-  [Nullable[double]]$CapacityTargetGiB=$null,
-  [Nullable[double]]$CapacityMinimumFreeGiB=$null
+  [string]$PythonExe=''
 )
 
 Set-StrictMode -Version Latest
@@ -26,10 +23,20 @@ if([string]::IsNullOrWhiteSpace($RunId)){
 $artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'source_z_energy_timing_diagnostic' `
-  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact
+  -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `
+  -CapacityLedgerLifecycleEnabled
 $runConfig=$package.run_config;$summary=$package.summary;$resultDir=$package.result_dir;$logDir=$package.log_dir
-$terminalized=$false;$failureStage='preflight'
+$terminalized=$false;$failureStage='preflight';$capacitySession=$null
 try{
+  $failureStage='capacity_startup'
+  $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes 8388608 -ProtectedPaths @($package.artifact_run_dir,$sourceRun) `
+    -Owner "mrtof-source-z-energy-timing:$RunId"
+  $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
+  Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
+
+  $failureStage='verify_source'
   & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $sourceManifest `
     --require-status success --require-project $projectId --require-mode finite_3d_two_prism_voltage_trial
   if($LASTEXITCODE-ne 0){throw 'Flight source manifest failed full verification.'}
@@ -37,24 +44,6 @@ try{
     -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $particleCount=[int]$sourceObservation.cohort_analysis.expected_particle_count
   if($particleCount-le 1){throw 'Flight source must contain N>1 particles.'}
-
-  $failureStage='capacity_startup'
-  $capacityStartupParameters=@{
-    Python=$python
-    RepoRoot=$repoRoot
-    ArtifactRoot=(Join-Path $workspaceRoot 'artifacts')
-    ProtectedPaths=@($package.artifact_run_dir,$sourceRun)
-    RequiredHeadroomBytes=[int64]4194304
-  }
-  if($null-ne$CapacityKnownMeasuredBytes){
-    $capacityStartupParameters.KnownMeasuredBytes=[int64]$CapacityKnownMeasuredBytes
-    $capacityStartupParameters.MaximumNewArtifactBytes=[int64]4194304
-  }
-  if($null-ne$CapacityTargetGiB){$capacityStartupParameters.TargetGiB=[double]$CapacityTargetGiB}
-  if($null-ne$CapacityMinimumFreeGiB){$capacityStartupParameters.MinimumFreeGiB=[double]$CapacityMinimumFreeGiB}
-  $startup=Invoke-ArtifactCapacityGate @capacityStartupParameters
-  $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
-  Write-RunJson -Path $startupPath -Depth 14 -Value $startup
 
   $failureStage='freeze_inputs'
   $frozenManifest=Copy-VerifiedRunInput -Source $sourceManifest `
@@ -71,8 +60,6 @@ try{
     source_or_peak_filtering='none'
     statistical_scope='descriptive_transfer_diagnostic_only__not_causal'
     acceptance_threshold=$null
-    capacity_target_gib=if($null-ne$CapacityTargetGiB){[double]$CapacityTargetGiB}else{$null}
-    capacity_minimum_free_gib=if($null-ne$CapacityMinimumFreeGiB){[double]$CapacityMinimumFreeGiB}else{$null}
   }
   Write-RunJson -Path $runConfig -Depth 12 -Value $configuration
 
@@ -110,18 +97,9 @@ try{
     interpretation=[string]$data.interpretation
   })
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
-  $maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
-  $capacityTerminalParameters=@{
-    Python=$python
-    RepoRoot=$repoRoot
-    ArtifactRoot=(Join-Path $workspaceRoot 'artifacts')
-    ProtectedPaths=@($package.artifact_run_dir,$sourceRun)
-    KnownMeasuredBytes=[int64]$startup.measured_after_bytes
-    MaximumNewArtifactBytes=$maximum
-  }
-  if($null-ne$CapacityTargetGiB){$capacityTerminalParameters.TargetGiB=[double]$CapacityTargetGiB}
-  if($null-ne$CapacityMinimumFreeGiB){$capacityTerminalParameters.MinimumFreeGiB=[double]$CapacityMinimumFreeGiB}
-  $terminal=Invoke-ArtifactCapacityGate @capacityTerminalParameters
+  $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -RemainingCommittedNewBytes 0
+  $capacitySession=$terminal.session
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   $failureStage='publish_success_manifest'
@@ -138,10 +116,16 @@ try{
   }
   throw
 }finally{
-  if(-not$terminalized-and(Test-Path -LiteralPath $runConfig)){
-    Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
-      -SummaryRole 'mrtof_source_z_energy_timing_diagnostic_run_summary' `
-      -Reason 'Source-z energy/timing analysis stopped before terminal publication.' `
-      -Software @('Python 3.11') -Status interrupted -FailureStage $failureStage
+  try{
+    if(-not$terminalized-and(Test-Path -LiteralPath $runConfig)){
+      Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
+        -SummaryRole 'mrtof_source_z_energy_timing_diagnostic_run_summary' `
+        -Reason 'Source-z energy/timing analysis stopped before terminal publication.' `
+        -Software @('Python 3.11') -Status interrupted -FailureStage $failureStage
+    }
+  }finally{
+    if($null-ne$capacitySession){
+      $null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession
+    }
   }
 }

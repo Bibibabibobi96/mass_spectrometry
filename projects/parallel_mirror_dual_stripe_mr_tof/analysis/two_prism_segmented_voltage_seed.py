@@ -396,7 +396,14 @@ def solve_two_prism_segmented_voltage_seed(
         )
     ordered_initial_indices = sorted(
         valid_initial_indices,
-        key=lambda index: evaluations[index].scaled_residual_norm_2,
+        # Physics residual remains the primary criterion.  Equivalent feasible
+        # P1/P2 seeds then use the smaller voltage envelope deterministically.
+        key=lambda index: (
+            evaluations[index].scaled_residual_norm_2,
+            max(abs(value) for value in evaluations[index].prism_voltages_v),
+            sum(abs(value) for value in evaluations[index].prism_voltages_v),
+            evaluations[index].prism_voltages_v,
+        ),
     )
     initial_neighborhood_position = 0
     selected_index = ordered_initial_indices[initial_neighborhood_position]

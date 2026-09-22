@@ -27,8 +27,19 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     CandidateContractError,
 )
 
+RUNNER = Path(__file__).resolve().parents[2] / "analysis" / "run_mirror_fixed_grid_voltage_correction.ps1"
+
 
 class FixedGridVoltageCorrectionTests(unittest.TestCase):
+    def test_runner_uses_ledger_lifecycle_and_one_capacity_session(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "-CapacityLedgerLifecycleEnabled", "Enter-ArtifactWorkflowCapacitySession",
+            "Update-ArtifactWorkflowCapacitySession", "Exit-ArtifactWorkflowCapacitySession",
+        ):
+            self.assertIn(token, source)
+        self.assertNotIn("Invoke-ArtifactCapacityGate", source)
+
     def test_measured_chord_gamma_root_stays_between_physical_l0_endpoints(self) -> None:
         proposal, slopes, fraction = _measured_chord_gamma_root(
             base_voltages=np.asarray([1.0, 2.0, 3.0, 4.0]),

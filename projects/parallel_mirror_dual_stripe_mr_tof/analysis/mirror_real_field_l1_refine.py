@@ -235,26 +235,29 @@ def _gamma_sample(
     nominal_energy_v: float,
     position_probe_mm: float,
     angle_probe_rad: float,
-    largest_scale: float,
+    probe_scale_factor: float,
     trace_controls: Mapping[str, float],
 ) -> dict[str, Any]:
     field = CombinedField(response_basis, tuple(float(value) for value in voltages[1:]))
     records = [
         l1_probe_at_energy(
             field, energy_per_charge_v=nominal_energy_v, launch_direction=direction,
-            position_probe_mm=position_probe_mm * largest_scale,
-            angle_probe_rad=angle_probe_rad * largest_scale,
+            position_probe_mm=position_probe_mm * probe_scale_factor,
+            angle_probe_rad=angle_probe_rad * probe_scale_factor,
             trace_controls=trace_controls,
         )
         for direction in (-1, 1)
     ]
-    if any(not record["stable"] or record["gamma_degrees"] is None for record in records):
-        raise RealFieldL1Error("continuous gamma trial left the stable transverse branch")
     trace_halves = [float(record["trace_half"]) for record in records]
     return {
         "objective_mean_trace_half": sum(trace_halves) / len(trace_halves),
+        "probe_scale_factor": float(probe_scale_factor),
         "directional_trace_half": trace_halves,
-        "directional_gamma_degrees": [float(record["gamma_degrees"]) for record in records],
+        "directional_stable": [bool(record["stable"]) for record in records],
+        "directional_gamma_degrees": [
+            None if record["gamma_degrees"] is None else float(record["gamma_degrees"])
+            for record in records
+        ],
         "directional_stability_margin": [float(record["stability_margin"]) for record in records],
     }
 
@@ -262,7 +265,7 @@ def _gamma_sample(
 def _endpoint_job(payload: tuple[Any, ...]) -> dict[str, Any]:
     (
         source_index, source_member, response_basis, energies, position_probe,
-        angle_probe, largest_scale, trace_controls,
+        angle_probe, discovery_scale, trace_controls,
     ) = payload
     member = dict(source_member)
     member["source_index"] = int(source_index)
@@ -276,14 +279,14 @@ def _endpoint_job(payload: tuple[Any, ...]) -> dict[str, Any]:
             nominal_energy_v=energies[1],
             position_probe_mm=position_probe,
             angle_probe_rad=angle_probe,
-            largest_scale=largest_scale,
+            probe_scale_factor=discovery_scale,
             trace_controls=trace_controls,
         )
     except RealFieldL1Error as exc:
         member["field_consistent_endpoint_status"] = "gamma_preflight_failed"
         member["gamma_preflight_error"] = str(exc)
         return member
-    member["field_consistent_endpoint_status"] = "stable_gamma_preflight_complete"
+    member["field_consistent_endpoint_status"] = "gamma_objective_complete"
     member["gamma_objective"] = float(gamma["objective_mean_trace_half"])
     member["gamma_preflight"] = gamma
     return member
@@ -292,7 +295,8 @@ def _endpoint_job(payload: tuple[Any, ...]) -> dict[str, Any]:
 def _root_job(payload: tuple[Any, ...]) -> dict[str, Any]:
     (
         bracket, axis_basis, response_basis, energies, derivative_step, bounds, slope_gate,
-        jacobian_step, solver_tolerance, maximum_evaluations, position_probe, angle_probe, largest_scale,
+        jacobian_step, solver_tolerance, maximum_evaluations, position_probe, angle_probe,
+        discovery_scale,
         trace_controls, trace_tolerance, e_voltage_tolerance, maximum_iterations,
         checkpoint_path, checkpoint_identity,
     ) = payload
@@ -338,7 +342,7 @@ def _root_job(payload: tuple[Any, ...]) -> dict[str, Any]:
         gamma = _gamma_sample(
             response_basis, member["mirror_voltages_v"], nominal_energy_v=energies[1],
             position_probe_mm=position_probe, angle_probe_rad=angle_probe,
-            largest_scale=largest_scale, trace_controls=trace_controls,
+            probe_scale_factor=discovery_scale, trace_controls=trace_controls,
         )
         value = float(gamma["objective_mean_trace_half"])
         history.append({
@@ -477,10 +481,11 @@ def refine_roots(
         index for index, member in enumerate(family["members"]) if member.get("l0_feasible") is True
     ]
     numerics = family["numerics"]
+    discovery_scale = min(float(value) for value in l1["probe_convergence_scale_factors"])
     endpoint_payloads = [(
         index, family["members"][index], response_basis, energies,
         float(l1["position_probe_mm"]), float(l1["angle_probe_rad"]),
-        max(float(value) for value in l1["probe_convergence_scale_factors"]), trace_controls,
+        discovery_scale, trace_controls,
     ) for index in feasible_indices]
     with ProcessPoolExecutor(
         max_workers=min(len(endpoint_payloads), int(l1["maximum_parallel_workers"])),
@@ -488,7 +493,7 @@ def refine_roots(
         reprojected_endpoints = list(executor.map(_endpoint_job, endpoint_payloads))
     endpoints = [
         member for member in reprojected_endpoints
-        if member.get("field_consistent_endpoint_status") == "stable_gamma_preflight_complete"
+        if member.get("field_consistent_endpoint_status") == "gamma_objective_complete"
     ]
     endpoints.sort(key=lambda item: float(item["mirror_voltages_v"][-1]))
     brackets = [
@@ -516,7 +521,7 @@ def refine_roots(
         float(numerics["least_squares_relative_tolerance"]),
         int(numerics["maximum_function_evaluations_per_e_slice"]),
         float(l1["position_probe_mm"]), float(l1["angle_probe_rad"]),
-        max(float(value) for value in l1["probe_convergence_scale_factors"]),
+        discovery_scale,
         trace_controls, trace_tolerance, float(l1["e_voltage_root_tolerance_v"]),
         int(l1["maximum_root_iterations"]),
         checkpoint_root / (
@@ -578,6 +583,12 @@ def refine_roots(
         "status": "coarse_0p5mm_roots_screened__fixed_candidate_0p25mm_validation_pending",
         "qualification": "coarse_family_selection_only__not_native_simion_or_candidate_qualification",
         "gamma_root_coordinate": "mean directional trace_half = 0 at nominal energy",
+        "gamma_root_discovery_probe_scale_factor": discovery_scale,
+        "gamma_root_discovery_semantics": (
+            "The smallest declared probe scale locates the linear trace-half zero even when a "
+            "bracket endpoint is transversely unstable. Root acceptance still uses the complete "
+            "declared probe-scale set, both directions, stability, gamma and Tbar gates."
+        ),
         "axis_period_authority": family["axis_period_authority"],
         "maximum_axis_potential_node_mismatch_v": maximum_node_mismatch,
         "maximum_axis_field_node_mismatch_v_per_mm": maximum_ez_node_mismatch,

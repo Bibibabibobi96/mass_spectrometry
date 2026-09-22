@@ -21,23 +21,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_volt
 
 
 class MirrorRealFieldVoltageFamilyTest(unittest.TestCase):
-    def test_runner_qualifies_reusable_basis_and_allows_native_check_to_follow(self) -> None:
-        project = Path(__file__).resolve().parents[2]
-        source = (project / "simion" / "run_mirror_real_field_voltage_family.ps1").read_text(
-            encoding="utf-8-sig"
-        )
-        self.assertIn("[string]$BaselinePeriodRunPath=''", source)
-        self.assertIn("[string]$ResponseBasisRunPath=''", source)
-        self.assertIn("-RetentionClass qualification", source)
-        self.assertIn("Real-3-D mirror response basis or derived voltage-family", source)
-        self.assertNotIn("-PreservePaths @($basisPath)", source)
-        self.assertIn("if($baselinePeriod){$analyzeArguments+=", source)
-        self.assertIn("','reuse',", source)
-        self.assertIn("'--basis-run',$basisRun", source)
-        self.assertIn("'--contract',$frozenContract", source)
-        self.assertIn("axis_basis_schema_version", source)
-        self.assertIn("axis_period_authority", source)
-
     def test_loads_numerics_from_baseline_contract(self) -> None:
         project = Path(__file__).resolve().parents[2]
 

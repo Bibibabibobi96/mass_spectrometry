@@ -26,14 +26,15 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'analytic_mirror_l0_l1_candidate' `
-  -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled
+  -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled `
+  -CapacityLedgerLifecycleEnabled
 $inputDir = $package.input_dir
 $resultDir = $package.result_dir
 $logDir = $package.log_dir
 $runConfig = $package.run_config
 $summary = $package.summary
 $artifactCapacityRoot = Join-Path $workspaceRoot 'artifacts'
-$artifactCapacityStartup = $null
+$capacitySession = $null
 $terminalized = $false
 $failureStage = 'preflight'
 
@@ -97,11 +98,12 @@ try {
   }
 
   $failureStage = 'capacity_preflight'
-  $artifactCapacityStartup = Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot $artifactCapacityRoot -RequiredHeadroomBytes $inputCopyBytes `
-    -ProtectedPaths @($package.artifact_run_dir)
+  $capacitySession = Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot $artifactCapacityRoot -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes $inputCopyBytes -ProtectedPaths @($package.artifact_run_dir) `
+    -Owner "mrtof-mirror-l0-l1-candidate:$RunId"
   $artifactCapacityStartupPath = Join-Path $resultDir 'artifact_capacity_gate_startup.json'
-  Write-RunJson -Path $artifactCapacityStartupPath -Depth 14 -Value $artifactCapacityStartup
+  Write-RunJson -Path $artifactCapacityStartupPath -Depth 14 -Value $capacitySession
 
   $failureStage = 'freeze_inputs'
   $frozenContract = Copy-VerifiedRunInput -Source $contractInput `
@@ -168,13 +170,9 @@ try {
   $failureStage = 'retention'
   $retention = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage = 'capacity_terminal'
-  $maximumNewArtifactBytes = [int64](
-    (Get-ChildItem -LiteralPath $package.artifact_run_dir -File -Recurse | Measure-Object -Property Length -Sum).Sum
-  )
-  $artifactCapacityTerminal = Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot $artifactCapacityRoot -ProtectedPaths @($package.artifact_run_dir) `
-    -KnownMeasuredBytes ([int64]$artifactCapacityStartup.measured_after_bytes) `
-    -MaximumNewArtifactBytes $maximumNewArtifactBytes
+  $artifactCapacityTerminal = Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -RemainingCommittedNewBytes 0
+  $capacitySession = $artifactCapacityTerminal.session
   $artifactCapacityTerminalPath = Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $artifactCapacityTerminalPath -Depth 14 -Value $artifactCapacityTerminal
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success `
@@ -195,11 +193,18 @@ try {
   }
   throw
 } finally {
-  if (-not $terminalized -and (Test-Path -LiteralPath $runConfig -PathType Leaf)) {
-    Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
-      -SummaryRole 'mrtof_mirror_l0_l1_candidate_summary' `
-      -Reason 'Runner stopped before terminal analytic evidence publication.' `
-      -Software @('Python 3.11', 'SciPy') -Status interrupted -FailureStage $failureStage
+  try {
+    if (-not $terminalized -and (Test-Path -LiteralPath $runConfig -PathType Leaf)) {
+      Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
+        -SummaryRole 'mrtof_mirror_l0_l1_candidate_summary' `
+        -Reason 'Runner stopped before terminal analytic evidence publication.' `
+        -Software @('Python 3.11', 'SciPy') -Status interrupted -FailureStage $failureStage
+    }
+  } finally {
+    try {
+      if ($null -ne $capacitySession) { $null = Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession }
+    } finally {
+      Remove-RunPackageExecutionAlias -Package $package
+    }
   }
-  Remove-RunPackageExecutionAlias -Package $package
 }

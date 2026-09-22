@@ -10,6 +10,9 @@ import unittest
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
+    resolve_bunch_source_interval,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic import (
     analyze_source_z_energy_timing,
 )
@@ -27,7 +30,12 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
-def _fixture(root: Path, *, omit_event: tuple[str, int] | None = None) -> Path:
+def _fixture(
+    root: Path,
+    *,
+    omit_event: tuple[str, int] | None = None,
+    selected_parent_interval: tuple[int, int] | None = None,
+) -> Path:
     source, run = root / "source", root / "run"
     source.mkdir()
     (run / "logs").mkdir(parents=True)
@@ -41,23 +49,31 @@ def _fixture(root: Path, *, omit_event: tuple[str, int] | None = None) -> Path:
     with state.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
-        for ion in range(1, 5):
+        source_count = 100 if selected_parent_interval is not None else 4
+        for ion in range(1, source_count + 1):
             writer.writerow({
                 "particle_id": ion, "tob_us": 0, "mass_th": 524, "charge_e": 1,
                 "kinetic_energy_ev": 5, "x_mm": 0, "y_mm": -55, "z_mm": ion - 1,
                 "direction_x": 0, "direction_y": 1, "direction_z": 0,
             })
     fly2 = source / "bunch_source.fly2"
-    fly2.write_text("\n".join("standard_beam {" for _ in range(4)), encoding="utf-8")
+    fly2.write_text(
+        "\n".join("standard_beam {" for _ in range(source_count)), encoding="utf-8"
+    )
     receipt_source = source / "bunch_source_receipt.json"
     receipt = {
         "schema_version": 1, "role": "mrtof_deterministic_ideal_bunch_source",
         "status": "materialized", "sampling_method": "center_first_halton_position_energy_angle_v1",
         "clock_basis": "ion_time_of_flight_us_from_common_tob_zero_release",
         "species": {"mass_th": 524.0, "charge_e": 1}, "common_time_of_birth_us": 0.0,
-        "particle_count": 4, "mother_particle_count": 4,
-        "expected_particle_ids": [1, 2, 3, 4],
-        "expected_particle_ids_sha256": hashlib.sha256(b"[1,2,3,4]").hexdigest(),
+        "source_profile_id": "test_source", "frame_id": "test_frame",
+        "prefix_rule": "ordered_first_n_states_of_one_mother_cohort",
+        "particle_count": source_count, "mother_particle_count": source_count,
+        "expected_particle_ids": list(range(1, source_count + 1)),
+        "expected_particle_ids_sha256": hashlib.sha256(
+            json.dumps(list(range(1, source_count + 1)), separators=(",", ":")).encode()
+        ).hexdigest(),
+        "particle_states_sha256": "a" * 64,
         "state_table": _record(state), "fly2": _record(fly2),
     }
     _write_json(receipt_source, receipt)
@@ -172,7 +188,21 @@ def _fixture(root: Path, *, omit_event: tuple[str, int] | None = None) -> Path:
         "electrode_collision_count": 1, "detector_hit_count": 3,
     }})
     run_config = run / "run_config.json"
-    _write_json(run_config, {"schema_version": 1, "role": "test_flight_config"})
+    parameters: dict[str, object] = {}
+    if selected_parent_interval is not None:
+        selected = resolve_bunch_source_interval(
+            receipt_path=receipt_copy,
+            particle_id_min=selected_parent_interval[0],
+            particle_id_max=selected_parent_interval[1],
+        )
+        parameters = {
+            "source_selection": selected["source_cohort"]["selection"],
+            "source_cohort": selected["source_cohort"],
+        }
+    _write_json(
+        run_config,
+        {"schema_version": 1, "role": "test_flight_config", "parameters": parameters},
+    )
     manifest = run / "run_manifest.json"
     _write_json(manifest, {
         "project": "parallel_mirror_dual_stripe_mr_tof",
@@ -189,6 +219,18 @@ def _fixture(root: Path, *, omit_event: tuple[str, int] | None = None) -> Path:
 
 
 class SourceZEnergyTimingDiagnosticTests(unittest.TestCase):
+    def test_contiguous_parent_interval_is_rebased_to_local_particle_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = analyze_source_z_energy_timing(
+                _fixture(Path(directory), selected_parent_interval=(2, 5))
+            )
+        self.assertEqual(result["cohort"]["particle_count"], 4)
+        self.assertAlmostEqual(
+            result["stages"]["detector"]["absolute_time"]
+            ["initial_z_association"]["slope"],
+            0.05,
+        )
+
     def test_batch_run_retains_losses_and_reports_transfer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result = analyze_source_z_energy_timing(_fixture(Path(directory)))

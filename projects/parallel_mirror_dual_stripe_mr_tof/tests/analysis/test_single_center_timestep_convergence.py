@@ -34,9 +34,10 @@ def _write_run(root: Path, name: str, step: float, shift: float = 0.0) -> Path:
         key: {"path": f"C:/frozen/{key}", "bytes": 10, "sha256": "A" * 64}
         for key in (
             "geometry_run_manifest", "mirror_run_manifest", "stripe_run_manifest",
-            "accelerator_run_manifest", "local_workbench_run_manifest",
-            "trajectory_numerics_contract", "local_refinement_sidecar", "flight_program",
-            "mirror_cycle_counter", "voltage_map", "read_only_analyzer_pa",
+            "accelerator_run_manifest", "trajectory_numerics_contract", "flight_program",
+            "mirror_cycle_counter", "voltage_map", "native_corridor_bank_run_manifest",
+            "native_corridor_bank_publication", "native_corridor_runtime_receipt",
+            "native_system_runtime_bundle", "native_global_fallback_pa",
             "read_only_accelerator_pa", "read_only_detector_pa", "frozen_source_fly2",
         )
     }
@@ -57,7 +58,7 @@ def _write_run(root: Path, name: str, step: float, shift: float = 0.0) -> Path:
         "drift_phase_contract": {"target_period_ratio": 25.5},
         "detector_return_policy_authority": {"policy": "current"},
         "target_drift_period_ratio": 25.5, "target_half_oscillation_count": 51,
-        "runtime_fast_adjust_enable": False, "workbench_accelerator_instance": 7,
+        "runtime_fast_adjust_enable": False, "accelerator_instance": 3,
         "accelerator_pulse": pulse,
         "trajectory_profile": {"profile_id": name, "maximum_step_us": step,
                                "trajectory_quality": 8, "purpose": "test"},

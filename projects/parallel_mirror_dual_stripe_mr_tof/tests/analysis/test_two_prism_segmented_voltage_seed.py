@@ -192,6 +192,15 @@ class TwoPrismSegmentedVoltageSeedTests(unittest.TestCase):
         self.assertTrue(all(item.transport_diagnostic is not None for item in result.evaluations))
         self.assertEqual(result.iterations[0].central_difference_evaluation_indices, (1, 2, 3, 4))
 
+    def test_equivalent_initial_feasible_pairs_choose_lower_absolute_voltage(self) -> None:
+        def evaluator(_contract, **_kwargs):
+            return diagnostic(0.0, 0.0)
+
+        result = self.solve(evaluator, initial=((8.0, -8.0), (1.0, -1.0)))
+        self.assertEqual(result.status, "underdetermined")
+        center = result.evaluations[result.iterations[0].center_evaluation_index]
+        self.assertEqual(center.prism_voltages_v, (1.0, -1.0))
+
     def test_rank_deficient_system_reports_underdetermined(self) -> None:
         def evaluator(_contract, **kwargs):
             p1 = kwargs["prism_bias_v_by_electrode_id"][16]

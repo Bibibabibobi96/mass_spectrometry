@@ -187,7 +187,13 @@ class CombinedField:
             raise RealFieldL1Error("field sample coordinates must be finite")
         ix, iz = self._nearest_indices(x_mm, z_mm)
         if reject_electrode and bool(self.basis.electrode_mask[ix, iz]):
-            raise RealFieldL1Error("trajectory entered a sampled electrode cell")
+            raise RealFieldL1Error(
+                "trajectory entered a sampled electrode cell: "
+                f"query_x_mm={x_mm:.17g}, query_z_mm={z_mm:.17g}, "
+                f"nearest_x_mm={float(self.basis.x_mm[ix]):.17g}, "
+                f"nearest_z_mm={float(self.basis.z_mm[iz]):.17g}, "
+                f"grid_index=({ix},{iz})"
+            )
         try:
             point = np.asarray([[x_mm, z_mm]], dtype=float)
             potential = float(self._potential_interpolator(point)[0])
@@ -327,23 +333,32 @@ def l1_probe_at_energy(
     if position_probe_mm <= 0.0 or angle_probe_rad <= 0.0:
         raise RealFieldL1Error("L1 probes must be positive")
 
-    def trace(x_mm: float, alpha_rad: float) -> TraceResult:
-        return trace_two_mirror_cycle(
-            field, energy_per_charge_v=energy_per_charge_v,
-            initial_x_mm=x_mm, initial_alpha_rad=alpha_rad,
-            launch_direction=launch_direction,
-            particle_mass_th=float(trace_controls["particle_mass_th"]),
-            particle_charge_e=float(trace_controls["particle_charge_e"]),
-            relative_tolerance=float(trace_controls["relative_tolerance"]),
-            absolute_tolerance=float(trace_controls["absolute_tolerance"]),
-            maximum_step_us=float(trace_controls["maximum_step_us"]),
-            maximum_leg_time_us=float(trace_controls["maximum_leg_time_us"]),
-            central_plane_offset_mm=float(trace_controls["central_plane_offset_mm"]),
-        )
+    def trace(label: str, x_mm: float, alpha_rad: float) -> TraceResult:
+        try:
+            return trace_two_mirror_cycle(
+                field, energy_per_charge_v=energy_per_charge_v,
+                initial_x_mm=x_mm, initial_alpha_rad=alpha_rad,
+                launch_direction=launch_direction,
+                particle_mass_th=float(trace_controls["particle_mass_th"]),
+                particle_charge_e=float(trace_controls["particle_charge_e"]),
+                relative_tolerance=float(trace_controls["relative_tolerance"]),
+                absolute_tolerance=float(trace_controls["absolute_tolerance"]),
+                maximum_step_us=float(trace_controls["maximum_step_us"]),
+                maximum_leg_time_us=float(trace_controls["maximum_leg_time_us"]),
+                central_plane_offset_mm=float(trace_controls["central_plane_offset_mm"]),
+            )
+        except RealFieldL1Error as exc:
+            raise RealFieldL1Error(
+                "L1 trajectory failed: "
+                f"probe={label}, energy_per_charge_v={energy_per_charge_v:.17g}, "
+                f"launch_direction_z={launch_direction}; {exc}"
+            ) from exc
 
-    center = trace(0.0, 0.0)
-    xp, xm = trace(position_probe_mm, 0.0), trace(-position_probe_mm, 0.0)
-    ap, am = trace(0.0, angle_probe_rad), trace(0.0, -angle_probe_rad)
+    center = trace("center", 0.0, 0.0)
+    xp = trace("position_positive", position_probe_mm, 0.0)
+    xm = trace("position_negative", -position_probe_mm, 0.0)
+    ap = trace("angle_positive", 0.0, angle_probe_rad)
+    am = trace("angle_negative", 0.0, -angle_probe_rad)
     matrix = np.asarray([
         [
             (xp.first_return_x_mm - xm.first_return_x_mm) / (2.0 * position_probe_mm),

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "role": "orthogonal_accelerator_component_focus_request",
+  "consumer_project_id": "parallel_mirror_dual_stripe_mr_tof",
+  "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+  "time_focus": {
+    "final_energy_per_charge_v": 4372.010347796,
+    "focus_plane_offset_from_exit_mm": 0.0,
+    "gap1_voltage_drop_bounds_v": [
+      100.0,
+      1500.0
+    ]
+  },
+  "numerics": {
+    "trajectory_quality": 8.0,
+    "maximum_step_us": 0.0005
+  },
+  "acceptance": {
+    "required_transport_fraction": 1.0,
+    "maximum_focus_peak_to_peak_time_ns": 1.5,
+    "time_spread_exceedance": "warning",
+    "focus_plane_tolerance_mm": 0.1
+  },
+  "simion_projection": {
+    "source_frame": "orthogonal_accelerator_exit_origin_v1",
+    "workbench_mapping": "identity_xyz_with_local_exit_z_translation_v1",
+    "local_pa_span_mm": [
+      44.5,
+      24.5,
+      50.0
+    ],
+    "iob_origin_rule": "negative_half_transverse_span__local_z_zero_v1",
+    "local_exit_z_mm": 6.0,
+    "focus_plane_padding_mm": 6.0,
+    "positive_z_enclosure_padding_mm": 6.0,
+    "semantics": "Provider-owned native assembly convention; MR supplies only the component demand and releases particles through the repository common specification."
+  }
+}

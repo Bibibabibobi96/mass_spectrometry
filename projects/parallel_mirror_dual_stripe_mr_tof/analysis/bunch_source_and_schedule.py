@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_count_policy import validate_standard_particle_count
+from common.ion_release.cylinder import generate_center_first_halton_cylinder_phase_space
 from common.simion.particle_source import render_standard_beams
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
@@ -31,7 +32,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
 _CLOCK_BASIS = "ion_time_of_flight_us_from_common_tob_zero_release"
 _SAMPLING_METHOD = "center_first_halton_position_energy_angle_v1"
 _SOURCE_DEFINITION_ROLE = "mrtof_ideal_bunch_source_definition"
-_CURRENT_SOURCE_DEFINITION_SCHEMA = 2
+_CURRENT_SOURCE_DEFINITION_SCHEMA = 3
 _COORDINATE_SEMANTICS = {
     "x": "transverse_mirror_focusing",
     "y": "slow_drift_positive_stripe_function_argument",
@@ -67,42 +68,14 @@ def _vector3(values: Sequence[float], label: str) -> tuple[float, float, float]:
     return tuple(_finite(value, label) for value in values)  # type: ignore[return-value]
 
 
-def _radical_inverse(index: int, base: int) -> float:
-    if index < 0 or base < 2:
-        raise ValueError("radical inverse requires index >= 0 and base >= 2")
-    value = 0.0
-    factor = 1.0 / base
-    while index:
-        index, digit = divmod(index, base)
-        value += digit * factor
-        factor /= base
-    return value
 
 
 def _normalize(values: Sequence[float]) -> tuple[float, float, float]:
+    """Normalize one MR adapter direction before FLY2 serialization."""
     norm = math.sqrt(sum(value * value for value in values))
     if not math.isfinite(norm) or norm <= 0.0:
         raise CandidateContractError("source direction must be nonzero")
     return tuple(value / norm for value in values)  # type: ignore[return-value]
-
-
-def _tangent_basis(
-    direction: Sequence[float],
-) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
-    unit = _normalize(direction)
-    reference = (0.0, 0.0, 1.0) if abs(unit[2]) < 0.9 else (1.0, 0.0, 0.0)
-    first = _normalize((
-        unit[1] * reference[2] - unit[2] * reference[1],
-        unit[2] * reference[0] - unit[0] * reference[2],
-        unit[0] * reference[1] - unit[1] * reference[0],
-    ))
-    second = _normalize((
-        unit[1] * first[2] - unit[2] * first[1],
-        unit[2] * first[0] - unit[0] * first[2],
-        unit[0] * first[1] - unit[1] * first[0],
-    ))
-    return first, second
-
 
 def deterministic_ideal_bunch_states(
     *,
@@ -138,51 +111,34 @@ def deterministic_ideal_bunch_states(
         raise CandidateContractError("aperture plane axes must be two unique axes")
     if acceleration_axis not in (0, 1, 2) or acceleration_axis in aperture_plane_axes:
         raise CandidateContractError("acceleration axis must complement the aperture plane")
-    center = _vector3(center_workbench_mm, "source centre")
-    nominal = _normalize(_vector3(nominal_direction_workbench, "nominal direction"))
-    tangent_1, tangent_2 = _tangent_basis(nominal)
-    radius = _finite(position_radius_mm, "position radius")
-    axial_width = _finite(acceleration_axis_full_width_mm, "axial full width")
-    energy_center = _finite(kinetic_energy_center_ev, "kinetic-energy centre")
-    energy_width = _finite(kinetic_energy_full_width_ev, "kinetic-energy full width")
-    angular_width = _finite(angular_full_width_deg, "angular full width")
+    try:
+        samples = generate_center_first_halton_cylinder_phase_space(
+            particle_count=particle_count,
+            center_mm=_vector3(center_workbench_mm, "source centre"),
+            transverse_axes=aperture_plane_axes,
+            axis=acceleration_axis,
+            radius_mm=_finite(position_radius_mm, "position radius"),
+            height_mm=_finite(acceleration_axis_full_width_mm, "axial full width"),
+            kinetic_energy_center_ev=_finite(kinetic_energy_center_ev, "kinetic-energy centre"),
+            kinetic_energy_full_width_ev=_finite(kinetic_energy_full_width_ev, "kinetic-energy full width"),
+            nominal_direction=_vector3(nominal_direction_workbench, "nominal direction"),
+            angular_full_width_deg=_finite(angular_full_width_deg, "angular full width"),
+        )
+    except ValueError as error:
+        raise CandidateContractError(str(error)) from error
     mass = _finite(mass_th, "particle mass")
     tob = _finite(common_time_of_birth_us, "common time of birth")
-    if radius < 0 or axial_width < 0 or energy_width < 0 or angular_width < 0:
-        raise CandidateContractError("source spread widths must be nonnegative")
-    if energy_center <= energy_width / 2.0 or mass <= 0 or type(charge_e) is not int or charge_e == 0:
+    if mass <= 0 or type(charge_e) is not int or charge_e == 0:
         raise CandidateContractError("source species and energy envelope must be physical")
-
-    states: list[dict[str, Any]] = []
-    for offset in range(particle_count):
-        if offset == 0:
-            disk_radius = angle = axial = energy_delta = tilt_1 = tilt_2 = 0.0
-        else:
-            disk_radius = radius * math.sqrt(_radical_inverse(offset, 2))
-            angle = 2.0 * math.pi * _radical_inverse(offset, 3)
-            axial = axial_width * (_radical_inverse(offset, 5) - 0.5)
-            energy_delta = energy_width * (_radical_inverse(offset, 7) - 0.5)
-            half_angle_rad = math.radians(angular_width) / 2.0
-            tilt_1 = half_angle_rad * (2.0 * _radical_inverse(offset, 11) - 1.0)
-            tilt_2 = half_angle_rad * (2.0 * _radical_inverse(offset, 13) - 1.0)
-        position = list(center)
-        position[aperture_plane_axes[0]] += disk_radius * math.cos(angle)
-        position[aperture_plane_axes[1]] += disk_radius * math.sin(angle)
-        position[acceleration_axis] += axial
-        direction = _normalize(tuple(
-            nominal[axis] + tilt_1 * tangent_1[axis] + tilt_2 * tangent_2[axis]
-            for axis in range(3)
-        ))
-        states.append({
-            "particle_id": offset + 1,
-            "tob_us": tob,
-            "mass_th": mass,
-            "charge_e": charge_e,
-            "kinetic_energy_ev": energy_center + energy_delta,
-            "position_workbench_mm": position,
-            "direction_workbench": list(direction),
-        })
-    return states
+    return [{
+        "particle_id": sample["particle_id"],
+        "tob_us": tob,
+        "mass_th": mass,
+        "charge_e": charge_e,
+        "kinetic_energy_ev": sample["kinetic_energy_ev"],
+        "position_workbench_mm": sample["position_mm"],
+        "direction_workbench": sample["direction"],
+    } for sample in samples]
 
 
 def materialize_bunch_source_from_definition(
@@ -197,26 +153,38 @@ def materialize_bunch_source_from_definition(
     definition = _load_object(definition_path, "bunch source definition")
     schema_version = definition.get("schema_version")
     if (
-        schema_version not in (1, _CURRENT_SOURCE_DEFINITION_SCHEMA)
+        schema_version not in (1, 2, _CURRENT_SOURCE_DEFINITION_SCHEMA)
         or definition.get("role") != _SOURCE_DEFINITION_ROLE
         or definition.get("status") != "frozen"
     ):
         raise CandidateContractError("bunch source definition identity is invalid")
     required = (
         "source_profile_id", "frame_id", "particle_count", "mother_particle_count",
-        "center_workbench_mm", "aperture_plane_axes", "acceleration_axis",
+        "aperture_plane_axes", "acceleration_axis",
         "position_radius_mm", "acceleration_axis_full_width_mm",
         "kinetic_energy_center_ev", "kinetic_energy_full_width_ev",
         "nominal_direction_workbench", "angular_full_width_deg",
         "mass_th", "charge_e", "common_time_of_birth_us",
     )
+    if schema_version in (1, 2):
+        required = (*required, "center_workbench_mm")
+    else:
+        required = (
+            *required,
+            "center_rule",
+            "center_offset_workbench_mm",
+            "field_cache_dependency",
+        )
     missing = [name for name in required if name not in definition]
     if missing:
         raise CandidateContractError(
             "bunch source definition is incomplete: " + ", ".join(missing)
         )
     geometry_binding: dict[str, Any] | None = None
-    if schema_version == _CURRENT_SOURCE_DEFINITION_SCHEMA:
+    resolved_center = _vector3(
+        definition["center_workbench_mm"], "source centre"
+    ) if schema_version in (1, 2) else None
+    if schema_version in (2, _CURRENT_SOURCE_DEFINITION_SCHEMA):
         if geometry_contract_path is None:
             raise CandidateContractError(
                 "schema-2 bunch source definition requires its geometry contract"
@@ -244,33 +212,51 @@ def materialize_bunch_source_from_definition(
             placement.focus_y_mm,
             placement.repeller_z_mm - release,
         )
-        actual_center = _vector3(definition["center_workbench_mm"], "source centre")
-        if any(
-            not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-12)
-            for actual, expected in zip(actual_center, expected_center, strict=True)
-        ):
-            raise CandidateContractError(
-                "bunch source centre differs from the resolved accelerator release position"
-            )
-        authority = definition.get("center_authority")
         geometry_sha = file_sha256(geometry_contract_path).lower()
-        if (
-            not isinstance(authority, dict)
-            or authority.get("method")
-            != "derived_two_zone_placement_repeller_minus_gap1_release"
-            or str(authority.get("geometry_contract_sha256", "")).lower() != geometry_sha
-        ):
-            raise CandidateContractError("bunch source centre authority is invalid")
+        if schema_version == 2:
+            actual_center = resolved_center
+            if any(
+                not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-12)
+                for actual, expected in zip(actual_center, expected_center, strict=True)
+            ):
+                raise CandidateContractError(
+                    "bunch source centre differs from the resolved accelerator release position"
+                )
+            authority = definition.get("center_authority")
+            if (
+                not isinstance(authority, dict)
+                or authority.get("method")
+                != "derived_two_zone_placement_repeller_minus_gap1_release"
+                or str(authority.get("geometry_contract_sha256", "")).lower() != geometry_sha
+            ):
+                raise CandidateContractError("bunch source centre authority is invalid")
+        else:
+            if (
+                definition.get("center_rule")
+                != "resolved_accelerator_release_position"
+                or definition.get("field_cache_dependency") != "none"
+            ):
+                raise CandidateContractError(
+                    "schema-3 source placement must be resolved at run time and field-cache independent"
+                )
+            offset = _vector3(
+                definition["center_offset_workbench_mm"], "source centre offset"
+            )
+            resolved_center = tuple(
+                expected + delta
+                for expected, delta in zip(expected_center, offset, strict=True)
+            )
         geometry_binding = {
             "path": str(geometry_contract_path.resolve()),
             "bytes": geometry_contract_path.stat().st_size,
             "sha256": geometry_sha,
-            "derived_center_workbench_mm": list(expected_center),
+            "derived_center_workbench_mm": list(resolved_center),
         }
+    assert resolved_center is not None
     states = deterministic_ideal_bunch_states(
         particle_count=definition["particle_count"],
         mother_particle_count=definition["mother_particle_count"],
-        center_workbench_mm=definition["center_workbench_mm"],
+        center_workbench_mm=resolved_center,
         aperture_plane_axes=tuple(definition["aperture_plane_axes"]),
         acceleration_axis=definition["acceleration_axis"],
         position_radius_mm=definition["position_radius_mm"],
@@ -299,7 +285,14 @@ def materialize_bunch_source_from_definition(
     }
     if geometry_binding is not None:
         receipt["geometry_contract"] = geometry_binding
-        receipt["center_authority"] = dict(definition["center_authority"])
+        if schema_version == 2:
+            receipt["center_authority"] = dict(definition["center_authority"])
+        else:
+            receipt["center_rule"] = definition["center_rule"]
+            receipt["center_offset_workbench_mm"] = list(
+                _vector3(definition["center_offset_workbench_mm"], "source centre offset")
+            )
+            receipt["field_cache_dependency"] = "none"
     receipt_path.write_text(
         json.dumps(receipt, indent=2, sort_keys=True) + "\n",
         encoding="utf-8", newline="\n",
@@ -513,6 +506,65 @@ def source_cohort_identity(receipt: Mapping[str, Any]) -> dict[str, Any]:
     return {key: receipt[key] for key in keys}
 
 
+def resolve_bunch_source_interval(
+    *, receipt_path: Path, particle_id_min: int, particle_id_max: int,
+) -> dict[str, Any]:
+    """Resolve one immutable contiguous interval from a verified mother cohort."""
+    receipt = load_verified_bunch_source_receipt(receipt_path)
+    count = int(receipt["particle_count"])
+    if not 1 <= particle_id_min <= particle_id_max <= count:
+        raise ValueError("source particle interval is outside the frozen cohort")
+    with Path(receipt["state_table"]["path"]).open(
+        "r", encoding="utf-8", newline="",
+    ) as stream:
+        rows = list(csv.DictReader(stream))
+    selected = rows[particle_id_min - 1:particle_id_max]
+    particle_ids = list(range(particle_id_min, particle_id_max + 1))
+    if [int(row["particle_id"]) for row in selected] != particle_ids:
+        raise ValueError("source selection is not one contiguous global-ID interval")
+    states = [{
+        "tob_us": float(row["tob_us"]),
+        "mass_th": float(row["mass_th"]),
+        "charge_e": int(row["charge_e"]),
+        "kinetic_energy_ev": float(row["kinetic_energy_ev"]),
+        "position_workbench_mm": [float(row[key]) for key in ("x_mm", "y_mm", "z_mm")],
+        "direction_workbench": [
+            float(row[key]) for key in ("direction_x", "direction_y", "direction_z")
+        ],
+    } for row in selected]
+    fly2 = render_bunch_fly2(states)
+    ids_payload = json.dumps(particle_ids, separators=(",", ":")).encode("utf-8")
+    state_payload = json.dumps(states, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    parent_identity = source_cohort_identity(receipt)
+    cohort_identity = {
+        **parent_identity,
+        "particle_count": len(states),
+        "expected_particle_ids_sha256": hashlib.sha256(ids_payload).hexdigest(),
+        "particle_states_sha256": hashlib.sha256(state_payload).hexdigest(),
+        "selection": {
+            "role": "contiguous_frozen_source_diagnostic_selection",
+            "particle_id_min": particle_id_min,
+            "particle_id_max": particle_id_max,
+            "parent_particle_count": count,
+            "parent_particle_states_sha256": parent_identity["particle_states_sha256"],
+            "source_receipt_sha256": file_sha256(receipt_path).lower(),
+        },
+    }
+    selected_fly2_sha256 = hashlib.sha256(fly2.encode("utf-8")).hexdigest()
+    cohort_identity["selection"].update({
+        "expected_particle_ids_sha256": cohort_identity["expected_particle_ids_sha256"],
+        "particle_states_sha256": cohort_identity["particle_states_sha256"],
+        "fly2_sha256": selected_fly2_sha256,
+    })
+    return {
+        "particle_ids": particle_ids,
+        "states": states,
+        "fly2": fly2,
+        "fly2_sha256": selected_fly2_sha256,
+        "source_cohort": cohort_identity,
+    }
+
+
 def solver_problem_identity_from_trial_receipt(
     trial_receipt: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -560,15 +612,38 @@ def freeze_bunch_pulse_schedule_from_files(
     pilot_trial_receipt_path: Path,
     guard_us: float,
     output_path: Path,
+    pulse_off_time_us: float | None = None,
 ) -> dict[str, Any]:
     """Freeze a detector-blind schedule from one complete frozen pilot cohort."""
     source = load_verified_bunch_source_receipt(source_receipt_path)
     trial = _load_object(pilot_trial_receipt_path, "pilot trial receipt")
-    if trial.get("source_particle_count") != source["particle_count"]:
-        raise CandidateContractError("pilot trial particle count differs from source cohort")
-    if trial.get("source_cohort") != source_cohort_identity(source):
+    selection = trial.get("source_selection")
+    if isinstance(selection, dict):
+        # The runner records every explicit interval, including the complete
+        # 1..N interval.  Reconstruct that exact view instead of inferring the
+        # parent cohort merely because its particle count happens to match.
+        # This preserves strict source identity while allowing a complete
+        # interval to use its independently rendered Fly2 representation.
+        try:
+            interval = resolve_bunch_source_interval(
+                receipt_path=source_receipt_path,
+                particle_id_min=int(selection["particle_id_min"]),
+                particle_id_max=int(selection["particle_id_max"]),
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise CandidateContractError("pilot source interval identity is invalid") from error
+        expected_cohort = interval["source_cohort"]
+        expected_fly2_sha256 = interval["fly2_sha256"]
+        expected_particle_ids = interval["particle_ids"]
+    else:
+        if trial.get("source_particle_count") != source["particle_count"]:
+            raise CandidateContractError("pilot trial particle count differs from source cohort")
+        expected_cohort = source_cohort_identity(source)
+        expected_fly2_sha256 = source["fly2"]["sha256"]
+        expected_particle_ids = list(source["expected_particle_ids"])
+    if trial.get("source_cohort") != expected_cohort:
         raise CandidateContractError("pilot trial consumed a different source cohort")
-    if str(trial.get("fly2_sha256", "")).lower() != str(source["fly2"]["sha256"]).lower():
+    if str(trial.get("fly2_sha256", "")).lower() != str(expected_fly2_sha256).lower():
         raise CandidateContractError("pilot trial Fly2 differs from source cohort")
     pulse = trial.get("accelerator_pulse")
     if (
@@ -589,11 +664,13 @@ def freeze_bunch_pulse_schedule_from_files(
     events = parse_events(pilot_log_path.read_text(encoding="utf-8"))
     schedule = derive_bunch_pulse_schedule(
         events=events,
-        expected_particle_ids=source["expected_particle_ids"],
+        expected_particle_ids=expected_particle_ids,
         guard_us=guard_us,
         pilot_maximum_step_us=maximum_step_us,
-        source_cohort_identity=source_cohort_identity(source),
+        source_cohort_identity=expected_cohort,
         solver_problem_identity=solver_problem_identity_from_trial_receipt(trial),
+        pulse_off_time_us=pulse_off_time_us,
+        accelerator_instance=int(trial.get("accelerator_instance", 3)),
     )
     schedule["inputs"] = {
         "source_receipt_sha256": file_sha256(source_receipt_path).lower(),
@@ -616,6 +693,8 @@ def derive_bunch_pulse_schedule(
     pilot_maximum_step_us: float,
     source_cohort_identity: Mapping[str, Any],
     solver_problem_identity: Mapping[str, Any],
+    pulse_off_time_us: float | None = None,
+    accelerator_instance: int = 3,
 ) -> dict[str, Any]:
     """Derive one global off time from every particle's unique safe exit."""
     expected = list(expected_particle_ids)
@@ -623,6 +702,8 @@ def derive_bunch_pulse_schedule(
         raise CandidateContractError("expected bunch IDs must be contiguous and one-based")
     guard = _finite(guard_us, "accelerator pulse guard")
     maximum_step = _finite(pilot_maximum_step_us, "pilot maximum step")
+    if type(accelerator_instance) is not int or accelerator_instance != 3:
+        raise CandidateContractError("accelerator instance must be 3")
     if maximum_step <= 0 or guard < maximum_step:
         raise CandidateContractError("accelerator pulse guard must cover at least one pilot maximum step")
     if not source_cohort_identity or not solver_problem_identity:
@@ -643,25 +724,40 @@ def derive_bunch_pulse_schedule(
         event = matches[0]
         time_us = _finite(event.get("t_us"), "safe-exit time")
         if (
-            int(event.get("from_instance", -1)) != 7
-            or int(event.get("to_instance", 7)) == 7
+            int(event.get("from_instance", -1)) != accelerator_instance
+            or int(event.get("to_instance", accelerator_instance)) == accelerator_instance
             or _finite(event.get("vz_mm_us"), "safe-exit axial velocity") >= 0
         ):
             raise CandidateContractError(f"particle {particle_id} has a non-injection safe exit")
+        exit_index = next(
+            index for index, item in enumerate(materialized) if item is event
+        )
         if any(
             item.get("kind") in {"terminal", "splat"}
             and int(item.get("ion", -1)) == particle_id
-            and _finite(item.get("t_us"), "pre-exit terminal time") <= time_us
-            for item in materialized
+            for item in materialized[:exit_index]
         ):
             raise CandidateContractError(f"particle {particle_id} terminated before its safe exit")
         selected.append({
             "particle_id": particle_id,
             "time_us": time_us,
-            "from_instance": 7,
+            "from_instance": accelerator_instance,
             "to_instance": int(event["to_instance"]),
         })
     last = max(selected, key=lambda item: (item["time_us"], item["particle_id"]))
+    minimum_pulse_off_time_us = last["time_us"] + guard
+    if pulse_off_time_us is None:
+        selected_pulse_off_time_us = minimum_pulse_off_time_us
+        pulse_off_authority = "cohort_last_safe_exit_plus_guard"
+    else:
+        selected_pulse_off_time_us = _finite(
+            pulse_off_time_us, "common accelerator pulse-off time"
+        )
+        if selected_pulse_off_time_us < minimum_pulse_off_time_us:
+            raise CandidateContractError(
+                "common accelerator pulse-off time precedes the cohort safe-exit envelope"
+            )
+        pulse_off_authority = "caller_common_envelope_verified_against_this_cohort"
     return {
         "schema_version": 2,
         "role": "mrtof_accelerator_global_pulse_schedule",
@@ -672,8 +768,8 @@ def derive_bunch_pulse_schedule(
         "source_cohort": dict(source_cohort_identity),
         "solver_problem_identity": dict(solver_problem_identity),
         "safe_exit_definition": {
-            "from_instance": 7,
-            "to_instance_rule": "not_7",
+            "from_instance": accelerator_instance,
+            "to_instance_rule": f"not_{accelerator_instance}",
             "required_project_z_direction": "negative",
             "event_count": len(selected),
             "first_safe_exit_time_us": min(item["time_us"] for item in selected),
@@ -685,7 +781,12 @@ def derive_bunch_pulse_schedule(
             "minimum_basis": "at_least_one_frozen_pilot_maximum_step",
             "pilot_maximum_step_us": maximum_step,
         },
-        "pulse_off_time_us": last["time_us"] + guard,
+        "pulse_off_time_us": selected_pulse_off_time_us,
+        "pulse_off_authority": pulse_off_authority,
+        "minimum_pulse_off_time_us": minimum_pulse_off_time_us,
+        "additional_common_envelope_margin_us": (
+            selected_pulse_off_time_us - minimum_pulse_off_time_us
+        ),
         "after_state": {
             "accelerator_electrode_ids": list(range(1, 10)),
             "voltage_v": 0.0,
@@ -699,8 +800,11 @@ def validate_fixed_global_pulse_events(
     expected_particle_ids: Sequence[int],
     pulse_off_time_us: float,
     time_tolerance_us: float,
+    accelerator_instance: int = 3,
 ) -> dict[str, Any]:
-    """Require one common fixed-time application event for every particle."""
+    """Require a common pulse outside the trial-declared accelerator instance."""
+    if type(accelerator_instance) is not int or accelerator_instance != 3:
+        raise CandidateContractError("accelerator instance must be 3")
     expected = list(expected_particle_ids)
     if expected != list(range(1, len(expected) + 1)):
         raise CandidateContractError("expected bunch IDs must be contiguous and one-based")
@@ -729,7 +833,11 @@ def validate_fixed_global_pulse_events(
             raise CandidateContractError(f"particle {particle_id} has the wrong pulse trigger")
         if abs(declared - scheduled) > tolerance or abs(actual - scheduled) > tolerance:
             raise CandidateContractError(f"particle {particle_id} missed the common pulse boundary")
-        if int(event.get("instance", 7)) == 7:
+        instance = event.get("instance")
+        if (type(instance) not in (int, float) or not math.isfinite(instance)
+                or instance < 1 or int(instance) != instance):
+            raise CandidateContractError(f"particle {particle_id} lacks a valid pulse-off instance")
+        if instance == accelerator_instance:
             raise CandidateContractError(f"particle {particle_id} remained in the accelerator at pulse-off")
         actual_times.append(actual)
     return {
@@ -758,6 +866,7 @@ def main() -> int:
     freeze.add_argument("--pilot-log", required=True, type=Path)
     freeze.add_argument("--pilot-trial-receipt", required=True, type=Path)
     freeze.add_argument("--guard-us", required=True, type=float)
+    freeze.add_argument("--pulse-off-time-us", type=float)
     freeze.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
     if arguments.command == "materialize-source":
@@ -779,6 +888,7 @@ def main() -> int:
             pilot_trial_receipt_path=arguments.pilot_trial_receipt,
             guard_us=arguments.guard_us,
             output_path=arguments.output,
+            pulse_off_time_us=arguments.pulse_off_time_us,
         )
         print(
             "MRTOF_BUNCH_PULSE_SCHEDULE=PASS "

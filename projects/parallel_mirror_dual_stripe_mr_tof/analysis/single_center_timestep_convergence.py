@@ -22,9 +22,10 @@ _STATE_FIELDS = ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_
 _IDENTITY_INPUTS = (
     "geometry_run_manifest", "mirror_run_manifest", "stripe_run_manifest",
     "accelerator_run_manifest", "accelerator_pulse_schedule",
-    "local_workbench_run_manifest", "trajectory_numerics_contract",
-    "local_refinement_sidecar", "flight_program", "mirror_cycle_counter", "voltage_map",
-    "read_only_analyzer_pa", "read_only_accelerator_pa", "read_only_detector_pa",
+    "trajectory_numerics_contract", "flight_program", "mirror_cycle_counter", "voltage_map",
+    "native_corridor_bank_run_manifest", "native_corridor_bank_publication",
+    "native_corridor_runtime_receipt", "native_system_runtime_bundle",
+    "native_global_fallback_pa", "read_only_accelerator_pa", "read_only_detector_pa",
     "frozen_source_fly2",
 )
 _IDENTITY_TRIAL_FIELDS = (
@@ -37,7 +38,7 @@ _IDENTITY_TRIAL_FIELDS = (
     "analyzer_electrode_voltages_v", "detector_box_mm", "drift_phase_contract",
     "detector_return_policy_authority", "target_drift_period_ratio",
     "target_half_oscillation_count", "runtime_fast_adjust_enable",
-    "workbench_accelerator_instance", "accelerator_pulse",
+    "accelerator_instance", "accelerator_pulse",
 )
 
 

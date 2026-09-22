@@ -44,6 +44,24 @@ VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES = (
 
 
 class MirrorL0L1RunnerTests(unittest.TestCase):
+    def _assert_workflow_capacity(self, source: str, committed_token: str) -> None:
+        for token in (
+            "-CapacityLedgerLifecycleEnabled",
+            "Enter-ArtifactWorkflowCapacitySession",
+            "Update-ArtifactWorkflowCapacitySession",
+            "Exit-ArtifactWorkflowCapacitySession",
+            committed_token,
+            "-RemainingCommittedNewBytes 0",
+        ):
+            self.assertIn(token, source)
+        for forbidden in (
+            "Invoke-ArtifactCapacityGate",
+            "RequiredHeadroomBytes",
+            "KnownMeasuredBytes",
+            "MaximumNewArtifactBytes",
+        ):
+            self.assertNotIn(forbidden, source)
+
     def _receipts(self, root: Path) -> tuple[Path, Path]:
         contract_sha = file_sha256(CONTRACT)
         l0 = root / "l0.json"
@@ -150,7 +168,6 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         for token in (
             "New-RunPackage",
             "Copy-VerifiedRunInput",
-            "Invoke-ArtifactCapacityGate",
             "Apply-RunArtifactRetention",
             "Write-VerifiedRunManifest",
             "mirror_l0_hardware_candidate",
@@ -159,6 +176,7 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             "Assert-FrozenSourcesUnchanged",
         ):
             self.assertIn(token, source)
+        self._assert_workflow_capacity(source, "-CommittedNewBytes $inputCopyBytes")
         self.assertEqual(source.count("Complete-FailedRun"), 2)
         self.assertNotIn("SIMION", source)
         self.assertNotIn("Refine", source)
@@ -168,7 +186,6 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         for token in (
             "New-RunPackage",
             "Copy-VerifiedRunInput",
-            "Invoke-ArtifactCapacityGate",
             "Apply-RunArtifactRetention",
             "Write-VerifiedRunManifest",
             "parent_mirror_run_manifest.json",
@@ -176,6 +193,7 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             "Test-RunFilesIdentical",
         ):
             self.assertIn(token, source)
+        self._assert_workflow_capacity(source, "-CommittedNewBytes 1048576")
         self.assertEqual(source.count("Complete-FailedRun"), 2)
         self.assertNotIn("SIMION", source)
         self.assertNotIn("Refine", source)
@@ -185,7 +203,6 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         for token in (
             "New-RunPackage",
             "Copy-VerifiedRunInput",
-            "Invoke-ArtifactCapacityGate",
             "Apply-RunArtifactRetention",
             "Write-VerifiedRunManifest",
             "parent_mirror_run_manifest.json",
@@ -196,6 +213,7 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             "Exit-HostExecutionLease -Lease $theoryLease",
         ):
             self.assertIn(token, source)
+        self._assert_workflow_capacity(source, "-CommittedNewBytes 1048576")
         self.assertEqual(source.count("Complete-FailedRun"), 2)
         self.assertNotIn("SIMION", source)
         self.assertNotIn("Refine", source)
@@ -228,7 +246,6 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         for token in (
             "New-RunPackage",
             "Copy-VerifiedRunInput",
-            "Invoke-ArtifactCapacityGate",
             "Apply-RunArtifactRetention",
             "Write-VerifiedRunManifest",
             "parent_mirror_run_manifest.json",
@@ -237,6 +254,7 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             "geometry_change = 'none'",
         ):
             self.assertIn(token, source)
+        self._assert_workflow_capacity(source, "-CommittedNewBytes 2097152")
         self.assertEqual(source.count("Complete-FailedRun"), 2)
         self.assertNotIn("SIMION", source)
         self.assertNotIn("Refine", source)

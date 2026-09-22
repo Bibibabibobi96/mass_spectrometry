@@ -9,6 +9,67 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis import mirror_real_fie
 
 
 class RealFieldL1RefineTests(unittest.TestCase):
+    def test_real_field_runners_use_one_capacity_session(self) -> None:
+        project = Path(__file__).resolve().parents[2]
+        for name in (
+            "run_mirror_real_field_l1_refine.ps1",
+        ):
+            source = (project / "analysis" / name).read_text(encoding="utf-8-sig")
+            for token in (
+                "-CapacityLedgerLifecycleEnabled",
+                "Enter-ArtifactWorkflowCapacitySession",
+                "Update-ArtifactWorkflowCapacitySession",
+                "Exit-ArtifactWorkflowCapacitySession",
+                "-CommittedNewBytes 1000000000",
+                "-RemainingCommittedNewBytes 0",
+            ):
+                self.assertIn(token, source, name)
+            for forbidden in (
+                "Invoke-ArtifactCapacityGate",
+                "RequiredHeadroomBytes",
+                "KnownMeasuredBytes",
+                "MaximumNewArtifactBytes",
+            ):
+                self.assertNotIn(forbidden, source, name)
+
+    def test_gamma_discovery_keeps_finite_unstable_endpoint_for_root_bracketing(self) -> None:
+        records = iter([
+            {
+                "trace_half": -1.8,
+                "stable": False,
+                "gamma_degrees": None,
+                "stability_margin": -0.8,
+            },
+            {
+                "trace_half": -1.6,
+                "stable": False,
+                "gamma_degrees": None,
+                "stability_margin": -0.6,
+            },
+        ])
+        with (
+            patch.object(mirror_real_field_l1_refine, "CombinedField", return_value=object()),
+            patch.object(
+                mirror_real_field_l1_refine,
+                "l1_probe_at_energy",
+                side_effect=lambda *_args, **_kwargs: next(records),
+            ),
+        ):
+            result = mirror_real_field_l1_refine._gamma_sample(
+                None,
+                [0.0, 1.0, 2.0, 3.0, 4.0],
+                nominal_energy_v=4000.0,
+                position_probe_mm=0.004,
+                angle_probe_rad=4.0e-5,
+                probe_scale_factor=1.0,
+                trace_controls={},
+            )
+
+        self.assertAlmostEqual(result["objective_mean_trace_half"], -1.7)
+        self.assertEqual(result["directional_stable"], [False, False])
+        self.assertEqual(result["directional_gamma_degrees"], [None, None])
+        self.assertEqual(result["probe_scale_factor"], 1.0)
+
     def test_only_probe_convergence_failures_may_advance_to_fixed_grid(self) -> None:
         reports = {
             "members": [

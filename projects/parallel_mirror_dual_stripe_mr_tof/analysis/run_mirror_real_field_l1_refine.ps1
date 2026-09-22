@@ -25,10 +25,11 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $artifactRoot "projects\$projectId") -RunId $RunId `
   -Project $projectId -Mode 'real_3d_mirror_l1_continuous_refinement' `
   -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass qualification `
-  -RetentionReason 'Continuous gamma-root refinement on the frozen 0.5-mm real-3-D mirror response basis.'
+  -RetentionReason 'Continuous gamma-root refinement on the frozen 0.5-mm real-3-D mirror response basis.' `
+  -CapacityLedgerLifecycleEnabled
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $runConfig=$package.run_config;$summary=$package.summary
-$terminalized=$false;$lease=$null;$failureStage='preflight';$hostOutcome='failed'
+$terminalized=$false;$lease=$null;$failureStage='preflight';$hostOutcome='failed';$capacitySession=$null
 
 function Invoke-ProjectPython([string[]]$Arguments){
   Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
@@ -52,6 +53,15 @@ try{
   $familyRun=(Resolve-Path -LiteralPath $L0FamilyRunPath).Path
   $axisRun=(Resolve-Path -LiteralPath $AxisResponseRunPath).Path
   $screenRun=(Resolve-Path -LiteralPath $DiscreteL1ScreenRunPath).Path
+  $failureStage='capacity_startup'
+  $protectedPaths=@($package.artifact_run_dir,$familyRun,$axisRun,$screenRun)
+  $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot $artifactRoot -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes 1000000000 -ProtectedPaths $protectedPaths `
+    -Owner "mrtof-mirror-real-field-l1-refine:$RunId"
+  $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
+  Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
+  $failureStage='verify_sources'
   foreach($sourceRun in @($familyRun,$axisRun,$screenRun)){
     Invoke-ProjectPython -Arguments @(
       (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py'),
@@ -62,17 +72,11 @@ try{
   $familySource=Join-Path $familyRun 'results\real_3d_mirror_l0_voltage_family.json'
   $axisSource=Join-Path $axisRun 'results\real_3d_mirror_axis_response_basis.csv'
   $screenSource=Join-Path $screenRun 'results\real_3d_mirror_l1_screen.json'
-  $planSource=Join-Path $screenRun 'inputs\mirror_l1_response_sampling_plan.json'
-  $basisSource=Join-Path $screenRun 'inputs\real_3d_mirror_l1_response_basis.csv'
+  $planSource=Join-Path $screenRun 'results\mirror_l1_response_sampling_plan.json'
+  $basisSource=Join-Path $screenRun 'results\real_3d_mirror_l1_response_basis.csv'
   foreach($source in @($familySource,$axisSource,$screenSource,$planSource,$basisSource)){
     if(-not(Test-Path -LiteralPath $source -PathType Leaf)){throw "Required input is missing: $source"}
   }
-  $failureStage='capacity_startup'
-  $protectedPaths=@($package.artifact_run_dir,$familyRun,$axisRun,$screenRun)
-  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot $artifactRoot -ProtectedPaths $protectedPaths -RequiredHeadroomBytes 1000000000
-  $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
-  Write-RunJson -Path $startupPath -Depth 14 -Value $startup
   $failureStage='freeze_inputs'
   $familyManifest=Copy-VerifiedRunInput -Source (Join-Path $familyRun 'run_manifest.json') -Destination (Join-Path $inputDir 'l0_family_run_manifest.json')
   $axisManifest=Copy-VerifiedRunInput -Source (Join-Path $axisRun 'run_manifest.json') -Destination (Join-Path $inputDir 'axis_response_run_manifest.json')
@@ -117,8 +121,9 @@ try{
   }
   Write-RunJson -Path $runConfig -Depth 30 -Value $configuration
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
-  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot $artifactRoot -ProtectedPaths $protectedPaths
+  $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -RemainingCommittedNewBytes 0
+  $capacitySession=$terminal.session
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   $checkpoints=@(Get-ChildItem -LiteralPath $resultDir -File -Filter 'root_*.checkpoint.json'|ForEach-Object{$_.FullName})
@@ -139,5 +144,9 @@ try{
   }
   throw
 }finally{
-  if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome $hostOutcome -RunId $RunId}
+  try{
+    if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome $hostOutcome -RunId $RunId}
+  }finally{
+    if($null-ne$capacitySession){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession}
+  }
 }

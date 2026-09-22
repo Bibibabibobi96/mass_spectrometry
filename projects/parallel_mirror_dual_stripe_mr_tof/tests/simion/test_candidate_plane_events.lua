@@ -2,6 +2,8 @@
 local repo=assert(arg[1],'repository root required')
 local directory=repo..'/projects/parallel_mirror_dual_stripe_mr_tof/simion/'
 local original_loadfile,original_print=loadfile,print
+local original_flush,flush_count=io.flush,0
+io.flush=function() flush_count=flush_count+1; return original_flush() end
 local program_file=assert(io.open(directory..'mrtof_candidate.lua','rb'))
 local program=program_file:read('*a'); program_file:close()
 local map=assert(loadfile(directory..'candidate_voltage_map.lua'))()
@@ -27,7 +29,7 @@ loadfile=function(path)
 end
 simion={workbench_program=function() segment={} end,
   early_access=function(version) assert(version==8.2) end,wb={instances={
-  {filename='mrtof_analyzer.pa0'}, {filename='mrtof_accelerator.pa0'}, {filename='mrtof_detector.pa#'}}}}
+  {filename='mrtof_analyzer.pa0'}, {filename='mrtof_analyzer_corridor.pa0',pa={fast_adjust=function() end}}, {filename='orthogonal_accelerator_focus.pa0'}, {filename='mrtof_detector.pa#'}}}}
 local records={}
 print=function(value) records[#records+1]=value end
 assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
@@ -40,7 +42,11 @@ end
 local function begin(z,vz,x,y,vy)
   records={}; segment.initialize_run(); state(z,vz,0,x,y,vy); segment.initialize()
 end
-local function step(z,vz,t,x,y,vy) state(z,vz,t,x,y,vy); segment.other_actions() end
+local function step(z,vz,t,x,y,vy)
+  local before=flush_count
+  state(z,vz,t,x,y,vy); segment.other_actions()
+  assert(flush_count-before<=1,'a turn event group must flush at most once')
+end
 local function events(kind)
   local found={}
   for _,line in ipairs(records) do
@@ -91,6 +97,7 @@ assert(#events('drift_phase_return')==1,table.concat(records,'\n'))
 assert(#events('drift_phase_candidate')==51)
 assert(#events('target_k_phase_sample')==1 and #events('target_k')==1)
 assert(#events('central_plane')>0)
+assert(flush_count>0,'turn events must become visible before flight completion')
 
 -- Dynamic prism switching is outside the active static Candidate.
 local switched_ok=pcall(function()
@@ -100,5 +107,46 @@ end)
 point.prism_switch=nil
 assert(not switched_ok)
 
+-- Native callbacks submit only changed channel values, including GUI edits.
+local fallback_loadfile=loadfile
+loadfile=function(path)
+  if path=='virtual/source.priority.lua' then
+    return assert(original_loadfile(directory..'native_corridor_priority_contract.lua'))
+  end
+  return fallback_loadfile(path)
+end
+local submissions={}
+local adjustment_flush_start=flush_count
+simion.wb.instances={
+  {filename='mrtof_analyzer.pa0'},
+  {filename='mrtof_analyzer_corridor.pa0',pa={fast_adjust=function(_,values)
+    submissions[#submissions+1]=values
+  end}},
+  {filename='orthogonal_accelerator_focus.pa0'}, {filename='mrtof_detector.pa#'}}
+assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+segment.initialize_run()
+for _=1,10 do segment.fast_adjust() end
+assert(#submissions==1 and #submissions[1]==8)
+local first_prism=submissions[1][7]
+V_prism_1=V_prism_1+1
+segment.fast_adjust(); segment.fast_adjust()
+assert(#submissions==2 and submissions[2][7]==first_prism+1)
+V_prism_1=V_prism_1-1
+segment.fast_adjust()
+assert(#submissions==3 and submissions[3][7]==first_prism)
+V_repeller=V_repeller+1 -- Accelerator changes do not alter corridor channels.
+segment.fast_adjust()
+assert(#submissions==3)
+segment.initialize_run(); segment.fast_adjust(); segment.fast_adjust()
+assert(#submissions==4)
+local adjustment_begins,adjustment_completions=0,0
+for _,line in ipairs(records) do
+  if line:match('^MRTOF_NATIVE_FAST_ADJUST begin ') then adjustment_begins=adjustment_begins+1 end
+  if line:match('^MRTOF_NATIVE_FAST_ADJUST complete ') then adjustment_completions=adjustment_completions+1 end
+end
+assert(adjustment_begins==4 and adjustment_completions==4)
+assert(flush_count-adjustment_flush_start==8,'flush only the four actual begin/complete pairs')
+
 print=original_print
+io.flush=original_flush
 print('CANDIDATE_PLANE_EVENTS=PASS parameterized_turn_phase_K25p5 switch_rejected')
