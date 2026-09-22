@@ -66,6 +66,33 @@ def emit_solid_rectangular_plate(
     )
 
 
+def emit_closed_two_zone_endplates(
+    *, grounded_id: int, repeller_id: int, enclosure: ShieldedRectangularEnclosure,
+    exit_z_mm: float, repeller_front_z_mm: float, repeller_back_z_mm: float,
+    repeller_half_x_mm: float, repeller_half_y_mm: float,
+) -> dict[str, str]:
+    """Emit the fixed two-zone end topology owned by the accelerator component.
+
+    Consumers may choose the documented placement and envelope dimensions, but
+    cannot turn either end into a grid or introduce a coaxial return aperture.
+    The negative-z exit remains a separately declared grid support.
+    """
+    _check_id(grounded_id)
+    _check_id(repeller_id)
+    if grounded_id == repeller_id:
+        raise TwoZoneGeometryError("grounded and repeller endplates require distinct IDs")
+    return {
+        "grounded_rear_cap": emit_grounded_enclosure(enclosure, exit_z_mm=exit_z_mm),
+        "repeller": emit_solid_rectangular_plate(
+            repeller_id,
+            half_x_mm=repeller_half_x_mm,
+            half_y_mm=repeller_half_y_mm,
+            front_z_mm=repeller_front_z_mm,
+            back_z_mm=repeller_back_z_mm,
+        ),
+    }
+
+
 def emit_ideal_grid(
     electrode_id: int, *, half_x_mm: float, half_y_mm: float, z_mm: float,
 ) -> str:

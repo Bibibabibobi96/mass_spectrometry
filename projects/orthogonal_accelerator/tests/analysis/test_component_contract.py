@@ -20,7 +20,7 @@ class ComponentContractTest(unittest.TestCase):
         validate_descriptor(descriptor, path, REPO)
         api = json.loads((PROJECT / descriptor["contracts"]["interface"]).read_text(encoding="utf-8"))
         self.assertEqual(api["schema_version"], 1)
-        self.assertEqual(api["api_version"], 1)
+        self.assertEqual(api["api_version"], 2)
         self.assertEqual(api["project_id"], descriptor["project_id"])
         variants = {row["variant_id"]: row for row in api["structural_variants"]}
         self.assertEqual(set(variants), {"two_zone", "three_zone"})
@@ -29,6 +29,15 @@ class ComponentContractTest(unittest.TestCase):
             self.assertEqual(len(variants[variant]["primary_electrode_roles"]), count + 1)
         for relative in api["implementation_modules"]:
             self.assertTrue((PROJECT / relative).is_file(), relative)
+        self.assertEqual(api["request_api"]["two_zone"]["role"],
+                         "orthogonal_accelerator_two_zone_requirements")
+        self.assertEqual(api["request_api"]["two_zone"]["fixed_topology"],
+                         "solid_positive_z_repeller_and_grounded_cap__negative_z_exit_grid")
+        self.assertEqual(api["request_api"]["two_zone"]["flight_source"],
+                         "caller_supplied_repository_ion_release_spec__run_input_only__excluded_from_pa_geometry_identity")
+        self.assertEqual(api["request_api"]["two_zone"]["geometry_authority"],
+                         "provider_owned__consumer_requests_only_source_envelope_mesh_and_rigid_placement")
+        self.assertIn("simion/two_zone_candidate.py", api["implementation_modules"])
         self.assertEqual(descriptor["formal_assets"]["status"], "none")
 
     def test_consumers_explicitly_declare_provider_and_variant(self) -> None:

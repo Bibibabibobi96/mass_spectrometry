@@ -2,12 +2,62 @@
   "schema_version": 1,
   "role": "orthogonal_accelerator_component_api",
   "project_id": "orthogonal_accelerator",
-  "api_version": 1,
+  "api_version": 2,
   "structural_variants": [
-    {"variant_id": "two_zone", "field_region_count": 2, "primary_electrode_roles": ["repeller", "grid1", "exit_grid"]},
-    {"variant_id": "three_zone", "field_region_count": 3, "primary_electrode_roles": ["repeller", "grid1", "grid2", "exit_grid"]}
+    {
+      "variant_id": "two_zone",
+      "field_region_count": 2,
+      "primary_electrode_roles": [
+        "repeller",
+        "grid1",
+        "exit_grid"
+      ]
+    },
+    {
+      "variant_id": "three_zone",
+      "field_region_count": 3,
+      "primary_electrode_roles": [
+        "repeller",
+        "grid1",
+        "grid2",
+        "exit_grid"
+      ]
+    }
   ],
-  "units": {"length": "mm", "voltage": "V", "mass": "Da", "time": "us"},
+  "units": {
+    "length": "mm",
+    "voltage": "V",
+    "mass": "Da",
+    "time": "us"
+  },
+  "request_api": {
+    "two_zone": {
+      "role": "orthogonal_accelerator_two_zone_requirements",
+      "fixed_topology": "solid_positive_z_repeller_and_grounded_cap__negative_z_exit_grid",
+      "source_shape": "cylinder",
+      "flight_source": "caller_supplied_repository_ion_release_spec__run_input_only__excluded_from_pa_geometry_identity",
+      "compaction_objective": "minimize_y_z_subject_to_focus",
+      "geometry_authority": "provider_owned__consumer_requests_only_source_envelope_mesh_and_rigid_placement"
+    }
+  },
+  "geometry_profiles": {
+    "closed_two_zone_compact_mr_axial_r3_gap1_4mm": {
+      "gap_1_mm": 4.0,
+      "gap_2_mm": 30.0,
+      "ring_count": 5,
+      "ring_thickness_z_mm": 1.0,
+      "aperture_width_x_mm": 25.0,
+      "aperture_height_y_mm": 16.0,
+      "electrode_outer_width_x_mm": 40.0,
+      "electrode_outer_height_y_mm": 20.0,
+      "guard_outer_width_x_mm": 44.0,
+      "guard_outer_height_y_mm": 24.0,
+      "guard_wall_thickness_mm": 1.0,
+      "lateral_clearance_mm": 1.0,
+      "repeller_thickness_z_mm": 2.0,
+      "rear_gap_mm": 1.0
+    }
+  },
   "coordinate_policy": "Each API declares its local axial convention; consumers must map positions with rotation and translation and velocities with rotation only. No instrument origin or focus plane is implicit.",
   "qualification_policy": "Independent component evidence only; no inheritance of instrument Formal qualification or sharing of evidence between structural variants.",
   "implementation_modules": [
@@ -16,6 +66,18 @@
     "analysis/two_zone_theory.py",
     "analysis/three_zone_ideal_theory.py",
     "analysis/two_zone_geometry.py",
-    "simion/rectangular_accelerator.py"
+    "simion/rectangular_accelerator.py",
+    "simion/two_zone_candidate.py",
+    "analysis/component_focus_analysis.py",
+    "analysis/component_focus_simion_source.py",
+    "simion/component_focus.lua",
+    "simion/build_component_focus_iob.lua",
+    "simion/run_component_focus_flight.ps1",
+    "analysis/component_focus_workflow.py",
+    "simion/run_component_focus_workflow.ps1",
+    "analysis/component_focus_fast_adjust.py",
+    "simion/run_component_focus_fast_adjust.ps1",
+    "analysis/component_focus_field_contrast.py",
+    "simion/run_component_focus_field_contrast.ps1"
   ]
 }

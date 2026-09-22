@@ -1,0 +1,20 @@
+[CmdletBinding()]
+param([Parameter(Mandatory)][string]$RunId,[Parameter(Mandatory)][string]$RootRunId,[Parameter(Mandatory)][string]$PABuildRunPath,[Parameter(Mandatory)][string]$CampaignPath,[Parameter(Mandatory)][string]$ReleaseSpecPath,[Parameter(Mandatory)][string]$InitialAnalysisPath,[string]$SimionExe='')
+Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
+$projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path;$repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path;$workspaceRoot=(Resolve-Path (Join-Path $repoRoot '..')).Path
+. (Join-Path $repoRoot 'common\require_powershell7.ps1');. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+$python=Join-Path $repoRoot '.venv\Scripts\python.exe';$runner=Join-Path $PSScriptRoot 'run_component_focus_flight.ps1';$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts\projects\orthogonal_accelerator') -RunId $RunId -Project orthogonal_accelerator -Mode component_focus_field_contrast -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Runtime two-zone ideal-field attribution on one published native Fast-Adjust PA.'
+$done=$false;$stage='freeze_inputs';try {
+ $campaign=Copy-VerifiedRunInput (Resolve-Path $CampaignPath).Path (Join-Path $package.input_dir 'campaign.json');$release=Copy-VerifiedRunInput (Resolve-Path $ReleaseSpecPath).Path (Join-Path $package.input_dir 'release_spec.json');$native=Copy-VerifiedRunInput (Resolve-Path $InitialAnalysisPath).Path (Join-Path $package.input_dir 'native_focus_analysis.json')
+ $analyses=@{native=$native};$manifests=@{}
+ $rootStamp=($RootRunId -split '__',2)[0]
+ if($rootStamp -notmatch '^\d{8}_\d{6}$'){throw 'RootRunId does not begin with a valid artifact timestamp.'}
+ $hash=[Security.Cryptography.SHA256]::Create();try{$rootToken=([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($RootRunId))).Replace('-','').Substring(0,8)).ToLowerInvariant()}finally{$hash.Dispose()}
+ foreach($mode in @('zone1_ideal','zone2_ideal','full_ideal')){
+  $stage=$mode;$safeMode=$mode.Replace('_','-');$childRunId="$rootStamp`__sim__simion__oa-field-$safeMode-$rootToken`__r01";&$runner -RunId $childRunId -PABuildRunPath $PABuildRunPath -CampaignPath $campaign -ReleaseSpecPath $release -FieldMode $mode -SimionExe $SimionExe;if($LASTEXITCODE-ne0){throw "Ideal-field child failed: $mode"}
+  $child=Join-Path $workspaceRoot (Join-Path 'artifacts\projects\orthogonal_accelerator\runs' $childRunId);$analyses[$mode]=Join-Path $child 'results\focus_analysis.json';$manifests[$mode]=(Get-FileHash (Join-Path $child 'run_manifest.json') -Algorithm SHA256).Hash
+ }
+ $out=Join-Path $package.result_dir 'two_zone_ideal_field_contrast.json';Push-Location $repoRoot;try{&$python -m projects.orthogonal_accelerator.analysis.component_focus_field_contrast --native $analyses.native --zone1-ideal $analyses.zone1_ideal --zone2-ideal $analyses.zone2_ideal --full-ideal $analyses.full_ideal --output $out;if($LASTEXITCODE-ne0){throw 'Ideal field contrast analysis failed'}}finally{Pop-Location}
+ $summary=[ordered]@{schema_version=1;role='orthogonal_accelerator_component_focus_field_contrast';status='diagnostic';native_analysis_sha256=(Get-FileHash $native -Algorithm SHA256).Hash;child_manifest_sha256=$manifests;contrast_sha256=(Get-FileHash $out -Algorithm SHA256).Hash};Write-RunJson -Path $package.summary -Depth 16 -Value $summary;Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs @($package.summary,$out);$done=$true
+}catch{throw
+}finally{if(-not$done){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Summary $package.summary -SummaryRole orthogonal_accelerator_component_focus_field_contrast -Reason "Ideal-field contrast failed at $stage." -Software @('SIMION 2020','Python 3.11') -Status failed};Remove-RunPackageExecutionAlias -Package $package}

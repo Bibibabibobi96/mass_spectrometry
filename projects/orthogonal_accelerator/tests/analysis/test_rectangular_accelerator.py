@@ -9,6 +9,7 @@ from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
     derive_shielded_rectangular_enclosure,
 )
 from projects.orthogonal_accelerator.simion.rectangular_accelerator import (
+    emit_closed_two_zone_endplates,
     emit_grounded_enclosure,
     emit_grounded_enclosure_with_rear_aperture,
     emit_ideal_grid,
@@ -17,6 +18,22 @@ from projects.orthogonal_accelerator.simion.rectangular_accelerator import (
 
 
 class RectangularAcceleratorTest(unittest.TestCase):
+    def test_closed_two_zone_endplates_cannot_be_rendered_as_grids(self) -> None:
+        enclosure = derive_shielded_rectangular_enclosure(
+            electrode_outer_width_x_mm=40.0, electrode_outer_height_y_mm=36.0,
+            guard_outer_width_x_mm=48.0, guard_outer_height_y_mm=44.0,
+            guard_wall_thickness_mm=2.0, lateral_clearance_mm=2.0,
+            repeller_z_mm=40.0, repeller_thickness_z_mm=2.0, rear_gap_mm=5.0,
+        )
+        endplates = emit_closed_two_zone_endplates(
+            grounded_id=1, repeller_id=2, enclosure=enclosure, exit_z_mm=0.0,
+            repeller_front_z_mm=40.0, repeller_back_z_mm=42.0,
+            repeller_half_x_mm=20.0, repeller_half_y_mm=18.0,
+        )
+        self.assertIn("box3D(-20,-18,40,20,18,42)", endplates["repeller"])
+        self.assertNotIn("notin_inside", endplates["repeller"])
+        self.assertIn("box3D(-24,-22,0,24,22,49)", endplates["grounded_rear_cap"])
+
     def test_open_frame_preserves_frozen_csg(self) -> None:
         self.assertEqual(emit_open_rectangular_frame(
             2, outer_half_x_mm=20.0, outer_half_y_mm=20.0,

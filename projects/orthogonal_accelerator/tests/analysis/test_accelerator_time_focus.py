@@ -6,6 +6,7 @@ import unittest
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     accelerator_state,
     derive,
+    fixed_plane_finite_interval_timing,
     fixed_energy_gap1_focus_sensitivity,
     focus_drift_mm,
     linear_phase_space_timing_coefficients,
@@ -16,6 +17,24 @@ from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
 
 
 class AcceleratorTimeFocusTest(unittest.TestCase):
+    def test_fixed_plane_finite_interval_reports_two_mm_design_width(self) -> None:
+        result = fixed_plane_finite_interval_timing(
+            4480.0,
+            3520.0,
+            6.0,
+            33.6,
+            3.0,
+            2.0,
+            0.0,
+            0.0,
+            0.12918680341103,
+            524.0,
+        )
+        self.assertEqual(result.source_minimum_mm, 2.0)
+        self.assertEqual(result.source_maximum_mm, 4.0)
+        self.assertEqual(result.sample_count, 1001)
+        self.assertLess(result.theoretical_peak_to_peak_time_ns, 4.0)
+
     def test_fixed_energy_gap1_focus_sensitivity_matches_independent_fixture(self) -> None:
         result = fixed_energy_gap1_focus_sensitivity(
             4198.879726494095,

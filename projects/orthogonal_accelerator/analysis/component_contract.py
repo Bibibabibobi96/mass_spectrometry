@@ -26,7 +26,7 @@ def _load_object(path: Path, fields: set[str], label: str) -> dict[str, Any]:
         raise ValueError(f"{label} has missing or unknown fields")
     if type(value["schema_version"]) is not int or value["schema_version"] != 1:
         raise ValueError(f"{label} schema_version is unsupported")
-    if type(value["api_version"]) is not int or value["api_version"] != 1:
+    if type(value["api_version"]) is not int or value["api_version"] != 2:
         raise ValueError(f"{label} api_version is unsupported")
     return value
 
@@ -84,7 +84,7 @@ def load_accelerator_dependency(
     provider_path = _source_path(root, expected_provider, "provider contract")
     provider = _load_object(provider_path, {
         "schema_version", "role", "project_id", "api_version", "structural_variants",
-        "units", "coordinate_policy", "qualification_policy", "implementation_modules",
+        "units", "request_api", "geometry_profiles", "coordinate_policy", "qualification_policy", "implementation_modules",
     }, "accelerator provider")
     if (provider["role"] != "orthogonal_accelerator_component_api"
             or provider["project_id"] != dependency["provider_project_id"]
@@ -92,6 +92,19 @@ def load_accelerator_dependency(
         raise ValueError("accelerator provider project/role/API identity differs")
     if provider["units"] != {"length": "mm", "voltage": "V", "mass": "Da", "time": "us"}:
         raise ValueError("accelerator provider units differ")
+    request_api = provider["request_api"]
+    if request_api != {"two_zone": {
+        "role": "orthogonal_accelerator_two_zone_requirements",
+        "fixed_topology": "solid_positive_z_repeller_and_grounded_cap__negative_z_exit_grid",
+        "source_shape": "cylinder",
+        "flight_source": "caller_supplied_repository_ion_release_spec__run_input_only__excluded_from_pa_geometry_identity",
+        "compaction_objective": "minimize_y_z_subject_to_focus",
+        "geometry_authority": "provider_owned__consumer_requests_only_source_envelope_mesh_and_rigid_placement",
+    }}:
+        raise ValueError("accelerator provider request API differs")
+    profiles = provider["geometry_profiles"]
+    if not isinstance(profiles, dict) or set(profiles) != {"closed_two_zone_compact_mr_axial_r3_gap1_4mm"}:
+        raise ValueError("accelerator provider geometry profiles differ")
     variants = dependency["structural_variants"]
     if (not isinstance(variants, list) or not variants
             or any(not isinstance(value, str) for value in variants)

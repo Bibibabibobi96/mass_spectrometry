@@ -21,14 +21,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from common.contracts.particle_physics import (
+    ELEMENTARY_CHARGE_C as _ELEMENTARY_CHARGE_C,
+    LEGACY_OA_TOF_ATOMIC_MASS_CONSTANT_KG as ATOMIC_MASS_CONSTANT_KG,
+    thomson_to_kg_per_c,
+)
+
+# Retained as a public module constant for the three-zone ideal-theory API.
+ELEMENTARY_CHARGE_C = _ELEMENTARY_CHARGE_C
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
     TwoZoneGeometryError,
     derive_uniform_ring_planes,
 )
-ELEMENTARY_CHARGE_C = 1.602176634e-19
-ATOMIC_MASS_CONSTANT_KG = 1.66053906892e-27
-
-
 class PhysicsContractError(ValueError):
     """Raised when an input violates the ideal-model physics contract."""
 
@@ -100,6 +104,22 @@ class FiniteIntervalMatchedVoltagePair:
     canonical_repeller_z_mm: float
     canonical_grid1_z_mm: float
     canonical_grid2_z_mm: float
+
+
+@dataclass(frozen=True)
+class FixedPlaneFiniteIntervalTiming:
+    """Ideal timing spread of a declared finite source at one fixed plane."""
+
+    source_center_mm: float
+    source_full_width_mm: float
+    source_minimum_mm: float
+    source_maximum_mm: float
+    focus_drift_mm: float
+    sample_count: int
+    mean_time_ns: float
+    theoretical_rms_time_ns: float
+    theoretical_peak_to_peak_time_ns: float
+    endpoint_time_difference_ns: float
 
 
 @dataclass(frozen=True)
@@ -406,7 +426,9 @@ def time_to_plane_s(
         field2_v_per_mm,
         distance_after_exit_mm,
     )
-    mass_over_charge_si = mu * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C
+    mass_over_charge_si = thomson_to_kg_per_c(
+        mu, atomic_mass_constant_kg=ATOMIC_MASS_CONSTANT_KG,
+    )
     return 1.0e-3 * math.sqrt(mass_over_charge_si / 2.0) * tau
 
 
@@ -442,7 +464,9 @@ def time_to_fixed_plane_s(
     if drift < 0.0:
         raise PhysicsContractError("focus_drift_mm must be >= 0")
 
-    mass_over_charge_si = mu * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C
+    mass_over_charge_si = thomson_to_kg_per_c(
+        mu, atomic_mass_constant_kg=ATOMIC_MASS_CONSTANT_KG,
+    )
     acceleration1 = state.field1_v_per_mm * 1000.0 / mass_over_charge_si
     acceleration2 = state.field2_v_per_mm * 1000.0 / mass_over_charge_si
     distance1_m = (gap1_mm - release_position_mm) * 1.0e-3
@@ -457,6 +481,92 @@ def time_to_fixed_plane_s(
     )
     time2 = (velocity2 - velocity1) / acceleration2
     return time1 + time2 + drift * 1.0e-3 / velocity2
+
+
+def fixed_plane_finite_interval_timing(
+    repeller_v: float,
+    intermediate_v: float,
+    gap1_mm: float,
+    gap2_mm: float,
+    source_center_mm: float,
+    source_full_width_mm: float,
+    mean_initial_velocity_m_per_s: float,
+    velocity_slope_m_per_s_per_mm: float,
+    focus_drift_mm: float,
+    mass_to_charge_th: float,
+    *,
+    exit_v: float = 0.0,
+    sample_count: int = 1001,
+) -> FixedPlaneFiniteIntervalTiming:
+    """Evaluate a finite linear ``z-vz`` source at a fixed downstream plane.
+
+    Unlike :func:`match_finite_phase_space_interval`, this diagnostic never
+    translates the accelerator or chooses a new focus plane. It is therefore
+    suitable for checking a source-width design requirement against an already
+    fixed mechanical placement and voltage point.
+    """
+    center = _as_finite_float(source_center_mm, "source_center_mm")
+    width = _as_finite_float(source_full_width_mm, "source_full_width_mm")
+    gap1 = _as_finite_float(gap1_mm, "gap1_mm")
+    gap2 = _as_finite_float(gap2_mm, "gap2_mm")
+    mean_velocity = _as_finite_float(
+        mean_initial_velocity_m_per_s, "mean_initial_velocity_m_per_s"
+    )
+    velocity_slope = _as_finite_float(
+        velocity_slope_m_per_s_per_mm, "velocity_slope_m_per_s_per_mm"
+    )
+    drift = _as_finite_float(focus_drift_mm, "focus_drift_mm")
+    mass_to_charge = _as_finite_float(mass_to_charge_th, "mass_to_charge_th")
+    for value, name in (
+        (width, "source_full_width_mm"),
+        (gap1, "gap1_mm"),
+        (gap2, "gap2_mm"),
+        (mass_to_charge, "mass_to_charge_th"),
+    ):
+        _require_positive(value, name)
+    if drift < 0.0:
+        raise PhysicsContractError("focus_drift_mm must be >= 0")
+    if sample_count < 3 or sample_count % 2 == 0:
+        raise PhysicsContractError("sample_count must be an odd integer >= 3")
+    source_minimum = center - width / 2.0
+    source_maximum = center + width / 2.0
+    if not 0.0 < source_minimum < source_maximum < gap1:
+        raise PhysicsContractError("finite source interval must lie inside gap 1")
+    positions = [
+        source_minimum + width * index / (sample_count - 1)
+        for index in range(sample_count)
+    ]
+    times_ns = [
+        time_to_fixed_plane_s(
+            repeller_v,
+            intermediate_v,
+            gap1,
+            gap2,
+            position,
+            mean_velocity + velocity_slope * (position - center),
+            drift,
+            mass_to_charge,
+            exit_v=exit_v,
+        )
+        * 1.0e9
+        for position in positions
+    ]
+    mean_time = sum(times_ns) / sample_count
+    rms = math.sqrt(
+        sum((value - mean_time) ** 2 for value in times_ns) / sample_count
+    )
+    return FixedPlaneFiniteIntervalTiming(
+        source_center_mm=center,
+        source_full_width_mm=width,
+        source_minimum_mm=source_minimum,
+        source_maximum_mm=source_maximum,
+        focus_drift_mm=drift,
+        sample_count=sample_count,
+        mean_time_ns=mean_time,
+        theoretical_rms_time_ns=rms,
+        theoretical_peak_to_peak_time_ns=max(times_ns) - min(times_ns),
+        endpoint_time_difference_ns=times_ns[-1] - times_ns[0],
+    )
 
 
 def match_finite_phase_space_interval(
@@ -668,7 +778,9 @@ def linear_phase_space_timing_coefficients(
     if drift < 0.0:
         raise PhysicsContractError("focus_drift_mm must be >= 0")
 
-    mass_over_charge_si = mu * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C
+    mass_over_charge_si = thomson_to_kg_per_c(
+        mu, atomic_mass_constant_kg=ATOMIC_MASS_CONSTANT_KG,
+    )
     velocity_scale = math.sqrt(mass_over_charge_si / 2.0)
     chi = velocity * velocity_scale
     beta = slope * velocity_scale

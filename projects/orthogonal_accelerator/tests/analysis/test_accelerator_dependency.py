@@ -32,7 +32,7 @@ class AcceleratorDependencyTest(unittest.TestCase):
             REPO, REPO / "projects" / CONSUMER / "config/accelerator_dependency.json",
             consumer_project_id=CONSUMER, required_variant="two_zone",
         )
-        self.assertEqual(result["api_version"], 1)
+        self.assertEqual(result["api_version"], 2)
         self.assertTrue(all(path.is_file() for path in result["implementation_sources"]))
         self.assertIn(Path(__file__).parents[2] / "analysis/component_contract.py",
                       result["implementation_sources"])
@@ -44,7 +44,7 @@ class AcceleratorDependencyTest(unittest.TestCase):
                 dependency, provider = self.fixture(root)
                 target = dependency if which == "consumer" else provider
                 document = json.loads(target.read_text(encoding="utf-8"))
-                document["api_version"] = 2
+                document["api_version"] = 3
                 target.write_text(json.dumps(document), encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "api_version"):
                     load_accelerator_dependency(root, dependency, consumer_project_id=CONSUMER,

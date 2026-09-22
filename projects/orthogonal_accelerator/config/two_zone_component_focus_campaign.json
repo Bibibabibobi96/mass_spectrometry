@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "role": "orthogonal_accelerator_component_focus_campaign",
+  "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+  "release_spec": {
+    "schema_version": 1,
+    "role": "repository_ion_release",
+    "frame_id": "orthogonal_accelerator_exit_origin_v1",
+    "particle_count": 100,
+    "mother_particle_count": 1000,
+    "common_time_of_birth_s": 0.0,
+    "geometry": {
+      "shape": "cylinder",
+      "center_mm": [
+        0.0,
+        0.0,
+        32.0
+      ],
+      "axis": "z",
+      "radius_mm": 1.0,
+      "height_mm": 1.0
+    },
+    "species": {
+      "mass_amu": 100.0,
+      "charge_state": 1
+    },
+    "sampling": {
+      "strategy": "center_first_halton_cylinder_v1",
+      "kinetic_energy": {
+        "center_ev": 0.001,
+        "full_width_ev": 0.0
+      },
+      "nominal_direction": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "angular_full_width_deg": 0.0
+    }
+  },
+  "operating_point": {
+    "acceleration_direction": "-z",
+    "focus_plane_offset_from_exit_mm": 0.0,
+    "instance_center_y_mm": 0.0,
+    "electrode_voltages_v": [
+      0.0,
+      4748.232329423991,
+      3994.2379835760084,
+      0.0,
+      3328.531652980007,
+      2662.8253223840056,
+      1997.1189917880045,
+      1331.4126611920028,
+      665.7063305960014
+    ]
+  },
+  "numerics": {
+    "trajectory_quality": 8.0,
+    "maximum_step_us": 0.0005
+  },
+  "acceptance": {
+    "required_transport_fraction": 1.0,
+    "maximum_focus_peak_to_peak_time_ns": 1.5,
+    "time_spread_exceedance": "warning",
+    "focus_plane_tolerance_mm": 0.1
+  },
+  "simion_projection": {
+    "source_frame": "orthogonal_accelerator_exit_origin_v1",
+    "workbench_mapping": "identity_xyz_with_local_exit_z_translation_v1",
+    "local_pa_span_mm": [
+      64.0,
+      64.0,
+      50.0
+    ],
+    "iob_origin_rule": "negative_half_transverse_span__local_z_zero_v1",
+    "local_exit_z_mm": 6.0,
+    "focus_plane_padding_mm": 6.0,
+    "positive_z_enclosure_padding_mm": 6.0,
+    "semantics": "The single PA IOB origin is (-span_x/2,-span_y/2,0), following the provider native-assembly convention. World-frame release x/y remain centred at zero and therefore map to the PA local transverse centre; z adds the provider exit z."
+  }
+}

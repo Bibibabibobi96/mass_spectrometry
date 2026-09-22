@@ -20,10 +20,17 @@
 原生PA专项回归使用`tests/simion/test_two_zone_native_geometry.lua`：只读检查冻结参数生成的
 环通孔、屏蔽间隙与Fast Adjust电压，须在独立SIMION租约及受管run中执行，不属于轻量门禁。
 
+封闭二区候选的组件级聚焦 campaign 固定在
+[`config/two_zone_component_focus_campaign.json`](config/two_zone_component_focus_campaign.json)：它声明
+1 mm 半径、1 mm 高圆柱的 N=100 要求、九路电压、负 z 焦面和数值/验收阈值。其结果验收入口为
+`python -m projects.orthogonal_accelerator.analysis.component_focus_analysis`；该入口只消费仓库公共
+ion-release receipt/CSV 及原生 SIMION 日志，不生成本地源，也不调用仪器项目。提供者自动入口`simion/run_component_focus_workflow.ps1`接受消费者的窄组件请求与仓库 common ion-release spec，冻结其 resolved campaign/plan，调用既有 PA runner 一次（cache hit 或唯一原生构建）和既有 N=100 flight runner 一次，并生成统一父 receipt。它不复制 PA、不导出第二套 response-bank，也不在构建后手工插入粒子释放；release 在编译时冻结，且其速度/能量只影响 flight，不进入 PA cache identity。低层`run_component_focus_pa.ps1`与`run_component_focus_flight.ps1`仍是该自动入口复用的单用途子运行器。
+
 ## 所有权
 
 `analysis/`拥有器件理论和几何派生，`simion/`、`comsol/`拥有器件实现，`tests/`拥有独立回归。
 共享运行、IOB基础机制、坐标与证据工具继续使用根`common/`。不保留另一份`common/accelerator/`领域实现。
+离子释放、粒子状态和 FLY2 序列化是共享层职责；本项目只声明源包络与组件验收，不得复制释放器。
 
 仪器项目通过明确接口复用本项目：自身保留系统布局、完整粒子链、联合聚焦与整机验收；
 integration保存连接及冻结依赖，不保存第二份加速器模型。旧OA整机适配器只做参数映射或兼容导入。

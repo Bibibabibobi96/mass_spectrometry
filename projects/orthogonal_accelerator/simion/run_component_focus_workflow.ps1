@@ -1,0 +1,47 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)][string]$RunId,
+    [Parameter(Mandatory)][string]$RequestPath,
+    [Parameter(Mandatory)][string]$ReleaseSpecPath,
+    [string]$SimionExe=''
+)
+Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
+$projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path;$repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path;$workspaceRoot=(Resolve-Path (Join-Path $repoRoot '..')).Path
+. (Join-Path $repoRoot 'common\require_powershell7.ps1');. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+$python=Join-Path $repoRoot '.venv\Scripts\python.exe';if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
+foreach($item in @($python,$SimionExe,$RequestPath,$ReleaseSpecPath)){if(-not(Test-Path -LiteralPath $item -PathType Leaf)){throw "Required workflow input is missing: $item"}}
+$artifactRoot=Join-Path $workspaceRoot 'artifacts';$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $artifactRoot 'projects\orthogonal_accelerator') -RunId $RunId -Project orthogonal_accelerator -Mode component_focus_workflow -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Provider-owned two-zone component workflow: one cache-probed PA family and one N=100 flight from one frozen caller release.' -AdditionalDirectories @('simion') -UseShortExecutionPath
+$done=$false;$failureDetail='';$stage='freeze_inputs'
+try {
+    $request=Copy-VerifiedRunInput (Resolve-Path -LiteralPath $RequestPath).Path (Join-Path $package.input_dir 'consumer_request.json')
+    $release=Copy-VerifiedRunInput (Resolve-Path -LiteralPath $ReleaseSpecPath).Path (Join-Path $package.input_dir 'release_spec.json')
+    $workflowPlan=Join-Path $package.result_dir 'component_focus_workflow_plan.json'
+    $stage='compile_provider_plan';Push-Location $repoRoot;try{&$python -m projects.orthogonal_accelerator.analysis.component_focus_workflow --request $request --release-spec $release --output $workflowPlan;if($LASTEXITCODE-ne0){throw 'Provider workflow compilation failed'}}finally{Pop-Location}
+    $resolvedCampaign=Join-Path $package.input_dir 'resolved_campaign.json';$workflow=Get-Content -Raw $workflowPlan|ConvertFrom-Json -Depth 40;$workflow.campaign|ConvertTo-Json -Depth 40|Set-Content $resolvedCampaign -Encoding utf8
+    $paRunId="$RunId`__pa";$flightRunId="$RunId`__n100";$paRunner=Join-Path $PSScriptRoot 'run_component_focus_pa.ps1';$flightRunner=Join-Path $PSScriptRoot 'run_component_focus_flight.ps1'
+    $stage='provider_pa_cache_probe_or_build';&$paRunner -RunId $paRunId -CampaignPath $resolvedCampaign -SimionExe $SimionExe;if($LASTEXITCODE-ne0){throw 'Provider PA cache probe/build child failed'}
+    $paRun=Join-Path $artifactRoot (Join-Path 'projects\orthogonal_accelerator\runs' $paRunId);$stage='n100_flight';&$flightRunner -RunId $flightRunId -PABuildRunPath $paRun -CampaignPath $resolvedCampaign -ReleaseSpecPath $release -SimionExe $SimionExe;if($LASTEXITCODE-ne0){throw 'Provider N=100 flight child failed'}
+    $flightRun=Join-Path $artifactRoot (Join-Path 'projects\orthogonal_accelerator\runs' $flightRunId);$paManifest=Join-Path $paRun 'run_manifest.json';$flightManifest=Join-Path $flightRun 'run_manifest.json';foreach($item in @($paManifest,$flightManifest)){if(-not(Test-Path -LiteralPath $item -PathType Leaf)){throw "Child workflow manifest is missing: $item"}}
+    $paResult=Get-Content -Raw (Join-Path $paRun 'results\component_focus_pa_result.json')|ConvertFrom-Json;$flightSummary=Get-Content -Raw (Join-Path $flightRun 'summary.json')|ConvertFrom-Json
+    $acceptedCampaign=$resolvedCampaign;$fastAdjustChild=$null;$fieldContrastChild=$null
+    if([string]$flightSummary.status -ne 'candidate_complete'){
+        $fieldContrastRunId="$RunId`__field-contrast__r01";$fieldContrastRunner=Join-Path $PSScriptRoot 'run_component_focus_field_contrast.ps1';$initialAnalysis=Join-Path $flightRun 'results\focus_analysis.json'
+        $stage='ideal_field_contrast';&$fieldContrastRunner -RunId $fieldContrastRunId -RootRunId $RunId -PABuildRunPath $paRun -CampaignPath $resolvedCampaign -ReleaseSpecPath $release -InitialAnalysisPath $initialAnalysis -SimionExe $SimionExe;if($LASTEXITCODE-ne0){throw 'Provider ideal-field contrast child failed'}
+        $fieldContrastRun=Join-Path $artifactRoot (Join-Path 'projects\orthogonal_accelerator\runs' $fieldContrastRunId);$fieldContrastChild=[ordered]@{run_id=$fieldContrastRunId;manifest_sha256=(Get-FileHash (Join-Path $fieldContrastRun 'run_manifest.json') -Algorithm SHA256).Hash;contrast_sha256=(Get-FileHash (Join-Path $fieldContrastRun 'results\two_zone_ideal_field_contrast.json') -Algorithm SHA256).Hash}
+
+        $requestValue=Get-Content -Raw -LiteralPath $request|ConvertFrom-Json -Depth 16;$bounds=@($requestValue.time_focus.gap1_voltage_drop_bounds_v)
+        $fastAdjustRunId="$RunId`__fast-adjust__r01";$fastAdjustRunner=Join-Path $PSScriptRoot 'run_component_focus_fast_adjust.ps1'
+        $stage='bounded_fast_adjust';&$fastAdjustRunner -RunId $fastAdjustRunId -RootRunId $RunId -PABuildRunPath $paRun -CampaignPath $resolvedCampaign -ReleaseSpecPath $release -Gap1VoltageDropBoundsV $bounds -InitialAnalysisPath $initialAnalysis -SimionExe $SimionExe
+        if($LASTEXITCODE-ne0){throw 'Provider bounded Fast-Adjust child failed'}
+        $fastAdjustRun=Join-Path $artifactRoot (Join-Path 'projects\orthogonal_accelerator\runs' $fastAdjustRunId);$fastAdjustSummary=Get-Content -Raw (Join-Path $fastAdjustRun 'summary.json')|ConvertFrom-Json
+        if([string]$fastAdjustSummary.status -ne 'accepted'){throw 'Provider bounded Fast-Adjust exhausted without a complete N=100 time-focus result; MR runtime receipt is withheld'}
+        $acceptedCampaign=Join-Path $fastAdjustRun 'results\accepted_campaign.json';if(-not(Test-Path -LiteralPath $acceptedCampaign -PathType Leaf)){throw 'Provider Fast-Adjust accepted campaign is missing'}
+        $fastAdjustChild=[ordered]@{run_id=$fastAdjustRunId;manifest_sha256=(Get-FileHash (Join-Path $fastAdjustRun 'run_manifest.json') -Algorithm SHA256).Hash;summary_sha256=(Get-FileHash (Join-Path $fastAdjustRun 'summary.json') -Algorithm SHA256).Hash;accepted_campaign_sha256=(Get-FileHash $acceptedCampaign -Algorithm SHA256).Hash}
+    }
+    $stage='unified_receipt';$receipt=Join-Path $package.result_dir 'component_focus_workflow_receipt.json'
+    $value=[ordered]@{schema_version=1;role='orthogonal_accelerator_component_focus_workflow_receipt';status='candidate_complete';qualification='candidate_prototype_numeric_component_focus_only';consumer_project_id=[string]$workflow.consumer_project_id;request_sha256=[string]$workflow.request_sha256;release_spec_sha256=[string]$workflow.release_spec_sha256;resolved_campaign_sha256=(Get-FileHash $acceptedCampaign -Algorithm SHA256).Hash;provider_plan_sha256=(Get-FileHash $workflowPlan -Algorithm SHA256).Hash;pa_child=@{run_id=$paRunId;manifest_sha256=(Get-FileHash $paManifest -Algorithm SHA256).Hash;cache_key=[string]$paResult.cache_key;generation_sha256=[string]$paResult.generation_sha256};flight_child=@{run_id=$flightRunId;manifest_sha256=(Get-FileHash $flightManifest -Algorithm SHA256).Hash;source_release_receipt_sha256=(Get-FileHash (Join-Path $flightRun 'inputs\release_receipt.json') -Algorithm SHA256).Hash};field_contrast_child=$fieldContrastChild;fast_adjust_child=$fastAdjustChild;pa_policy='one_provider_cache_probe__at_most_one_native_build__published_read_only_runtime_fast_adjust';release_policy='one_frozen_common_release__materialized_only_inside_n100_flight__excluded_from_pa_identity'};$value|ConvertTo-Json -Depth 16|Set-Content $receipt -Encoding utf8
+    $mrReceipt=Join-Path $package.result_dir 'mrtof_runtime_receipt.json';Push-Location $repoRoot;try{&$python -m projects.orthogonal_accelerator.analysis.component_focus_mr_runtime_receipt --workflow-receipt $receipt --pa-result (Join-Path $paRun 'results\component_focus_pa_result.json') --pa-manifest $paManifest --campaign $acceptedCampaign --plan (Join-Path $paRun 'results\component_focus_pa_plan.json') --output $mrReceipt;if($LASTEXITCODE-ne0){throw 'MR-TOF runtime receipt projection failed'}}finally{Pop-Location}
+    $summary=[ordered]@{schema_version=1;role='orthogonal_accelerator_component_focus_workflow';status='candidate_complete';qualification='candidate_prototype_numeric_component_focus_only';receipt_sha256=(Get-FileHash $receipt -Algorithm SHA256).Hash;mrtof_runtime_receipt_sha256=(Get-FileHash $mrReceipt -Algorithm SHA256).Hash;pa_run_id=$paRunId;flight_run_id=$flightRunId};Write-RunJson -Path $package.summary -Depth 16 -Value $summary
+    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs @($package.summary,$workflowPlan,$receipt,$mrReceipt);$done=$true
+}catch{$failureDetail=$_.Exception.Message;throw
+}finally{if(-not$done){$reason="Provider component workflow failed at $stage.";if(-not[string]::IsNullOrWhiteSpace($failureDetail)){$reason+=" $failureDetail"};Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Summary $package.summary -SummaryRole orthogonal_accelerator_component_focus_workflow -Reason $reason -Software @('SIMION 2020','Python 3.11') -Status failed};Remove-RunPackageExecutionAlias -Package $package}
