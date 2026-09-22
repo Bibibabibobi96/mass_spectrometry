@@ -1,4 +1,4 @@
-"""Finite-lifecycle requirements for capacity-ledger schema v3."""
+"""Managed-range requirements for capacity-ledger schema v3."""
 
 from __future__ import annotations
 
@@ -10,14 +10,12 @@ from common.contracts import capacity_ledger
 
 
 IDENTITY = "a" * 64
-READY_DUTIES = {
+READY_RANGE = {
     "owner": "parallel_mirror_dual_stripe_mr_tof",
-    "retention_reason": "current GUI-inspectable native PA generation",
-    "review_deadline": "2026-10-22",
-    "retirement_route": "pa_manager_disposition",
 }
-WRITING_DUTIES = {
-    **READY_DUTIES,
+WRITING_RANGE = {
+    **READY_RANGE,
+    "review_deadline": "2026-10-22",
     "recovery_reason": "publication interrupted before verification",
     "recovery_task": "owner must resume or retire the exact transaction",
     "recovery_evidence_paths": ["transactions/tx/transaction.json"],
@@ -25,7 +23,7 @@ WRITING_DUTIES = {
 
 
 class CapacityLedgerV3Test(unittest.TestCase):
-    def test_v3_rejects_resident_objects_without_finite_lifecycle_duties(self) -> None:
+    def test_v3_rejects_resident_ranges_without_an_owner_or_writing_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             missing_ready = {
@@ -36,7 +34,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 capacity_ledger.initialize_capacity_ledger(root, objects=[missing_ready])
             missing_writing = {
                 "path": "transactions/tx", "class": "rebuildable_payload", "bytes": 1,
-                "status": "writing", "pin": False, **READY_DUTIES,
+                "status": "writing", "pin": False, **READY_RANGE,
                 "recovery_reason": "interrupted",
             }
             with self.assertRaisesRegex(ValueError, "baseline is invalid"):
@@ -49,46 +47,46 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 {
                     "path": "cache/key", "class": "published_cache", "bytes": 7,
                     "status": "ready", "pin": False, "identity": IDENTITY,
-                    "manager": capacity_ledger.PA_CACHE_MANAGER, **READY_DUTIES,
+                    "manager": capacity_ledger.PA_CACHE_MANAGER, **READY_RANGE,
                 },
                 {
                     "path": "transactions/tx", "class": "rebuildable_payload", "bytes": 3,
-                    "status": "writing", "pin": False, **WRITING_DUTIES,
+                    "status": "writing", "pin": False, **WRITING_RANGE,
                 },
             ])
             self.assertEqual(document["schema_version"], 3)
             self.assertEqual(document["resident_bytes"], 10)
             self.assertIsNotNone(capacity_ledger.load_capacity_ledger(root))
 
-    def test_v3_recording_refuses_unowned_writes_and_preserves_recovery_evidence(self) -> None:
+    def test_v3_recording_refuses_unowned_ranges_and_preserves_recovery_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             capacity_ledger.initialize_capacity_ledger(root, objects=[])
-            with self.assertRaisesRegex(ValueError, "resident ledger objects require"):
+            with self.assertRaisesRegex(ValueError, "managed ranges require"):
                 capacity_ledger.record_capacity_object(
                     root, path="transactions/tx", object_class="rebuildable_payload",
                     bytes_count=1, status="writing",
                 )
             entry = capacity_ledger.record_capacity_object(
                 root, path="transactions/tx", object_class="rebuildable_payload",
-                bytes_count=1, status="writing", **WRITING_DUTIES,
+                bytes_count=1, status="writing", **WRITING_RANGE,
             )
             self.assertEqual(entry["recovery_evidence_paths"], ["transactions/tx/transaction.json"])
 
-    def test_v3_rejects_ungoverned_published_cache_manager_or_route(self) -> None:
+    def test_v3_requires_the_pa_manager_but_drops_duplicated_routes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             object_record = {
                 "path": "cache/key", "class": "published_cache", "bytes": 1,
                 "status": "ready", "pin": False, "identity": IDENTITY,
-                "manager": "unknown.manager", **READY_DUTIES,
+                "manager": "unknown.manager", **READY_RANGE,
             }
             with self.assertRaisesRegex(ValueError, "baseline is invalid"):
                 capacity_ledger.initialize_capacity_ledger(root, objects=[object_record])
             object_record["manager"] = capacity_ledger.PA_CACHE_MANAGER
             object_record["retirement_route"] = "owner_managed_disposition"
-            with self.assertRaisesRegex(ValueError, "baseline is invalid"):
-                capacity_ledger.initialize_capacity_ledger(root, objects=[object_record])
+            document = capacity_ledger.initialize_capacity_ledger(root, objects=[object_record])
+            self.assertNotIn("retirement_route", document["objects"][0])
 
     def test_v2_transition_requires_explicit_complete_duty_assignment(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -105,7 +103,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "cover exactly"):
                 capacity_ledger.migrate_v2_ledger_document(root, v2, lifecycle_by_path={})
             migrated = capacity_ledger.migrate_v2_ledger_document(
-                root, v2, lifecycle_by_path={"cache/key": READY_DUTIES},
+                root, v2, lifecycle_by_path={"cache/key": READY_RANGE},
             )
             self.assertEqual(migrated["schema_version"], 3)
             self.assertEqual(migrated["objects"][0]["manager"], capacity_ledger.PA_CACHE_MANAGER)

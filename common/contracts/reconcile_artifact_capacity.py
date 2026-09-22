@@ -338,7 +338,7 @@ def _maintenance_management_summary(
     target_bytes: int, required_free_bytes: int, free_bytes: int,
     planned: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
-    """Describe all governed resident bytes and owner actions without discovery.
+    """Describe managed ranges and automatic next actions without discovery.
 
     The ledger remains the only source of lifecycle truth.  This summary is
     intentionally a projection: it neither infers owners for external scopes
@@ -346,17 +346,14 @@ def _maintenance_management_summary(
     """
 
     planned_paths = {str(item["path"]) for item in planned}
-    aggregates: dict[tuple[str, str, str, str, str], dict[str, int]] = {}
+    aggregates: dict[tuple[str, str, str], dict[str, int]] = {}
     blocked: list[dict[str, Any]] = []
     for item in ledger["objects"]:
         if item.get("status") == "retired":
             continue
         target, _ = capacity_ledger.capacity_object_path(root, item["path"])
         owner = str(item.get("owner", ""))
-        aggregate_key = (
-            owner, str(item["class"]), str(item["status"]),
-            str(item.get("review_deadline", "")), str(item.get("retirement_route", "")),
-        )
+        aggregate_key = (owner, str(item["class"]), str(item["status"]))
         aggregate = aggregates.setdefault(aggregate_key, {"object_count": 0, "bytes": 0})
         aggregate["object_count"] += 1
         aggregate["bytes"] += int(item["bytes"])
@@ -383,8 +380,6 @@ def _maintenance_management_summary(
                 "class": item["class"],
                 "status": item["status"],
                 "bytes": int(item["bytes"]),
-                "review_deadline": item.get("review_deadline"),
-                "retirement_route": item.get("retirement_route"),
                 "action": action, "reason": reason,
                 "protection_lease_ids": lease_ids,
                 "recovery_reason": item.get("recovery_reason"),
@@ -393,16 +388,14 @@ def _maintenance_management_summary(
     grouped = [
         {
             "owner": owner, "class": object_class, "status": status,
-            "review_deadline": deadline or None,
-            "retirement_route": route or None, "object_count": object_count,
+            "object_count": object_count,
             "bytes": bytes_count,
         }
-        for (owner, object_class, status, deadline, route), values in aggregates.items()
+        for (owner, object_class, status), values in aggregates.items()
         for bytes_count, object_count in [(values["bytes"], values["object_count"])]
     ]
     grouped.sort(key=lambda item: (
         item["owner"], item["class"], item["status"],
-        item["review_deadline"] or "", item["retirement_route"] or "",
     ))
     blocked.sort(key=lambda item: (item["owner"], item["action"], item["path"]))
     resident = int(ledger["resident_bytes"])

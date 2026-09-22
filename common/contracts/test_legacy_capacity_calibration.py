@@ -141,7 +141,7 @@ def _write_frozen_input_cache(root: Path) -> Path:
 
 
 class LegacyCapacityCalibrationTests(unittest.TestCase):
-    def test_canonical_v2_to_v3_migration_binds_duties_and_writing_receipt_evidence(self) -> None:
+    def test_canonical_v2_to_v3_migration_binds_range_owners_and_writing_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"
             root.mkdir()
@@ -172,10 +172,10 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             by_path = {item["path"]: item for item in migrated["objects"]}
             ready = by_path["projects/orthogonal_accelerator/runs/r1"]
             self.assertEqual(ready["owner"], "orthogonal_accelerator")
-            self.assertEqual(ready["retirement_route"], "owner_managed_disposition")
+            self.assertNotIn("retirement_route", ready)
             cache = by_path["common/simion/pa_family_cache/" + KEY]
             self.assertEqual(cache["manager"], capacity_ledger.PA_CACHE_MANAGER)
-            self.assertEqual(cache["retirement_route"], "pa_manager_disposition")
+            self.assertNotIn("retirement_route", cache)
             writing = by_path["projects/orthogonal_accelerator/runs/r2"]
             self.assertTrue(writing["recovery_evidence_paths"])
             self.assertTrue(writing["recovery_evidence_paths"][0].endswith(".pending.json"))

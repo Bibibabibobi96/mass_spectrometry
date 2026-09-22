@@ -880,11 +880,13 @@ def build_calibration_inventory(
             ))
     protected_count, protected_bytes, leases = _protect_active_dependencies(root, objects)
     for item in objects:
-        item.update(_legacy_lifecycle_duties(
-            path=item["path"], object_class=item["class"],
-            owner=item["owner_hint"], review_deadline=review_deadline,
-        ))
+        # The calibrated item is the managed range.  Its single owner covers
+        # the files beneath it; class/status select the existing retention or
+        # manager exit path.  Do not copy run/PA lifecycle prose into the
+        # accounting ledger.
+        item["owner"] = item["owner_hint"]
         if item["status"] == "writing":
+            item["review_deadline"] = review_deadline
             item["recovery_reason"] = item.get(
                 "recovery_reason", item.get("active_protection", "legacy_writing_object"),
             )
@@ -904,8 +906,7 @@ def build_calibration_inventory(
     for item in writing_objects:
         missing = [
             field for field in (
-                "owner", "retention_reason", "review_deadline", "retirement_route",
-                "recovery_reason", "recovery_task",
+                "owner", "review_deadline", "recovery_reason", "recovery_task",
             )
             if not isinstance(item.get(field), str) or not item[field].strip()
         ]
@@ -1083,41 +1084,6 @@ def _validate_existing_report_accounting(inventory: dict[str, Any]) -> None:
         raise CalibrationError("existing calibration report resident_bytes does not match records")
 
 
-def _legacy_lifecycle_duties(
-    *, path: str, object_class: str, owner: object, review_deadline: object,
-) -> dict[str, str]:
-    """Turn calibrated owner evidence into finite v3 lifecycle duties."""
-
-    if not isinstance(owner, str) or not owner.strip():
-        raise CalibrationError(f"calibrated object has no owner: {path}")
-    if not isinstance(review_deadline, str):
-        raise CalibrationError(f"calibrated object has no review deadline: {path}")
-    try:
-        date.fromisoformat(review_deadline)
-    except ValueError as exc:
-        raise CalibrationError(f"calibrated object review deadline is invalid: {path}") from exc
-    if object_class == "published_cache":
-        if owner == capacity_ledger.PA_CACHE_MANAGER:
-            return {
-                "owner": owner,
-                "retention_reason": "legacy calibrated PA family cache awaiting manager review",
-                "review_deadline": review_deadline,
-                "retirement_route": "pa_manager_disposition",
-            }
-        return {
-            "owner": owner,
-            "retention_reason": "legacy calibrated project cache awaiting explicit owner review",
-            "review_deadline": review_deadline,
-            "retirement_route": "owner_managed_disposition",
-        }
-    return {
-        "owner": owner,
-        "retention_reason": "legacy calibrated artifact awaiting explicit owner review",
-        "review_deadline": review_deadline,
-        "retirement_route": "owner_managed_disposition",
-    }
-
-
 def _recovery_writing_entries(inventory: dict[str, Any]) -> list[dict[str, Any]]:
     """Convert only explicit, still-actionable unresolved records to writing.
 
@@ -1195,10 +1161,6 @@ def _recovery_writing_entries(inventory: dict[str, Any]) -> list[dict[str, Any]]
             "review_deadline": item_deadline,
             "recovery_task": task.strip(),
             "recovery_evidence_paths": canonical_evidence or [canonical_path],
-            **_legacy_lifecycle_duties(
-                path=canonical_path, object_class="rebuildable_payload",
-                owner=owner, review_deadline=item_deadline,
-            ),
         })
     return entries
 
@@ -1287,8 +1249,7 @@ def initialize_from_inventory(
         fields_valid = all(
             isinstance(item.get(field), str) and item[field].strip()
             for field in (
-                "owner", "retention_reason", "review_deadline", "retirement_route",
-                "recovery_reason", "recovery_task",
+                "owner", "review_deadline", "recovery_reason", "recovery_task",
             )
         ) and isinstance(item.get("recovery_evidence_paths"), list) and bool(item["recovery_evidence_paths"])
         try:
@@ -1602,7 +1563,12 @@ def _v2_to_v3_migration_id(source_sha256: str, review_deadline: str) -> str:
 def _legacy_v3_duties(
     document: dict[str, Any], *, review_deadline: str, pending_receipt_path: str,
 ) -> dict[str, dict[str, Any]]:
-    """Assign v3 duties only where canonical paths establish their owner."""
+    """Assign one range owner where canonical paths establish it.
+
+    The historical function name remains because it labels immutable
+    migration receipts.  New v3 records no longer duplicate retention prose
+    and retirement routes; classes and the owner manager already select them.
+    """
 
     duties_by_path: dict[str, dict[str, Any]] = {}
     for item in document["objects"]:
@@ -1624,20 +1590,12 @@ def _legacy_v3_duties(
         )
         if len(parts) >= 4 and parts[:3] == ("common", "simion", "pa_family_cache"):
             owner = capacity_ledger.PA_CACHE_MANAGER
-            route = "pa_manager_disposition"
-            retention_reason = "legacy calibrated PA family cache awaiting manager review"
         elif governance_root:
             owner = "common.capacity_lifecycle"
-            route = "owner_managed_disposition"
-            retention_reason = "legacy calibrated common capacity-governance record awaiting lifecycle review"
         elif common_owner is not None:
             owner = common_owner
-            route = "owner_managed_disposition"
-            retention_reason = "legacy calibrated common runtime record awaiting owner review"
         elif len(parts) >= 2 and parts[0] == "projects" and parts[1]:
             owner = parts[1]
-            route = "owner_managed_disposition"
-            retention_reason = "legacy calibrated project artifact awaiting owner review"
         else:
             raise CalibrationError(
                 f"v2 to v3 migration cannot establish owner from canonical path: {path}"
@@ -1653,12 +1611,7 @@ def _legacy_v3_duties(
             raise CalibrationError(
                 f"v2 to v3 migration owner conflicts with canonical path: {path}"
             )
-        duties: dict[str, Any] = {
-            "owner": owner,
-            "retention_reason": retention_reason,
-            "review_deadline": review_deadline,
-            "retirement_route": route,
-        }
+        duties: dict[str, Any] = {"owner": owner}
         if item["status"] == "writing":
             recovery_reason = item.get("recovery_reason")
             if not isinstance(recovery_reason, str) or not recovery_reason.strip():
@@ -1674,6 +1627,7 @@ def _legacy_v3_duties(
                 recovery_task = "legacy calibrated recovery requires explicit owner action"
             duties.update({
                 "recovery_reason": recovery_reason,
+                "review_deadline": review_deadline,
                 "recovery_task": recovery_task,
                 "recovery_evidence_paths": sorted(set([
                     *existing_evidence, pending_receipt_path,
