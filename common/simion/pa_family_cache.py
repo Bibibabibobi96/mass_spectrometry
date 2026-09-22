@@ -2237,6 +2237,30 @@ def _complete_transaction_publication(
     if manifest["files"] != validate_direct_inventory(document["files"]):
         raise PAFamilyCacheError("published PA transaction payload identity differs")
     _publish_pointer(cache_root / cache_key, cache_key, generation_sha256)
+    # Older sealed generations predate the transaction owner record.  They
+    # have one deliberately narrow ledger shape; bind that existing record
+    # before the ordinary handoff.  This is metadata-only: the manifest has
+    # already supplied the member inventory and no PA member is reopened.
+    if ledger_binding is not None:
+        artifact_root, _, key_root = ledger_binding
+        ledger = capacity_ledger.load_capacity_ledger(artifact_root)
+        _, relative = capacity_ledger.capacity_object_path(artifact_root, key_root)
+        entry = next((item for item in (ledger or {}).get("objects", []) if item.get("path") == relative), None)
+        legacy = (entry is not None and entry.get("class") == "published_cache"
+                  and entry.get("status") == "writing"
+                  and entry.get("recovery_reason") == "legacy_pa_cache_missing_owner_transaction"
+                  and entry.get("identity") == generation_sha256
+                  and entry.get("owner") == document["owner"]
+                  and entry.get("pin") is (document["published_pin_reason"] is not None)
+                  and entry.get("pin_reason") == document["published_pin_reason"]
+                  and entry.get("bytes") == _key_root_bytes(key_root))
+        if legacy:
+            capacity_ledger.record_capacity_object(
+                artifact_root, path=key_root, object_class="published_cache",
+                bytes_count=int(entry["bytes"]), status="ready", owner=str(document["owner"]),
+                identity=generation_sha256, pin=bool(entry["pin"]),
+                pin_reason=entry.get("pin_reason"),
+            )
     _handoff_transaction_stage(
         ledger_binding,
         owner=str(document["owner"]),
