@@ -223,6 +223,36 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                 {"bad": "retired", "good": "retired"},
             )
 
+    def test_historical_closure_summary_distinguishes_checkpoint_consumer_and_receipted_review(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkpoint = root / "projects" / "p" / "runs" / "checkpoint"
+            checkpoint.mkdir(parents=True)
+            (checkpoint / "run_manifest.json").write_text(json.dumps({"status": "checkpoint"}))
+            review = root / "projects" / "p" / "reviews" / "current"
+            review.mkdir(parents=True)
+            (review / "inspection_receipt.json").write_text(json.dumps({"status": "ready"}))
+            capacity_ledger.initialize_capacity_ledger(root, objects=[
+                _object(
+                    "projects/p/runs/checkpoint", bytes_count=3, status="writing", owner="p"
+                ) | {"recovery_reason": "run_manifest_not_terminal"},
+                _object(
+                    "projects/p/runs/active/output.pa0", bytes_count=5, status="writing", owner="p"
+                ) | {"recovery_reason": "structured_nonterminal_run_reference", "consumers": ["projects/p/runs/consumer"]},
+                _object(
+                    "projects/p/reviews/current", bytes_count=7, status="writing", owner="p"
+                ) | {"recovery_reason": "review_package_lacks_sealed_owner_disposition_manifest"},
+            ])
+            summary = capacity._historical_closure_summary(root, capacity_ledger.load_capacity_ledger(root))
+            self.assertEqual(
+                {(item["recovery_reason"], item["classification"]) for item in summary},
+                {
+                    ("run_manifest_not_terminal", "workflow_checkpoint_requires_owner_decision"),
+                    ("structured_nonterminal_run_reference", "active_or_handoff_consumer"),
+                    ("review_package_lacks_sealed_owner_disposition_manifest", "review_source_evidence_unsealed"),
+                },
+            )
+
     def test_default_cli_output_is_bounded_aggregate_without_object_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -961,6 +961,73 @@ def _audit_pa_transaction_owner(root: Path) -> dict[str, int]:
     return audit_pa_transaction_maintenance(root / "common" / "simion" / "pa_family_cache")
 
 
+def _historical_closure_summary(root: Path, ledger: dict[str, Any]) -> list[dict[str, Any]]:
+    """Classify writing ranges from their existing lightweight evidence.
+
+    This is deliberately an audit projection, rather than a second ledger or
+    a disposal policy.  It distinguishes an active dependency from a stopped
+    checkpoint and identifies review packages that already have a source
+    receipt but lack the owner's sealed disposition.  It reads only run and
+    review JSON; PA payloads are neither opened nor hashed.
+    """
+
+    run_statuses: dict[Path, str] = {}
+    groups: dict[tuple[str, str, str], dict[str, int]] = {}
+    for item in ledger["objects"]:
+        if item.get("status") != "writing":
+            continue
+        relative = str(item["path"])
+        target = root / relative
+        reason = str(item.get("recovery_reason", "unknown"))
+        category = "owner_evidence_not_recognized"
+        if reason == "structured_nonterminal_run_reference" or item.get("consumers"):
+            category = "active_or_handoff_consumer"
+        elif reason == "run_manifest_not_terminal":
+            run = target if target.parent.name == "runs" else next(
+                (parent for parent in target.parents if parent.parent.name == "runs"), None
+            )
+            status = None
+            if run is not None:
+                status = run_statuses.get(run)
+                if status is None:
+                    manifest = _load_object(run / "run_manifest.json")
+                    status = str(manifest.get("status")) if manifest else "missing_or_invalid"
+                    run_statuses[run] = status
+            category = (
+                "workflow_checkpoint_requires_owner_decision"
+                if status == "checkpoint" else "terminal_or_contract_reconciliation_required"
+            )
+        elif reason == "run_contract_missing_or_invalid":
+            category = "historical_run_contract_missing"
+        elif reason == "review_package_lacks_sealed_owner_disposition_manifest":
+            # Existing inspection/release receipts prove a source and intended
+            # GUI scope, but not an exact retireable inventory or replacement.
+            receipt_names = ("inspection_receipt.json", "release_receipt.json")
+            has_source_receipt = any((target / name).is_file() for name in receipt_names) or any(
+                candidate.is_file()
+                for name in receipt_names
+                for candidate in target.glob(f"*/{name}")
+            )
+            category = (
+                "review_source_evidence_unsealed"
+                if has_source_receipt
+                else "review_source_or_purpose_unknown"
+            )
+        elif reason == "pa_transaction_recovery_required":
+            category = "pa_transaction_requires_producer_or_failure_evidence"
+        elif reason == "pa_runtime_state_recovery_required":
+            category = "pa_runtime_state_requires_owner_recovery"
+        key = (str(item["owner"]), reason, category)
+        group = groups.setdefault(key, {"object_count": 0, "bytes": 0})
+        group["object_count"] += 1
+        group["bytes"] += int(item["bytes"])
+    return [
+        {"owner": owner, "recovery_reason": reason, "classification": category,
+         "object_count": values["object_count"], "bytes": values["bytes"]}
+        for (owner, reason, category), values in sorted(groups.items())
+    ]
+
+
 def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     """Apply a startup recheck or exact ledger retirement plan."""
 
@@ -1023,6 +1090,7 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
                 required_free_bytes=required_free,
                 free_bytes=free_after,
             )
+            outcome["historical_closure_summary"] = _historical_closure_summary(root, ledger)
         outcome["satisfied_after_apply"] = bool(
             ledger is not None
             and not leases["legacy_unknown_commitment_count"]
@@ -1133,6 +1201,7 @@ def _compact_maintenance_output(receipt: dict[str, Any]) -> dict[str, Any]:
         },
         "owner_usage_summary": groups,
         "owner_action_summary": owner_actions,
+        "historical_closure_summary": receipt.get("historical_closure_summary", []),
         "external_scope_summary": [
             {"role": item["role"], "bytes": int(item["bytes"])}
             for item in summary["external_scope_groups"]
