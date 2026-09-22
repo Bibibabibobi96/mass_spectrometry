@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -43,6 +44,91 @@ def _object(
 
 
 class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
+    def test_cli_preview_and_unleased_apply_never_run_mutations(self) -> None:
+        mutators = (
+            "activate_owner_dispositions", "_register_workspace_scratch_scope",
+            "_resume_source_scratch_dispositions", "_reconcile_execution_alias_root",
+        )
+        for apply_requested in (False, True):
+            with self.subTest(apply=apply_requested), ExitStack() as stack:
+                mocks = [stack.enter_context(patch.object(capacity, name)) for name in mutators]
+                planner = stack.enter_context(patch.object(capacity, "plan", return_value={}))
+                stack.enter_context(patch.dict(os.environ, {}, clear=True))
+                stack.enter_context(patch.object(sys, "argv", [
+                    "capacity", "--artifact-root", "unused", "--execution-mode", "maintenance",
+                    *(["--apply"] if apply_requested else []),
+                ]))
+                stack.enter_context(redirect_stdout(io.StringIO()))
+                stack.enter_context(redirect_stderr(io.StringIO()))
+                if apply_requested:
+                    with self.assertRaises(SystemExit):
+                        capacity.main()
+                    planner.assert_not_called()
+                else:
+                    capacity.main()
+                    planner.assert_called_once()
+                for mutation in mocks:
+                    mutation.assert_not_called()
+
+    def test_maintenance_reserves_peak_and_deletes_without_payload_hashing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name, size in (("large", 20), ("small", 10)):
+                (root / name).mkdir()
+                (root / name / "payload.pa0").write_bytes(b"x" * size)
+            capacity_ledger.initialize_capacity_ledger(root, objects=[
+                _object("large", bytes_count=20), _object("small", bytes_count=10),
+                _object("active", bytes_count=80, pin=True),
+            ])
+            create_capacity_protection_lease(
+                root, lease_id="next", owner="workflow", ttl_seconds=600,
+                protected_paths=[root / "active"], committed_new_bytes=20,
+            )
+            with patch.object(capacity, "file_sha256", side_effect=AssertionError("payload hash")):
+                receipt = capacity.plan(
+                    root, target_bytes=100, minimum_free_bytes=0, execution_mode="maintenance",
+                )
+                self.assertEqual(receipt["planned_bytes"], 30)
+                applied = capacity.apply(receipt)
+            self.assertTrue(applied["satisfied_after_apply"])
+            self.assertEqual(applied["removed_bytes"], 30)
+            self.assertEqual(applied["measured_after_bytes"], 80)
+            compact = capacity._compact_maintenance_output(applied)
+            self.assertEqual(compact["owner_usage_summary"][0]["bytes"], 80)
+
+    def test_apply_rechecks_commitments_added_after_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capacity_ledger.initialize_capacity_ledger(root, objects=[
+                _object("active", bytes_count=80, pin=True),
+            ])
+            receipt = capacity.plan(
+                root, target_bytes=100, minimum_free_bytes=0, execution_mode="maintenance",
+            )
+            self.assertTrue(receipt["satisfied"])
+            create_capacity_protection_lease(
+                root, lease_id="next", owner="workflow", ttl_seconds=600,
+                protected_paths=[root / "active"], committed_new_bytes=30,
+            )
+            applied = capacity.apply(receipt)
+            self.assertFalse(applied["satisfied_after_apply"])
+            self.assertEqual(applied["management_summary_after_apply"]["capacity_gap_bytes"], 10)
+
+    def test_unhandled_published_cache_is_not_reported_as_evictable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = _object("legacy", bytes_count=80, object_class="published_cache")
+            cache["identity"] = "A" * 64
+            capacity_ledger.initialize_capacity_ledger(root, objects=[cache])
+            receipt = capacity.plan(
+                root, target_bytes=100, minimum_free_bytes=0, execution_mode="maintenance",
+            )
+            self.assertTrue(receipt["satisfied"])
+            self.assertEqual(receipt["candidate_count"], 0)
+            action = receipt["management_summary"]["blocked_owner_actions"][0]
+            self.assertEqual(action["action"], "register_owner_retirement")
+            self.assertEqual(action["reason"], "published_cache_manager_unavailable")
+
     def test_plan_reports_all_governed_groups_and_owner_actions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             parent = Path(temporary)
@@ -76,7 +162,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
 
             summary = receipt["management_summary"]
             self.assertEqual([item["path"] for item in receipt["planned"]], [str(root / "retire")])
-            self.assertEqual(summary["capacity_gap_bytes"], 51)
+            self.assertEqual(summary["capacity_gap_bytes"], 68)
             self.assertEqual(summary["next_active_commitments"]["committed_new_bytes"], 17)
             self.assertEqual(
                 summary["external_scope_groups"],

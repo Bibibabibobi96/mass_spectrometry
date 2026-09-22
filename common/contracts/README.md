@@ -64,6 +64,20 @@ writer/verifier同时扫描未列出的重型文件，防止通过漏报output�
 启动检查、生命周期登记和维护清理。唯一权威状态是[`capacity_ledger.py`](capacity_ledger.py)维护的
 `capacity_ledger.json`及[`capacity_protection.py`](capacity_protection.py)维护的公共租约，不存在第二套项目级门禁。
 
+维护的容量判据与startup一致：`resident_bytes + committed_new_bytes <= target_bytes`，并满足
+`free_bytes >= minimum_free_bytes + committed_new_bytes`。apply结束时重新读取承诺，不能以规划时的旧租约
+宣布成功。未带`--apply`的维护只读；带`--apply`时先检查HostExecutionLease，再执行登记、续做和删除。
+默认报告按owner、类别、状态汇总全部受管占用，并单列缺少已注册退休manager的缓存；不得把它们报告成
+“容量需要时即可删除”。可重建范围的删除仅核对批准范围、路径、类型和字节数，不为待丢弃载荷新增全文哈希。
+
+容量达标与生命周期闭合是不同判据。`satisfied=true`只表示本次容量判据通过，不表示所有历史`writing`
+已恢复、所有缓存已有退休入口或工作区外部范围均已实时计量。当前仍需补齐的闭环是：由既有run/PA/review
+owner入口根据真实证据产生可重放的收尾决定，由同一maintenance消费；文字`recovery_task`不是可执行规则。
+新增重型产物必须在写入前绑定owner、已注册的收尾能力及有限恢复期限，并在发布前复核，不得靠文档承诺。
+历史checkpoint不自动改写为失败；活动消费者与已封存证据仍须保护。验收须覆盖中断重放、缺owner或处置能力
+拒绝新建、未知路径拒绝准入、单对象失败后继续独立对象，以及保留期到期后的实际处置；仅缩减台账占用
+或输出行动清单不能视为这一闭环完成。不新增第二份台账、通用任务调度器或平行删除入口。
+
 台账只使用三类对象：`light_evidence`保留必要证据，`published_cache`保存公共可复用重型资产，
 `rebuildable_payload`保存可重建载荷。对象状态只使用`writing/ready/retirement_pending/retired`；pin必须说明理由，
 发布缓存必须绑定SHA-256代际。`writing`必须登记`owner/recovery_reason/review_deadline`，可列出消费者；到期后

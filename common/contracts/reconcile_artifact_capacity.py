@@ -374,6 +374,11 @@ def _maintenance_management_summary(
             action, reason = "wait_for_or_release_protection_lease", "active_protection_lease"
         elif item["class"] == "light_evidence":
             action, reason = "review_retention_route", "light_evidence_is_not_auto_retired"
+        elif (
+            item["class"] == "published_cache"
+            and item.get("manager") != capacity_ledger.PA_CACHE_MANAGER
+        ):
+            action, reason = "register_owner_retirement", "published_cache_manager_unavailable"
         elif str(target) not in planned_paths and item["status"] == "ready":
             # Ready unprotected payloads are valid auto-retirement candidates,
             # but are retained when the configured target is already satisfied.
@@ -404,7 +409,10 @@ def _maintenance_management_summary(
     ))
     blocked.sort(key=lambda item: (item["owner"], item["action"], item["path"]))
     resident = int(ledger["resident_bytes"])
-    limit = min(target_bytes, resident - max(0, required_free_bytes - free_bytes))
+    limit = min(
+        target_bytes - int(leases["committed_new_bytes"]),
+        resident - max(0, required_free_bytes - free_bytes),
+    )
     return {
         "governed_object_groups": grouped,
         "external_scope_groups": [
@@ -472,7 +480,10 @@ def _maintenance_plan(
         root, ledger, [*protected_paths, *leases["protected_paths"]],
         [*protected_cache_keys, *leases["protected_cache_keys"]], policy,
     )
-    limit = min(target_bytes, measured - max(0, required_free - free_bytes))
+    limit = min(
+        target_bytes - int(leases["committed_new_bytes"]),
+        measured - max(0, required_free - free_bytes),
+    )
     projected = measured
     planned: list[dict[str, Any]] = []
     for candidate in candidates:
@@ -490,6 +501,7 @@ def _maintenance_plan(
         "artifact_root": str(root), "target_bytes": target_bytes,
         "minimum_free_bytes": minimum_free_bytes, "free_bytes_before": free_bytes,
         "required_free_bytes": required_free, "measured_bytes": measured,
+        "total_active_lease_committed_new_bytes": int(leases["committed_new_bytes"]),
         "candidate_discovery_performed": True, "candidate_count": len(candidates),
         "planned": planned, "planned_bytes": sum(item["bytes"] for item in planned),
         "projected_bytes": projected, "satisfied": projected <= limit,
@@ -661,7 +673,7 @@ def _inventory_target(root: Path, target: Path) -> tuple[Path, list[dict[str, An
     inventory_root = target.parent if target.is_file() else target
     records = [{
         "path": item.relative_to(inventory_root).as_posix(),
-        "bytes": item.stat().st_size, "sha256": file_sha256(item),
+        "bytes": item.stat().st_size,
     } for item in files]
     return inventory_root, records
 
@@ -748,12 +760,9 @@ def _remove_ledger_target(root: Path, target: Path, expected_bytes: int) -> tupl
 
 
 def _delete_ledger_file(root: Path, record: dict[str, Any]) -> None:
-    # `_inventory_target` has already performed the one complete SHA-256
-    # validation and durably recorded that identity before this call.  The
-    # object is retirement-pending, so no governed consumer can begin using
-    # it.  Rehashing the same multi-gigabyte file here only turns ordinary
-    # maintenance into a second full disk pass; `remove_recorded_files` still
-    # verifies the exact path, regular-file status, and byte length.
+    # The owner has released this complete rebuildable range and the ledger
+    # excludes new consumers while retirement is pending.  Deletion needs its
+    # recorded paths and sizes, not a new content identity for discarded bytes.
     for _ in remove_recorded_files(root, [record], identities_verified=True):
         pass
 
@@ -976,6 +985,9 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
                 })
     with timings.phase("post_verify"):
         ledger = capacity_ledger.load_capacity_ledger(root, ledger_path)
+        leases = protection.load_capacity_protection_leases(root)
+        commitment = int(leases["committed_new_bytes"])
+        required_free = int(receipt["minimum_free_bytes"]) + commitment
         free_after = shutil.disk_usage(root).free
         outcome = dict(receipt)
         outcome.update(
@@ -983,19 +995,21 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
             removed_bytes=sum(item["bytes"] for item in removed),
             measured_after_bytes=None if ledger is None else int(ledger["resident_bytes"]),
             free_bytes_after=free_after,
+            required_free_bytes=required_free,
+            total_active_lease_committed_new_bytes=commitment,
             failed=failed,
         )
         if ledger is not None:
-            leases = protection.load_capacity_protection_leases(root)
             outcome["management_summary_after_apply"] = _maintenance_management_summary(
                 root, ledger, leases, target_bytes=int(receipt["target_bytes"]),
-                required_free_bytes=int(receipt["required_free_bytes"]),
+                required_free_bytes=required_free,
                 free_bytes=free_after,
             )
         outcome["satisfied_after_apply"] = bool(
             ledger is not None
-            and int(ledger["resident_bytes"]) <= int(receipt["target_bytes"])
-            and free_after >= int(receipt["required_free_bytes"])
+            and not leases["legacy_unknown_commitment_count"]
+            and int(ledger["resident_bytes"]) + commitment <= int(receipt["target_bytes"])
+            and free_after >= required_free
         )
     outcome["timing"] = timings.finish()
     return outcome
@@ -1099,6 +1113,7 @@ def _compact_maintenance_output(receipt: dict[str, Any]) -> dict[str, Any]:
             "object_count": sum(int(item["object_count"]) for item in groups),
             "bytes": sum(int(item["bytes"]) for item in groups),
         },
+        "owner_usage_summary": groups,
         "owner_action_summary": owner_actions,
         "external_scope_summary": [
             {"role": item["role"], "bytes": int(item["bytes"])}
@@ -1179,6 +1194,8 @@ def main() -> None:
         ):
             parser.error("--maintenance-target-gib must be finite, positive, and no greater than policy target")
         target_gib = args.maintenance_target_gib
+    if args.apply and not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
+        parser.error("--apply requires the shared HostExecutionLease")
     try:
         lease = _lease_action(args, parser)
         if lease is not None:
@@ -1186,7 +1203,7 @@ def main() -> None:
             return
         activation = {"activated_count": 0, "activated_bytes": 0}
         alias_reconciliation = {"corrected_count": 0, "released_bytes": 0}
-        if args.execution_mode == "maintenance":
+        if args.execution_mode == "maintenance" and args.apply:
             activation = activate_owner_dispositions(args.artifact_root)
             source_scratch_registration = _register_workspace_scratch_scope(args.artifact_root)
             source_scratch_dispositions = _resume_source_scratch_dispositions(args.artifact_root)
@@ -1205,8 +1222,6 @@ def main() -> None:
             capacity_protection_lease_id=args.capacity_protection_lease_id,
         )
         if args.apply:
-            if not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
-                parser.error("--apply requires the shared HostExecutionLease")
             receipt = apply(receipt)
         # A maintenance pass may retire thousands of individually receipted PA
         # files.  Dumping that entire list on the launcher hot path makes the

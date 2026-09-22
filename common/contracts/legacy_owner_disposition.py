@@ -1,8 +1,8 @@
-"""Validate a sealed owner disposition during explicit legacy calibration.
+"""Validate sealed owner dispositions for legacy calibration and maintenance.
 
-This module is deliberately not used by daily capacity maintenance.  It turns
-one owner-approved, whole-range *metadata* inventory into the existing ledger
-``disposition`` shape; maintenance later consumes that already-frozen value.
+It turns an owner-approved, whole-range *metadata* inventory into the existing
+ledger ``disposition`` shape.  Maintenance can activate an existing approval;
+it never discovers or infers the owner's authority to abandon a range.
 The PA family was content-sealed when it was built.  Retirement therefore
 checks the recorded generation, paths and sizes once, without re-hashing a
 large payload merely to delete it.
