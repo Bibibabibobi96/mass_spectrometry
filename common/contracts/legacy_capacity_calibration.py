@@ -1020,6 +1020,151 @@ def _validate_existing_report_scope(
         raise CalibrationError("existing calibration report external scopes do not match workspace")
 
 
+def _validate_existing_report_accounting(inventory: dict[str, Any]) -> None:
+    """Reject a truncated or internally inconsistent frozen inventory report."""
+
+    groups = (
+        ("objects", "object_count", "classified_bytes"),
+        ("unresolved", "unresolved_count", "unresolved_bytes"),
+        ("initialization_blockers", "initialization_blocker_count", None),
+    )
+    totals: dict[str, int] = {}
+    for name, count_name, bytes_name in groups:
+        records = inventory.get(name)
+        if not isinstance(records, list):
+            raise CalibrationError(f"existing calibration report {name} is invalid")
+        if inventory.get(count_name) != len(records):
+            raise CalibrationError(f"existing calibration report {count_name} does not match records")
+        if bytes_name is None:
+            continue
+        total = 0
+        for record in records:
+            bytes_count = record.get("bytes") if isinstance(record, dict) else None
+            if isinstance(bytes_count, bool) or not isinstance(bytes_count, int) or bytes_count < 0:
+                raise CalibrationError(f"existing calibration report {name} bytes are invalid")
+            total += bytes_count
+        if inventory.get(bytes_name) != total:
+            raise CalibrationError(f"existing calibration report {bytes_name} does not match records")
+        totals[bytes_name] = total
+    scopes = inventory["external_scopes"]
+    external_bytes = sum(int(scope["bytes"]) for scope in scopes)
+    if inventory.get("external_scope_bytes") != external_bytes:
+        raise CalibrationError("existing calibration report external_scope_bytes does not match scopes")
+    expected_resident = (
+        totals["classified_bytes"] + totals["unresolved_bytes"] + external_bytes
+    )
+    if inventory.get("resident_bytes") != expected_resident:
+        raise CalibrationError("existing calibration report resident_bytes does not match records")
+
+
+def _recovery_writing_entries(inventory: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert only explicit, still-actionable unresolved records to writing.
+
+    A calibration report is deliberately retained unchanged as the immutable
+    discovery record.  This conversion is the narrow bridge into the v2
+    ledger: it keeps the exact path, bytes, owner, recovery obligation and
+    evidence, but never upgrades an unknown object to a consumable cache.
+    """
+
+    unresolved = inventory.get("unresolved")
+    if not isinstance(unresolved, list):
+        raise CalibrationError("existing calibration report unresolved records are invalid")
+    deadline = inventory.get("review_deadline")
+    if not isinstance(deadline, str):
+        raise CalibrationError("existing calibration report review_deadline is invalid")
+    try:
+        date.fromisoformat(deadline)
+    except ValueError as exc:
+        raise CalibrationError("existing calibration report review_deadline is invalid") from exc
+
+    allowed = {
+        "path", "bytes", "reason", "owner_hint", "review_deadline",
+        "evidence_paths", "recovery_task",
+    }
+    entries: list[dict[str, Any]] = []
+    for item in unresolved:
+        if not isinstance(item, dict) or set(item) - allowed:
+            raise CalibrationError("unresolved recovery record schema is invalid")
+        required = ("path", "bytes", "reason", "owner_hint", "review_deadline", "evidence_paths", "recovery_task")
+        if any(field not in item for field in required):
+            raise CalibrationError("unresolved record lacks explicit recovery responsibility")
+        path, owner, reason, item_deadline, task = (
+            item["path"], item["owner_hint"], item["reason"],
+            item["review_deadline"], item["recovery_task"],
+        )
+        size = item["bytes"]
+        evidence = item["evidence_paths"]
+        if (
+            not all(isinstance(value, str) and value.strip() for value in (
+                path, owner, reason, item_deadline, task,
+            ))
+            or isinstance(size, bool) or not isinstance(size, int) or size < 0
+            or not isinstance(evidence, list)
+            or any(not isinstance(value, str) or not value for value in evidence)
+        ):
+            raise CalibrationError("unresolved record lacks explicit recovery responsibility")
+        try:
+            parsed_deadline = date.fromisoformat(item_deadline)
+        except ValueError as exc:
+            raise CalibrationError("unresolved record review_deadline is invalid") from exc
+        if item_deadline != deadline or datetime.now(timezone.utc).date() > parsed_deadline:
+            raise CalibrationError("unresolved recovery responsibility is overdue or inconsistent")
+        try:
+            canonical_path = capacity_ledger.capacity_object_path(
+                Path(str(inventory["artifact_root"])), path,
+            )[1]
+            canonical_evidence = sorted({
+                capacity_ledger.capacity_object_path(
+                    Path(str(inventory["artifact_root"])), value,
+                )[1]
+                for value in evidence
+            })
+        except (TypeError, ValueError, OSError, RuntimeError) as exc:
+            raise CalibrationError("unresolved recovery paths escape artifact root") from exc
+        if canonical_path != path or canonical_evidence != evidence:
+            raise CalibrationError("unresolved recovery paths are not canonical")
+        entries.append({
+            "path": canonical_path,
+            "class": "rebuildable_payload",
+            "bytes": size,
+            "status": "writing",
+            "pin": False,
+            "owner": owner.strip(),
+            "recovery_reason": reason.strip(),
+            "review_deadline": item_deadline,
+            "recovery_task": task.strip(),
+            "recovery_evidence_paths": canonical_evidence,
+        })
+    return entries
+
+
+def _inventory_is_initializable(inventory: dict[str, Any]) -> bool:
+    """Accept complete inventories or unexpired, explicitly recoverable ones."""
+
+    unresolved = inventory.get("unresolved")
+    if not isinstance(unresolved, list):
+        return False
+    if inventory.get("initialization_blocker_count", 0) != 0 or inventory.get("initialization_blockers", []) != []:
+        return False
+    if not unresolved:
+        return inventory.get("status") == "ready_to_initialize" and inventory.get("complete") is True
+    if inventory.get("status") != "calibration_pending" or inventory.get("complete") is not False:
+        return False
+    try:
+        _recovery_writing_entries(inventory)
+    except CalibrationError:
+        return False
+    return True
+
+
+def _report_has_supported_lifecycle(inventory: dict[str, Any]) -> bool:
+    """Accept a report for later rejection diagnostics without weakening init."""
+
+    if inventory.get("status") == "ready_to_initialize" and inventory.get("complete") is True:
+        return True
+    return _inventory_is_initializable(inventory)
+
+
 def load_existing_calibration_report(
     report_path: Path, *, artifact_root: Path, workspace_root: Path,
     review_deadline: str,
@@ -1046,22 +1191,30 @@ def load_existing_calibration_report(
         raise CalibrationError("existing calibration report schema_version is unsupported")
     if inventory.get("role") != "legacy_capacity_calibration_inventory":
         raise CalibrationError("existing calibration report role is invalid")
-    if inventory.get("status") != "ready_to_initialize" or inventory.get("complete") is not True:
-        raise CalibrationError("existing calibration report is not complete and ready to initialize")
+    if not _report_has_supported_lifecycle(inventory):
+        raise CalibrationError(
+            "existing calibration report is neither complete nor an explicit, "
+            "unexpired recovery-only inventory"
+        )
     if inventory.get("metadata_only") is not True or inventory.get("payload_hashes_computed") is not False:
         raise CalibrationError("existing calibration report must be metadata-only with no payload hashes")
     _validate_existing_report_scope(
         inventory, artifact_root=root, workspace_root=workspace_root,
         review_deadline=review_deadline,
     )
+    _validate_existing_report_accounting(inventory)
     return inventory
 
 
 def initialize_from_inventory(
     inventory: dict[str, Any], *, ledger_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Initialize the ledger only from a complete, zero-unresolved inventory."""
+    """Initialize v2 from a complete or explicit recovery-only inventory."""
 
+    try:
+        _validate_existing_report_accounting(inventory)
+    except (KeyError, TypeError) as exc:
+        raise CalibrationError("capacity ledger initialization inventory accounting is invalid") from exc
     writing_invalid = 0
     for item in inventory.get("objects", []):
         if not isinstance(item, dict) or item.get("status") != "writing":
@@ -1083,14 +1236,9 @@ def initialize_from_inventory(
     if (
         inventory.get("schema_version") != 1
         or inventory.get("role") != "legacy_capacity_calibration_inventory"
-        or inventory.get("status") != "ready_to_initialize"
-        or inventory.get("complete") is not True
         or inventory.get("metadata_only") is not True
         or inventory.get("payload_hashes_computed") is not False
-        or inventory.get("unresolved_count") != 0
-        or inventory.get("unresolved") != []
-        or inventory.get("initialization_blocker_count", 0) != 0
-        or inventory.get("initialization_blockers", []) != []
+        or not _inventory_is_initializable(inventory)
         or writing_invalid != 0
     ):
         expired = int(inventory.get("expired_unresolved_count", 0) or 0)
@@ -1099,14 +1247,15 @@ def initialize_from_inventory(
             inventory.get("expired_initialization_blocker_count", 0) or 0
         )
         raise CalibrationError(
-            "capacity ledger initialization requires zero unresolved objects and "
-            "complete writing recovery responsibility; "
+            "capacity ledger initialization requires complete inventory or "
+            "explicit unexpired recovery responsibility; "
             f"initialization_blocker_count={blockers}; "
             f"expired_unresolved_count={expired}; "
             f"expired_initialization_blocker_count={expired_blockers}; "
             f"invalid_or_overdue_writing_count={writing_invalid}"
         )
     root = Path(str(inventory["artifact_root"]))
+    recovery_entries = _recovery_writing_entries(inventory)
     ledger_objects = [
         {
             key: value for key, value in item.items()
@@ -1116,7 +1265,7 @@ def initialize_from_inventory(
             }
         }
         for item in inventory["objects"]
-    ]
+    ] + recovery_entries
     return capacity_ledger.initialize_capacity_ledger(
         root, objects=ledger_objects, external_scopes=inventory.get("external_scopes", ()), path=ledger_path,
     )

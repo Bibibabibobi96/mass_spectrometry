@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from common.contracts import capacity_ledger
 from common.contracts.legacy_capacity_calibration import (
     CalibrationError,
     build_calibration_inventory,
@@ -110,6 +111,72 @@ def _write_frozen_input_cache(root: Path) -> Path:
 
 
 class LegacyCapacityCalibrationTests(unittest.TestCase):
+    def test_recovery_only_unresolved_inventory_initializes_writing_ledger_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            common = root / "common"
+            common.mkdir(parents=True)
+            (common / "capacity_ledger.json").write_text("{}", encoding="utf-8")
+            (common / ".capacity_ledger.json.fixture").write_bytes(b"stale")
+            for project in ("orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"):
+                review = root / "projects" / project / "reviews" / "current"
+                review.mkdir(parents=True)
+                _write_json(review / "inspection_receipt.json", {
+                    "role": "readonly_inspection", "status": "ready",
+                })
+                (review / "copied.pa0").write_bytes(b"payload")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            self.assertEqual(inventory["status"], "calibration_pending")
+            self.assertFalse(inventory["complete"])
+            self.assertEqual(inventory["unresolved_count"], 3)
+
+            ledger_path = root / "common" / "migration-ledger.json"
+            ledger = initialize_from_inventory(inventory, ledger_path=ledger_path)
+            self.assertEqual(ledger["resident_bytes"], inventory["resident_bytes"])
+            self.assertEqual(len(ledger["objects"]), inventory["unresolved_count"])
+            pending = {item["path"]: item for item in inventory["unresolved"]}
+            for item in ledger["objects"]:
+                original = pending[item["path"]]
+                self.assertEqual(item["class"], "rebuildable_payload")
+                self.assertEqual(item["status"], "writing")
+                self.assertEqual(item["bytes"], original["bytes"])
+                self.assertEqual(item["owner"], original["owner_hint"])
+                self.assertEqual(item["recovery_reason"], original["reason"])
+                self.assertEqual(item["review_deadline"], original["review_deadline"])
+                self.assertEqual(item["recovery_evidence_paths"], original["evidence_paths"])
+                with self.assertRaisesRegex(ValueError, "not eligible for retirement"):
+                    capacity_ledger.retire_capacity_object(
+                        root, path=item["path"], ledger_path=ledger_path,
+                    )
+                with self.assertRaisesRegex(ValueError, "ready published_cache"):
+                    capacity_ledger.touch_capacity_object(
+                        root, path=item["path"], when_epoch=1, ledger_path=ledger_path,
+                    )
+
+    def test_unknown_or_unattributed_unresolved_inventory_cannot_initialize(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            unknown = root / "projects" / "instrument" / "cache" / "unknown" / KEY
+            unknown.mkdir(parents=True)
+            (unknown / "payload.bin").write_bytes(b"cache")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            self.assertEqual(inventory["status"], "calibration_pending")
+            self.assertNotIn("recovery_task", inventory["unresolved"][0])
+            with self.assertRaisesRegex(CalibrationError, "explicit unexpired recovery responsibility"):
+                initialize_from_inventory(inventory)
+
+    def test_recovery_inventory_accounting_must_reconcile_before_initialization(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            common = root / "common"
+            common.mkdir(parents=True)
+            (common / "capacity_ledger.json").write_text("{}", encoding="utf-8")
+            (common / ".capacity_ledger.json.fixture").write_bytes(b"stale")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            inventory["resident_bytes"] += 1
+            with self.assertRaisesRegex(CalibrationError, "resident_bytes"):
+                initialize_from_inventory(inventory)
+
     def test_existing_external_report_initialization_uses_no_scan_or_payload_hashes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             parent = Path(temporary)
@@ -181,6 +248,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                 "deadline": {"review_deadline": "2026-09-30"},
                 "not_metadata_only": {"metadata_only": False},
                 "hashed": {"payload_hashes_computed": True},
+                "truncated_accounting": {"resident_bytes": 1},
             }
             for name, change in cases.items():
                 with self.subTest(name):

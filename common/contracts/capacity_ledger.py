@@ -29,6 +29,7 @@ BASE_OBJECT_FIELDS = {"path", "class", "bytes", "status"}
 OPTIONAL_OBJECT_FIELDS = {
     "pin", "identity", "pin_reason", "last_used_epoch", "retired_at_utc",
     "retirement_error", "consumers", "disposition", "manager", *RECOVERY_FIELDS,
+    "recovery_task", "recovery_evidence_paths",
 }
 PA_CACHE_MANAGER = "common.simion.pa_family_cache"
 
@@ -203,7 +204,22 @@ def _is_valid_capacity_ledger(root: Path, document: object) -> bool:
                 return False
             if consumers != sorted(set(canonical_consumers)):
                 return False
-        elif recovery_present or "consumers" in item:
+            if "recovery_task" in item and (
+                not isinstance(item["recovery_task"], str)
+                or not item["recovery_task"].strip()
+            ):
+                return False
+            evidence_paths = item.get("recovery_evidence_paths", [])
+            if not isinstance(evidence_paths, list) or any(
+                not isinstance(value, str) or not value for value in evidence_paths
+            ):
+                return False
+            canonical_evidence = [_ledger_relative_path(value) for value in evidence_paths]
+            if any(value is None for value in canonical_evidence):
+                return False
+            if evidence_paths != sorted(set(canonical_evidence)):
+                return False
+        elif recovery_present or "consumers" in item or "recovery_task" in item or "recovery_evidence_paths" in item:
             return False
         canonical = _ledger_relative_path(item["path"])
         if canonical is None:
