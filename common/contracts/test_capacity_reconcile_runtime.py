@@ -173,6 +173,39 @@ class DailyCapacityReconcileTest(unittest.TestCase):
                 {"registered_count": 0, "registered_bytes": 6},
             )
 
+    def test_maintenance_completes_authorized_source_scratch_disposition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"; root.mkdir()
+            source = parent / "scratch"; source.mkdir()
+            (source / "obsolete.bin").write_bytes(b"obsolete")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[], external_scopes=[
+                {"role": "repository_scratch", "path": str((parent / "simulation_repo" / "scratch").resolve()), "bytes": 0},
+                {"role": "repository_generated", "path": str((parent / "simulation_repo" / "generated").resolve()), "bytes": 0},
+                {"role": "repository_workspace_scratch", "path": str(source.resolve()), "bytes": 8},
+            ])
+            evidence = root / capacity.SCRATCH_DISPOSITION_DIRECTORY / "obsolete.json"
+            evidence.parent.mkdir(parents=True)
+            evidence.write_text(json.dumps({
+                "schema_version": 1,
+                "role": "historical_source_scratch_retirement_authorization",
+                "status": "approved", "owner": "fixture-owner",
+                "source_root": str(source), "retirement_authorized": True,
+                "retirement_targets": ["obsolete.bin"], "active_consumers": [],
+                "protected_paths": [],
+            }), encoding="utf-8")
+            self.assertEqual(
+                capacity._resume_source_scratch_dispositions(root),
+                {
+                    "completed_count": 1,
+                    "newly_removed_bytes": 8,
+                    "evidence_archived_count": 1,
+                },
+            )
+            self.assertFalse(evidence.exists())
+            self.assertFalse(source.exists())
+            self.assertEqual(capacity_ledger.load_capacity_ledger(root)["resident_bytes"], 0)
+
     def test_daily_module_has_no_legacy_imports(self) -> None:
         source = Path(capacity.__file__).read_text(encoding="utf-8")
         for forbidden in (

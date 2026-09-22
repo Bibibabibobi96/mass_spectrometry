@@ -17,6 +17,8 @@ from typing import Any, Iterable
 from common.contracts import capacity_ledger
 from common.contracts import capacity_protection as protection
 from common.contracts.execution_aliases import execution_alias_root_is_valid
+from common.contracts.historical_source_scratch_retirement import apply as apply_source_scratch_disposition
+from common.contracts.historical_source_scratch_retirement import plan as plan_source_scratch_disposition
 from common.contracts.legacy_owner_disposition import activate_owner_dispositions
 from common.contracts.file_identity import file_sha256
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
@@ -25,6 +27,7 @@ GIB = 1024**3
 POLICY_PATH = Path(__file__).with_name("artifact_capacity_policy.json")
 DISPOSAL_RECEIPT_DIRECTORY = Path("common") / "capacity_disposal_receipts"
 CAPACITY_LEDGER_RELATIVE_PATH = capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH
+SCRATCH_DISPOSITION_DIRECTORY = Path("common") / "capacity_calibration" / "scratch_dispositions"
 
 # Compatibility exports for existing publishers while they move to the ledger module.
 _load_capacity_ledger = capacity_ledger.load_capacity_ledger
@@ -557,6 +560,57 @@ def _register_workspace_scratch_scope(root: Path) -> dict[str, int]:
         root, role="repository_workspace_scratch", path=source, bytes_count=measured,
     )
     return {"registered_count": 1, "registered_bytes": measured}
+
+
+def _resume_source_scratch_dispositions(root: Path) -> dict[str, int]:
+    """Apply exact owner-authorized source-scratch dispositions during maintenance."""
+
+    directory = root / SCRATCH_DISPOSITION_DIRECTORY
+    if not directory.exists():
+        return {"completed_count": 0, "newly_removed_bytes": 0, "evidence_archived_count": 0}
+    if not directory.is_dir() or directory.is_symlink():
+        raise RuntimeError("source scratch disposition directory is not regular")
+    completed_count, newly_removed_bytes = 0, 0
+    for evidence in sorted(directory.iterdir()):
+        if not evidence.is_file() or evidence.is_symlink() or evidence.suffix != ".json":
+            raise RuntimeError("source scratch disposition directory permits only direct JSON documents")
+        try:
+            document = json.loads(evidence.read_text(encoding="utf-8-sig"))
+            source = Path(str(document["source_root"])).resolve(strict=False)
+            owner = str(document["owner"])
+        except (KeyError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError("source scratch disposition evidence is unreadable") from exc
+        digest = file_sha256(evidence)
+        receipt_path = root / DISPOSAL_RECEIPT_DIRECTORY / f"source_scratch_{digest.upper()}.json"
+        prior = _load_object(receipt_path)
+        prior_progress = {
+            item["path"] for item in prior.get("removal_progress", [])
+        } if isinstance(prior, dict) else set()
+        if source.exists():
+            completed = apply_source_scratch_disposition(plan_source_scratch_disposition(
+                root, source_root=source, owner=owner, evidence=evidence,
+                evidence_sha256=digest,
+            ))
+        else:
+            try:
+                completed = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise RuntimeError("missing source scratch completion receipt") from exc
+        if completed.get("status") != "complete":
+            raise RuntimeError("source scratch disposition did not complete")
+        bytes_by_path = {item["path"]: int(item["bytes"]) for item in completed["files"]}
+        newly_removed_bytes += sum(
+            bytes_by_path[item["path"]]
+            for item in completed.get("removal_progress", [])
+            if item["path"] not in prior_progress and item.get("outcome") == "removed"
+        )
+        completed_count += 1
+        evidence.unlink()
+    return {
+        "completed_count": completed_count,
+        "newly_removed_bytes": newly_removed_bytes,
+        "evidence_archived_count": completed_count,
+    }
 
 
 def plan(
@@ -1135,9 +1189,11 @@ def main() -> None:
         if args.execution_mode == "maintenance":
             activation = activate_owner_dispositions(args.artifact_root)
             source_scratch_registration = _register_workspace_scratch_scope(args.artifact_root)
+            source_scratch_dispositions = _resume_source_scratch_dispositions(args.artifact_root)
             alias_reconciliation = _reconcile_execution_alias_root(args.artifact_root)
         else:
             source_scratch_registration = {"registered_count": 0, "registered_bytes": 0}
+            source_scratch_dispositions = {"completed_count": 0, "removed_bytes": 0}
         receipt = plan(
             args.artifact_root,
             target_bytes=int(target_gib * GIB),
@@ -1175,6 +1231,8 @@ def main() -> None:
             receipt["administrative_aliases_reconciled"] = alias_reconciliation
         if source_scratch_registration["registered_count"]:
             receipt["repository_workspace_scratch_registered"] = source_scratch_registration
+        if source_scratch_dispositions["completed_count"]:
+            receipt["source_scratch_dispositions_completed"] = source_scratch_dispositions
         print(json.dumps(receipt, indent=2))
     except (ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
         parser.error(str(exc))
