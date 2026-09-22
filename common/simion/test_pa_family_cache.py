@@ -503,6 +503,38 @@ class PAFamilyCacheTest(unittest.TestCase):
             )
         self.assertFalse(destination.exists())
 
+    def test_legacy_unbound_published_cache_cannot_consume_or_retire(self) -> None:
+        artifacts, cache = self._artifact_cache()
+        published = self._publish_governed_transaction(cache)
+        capacity_protection.create_capacity_protection_lease(
+            artifacts,
+            lease_id="fixture-legacy-consumer",
+            owner="fixture-owner",
+            ttl_seconds=300,
+            protected_cache_keys=[published.cache_key],
+        )
+        transaction_path = published.transaction_directory / "transaction.json"
+        transaction_path.unlink()
+        ledger_path = capacity_ledger.resolve_ledger_path(artifacts)
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+        key_relative = capacity_ledger.capacity_object_path(
+            artifacts, cache / published.cache_key
+        )[1]
+        entry = next(item for item in ledger["objects"] if item["path"] == key_relative)
+        entry.pop("manager")
+        ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+        with self.assertRaisesRegex(PAFamilyCacheError, "transaction is unreadable"):
+            materialize_pa_family_cache(
+                published.generation_directory,
+                self.root / "legacy-unbound-consumer",
+                capacity_lease_id="fixture-legacy-consumer",
+                capacity_lease_owner="fixture-owner",
+            )
+        with self.assertRaisesRegex(PAFamilyCacheError, "transaction"):
+            approve_pa_family_cache_retirement(
+                cache, published.cache_key, published.generation_sha256
+            )
+
     def test_artifact_hit_does_not_overwrite_concurrent_writing_state(self) -> None:
         artifacts, cache = self._artifact_cache()
         published = self._publish_governed_transaction(cache)

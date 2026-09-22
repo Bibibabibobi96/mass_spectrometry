@@ -123,6 +123,12 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             cache_path = f"common/simion/pa_family_cache/{KEY}"
             self.assertEqual(by_path[cache_path]["class"], "published_cache")
             self.assertEqual(by_path[cache_path]["identity"], GENERATION)
+            self.assertEqual(by_path[cache_path]["status"], "writing")
+            self.assertEqual(by_path[cache_path]["owner"], "common.simion.pa_family_cache")
+            self.assertEqual(
+                by_path[cache_path]["recovery_reason"],
+                "legacy_pa_cache_missing_owner_transaction",
+            )
             self.assertEqual(
                 by_path[run.relative_to(root).as_posix()]["class"], "light_evidence",
             )

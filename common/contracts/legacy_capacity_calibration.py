@@ -251,8 +251,35 @@ def _common_pa_cache(
     )
     evidence = (pointer_path, manifest_path)
     if valid:
+        transaction_path = key.parent / ".transactions" / key.name / "transaction.json"
+        transaction = _load_json(transaction_path)
+        transaction_bound = (
+            transaction is not None
+            and transaction.get("schema_version") == 1
+            and transaction.get("role") == "simion_pa_family_cache_transaction"
+            and transaction.get("status") == "published"
+            and str(transaction.get("cache_key", "")).casefold() == key.name.casefold()
+            and str(transaction.get("generation_sha256", "")).casefold() == generation.casefold()
+            and isinstance(transaction.get("owner"), str)
+            and bool(transaction["owner"].strip())
+            and isinstance(transaction.get("verification"), dict)
+        )
+        if transaction_bound:
+            candidate = _candidate(
+                root, key, "published_cache", identity=generation,
+                evidence=(*evidence, transaction_path),
+            )
+            candidate["manager"] = capacity_ledger.PA_CACHE_MANAGER
+            return candidate, None
+        # A pointer and manifest establish byte identity, but never establish
+        # who may recover, consume, or retire it.  Preserve the exact object
+        # as governed writing state until its real owner restores a transaction
+        # or creates an authorized disposition; do not invent either record.
         return _candidate(
-            root, key, "published_cache", identity=generation, evidence=evidence,
+            root, key, "published_cache", identity=generation,
+            status="writing", evidence=(*evidence, transaction_path),
+            recovery_reason="legacy_pa_cache_missing_owner_transaction",
+            owner_hint="common.simion.pa_family_cache",
         ), None
     return None, _unresolved(
         root, key, "common_pa_cache_identity_chain_incomplete",
