@@ -12,7 +12,6 @@ from unittest import mock
 
 from common.contracts import capacity_ledger
 from common.contracts import legacy_owner_disposition
-from common.contracts.file_identity import file_sha256
 from common.contracts import legacy_capacity_calibration as calibration
 from common.contracts.legacy_capacity_calibration import (
     CalibrationError,
@@ -39,24 +38,23 @@ def _write_owner_disposition(root: Path, target: Path, *, owner: str = "instrume
     payload = target / "payload.bin"
     payload.write_bytes(b"retire me")
     files = [
-        {"path": item.relative_to(target).as_posix(), "bytes": item.stat().st_size,
-         "sha256": file_sha256(item).upper()}
+        {"path": item.relative_to(target).as_posix(), "bytes": item.stat().st_size}
         for item in sorted(target.rglob("*")) if item.is_file()
     ]
     evidence = next(item for item in files if item["path"] == "owner_manifest.json")
     target_path = target.relative_to(root).as_posix()
     seed = {
         "owner": owner, "target_path": target_path,
-        "authority_evidence": {"path": evidence["path"], "sha256": evidence["sha256"]},
-        "generation": "D" * 64, "manifest_sha256": evidence["sha256"], "files": files,
+        "authority_evidence": {"path": evidence["path"]},
+        "generation": "D" * 64, "manifest_path": evidence["path"], "files": files,
     }
     disposition_id = hashlib.sha256(json.dumps(seed, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest().upper()
     document = {
-        "schema_version": 1, "role": "artifact_capacity_owner_retirement_disposition",
+        "schema_version": 2, "role": "artifact_capacity_owner_retirement_disposition",
         "status": "retire_approved", "owner": owner, "target_path": target_path,
         "authority_evidence": seed["authority_evidence"],
         "disposition": {"id": disposition_id, "generation": seed["generation"],
-                        "manifest_sha256": evidence["sha256"], "files": files},
+                        "manifest_path": evidence["path"], "files": files},
     }
     path = root / "common" / "capacity_calibration" / "owner_dispositions" / f"{disposition_id}.json"
     _write_json(path, document)

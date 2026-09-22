@@ -100,27 +100,39 @@ def _ledger_relative_path(value: object) -> str | None:
 
 
 def _valid_disposition(value: object, *, expected_bytes: int) -> bool:
-    if not isinstance(value, dict) or set(value) != {
+    if not isinstance(value, dict) or set(value) not in ({
         "id", "generation", "manifest_sha256", "files",
-    }:
+    }, {
+        "id", "generation", "manifest_path", "files",
+    }):
         return False
     if any(
         not isinstance(value.get(key), str) or SHA256.fullmatch(value[key]) is None
-        for key in ("id", "generation", "manifest_sha256")
+        for key in ("id", "generation")
     ) or not isinstance(value.get("files"), list) or not value["files"]:
+        return False
+    legacy_hash_inventory = "manifest_sha256" in value
+    if legacy_hash_inventory:
+        if not isinstance(value["manifest_sha256"], str) or SHA256.fullmatch(value["manifest_sha256"]) is None:
+            return False
+    elif _ledger_relative_path(value.get("manifest_path")) is None:
         return False
     seen: set[str] = set()
     total = 0
     for record in value["files"]:
-        if not isinstance(record, dict) or set(record) != {"path", "bytes", "sha256"}:
+        required = {"path", "bytes", "sha256"} if legacy_hash_inventory else {"path", "bytes"}
+        if not isinstance(record, dict) or set(record) != required:
             return False
         path = _ledger_relative_path(record.get("path"))
         size = record.get("bytes")
-        digest = record.get("sha256")
         if (
             path is None or path in seen or isinstance(size, bool)
             or not isinstance(size, int) or size < 0
-            or not isinstance(digest, str) or SHA256.fullmatch(digest) is None
+        ):
+            return False
+        if legacy_hash_inventory and (
+            not isinstance(record.get("sha256"), str)
+            or SHA256.fullmatch(record["sha256"]) is None
         ):
             return False
         seen.add(path)

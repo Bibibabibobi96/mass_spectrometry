@@ -90,8 +90,9 @@ startup与maintenance均报告总耗时和分段耗时；正常目标为5秒，�
 只承担历史恢复，不能提供日常准入或容量水位覆盖。
 
 缺少现行事务而已被明确放弃的历史范围，只能由其目标项目 owner 在
-`artifacts/common/capacity_calibration/owner_dispositions/`提供一次性、身份绑定的范围处置记录。显式校准会复核
-该记录所列完整清单和权威证据，再复用既有 sealed disposition、处置收据和重放路径；日常启动与维护不扫描
+`artifacts/common/capacity_calibration/owner_dispositions/`提供一次性、代际绑定的范围处置记录。显式校准只复核
+该记录所列完整路径和字节数及已封存的代际/manifest 路径，不重新读取或哈希 PA payload；仅在该元数据不一致
+时才升级为受影响成员的身份诊断。随后复用既有 sealed disposition、处置收据和重放路径；日常启动与维护不扫描
 这些范围，也不会为它们推断 owner、终态或删除资格。
 
 历史仓库 source `scratch/` 的删除只能使用`historical_source_scratch_retirement.py`：它要求
