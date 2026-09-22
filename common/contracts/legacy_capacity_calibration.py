@@ -9,7 +9,9 @@ ledger initialization.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
 import stat
 import sys
@@ -27,6 +29,11 @@ from common.contracts.verify_artifact_layout import INTEGRATION_CACHE_ROLES
 
 
 SHA256 = re.compile(r"^[A-Fa-f0-9]{64}$")
+LEGACY_LEDGER_KEYS = {
+    "schema_version", "role", "status", "complete", "artifact_root",
+    "resident_bytes", "objects",
+}
+LEDGER_MIGRATION_DIRECTORY = Path("common") / "capacity_calibration" / "ledger_migrations"
 TERMINAL_RUN_STATUSES = {
     "success", "completed", "failed", "interrupted", "cancelled", "aborted",
 }
@@ -1266,9 +1273,263 @@ def initialize_from_inventory(
         }
         for item in inventory["objects"]
     ] + recovery_entries
-    return capacity_ledger.initialize_capacity_ledger(
-        root, objects=ledger_objects, external_scopes=inventory.get("external_scopes", ()), path=ledger_path,
+    return _initialize_or_migrate_capacity_ledger(
+        root,
+        objects=ledger_objects,
+        external_scopes=inventory.get("external_scopes", ()),
+        inventory=inventory,
+        ledger_path=ledger_path,
     )
+
+
+def _canonical_json_sha256(value: object) -> str:
+    """Return a stable identity for small governance records only."""
+
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest().upper()
+
+
+def _load_json_bytes(path: Path) -> tuple[dict[str, Any] | None, bytes | None]:
+    """Read one small governance JSON record without inspecting artifacts."""
+
+    try:
+        raw = path.read_bytes()
+        value = json.loads(raw.decode("utf-8-sig"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None, None
+    return (value if isinstance(value, dict) else None), raw
+
+
+def _valid_legacy_v1_ledger(root: Path, document: object) -> bool:
+    """Recognize only the calibrated v1 ledger shape that v2 supersedes."""
+
+    if not isinstance(document, dict) or set(document) != LEGACY_LEDGER_KEYS:
+        return False
+    if (
+        document.get("schema_version") != 1
+        or document.get("role") != "artifact_capacity_ledger"
+        or document.get("status") != "calibrated"
+        or document.get("complete") is not True
+    ):
+        return False
+    try:
+        document_root = Path(str(document.get("artifact_root", ""))).resolve(strict=False)
+    except (OSError, RuntimeError):
+        return False
+    if document_root != root:
+        return False
+    resident = document.get("resident_bytes")
+    objects = document.get("objects")
+    if (
+        isinstance(resident, bool) or not isinstance(resident, int) or resident < 0
+        or not isinstance(objects, list)
+    ):
+        return False
+    total = 0
+    for item in objects:
+        if not isinstance(item, dict):
+            return False
+        if (
+            not isinstance(item.get("path"), str) or not item["path"]
+            or item.get("class") not in capacity_ledger.LEDGER_CLASSES
+            or item.get("status") not in capacity_ledger.LEDGER_STATUSES
+            or isinstance(item.get("bytes"), bool)
+            or not isinstance(item.get("bytes"), int)
+            or item["bytes"] < 0
+            or not isinstance(item.get("pin", False), bool)
+        ):
+            return False
+        if item["status"] != "retired":
+            total += item["bytes"]
+    if total != resident:
+        return False
+    # v1 differed only by the absence of external-scope accounting.  Reuse
+    # the v2 validator with that one known structural addition so malformed
+    # historical fields never become an overwrite authorization.
+    return capacity_ledger._is_valid_capacity_ledger(root, {
+        **document,
+        "schema_version": 2,
+        "external_scopes": [],
+    })
+
+
+def _build_v2_ledger_document(
+    root: Path, *, objects: Iterable[dict[str, Any]],
+    external_scopes: Iterable[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build the same complete v2 document as normal baseline publication."""
+
+    normalized: list[dict[str, Any]] = []
+    for source in objects:
+        if not isinstance(source, dict):
+            raise CalibrationError("capacity ledger objects must be mappings")
+        _, relative = capacity_ledger.capacity_object_path(root, str(source.get("path", "")))
+        normalized.append({**source, "path": relative})
+    scopes = [dict(scope) for scope in external_scopes]
+    document = {
+        "schema_version": 2,
+        "role": "artifact_capacity_ledger",
+        "status": "calibrated",
+        "complete": True,
+        "artifact_root": str(root),
+        "resident_bytes": (
+            sum(int(item.get("bytes", 0)) for item in normalized if item.get("status") != "retired")
+            + sum(int(item.get("bytes", 0)) for item in scopes)
+        ),
+        "objects": normalized,
+        "external_scopes": scopes,
+    }
+    if not capacity_ledger._is_valid_capacity_ledger(root, document):
+        raise CalibrationError("explicit capacity ledger baseline is invalid")
+    return document
+
+
+def _write_immutable_json(path: Path, document: dict[str, Any]) -> None:
+    """Publish a small receipt once; an existing differing receipt is unsafe."""
+
+    encoded = (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    except FileExistsError:
+        existing, raw = _load_json_bytes(path)
+        if existing != document or raw is None:
+            raise CalibrationError(f"immutable ledger migration receipt conflicts: {path}")
+        return
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _migration_receipt(
+    *, migration_id: str, status: str, root: Path, destination: Path,
+    legacy_sha256: str, inventory_sha256: str, target_sha256: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "role": "capacity_ledger_v1_to_v2_migration",
+        "status": status,
+        "migration_id": migration_id,
+        "artifact_root": str(root),
+        "ledger_path": str(destination),
+        "legacy_ledger_sha256": legacy_sha256,
+        "calibration_inventory_sha256": inventory_sha256,
+        "target_ledger_sha256": target_sha256,
+    }
+
+
+def _initialize_or_migrate_capacity_ledger(
+    root: Path, *, objects: Iterable[dict[str, Any]],
+    external_scopes: Iterable[dict[str, Any]], inventory: dict[str, Any],
+    ledger_path: Path | None,
+) -> dict[str, Any]:
+    """Initialize an empty destination or recover one exact v1→v2 migration.
+
+    A v1 ledger is never treated as an overwrite permission.  The exact old
+    ledger, frozen calibration inventory and target v2 document are bound into
+    an immutable pending receipt before the atomic replacement.  A retry can
+    only finish that exact pending migration after validating the landed v2
+    ledger; arbitrary valid v2 ledgers remain untouchable.
+    """
+
+    root = root.resolve(strict=False)
+    destination = capacity_ledger.resolve_ledger_path(root, ledger_path)
+    canonical = capacity_ledger.resolve_ledger_path(root)
+    if destination != canonical:
+        return capacity_ledger.initialize_capacity_ledger(
+            root, objects=objects, external_scopes=external_scopes, path=destination,
+        )
+    target = _build_v2_ledger_document(
+        root, objects=objects, external_scopes=external_scopes,
+    )
+    inventory_sha256 = _canonical_json_sha256(inventory)
+    target_sha256 = _canonical_json_sha256(target)
+
+    with capacity_protection.capacity_decision_lock(root):
+        existing, raw = _load_json_bytes(destination)
+        if raw is None:
+            if destination.exists():
+                raise CalibrationError(
+                    "existing capacity ledger is unreadable and will not be overwritten"
+                )
+            write_json_atomic(destination, target)
+            initialized = capacity_ledger.load_capacity_ledger(root, destination)
+            if initialized != target:
+                raise CalibrationError("capacity ledger publication could not be read back")
+            return initialized
+        receipt_directory = root / LEDGER_MIGRATION_DIRECTORY
+        if _valid_legacy_v1_ledger(root, existing):
+            legacy_sha256 = hashlib.sha256(raw).hexdigest().upper()
+            migration_id = hashlib.sha256(
+                f"capacity-ledger-v1-to-v2:{legacy_sha256}:{inventory_sha256}:{target_sha256}".encode("ascii")
+            ).hexdigest().upper()
+            pending_path = receipt_directory / f"{migration_id}.pending.json"
+            complete_path = receipt_directory / f"{migration_id}.complete.json"
+            pending = _migration_receipt(
+                migration_id=migration_id, status="pending", root=root,
+                destination=destination, legacy_sha256=legacy_sha256,
+                inventory_sha256=inventory_sha256, target_sha256=target_sha256,
+            )
+            complete = {**pending, "status": "complete"}
+            _write_immutable_json(pending_path, pending)
+            write_json_atomic(destination, target)
+            landed = capacity_ledger.load_capacity_ledger(root, destination)
+            if landed != target:
+                raise CalibrationError("v1 to v2 capacity ledger replacement could not be read back")
+            _write_immutable_json(complete_path, complete)
+            return landed
+
+        landed = capacity_ledger.load_capacity_ledger(root, destination)
+        if landed is None:
+            raise CalibrationError(
+                "existing capacity ledger is neither an exact calibrated v1 ledger nor a valid v2 ledger"
+            )
+        matches: list[tuple[Path, dict[str, Any]]] = []
+        if receipt_directory.is_dir():
+            for candidate_path in receipt_directory.glob("*.pending.json"):
+                candidate, _ = _load_json_bytes(candidate_path)
+                if not isinstance(candidate, dict):
+                    continue
+                legacy_sha256 = candidate.get("legacy_ledger_sha256")
+                migration_id = candidate.get("migration_id")
+                expected_id = (
+                    hashlib.sha256(
+                        f"capacity-ledger-v1-to-v2:{legacy_sha256}:{inventory_sha256}:{target_sha256}".encode("ascii")
+                    ).hexdigest().upper()
+                    if isinstance(legacy_sha256, str) else None
+                )
+                if (
+                    candidate.get("schema_version") == 1
+                    and candidate.get("role") == "capacity_ledger_v1_to_v2_migration"
+                    and candidate.get("status") == "pending"
+                    and candidate.get("artifact_root") == str(root)
+                    and candidate.get("ledger_path") == str(destination)
+                    and candidate.get("calibration_inventory_sha256") == inventory_sha256
+                    and candidate.get("target_ledger_sha256") == target_sha256
+                    and migration_id == expected_id
+                ):
+                    matches.append((candidate_path, candidate))
+        if len(matches) != 1:
+            raise CalibrationError("valid v2 capacity ledger will not be overwritten by migration")
+        if landed != target:
+            raise CalibrationError("pending capacity ledger migration target differs from landed v2 ledger")
+        pending_path, pending = matches[0]
+        complete_path = pending_path.with_name(
+            pending_path.name.removesuffix(".pending.json") + ".complete.json"
+        )
+        complete = {**pending, "status": "complete"}
+        _write_immutable_json(complete_path, complete)
+        return landed
 
 
 def main() -> None:

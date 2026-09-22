@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from common.contracts import capacity_ledger
+from common.contracts import legacy_capacity_calibration as calibration
 from common.contracts.legacy_capacity_calibration import (
     CalibrationError,
     build_calibration_inventory,
@@ -26,6 +27,20 @@ GENERATION = "B" * 64
 def _write_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def _write_legacy_v1_ledger(root: Path, *, resident_bytes: int = 0) -> Path:
+    path = root / "common" / "capacity_ledger.json"
+    _write_json(path, {
+        "schema_version": 1,
+        "role": "artifact_capacity_ledger",
+        "status": "calibrated",
+        "complete": True,
+        "artifact_root": str(root.resolve()),
+        "resident_bytes": resident_bytes,
+        "objects": [],
+    })
+    return path
 
 
 def _write_common_cache(root: Path) -> None:
@@ -111,6 +126,83 @@ def _write_frozen_input_cache(root: Path) -> Path:
 
 
 class LegacyCapacityCalibrationTests(unittest.TestCase):
+    def test_exact_v1_ledger_is_replaced_once_with_bound_migration_receipts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            destination = _write_legacy_v1_ledger(root)
+
+            ledger = initialize_from_inventory(inventory)
+
+            self.assertEqual(ledger["schema_version"], 2)
+            self.assertEqual(capacity_ledger.load_capacity_ledger(root), ledger)
+            receipts = list((root / "common" / "capacity_calibration" / "ledger_migrations").glob("*.json"))
+            self.assertEqual(sorted(path.suffixes[-2:] for path in receipts), [[".complete", ".json"], [".pending", ".json"]])
+            pending = json.loads(next(path for path in receipts if path.name.endswith(".pending.json")).read_text(encoding="utf-8"))
+            complete = json.loads(next(path for path in receipts if path.name.endswith(".complete.json")).read_text(encoding="utf-8"))
+            self.assertEqual(pending["status"], "pending")
+            self.assertEqual(complete, {**pending, "status": "complete"})
+            self.assertEqual(Path(pending["ledger_path"]), destination.absolute())
+            self.assertNotIn("objects", pending)
+
+    def test_valid_v2_ledger_is_never_an_overwrite_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            initialize_from_inventory(inventory)
+            before = (root / "common" / "capacity_ledger.json").read_bytes()
+
+            with self.assertRaisesRegex(CalibrationError, "will not be overwritten"):
+                initialize_from_inventory(inventory)
+
+            self.assertEqual((root / "common" / "capacity_ledger.json").read_bytes(), before)
+            self.assertFalse((root / "common" / "capacity_calibration" / "ledger_migrations").exists())
+
+    def test_invalid_v1_ledger_is_refused_without_receipt_or_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            destination = _write_legacy_v1_ledger(root, resident_bytes=1)
+            before = destination.read_bytes()
+
+            with self.assertRaisesRegex(CalibrationError, "neither an exact calibrated v1"):
+                initialize_from_inventory(inventory)
+
+            self.assertEqual(destination.read_bytes(), before)
+            self.assertFalse((root / "common" / "capacity_calibration" / "ledger_migrations").exists())
+
+    def test_pending_v1_migration_resumes_after_ledger_replace_interruption(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            destination = _write_legacy_v1_ledger(root)
+            original_write = calibration.write_json_atomic
+
+            def interrupt_after_replace(path: Path, value: dict) -> None:
+                original_write(path, value)
+                if Path(path).absolute() == destination.absolute():
+                    raise OSError("fixture interruption after atomic ledger replace")
+
+            with mock.patch.object(calibration, "write_json_atomic", side_effect=interrupt_after_replace):
+                with self.assertRaisesRegex(OSError, "fixture interruption"):
+                    initialize_from_inventory(inventory)
+            self.assertIsNotNone(capacity_ledger.load_capacity_ledger(root))
+            receipts = root / "common" / "capacity_calibration" / "ledger_migrations"
+            self.assertEqual(len(list(receipts.glob("*.pending.json"))), 1)
+            self.assertEqual(len(list(receipts.glob("*.complete.json"))), 0)
+
+            resumed = initialize_from_inventory(inventory)
+            repeated = initialize_from_inventory(inventory)
+
+            self.assertEqual(resumed["schema_version"], 2)
+            self.assertEqual(repeated, resumed)
+            self.assertEqual(len(list(receipts.glob("*.pending.json"))), 1)
+            self.assertEqual(len(list(receipts.glob("*.complete.json"))), 1)
+
     def test_recovery_only_unresolved_inventory_initializes_writing_ledger_entries(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"
