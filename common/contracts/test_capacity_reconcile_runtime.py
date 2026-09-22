@@ -14,6 +14,20 @@ from common.contracts import reconcile_artifact_capacity as capacity
 from common.contracts.capacity_protection import create_capacity_protection_lease
 
 
+READY_DUTIES = {
+    "owner": "fixture_owner",
+    "retention_reason": "finite test fixture retention",
+    "review_deadline": "2026-10-22",
+    "retirement_route": "owner_managed_disposition",
+}
+WRITING_DUTIES = {
+    **READY_DUTIES,
+    "recovery_reason": "fixture interrupted write",
+    "recovery_task": "fixture owner must recover or retire",
+    "recovery_evidence_paths": ["incomplete"],
+}
+
+
 class DailyCapacityReconcileTest(unittest.TestCase):
     def test_loading_calibrated_ledger_does_not_resolve_payload_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -21,6 +35,7 @@ class DailyCapacityReconcileTest(unittest.TestCase):
             capacity_ledger.initialize_capacity_ledger(root, objects=[{
                 "path": "projects/p/runs/r1", "class": "light_evidence",
                 "bytes": 1, "status": "ready", "pin": False,
+                **READY_DUTIES,
             }])
             with patch.object(
                 capacity_ledger, "capacity_object_path",
@@ -34,7 +49,7 @@ class DailyCapacityReconcileTest(unittest.TestCase):
             root = Path(temporary)
             objects = [
                 {"path": path, "class": "light_evidence", "bytes": 1,
-                 "status": "ready", "pin": False}
+                 "status": "ready", "pin": False, **READY_DUTIES}
                 for path in ("a", "a-b", "a/c")
             ]
             with self.assertRaisesRegex(ValueError, "baseline is invalid"):
@@ -53,6 +68,10 @@ class DailyCapacityReconcileTest(unittest.TestCase):
                 "status": "writing", "pin": False, "owner": "workflow-a",
                 "recovery_reason": "run_manifest_not_terminal",
                 "review_deadline": "2026-09-27",
+                "retention_reason": "finite test fixture retention",
+                "retirement_route": "owner_managed_disposition",
+                "recovery_task": "workflow-a must recover or retire",
+                "recovery_evidence_paths": ["incomplete"],
                 "consumers": ["projects/p/runs/consumer"],
             }])
             self.assertEqual(document["objects"][0]["owner"], "workflow-a")
@@ -65,7 +84,8 @@ class DailyCapacityReconcileTest(unittest.TestCase):
                 capacity_ledger.record_capacity_object(
                     root, path="ready", object_class="rebuildable_payload",
                     bytes_count=1, status="ready", owner="workflow-a",
-                    recovery_reason="not_allowed", review_deadline="2026-09-27",
+                    retention_reason="fixture", recovery_reason="not_allowed",
+                    review_deadline="2026-09-27", retirement_route="owner_managed_disposition",
                 )
             with self.assertRaisesRegex(ValueError, "baseline is invalid"):
                 capacity_ledger.initialize_capacity_ledger(root, objects=[{
@@ -74,7 +94,7 @@ class DailyCapacityReconcileTest(unittest.TestCase):
                 }], overwrite=True)
             ready = capacity_ledger.record_capacity_object(
                 root, path="incomplete", object_class="light_evidence",
-                bytes_count=1, status="ready",
+                bytes_count=1, status="ready", **READY_DUTIES,
             )
             self.assertTrue(capacity_ledger.RECOVERY_FIELDS.isdisjoint(ready))
 
@@ -166,6 +186,7 @@ for name in (
             capacity_ledger.initialize_capacity_ledger(root, objects=[{
                 "path": "resident", "class": "rebuildable_payload", "bytes": 100,
                 "status": "ready", "pin": False,
+                **READY_DUTIES,
             }])
             create_capacity_protection_lease(
                 root, lease_id="current", owner="workflow", ttl_seconds=3600,
@@ -232,6 +253,10 @@ for name in (
                 "status": "writing", "pin": False, "owner": "workflow-a",
                 "recovery_reason": "run_manifest_not_terminal",
                 "review_deadline": (date.today() - timedelta(days=1)).isoformat(),
+                "retention_reason": "finite test fixture retention",
+                "retirement_route": "owner_managed_disposition",
+                "recovery_task": "workflow-a must recover or retire",
+                "recovery_evidence_paths": ["active-run"],
             }])
             create_capacity_protection_lease(
                 root, lease_id="current", owner="workflow-a", ttl_seconds=3600,
@@ -274,20 +299,31 @@ for name in (
                 {
                     "path": "evidence", "class": "light_evidence", "bytes": 1,
                     "status": "ready", "pin": False,
+                    **READY_DUTIES,
                 },
                 {
                     "path": "cache", "class": "published_cache", "bytes": 2,
                     "status": "ready", "pin": False, "identity": "a" * 64,
+                    "manager": capacity_ledger.PA_CACHE_MANAGER,
+                    "owner": capacity_ledger.PA_CACHE_MANAGER,
+                    "retention_reason": "finite PA fixture retention",
+                    "review_deadline": "2026-10-22",
+                    "retirement_route": "pa_manager_disposition",
                 },
                 {
                     "path": "writing", "class": "rebuildable_payload", "bytes": 4,
                     "status": "writing", "pin": False, "owner": "test",
                     "recovery_reason": "fixture_incomplete",
                     "review_deadline": "2026-09-27",
+                    "retention_reason": "finite test fixture retention",
+                    "retirement_route": "owner_managed_disposition",
+                    "recovery_task": "test must recover or retire",
+                    "recovery_evidence_paths": ["writing"],
                 },
                 {
                     "path": "rebuildable", "class": "rebuildable_payload", "bytes": 3,
                     "status": "ready", "pin": False,
+                    **READY_DUTIES,
                 },
             ])
             receipt = capacity.plan(
@@ -296,9 +332,9 @@ for name in (
             )
             self.assertEqual(
                 [item["class"] for item in receipt["planned"]],
-                ["rebuildable_payload"],
+                ["rebuildable_payload", "published_cache"],
             )
-            self.assertEqual(receipt["candidate_count"], 1)
+            self.assertEqual(receipt["candidate_count"], 2)
 
 
 if __name__ == "__main__":

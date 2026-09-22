@@ -24,11 +24,24 @@ LEDGER_STATUSES = {"writing", "ready", "retirement_pending", "retired"}
 EXTERNAL_SCOPE_ROLES = {"repository_scratch", "repository_generated"}
 RECORDABLE_STATUSES = {"writing", "ready"}
 SHA256 = re.compile(r"[0-9A-Fa-f]{64}")
-RECOVERY_FIELDS = {"owner", "recovery_reason", "review_deadline"}
+LIFECYCLE_FIELDS = {
+    "owner", "retention_reason", "review_deadline", "retirement_route",
+}
+RECOVERY_FIELDS = {"recovery_reason", "recovery_task", "recovery_evidence_paths"}
+RETIREMENT_ROUTES = {
+    "owner_managed_disposition", "pa_manager_disposition", "run_retention",
+    "solver_review_retirement", "source_scratch_retirement",
+}
 BASE_OBJECT_FIELDS = {"path", "class", "bytes", "status"}
 OPTIONAL_OBJECT_FIELDS = {
     "pin", "identity", "pin_reason", "last_used_epoch", "retired_at_utc",
-    "retirement_error", "consumers", "disposition", "manager", *RECOVERY_FIELDS,
+    "retirement_error", "consumers", "disposition", "manager", *LIFECYCLE_FIELDS,
+    *RECOVERY_FIELDS,
+}
+V2_RECOVERY_FIELDS = {"owner", "recovery_reason", "review_deadline"}
+V2_OPTIONAL_OBJECT_FIELDS = {
+    "pin", "identity", "pin_reason", "last_used_epoch", "retired_at_utc",
+    "retirement_error", "consumers", "disposition", "manager", *V2_RECOVERY_FIELDS,
     "recovery_task", "recovery_evidence_paths",
 }
 PA_CACHE_MANAGER = "common.simion.pa_family_cache"
@@ -107,6 +120,33 @@ def _valid_disposition(value: object, *, expected_bytes: int) -> bool:
     return total == expected_bytes
 
 
+def _valid_lifecycle_duties(item: dict[str, Any]) -> bool:
+    """Require finite owner, review, and retirement responsibility.
+
+    Retired records retain these fields when available as audit evidence, but
+    historical retired records may omit them.  Every resident object must have
+    the complete v3 duty set; there is no "permanent" resident state.
+    """
+
+    present = LIFECYCLE_FIELDS.intersection(item)
+    if item["status"] == "retired":
+        if present and present != LIFECYCLE_FIELDS:
+            return False
+        if not present:
+            return True
+    elif present != LIFECYCLE_FIELDS:
+        return False
+    if any(not isinstance(item[field], str) or not item[field].strip() for field in LIFECYCLE_FIELDS):
+        return False
+    if item["retirement_route"] not in RETIREMENT_ROUTES:
+        return False
+    try:
+        date.fromisoformat(item["review_deadline"])
+    except ValueError:
+        return False
+    return True
+
+
 def load_capacity_ledger(root: Path, path: Path | None = None) -> dict[str, Any] | None:
     """Load a calibrated complete ledger without scanning artifact payloads."""
 
@@ -118,11 +158,55 @@ def load_capacity_ledger(root: Path, path: Path | None = None) -> dict[str, Any]
     return document if _is_valid_capacity_ledger(root, document) else None
 
 
+def migrate_v2_ledger_document(
+    root: Path, document: object, *, lifecycle_by_path: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Return a v3 ledger after an explicit, complete duty assignment.
+
+    This pure helper deliberately does not discover files, write a ledger, or
+    infer an owner from a path.  Migration callers must provide duties for
+    every resident v2 object; retired history is preserved unchanged.
+    """
+
+    root = root.resolve(strict=False)
+    if not isinstance(document, dict) or document.get("schema_version") != 2:
+        raise ValueError("v2 capacity ledger migration requires a valid v2 document")
+    if not _is_valid_capacity_ledger(root, document):
+        raise ValueError("v2 capacity ledger migration source is invalid")
+    if not isinstance(lifecycle_by_path, dict):
+        raise ValueError("v2 capacity ledger lifecycle assignments must be a mapping")
+    resident_paths = {
+        item["path"] for item in document["objects"] if item["status"] != "retired"
+    }
+    if set(lifecycle_by_path) != resident_paths:
+        raise ValueError("v2 capacity ledger migration duties must cover exactly every resident object")
+    migrated = json.loads(json.dumps(document))
+    migrated["schema_version"] = 3
+    for item in migrated["objects"]:
+        if item["status"] == "retired":
+            continue
+        duties = lifecycle_by_path[item["path"]]
+        if not isinstance(duties, dict):
+            raise ValueError("v2 capacity ledger lifecycle duty must be a mapping")
+        expected = set(LIFECYCLE_FIELDS)
+        if item["status"] == "writing":
+            expected |= RECOVERY_FIELDS
+        if set(duties) != expected:
+            raise ValueError("v2 capacity ledger lifecycle duty fields are incomplete or unknown")
+        item.update(duties)
+        if item["class"] == "published_cache" and duties["retirement_route"] == "pa_manager_disposition":
+            item["manager"] = PA_CACHE_MANAGER
+    if not _is_valid_capacity_ledger(root, migrated):
+        raise ValueError("v2 capacity ledger migration result is invalid")
+    return migrated
+
+
 def _is_valid_capacity_ledger(root: Path, document: object) -> bool:
     """Validate the complete ledger schema and its resident-byte invariant."""
 
-    if not isinstance(document, dict) or document.get("schema_version") != 2:
+    if not isinstance(document, dict) or document.get("schema_version") not in {2, 3}:
         return False
+    is_v3 = document["schema_version"] == 3
     if set(document) != {
         "schema_version", "role", "status", "complete", "artifact_root",
         "resident_bytes", "objects", "external_scopes",
@@ -173,27 +257,36 @@ def _is_valid_capacity_ledger(root: Path, document: object) -> bool:
     for item in objects:
         if not isinstance(item, dict) or not isinstance(item.get("path"), str):
             return False
+        allowed_object_fields = OPTIONAL_OBJECT_FIELDS if is_v3 else V2_OPTIONAL_OBJECT_FIELDS
         if not BASE_OBJECT_FIELDS.issubset(item) or set(item) - (
-            BASE_OBJECT_FIELDS | OPTIONAL_OBJECT_FIELDS
+            BASE_OBJECT_FIELDS | allowed_object_fields
         ):
             return False
         if item.get("class") not in LEDGER_CLASSES:
             return False
         if item.get("status") not in LEDGER_STATUSES or not isinstance(item.get("pin", False), bool):
             return False
-        recovery_present = RECOVERY_FIELDS.intersection(item)
+        if is_v3:
+            if not _valid_lifecycle_duties(item):
+                return False
+            recovery_present = RECOVERY_FIELDS.intersection(item)
+        else:
+            recovery_present = V2_RECOVERY_FIELDS.intersection(item)
         if item["status"] == "writing":
-            if recovery_present != RECOVERY_FIELDS:
+            required_recovery_fields = RECOVERY_FIELDS if is_v3 else V2_RECOVERY_FIELDS
+            if recovery_present != required_recovery_fields:
                 return False
-            if any(
-                not isinstance(item[field], str) or not item[field].strip()
-                for field in ("owner", "recovery_reason", "review_deadline")
-            ):
+            writing_text_fields = (
+                ("recovery_reason", "recovery_task") if is_v3
+                else ("owner", "recovery_reason", "review_deadline")
+            )
+            if any(not isinstance(item[field], str) or not item[field].strip() for field in writing_text_fields):
                 return False
-            try:
-                date.fromisoformat(item["review_deadline"])
-            except ValueError:
-                return False
+            if not is_v3:
+                try:
+                    date.fromisoformat(item["review_deadline"])
+                except ValueError:
+                    return False
             consumers = item.get("consumers", [])
             if not isinstance(consumers, list) or any(
                 not isinstance(value, str) or not value for value in consumers
@@ -204,15 +297,10 @@ def _is_valid_capacity_ledger(root: Path, document: object) -> bool:
                 return False
             if consumers != sorted(set(canonical_consumers)):
                 return False
-            if "recovery_task" in item and (
-                not isinstance(item["recovery_task"], str)
-                or not item["recovery_task"].strip()
-            ):
-                return False
             evidence_paths = item.get("recovery_evidence_paths", [])
             if not isinstance(evidence_paths, list) or any(
                 not isinstance(value, str) or not value for value in evidence_paths
-            ):
+            ) or (is_v3 and not evidence_paths):
                 return False
             canonical_evidence = [_ledger_relative_path(value) for value in evidence_paths]
             if any(value is None for value in canonical_evidence):
@@ -244,6 +332,11 @@ def _is_valid_capacity_ledger(root: Path, document: object) -> bool:
             or SHA256.fullmatch(item["identity"]) is None
         ):
             return False
+        if is_v3 and item["class"] == "published_cache":
+            if "manager" in item and item["manager"] != PA_CACHE_MANAGER:
+                return False
+            if item.get("manager") == PA_CACHE_MANAGER and item.get("retirement_route") != "pa_manager_disposition":
+                return False
         if item["class"] != "published_cache" and (
             "identity" in item or "last_used_epoch" in item or "manager" in item
         ):
@@ -306,7 +399,7 @@ def initialize_capacity_ledger(
         entry = {**source, "path": relative}
         normalized.append(entry)
     document = {
-        "schema_version": 2,
+        "schema_version": 3,
         "role": "artifact_capacity_ledger",
         "status": "calibrated",
         "complete": True,
@@ -334,8 +427,10 @@ def record_capacity_object(
     root: Path, *, path: Path | str, object_class: str, bytes_count: int,
     status: str = "ready", identity: str | None = None, pin: bool = False,
     pin_reason: str | None = None,
-    owner: str | None = None, recovery_reason: str | None = None,
-    review_deadline: str | None = None,
+    owner: str | None = None, retention_reason: str | None = None,
+    review_deadline: str | None = None, retirement_route: str | None = None,
+    recovery_reason: str | None = None, recovery_task: str | None = None,
+    recovery_evidence_paths: Iterable[Path | str] = (),
     consumers: Iterable[Path | str] = (),
     ledger_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -351,28 +446,43 @@ def record_capacity_object(
         not isinstance(identity, str) or SHA256.fullmatch(identity) is None
     ):
         raise ValueError("published_cache requires a SHA-256 generation identity")
-    recovery = {
-        "owner": owner, "recovery_reason": recovery_reason,
-        "review_deadline": review_deadline,
+    lifecycle = {
+        "owner": owner, "retention_reason": retention_reason,
+        "review_deadline": review_deadline, "retirement_route": retirement_route,
     }
+    if any(not isinstance(value, str) or not value.strip() for value in lifecycle.values()):
+        raise ValueError(
+            "resident ledger objects require owner, retention_reason, review_deadline, and retirement_route"
+        )
+    if lifecycle["retirement_route"] not in RETIREMENT_ROUTES:
+        raise ValueError("ledger retirement_route is not governed")
+    try:
+        date.fromisoformat(str(review_deadline))
+    except ValueError as exc:
+        raise ValueError("ledger review_deadline must be YYYY-MM-DD") from exc
     if status == "writing":
-        if any(not isinstance(value, str) or not value.strip() for value in recovery.values()):
+        if any(not isinstance(value, str) or not value.strip() for value in (
+            recovery_reason, recovery_task,
+        )):
             raise ValueError(
-                "writing ledger objects require owner, recovery_reason, and review_deadline"
+                "writing ledger objects require recovery_reason and recovery_task"
             )
-        try:
-            date.fromisoformat(str(review_deadline))
-        except ValueError as exc:
-            raise ValueError("writing ledger review_deadline must be YYYY-MM-DD") from exc
-    elif any(value is not None for value in recovery.values()):
+    elif any(value is not None for value in (recovery_reason, recovery_task)):
         raise ValueError("ready ledger objects cannot carry recovery responsibility fields")
     root = root.resolve(strict=False)
     _, relative = capacity_object_path(root, path)
     canonical_consumers = sorted({
         capacity_object_path(root, value)[1] for value in consumers
     })
+    canonical_recovery_evidence = sorted({
+        capacity_object_path(root, value)[1] for value in recovery_evidence_paths
+    })
     if status != "writing" and canonical_consumers:
         raise ValueError("ready ledger objects cannot carry consumers")
+    if status != "writing" and canonical_recovery_evidence:
+        raise ValueError("ready ledger objects cannot carry recovery evidence")
+    if status == "writing" and not canonical_recovery_evidence:
+        raise ValueError("writing ledger objects require recovery evidence paths")
     destination = resolve_ledger_path(root, ledger_path)
     with protection.capacity_decision_lock(root):
         ledger = load_capacity_ledger(root, destination)
@@ -407,8 +517,11 @@ def record_capacity_object(
             entry["manager"] = PA_CACHE_MANAGER
         if pin:
             entry["pin_reason"] = pin_reason.strip()
+        entry.update({key: str(value).strip() for key, value in lifecycle.items()})
         if status == "writing":
-            entry.update({key: str(value).strip() for key, value in recovery.items()})
+            entry["recovery_reason"] = recovery_reason.strip()
+            entry["recovery_task"] = recovery_task.strip()
+            entry["recovery_evidence_paths"] = canonical_recovery_evidence
             if canonical_consumers:
                 entry["consumers"] = canonical_consumers
         if existing is None:
@@ -460,7 +573,9 @@ def touch_capacity_object(
 def handoff_prepared_cache_stage(
     root: Path, *, stage_path: Path | str, stage_owner: str,
     stage_bytes: int, published_path: Path | str, published_identity: str,
-    published_bytes: int, published_pin_reason: str | None = None,
+    published_bytes: int, published_owner: str, published_retention_reason: str,
+    published_review_deadline: str, published_retirement_route: str,
+    published_pin_reason: str | None = None,
     ledger_path: Path | None = None,
 ) -> dict[str, Any]:
     """Atomically replace one prepared stage with its landed cache key.
@@ -478,6 +593,20 @@ def handoff_prepared_cache_stage(
             raise ValueError(f"{label} cache bytes must be a nonnegative integer")
     if not isinstance(published_identity, str) or SHA256.fullmatch(published_identity) is None:
         raise ValueError("published cache handoff requires a SHA-256 generation identity")
+    published_lifecycle = {
+        "owner": published_owner,
+        "retention_reason": published_retention_reason,
+        "review_deadline": published_review_deadline,
+        "retirement_route": published_retirement_route,
+    }
+    if any(not isinstance(value, str) or not value.strip() for value in published_lifecycle.values()):
+        raise ValueError("published cache handoff requires complete lifecycle duties")
+    if published_retirement_route != "pa_manager_disposition":
+        raise ValueError("published cache handoff retirement route must be pa_manager_disposition")
+    try:
+        date.fromisoformat(published_review_deadline)
+    except ValueError as exc:
+        raise ValueError("published cache handoff review_deadline must be YYYY-MM-DD") from exc
     if published_pin_reason is not None and (
         not isinstance(published_pin_reason, str) or not published_pin_reason.strip()
     ):
@@ -513,6 +642,7 @@ def handoff_prepared_cache_stage(
             and published.get("bytes") == published_bytes
             and published.get("pin") is pin
             and published.get("pin_reason") == pin_reason
+            and all(published.get(field) == value.strip() for field, value in published_lifecycle.items())
         )
         if stage is not None and stage.get("status") == "retired":
             if (
@@ -577,6 +707,7 @@ def handoff_prepared_cache_stage(
             "identity": published_identity,
             "manager": PA_CACHE_MANAGER,
         }
+        published_entry.update({field: value.strip() for field, value in published_lifecycle.items()})
         if pin_reason is not None:
             published_entry["pin_reason"] = pin_reason
         if published is None:
@@ -641,9 +772,13 @@ def approve_published_cache_retirement(
         if ledger is None:
             raise ValueError("capacity ledger is missing or invalid")
         entry = next((item for item in ledger["objects"] if item.get("path") == relative), None)
+        lifecycle = {
+            field: entry[field] for field in LIFECYCLE_FIELDS
+            if entry is not None and field in entry
+        }
         approved = {
             "path": relative, "class": "rebuildable_payload", "bytes": expected_bytes,
-            "status": "ready", "pin": False, "disposition": disposition,
+            "status": "ready", "pin": False, "disposition": disposition, **lifecycle,
         }
         if entry == approved:
             if commit_owner_retirement is not None:
@@ -706,9 +841,12 @@ def reconcile_abandoned_pa_transaction(
         commit_owner_retirement()
         retained_bytes = (target / "transaction.json").stat().st_size
         old_bytes = entry["bytes"]
+        lifecycle = {
+            field: entry[field] for field in LIFECYCLE_FIELDS if field in entry
+        }
         entry.clear()
         entry.update(path=relative, **{"class": "light_evidence"}, bytes=retained_bytes,
-                     status="ready", pin=False)
+                     status="ready", pin=False, **lifecycle)
         ledger["resident_bytes"] += retained_bytes - old_bytes
         write_json_atomic(resolve_ledger_path(root), ledger)
         return dict(entry)

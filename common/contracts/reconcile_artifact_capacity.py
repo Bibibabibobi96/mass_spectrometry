@@ -201,17 +201,10 @@ def _startup_capacity_gate(
         item for item in writing
         if date.fromisoformat(item["review_deadline"]) < date.today()
     ]
-    required_targets = [Path(value).resolve(strict=False) for value in required[0]]
-    blocking_overdue_writing = []
-    for item in overdue_writing:
-        target, _ = capacity_ledger.capacity_object_path(root, item["path"])
-        consumers = {(root / value).resolve(strict=False) for value in item.get("consumers", [])}
-        if (
-            any(target == value or target in value.parents or value in target.parents for value in required_targets)
-            or any(value in consumers for value in required_targets)
-            or target.name.lower() in set(required[1])
-        ):
-            blocking_overdue_writing.append(item)
+    # An overdue heavy write has unknown recovery state and can invalidate the
+    # repository-wide capacity projection.  It blocks every new heavy write,
+    # not just consumers that happen to name the same path.
+    blocking_overdue_writing = list(overdue_writing)
     projected = None if resident is None else resident + total_commitment
     legacy_unknown = int(leases["legacy_unknown_commitment_count"])
     scope_satisfied = current_lease is not None and not required[2] and not required[3]
@@ -322,6 +315,113 @@ def _ledger_candidates(
     )
 
 
+def _lease_ids_for_target(
+    target: Path, cache_key: str | None, leases: dict[str, Any],
+) -> list[str]:
+    """Return active lease ids that prevent one exact ledger retirement."""
+
+    matched: list[str] = []
+    for lease in leases["audit"]:
+        if lease.get("status") != "active":
+            continue
+        paths = (Path(value).resolve(strict=False) for value in lease.get("protected_paths", ()))
+        keys = {str(value).lower() for value in lease.get("protected_cache_keys", ())}
+        if protection.path_is_protected(target, paths) or (
+            cache_key is not None and cache_key.lower() in keys
+        ):
+            matched.append(str(lease["lease_id"]))
+    return sorted(matched)
+
+
+def _maintenance_management_summary(
+    root: Path, ledger: dict[str, Any], leases: dict[str, Any], *,
+    target_bytes: int, required_free_bytes: int, free_bytes: int,
+    planned: Iterable[dict[str, Any]] = (),
+) -> dict[str, Any]:
+    """Describe all governed resident bytes and owner actions without discovery.
+
+    The ledger remains the only source of lifecycle truth.  This summary is
+    intentionally a projection: it neither infers owners for external scopes
+    nor changes an object's status while reporting it.
+    """
+
+    planned_paths = {str(item["path"]) for item in planned}
+    aggregates: dict[tuple[str, str, str, str, str], int] = {}
+    blocked: list[dict[str, Any]] = []
+    for item in ledger["objects"]:
+        if item.get("status") == "retired":
+            continue
+        target, _ = capacity_ledger.capacity_object_path(root, item["path"])
+        owner = str(item.get("owner", ""))
+        aggregate_key = (
+            owner, str(item["class"]), str(item["status"]),
+            str(item.get("review_deadline", "")), str(item.get("retirement_route", "")),
+        )
+        aggregates[aggregate_key] = aggregates.get(aggregate_key, 0) + int(item["bytes"])
+        cache_key = target.name if item["class"] == "published_cache" else None
+        lease_ids = _lease_ids_for_target(target, cache_key, leases)
+        action: str | None = None
+        reason: str | None = None
+        if item["status"] == "writing":
+            action, reason = "recover_or_disposition", "writing_requires_owner_recovery"
+        elif item.get("pin") is True:
+            action, reason = "review_pin_for_release", "object_is_pinned"
+        elif lease_ids:
+            action, reason = "wait_for_or_release_protection_lease", "active_protection_lease"
+        elif item["class"] == "light_evidence":
+            action, reason = "review_retention_route", "light_evidence_is_not_auto_retired"
+        elif str(target) not in planned_paths and item["status"] == "ready":
+            # Ready unprotected payloads are valid auto-retirement candidates,
+            # but are retained when the configured target is already satisfied.
+            action, reason = "retained_until_capacity_requires_retirement", "ready_governed_payload"
+        if action is not None:
+            blocked.append({
+                "owner": owner,
+                "path": str(target),
+                "class": item["class"],
+                "status": item["status"],
+                "bytes": int(item["bytes"]),
+                "review_deadline": item.get("review_deadline"),
+                "retirement_route": item.get("retirement_route"),
+                "action": action, "reason": reason,
+                "protection_lease_ids": lease_ids,
+                "recovery_reason": item.get("recovery_reason"),
+                "recovery_task": item.get("recovery_task"),
+            })
+    grouped = [
+        {
+            "owner": owner, "class": object_class, "status": status,
+            "review_deadline": deadline or None,
+            "retirement_route": route or None, "bytes": bytes_count,
+        }
+        for (owner, object_class, status, deadline, route), bytes_count in aggregates.items()
+    ]
+    grouped.sort(key=lambda item: (
+        item["owner"], item["class"], item["status"],
+        item["review_deadline"] or "", item["retirement_route"] or "",
+    ))
+    blocked.sort(key=lambda item: (item["owner"], item["action"], item["path"]))
+    resident = int(ledger["resident_bytes"])
+    limit = min(target_bytes, resident - max(0, required_free_bytes - free_bytes))
+    return {
+        "governed_object_groups": grouped,
+        "external_scope_groups": [
+            {"role": item["role"], "path": item["path"], "bytes": int(item["bytes"])}
+            for item in sorted(ledger["external_scopes"], key=lambda value: value["role"])
+        ],
+        "blocked_owner_actions": blocked,
+        "resumable_retirement_count": sum(
+            item["status"] == "retirement_pending" for item in ledger["objects"]
+        ),
+        "capacity_gap_bytes": max(0, resident - limit),
+        "next_active_commitments": {
+            "committed_new_bytes": int(leases["committed_new_bytes"]),
+            "legacy_unknown_commitment_count": int(leases["legacy_unknown_commitment_count"]),
+            "required_free_bytes": required_free_bytes,
+        },
+    }
+
+
 def _maintenance_plan(
     root: Path, *, target_bytes: int, minimum_free_bytes: int,
     protected_paths: Iterable[Path],
@@ -341,6 +441,16 @@ def _maintenance_plan(
             "candidate_discovery_performed": False, "candidate_count": None,
             "planned": [], "satisfied": False,
             "blocking_reason": "SAFETY_DECISION_UNAVAILABLE",
+        }, timings, "maintenance")
+    if ledger.get("schema_version") != 3:
+        return _finish({
+            "schema_version": 1, "role": "artifact_capacity_gate",
+            "artifact_root": str(root), "target_bytes": target_bytes,
+            "minimum_free_bytes": minimum_free_bytes,
+            "measurement_mode": "MAINTENANCE_LIFECYCLE_LEDGER_V3_REQUIRED",
+            "candidate_discovery_performed": False, "candidate_count": None,
+            "planned": [], "satisfied": False,
+            "blocking_reason": "LIFECYCLE_LEDGER_V3_REQUIRED",
         }, timings, "maintenance")
     with timings.phase("disk_usage"):
         free_bytes = shutil.disk_usage(root).free
@@ -369,6 +479,10 @@ def _maintenance_plan(
         planned.append(candidate)
         projected -= candidate["bytes"]
     ledger_location = capacity_ledger_path or root / CAPACITY_LEDGER_RELATIVE_PATH
+    management_summary = _maintenance_management_summary(
+        root, ledger, leases, target_bytes=target_bytes,
+        required_free_bytes=required_free, free_bytes=free_bytes, planned=planned,
+    )
     return _finish({
         "schema_version": 1, "role": "artifact_capacity_gate",
         "artifact_root": str(root), "target_bytes": target_bytes,
@@ -379,6 +493,7 @@ def _maintenance_plan(
         "projected_bytes": projected, "satisfied": projected <= limit,
         "capacity_ledger": str(ledger_location.absolute()),
         "protection_lease_audit": leases["audit"],
+        "management_summary": management_summary,
         "measurement_mode": "LEDGER_MAINTENANCE",
     }, timings, "maintenance")
 
@@ -702,7 +817,22 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     if receipt.get("measurement_mode") != "LEDGER_MAINTENANCE":
         raise ValueError("only startup or ledger maintenance receipts can be applied")
     ledger_path = Path(receipt["capacity_ledger"])
-    removed = [_apply_ledger_object(root, item, ledger_path) for item in receipt["planned"]]
+    removed: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    for item in receipt["planned"]:
+        try:
+            removed.append(_apply_ledger_object(root, item, ledger_path))
+        except (OSError, ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
+            # Each target has a durable pending receipt before its bytes are
+            # removed.  A target-local failure is therefore resumable and
+            # cannot prevent independent governed retirements.  The ledger is
+            # the one global authority: its loss stops the pass immediately.
+            if capacity_ledger.load_capacity_ledger(root, ledger_path) is None:
+                raise RuntimeError("capacity ledger became unavailable during maintenance") from exc
+            failed.append({
+                "path": item["path"], "operation": item["operation"],
+                "error": f"{type(exc).__name__}: {exc}",
+            })
     ledger = capacity_ledger.load_capacity_ledger(root, ledger_path)
     free_after = shutil.disk_usage(root).free
     outcome = dict(receipt)
@@ -711,7 +841,15 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
         removed_bytes=sum(item["bytes"] for item in removed),
         measured_after_bytes=None if ledger is None else int(ledger["resident_bytes"]),
         free_bytes_after=free_after,
+        failed=failed,
     )
+    if ledger is not None:
+        leases = protection.load_capacity_protection_leases(root)
+        outcome["management_summary_after_apply"] = _maintenance_management_summary(
+            root, ledger, leases, target_bytes=int(receipt["target_bytes"]),
+            required_free_bytes=int(receipt["required_free_bytes"]),
+            free_bytes=free_after,
+        )
     outcome["satisfied_after_apply"] = bool(
         ledger is not None
         and int(ledger["resident_bytes"]) <= int(receipt["target_bytes"])

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -19,6 +20,13 @@ LEASE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 PROTECTION_LEASE_DIRECTORY = Path("common") / "capacity_protection_leases"
 CAPACITY_DECISION_LOCK_NAME = ".capacity_decision.lock"
 DISPOSAL_RECEIPT_DIRECTORY = Path("common") / "capacity_disposal_receipts"
+PROTECTION_LEASE_PRUNING_RECEIPT_DIRECTORY = (
+    Path("common") / "capacity_protection_lease_pruning_receipts"
+)
+# A caller may choose a shorter, explicit closure date.  The default keeps
+# existing short workflow callers usable while still making every new lease
+# finite and preventing a sequence of renewals from becoming permanent.
+DEFAULT_MAX_LEASE_LIFETIME_SECONDS = 30 * 24 * 60 * 60
 
 
 class CapacityProtectionLeaseError(RuntimeError):
@@ -105,6 +113,43 @@ def parse_utc_timestamp(value: object) -> tuple[float, str] | None:
         return None
     normalized = parsed.astimezone(timezone.utc)
     return normalized.timestamp(), normalized.isoformat().replace("+00:00", "Z")
+
+
+def _closure_deadline(
+    value: datetime | str | None, *, created: datetime, default: datetime,
+) -> tuple[float, str]:
+    """Normalize a finite lifecycle deadline for a protection lease."""
+
+    if value is None:
+        candidate = default
+    elif isinstance(value, datetime):
+        if value.tzinfo is None:
+            raise ValueError("lease closure deadline must be timezone-aware")
+        candidate = value.astimezone(timezone.utc)
+    else:
+        parsed = parse_utc_timestamp(value)
+        if parsed is None:
+            raise ValueError("lease closure deadline must be timezone-aware UTC")
+        return parsed
+    return candidate.timestamp(), candidate.isoformat().replace("+00:00", "Z")
+
+
+def _lease_closure_deadline(
+    document: dict[str, Any], *, created: tuple[float, str], expiry: tuple[float, str],
+) -> tuple[float, str]:
+    """Return the finite closure deadline, preserving pre-deadline leases.
+
+    Leases written before this lifecycle field existed retain their recorded
+    expiry as their immutable closure deadline.  They remain usable until that
+    expiry but cannot be renewed into an unbounded resident.
+    """
+
+    if "closure_deadline_at_utc" not in document:
+        return expiry
+    deadline = parse_utc_timestamp(document.get("closure_deadline_at_utc"))
+    if deadline is None or deadline[0] <= created[0] or deadline[0] < expiry[0]:
+        raise ValueError("lease closure deadline must be after creation and at or after expiry")
+    return deadline
 
 
 def _validated_lease_id(value: object) -> str:
@@ -228,6 +273,7 @@ def _create_capacity_protection_lease_unlocked(
     root: Path, *, lease_id: str, owner: str, ttl_seconds: int,
     protected_cache_keys: Iterable[str] = (), protected_paths: Iterable[Path] = (),
     committed_new_bytes: int = 0,
+    closure_deadline_at_utc: datetime | str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Create one TTL protection lease below ``artifacts/common``."""
@@ -252,6 +298,15 @@ def _create_capacity_protection_lease_unlocked(
     )
     created = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     expires = datetime.fromtimestamp(created.timestamp() + ttl_seconds, timezone.utc)
+    closure_deadline = _closure_deadline(
+        closure_deadline_at_utc,
+        created=created,
+        default=datetime.fromtimestamp(
+            created.timestamp() + DEFAULT_MAX_LEASE_LIFETIME_SECONDS, timezone.utc,
+        ),
+    )
+    if closure_deadline[0] <= created.timestamp() or closure_deadline[0] < expires.timestamp():
+        raise ValueError("lease closure deadline must be after creation and at or after expiry")
     document = {
         "schema_version": 1,
         "role": "artifact_capacity_protection_lease",
@@ -259,6 +314,7 @@ def _create_capacity_protection_lease_unlocked(
         "owner": owner.strip(),
         "created_at_utc": created.isoformat().replace("+00:00", "Z"),
         "expires_at_utc": expires.isoformat().replace("+00:00", "Z"),
+        "closure_deadline_at_utc": closure_deadline[1],
         "protected_cache_keys": keys,
         "protected_paths": paths,
         "committed_new_bytes": committed_new_bytes,
@@ -278,6 +334,7 @@ def create_capacity_protection_lease(
     root: Path, *, lease_id: str, owner: str, ttl_seconds: int,
     protected_cache_keys: Iterable[str] = (), protected_paths: Iterable[Path] = (),
     committed_new_bytes: int = 0,
+    closure_deadline_at_utc: datetime | str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     with capacity_decision_lock(root):
@@ -289,6 +346,7 @@ def create_capacity_protection_lease(
             protected_cache_keys=protected_cache_keys,
             protected_paths=protected_paths,
             committed_new_bytes=committed_new_bytes,
+            closure_deadline_at_utc=closure_deadline_at_utc,
             now=now,
         )
 
@@ -298,6 +356,7 @@ def _renew_capacity_protection_lease_unlocked(
     protected_cache_keys: Iterable[str] = (),
     protected_paths: Iterable[Path] = (),
     committed_new_bytes: int | None = None,
+    closure_deadline_at_utc: datetime | str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Atomically extend an active lease and monotonically expand its scope.
@@ -366,12 +425,29 @@ def _renew_capacity_protection_lease_unlocked(
     current_expiry = parse_utc_timestamp(document.get("expires_at_utc"))
     if current_expiry is None:
         raise ValueError("protection lease expiry is invalid")
+    created_at = parse_utc_timestamp(document.get("created_at_utc"))
+    if created_at is None:
+        raise ValueError("protection lease creation timestamp is invalid")
+    closure_deadline = _lease_closure_deadline(
+        document, created=created_at, expiry=current_expiry,
+    )
+    if closure_deadline_at_utc is not None:
+        requested_deadline = _closure_deadline(
+            closure_deadline_at_utc,
+            created=datetime.fromtimestamp(created_at[0], timezone.utc),
+            default=datetime.fromtimestamp(closure_deadline[0], timezone.utc),
+        )
+        if requested_deadline[0] != closure_deadline[0]:
+            raise ValueError("protection lease renewal cannot change its closure deadline")
     expires = datetime.fromtimestamp(observed.timestamp() + ttl_seconds, timezone.utc)
     if expires.timestamp() <= current_expiry[0]:
         raise ValueError("protection lease renewal must extend its expiry")
+    if expires.timestamp() > closure_deadline[0]:
+        raise ValueError("protection lease renewal cannot extend beyond its closure deadline")
     renewed = {
         **document,
         "expires_at_utc": expires.isoformat().replace("+00:00", "Z"),
+        "closure_deadline_at_utc": closure_deadline[1],
         "protected_cache_keys": sorted(
             current_keys | additional_keys
         ),
@@ -419,6 +495,7 @@ def renew_capacity_protection_lease(
     protected_cache_keys: Iterable[str] = (),
     protected_paths: Iterable[Path] = (),
     committed_new_bytes: int | None = None,
+    closure_deadline_at_utc: datetime | str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     with capacity_decision_lock(root):
@@ -430,6 +507,7 @@ def renew_capacity_protection_lease(
             protected_cache_keys=protected_cache_keys,
             protected_paths=protected_paths,
             committed_new_bytes=committed_new_bytes,
+            closure_deadline_at_utc=closure_deadline_at_utc,
             now=now,
         )
 
@@ -514,7 +592,9 @@ def load_capacity_protection_leases(
         paths = document.get("protected_paths")
         malformed = (
             not required_fields.issubset(document)
-            or set(document) - (required_fields | {"committed_new_bytes"})
+            or set(document) - (
+                required_fields | {"committed_new_bytes", "closure_deadline_at_utc"}
+            )
             or document.get("schema_version") != 1
             or document.get("role") != "artifact_capacity_protection_lease"
             or path.name != f"{lease_id}.json"
@@ -530,6 +610,12 @@ def load_capacity_protection_leases(
         )
         if malformed:
             raise CapacityProtectionLeaseError(path, "active lease fields differ from schema version 1")
+        try:
+            closure_deadline = _lease_closure_deadline(
+                document, created=created, expiry=expiry,
+            )
+        except ValueError as exc:
+            raise CapacityProtectionLeaseError(path, str(exc)) from exc
         resolved_paths: set[Path] = set()
         try:
             for item in paths:
@@ -558,6 +644,12 @@ def load_capacity_protection_leases(
         result["audit"].append({
             **audit,
             "status": "active",
+            "closure_deadline_at_utc": closure_deadline[1],
+            "closure_deadline_status": (
+                "legacy_expiry_is_closure_deadline"
+                if "closure_deadline_at_utc" not in document
+                else "declared"
+            ),
             "protected_cache_key_count": len(normalized_keys),
             "protected_path_count": len(resolved_paths),
             "protected_cache_keys": sorted(normalized_keys),
@@ -566,6 +658,235 @@ def load_capacity_protection_leases(
             "commitment_status": "legacy_unknown_treated_as_zero" if legacy_commitment else "declared",
         })
     return result
+
+
+def _write_json_atomic(path: Path, document: dict[str, Any]) -> None:
+    """Durably replace a small lease receipt without leaving a partial JSON file."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", newline="\n", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as stream:
+            temporary_name = stream.name
+            json.dump(document, stream, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        Path(temporary_name).replace(path)
+    finally:
+        if temporary_name is not None:
+            Path(temporary_name).unlink(missing_ok=True)
+
+
+def _pending_disposal_references_lease(
+    root: Path, *, lease_id: str, lease_path: Path,
+) -> bool:
+    """Fail closed if a durable pending disposal still names this lease.
+
+    Receipts evolved independently, so this checks exact JSON scalar values
+    rather than owning a second receipt schema.  Matching the precise lease id
+    or its absolute/root-relative path is conservative and avoids pruning an
+    audit record needed to resume a pending disposal.
+    """
+
+    receipt_root = root / DISPOSAL_RECEIPT_DIRECTORY
+    if not receipt_root.exists():
+        return False
+    if not receipt_root.is_dir() or receipt_root.is_symlink():
+        raise ValueError("capacity disposal receipt directory is not a real directory")
+    values = {
+        lease_id,
+        str(lease_path.absolute()),
+        lease_path.relative_to(root).as_posix(),
+    }
+
+    def contains_reference(value: object) -> bool:
+        if isinstance(value, str):
+            return value in values
+        if isinstance(value, list):
+            return any(contains_reference(item) for item in value)
+        if isinstance(value, dict):
+            return any(contains_reference(item) for item in value.values())
+        return False
+
+    for receipt_path in sorted(receipt_root.glob("*.json"), key=lambda item: item.name):
+        if receipt_path.stat().st_size == 0:
+            continue
+        try:
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"capacity disposal receipt is unreadable: {receipt_path}"
+            ) from exc
+        if not isinstance(receipt, dict):
+            raise ValueError(f"capacity disposal receipt is not an object: {receipt_path}")
+        if (
+            receipt.get("role") == "artifact_capacity_disposal_receipt"
+            and receipt.get("status") == "pending"
+            and contains_reference(receipt)
+        ):
+            return True
+    return False
+
+
+def _expired_lease_for_pruning(path: Path, *, now_timestamp: float) -> dict[str, Any] | None:
+    """Validate one lease as an expired, exact pruning candidate."""
+
+    try:
+        document = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CapacityProtectionLeaseError(path, f"lease JSON is unreadable: {exc}") from exc
+    if not isinstance(document, dict):
+        raise CapacityProtectionLeaseError(path, "lease JSON must be an object")
+    try:
+        lease_id = _validated_lease_id(document.get("lease_id"))
+    except ValueError as exc:
+        raise CapacityProtectionLeaseError(path, str(exc)) from exc
+    expiry = parse_utc_timestamp(document.get("expires_at_utc"))
+    created = parse_utc_timestamp(document.get("created_at_utc"))
+    allowed_fields = {
+        "schema_version", "role", "lease_id", "owner", "created_at_utc",
+        "expires_at_utc", "closure_deadline_at_utc", "protected_cache_keys",
+        "protected_paths", "committed_new_bytes",
+    }
+    if (
+        document.get("schema_version") != 1
+        or document.get("role") != "artifact_capacity_protection_lease"
+        or path.name != f"{lease_id}.json"
+        or not isinstance(document.get("owner"), str)
+        or not document["owner"].strip()
+        or created is None
+        or expiry is None
+        or created[0] >= expiry[0]
+        or set(document) - allowed_fields
+    ):
+        raise CapacityProtectionLeaseError(path, "expired lease fields differ from schema version 1")
+    try:
+        _lease_closure_deadline(document, created=created, expiry=expiry)
+        _validated_commitment(document.get("committed_new_bytes", 0))
+    except ValueError as exc:
+        raise CapacityProtectionLeaseError(path, str(exc)) from exc
+    if expiry[0] > now_timestamp:
+        return None
+    return document
+
+
+def _prune_expired_capacity_protection_leases_unlocked(
+    root: Path, *, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Receipt-delete expired leases that no pending disposal still references."""
+
+    from common.contracts.file_identity import file_sha256
+
+    root = root.absolute()
+    if not root.is_dir():
+        raise ValueError("artifact root must exist")
+    observed = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    lease_root = root / PROTECTION_LEASE_DIRECTORY
+    outcome: dict[str, Any] = {
+        "schema_version": 1,
+        "role": "artifact_capacity_protection_lease_pruning",
+        "status": "complete",
+        "observed_at_utc": observed.isoformat().replace("+00:00", "Z"),
+        "pruned": [],
+        "skipped_pending_disposal": [],
+    }
+    if not lease_root.exists():
+        return outcome
+    if not lease_root.is_dir() or lease_root.is_symlink():
+        raise CapacityProtectionLeaseError(lease_root, "lease root is not a real directory")
+    # Validate the entire active view first.  A malformed active lease must not
+    # be hidden by deleting unrelated expired evidence in the same pass.
+    load_capacity_protection_leases(root, now=observed)
+    for path in sorted(lease_root.iterdir(), key=lambda item: item.name):
+        if path.name == CAPACITY_DECISION_LOCK_NAME and path.is_file():
+            continue
+        if not path.is_file() or path.is_symlink() or path.suffix != ".json":
+            raise CapacityProtectionLeaseError(path, "lease directory contains a non-JSON file")
+        document = _expired_lease_for_pruning(path, now_timestamp=observed.timestamp())
+        if document is None:
+            continue
+        lease_id = str(document["lease_id"])
+        if _pending_disposal_references_lease(root, lease_id=lease_id, lease_path=path):
+            outcome["skipped_pending_disposal"].append({
+                "lease_id": lease_id, "path": str(path),
+            })
+            continue
+        receipt_path = (
+            root / PROTECTION_LEASE_PRUNING_RECEIPT_DIRECTORY / f"lease_{lease_id}.json"
+        )
+        if receipt_path.exists():
+            try:
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError(f"lease pruning receipt is unreadable: {receipt_path}") from exc
+            expected = receipt.get("file")
+            if (
+                not isinstance(receipt, dict)
+                or receipt.get("role") != "artifact_capacity_protection_lease_pruning_receipt"
+                or receipt.get("lease_id") != lease_id
+                or receipt.get("target_path") != str(path)
+                or receipt.get("status") not in {"pending", "complete"}
+                or not isinstance(expected, dict)
+                or expected.get("path") != path.relative_to(root).as_posix()
+                or isinstance(expected.get("bytes"), bool)
+                or not isinstance(expected.get("bytes"), int)
+                or int(expected["bytes"]) < 0
+                or not isinstance(expected.get("sha256"), str)
+                or re.fullmatch(r"[A-F0-9]{64}", expected["sha256"]) is None
+            ):
+                raise ValueError("lease pruning receipt conflicts with expired lease")
+            if receipt.get("status") == "complete":
+                if path.exists():
+                    raise ValueError("completed lease pruning target reappeared")
+                outcome["pruned"].append({"lease_id": lease_id, "path": str(path), "resumed": True})
+                continue
+            if not path.exists():
+                receipt["status"] = "complete"
+                receipt["completed_at_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                _write_json_atomic(receipt_path, receipt)
+                outcome["pruned"].append({"lease_id": lease_id, "path": str(path), "resumed": True})
+                continue
+        else:
+            expected = {
+                "path": path.relative_to(root).as_posix(),
+                "bytes": path.stat().st_size,
+                "sha256": file_sha256(path),
+            }
+            receipt = {
+                "schema_version": 1,
+                "role": "artifact_capacity_protection_lease_pruning_receipt",
+                "status": "pending",
+                "reason": "expired_finite_protection_lease",
+                "lease_id": lease_id,
+                "target_path": str(path),
+                "file": expected,
+                "observed_at_utc": outcome["observed_at_utc"],
+            }
+            _write_json_atomic(receipt_path, receipt)
+        expected_bytes = int(expected["bytes"])
+        expected_sha256 = str(expected["sha256"])
+        if path.exists():
+            if path.stat().st_size != expected_bytes or file_sha256(path) != expected_sha256:
+                raise ValueError("expired lease changed after pruning receipt was sealed")
+            path.unlink()
+        receipt["status"] = "complete"
+        receipt["completed_at_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        _write_json_atomic(receipt_path, receipt)
+        outcome["pruned"].append({"lease_id": lease_id, "path": str(path), "receipt": str(receipt_path)})
+    return outcome
+
+
+def prune_expired_capacity_protection_leases(
+    root: Path, *, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Prune only expired, receipt-unreferenced protection leases."""
+
+    with capacity_decision_lock(root):
+        return _prune_expired_capacity_protection_leases_unlocked(root, now=now)
 
 
 def path_is_protected(path: Path, protected_paths: Iterable[Path]) -> bool:

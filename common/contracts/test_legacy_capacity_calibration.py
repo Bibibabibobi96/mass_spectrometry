@@ -17,6 +17,7 @@ from common.contracts.legacy_capacity_calibration import (
     initialize_from_inventory,
     load_existing_calibration_report,
     main,
+    migrate_canonical_v2_ledger_to_v3,
 )
 
 
@@ -40,6 +41,20 @@ def _write_legacy_v1_ledger(root: Path, *, resident_bytes: int = 0) -> Path:
         "resident_bytes": resident_bytes,
         "objects": [],
     })
+    return path
+
+
+def _write_v2_ledger(root: Path, objects: list[dict]) -> Path:
+    path = root / "common" / "capacity_ledger.json"
+    document = {
+        "schema_version": 2, "role": "artifact_capacity_ledger",
+        "status": "calibrated", "complete": True,
+        "artifact_root": str(root.resolve()),
+        "resident_bytes": sum(item["bytes"] for item in objects if item["status"] != "retired"),
+        "objects": objects, "external_scopes": [],
+    }
+    assert capacity_ledger._is_valid_capacity_ledger(root, document)
+    _write_json(path, document)
     return path
 
 
@@ -126,6 +141,118 @@ def _write_frozen_input_cache(root: Path) -> Path:
 
 
 class LegacyCapacityCalibrationTests(unittest.TestCase):
+    def test_canonical_v2_to_v3_migration_binds_duties_and_writing_receipt_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            _write_v2_ledger(root, [
+                {
+                    "path": "projects/orthogonal_accelerator/runs/r1",
+                    "class": "rebuildable_payload", "bytes": 3,
+                    "status": "ready", "pin": False,
+                },
+                {
+                    "path": "common/simion/pa_family_cache/" + KEY,
+                    "class": "published_cache", "bytes": 5,
+                    "status": "ready", "pin": False, "identity": GENERATION,
+                },
+                {
+                    "path": "projects/orthogonal_accelerator/runs/r2",
+                    "class": "rebuildable_payload", "bytes": 7,
+                    "status": "writing", "pin": False,
+                    "owner": "orthogonal_accelerator",
+                    "recovery_reason": "interrupted run",
+                    "review_deadline": "2026-09-29",
+                },
+            ])
+            migrated = migrate_canonical_v2_ledger_to_v3(
+                root, review_deadline="2026-10-22",
+            )
+            self.assertEqual(migrated["schema_version"], 3)
+            by_path = {item["path"]: item for item in migrated["objects"]}
+            ready = by_path["projects/orthogonal_accelerator/runs/r1"]
+            self.assertEqual(ready["owner"], "orthogonal_accelerator")
+            self.assertEqual(ready["retirement_route"], "owner_managed_disposition")
+            cache = by_path["common/simion/pa_family_cache/" + KEY]
+            self.assertEqual(cache["manager"], capacity_ledger.PA_CACHE_MANAGER)
+            self.assertEqual(cache["retirement_route"], "pa_manager_disposition")
+            writing = by_path["projects/orthogonal_accelerator/runs/r2"]
+            self.assertTrue(writing["recovery_evidence_paths"])
+            self.assertTrue(writing["recovery_evidence_paths"][0].endswith(".pending.json"))
+            receipts = list((root / calibration.LEDGER_MIGRATION_DIRECTORY).glob("*.v2-to-v3.*.json"))
+            self.assertEqual(len(receipts), 2)
+
+    def test_canonical_v2_to_v3_migration_rejects_unowned_path_without_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            destination = _write_v2_ledger(root, [{
+                "path": "common/unattributed", "class": "light_evidence", "bytes": 1,
+                "status": "ready", "pin": False,
+            }])
+            before = destination.read_bytes()
+            with self.assertRaisesRegex(CalibrationError, "cannot establish owner"):
+                migrate_canonical_v2_ledger_to_v3(root, review_deadline="2026-10-22")
+            self.assertEqual(destination.read_bytes(), before)
+            self.assertFalse((root / calibration.LEDGER_MIGRATION_DIRECTORY).exists())
+
+    def test_canonical_v2_to_v3_migration_refuses_unrelated_valid_v3(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": "projects/orthogonal_accelerator/runs/r1",
+                "class": "light_evidence", "bytes": 1, "status": "ready", "pin": False,
+                "owner": "orthogonal_accelerator",
+                "retention_reason": "fixture", "review_deadline": "2026-10-22",
+                "retirement_route": "owner_managed_disposition",
+            }])
+            with self.assertRaisesRegex(CalibrationError, "will not be overwritten"):
+                migrate_canonical_v2_ledger_to_v3(root, review_deadline="2026-10-22")
+
+    def test_canonical_v2_to_v3_migration_retry_finishes_only_exact_pending_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            destination = _write_v2_ledger(root, [{
+                "path": "projects/orthogonal_accelerator/runs/r1",
+                "class": "light_evidence", "bytes": 1, "status": "ready", "pin": False,
+            }])
+            original_write = calibration.write_json_atomic
+
+            def interrupt_after_replace(path: Path, value: dict) -> None:
+                original_write(path, value)
+                if Path(path).absolute() == destination.absolute():
+                    raise OSError("fixture interruption after atomic ledger replace")
+
+            with mock.patch.object(calibration, "write_json_atomic", side_effect=interrupt_after_replace):
+                with self.assertRaisesRegex(OSError, "fixture interruption"):
+                    migrate_canonical_v2_ledger_to_v3(root, review_deadline="2026-10-22")
+            self.assertEqual(capacity_ledger.load_capacity_ledger(root)["schema_version"], 3)
+            resumed = migrate_canonical_v2_ledger_to_v3(root, review_deadline="2026-10-22")
+            self.assertEqual(resumed["schema_version"], 3)
+            receipts = root / calibration.LEDGER_MIGRATION_DIRECTORY
+            self.assertEqual(len(list(receipts.glob("*.v2-to-v3.pending.json"))), 1)
+            self.assertEqual(len(list(receipts.glob("*.v2-to-v3.complete.json"))), 1)
+
+    def test_v2_to_v3_cli_requires_only_canonical_ledger_and_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            _write_v2_ledger(root, [{
+                "path": "projects/orthogonal_accelerator/runs/r1",
+                "class": "light_evidence", "bytes": 1, "status": "ready", "pin": False,
+            }])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), mock.patch.object(sys, "argv", [
+                "legacy_capacity_calibration", "--artifact-root", str(root),
+                "--review-deadline", "2026-10-22", "--migrate-v2-to-v3",
+            ]):
+                main()
+            event = json.loads(output.getvalue())
+            self.assertEqual(event["event"], "v2_to_v3_ledger_migrated")
+            self.assertEqual(event["schema_version"], 3)
+
     def test_exact_v1_ledger_is_replaced_once_with_bound_migration_receipts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"
@@ -135,7 +262,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
 
             ledger = initialize_from_inventory(inventory)
 
-            self.assertEqual(ledger["schema_version"], 2)
+            self.assertEqual(ledger["schema_version"], 3)
             self.assertEqual(capacity_ledger.load_capacity_ledger(root), ledger)
             receipts = list((root / "common" / "capacity_calibration" / "ledger_migrations").glob("*.json"))
             self.assertEqual(sorted(path.suffixes[-2:] for path in receipts), [[".complete", ".json"], [".pending", ".json"]])
@@ -198,7 +325,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             resumed = initialize_from_inventory(inventory)
             repeated = initialize_from_inventory(inventory)
 
-            self.assertEqual(resumed["schema_version"], 2)
+            self.assertEqual(resumed["schema_version"], 3)
             self.assertEqual(repeated, resumed)
             self.assertEqual(len(list(receipts.glob("*.pending.json"))), 1)
             self.assertEqual(len(list(receipts.glob("*.complete.json"))), 1)

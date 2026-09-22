@@ -18,6 +18,7 @@ from common.contracts.capacity_protection import (
     CapacityProtectionLeaseError,
     create_capacity_protection_lease as _create_capacity_protection_lease,
     load_capacity_protection_leases,
+    prune_expired_capacity_protection_leases,
     renew_capacity_protection_lease,
 )
 from common.contracts import capacity_ledger
@@ -34,6 +35,65 @@ from common.contracts.legacy_capacity_backfill import (
 )
 
 
+_REAL_INITIALIZE_LEDGER = capacity_ledger.initialize_capacity_ledger
+_REAL_RECORD_OBJECT = capacity_ledger.record_capacity_object
+_FIXTURE_DEADLINE = "2026-10-22"
+
+
+def _v3_fixture_object(item: dict) -> dict:
+    """Make test records explicit about their finite lifecycle duties."""
+
+    result = dict(item)
+    if result.get("status") == "retired":
+        return result
+    is_pa = result.get("class") == "published_cache"
+    result.setdefault(
+        "owner", capacity_ledger.PA_CACHE_MANAGER if is_pa else "fixture_owner",
+    )
+    result.setdefault("retention_reason", "finite test fixture retention")
+    result.setdefault("review_deadline", _FIXTURE_DEADLINE)
+    result.setdefault(
+        "retirement_route", "pa_manager_disposition" if is_pa else "owner_managed_disposition",
+    )
+    if is_pa:
+        result.setdefault("manager", capacity_ledger.PA_CACHE_MANAGER)
+    if result.get("status") == "writing":
+        result.setdefault("recovery_reason", "fixture interrupted write")
+        result.setdefault("recovery_task", "fixture owner must recover or retire")
+        result.setdefault("recovery_evidence_paths", [result["path"]])
+    return result
+
+
+def _initialize_fixture_ledger(root: Path, *, objects=(), **kwargs):
+    return _REAL_INITIALIZE_LEDGER(
+        root, objects=[_v3_fixture_object(item) for item in objects], **kwargs,
+    )
+
+
+def _record_fixture_object(root: Path, **kwargs):
+    object_class = kwargs.get("object_class")
+    if object_class in capacity_ledger.LEDGER_CLASSES:
+        is_pa = object_class == "published_cache"
+        kwargs.setdefault(
+            "owner", capacity_ledger.PA_CACHE_MANAGER if is_pa else "fixture_owner",
+        )
+        kwargs.setdefault("retention_reason", "finite test fixture retention")
+        kwargs.setdefault("review_deadline", _FIXTURE_DEADLINE)
+        kwargs.setdefault(
+            "retirement_route", "pa_manager_disposition" if is_pa else "owner_managed_disposition",
+        )
+        if kwargs.get("status", "ready") == "writing":
+            kwargs.setdefault("recovery_reason", "fixture interrupted write")
+            kwargs.setdefault("recovery_task", "fixture owner must recover or retire")
+            kwargs.setdefault("recovery_evidence_paths", [kwargs["path"]])
+    return _REAL_RECORD_OBJECT(root, **kwargs)
+
+
+def _assert_target_failure(test: unittest.TestCase, outcome: dict, expected: str) -> None:
+    test.assertEqual(len(outcome["failed"]), 1)
+    test.assertIn(expected, outcome["failed"][0]["error"])
+
+
 def plan(*args, **kwargs):
     """Legacy fixture helper: exhaustive behavior is explicit in tests only."""
 
@@ -45,7 +105,7 @@ def create_capacity_protection_lease(root: Path, **kwargs):
     """Give lease-focused fixtures the calibrated ledger required in production."""
 
     if capacity_ledger.load_capacity_ledger(root) is None:
-        capacity_ledger.initialize_capacity_ledger(root, objects=[])
+        _initialize_fixture_ledger(root, objects=[])
     return _create_capacity_protection_lease(root, **kwargs)
 
 
@@ -59,7 +119,7 @@ class MaintenanceTargetCliTest(unittest.TestCase):
                 {"path": "protected/largest", "bytes": 1000, "pin": True, "pin_reason": "active input"},
                 {"path": "pending/tiny", "bytes": 1, "status": "retirement_pending"},
             ]
-            capacity_ledger.initialize_capacity_ledger(root, objects=[
+            _initialize_fixture_ledger(root, objects=[
                 {"class": "rebuildable_payload", "status": "ready", "pin": False, **item}
                 for item in objects
             ])
@@ -110,7 +170,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
     def test_capacity_ledger_requires_explicit_initialized_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            initialized = capacity_ledger.initialize_capacity_ledger(
+            initialized = _initialize_fixture_ledger(
                 root,
                 objects=[{
                     "path": "reports/baseline.json",
@@ -124,9 +184,9 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             self.assertTrue(initialized["complete"])
             self.assertEqual(initialized["resident_bytes"], 11)
             with self.assertRaises(FileExistsError):
-                capacity_ledger.initialize_capacity_ledger(root, objects=[])
+                _initialize_fixture_ledger(root, objects=[])
             with self.assertRaisesRegex(ValueError, "baseline is invalid"):
-                capacity_ledger.initialize_capacity_ledger(
+                _initialize_fixture_ledger(
                     root,
                     objects=[{
                         "path": "bad/object", "class": "legacy_payload",
@@ -141,33 +201,33 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
     def test_ledger_enforces_four_states_pin_reason_cache_identity_and_disjoint_ranges(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            capacity_ledger.initialize_capacity_ledger(root, objects=[])
+            _initialize_fixture_ledger(root, objects=[])
             with self.assertRaisesRegex(ValueError, "class/status"):
-                capacity_ledger.record_capacity_object(
+                _record_fixture_object(
                     root, path="legacy", object_class="rebuildable_payload",
                     bytes_count=1, status="superseded",
                 )
             with self.assertRaisesRegex(ValueError, "pin_reason"):
-                capacity_ledger.record_capacity_object(
+                _record_fixture_object(
                     root, path="pinned", object_class="light_evidence",
                     bytes_count=1, pin=True,
                 )
             with self.assertRaisesRegex(ValueError, "generation identity"):
-                capacity_ledger.record_capacity_object(
+                _record_fixture_object(
                     root, path="cache/generation", object_class="published_cache",
                     bytes_count=1,
                 )
-            capacity_ledger.record_capacity_object(
+            _record_fixture_object(
                 root, path="objects/parent", object_class="rebuildable_payload",
                 bytes_count=1,
             )
             with self.assertRaisesRegex(ValueError, "ranges cannot overlap"):
-                capacity_ledger.record_capacity_object(
+                _record_fixture_object(
                     root, path="objects/parent/child", object_class="light_evidence",
                     bytes_count=1,
                 )
             with self.assertRaisesRegex(ValueError, "ranges cannot overlap"):
-                capacity_ledger.record_capacity_object(
+                _record_fixture_object(
                     root, path="objects", object_class="light_evidence", bytes_count=1,
                 )
 
@@ -187,9 +247,9 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 if created.returncode != 0:
                     self.skipTest(f"host cannot create a test junction: {created.stderr}")
             try:
-                capacity_ledger.initialize_capacity_ledger(root, objects=[])
+                _initialize_fixture_ledger(root, objects=[])
                 with self.assertRaisesRegex(ValueError, "below artifact root"):
-                    capacity_ledger.record_capacity_object(
+                    _record_fixture_object(
                         root, path=link / "payload", object_class="rebuildable_payload",
                         bytes_count=1,
                     )
@@ -263,7 +323,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             ledger = root / "common" / "capacity_ledger.json"
-            capacity_ledger.initialize_capacity_ledger(
+            _initialize_fixture_ledger(
                 root,
                 objects=[
                     {
@@ -366,10 +426,10 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             self.assertEqual(receipt["measurement_mode"], "STARTUP_LEDGER")
             self.assertFalse(receipt["candidate_discovery_performed"])
 
-    def test_startup_warns_on_unrelated_overdue_writing_but_blocks_required_input(self) -> None:
+    def test_startup_blocks_all_new_heavy_writes_when_any_writing_recovery_is_overdue(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": "scratch/old", "class": "rebuildable_payload",
                 "bytes": 1, "status": "writing", "pin": False,
                 "owner": "old", "recovery_reason": "review",
@@ -385,10 +445,11 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                 execution_mode="startup",
                 protected_paths=[required], capacity_protection_lease_id="current",
             )
-            self.assertTrue(warning["satisfied"])
+            self.assertFalse(warning["satisfied"])
             self.assertEqual(warning["overdue_writing_object_count"], 1)
-            self.assertEqual(warning["blocking_overdue_writing_object_count"], 0)
-            capacity_ledger.record_capacity_object(
+            self.assertEqual(warning["blocking_overdue_writing_object_count"], 1)
+            self.assertEqual(warning["blocking_reason"], "WRITING_RECOVERY_REVIEW_OVERDUE")
+            _record_fixture_object(
                 root, path=required, object_class="rebuildable_payload", bytes_count=1,
                 status="writing", owner="current", recovery_reason="review",
                 review_deadline="2000-01-01",
@@ -415,7 +476,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
     def test_increased_commitment_survives_failed_startup_revalidation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            capacity_ledger.initialize_capacity_ledger(root, objects=[])
+            _initialize_fixture_ledger(root, objects=[])
             started = datetime.now(timezone.utc)
             create_capacity_protection_lease(
                 root, lease_id="growing", owner="workflow", ttl_seconds=120,
@@ -500,35 +561,28 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
     def test_ledger_object_api_allows_only_three_classes_and_pin(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            ledger = root / "common" / "capacity_ledger.json"
-            ledger.parent.mkdir()
-            ledger.write_text(json.dumps({
-                "schema_version": 2, "role": "artifact_capacity_ledger",
-                "status": "calibrated", "complete": True,
-                "artifact_root": str(root), "resident_bytes": 0,
-                "external_scopes": [], "objects": [],
-            }), encoding="utf-8")
+            _initialize_fixture_ledger(root, objects=[])
             self.assertEqual(
-                capacity.record_capacity_object(
+                _record_fixture_object(
                     root, path="evidence/report.json", object_class="light_evidence",
                     bytes_count=10,
                 )["class"],
                 "light_evidence",
             )
-            capacity.record_capacity_object(
+            _record_fixture_object(
                 root, path="cache/key", object_class="published_cache", bytes_count=20,
                 identity="a" * 64,
             )
-            capacity.record_capacity_object(
+            _record_fixture_object(
                 root, path="runs/old", object_class="rebuildable_payload", bytes_count=30,
                 status="ready", pin=True, pin_reason="unique scientific evidence",
             )
             with self.assertRaises(ValueError):
-                capacity.record_capacity_object(
+                _record_fixture_object(
                     root, path="runs/bad", object_class="solver_review", bytes_count=1,
                 )
             with self.assertRaises(ValueError):
-                capacity.record_capacity_object(
+                _record_fixture_object(
                     root, path="runs/pending", object_class="rebuildable_payload",
                     bytes_count=1, status="retirement_pending",
                 )
@@ -539,14 +593,8 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             ledger_path = root / "common" / "capacity_ledger.json"
-            ledger_path.parent.mkdir()
-            ledger_path.write_text(json.dumps({
-                "schema_version": 2, "role": "artifact_capacity_ledger",
-                "status": "calibrated", "complete": True,
-                "artifact_root": str(root), "resident_bytes": 0,
-                "external_scopes": [], "objects": [],
-            }), encoding="utf-8")
-            capacity.record_capacity_object(
+            _initialize_fixture_ledger(root, objects=[])
+            _record_fixture_object(
                 root, path="runs/old", object_class="rebuildable_payload",
                 bytes_count=30, status="ready",
             )
@@ -566,7 +614,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
     def test_touch_updates_only_ready_cache_last_used_time_monotonically(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            capacity_ledger.initialize_capacity_ledger(
+            _initialize_fixture_ledger(
                 root,
                 objects=[{
                     "path": "cache/generation", "class": "published_cache",
@@ -602,7 +650,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             root = Path(temporary)
             target = root / "cache" / ("a" * 64)
             target.mkdir(parents=True)
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": target.relative_to(root).as_posix(),
                 "class": "published_cache", "bytes": 7, "status": "ready",
                 "pin": False, "identity": "b" * 64,
@@ -645,7 +693,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             target = root / "common" / "simion" / "pa_family_cache" / cache_key
             target.mkdir(parents=True)
             (target / "payload.pa0").write_bytes(b"payload")
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": target.relative_to(root).as_posix(),
                 "class": "published_cache", "bytes": 7, "status": "ready",
                 "pin": False, "identity": generation,
@@ -687,7 +735,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             target = root / "cache" / ("a" * 64)
             target.mkdir(parents=True)
             (target / "one.bin").write_bytes(b"abc")
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": target.relative_to(root).as_posix(), "class": "published_cache",
                 "bytes": 3, "status": "ready", "pin": False, "identity": "b" * 64,
                 "manager": capacity_ledger.PA_CACHE_MANAGER,
@@ -713,8 +761,9 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                 return original_write(path, value)
 
             with patch.object(normal_capacity, "write_json_atomic", interrupt_complete):
-                with self.assertRaisesRegex(RuntimeError, "approved complete-receipt"):
-                    normal_capacity.apply(planned)
+                _assert_target_failure(
+                    self, normal_capacity.apply(planned), "approved complete-receipt",
+                )
             self.assertFalse(target.exists())
             resumed = normal_capacity.plan(
                 root, target_bytes=100, minimum_free_bytes=0,
@@ -734,7 +783,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             target.mkdir(parents=True)
             (target / "one.bin").write_bytes(b"abc")
             (target / "two.bin").write_bytes(b"defg")
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": target.relative_to(root).as_posix(), "class": "published_cache",
                 "bytes": 7, "status": "ready", "pin": False, "identity": "b" * 64,
                 "manager": capacity_ledger.PA_CACHE_MANAGER,
@@ -762,8 +811,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                     raise RuntimeError("injected disposal interruption")
 
             with patch.object(normal_capacity, "_delete_approved_file", interrupt_after_delete):
-                with self.assertRaisesRegex(RuntimeError, "injected"):
-                    normal_capacity.apply(receipt)
+                _assert_target_failure(self, normal_capacity.apply(receipt), "injected")
             fixed = (
                 root / "common" / "capacity_disposal_receipts"
                 / f"ledger_disposition_{'d' * 64}.json"
@@ -784,7 +832,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             target = root / "cache" / ("a" * 64)
             target.mkdir(parents=True)
             (target / "one.bin").write_bytes(b"abc")
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": target.relative_to(root).as_posix(), "class": "published_cache",
                 "bytes": 3, "status": "ready", "pin": False, "identity": "b" * 64,
                 "manager": capacity_ledger.PA_CACHE_MANAGER,
@@ -812,8 +860,9 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             with patch.object(
                 capacity_ledger, "finalize_retirement", fail_first_finalize,
             ):
-                with self.assertRaisesRegex(RuntimeError, "post-disposal finalize"):
-                    normal_capacity.apply(planned)
+                _assert_target_failure(
+                    self, normal_capacity.apply(planned), "post-disposal finalize",
+                )
                 self.assertFalse(target.exists())
                 resumed = normal_capacity.plan(
                     root, target_bytes=100, minimum_free_bytes=0,
@@ -831,7 +880,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             target.mkdir(parents=True)
             (target / "one.bin").write_bytes(b"abc")
             (target / "extra.bin").write_bytes(b"")
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": target.relative_to(root).as_posix(), "class": "published_cache",
                 "bytes": 3, "status": "ready", "pin": False, "identity": "b" * 64,
                 "manager": capacity_ledger.PA_CACHE_MANAGER,
@@ -846,8 +895,9 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             receipt = normal_capacity.plan(
                 root, target_bytes=0, minimum_free_bytes=0, execution_mode="maintenance",
             )
-            with self.assertRaisesRegex(ValueError, "sealed file inventory"):
-                normal_capacity.apply(receipt)
+            _assert_target_failure(
+                self, normal_capacity.apply(receipt), "sealed file inventory",
+            )
 
     def test_plain_rebuildable_retirement_resumes_one_fixed_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -856,7 +906,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             target.mkdir(parents=True)
             (target / "one.bin").write_bytes(b"abc")
             (target / "two.bin").write_bytes(b"defg")
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": target.relative_to(root).as_posix(),
                 "class": "rebuildable_payload", "bytes": 7,
                 "status": "ready", "pin": False,
@@ -876,8 +926,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                     raise RuntimeError("injected ordinary disposal interruption")
 
             with patch.object(normal_capacity, "_delete_ledger_file", interrupt_after_delete):
-                with self.assertRaisesRegex(RuntimeError, "injected ordinary"):
-                    normal_capacity.apply(planned)
+                _assert_target_failure(self, normal_capacity.apply(planned), "injected ordinary")
             fixed_receipts = list(
                 (root / normal_capacity.DISPOSAL_RECEIPT_DIRECTORY).glob("ledger_*.json")
             )
@@ -908,7 +957,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             target = root / "runs" / "rebuildable"
             target.mkdir(parents=True)
             (target / "one.bin").write_bytes(b"abc")
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": target.relative_to(root).as_posix(),
                 "class": "rebuildable_payload", "bytes": 3,
                 "status": "ready", "pin": False,
@@ -933,7 +982,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             target = root / "runs" / "rebuildable"
             target.mkdir(parents=True)
             (target / "one.bin").write_bytes(b"abc")
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": target.relative_to(root).as_posix(),
                 "class": "rebuildable_payload", "bytes": 3,
                 "status": "ready", "pin": False,
@@ -953,8 +1002,9 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                 return original_write(path, value)
 
             with patch.object(normal_capacity, "write_json_atomic", interrupt_complete):
-                with self.assertRaisesRegex(RuntimeError, "plain complete-receipt"):
-                    normal_capacity.apply(planned)
+                _assert_target_failure(
+                    self, normal_capacity.apply(planned), "plain complete-receipt",
+                )
             self.assertFalse(target.exists())
             resumed = normal_capacity.plan(
                 root, target_bytes=100, minimum_free_bytes=0,
@@ -972,7 +1022,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             target = root / "cache" / ("a" * 64)
             target.mkdir(parents=True)
             (target / "one.bin").write_bytes(b"x")
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+            _initialize_fixture_ledger(root, objects=[{
                 "path": target.relative_to(root).as_posix(), "class": "published_cache",
                 "bytes": 1, "status": "ready", "pin": False, "identity": "b" * 64,
                 "manager": capacity_ledger.PA_CACHE_MANAGER,
@@ -990,7 +1040,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, "uncalibrated"):
-                capacity.record_capacity_object(
+                _record_fixture_object(
                     root, path="cache/key", object_class="published_cache",
                     bytes_count=1, identity="b" * 64,
                 )
@@ -1002,7 +1052,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                 "external_scopes": [], "objects": [],
             }), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "uncalibrated"):
-                capacity.record_capacity_object(
+                _record_fixture_object(
                     root, path="cache/key", object_class="published_cache",
                     bytes_count=1, identity="b" * 64,
                 )
@@ -1700,7 +1750,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
 
     def test_cli_creates_renews_and_deletes_named_lease(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            capacity_ledger.initialize_capacity_ledger(Path(temporary), objects=[])
+            _initialize_fixture_ledger(Path(temporary), objects=[])
             output = io.StringIO()
             with patch("sys.argv", [
                 "legacy_capacity_backfill", "--artifact-root", temporary,
@@ -2548,6 +2598,114 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             self.assertTrue(applied["applied"])
             self.assertFalse(applied["satisfied_after_apply"])
             self.assertIn("candidate_count", applied)
+
+
+class FiniteCapacityProtectionLeaseTest(unittest.TestCase):
+    def test_new_lease_has_finite_closure_deadline_and_renewal_cannot_extend_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            deadline = datetime(2026, 1, 1, 0, 10, tzinfo=timezone.utc)
+            created = create_capacity_protection_lease(
+                root, lease_id="finite", owner="workflow", ttl_seconds=60,
+                closure_deadline_at_utc=deadline,
+                protected_cache_keys=["a" * 64], now=started,
+            )
+            self.assertEqual(created["closure_deadline_at_utc"], "2026-01-01T00:10:00Z")
+            renewed = renew_capacity_protection_lease(
+                root, lease_id="finite", owner="workflow", ttl_seconds=300,
+                now=datetime(2026, 1, 1, 0, 0, 30, tzinfo=timezone.utc),
+            )
+            self.assertEqual(renewed["expires_at_utc"], "2026-01-01T00:05:30Z")
+            self.assertEqual(renewed["closure_deadline_at_utc"], "2026-01-01T00:10:00Z")
+            with self.assertRaisesRegex(ValueError, "beyond its closure deadline"):
+                renew_capacity_protection_lease(
+                    root, lease_id="finite", owner="workflow", ttl_seconds=600,
+                    now=datetime(2026, 1, 1, 0, 2, tzinfo=timezone.utc),
+                )
+            with self.assertRaisesRegex(ValueError, "cannot change its closure deadline"):
+                renew_capacity_protection_lease(
+                    root, lease_id="finite", owner="workflow", ttl_seconds=60,
+                    closure_deadline_at_utc=datetime(2026, 1, 1, 0, 11, tzinfo=timezone.utc),
+                    now=datetime(2026, 1, 1, 0, 2, tzinfo=timezone.utc),
+                )
+
+    def test_new_lease_default_deadline_is_persisted_and_legacy_expiry_is_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            created = create_capacity_protection_lease(
+                root, lease_id="default", owner="workflow", ttl_seconds=60,
+                protected_cache_keys=["a" * 64], now=started,
+            )
+            self.assertEqual(created["closure_deadline_at_utc"], "2026-01-31T00:00:00Z")
+            legacy_path = root / "common" / "capacity_protection_leases" / "legacy.json"
+            legacy_path.write_text(json.dumps({
+                "schema_version": 1, "role": "artifact_capacity_protection_lease",
+                "lease_id": "legacy", "owner": "old-workflow",
+                "created_at_utc": "2026-01-01T00:00:00Z",
+                "expires_at_utc": "2026-01-02T00:00:00Z",
+                "protected_cache_keys": ["b" * 64], "protected_paths": [],
+            }), encoding="utf-8")
+            loaded = load_capacity_protection_leases(
+                root, now=datetime(2026, 1, 1, 12, tzinfo=timezone.utc),
+            )
+            audit = next(item for item in loaded["audit"] if item["lease_id"] == "legacy")
+            self.assertEqual(audit["closure_deadline_at_utc"], "2026-01-02T00:00:00Z")
+            self.assertEqual(audit["closure_deadline_status"], "legacy_expiry_is_closure_deadline")
+            with self.assertRaisesRegex(ValueError, "beyond its closure deadline"):
+                renew_capacity_protection_lease(
+                    root, lease_id="legacy", owner="old-workflow", ttl_seconds=13 * 60 * 60,
+                    now=datetime(2026, 1, 1, 12, tzinfo=timezone.utc),
+                )
+
+    def test_pruning_expired_lease_writes_receipt_and_never_prunes_pending_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            expired_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+            create_capacity_protection_lease(
+                root, lease_id="prunable", owner="finished", ttl_seconds=1,
+                protected_cache_keys=["a" * 64], now=expired_at,
+            )
+            create_capacity_protection_lease(
+                root, lease_id="referenced", owner="finished", ttl_seconds=1,
+                protected_cache_keys=["b" * 64], now=expired_at,
+            )
+            receipt_root = root / "common" / "capacity_disposal_receipts"
+            receipt_root.mkdir(parents=True)
+            (receipt_root / "pending.json").write_text(json.dumps({
+                "schema_version": 1, "role": "artifact_capacity_disposal_receipt",
+                "status": "pending", "capacity_protection_lease_id": "referenced",
+                "target_path": str(root / "payload"),
+            }), encoding="utf-8")
+            pruned = prune_expired_capacity_protection_leases(
+                root, now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+            self.assertEqual([item["lease_id"] for item in pruned["pruned"]], ["prunable"])
+            self.assertEqual(
+                [item["lease_id"] for item in pruned["skipped_pending_disposal"]], ["referenced"],
+            )
+            self.assertFalse((root / "common" / "capacity_protection_leases" / "prunable.json").exists())
+            self.assertTrue((root / "common" / "capacity_protection_leases" / "referenced.json").exists())
+            receipt = json.loads((
+                root / "common" / "capacity_protection_lease_pruning_receipts" / "lease_prunable.json"
+            ).read_text(encoding="utf-8"))
+            self.assertEqual(receipt["status"], "complete")
+            self.assertEqual(receipt["reason"], "expired_finite_protection_lease")
+
+    def test_pruning_never_deletes_active_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            create_capacity_protection_lease(
+                root, lease_id="active", owner="current", ttl_seconds=3600,
+                protected_cache_keys=["a" * 64],
+                now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+            outcome = prune_expired_capacity_protection_leases(
+                root, now=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+            )
+            self.assertEqual(outcome["pruned"], [])
+            self.assertTrue((root / "common" / "capacity_protection_leases" / "active.json").exists())
 
 
 if __name__ == "__main__":

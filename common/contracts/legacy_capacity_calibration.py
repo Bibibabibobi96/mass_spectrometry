@@ -871,15 +871,22 @@ def build_calibration_inventory(
             ))
     protected_count, protected_bytes, leases = _protect_active_dependencies(root, objects)
     for item in objects:
-        if item["status"] != "writing":
-            continue
-        item["owner"] = item["owner_hint"]
-        item["recovery_reason"] = item.get(
-            "recovery_reason", item.get("active_protection", "legacy_writing_object"),
-        )
-        item["review_deadline"] = review_deadline
-        if item.get("active_consumers"):
-            item["consumers"] = sorted(set(item["active_consumers"]))
+        item.update(_legacy_lifecycle_duties(
+            path=item["path"], object_class=item["class"],
+            owner=item["owner_hint"], review_deadline=review_deadline,
+        ))
+        if item["status"] == "writing":
+            item["recovery_reason"] = item.get(
+                "recovery_reason", item.get("active_protection", "legacy_writing_object"),
+            )
+            item["recovery_task"] = item.get(
+                "recovery_task", "legacy calibrated recovery requires explicit owner action",
+            )
+            item["recovery_evidence_paths"] = sorted(set(
+                item.get("evidence_paths", []) or [item["path"]]
+            ))
+            if item.get("active_consumers"):
+                item["consumers"] = sorted(set(item["active_consumers"]))
     objects.sort(key=lambda item: item["path"])
     unresolved.sort(key=lambda item: item["path"])
     writing_objects = [item for item in objects if item["status"] == "writing"]
@@ -887,7 +894,10 @@ def build_calibration_inventory(
     initialization_blockers: list[dict[str, Any]] = []
     for item in writing_objects:
         missing = [
-            field for field in ("owner", "recovery_reason", "review_deadline")
+            field for field in (
+                "owner", "retention_reason", "review_deadline", "retirement_route",
+                "recovery_reason", "recovery_task",
+            )
             if not isinstance(item.get(field), str) or not item[field].strip()
         ]
         try:
@@ -1064,6 +1074,41 @@ def _validate_existing_report_accounting(inventory: dict[str, Any]) -> None:
         raise CalibrationError("existing calibration report resident_bytes does not match records")
 
 
+def _legacy_lifecycle_duties(
+    *, path: str, object_class: str, owner: object, review_deadline: object,
+) -> dict[str, str]:
+    """Turn calibrated owner evidence into finite v3 lifecycle duties."""
+
+    if not isinstance(owner, str) or not owner.strip():
+        raise CalibrationError(f"calibrated object has no owner: {path}")
+    if not isinstance(review_deadline, str):
+        raise CalibrationError(f"calibrated object has no review deadline: {path}")
+    try:
+        date.fromisoformat(review_deadline)
+    except ValueError as exc:
+        raise CalibrationError(f"calibrated object review deadline is invalid: {path}") from exc
+    if object_class == "published_cache":
+        if owner == capacity_ledger.PA_CACHE_MANAGER:
+            return {
+                "owner": owner,
+                "retention_reason": "legacy calibrated PA family cache awaiting manager review",
+                "review_deadline": review_deadline,
+                "retirement_route": "pa_manager_disposition",
+            }
+        return {
+            "owner": owner,
+            "retention_reason": "legacy calibrated project cache awaiting explicit owner review",
+            "review_deadline": review_deadline,
+            "retirement_route": "owner_managed_disposition",
+        }
+    return {
+        "owner": owner,
+        "retention_reason": "legacy calibrated artifact awaiting explicit owner review",
+        "review_deadline": review_deadline,
+        "retirement_route": "owner_managed_disposition",
+    }
+
+
 def _recovery_writing_entries(inventory: dict[str, Any]) -> list[dict[str, Any]]:
     """Convert only explicit, still-actionable unresolved records to writing.
 
@@ -1140,7 +1185,11 @@ def _recovery_writing_entries(inventory: dict[str, Any]) -> list[dict[str, Any]]
             "recovery_reason": reason.strip(),
             "review_deadline": item_deadline,
             "recovery_task": task.strip(),
-            "recovery_evidence_paths": canonical_evidence,
+            "recovery_evidence_paths": canonical_evidence or [canonical_path],
+            **_legacy_lifecycle_duties(
+                path=canonical_path, object_class="rebuildable_payload",
+                owner=owner, review_deadline=item_deadline,
+            ),
         })
     return entries
 
@@ -1216,7 +1265,7 @@ def load_existing_calibration_report(
 def initialize_from_inventory(
     inventory: dict[str, Any], *, ledger_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Initialize v2 from a complete or explicit recovery-only inventory."""
+    """Initialize v3 from a complete or explicit recovery-only inventory."""
 
     try:
         _validate_existing_report_accounting(inventory)
@@ -1228,8 +1277,11 @@ def initialize_from_inventory(
             continue
         fields_valid = all(
             isinstance(item.get(field), str) and item[field].strip()
-            for field in ("owner", "recovery_reason", "review_deadline")
-        )
+            for field in (
+                "owner", "retention_reason", "review_deadline", "retirement_route",
+                "recovery_reason", "recovery_task",
+            )
+        ) and isinstance(item.get("recovery_evidence_paths"), list) and bool(item["recovery_evidence_paths"])
         try:
             deadline = date.fromisoformat(str(item.get("review_deadline", "")))
         except ValueError:
@@ -1355,11 +1407,11 @@ def _valid_legacy_v1_ledger(root: Path, document: object) -> bool:
     })
 
 
-def _build_v2_ledger_document(
+def _build_v3_ledger_document(
     root: Path, *, objects: Iterable[dict[str, Any]],
     external_scopes: Iterable[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Build the same complete v2 document as normal baseline publication."""
+    """Build the same complete v3 document as normal baseline publication."""
 
     normalized: list[dict[str, Any]] = []
     for source in objects:
@@ -1369,7 +1421,7 @@ def _build_v2_ledger_document(
         normalized.append({**source, "path": relative})
     scopes = [dict(scope) for scope in external_scopes]
     document = {
-        "schema_version": 2,
+        "schema_version": 3,
         "role": "artifact_capacity_ledger",
         "status": "calibrated",
         "complete": True,
@@ -1417,7 +1469,7 @@ def _migration_receipt(
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
-        "role": "capacity_ledger_v1_to_v2_migration",
+        "role": "capacity_ledger_v1_to_v3_migration",
         "status": status,
         "migration_id": migration_id,
         "artifact_root": str(root),
@@ -1433,13 +1485,13 @@ def _initialize_or_migrate_capacity_ledger(
     external_scopes: Iterable[dict[str, Any]], inventory: dict[str, Any],
     ledger_path: Path | None,
 ) -> dict[str, Any]:
-    """Initialize an empty destination or recover one exact v1→v2 migration.
+    """Initialize an empty destination or recover one exact v1→v3 migration.
 
     A v1 ledger is never treated as an overwrite permission.  The exact old
     ledger, frozen calibration inventory and target v2 document are bound into
     an immutable pending receipt before the atomic replacement.  A retry can
-    only finish that exact pending migration after validating the landed v2
-    ledger; arbitrary valid v2 ledgers remain untouchable.
+    only finish that exact pending migration after validating the landed v3
+    ledger; arbitrary valid ledgers remain untouchable.
     """
 
     root = root.resolve(strict=False)
@@ -1449,7 +1501,7 @@ def _initialize_or_migrate_capacity_ledger(
         return capacity_ledger.initialize_capacity_ledger(
             root, objects=objects, external_scopes=external_scopes, path=destination,
         )
-    target = _build_v2_ledger_document(
+    target = _build_v3_ledger_document(
         root, objects=objects, external_scopes=external_scopes,
     )
     inventory_sha256 = _canonical_json_sha256(inventory)
@@ -1471,7 +1523,7 @@ def _initialize_or_migrate_capacity_ledger(
         if _valid_legacy_v1_ledger(root, existing):
             legacy_sha256 = hashlib.sha256(raw).hexdigest().upper()
             migration_id = hashlib.sha256(
-                f"capacity-ledger-v1-to-v2:{legacy_sha256}:{inventory_sha256}:{target_sha256}".encode("ascii")
+                f"capacity-ledger-v1-to-v3:{legacy_sha256}:{inventory_sha256}:{target_sha256}".encode("ascii")
             ).hexdigest().upper()
             pending_path = receipt_directory / f"{migration_id}.pending.json"
             complete_path = receipt_directory / f"{migration_id}.complete.json"
@@ -1485,7 +1537,7 @@ def _initialize_or_migrate_capacity_ledger(
             write_json_atomic(destination, target)
             landed = capacity_ledger.load_capacity_ledger(root, destination)
             if landed != target:
-                raise CalibrationError("v1 to v2 capacity ledger replacement could not be read back")
+                raise CalibrationError("v1 to v3 capacity ledger replacement could not be read back")
             _write_immutable_json(complete_path, complete)
             return landed
 
@@ -1504,13 +1556,13 @@ def _initialize_or_migrate_capacity_ledger(
                 migration_id = candidate.get("migration_id")
                 expected_id = (
                     hashlib.sha256(
-                        f"capacity-ledger-v1-to-v2:{legacy_sha256}:{inventory_sha256}:{target_sha256}".encode("ascii")
+                    f"capacity-ledger-v1-to-v3:{legacy_sha256}:{inventory_sha256}:{target_sha256}".encode("ascii")
                     ).hexdigest().upper()
                     if isinstance(legacy_sha256, str) else None
                 )
                 if (
                     candidate.get("schema_version") == 1
-                    and candidate.get("role") == "capacity_ledger_v1_to_v2_migration"
+                    and candidate.get("role") == "capacity_ledger_v1_to_v3_migration"
                     and candidate.get("status") == "pending"
                     and candidate.get("artifact_root") == str(root)
                     and candidate.get("ledger_path") == str(destination)
@@ -1520,9 +1572,9 @@ def _initialize_or_migrate_capacity_ledger(
                 ):
                     matches.append((candidate_path, candidate))
         if len(matches) != 1:
-            raise CalibrationError("valid v2 capacity ledger will not be overwritten by migration")
+            raise CalibrationError("valid capacity ledger will not be overwritten by migration")
         if landed != target:
-            raise CalibrationError("pending capacity ledger migration target differs from landed v2 ledger")
+            raise CalibrationError("pending capacity ledger migration target differs from landed v3 ledger")
         pending_path, pending = matches[0]
         complete_path = pending_path.with_name(
             pending_path.name.removesuffix(".pending.json") + ".complete.json"
@@ -1532,21 +1584,205 @@ def _initialize_or_migrate_capacity_ledger(
         return landed
 
 
+def _v2_to_v3_migration_id(source_sha256: str, review_deadline: str) -> str:
+    return hashlib.sha256(
+        f"capacity-ledger-v2-to-v3:{source_sha256}:{review_deadline}".encode("ascii")
+    ).hexdigest().upper()
+
+
+def _legacy_v3_duties(
+    document: dict[str, Any], *, review_deadline: str, pending_receipt_path: str,
+) -> dict[str, dict[str, Any]]:
+    """Assign v3 duties only where canonical paths establish their owner."""
+
+    duties_by_path: dict[str, dict[str, Any]] = {}
+    for item in document["objects"]:
+        if item["status"] == "retired":
+            continue
+        path = item["path"]
+        parts = Path(path).parts
+        if len(parts) >= 4 and parts[:3] == ("common", "simion", "pa_family_cache"):
+            owner = capacity_ledger.PA_CACHE_MANAGER
+            route = "pa_manager_disposition"
+            retention_reason = "legacy calibrated PA family cache awaiting manager review"
+        elif len(parts) >= 2 and parts[0] == "projects" and parts[1]:
+            owner = parts[1]
+            route = "owner_managed_disposition"
+            retention_reason = "legacy calibrated project artifact awaiting owner review"
+        else:
+            raise CalibrationError(
+                f"v2 to v3 migration cannot establish owner from canonical path: {path}"
+            )
+        existing_owner = item.get("owner")
+        if existing_owner is not None and existing_owner != owner:
+            raise CalibrationError(
+                f"v2 to v3 migration owner conflicts with canonical path: {path}"
+            )
+        duties: dict[str, Any] = {
+            "owner": owner,
+            "retention_reason": retention_reason,
+            "review_deadline": review_deadline,
+            "retirement_route": route,
+        }
+        if item["status"] == "writing":
+            recovery_reason = item.get("recovery_reason")
+            if not isinstance(recovery_reason, str) or not recovery_reason.strip():
+                raise CalibrationError(f"v2 writing object has no recovery reason: {path}")
+            existing_evidence = item.get("recovery_evidence_paths", [])
+            if (
+                not isinstance(existing_evidence, list)
+                or any(not isinstance(value, str) or not value for value in existing_evidence)
+            ):
+                raise CalibrationError(f"v2 writing recovery evidence is invalid: {path}")
+            recovery_task = item.get("recovery_task")
+            if not isinstance(recovery_task, str) or not recovery_task.strip():
+                recovery_task = "legacy calibrated recovery requires explicit owner action"
+            duties.update({
+                "recovery_reason": recovery_reason,
+                "recovery_task": recovery_task,
+                "recovery_evidence_paths": sorted(set([
+                    *existing_evidence, pending_receipt_path,
+                ])),
+            })
+        duties_by_path[path] = duties
+    return duties_by_path
+
+
+def _v2_to_v3_migration_receipt(
+    *, migration_id: str, status: str, root: Path, destination: Path,
+    source_sha256: str, target_sha256: str, review_deadline: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "role": "capacity_ledger_v2_to_v3_migration",
+        "status": status,
+        "migration_id": migration_id,
+        "artifact_root": str(root),
+        "ledger_path": str(destination),
+        "source_v2_ledger_sha256": source_sha256,
+        "target_v3_ledger_sha256": target_sha256,
+        "review_deadline": review_deadline,
+    }
+
+
+def migrate_canonical_v2_ledger_to_v3(
+    root: Path, *, review_deadline: str,
+) -> dict[str, Any]:
+    """Atomically replace only the canonical v2 ledger with its bound v3 form."""
+
+    try:
+        date.fromisoformat(review_deadline)
+    except ValueError as exc:
+        raise CalibrationError("v2 to v3 migration review_deadline must be YYYY-MM-DD") from exc
+    root = root.resolve(strict=False)
+    destination = capacity_ledger.resolve_ledger_path(root)
+    receipt_directory = root / LEDGER_MIGRATION_DIRECTORY
+    with capacity_protection.capacity_decision_lock(root):
+        existing, raw = _load_json_bytes(destination)
+        if existing is None or raw is None:
+            raise CalibrationError("canonical capacity ledger is unreadable and cannot be migrated")
+        if existing.get("schema_version") == 2:
+            if not capacity_ledger._is_valid_capacity_ledger(root, existing):
+                raise CalibrationError("canonical capacity ledger is not a valid v2 ledger")
+            source_sha256 = hashlib.sha256(raw).hexdigest().upper()
+            migration_id = _v2_to_v3_migration_id(source_sha256, review_deadline)
+            pending_path = receipt_directory / f"{migration_id}.v2-to-v3.pending.json"
+            pending_relative = pending_path.relative_to(root).as_posix()
+            duties = _legacy_v3_duties(
+                existing, review_deadline=review_deadline,
+                pending_receipt_path=pending_relative,
+            )
+            target = capacity_ledger.migrate_v2_ledger_document(
+                root, existing, lifecycle_by_path=duties,
+            )
+            target_sha256 = _canonical_json_sha256(target)
+            pending = _v2_to_v3_migration_receipt(
+                migration_id=migration_id, status="pending", root=root,
+                destination=destination, source_sha256=source_sha256,
+                target_sha256=target_sha256, review_deadline=review_deadline,
+            )
+            complete = {**pending, "status": "complete"}
+            complete_path = pending_path.with_name(
+                pending_path.name.removesuffix(".pending.json") + ".complete.json"
+            )
+            _write_immutable_json(pending_path, pending)
+            write_json_atomic(destination, target)
+            landed = capacity_ledger.load_capacity_ledger(root, destination)
+            if landed != target:
+                raise CalibrationError("v2 to v3 capacity ledger replacement could not be read back")
+            _write_immutable_json(complete_path, complete)
+            return landed
+        if existing.get("schema_version") != 3:
+            raise CalibrationError("canonical capacity ledger is neither a valid v2 ledger nor a valid v3 ledger")
+        landed = capacity_ledger.load_capacity_ledger(root, destination)
+        if landed is None:
+            raise CalibrationError("canonical capacity ledger is invalid and cannot be migrated")
+        matches: list[tuple[Path, dict[str, Any]]] = []
+        if receipt_directory.is_dir():
+            for pending_path in receipt_directory.glob("*.v2-to-v3.pending.json"):
+                pending, _ = _load_json_bytes(pending_path)
+                if not isinstance(pending, dict):
+                    continue
+                source_sha256 = pending.get("source_v2_ledger_sha256")
+                target_sha256 = pending.get("target_v3_ledger_sha256")
+                if (
+                    isinstance(source_sha256, str)
+                    and pending == _v2_to_v3_migration_receipt(
+                        migration_id=_v2_to_v3_migration_id(source_sha256, review_deadline),
+                        status="pending", root=root, destination=destination,
+                        source_sha256=source_sha256, target_sha256=target_sha256,
+                        review_deadline=review_deadline,
+                    )
+                    and _canonical_json_sha256(landed) == target_sha256
+                ):
+                    matches.append((pending_path, pending))
+        if len(matches) != 1:
+            raise CalibrationError("valid v3 capacity ledger will not be overwritten by migration")
+        pending_path, pending = matches[0]
+        complete_path = pending_path.with_name(
+            pending_path.name.removesuffix(".pending.json") + ".complete.json"
+        )
+        _write_immutable_json(complete_path, {**pending, "status": "complete"})
+        return landed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifact-root", required=True, type=Path)
     parser.add_argument("--review-deadline", required=True)
-    parser.add_argument("--workspace-root", required=True, type=Path)
+    parser.add_argument("--workspace-root", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--initialize-ledger", action="store_true")
     parser.add_argument("--initialize-from-report", type=Path)
+    parser.add_argument("--migrate-v2-to-v3", action="store_true")
     parser.add_argument("--ledger-path", type=Path)
     args = parser.parse_args()
     root = args.artifact_root.resolve()
-    if (args.report is None) == (args.initialize_from_report is None):
-        parser.error("provide exactly one of --report or --initialize-from-report")
+    if sum(value is not None for value in (args.report, args.initialize_from_report)) + int(args.migrate_v2_to_v3) != 1:
+        parser.error("provide exactly one of --report, --initialize-from-report, or --migrate-v2-to-v3")
+    if not args.migrate_v2_to_v3 and args.workspace_root is None:
+        parser.error("--workspace-root is required for calibration operations")
+    if args.migrate_v2_to_v3 and (args.initialize_ledger or args.ledger_path is not None):
+        parser.error("--migrate-v2-to-v3 only operates on the canonical ledger")
     if args.initialize_from_report is not None and args.initialize_ledger:
         parser.error("--initialize-ledger cannot be combined with --initialize-from-report")
+    if args.migrate_v2_to_v3:
+        try:
+            migrated = migrate_canonical_v2_ledger_to_v3(
+                root, review_deadline=args.review_deadline,
+            )
+        except (CalibrationError, ValueError, OSError) as exc:
+            print(json.dumps({
+                "event": "v2_to_v3_ledger_migration_rejected",
+                "artifact_root": str(root), "reason": str(exc),
+            }, ensure_ascii=False), file=sys.stderr, flush=True)
+            raise SystemExit(2) from exc
+        print(json.dumps({
+            "event": "v2_to_v3_ledger_migrated",
+            "ledger_path": str(capacity_ledger.resolve_ledger_path(root)),
+            "schema_version": migrated["schema_version"],
+        }, ensure_ascii=False))
+        return
     report = (args.report or args.initialize_from_report).resolve(strict=False)
     try:
         report_relative = report.relative_to(root)
@@ -1609,7 +1845,7 @@ def main() -> None:
     print(json.dumps({
         "event": "calibration_started",
         "artifact_root": str(root),
-        "workspace_root": str(args.workspace_root.resolve()),
+            "workspace_root": str(args.workspace_root.resolve()),
         "report": str(report),
         "initialize_ledger": args.initialize_ledger,
     }, ensure_ascii=False), file=sys.stderr, flush=True)

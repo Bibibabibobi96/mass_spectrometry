@@ -21,6 +21,21 @@ TERMINAL_STATUSES = {"success", "failed", "interrupted"}
 HEAVY_RETENTION_ROLES = {
     "solver_native_binary", "dense_trajectory", "large_optional",
 }
+WRITING_REVIEW_DAYS = 7
+READY_REVIEW_DAYS = 30
+
+
+def _run_lifecycle_duties(run_dir: Path, *, review_days: int, reason: str) -> dict[str, str]:
+    """Assign the run owner a finite review and owner-managed retirement route."""
+
+    return {
+        "owner": run_dir.parent.parent.name,
+        "retention_reason": reason,
+        "review_deadline": (
+            datetime.now(timezone.utc).date() + timedelta(days=review_days)
+        ).isoformat(),
+        "retirement_route": "owner_managed_disposition",
+    }
 
 
 def _load_json(path: Path, label: str) -> dict[str, Any]:
@@ -78,9 +93,13 @@ def register_writing(artifact_root: Path, run_config: Path) -> dict[str, Any]:
         object_class="rebuildable_payload",
         bytes_count=total,
         status="writing",
-        owner=run_dir.parent.parent.name,
+        **_run_lifecycle_duties(
+            run_dir, review_days=WRITING_REVIEW_DAYS,
+            reason="active run awaiting terminal retention",
+        ),
         recovery_reason="run_manifest_not_terminal",
-        review_deadline=(datetime.now(timezone.utc).date() + timedelta(days=7)).isoformat(),
+        recovery_task="run owner must complete terminal retention or explicit recovery",
+        recovery_evidence_paths=[run_dir / "run_config.json"],
     )
     return {
         "schema_version": 1,
@@ -145,6 +164,10 @@ def finalize_ready(artifact_root: Path, run_config: Path) -> dict[str, Any]:
         object_class="light_evidence",
         bytes_count=total,
         status="ready",
+        **_run_lifecycle_duties(
+            run_dir, review_days=READY_REVIEW_DAYS,
+            reason="terminal compact run retained as light evidence",
+        ),
     )
     return {
         "schema_version": 1,

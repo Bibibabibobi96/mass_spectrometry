@@ -10,6 +10,19 @@ from common.contracts import capacity_ledger
 
 
 IDENTITY = "a" * 64
+PUBLISHED_DUTIES = {
+    "owner": "common.simion.pa_family_cache",
+    "retention_reason": "active native PA generation",
+    "review_deadline": "2026-10-22",
+    "retirement_route": "pa_manager_disposition",
+}
+WRITING_DUTIES = {
+    "retention_reason": "prepared native PA publication",
+    "review_deadline": "2026-10-22",
+    "retirement_route": "pa_manager_disposition",
+    "recovery_task": "resume or retire the exact PA transaction",
+    "recovery_evidence_paths": ["staging/prepared/transaction.json"],
+}
 
 
 class CapacityLedgerHandoffTest(unittest.TestCase):
@@ -29,9 +42,17 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
             bytes_count=size,
             status="writing",
             owner=owner,
+            **WRITING_DUTIES,
             recovery_reason="prepared cache publication",
-            review_deadline="2026-09-27",
             consumers=[consumer],
+        )
+
+    def _handoff(self, root: Path, **kwargs: object) -> dict[str, object]:
+        duties = {
+            f"published_{field}": value for field, value in PUBLISHED_DUTIES.items()
+        }
+        return capacity_ledger.handoff_prepared_cache_stage(
+            root, **duties, **kwargs,
         )
 
     def test_handoff_replaces_stage_without_double_counting(self) -> None:
@@ -40,7 +61,7 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
             capacity_ledger.initialize_capacity_ledger(root, objects=[])
             self._stage(root)
 
-            result = capacity_ledger.handoff_prepared_cache_stage(
+            result = self._handoff(
                 root,
                 stage_path="staging/prepared",
                 stage_owner="publisher",
@@ -66,15 +87,17 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
                     "path": "cache/key",
                     "class": "published_cache",
                     "bytes": 17,
-                    "status": "ready",
-                    "pin": False,
-                    "identity": IDENTITY,
+                "status": "ready",
+                "pin": False,
+                "identity": IDENTITY,
+                "manager": capacity_ledger.PA_CACHE_MANAGER,
+                **PUBLISHED_DUTIES,
                 }],
             )
             self._stage(root)
             self.assertEqual(capacity_ledger.load_capacity_ledger(root)["resident_bytes"], 34)
 
-            first = capacity_ledger.handoff_prepared_cache_stage(
+            first = self._handoff(
                 root,
                 stage_path="staging/prepared",
                 stage_owner="publisher",
@@ -83,7 +106,7 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
                 published_identity=IDENTITY,
                 published_bytes=17,
             )
-            second = capacity_ledger.handoff_prepared_cache_stage(
+            second = self._handoff(
                 root,
                 stage_path="staging/prepared",
                 stage_owner="publisher",
@@ -103,7 +126,7 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
             capacity_ledger.initialize_capacity_ledger(root, objects=[])
             self._stage(root)
 
-            first = capacity_ledger.handoff_prepared_cache_stage(
+            first = self._handoff(
                 root,
                 stage_path="staging/prepared",
                 stage_owner="publisher",
@@ -113,7 +136,7 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
                 published_bytes=19,
                 published_pin_reason="stable native PA family",
             )
-            second = capacity_ledger.handoff_prepared_cache_stage(
+            second = self._handoff(
                 root,
                 stage_path="staging/prepared",
                 stage_owner="publisher",
@@ -135,7 +158,7 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
             root = self._root(temporary)
             capacity_ledger.initialize_capacity_ledger(root, objects=[])
             self._stage(root)
-            capacity_ledger.handoff_prepared_cache_stage(
+            self._handoff(
                 root,
                 stage_path="staging/prepared",
                 stage_owner="publisher",
@@ -147,7 +170,7 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(ValueError, "retry declaration"):
-                capacity_ledger.handoff_prepared_cache_stage(
+                self._handoff(
                     root,
                     stage_path="staging/prepared",
                     stage_owner="publisher",
@@ -163,7 +186,7 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
             capacity_ledger.initialize_capacity_ledger(root, objects=[])
             self._stage(root)
             with self.assertRaisesRegex(ValueError, "must be landed"):
-                capacity_ledger.handoff_prepared_cache_stage(
+                self._handoff(
                     root,
                     stage_path="staging/prepared",
                     stage_owner="publisher",
@@ -174,7 +197,7 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
                 )
             (root / "cache" / "key").mkdir(parents=True)
             with self.assertRaisesRegex(ValueError, "exactly match"):
-                capacity_ledger.handoff_prepared_cache_stage(
+                self._handoff(
                     root,
                     stage_path="staging/prepared",
                     stage_owner="other",
@@ -184,7 +207,7 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
                     published_bytes=17,
                 )
             with self.assertRaisesRegex(ValueError, "exactly match"):
-                capacity_ledger.handoff_prepared_cache_stage(
+                self._handoff(
                     root,
                     stage_path="staging/prepared",
                     stage_owner="publisher",
@@ -200,7 +223,7 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
             capacity_ledger.initialize_capacity_ledger(root, objects=[])
             self._stage(root, consumer="cache/other")
             with self.assertRaisesRegex(ValueError, "exactly match"):
-                capacity_ledger.handoff_prepared_cache_stage(
+                self._handoff(
                     root,
                     stage_path="staging/prepared",
                     stage_owner="publisher",
@@ -221,11 +244,13 @@ class CapacityLedgerHandoffTest(unittest.TestCase):
                     "status": "ready",
                     "pin": False,
                     "identity": "b" * 64,
+                    "manager": capacity_ledger.PA_CACHE_MANAGER,
+                    **PUBLISHED_DUTIES,
                 }],
             )
             self._stage(root)
             with self.assertRaisesRegex(ValueError, "conflicts"):
-                capacity_ledger.handoff_prepared_cache_stage(
+                self._handoff(
                     root,
                     stage_path="staging/prepared",
                     stage_owner="publisher",
