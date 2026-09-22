@@ -955,6 +955,12 @@ def _resume_terminal_run_owner(root: Path) -> dict[str, int]:
     return resume_terminal_runs(root)
 
 
+def _audit_pa_transaction_owner(root: Path) -> dict[str, int]:
+    from common.simion.pa_family_cache import audit_pa_transaction_maintenance
+
+    return audit_pa_transaction_maintenance(root / "common" / "simion" / "pa_family_cache")
+
+
 def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     """Apply a startup recheck or exact ledger retirement plan."""
 
@@ -1215,10 +1221,12 @@ def main() -> None:
             return
         activation = {"activated_count": 0, "activated_bytes": 0}
         terminal_run_resume = {"checked_count": 0, "finalized_count": 0, "blocked_count": 0}
+        pa_transaction_audit = {"checked_count": 0, "replayable_count": 0, "awaiting_verification_count": 0, "missing_failure_evidence_count": 0, "invalid_count": 0}
         alias_reconciliation = {"corrected_count": 0, "released_bytes": 0}
         if args.execution_mode == "maintenance" and args.apply:
             activation = activate_owner_dispositions(args.artifact_root)
             terminal_run_resume = _resume_terminal_run_owner(args.artifact_root)
+            pa_transaction_audit = _audit_pa_transaction_owner(args.artifact_root)
             source_scratch_registration = _register_workspace_scratch_scope(args.artifact_root)
             source_scratch_dispositions = _resume_source_scratch_dispositions(args.artifact_root)
             alias_reconciliation = _reconcile_execution_alias_root(args.artifact_root)
@@ -1258,6 +1266,8 @@ def main() -> None:
             receipt["owner_dispositions_activated"] = activation
         if terminal_run_resume["checked_count"]:
             receipt["terminal_run_lifecycle_resume"] = terminal_run_resume
+        if pa_transaction_audit["checked_count"]:
+            receipt["pa_transaction_owner_audit"] = pa_transaction_audit
         if alias_reconciliation["corrected_count"]:
             receipt["administrative_aliases_reconciled"] = alias_reconciliation
         if source_scratch_registration["registered_count"]:

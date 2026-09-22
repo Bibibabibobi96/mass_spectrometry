@@ -3725,6 +3725,47 @@ def _cli_filenames(value: str) -> tuple[str, ...]:
     return _family_names(value.split(","))
 
 
+def audit_pa_transaction_maintenance(cache_root: str | Path) -> dict[str, int]:
+    """Classify recoverable PA transactions without opening their payloads.
+
+    The owner deliberately does not turn a ``build`` result into a solver run.
+    A building transaction with members but no verified inventory needs its
+    original failed-producer evidence before any retirement path exists.
+    """
+
+    root = Path(cache_root)
+    directory = root / TRANSACTION_DIRECTORY
+    result = {"checked_count": 0, "replayable_count": 0, "awaiting_verification_count": 0,
+              "missing_failure_evidence_count": 0, "invalid_count": 0}
+    if not directory.exists():
+        return result
+    if not directory.is_dir() or directory.is_symlink():
+        raise PAFamilyCacheError("PA transaction directory is not a regular directory")
+    for transaction in sorted(directory.iterdir()):
+        if not transaction.is_dir() or transaction.is_symlink() or SHA256.fullmatch(transaction.name) is None:
+            result["invalid_count"] += 1
+            continue
+        result["checked_count"] += 1
+        try:
+            document = _load_transaction_by_key(transaction / TRANSACTION_NAME, transaction.name)
+        except PAFamilyCacheError:
+            result["invalid_count"] += 1
+            continue
+        if document["status"] in {"prepared", "published", "retired"}:
+            result["replayable_count"] += 1
+        elif document["files"]:
+            result["awaiting_verification_count"] += 1
+        else:
+            # Listing direct member names is metadata-only; their bytes are
+            # neither opened nor hashed here.
+            payload = transaction / "payload"
+            if payload.is_dir() and any(payload.iterdir()):
+                result["missing_failure_evidence_count"] += 1
+            else:
+                result["replayable_count"] += 1
+    return result
+
+
 def main(arguments: Sequence[str] | None = None) -> int:
     """Expose probe, one transaction advance, and writable materialization."""
 
