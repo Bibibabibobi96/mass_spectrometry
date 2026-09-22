@@ -841,3 +841,27 @@ def finalize_retirement(
         ledger["resident_bytes"] = int(ledger["resident_bytes"]) - removed_bytes
         write_json_atomic(destination, ledger)
         return entry
+
+
+def update_external_scope_bytes(
+    root: Path, *, role: str, path: Path, expected_bytes: int, new_bytes: int,
+    ledger_path: Path | None = None,
+) -> dict[str, Any]:
+    """Atomically update one calibration-only external scope after exact disposal."""
+
+    if role not in EXTERNAL_SCOPE_ROLES or min(expected_bytes, new_bytes) < 0:
+        raise ValueError("external scope update values are invalid")
+    root = root.resolve(strict=False)
+    destination = resolve_ledger_path(root, ledger_path)
+    canonical = str(path.resolve(strict=False))
+    with protection.capacity_decision_lock(root):
+        ledger = load_capacity_ledger(root, destination)
+        if ledger is None:
+            raise ValueError("capacity ledger is missing or invalid")
+        entry = next((item for item in ledger["external_scopes"] if item["role"] == role), None)
+        if entry is None or entry["path"] != canonical or int(entry["bytes"]) != expected_bytes:
+            raise ValueError("external scope record differs from approved disposition")
+        entry["bytes"] = new_bytes
+        ledger["resident_bytes"] += new_bytes - expected_bytes
+        write_json_atomic(destination, ledger)
+        return dict(entry)

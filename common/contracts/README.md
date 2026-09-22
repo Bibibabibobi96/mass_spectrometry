@@ -89,6 +89,11 @@ startup只查询磁盘空闲并读取台账、当前租约和全部活动承诺�
 受管范围；二者只在校准时计量，启动仅使用冻结的台账数值。`legacy_capacity_backfill.py`
 只承担历史恢复，不能提供日常准入或容量水位覆盖。
 
+历史仓库 source `scratch/` 的删除只能使用`historical_source_scratch_retirement.py`：它要求
+校准外部范围、owner批准证据及其SHA-256，并在证据中逐项列出规范化的`retirement_targets`子目录。入口拒绝
+重叠目标、符号链接、活动消费者和受保护路径；先冻结这些目标的逐文件清单及可续做收据，随后才可用`--apply`。
+它绝不删除`scratch/`根或未列出的兄弟目录，完成后保留`repository_scratch`台账根记录并只扣除已处置字节。
+
 maintenance先处理`ready`、未pin且无租约保护的`rebuildable_payload`。`published_cache`不会进入通用删除队列；
 已开始的退休优先续做；同类可重建载荷按字节数降序选择，达到容量目标即停止，避免为很小的空间缺口
 逐项重写上千次全量账本。published cache 仍沿用最近使用时间顺序，所有身份与保护检查保持不变。
