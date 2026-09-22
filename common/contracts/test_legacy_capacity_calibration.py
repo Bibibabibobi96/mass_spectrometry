@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +13,7 @@ from common.contracts.legacy_capacity_calibration import (
     CalibrationError,
     build_calibration_inventory,
     initialize_from_inventory,
+    main,
 )
 
 
@@ -538,6 +542,44 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                 CalibrationError, "invalid_or_overdue_writing_count",
             ):
                 initialize_from_inventory(inventory)
+
+    def test_cli_writes_pending_report_before_rejecting_ledger_initialization(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            workspace = parent / "workspace"
+            report = parent / "capacity-report.json"
+            unknown = root / "projects" / "instrument" / "cache" / "unknown" / KEY
+            unknown.mkdir(parents=True)
+            (unknown / "payload.bin").write_bytes(b"cache")
+            workspace.mkdir()
+            stdout, stderr = io.StringIO(), io.StringIO()
+            arguments = [
+                "legacy_capacity_calibration",
+                "--artifact-root", str(root),
+                "--workspace-root", str(workspace),
+                "--review-deadline", "2026-09-29",
+                "--report", str(report),
+                "--initialize-ledger",
+            ]
+            with (
+                mock.patch.object(sys, "argv", arguments),
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(stderr),
+                self.assertRaises(SystemExit) as exited,
+            ):
+                main()
+            self.assertEqual(exited.exception.code, 2)
+            self.assertTrue(report.is_file())
+            inventory = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(inventory["unresolved_count"], 1)
+            events = [json.loads(line)["event"] for line in stderr.getvalue().splitlines()]
+            self.assertEqual(events[0], "calibration_started")
+            self.assertIn("scan_artifact_root_entry", events)
+            self.assertIn("calibration_report_written", events)
+            self.assertEqual(events[-1], "ledger_initialization_rejected")
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertFalse((root / "common" / "capacity_ledger.json").exists())
 
 
 if __name__ == "__main__":

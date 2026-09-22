@@ -12,9 +12,10 @@ import argparse
 import json
 import re
 import stat
+import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from common.contracts import capacity_ledger, capacity_protection
 from common.contracts.artifact_retention import (
@@ -65,6 +66,24 @@ SCRATCH_LIGHT_ROLE_SUFFIXES = (
 
 class CalibrationError(ValueError):
     """Raised when a calibration request or trusted metadata is invalid."""
+
+
+CalibrationProgress = Callable[[str, Path], None]
+
+
+def _report_progress(
+    progress: CalibrationProgress | None, event: str, path: Path,
+) -> None:
+    """Emit an optional coarse-grained scan checkpoint.
+
+    Calibration deliberately measures every declared scope once.  On a large
+    PA repository that metadata walk can take long enough that a caller needs
+    proof it is still scanning rather than waiting on ledger initialization.
+    The callback never reports individual files or reads payload contents.
+    """
+
+    if progress is not None:
+        progress(event, path)
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
@@ -514,12 +533,16 @@ def _run_objects(
 
 def _classify_project(
     root: Path, project: Path, review_deadline: str,
+    *, progress: CalibrationProgress | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     objects: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
     for child in sorted(project.iterdir()):
         if child.name == "runs" and child.is_dir():
-            for run in sorted(item for item in child.iterdir() if item.is_dir()):
+            runs = sorted(item for item in child.iterdir() if item.is_dir())
+            for index, run in enumerate(runs, start=1):
+                if index == 1 or index == len(runs) or index % 25 == 0:
+                    _report_progress(progress, "scan_project_runs", run)
                 found, pending = _run_objects(root, run, review_deadline)
                 objects.extend(found)
                 unresolved.extend(pending)
@@ -707,7 +730,9 @@ def _protect_active_dependencies(
     return count, bytes_count, leases
 
 
-def _workspace_external_scopes(artifact_root: Path, workspace_root: Path) -> list[dict[str, Any]]:
+def _workspace_external_scopes(
+    artifact_root: Path, workspace_root: Path, *, progress: CalibrationProgress | None = None,
+) -> list[dict[str, Any]]:
     """Measure the two declared source-tree working roots during calibration only."""
 
     workspace = workspace_root.resolve(strict=False)
@@ -717,6 +742,7 @@ def _workspace_external_scopes(artifact_root: Path, workspace_root: Path) -> lis
     scopes: list[dict[str, Any]] = []
     for role, name in (("repository_scratch", "scratch"), ("repository_generated", "generated")):
         target = (workspace / name).resolve(strict=False)
+        _report_progress(progress, "scan_workspace_scope", target)
         if target.exists() and not target.is_dir():
             raise CalibrationError(f"declared workspace scope is not a directory: {target}")
         scopes.append({"role": role, "path": str(target), "bytes": 0 if not target.exists() else _bytes(target)})
@@ -725,6 +751,7 @@ def _workspace_external_scopes(artifact_root: Path, workspace_root: Path) -> lis
 
 def build_calibration_inventory(
     artifact_root: Path, *, review_deadline: str, workspace_root: Path | None = None,
+    progress: CalibrationProgress | None = None,
 ) -> dict[str, Any]:
     """Return a metadata-only inventory; never hash or remove payload files."""
 
@@ -736,12 +763,13 @@ def build_calibration_inventory(
     if not root.is_dir():
         raise CalibrationError("artifact_root must be an existing directory")
     external_scopes = (
-        _workspace_external_scopes(root, workspace_root)
+        _workspace_external_scopes(root, workspace_root, progress=progress)
         if workspace_root is not None else []
     )
     objects: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
     for child in sorted(root.iterdir()):
+        _report_progress(progress, "scan_artifact_root_entry", child)
         if child.name == "common" and child.is_dir():
             for common_child in sorted(child.iterdir()):
                 if common_child.name == "simion" and common_child.is_dir():
@@ -806,7 +834,10 @@ def build_calibration_inventory(
         elif child.name == "projects" and child.is_dir():
             for project in sorted(child.iterdir()):
                 if project.is_dir():
-                    found, pending = _classify_project(root, project, review_deadline)
+                    _report_progress(progress, "scan_project", project)
+                    found, pending = _classify_project(
+                        root, project, review_deadline, progress=progress,
+                    )
                     objects.extend(found)
                     unresolved.extend(pending)
                 else:
@@ -1020,12 +1051,59 @@ def main() -> None:
             "in-root pending reports must be below common/capacity_calibration; "
             "ledger initialization requires an external report"
         )
-    inventory = build_calibration_inventory(
-        root, review_deadline=args.review_deadline, workspace_root=args.workspace_root,
-    )
+
+    def progress(event: str, path: Path) -> None:
+        print(json.dumps({
+            "event": event,
+            "path": str(path),
+        }, ensure_ascii=False), file=sys.stderr, flush=True)
+
+    print(json.dumps({
+        "event": "calibration_started",
+        "artifact_root": str(root),
+        "workspace_root": str(args.workspace_root.resolve()),
+        "report": str(report),
+        "initialize_ledger": args.initialize_ledger,
+    }, ensure_ascii=False), file=sys.stderr, flush=True)
+    try:
+        inventory = build_calibration_inventory(
+            root, review_deadline=args.review_deadline,
+            workspace_root=args.workspace_root, progress=progress,
+        )
+    except (CalibrationError, OSError) as exc:
+        print(json.dumps({
+            "event": "calibration_failed_before_report",
+            "report": str(report),
+            "error_type": type(exc).__name__,
+            "reason": str(exc),
+        }, ensure_ascii=False), file=sys.stderr, flush=True)
+        raise
     write_json_atomic(report, inventory)
+    print(json.dumps({
+        "event": "calibration_report_written",
+        "report": str(report),
+        "status": inventory["status"],
+        "unresolved_count": inventory["unresolved_count"],
+        "initialization_blocker_count": inventory["initialization_blocker_count"],
+    }, ensure_ascii=False), file=sys.stderr, flush=True)
     if args.initialize_ledger:
-        initialize_from_inventory(inventory, ledger_path=args.ledger_path)
+        try:
+            initialize_from_inventory(inventory, ledger_path=args.ledger_path)
+        except CalibrationError as exc:
+            print(json.dumps({
+                "event": "ledger_initialization_rejected",
+                "report": str(report),
+                "reason": str(exc),
+            }, ensure_ascii=False), file=sys.stderr, flush=True)
+            raise SystemExit(2) from exc
+        print(json.dumps({
+            "event": "ledger_initialized",
+            "ledger_path": str(
+                args.ledger_path.resolve(strict=False)
+                if args.ledger_path is not None
+                else capacity_ledger.resolve_ledger_path(root)
+            ),
+        }, ensure_ascii=False), file=sys.stderr, flush=True)
     print(json.dumps({
         "status": inventory["status"],
         "classified_bytes": inventory["classified_bytes"],
