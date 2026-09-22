@@ -294,12 +294,13 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             ledger = root / "common" / "capacity_ledger.json"
             ledger.parent.mkdir(exist_ok=True)
             ledger.write_text(json.dumps({
-                "schema_version": 1,
+                "schema_version": 2,
                 "role": "artifact_capacity_ledger",
                 "status": "calibrated",
                 "complete": True,
                 "artifact_root": str(root),
                 "resident_bytes": 1000,
+                "external_scopes": [],
                 "objects": [{
                     "path": "projects/existing", "class": "light_evidence",
                     "bytes": 1000, "status": "ready", "pin": False,
@@ -399,12 +400,13 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             root = Path(temporary)
             (root / "common").mkdir()
             (root / "common" / "capacity_ledger.json").write_text(json.dumps({
-                "schema_version": 1,
+                "schema_version": 2,
                 "role": "artifact_capacity_ledger",
                 "status": "calibrated",
                 "complete": True,
                 "artifact_root": str(root),
                 "resident_bytes": 10,
+                "external_scopes": [],
                 "objects": [{
                     "path": "projects/p/cache/key",
                     "class": "rebuildable_payload",
@@ -431,9 +433,10 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             ledger = root / "common" / "capacity_ledger.json"
             ledger.parent.mkdir(exist_ok=True)
             ledger.write_text(json.dumps({
-                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "schema_version": 2, "role": "artifact_capacity_ledger",
                 "status": "calibrated", "complete": True,
                 "artifact_root": str(root), "resident_bytes": payload_bytes,
+                "external_scopes": [],
                 "objects": [{
                     "path": "projects/p/runs/rebuildable",
                     "class": "rebuildable_payload", "bytes": payload_bytes,
@@ -456,9 +459,10 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             ledger = root / "common" / "capacity_ledger.json"
             ledger.parent.mkdir()
             ledger.write_text(json.dumps({
-                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "schema_version": 2, "role": "artifact_capacity_ledger",
                 "status": "calibrated", "complete": True,
-                "artifact_root": str(root), "resident_bytes": 0, "objects": [],
+                "artifact_root": str(root), "resident_bytes": 0,
+                "external_scopes": [], "objects": [],
             }), encoding="utf-8")
             self.assertEqual(
                 capacity.record_capacity_object(
@@ -493,9 +497,10 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             ledger_path = root / "common" / "capacity_ledger.json"
             ledger_path.parent.mkdir()
             ledger_path.write_text(json.dumps({
-                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "schema_version": 2, "role": "artifact_capacity_ledger",
                 "status": "calibrated", "complete": True,
-                "artifact_root": str(root), "resident_bytes": 0, "objects": [],
+                "artifact_root": str(root), "resident_bytes": 0,
+                "external_scopes": [], "objects": [],
             }), encoding="utf-8")
             capacity.record_capacity_object(
                 root, path="runs/old", object_class="rebuildable_payload",
@@ -948,8 +953,9 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             ledger = root / "common" / "capacity_ledger.json"
             ledger.parent.mkdir(exist_ok=True)
             ledger.write_text(json.dumps({
-                "schema_version": 1, "role": "artifact_capacity_ledger",
-                "artifact_root": str(root), "resident_bytes": 0, "objects": [],
+                "schema_version": 2, "role": "artifact_capacity_ledger",
+                "artifact_root": str(root), "resident_bytes": 0,
+                "external_scopes": [], "objects": [],
             }), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "uncalibrated"):
                 capacity.record_capacity_object(
@@ -963,9 +969,10 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             ledger = root / "common" / "capacity_ledger.json"
             ledger.parent.mkdir()
             base = {
-                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "schema_version": 2, "role": "artifact_capacity_ledger",
                 "status": "calibrated", "complete": True,
                 "artifact_root": str(root), "resident_bytes": 1,
+                "external_scopes": [],
                 "objects": [{
                     "path": "cache/key", "class": "published_cache", "bytes": 1,
                     "status": "ready", "pin": False, "identity": "c" * 64,
@@ -991,9 +998,10 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             ledger = root / "common" / "capacity_ledger.json"
             ledger.parent.mkdir()
             ledger.write_text(json.dumps({
-                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "schema_version": 2, "role": "artifact_capacity_ledger",
                 "status": "calibrated", "complete": True,
                 "artifact_root": str(root), "resident_bytes": 7,
+                "external_scopes": [],
                 "objects": [{
                     "path": "cache/old", "class": "rebuildable_payload", "bytes": 7,
                     "status": "ready", "pin": False,
@@ -1015,27 +1023,30 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             self.assertEqual(document["objects"][0]["status"], "retired")
             self.assertEqual(document["resident_bytes"], 0)
 
-    def test_cli_watermarks_follow_policy_and_explicit_overrides(self) -> None:
-        policy = capacity._capacity_policy()
-        policy.update(target_gib=37, minimum_free_gib=11)
-        for extra, expected in (([], (37, 11)),
-                                (["--target-gib", "9", "--minimum-free-gib", "0"], (9, 0))):
-            with self.subTest(extra=extra), patch.object(capacity, "_capacity_policy", return_value=policy), \
-                    patch.object(capacity, "plan", return_value={"satisfied": True}) as planned, \
-                    patch("sys.argv", ["capacity", "--artifact-root", ".", *extra]), \
-                    redirect_stdout(io.StringIO()):
+    def test_legacy_cli_uses_shared_policy_and_rejects_capacity_overrides(self) -> None:
+        shared = normal_capacity._capacity_policy()
+        with patch.object(capacity, "plan", return_value={"satisfied": True}) as planned, \
+                patch("sys.argv", ["capacity", "--artifact-root", "."]), \
+                redirect_stdout(io.StringIO()):
+            main()
+        self.assertEqual(planned.call_args.kwargs["target_bytes"], shared["target_gib"] * capacity.GIB)
+        self.assertEqual(planned.call_args.kwargs["minimum_free_bytes"], shared["minimum_free_gib"] * capacity.GIB)
+        self.assertEqual(planned.call_args.kwargs["execution_mode"], "legacy-backfill")
+        for option in ("--target-gib", "--minimum-free-gib"):
+            with self.subTest(option=option), patch("sys.argv", [
+                "capacity", "--artifact-root", ".", option, "999999",
+            ]), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
                 main()
-            self.assertEqual(planned.call_args.kwargs["target_bytes"], expected[0] * capacity.GIB)
-            self.assertEqual(planned.call_args.kwargs["minimum_free_bytes"], expected[1] * capacity.GIB)
+            self.assertEqual(raised.exception.code, 2)
 
     def test_policy_rejects_invalid_watermarks(self) -> None:
-        original = capacity._capacity_policy()
+        original = normal_capacity._capacity_policy()
         for field, value in (("target_gib", 0), ("minimum_free_gib", -1),
                              ("target_gib", float("nan")), ("minimum_free_gib", True)):
             with self.subTest(field=field, value=value), \
-                    patch.object(capacity, "_load_object", return_value={**original, field: value}), \
+                    patch.object(normal_capacity, "_load_object", return_value={**original, field: value}), \
                     self.assertRaisesRegex(RuntimeError, field):
-                capacity._capacity_policy()
+                normal_capacity._capacity_policy()
 
     def _success_build_run(self, root: Path, name: str) -> tuple[Path, Path, Path]:
         run = root / "projects" / "p" / "runs" / name
@@ -1604,7 +1615,6 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             stderr = io.StringIO()
             with patch("sys.argv", [
                 "legacy_capacity_backfill", "--artifact-root", str(root),
-                "--target-gib", "1", "--minimum-free-gib", "0",
             ]), redirect_stderr(stderr), self.assertRaises(SystemExit) as exited:
                 main()
             self.assertEqual(exited.exception.code, 2)

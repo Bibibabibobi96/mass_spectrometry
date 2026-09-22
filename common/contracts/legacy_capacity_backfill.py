@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from common.contracts import capacity_ledger
+from common.contracts import reconcile_artifact_capacity as daily_capacity
 from common.contracts import capacity_protection as protection
 from common.contracts.artifact_retention import classify_file, validate_retention
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic as _write_json_atomic
@@ -428,17 +429,25 @@ def _published_cache_keys(root: Path) -> set[str]:
 
 
 def _capacity_policy() -> dict[str, Any]:
-    """Load and minimally validate the versioned repository eviction policy."""
+    """Load migration priorities and the single authoritative capacity policy.
+
+    This module retains only explicit historical discovery/recovery work.  Its
+    former independent capacity watermarks are intentionally absent: every
+    byte decision uses the daily reconciler's checked-in policy.
+    """
 
     policy = _load_object(POLICY_PATH)
-    if policy is None or int(policy.get("schema_version", 0)) != 1:
-        raise RuntimeError(f"invalid artifact-capacity policy: {POLICY_PATH}")
-    for field in ("target_gib", "minimum_free_gib"):
-        value = policy.get(field)
-        if (isinstance(value, bool) or not isinstance(value, (int, float))
-                or not math.isfinite(value) or value < 0
-                or (field == "target_gib" and value == 0)):
-            raise RuntimeError(f"invalid {field} in {POLICY_PATH}")
+    expected = {
+        "schema_version", "role", "description",
+        "unmanaged_run_deletion_priority", "unmanaged_run_grace_seconds",
+        "explicit_success_build_payload_deletion_priority",
+        "default_l2_deletion_priority", "l1_deletion_priority",
+        "l3_deletion_priority", "l2_role_deletion_priorities",
+    }
+    if policy is None or set(policy) != expected:
+        raise RuntimeError(f"invalid legacy backfill policy: {POLICY_PATH}")
+    if policy.get("schema_version") != 1 or policy.get("role") != "legacy_capacity_backfill_policy":
+        raise RuntimeError(f"invalid legacy backfill policy identity: {POLICY_PATH}")
     roles = policy.get("l2_role_deletion_priorities")
     if not isinstance(roles, dict):
         raise RuntimeError(f"invalid L2 role priorities in {POLICY_PATH}")
@@ -456,8 +465,8 @@ def _capacity_policy() -> dict[str, Any]:
         raise RuntimeError(f"invalid unmanaged_run_grace_seconds in {POLICY_PATH}")
     if any(not isinstance(value, int) or value < 0 for value in roles.values()):
         raise RuntimeError(f"invalid L2 role priority in {POLICY_PATH}")
-    return policy
-
+    shared = daily_capacity._capacity_policy()
+    return {**policy, "target_gib": shared["target_gib"], "minimum_free_gib": shared["minimum_free_gib"]}
 
 def _deletion_priority(*, level: str, cache_role: str | None, policy: dict[str, Any]) -> int:
     """Return a policy-owned priority; unknown published roles stay conservative."""
@@ -1571,9 +1580,7 @@ def main() -> None:
     parser.add_argument("--lease-owner")
     parser.add_argument("--lease-ttl-seconds", type=int)
     parser.add_argument("--committed-new-bytes", type=int)
-    parser.add_argument("--target-gib", type=float, default=policy["target_gib"])
     parser.add_argument("--required-headroom-bytes", type=int, default=0)
-    parser.add_argument("--minimum-free-gib", type=float, default=policy["minimum_free_gib"])
     parser.add_argument("--protect-path", action="append", type=Path, default=[])
     parser.add_argument("--protect-cache-key", action="append", default=[])
     parser.add_argument("--known-measured-bytes", type=int)
@@ -1581,8 +1588,8 @@ def main() -> None:
     parser.add_argument("--capacity-baseline-receipt", type=Path)
     parser.add_argument("--capacity-baseline-receipt-sha256")
     parser.add_argument(
-        "--execution-mode", choices=("startup", "maintenance", "legacy-backfill"),
-        default="startup",
+        "--execution-mode", choices=("legacy-backfill",), default="legacy-backfill",
+        help="explicit historical discovery/recovery only; daily admission uses reconcile_artifact_capacity",
     )
     parser.add_argument("--capacity-ledger", type=Path)
     parser.add_argument("--capacity-protection-lease-id")
@@ -1659,9 +1666,8 @@ def main() -> None:
             parser.error(str(exc))
         print(json.dumps(deleted, indent=2))
         return
-    if (args.target_gib <= 0 or args.required_headroom_bytes < 0 or
-            args.minimum_free_gib < 0):
-        parser.error("capacity values must be nonnegative and target positive")
+    if args.required_headroom_bytes < 0:
+        parser.error("required headroom bytes must be nonnegative")
     if args.apply and not os.environ.get(
         "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"
     ):
@@ -1675,9 +1681,9 @@ def main() -> None:
         )
         if baseline is not None and args.known_measured_bytes is not None:
             parser.error("capacity baseline receipt and raw known measurement are mutually exclusive")
-        receipt = plan(args.artifact_root, target_bytes=int(args.target_gib * GIB),
+        receipt = plan(args.artifact_root, target_bytes=int(policy["target_gib"] * GIB),
                        required_headroom_bytes=args.required_headroom_bytes,
-                       minimum_free_bytes=int(args.minimum_free_gib * GIB),
+                       minimum_free_bytes=int(policy["minimum_free_gib"] * GIB),
                        protected_paths=args.protect_path,
                        protected_cache_keys=args.protect_cache_key,
                        known_measured_bytes=baseline if baseline is not None else args.known_measured_bytes,

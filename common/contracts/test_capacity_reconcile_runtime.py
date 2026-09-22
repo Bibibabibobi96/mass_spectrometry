@@ -89,6 +89,49 @@ class DailyCapacityReconcileTest(unittest.TestCase):
         self.assertEqual(policy["light_evidence_budget_bytes"], 26_214_400)
         self.assertEqual(capacity._capacity_policy(), policy)
 
+    def test_formal_policy_is_exactly_600_gib_and_legacy_v1_ledger_fails_closed(self) -> None:
+        self.assertEqual(capacity._capacity_policy()["target_gib"], 600)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            legacy = {
+                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "status": "calibrated", "complete": True,
+                "artifact_root": str(root), "resident_bytes": 0, "objects": [],
+            }
+            ledger = root / "common" / "capacity_ledger.json"
+            ledger.parent.mkdir()
+            ledger.write_text(json.dumps(legacy), encoding="utf-8")
+            self.assertIsNone(capacity_ledger.load_capacity_ledger(root))
+
+    def test_external_scope_bytes_contribute_to_startup_resident_projection_without_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            root.mkdir()
+            workspace = parent / "simulation_repo"
+            scratch = workspace / "scratch"
+            generated = workspace / "generated"
+            scratch.mkdir(parents=True)
+            generated.mkdir()
+            scopes = [
+                {"role": "repository_scratch", "path": str(scratch.resolve()), "bytes": 40},
+                {"role": "repository_generated", "path": str(generated.resolve()), "bytes": 60},
+            ]
+            capacity_ledger.initialize_capacity_ledger(root, objects=[], external_scopes=scopes)
+            create_capacity_protection_lease(
+                root, lease_id="current", owner="test", ttl_seconds=60,
+                protected_paths=[root / "future"], committed_new_bytes=1,
+            )
+            with patch.object(capacity.shutil, "disk_usage", return_value=Mock(free=10_000)):
+                receipt = capacity.plan(
+                    root, target_bytes=100, minimum_free_bytes=0,
+                    protected_paths=[root / "future"], capacity_protection_lease_id="current",
+                )
+            self.assertFalse(receipt["satisfied"])
+            self.assertEqual(receipt["resident_bytes"], 100)
+            self.assertEqual(receipt["projected_bytes"], 101)
+            self.assertEqual(receipt["blocking_reason"], "TARGET_CAPACITY_EXCEEDED")
+
     def test_daily_module_has_no_legacy_imports(self) -> None:
         source = Path(capacity.__file__).read_text(encoding="utf-8")
         for forbidden in (

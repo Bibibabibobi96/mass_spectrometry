@@ -206,6 +206,106 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             self.assertTrue(inventory["objects"][0]["pin"])
             self.assertEqual(inventory["objects"][0]["class"], "light_evidence")
 
+    def test_unproven_review_and_stale_ledger_temp_remain_actionable_unresolved(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            common = root / "common"
+            common.mkdir(parents=True)
+            (common / "capacity_ledger.json").write_text("{}", encoding="utf-8")
+            (common / ".capacity_ledger.json.fixture").write_bytes(b"stale")
+            for project in ("orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"):
+                review = root / "projects" / project / "reviews" / "current"
+                review.mkdir(parents=True)
+                _write_json(review / "inspection_receipt.json", {
+                    "role": "readonly_inspection", "status": "ready",
+                })
+                (review / "copied.pa0").write_bytes(b"payload")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            pending = {item["path"]: item for item in inventory["unresolved"]}
+            temp = pending["common/.capacity_ledger.json.fixture"]
+            self.assertEqual(temp["owner_hint"], "common.capacity_ledger")
+            self.assertEqual(temp["reason"], "stale_capacity_ledger_atomic_temp_requires_recovery")
+            self.assertIn("atomic publication lineage", temp["recovery_task"])
+            for project in ("orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"):
+                item = pending[f"projects/{project}/reviews"]
+                self.assertEqual(item["owner_hint"], project)
+                self.assertEqual(item["reason"], "review_package_lacks_sealed_owner_disposition_manifest")
+                self.assertIn("sealed review-package manifest", item["recovery_task"])
+
+    def test_invalid_frozen_input_cache_remains_actionable_not_published(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            key = "A" * 64
+            cache = root / "projects" / "instrument" / "cache" / "native_corridor_frozen_inputs" / key
+            cache.mkdir(parents=True)
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            self.assertEqual(inventory["object_count"], 0)
+            self.assertEqual(inventory["unresolved_count"], 1)
+            item = inventory["unresolved"][0]
+            self.assertEqual(item["reason"], "frozen_input_cache_manifest_or_member_metadata_differs")
+            self.assertEqual(item["owner_hint"], "instrument")
+            self.assertIn("restore the frozen-input manifest", item["recovery_task"])
+
+    def test_pa_runtime_roots_are_accounted_with_explicit_recovery_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            transactions = root / "common" / "simion" / "pa_family_cache" / ".transactions"
+            locks = root / "common" / "simion" / "pa_family_cache" / ".locks"
+            transactions.mkdir(parents=True)
+            locks.mkdir()
+            (transactions / "partial.pa0").write_bytes(b"transaction")
+            (locks / "builder.lock").write_bytes(b"lock")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            by_path = {item["path"]: item for item in inventory["objects"]}
+            for name in (
+                "common/simion/pa_family_cache/.transactions",
+                "common/simion/pa_family_cache/.locks",
+            ):
+                self.assertEqual(by_path[name]["status"], "writing")
+                self.assertEqual(by_path[name]["owner_hint"], "common.simion.pa_family_cache")
+                self.assertEqual(by_path[name]["class"], "rebuildable_payload")
+            self.assertEqual(inventory["unresolved_count"], 0)
+
+    def test_workspace_scratch_and_generated_are_external_ledger_scopes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            root.mkdir()
+            workspace = parent / "simulation_repo"
+            (workspace / "scratch").mkdir(parents=True)
+            (workspace / "generated").mkdir()
+            (workspace / "scratch" / "checkpoint.bin").write_bytes(b"scratch")
+            (workspace / "generated" / "derived.pa0").write_bytes(b"generated")
+            inventory = build_calibration_inventory(
+                root, review_deadline="2026-09-27", workspace_root=workspace,
+            )
+            self.assertEqual(inventory["external_scope_bytes"], len(b"scratchgenerated"))
+            self.assertEqual(
+                {item["role"] for item in inventory["external_scopes"]},
+                {"repository_scratch", "repository_generated"},
+            )
+            ledger = initialize_from_inventory(inventory)
+            self.assertEqual(ledger["resident_bytes"], len(b"scratchgenerated"))
+            self.assertEqual(ledger["external_scopes"], inventory["external_scopes"])
+
+    def test_top_level_scratch_and_generated_are_counted_as_recoverable_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            scratch = root / "scratch"
+            generated = root / "generated"
+            scratch.mkdir(parents=True)
+            generated.mkdir()
+            (scratch / "interrupted.pa0").write_bytes(b"scratch")
+            (generated / "response.pa0").write_bytes(b"generated")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            by_path = {item["path"]: item for item in inventory["objects"]}
+            for name in ("scratch", "generated"):
+                self.assertEqual(by_path[name]["class"], "rebuildable_payload")
+                self.assertEqual(by_path[name]["status"], "writing")
+                self.assertEqual(by_path[name]["owner_hint"], "artifact_root_maintainer")
+            self.assertEqual(inventory["unresolved_count"], 0)
+            self.assertEqual(inventory["resident_bytes"], len(b"scratchgenerated"))
+
     def test_scratch_and_unknown_cache_provider_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "role": "artifact_capacity_policy",
-  "description": "Legacy migration-only artifact discovery and eviction policy.",
+  "role": "legacy_capacity_backfill_policy",
+  "description": "Migration-only discovery and historical eviction priority. Capacity watermarks are owned by artifact_capacity_policy.json.",
   "unmanaged_run_deletion_priority": 5,
   "unmanaged_run_grace_seconds": 86400,
   "explicit_success_build_payload_deletion_priority": 200,
@@ -15,9 +15,5 @@
     "simion_oatof_flight_tube_pa_cache": 70,
     "simion_single_flight_upstream_bridge_pa_cache": 80,
     "simion_single_flight_accelerator_main_pa_cache": 90
-  },
-  "target_gib": 700,
-  "minimum_free_gib": 300,
-  "startup_gate_target_seconds": 5,
-  "startup_gate_deadline_seconds": 60
+  }
 }

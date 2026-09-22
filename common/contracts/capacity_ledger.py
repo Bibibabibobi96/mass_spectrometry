@@ -21,6 +21,7 @@ from common.contracts.recorded_file_removal import write_json_atomic
 CAPACITY_LEDGER_RELATIVE_PATH = Path("common") / "capacity_ledger.json"
 LEDGER_CLASSES = {"light_evidence", "published_cache", "rebuildable_payload"}
 LEDGER_STATUSES = {"writing", "ready", "retirement_pending", "retired"}
+EXTERNAL_SCOPE_ROLES = {"repository_scratch", "repository_generated"}
 RECORDABLE_STATUSES = {"writing", "ready"}
 SHA256 = re.compile(r"[0-9A-Fa-f]{64}")
 RECOVERY_FIELDS = {"owner", "recovery_reason", "review_deadline"}
@@ -119,11 +120,11 @@ def load_capacity_ledger(root: Path, path: Path | None = None) -> dict[str, Any]
 def _is_valid_capacity_ledger(root: Path, document: object) -> bool:
     """Validate the complete ledger schema and its resident-byte invariant."""
 
-    if not isinstance(document, dict) or document.get("schema_version") != 1:
+    if not isinstance(document, dict) or document.get("schema_version") != 2:
         return False
     if set(document) != {
         "schema_version", "role", "status", "complete", "artifact_root",
-        "resident_bytes", "objects",
+        "resident_bytes", "objects", "external_scopes",
     }:
         return False
     if document.get("role") != "artifact_capacity_ledger":
@@ -140,7 +141,30 @@ def _is_valid_capacity_ledger(root: Path, document: object) -> bool:
     if isinstance(resident, bool) or not isinstance(resident, int) or resident < 0:
         return False
     objects = document.get("objects", [])
-    if not isinstance(objects, list):
+    external_scopes = document.get("external_scopes", [])
+    if not isinstance(objects, list) or not isinstance(external_scopes, list):
+        return False
+    external_bytes = 0
+    external_roles: set[str] = set()
+    external_paths: set[str] = set()
+    for item in external_scopes:
+        if not isinstance(item, dict) or set(item) != {"role", "path", "bytes"}:
+            return False
+        role, path, size = item.get("role"), item.get("path"), item.get("bytes")
+        if role not in EXTERNAL_SCOPE_ROLES or not isinstance(path, str) or not path:
+            return False
+        candidate = Path(path)
+        if not candidate.is_absolute() or candidate.resolve(strict=False) != candidate:
+            return False
+        key = str(candidate).casefold() if os.name == "nt" else str(candidate)
+        if role in external_roles or key in external_paths:
+            return False
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            return False
+        external_roles.add(role)
+        external_paths.add(key)
+        external_bytes += size
+    if external_scopes and external_roles != EXTERNAL_SCOPE_ROLES:
         return False
     seen_paths: set[str] = set()
     governed_paths: list[str] = []
@@ -240,14 +264,15 @@ def _is_valid_capacity_ledger(root: Path, document: object) -> bool:
         parts = governed_path.split("/")
         if any("/".join(parts[:index]) in governed_path_set for index in range(1, len(parts))):
             return False
-    if governed_bytes != resident:
+    if governed_bytes + external_bytes != resident:
         return False
     return True
 
 
 def initialize_capacity_ledger(
-    root: Path, *, objects: Iterable[dict[str, Any]], path: Path | None = None,
-    overwrite: bool = False,
+    root: Path, *, objects: Iterable[dict[str, Any]],
+    external_scopes: Iterable[dict[str, Any]] | None = None,
+    path: Path | None = None, overwrite: bool = False,
 ) -> dict[str, Any]:
     """Explicitly publish a calibrated complete baseline from backfill output.
 
@@ -265,15 +290,17 @@ def initialize_capacity_ledger(
         entry = {**source, "path": relative}
         normalized.append(entry)
     document = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "artifact_capacity_ledger",
         "status": "calibrated",
         "complete": True,
         "artifact_root": str(root),
-        "resident_bytes": sum(
-            int(item.get("bytes", 0)) for item in normalized if item.get("status") != "retired"
+        "resident_bytes": (
+            sum(int(item.get("bytes", 0)) for item in normalized if item.get("status") != "retired")
+            + sum(int(item.get("bytes", 0)) for item in (external_scopes or ()))
         ),
         "objects": normalized,
+        "external_scopes": list(external_scopes or ()),
     }
     if not _is_valid_capacity_ledger(root, document):
         raise ValueError("explicit capacity ledger baseline is invalid")

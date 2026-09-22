@@ -133,7 +133,10 @@ PID与创建时间继续识别后代，确认相关进程退出才回收。状�
 
 清理时先运行卫生门禁检查源码与工作区顶层，再按[生命周期](LIFECYCLE.md#保留与清理策略)盘点产物、
 活动引用和相关系统临时目录。`reconcile_artifact_capacity.py --artifact-root ..\artifacts`只执行
-ledger-only日常startup/maintenance；历史全盘扫描必须显式调用`legacy_capacity_backfill.py`。
+ledger-only日常startup/maintenance。首次校准或台账失准时，必须显式调用
+`legacy_capacity_calibration.py --workspace-root <simulation_repo>`；它一次性统计artifact根、
+仓库`scratch/`和`generated/`，而日常启动绝不遍历这些目录。`legacy_capacity_backfill.py`
+只保留历史发现／恢复，不能作为日常准入或覆盖容量水位。
 未核对候选不得追加`--apply`。清理收据统一放在
 `artifacts/common/capacity_disposal_receipts/`，不留在工作区顶层。主机资源许可不替代容量保护租约，
 调用与保护参数见[公共容量合同](../common/contracts/README.md#运行身份与生命周期)。

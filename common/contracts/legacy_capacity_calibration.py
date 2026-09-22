@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import stat
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -116,6 +117,7 @@ def _candidate(
     root: Path, path: Path, object_class: str, *, identity: str | None = None,
     status: str = "ready", pin: bool = False, pin_reason: str | None = None,
     evidence: Iterable[Path] = (), recovery_reason: str | None = None,
+    owner_hint: str | None = None,
 ) -> dict[str, Any]:
     item: dict[str, Any] = {
         "path": _relative(root, path),
@@ -123,7 +125,7 @@ def _candidate(
         "bytes": _bytes(path),
         "status": status,
         "pin": pin,
-        "owner_hint": _owner_hint(root, path),
+        "owner_hint": _owner_hint(root, path) if owner_hint is None else owner_hint,
         "evidence_paths": [_relative(root, item) for item in evidence],
     }
     if identity is not None:
@@ -137,15 +139,17 @@ def _candidate(
 
 def _unresolved(
     root: Path, path: Path, reason: str, review_deadline: str,
-    *, evidence: Iterable[Path] = (),
+    *, evidence: Iterable[Path] = (), owner_hint: str | None = None,
+    recovery_task: str | None = None,
 ) -> dict[str, Any]:
     return {
         "path": _relative(root, path),
         "bytes": _bytes(path),
         "reason": reason,
-        "owner_hint": _owner_hint(root, path),
+        "owner_hint": _owner_hint(root, path) if owner_hint is None else owner_hint,
         "review_deadline": review_deadline,
         "evidence_paths": [_relative(root, item) for item in evidence],
+        **({"recovery_task": recovery_task} if recovery_task is not None else {}),
     }
 
 
@@ -184,6 +188,42 @@ def _scratch_is_small_named_evidence(path: Path) -> bool:
         isinstance(role, str)
         and role.casefold().endswith(SCRATCH_LIGHT_ROLE_SUFFIXES)
     )
+
+
+def _common_pa_runtime_state(
+    root: Path, path: Path, *, reason: str,
+) -> dict[str, Any]:
+    """Account PA transaction/lock state without treating it as a cache key."""
+
+    return _candidate(
+        root, path, "rebuildable_payload", status="writing",
+        recovery_reason=reason, owner_hint="common.simion.pa_family_cache",
+    )
+
+
+def _execution_alias_root(root: Path, path: Path, review_deadline: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Validate disposable junction aliases without double-counting targets."""
+
+    root_resolved = root.resolve(strict=False)
+    for alias in sorted(path.iterdir()):
+        try:
+            target = alias.resolve(strict=True)
+            target.relative_to(root_resolved)
+        except (OSError, RuntimeError, ValueError):
+            return None, _unresolved(
+                root, path, "execution_alias_target_missing_or_escapes_artifact_root",
+                review_deadline,
+            )
+        attributes = getattr(alias.lstat(), "st_file_attributes", 0)
+        if not alias.is_dir() or not (attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT):
+            return None, _unresolved(
+                root, path, "execution_alias_root_contains_non_junction_entry",
+                review_deadline,
+            )
+    # Junction payload is already represented by its target object.  Recording
+    # this zero-byte administrative root makes the declared scope explicit
+    # while preserving the physical resident-byte invariant.
+    return _candidate(root, path, "light_evidence", owner_hint="common.run_artifact_support"), None
 
 
 def _common_pa_cache(
@@ -340,6 +380,31 @@ def _frozen_input_cache(
     return None, _unresolved(
         root, key, "frozen_input_cache_manifest_or_member_metadata_differs",
         review_deadline, evidence=(manifest_path,),
+        recovery_task=(
+            "project cache owner must restore the frozen-input manifest and its "
+            "member inventory, or retire this exact cache key through its owner"
+        ),
+    )
+
+
+def _review_package_unresolved(
+    root: Path, project: Path, reviews: Path, review_deadline: str,
+) -> dict[str, Any]:
+    """Keep review copies out of the ledger until a sealed lifecycle receipt exists."""
+
+    evidence = tuple(sorted(
+        path for path in reviews.rglob("*.json")
+        if path.name.casefold().endswith(("receipt.json", "manifest.json"))
+    ))
+    return _unresolved(
+        root, reviews, "review_package_lacks_sealed_owner_disposition_manifest",
+        review_deadline, evidence=evidence, owner_hint=project.name,
+        recovery_task=(
+            "project owner must publish a sealed review-package manifest with "
+            "content inventory, source identity, consumer protection and owner "
+            "retirement/disposition semantics; otherwise remove it through an "
+            "owner-authorized recorded-file disposition"
+        ),
     )
 
 
@@ -465,6 +530,14 @@ def _classify_project(
                         ),
                         evidence=(manifest,),
                     ))
+        elif child.name == "reviews" and child.is_dir():
+            # A GUI review package can contain copied PA payloads.  Existing
+            # lightweight receipts identify observations but do not prove a
+            # complete owner/disposition chain, so it remains explicit pending
+            # work instead of being silently treated as evidence or cache.
+            unresolved.append(_review_package_unresolved(
+                root, project, child, review_deadline,
+            ))
         elif child.name == "scratch" and child.is_dir():
             for task in sorted(child.iterdir()):
                 preserve_engineering_source = (
@@ -607,8 +680,24 @@ def _protect_active_dependencies(
     return count, bytes_count, leases
 
 
+def _workspace_external_scopes(artifact_root: Path, workspace_root: Path) -> list[dict[str, Any]]:
+    """Measure the two declared source-tree working roots during calibration only."""
+
+    workspace = workspace_root.resolve(strict=False)
+    root = artifact_root.resolve(strict=False)
+    if workspace == root or workspace in root.parents or root in workspace.parents:
+        raise CalibrationError("workspace_root must be distinct from artifact_root to avoid double counting")
+    scopes: list[dict[str, Any]] = []
+    for role, name in (("repository_scratch", "scratch"), ("repository_generated", "generated")):
+        target = (workspace / name).resolve(strict=False)
+        if target.exists() and not target.is_dir():
+            raise CalibrationError(f"declared workspace scope is not a directory: {target}")
+        scopes.append({"role": role, "path": str(target), "bytes": 0 if not target.exists() else _bytes(target)})
+    return scopes
+
+
 def build_calibration_inventory(
-    artifact_root: Path, *, review_deadline: str,
+    artifact_root: Path, *, review_deadline: str, workspace_root: Path | None = None,
 ) -> dict[str, Any]:
     """Return a metadata-only inventory; never hash or remove payload files."""
 
@@ -619,6 +708,10 @@ def build_calibration_inventory(
         raise CalibrationError("review_deadline must be YYYY-MM-DD") from exc
     if not root.is_dir():
         raise CalibrationError("artifact_root must be an existing directory")
+    external_scopes = (
+        _workspace_external_scopes(root, workspace_root)
+        if workspace_root is not None else []
+    )
     objects: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
     for child in sorted(root.iterdir()):
@@ -634,28 +727,55 @@ def build_calibration_inventory(
                             ))
                     if cache.is_dir():
                         for key in sorted(cache.iterdir()):
-                            if key.name in {".locks", ".staging"}:
-                                if _bytes(key):
-                                    unresolved.append(_unresolved(
-                                        root, key, "common_pa_cache_runtime_state_not_empty",
-                                        review_deadline,
-                                    ))
+                            if key.name == ".transactions":
+                                objects.append(_common_pa_runtime_state(
+                                    root, key, reason="pa_transaction_recovery_required",
+                                ))
+                                continue
+                            if key.name in {".locks", ".staging", ".build-locks"}:
+                                objects.append(_common_pa_runtime_state(
+                                    root, key, reason="pa_runtime_state_recovery_required",
+                                ))
                                 continue
                             candidate, pending = _common_pa_cache(root, key, review_deadline)
                             (objects if candidate else unresolved).append(candidate or pending)
+                elif common_child.name == "execution_aliases" and common_child.is_dir():
+                    candidate, pending = _execution_alias_root(root, common_child, review_deadline)
+                    (objects if candidate else unresolved).append(candidate or pending)
                 elif common_child.name in {
-                    "capacity_protection_leases", "capacity_disposal_receipts",
+                    "capacity_protection_leases", "capacity_disposal_receipts", "host_resources.sqlite3",
                 }:
                     objects.append(_candidate(root, common_child, "light_evidence"))
                 elif common_child.name == "capacity_calibration" and common_child.is_dir():
                     # Calibration receipts describe the governed snapshot and cannot
                     # recursively account for their own bytes.
                     continue
+                elif common_child.name.startswith(".capacity_ledger.json.") and common_child.is_file():
+                    current = common_child.with_name("capacity_ledger.json")
+                    unresolved.append(_unresolved(
+                        root, common_child, "stale_capacity_ledger_atomic_temp_requires_recovery",
+                        review_deadline, evidence=((current,) if current.is_file() else ()),
+                        owner_hint="common.capacity_ledger",
+                        recovery_task=(
+                            "capacity ledger owner must validate the atomic publication lineage "
+                            "against the current ledger, then remove this exact temporary file "
+                            "through the recorded recovery/disposition path"
+                        ),
+                    ))
                 elif common_child.name != "capacity_ledger.json":
                     unresolved.append(_unresolved(
                         root, common_child, "common_artifact_role_unrecognized",
                         review_deadline,
                     ))
+        elif child.name in {"scratch", "generated"} and child.is_dir():
+            # These top-level working areas are outside project run layouts but
+            # occupy the same governed volume.  A calibration accounts for them
+            # as recoverable writing state; startup later reads the ledger and
+            # never repeats this walk.
+            objects.append(_candidate(
+                root, child, "rebuildable_payload", status="writing",
+                recovery_reason="top_level_runtime_payload_requires_owner_review",
+            ))
         elif child.name == "projects" and child.is_dir():
             for project in sorted(child.iterdir()):
                 if project.is_dir():
@@ -759,7 +879,8 @@ def build_calibration_inventory(
         "excluded_governance_paths": ["common/capacity_calibration"],
         "classified_bytes": classified_bytes,
         "unresolved_bytes": unresolved_bytes,
-        "resident_bytes": classified_bytes + unresolved_bytes,
+        "external_scope_bytes": sum(int(item["bytes"]) for item in external_scopes),
+        "resident_bytes": classified_bytes + unresolved_bytes + sum(int(item["bytes"]) for item in external_scopes),
         "object_count": len(objects),
         "unresolved_count": len(unresolved),
         "expired_unresolved_count": len(unresolved) if unresolved_overdue else 0,
@@ -783,6 +904,7 @@ def build_calibration_inventory(
         "recovery_required": recovery_required,
         "initialization_blockers": initialization_blockers,
         "objects": objects,
+        "external_scopes": external_scopes,
         "unresolved": unresolved,
     }
 
@@ -844,7 +966,7 @@ def initialize_from_inventory(
         for item in inventory["objects"]
     ]
     return capacity_ledger.initialize_capacity_ledger(
-        root, objects=ledger_objects, path=ledger_path,
+        root, objects=ledger_objects, external_scopes=inventory.get("external_scopes", ()), path=ledger_path,
     )
 
 
@@ -852,6 +974,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifact-root", required=True, type=Path)
     parser.add_argument("--review-deadline", required=True)
+    parser.add_argument("--workspace-root", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--initialize-ledger", action="store_true")
     parser.add_argument("--ledger-path", type=Path)
@@ -870,7 +993,9 @@ def main() -> None:
             "in-root pending reports must be below common/capacity_calibration; "
             "ledger initialization requires an external report"
         )
-    inventory = build_calibration_inventory(root, review_deadline=args.review_deadline)
+    inventory = build_calibration_inventory(
+        root, review_deadline=args.review_deadline, workspace_root=args.workspace_root,
+    )
     write_json_atomic(report, inventory)
     if args.initialize_ledger:
         initialize_from_inventory(inventory, ledger_path=args.ledger_path)
@@ -879,6 +1004,7 @@ def main() -> None:
         "classified_bytes": inventory["classified_bytes"],
         "unresolved_bytes": inventory["unresolved_bytes"],
         "unresolved_count": inventory["unresolved_count"],
+        "external_scope_bytes": inventory["external_scope_bytes"],
         "report": str(report),
     }, ensure_ascii=False))
 

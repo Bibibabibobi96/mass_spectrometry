@@ -2,7 +2,7 @@
   "schema_version": 2,
   "role": "artifact_capacity_policy",
   "description": "Daily ledger-only artifact capacity thresholds and unified class order.",
-  "target_gib": 850,
+  "target_gib": 600,
   "minimum_free_gib": 295,
   "light_evidence_budget_bytes": 26214400,
   "startup_gate_target_seconds": 5,
