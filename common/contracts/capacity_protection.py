@@ -18,6 +18,7 @@ CACHE_KEY = re.compile(r"\b[a-f0-9]{64}\b", re.IGNORECASE)
 LEASE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 PROTECTION_LEASE_DIRECTORY = Path("common") / "capacity_protection_leases"
 CAPACITY_DECISION_LOCK_NAME = ".capacity_decision.lock"
+DISPOSAL_RECEIPT_DIRECTORY = Path("common") / "capacity_disposal_receipts"
 
 
 class CapacityProtectionLeaseError(RuntimeError):
@@ -129,20 +130,86 @@ def _relative_protected_path(root: Path, value: Path) -> str:
     return relative.as_posix()
 
 
-def _pending_disposal_targets(root: Path) -> set[Path]:
-    """Query the ledger boundary without importing legacy discovery code."""
+def _pending_disposal_targets_from_receipts(root: Path) -> set[Path]:
+    """Read explicit pending capacity-disposal receipts without discovery.
+
+    A protection lease can be needed precisely while a historical capacity
+    ledger is missing or fails schema validation.  Such registration must not
+    initialize, repair, or otherwise mutate that ledger.  Pending disposal
+    receipts remain independent, durable deletion authority, so inspect them
+    directly before accepting a new lease in that bootstrap state.
+    """
+
+    receipt_root = root / DISPOSAL_RECEIPT_DIRECTORY
+    if not receipt_root.exists():
+        return set()
+    if not receipt_root.is_dir() or receipt_root.is_symlink():
+        raise ValueError("capacity disposal receipt directory is not a real directory")
+    pending: set[Path] = set()
+    for receipt_path in sorted(receipt_root.glob("*.json"), key=lambda item: item.name):
+        # A zero-byte historical plan placeholder cannot be a valid receipt:
+        # every receipt is a JSON object with role and status.  Ignoring this
+        # exact shape permits protective registration during ledger migration;
+        # nonempty unreadable files remain fail-closed below.
+        if receipt_path.stat().st_size == 0:
+            continue
+        try:
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"capacity disposal receipt is unreadable: {receipt_path}"
+            ) from exc
+        if not isinstance(receipt, dict) or receipt.get("status") != "pending":
+            continue
+        if receipt.get("role") != "artifact_capacity_disposal_receipt":
+            continue
+        target_value = receipt.get("target_path")
+        if not isinstance(target_value, str) or not target_value:
+            raise ValueError(
+                f"pending capacity disposal receipt target is invalid: {receipt_path}"
+            )
+        target = Path(target_value).resolve(strict=False)
+        try:
+            target.relative_to(root.resolve(strict=False))
+        except ValueError as exc:
+            raise ValueError(
+                f"pending capacity disposal target escapes artifact root: {receipt_path}"
+            ) from exc
+        if target == root.resolve(strict=False):
+            raise ValueError(
+                f"pending capacity disposal target is artifact root: {receipt_path}"
+            )
+        pending.add(target)
+    return pending
+
+
+def _pending_disposal_targets(root: Path) -> set[Path] | None:
+    """Query the calibrated ledger when available without legacy discovery."""
 
     # Local import avoids a module-initialization cycle: capacity_ledger uses
     # this module's decision lock for its own atomic state transitions.
     from common.contracts.capacity_ledger import pending_disposal_targets
 
+    from common.contracts.capacity_ledger import load_capacity_ledger
+
+    if load_capacity_ledger(root) is None:
+        return None
     return pending_disposal_targets(root)
 
 
 def _assert_not_pending_disposal(
     root: Path, *, keys: Iterable[str], paths: Iterable[str],
+    allow_unavailable_ledger: bool = False,
 ) -> None:
-    pending = _pending_disposal_targets(root)
+    # Receipt inspection is required even when the ledger is healthy: a
+    # deletion receipt is durable authority during the ledger/apply gap.
+    pending = _pending_disposal_targets_from_receipts(root)
+    ledger_pending = _pending_disposal_targets(root)
+    if ledger_pending is None:
+        if not allow_unavailable_ledger:
+            raise ValueError("capacity ledger is missing or invalid; pending state is unknown")
+    else:
+        pending.update(ledger_pending)
     normalized_keys = {key.lower() for key in keys}
     if any(target.name.lower() in normalized_keys for target in pending):
         raise ValueError("cannot protect a cache key after its disposal became pending")
@@ -180,7 +247,9 @@ def _create_capacity_protection_lease_unlocked(
     paths = sorted({_relative_protected_path(root, Path(path)) for path in protected_paths})
     if not keys and not paths:
         raise ValueError("a protection lease must protect at least one cache key or path")
-    _assert_not_pending_disposal(root, keys=keys, paths=paths)
+    _assert_not_pending_disposal(
+        root, keys=keys, paths=paths, allow_unavailable_ledger=True,
+    )
     created = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     expires = datetime.fromtimestamp(created.timestamp() + ttl_seconds, timezone.utc)
     document = {

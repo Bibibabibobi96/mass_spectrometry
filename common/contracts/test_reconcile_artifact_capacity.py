@@ -199,21 +199,65 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 elif link.exists():
                     os.rmdir(link)
 
-    def test_pending_query_and_lease_registration_fail_closed_without_valid_ledger(self) -> None:
+    def test_lease_registration_bootstraps_without_touching_missing_or_legacy_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, "pending state is unknown"):
                 capacity_ledger.pending_disposal_targets(root)
-            with self.assertRaisesRegex(ValueError, "pending state is unknown"):
-                _create_capacity_protection_lease(
-                    root, lease_id="missing-ledger", owner="test", ttl_seconds=60,
-                    protected_paths=[root / "payload"],
-                )
+            created = _create_capacity_protection_lease(
+                root, lease_id="missing-ledger", owner="test", ttl_seconds=60,
+                protected_paths=[root / "payload"],
+            )
+            self.assertEqual(created["protected_paths"], ["payload"])
+            self.assertFalse((root / "common" / "capacity_ledger.json").exists())
             ledger = root / "common" / "capacity_ledger.json"
             ledger.parent.mkdir(exist_ok=True)
             ledger.write_text("{}", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "pending state is unknown"):
                 capacity_ledger.pending_disposal_targets(root)
+            created = _create_capacity_protection_lease(
+                root, lease_id="legacy-ledger", owner="test", ttl_seconds=60,
+                protected_cache_keys=["a" * 64],
+            )
+            self.assertEqual(created["protected_cache_keys"], ["a" * 64])
+            self.assertEqual(ledger.read_text(encoding="utf-8"), "{}")
+
+    def test_lease_registration_rejects_direct_pending_disposal_without_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "common" / "simion" / "pa_family_cache" / ("a" * 64)
+            target.mkdir(parents=True)
+            receipts = root / "common" / "capacity_disposal_receipts"
+            receipts.mkdir(parents=True)
+            (receipts / "pending.json").write_text(json.dumps({
+                "schema_version": 1,
+                "role": "artifact_capacity_disposal_receipt",
+                "status": "pending",
+                "target_path": str(target.resolve()),
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "cannot protect a cache key"):
+                _create_capacity_protection_lease(
+                    root, lease_id="cache-conflict", owner="test", ttl_seconds=60,
+                    protected_cache_keys=["a" * 64],
+                )
+            with self.assertRaisesRegex(ValueError, "cannot protect a path"):
+                _create_capacity_protection_lease(
+                    root, lease_id="path-conflict", owner="test", ttl_seconds=60,
+                    protected_paths=[target],
+                )
+            self.assertFalse((root / "common" / "capacity_ledger.json").exists())
+
+    def test_lease_registration_ignores_empty_historical_plan_placeholder(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            receipts = root / "common" / "capacity_disposal_receipts"
+            receipts.mkdir(parents=True)
+            (receipts / "residual_sweep_plan_latest.json").touch()
+            created = _create_capacity_protection_lease(
+                root, lease_id="current", owner="test", ttl_seconds=60,
+                protected_cache_keys=["a" * 64],
+            )
+            self.assertEqual(created["protected_cache_keys"], ["a" * 64])
 
     def test_maintenance_selects_only_ready_unpinned_heavy_classes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
