@@ -185,6 +185,50 @@ def finalize_ready(artifact_root: Path, run_config: Path) -> dict[str, Any]:
     }
 
 
+def resume_terminal_runs(artifact_root: Path) -> dict[str, int]:
+    """Close already-terminal opted-in runs without resuming a computation.
+
+    Maintenance is allowed to make only the ledger transition that the run has
+    already earned: a terminal manifest plus a completed retention receipt.
+    Checkpoints, incomplete retention, legacy runs, and runs with consumers
+    remain writing and are counted as blocked.  This keeps recovery decisions
+    with the original workflow while making an interrupted ledger handoff
+    idempotently recoverable through the existing run owner.
+    """
+
+    root = Path(artifact_root).resolve(strict=False)
+    ledger = capacity_ledger.load_capacity_ledger(root)
+    if ledger is None:
+        raise ValueError("run lifecycle maintenance requires a valid capacity ledger")
+    checked = finalized = blocked = 0
+    for entry in ledger["objects"]:
+        if not (
+            entry.get("class") == "rebuildable_payload"
+            and entry.get("status") == "writing"
+            and entry.get("recovery_reason") == "run_manifest_not_terminal"
+        ):
+            continue
+        run_dir = root / entry["path"]
+        if run_dir.parent.name != "runs" or entry.get("consumers"):
+            blocked += 1
+            continue
+        if entry.get("owner") != run_dir.parent.parent.name:
+            blocked += 1
+            continue
+        checked += 1
+        try:
+            manifest = _load_json(run_dir / "run_manifest.json", "run manifest")
+            if manifest.get("status") not in TERMINAL_STATUSES:
+                blocked += 1
+                continue
+            finalize_ready(root, run_dir / "run_config.json")
+        except (OSError, ValueError):
+            blocked += 1
+        else:
+            finalized += 1
+    return {"checked_count": checked, "finalized_count": finalized, "blocked_count": blocked}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--action", choices=("register-writing", "assert-retention", "finalize-ready"), required=True)

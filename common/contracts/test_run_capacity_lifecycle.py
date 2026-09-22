@@ -10,6 +10,7 @@ from common.contracts.run_capacity_lifecycle import (
     assert_retention_complete,
     finalize_ready,
     register_writing,
+    resume_terminal_runs,
 )
 
 
@@ -110,6 +111,29 @@ class RunCapacityLifecycleTests(unittest.TestCase):
                 entry = load_capacity_ledger(root)["objects"][0]
                 self.assertEqual(entry["status"], "writing")
                 self.assertEqual(entry["class"], "rebuildable_payload")
+
+    def test_maintenance_resumes_only_already_terminal_opted_in_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            terminal, terminal_config = self.fixture(root, "terminal")
+            checkpoint, _ = self.fixture(root, "checkpoint")
+            register_writing(root, terminal_config)
+            register_writing(root, checkpoint / "run_config.json")
+            (terminal / "retention_actions.json").write_text(json.dumps({
+                "schema_version": 1, "role": "artifact_retention_actions",
+                "status": "complete", "retention_class": "compact",
+            }), encoding="utf-8")
+            (terminal / "run_manifest.json").write_text(json.dumps({"status": "failed"}), encoding="utf-8")
+
+            result = resume_terminal_runs(root)
+            self.assertEqual(result, {"checked_count": 2, "finalized_count": 1, "blocked_count": 1})
+            statuses = {item["path"]: item["status"] for item in load_capacity_ledger(root)["objects"]}
+            self.assertEqual(statuses["projects/p/runs/terminal"], "ready")
+            self.assertEqual(statuses["projects/p/runs/checkpoint"], "writing")
+            self.assertEqual(resume_terminal_runs(root), {
+                "checked_count": 1, "finalized_count": 0, "blocked_count": 1,
+            })
 
 
 if __name__ == "__main__":

@@ -943,6 +943,18 @@ def _maintenance_apply_timings(receipt: dict[str, Any]) -> _PhaseTimings:
     return timings
 
 
+def _resume_terminal_run_owner(root: Path) -> dict[str, int]:
+    """Load the run owner only for a leased maintenance apply.
+
+    Startup must retain its ledger-only import and I/O budget; terminal run
+    reconciliation is an owner action, never an admission dependency.
+    """
+
+    from common.contracts.run_capacity_lifecycle import resume_terminal_runs
+
+    return resume_terminal_runs(root)
+
+
 def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     """Apply a startup recheck or exact ledger retirement plan."""
 
@@ -1202,9 +1214,11 @@ def main() -> None:
             print(json.dumps(lease, indent=2))
             return
         activation = {"activated_count": 0, "activated_bytes": 0}
+        terminal_run_resume = {"checked_count": 0, "finalized_count": 0, "blocked_count": 0}
         alias_reconciliation = {"corrected_count": 0, "released_bytes": 0}
         if args.execution_mode == "maintenance" and args.apply:
             activation = activate_owner_dispositions(args.artifact_root)
+            terminal_run_resume = _resume_terminal_run_owner(args.artifact_root)
             source_scratch_registration = _register_workspace_scratch_scope(args.artifact_root)
             source_scratch_dispositions = _resume_source_scratch_dispositions(args.artifact_root)
             alias_reconciliation = _reconcile_execution_alias_root(args.artifact_root)
@@ -1242,6 +1256,8 @@ def main() -> None:
             }
         if activation["activated_count"]:
             receipt["owner_dispositions_activated"] = activation
+        if terminal_run_resume["checked_count"]:
+            receipt["terminal_run_lifecycle_resume"] = terminal_run_resume
         if alias_reconciliation["corrected_count"]:
             receipt["administrative_aliases_reconciled"] = alias_reconciliation
         if source_scratch_registration["registered_count"]:

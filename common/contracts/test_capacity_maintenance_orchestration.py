@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from common.contracts import capacity_ledger
+from common.contracts import recorded_file_removal
 from common.contracts import reconcile_artifact_capacity as capacity
 from common.contracts.capacity_protection import create_capacity_protection_lease
 
@@ -48,6 +49,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
         mutators = (
             "activate_owner_dispositions", "_register_workspace_scratch_scope",
             "_resume_source_scratch_dispositions", "_reconcile_execution_alias_root",
+            "_resume_terminal_run_owner",
         )
         for apply_requested in (False, True):
             with self.subTest(apply=apply_requested), ExitStack() as stack:
@@ -84,7 +86,8 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                 root, lease_id="next", owner="workflow", ttl_seconds=600,
                 protected_paths=[root / "active"], committed_new_bytes=20,
             )
-            with patch.object(capacity, "file_sha256", side_effect=AssertionError("payload hash")):
+            with (patch.object(capacity, "file_sha256", side_effect=AssertionError("payload hash")),
+                  patch.object(recorded_file_removal, "file_sha256", side_effect=AssertionError("payload hash"))):
                 receipt = capacity.plan(
                     root, target_bytes=100, minimum_free_bytes=0, execution_mode="maintenance",
                 )
@@ -208,6 +211,17 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                 {"bad": "retirement_pending", "good": "retired"},
             )
             self.assertEqual(applied["management_summary_after_apply"]["resumable_retirement_count"], 1)
+            (root / "bad" / "payload.bin").write_bytes(b"x" * 10)
+            resumed = capacity.apply(capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0, execution_mode="maintenance",
+            ))
+            self.assertEqual(resumed["removed_bytes"], 10)
+            self.assertEqual(len(resumed["removed"]), 1)
+            self.assertFalse((root / "bad").exists())
+            self.assertEqual(
+                {item["path"]: item["status"] for item in capacity_ledger.load_capacity_ledger(root)["objects"]},
+                {"bad": "retired", "good": "retired"},
+            )
 
     def test_default_cli_output_is_bounded_aggregate_without_object_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
