@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import io
+import json
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from common.contracts import capacity_ledger
 from common.contracts import reconcile_artifact_capacity as capacity
@@ -117,6 +122,43 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                 {"bad": "retirement_pending", "good": "retired"},
             )
             self.assertEqual(applied["management_summary_after_apply"]["resumable_retirement_count"], 1)
+
+    def test_default_cli_output_is_bounded_aggregate_without_object_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capacity_ledger.initialize_capacity_ledger(
+                root,
+                objects=[
+                    _object(
+                        f"historical/object-{index:04d}", bytes_count=1,
+                        status="writing", owner="historical-owner",
+                    )
+                    for index in range(1000)
+                ],
+            )
+            output = io.StringIO()
+            with patch.object(
+                sys, "argv", [
+                    "reconcile_artifact_capacity", "--artifact-root", str(root),
+                    "--execution-mode", "maintenance",
+                ],
+            ), redirect_stdout(output):
+                capacity.main()
+
+            rendered = output.getvalue()
+            document = json.loads(rendered)
+            self.assertLess(len(rendered), 5_000)
+            self.assertNotIn("blocked_owner_actions", document)
+            self.assertNotIn("management_summary", document)
+            self.assertNotIn("object-0000", rendered)
+            self.assertEqual(document["governed"], {"object_count": 1000, "bytes": 1000})
+            self.assertEqual(document["owner_action_summary"], [{
+                "owner": "historical-owner",
+                "action": "recover_or_disposition",
+                "reason": "writing_requires_owner_recovery",
+                "object_count": 1000,
+                "bytes": 1000,
+            }])
 
 
 if __name__ == "__main__":

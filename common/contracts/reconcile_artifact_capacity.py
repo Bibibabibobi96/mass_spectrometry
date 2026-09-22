@@ -346,7 +346,7 @@ def _maintenance_management_summary(
     """
 
     planned_paths = {str(item["path"]) for item in planned}
-    aggregates: dict[tuple[str, str, str, str, str], int] = {}
+    aggregates: dict[tuple[str, str, str, str, str], dict[str, int]] = {}
     blocked: list[dict[str, Any]] = []
     for item in ledger["objects"]:
         if item.get("status") == "retired":
@@ -357,7 +357,9 @@ def _maintenance_management_summary(
             owner, str(item["class"]), str(item["status"]),
             str(item.get("review_deadline", "")), str(item.get("retirement_route", "")),
         )
-        aggregates[aggregate_key] = aggregates.get(aggregate_key, 0) + int(item["bytes"])
+        aggregate = aggregates.setdefault(aggregate_key, {"object_count": 0, "bytes": 0})
+        aggregate["object_count"] += 1
+        aggregate["bytes"] += int(item["bytes"])
         cache_key = target.name if item["class"] == "published_cache" else None
         lease_ids = _lease_ids_for_target(target, cache_key, leases)
         action: str | None = None
@@ -392,9 +394,11 @@ def _maintenance_management_summary(
         {
             "owner": owner, "class": object_class, "status": status,
             "review_deadline": deadline or None,
-            "retirement_route": route or None, "bytes": bytes_count,
+            "retirement_route": route or None, "object_count": object_count,
+            "bytes": bytes_count,
         }
-        for (owner, object_class, status, deadline, route), bytes_count in aggregates.items()
+        for (owner, object_class, status, deadline, route), values in aggregates.items()
+        for bytes_count, object_count in [(values["bytes"], values["object_count"])]
     ]
     grouped.sort(key=lambda item: (
         item["owner"], item["class"], item["status"],
@@ -858,6 +862,76 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     return outcome
 
 
+def _compact_maintenance_output(receipt: dict[str, Any]) -> dict[str, Any]:
+    """Return bounded daily maintenance output without object-level paths.
+
+    Exact candidates, errors, and removal records stay in the in-memory
+    detailed receipt and the authoritative ledger/disposal receipts.  The
+    ordinary CLI view deliberately carries only action aggregates so a large
+    historical ledger cannot turn routine governance into a giant JSON dump.
+    """
+
+    summary = receipt.get("management_summary_after_apply") or receipt.get("management_summary")
+    if not isinstance(summary, dict):
+        return {
+            key: value for key, value in receipt.items()
+            if key not in {"planned", "removed", "failed", "protection_lease_audit"}
+        } | {
+            "planned_count": len(receipt.get("planned", [])),
+            "removed_count": len(receipt.get("removed", [])),
+            "failed_count": len(receipt.get("failed", [])),
+        }
+    actions: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for item in summary["blocked_owner_actions"]:
+        key = (str(item["owner"]), str(item["action"]), str(item["reason"]))
+        group = actions.setdefault(key, {
+            "owner": key[0], "action": key[1], "reason": key[2],
+            "object_count": 0, "bytes": 0,
+        })
+        group["object_count"] += 1
+        group["bytes"] += int(item["bytes"])
+    owner_actions = sorted(
+        actions.values(), key=lambda item: (item["owner"], item["action"], item["reason"]),
+    )
+    groups = summary["governed_object_groups"]
+    compact = {
+        "schema_version": receipt.get("schema_version"), "role": receipt.get("role"),
+        "execution_mode": receipt.get("execution_mode"),
+        "measurement_mode": receipt.get("measurement_mode"),
+        "target_bytes": receipt.get("target_bytes"),
+        "minimum_free_bytes": receipt.get("minimum_free_bytes"),
+        "resident_bytes": receipt.get("measured_after_bytes", receipt.get("measured_bytes")),
+        "free_bytes": receipt.get("free_bytes_after", receipt.get("free_bytes_before")),
+        "capacity_gap_bytes": summary["capacity_gap_bytes"],
+        "satisfied": receipt.get("satisfied_after_apply", receipt.get("satisfied")),
+        "blocking_reason": receipt.get("blocking_reason"),
+        "planned": {
+            "object_count": len(receipt.get("planned", [])),
+            "bytes": int(receipt.get("planned_bytes", sum(
+                int(item["bytes"]) for item in receipt.get("planned", [])
+            ))),
+        },
+        "removed": {
+            "object_count": len(receipt.get("removed", [])),
+            "bytes": int(receipt.get("removed_bytes", 0)),
+        },
+        "failed_object_count": len(receipt.get("failed", [])),
+        "governed": {
+            "object_count": sum(int(item["object_count"]) for item in groups),
+            "bytes": sum(int(item["bytes"]) for item in groups),
+        },
+        "owner_action_summary": owner_actions,
+        "external_scope_summary": [
+            {"role": item["role"], "bytes": int(item["bytes"])}
+            for item in summary["external_scope_groups"]
+        ],
+        "resumable_retirement_count": summary["resumable_retirement_count"],
+        "next_active_commitments": summary["next_active_commitments"],
+        "timing": receipt.get("timing"),
+    }
+    return compact
+
+
 def _lease_action(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict[str, Any] | None:
     if args.create_protection_lease:
         if args.apply or not args.lease_owner or args.lease_ttl_seconds is None:
@@ -951,7 +1025,9 @@ def main() -> None:
         # per-object disposal receipts remain authoritative; ordinary callers
         # only need the gate decision and aggregate counts.  Request detailed
         # output explicitly when auditing a particular maintenance operation.
-        if not args.detailed_output:
+        if not args.detailed_output and receipt.get("execution_mode") == "maintenance":
+            receipt = _compact_maintenance_output(receipt)
+        elif not args.detailed_output:
             receipt = {
                 key: value
                 for key, value in receipt.items()
