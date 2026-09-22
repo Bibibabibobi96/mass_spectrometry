@@ -60,6 +60,21 @@ class ComponentFocusPAPlanTests(unittest.TestCase):
         self.assertIn('Focus PA build failed at $stage.', runner)
         self.assertIn('$reason+=" $failureDetail"', runner)
         self.assertIn('-Outputs $outputs', runner[manifest:])
+        self.assertIn("--action','advance-transaction'", runner)
+        self.assertIn("$stage='transaction_start'", runner)
+        self.assertIn("$stage='seal_and_verify'", runner)
+        self.assertIn('simion_pa_family_verification', runner)
+        self.assertIn('verify_component_focus_pa.lua', runner)
+        self.assertIn("'--owner',$capacity.owner", runner)
+        self.assertNotIn("--action','publish'", runner)
+        self.assertNotIn('--source-directory', runner)
+
+    def test_cache_adapter_forbids_direct_artifact_publication(self) -> None:
+        root=Path(__file__).resolve().parents[2]
+        adapter=(root/'analysis'/'component_focus_pa_cache.py').read_text(encoding='utf-8')
+        self.assertIn('advance_pa_family_cache_transaction', adapter)
+        self.assertNotIn('publish_pa_family_cache', adapter)
+        self.assertIn('verification_evidence=evidence', adapter)
 
     def test_cache_hit_manifest_only_includes_the_build_log_when_it_exists(self) -> None:
         root=Path(__file__).resolve().parents[2]

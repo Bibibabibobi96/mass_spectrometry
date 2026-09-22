@@ -59,6 +59,9 @@ current已指向别代则绝不回退pointer，返回值必须把predecessor与r
 指针或结构异常时才回退到逐字节验证与修复，不把正常命中变成整套 PA 重读。
 原生family只走确定的`<root>/.transactions/<cache-key>/transaction.json`事务；common同时拥有同目录内的
 `payload`和scratch。状态只有`building / prepared / published / retired`，错误只写`last_error`而不增加状态。
+位于仓库`artifacts/`下的 PA family 禁止调用旧的`publish_pa_family_cache`直发 helper：它只保留给非受管的
+临时／fixture cache；受管资产必须由`advance_pa_family_cache_transaction`取得唯一 owner、写入登记、验证证据
+和发布／ledger handoff，避免出现可见却无人能恢复或退役的 generation。
 builder把每个成员先写到返回的确定性scratch，再以原子改名落入`payload`；common看到完整精确清单后建立连续稳定的
 持久化视图并封存，返回`verify`。调用方提交绑定cache key与inventory的SIMION验证证据后，common在同一事务内
 完成parity、generation原子发布、pointer和容量ledger交接。中断后重复`advance-transaction`从同一状态收敛，
@@ -119,8 +122,11 @@ writer 只复用本次内存 inventory，最后仅计算小 receipt 的哈希并
 未传入此选项且未登记规范的既有事务行为不变；单独 receipt writer 继续支持独立构建调用。
 `advance-transaction`返回`build / verify / complete`之一，以及确定的transaction、build与scratch路径；验证完成时
 追加`--verification-evidence <json>`，昂贵长期资产再追加`--published-pin-reason <reason>`。`materialize`使用
-`--destination-directory`。`probe`和`materialize`不建立隐式长租约，工作流仍须用显式TTL租约覆盖从命中到消费
-完成的删除竞争。Python层保留验证、修复和迁移原语；它们不再形成另一套原生family发布CLI或恢复状态机。
+`--destination-directory`。受管`artifacts/` generation 的`materialize`还必须给出活动 TTL lease 的 id 和
+owner；common在复制前只读事务、sealed manifest、ledger 和 lease 元数据，核对 manager、published generation
+及 cache-key 覆盖，任一 retired／缺绑定／过期状态即失败。它不建立隐式长租约，也不为健康命中重读 PA payload；
+工作流必须让该 lease 覆盖从命中到消费完成的删除竞争。Python层保留验证、修复和迁移原语；它们不再形成另一套
+原生family发布CLI或恢复状态机。
 
 当运行只消费同一 generation 中已经独立导出的 standalone 成员时，Python 调用方可使用
 `validate_pa_family_cache_subset(...)`：它仍验证 generation manifest、cache key、身份元数据和 generation

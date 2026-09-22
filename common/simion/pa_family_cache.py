@@ -1459,6 +1459,70 @@ def _record_cache_hit(cache_root: Path, cache_key: str, generation_sha256: str) 
         ) from exc
 
 
+def _require_managed_pa_consumer_binding(
+    cache_root: Path,
+    manifest: Mapping[str, Any],
+    *,
+    capacity_lease_id: str | None,
+    capacity_lease_owner: str | None,
+) -> None:
+    """Fail closed before copying a governed PA into a consumer workspace.
+
+    This checks only transaction, ledger, lease and sealed-manifest metadata.
+    In particular, it deliberately does not hash PA payloads on a healthy hit.
+    """
+
+    cache_key = str(manifest["cache_key"])
+    generation = str(manifest["generation_sha256"])
+    binding = _artifact_ledger_binding(cache_root, cache_key, required=False)
+    if binding is None:
+        return
+    if not isinstance(capacity_lease_id, str) or not capacity_lease_id:
+        raise PAFamilyCacheError("managed PA consumption requires an active protection lease id")
+    if not isinstance(capacity_lease_owner, str) or not capacity_lease_owner.strip():
+        raise PAFamilyCacheError("managed PA consumption requires the protection lease owner")
+    try:
+        transaction = _load_transaction_by_key(
+            cache_root / TRANSACTION_DIRECTORY / cache_key / TRANSACTION_NAME,
+            cache_key,
+        )
+        if (
+            transaction["status"] != "published"
+            or transaction["generation_sha256"] != generation
+        ):
+            raise ValueError("PA transaction is not the active published generation")
+        ledger = capacity_ledger.load_capacity_ledger(binding.artifact_root)
+        if ledger is None:
+            raise ValueError("capacity ledger is missing or invalid")
+        _, relative = capacity_ledger.capacity_object_path(
+            binding.artifact_root, binding.key_root
+        )
+        entry = next((item for item in ledger["objects"] if item.get("path") == relative), None)
+        if (
+            entry is None
+            or entry.get("class") != "published_cache"
+            or entry.get("status") != "ready"
+            or entry.get("identity") != generation
+            or entry.get("manager") != capacity_ledger.PA_CACHE_MANAGER
+        ):
+            raise ValueError("PA capacity ledger binding differs")
+        leases = capacity_protection.load_capacity_protection_leases(binding.artifact_root)
+        active = next(
+            (
+                item for item in leases["audit"]
+                if item.get("status") == "active"
+                and item.get("lease_id") == capacity_lease_id
+                and item.get("owner") == capacity_lease_owner.strip()
+                and cache_key.lower() in item.get("protected_cache_keys", [])
+            ),
+            None,
+        )
+        if active is None:
+            raise ValueError("PA protection lease is absent, expired, or does not cover the cache key")
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise PAFamilyCacheError(f"managed PA consumption binding is invalid: {exc}") from exc
+
+
 def _complete_artifact_cache_rollback(
     binding: _ArtifactLedgerBinding | None,
     predecessor_generation_sha256: str | None,
@@ -1545,6 +1609,16 @@ def publish_pa_family_cache(
         raise PAFamilyCacheError("PA cache recovery policy must be 'xor' or 'none'")
     key = canonical_pa_family_cache_key(identity)
     root = Path(cache_root)
+    # A cache below the repository artifact root is a managed, durable asset.
+    # Publishing it without the authoritative transaction would make the
+    # pointer visible before there is an owner, verification record, or
+    # recoverable ledger handoff.  Keep this compatibility helper for
+    # disposable test/local caches only; production callers must use the
+    # transaction API below.
+    if _artifact_root_for_cache(root) is not None:
+        raise PAFamilyCacheError(
+            "artifact PA publication requires advance_pa_family_cache_transaction"
+        )
     ledger_binding = _artifact_ledger_binding(root, key, required=True)
     root.mkdir(parents=True, exist_ok=True)
     with _protected_key_lock(root, key, lock_timeout_s):
@@ -1733,7 +1807,9 @@ def _load_transaction(
         or _canonical_identity(document["identity"]) != _canonical_identity(identity)
         or tuple(document["filenames"]) != _family_names(filenames)
         or document["status"] not in TRANSACTION_STATES
-        or document["owner"] != f"common.simion.pa_family_cache:{cache_key[:32]}"
+        or not isinstance(document["owner"], str)
+        or not document["owner"].strip()
+        or len(document["owner"]) > 256
         or (
             document["published_pin_reason"] is not None
             and (
@@ -2835,6 +2911,7 @@ def advance_pa_family_cache_transaction(
     filenames: Sequence[str],
     *,
     verification_evidence: Mapping[str, Any] | None = None,
+    owner: str | None = None,
     lock_timeout_s: float = 30.0,
     recovery_policy: str = "xor",
     published_pin_reason: str | None = None,
@@ -2853,6 +2930,11 @@ def advance_pa_family_cache_transaction(
         return _abandon_empty_transaction(
             Path(cache_root), identity, filenames, abandon_empty_transaction, lock_timeout_s
         )
+    if owner is not None and (
+        not isinstance(owner, str) or not owner.strip() or len(owner.strip()) > 256
+    ):
+        raise PAFamilyCacheError("PA transaction owner must be a nonempty 1-256 character string")
+    owner = owner.strip() if owner is not None else None
     if recovery_policy not in {"xor", "none"}:
         raise PAFamilyCacheError("PA cache recovery policy must be 'xor' or 'none'")
     if publication_metadata_correction is not None and any(value is not None for value in (verification_evidence, member_recovery, retained_inventory_recovery)):
@@ -2901,6 +2983,8 @@ def advance_pa_family_cache_transaction(
             document = _load_transaction(
                 transaction_path, cache_key=cache_key, identity=identity, filenames=names
             )
+            if owner is not None and document["owner"] != owner:
+                raise PAFamilyCacheError("PA transaction owner differs")
         else:
             if member_recovery is not None or retained_inventory_recovery is not None or publication_metadata_correction is not None:
                 raise PAFamilyCacheError("PA member recovery requires an existing transaction")
@@ -2914,7 +2998,7 @@ def advance_pa_family_cache_transaction(
                 "identity": _canonical_identity(identity),
                 "filenames": list(names),
                 "status": "building",
-                "owner": f"common.simion.pa_family_cache:{cache_key[:32]}",
+                "owner": owner or f"common.simion.pa_family_cache:{cache_key[:32]}",
                 "files": [],
                 "inventory_sha256": None,
                 "verification": None,
@@ -3379,6 +3463,8 @@ def materialize_pa_family_cache(
     destination_directory: str | Path,
     *,
     expected_filenames: Sequence[str] | None = None,
+    capacity_lease_id: str | None = None,
+    capacity_lease_owner: str | None = None,
 ) -> MaterializedFamily:
     """Copy a validated family into a run-local directory without overwriting it.
 
@@ -3403,6 +3489,12 @@ def materialize_pa_family_cache(
         manifest = validate_pa_family_cache_generation(
             source, expected_filenames=expected_filenames
         )
+    _require_managed_pa_consumer_binding(
+        source.parents[2],
+        manifest,
+        capacity_lease_id=capacity_lease_id,
+        capacity_lease_owner=capacity_lease_owner,
+    )
     destination = Path(destination_directory)
     collisions = [
         record["name"] for record in manifest["files"]
@@ -3488,6 +3580,9 @@ def main(arguments: Sequence[str] | None = None) -> int:
     parser.add_argument("--destination-directory", type=Path)
     parser.add_argument("--recovery-policy", choices=("xor", "none"), default="xor")
     parser.add_argument("--published-pin-reason")
+    parser.add_argument("--owner")
+    parser.add_argument("--capacity-lease-id")
+    parser.add_argument("--capacity-lease-owner")
     parser.add_argument("--lock-timeout-s", type=float, default=30.0)
     args = parser.parse_args(arguments)
     identity = _cli_identity(args.identity)
@@ -3504,6 +3599,10 @@ def main(arguments: Sequence[str] | None = None) -> int:
         parser.error("publication metadata correction is accepted only by advance-transaction")
     if args.action != "advance-transaction" and args.abandon_empty_transaction is not None:
         parser.error("empty transaction abandonment is accepted only by advance-transaction")
+    if args.action != "materialize" and (
+        args.capacity_lease_id is not None or args.capacity_lease_owner is not None
+    ):
+        parser.error("capacity lease identity is accepted only by materialize")
 
     if args.action == "probe":
         if args.verification_evidence is not None or args.destination_directory is not None:
@@ -3564,6 +3663,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             identity,
             filenames,
             verification_evidence=evidence,
+            owner=args.owner,
             lock_timeout_s=args.lock_timeout_s,
             recovery_policy=args.recovery_policy,
             published_pin_reason=args.published_pin_reason,
@@ -3614,6 +3714,8 @@ def main(arguments: Sequence[str] | None = None) -> int:
             probe.generation_directory,
             args.destination_directory,
             expected_filenames=filenames,
+            capacity_lease_id=args.capacity_lease_id,
+            capacity_lease_owner=args.capacity_lease_owner,
         )
         document = {
             "disposition": "materialized",
