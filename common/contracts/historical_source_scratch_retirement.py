@@ -1,8 +1,8 @@
 """Owner-authorized retirement of explicit children in calibrated source scratch.
 
-This maintenance entry point never treats the ``repository_scratch`` external
-scope itself as a deletion target.  Approval must name exact normalized child
-directories; the ledger retains the root scope and only decrements its bytes.
+This maintenance entry point never treats a registered source-scratch scope
+itself as a deletion target. Approval must name exact normalized children; the
+ledger retains the scope and only decrements disposed bytes.
 """
 from __future__ import annotations
 
@@ -43,8 +43,8 @@ def _target_path(source: Path, relative: str, *, require_exists: bool) -> Path:
         raise ValueError("retirement target escapes source scratch") from exc
     if target.is_symlink():
         raise ValueError("retirement target is a symbolic link")
-    if require_exists and (not target.exists() or not target.is_dir()):
-        raise ValueError("retirement target must be one existing regular directory")
+    if require_exists and (not target.exists() or not (target.is_dir() or target.is_file())):
+        raise ValueError("retirement target must be one existing regular file or directory")
     if target.exists():
         try:
             target.resolve().relative_to(source)
@@ -121,6 +121,9 @@ def _inventory(source: Path, targets: list[str]) -> list[dict[str, Any]]:
     files: list[dict[str, Any]] = []
     for target_name in targets:
         target = _target_path(source, target_name, require_exists=True)
+        if target.is_file():
+            files.append({"target": target_name, "path": target_name, "bytes": target.stat().st_size})
+            continue
         for item in sorted(target.rglob("*"), key=lambda value: value.as_posix()):
             if item.is_symlink():
                 raise ValueError("source scratch inventory contains a symbolic link")
@@ -134,9 +137,9 @@ def _external_scope(root: Path, source: Path) -> dict[str, Any]:
     ledger = capacity_ledger.load_capacity_ledger(root)
     if ledger is None:
         raise ValueError("calibrated capacity ledger is required")
-    external = next((item for item in ledger["external_scopes"] if item["role"] == "repository_scratch"), None)
-    if external is None or external["path"] != str(source):
-        raise ValueError("source scratch root is not the calibrated repository_scratch scope")
+    external = next((item for item in ledger["external_scopes"] if item["path"] == str(source)), None)
+    if external is None or external["role"] not in {"repository_scratch", "repository_workspace_scratch"}:
+        raise ValueError("source scratch root is not one calibrated source-scratch scope")
     return external
 
 
@@ -155,7 +158,7 @@ def plan(artifact_root: Path, *, source_root: Path, owner: str, evidence: Path, 
     did = file_sha256(evidence).upper()
     receipt = root / RECEIPTS / f"source_scratch_{did}.json"
     return {"schema_version": 2, "role": ROLE, "status": "planned", "owner": owner,
-            "artifact_root": str(root), "source_root": str(source), "scope_role": "repository_scratch",
+            "artifact_root": str(root), "source_root": str(source), "scope_role": external["role"],
             "targets": targets, "evidence": str(evidence.resolve()), "evidence_sha256": did,
             "files": files, "bytes": total, "external_scope_bytes_before": scope_bytes,
             "external_scope_bytes_after": scope_bytes - total, "receipt": str(receipt)}
@@ -186,12 +189,14 @@ def _revalidate_apply_authority(receipt: dict[str, Any]) -> None:
         raise ValueError("authorization retirement targets differ from pending disposition")
 
 
-def _remove_empty_target_tree(source: Path, target_name: str) -> None:
+def _remove_empty_target(source: Path, target_name: str) -> None:
     target = _target_path(source, target_name, require_exists=False)
     if not target.exists():
         return
+    if target.is_file():
+        raise ValueError("source scratch target file survived recorded removal")
     if not target.is_dir():
-        raise ValueError("source scratch target changed into a non-directory")
+        raise ValueError("source scratch target changed into an unsupported type")
     for item in sorted(target.rglob("*"), key=lambda value: len(value.parts), reverse=True):
         if item.is_symlink():
             raise ValueError("source scratch disposition encountered a symbolic link")
@@ -208,7 +213,7 @@ def _update_external_scope(receipt: dict[str, Any]) -> None:
         return
     if observed != before:
         raise ValueError("external scope record differs from pending source scratch disposition")
-    capacity_ledger.update_external_scope_bytes(root, role="repository_scratch", path=source,
+    capacity_ledger.update_external_scope_bytes(root, role=receipt["scope_role"], path=source,
                                                 expected_bytes=before, new_bytes=after)
 
 
@@ -243,7 +248,7 @@ def apply(plan_: dict[str, Any]) -> dict[str, Any]:
         receipt["removal_progress"].append({"path": relative, "outcome": outcome})
         write_json_atomic(receipt_path, receipt)
     for target in receipt["targets"]:
-        _remove_empty_target_tree(source, target)
+        _remove_empty_target(source, target)
     _update_external_scope(receipt)
     complete = {**receipt, "status": "complete"}
     write_json_atomic(receipt_path, complete)

@@ -16,7 +16,7 @@ from typing import Any, Iterable
 
 from common.contracts import capacity_ledger
 from common.contracts import capacity_protection as protection
-from common.contracts.legacy_capacity_calibration import _execution_alias_root
+from common.contracts.execution_aliases import execution_alias_root_is_valid
 from common.contracts.legacy_owner_disposition import activate_owner_dispositions
 from common.contracts.file_identity import file_sha256
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
@@ -503,15 +503,14 @@ def _reconcile_execution_alias_root(root: Path) -> dict[str, int]:
     alias_root = root / "common" / "execution_aliases"
     if not alias_root.exists():
         return {"corrected_count": 0, "released_bytes": 0}
-    candidate, unresolved = _execution_alias_root(root, alias_root, date.today().isoformat())
-    if unresolved is not None or candidate is None:
+    if not execution_alias_root_is_valid(root, alias_root):
         raise RuntimeError("execution alias root is not a bounded internal junction set")
     ledger = capacity_ledger.load_capacity_ledger(root)
     if ledger is None:
         raise RuntimeError("capacity ledger is missing or invalid")
     recorded = next((
         item for item in ledger["objects"]
-        if item.get("path") == candidate["path"] and item.get("status") != "retired"
+        if item.get("path") == "common/execution_aliases" and item.get("status") != "retired"
     ), None)
     if recorded is None:
         raise RuntimeError("execution alias root is absent from the calibrated ledger")
@@ -530,6 +529,34 @@ def _reconcile_execution_alias_root(root: Path) -> dict[str, int]:
         "corrected_count": int(previous_bytes != 0),
         "released_bytes": previous_bytes,
     }
+
+
+def _register_workspace_scratch_scope(root: Path) -> dict[str, int]:
+    """Account for the workspace scratch once, before daily planning."""
+
+    if not root.is_dir():
+        return {"registered_count": 0, "registered_bytes": 0}
+    source = root.parent / "scratch"
+    if not source.exists():
+        return {"registered_count": 0, "registered_bytes": 0}
+    if not source.is_dir() or source.is_symlink():
+        raise RuntimeError("workspace scratch is not a regular directory")
+    ledger = capacity_ledger.load_capacity_ledger(root)
+    if ledger is None:
+        raise RuntimeError("capacity ledger is missing or invalid")
+    existing = next((
+        item for item in ledger["external_scopes"]
+        if item["role"] == "repository_workspace_scratch"
+    ), None)
+    if existing is not None:
+        if existing["path"] != str(source.resolve(strict=False)):
+            raise RuntimeError("workspace scratch scope identity differs")
+        return {"registered_count": 0, "registered_bytes": int(existing["bytes"])}
+    measured = sum(item.stat().st_size for item in source.rglob("*") if item.is_file())
+    capacity_ledger.record_external_scope(
+        root, role="repository_workspace_scratch", path=source, bytes_count=measured,
+    )
+    return {"registered_count": 1, "registered_bytes": measured}
 
 
 def plan(
@@ -1107,7 +1134,10 @@ def main() -> None:
         alias_reconciliation = {"corrected_count": 0, "released_bytes": 0}
         if args.execution_mode == "maintenance":
             activation = activate_owner_dispositions(args.artifact_root)
+            source_scratch_registration = _register_workspace_scratch_scope(args.artifact_root)
             alias_reconciliation = _reconcile_execution_alias_root(args.artifact_root)
+        else:
+            source_scratch_registration = {"registered_count": 0, "registered_bytes": 0}
         receipt = plan(
             args.artifact_root,
             target_bytes=int(target_gib * GIB),
@@ -1143,6 +1173,8 @@ def main() -> None:
             receipt["owner_dispositions_activated"] = activation
         if alias_reconciliation["corrected_count"]:
             receipt["administrative_aliases_reconciled"] = alias_reconciliation
+        if source_scratch_registration["registered_count"]:
+            receipt["repository_workspace_scratch_registered"] = source_scratch_registration
         print(json.dumps(receipt, indent=2))
     except (ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
         parser.error(str(exc))

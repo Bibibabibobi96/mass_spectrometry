@@ -152,6 +152,27 @@ class DailyCapacityReconcileTest(unittest.TestCase):
             self.assertEqual(receipt["projected_bytes"], 101)
             self.assertEqual(receipt["blocking_reason"], "TARGET_CAPACITY_EXCEEDED")
 
+    def test_maintenance_registers_workspace_scratch_once_without_artifact_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"; root.mkdir()
+            source = parent / "scratch"; source.mkdir(parents=True)
+            (source / "payload.bin").write_bytes(b"source")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[], external_scopes=[
+                {"role": "repository_scratch", "path": str((parent / "simulation_repo" / "scratch").resolve()), "bytes": 0},
+                {"role": "repository_generated", "path": str((parent / "generated").resolve()), "bytes": 0},
+            ])
+            self.assertEqual(
+                capacity._register_workspace_scratch_scope(root),
+                {"registered_count": 1, "registered_bytes": 6},
+            )
+            ledger = capacity_ledger.load_capacity_ledger(root)
+            self.assertEqual(ledger["resident_bytes"], 6)
+            self.assertEqual(
+                capacity._register_workspace_scratch_scope(root),
+                {"registered_count": 0, "registered_bytes": 6},
+            )
+
     def test_daily_module_has_no_legacy_imports(self) -> None:
         source = Path(capacity.__file__).read_text(encoding="utf-8")
         for forbidden in (

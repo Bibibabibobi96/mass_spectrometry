@@ -13,13 +13,13 @@ import hashlib
 import json
 import os
 import re
-import stat
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from common.contracts import capacity_ledger, capacity_protection
+from common.contracts.execution_aliases import execution_alias_root_is_valid
 from common.contracts.legacy_owner_disposition import load_legacy_owner_disposition
 from common.contracts.artifact_retention import (
     classify_file,
@@ -240,22 +240,11 @@ def _common_pa_runtime_state(
 def _execution_alias_root(root: Path, path: Path, review_deadline: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Validate disposable junction aliases without double-counting targets."""
 
-    root_resolved = root.resolve(strict=False)
-    for alias in sorted(path.iterdir()):
-        try:
-            target = alias.resolve(strict=True)
-            target.relative_to(root_resolved)
-        except (OSError, RuntimeError, ValueError):
-            return None, _unresolved(
-                root, path, "execution_alias_target_missing_or_escapes_artifact_root",
-                review_deadline,
-            )
-        attributes = getattr(alias.lstat(), "st_file_attributes", 0)
-        if not alias.is_dir() or not (attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT):
-            return None, _unresolved(
-                root, path, "execution_alias_root_contains_non_junction_entry",
-                review_deadline,
-            )
+    if not execution_alias_root_is_valid(root, path):
+        return None, _unresolved(
+            root, path, "execution_alias_root_is_not_a_bounded_internal_junction_set",
+            review_deadline,
+        )
     # Junction payload is already represented by its target object.  Recording
     # this zero-byte administrative root makes the declared scope explicit
     # while preserving the physical resident-byte invariant.
@@ -771,7 +760,7 @@ def _protect_active_dependencies(
 def _workspace_external_scopes(
     artifact_root: Path, workspace_root: Path, *, progress: CalibrationProgress | None = None,
 ) -> list[dict[str, Any]]:
-    """Measure the two declared source-tree working roots during calibration only."""
+    """Measure the declared source-tree working roots during calibration only."""
 
     declared = _declared_workspace_scope_paths(artifact_root, workspace_root)
     scopes: list[dict[str, Any]] = []
@@ -786,7 +775,7 @@ def _workspace_external_scopes(
 def _declared_workspace_scope_paths(
     artifact_root: Path, workspace_root: Path,
 ) -> list[tuple[str, Path]]:
-    """Return the two fixed source-tree scope paths without touching contents."""
+    """Return fixed source-tree scope paths without touching contents."""
 
     workspace = workspace_root.resolve(strict=False)
     root = artifact_root.resolve(strict=False)
@@ -797,6 +786,7 @@ def _declared_workspace_scope_paths(
     return [
         ("repository_scratch", (workspace / "scratch").resolve(strict=False)),
         ("repository_generated", (workspace / "generated").resolve(strict=False)),
+        ("repository_workspace_scratch", (workspace.parent / "scratch").resolve(strict=False)),
     ]
 
 

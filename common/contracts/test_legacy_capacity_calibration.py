@@ -920,7 +920,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             self.assertEqual(inventory["external_scope_bytes"], len(b"scratchgenerated"))
             self.assertEqual(
                 {item["role"] for item in inventory["external_scopes"]},
-                {"repository_scratch", "repository_generated"},
+                {"repository_scratch", "repository_generated", "repository_workspace_scratch"},
             )
             ledger = initialize_from_inventory(inventory)
             self.assertEqual(ledger["resident_bytes"], len(b"scratchgenerated"))

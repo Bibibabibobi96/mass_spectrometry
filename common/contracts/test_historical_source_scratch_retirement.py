@@ -57,6 +57,19 @@ class SourceScratchRetirementTests(unittest.TestCase):
         self.assertTrue(self.source.exists())
         self.assertEqual(capacity_ledger.load_capacity_ledger(self.root)["external_scopes"][0]["bytes"], 7)
 
+    def test_exact_top_level_file_is_retired_without_touching_sibling(self):
+        obsolete = self.source / "obsolete.json"
+        obsolete.write_bytes(b"obsolete")
+        auth(self.evidence, "owner", self.source, targets=["obsolete.json"])
+        disposition = self.disposition()
+        self.assertEqual(disposition["files"], [{
+            "target": "obsolete.json", "path": "obsolete.json", "bytes": 8,
+        }])
+        done = apply(disposition)
+        self.assertEqual(done["status"], "complete")
+        self.assertFalse(obsolete.exists())
+        self.assertTrue((self.source / "current-accelerator" / "keep.bin").exists())
+
     def test_requires_exact_normalized_and_nonoverlapping_authorized_targets(self):
         for targets, reason in [(["old-five-zone/.."], "normalized"),
                                 (["old-five-zone", "old-five-zone/nested"], "overlap"),

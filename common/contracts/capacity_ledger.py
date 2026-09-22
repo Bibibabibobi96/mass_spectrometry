@@ -21,7 +21,9 @@ from common.contracts.recorded_file_removal import write_json_atomic
 CAPACITY_LEDGER_RELATIVE_PATH = Path("common") / "capacity_ledger.json"
 LEDGER_CLASSES = {"light_evidence", "published_cache", "rebuildable_payload"}
 LEDGER_STATUSES = {"writing", "ready", "retirement_pending", "retired"}
-EXTERNAL_SCOPE_ROLES = {"repository_scratch", "repository_generated"}
+EXTERNAL_SCOPE_ROLES = {
+    "repository_scratch", "repository_generated", "repository_workspace_scratch",
+}
 RECORDABLE_STATUSES = {"writing", "ready"}
 SHA256 = re.compile(r"[0-9A-Fa-f]{64}")
 """The ledger records *managed ranges*, not duties for individual files.
@@ -257,7 +259,7 @@ def _is_valid_capacity_ledger(root: Path, document: object) -> bool:
         external_roles.add(role)
         external_paths.add(key)
         external_bytes += size
-    if external_scopes and external_roles != EXTERNAL_SCOPE_ROLES:
+    if external_scopes and not external_roles.issubset(EXTERNAL_SCOPE_ROLES):
         return False
     seen_paths: set[str] = set()
     governed_paths: list[str] = []
@@ -1019,5 +1021,35 @@ def update_external_scope_bytes(
             raise ValueError("external scope record differs from approved disposition")
         entry["bytes"] = new_bytes
         ledger["resident_bytes"] += new_bytes - expected_bytes
+        write_json_atomic(destination, ledger)
+        return dict(entry)
+
+
+def record_external_scope(
+    root: Path, *, role: str, path: Path, bytes_count: int,
+    ledger_path: Path | None = None,
+) -> dict[str, Any]:
+    """Register one measured workspace range without rediscovering artifacts."""
+
+    if role not in EXTERNAL_SCOPE_ROLES or isinstance(bytes_count, bool) or bytes_count < 0:
+        raise ValueError("external scope record is invalid")
+    root = root.resolve(strict=False)
+    destination = resolve_ledger_path(root, ledger_path)
+    canonical = str(path.resolve(strict=False))
+    with protection.capacity_decision_lock(root):
+        ledger = load_capacity_ledger(root, destination)
+        if ledger is None:
+            raise ValueError("capacity ledger is missing or invalid")
+        existing = next((item for item in ledger["external_scopes"] if item["role"] == role), None)
+        if existing is not None:
+            if existing["path"] != canonical or int(existing["bytes"]) != bytes_count:
+                raise ValueError("external scope differs from its calibrated record")
+            return dict(existing)
+        if any(item["path"] == canonical for item in ledger["external_scopes"]):
+            raise ValueError("external scope path is already registered")
+        entry = {"role": role, "path": canonical, "bytes": bytes_count}
+        ledger["external_scopes"].append(entry)
+        ledger["external_scopes"].sort(key=lambda item: item["role"])
+        ledger["resident_bytes"] += bytes_count
         write_json_atomic(destination, ledger)
         return dict(entry)

@@ -85,8 +85,8 @@ startup只查询磁盘空闲并读取台账、当前租约和全部活动承诺�
 不做历史清理。缺失/损坏台账、当前租约scope不完整、未知承诺、影响当前输入或使容量不可判定的writing复核逾期、
 以及空间不足都明确失败关闭；无关逾期writing只报告warning。
 startup与maintenance均报告总耗时和分段耗时；正常目标为5秒，超过5秒或60秒只发性能warning，不改变安全结论。历史发现只由显式一次性`legacy_capacity_calibration.py --workspace-root <simulation_repo>`
-执行，不能从日常路径隐式触发。它同时登记artifact根与仓库`scratch/`、`generated/`两个外部
-受管范围；二者只在校准时计量，启动仅使用冻结的台账数值。`legacy_capacity_backfill.py`
+执行，不能从日常路径隐式触发。它同时登记artifact根、仓库`scratch/`、`generated/`和工作区`scratch/`三个外部
+受管范围；前两项只在校准时计量，工作区`scratch/`若尚未登记则由maintenance做一次范围计量，之后启动仅使用冻结的台账数值。`legacy_capacity_backfill.py`
 只承担历史恢复，不能提供日常准入或容量水位覆盖。
 
 缺少现行事务而已被明确放弃的历史范围，只能由其目标项目 owner 在
@@ -96,7 +96,7 @@ startup与maintenance均报告总耗时和分段耗时；正常目标为5秒，�
 这些范围，也不会为它们推断 owner、终态或删除资格。
 
 历史仓库 source `scratch/` 的删除只能使用`historical_source_scratch_retirement.py`：它要求
-校准外部范围、owner批准证据及其SHA-256，并在证据中逐项列出规范化的`retirement_targets`子目录。入口拒绝
+校准外部范围、owner批准证据及其SHA-256，并在证据中逐项列出规范化的`retirement_targets`直接子范围（文件或目录）。入口拒绝
 重叠目标、符号链接、活动消费者和受保护路径；先冻结这些目标的路径/字节清单及可续做收据，随后才可用`--apply`。
 它只哈希小型授权证据，不为可重建大 payload 进行删除前或删除时的内容扫描。
 它绝不删除`scratch/`根或未列出的兄弟目录，完成后保留`repository_scratch`台账根记录并只扣除已处置字节。
