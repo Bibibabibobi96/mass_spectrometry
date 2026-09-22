@@ -151,6 +151,26 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
             self.assertFalse(applied["satisfied_after_apply"])
             self.assertEqual(applied["management_summary_after_apply"]["capacity_gap_bytes"], 10)
 
+    def test_noop_apply_reuses_plan_projections_but_rechecks_capacity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capacity_ledger.initialize_capacity_ledger(root, objects=[
+                _object("active", bytes_count=80, pin=True),
+            ])
+            receipt = capacity.plan(
+                root, target_bytes=100, minimum_free_bytes=0, execution_mode="maintenance",
+            )
+            self.assertEqual(receipt["planned"], [])
+            with patch.object(
+                capacity, "_maintenance_management_summary",
+                side_effect=AssertionError("no-op apply must reuse the plan projection"),
+            ):
+                applied = capacity.apply(receipt)
+            self.assertTrue(applied["satisfied_after_apply"])
+            self.assertEqual(
+                applied["management_summary_after_apply"], receipt["management_summary"],
+            )
+
     def test_unhandled_published_cache_is_not_reported_as_evictable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

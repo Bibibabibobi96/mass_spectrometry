@@ -1237,12 +1237,25 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
             failed=failed,
         )
         if ledger is not None:
-            outcome["management_summary_after_apply"] = _maintenance_management_summary(
-                root, ledger, leases, target_bytes=int(receipt["target_bytes"]),
-                required_free_bytes=required_free,
-                free_bytes=free_after,
-            )
-            outcome["historical_closure_summary"] = _historical_closure_summary(root, ledger, leases)
+            if (
+                not receipt["planned"]
+                and int(ledger["resident_bytes"]) == int(receipt["measured_bytes"])
+                and commitment == int(receipt["total_active_lease_committed_new_bytes"])
+                and leases["audit"] == receipt["protection_lease_audit"]
+            ):
+                # A no-op pass still re-reads the authoritative ledger, leases,
+                # and free space above, but none of its maintenance operations
+                # can have changed the per-owner or historical projections.  Do
+                # not spend a second full projection pass merely to duplicate
+                # the plan's already-current report.
+                outcome["management_summary_after_apply"] = receipt.get("management_summary", {})
+            else:
+                outcome["management_summary_after_apply"] = _maintenance_management_summary(
+                    root, ledger, leases, target_bytes=int(receipt["target_bytes"]),
+                    required_free_bytes=required_free,
+                    free_bytes=free_after,
+                )
+                outcome["historical_closure_summary"] = _historical_closure_summary(root, ledger, leases)
         outcome["satisfied_after_apply"] = bool(
             ledger is not None
             and not leases["legacy_unknown_commitment_count"]
