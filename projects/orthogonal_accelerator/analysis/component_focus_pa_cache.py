@@ -58,6 +58,7 @@ def main() -> int:
     parser.add_argument("--simion-executable", type=Path, required=True)
     parser.add_argument("--verification-evidence", type=Path)
     parser.add_argument("--owner")
+    parser.add_argument("--producer-run-config", type=Path)
     args = parser.parse_args()
     try:
         plan = json.loads(args.plan.read_text(encoding="utf-8"))
@@ -84,6 +85,7 @@ def main() -> int:
             result = advance_pa_family_cache_transaction(
                 args.cache_root, value, FILES, verification_evidence=evidence,
                 recovery_policy="none", owner=args.owner,
+                producer_run_config=args.producer_run_config,
             )
             if result.generation_directory is not None and tuple(
                 record["name"] for record in json.loads(

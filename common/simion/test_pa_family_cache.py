@@ -65,6 +65,11 @@ class PAFamilyCacheTest(unittest.TestCase):
         self.names = ("field.pa#", "field.pa0", "field.pa1")
         self.cache = self.root / "cache"
         self.artifact_owner = "pa-family-cache-test"
+        self.producer_run_config = self.root / "run_config.json"
+        self.producer_run_config.write_text(
+            json.dumps({"run_id": "fixture-pa-producer", "project": "fixture"}),
+            encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -85,9 +90,12 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def _empty_failed_transaction(self, *, prepared=False):
         artifacts, cache = self._artifact_cache()
-        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        first = advance_pa_family_cache_transaction(
+            cache, identity(), self.names, owner=self.artifact_owner,
+            producer_run_config=self.producer_run_config,
+        )
         self._land_transaction_members(first, self.names)
-        sealed = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        sealed = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         path = first.transaction_directory / "transaction.json"
         document = json.loads(path.read_text())
         if prepared:
@@ -142,7 +150,7 @@ class PAFamilyCacheTest(unittest.TestCase):
                 advance_pa_family_cache_transaction(cache, identity(), self.names, abandon_empty_transaction=request)
                 self.assertEqual(before, path.read_bytes())
                 with self.assertRaisesRegex(PAFamilyCacheError, "retained failure evidence"):
-                    advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+                    advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
                 self.root = old_root
 
     def test_abandon_empty_transaction_replays_owner_commit_after_ledger_failure(self):
@@ -245,7 +253,7 @@ class PAFamilyCacheTest(unittest.TestCase):
             replay = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, response_receipt=spec)
             self.assertEqual(replay.inventory_sha256, sealed.inventory_sha256)
             # A saved recipe is also resumed by ordinary advance.
-            replay = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner)
+            replay = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
             self.assertEqual(replay.inventory_sha256, sealed.inventory_sha256)
 
     def test_response_receipt_waits_for_data_without_hashing_or_writing_receipt(self):
@@ -361,11 +369,12 @@ class PAFamilyCacheTest(unittest.TestCase):
     ) -> pa_family_cache.TransactionAdvance:
         """Publish fixture bytes only through the production transaction path."""
         building = advance_pa_family_cache_transaction(
-            cache, identity(), self.names, owner=self.artifact_owner, recovery_policy=recovery_policy
+            cache, identity(), self.names, owner=self.artifact_owner,
+            producer_run_config=self.producer_run_config, recovery_policy=recovery_policy,
         )
         self._land_transaction_members(building, self.names)
         prepared = advance_pa_family_cache_transaction(
-            cache, identity(), self.names, owner=self.artifact_owner, recovery_policy=recovery_policy
+            cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, recovery_policy=recovery_policy
         )
         return advance_pa_family_cache_transaction(
             cache,
@@ -384,7 +393,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         _, cache = self._artifact_cache(initialize_ledger=False)
         before = {name: (self.source / name).read_bytes() for name in self.names}
         with self.assertRaisesRegex(PAFamilyCacheError, "calibrated capacity ledger"):
-            advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+            advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self.assertEqual(
             before, {name: (self.source / name).read_bytes() for name in self.names}
         )
@@ -395,14 +404,23 @@ class PAFamilyCacheTest(unittest.TestCase):
         with self.assertRaisesRegex(PAFamilyCacheError, "requires an explicit nonempty owner"):
             advance_pa_family_cache_transaction(cache, identity(), self.names)
         self.assertFalse((cache / ".transactions").exists())
+        with self.assertRaisesRegex(PAFamilyCacheError, "requires a producer run config"):
+            advance_pa_family_cache_transaction(
+                cache, identity(), self.names, owner=self.artifact_owner
+            )
         building = advance_pa_family_cache_transaction(
-            cache, identity(), self.names, owner=self.artifact_owner
+            cache, identity(), self.names, owner=self.artifact_owner,
+            producer_run_config=self.producer_run_config,
         )
         self.assertEqual(building.action_required, "build")
         transaction = json.loads(
             (building.transaction_directory / "transaction.json").read_text(encoding="utf-8")
         )
         self.assertEqual(transaction["owner"], self.artifact_owner)
+        self.assertEqual(
+            transaction["producer"]["run_config_sha256"],
+            pa_family_cache.file_sha256(self.producer_run_config),
+        )
 
     def test_artifact_publish_hit_and_materialize_record_lifecycle_without_hashing_hit(self) -> None:
         artifacts, cache = self._artifact_cache()
@@ -779,11 +797,11 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def _sealed_mismatch_fixture(self):
         names = (*self.names, "receipt.json")
-        build = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner)
+        build = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self._land_transaction_members(build, self.names)
         expected = {"name": self.names[1], "bytes": 4, "sha256": "A" * 64}
         (build.build_directory / "receipt.json").write_text(json.dumps({"source": expected}), encoding="utf-8")
-        sealed = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner)
+        sealed = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         document = json.loads((sealed.transaction_directory / "transaction.json").read_text())
         records = {item["name"]: item for item in document["files"]}
         request = {
@@ -798,7 +816,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         names, sealed, request = self._sealed_mismatch_fixture()
         kept = {name: (sealed.build_directory / name).stat() for name in (self.names[0], self.names[2])}
         with patch.object(pa_family_cache, "inventory_named_files", side_effect=AssertionError("no PA rehash")):
-            recovered = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=request)
+            recovered = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=request)
         self.assertEqual(set(recovered.missing_files), {self.names[1], "receipt.json"})
         self.assertIsNone(recovered.inventory_sha256)
         for name, before in kept.items():
@@ -806,10 +824,10 @@ class PAFamilyCacheTest(unittest.TestCase):
             self.assertEqual((before.st_ino, before.st_size, before.st_mtime_ns), (after.st_ino, after.st_size, after.st_mtime_ns))
             self.assertFalse(after.st_mode & stat.S_IWRITE)
         self._land_transaction_members(recovered, (self.names[1],))
-        repeated = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=request)
+        repeated = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=request)
         self.assertEqual(repeated.missing_files, ("receipt.json",))
         (repeated.build_directory / "receipt.json").write_text("{}", encoding="utf-8")
-        resealed = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner)
+        resealed = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self.assertNotEqual(resealed.inventory_sha256, sealed.inventory_sha256)
         published = advance_pa_family_cache_transaction(
             self.cache, identity(), names, verification_evidence=self._verification_evidence(resealed), recovery_policy="none",
@@ -818,7 +836,7 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def _retained_inventory_fixture(self):
         names, sealed, recovery = self._sealed_mismatch_fixture()
-        building = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=recovery)
+        building = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=recovery)
         self._land_transaction_members(building, (self.names[1],))
         (building.build_directory / "receipt.json").write_text("{}", encoding="utf-8")
         retained = (self.names[0], self.names[2])
@@ -829,7 +847,7 @@ class PAFamilyCacheTest(unittest.TestCase):
                     for record in real_inventory(root, filenames, **options)]
 
         with patch.object(pa_family_cache, "inventory_named_files", side_effect=stale_inventory):
-            sealed = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner)
+            sealed = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         document = json.loads((sealed.transaction_directory / "transaction.json").read_text())
         request = {"schema_version": 1, "cache_key": sealed.cache_key, "owner": document["owner"],
                    "inventory_sha256": sealed.inventory_sha256, "names": list(retained)}
@@ -870,7 +888,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         self.assertEqual(validate_pa_family_cache_generation(result.generation_directory)["predecessor_generation_sha256"], old.generation_sha256)
         with patch.object(pa_family_cache, "file_sha256_unbuffered", side_effect=AssertionError("no repeated PA hash")):
             replay = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, publication_metadata_correction=request)
-            ordinary = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner)
+            ordinary = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self.assertEqual(replay, ordinary)
 
     def test_publication_metadata_correction_rejects_false_evidence_and_leaves_source(self):
@@ -945,7 +963,7 @@ class PAFamilyCacheTest(unittest.TestCase):
                 self.assertTrue(fired)
                 self.assertEqual(probe_pa_family_cache(self.cache, identity()).disposition, CacheDisposition.CORRUPT)
                 with patch.object(pa_family_cache, "file_sha256_unbuffered", side_effect=AssertionError("no repeated hash")):
-                    done = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner)
+                    done = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
                 self.assertEqual(done.action_required, "complete")
                 validate_pa_family_cache_generation(done.generation_directory)
 
@@ -1017,7 +1035,7 @@ class PAFamilyCacheTest(unittest.TestCase):
             # A crash-resumed older prepared transaction must pass the same gate.
             pa_family_cache._write_transaction(transaction_path, dict(original, status="prepared", verification=evidence))
             with self.assertRaisesRegex(PAFamilyCacheError, r"retained member inventory.*field\.pa#"):
-                advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner)
+                advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self.assertFalse((self.cache / sealed.cache_key / "current_generation.json").exists())
 
     def test_new_build_after_retirement_does_not_inherit_prior_member_recovery_promise(self):
@@ -1091,12 +1109,12 @@ class PAFamilyCacheTest(unittest.TestCase):
             return original_unlink(path, *args, **kwargs)
         with patch.object(Path, "unlink", interrupt_receipt):
             with self.assertRaisesRegex(OSError, "deletion interruption"):
-                advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=request)
+                advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=request)
         self.assertFalse((sealed.build_directory / self.names[1]).exists())
         document = json.loads((sealed.transaction_directory / "transaction.json").read_text())
         self.assertFalse(document["member_recovery"]["complete"])
         self.assertEqual(document["files"], [])
-        recovered = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner)
+        recovered = advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self.assertEqual(set(recovered.missing_files), {self.names[1], "receipt.json"})
 
     def test_member_recovery_rejects_unbound_or_healthy_members_before_deletion(self) -> None:
@@ -1115,32 +1133,32 @@ class PAFamilyCacheTest(unittest.TestCase):
             invalid = json.loads(json.dumps(request))
             change(invalid)
             with self.subTest(request=invalid), self.assertRaises(ValueError):
-                advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=invalid)
+                advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=invalid)
             self.assertEqual(before, {path.name: path.read_bytes() for path in sealed.build_directory.iterdir()})
 
     def test_member_recovery_rejects_verification_or_published_state(self) -> None:
         names, sealed, request = self._sealed_mismatch_fixture()
         evidence = self._verification_evidence(sealed)
         with self.assertRaisesRegex(PAFamilyCacheError, "cannot accompany"):
-            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=request, verification_evidence=evidence)
+            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=request, verification_evidence=evidence)
         transaction_path = sealed.transaction_directory / "transaction.json"
         document = json.loads(transaction_path.read_text())
         document["verification"] = evidence
         pa_family_cache._write_transaction(transaction_path, document)
         with self.assertRaisesRegex(PAFamilyCacheError, "requires building"):
-            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=request)
+            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=request)
         document["status"] = "building"
         document["verification"] = None
         document["generation_sha256"] = "E" * 64
         pa_family_cache._write_transaction(transaction_path, document)
         with self.assertRaisesRegex(PAFamilyCacheError, "requires building"):
-            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=request)
+            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=request)
 
         document["status"] = "prepared"
         document["generation_sha256"] = None
         pa_family_cache._write_transaction(transaction_path, document)
         with self.assertRaisesRegex(PAFamilyCacheError, "requires building"):
-            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=request)
+            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=request)
 
     def test_member_recovery_cli_and_pending_request_conflict(self) -> None:
         names, sealed, request = self._sealed_mismatch_fixture()
@@ -1154,11 +1172,11 @@ class PAFamilyCacheTest(unittest.TestCase):
                 raise OSError("fixture before deletion")
             return original_unlink(path, *args, **kwargs)
         with patch.object(Path, "unlink", interrupt_member), self.assertRaisesRegex(OSError, "before deletion"):
-            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=request)
+            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=request)
         conflicting = json.loads(json.dumps(request))
         conflicting["owner"] = "not owner"
         with self.assertRaisesRegex(PAFamilyCacheError, "pending request"):
-            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, member_recovery=conflicting)
+            advance_pa_family_cache_transaction(self.cache, identity(), names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery=conflicting)
         self.assertTrue((sealed.build_directory / self.names[1]).exists())
         common = ["--cache-root", str(self.cache), "--identity", str(identity_path),
                   "--filenames", ",".join(names), "--member-recovery", str(request_path)]
@@ -1172,7 +1190,7 @@ class PAFamilyCacheTest(unittest.TestCase):
             advance_pa_family_cache_transaction(self.cache, identity(), self.names, member_recovery={})
         _, cache = self._artifact_cache(initialize_ledger=False)
         with self.assertRaisesRegex(PAFamilyCacheError, "calibrated capacity ledger"):
-            advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, member_recovery={})
+            advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, member_recovery={})
 
     def test_transaction_recovers_hard_kill_during_member_sealing(self) -> None:
         first = advance_pa_family_cache_transaction(self.cache, identity(), self.names)
@@ -1408,9 +1426,9 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def test_artifact_transaction_may_publish_unpinned_for_manager_retirement(self) -> None:
         artifacts, cache = self._artifact_cache()
-        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self._land_transaction_members(first, self.names)
-        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         published = advance_pa_family_cache_transaction(
             cache,
             identity(),
@@ -1429,12 +1447,12 @@ class PAFamilyCacheTest(unittest.TestCase):
         artifacts, cache = self._artifact_cache()
         reason = "fixture governed family"
         first = advance_pa_family_cache_transaction(
-            cache, identity(), self.names, owner=self.artifact_owner,
+            cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config,
             published_pin_reason=reason
         )
         self._land_transaction_members(first, self.names)
         prepared = advance_pa_family_cache_transaction(
-            cache, identity(), self.names, owner=self.artifact_owner,
+            cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config,
             published_pin_reason=reason
         )
         published = advance_pa_family_cache_transaction(
@@ -1468,9 +1486,9 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def test_artifact_transaction_owner_approves_exact_retirement_idempotently(self) -> None:
         artifacts, cache = self._artifact_cache()
-        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self._land_transaction_members(first, self.names)
-        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         published = advance_pa_family_cache_transaction(
             cache,
             identity(),
@@ -1518,6 +1536,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         reason = "fixture native family; rebuild only on frozen identity change"
         first = advance_pa_family_cache_transaction(
             cache, identity(), self.names, owner=self.artifact_owner,
+            producer_run_config=self.producer_run_config,
             published_pin_reason=reason
         )
         self._land_transaction_members(first, self.names)
@@ -1542,13 +1561,13 @@ class PAFamilyCacheTest(unittest.TestCase):
         artifacts, cache = self._artifact_cache()
         reason = "fixture pinned until replacement"
         first = advance_pa_family_cache_transaction(
-            cache, identity(), self.names, owner=self.artifact_owner, published_pin_reason=reason)
+            cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, published_pin_reason=reason)
         self._land_transaction_members(first, self.names)
         prepared = advance_pa_family_cache_transaction(
-            cache, identity(), self.names, owner=self.artifact_owner, published_pin_reason=reason)
+            cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, published_pin_reason=reason)
         published = advance_pa_family_cache_transaction(
             cache, identity(), self.names, verification_evidence=self._verification_evidence(prepared),
-            owner=self.artifact_owner, published_pin_reason=reason)
+            owner=self.artifact_owner, producer_run_config=self.producer_run_config, published_pin_reason=reason)
         replacement_path = artifacts / "replacement" / "run_manifest.json"
         replacement_path.parent.mkdir(parents=True)
         replacement_path.write_bytes(b"verified replacement")
@@ -1582,13 +1601,13 @@ class PAFamilyCacheTest(unittest.TestCase):
     def test_owner_pin_release_rejects_missing_or_mismatched_replacement_evidence(self) -> None:
         _, cache = self._artifact_cache()
         first = advance_pa_family_cache_transaction(
-            cache, identity(), self.names, owner=self.artifact_owner, published_pin_reason="fixture pin")
+            cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, published_pin_reason="fixture pin")
         self._land_transaction_members(first, self.names)
         prepared = advance_pa_family_cache_transaction(
-            cache, identity(), self.names, owner=self.artifact_owner, published_pin_reason="fixture pin")
+            cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config, published_pin_reason="fixture pin")
         published = advance_pa_family_cache_transaction(
             cache, identity(), self.names, verification_evidence=self._verification_evidence(prepared),
-            owner=self.artifact_owner, published_pin_reason="fixture pin")
+            owner=self.artifact_owner, producer_run_config=self.producer_run_config, published_pin_reason="fixture pin")
         with self.assertRaisesRegex(PAFamilyCacheError, "replacement evidence"):
             release_pa_family_cache_retirement_pin(
                 cache, published.cache_key, published.generation_sha256, owner=self.artifact_owner,
@@ -1596,9 +1615,9 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def test_artifact_transaction_retirement_lease_blocks_without_state_change(self) -> None:
         artifacts, cache = self._artifact_cache()
-        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self._land_transaction_members(first, self.names)
-        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         published = advance_pa_family_cache_transaction(
             cache,
             identity(),
@@ -1626,9 +1645,9 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def test_artifact_transaction_retirement_resumes_after_ledger_write_failure(self) -> None:
         artifacts, cache = self._artifact_cache()
-        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self._land_transaction_members(first, self.names)
-        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         published = advance_pa_family_cache_transaction(
             cache,
             identity(),
@@ -1667,9 +1686,9 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def test_artifact_transaction_retirement_resumes_after_owner_write_failure(self) -> None:
         artifacts, cache = self._artifact_cache()
-        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self._land_transaction_members(first, self.names)
-        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         published = advance_pa_family_cache_transaction(
             cache,
             identity(),
@@ -1713,9 +1732,9 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def test_completed_retirement_starts_a_new_build_cycle(self) -> None:
         artifacts, cache = self._artifact_cache()
-        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        first = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         self._land_transaction_members(first, self.names)
-        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+        prepared = advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         published = advance_pa_family_cache_transaction(
             cache,
             identity(),
@@ -1760,7 +1779,7 @@ class PAFamilyCacheTest(unittest.TestCase):
 
         with patch.object(Path, "mkdir", new=interrupt_first_payload_mkdir):
             with self.assertRaisesRegex(OSError, "after building transaction commit"):
-                advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner)
+                advance_pa_family_cache_transaction(cache, identity(), self.names, owner=self.artifact_owner, producer_run_config=self.producer_run_config)
         interrupted_document = json.loads(
             (published.transaction_directory / "transaction.json").read_text(
                 encoding="utf-8"

@@ -1834,7 +1834,7 @@ def _load_transaction(
         "generation_sha256", "published_pin_reason", "retirement", "last_error",
     }
     if (not isinstance(document, dict) or not required <= set(document)
-            or set(document) - required - {"member_recovery", "response_receipt", "retained_inventory_recovery", "publication_metadata_correction", "abandonment", "pin_release"}):
+            or set(document) - required - {"producer", "member_recovery", "response_receipt", "retained_inventory_recovery", "publication_metadata_correction", "abandonment", "pin_release"}):
         raise PAFamilyCacheError("PA cache transaction fields differ")
     if (
             document["schema_version"] != 1
@@ -1862,6 +1862,16 @@ def _load_transaction(
     digest = canonical_json_sha256(records) if records else None
     if document["inventory_sha256"] != digest:
         raise PAFamilyCacheError("PA cache transaction inventory digest differs")
+    if "producer" in document:
+        producer = document["producer"]
+        if (
+            not isinstance(producer, dict)
+            or set(producer) != {"run_config_path", "run_config_sha256"}
+            or not isinstance(producer["run_config_path"], str)
+            or not Path(producer["run_config_path"]).is_absolute()
+            or SHA256.fullmatch(str(producer["run_config_sha256"])) is None
+        ):
+            raise PAFamilyCacheError("PA transaction producer provenance differs")
     generation = document["generation_sha256"]
     if generation is not None and (
         not isinstance(generation, str) or SHA256.fullmatch(generation) is None
@@ -2990,6 +3000,7 @@ def advance_pa_family_cache_transaction(
     *,
     verification_evidence: Mapping[str, Any] | None = None,
     owner: str | None = None,
+    producer_run_config: str | Path | None = None,
     lock_timeout_s: float = 30.0,
     recovery_policy: str = "xor",
     published_pin_reason: str | None = None,
@@ -3013,6 +3024,8 @@ def advance_pa_family_cache_transaction(
     ):
         raise PAFamilyCacheError("PA transaction owner must be a nonempty 1-256 character string")
     owner = owner.strip() if owner is not None else None
+    if producer_run_config is not None and not isinstance(producer_run_config, (str, Path)):
+        raise PAFamilyCacheError("PA producer run config must be a path")
     if recovery_policy not in {"xor", "none"}:
         raise PAFamilyCacheError("PA cache recovery policy must be 'xor' or 'none'")
     if publication_metadata_correction is not None and any(value is not None for value in (verification_evidence, member_recovery, retained_inventory_recovery)):
@@ -3037,14 +3050,28 @@ def advance_pa_family_cache_transaction(
     root.mkdir(parents=True, exist_ok=True)
     transaction = root / TRANSACTION_DIRECTORY / cache_key
     transaction_path = transaction / TRANSACTION_NAME
-    if (
-        _artifact_root_for_cache(root) is not None
-        and owner is None
-        and not transaction_path.exists()
-    ):
+    governed_new_transaction = (
+        _artifact_root_for_cache(root) is not None and not transaction_path.exists()
+    )
+    if governed_new_transaction and owner is None:
         raise PAFamilyCacheError(
             "artifact PA transaction requires an explicit nonempty owner"
         )
+    producer: dict[str, str] | None = None
+    if governed_new_transaction:
+        if producer_run_config is None:
+            raise PAFamilyCacheError(
+                "artifact PA transaction requires a producer run config before payload creation"
+            )
+        source = Path(producer_run_config)
+        if source.is_symlink() or not source.is_file():
+            raise PAFamilyCacheError("PA producer run config must be a regular existing file")
+        producer = {
+            "run_config_path": str(source.resolve(strict=True)),
+            # This is a small, frozen control record.  PA member bytes are never
+            # read here; their inventory is sealed only at the existing boundary.
+            "run_config_sha256": file_sha256(source),
+        }
     payload = transaction / "payload"
     build_scratch = transaction / "build-scratch"
     ledger_binding = _transaction_ledger_binding(root, cache_key, transaction)
@@ -3098,6 +3125,8 @@ def advance_pa_family_cache_transaction(
                 "retirement": None,
                 "last_error": None,
             }
+            if producer is not None:
+                document["producer"] = producer
             if existing.disposition is CacheDisposition.HIT:
                 manifest = _validate_sealed_generation_metadata(
                     existing.generation_directory, expected_cache_key=cache_key, expected_filenames=names
@@ -3790,6 +3819,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     parser.add_argument("--recovery-policy", choices=("xor", "none"), default="xor")
     parser.add_argument("--published-pin-reason")
     parser.add_argument("--owner")
+    parser.add_argument("--producer-run-config", type=Path)
     parser.add_argument("--capacity-lease-id")
     parser.add_argument("--capacity-lease-owner")
     parser.add_argument("--lock-timeout-s", type=float, default=30.0)
@@ -3873,6 +3903,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             filenames,
             verification_evidence=evidence,
             owner=args.owner,
+            producer_run_config=args.producer_run_config,
             lock_timeout_s=args.lock_timeout_s,
             recovery_policy=args.recovery_policy,
             published_pin_reason=args.published_pin_reason,

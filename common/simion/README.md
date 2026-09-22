@@ -72,7 +72,9 @@ disposition 删除。它不提供通用 unpin，也不接受不可核验的路�
 builder把每个成员先写到返回的确定性scratch，再以原子改名落入`payload`；common看到完整精确清单后建立连续稳定的
 持久化视图并封存，返回`verify`。调用方提交绑定cache key与inventory的SIMION验证证据后，common在同一事务内
 完成parity、generation原子发布、pointer和容量ledger交接。中断后重复`advance-transaction`从同一状态收敛，
-不重新Refine。生产`artifacts/`缺少可信容量ledger时在修改payload前失败关闭；fixture可在其外独立运行。
+不重新Refine。生产`artifacts/`缺少可信容量ledger时在修改payload前失败关闭；首次事务还必须给出显式
+owner和`--producer-run-config`。common只对这个小型、冻结的运行配置记录路径和一次性SHA-256，随后续作和
+缓存命中不再读取它，更不会为此读取PA；因此每个新PA在产生重载荷前已有来源、责任人和恢复入口。fixture可在其外独立运行。
 尚未验证的封存成员与其轻量receipt身份不一致时，owner可在同一个`advance-transaction`调用中传入
 `--member-recovery <json>`（Python参数`member_recovery`）。请求固定为schema v1、role
 `simion_pa_family_member_recovery`，绑定`cache_key`、`owner`、旧`inventory_sha256`、`receipt`
