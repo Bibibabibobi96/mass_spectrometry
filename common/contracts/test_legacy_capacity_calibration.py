@@ -13,6 +13,7 @@ from common.contracts.legacy_capacity_calibration import (
     CalibrationError,
     build_calibration_inventory,
     initialize_from_inventory,
+    load_existing_calibration_report,
     main,
 )
 
@@ -109,6 +110,128 @@ def _write_frozen_input_cache(root: Path) -> Path:
 
 
 class LegacyCapacityCalibrationTests(unittest.TestCase):
+    def test_existing_external_report_initialization_uses_no_scan_or_payload_hashes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            root.mkdir()
+            workspace = parent / "workspace"
+            (workspace / "scratch").mkdir(parents=True)
+            (workspace / "generated").mkdir()
+            (workspace / "scratch" / "checkpoint.bin").write_bytes(b"scratch")
+            report = parent / "completed-capacity-report.json"
+            inventory = build_calibration_inventory(
+                root, workspace_root=workspace, review_deadline="2026-09-29",
+            )
+            _write_json(report, inventory)
+            stdout, stderr = io.StringIO(), io.StringIO()
+            arguments = [
+                "legacy_capacity_calibration",
+                "--artifact-root", str(root),
+                "--workspace-root", str(workspace),
+                "--review-deadline", "2026-09-29",
+                "--initialize-from-report", str(report),
+            ]
+            with (
+                mock.patch(
+                    "common.contracts.legacy_capacity_calibration.build_calibration_inventory",
+                    side_effect=AssertionError("existing report initialization must not scan"),
+                ),
+                mock.patch(
+                    "common.contracts.legacy_capacity_calibration.initialize_from_inventory",
+                    return_value={},
+                ) as initialize,
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(stderr),
+                mock.patch.object(sys, "argv", arguments),
+            ):
+                main()
+            initialize.assert_called_once()
+            self.assertFalse((root / "common" / "capacity_ledger.json").exists())
+            events = [json.loads(line)["event"] for line in stderr.getvalue().splitlines()]
+            self.assertEqual(events, [
+                "existing_calibration_report_initialization_started",
+                "ledger_initialized_from_existing_report",
+            ])
+            self.assertEqual(json.loads(stdout.getvalue())["status"], "ready_to_initialize")
+
+    def test_existing_report_rejects_identity_scope_and_metadata_mismatches(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            root.mkdir()
+            workspace = parent / "workspace"
+            workspace.mkdir()
+            inventory = build_calibration_inventory(
+                root, workspace_root=workspace, review_deadline="2026-09-29",
+            )
+            report = parent / "completed-capacity-report.json"
+            _write_json(report, inventory)
+            with self.subTest("accepted"):
+                loaded = load_existing_calibration_report(
+                    report, artifact_root=root, workspace_root=workspace,
+                    review_deadline="2026-09-29",
+                )
+                self.assertEqual(loaded, inventory)
+            cases = {
+                "schema": {"schema_version": 2},
+                "role": {"role": "wrong"},
+                "status": {"status": "calibration_pending"},
+                "root": {"artifact_root": str(parent / "other-artifacts")},
+                "deadline": {"review_deadline": "2026-09-30"},
+                "not_metadata_only": {"metadata_only": False},
+                "hashed": {"payload_hashes_computed": True},
+            }
+            for name, change in cases.items():
+                with self.subTest(name):
+                    candidate = {**inventory, **change}
+                    _write_json(report, candidate)
+                    with self.assertRaises(CalibrationError):
+                        load_existing_calibration_report(
+                            report, artifact_root=root, workspace_root=workspace,
+                            review_deadline="2026-09-29",
+                        )
+            with self.subTest("workspace_scope"):
+                candidate = {**inventory, "external_scopes": [
+                    {**inventory["external_scopes"][0], "path": str(parent / "wrong")},
+                    inventory["external_scopes"][1],
+                ]}
+                _write_json(report, candidate)
+                with self.assertRaisesRegex(CalibrationError, "external scopes"):
+                    load_existing_calibration_report(
+                        report, artifact_root=root, workspace_root=workspace,
+                        review_deadline="2026-09-29",
+                    )
+            with self.subTest("in_root"):
+                in_root = root / "common" / "capacity_calibration" / "report.json"
+                _write_json(in_root, inventory)
+                with self.assertRaisesRegex(CalibrationError, "external calibration report"):
+                    load_existing_calibration_report(
+                        in_root, artifact_root=root, workspace_root=workspace,
+                        review_deadline="2026-09-29",
+                    )
+
+    def test_existing_report_preserves_initialization_blockers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            root.mkdir()
+            workspace = parent / "workspace"
+            workspace.mkdir()
+            inventory = build_calibration_inventory(
+                root, workspace_root=workspace, review_deadline="2026-09-29",
+            )
+            inventory["initialization_blocker_count"] = 1
+            inventory["initialization_blockers"] = [{"reason": "fixture"}]
+            report = parent / "blocked-capacity-report.json"
+            _write_json(report, inventory)
+            loaded = load_existing_calibration_report(
+                report, artifact_root=root, workspace_root=workspace,
+                review_deadline="2026-09-29",
+            )
+            with self.assertRaisesRegex(CalibrationError, "initialization_blocker_count=1"):
+                initialize_from_inventory(loaded)
+
     def test_metadata_inventory_can_initialize_only_when_complete(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"

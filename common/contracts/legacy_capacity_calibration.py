@@ -735,18 +735,31 @@ def _workspace_external_scopes(
 ) -> list[dict[str, Any]]:
     """Measure the two declared source-tree working roots during calibration only."""
 
-    workspace = workspace_root.resolve(strict=False)
-    root = artifact_root.resolve(strict=False)
-    if workspace == root or workspace in root.parents or root in workspace.parents:
-        raise CalibrationError("workspace_root must be distinct from artifact_root to avoid double counting")
+    declared = _declared_workspace_scope_paths(artifact_root, workspace_root)
     scopes: list[dict[str, Any]] = []
-    for role, name in (("repository_scratch", "scratch"), ("repository_generated", "generated")):
-        target = (workspace / name).resolve(strict=False)
+    for role, target in declared:
         _report_progress(progress, "scan_workspace_scope", target)
         if target.exists() and not target.is_dir():
             raise CalibrationError(f"declared workspace scope is not a directory: {target}")
         scopes.append({"role": role, "path": str(target), "bytes": 0 if not target.exists() else _bytes(target)})
     return scopes
+
+
+def _declared_workspace_scope_paths(
+    artifact_root: Path, workspace_root: Path,
+) -> list[tuple[str, Path]]:
+    """Return the two fixed source-tree scope paths without touching contents."""
+
+    workspace = workspace_root.resolve(strict=False)
+    root = artifact_root.resolve(strict=False)
+    if workspace == root or workspace in root.parents or root in workspace.parents:
+        raise CalibrationError(
+            "workspace_root must be distinct from artifact_root to avoid double counting"
+        )
+    return [
+        ("repository_scratch", (workspace / "scratch").resolve(strict=False)),
+        ("repository_generated", (workspace / "generated").resolve(strict=False)),
+    ]
 
 
 def build_calibration_inventory(
@@ -967,6 +980,83 @@ def build_calibration_inventory(
     }
 
 
+def _validate_existing_report_scope(
+    inventory: dict[str, Any], *, artifact_root: Path, workspace_root: Path,
+    review_deadline: str,
+) -> None:
+    """Validate a frozen report against this invocation without reading payloads."""
+
+    root = artifact_root.resolve(strict=False)
+    try:
+        report_root = Path(str(inventory.get("artifact_root", ""))).resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise CalibrationError("existing calibration report has an invalid artifact_root") from exc
+    if report_root != root:
+        raise CalibrationError("existing calibration report artifact_root does not match this invocation")
+    if inventory.get("review_deadline") != review_deadline:
+        raise CalibrationError("existing calibration report review_deadline does not match this invocation")
+    expected = _declared_workspace_scope_paths(root, workspace_root)
+    scopes = inventory.get("external_scopes")
+    if not isinstance(scopes, list) or len(scopes) != len(expected):
+        raise CalibrationError("existing calibration report external scopes are incomplete")
+    expected_by_role = {role: path for role, path in expected}
+    seen_roles: set[str] = set()
+    for scope in scopes:
+        if not isinstance(scope, dict) or set(scope) != {"role", "path", "bytes"}:
+            raise CalibrationError("existing calibration report external scope schema is invalid")
+        role, value, bytes_count = scope.get("role"), scope.get("path"), scope.get("bytes")
+        if role not in expected_by_role or role in seen_roles:
+            raise CalibrationError("existing calibration report external scopes do not match workspace")
+        try:
+            path = Path(str(value)).resolve(strict=False)
+        except (OSError, RuntimeError) as exc:
+            raise CalibrationError("existing calibration report external scope path is invalid") from exc
+        if path != expected_by_role[role]:
+            raise CalibrationError("existing calibration report external scopes do not match workspace")
+        if isinstance(bytes_count, bool) or not isinstance(bytes_count, int) or bytes_count < 0:
+            raise CalibrationError("existing calibration report external scope bytes are invalid")
+        seen_roles.add(role)
+    if seen_roles != set(expected_by_role):
+        raise CalibrationError("existing calibration report external scopes do not match workspace")
+
+
+def load_existing_calibration_report(
+    report_path: Path, *, artifact_root: Path, workspace_root: Path,
+    review_deadline: str,
+) -> dict[str, Any]:
+    """Load one external, completed metadata-only report for ledger initialization.
+
+    This deliberately does not rediscover any artifact or workspace path.  The
+    caller supplies every scope identity again, so a stale report cannot be
+    replayed for another repository or a different review responsibility.
+    """
+
+    root = artifact_root.resolve(strict=False)
+    report = report_path.resolve(strict=False)
+    try:
+        report.relative_to(root)
+    except ValueError:
+        pass
+    else:
+        raise CalibrationError("ledger initialization requires an external calibration report")
+    inventory = _load_json(report)
+    if inventory is None:
+        raise CalibrationError("existing calibration report is not a JSON object")
+    if inventory.get("schema_version") != 1:
+        raise CalibrationError("existing calibration report schema_version is unsupported")
+    if inventory.get("role") != "legacy_capacity_calibration_inventory":
+        raise CalibrationError("existing calibration report role is invalid")
+    if inventory.get("status") != "ready_to_initialize" or inventory.get("complete") is not True:
+        raise CalibrationError("existing calibration report is not complete and ready to initialize")
+    if inventory.get("metadata_only") is not True or inventory.get("payload_hashes_computed") is not False:
+        raise CalibrationError("existing calibration report must be metadata-only with no payload hashes")
+    _validate_existing_report_scope(
+        inventory, artifact_root=root, workspace_root=workspace_root,
+        review_deadline=review_deadline,
+    )
+    return inventory
+
+
 def initialize_from_inventory(
     inventory: dict[str, Any], *, ledger_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -991,8 +1081,12 @@ def initialize_from_inventory(
         ):
             writing_invalid += 1
     if (
-        inventory.get("role") != "legacy_capacity_calibration_inventory"
+        inventory.get("schema_version") != 1
+        or inventory.get("role") != "legacy_capacity_calibration_inventory"
+        or inventory.get("status") != "ready_to_initialize"
         or inventory.get("complete") is not True
+        or inventory.get("metadata_only") is not True
+        or inventory.get("payload_hashes_computed") is not False
         or inventory.get("unresolved_count") != 0
         or inventory.get("unresolved") != []
         or inventory.get("initialization_blocker_count", 0) != 0
@@ -1033,19 +1127,25 @@ def main() -> None:
     parser.add_argument("--artifact-root", required=True, type=Path)
     parser.add_argument("--review-deadline", required=True)
     parser.add_argument("--workspace-root", required=True, type=Path)
-    parser.add_argument("--report", required=True, type=Path)
+    parser.add_argument("--report", type=Path)
     parser.add_argument("--initialize-ledger", action="store_true")
+    parser.add_argument("--initialize-from-report", type=Path)
     parser.add_argument("--ledger-path", type=Path)
     args = parser.parse_args()
     root = args.artifact_root.resolve()
-    report = args.report.resolve(strict=False)
+    if (args.report is None) == (args.initialize_from_report is None):
+        parser.error("provide exactly one of --report or --initialize-from-report")
+    if args.initialize_from_report is not None and args.initialize_ledger:
+        parser.error("--initialize-ledger cannot be combined with --initialize-from-report")
+    report = (args.report or args.initialize_from_report).resolve(strict=False)
     try:
         report_relative = report.relative_to(root)
     except ValueError:
         report_relative = None
-    if report_relative is not None and (
-        args.initialize_ledger
-        or report_relative.parts[:2] != ("common", "capacity_calibration")
+    if args.initialize_from_report is not None and report_relative is not None:
+        raise CalibrationError("ledger initialization requires an external calibration report")
+    if args.report is not None and report_relative is not None and (
+        args.initialize_ledger or report_relative.parts[:2] != ("common", "capacity_calibration")
     ):
         raise CalibrationError(
             "in-root pending reports must be below common/capacity_calibration; "
@@ -1057,6 +1157,44 @@ def main() -> None:
             "event": event,
             "path": str(path),
         }, ensure_ascii=False), file=sys.stderr, flush=True)
+
+    if args.initialize_from_report is not None:
+        print(json.dumps({
+            "event": "existing_calibration_report_initialization_started",
+            "artifact_root": str(root),
+            "workspace_root": str(args.workspace_root.resolve()),
+            "report": str(report),
+        }, ensure_ascii=False), file=sys.stderr, flush=True)
+        try:
+            inventory = load_existing_calibration_report(
+                report, artifact_root=root, workspace_root=args.workspace_root,
+                review_deadline=args.review_deadline,
+            )
+            initialize_from_inventory(inventory, ledger_path=args.ledger_path)
+        except (CalibrationError, ValueError, OSError) as exc:
+            print(json.dumps({
+                "event": "existing_calibration_report_initialization_rejected",
+                "report": str(report),
+                "reason": str(exc),
+            }, ensure_ascii=False), file=sys.stderr, flush=True)
+            raise SystemExit(2) from exc
+        print(json.dumps({
+            "event": "ledger_initialized_from_existing_report",
+            "ledger_path": str(
+                args.ledger_path.resolve(strict=False)
+                if args.ledger_path is not None
+                else capacity_ledger.resolve_ledger_path(root)
+            ),
+        }, ensure_ascii=False), file=sys.stderr, flush=True)
+        print(json.dumps({
+            "status": inventory["status"],
+            "classified_bytes": inventory["classified_bytes"],
+            "unresolved_bytes": inventory["unresolved_bytes"],
+            "unresolved_count": inventory["unresolved_count"],
+            "external_scope_bytes": inventory["external_scope_bytes"],
+            "report": str(report),
+        }, ensure_ascii=False))
+        return
 
     print(json.dumps({
         "event": "calibration_started",
