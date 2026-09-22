@@ -88,7 +88,7 @@ function Invoke-ArtifactCapacityGate {
     '--apply'
   )
   if($null-ne$MaintenanceTargetGiB){
-    $arguments+=@('--maintenance-target-gib',([string]$MaintenanceTargetGiB.Value))
+    $arguments+=@('--maintenance-target-gib',([string]$MaintenanceTargetGiB))
   }
   foreach($path in @($ProtectedPaths|Where-Object{ -not [string]::IsNullOrWhiteSpace($_) }|Select-Object -Unique)){
     $arguments+=@('--protect-path',$path)
