@@ -190,7 +190,7 @@ def finalize_ready(artifact_root: Path, run_config: Path) -> dict[str, Any]:
 
 def _legacy_terminal_run_entries(
     root: Path, ledger: dict[str, Any], run_dir: Path,
-) -> list[dict[str, Any]] | None:
+) -> tuple[list[dict[str, Any]], str] | None:
     """Return one safely consolidatable historical compact run, if any.
 
     Old manifests already seal terminal outputs and retention decisions, but
@@ -200,24 +200,37 @@ def _legacy_terminal_run_entries(
     """
 
     try:
-        config = _load_json(run_dir / "run_config.json", "run config")
         manifest = _load_json(run_dir / "run_manifest.json", "run manifest")
-        retention = _load_json(run_dir / "retention_actions.json", "retention receipt")
     except ValueError:
         return None
+    try:
+        config = _load_json(run_dir / "run_config.json", "run config")
+    except ValueError:
+        config = {}
+    try:
+        retention = _load_json(run_dir / "retention_actions.json", "retention receipt")
+    except ValueError:
+        retention = {}
     retention_class = config.get("artifact_retention", {}).get("class")
     if retention_class is None:
         # Older run configs predate the retention contract, while their v2
         # terminal manifests still freeze the chosen class.  Consume that
         # sealed record instead of asking the user to reconstruct it.
         retention_class = manifest.get("artifact_retention", {}).get("class")
-    if (
-        manifest.get("status") not in TERMINAL_STATUSES
-        or retention_class != "compact"
-        or retention.get("role") != "artifact_retention_actions"
-        or retention.get("status") != "complete"
-        or retention.get("retention_class") != "compact"
-    ):
+    if manifest.get("status") not in TERMINAL_STATUSES:
+        return None
+    sealed_compact = (
+        retention_class == "compact"
+        and retention.get("role") == "artifact_retention_actions"
+        and retention.get("status") == "complete"
+        and retention.get("retention_class") == "compact"
+    )
+    # A historical terminal manifest may predate both retention documents.
+    # It can become ready *only* when the entire range is already light
+    # evidence; this is a ledger reconciliation, never an authorization to
+    # discard payloads or to terminalize a checkpoint.
+    terminal_light_only = retention_class is None and not retention
+    if not sealed_compact and not terminal_light_only:
         return None
     _, records = _inventory(run_dir)
     if sum(int(record["bytes"]) for record in records) > LEGACY_LIGHT_EVIDENCE_BUDGET_BYTES:
@@ -247,7 +260,12 @@ def _legacy_terminal_run_entries(
         for item in entries
     ):
         return None
-    return entries
+    reason = (
+        "legacy terminal compact run reconciled from sealed manifest and retention receipt"
+        if sealed_compact else
+        "legacy terminal light-evidence run reconciled from terminal manifest"
+    )
+    return entries, reason
 
 
 def _consolidate_legacy_terminal_runs(root: Path) -> dict[str, int]:
@@ -268,16 +286,17 @@ def _consolidate_legacy_terminal_runs(root: Path) -> dict[str, int]:
         })
         replacements: list[tuple[Path, list[dict[str, Any]], dict[str, Any]]] = []
         for run_dir in run_dirs:
-            entries = _legacy_terminal_run_entries(root, ledger, run_dir)
-            if entries is None:
+            candidate = _legacy_terminal_run_entries(root, ledger, run_dir)
+            if candidate is None:
                 continue
+            entries, reason = candidate
             total = sum(int(item["bytes"]) for item in entries)
             replacements.append((run_dir, entries, {
                 "path": capacity_ledger.capacity_object_path(root, run_dir)[1],
                 "class": "light_evidence", "bytes": total, "status": "ready", "pin": False,
                 **_run_lifecycle_duties(
                     run_dir, review_days=READY_REVIEW_DAYS,
-                    reason="legacy terminal compact run reconciled from sealed manifest and retention receipt",
+                    reason=reason,
                 ),
             }))
         if not replacements:

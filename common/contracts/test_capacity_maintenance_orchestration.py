@@ -49,7 +49,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
         mutators = (
             "activate_owner_dispositions", "_register_workspace_scratch_scope",
             "_resume_source_scratch_dispositions", "_reconcile_execution_alias_root",
-            "_resume_terminal_run_owner",
+            "_resume_terminal_run_owner", "_audit_pa_transaction_owner",
         )
         for apply_requested in (False, True):
             with self.subTest(apply=apply_requested), ExitStack() as stack:
@@ -71,6 +71,40 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                     planner.assert_called_once()
                 for mutation in mocks:
                     mutation.assert_not_called()
+
+    def test_maintenance_owner_action_failure_does_not_skip_independent_actions(self) -> None:
+        with (patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "1"}, clear=True),
+              patch.object(capacity, "activate_owner_dispositions", side_effect=ValueError("bad disposition")),
+              patch.object(capacity, "_resume_terminal_run_owner", return_value={
+                  "checked_count": 1, "finalized_count": 1, "blocked_count": 0,
+                  "migrated_count": 0, "migrated_bytes": 0,
+              }) as resumed,
+              patch.object(capacity, "_audit_pa_transaction_owner", return_value={
+                  "checked_count": 1, "replayable_count": 0, "awaiting_verification_count": 0,
+                  "missing_failure_evidence_count": 0, "invalid_count": 0,
+              }) as audited,
+              patch.object(capacity, "_register_workspace_scratch_scope", return_value={
+                  "registered_count": 0, "registered_bytes": 0,
+              }),
+              patch.object(capacity, "_resume_source_scratch_dispositions", return_value={
+                  "completed_count": 0, "removed_bytes": 0,
+              }),
+              patch.object(capacity, "_reconcile_execution_alias_root", return_value={
+                  "corrected_count": 0, "released_bytes": 0,
+              }),
+              patch.object(capacity, "plan", return_value={"execution_mode": "maintenance"}),
+              patch.object(capacity, "apply", side_effect=lambda receipt: receipt),
+              patch.object(sys, "argv", [
+                  "capacity", "--artifact-root", "unused", "--execution-mode", "maintenance",
+                  "--apply", "--detailed-output",
+              ]),
+              redirect_stdout(io.StringIO()) as stdout):
+            capacity.main()
+        rendered = json.loads(stdout.getvalue())
+        resumed.assert_called_once()
+        audited.assert_called_once()
+        self.assertEqual(rendered["owner_action_failures"][0]["action"], "owner_dispositions")
+        self.assertEqual(rendered["terminal_run_lifecycle_resume"]["finalized_count"], 1)
 
     def test_maintenance_reserves_peak_and_deletes_without_payload_hashing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

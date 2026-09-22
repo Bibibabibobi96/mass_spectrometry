@@ -1062,6 +1062,43 @@ def _audit_pa_transaction_owner(root: Path) -> dict[str, int]:
     return audit_pa_transaction_maintenance(root / "common" / "simion" / "pa_family_cache")
 
 
+def _run_maintenance_owner_actions(root: Path) -> tuple[dict[str, dict[str, int]], list[dict[str, str]]]:
+    """Run independent owner continuations without masking later safe work."""
+
+    actions = (
+        ("owner_dispositions", activate_owner_dispositions, {"activated_count": 0, "activated_bytes": 0}),
+        ("terminal_run_lifecycle", _resume_terminal_run_owner, {
+            "checked_count": 0, "finalized_count": 0, "blocked_count": 0,
+            "migrated_count": 0, "migrated_bytes": 0,
+        }),
+        ("pa_transaction_audit", _audit_pa_transaction_owner, {
+            "checked_count": 0, "replayable_count": 0, "awaiting_verification_count": 0,
+            "missing_failure_evidence_count": 0, "invalid_count": 0,
+        }),
+        ("workspace_scratch_registration", _register_workspace_scratch_scope, {
+            "registered_count": 0, "registered_bytes": 0,
+        }),
+        ("source_scratch_dispositions", _resume_source_scratch_dispositions, {
+            "completed_count": 0, "removed_bytes": 0,
+        }),
+        ("execution_alias_reconciliation", _reconcile_execution_alias_root, {
+            "corrected_count": 0, "released_bytes": 0,
+        }),
+    )
+    results: dict[str, dict[str, int]] = {}
+    failures: list[dict[str, str]] = []
+    for name, action, fallback in actions:
+        try:
+            results[name] = action(root)
+        except (OSError, RuntimeError, ValueError, protection.CapacityProtectionLeaseError) as exc:
+            # Owner continuations have isolated evidence and pending receipts.
+            # A malformed historical range must not prevent other owners from
+            # resuming their independent, already-authorized work.
+            results[name] = fallback
+            failures.append({"action": name, "error": f"{type(exc).__name__}: {exc}"})
+    return results, failures
+
+
 def _historical_closure_summary(
     root: Path, ledger: dict[str, Any], leases: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
@@ -1403,21 +1440,20 @@ def main() -> None:
         if lease is not None:
             print(json.dumps(lease, indent=2))
             return
-        activation = {"activated_count": 0, "activated_bytes": 0}
-        terminal_run_resume = {"checked_count": 0, "finalized_count": 0, "blocked_count": 0,
-                               "migrated_count": 0, "migrated_bytes": 0}
-        pa_transaction_audit = {"checked_count": 0, "replayable_count": 0, "awaiting_verification_count": 0, "missing_failure_evidence_count": 0, "invalid_count": 0}
-        alias_reconciliation = {"corrected_count": 0, "released_bytes": 0}
+        owner_action_failures: list[dict[str, str]] = []
         if args.execution_mode == "maintenance" and args.apply:
-            activation = activate_owner_dispositions(args.artifact_root)
-            terminal_run_resume = _resume_terminal_run_owner(args.artifact_root)
-            pa_transaction_audit = _audit_pa_transaction_owner(args.artifact_root)
-            source_scratch_registration = _register_workspace_scratch_scope(args.artifact_root)
-            source_scratch_dispositions = _resume_source_scratch_dispositions(args.artifact_root)
-            alias_reconciliation = _reconcile_execution_alias_root(args.artifact_root)
+            owner_actions, owner_action_failures = _run_maintenance_owner_actions(args.artifact_root)
         else:
-            source_scratch_registration = {"registered_count": 0, "registered_bytes": 0}
-            source_scratch_dispositions = {"completed_count": 0, "removed_bytes": 0}
+            owner_actions = {
+                "owner_dispositions": {"activated_count": 0, "activated_bytes": 0},
+                "terminal_run_lifecycle": {"checked_count": 0, "finalized_count": 0, "blocked_count": 0,
+                                           "migrated_count": 0, "migrated_bytes": 0},
+                "pa_transaction_audit": {"checked_count": 0, "replayable_count": 0, "awaiting_verification_count": 0,
+                                         "missing_failure_evidence_count": 0, "invalid_count": 0},
+                "workspace_scratch_registration": {"registered_count": 0, "registered_bytes": 0},
+                "source_scratch_dispositions": {"completed_count": 0, "removed_bytes": 0},
+                "execution_alias_reconciliation": {"corrected_count": 0, "released_bytes": 0},
+            }
         receipt = plan(
             args.artifact_root,
             target_bytes=int(target_gib * GIB),
@@ -1447,18 +1483,20 @@ def main() -> None:
                 "planned_count": len(receipt.get("planned", [])),
                 "removed_count": len(receipt.get("removed", [])),
             }
-        if activation["activated_count"]:
-            receipt["owner_dispositions_activated"] = activation
-        if any(terminal_run_resume.values()):
-            receipt["terminal_run_lifecycle_resume"] = terminal_run_resume
-        if pa_transaction_audit["checked_count"]:
-            receipt["pa_transaction_owner_audit"] = pa_transaction_audit
-        if alias_reconciliation["corrected_count"]:
-            receipt["administrative_aliases_reconciled"] = alias_reconciliation
-        if source_scratch_registration["registered_count"]:
-            receipt["repository_workspace_scratch_registered"] = source_scratch_registration
-        if source_scratch_dispositions["completed_count"]:
-            receipt["source_scratch_dispositions_completed"] = source_scratch_dispositions
+        if owner_actions["owner_dispositions"]["activated_count"]:
+            receipt["owner_dispositions_activated"] = owner_actions["owner_dispositions"]
+        if any(owner_actions["terminal_run_lifecycle"].values()):
+            receipt["terminal_run_lifecycle_resume"] = owner_actions["terminal_run_lifecycle"]
+        if owner_actions["pa_transaction_audit"]["checked_count"]:
+            receipt["pa_transaction_owner_audit"] = owner_actions["pa_transaction_audit"]
+        if owner_actions["execution_alias_reconciliation"]["corrected_count"]:
+            receipt["administrative_aliases_reconciled"] = owner_actions["execution_alias_reconciliation"]
+        if owner_actions["workspace_scratch_registration"]["registered_count"]:
+            receipt["repository_workspace_scratch_registered"] = owner_actions["workspace_scratch_registration"]
+        if owner_actions["source_scratch_dispositions"]["completed_count"]:
+            receipt["source_scratch_dispositions_completed"] = owner_actions["source_scratch_dispositions"]
+        if owner_action_failures:
+            receipt["owner_action_failures"] = owner_action_failures
         print(json.dumps(receipt, indent=2))
     except (ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
         parser.error(str(exc))

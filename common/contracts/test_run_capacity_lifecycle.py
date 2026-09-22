@@ -176,6 +176,32 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(ledger["objects"][0]["path"], run.relative_to(root).as_posix())
             self.assertEqual(ledger["objects"][0]["status"], "ready")
 
+    def test_maintenance_consolidates_terminal_legacy_light_evidence_without_retention_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run = root / "projects" / "p" / "runs" / "legacy-light"
+            run.mkdir(parents=True)
+            (run / "run_config.json").write_text(json.dumps({"run_id": "legacy-light"}), encoding="utf-8")
+            (run / "run_manifest.json").write_text(json.dumps({"status": "success"}), encoding="utf-8")
+            (run / "summary.json").write_text(json.dumps({"status": "success"}), encoding="utf-8")
+            entries = []
+            for path in run.rglob("*"):
+                if path.is_file():
+                    entries.append({
+                        "path": path.relative_to(root).as_posix(), "class": "light_evidence",
+                        "bytes": path.stat().st_size, "status": "writing", "pin": False,
+                        "owner": "p", "retention_reason": "legacy", "review_deadline": "2026-10-22",
+                        "retirement_route": "owner_managed_disposition",
+                        "recovery_reason": "run_contract_missing_or_invalid",
+                    })
+            initialize_capacity_ledger(root, objects=entries)
+            result = resume_terminal_runs(root)
+            self.assertEqual(result["migrated_count"], 1)
+            entry = load_capacity_ledger(root)["objects"][0]
+            self.assertEqual(entry["class"], "light_evidence")
+            self.assertEqual(entry["status"], "ready")
+            self.assertIn("terminal manifest", entry["retention_reason"])
+
 
 if __name__ == "__main__":
     unittest.main()
