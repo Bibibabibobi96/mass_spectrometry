@@ -123,7 +123,7 @@ $summaryRole = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport_summ
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $upstreamProjectId -Mode $mode -Software $software `
-  -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath `
+  -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled -UseShortExecutionPath `
   -ExpectedExecutionRelativePaths $executionCapacityPaths
 $manifestToolRoot = $repoRoot
 $resourceBudgetExceeded = $false

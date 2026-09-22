@@ -31,7 +31,8 @@ $software = @('Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_quadrupole_ion_optics' `
-    -Mode 'same_solver_numerical_convergence' -Software $software
+    -Mode 'same_solver_numerical_convergence' -Software $software `
+    -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled
 $inputDir = $package.input_dir
 $resultDir = $package.result_dir
 $runConfigPath = $package.run_config
@@ -307,9 +308,11 @@ try {
         comparison='results/same_solver_numerical_convergence.json'
         census='results/particle_event_census.csv'
     })
+    $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
+        -RunConfig $runConfigPath
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
         -RunConfig $runConfigPath -Status success -Software $software `
-        -Outputs @($comparison,$census,$summaryPath)
+        -Outputs @($comparison,$census,$summaryPath,$retentionActions)
 } catch {
     Complete-FailedRun -Python $python -RepoRoot $repoRoot `
         -RunConfig $runConfigPath -Summary $summaryPath `

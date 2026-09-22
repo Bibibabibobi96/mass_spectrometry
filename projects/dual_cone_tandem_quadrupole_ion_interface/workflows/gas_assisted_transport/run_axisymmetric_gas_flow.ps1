@@ -17,21 +17,27 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'axisymmetric_gas_flow_screening' `
   -Software @('COMSOL Multiphysics 6.4','MATLAB R2025b','Python 3.11') `
-  -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath
+  -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath `
+  -CapacityLedgerLifecycleEnabled
 $failureStage='freeze_inputs'
 $terminalized=$false
 $resourceLease=$null
+$capacitySession=$null
 $environmentNames=@('DUAL_CONE_GAS_FLOW_OUTPUT_DIR','DUAL_CONE_PROJECT_ROOT','SIMULATION_PYTHON_EXE')
 $savedEnvironment=Save-RunEnvironment -Names $environmentNames
 try{
   $env:SIMULATION_PYTHON_EXE=$python
   $resourceLease=Enter-HostResourceStage -Role COMSOL -Stage prepare `
     -Budget (Get-HostResourceBudget -Profile unknown) -RunId $RunId
-  $failureStage='capacity_preflight'
-  $capacityStartup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -ProtectedPaths @($package.artifact_run_dir)
+  $failureStage='capacity_startup'
+  # Workflow remaining peak commitment: conservative 1 GiB upper bound over the
+  # largest historical terminal payload; this is scheduling metadata, not physics.
+  $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
+    -RunDirectory $package.artifact_run_dir -CommittedNewBytes 1073741824 `
+    -ProtectedPaths @($package.artifact_run_dir) -Owner "dual-cone-gas-flow:$RunId"
   $capacityStartupPath=Join-Path $package.result_dir 'artifact_capacity_gate_startup.json'
-  Write-RunJson -Path $capacityStartupPath -Value $capacityStartup -Depth 14
+  Write-RunJson -Path $capacityStartupPath -Value $capacitySession -Depth 14
   $failureStage='freeze_inputs'
   $frozen=[ordered]@{}
   $sourceFiles=[ordered]@{
@@ -118,8 +124,9 @@ try{
   }) -Depth 14
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
     -RunConfig $package.run_config
-  $capacityTerminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -ProtectedPaths @($package.artifact_run_dir)
+  $capacityTerminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -RemainingCommittedNewBytes 0
+  $capacitySession=$capacityTerminal.session
   $capacityTerminalPath=Join-Path $package.result_dir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $capacityTerminalPath -Value $capacityTerminal -Depth 14
   $outputs=@($package.summary,$field,$metadata,$taskReport,$validation,$retention,$capacityStartupPath,$capacityTerminalPath,(Join-Path $package.log_dir 'comsol_bootstrap_report.txt'))
@@ -145,7 +152,14 @@ try{
   }
   throw
 }finally{
-  Restore-RunEnvironment -Names $environmentNames -Snapshot $savedEnvironment
-  if($null-ne$resourceLease){Exit-HostResourceStage -Lease $resourceLease}
-  Remove-RunPackageExecutionAlias -Package $package
+  try{
+    Restore-RunEnvironment -Names $environmentNames -Snapshot $savedEnvironment
+    if($null-ne$resourceLease){Exit-HostResourceStage -Lease $resourceLease}
+    Remove-RunPackageExecutionAlias -Package $package
+  }finally{
+    if($null-ne$capacitySession){
+      $null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+        -Session $capacitySession
+    }
+  }
 }

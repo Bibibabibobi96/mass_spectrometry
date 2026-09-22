@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from common.contracts.file_identity import file_sha256
+from common.ion_release.release import generate_release_states, validate_release_spec
 from projects.dual_cone_tandem_quadrupole_ion_interface.simion.geometry import (
     DEFAULT_NUMERICS,
     DEFAULT_RESOLVED,
@@ -216,7 +217,11 @@ if($null-ne$parent){Exit-HostExecutionLease -Lease $parent}
         source = load(PROJECT / "config" / "cylindrical_ion_source.json")
         resolved = load(PROJECT / "config" / "resolved_geometry.json")
         gas_science = load(PROJECT / "config" / "gas_flow_science.json")
-        radius = source["geometry_mm"]["radius_mm"]
+        radius = source["geometry"]["radius_mm"]
+        validate_release_spec(source)
+        states = generate_release_states(source)
+        self.assertEqual(len(states), 100)
+        self.assertTrue(all(state["vz_m_s"] >= 1.0 for state in states))
         self.assertEqual(radius, 1.5)
         self.assertGreater(radius, resolved["geometry_mm"]["first_cone"]["aperture_radius_mm"])
         self.assertLess(radius, gas_science["geometry_proxy"]["upstream_plenum_radius_mm"])
@@ -277,7 +282,11 @@ if($null-ne$parent){Exit-HostExecutionLease -Lease $parent}
         self.assertIn("Write-VerifiedRunManifest", runner)
         self.assertIn("Complete-FailedRun", runner)
         self.assertIn("Enter-HostExecutionLease -Role SIMION", runner)
-        self.assertIn("Invoke-ArtifactCapacityGate", runner)
+        self.assertIn("Enter-ArtifactWorkflowCapacitySession", runner)
+        self.assertIn("Update-ArtifactWorkflowCapacitySession", runner)
+        self.assertIn("Exit-ArtifactWorkflowCapacitySession", runner)
+        self.assertIn("-CapacityLedgerLifecycleEnabled", runner)
+        self.assertNotIn("Invoke-ArtifactCapacityGate", runner)
         self.assertIn("Apply-RunArtifactRetention", runner)
         self.assertNotIn("[string]$OutputDir", runner)
 
@@ -381,7 +390,8 @@ class GasPreparationTests(unittest.TestCase):
             for record in frozen.values():
                 self.assertEqual(file_sha256(Path(record["frozen_path"])), record["sha256"])
             source_receipt = receipt["inputs"]["cylindrical_ion_source_receipt"]["identity"]
-            self.assertEqual(source_receipt["source_region_model"], "ion_source_volume_cylinder_v1")
+            self.assertEqual(source_receipt["role"], "repository_ion_release")
+            self.assertEqual(source_receipt["release_spec"]["geometry"]["shape"], "cylinder")
             self.assertEqual(source_receipt["particle_count"], 100)
             fly2 = Path(receipt["inputs"]["particle_fly2"]["path"])
             source = fly2.read_text(encoding="utf-8")

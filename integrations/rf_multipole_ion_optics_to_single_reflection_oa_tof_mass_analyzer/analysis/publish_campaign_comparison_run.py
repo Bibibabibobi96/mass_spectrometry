@@ -17,6 +17,10 @@ from common.contracts.file_identity import (
     file_sha256,
 )
 from common.contracts.machine_contracts import ContractError
+from common.contracts.write_run_manifest import (
+    TERMINAL_JOURNAL_NAME,
+    replay_terminal_publication,
+)
 from common.multipole.exit_state_plot import _git_identity
 from common.analysis.peak_metrics import (
     FWHM_FACTOR,
@@ -27,8 +31,6 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     portable_path,
     publish_manifest,
     record_for_path,
-    restore_interrupted,
-    terminalize_failure,
     verified_record,
     write_pending_json,
 )
@@ -164,26 +166,6 @@ def _workspace_path(raw: Any, workspace_root: Path) -> Path:
 
 def _manifest_reference(path: Path) -> dict[str, str]:
     return {"path": str(path.resolve()), "sha256": file_sha256(path)}
-
-
-def _publish_analysis_manifest(
-    *,
-    repo_root: Path,
-    run_config: Path,
-    manifest_path: Path,
-    status: str,
-    outputs: Sequence[Path],
-) -> None:
-    publish_manifest(
-        repo_root=repo_root,
-        run_config=run_config,
-        manifest_path=manifest_path,
-        status=status,
-        outputs=outputs,
-        project=INTEGRATION_ID,
-        mode=OUTPUT_MODE,
-        label="campaign-comparison",
-    )
 
 
 def _load_case_inputs(
@@ -833,8 +815,13 @@ def publish_campaign_comparison_run(
         workspace_root / "artifacts" / "projects" / INTEGRATION_ID / "runs"
     ).resolve()
     run_dir = (runs_root / run_id).resolve()
-    if run_dir.parent != runs_root or run_dir.exists():
-        raise ContractError("campaign comparison output already exists or is invalid")
+    if run_dir.parent != runs_root:
+        raise ContractError("campaign comparison output path is invalid")
+    if run_dir.exists():
+        if (run_dir / TERMINAL_JOURNAL_NAME).is_file():
+            replay_terminal_publication(run_dir)
+            return run_dir / "run_manifest.json"
+        raise ContractError("campaign comparison output already exists")
     case_inputs = [
         _load_case_inputs(
             repo_root=repo_root,
@@ -980,18 +967,17 @@ def publish_campaign_comparison_run(
         "report": None,
         "figure": None,
     }
-    write_pending_json(summary_path, interrupted_summary)
-    manifest_pending = manifest_path.with_name(".run_manifest.json.pending")
-    _publish_analysis_manifest(
+    publish_manifest(
         repo_root=repo_root,
         run_config=run_config_path,
-        manifest_path=manifest_pending,
+        manifest_path=manifest_path,
+        summary=interrupted_summary,
         status="interrupted",
         outputs=(summary_path,),
+        project=INTEGRATION_ID,
+        mode=OUTPUT_MODE,
+        label="campaign-comparison",
     )
-    os.replace(manifest_pending, manifest_path)
-    interrupted_summary_bytes = summary_path.read_bytes()
-    interrupted_manifest_bytes = manifest_path.read_bytes()
     planned_outputs = (
         result_path,
         report_path,
@@ -1065,26 +1051,20 @@ def publish_campaign_comparison_run(
                 )
             ],
         }
-        write_pending_json(summary_path, summary)
         failure_stage = "success_manifest_publication"
-        _publish_analysis_manifest(
+        publish_manifest(
             repo_root=repo_root,
             run_config=run_config_path,
-            manifest_path=manifest_pending,
+            manifest_path=manifest_path,
+            summary=summary,
             status="success",
             outputs=planned_outputs,
+            project=INTEGRATION_ID,
+            mode=OUTPUT_MODE,
+            label="campaign-comparison",
         )
-        failure_stage = "success_manifest_commit"
-        os.replace(manifest_pending, manifest_path)
         return manifest_path
     except (KeyboardInterrupt, SystemExit):
-        restore_interrupted(
-            summary_path=summary_path,
-            manifest_path=manifest_path,
-            manifest_pending=manifest_pending,
-            summary_bytes=interrupted_summary_bytes,
-            manifest_bytes=interrupted_manifest_bytes,
-        )
         raise
     except Exception as error:
         failed_summary = {
@@ -1098,17 +1078,16 @@ def publish_campaign_comparison_run(
             "reason": str(error),
             "error_type": type(error).__name__,
         }
-        terminalize_failure(
-            publish=_publish_analysis_manifest,
+        publish_manifest(
             repo_root=repo_root,
-            run_config_path=run_config_path,
-            summary_path=summary_path,
+            run_config=run_config_path,
             manifest_path=manifest_path,
-            manifest_pending=manifest_pending,
-            failed_summary=failed_summary,
-            candidate_outputs=planned_outputs,
-            interrupted_summary_bytes=interrupted_summary_bytes,
-            interrupted_manifest_bytes=interrupted_manifest_bytes,
+            summary=failed_summary,
+            status="failed",
+            outputs=[path for path in planned_outputs if path.is_file()],
+            project=INTEGRATION_ID,
+            mode=OUTPUT_MODE,
+            label="campaign-comparison",
         )
         raise
 

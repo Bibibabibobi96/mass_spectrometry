@@ -330,6 +330,18 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     code_root / "common" / "contracts" / "file_identity.py",
                 ),
                 (
+                    REPOSITORY_ROOT / "common" / "ion_release" / "__init__.py",
+                    code_root / "common" / "ion_release" / "__init__.py",
+                ),
+                (
+                    REPOSITORY_ROOT / "common" / "ion_release" / "cylinder.py",
+                    code_root / "common" / "ion_release" / "cylinder.py",
+                ),
+                (
+                    REPOSITORY_ROOT / "common" / "ion_release" / "numpy_ion11_box.py",
+                    code_root / "common" / "ion_release" / "numpy_ion11_box.py",
+                ),
+                (
                     REPOSITORY_ROOT / "common" / "multipole" / "__init__.py",
                     code_root / "common" / "multipole" / "__init__.py",
                 ),

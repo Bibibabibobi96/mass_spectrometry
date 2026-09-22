@@ -392,11 +392,13 @@ try {
         self.assertIn("SIMION refines every member of a fast-adjust .pa# family", self.source)
         self.assertNotIn("frontend_refine_pa{0}_resource_usage.json", self.source)
 
-    def test_frontend_staging_is_recoverable_and_reserves_its_measured_family_size(self) -> None:
+    def test_frontend_staging_is_recoverable_under_the_parent_capacity_session(self) -> None:
         self.assertIn("-RecoveryCacheKey $frontendCacheKey", self.source)
         self.assertIn("simion_single_flight_frontend_pa_refinement", self.source)
-        self.assertIn("$frontendProjectedFamilyBytes", self.source)
-        self.assertIn("-RequiredHeadroomBytes $frontendProjectedFamilyBytes", self.source)
+        self.assertIn("$frontendCapacityScope = Update-ArtifactWorkflowCapacitySession", self.source)
+        self.assertIn("-ProtectedPaths @($frontendBuildDir)", self.source)
+        self.assertIn("-ProtectedCacheKeys @($frontendCacheKey)", self.source)
+        self.assertNotIn("$frontendProjectedFamilyBytes", self.source)
 
     def test_pa_refinement_uses_simion_official_default_convergence(self) -> None:
         self.assertIn("refinement_convergence='simion_official_default'", self.source)
@@ -524,43 +526,26 @@ try {
         )
         self.assertNotIn("role='rf_oatof_standalone_dynamic_field_bank'", self.source)
 
-    def test_interrupted_compact_reconciliation_is_advisory_but_capacity_is_mandatory(self) -> None:
-        startup_capacity = self.source.index(
-            "$artifactCapacityStartupReceipt = Invoke-ArtifactCapacityGate"
-        )
-        reconciliation = self.source.index("reconcile_interrupted_compact_runs")
-        capacity_check = self.source.index("Test-RepositoryDiskCapacity")
-        self.assertLess(startup_capacity, reconciliation)
-        self.assertLess(reconciliation, capacity_check)
-        reconciliation_block = self.source[reconciliation:capacity_check]
-        self.assertIn("try {", reconciliation_block)
-        self.assertIn("INTERRUPTED_COMPACT_RECONCILIATION=WARN", reconciliation_block)
-        self.assertIn("catch {", reconciliation_block)
+    def test_parent_workflow_owns_one_capacity_session_without_startup_maintenance(self) -> None:
+        budget = self.source.index("$stageBudgetDocument = Get-Content")
+        enter = self.source.index("Enter-ArtifactWorkflowCapacitySession", budget)
+        self.assertLess(budget, enter)
         self.assertIn(
-            "Artifact capacity gate did not reach the frozen transient-staging launch watermark.",
-            self.source,
+            "-CommittedNewBytes ([int64]$stageBudgetDocument.limits.transient_run_directory_bytes)",
+            self.source[enter:enter + 900],
         )
+        self.assertNotIn("reconcile_interrupted_compact_runs", self.source)
+        self.assertNotIn("Test-RepositoryDiskCapacity", self.source)
+        self.assertNotIn("Invoke-ArtifactCapacityGate", self.source)
 
-    def test_early_capacity_failure_does_not_supply_an_unknown_measurement(self) -> None:
-        self.assertLess(
-            self.source.index("$artifactCapacityState = $null"),
-            self.source.index(
-                "$artifactCapacityStartupReceipt = Invoke-ArtifactCapacityGate"
-            ),
-        )
-        terminal = self.source[self.source.index("$terminalCapacityParameters = @{"):]
-        guard = terminal.index("if ($null -ne $artifactCapacityState)")
-        hint = terminal.index("$terminalCapacityParameters.KnownMeasuredBytes")
-        maximum = terminal.index(
-            "$terminalCapacityParameters.MaximumNewArtifactBytes"
-        )
-        self.assertLess(guard, hint)
-        self.assertLess(guard, maximum)
-        self.assertNotIn("KnownMeasuredBytes", terminal[:guard])
-        self.assertNotIn("MaximumNewArtifactBytes", terminal[:guard])
-        self.assertIn(
-            "Invoke-ArtifactCapacityGate @terminalCapacityParameters", terminal
-        )
+    def test_capacity_session_has_no_legacy_measurement_or_raw_budget_path(self) -> None:
+        self.assertNotIn("$artifactCapacityState", self.source)
+        self.assertNotIn("KnownMeasuredBytes", self.source)
+        self.assertNotIn("MaximumNewArtifactBytes", self.source)
+        self.assertNotIn("TargetGiB", self.source)
+        self.assertNotIn("MinimumFreeGiB", self.source)
+        self.assertIn("Complete-RfArtifactCapacityCommitment", self.source)
+        self.assertIn("Exit-ArtifactWorkflowCapacitySession", self.source)
 
     def test_domain_split_aperture_check_uses_the_authoritative_local_or_main_pa(self) -> None:
         self.assertIn("Domain-split aperture topology check requires exactly one authoritative aperture PA.", self.source)
@@ -722,15 +707,6 @@ try {
         self.assertIn("basis_builder_sha256=(Get-FileHash -LiteralPath $fineBasisBuilderSource", self.source)
         self.assertIn("pa_plus_initializer_sha256", self.source)
         self.assertIn("$fineBoundaryProjection.mode_map,$fineBuildSharp", self.source)
-
-    def test_accelerator_main_builder_covers_six_faces_without_duplicate_key_tracking(self) -> None:
-        builder = RUNNER.with_name("build_accelerator_main_basis_fast.lua").read_text(encoding="utf-8")
-        self.assertNotIn("local seen={}", builder)
-        self.assertIn("for ix=1,fine.nx-2 do", builder)
-        self.assertIn("for iy=1,fine.ny-2 do", builder)
-        self.assertIn('"disjoint_six_faces_v1"', builder)
-        self.assertNotIn("boundary_readback", builder)
-        self.assertNotIn("potential(ix,iy,iz)", builder)
 
     def test_accelerator_pa_plus_builder_materializes_only_independent_modes(self) -> None:
         builder = RUNNER.with_name("build_accelerator_pa_plus_basis.lua").read_text(encoding="utf-8")

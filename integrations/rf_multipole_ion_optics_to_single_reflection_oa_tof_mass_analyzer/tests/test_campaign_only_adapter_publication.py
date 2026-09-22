@@ -59,6 +59,10 @@ def cache_fixture_prelude(directory: Path) -> str:
         "Win32_PerfFormattedData_PerfDisk_PhysicalDisk { [pscustomobject]@{Name='fixture';CurrentDiskQueueLength=0} } } }; "
         "$fixtureLease=Enter-HostExecutionLease -Role SIMION -Stage prepare 6>$null; "
         "Register-EngineEvent PowerShell.Exiting -Action { Exit-HostExecutionLease -Lease $fixtureLease 6>$null } | Out-Null; "
+        "function Update-ArtifactWorkflowCapacitySession { param($Python,$RepoRoot,$Session,$ProtectedPaths,$ProtectedCacheKeys,$RemainingCommittedNewBytes); "
+        "if($null-ne$RemainingCommittedNewBytes){$Session.committed_new_bytes=[int64]$RemainingCommittedNewBytes}; "
+        "[pscustomobject]@{session=$Session;renewal=[pscustomobject]@{fixture=$true};admission_gate=$null} }; "
+        "$capacitySession=[pscustomobject]@{status='active';committed_new_bytes=[int64]1048576;protected_paths=@();protected_cache_keys=@()}; "
     )
 
 
@@ -398,7 +402,6 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 cache_fixture_prelude(Path(directory)) +
                 f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                 f"$key=Get-RfContentIdentitySha256 -Identity $identity; "
-                "$capacity=@{known_measured_bytes=[int64]0}; "
                 f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
                 "'frontend.gem','frontend.pa#','frontend.pa0' | ForEach-Object { "
                 "[IO.File]::WriteAllText((Join-Path $staging $_),$_) }; "
@@ -406,9 +409,9 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                 f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                 "-CacheKey $key -Role $identity.role -Identity $identity "
-                "-StagingDirectory $staging -ProviderRunId fixture -MinimumFreeGiB 0 "
-                "-ArtifactCapacityState $capacity -MaximumNewArtifactBytes 1048576; "
-                "if($capacity.known_measured_bytes-le 0){throw 'capacity state was not advanced'}; "
+                "-StagingDirectory $staging -ProviderRunId fixture "
+                "-ArtifactCapacitySession $capacitySession; "
+                "if($capacitySession.committed_new_bytes-ge 1048576){throw 'capacity commitment was not advanced'}; "
                 "Write-Output $published"
             )
             result = subprocess.run(
@@ -584,7 +587,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                 f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                 "-CacheKey $key -Role $identity.role -Identity $identity "
-                "-StagingDirectory $staging -ProviderRunId fixture -MinimumFreeGiB 0 | Out-Null"
+                "-StagingDirectory $staging -ProviderRunId fixture -ArtifactCapacitySession $capacitySession | Out-Null"
             )
             subprocess.run(["pwsh", "-NoProfile", "-Command", publish], cwd=REPO_ROOT,
                            check=True, capture_output=True, text=True, timeout=120)
@@ -687,7 +690,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                     f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                     f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                     "-CacheKey $key -Role $identity.role -Identity $identity "
-                    f"-StagingDirectory $staging -ProviderRunId '{label}' -MinimumFreeGiB 0 | Out-Null"
+                    f"-StagingDirectory $staging -ProviderRunId '{label}' -ArtifactCapacitySession $capacitySession | Out-Null"
                 )
                 result = subprocess.run(
                     ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
@@ -792,7 +795,7 @@ Write-Output 'WRITER_GUARDS=PASS'
                     f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                     f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                     "-CacheKey $key -Role $identity.role -Identity $identity "
-                    f"-StagingDirectory $staging -ProviderRunId '{provider}' -MinimumFreeGiB 0 | Out-Null"
+                    f"-StagingDirectory $staging -ProviderRunId '{provider}' -ArtifactCapacitySession $capacitySession | Out-Null"
                 )
                 subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=workspace,
                                check=True, capture_output=True, text=True, timeout=120)
@@ -939,7 +942,7 @@ Write-Output 'WRITER_GUARDS=PASS'
                     f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                     f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                     "-CacheKey $key -Role $identity.role -Identity $identity "
-                    f"-StagingDirectory $staging -ProviderRunId '{label}' -MinimumFreeGiB 0 | Out-Null "
+                    f"-StagingDirectory $staging -ProviderRunId '{label}' -ArtifactCapacitySession $capacitySession | Out-Null "
                     "} "
                     "} finally { Exit-RfCacheKeyLock -Mutex $lock }"
                 )

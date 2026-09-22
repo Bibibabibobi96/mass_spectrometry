@@ -12,7 +12,7 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
-from common.multipole.sources.continuous_axial_volume_source import materialize
+from common.ion_release.release import materialize_release_from_file
 from common.simion.particle_source import render_standard_beams, render_source_states
 from projects.dual_cone_tandem_quadrupole_ion_interface.simion.geometry import (
     DEFAULT_NUMERICS,
@@ -179,11 +179,11 @@ def _materialize_gas_source(
     *, frozen: Path, solver: Path, resolved: dict[str, Any], gas_science: dict[str, Any],
     numerics: dict[str, Any]
 ) -> tuple[Path, Path, dict[str, Any]]:
-    spec = _load(CYLINDRICAL_SOURCE, "continuous_axial_volume_ion_beam_source")
-    geometry = spec["geometry_mm"]
+    spec = _load(CYLINDRICAL_SOURCE, "repository_ion_release")
+    geometry = spec["geometry"]
     radius = float(geometry["radius_mm"])
-    z_min = float(geometry["center_z_mm"]) - 0.5 * float(geometry["axial_length_mm"])
-    z_max = float(geometry["center_z_mm"]) + 0.5 * float(geometry["axial_length_mm"])
+    z_min = float(geometry["center_mm"][2]) - 0.5 * float(geometry["height_mm"])
+    z_max = float(geometry["center_mm"][2]) + 0.5 * float(geometry["height_mm"])
     first_cone = resolved["geometry_mm"]["first_cone"]
     plenum_radius = float(gas_science["geometry_proxy"]["upstream_plenum_radius_mm"])
     if radius > plenum_radius:
@@ -193,7 +193,7 @@ def _materialize_gas_source(
 
     source_csv = frozen / "cylindrical_ion_source.csv"
     source_receipt = frozen / "cylindrical_ion_source_receipt.json"
-    receipt = materialize(CYLINDRICAL_SOURCE, source_csv, source_receipt)
+    receipt = materialize_release_from_file(CYLINDRICAL_SOURCE, source_csv, source_receipt)
     offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
     beams: list[dict[str, Any]] = []
     states: list[dict[str, Any]] = []

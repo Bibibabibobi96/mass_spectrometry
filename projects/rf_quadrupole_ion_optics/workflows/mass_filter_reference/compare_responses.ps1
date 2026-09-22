@@ -30,7 +30,8 @@ $software = @('Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_quadrupole_ion_optics' `
-    -Mode 'mass_filter_reference' -Software $software
+    -Mode 'mass_filter_reference' -Software $software `
+    -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled
 $inputDir = $package.input_dir
 $resultDir = $package.result_dir
 $runConfigPath = $package.run_config
@@ -323,9 +324,11 @@ try {
         figure = 'results/mass-response__l0-l1-simion-comsol.png'
         claim_limit = [string]$report.claim_limit
     })
+    $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
+        -RunConfig $runConfigPath
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
         -RunConfig $runConfigPath -Status success -Software $software `
-        -Outputs @($comparison,$metrics,$figure,$summaryPath)
+        -Outputs @($comparison,$metrics,$figure,$summaryPath,$retentionActions)
     "STATUS=PASS RUN_ID=$RunId DECISION=$($report.decision_status)"
 } catch {
     Complete-FailedRun -Python $python -RepoRoot $repoRoot `

@@ -597,31 +597,6 @@ function Exit-RfCacheKeyLock {
   }
 }
 
-function Assert-RfArtifactCapacityBeforeCachePublication {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$Python,
-    [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string]$WorkspaceRoot,
-    [Parameter(Mandatory)][string]$StagingDirectory,
-    [string[]]$ProtectedPaths = @(),
-    [string[]]$ProtectedCacheKeys = @(),
-    [long]$RequiredHeadroomBytes = 0,
-    [double]$MinimumFreeGiB = 500.0
-  )
-  # The live staging directory is protected from the cleanup scan and is
-  # already below artifact-root.  Publication is a same-volume Move-Item, so
-  # it adds no bytes to the current artifact measurement.  Always use that
-  # current measurement: a startup snapshot may already include a recovered
-  # staging family, and adding it again falsely rejects a valid publication
-  # near the 500 GiB watermark.
-  return Invoke-ArtifactCapacityGate -Python $Python -RepoRoot $RepoRoot `
-    -ArtifactRoot (Join-Path $WorkspaceRoot 'artifacts') -TargetGiB 500 `
-    -MinimumFreeGiB $MinimumFreeGiB -RequiredHeadroomBytes $RequiredHeadroomBytes `
-    -ProtectedPaths (@($StagingDirectory) + @($ProtectedPaths)) `
-    -ProtectedCacheKeys $ProtectedCacheKeys
-}
-
 function Wait-RfCacheStagingWriterExit {
   <# The resource wrapper normally waits for its direct child.  This final
      fail-closed guard also detects a detached or delayed SIMION child before
@@ -687,13 +662,7 @@ function Publish-RfVerifiedCacheEntry {
     [Parameter(Mandatory)]$Identity,
     [Parameter(Mandatory)][string]$StagingDirectory,
     [Parameter(Mandatory)][string]$ProviderRunId,
-    [string[]]$ProtectedPaths = @(),
-    [string[]]$ProtectedCacheKeys = @(),
-    [hashtable]$ArtifactCapacityState = $null,
-    # Retained for call-site compatibility while live staging publication
-    # measures the artifact tree directly; see the capacity helper below.
-    [long]$MaximumNewArtifactBytes = -1,
-    [double]$MinimumFreeGiB = 500.0
+    [Parameter(Mandatory)][pscustomobject]$ArtifactCapacitySession
   )
   $root = [IO.Path]::GetFullPath($CacheRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
   $staging = [IO.Path]::GetFullPath($StagingDirectory)
@@ -703,6 +672,13 @@ function Publish-RfVerifiedCacheEntry {
   $keyDirectory = Join-Path $root $CacheKey
   Assert-RfCacheEntryPath -CacheRoot $root -CacheKey $CacheKey -CacheEntry $keyDirectory
   $recoveryMarker = Join-Path $staging '.rf_cache_staging.json'
+  # The parent workflow owns the only capacity session.  Publication merely
+  # extends that session's protected scope; it never opens a second lease or
+  # re-runs repository capacity reconciliation.
+  $capacityScope = Update-ArtifactWorkflowCapacitySession -Python $Python `
+    -RepoRoot $RepoRoot -Session $ArtifactCapacitySession `
+    -ProtectedPaths @($staging) -ProtectedCacheKeys @($CacheKey)
+  $ArtifactCapacitySession = $capacityScope.session
   # The device-neutral inventory/payload/generation calculation has one shared
   # implementation.  This adapter retains the integration-owned cache schema,
   # capacity admission, recovery marker and SIMION writer lifecycle.
@@ -741,12 +717,9 @@ function Publish-RfVerifiedCacheEntry {
     cache_key_input=$cacheKeyInput; identity=$Identity; payload_sha256=$payloadSha256
     generation_sha256=$generationSha256; generation_input=$generationInput; files=$records
   })
-  $capacityReceipt = Assert-RfArtifactCapacityBeforeCachePublication -Python $Python `
-    -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -StagingDirectory $staging `
-    -ProtectedPaths $ProtectedPaths `
-    -ProtectedCacheKeys $ProtectedCacheKeys `
-    -MinimumFreeGiB $MinimumFreeGiB
-  # Recheck after the fallible hashing and capacity stages.  This closes the
+  $publicationBytes = [int64]((Get-ChildItem -LiteralPath $staging -File -Recurse |
+    Measure-Object -Property Length -Sum).Sum)
+  # Recheck after the fallible hashing and manifest stages.  This closes the
   # exposure window if a delayed SIMION child appeared after the first quiet
   # interval and before the atomic directory publication.
   Wait-RfCacheStagingWriterExit -StagingDirectory $staging -FailIfWriterObserved
@@ -764,11 +737,15 @@ function Publish-RfVerifiedCacheEntry {
     Move-Item -LiteralPath $staging -Destination $target
     $published = $true
   }
-  if ($published -and $null -ne $ArtifactCapacityState) {
-    # The full capacity receipt already includes staging and the publication
-    # move does not change the total.  Carry that measured value forward
-    # rather than adding the same PA family a second time.
-    $ArtifactCapacityState.known_measured_bytes = [int64]$capacityReceipt.measured_after_bytes
+  if ($published) {
+    [int64]$remainingCommitment = [Math]::Max(
+      0L,[int64]$ArtifactCapacitySession.committed_new_bytes - $publicationBytes
+    )
+    $capacityProgress = Update-ArtifactWorkflowCapacitySession -Python $Python `
+      -RepoRoot $RepoRoot -Session $ArtifactCapacitySession `
+      -ProtectedCacheKeys @($CacheKey) `
+      -RemainingCommittedNewBytes $remainingCommitment
+    $ArtifactCapacitySession = $capacityProgress.session
   }
   $pointerStage = Join-Path $keyDirectory ('current_generation.' + [guid]::NewGuid().ToString('N') + '.json')
   Write-RunJson -Path $pointerStage -Depth 8 -Value ([ordered]@{

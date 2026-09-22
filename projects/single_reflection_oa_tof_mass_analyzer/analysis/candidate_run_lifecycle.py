@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 from datetime import datetime, timezone
@@ -14,6 +13,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.machine_contracts import load_json, sha256
+from common.contracts.recorded_file_removal import write_json_atomic
+from common.contracts.write_run_manifest import (
+    TERMINAL_JOURNAL_NAME,
+    build_run_manifest,
+    publish_terminal_state,
+    replay_terminal_publication,
+)
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import verify_candidate_source_closure
 
 
@@ -23,13 +29,6 @@ TERMINAL_STATUSES = {"success", "failed", "interrupted"}
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _file_record(path: Path, recorded_path: Path | None = None) -> dict[str, Any]:
-    record: dict[str, Any] = {"path": str(recorded_path or path), "exists": path.is_file()}
-    if path.is_file():
-        record.update(bytes=path.stat().st_size, sha256=sha256(path))
-    return record
 
 
 def _rewrite_paths(value: Any, old_root: Path, new_root: Path) -> Any:
@@ -44,10 +43,6 @@ def _rewrite_paths(value: Any, old_root: Path, new_root: Path) -> Any:
             return value
         return str(new_root / relative)
     return value
-
-
-def _write_json(path: Path, value: dict[str, Any]) -> None:
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _output_files(run_root: Path) -> list[Path]:
@@ -65,45 +60,32 @@ def _write_manifest(
     recorded_root: Path | None = None,
     *,
     provisional: bool = False,
+    summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     recorded_root = recorded_root or run_root
     config_path = run_root / "run_config.json"
     config = load_json(config_path)
-    inputs = {}
-    for key, value in config.get("inputs", {}).items():
-        if not isinstance(value, str):
-            continue
-        recorded_path = Path(value)
-        try:
-            actual_path = run_root / recorded_path.resolve().relative_to(recorded_root.resolve())
-        except ValueError:
-            actual_path = recorded_path
-        inputs[key] = _file_record(actual_path, recorded_path)
-    outputs = []
-    for path in _output_files(run_root):
-        outputs.append(_file_record(path, recorded_root / path.relative_to(run_root)))
-    manifest = {
-        "schema_version": 1,
-        "role": "simulation_run_manifest",
-        "run_id": config["run_id"],
-        "project": "single_reflection_oa_tof_mass_analyzer",
-        "mode": "design_candidate",
-        "status": status,
+    extras = {
         "lifecycle_state": "provisional" if provisional else "terminal",
-        "recorded_at_utc": _utc_now(),
-        "run_config": _file_record(config_path, recorded_root / "run_config.json"),
-        "inputs": inputs,
-        "outputs": outputs,
         "formal_eligible": False,
         "promotion_authorized": False,
         "execution_source_closure": config.get("execution_source_closure", {}),
-        **(
-            {"campaign_binding": config["campaign_binding"]}
-            if "campaign_binding" in config
-            else {}
-        ),
     }
-    _write_json(run_root / "run_manifest.json", manifest)
+    if "campaign_binding" in config:
+        extras["campaign_binding"] = config["campaign_binding"]
+    virtual = {run_root / "summary.json": summary} if summary is not None else None
+    manifest = build_run_manifest(
+        config_path,
+        status,
+        output_paths=_output_files(run_root),
+        actual_root=run_root,
+        recorded_root=recorded_root,
+        virtual_documents=virtual,
+        extra_fields=extras,
+        allow_missing_inputs=True,
+    )
+    if summary is None:
+        write_json_atomic(run_root / "run_manifest.json", manifest)
     return manifest
 
 
@@ -215,23 +197,26 @@ def start_candidate_run(plan_path: Path, *, provisional_manifest: bool = True) -
     runtime_plan = _rewrite_paths(plan, planning_root, run_root)
     runtime_plan["status"] = "RUNNING"
     runtime_plan["started_at_utc"] = _utc_now()
-    _write_json(staging / "candidate_workflow_plan.json", runtime_plan)
+    write_json_atomic(staging / "candidate_workflow_plan.json", runtime_plan)
 
     run_config = _rewrite_paths(config_template, planning_root, run_root)
     run_config["execution_source_closure"] = runtime_plan["execution_source_closure"]
     run_config["started_at_utc"] = runtime_plan["started_at_utc"]
-    _write_json(staging / "run_config.json", run_config)
+    write_json_atomic(staging / "run_config.json", run_config)
 
     consumption_path = staging / "inputs" / "prepared_consumers" / "candidate_consumption_plan.json"
     if consumption_path.is_file():
-        _write_json(consumption_path, _rewrite_paths(load_json(consumption_path), planning_root, run_root))
+        write_json_atomic(
+            consumption_path,
+            _rewrite_paths(load_json(consumption_path), planning_root, run_root),
+        )
 
     provisional = _summary(
         "interrupted",
         [{"stage_id": "orchestration", "status": "interrupted"}],
         "orchestration_not_completed",
     )
-    _write_json(staging / "summary.json", provisional)
+    write_json_atomic(staging / "summary.json", provisional)
     if provisional_manifest:
         _write_manifest(staging, "interrupted", run_root, provisional=True)
     run_root.parent.mkdir(parents=True, exist_ok=True)
@@ -292,7 +277,7 @@ def update_candidate_progress(
         "safe_to_promote": False,
         "recorded_at_utc": _utc_now(),
     }
-    _write_json(run_root.resolve() / "summary.json", summary)
+    write_json_atomic(run_root.resolve() / "summary.json", summary)
     return summary
 
 
@@ -312,6 +297,8 @@ def finalize_candidate_run(
     failure_stage: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     run_root = run_root.resolve()
+    if (run_root / TERMINAL_JOURNAL_NAME).is_file():
+        return replay_terminal_publication(run_root)
     if status not in TERMINAL_STATUSES:
         raise ValueError(f"unsupported candidate terminal status: {status}")
     config = load_json(run_root / "run_config.json")
@@ -328,6 +315,5 @@ def finalize_candidate_run(
     if status != "success" and not failure_stage:
         raise ValueError("non-success candidate runs require failure_stage")
     summary = _summary(status, stage_results, failure_stage)
-    _write_json(run_root / "summary.json", summary)
-    manifest = _write_manifest(run_root, status)
-    return summary, manifest
+    manifest = _write_manifest(run_root, status, summary=summary)
+    return publish_terminal_state(run_root, summary, manifest)

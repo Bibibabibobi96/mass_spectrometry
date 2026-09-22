@@ -31,7 +31,7 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $arguments = @(
-  (Join-Path $projectRoot 'analysis\generate_ion_source.py')
+  (Join-Path $projectRoot '..\..\common\ion_release\dotnet_gaussian_box_ion11.py')
   '--particle-count'; [string]$N
   '--mass-amu'; [string]$MassAmu
   '--charge'; [string]$Charge

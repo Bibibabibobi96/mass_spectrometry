@@ -66,6 +66,10 @@ workflow可复用机制，但不得互相消费run或用`Mode`切换科学声明
 | 接口事件 | [`interface_contract.json`](../config/interface_contract.json) |
 | 执行profile | [`execution_profiles.json`](../config/execution_profiles.json) |
 
+质量过滤 L1 只声明并读取本项目的 `official_particle_source.json`；矩形位置、能量、filled-cone
+和 RF 相位的确定性采样由仓库公共 [`ion_release`](../../../common/ion_release/README.md) 提供，再由
+workflow 投影至其 SI 积分状态。
+
 活动runner只消费具名profile编译的完整request/resolved。CLI不得覆盖几何、RF/DC、静态电极或轴向
 加速；SIMION入口可选择任意正数的RF步数/周期与trajectory quality，实际值会冻结到运行产物，偏离
 数值基线的运行仅为未资格探索。缺失绑定必须在商业软件启动前失败关闭。

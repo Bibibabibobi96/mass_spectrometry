@@ -44,7 +44,7 @@ RELATIVE_PATHS = (
     "projects/orthogonal_accelerator/comsol/build_two_zone_grids.m",
     "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
     "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/generate_ion_source.py",
+    "common/ion_release/dotnet_gaussian_box_ion11.py",
     "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/candidate_run_lifecycle.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/analyze_comsol_detector_events.py",

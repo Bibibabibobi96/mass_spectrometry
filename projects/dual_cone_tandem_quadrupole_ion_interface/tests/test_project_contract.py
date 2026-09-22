@@ -36,7 +36,7 @@ class ProjectContractTests(unittest.TestCase):
     def test_simion_compact_retention_preserves_normal_outputs_without_exemptions(self) -> None:
         source = (PROJECT_ROOT / "workflows/gas_assisted_transport/run_gas_field_prototype.ps1").read_text(encoding="utf-8")
         block = source[source.index("  $retention=Apply-RunArtifactRetention"):
-                       source.index("  $capacityTerminal=Invoke-ArtifactCapacityGate")]
+                       source.index("  $capacityTerminal=Update-ArtifactWorkflowCapacitySession")]
         self.assertNotIn("-PreservePaths", block)
         with tempfile.TemporaryDirectory() as directory:
             run = Path(directory) / "runs/20260914_170000__test__simion__compact"
@@ -118,7 +118,10 @@ class ProjectContractTests(unittest.TestCase):
             "host_resource_policy.json",
             "require_powershell7.ps1",
             "SIMULATION_PYTHON_EXE",
-            "Invoke-ArtifactCapacityGate",
+            "Enter-ArtifactWorkflowCapacitySession",
+            "Update-ArtifactWorkflowCapacitySession",
+            "Exit-ArtifactWorkflowCapacitySession",
+            "-CapacityLedgerLifecycleEnabled",
             "Apply-RunArtifactRetention",
             "Write-VerifiedRunManifest",
             "Complete-FailedRun",
@@ -134,6 +137,34 @@ class ProjectContractTests(unittest.TestCase):
         self.assertNotIn("Enter-HostExecutionLease -Role COMSOL", comsol_runner)
         self.assertNotIn("Test-RunFilesIdentical", comsol_runner)
         self.assertNotIn("-PreservePaths @($field", comsol_runner)
+
+    def test_capacity_session_migration_covers_both_normal_runners(self) -> None:
+        runners = {
+            "comsol": (
+                PROJECT_ROOT
+                / "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1"
+            ).read_text(encoding="utf-8"),
+            "simion": (
+                PROJECT_ROOT
+                / "workflows/gas_assisted_transport/run_gas_field_prototype.ps1"
+            ).read_text(encoding="utf-8"),
+        }
+        for name, source in runners.items():
+            with self.subTest(name=name):
+                self.assertIn("-CapacityLedgerLifecycleEnabled", source)
+                self.assertEqual(source.count("Enter-ArtifactWorkflowCapacitySession"), 1)
+                self.assertGreaterEqual(
+                    source.count("Update-ArtifactWorkflowCapacitySession"), 1,
+                )
+                self.assertEqual(source.count("Exit-ArtifactWorkflowCapacitySession"), 1)
+                self.assertIn("-RemainingCommittedNewBytes 0", source)
+                self.assertNotIn("Invoke-ArtifactCapacityGate", source)
+                self.assertNotIn("-TargetBytes", source)
+                self.assertNotIn("-MinimumFreeBytes", source)
+        self.assertIn("-CommittedNewBytes 1073741824", runners["comsol"])
+        self.assertIn("-CommittedNewBytes 536870912", runners["simion"])
+        self.assertIn("$manifestPath", runners["simion"])
+        self.assertIn("$sourceGasRuntime", runners["simion"])
 
     def test_retired_python_integrator_is_not_an_active_entry(self) -> None:
         profiles = (PROJECT_ROOT / "config/execution_profiles.json").read_text(

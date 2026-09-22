@@ -14,6 +14,7 @@ from unittest import mock
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256
+from common.contracts import write_run_manifest as terminal_publication
 from common.contracts.verify_artifact_layout import verify_project
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
@@ -59,7 +60,7 @@ class CandidateDesignTests(unittest.TestCase):
                 path.write_bytes((REPO_ROOT / relative).read_bytes())
             provider_path = root / "projects/orthogonal_accelerator/config/component_contract.json"
             provider = json.loads(provider_path.read_text(encoding="utf-8"))
-            provider["api_version"] = 2
+            provider["api_version"] = 3
             provider_path.write_text(json.dumps(provider), encoding="utf-8")
             with mock.patch.multiple(closure, REPO_ROOT=root,
                                      PROJECT_ROOT=root / "projects/single_reflection_oa_tof_mass_analyzer"):
@@ -1079,6 +1080,33 @@ class CandidateDesignTests(unittest.TestCase):
                 self.assertTrue((run_root / "run_manifest.json").is_file())
                 self.assertEqual(verify_project(artifact_root), (1, 0))
 
+    def test_terminal_publication_replays_summary_crash_on_finalize_retry(self):
+        with tempfile.TemporaryDirectory() as root:
+            _, run_root, plan = self.materialize_candidate_run(Path(root))
+            original = terminal_publication.write_json_atomic
+
+            def crash_after_summary(path, value):
+                original(path, value)
+                if path.name == "summary.json":
+                    raise RuntimeError("injected summary crash")
+
+            with (
+                mock.patch.object(
+                    terminal_publication,
+                    "write_json_atomic",
+                    crash_after_summary,
+                ),
+                self.assertRaisesRegex(RuntimeError, "injected summary crash"),
+            ):
+                finalize_candidate_run(run_root, "success", self.stage_results(plan))
+            summary, manifest = finalize_candidate_run(
+                run_root, "success", self.stage_results(plan)
+            )
+            self.assertEqual(summary["status"], manifest["status"])
+            self.assertFalse(
+                (run_root / terminal_publication.TERMINAL_JOURNAL_NAME).exists()
+            )
+
     def test_planned_inputs_cannot_change_before_atomic_run_start(self):
         with tempfile.TemporaryDirectory() as root:
             root_path = Path(root)
@@ -1355,6 +1383,9 @@ class CandidateDesignTests(unittest.TestCase):
                 runner,
                 relative,
             )
+            self.assertIn("-CapacityLedgerLifecycleEnabled", runner, relative)
+            self.assertIn("Apply-RunArtifactRetention", runner, relative)
+            self.assertIn("Write-VerifiedRunManifest", runner, relative)
 
     def test_simion_candidate_requires_explicit_nonformal_frozen_template_before_builder(self):
         with tempfile.TemporaryDirectory() as root:

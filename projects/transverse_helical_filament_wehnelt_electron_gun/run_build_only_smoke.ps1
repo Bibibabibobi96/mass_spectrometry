@@ -258,7 +258,8 @@ $commercialWrapperCompleted = $false
 try {
   $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
     -RunId $RunId -Project 'transverse_helical_filament_wehnelt_electron_gun' -Mode 'build_only_smoke' `
-    -Software $software -AdditionalDirectories @('comsol') -UseShortExecutionPath
+    -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
+    -AdditionalDirectories @('comsol') -UseShortExecutionPath
   $manifestPath = Join-Path $package.run_dir 'run_manifest.json'
   $recordPaths = @($package.run_config,$package.summary,$manifestPath)
   $report = Join-Path $package.log_dir 'build_only_report.txt'
@@ -298,7 +299,7 @@ try {
         -Reason 'Run initialized; task-specific inputs are not frozen yet.' `
         -FailureStage $failureStage
     )
-    Write-VerifiedRunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
+    Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
       -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
       -Software $software -Outputs @($package.summary)
   }
@@ -396,7 +397,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
         -Reason 'Inputs are frozen; the Static gate has not completed.' `
         -FailureStage 'static_gate_pending'
     )
-    Write-VerifiedRunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
+    Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
       -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
       -Software $software -Outputs (Get-ExistingRunOutputs `
         -RunDirectory $package.run_dir -InputDirectory $package.input_dir)
@@ -434,7 +435,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
         -Reason 'Static gate passed; the commercial wrapper has not reached a terminal state.' `
         -FailureStage $failureStage
     )
-    Write-VerifiedRunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
+    Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
       -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
       -Software $software -Outputs @($package.summary)
   }
@@ -518,10 +519,12 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
   Invoke-VerifiedRecordTransition -Paths $recordPaths -Action {
     Write-RunJson -Value $runConfig -Path $package.run_config
     Write-RunJson -Path $package.summary -Value $successSummary
+    $retentionActions = Apply-RunArtifactRetention -Python $package.python `
+      -RepoRoot $manifestRepoRoot -RunConfig $package.run_config
     Write-VerifiedRunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
       -RunConfig $package.run_config -Manifest $manifestPath -Status success `
-      -Software $software -Outputs (Get-ExistingRunOutputs `
-        -RunDirectory $package.run_dir -InputDirectory $package.input_dir)
+      -Software $software -Outputs (@(Get-ExistingRunOutputs `
+        -RunDirectory $package.run_dir -InputDirectory $package.input_dir)+@($retentionActions))
   }
   Write-Output "WEHNELT_BUILD_ONLY=PASS RUN_ID=$RunId RUN_DIR=$($package.run_dir)"
 } catch {
@@ -549,8 +552,11 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
             -CommercialWrapperInvocationAttempted $commercialWrapperInvocationAttempted `
             -CommercialWrapperCompleted $commercialWrapperCompleted
         )
-        $outputs = Get-ExistingRunOutputs `
+        $retentionActions = Apply-RunArtifactRetention -Python $package.python `
+          -RepoRoot $manifestRepoRoot -RunConfig $package.run_config
+        $outputs = @(Get-ExistingRunOutputs `
           -RunDirectory $package.run_dir -InputDirectory $package.input_dir
+        ) + @($retentionActions)
         Write-VerifiedRunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
           -RunConfig $package.run_config -Manifest $manifestPath -Status failed `
           -Software $software -Outputs $outputs

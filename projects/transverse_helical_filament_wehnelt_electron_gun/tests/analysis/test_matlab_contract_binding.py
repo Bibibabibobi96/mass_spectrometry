@@ -225,6 +225,8 @@ class MatlabContractBindingTests(unittest.TestCase):
             "config\\resolved_model.json",
             "WEHNELT_ARTIFACT_ROOT",
             "common\\comsol\\run_comsol_r2025b.ps1",
+            "-CapacityLedgerLifecycleEnabled",
+            "Apply-RunArtifactRetention",
             "Write-VerifiedRunManifest",
             "-Status success",
             "-Status failed",
@@ -848,7 +850,7 @@ function Get-HostResourceSnapshot {
             "$failureStage = 'commercial_wrapper_pending'"
         )
         pending_manifest = self.build_runner.index(
-            "Write-VerifiedRunManifest", pending_stage
+            "Write-RunManifest", pending_stage
         )
         final_inventory = self.build_runner.index(
             "Assert-FrozenInputSet", pending_manifest

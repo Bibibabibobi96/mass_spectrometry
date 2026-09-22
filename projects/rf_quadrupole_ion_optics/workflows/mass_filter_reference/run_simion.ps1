@@ -39,6 +39,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 }
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_quadrupole_ion_optics' -Mode $modeName -Software @('SIMION 2020','Python 3.11') `
+    -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
     -AdditionalDirectories @('simion') -UseShortExecutionPath
 $runDir = $package.run_dir
 $candidateDir = Join-Path $runDir 'simion'
@@ -461,8 +462,10 @@ try {
     $manifestOutputs += $resourceUsage
     if ($resourceProfile) { $manifestOutputs += $resourceProfile }
     $manifestOutputs = @($manifestOutputs | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -Unique)
+    $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
+        -RunConfig $runConfigPath
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `
-        -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
+        -Software @('SIMION 2020','Python 3.11') -Outputs ($manifestOutputs+@($retentionActions))
     $hostExecutionOutcome = 'success'
     "EXECUTION=PASS DECISION=$physicalDecision RUN_ID=$RunId HITS=$($summary.hits) " +
         "TRANSMISSION=$($summary.transmission)"

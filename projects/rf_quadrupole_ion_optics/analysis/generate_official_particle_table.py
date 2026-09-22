@@ -7,11 +7,16 @@ import csv
 import json
 import math
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.contracts.particle_count_policy import validate_positive_particle_count
+from common.ion_release.numpy_ion11_box import (
+    render_numpy_ion11_box_table,
+    sample_numpy_ion11_box_latent,
+)
 from common.multipole.particle_source_preflight import COLUMNS
 
 
@@ -19,60 +24,37 @@ SEED = 20260716
 MASTER_COUNT = 1000
 
 
-def _generate_legacy(count: int) -> np.ndarray:
-    rng = np.random.default_rng(SEED)
-    birth = rng.uniform(0.0, 0.909091, count)
-    y = rng.uniform(-0.05, 0.05, count)
-    z = rng.uniform(-0.05, 0.05, count)
-    energy = rng.uniform(1.8, 2.2, count)
-    phi = rng.uniform(0.0, 2.0 * np.pi, count)
-    cos_theta = rng.uniform(np.cos(np.deg2rad(5.0)), 1.0, count)
-    theta = np.arccos(cos_theta)
-    vx = np.cos(theta)
-    vy = np.sin(theta) * np.cos(phi)
-    vz = np.sin(theta) * np.sin(phi)
-    azimuth = np.rad2deg(np.arctan2(vy, vx))
-    elevation = np.rad2deg(np.arcsin(vz))
-    master = np.column_stack(
-        [birth, np.full(count, 100.0), np.ones(count), np.zeros(count), y, z,
-         azimuth, elevation, energy, np.ones(count), np.full(count, 3.0)]
-    )
-    return master
+OFFICIAL_SOURCE_PATH = Path(__file__).resolve().parents[1] / "config" / "official_particle_source.json"
+
+
+def _official_distribution() -> dict[str, Any]:
+    """Read the declared source parameters; common owns the sampler itself."""
+    source = json.loads(OFFICIAL_SOURCE_PATH.read_text(encoding="utf-8-sig"))
+    if not isinstance(source, dict):
+        raise ValueError("official particle source must be an object")
+    return source
 
 
 def generate(count: int = 100) -> np.ndarray:
     validate_positive_particle_count(count)
-    legacy = _generate_legacy(MASTER_COUNT)
-    if count <= MASTER_COUNT:
-        return legacy[:count]
-    extension_count = count - MASTER_COUNT
-    streams = np.random.SeedSequence(SEED).spawn(6)
-    birth_rng, y_rng, z_rng, energy_rng, phi_rng, theta_rng = (
-        np.random.default_rng(stream) for stream in streams
+    source = _official_distribution()
+    latent = sample_numpy_ion11_box_latent(
+        distribution=source,
+        seed=SEED,
+        particle_count=count,
+        master_particle_count=MASTER_COUNT,
     )
-    birth = birth_rng.uniform(0.0, 0.909091, extension_count)
-    y = y_rng.uniform(-0.05, 0.05, extension_count)
-    z = z_rng.uniform(-0.05, 0.05, extension_count)
-    energy = energy_rng.uniform(1.8, 2.2, extension_count)
-    phi = phi_rng.uniform(0.0, 2.0 * np.pi, extension_count)
-    cos_theta = theta_rng.uniform(np.cos(np.deg2rad(5.0)), 1.0, extension_count)
-    theta = np.arccos(cos_theta)
-    extension = np.column_stack(
-        [
-            birth,
-            np.full(extension_count, 100.0),
-            np.ones(extension_count),
-            np.zeros(extension_count),
-            y,
-            z,
-            np.rad2deg(np.arctan2(np.sin(theta) * np.cos(phi), np.cos(theta))),
-            np.rad2deg(np.arcsin(np.sin(theta) * np.sin(phi))),
-            energy,
-            np.ones(extension_count),
-            np.full(extension_count, 3.0),
-        ]
+    energy = source["kinetic_energy_eV"]
+    return render_numpy_ion11_box_table(
+        latent=latent,
+        mass_amu=float(source["mass_amu"]),
+        charge_state=int(source["charge_state"]),
+        axial_mm=float(source["position_mm"]["axial"]),
+        energy_min_ev=float(energy["min"]),
+        energy_max_ev=float(energy["max"]),
+        cwf=float(source["cwf"]),
+        color=float(source["color"]),
     )
-    return np.vstack([legacy, extension])
 
 
 def generate_canonical(count: int, resolved_design: dict[str, object]) -> list[dict[str, str]]:

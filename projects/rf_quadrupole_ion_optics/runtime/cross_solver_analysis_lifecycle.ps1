@@ -9,7 +9,8 @@ function New-CrossSolverAnalysisPackage {
         [Parameter(Mandatory)][string]$PackageMode,[Parameter(Mandatory)][string[]]$Software
     )
     New-RunPackage -Python $Python -RepoRoot $RepoRoot -ArtifactRoot $ArtifactRoot `
-        -RunId $RunId -Project 'rf_quadrupole_ion_optics' -Mode $PackageMode -Software $Software
+        -RunId $RunId -Project 'rf_quadrupole_ion_optics' -Mode $PackageMode -Software $Software `
+        -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled
 }
 
 function Assert-CrossSolverSourceManifest {
@@ -170,6 +171,9 @@ function Complete-CrossSolverAnalysis {
         [Parameter(Mandatory)][string[]]$Software,[Parameter(Mandatory)][string[]]$Logs
     )
     Write-RunJson -Path $Summary -Depth 10 -Value $SummaryValue
+    $retentionActions = Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot `
+        -RunConfig $RunConfig
     Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
-        -Status success -Software $Software -Outputs ($Outputs+@($Summary)+$Logs)
+        -Status success -Software $Software `
+        -Outputs ($Outputs+@($Summary)+$Logs+@($retentionActions))
 }

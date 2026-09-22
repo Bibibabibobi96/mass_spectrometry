@@ -15,10 +15,10 @@ from common.contracts.particle_physics import (
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,
 )
-from common.multipole.sources.continuous_axial_volume_source import (
+from common.ion_release.continuous_axial_volume import (
     METHOD as ION_SOURCE_VOLUME_METHOD,
-    materialize as materialize_ion_source_volume,
 )
+from common.ion_release.release import materialize_release_from_file
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.rf_handoff_adapter import (
     encode_simion_accelerator_velocity,
 )
@@ -126,7 +126,7 @@ def materialize_independent_ion_source_volume(
         spec_path.relative_to(integration_root.resolve())
     except ValueError as exc:
         raise ValueError("ion-source volume specification escapes integration") from exc
-    receipt = materialize_ion_source_volume(spec_path, output_path, receipt_path)
+    receipt = materialize_release_from_file(spec_path, output_path, receipt_path)
     if int(receipt["particle_count"]) != int(profile["particle_count"]):
         raise ValueError("ion-source volume profile and source specification counts differ")
     if receipt.get("method") != ION_SOURCE_VOLUME_METHOD:

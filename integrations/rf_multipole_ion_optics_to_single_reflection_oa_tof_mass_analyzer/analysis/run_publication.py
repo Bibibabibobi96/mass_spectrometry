@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from common.contracts.machine_contracts import ContractError
 from common.contracts.file_identity import file_sha256
+from common.contracts.recorded_file_removal import write_json_atomic
 from common.contracts.verify_run_manifest import verify_record
+from common.contracts.write_run_manifest import (
+    build_run_manifest,
+    publish_terminal_state,
+    require_completed_terminal_publication,
+)
 
 
 def load_json(path: Path, label: str) -> dict[str, Any]:
+    if path.name == "run_manifest.json":
+        require_completed_terminal_publication(path)
     try:
         value = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as error:
@@ -90,13 +96,7 @@ def freeze_repository_inputs(
 
 
 def write_pending_json(path: Path, value: Mapping[str, Any]) -> None:
-    pending = path.with_name(f".{path.name}.pending")
-    pending.parent.mkdir(parents=True, exist_ok=True)
-    pending.write_text(
-        json.dumps(value, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    os.replace(pending, path)
+    write_json_atomic(path, dict(value))
 
 
 def publish_manifest(
@@ -109,37 +109,45 @@ def publish_manifest(
     project: str,
     mode: str,
     label: str,
-) -> None:
-    command = [
-        sys.executable,
-        "-m",
-        "common.contracts.write_run_manifest",
-        "--run-config",
-        str(run_config),
-        "--manifest",
-        str(manifest_path),
-        "--status",
+    summary: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    final_outputs = list(outputs)
+    summary_path = run_config.with_name("summary.json")
+    if summary is not None and summary_path not in final_outputs:
+        final_outputs.append(summary_path)
+    manifest = build_run_manifest(
+        run_config,
         status,
-        "--software",
-        f"Python {sys.version_info.major}.{sys.version_info.minor}",
-    ]
-    for output in outputs:
-        command.extend(("--output", str(output)))
-    completed = subprocess.run(
-        command,
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=60,
+        software=[f"Python {sys.version_info.major}.{sys.version_info.minor}"],
+        output_paths=final_outputs,
+        virtual_documents={summary_path: dict(summary)} if summary is not None else None,
     )
-    if completed.returncode != 0:
-        raise ContractError(
-            f"{label} {status} manifest publication failed: "
-            + (completed.stdout + completed.stderr).strip()
-        )
+    if summary is None:
+        write_json_atomic(manifest_path, manifest)
+    else:
+        publish_terminal_state(run_config.parent, dict(summary), manifest)
+    return _verify_published_manifest(
+        run_config=run_config,
+        manifest_path=manifest_path,
+        status=status,
+        outputs=final_outputs,
+        project=project,
+        mode=mode,
+        label=label,
+    )
+
+
+def _verify_published_manifest(
+    *,
+    run_config: Path,
+    manifest_path: Path,
+    status: str,
+    outputs: Sequence[Path],
+    project: str,
+    mode: str,
+    label: str,
+) -> dict[str, Any]:
+    require_completed_terminal_publication(manifest_path)
     manifest = load_json(manifest_path, f"{label} {status} manifest")
     config = load_json(run_config, f"{label} run_config")
     if (
@@ -152,96 +160,10 @@ def publish_manifest(
     ):
         raise ContractError(f"{label} {status} manifest identity differs")
     verified_record(f"{label} {status} manifest run_config", manifest.get("run_config"))
+    for name, record in manifest.get("inputs", {}).items():
+        verified_record(f"{label} {status} input {name}", record)
     for output in outputs:
         record_for_path(
             manifest.get("outputs"), output, f"{label} {status} output {output.name}"
         )
-    verified = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "common.contracts.verify_run_manifest",
-            str(manifest_path),
-            "--require-status",
-            status,
-            "--require-local-run-config",
-            "--require-run-id",
-            str(config["run_id"]),
-            "--require-project",
-            project,
-            "--require-mode",
-            mode,
-        ],
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=60,
-    )
-    if verified.returncode != 0:
-        raise ContractError(
-            f"{label} {status} manifest verification failed: "
-            + (verified.stdout + verified.stderr).strip()
-        )
-
-
-def restore_interrupted(
-    *,
-    summary_path: Path,
-    manifest_path: Path,
-    manifest_pending: Path,
-    summary_bytes: bytes,
-    manifest_bytes: bytes,
-) -> None:
-    pending = summary_path.with_name(f".{summary_path.name}.pending")
-    pending.write_bytes(summary_bytes)
-    os.replace(pending, summary_path)
-    manifest_pending.write_bytes(manifest_bytes)
-    os.replace(manifest_pending, manifest_path)
-
-
-def terminalize_failure(
-    *,
-    publish: Callable[..., None],
-    repo_root: Path,
-    run_config_path: Path,
-    summary_path: Path,
-    manifest_path: Path,
-    manifest_pending: Path,
-    failed_summary: Mapping[str, Any],
-    candidate_outputs: Sequence[Path],
-    interrupted_summary_bytes: bytes,
-    interrupted_manifest_bytes: bytes,
-) -> None:
-    try:
-        write_pending_json(summary_path, failed_summary)
-        outputs = [path for path in candidate_outputs if path.is_file()]
-        if summary_path not in outputs:
-            outputs.append(summary_path)
-        publish(
-            repo_root=repo_root,
-            run_config=run_config_path,
-            manifest_path=manifest_pending,
-            status="failed",
-            outputs=outputs,
-        )
-        os.replace(manifest_pending, manifest_path)
-    except (KeyboardInterrupt, SystemExit):
-        restore_interrupted(
-            summary_path=summary_path,
-            manifest_path=manifest_path,
-            manifest_pending=manifest_pending,
-            summary_bytes=interrupted_summary_bytes,
-            manifest_bytes=interrupted_manifest_bytes,
-        )
-        raise
-    except Exception:
-        restore_interrupted(
-            summary_path=summary_path,
-            manifest_path=manifest_path,
-            manifest_pending=manifest_pending,
-            summary_bytes=interrupted_summary_bytes,
-            manifest_bytes=interrupted_manifest_bytes,
-        )
+    return manifest

@@ -197,13 +197,10 @@ function Resolve-RfNativeOperatingPaCompanion {
   $probePath = Join-Path $package.log_dir ($Name + '_native_operating_pa_probe.json')
   Invoke-SingleFlightPython -Arguments @(
     '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.native_operating_pa_family',
-    '--action','probe','--identity',$identityPath,'--cache-root',$OperatingCacheRoot,
+    '--action','ensure','--identity',$identityPath,'--cache-root',$OperatingCacheRoot,
     '--output',$probePath
   ) -Failure "Native operating PA cache probe failed: $Name"
   $probe = Get-Content -LiteralPath $probePath -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ([string]$probe.disposition -eq 'corrupt') {
-    throw "Native operating PA cache is corrupt and will not be overwritten: $Name key=$operatingKey"
-  }
   if ([string]$probe.disposition -eq 'miss') {
     if (-not $AllowSynthesis) {
       throw "Native operating PA companion is missing; published PA families are forbidden synthesis sources: $Name key=$operatingKey"
@@ -211,6 +208,10 @@ function Resolve-RfNativeOperatingPaCompanion {
     $operatingRole = 'simion_native_family_operating_pa_group'
     $operatingStaging = New-RfCacheStagingDirectory -CacheRoot $OperatingCacheRoot `
       -RecoveryCacheKey $operatingKey -RecoveryRole $operatingRole
+    $operatingCapacityScope = Update-ArtifactWorkflowCapacitySession `
+      -Python $python -RepoRoot $repoRoot -Session $artifactCapacitySession `
+      -ProtectedPaths @($operatingStaging) -ProtectedCacheKeys @($operatingKey)
+    $artifactCapacitySession = $operatingCapacityScope.session
     $completion = Join-Path $operatingStaging 'operating_export_complete.json'
     $expectedOutputs = @(
       Join-Path $operatingStaging ($Name + '.carrier_off.pa')
@@ -294,10 +295,8 @@ function Resolve-RfNativeOperatingPaCompanion {
         receipts=@($expectedReceipts | ForEach-Object { Split-Path -Leaf $_ })
       })
     }
-    Assert-RfArtifactCapacityBeforeCachePublication -Python $python -RepoRoot $repoRoot `
-      -WorkspaceRoot $workspaceRoot -StagingDirectory $operatingStaging `
-      -ProtectedPaths $artifactCapacityProtectedPaths `
-      -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys | Out-Null
+    $operatingPublicationBytes = [int64]((Get-ChildItem -LiteralPath $operatingStaging `
+      -File -Recurse | Measure-Object -Property Length -Sum).Sum)
     $publicationPath = Join-Path $package.log_dir ($Name + '_native_operating_pa_publication.json')
     Invoke-SingleFlightPython -Arguments @(
       '-m','integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.native_operating_pa_family',
@@ -305,6 +304,16 @@ function Resolve-RfNativeOperatingPaCompanion {
       '--source-directory',$operatingStaging,'--output',$publicationPath
     ) -Failure "Native operating PA cache publication failed: $Name"
     $probe = Get-Content -LiteralPath $publicationPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ([string]$probe.disposition -eq 'published') {
+      [int64]$operatingRemainingCommitment = [Math]::Max(
+        0L,[int64]$artifactCapacitySession.committed_new_bytes - $operatingPublicationBytes
+      )
+      $operatingCapacityProgress = Update-ArtifactWorkflowCapacitySession `
+        -Python $python -RepoRoot $repoRoot -Session $artifactCapacitySession `
+        -ProtectedCacheKeys @($operatingKey) `
+        -RemainingCommittedNewBytes $operatingRemainingCommitment
+      $artifactCapacitySession = $operatingCapacityProgress.session
+    }
     $resolvedOperatingRoot = [IO.Path]::GetFullPath($OperatingCacheRoot).TrimEnd(
       [IO.Path]::DirectorySeparatorChar)
     $resolvedOperatingStaging = [IO.Path]::GetFullPath($operatingStaging)
@@ -837,7 +846,7 @@ $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId"
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $runProjectId -Mode 'rf_to_oatof_simion_single_flight' `
   -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
-  -AdditionalDirectories @('simion') -UseShortExecutionPath `
+  -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion') -UseShortExecutionPath `
   -ExpectedExecutionRelativePaths @(
     'inputs/simion_five_instance_container/mag_quad_2dp.iob',
     'inputs/single_flight_mother_sample__batch999.fly2',
@@ -848,6 +857,7 @@ $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $art
     'simion/frontend_cache_copy/frontend.pa0',
     'simion/overlay_iob_stage/mag_quad_2dp.iob'
   )
+$artifactCapacitySession = $null
 $artifactCapacityProtectedPaths = [System.Collections.Generic.List[string]]::new()
 function Add-RfArtifactCapacityProtectedRunPath {
   param([Parameter(Mandatory)][string]$Path,[switch]$ContinuationPredecessor)
@@ -1006,7 +1016,24 @@ function Add-RfArtifactCapacityProtectedCacheKey {
   }
   if (-not $artifactCapacityProtectedCacheKeys.Contains($CacheKey)) {
     $artifactCapacityProtectedCacheKeys.Add($CacheKey)
+    if ($null -ne $artifactCapacitySession) {
+      $capacityScope = Update-ArtifactWorkflowCapacitySession -Python $python `
+        -RepoRoot $repoRoot -Session $artifactCapacitySession `
+        -ProtectedCacheKeys @($CacheKey)
+      $artifactCapacitySession = $capacityScope.session
+    }
   }
+}
+
+function Complete-RfArtifactCapacityCommitment {
+  if ($null -eq $artifactCapacitySession) { return $null }
+  $terminal = Update-ArtifactWorkflowCapacitySession -Python $python `
+    -RepoRoot $repoRoot -Session $artifactCapacitySession `
+    -RemainingCommittedNewBytes 0
+  $artifactCapacitySession = $terminal.session
+  $terminalPath = Join-Path $package.result_dir 'artifact_capacity_gate_terminal.json'
+  Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
+  return $terminalPath
 }
 function Assert-RfExactPaCacheGenerationBinding {
   param([Parameter(Mandatory)][object[]]$ActiveCaches)
@@ -1200,8 +1227,6 @@ $stdoutFiles = @()
 $stderrFiles = @()
 $materializerStdout = $null
 $materializerStderr = $null
-$artifactCapacityState = $null
-$publishedPaCacheProtectionSnapshotReady = $false
 $standaloneDynamicExecutionDir = $null
 try {
   # Freeze the stage budget before making the capacity decision: its transient
@@ -1236,117 +1261,20 @@ try {
     -Encoding UTF8 | ConvertFrom-Json
   $minimumSystemAvailableMemoryBytes =
     [int64]$stageBudgetDocument.limits.minimum_system_available_memory_bytes
-  # 500 GiB is the repository policy floor.  Do not turn a measured staging
-  # requirement into a second policy constant: derive it from this frozen run.
-  $artifactCapacityLaunchMinimumFreeBytes =
-    [int64](500GB) + [int64]$stageBudgetDocument.limits.transient_run_directory_bytes
-  $artifactCapacityLaunchMinimumFreeGiB = ([double]$artifactCapacityLaunchMinimumFreeBytes / 1GB).ToString(
-    '0.#########',[System.Globalization.CultureInfo]::InvariantCulture)
-  # Freeze every valid PA-family publication visible at startup before any
-  # capacity reconciliation can evict it.  The same immutable key set follows
-  # this run through publication and terminal gates; unpublished staging and
-  # damaged/failed generations are intentionally absent from the snapshot.
-  $publishedPaCacheProtectionSnapshotPath = Join-Path $package.input_dir `
-    'published_pa_cache_protection_snapshot.json'
-  $publishedPaCacheProtectionSnapshot = New-PublishedPaCacheProtectionSnapshot `
+  # The whole-machine parent owns one workflow-capacity session.  Its frozen
+  # stage peak covers all child preparation, cache publication and flight
+  # phases; helpers only extend this same session's protected scope.
+  $artifactCapacitySession = Enter-ArtifactWorkflowCapacitySession `
     -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
-    -OutputPath $publishedPaCacheProtectionSnapshotPath
-  foreach ($cacheKey in @($publishedPaCacheProtectionSnapshot.protected_cache_keys)) {
-    Add-RfArtifactCapacityProtectedCacheKey -CacheKey ([string]$cacheKey)
-  }
-  $publishedPaCacheProtectionSnapshotReady = $true
-  # Repository-wide cleanup enforces the current 500 GiB artifact waterline.
-  # Do not pre-delete reusable PA generations merely to reserve future staging:
-  # disk admission below reserves that envelope, while cache publication later
-  # measures and admits the concrete staging payload.  The startup snapshot
-  # above prevents speculative deletion of every already-published family.
-  # Both receipts are frozen with this run, making protection and every
-  # automatic removal auditable.
-  $artifactCapacityStartupReceipt = Invoke-ArtifactCapacityGate `
-    -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -TargetGiB 500 `
-    -MinimumFreeGiB ([double]$artifactCapacityLaunchMinimumFreeGiB) `
+    -RunDirectory $package.artifact_run_dir `
+    -CommittedNewBytes ([int64]$stageBudgetDocument.limits.transient_run_directory_bytes) `
     -ProtectedPaths $artifactCapacityProtectedPaths `
-    -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys
-  if (-not [bool]$artifactCapacityStartupReceipt.satisfied_after_apply) {
-    throw 'Artifact capacity gate did not reach the frozen transient-staging launch watermark.'
-  }
+    -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
+    -Owner "rf-oatof-single-flight:$RunId"
   $artifactCapacityStartupReceiptPath = Join-Path $package.input_dir 'artifact_capacity_gate_startup.json'
-  Write-RunJson -Path $artifactCapacityStartupReceiptPath -Depth 14 -Value $artifactCapacityStartupReceipt
-  Write-Output ((
-    'ARTIFACT_CAPACITY_GATE=PASS MEASURED_GIB={0:N2} REMOVED_GIB={1:N2} TARGET_GIB=500.00'
-  ) -f ($artifactCapacityStartupReceipt.measured_bytes / 1GB),
-    ($artifactCapacityStartupReceipt.removed_bytes / 1GB))
-  # Cache generations are published serially under this run's lease.  Advance
-  # the measured baseline after each successful publication so the fast path
-  # remains conservative across more than one PA family.
-  $artifactCapacityState = @{
-    known_measured_bytes = [int64]$artifactCapacityStartupReceipt.measured_bytes
-  }
-  # The startup gate already reserved the complete frozen transient-run
-  # envelope.  At cache publication the staging directory is the only new
-  # payload outside `known_measured_bytes`, and the publication helper adds
-  # its measured size as headroom.  Count no further payload here: reapplying
-  # the complete envelope would double-count the same PA family.
-  $cachePublicationAdditionalArtifactBytes = 0
-  # External stops can bypass a compact run's terminal cleanup.  This small,
-  # local metadata scan is intentionally performed before every new SIMION
-  # launch, while the shared host lease proves no other SIMION process runs.
-  # It only removes unrecorded files forbidden by a *verified* interrupted
-  # compact manifest.  Historical manifest drift remains reportable by the
-  # explicit maintenance command, never silently removed at startup.
-  # Reconciliation is opportunistic housekeeping, not a simulation-input
-  # validity condition.  A transient metadata-scan failure must not prevent a
-  # scientifically valid run from starting: the capacity gate and subsequent
-  # disk check below remain mandatory admission controls.
-  try {
-    $interruptedReconciliation = Invoke-SingleFlightPython -Arguments @(
-      '-m','common.contracts.reconcile_interrupted_compact_runs',
-      '--run-root',(Join-Path $artifactRoot 'runs'),'--apply','--summary-only'
-    ) -Failure 'Interrupted compact-run reconciliation failed.'
-    $interruptedReconciliationReceipt = @($interruptedReconciliation) -join "`n" |
-      ConvertFrom-Json
-    Write-Output ((
-      'INTERRUPTED_COMPACT_RECONCILIATION=PASS SCANNED={0} ELIGIBLE={1} ' +
-      'REMAINING_BYTES={2} APPLIED={3} REMOVED_BYTES={4}'
-    ) -f
-      $interruptedReconciliationReceipt.scanned_run_count,
-      $interruptedReconciliationReceipt.eligible_runs,
-      $interruptedReconciliationReceipt.removable_bytes,
-      $interruptedReconciliationReceipt.applied_runs,
-      $interruptedReconciliationReceipt.removed_bytes
-    )
-  } catch {
-    Write-Warning ('INTERRUPTED_COMPACT_RECONCILIATION=WARN REASON={0}' -f $_.Exception.Message)
-  }
-  try {
-    $diskCapacity = Test-RepositoryDiskCapacity -TargetPath $package.run_dir `
-      -TransientRunDirectoryBytes ([int64]$stageBudgetDocument.limits.transient_run_directory_bytes) `
-      -MinimumFreeBytes ([int64](500GB))
-  } catch {
-    $diskFailure = $_.TargetObject
-    if ($diskFailure -is [pscustomobject] -and
-        [string]$diskFailure.role -eq 'repository_disk_capacity_check') {
-      Write-Output ((
-        'SIMION_STARTUP_STORAGE=FAIL VOLUME={0} FREE_GIB={1:N2} REQUIRED_GIB={2:N2} ' +
-        'RESERVE_GIB={3:N2} REASON=insufficient_disk_capacity'
-      ) -f
-        $diskFailure.volume_root, ($diskFailure.free_bytes / 1GB),
-        ($diskFailure.required_available_bytes / 1GB),
-        ($diskFailure.system_disk_reserve_bytes / 1GB)
-      )
-    }
-    throw
-  }
-  Write-Output ((
-    'SIMION_STARTUP_STORAGE=PASS VOLUME={0} FREE_GIB={1:N2} REQUIRED_GIB={2:N2} ' +
-    'RESERVE_GIB={3:N2}'
-  ) -f $diskCapacity.volume_root,
-    ($diskCapacity.free_bytes / 1GB),
-    ($diskCapacity.required_available_bytes / 1GB),
-    ($diskCapacity.system_disk_reserve_bytes / 1GB)
-  )
+  Write-RunJson -Path $artifactCapacityStartupReceiptPath -Depth 14 `
+    -Value $artifactCapacitySession
   $PaCachePolicy = [string]$resolvedBudgetDocument.single_flight_pa_cache_policy
   $PaCachePolicyProvenance = [string](
     $resolvedBudgetDocument.single_flight_pa_cache_policy_provenance
@@ -2370,13 +2298,11 @@ try {
         '--pa-plus-contract',$acceleratorMainContract,'--pa-plus-output',$cachePaPlus
       ) -Failure 'Coarse frontend PA+ file rendering failed.'
     }
-    $frontendProjectedFamilyBytes = [int64]((Get-Item -LiteralPath $cachePaSharp).Length) *
-      [int64](2 * $frontendSolutionIds.Count + 2)
-    Assert-RfArtifactCapacityBeforeCachePublication -Python $python -RepoRoot $repoRoot `
-      -WorkspaceRoot $workspaceRoot -StagingDirectory $frontendBuildDir `
-      -ProtectedPaths $artifactCapacityProtectedPaths `
-      -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
-      -RequiredHeadroomBytes $frontendProjectedFamilyBytes | Out-Null
+    $frontendCapacityScope = Update-ArtifactWorkflowCapacitySession `
+      -Python $python -RepoRoot $repoRoot -Session $artifactCapacitySession `
+      -ProtectedPaths @($frontendBuildDir) `
+      -ProtectedCacheKeys @($frontendCacheKey)
+    $artifactCapacitySession = $frontendCapacityScope.session
     $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
       -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
     $basisInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
@@ -2431,10 +2357,7 @@ try {
       -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $cacheRoot `
       -CacheKey $frontendCacheKey -Role $frontendCacheRole -Identity $frontendCacheIdentity `
       -StagingDirectory $frontendBuildDir -ProviderRunId $RunId `
-      -ArtifactCapacityState $artifactCapacityState `
-      -ProtectedPaths $artifactCapacityProtectedPaths `
-      -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
-      -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
+      -ArtifactCapacitySession $artifactCapacitySession
     $paCacheDispositions.frontend.disposition = 'built_and_published'
     Write-RfPreCacheRunConfiguration -LifecycleStage 'frontend_pa_cache_published'
     } catch {
@@ -2549,7 +2472,7 @@ try {
           $buildGem=Join-Path $staging "$Name.gem"; $buildPa0=Join-Path $staging "$Name.pa0"; Copy-Item -LiteralPath $Gem -Destination $buildGem
           $build=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir "${Name}_gem2pa_resource_usage.json") -FilePath $SimionExe -WorkingDirectory $staging -RedirectStandardOutput (Join-Path $package.log_dir "${Name}_gem2pa.stdout.log") -RedirectStandardError (Join-Path $package.log_dir "${Name}_gem2pa.stderr.log") -ArgumentList @('--nogui','--noprompt','gem2pa',$buildGem,$buildPa0)
           if ($build.resource_budget_exceeded -or $build.exit_code -ne 0 -or -not (Test-Path -LiteralPath $buildPa0 -PathType Leaf)) { throw "Raw collision GEM conversion failed: $Name" }
-          $entry=Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $root -CacheKey $key -Role $Role -Identity $collisionIdentity -StagingDirectory $staging -ProviderRunId $RunId -ArtifactCapacityState $artifactCapacityState -ProtectedPaths $artifactCapacityProtectedPaths -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
+          $entry=Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $root -CacheKey $key -Role $Role -Identity $collisionIdentity -StagingDirectory $staging -ProviderRunId $RunId -ArtifactCapacitySession $artifactCapacitySession
           $paCacheDispositions[$DispositionKey].disposition='built_and_published'
         } catch { if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }; throw }
       } else { $paCacheDispositions[$DispositionKey].disposition='cache_hit' }
@@ -2917,10 +2840,7 @@ try {
             -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $fineCacheRoot `
             -CacheKey $fineKey -Role $fineDefinition.role -Identity $fineIdentity `
             -StagingDirectory $fineBuildDir -ProviderRunId $RunId `
-            -ArtifactCapacityState $artifactCapacityState `
-            -ProtectedPaths $artifactCapacityProtectedPaths `
-            -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
-            -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
+            -ArtifactCapacitySession $artifactCapacitySession
           $paCacheDispositions[$fineDefinition.disposition_key].disposition = 'built_and_published'
         } catch {
           # Preserve only the identity-bound staging family after the complete
@@ -3321,10 +3241,7 @@ try {
             -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $localCacheRoot `
             -CacheKey $localKey -Role $localRole -Identity $localIdentity `
             -StagingDirectory $localBuildDir -ProviderRunId $RunId `
-            -ArtifactCapacityState $artifactCapacityState `
-            -ProtectedPaths $artifactCapacityProtectedPaths `
-            -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
-            -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
+            -ArtifactCapacitySession $artifactCapacitySession
           $paCacheDispositions.accelerator_entrance_local.disposition = 'built_and_published'
         } catch {
           # Preserve only an exact, identity-bound staging family that reached
@@ -3568,10 +3485,7 @@ try {
           -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
           -CacheRoot $overlayCacheRoot -CacheKey $overlayKey -Role $overlayCacheRole `
           -Identity $overlayIdentity -StagingDirectory $overlayBuildDir -ProviderRunId $RunId `
-          -ArtifactCapacityState $artifactCapacityState `
-          -ProtectedPaths $artifactCapacityProtectedPaths `
-          -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
-          -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
+          -ArtifactCapacitySession $artifactCapacitySession
         $paCacheDispositions.accelerator_overlay.disposition = 'built_and_published'
         Write-RfPreCacheRunConfiguration -LifecycleStage 'accelerator_overlay_pa_cache_published'
       } catch {
@@ -3748,10 +3662,7 @@ try {
           $overlayCacheDir = Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot `
             -ProjectId $runProjectId -CacheRoot $overlayCacheRoot -CacheKey $overlayKey -Role $overlayRole `
             -Identity $overlayIdentity -StagingDirectory $overlayBuildDir -ProviderRunId $RunId `
-            -ArtifactCapacityState $artifactCapacityState `
-            -ProtectedPaths $artifactCapacityProtectedPaths `
-            -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
-            -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
+            -ArtifactCapacitySession $artifactCapacitySession
           $overlayDisposition.disposition = 'built_and_published'
         } catch {
           if (Test-Path -LiteralPath $overlayBuildDir) { Remove-Item -LiteralPath $overlayBuildDir -Recurse -Force }
@@ -4320,12 +4231,13 @@ try {
         throw 'Compact pre-pulse retained-byte budget exceeded.'
       }
     }
+    $artifactCapacityTerminalReceiptPath = Complete-RfArtifactCapacityCommitment
     $outputs = @(
       $compactHandoff,$compactReceipt,$compactSelection,$compactTerminalStates,$package.summary,$retentionActions,
-      $compactScanStdout,$compactScanStderr
+      $compactScanStdout,$compactScanStderr,$artifactCapacityTerminalReceiptPath
     ) + $stdoutFiles + $stderrFiles + $resourceUsageFiles |
       Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-    Write-RunManifest -Python $python -RepoRoot $repoRoot `
+    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config -Status success `
       -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
     Write-Output "SIMION_PRE_PULSE_COMPACT_HANDOFF=PASS RUN_ID=$RunId PULSE_US=$($compactSelectionDocument.selected_time_us) PARTICLES=$($compactSelectionDocument.pulse_eligible_count)"
@@ -4554,10 +4466,7 @@ try {
         -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
         -CacheRoot $downstreamCacheRoot -CacheKey $Plan.key -Role $Plan.role `
         -Identity $Plan.identity -StagingDirectory $staging -ProviderRunId $RunId `
-        -ArtifactCapacityState $artifactCapacityState `
-        -ProtectedPaths $artifactCapacityProtectedPaths `
-        -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
-        -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
+        -ArtifactCapacitySession $artifactCapacitySession
     } catch {
       if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
       throw
@@ -5578,7 +5487,8 @@ try {
     $runtime.implementation_identity
   Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   Write-RunJson -Path $package.summary -Depth 10 -Value ([ordered]@{schema_version=1;role=$summaryRole;status='checkpoint';reason='Frozen inputs recorded; SIMION flight is in progress.';single_flight_pa_cache_policy=$PaCachePolicy;single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance;pa_cache_dispositions=$paCacheDispositions})
-  Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status checkpoint -Software @('SIMION 2020','Python 3.11')
+  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+    -Status checkpoint -Software @('SIMION 2020','Python 3.11')
   $snapshotReady = $true
 
   if ($BuildOnly) {
@@ -5661,12 +5571,16 @@ try {
       total_axis_field_iob_status='TOP_LEVEL_FIVE_INSTANCE_EXPORT'
       total_axis_field_resource_usage=$axisFieldUsageArtifact
     })
+    $artifactCapacityTerminalReceiptPath = Complete-RfArtifactCapacityCommitment
     $buildOnlyOutputs = @(
       $axisFieldOutput,$axisFieldComparison,$axisFieldUsage,$retentionActions,
       (Join-Path $package.log_dir 'total_axis_field.stdout.log'),
-      (Join-Path $package.log_dir 'total_axis_field.stderr.log'),$package.summary
+      (Join-Path $package.log_dir 'total_axis_field.stderr.log'),$package.summary,
+      $artifactCapacityTerminalReceiptPath
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-    Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $buildOnlyOutputs
+    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
+      -RunConfig $package.run_config -Status success `
+      -Software @('SIMION 2020','Python 3.11') -Outputs $buildOnlyOutputs
     $hostExecutionOutcome = 'success'
     return
   }
@@ -5759,11 +5673,13 @@ try {
         })
         $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
           -RunConfig $package.run_config
+        $artifactCapacityTerminalReceiptPath = Complete-RfArtifactCapacityCommitment
         $outputs = @(
           $compactHandoff,$compactReceipt,$compactSelection,$package.summary,
-          $retentionActions,$compactScanStdout,$compactScanStderr
+          $retentionActions,$compactScanStdout,$compactScanStderr,
+          $artifactCapacityTerminalReceiptPath
         ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-        Write-RunManifest -Python $python -RepoRoot $repoRoot `
+        Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
           -RunConfig $package.run_config -Status success `
           -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
         $hostExecutionOutcome = 'success'
@@ -5804,11 +5720,12 @@ try {
       Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
       $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
         -RunConfig $package.run_config
+      $artifactCapacityTerminalReceiptPath = Complete-RfArtifactCapacityCommitment
       $outputs = @(
         $statesCsv,$screeningReceipt,$package.summary,$retentionActions,
-        $materializerStdout,$materializerStderr
+        $materializerStdout,$materializerStderr,$artifactCapacityTerminalReceiptPath
       ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-      Write-RunManifest -Python $python -RepoRoot $repoRoot `
+      Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
         -RunConfig $package.run_config -Status success `
         -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
       $hostExecutionOutcome = 'success'
@@ -6283,10 +6200,12 @@ try {
         throw 'Pre-pulse time-series compact retained-byte budget exceeded.'
       }
     }
-  $outputs = @($statesCsv,$screeningReceipt,$package.summary,$retentionActions) +
+    $artifactCapacityTerminalReceiptPath = Complete-RfArtifactCapacityCommitment
+  $outputs = @($statesCsv,$screeningReceipt,$package.summary,$retentionActions,
+      $artifactCapacityTerminalReceiptPath) +
       $stdoutFiles + $stderrFiles + $resourceUsageFiles |
       Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-    Write-RunManifest -Python $python -RepoRoot $repoRoot `
+    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config -Status success `
       -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
     $hostExecutionOutcome = 'success'
@@ -6426,7 +6345,13 @@ try {
     ) -Failure 'Single-flight SIMION resource profile publication failed.'
   }
   if ($resourceProfile) { $outputs += $resourceProfile }
-  Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+  $artifactCapacityTerminalReceiptPath = Complete-RfArtifactCapacityCommitment
+  if ($artifactCapacityTerminalReceiptPath) {
+    $outputs += $artifactCapacityTerminalReceiptPath
+  }
+  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
+    -RunConfig $package.run_config -Status success `
+    -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
   $hostExecutionOutcome = 'success'
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after successful run: $($_.Exception.Message)"
@@ -6474,6 +6399,7 @@ try {
     $recoverablePrePulseTracePaths + $recoverableFullFlightStdoutPaths
   )
   try {
+    $failureCapacityReceiptPath = Complete-RfArtifactCapacityCommitment
     Complete-FailedRun -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config -Summary $package.summary `
       -SummaryRole $summaryRole -Reason $originalFailure.Exception.Message `
@@ -6489,8 +6415,9 @@ try {
         failure_script_stack_trace=[string]$originalFailure.ScriptStackTrace
       }) `
       -AdditionalOutputs $(if ($isPrePulseTimeSeriesScreening) {
-        @($stdoutFiles,$stderrFiles,$materializerStdout,$materializerStderr)
-      } else { @($recoverableFullFlightStdoutPaths) }) `
+        @($stdoutFiles,$stderrFiles,$materializerStdout,$materializerStderr,
+          $failureCapacityReceiptPath)
+      } else { @($recoverableFullFlightStdoutPaths,$failureCapacityReceiptPath) }) `
       -PreserveRawOutputs:$preserveRecoverablePrePulseTrace `
       -PreserveRawOutputPaths $recoverablePrePulseTracePaths `
       -ResourceUsagePath $(if ($resourceBudgetExceeded) {$resourceUsage} else {''})
@@ -6511,58 +6438,17 @@ try {
     }
   } catch {
     # Cleanup is best-effort at this boundary.  Do not mask the scientific
-    # outcome or skip the terminal capacity gate and lease release.
+    # outcome or skip the workflow-capacity and host-lease releases.
     Write-Warning "Standalone dynamic execution cleanup failed: $($_.Exception.Message)"
   }
-  # The startup gate protects an incoming run.  Once its terminal manifest is
-  # immutable, repeat the governed L1/L2/L3 reconciliation before returning
-  # the shared lease so compact output cannot leave the workspace below its
-  # free-space watermark.  Pin this run, every startup-published family, and
-  # every cache key resolved or published during this invocation. Terminal
-  # manifests are deliberately not treated as "active" by the reconciler.
   try {
-    if (-not $publishedPaCacheProtectionSnapshotReady) {
-      throw 'Startup-published PA cache protection snapshot is unavailable; terminal cleanup is prohibited.'
+    if ($null -ne $artifactCapacitySession) {
+      $null = Exit-ArtifactWorkflowCapacitySession -Python $python `
+        -RepoRoot $repoRoot -Session $artifactCapacitySession
     }
-    # The startup measurement already contains this run's initial package,
-    # and every cache publication has advanced artifactCapacityState by its
-    # actual staging payload.  At terminal time the complete run directory is
-    # a fast, conservative upper bound for the remaining change: adding it
-    # double-counts the small pre-launch package, but never understates a
-    # result written below this protected path.  Do not reserve the frozen
-    # 40 GiB transient *budget* again here; it is a launch disk-floor budget,
-    # not evidence that this compact run created 40 GiB of artifacts.
-    # Success/failure publication may already have removed the short execution
-    # alias. The canonical artifact directory remains valid for reconciliation.
-    $terminalCapacityMaximumNewArtifactBytes = [int64]((Get-ChildItem -LiteralPath $package.artifact_run_dir -File -Recurse |
-      Measure-Object -Property Length -Sum).Sum)
-    $terminalCapacityParameters = @{
-      Python=$python; RepoRoot=$repoRoot
-      ArtifactRoot=(Join-Path $workspaceRoot 'artifacts')
-      TargetGiB=500; MinimumFreeGiB=500
-      ProtectedPaths=$artifactCapacityProtectedPaths
-      ProtectedCacheKeys=$artifactCapacityProtectedCacheKeys
-    }
-    # An early startup failure has no measured baseline.  Omit the fast-path
-    # pair in that case so terminal reconciliation performs its normal scan;
-    # neither half of the pair is meaningful alone. Never invent a zero
-    # baseline or mask the original failure in StrictMode.
-    if ($null -ne $artifactCapacityState) {
-      $terminalCapacityParameters.KnownMeasuredBytes =
-        [int64]$artifactCapacityState.known_measured_bytes
-      $terminalCapacityParameters.MaximumNewArtifactBytes =
-        $terminalCapacityMaximumNewArtifactBytes
-    }
-    $terminalCapacityReceipt = Invoke-ArtifactCapacityGate @terminalCapacityParameters
-    if (-not [bool]$terminalCapacityReceipt.satisfied_after_apply) {
-      throw 'Artifact capacity gate did not restore the 500 GiB repository watermark after terminal publication.'
-    }
-    Write-Output (('ARTIFACT_CAPACITY_TERMINAL=PASS MEASURED_GIB={0:N2} REMOVED_GIB={1:N2} TARGET_GIB=500.00' -f
-      ($terminalCapacityReceipt.measured_bytes / 1GB),($terminalCapacityReceipt.removed_bytes / 1GB)))
   } catch {
-    # A terminal science result stays immutable.  Surface cleanup failure to
-    # the caller while still releasing the host lease for future remediation.
-    Write-Warning "ARTIFACT_CAPACITY_TERMINAL=FAIL $($_.Exception.Message)"
+    Write-Warning "ARTIFACT_CAPACITY_SESSION_RELEASE=FAIL $($_.Exception.Message)"
+  } finally {
+    Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
   }
-  Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
 }

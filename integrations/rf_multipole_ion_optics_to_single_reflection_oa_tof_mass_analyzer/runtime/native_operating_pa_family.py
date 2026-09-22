@@ -17,6 +17,7 @@ from common.simion.native_fast_adjust_operating_pa_cache import (
     build_native_operating_pa_export_plan,
     canonical_native_operating_pa_cache_key,
     canonical_native_operating_pa_identity,
+    ensure_native_operating_pa_cache,
     materialize_native_operating_pa_cache,
     native_operating_pa_group_identity,
     native_operating_pa_member_identity,
@@ -219,6 +220,7 @@ def main() -> int:
             "export-plan",
             "verify-exports",
             "probe",
+            "ensure",
             "publish",
             "materialize",
         ),
@@ -319,8 +321,12 @@ def main() -> int:
 
     if args.cache_root is None:
         raise ValueError(f"{args.action} action requires --cache-root")
-    if args.action == "probe":
-        probe = probe_native_operating_pa_cache(args.cache_root, identity)
+    if args.action in {"probe", "ensure"}:
+        probe = (
+            probe_native_operating_pa_cache(args.cache_root, identity)
+            if args.action == "probe"
+            else ensure_native_operating_pa_cache(args.cache_root, identity)
+        )
         _write_object(
             args.output,
             {
@@ -370,6 +376,15 @@ def main() -> int:
                 "schema_version": 1,
                 "role": "rf_oatof_native_operating_pa_materialization",
                 "cache_key": canonical_native_operating_pa_cache_key(identity),
+                "generation_directory": str(result.source_generation_directory.resolve()),
+                "predecessor_generation_directory": (
+                    str(result.predecessor_generation_directory.resolve())
+                    if result.predecessor_generation_directory is not None else None
+                ),
+                "repair_receipt_path": (
+                    str(result.repair_receipt_path.resolve())
+                    if result.repair_receipt_path is not None else None
+                ),
                 "destination_directory": str(result.destination_directory.resolve()),
                 "files": list(result.files),
             },

@@ -7,9 +7,7 @@ import math
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256
-
-E_CHARGE = 1.602176634e-19
-AMU_KG = 1.66053906660e-27
+from common.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
 
 
 def main() -> None:
@@ -47,7 +45,7 @@ def main() -> None:
     center_y = float(source["center_y_mm"])
     center_z = float(source["center_z_mm"])
     width_z = float(source["size_z_mm"])
-    speed = math.sqrt(2 * 10.0 * E_CHARGE / (100.0 * AMU_KG))
+    speed = speed_m_s_from_kinetic_energy_ev(100.0, 10.0)
     output_rows: list[list[float | int]] = []
     for index, row in enumerate(rows):
         x = center_x + (float(row["initial_x_mm"]) - old_x_mid) / old_x_span

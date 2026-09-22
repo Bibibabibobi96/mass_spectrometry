@@ -29,7 +29,8 @@ foreach ($path in @($SimionExe, $builder, $analyzer, $transport)) {
 $software = @('SIMION 2020', 'Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'simion_n100_source_build_and_track' `
-  -Software $software -AdditionalDirectories @('simion') -UseShortExecutionPath
+  -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
+  -AdditionalDirectories @('simion') -UseShortExecutionPath
 $simionDir = Join-Path $package.run_dir 'simion'
 $textDir = Join-Path $package.input_dir 'simion_text'
 New-Item -ItemType Directory -Path $textDir | Out-Null
@@ -172,11 +173,11 @@ try {
     $transportSummary,
     $package.summary
   )
-  Write-RunManifest -Python $package.python -RepoRoot $repoRoot `
-    -RunConfig $package.run_config -Status success -Software $software -Outputs $outputs
-  & $package.python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
-    (Join-Path $package.run_dir 'run_manifest.json') --require-status success
-  if ($LASTEXITCODE -ne 0) { throw 'SIMION run manifest verification failed.' }
+  $retentionActions=Apply-RunArtifactRetention -Python $package.python -RepoRoot $repoRoot `
+    -RunConfig $package.run_config
+  Write-VerifiedRunManifest -Python $package.python -RepoRoot $repoRoot `
+    -RunConfig $package.run_config -Status success -Software $software `
+    -Outputs ($outputs+@($retentionActions))
   Write-Output "OATOF_SIMION_N100=PASS RUN_ID=$RunId RUN_DIR=$($package.run_dir)"
 }
 catch {
@@ -185,12 +186,6 @@ catch {
     -RunConfig $package.run_config -Summary $package.summary `
     -SummaryRole 'oa_tof_simion_n100_source_build_and_track_summary' `
     -Reason $reason -Software $software
-  $failedOutputs = @($package.summary)
-  $failedOutputs += @(Get-ChildItem -LiteralPath $package.log_dir -File |
-    ForEach-Object { $_.FullName })
-  Write-RunManifest -Python $package.python -RepoRoot $repoRoot `
-    -RunConfig $package.run_config -Status failed -Software $software `
-    -Outputs $failedOutputs
   throw
 }
 finally {

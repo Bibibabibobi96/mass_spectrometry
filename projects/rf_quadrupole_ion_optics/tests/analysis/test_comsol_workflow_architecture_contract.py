@@ -543,14 +543,17 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
             shared.index("import com.comsol.model.*"),
         )
 
-    def test_runner_closes_initial_interrupted_success_and_failed_records(self) -> None:
+    def test_runner_checkpoints_then_closes_success_and_failed_records(self) -> None:
         source = _read(RUNNER)
         for token in (
             "common\\contracts\\run_artifact_support.ps1",
             "New-RunPackage",
+            "-CapacityLedgerLifecycleEnabled",
+            "Write-RunManifest",
             "Write-VerifiedRunManifest",
             "-Status interrupted",
             "-Status success",
+            "Apply-RunArtifactRetention",
             "Complete-FailedRun",
             "Save-RunEnvironment",
             "Restore-RunEnvironment",
@@ -559,8 +562,12 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         ):
             self.assertIn(token, source)
         self.assertLess(
-            source.index("Write-VerifiedRunManifest"),
+            source.index("Write-RunManifest"),
             source.index("run_comsol_r2025b.ps1"),
+        )
+        self.assertLess(
+            source.index("Apply-RunArtifactRetention"),
+            source.index("Write-VerifiedRunManifest"),
         )
 
     def test_interface_normal_launches_disable_attempt_local_retry(self) -> None:

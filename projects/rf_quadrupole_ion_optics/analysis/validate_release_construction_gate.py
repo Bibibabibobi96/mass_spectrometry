@@ -11,11 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
+from common.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
 
 
 PARTICLE_COUNT = 100
-ELEMENTARY_CHARGE_C = 1.602176634e-19
-ATOMIC_MASS_KG = 1.66053906660e-27
 PHASES = (
     "before_create",
     "after_create",
@@ -97,9 +96,7 @@ def _expected_release_state(row: list[float], axial_offset_mm: float) -> list[fl
     energy_ev = row[8]
     if mass_amu <= 0 or energy_ev < 0:
         raise ValueError("ION11 mass must be positive and energy must be non-negative.")
-    speed = math.sqrt(
-        2 * energy_ev * ELEMENTARY_CHARGE_C / (mass_amu * ATOMIC_MASS_KG)
-    )
+    speed = speed_m_s_from_kinetic_energy_ev(mass_amu, energy_ev)
     azimuth = math.radians(row[6])
     elevation = math.radians(row[7])
     velocity_simion = (

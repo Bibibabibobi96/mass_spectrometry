@@ -26,8 +26,8 @@ $inventory=($required+@('dual_cone_tandem.pa-surf')) -join ','
 $identity=Join-Path $output 'input\pa_cache_identity.json'
 Push-Location $repoRoot
 try{
-  $probeText=& $python -m common.simion.pa_family_cache --action probe --cache-root $cacheRoot --identity $identity --filenames $inventory
-  if($LASTEXITCODE-ne 0){throw 'SIMION PA cache probe failed.'}
+  $probeText=& $python -m common.simion.pa_family_cache --action ensure --cache-root $cacheRoot --identity $identity --filenames $inventory
+  if($LASTEXITCODE-ne 0){throw 'SIMION PA cache ensure failed.'}
   $probe=($probeText -join "`n")|ConvertFrom-Json
   if($probe.disposition -eq 'hit'){
     & $python -m common.simion.pa_family_cache --action materialize --cache-root $cacheRoot --identity $identity --filenames $inventory --destination-directory $solverDir | Out-Null

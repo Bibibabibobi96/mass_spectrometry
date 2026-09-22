@@ -236,7 +236,7 @@ $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot $artifactRoot -RunId $RunId `
   -Project $upstreamProjectId `
   -Mode $runMode -Software $software `
-  -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath `
+  -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled -UseShortExecutionPath `
   -AdditionalDirectories @('simion') `
   -ExpectedExecutionRelativePaths $executionCapacityPaths
 $python = $package.python

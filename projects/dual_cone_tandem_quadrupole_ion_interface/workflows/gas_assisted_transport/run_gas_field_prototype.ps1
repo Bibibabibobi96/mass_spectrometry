@@ -24,7 +24,7 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -RunId $RunId -Project $projectId -Mode 'gas_field_driven_simion_transport' `
   -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
   -AdditionalDirectories @('simion') `
-  -UseShortExecutionPath
+  -UseShortExecutionPath -CapacityLedgerLifecycleEnabled
 $runDir=$package.run_dir
 $resultDir=$package.result_dir
 $logDir=$package.log_dir
@@ -35,17 +35,26 @@ $log=Join-Path $logDir 'simion_fly.log'
 $failureStage='freeze_inputs'
 $terminalized=$false
 $lease=$null
+$capacitySession=$null
 $hostOutcome='failed'
 
 try{
-  $failureStage='capacity_preflight'
-  $capacityStartup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -ProtectedPaths @($package.artifact_run_dir)
+  $failureStage='capacity_startup'
+  # Workflow remaining peak commitment: conservative 512 MiB upper bound over
+  # historical compact runs; this is scheduling metadata, not a physical input.
+  $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
+    -RunDirectory $package.artifact_run_dir -CommittedNewBytes 536870912 `
+    -ProtectedPaths @($package.artifact_run_dir,$manifestPath) `
+    -Owner "dual-cone-gas-field-prototype:$RunId"
+  $sourceGasManifest=Get-Content -LiteralPath $manifestPath -Raw|ConvertFrom-Json
+  $sourceGasRuntime=(Resolve-Path -LiteralPath ([string]$sourceGasManifest.runtime_lua.path)).Path
+  $capacityStartup=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -ProtectedPaths @($sourceGasRuntime)
+  $capacitySession=$capacityStartup.session
   $capacityStartupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $capacityStartupPath -Value $capacityStartup -Depth 14
   $failureStage='freeze_inputs'
-  $sourceGasManifest=Get-Content -LiteralPath $manifestPath -Raw|ConvertFrom-Json
-  $sourceGasRuntime=(Resolve-Path -LiteralPath ([string]$sourceGasManifest.runtime_lua.path)).Path
   $frozenGasRuntime=Copy-VerifiedRunInput -Source $sourceGasRuntime `
     -Destination (Join-Path $package.input_dir 'gas_field_runtime.lua')
   $sourceGasManifest.runtime_lua.path=Join-Path $package.artifact_run_dir 'inputs\gas_field_runtime.lua'
@@ -142,7 +151,7 @@ try{
     trajectory_authority='SIMION';collision_model='SIMION official collision_sds'
     electric_field=$science.electric_field
     gas_field=[ordered]@{role=$gasManifest.role;source=$gasManifest.source;runtime_lua_sha256=$gasManifest.runtime_lua.sha256}
-    particle_source=[ordered]@{role=$sourceSpec.role;model=$sourceSpec.source_region_model;particle_count=[int]$sourceSpec.particle_count;seed=[int]$sourceSpec.seed;geometry_mm=$sourceSpec.geometry_mm;velocity_distribution=$sourceSpec.velocity_distribution}
+    particle_source=[ordered]@{role=$sourceSpec.role;model=$sourceSpec.geometry.shape;frame_id=$sourceSpec.frame_id;particle_count=[int]$sourceSpec.particle_count;seed=[int]$sourceSpec.sampling.seed;geometry=$sourceSpec.geometry;velocity_distribution=$sourceSpec.sampling.velocity_distribution}
     downstream_aperture_plate=$resolved.geometry_mm.downstream_aperture_plate
     terminal_plane_device_z_mm=([double]$resolved.geometry_mm.downstream_aperture_plate.downstream_observation_end_z_mm-0.5*[double]$numerics.pa.cell_mm_xyz.z)
     terminal_code_definitions=[ordered]@{'0'='SIMION native geometry or otherwise unclassified splat';'1'='reached governed terminal plane';'2'='maximum flight time reached';'3'='left validated gas-field fluid support'}
@@ -157,8 +166,9 @@ try{
   }) -Depth 12
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
     -RunConfig $package.run_config
-  $capacityTerminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -ProtectedPaths @($package.artifact_run_dir)
+  $capacityTerminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -Session $capacitySession -RemainingCommittedNewBytes 0
+  $capacitySession=$capacityTerminal.session
   $capacityTerminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $capacityTerminalPath -Value $capacityTerminal -Depth 14
   $outputs=@($package.summary,$reportPath,$transportMetrics,$transmittedStates,$trajectoryPlot,$log,$retention,$capacityStartupPath,$capacityTerminalPath)
@@ -180,6 +190,13 @@ try{
   }
   throw
 }finally{
-  if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome $hostOutcome -RunId $RunId}
-  Remove-RunPackageExecutionAlias -Package $package
+  try{
+    if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome $hostOutcome -RunId $RunId}
+    Remove-RunPackageExecutionAlias -Package $package
+  }finally{
+    if($null-ne$capacitySession){
+      $null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+        -Session $capacitySession
+    }
+  }
 }

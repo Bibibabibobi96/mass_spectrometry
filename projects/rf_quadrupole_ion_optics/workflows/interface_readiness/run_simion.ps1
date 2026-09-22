@@ -41,6 +41,9 @@ $frozenPythonRelativePaths = @(
     'common\contracts\particle_count_policy.py',
     'common\contracts\particle_count_policy.json',
     'common\contracts\file_identity.py',
+    'common\ion_release\__init__.py',
+    'common\ion_release\cylinder.py',
+    'common\ion_release\numpy_ion11_box.py',
     'common\multipole\__init__.py',
     'common\multipole\particle_source_preflight.py'
 )
@@ -51,6 +54,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 }
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_quadrupole_ion_optics' -Mode $mode -Software @('SIMION 2020','Python 3.11') `
+    -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
     -AdditionalDirectories @('simion') -UseShortExecutionPath `
     -ExpectedExecutionRelativePaths $executionCapacityPaths
 $runDir=$package.run_dir
@@ -179,6 +183,8 @@ $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
         'common.contracts.particle_physics',
         'common.contracts.particle_count_policy',
         'common.contracts.file_identity',
+        'common.ion_release',
+        'common.ion_release.numpy_ion11_box',
         'common.multipole',
         'common.multipole.particle_source_preflight'
     ) -ForbiddenRoots @($repoRoot,$projectRoot)
@@ -562,8 +568,10 @@ foreach ($batchRun in $batchRuns) {
 $manifestOutputs += $resourceUsage
 if ($resourceProfile) { $manifestOutputs += $resourceProfile }
 $manifestOutputs = @($manifestOutputs | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -Unique)
+$retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
+    -RunConfig $runConfigPath
 Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `
-    -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
+    -Software @('SIMION 2020','Python 3.11') -Outputs ($manifestOutputs+@($retentionActions))
 $hostExecutionOutcome = 'success'
 "EXECUTION=PASS DECISION=$physicalDecision RUN_ID=$RunId HITS=$($summary.hits) TRANSMISSION=$($summary.transmission)"
 }

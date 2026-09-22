@@ -38,6 +38,9 @@ $frozenPythonRelativePaths = @(
     'common\contracts\particle_count_policy.py',
     'common\contracts\particle_count_policy.json',
     'common\contracts\file_identity.py',
+    'common\ion_release\__init__.py',
+    'common\ion_release\cylinder.py',
+    'common\ion_release\numpy_ion11_box.py',
     'common\multipole\__init__.py',
     'common\multipole\particle_source_preflight.py'
 )
@@ -58,7 +61,8 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_quadrupole_ion_optics' -Mode $workflowId `
-    -Software $software -AdditionalDirectories @('comsol','runtime') -UseShortExecutionPath `
+    -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
+    -AdditionalDirectories @('comsol','runtime') -UseShortExecutionPath `
     -ExpectedExecutionRelativePaths $executionCapacityPaths
 $runDir,$inputDir,$resultDir,$logDir = $package.run_dir,$package.input_dir,
     $package.result_dir,$package.log_dir
@@ -184,6 +188,8 @@ try {
             'common.contracts.particle_physics',
         'common.contracts.particle_count_policy',
         'common.contracts.file_identity',
+        'common.ion_release',
+        'common.ion_release.numpy_ion11_box',
         'common.multipole',
             'common.multipole.particle_source_preflight'
         ) -ForbiddenRoots @($repoRoot,$projectRoot)
@@ -357,7 +363,7 @@ try {
         failure_stage='commercial_execution_not_started';threshold_result_eligible=$false
         reason='Frozen inputs and COMSOL numerics passed preflight.'
     })
-    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
+    Write-RunManifest -Python $python -RepoRoot $repoRoot `
         -RunConfig $package.run_config -Status interrupted -Software $software `
         -Outputs @($package.summary)
 
@@ -476,9 +482,11 @@ try {
         $outputs=@($releaseGateModel,$releaseGateResult,$releaseGateBreadcrumbs,
             $releaseGateValidation,$bootstrapReport,$package.summary)
         $outputs+=@($releaseFiles|Select-Object -ExpandProperty FullName)
+        $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
+            -RunConfig $package.run_config
         Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
             -RunConfig $package.run_config -Status success -Software $software `
-            -Outputs $outputs
+            -Outputs ($outputs+@($retentionActions))
         "STATUS=PASS RUN_ID=$RunId EXECUTION_STAGE=release_construction_gate RELEASE_TAGS=100"
         return
     }
@@ -561,9 +569,11 @@ try {
     $outputs = @($modelPath,$rawMetadataPath,$summaryPath,$trajectoryPath,$particleStatePath,
         $rawPhaseSpacePath,$bootstrapReport,$guiVerifyReport,$stateContractReport,
         $package.summary)
+    $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
+        -RunConfig $package.run_config
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
         -RunConfig $package.run_config -Status success -Software $software `
-        -Outputs $outputs
+        -Outputs ($outputs+@($retentionActions))
     "STATUS=PASS RUN_ID=$RunId HITS=$($solverSummary.hits) TRANSMISSION=$($solverSummary.transmission)"
 } catch {
     $failureReason = "$failureStage`: $($_.Exception.Message)"

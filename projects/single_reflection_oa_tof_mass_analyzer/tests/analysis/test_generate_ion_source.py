@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.generate_ion_source import (
+from common.ion_release.dotnet_gaussian_box_ion11 import (
     DotNetFrameworkRandom,
     _serialized_ion_source,
     generate_ion_source,

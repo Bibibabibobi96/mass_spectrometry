@@ -19,8 +19,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-ELEMENTARY_CHARGE_C = 1.602176634e-19
-ATOMIC_MASS_CONSTANT_KG = 1.66053906892e-27
+from common.contracts.particle_physics import (
+    ELEMENTARY_CHARGE_C,
+    LEGACY_OA_TOF_ATOMIC_MASS_CONSTANT_KG as ATOMIC_MASS_CONSTANT_KG,
+    thomson_to_kg_per_c,
+)
 
 
 class PhysicsContractError(ValueError):
@@ -114,7 +117,9 @@ def flight_time_s(
         stage1_field_v_per_mm,
         stage2_field_v_per_mm,
     )
-    mass_over_charge_si = mu * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C
+    mass_over_charge_si = thomson_to_kg_per_c(
+        mu, atomic_mass_constant_kg=ATOMIC_MASS_CONSTANT_KG,
+    )
     return 1.0e-3 * math.sqrt(mass_over_charge_si / 2.0) * tau
 
 
@@ -386,7 +391,9 @@ def energy_aberration_diagnostics(
         solution.stage1_field_v_per_mm,
         solution.stage2_field_v_per_mm,
     )
-    mass_over_charge_si = mu * ATOMIC_MASS_CONSTANT_KG / ELEMENTARY_CHARGE_C
+    mass_over_charge_si = thomson_to_kg_per_c(
+        mu, atomic_mass_constant_kg=ATOMIC_MASS_CONSTANT_KG,
+    )
     factor = 1.0e-3 * math.sqrt(mass_over_charge_si / 2.0)
     t0 = factor * tau0
     delta_t_endpoint = factor * abs(tau3) * half_range**3 / 6.0

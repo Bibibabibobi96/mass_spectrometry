@@ -81,7 +81,7 @@ $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $upstreamProjectId `
   -Mode 'rf_to_oatof_pulse_capture' -Software $software `
-  -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath `
+  -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled -UseShortExecutionPath `
   -ExpectedExecutionRelativePaths $executionCapacityPaths
 $manifestToolRoot = $repoRoot
 $resourceBudgetExceeded = $false

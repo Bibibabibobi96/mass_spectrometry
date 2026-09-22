@@ -21,6 +21,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){
 $software=@('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
   -Project 'rf_quadrupole_ion_optics' -Mode 'mass_filter_reference' -Software $software `
+  -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
   -AdditionalDirectories @('comsol','runtime') -UseShortExecutionPath
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir
 $report=Join-Path $logDir 'comsol_mass_filter_scan.txt'
@@ -194,8 +195,10 @@ try {
   $centerToken=('{0:g}' -f $centerMass).Replace('.','p')
   $centerModel=Join-Path $runDir "comsol\mass_$centerToken`_Th\rf_quadrupole_ion_optics__model.mph"
   if(Test-Path -LiteralPath $centerModel -PathType Leaf){$outputs+=$centerModel}
-  Write-RunManifest -Python $package.python -RepoRoot $repoRoot -RunConfig $package.run_config `
-    -Status success -Software $software -Outputs $outputs
+  $retentionActions=Apply-RunArtifactRetention -Python $package.python -RepoRoot $repoRoot `
+    -RunConfig $package.run_config
+  Write-VerifiedRunManifest -Python $package.python -RepoRoot $repoRoot -RunConfig $package.run_config `
+    -Status success -Software $software -Outputs ($outputs+@($retentionActions))
   "STATUS=PASS RUN_ID=$RunId FUNCTIONAL_GATE=$($metricDocument.status)"
 } catch {
   Complete-FailedRun -Python $package.python -RepoRoot $repoRoot -RunConfig $package.run_config `

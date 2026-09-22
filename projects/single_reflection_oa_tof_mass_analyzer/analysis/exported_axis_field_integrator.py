@@ -13,8 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-ELEMENTARY_CHARGE_C = 1.602176634e-19
-ATOMIC_MASS_KG = 1.66053906660e-27
+from common.contracts.particle_physics import charge_to_mass_c_per_kg
 
 
 @dataclass(frozen=True)
@@ -64,7 +63,7 @@ def integrate_axis_to_plane_us(
         raise ValueError("start/stop plane lies outside exported field")
     if mass_th <= 0 or charge_state == 0 or dt_us <= 0 or max_elapsed_us <= 0:
         raise ValueError("mass, charge, and time step must be nonzero and positive where applicable")
-    q_over_m_si = charge_state * ELEMENTARY_CHARGE_C / (mass_th * ATOMIC_MASS_KG)
+    q_over_m_si = charge_to_mass_c_per_kg(mass_th, charge_state)
     # 1 V/mm = 1e3 V/m; 1 m/s^2 = 1e-9 mm/us^2.
     def acceleration(z_mm: float) -> float:
         return q_over_m_si * float(np.interp(z_mm, field.z_mm, field.ez_v_per_mm * 1.0e3)) * 1.0e-9

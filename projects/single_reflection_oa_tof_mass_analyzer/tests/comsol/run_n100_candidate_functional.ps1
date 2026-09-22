@@ -20,7 +20,8 @@ $ion = Join-Path $artifactRoot 'formal\simion\oatof_comsol_524amu_gaussian_N100.
 $software = @('COMSOL 6.4', 'MATLAB R2025b', 'Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'comsol_n100_candidate_functional' `
-  -Software $software -AdditionalDirectories @('comsol') -UseShortExecutionPath
+  -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
+  -AdditionalDirectories @('comsol') -UseShortExecutionPath
 $model = Join-Path $package.artifact_run_dir 'comsol\single_reflection_oa_tof_mass_analyzer__candidate_n100.mph'
 $report = Join-Path $package.log_dir 'comsol_candidate_report.txt'
 
@@ -120,11 +121,11 @@ try {
     ForEach-Object { $_.FullName })
   $outputs += @(Get-ChildItem -LiteralPath $analysisDir -File |
     ForEach-Object { $_.FullName })
-  Write-RunManifest -Python $package.python -RepoRoot $repoRoot `
-    -RunConfig $package.run_config -Status success -Software $software -Outputs $outputs
-  & $package.python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
-    (Join-Path $package.run_dir 'run_manifest.json') --require-status success
-  if ($LASTEXITCODE -ne 0) { throw 'COMSOL candidate manifest verification failed.' }
+  $retentionActions=Apply-RunArtifactRetention -Python $package.python -RepoRoot $repoRoot `
+    -RunConfig $package.run_config
+  Write-VerifiedRunManifest -Python $package.python -RepoRoot $repoRoot `
+    -RunConfig $package.run_config -Status success -Software $software `
+    -Outputs ($outputs+@($retentionActions))
   Write-Output "OATOF_COMSOL_N100=PASS RUN_ID=$RunId RUN_DIR=$($package.run_dir)"
 }
 catch {
@@ -133,11 +134,6 @@ catch {
     -RunConfig $package.run_config -Summary $package.summary `
     -SummaryRole 'oa_tof_comsol_n100_candidate_functional_summary' `
     -Reason $reason -Software $software
-  $failedOutputs = @($package.summary)
-  if (Test-Path -LiteralPath $report -PathType Leaf) { $failedOutputs += $report }
-  Write-RunManifest -Python $package.python -RepoRoot $repoRoot `
-    -RunConfig $package.run_config -Status failed -Software $software `
-    -Outputs $failedOutputs
   throw
 }
 finally {

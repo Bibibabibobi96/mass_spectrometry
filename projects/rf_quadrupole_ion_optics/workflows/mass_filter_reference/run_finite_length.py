@@ -23,6 +23,8 @@ import matplotlib
 import numpy as np
 from scipy.constants import atomic_mass, elementary_charge, electron_volt
 
+from common.ion_release.numpy_box_cone import sample_numpy_box_cone_phase_space
+
 from . import theory
 
 
@@ -91,35 +93,23 @@ def validate_l1_contract(
     }
 
 
-def generate_particles(
+def _l1_particles_from_release(
     source: dict[str, Any], particle_count: int, random_seed: int
 ) -> dict[str, np.ndarray]:
-    """Sample the documented source envelope deterministically in SI units."""
-    rng = np.random.default_rng(random_seed)
-    position = source["position_mm"]
-    energy = source["kinetic_energy_eV"]
-    half_angle = math.radians(float(source["direction"]["half_angle_deg"]))
-    cos_theta = rng.uniform(math.cos(half_angle), 1.0, particle_count)
-    sin_theta = np.sqrt(1.0 - cos_theta**2)
-    azimuth = rng.uniform(0.0, 2.0 * math.pi, particle_count)
+    """Project the common source release to the L1 integrator's SI state."""
+    release = sample_numpy_box_cone_phase_space(
+        source=source,
+        seed=random_seed,
+        particle_count=particle_count,
+    )
     return {
-        "x_m": rng.uniform(
-            float(position["transverse_1"]["min"]),
-            float(position["transverse_1"]["max"]),
-            particle_count,
-        ) * 1e-3,
-        "y_m": rng.uniform(
-            float(position["transverse_2"]["min"]),
-            float(position["transverse_2"]["max"]),
-            particle_count,
-        ) * 1e-3,
-        "energy_j": rng.uniform(
-            float(energy["min"]), float(energy["max"]), particle_count
-        ) * electron_volt,
-        "direction_x": sin_theta * np.cos(azimuth),
-        "direction_y": sin_theta * np.sin(azimuth),
-        "direction_z": cos_theta,
-        "rf_phase_rad": rng.uniform(0.0, 2.0 * math.pi, particle_count),
+        "x_m": release["transverse_1_mm"] * 1e-3,
+        "y_m": release["transverse_2_mm"] * 1e-3,
+        "energy_j": release["energy_eV"] * electron_volt,
+        "direction_x": release["direction_transverse_1"],
+        "direction_y": release["direction_transverse_2"],
+        "direction_z": release["direction_axial"],
+        "rf_phase_rad": release["phase_rad"],
     }
 
 
@@ -263,7 +253,11 @@ def run(
     source = load_json(source_path)
     derived = validate_l1_contract(baseline, mode, source)
     screen = mode["functional_screen"]
-    particles = generate_particles(source, int(screen["particle_count"]), int(screen["random_seed"]))
+    particles = _l1_particles_from_release(
+        source,
+        int(screen["particle_count"]),
+        int(screen["random_seed"]),
+    )
     destination = artifact_project_root.resolve() / "runs" / run_id
     if destination.exists():
         raise FileExistsError(destination)

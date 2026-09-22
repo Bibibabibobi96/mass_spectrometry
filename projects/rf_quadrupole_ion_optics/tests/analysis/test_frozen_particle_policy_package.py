@@ -34,6 +34,9 @@ RELATIVE_PATHS = (
     r"common\contracts\particle_count_policy.py",
     r"common\contracts\particle_count_policy.json",
     r"common\contracts\file_identity.py",
+    r"common\ion_release\__init__.py",
+    r"common\ion_release\cylinder.py",
+    r"common\ion_release\numpy_ion11_box.py",
     r"common\multipole\__init__.py",
     r"common\multipole\particle_source_preflight.py",
 )
@@ -46,6 +49,8 @@ REQUIRED_MODULES = (
     "common.contracts.particle_physics",
     "common.contracts.particle_count_policy",
     "common.contracts.file_identity",
+    "common.ion_release",
+    "common.ion_release.numpy_ion11_box",
     "common.multipole",
     "common.multipole.particle_source_preflight",
 )

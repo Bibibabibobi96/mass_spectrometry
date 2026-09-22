@@ -13,7 +13,7 @@ from common.contracts.particle_count_policy import (
     validate_prefix_particle_sources,
     validate_standard_particle_count,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.generate_ion_source import (
+from common.ion_release.dotnet_gaussian_box_ion11 import (
     _serialized_ion_source,
     generate_ion_source,
     validate_ion_source,

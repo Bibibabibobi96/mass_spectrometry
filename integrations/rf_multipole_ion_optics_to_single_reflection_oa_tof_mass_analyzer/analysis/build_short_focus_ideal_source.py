@@ -7,8 +7,9 @@ import csv
 import math
 from pathlib import Path
 
-E_CHARGE = 1.602176634e-19
-AMU_KG = 1.66053906660e-27
+from common.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
+
+
 PARTICLES = 1000
 MASS_AMU = 100.0
 ENTRY_GLOBAL_X_MM = -88.01362184380704
@@ -23,7 +24,7 @@ SLOPE_VZ_M_S_PER_MM = 228.80604377795845
 
 
 def build(output: Path) -> None:
-    speed = math.sqrt(2.0 * 10.0 * E_CHARGE / (MASS_AMU * AMU_KG))
+    speed = speed_m_s_from_kinetic_energy_ev(MASS_AMU, 10.0)
     rows = []
     for index in range(PARTICLES):
         desired_z = SOURCE_CENTER_Z_MM - 0.5 + index / (PARTICLES - 1)
