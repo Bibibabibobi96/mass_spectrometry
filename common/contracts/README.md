@@ -97,7 +97,8 @@ startup与maintenance均报告总耗时和分段耗时；正常目标为5秒，�
 
 历史仓库 source `scratch/` 的删除只能使用`historical_source_scratch_retirement.py`：它要求
 校准外部范围、owner批准证据及其SHA-256，并在证据中逐项列出规范化的`retirement_targets`子目录。入口拒绝
-重叠目标、符号链接、活动消费者和受保护路径；先冻结这些目标的逐文件清单及可续做收据，随后才可用`--apply`。
+重叠目标、符号链接、活动消费者和受保护路径；先冻结这些目标的路径/字节清单及可续做收据，随后才可用`--apply`。
+它只哈希小型授权证据，不为可重建大 payload 进行删除前或删除时的内容扫描。
 它绝不删除`scratch/`根或未列出的兄弟目录，完成后保留`repository_scratch`台账根记录并只扣除已处置字节。
 
 maintenance先处理`ready`、未pin且无租约保护的`rebuildable_payload`。`published_cache`不会进入通用删除队列；

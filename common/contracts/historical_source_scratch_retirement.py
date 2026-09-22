@@ -111,6 +111,13 @@ def _authorization(path: Path, digest: str, owner: str, source: Path, *, require
 
 
 def _inventory(source: Path, targets: list[str]) -> list[dict[str, Any]]:
+    """Capture the approved scratch layout without re-reading payload bytes.
+
+    The authorization document is small and identity-bound.  The large,
+    rebuildable scratch payload is protected by its exact paths, regular-file
+    checks and byte counts in the durable receipt; it is never content-hashed
+    just before deletion.
+    """
     files: list[dict[str, Any]] = []
     for target_name in targets:
         target = _target_path(source, target_name, require_exists=True)
@@ -119,7 +126,7 @@ def _inventory(source: Path, targets: list[str]) -> list[dict[str, Any]]:
                 raise ValueError("source scratch inventory contains a symbolic link")
             if item.is_file():
                 files.append({"target": target_name, "path": item.relative_to(source).as_posix(),
-                              "bytes": item.stat().st_size, "sha256": file_sha256(item)})
+                              "bytes": item.stat().st_size})
     return files
 
 
@@ -226,7 +233,9 @@ def apply(plan_: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("source scratch completed removal reappeared")
             continue
         if path.exists():
-            if len(list(remove_recorded_files(source, [record]))) != 1:
+            if len(list(remove_recorded_files(
+                source, [record], identities_verified=True,
+            ))) != 1:
                 raise ValueError("source scratch recorded removal did not remove its file")
             outcome = "removed"
         else:

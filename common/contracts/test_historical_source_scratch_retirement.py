@@ -101,6 +101,16 @@ class SourceScratchRetirementTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "identity"):
             apply(disposition)
 
+    def test_large_payload_is_not_hashed_for_inventory_or_removal(self):
+        disposition = self.disposition()
+        self.assertNotIn("sha256", disposition["files"][0])
+        with mock.patch(
+            "common.contracts.historical_source_scratch_retirement.file_sha256",
+            side_effect=lambda path: file_sha256(path),
+        ) as digest:
+            apply(disposition)
+        self.assertEqual(digest.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
