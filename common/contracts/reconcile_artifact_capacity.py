@@ -11,6 +11,7 @@ import shutil
 import time
 from contextlib import contextmanager
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -338,6 +339,99 @@ def _lease_ids_for_target(
     return sorted(matched)
 
 
+def _current_gui_review_retention(item: dict[str, Any], target: Path) -> bool:
+    """Recognize a current, receipted read-only GUI package.
+
+    A source receipt and the ``current_`` package name establish its limited
+    inspection purpose.  This projection does not create a new retention
+    contract or infer that the user has completed the inspection.
+    """
+
+    candidates = [target]
+    if target.name == "reviews" and target.is_dir():
+        children = [child for child in target.iterdir() if child.is_dir() and not child.is_symlink()]
+        if len(children) == 1:
+            candidates = children
+    for candidate in candidates:
+        if not candidate.name.startswith("current_"):
+            continue
+        for name in ("inspection_receipt.json", "release_receipt.json"):
+            receipt = _load_object(candidate / name)
+            if receipt is None:
+                continue
+            if receipt.get("status") in {"ready", "materialized"}:
+                return True
+    return False
+
+
+@lru_cache(maxsize=8)
+def _current_gui_source_paths(root_text: str) -> tuple[str, ...]:
+    """Index explicit current-GUI source paths once per maintenance process."""
+
+    root = Path(root_text)
+    sources: set[str] = set()
+    for review_root in root.glob("projects/*/reviews"):
+        if not review_root.is_dir() or review_root.is_symlink():
+            continue
+        for package in review_root.glob("current_*"):
+            if not package.is_dir() or package.is_symlink():
+                continue
+            for name in ("inspection_receipt.json", "release_receipt.json"):
+                receipt = _load_object(package / name)
+                if receipt is None or receipt.get("status") not in {"ready", "materialized"}:
+                    continue
+                source_run = receipt.get("source_run")
+                if isinstance(source_run, str) and source_run:
+                    sources.add(str((review_root.parent / "runs" / source_run).resolve(strict=False)))
+                for value in (
+                    receipt.get("trajectory_log"), receipt.get("materialization"),
+                    receipt.get("observation"),
+                    receipt.get("native_runtime", {}).get("checkpoint")
+                    if isinstance(receipt.get("native_runtime"), dict) else None,
+                ):
+                    if isinstance(value, str) and value:
+                        sources.add(str(Path(value).resolve(strict=False)))
+    return tuple(sorted(sources))
+
+
+def _current_gui_source_retention(root: Path, target: Path) -> bool:
+    """Return whether a current GUI receipt explicitly names this source tree."""
+
+    target_resolved = target.resolve(strict=False)
+    return any(
+        target_resolved == Path(source) or target_resolved in Path(source).parents
+        for source in _current_gui_source_paths(str(root.resolve(strict=False)))
+    )
+
+
+def _consumer_has_active_protection(
+    root: Path, consumers: object, leases: dict[str, Any],
+) -> bool:
+    """Require a live lease that explicitly covers a structured consumer.
+
+    Historical config references are useful provenance but are not evidence of
+    current use.  Only a live lease over the consumer's path extends a
+    consumer protection classification.
+    """
+
+    if not isinstance(consumers, list):
+        return False
+    protected = [
+        Path(value).resolve(strict=False)
+        for lease in leases["audit"] if lease.get("status") == "active"
+        for value in lease.get("protected_paths", ())
+    ]
+    for value in consumers:
+        if not isinstance(value, str) or not value:
+            continue
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        if protection.path_is_protected(candidate.resolve(strict=False), protected):
+            return True
+    return False
+
+
 def _maintenance_management_summary(
     root: Path, ledger: dict[str, Any], leases: dict[str, Any], *,
     target_bytes: int, required_free_bytes: int, free_bytes: int,
@@ -366,7 +460,12 @@ def _maintenance_management_summary(
         lease_ids = _lease_ids_for_target(target, cache_key, leases)
         action: str | None = None
         reason: str | None = None
-        if item["status"] == "writing":
+        if item["status"] == "writing" and (
+            _current_gui_review_retention(item, target)
+            or _current_gui_source_retention(root, target)
+        ):
+            action, reason = "retain_current_gui_until_owner_closure", "current_receipted_gui_review"
+        elif item["status"] == "writing":
             action, reason = "recover_or_disposition", "writing_requires_owner_recovery"
         elif item.get("pin") is True:
             action, reason = "review_pin_for_release", "object_is_pinned"
@@ -496,6 +595,7 @@ def _maintenance_plan(
         root, ledger, leases, target_bytes=target_bytes,
         required_free_bytes=required_free, free_bytes=free_bytes, planned=planned,
     )
+    historical_closure = _historical_closure_summary(root, ledger, leases)
     return _finish({
         "schema_version": 1, "role": "artifact_capacity_gate",
         "artifact_root": str(root), "target_bytes": target_bytes,
@@ -508,6 +608,7 @@ def _maintenance_plan(
         "capacity_ledger": str(ledger_location.absolute()),
         "protection_lease_audit": leases["audit"],
         "management_summary": management_summary,
+        "historical_closure_summary": historical_closure,
         "measurement_mode": "LEDGER_MAINTENANCE",
     }, timings, "maintenance")
 
@@ -961,7 +1062,9 @@ def _audit_pa_transaction_owner(root: Path) -> dict[str, int]:
     return audit_pa_transaction_maintenance(root / "common" / "simion" / "pa_family_cache")
 
 
-def _historical_closure_summary(root: Path, ledger: dict[str, Any]) -> list[dict[str, Any]]:
+def _historical_closure_summary(
+    root: Path, ledger: dict[str, Any], leases: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Classify writing ranges from their existing lightweight evidence.
 
     This is deliberately an audit projection, rather than a second ledger or
@@ -972,7 +1075,8 @@ def _historical_closure_summary(root: Path, ledger: dict[str, Any]) -> list[dict
     """
 
     run_statuses: dict[Path, str] = {}
-    groups: dict[tuple[str, str, str], dict[str, int]] = {}
+    lease_state = leases if leases is not None else protection.load_capacity_protection_leases(root)
+    groups: dict[tuple[str, str, str, str], dict[str, int]] = {}
     for item in ledger["objects"]:
         if item.get("status") != "writing":
             continue
@@ -980,8 +1084,17 @@ def _historical_closure_summary(root: Path, ledger: dict[str, Any]) -> list[dict
         target = root / relative
         reason = str(item.get("recovery_reason", "unknown"))
         category = "owner_evidence_not_recognized"
-        if reason == "structured_nonterminal_run_reference" or item.get("consumers"):
-            category = "active_or_handoff_consumer"
+        route = "owner_evidence_review"
+        if _current_gui_source_retention(root, target):
+            category, route = "normal_managed_retention", "owner_disposition_after_gui_review"
+        elif reason == "structured_nonterminal_run_reference" or item.get("consumers"):
+            if _consumer_has_active_protection(root, item.get("consumers"), lease_state):
+                category, route = "normal_managed_retention", "release_when_consumer_lease_closes"
+            else:
+                category, route = (
+                    "historical_consumer_reference_requires_owner_decision",
+                    "owner_abandonment_or_recovery_decision",
+                )
         elif reason == "run_manifest_not_terminal":
             run = target if target.parent.name == "runs" else next(
                 (parent for parent in target.parents if parent.parent.name == "runs"), None
@@ -993,12 +1106,12 @@ def _historical_closure_summary(root: Path, ledger: dict[str, Any]) -> list[dict
                     manifest = _load_object(run / "run_manifest.json")
                     status = str(manifest.get("status")) if manifest else "missing_or_invalid"
                     run_statuses[run] = status
-            category = (
-                "workflow_checkpoint_requires_owner_decision"
-                if status == "checkpoint" else "terminal_or_contract_reconciliation_required"
-            )
+            if status == "checkpoint":
+                category, route = "workflow_checkpoint_requires_owner_decision", "owner_abandonment_or_recovery_decision"
+            else:
+                category, route = "terminal_or_contract_reconciliation_required", "owner_contract_reconciliation"
         elif reason == "run_contract_missing_or_invalid":
-            category = "historical_run_contract_missing"
+            category, route = "historical_run_contract_missing", "owner_abandonment_or_contract_recovery"
         elif reason == "review_package_lacks_sealed_owner_disposition_manifest":
             # Existing inspection/release receipts prove a source and intended
             # GUI scope, but not an exact retireable inventory or replacement.
@@ -1008,23 +1121,25 @@ def _historical_closure_summary(root: Path, ledger: dict[str, Any]) -> list[dict
                 for name in receipt_names
                 for candidate in target.glob(f"*/{name}")
             )
-            category = (
-                "review_source_evidence_unsealed"
-                if has_source_receipt
-                else "review_source_or_purpose_unknown"
-            )
+            if _current_gui_review_retention(item, target):
+                category, route = "normal_managed_retention", "owner_disposition_after_gui_review"
+            elif has_source_receipt:
+                category, route = "review_source_evidence_unsealed", "owner_abandonment_or_replacement_disposition"
+            else:
+                category, route = "review_source_or_purpose_unknown", "owner_purpose_decision"
         elif reason == "pa_transaction_recovery_required":
-            category = "pa_transaction_requires_producer_or_failure_evidence"
+            category, route = "pa_transaction_requires_producer_or_failure_evidence", "producer_failure_or_recovery_evidence"
         elif reason == "pa_runtime_state_recovery_required":
-            category = "pa_runtime_state_requires_owner_recovery"
-        key = (str(item["owner"]), reason, category)
+            category, route = "pa_runtime_state_requires_owner_recovery", "owner_runtime_recovery"
+        key = (str(item["owner"]), reason, category, route)
         group = groups.setdefault(key, {"object_count": 0, "bytes": 0})
         group["object_count"] += 1
         group["bytes"] += int(item["bytes"])
     return [
         {"owner": owner, "recovery_reason": reason, "classification": category,
+         "exit_route": route,
          "object_count": values["object_count"], "bytes": values["bytes"]}
-        for (owner, reason, category), values in sorted(groups.items())
+        for (owner, reason, category, route), values in sorted(groups.items())
     ]
 
 
@@ -1090,7 +1205,7 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
                 required_free_bytes=required_free,
                 free_bytes=free_after,
             )
-            outcome["historical_closure_summary"] = _historical_closure_summary(root, ledger)
+            outcome["historical_closure_summary"] = _historical_closure_summary(root, ledger, leases)
         outcome["satisfied_after_apply"] = bool(
             ledger is not None
             and not leases["legacy_unknown_commitment_count"]

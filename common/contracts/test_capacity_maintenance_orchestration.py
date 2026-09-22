@@ -229,7 +229,9 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
             checkpoint = root / "projects" / "p" / "runs" / "checkpoint"
             checkpoint.mkdir(parents=True)
             (checkpoint / "run_manifest.json").write_text(json.dumps({"status": "checkpoint"}))
-            review = root / "projects" / "p" / "reviews" / "current"
+            consumer = root / "projects" / "p" / "runs" / "consumer"
+            consumer.mkdir(parents=True)
+            review = root / "projects" / "p" / "reviews" / "current_gui"
             review.mkdir(parents=True)
             (review / "inspection_receipt.json").write_text(json.dumps({"status": "ready"}))
             capacity_ledger.initialize_capacity_ledger(root, objects=[
@@ -240,18 +242,55 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                     "projects/p/runs/active/output.pa0", bytes_count=5, status="writing", owner="p"
                 ) | {"recovery_reason": "structured_nonterminal_run_reference", "consumers": ["projects/p/runs/consumer"]},
                 _object(
-                    "projects/p/reviews/current", bytes_count=7, status="writing", owner="p"
+                    "projects/p/reviews/current_gui", bytes_count=7, status="writing", owner="p"
                 ) | {"recovery_reason": "review_package_lacks_sealed_owner_disposition_manifest"},
             ])
+            create_capacity_protection_lease(
+                root, lease_id="consumer", owner="fixture", ttl_seconds=600,
+                protected_paths=[consumer],
+            )
             summary = capacity._historical_closure_summary(root, capacity_ledger.load_capacity_ledger(root))
             self.assertEqual(
                 {(item["recovery_reason"], item["classification"]) for item in summary},
                 {
                     ("run_manifest_not_terminal", "workflow_checkpoint_requires_owner_decision"),
-                    ("structured_nonterminal_run_reference", "active_or_handoff_consumer"),
-                    ("review_package_lacks_sealed_owner_disposition_manifest", "review_source_evidence_unsealed"),
+                    ("structured_nonterminal_run_reference", "normal_managed_retention"),
+                    ("review_package_lacks_sealed_owner_disposition_manifest", "normal_managed_retention"),
                 },
             )
+
+    def test_historical_consumer_reference_without_live_lease_is_not_active(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capacity_ledger.initialize_capacity_ledger(root, objects=[
+                _object("projects/p/runs/old/output.pa0", bytes_count=5, status="writing", owner="p") | {
+                    "recovery_reason": "structured_nonterminal_run_reference",
+                    "consumers": ["projects/p/runs/old-consumer"],
+                },
+            ])
+            summary = capacity._historical_closure_summary(root, capacity_ledger.load_capacity_ledger(root))
+            self.assertEqual(summary[0]["classification"], "historical_consumer_reference_requires_owner_decision")
+            self.assertEqual(summary[0]["exit_route"], "owner_abandonment_or_recovery_decision")
+
+    def test_current_gui_receipt_protects_its_explicit_source_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run = root / "projects" / "p" / "runs" / "source"
+            run.mkdir(parents=True)
+            (run / "run_manifest.json").write_text(json.dumps({"status": "checkpoint"}))
+            review = root / "projects" / "p" / "reviews" / "current_gui"
+            review.mkdir(parents=True)
+            (review / "inspection_receipt.json").write_text(json.dumps({
+                "status": "ready", "source_run": "source",
+            }))
+            capacity_ledger.initialize_capacity_ledger(root, objects=[
+                _object("projects/p/runs/source", bytes_count=5, status="writing", owner="p") | {
+                    "recovery_reason": "run_manifest_not_terminal",
+                },
+            ])
+            summary = capacity._historical_closure_summary(root, capacity_ledger.load_capacity_ledger(root))
+            self.assertEqual(summary[0]["classification"], "normal_managed_retention")
+            self.assertEqual(summary[0]["exit_route"], "owner_disposition_after_gui_review")
 
     def test_default_cli_output_is_bounded_aggregate_without_object_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

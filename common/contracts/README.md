@@ -78,6 +78,12 @@ owner入口根据真实证据产生可重放的收尾决定，由同一maintenan
 拒绝新建、未知路径拒绝准入、单对象失败后继续独立对象，以及保留期到期后的实际处置；仅缩减台账占用
 或输出行动清单不能视为这一闭环完成。不新增第二份台账、通用任务调度器或平行删除入口。
 
+维护摘要将历史`writing`分为三类：有**当前租约明确覆盖**的消费者、唯一`current_*`已收据的 GUI
+检查包，或被该 GUI 收据直接引用的 source run 是正常受管保留，并给出租约关闭或 owner 处置的退出路径；已有 sealed owner disposition 的已放弃
+范围进入既有自动退休队列；其余 checkpoint、历史引用、失效合同和缺少 producer 证据的范围列为 owner
+决策或恢复对象。历史配置中的路径引用本身不是活动消费者，不能无限期保护载荷；当前 GUI 收据也不表示
+检查已经完成。该投影只读取小型 JSON 和租约，不打开或全文哈希 PA payload。
+
 台账只使用三类对象：`light_evidence`保留必要证据，`published_cache`保存公共可复用重型资产，
 `rebuildable_payload`保存可重建载荷。对象状态只使用`writing/ready/retirement_pending/retired`；pin必须说明理由，
 发布缓存必须绑定SHA-256代际。`writing`必须登记`owner/recovery_reason/review_deadline`，可列出消费者；到期后
