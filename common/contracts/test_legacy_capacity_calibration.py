@@ -399,6 +399,21 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             with self.assertRaisesRegex(CalibrationError, "cannot establish owner"):
                 migrate_canonical_v2_ledger_to_v3(other, review_deadline="2026-10-22")
 
+    def test_execution_alias_root_is_zero_byte_administrative_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aliases = root / "common" / "execution_aliases"
+            aliases.mkdir(parents=True)
+            with mock.patch.object(
+                calibration, "_candidate", side_effect=AssertionError("junction targets counted"),
+            ):
+                candidate, unresolved = calibration._execution_alias_root(
+                    root, aliases, "2026-10-22",
+                )
+            self.assertIsNone(unresolved)
+            self.assertEqual(candidate["path"], "common/execution_aliases")
+            self.assertEqual(candidate["bytes"], 0)
+
     def test_canonical_v2_to_v3_migration_refuses_unrelated_valid_v3(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"

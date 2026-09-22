@@ -259,7 +259,18 @@ def _execution_alias_root(root: Path, path: Path, review_deadline: str) -> tuple
     # Junction payload is already represented by its target object.  Recording
     # this zero-byte administrative root makes the declared scope explicit
     # while preserving the physical resident-byte invariant.
-    return _candidate(root, path, "light_evidence", owner_hint="common.run_artifact_support"), None
+    # Do not pass this administrative junction root through ``_candidate``:
+    # its generic byte counter would walk the junction targets and count their
+    # managed ranges for a second time.
+    return {
+        "path": _relative(root, path),
+        "class": "light_evidence",
+        "bytes": 0,
+        "status": "ready",
+        "pin": False,
+        "owner_hint": "common.run_artifact_support",
+        "evidence_paths": [],
+    }, None
 
 
 def _common_pa_cache(

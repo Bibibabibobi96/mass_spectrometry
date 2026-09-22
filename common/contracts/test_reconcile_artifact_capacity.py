@@ -110,6 +110,25 @@ def create_capacity_protection_lease(root: Path, **kwargs):
 
 
 class MaintenanceTargetCliTest(unittest.TestCase):
+    def test_maintenance_reconciles_execution_alias_root_without_scanning_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "common" / "execution_aliases").mkdir(parents=True)
+            _initialize_fixture_ledger(root, objects=[{
+                "path": "common/execution_aliases", "class": "light_evidence",
+                "bytes": 123, "status": "ready", "pin": False,
+                "owner": "common.run_artifact_support",
+            }])
+            outcome = normal_capacity._reconcile_execution_alias_root(root)
+            self.assertEqual(outcome, {"corrected_count": 1, "released_bytes": 123})
+            ledger = capacity_ledger.load_capacity_ledger(root)
+            self.assertEqual(ledger["resident_bytes"], 0)
+            self.assertEqual(ledger["objects"][0]["bytes"], 0)
+            self.assertEqual(
+                normal_capacity._reconcile_execution_alias_root(root),
+                {"corrected_count": 0, "released_bytes": 0},
+            )
+
     def test_maintenance_reaches_target_with_large_payload_and_resumes_pending_first(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -16,6 +16,7 @@ from typing import Any, Iterable
 
 from common.contracts import capacity_ledger
 from common.contracts import capacity_protection as protection
+from common.contracts.legacy_capacity_calibration import _execution_alias_root
 from common.contracts.legacy_owner_disposition import activate_owner_dispositions
 from common.contracts.file_identity import file_sha256
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
@@ -494,6 +495,41 @@ def _maintenance_plan(
         "management_summary": management_summary,
         "measurement_mode": "LEDGER_MAINTENANCE",
     }, timings, "maintenance")
+
+
+def _reconcile_execution_alias_root(root: Path) -> dict[str, int]:
+    """Correct the zero-byte administrative junction range without scanning targets."""
+
+    alias_root = root / "common" / "execution_aliases"
+    if not alias_root.exists():
+        return {"corrected_count": 0, "released_bytes": 0}
+    candidate, unresolved = _execution_alias_root(root, alias_root, date.today().isoformat())
+    if unresolved is not None or candidate is None:
+        raise RuntimeError("execution alias root is not a bounded internal junction set")
+    ledger = capacity_ledger.load_capacity_ledger(root)
+    if ledger is None:
+        raise RuntimeError("capacity ledger is missing or invalid")
+    recorded = next((
+        item for item in ledger["objects"]
+        if item.get("path") == candidate["path"] and item.get("status") != "retired"
+    ), None)
+    if recorded is None:
+        raise RuntimeError("execution alias root is absent from the calibrated ledger")
+    if (
+        recorded.get("class") != "light_evidence"
+        or recorded.get("owner") != "common.run_artifact_support"
+    ):
+        raise RuntimeError("execution alias root has an unexpected ledger identity")
+    previous_bytes = int(recorded["bytes"])
+    if previous_bytes:
+        capacity_ledger.record_capacity_object(
+            root, path=alias_root, object_class="light_evidence", bytes_count=0,
+            owner="common.run_artifact_support",
+        )
+    return {
+        "corrected_count": int(previous_bytes != 0),
+        "released_bytes": previous_bytes,
+    }
 
 
 def plan(
@@ -1068,8 +1104,10 @@ def main() -> None:
             print(json.dumps(lease, indent=2))
             return
         activation = {"activated_count": 0, "activated_bytes": 0}
+        alias_reconciliation = {"corrected_count": 0, "released_bytes": 0}
         if args.execution_mode == "maintenance":
             activation = activate_owner_dispositions(args.artifact_root)
+            alias_reconciliation = _reconcile_execution_alias_root(args.artifact_root)
         receipt = plan(
             args.artifact_root,
             target_bytes=int(target_gib * GIB),
@@ -1103,6 +1141,8 @@ def main() -> None:
             }
         if activation["activated_count"]:
             receipt["owner_dispositions_activated"] = activation
+        if alias_reconciliation["corrected_count"]:
+            receipt["administrative_aliases_reconciled"] = alias_reconciliation
         print(json.dumps(receipt, indent=2))
     except (ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
         parser.error(str(exc))
