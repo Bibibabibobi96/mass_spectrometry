@@ -1289,7 +1289,8 @@ def main() -> None:
             print(json.dumps(lease, indent=2))
             return
         activation = {"activated_count": 0, "activated_bytes": 0}
-        terminal_run_resume = {"checked_count": 0, "finalized_count": 0, "blocked_count": 0}
+        terminal_run_resume = {"checked_count": 0, "finalized_count": 0, "blocked_count": 0,
+                               "migrated_count": 0, "migrated_bytes": 0}
         pa_transaction_audit = {"checked_count": 0, "replayable_count": 0, "awaiting_verification_count": 0, "missing_failure_evidence_count": 0, "invalid_count": 0}
         alias_reconciliation = {"corrected_count": 0, "released_bytes": 0}
         if args.execution_mode == "maintenance" and args.apply:
@@ -1333,7 +1334,7 @@ def main() -> None:
             }
         if activation["activated_count"]:
             receipt["owner_dispositions_activated"] = activation
-        if terminal_run_resume["checked_count"]:
+        if any(terminal_run_resume.values()):
             receipt["terminal_run_lifecycle_resume"] = terminal_run_resume
         if pa_transaction_audit["checked_count"]:
             receipt["pa_transaction_owner_audit"] = pa_transaction_audit

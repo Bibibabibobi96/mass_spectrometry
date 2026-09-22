@@ -127,13 +127,51 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             (terminal / "run_manifest.json").write_text(json.dumps({"status": "failed"}), encoding="utf-8")
 
             result = resume_terminal_runs(root)
-            self.assertEqual(result, {"checked_count": 2, "finalized_count": 1, "blocked_count": 1})
+            self.assertEqual(result, {
+                "checked_count": 2, "finalized_count": 1, "blocked_count": 1,
+                "migrated_count": 0, "migrated_bytes": 0,
+            })
             statuses = {item["path"]: item["status"] for item in load_capacity_ledger(root)["objects"]}
             self.assertEqual(statuses["projects/p/runs/terminal"], "ready")
             self.assertEqual(statuses["projects/p/runs/checkpoint"], "writing")
             self.assertEqual(resume_terminal_runs(root), {
                 "checked_count": 1, "finalized_count": 0, "blocked_count": 1,
+                "migrated_count": 0, "migrated_bytes": 0,
             })
+
+    def test_maintenance_consolidates_sealed_legacy_compact_run_without_hashing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run, config = self.fixture(root, "legacy-terminal")
+            # This fixture deliberately removes only the newer lifecycle opt-in;
+            # its manifest and completed compact retention receipt are real.
+            legacy_config = json.loads(config.read_text(encoding="utf-8"))
+            legacy_config.pop("capacity_ledger_lifecycle")
+            config.write_text(json.dumps(legacy_config), encoding="utf-8")
+            (run / "retention_actions.json").write_text(json.dumps({
+                "schema_version": 1, "role": "artifact_retention_actions",
+                "status": "complete", "retention_class": "compact",
+            }), encoding="utf-8")
+            (run / "run_manifest.json").write_text(json.dumps({"status": "success"}), encoding="utf-8")
+            payload = run / "results.json"
+            payload.write_text("{}", encoding="utf-8")
+            entries = []
+            for path in run.rglob("*"):
+                if path.is_file():
+                    entries.append({
+                        "path": path.relative_to(root).as_posix(), "class": "light_evidence",
+                        "bytes": path.stat().st_size, "status": "writing", "pin": False,
+                        "owner": "p", "retention_reason": "legacy", "review_deadline": "2026-10-22",
+                        "retirement_route": "owner_managed_disposition",
+                        "recovery_reason": "run_contract_missing_or_invalid",
+                    })
+            initialize_capacity_ledger(root, objects=entries)
+            result = resume_terminal_runs(root)
+            self.assertEqual(result["migrated_count"], 1)
+            ledger = load_capacity_ledger(root)
+            self.assertEqual(len(ledger["objects"]), 1)
+            self.assertEqual(ledger["objects"][0]["path"], run.relative_to(root).as_posix())
+            self.assertEqual(ledger["objects"][0]["status"], "ready")
 
 
 if __name__ == "__main__":

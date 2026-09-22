@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts import capacity_ledger
+from common.contracts import capacity_protection
 from common.contracts.artifact_retention import classify_file
+from common.contracts.recorded_file_removal import write_json_atomic
 
 
 TERMINAL_STATUSES = {"success", "failed", "interrupted"}
@@ -23,6 +25,7 @@ HEAVY_RETENTION_ROLES = {
 }
 WRITING_REVIEW_DAYS = 7
 READY_REVIEW_DAYS = 30
+LEGACY_LIGHT_EVIDENCE_BUDGET_BYTES = 26_214_400
 
 
 def _run_lifecycle_duties(run_dir: Path, *, review_days: int, reason: str) -> dict[str, str]:
@@ -185,6 +188,106 @@ def finalize_ready(artifact_root: Path, run_config: Path) -> dict[str, Any]:
     }
 
 
+def _legacy_terminal_run_entries(
+    root: Path, ledger: dict[str, Any], run_dir: Path,
+) -> list[dict[str, Any]] | None:
+    """Return one safely consolidatable historical compact run, if any.
+
+    Old manifests already seal terminal outputs and retention decisions, but
+    predate the lifecycle opt-in field.  This bridge accepts only a complete
+    file-for-file ledger representation of a compact terminal run.  It uses
+    sizes and retention roles, never re-hashes payloads and never deletes.
+    """
+
+    try:
+        config = _load_json(run_dir / "run_config.json", "run config")
+        manifest = _load_json(run_dir / "run_manifest.json", "run manifest")
+        retention = _load_json(run_dir / "retention_actions.json", "retention receipt")
+    except ValueError:
+        return None
+    if (
+        manifest.get("status") not in TERMINAL_STATUSES
+        or config.get("artifact_retention", {}).get("class") != "compact"
+        or retention.get("role") != "artifact_retention_actions"
+        or retention.get("status") != "complete"
+        or retention.get("retention_class") != "compact"
+    ):
+        return None
+    _, records = _inventory(run_dir)
+    if sum(int(record["bytes"]) for record in records) > LEGACY_LIGHT_EVIDENCE_BUDGET_BYTES:
+        return None
+    if any(
+        classify_file(run_dir / record["path"], bytes_count=int(record["bytes"]))
+        in HEAVY_RETENTION_ROLES
+        for record in records
+    ):
+        return None
+    prefix = capacity_ledger.capacity_object_path(root, run_dir)[1] + "/"
+    entries = [
+        item for item in ledger["objects"]
+        if item.get("path", "").startswith(prefix) and item.get("status") != "retired"
+    ]
+    expected = {
+        prefix + record["path"]: int(record["bytes"])
+        for record in records
+    }
+    actual = {str(item["path"]): int(item["bytes"]) for item in entries}
+    if actual != expected or any(
+        item.get("class") != "light_evidence"
+        or item.get("status") != "writing"
+        or item.get("recovery_reason") != "run_contract_missing_or_invalid"
+        or item.get("owner") != run_dir.parent.parent.name
+        or item.get("consumers")
+        for item in entries
+    ):
+        return None
+    return entries
+
+
+def _consolidate_legacy_terminal_runs(root: Path) -> dict[str, int]:
+    """Atomically replace legacy per-file light evidence with its run range."""
+
+    migrated = migrated_bytes = 0
+    with capacity_protection.capacity_decision_lock(root):
+        ledger = capacity_ledger.load_capacity_ledger(root)
+        if ledger is None:
+            raise ValueError("run lifecycle maintenance requires a valid capacity ledger")
+        run_dirs = sorted({
+            root / Path(*Path(item["path"]).parts[:4])
+            for item in ledger["objects"]
+            if item.get("status") == "writing"
+            and item.get("recovery_reason") == "run_contract_missing_or_invalid"
+            and len(Path(item["path"]).parts) >= 5
+            and Path(item["path"]).parts[:3] == ("projects", Path(item["path"]).parts[1], "runs")
+        })
+        replacements: list[tuple[Path, list[dict[str, Any]], dict[str, Any]]] = []
+        for run_dir in run_dirs:
+            entries = _legacy_terminal_run_entries(root, ledger, run_dir)
+            if entries is None:
+                continue
+            total = sum(int(item["bytes"]) for item in entries)
+            replacements.append((run_dir, entries, {
+                "path": capacity_ledger.capacity_object_path(root, run_dir)[1],
+                "class": "light_evidence", "bytes": total, "status": "ready", "pin": False,
+                **_run_lifecycle_duties(
+                    run_dir, review_days=READY_REVIEW_DAYS,
+                    reason="legacy terminal compact run reconciled from sealed manifest and retention receipt",
+                ),
+            }))
+        if not replacements:
+            return {"migrated_count": 0, "migrated_bytes": 0}
+        retired_paths = {entry["path"] for _, entries, _ in replacements for entry in entries}
+        ledger["objects"] = [
+            entry for entry in ledger["objects"] if entry.get("path") not in retired_paths
+        ] + [replacement for _, _, replacement in replacements]
+        if not capacity_ledger._is_valid_capacity_ledger(root, ledger):
+            raise ValueError("legacy terminal run consolidation would invalidate ledger")
+        write_json_atomic(capacity_ledger.resolve_ledger_path(root), ledger)
+        migrated = len(replacements)
+        migrated_bytes = sum(replacement["bytes"] for _, _, replacement in replacements)
+    return {"migrated_count": migrated, "migrated_bytes": migrated_bytes}
+
+
 def resume_terminal_runs(artifact_root: Path) -> dict[str, int]:
     """Close already-terminal opted-in runs without resuming a computation.
 
@@ -226,7 +329,11 @@ def resume_terminal_runs(artifact_root: Path) -> dict[str, int]:
             blocked += 1
         else:
             finalized += 1
-    return {"checked_count": checked, "finalized_count": finalized, "blocked_count": blocked}
+    legacy = _consolidate_legacy_terminal_runs(root)
+    return {
+        "checked_count": checked, "finalized_count": finalized, "blocked_count": blocked,
+        **legacy,
+    }
 
 
 def main() -> int:
