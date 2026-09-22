@@ -17,6 +17,9 @@ import stat
 from pathlib import Path
 from typing import Any
 
+from common.contracts import capacity_ledger, capacity_protection
+from common.contracts.recorded_file_removal import write_json_atomic
+
 SHA256 = re.compile(r"[0-9A-Fa-f]{64}")
 ROLE = "artifact_capacity_owner_retirement_disposition"
 
@@ -133,4 +136,66 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
         "status": "ready", "pin": False, "owner_hint": owner.strip(),
         "disposition": {"id": expected_id, "generation": disposition["generation"].upper(),
                         "manifest_path": manifest_path, "files": records},
+    }
+
+
+def activate_owner_dispositions(root: Path) -> dict[str, Any]:
+    """Bind owner-approved legacy PA ranges into the current ledger.
+
+    This is the narrow bridge for the historical case where a valid PA family
+    predates its owner transaction.  It never discovers candidates, changes a
+    transaction-bound family, or removes bytes.  Maintenance calls it before
+    planning so owner intent remains the sole admission route to deletion.
+    """
+
+    root = root.resolve(strict=False)
+    directory = root / "common" / "capacity_calibration" / "owner_dispositions"
+    if not directory.exists():
+        return {"activated_count": 0, "activated_bytes": 0}
+    if not directory.is_dir() or directory.is_symlink():
+        raise ValueError("owner disposition directory is not a regular directory")
+    documents = sorted(directory.glob("*.json"))
+    approved: list[tuple[Path, dict[str, Any]]] = []
+    seen: set[str] = set()
+    for document_path in documents:
+        candidate = load_legacy_owner_disposition(root, document_path)
+        if candidate["path"] in seen:
+            raise ValueError("multiple owner dispositions target one managed range")
+        seen.add(candidate["path"])
+        approved.append((document_path, candidate))
+    if not approved:
+        return {"activated_count": 0, "activated_bytes": 0}
+    with capacity_protection.capacity_decision_lock(root):
+        ledger = capacity_ledger.load_capacity_ledger(root)
+        if ledger is None:
+            raise ValueError("capacity ledger is missing or invalid")
+        activated: list[dict[str, Any]] = []
+        for _, candidate in approved:
+            target, relative = capacity_ledger.capacity_object_path(root, candidate["path"])
+            entry = next((item for item in ledger["objects"] if item.get("path") == relative), None)
+            expected = {
+                "path": relative, "class": "rebuildable_payload",
+                "bytes": candidate["bytes"], "status": "ready", "pin": False,
+                "owner": candidate["owner_hint"], "disposition": candidate["disposition"],
+            }
+            if entry == expected:
+                continue
+            if (
+                entry is None or entry.get("class") != "published_cache"
+                or entry.get("status") != "writing"
+                or entry.get("recovery_reason") != "legacy_pa_cache_missing_owner_transaction"
+                or entry.get("owner") != candidate["owner_hint"]
+                or entry.get("identity", "").upper() != candidate["disposition"]["generation"]
+                or entry.get("bytes") != candidate["bytes"]
+            ):
+                raise ValueError("owner disposition conflicts with the current legacy PA ledger entry")
+            capacity_ledger._assert_unleased(root, target)
+            entry.clear()
+            entry.update(expected)
+            activated.append({"path": relative, "bytes": candidate["bytes"]})
+        if activated:
+            write_json_atomic(capacity_ledger.resolve_ledger_path(root), ledger)
+    return {
+        "activated_count": len(activated),
+        "activated_bytes": sum(item["bytes"] for item in activated),
     }

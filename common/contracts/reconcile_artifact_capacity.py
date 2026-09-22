@@ -16,6 +16,7 @@ from typing import Any, Iterable
 
 from common.contracts import capacity_ledger
 from common.contracts import capacity_protection as protection
+from common.contracts.legacy_owner_disposition import activate_owner_dispositions
 from common.contracts.file_identity import file_sha256
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
 
@@ -1065,6 +1066,9 @@ def main() -> None:
         if lease is not None:
             print(json.dumps(lease, indent=2))
             return
+        activation = {"activated_count": 0, "activated_bytes": 0}
+        if args.execution_mode == "maintenance":
+            activation = activate_owner_dispositions(args.artifact_root)
         receipt = plan(
             args.artifact_root,
             target_bytes=int(target_gib * GIB),
@@ -1096,6 +1100,8 @@ def main() -> None:
                 "planned_count": len(receipt.get("planned", [])),
                 "removed_count": len(receipt.get("removed", [])),
             }
+        if activation["activated_count"]:
+            receipt["owner_dispositions_activated"] = activation
         print(json.dumps(receipt, indent=2))
     except (ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
         parser.error(str(exc))

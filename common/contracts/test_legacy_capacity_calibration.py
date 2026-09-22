@@ -32,7 +32,9 @@ def _write_json(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
-def _write_owner_disposition(root: Path, target: Path, *, owner: str = "instrument") -> Path:
+def _write_owner_disposition(
+    root: Path, target: Path, *, owner: str = "instrument", generation: str = "D" * 64,
+) -> Path:
     manifest = target / "owner_manifest.json"
     _write_json(manifest, {"role": "legacy_owner_terminal", "status": "obsolete"})
     payload = target / "payload.bin"
@@ -46,7 +48,7 @@ def _write_owner_disposition(root: Path, target: Path, *, owner: str = "instrume
     seed = {
         "owner": owner, "target_path": target_path,
         "authority_evidence": {"path": evidence["path"]},
-        "generation": "D" * 64, "manifest_path": evidence["path"], "files": files,
+        "generation": generation, "manifest_path": evidence["path"], "files": files,
     }
     disposition_id = hashlib.sha256(json.dumps(seed, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest().upper()
     document = {
@@ -222,7 +224,9 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             root = Path(temporary) / "artifacts"
             _write_common_cache(root)
             target = root / "common" / "simion" / "pa_family_cache" / KEY
-            _write_owner_disposition(root, target, owner="common.simion.pa_family_cache")
+            _write_owner_disposition(
+                root, target, owner="common.simion.pa_family_cache", generation=GENERATION,
+            )
             report = build_calibration_inventory(root, review_deadline="2026-10-22")
             entry = next(item for item in report["objects"] if item["path"] == target.relative_to(root).as_posix())
             self.assertEqual(entry["class"], "rebuildable_payload")
@@ -242,6 +246,32 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             })
             with self.assertRaisesRegex(CalibrationError, "cannot bypass"):
                 build_calibration_inventory(root, review_deadline="2026-10-22")
+
+    def test_owner_disposition_activation_binds_only_matching_legacy_pa_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            _write_common_cache(root)
+            target = root / "common" / "simion" / "pa_family_cache" / KEY
+            _write_owner_disposition(
+                root, target, owner="common.simion.pa_family_cache", generation=GENERATION,
+            )
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(), "class": "published_cache",
+                "bytes": sum(item.stat().st_size for item in target.rglob("*") if item.is_file()),
+                "status": "writing", "pin": False, "identity": GENERATION,
+                "owner": "common.simion.pa_family_cache",
+                "recovery_reason": "legacy_pa_cache_missing_owner_transaction",
+                "review_deadline": "2026-10-22",
+            }], external_scopes=[])
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual(outcome["activated_count"], 1)
+            entry = capacity_ledger.load_capacity_ledger(root)["objects"][0]
+            self.assertEqual(entry["status"], "ready")
+            self.assertEqual(entry["class"], "rebuildable_payload")
+            self.assertIn("disposition", entry)
+            self.assertEqual(
+                legacy_owner_disposition.activate_owner_dispositions(root)["activated_count"], 0,
+            )
 
     def test_canonical_v2_to_v3_migration_binds_range_owners_and_writing_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
