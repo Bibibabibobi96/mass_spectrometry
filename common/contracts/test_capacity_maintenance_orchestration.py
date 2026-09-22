@@ -49,7 +49,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
         mutators = (
             "activate_owner_dispositions", "_register_workspace_scratch_scope",
             "_resume_source_scratch_dispositions", "_reconcile_execution_alias_root",
-            "_resume_terminal_run_owner", "_audit_pa_transaction_owner",
+            "_resume_terminal_run_owner", "_audit_pa_transaction_owner", "_recover_capacity_ledger_owner",
         )
         for apply_requested in (False, True):
             with self.subTest(apply=apply_requested), ExitStack() as stack:
@@ -74,6 +74,10 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
 
     def test_maintenance_owner_action_failure_does_not_skip_independent_actions(self) -> None:
         with (patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "1"}, clear=True),
+              patch.object(capacity, "_recover_capacity_ledger_owner", return_value={
+                  "checked_count": 0, "retired_count": 0, "removed_bytes": 0,
+                  "fresh_count": 0, "invalid_count": 0,
+              }),
               patch.object(capacity, "activate_owner_dispositions", side_effect=ValueError("bad disposition")),
               patch.object(capacity, "_resume_terminal_run_owner", return_value={
                   "checked_count": 1, "finalized_count": 1, "blocked_count": 0,

@@ -82,6 +82,8 @@ maintenance 以固定顺序调用 owner continuation；某一历史 owner 的 JS
 错误，仍继续其他彼此独立的 run、PA、scratch 与别名续做。终态历史 run 若已经逐项登记、总量在轻量
 证据预算内且不含重型角色，可从真实 terminal manifest 收敛为一个 `ready` light-evidence range；有完整
 compact retention receipt 时使用该 receipt，没有旧 retention 合同时也只允许这一无删除的轻量收敛。
+有效 ledger 旁、超过原子发布重试窗口的截断 ledger 临时文件由 capacity owner 以 pending receipt 续做退休；
+它只核对精确路径、字节数和租约，不读取或哈希该临时内容。
 
 维护摘要将历史`writing`分为三类：有**当前租约明确覆盖**的消费者、唯一`current_*`已收据的 GUI
 检查包，或被该 GUI 收据直接引用的 source run 是正常受管保留，并给出租约关闭或 owner 处置的退出路径；已有 sealed owner disposition 的已放弃

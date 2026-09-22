@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,31 @@ WRITING_DUTIES = {
 
 
 class DailyCapacityReconcileTest(unittest.TestCase):
+    def test_owner_recovers_only_stale_atomic_ledger_temp_without_payload_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "common" / ".capacity_ledger.json.crashed"
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"truncated ledger")
+            os.utime(target, (0, 0))
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(),
+                "class": "rebuildable_payload", "bytes": target.stat().st_size,
+                "status": "writing", "pin": False,
+                "owner": "common.capacity_lifecycle",
+                "recovery_reason": "stale_capacity_ledger_atomic_temp_requires_recovery",
+                "review_deadline": "2026-10-22",
+            }])
+            with patch("common.contracts.file_identity.file_sha256", side_effect=AssertionError("payload hash")):
+                outcome = capacity_ledger.recover_stale_atomic_ledger_temps(root)
+            self.assertEqual(outcome["retired_count"], 1)
+            self.assertEqual(outcome["removed_bytes"], len(b"truncated ledger"))
+            self.assertFalse(target.exists())
+            entry = capacity_ledger.load_capacity_ledger(root)["objects"][0]
+            self.assertEqual(entry["status"], "retired")
+            receipt = next((root / "common" / "capacity_disposal_receipts").glob("atomic-ledger-temp-*.json"))
+            self.assertEqual(json.loads(receipt.read_text(encoding="utf-8"))["status"], "retired")
+
     def test_loading_calibrated_ledger_does_not_resolve_payload_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

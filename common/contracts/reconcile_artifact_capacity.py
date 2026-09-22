@@ -1056,6 +1056,10 @@ def _resume_terminal_run_owner(root: Path) -> dict[str, int]:
     return resume_terminal_runs(root)
 
 
+def _recover_capacity_ledger_owner(root: Path) -> dict[str, int]:
+    return capacity_ledger.recover_stale_atomic_ledger_temps(root)
+
+
 def _audit_pa_transaction_owner(root: Path) -> dict[str, int]:
     from common.simion.pa_family_cache import audit_pa_transaction_maintenance
 
@@ -1066,6 +1070,10 @@ def _run_maintenance_owner_actions(root: Path) -> tuple[dict[str, dict[str, int]
     """Run independent owner continuations without masking later safe work."""
 
     actions = (
+        ("capacity_ledger_recovery", _recover_capacity_ledger_owner, {
+            "checked_count": 0, "retired_count": 0, "removed_bytes": 0,
+            "fresh_count": 0, "invalid_count": 0, "replayed_count": 0,
+        }),
         ("owner_dispositions", activate_owner_dispositions, {"activated_count": 0, "activated_bytes": 0}),
         ("terminal_run_lifecycle", _resume_terminal_run_owner, {
             "checked_count": 0, "finalized_count": 0, "blocked_count": 0,
@@ -1458,6 +1466,8 @@ def main() -> None:
             owner_actions, owner_action_failures = _run_maintenance_owner_actions(args.artifact_root)
         else:
             owner_actions = {
+                "capacity_ledger_recovery": {"checked_count": 0, "retired_count": 0, "removed_bytes": 0,
+                                             "fresh_count": 0, "invalid_count": 0, "replayed_count": 0},
                 "owner_dispositions": {"activated_count": 0, "activated_bytes": 0},
                 "terminal_run_lifecycle": {"checked_count": 0, "finalized_count": 0, "blocked_count": 0,
                                            "migrated_count": 0, "migrated_bytes": 0},
@@ -1498,6 +1508,8 @@ def main() -> None:
             }
         if owner_actions["owner_dispositions"]["activated_count"]:
             receipt["owner_dispositions_activated"] = owner_actions["owner_dispositions"]
+        if owner_actions["capacity_ledger_recovery"]["checked_count"]:
+            receipt["capacity_ledger_recovery"] = owner_actions["capacity_ledger_recovery"]
         if any(owner_actions["terminal_run_lifecycle"].values()):
             receipt["terminal_run_lifecycle_resume"] = owner_actions["terminal_run_lifecycle"]
         if owner_actions["pa_transaction_audit"]["checked_count"]:

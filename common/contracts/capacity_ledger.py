@@ -11,6 +11,7 @@ import json
 import math
 import os
 import re
+import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -19,6 +20,8 @@ from common.contracts import capacity_protection as protection
 from common.contracts.recorded_file_removal import write_json_atomic
 
 CAPACITY_LEDGER_RELATIVE_PATH = Path("common") / "capacity_ledger.json"
+STALE_ATOMIC_TEMP_PREFIX = ".capacity_ledger.json."
+STALE_ATOMIC_TEMP_MINIMUM_AGE_SECONDS = 1.0
 LEDGER_CLASSES = {"light_evidence", "published_cache", "rebuildable_payload"}
 LEDGER_STATUSES = {"writing", "ready", "retirement_pending", "retired"}
 EXTERNAL_SCOPE_ROLES = {
@@ -915,6 +918,99 @@ def retire_capacity_object(
         ledger["resident_bytes"] = int(ledger["resident_bytes"]) - amount
         write_json_atomic(destination, ledger)
     return entry
+
+
+def recover_stale_atomic_ledger_temps(root: Path) -> dict[str, int]:
+    """Retire crash-left ledger publication temps through the normal ledger.
+
+    ``write_json_atomic`` has a bounded 0.75-second replacement retry.  A
+    matching temp older than that interval, beside a valid current ledger, is
+    therefore a failed publication residue rather than a new artifact.  This
+    narrow owner recovery does not inspect its JSON payload or hash it.
+    """
+
+    root = root.resolve(strict=False)
+    receipt_directory = root / "common" / "capacity_disposal_receipts"
+    result = {"checked_count": 0, "retired_count": 0, "removed_bytes": 0,
+              "fresh_count": 0, "invalid_count": 0, "replayed_count": 0}
+    with protection.capacity_decision_lock(root):
+        ledger = load_capacity_ledger(root)
+        if ledger is None:
+            raise ValueError("capacity ledger is missing or invalid")
+        now = time.time()
+        candidates = [
+            item for item in ledger["objects"]
+            if item.get("status") in {"writing", "retirement_pending"}
+            and item.get("owner") == "common.capacity_lifecycle"
+            and Path(str(item.get("path", ""))).parent.as_posix() == "common"
+            and Path(str(item.get("path", ""))).name.startswith(STALE_ATOMIC_TEMP_PREFIX)
+        ]
+        for entry in candidates:
+            result["checked_count"] += 1
+            target, relative = capacity_object_path(root, entry["path"])
+            receipt = receipt_directory / f"atomic-ledger-temp-{target.name}.json"
+            if entry["status"] == "retirement_pending" and not target.exists():
+                try:
+                    receipt_document = json.loads(receipt.read_text(encoding="utf-8-sig"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    result["invalid_count"] += 1
+                    continue
+                if (receipt_document.get("role") != "capacity_ledger_atomic_temp_recovery"
+                        or receipt_document.get("status") not in {"retirement_pending", "retired"}
+                        or receipt_document.get("target_path") != relative
+                        or receipt_document.get("expected_bytes") != int(entry["bytes"])):
+                    result["invalid_count"] += 1
+                    continue
+                entry["status"] = "retired"
+                entry["retired_at_utc"] = _utc_now()
+                entry.pop("retirement_error", None)
+                ledger["resident_bytes"] -= int(entry["bytes"])
+                receipt_document["status"] = "retired"
+                receipt_document["removed_bytes"] = int(entry["bytes"])
+                write_json_atomic(receipt, receipt_document)
+                write_json_atomic(resolve_ledger_path(root), ledger)
+                result["retired_count"] += 1
+                result["removed_bytes"] += int(entry["bytes"])
+                result["replayed_count"] += 1
+                continue
+            if target.is_symlink() or not target.is_file() or target.stat().st_size != int(entry["bytes"]):
+                result["invalid_count"] += 1
+                continue
+            if (entry["status"] == "writing"
+                    and now - target.stat().st_mtime < STALE_ATOMIC_TEMP_MINIMUM_AGE_SECONDS):
+                result["fresh_count"] += 1
+                continue
+            _assert_unleased(root, target)
+            if entry["status"] == "writing":
+                entry["status"] = "retirement_pending"
+                entry.pop("recovery_reason", None)
+                entry.pop("recovery_task", None)
+                entry.pop("recovery_evidence_paths", None)
+                write_json_atomic(receipt, {
+                    "schema_version": 1,
+                    "role": "capacity_ledger_atomic_temp_recovery",
+                    "status": "retirement_pending",
+                    "target_path": relative,
+                    "expected_bytes": int(entry["bytes"]),
+                })
+                write_json_atomic(resolve_ledger_path(root), ledger)
+            try:
+                target.unlink()
+            except OSError as exc:
+                entry["retirement_error"] = f"{type(exc).__name__}: {exc}"
+                write_json_atomic(resolve_ledger_path(root), ledger)
+                continue
+            entry["status"] = "retired"
+            entry["retired_at_utc"] = _utc_now()
+            ledger["resident_bytes"] -= int(entry["bytes"])
+            receipt_document = json.loads(receipt.read_text(encoding="utf-8-sig"))
+            receipt_document["status"] = "retired"
+            receipt_document["removed_bytes"] = int(entry["bytes"])
+            write_json_atomic(receipt, receipt_document)
+            write_json_atomic(resolve_ledger_path(root), ledger)
+            result["retired_count"] += 1
+            result["removed_bytes"] += int(entry["bytes"])
+    return result
 
 
 def pending_disposal_targets(root: Path, path: Path | None = None) -> set[Path]:
