@@ -3,7 +3,8 @@
   "policy_id": "host-stage-admission",
   "cpu_admission_percent": 95.0,
   "memory_admission_reserve_bytes": 1073741824,
-  "io_slots": 1,
+  "io_slots": 0,
+  "io_pressure_queue_length_threshold": 2,
   "maximum_queue_bypasses": 8,
   "poll_milliseconds": 1000,
   "status_interval_seconds": 30,
@@ -41,6 +42,24 @@
       "unknown_peak": false,
       "heavy_stage": true
     },
+    "simion-flight": {
+      "schema_version": 1,
+      "cpu_cores": 0,
+      "memory_bytes": 0,
+      "io_slots": 1,
+      "exclusive_resources": [],
+      "unknown_peak": false,
+      "heavy_stage": true
+    },
+    "simion-dirichlet-response": {
+      "schema_version": 1,
+      "cpu_cores": 2,
+      "memory_bytes": 6442450944,
+      "io_slots": 1,
+      "exclusive_resources": [],
+      "unknown_peak": false,
+      "heavy_stage": false
+    },
     "unknown": {
       "schema_version": 1,
       "cpu_cores": 2,
@@ -57,9 +76,11 @@
     "GATE/ruff_all": "measured-small-check",
     "GATE/ruff_changed_python": "measured-small-check",
     "SIMION/pa_refine": "heavy-compute",
-    "SIMION/flight": "heavy-compute",
+    "SIMION/operating_pa_composition": "heavy-compute",
+    "SIMION/dirichlet_response_refine": "simion-dirichlet-response",
+    "SIMION/flight": "simion-flight",
     "SIMION/postprocess": "ordinary-light",
-    "SIMION/mrtof_flight": "heavy-compute",
+    "SIMION/mrtof_flight": "simion-flight",
     "SIMION/mrtof_postprocess": "ordinary-light",
     "COMSOL/solver": "heavy-compute",
     "GATE/theory_compute": "heavy-compute"
@@ -77,11 +98,14 @@
     "comsol-postprocess": "After this attempt's servers have fully exited, launcher postprocess returns and project postprocess performs output validation and metadata/summary/manifest publication. Only the listed COMSOL/solver stage holds the heavy permission; prepare and unlisted stages use ordinary-light.",
     "ordinary-light": "User-authorized efficiency-first declaration, not a measured worst-case peak or a sampling prerequisite: every unlisted stage requests 2 logical cores and 2 GiB, with no bulk I/O slot, regardless of role. The resolver caps CPU at the machine admission ceiling on small hosts. Aggregate promises and live pressure still control admission.",
     "snapshot_backoff": "Rejected stale snapshots are resampled after bounded randomized backoff, without a retry-count failure. The five-second delay ceiling preserves cancellation and reduces synchronized contention; invalid telemetry still fails closed.",
-    "io_slots": "One uncalibrated streaming I/O producer at a time; zero means metadata-only or no bulk I/O, not unrestricted disk access.",
+    "io_slots": "The host capacity value is zero, selecting telemetry-only admission because no reproducible benchmark currently establishes a static concurrent-stream limit. A stage budget of one marks bulk I/O and activates target-volume pressure checks; it is not a byte quota. Heavy-stage exclusion, CPU and memory admission remain independent. A positive host capacity may be restored only with recorded throughput evidence.",
+    "io_pressure_queue_length_threshold": "A single queued I/O request is normal while a bulk reader or writer is active and must not serialize independent response builds. The configured target-volume queue depth is the admission threshold; CPU, memory and heavy-stage rules remain separate safeguards.",
     "maximum_queue_bypasses": "Bounded backfilling within each task class: after eight later admissions of the same class, the older request blocks further admissions of that class until it can run. The other class remains eligible under the existing resource checks.",
     "measured-small-check": "Initial complete-tree observed envelopes with fourfold margin rounded upward to 64 MiB; not OS-enforced limits.",
     "safety_reserves": "Moved unchanged from the existing SIMION repository policy: 95 percent system CPU ceiling and 1 GiB physical-memory reserve. SIMION imports these same values.",
-    "heavy-compute": "Actual PA refinement and internally parallel ion flight hold the single heavy stage permission even after worker peaks are measured. Both ordinary declared light work and measured small checks may coexist within their CPU/memory/I/O budgets and live pressure limits. No permanent whole-host CPU or memory reservation is imposed; the existing internal planner manages live worker capacity.",
+    "heavy-compute": "Actual PA refinement and internally parallel ion flight hold the single heavy stage permission even after worker peaks are measured. Bulk-I/O heavy stages carry the one-slot marker so target-volume telemetry is consulted, but the uncalibrated static slot sum is disabled. Both ordinary declared light work and measured small checks may coexist within CPU, memory and live-pressure limits.",
+    "simion-flight": "SIMION flight remains a heavy stage so two flights or another heavy solve cannot overlap. It reserves one I/O stream only for the sequential PA-load phase instead of all three streams for the full trajectory run; live CPU, memory and target-volume I/O pressure still block admission independently.",
+    "simion-dirichlet-response": "Measured 0.25-mm local Dirichlet response builds use about 4.6 GiB and approximately one CPU core per SIMION process. A 6 GiB, two-core envelope and one bulk-I/O marker leave concurrency to live target-volume, CPU and memory pressure; no unmeasured fixed stream count is asserted.",
     "mrtof_stages": "PA preparation and postprocess publication use ordinary-light. Actual refinement uses SIMION/pa_refine and flight uses the listed heavy permission. The campaign does not retain a grant between rows.",
     "unknown": "Unknown peak is informational and does not classify work as heavy or authorize the internal worker planner. This explicit profile retains the ordinary declared light envelope."
   }

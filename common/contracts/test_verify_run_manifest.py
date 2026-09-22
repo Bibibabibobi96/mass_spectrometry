@@ -115,6 +115,12 @@ class VerifyRunManifestIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("RUN_MANIFEST_VERIFY=PASS", result.stdout)
 
+    def test_pending_terminal_journal_blocks_manifest_consumption(self) -> None:
+        (self.run / ".run_terminal_publication.json").write_text("{}\n", encoding="utf-8")
+        result = self._verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("publication is incomplete", result.stderr)
+
     def test_historical_run_relative_records_resolve_from_manifest(self) -> None:
         document = json.loads(self.manifest.read_text(encoding="utf-8"))
         document["run_config"]["path"] = "run_config.json"

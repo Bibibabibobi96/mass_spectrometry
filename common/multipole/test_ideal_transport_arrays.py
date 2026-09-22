@@ -11,6 +11,7 @@ from common.multipole.ideal_transport import (
     electric_field_xy,
     electric_field_xy_array,
     rf_waveform_voltage_array,
+    source_particles,
 )
 
 
@@ -46,6 +47,30 @@ class IdealTransportArrayTest(unittest.TestCase):
                 )
                 np.testing.assert_allclose(field_x, expected[:, 0], rtol=1e-14, atol=1e-12)
                 np.testing.assert_allclose(field_y, expected[:, 1], rtol=1e-14, atol=1e-12)
+
+    def test_source_projection_preserves_historical_l1_sequence(self):
+        particles = source_particles({
+            "rf": {"frequency_Hz": 1_100_000.0},
+            "particle_source": {
+                "count": 2, "seed": 20260722, "mass_amu": 100.0,
+                "charge_state": 1, "kinetic_energy_eV": 2.0,
+                "maximum_source_radius_mm": 0.5, "maximum_divergence_deg": 5.0,
+            },
+        })
+        self.assertEqual(particles, [
+            {
+                "particle_id": 1, "birth_time_s": 9.005917074680262e-07,
+                "x_m": -0.00030050212541290637, "y_m": 0.00021591805458583816,
+                "vx_m_s": 102.4804793163208, "vy_m_s": 35.336438712049,
+                "vz_m_s": 1961.5459142534435,
+            },
+            {
+                "particle_id": 2, "birth_time_s": 7.897899115417313e-07,
+                "x_m": 7.029143790761464e-05, "y_m": -0.00012228344093233935,
+                "vx_m_s": -110.31001246837077, "vy_m_s": 69.33907541741773,
+                "vz_m_s": 1960.2135291941072,
+            },
+        ])
 
 
 if __name__ == "__main__":

@@ -13,37 +13,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from common.contracts import capacity_protection as protection
 from common.contracts.artifact_retention import (
     _execute_removals,
+    _publish_removal_preflight,
     classify_file,
     load_run_retention,
 )
 from common.contracts.verify_run_manifest import record_path, verify_record
+from common.contracts.solver_review_retirement import _downstream_references
 
 
 TERMINAL_RECONCILABLE_STATUSES = frozenset({"failed", "interrupted"})
 HOST_LEASE_OWNER_ENV = "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"
-
-
-def assert_no_active_simion() -> None:
-    """Refuse reconciliation while any local SIMION process is active."""
-
-    if __import__("os").name != "nt":
-        return
-    listing = subprocess.run(
-        ["tasklist", "/FO", "CSV", "/NH"], cwd=Path.cwd(), text=True, capture_output=True,
-        encoding="utf-8", errors="replace", check=False, timeout=15,
-    )
-    if listing.returncode != 0:
-        raise RuntimeError("cannot establish that SIMION is inactive")
-    active = [line for line in listing.stdout.splitlines() if line.lower().startswith('"simion')]
-    if active:
-        raise RuntimeError("refusing compact reconciliation while SIMION is active")
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -69,7 +54,11 @@ def _artifact_root_for_run(run_dir: Path) -> Path:
     return run_dir.parents[3]
 
 
-def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[str, Any]:
+def inspect_run(
+    run_dir: Path, *, permit_manifest_drift: bool = False,
+    verify_manifest_records: bool = True,
+    permit_preflight_marker: bool = False,
+) -> dict[str, Any]:
     """Return a fail-closed reconciliation plan for one terminal compact run."""
 
     run_dir = run_dir.resolve()
@@ -94,13 +83,14 @@ def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[s
         raise ValueError(
             "summary status must match the terminal failed/interrupted manifest status"
         )
-    integrity = "verified"
-    try:
-        verify_record("run_config", manifest["run_config"], base_dir=run_dir)
-    except (AssertionError, KeyError, TypeError) as error:
-        if not permit_manifest_drift:
-            raise ValueError(f"manifest integrity must verify before reconciliation: {error}") from error
-        integrity = "degraded_manifest_drift"
+    integrity = "verified" if verify_manifest_records else "structural_precheck"
+    if verify_manifest_records:
+        try:
+            verify_record("run_config", manifest["run_config"], base_dir=run_dir)
+        except (AssertionError, KeyError, TypeError) as error:
+            if not permit_manifest_drift:
+                raise ValueError(f"manifest integrity must verify before reconciliation: {error}") from error
+            integrity = "degraded_manifest_drift"
     config_record = record_path(manifest["run_config"], base_dir=run_dir)
     if config_record != config_path:
         raise ValueError("manifest run_config must be the local run_config.json")
@@ -111,7 +101,13 @@ def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[s
         raise ValueError("only compact runs may be reconciled")
     action_path = run_dir / "retention_actions.json"
     if action_path.exists():
-        raise ValueError("run already has a retention reconciliation receipt")
+        action = _load(action_path)
+        if not (
+            permit_preflight_marker
+            and action.get("status") == "preflight_pending"
+            and action.get("retention_class") == "compact"
+        ):
+            raise ValueError("run already has a retention reconciliation receipt")
 
     recorded: set[Path] = {config_path, manifest_path}
     summary_recorded = False
@@ -124,16 +120,19 @@ def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[s
             if not isinstance(record, dict):
                 raise ValueError(f"manifest {section} record {index} is invalid")
             candidate = record_path(record, base_dir=run_dir)
-            if candidate != run_dir and run_dir not in candidate.parents:
+            local_candidate = candidate == run_dir or run_dir in candidate.parents
+            if section == "outputs" and not local_candidate:
                 raise ValueError(f"manifest {section} record escapes run directory")
-            try:
-                verify_record(f"{section} {index}", record, base_dir=run_dir)
-            except AssertionError as error:
-                if not permit_manifest_drift:
-                    raise ValueError(f"manifest integrity must verify before reconciliation: {error}") from error
-                integrity = "degraded_manifest_drift"
-            recorded.add(candidate)
-            summary_recorded = summary_recorded or candidate == summary_path
+            if verify_manifest_records:
+                try:
+                    verify_record(f"{section} {index}", record, base_dir=run_dir)
+                except AssertionError as error:
+                    if not permit_manifest_drift:
+                        raise ValueError(f"manifest integrity must verify before reconciliation: {error}") from error
+                    integrity = "degraded_manifest_drift"
+            if local_candidate:
+                recorded.add(candidate)
+                summary_recorded = summary_recorded or candidate == summary_path
 
     if not summary_recorded:
         raise ValueError("manifest must record the local summary.json")
@@ -147,11 +146,48 @@ def inspect_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> dict[s
             if path.resolve() in recorded:
                 raise ValueError(f"manifest-recorded file is forbidden in compact run: {path}")
             forbidden.append({"path": path.relative_to(run_dir).as_posix(), "bytes": path.stat().st_size, "retention_role": role})
+    all_files = {
+        path.relative_to(run_dir).as_posix()
+        for path in run_dir.rglob("*") if path.is_file() and not path.is_symlink()
+    }
+    removable_paths = {item["path"] for item in forbidden}
+    references = _downstream_references(
+        artifact_root,
+        run_dir,
+        run_dir.name,
+        removable_paths=removable_paths,
+        preserved_paths=all_files - removable_paths,
+    )
+    occupied_all = any(not item.get("path") for item in references["active"])
+    occupied_paths = {
+        item.get("path") for item in references["active"] if item.get("path")
+    }
+    occupied = [
+        {**item, "consumers": [
+            reference["run_config_path"] for reference in references["active"]
+            if not reference.get("path") or reference.get("path") == item["path"]
+        ]}
+        for item in forbidden
+        if occupied_all or item["path"].casefold() in {str(path).casefold() for path in occupied_paths}
+    ]
+    occupied_relative_paths = {item["path"].casefold() for item in occupied}
+    removable = [
+        item for item in forbidden
+        if item["path"].casefold() not in occupied_relative_paths
+    ]
     return {
         "run_dir": str(run_dir), "run_id": config_path.parent.name,
         "eligible": True, "terminal_status": manifest_status,
-        "manifest_integrity": integrity, "removable_file_count": len(forbidden),
-        "removable_bytes": sum(int(item["bytes"]) for item in forbidden), "removable": forbidden,
+        "manifest_integrity": integrity,
+        "manifest_records_verified": verify_manifest_records,
+        "removable_file_count": len(removable),
+        "removable_bytes": sum(int(item["bytes"]) for item in removable),
+        "removable": removable,
+        "occupied_file_count": len(occupied),
+        "occupied_bytes": sum(int(item["bytes"]) for item in occupied),
+        "occupied": occupied,
+        "active_preserved_file_references": references["active_preserved"],
+        "historical_references": references["historical"],
     }
 
 
@@ -160,13 +196,34 @@ def apply_run(run_dir: Path, *, permit_manifest_drift: bool = False) -> Path:
 
     if not os.environ.get(HOST_LEASE_OWNER_ENV):
         raise RuntimeError("apply requires the shared HostExecutionLease")
-    assert_no_active_simion()
-    report = inspect_run(run_dir, permit_manifest_drift=permit_manifest_drift)
-    directory, retention = load_run_retention(run_dir / "run_config.json")
-    removed = [
+    artifact_root = _artifact_root_for_run(run_dir.resolve())
+    with protection.capacity_decision_lock(artifact_root):
+        report = inspect_run(
+            run_dir,
+            permit_manifest_drift=permit_manifest_drift,
+            verify_manifest_records=False,
+            permit_preflight_marker=True,
+        )
+        directory, retention = load_run_retention(run_dir / "run_config.json")
+        removed = [
+            {**item, "action": "removed_unrecorded_interrupted_payload"}
+            for item in report["removable"]
+        ]
+        action_path = directory / "retention_actions.json"
+        if not action_path.exists():
+            _publish_removal_preflight(directory, retention, removed)
+    verified = inspect_run(
+        run_dir,
+        permit_manifest_drift=permit_manifest_drift,
+        verify_manifest_records=True,
+        permit_preflight_marker=True,
+    )
+    verified_removed = [
         {**item, "action": "removed_unrecorded_interrupted_payload"}
-        for item in report["removable"]
+        for item in verified["removable"]
     ]
+    if verified_removed != removed:
+        raise ValueError("compact removable payload changed after pending marker")
     return _execute_removals(directory, retention, removed, [])
 
 
@@ -210,6 +267,10 @@ def summarize(reports: list[dict[str, Any]], *, apply: bool) -> dict[str, Any]:
         "scanned_run_count": len(reports),
         "eligible_runs": len(eligible),
         "removable_bytes": sum(int(item.get("removable_bytes", 0)) for item in eligible),
+        "occupied_file_count": sum(
+            int(item.get("occupied_file_count", 0)) for item in eligible
+        ),
+        "occupied_bytes": sum(int(item.get("occupied_bytes", 0)) for item in eligible),
         "applied_runs": len(applied),
         "removed_file_count": sum(int(item.get("removed_file_count", 0)) for item in applied),
         "removed_bytes": sum(int(item.get("removed_bytes", 0)) for item in applied),

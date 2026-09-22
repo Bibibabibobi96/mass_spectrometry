@@ -150,6 +150,20 @@ class ProjectRegistryTests(unittest.TestCase):
         described = sorted(path.parents[1].name for path in descriptor_paths(REPO_ROOT))
         self.assertEqual(project_directories, described)
 
+    def test_mrtof_descriptor_registers_current_candidate_baseline(self) -> None:
+        descriptor = load_json(
+            REPO_ROOT
+            / "projects/parallel_mirror_dual_stripe_mr_tof/config/project.json"
+        )
+        self.assertEqual(descriptor["lifecycle_status"], "candidate")
+        self.assertEqual(
+            descriptor["contracts"]["baseline"],
+            "config/simion_candidate_two_zone.json",
+        )
+        self.assertIsNone(descriptor["contracts"]["resolved"])
+        self.assertIn("simion", descriptor["toolchains"])
+        self.assertEqual(descriptor["capabilities"][0]["status"], "candidate")
+
     def test_registry_is_current_and_deterministic(self) -> None:
         registry = build_registry()
         self.assertEqual(

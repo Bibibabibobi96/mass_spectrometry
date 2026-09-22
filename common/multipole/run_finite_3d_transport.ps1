@@ -149,7 +149,7 @@ $executionCapacityPaths+=@($hostRuntimeSourcePaths|ForEach-Object{"inputs/code/$
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' `
-  -RetentionContractEnabled `
+  -RetentionContractEnabled -CapacityLedgerLifecycleEnabled `
   -RetentionClass $RetentionClass -RetentionReason $RetentionReason `
   -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -UseShortExecutionPath `
   -ExpectedExecutionRelativePaths $executionCapacityPaths

@@ -72,7 +72,7 @@ function Get-SimionPaGridAudit {
 
 function Invoke-CommonPaFamilyCache {
   param(
-    [Parameter(Mandatory=$true)][ValidateSet('probe','publish','materialize')][string]$Operation,
+    [Parameter(Mandatory=$true)][ValidateSet('probe','ensure','publish','materialize')][string]$Operation,
     [Parameter(Mandatory=$true)][string]$IdentityPath,
     [Parameter(Mandatory=$true)][string]$CacheRoot,
     [Parameter(Mandatory=$true)][string[]]$Filenames,
@@ -238,7 +238,7 @@ $executionCapacityPaths+=@($hostRuntimeSourcePaths|ForEach-Object{"inputs/code/$
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' -Software @('SIMION 2020','Python 3.11') `
-  -RetentionContractEnabled `
+  -RetentionContractEnabled -CapacityLedgerLifecycleEnabled `
   -RetentionClass $RetentionClass -RetentionReason $RetentionReason `
   -AdditionalDirectories @('simion') -UseShortExecutionPath `
   -ExpectedExecutionRelativePaths $executionCapacityPaths
@@ -843,14 +843,9 @@ try{
   $paBasisCacheKey=$null
   $paBasisGenerationDirectory=$null
   if($paBasisReuseAuthorized){
-    $paBasisProbe=Invoke-CommonPaFamilyCache -Operation probe -IdentityPath $paBasisIdentityPath `
+    $paBasisProbe=Invoke-CommonPaFamilyCache -Operation ensure -IdentityPath $paBasisIdentityPath `
       -CacheRoot $paBasisCacheRoot -Filenames $paBasisNames -ModuleRoot $codeRoot -Python $python
     $paBasisCacheKey=[string]$paBasisProbe.cache_key
-    if([string]$paBasisProbe.disposition-eq'corrupt'){
-      # A corrupt content-addressed entry is never deleted or overwritten by a
-      # runner.  It requires an explicit governed cache-cleanup decision.
-      throw "SIMION PA-basis cache is corrupt: $paBasisCacheKey ($($paBasisProbe.detail))"
-    }
     if([string]$paBasisProbe.disposition-eq'hit'){
       $paBasisGenerationDirectory=[string]$paBasisProbe.generation_directory
       $paBasisCacheManifestInput=Copy-VerifiedRunInput `

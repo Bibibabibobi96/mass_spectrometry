@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
 from common.simion.standalone_pa_response_set import (
@@ -70,6 +71,19 @@ class StandalonePaResponseSetTests(unittest.TestCase):
         ]
         return {"schema_version": 3, "files": records}
 
+    def test_receipt_hashes_persisted_producer_bytes(self) -> None:
+        def persist(path: Path) -> None:
+            path.write_bytes(path.read_bytes() + b'-persisted')
+
+        with patch('common.simion.standalone_pa_response_set._flush_writable_source', side_effect=persist):
+            self._write_receipt()
+        receipt = json.loads((self.root / self.receipt_name).read_text())
+        for response in receipt['responses']:
+            for role in ('source', 'standalone'):
+                record = response[role]
+                self.assertEqual(record['sha256'], file_sha256(self.root / record['name']))
+                self.assertTrue((self.root / record['name']).read_bytes().endswith(b'-persisted'))
+
     def test_two_stage_receipt_and_manifest_cover_native_and_standalone_files(self) -> None:
         self._write_receipt()
         receipt = json.loads((self.root / self.receipt_name).read_text())
@@ -81,6 +95,23 @@ class StandalonePaResponseSetTests(unittest.TestCase):
             self.receipt_name,
             expected_response_ids=(36, 37),
         )
+        self.assertEqual([record.response_id for record in selected], [36, 37])
+
+    def test_verified_inventory_binds_receipt_without_rehashing_payload(self) -> None:
+        self._write_receipt()
+        manifest = self._manifest()
+        with patch(
+            "common.simion.standalone_pa_response_set._file_record",
+            side_effect=AssertionError("sealed inventory must not be rehashed"),
+        ):
+            selected = validate_standalone_pa_response_set(
+                self.root,
+                manifest,
+                self.receipt_name,
+                expected_response_ids=(36, 37),
+                inventory_is_verified=True,
+            )
+        self.assertEqual([record.response_id for record in selected], [36, 37])
         self.assertEqual([record.response_id for record in selected], [36, 37])
         self.assertEqual(
             {record["name"] for record in manifest["files"]},
@@ -108,6 +139,22 @@ class StandalonePaResponseSetTests(unittest.TestCase):
             ["field.response_36.pa", "field.response_37.pa"],
         )
         self.assertTrue(all(record.name.endswith(".pa") for record in selected))
+
+    def test_pa_family_cache_v2_inventory_is_accepted(self) -> None:
+        """A PA-family cache uses the same sealed direct-file record schema."""
+        self._write_receipt()
+        manifest = self._manifest()
+        manifest["schema_version"] = 2
+        selected = select_standalone_pa_records(
+            self.root,
+            manifest,
+            self.receipt_name,
+            expected_response_ids=(36, 37),
+        )
+        self.assertEqual(
+            [record.name for record in selected],
+            ["field.response_36.pa", "field.response_37.pa"],
+        )
 
     def test_writer_rejects_native_output_and_mismatched_or_duplicate_identity(self) -> None:
         invalid_sets = (

@@ -261,8 +261,20 @@ def _execute_removals(
 ) -> Path:
     """Persist deletion identities before touching a preflighted file list."""
     action_path = run_dir / "retention_actions.json"
+    existing = None
     if action_path.exists():
-        raise ValueError("run already has a retention reconciliation receipt")
+        existing = json.loads(action_path.read_text(encoding="utf-8-sig"))
+        expected_planned = [
+            {"path": item["path"], "bytes": int(item["bytes"])}
+            for item in removed
+        ]
+        if (
+            not isinstance(existing, dict)
+            or existing.get("status") != "preflight_pending"
+            or existing.get("retention_class") != retention.class_id
+            or existing.get("planned") != expected_planned
+        ):
+            raise ValueError("run already has a retention reconciliation receipt")
     for item in removed:
         path = run_dir / item["path"]
         path.resolve().relative_to(run_dir.resolve())
@@ -277,12 +289,37 @@ def _execute_removals(
     }
 
     write_json_atomic(action_path, action)
-    for item in remove_recorded_files(run_dir, removed):
+    for item in remove_recorded_files(run_dir, removed, identities_verified=True):
         action["removed_file_count"] += 1
         action["removed_bytes"] += item["bytes"]
         write_json_atomic(action_path, action)
     action["status"] = "complete"
     write_json_atomic(action_path, action)
+    return action_path
+
+
+def _publish_removal_preflight(
+    run_dir: Path, retention: Retention, removed: list[dict[str, Any]],
+) -> Path:
+    """Win removal authority without hashing or deleting payload bytes."""
+
+    action_path = run_dir / "retention_actions.json"
+    if action_path.exists():
+        raise ValueError("run already has a retention reconciliation receipt")
+    planned = [
+        {"path": item["path"], "bytes": int(item["bytes"])} for item in removed
+    ]
+    write_json_atomic(
+        action_path,
+        {
+            "schema_version": 1,
+            "role": "artifact_retention_actions",
+            "retention_class": retention.class_id,
+            "status": "preflight_pending",
+            "planned": planned,
+            "planned_bytes": sum(item["bytes"] for item in planned),
+        },
+    )
     return action_path
 
 

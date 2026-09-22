@@ -56,27 +56,20 @@ function Assert-VerifiedRunRecordHash {
 function Invoke-ArtifactCapacityGate {
   <# Invoke the repository-owned artifact reconciler and require an applied
      receipt.  This is deliberately a lifecycle adapter: projects supply their
-     own protected paths, cache identities, and measured transient envelope. #>
+     own protected paths and cache identities; global watermarks come only
+     from artifact_capacity_policy.json. #>
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$ArtifactRoot,
-    [Nullable[double]]$TargetGiB=$null,
-    [Nullable[double]]$MinimumFreeGiB=$null,
-    [long]$RequiredHeadroomBytes=0,
     [string[]]$ProtectedPaths=@(),
     [string[]]$ProtectedCacheKeys=@(),
-    [string[]]$RebuildableSuccessBuildRuns=@(),
-    [Nullable[long]]$KnownMeasuredBytes=$null,
-    [Nullable[long]]$MaximumNewArtifactBytes=$null
+    [string]$CapacityProtectionLeaseId='',
+    [ValidateSet('startup','maintenance')][string]$ExecutionMode='startup'
   )
-  if(($null-ne$TargetGiB -and $TargetGiB-le 0) -or
-     ($null-ne$MinimumFreeGiB -and $MinimumFreeGiB-lt 0) -or $RequiredHeadroomBytes-lt 0){
-    throw 'Artifact capacity gate requires nonnegative watermarks and headroom.'
-  }
-  if(($null-eq$KnownMeasuredBytes)-ne($null-eq$MaximumNewArtifactBytes)){
-    throw 'Artifact capacity gate requires both known measurement and maximum new bytes.'
+  if($ExecutionMode-eq'startup'-and[string]::IsNullOrWhiteSpace($CapacityProtectionLeaseId)){
+    throw 'Artifact capacity startup requires CapacityProtectionLeaseId.'
   }
   # Capacity work uses shared host admission and inherits the caller's permit.
   # Light admission is not a cache-consumption or deletion lock; the reconciler
@@ -86,12 +79,10 @@ function Invoke-ArtifactCapacityGate {
   $arguments=@(
     '-m','common.contracts.reconcile_artifact_capacity',
     '--artifact-root',$ArtifactRoot,
-    '--required-headroom-bytes',([string]$RequiredHeadroomBytes),
+    '--execution-mode',$ExecutionMode,
+    '--capacity-ledger',(Join-Path $ArtifactRoot 'common\capacity_ledger.json'),
     '--apply'
   )
-  # Omitted watermarks are resolved once by Python from artifact_capacity_policy.json.
-  if($null-ne$TargetGiB){$arguments+=@('--target-gib',([string]$TargetGiB))}
-  if($null-ne$MinimumFreeGiB){$arguments+=@('--minimum-free-gib',([string]$MinimumFreeGiB))}
   foreach($path in @($ProtectedPaths|Where-Object{ -not [string]::IsNullOrWhiteSpace($_) }|Select-Object -Unique)){
     $arguments+=@('--protect-path',$path)
   }
@@ -99,21 +90,8 @@ function Invoke-ArtifactCapacityGate {
     if($key-notmatch '^[0-9a-fA-F]{64}$'){throw 'Protected cache key must be one SHA-256 key.'}
     $arguments+=@('--protect-cache-key',$key)
   }
-  foreach($runPath in @($RebuildableSuccessBuildRuns|Where-Object{
-      -not [string]::IsNullOrWhiteSpace($_)
-    }|Select-Object -Unique)){
-    $arguments+=@('--rebuildable-success-build-run',$runPath)
-  }
-  if($null-ne$KnownMeasuredBytes){
-    [int64]$knownMeasuredBytesValue=$KnownMeasuredBytes
-    [int64]$maximumNewArtifactBytesValue=$MaximumNewArtifactBytes
-    if($knownMeasuredBytesValue-lt 0 -or $maximumNewArtifactBytesValue-lt 0){
-      throw 'Artifact capacity fast-path bytes must be nonnegative.'
-    }
-    $arguments+=@(
-      '--known-measured-bytes',([string]$knownMeasuredBytesValue),
-      '--maximum-new-artifact-bytes',([string]$maximumNewArtifactBytesValue)
-    )
+  if(-not[string]::IsNullOrWhiteSpace($CapacityProtectionLeaseId)){
+    $arguments+=@('--capacity-protection-lease-id',$CapacityProtectionLeaseId)
   }
   $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
     & $Python @arguments
@@ -121,7 +99,12 @@ function Invoke-ArtifactCapacityGate {
   })
   $receipt=((@($output)-join "`n")|ConvertFrom-Json)
   if($receipt.satisfied_after_apply -ne $true){
-    throw 'Artifact capacity gate could not satisfy its watermark.'
+    if($ExecutionMode-eq'maintenance'){
+      throw ("Artifact capacity gate blocked maintenance: CAPACITY_TARGET_NOT_MET; measured_after_bytes={0}; free_bytes_after={1}; required_free_bytes={2}; target_bytes={3}; removed_bytes={4}" -f $receipt.measured_after_bytes,$receipt.free_bytes_after,$receipt.required_free_bytes,$receipt.target_bytes,$receipt.removed_bytes)
+    }
+    $reason=[string]$receipt.blocking_reason
+    if([string]::IsNullOrWhiteSpace($reason)){$reason='UNSPECIFIED'}
+    throw ("Artifact capacity gate blocked startup: {0}; resident_bytes={1}; active_commitment_bytes={2}; projected_bytes={3}; target_bytes={4}" -f $reason,$receipt.resident_bytes,$receipt.total_active_lease_committed_new_bytes,$receipt.projected_bytes,$receipt.target_bytes)
   }
   # The JSON root is one object; NoEnumerate wraps it and changes nested-array access.
   Write-Output $receipt
@@ -130,29 +113,118 @@ function Invoke-ArtifactCapacityGate {
   }
 }
 
-function New-PublishedPaCacheProtectionSnapshot {
-  <# Freeze the valid PA-family generations visible before a run's startup
-     capacity gate.  Callers retain this receipt and pass its keys to every
-     later gate in the same run; publications created afterwards are not
-     retroactively classified as startup cache. #>
+function Invoke-RunCapacityLifecycleAdapter {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][ValidateSet('register-writing','assert-retention','finalize-ready')][string]$Action,
     [Parameter(Mandatory)][string]$ArtifactRoot,
-    [Parameter(Mandatory)][string]$OutputPath
+    [Parameter(Mandatory)][string]$RunConfig
   )
   $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    & $Python -m common.contracts.reconcile_artifact_capacity `
-      --artifact-root $ArtifactRoot --snapshot-published-pa-cache-keys
-    if($LASTEXITCODE-ne 0){throw "Published PA cache protection snapshot exit_code=$LASTEXITCODE"}
+    & $Python -m common.contracts.run_capacity_lifecycle --action $Action `
+      --artifact-root $ArtifactRoot --run-config $RunConfig
+    if($LASTEXITCODE-ne 0){throw "Run capacity lifecycle $Action failed."}
   })
-  $snapshot=((@($output)-join "`n")|ConvertFrom-Json)
-  if($snapshot.role-ne'artifact_capacity_published_pa_cache_protection_snapshot'){
-    throw 'Published PA cache protection snapshot role differs.'
+  return ((@($output)-join "`n")|ConvertFrom-Json)
+}
+
+function Enter-ArtifactWorkflowCapacitySession {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$ArtifactRoot,[Parameter(Mandatory)][string]$RunDirectory,
+    [Parameter(Mandatory)][long]$CommittedNewBytes,[string]$Owner='',
+    [int]$LeaseTtlSeconds=21600,[string[]]$ProtectedPaths=@(),
+    [string[]]$ProtectedCacheKeys=@()
+  )
+  if($CommittedNewBytes-lt0-or$LeaseTtlSeconds-le0){throw 'Workflow capacity session requires nonnegative bytes and a positive TTL.'}
+  $leaseId='workflow-'+[guid]::NewGuid().ToString('N')
+  if([string]::IsNullOrWhiteSpace($Owner)){$Owner="run-artifact-support:$([IO.Path]::GetFileName($RunDirectory))"}
+  $paths=@([IO.Path]::GetFullPath($RunDirectory))+$ProtectedPaths|Select-Object -Unique
+  $arguments=@('-m','common.contracts.reconcile_artifact_capacity','--artifact-root',$ArtifactRoot,
+    '--create-protection-lease',$leaseId,'--lease-owner',$Owner,
+    '--lease-ttl-seconds',([string]$LeaseTtlSeconds),'--committed-new-bytes',([string]$CommittedNewBytes))
+  foreach($path in $paths){$arguments+=@('--protect-path',$path)}
+  foreach($key in $ProtectedCacheKeys){$arguments+=@('--protect-cache-key',$key)}
+  try{
+    $leaseOutput=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+      & $Python @arguments;if($LASTEXITCODE-ne0){throw 'Workflow capacity lease creation failed.'}
+    })
+    # The active lease is the single reservation source.
+    $gateParameters=@{Python=$Python;RepoRoot=$RepoRoot;ArtifactRoot=$ArtifactRoot;
+      ProtectedPaths=$paths;ProtectedCacheKeys=$ProtectedCacheKeys;
+      CapacityProtectionLeaseId=$leaseId;ExecutionMode='startup'}
+    $gate=Invoke-ArtifactCapacityGate @gateParameters
+    return [pscustomobject]@{schema_version=1;role='artifact_workflow_capacity_session';
+      status='active';artifact_root=[IO.Path]::GetFullPath($ArtifactRoot);lease_id=$leaseId;
+      owner=$Owner;lease_ttl_seconds=$LeaseTtlSeconds;committed_new_bytes=$CommittedNewBytes;
+      protected_paths=@($paths);protected_cache_keys=@($ProtectedCacheKeys|Select-Object -Unique);
+      lease=((@($leaseOutput)-join"`n")|ConvertFrom-Json);startup_gate=$gate}
+  }catch{
+    try{
+      Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+        & $Python -m common.contracts.reconcile_artifact_capacity --artifact-root $ArtifactRoot `
+          --delete-protection-lease $leaseId|Out-Null
+      }
+    }catch{
+      Write-Warning "CAPACITY_WORKFLOW_LEASE_CLEANUP_FAILED lease_id=$leaseId error=$($_.Exception.Message)"
+    }
+    throw
   }
-  Write-RunJson -Path $OutputPath -Depth 8 -Value $snapshot
-  Write-Output -NoEnumerate $snapshot
+}
+
+function Update-ArtifactWorkflowCapacitySession {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][pscustomobject]$Session,[string[]]$ProtectedPaths=@(),
+    [string[]]$ProtectedCacheKeys=@(),[Nullable[long]]$RemainingCommittedNewBytes=$null
+  )
+  if([string]$Session.status-ne'active'){throw 'Workflow capacity session is not active.'}
+  if($null-ne$RemainingCommittedNewBytes-and$RemainingCommittedNewBytes-lt0){throw 'Remaining committed bytes must be nonnegative.'}
+  [int64]$priorCommitment=$Session.committed_new_bytes
+  $arguments=@('-m','common.contracts.reconcile_artifact_capacity','--artifact-root',[string]$Session.artifact_root,
+    '--renew-protection-lease',[string]$Session.lease_id,'--lease-owner',[string]$Session.owner,
+    '--lease-ttl-seconds',([string]$Session.lease_ttl_seconds))
+  if($null-ne$RemainingCommittedNewBytes){$arguments+=@('--committed-new-bytes',([string]$RemainingCommittedNewBytes))}
+  foreach($path in $ProtectedPaths){$arguments+=@('--protect-path',$path)}
+  foreach($key in $ProtectedCacheKeys){$arguments+=@('--protect-cache-key',$key)}
+  $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+    & $Python @arguments;if($LASTEXITCODE-ne0){throw 'Workflow capacity lease renewal failed.'}
+  })
+  if($null-ne$RemainingCommittedNewBytes){$Session.committed_new_bytes=[int64]$RemainingCommittedNewBytes}
+  $Session.protected_paths=@($Session.protected_paths)+@($ProtectedPaths)|Select-Object -Unique
+  $Session.protected_cache_keys=@($Session.protected_cache_keys)+@($ProtectedCacheKeys)|Select-Object -Unique
+  $gate=$null
+  if($null-ne$RemainingCommittedNewBytes-and[int64]$RemainingCommittedNewBytes-gt$priorCommitment){
+    # The larger commitment is already durable.  Re-admission may fail, but
+    # failure leaves the conservative larger reservation visible to peers.
+    $gate=Invoke-ArtifactCapacityGate -Python $Python -RepoRoot $RepoRoot `
+      -ArtifactRoot ([string]$Session.artifact_root) `
+      -ProtectedPaths @($Session.protected_paths) `
+      -ProtectedCacheKeys @($Session.protected_cache_keys) `
+      -CapacityProtectionLeaseId ([string]$Session.lease_id) -ExecutionMode startup
+  }
+  return [pscustomobject]@{session=$Session;renewal=((@($output)-join"`n")|ConvertFrom-Json);admission_gate=$gate}
+}
+
+function Exit-ArtifactWorkflowCapacitySession {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][pscustomobject]$Session
+  )
+  if([string]$Session.status-ne'active'){return [pscustomobject]@{deleted=$false;status=[string]$Session.status}}
+  $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+    & $Python -m common.contracts.reconcile_artifact_capacity `
+      --artifact-root ([string]$Session.artifact_root) `
+      --delete-protection-lease ([string]$Session.lease_id)
+    if($LASTEXITCODE-ne0){throw 'Workflow capacity lease deletion failed.'}
+  })
+  $Session.status='released'
+  return ((@($output)-join"`n")|ConvertFrom-Json)
 }
 
 function Write-RunJson {
@@ -198,11 +270,24 @@ function Write-VerifiedRunManifest {
   if([string]::IsNullOrWhiteSpace($Manifest)){
     $Manifest=Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json'
   }
+  $capacityLifecycle=$null
+  $terminalCapacityLifecycle=$Status-in@('success','failed','interrupted')
+  if($terminalCapacityLifecycle){
+    $runConfiguration=Get-Content -LiteralPath $RunConfig -Raw -Encoding UTF8|ConvertFrom-Json
+    if($null-ne$runConfiguration.PSObject.Properties['capacity_ledger_lifecycle']-and
+       [bool]$runConfiguration.capacity_ledger_lifecycle.enabled){
+      $capacityLifecycle=$runConfiguration.capacity_ledger_lifecycle
+      $null=Invoke-RunCapacityLifecycleAdapter -Python $Python -RepoRoot $RepoRoot `
+        -Action assert-retention -ArtifactRoot ([string]$capacityLifecycle.artifact_root) `
+        -RunConfig $RunConfig
+    }
+  }
   $manifestDirectory=Split-Path -Parent $Manifest
   $manifestName=[IO.Path]::GetFileNameWithoutExtension($Manifest)
   $manifestExtension=[IO.Path]::GetExtension($Manifest)
   $candidateManifest=Join-Path $manifestDirectory `
     ('.{0}.{1}.candidate{2}'-f$manifestName,[guid]::NewGuid().ToString('N'),$manifestExtension)
+  $manifestPublished=$false
   try{
     Write-RunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
       -Status $Status -Software $Software -Manifest $candidateManifest -Outputs $Outputs -PassThru
@@ -210,7 +295,22 @@ function Write-VerifiedRunManifest {
       $candidateManifest --require-status $Status
     if($LASTEXITCODE-ne 0){throw "Could not verify $Status run manifest."}
     Move-Item -LiteralPath $candidateManifest -Destination $Manifest -Force
+    $manifestPublished=$true
+    if($null-ne$capacityLifecycle){
+      $capacityFinal=Invoke-RunCapacityLifecycleAdapter -Python $Python -RepoRoot $RepoRoot `
+        -Action finalize-ready -ArtifactRoot ([string]$capacityLifecycle.artifact_root) `
+        -RunConfig $RunConfig
+      if([bool]$capacityFinal.light_evidence_budget_exceeded){
+        $largest=@($capacityFinal.largest_files|ForEach-Object{"$($_.path)=$($_.bytes)B"})-join', '
+        Write-Warning ("RUN_LIGHT_EVIDENCE_BUDGET_EXCEEDED RUN={0} BYTES={1} BUDGET={2} LARGEST=[{3}]"-f `
+          $capacityFinal.run_directory,$capacityFinal.bytes,$capacityFinal.light_evidence_budget_bytes,$largest) `
+          -WarningAction Continue
+      }
+    }
   }catch{
+    if($manifestPublished-and$null-ne$capacityLifecycle){
+      throw "Verified $Status run manifest was published, but capacity ledger finalization failed; the run remains writing for recovery: $($_.Exception.Message)"
+    }
     throw "Could not publish verified $Status run manifest: $($_.Exception.Message)"
   }finally{
     Remove-Item -LiteralPath $candidateManifest -Force -ErrorAction SilentlyContinue
@@ -362,7 +462,12 @@ function New-RunExecutionAlias {
   if([string]::IsNullOrWhiteSpace($ExecutionRoot)){
     $ExecutionRoot=if($env:MASS_SPECTROMETRY_EXECUTION_ROOT){
       $env:MASS_SPECTROMETRY_EXECUTION_ROOT
-    }else{'C:\tmp\ms'}
+    }else{
+      # Desktop children can be denied C:\tmp.  The shared artifact root is
+      # writable to every project workflow and keeps aliases in one audited
+      # disposable location rather than falling back to a long path.
+      Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'artifacts\common\execution_aliases'
+    }
   }
   $executionRootPath=[IO.Path]::GetFullPath($ExecutionRoot)
   $alias=Join-Path $executionRootPath ('run_'+[guid]::NewGuid().ToString('N'))
@@ -415,6 +520,8 @@ function New-RunPackage {
     [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',
     [string]$RetentionReason='',
     [string[]]$AdditionalDirectories=@(),
+    [switch]$CapacityLedgerLifecycleEnabled,
+    [string]$CapacityLedgerArtifactRoot='',
     [switch]$UseShortExecutionPath,
     [string]$ExecutionRoot='',
     [string[]]$ExpectedExecutionRelativePaths=@()
@@ -428,6 +535,12 @@ function New-RunPackage {
   if(-not$RetentionContractEnabled-and(
       $RetentionClass-ne'compact'-or-not[string]::IsNullOrWhiteSpace($RetentionReason))){
     throw 'RetentionContractEnabled is required when selecting run artifact retention.'
+  }
+  if($CapacityLedgerLifecycleEnabled-and-not$RetentionContractEnabled){
+    throw 'CapacityLedgerLifecycleEnabled requires RetentionContractEnabled.'
+  }
+  if(-not$CapacityLedgerLifecycleEnabled-and-not[string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){
+    throw 'CapacityLedgerArtifactRoot requires CapacityLedgerLifecycleEnabled.'
   }
   $python=[IO.Path]::GetFullPath($Python)
   if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Run Python environment is missing: $python"}
@@ -476,6 +589,27 @@ function New-RunPackage {
     $initialConfig.artifact_retention=[ordered]@{policy_version=1;class=$RetentionClass;
       reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})}
   }
+  if($CapacityLedgerLifecycleEnabled){
+    if([string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){
+      $capacityRootCandidate=[IO.DirectoryInfo][IO.Path]::GetFullPath($ArtifactRoot)
+      while($null-ne$capacityRootCandidate-and$capacityRootCandidate.Name-ne'artifacts'){
+        $capacityRootCandidate=$capacityRootCandidate.Parent
+      }
+      if($null-eq$capacityRootCandidate){
+        throw 'Could not derive the workspace artifacts root for capacity-ledger lifecycle.'
+      }
+      $CapacityLedgerArtifactRoot=$capacityRootCandidate.FullName
+    }
+    $CapacityLedgerArtifactRoot=[IO.Path]::GetFullPath($CapacityLedgerArtifactRoot)
+    $capacityPolicy=Get-Content -LiteralPath (Join-Path $RepoRoot 'common\contracts\artifact_capacity_policy.json') `
+      -Raw -Encoding UTF8|ConvertFrom-Json
+    [int64]$lightBudget=$capacityPolicy.light_evidence_budget_bytes
+    if($lightBudget-le0){throw 'Artifact capacity policy light-evidence budget must be positive.'}
+    $initialConfig.capacity_ledger_lifecycle=[ordered]@{
+      schema_version=1;enabled=$true;artifact_root=$CapacityLedgerArtifactRoot
+      light_evidence_budget_bytes=$lightBudget
+    }
+  }
   Write-RunJson -Path $package.run_config -Value $initialConfig
   Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version=1;role='run_package_initialization_summary';status='checkpoint';
@@ -483,6 +617,10 @@ function New-RunPackage {
   })
   $null=Write-VerifiedRunManifest -Python $python -RepoRoot $RepoRoot -RunConfig $package.run_config `
     -Status checkpoint -Software $Software -Outputs @($package.summary)
+  if($CapacityLedgerLifecycleEnabled){
+    $null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $RepoRoot `
+      -Action register-writing -ArtifactRoot $CapacityLedgerArtifactRoot -RunConfig $package.run_config
+  }
   return [pscustomobject]$package
 }
 
@@ -716,9 +854,18 @@ function Complete-FailedRun {
   # other compact-forbidden payload, including solver-native PA/IOB/Fly files,
   # is still removed before the terminal manifest is published.
   if([int]$document.schema_version-eq 2){
-    $retentionActions=Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot `
-      -RunConfig $RunConfig -PreservePaths $preservedRawTracePaths `
-      -RemovePaths $discardedRawTracePaths
+    $existingRetentionActions=Join-Path $runDir 'retention_actions.json'
+    if(Test-Path -LiteralPath $existingRetentionActions -PathType Leaf){
+      # A success-path publication may already have reconciled retention before
+      # a later manifest verification error.  Reuse that immutable receipt when
+      # terminalizing the failure; applying retention twice is both unnecessary
+      # and rejected by the retention contract.
+      $retentionActions=$existingRetentionActions
+    }else{
+      $retentionActions=Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot `
+        -RunConfig $RunConfig -PreservePaths $preservedRawTracePaths `
+        -RemovePaths $discardedRawTracePaths
+    }
   }
   if(-not[string]::IsNullOrWhiteSpace($ResourceUsagePath)-and
     (Test-Path -LiteralPath $ResourceUsagePath -PathType Leaf)){

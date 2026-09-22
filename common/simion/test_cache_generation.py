@@ -24,6 +24,27 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 class CacheGenerationTests(unittest.TestCase):
+    @unittest.skipUnless(cache_generation.os.name == "nt", "Windows PA read authority")
+    def test_owner_inventory_uses_one_unbuffered_hash_without_stale_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "field.pa").write_bytes(b"fixture")
+            with (
+                patch.object(cache_generation, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 1),
+                patch.object(cache_generation, "file_sha256", return_value="B" * 64) as buffered,
+                patch.object(cache_generation, "file_sha256_unbuffered", return_value="A" * 64) as unbuffered,
+            ):
+                result = cache_generation.inventory_named_files(
+                    root, ["field.pa"], unbuffered_large_files=True,
+                )
+                self.assertEqual(result[0]["sha256"], "A" * 64)
+                unbuffered.assert_called_once_with(root / "field.pa")
+                buffered.assert_not_called()
+                unbuffered.side_effect = OSError("unbuffered read failed")
+                with self.assertRaisesRegex(OSError, "unbuffered read failed"):
+                    cache_generation.inventory_named_files(root, ["field.pa"], unbuffered_large_files=True)
+                buffered.assert_not_called()
+
     def test_stable_inventory_accepts_a_transient_first_view(self) -> None:
         first = [{"name": "family.pa0", "bytes": 1, "sha256": "A" * 64}]
         second = [{"name": "family.pa0", "bytes": 1, "sha256": "B" * 64}]

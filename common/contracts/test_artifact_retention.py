@@ -124,7 +124,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertFalse(pa.exists())
         action = json.loads(action_path.read_text(encoding="utf-8"))
         self.assertEqual(action["preserved"][0]["path"], "logs/simion__batch01.trace.log")
-        self.assertEqual(classify_file(trace), "large_optional")
+        self.assertEqual(classify_file(trace), "dense_trajectory")
         writer = subprocess.run(
             [
                 sys.executable, str(WRITER), "--run-config", str(self.config),
@@ -154,7 +154,7 @@ class ArtifactRetentionTests(unittest.TestCase):
             ], cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
         )
         self.assertNotEqual(writer.returncode, 0)
-        self.assertIn("large_optional", writer.stderr)
+        self.assertIn("dense_trajectory", writer.stderr)
 
     def test_failed_compact_can_retain_completed_full_flight_stdout(self) -> None:
         self.write_config("compact", None)
@@ -343,6 +343,22 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertIn("if($RetentionContractEnabled){2}else{1}", support)
         self.assertIn("Apply-RunArtifactRetention", support)
 
+    def test_capacity_gate_has_no_retired_baseline_or_raw_budget_compatibility(self) -> None:
+        support = (Path(__file__).with_name("run_artifact_support.ps1")).read_text(
+            encoding="utf-8-sig"
+        )
+        for retired in (
+            "KnownMeasuredBytes", "MaximumNewArtifactBytes",
+            "CapacityBaselineReceipt", "RequiredHeadroomBytes",
+            "legacy-gate-adapter", "BudgetMode",
+        ):
+            self.assertNotIn(retired, support)
+        self.assertIn(
+            "[ValidateSet('startup','maintenance')][string]$ExecutionMode='startup'",
+            support,
+        )
+        self.assertIn("'--execution-mode',$ExecutionMode", support)
+
     def test_verified_input_copy_can_retry_but_requires_three_way_hash_identity(self) -> None:
         support = (Path(__file__).with_name("run_artifact_support.ps1")).read_text(
             encoding="utf-8-sig"
@@ -377,59 +393,9 @@ class ArtifactRetentionTests(unittest.TestCase):
                 source.index("Write-VerifiedRunManifest", source.index("try{")),
             )
 
-    def test_new_run_package_callers_are_explicitly_migrated_or_baselined(self) -> None:
-        migrated = {
-            "projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1",
-            "projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/run_gas_field_prototype.ps1",
-            "common/multipole/run_finite_3d_transport.ps1",
-            "common/multipole/run_simion_finite_3d_transport.ps1",
-            "common/multipole/run_simion_transport_campaign.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_three_component_candidate.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_three_component_first_prism_flight.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_dual_stripe_operating_seed.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_dual_stripe_shape_diagnostic.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_freeze_accelerator_pulse_schedule.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_freeze_bunch_pulse_schedule.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_full_bunch_stripe_central_difference.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_mirror_exact_k_operating_point.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_mirror_l0_l1_candidate.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_accelerator_exit_energy_calibration.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_publish_bunch_source.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_r27_source_return_correlation.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_single_center_timestep_convergence.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_stripe_return_sensitivity_campaign.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_two_prism_operating_point.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_two_prism_parallel_angle_discovery.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_two_prism_segmented_continuation.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_two_prism_segmented_coverage.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_accelerator_exit_flight.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_accelerator_focus_flight.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_accelerator_pa_family.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_analyzer_local_interface_convergence.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_analyzer_local_pa_family.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_analyzer_local_portal_interface_convergence.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_analyzer_local_workbench.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_local_operating_pa_prewarm.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_mirror_period_validation.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_mirror_real_field_profile.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_mirror_real_field_voltage_family.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_mirror_turn_fixed_grid_validation.ps1",
-            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_two_prism_trial.ps1",
-        }
-        legacy = {
-            "projects/single_reflection_oa_tof_mass_analyzer/tests/comsol/run_n100_candidate_functional.ps1",
-            "projects/single_reflection_oa_tof_mass_analyzer/tests/simion/run_n100_source_build_and_track.ps1",
-            "projects/rf_quadrupole_ion_optics/runtime/cross_solver_analysis_lifecycle.ps1",
-            "projects/rf_quadrupole_ion_optics/workflows/interface_readiness/run_comsol.ps1",
-            "projects/rf_quadrupole_ion_optics/workflows/interface_readiness/run_simion.ps1",
-            "projects/rf_quadrupole_ion_optics/workflows/mass_filter_reference/compare_responses.ps1",
-            "projects/rf_quadrupole_ion_optics/workflows/mass_filter_reference/run_comsol.ps1",
-            "projects/rf_quadrupole_ion_optics/workflows/mass_filter_reference/run_simion.ps1",
-            "projects/rf_quadrupole_ion_optics/workflows/same_solver_convergence/run_comparison.ps1",
-            "projects/transverse_helical_filament_wehnelt_electron_gun/run_build_only_smoke.ps1",
-        }
+    def test_every_production_new_run_package_caller_enables_capacity_lifecycle(self) -> None:
         callers: dict[str, str] = {}
-        for root in ("common", "projects"):
+        for root in ("common", "projects", "integrations"):
             for path in (REPO_ROOT / root).rglob("*.ps1"):
                 source = path.read_text(encoding="utf-8-sig")
                 if (
@@ -438,11 +404,11 @@ class ArtifactRetentionTests(unittest.TestCase):
                     and not path.name.startswith("test_")
                 ):
                     callers[path.relative_to(REPO_ROOT).as_posix()] = source
-        self.assertEqual(set(callers), migrated | legacy)
-        for relative in migrated:
-            self.assertIn("-RetentionContractEnabled", callers[relative])
-        for relative in legacy:
-            self.assertNotIn("-RetentionContractEnabled", callers[relative])
+        self.assertTrue(callers)
+        for relative, source in callers.items():
+            with self.subTest(caller=relative):
+                self.assertIn("-RetentionContractEnabled", source)
+                self.assertIn("-CapacityLedgerLifecycleEnabled", source)
 
 
 if __name__ == "__main__":

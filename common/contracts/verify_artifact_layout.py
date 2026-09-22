@@ -867,7 +867,10 @@ def verify_artifacts_root(projects: Path) -> None:
         )
     common = artifacts / "common"
     if common.exists():
-        allowed_common = {"simion", "capacity_protection_leases", "capacity_disposal_receipts"}
+        allowed_common = {
+            "simion", "capacity_protection_leases", "capacity_disposal_receipts",
+            "capacity_calibration",
+        }
         if (
             not common.is_dir()
             or ({item.name for item in common.iterdir()} - allowed_common)

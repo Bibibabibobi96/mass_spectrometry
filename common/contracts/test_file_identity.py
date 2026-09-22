@@ -2,19 +2,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from common.contracts.file_identity import (
     HASH_CHUNK_BYTES,
     canonical_json_sha256,
     file_sha256,
+    file_sha256_unbuffered,
     files_have_same_identity,
     files_match_manifest_records,
     repository_text_sha256,
 )
 from common.contracts import write_formal_asset_manifest, write_run_manifest
+from common.contracts import file_identity
 
 
 def legacy_sha256(path: Path) -> str:
@@ -26,6 +32,89 @@ def legacy_sha256(path: Path) -> str:
 
 
 class FileIdentityTest(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "requires Windows unbuffered file API")
+    def test_unbuffered_cli_reports_digest_and_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "cli file.bin"
+            payload = b"cli unbuffered identity" * 257
+            path.write_bytes(payload)
+            command = [sys.executable, "-m", "common.contracts.file_identity", "--unbuffered"]
+            repo_root = Path(__file__).resolve().parents[2]
+            result = subprocess.run(command + [str(path)], cwd=repo_root, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), hashlib.sha256(payload).hexdigest().upper())
+            missing = subprocess.run(command + [str(path.with_name("missing.bin"))], cwd=repo_root, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertEqual(missing.stdout, "")
+            conflict = subprocess.run(command + [str(path), "--left", str(path)], cwd=repo_root, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(conflict.returncode, 0)
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows unbuffered file API")
+    def test_unbuffered_matches_hashlib_at_sector_and_chunk_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "unbuffered.bin"
+            for size in (0, 1, 511, 512, 513, 4095, 4096, 4097,
+                         HASH_CHUNK_BYTES - 1, HASH_CHUNK_BYTES, HASH_CHUNK_BYTES + 1,
+                         2 * HASH_CHUNK_BYTES + 37):
+                with self.subTest(size=size):
+                    payload = (bytes(range(256)) * ((size + 255) // 256))[:size]
+                    path.write_bytes(payload)
+                    self.assertEqual(file_sha256_unbuffered(path), hashlib.sha256(payload).hexdigest().upper())
+                    self.assertEqual(path.read_bytes(), payload)
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows unbuffered file API")
+    def test_unbuffered_failures_release_handle_and_allocation(self) -> None:
+        import ctypes
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "failure.bin"
+            path.write_bytes(b"fixture")
+            for stage in ("GetFileSizeEx", "GetFileInformationByHandleEx", "VirtualAlloc", "ReadFile", "short_read", "digest"):
+                with self.subTest(stage=stage):
+                    api = file_identity._windows_file_api()
+                    wrapped = mock.Mock(wraps=api)
+                    if stage == "short_read":
+                        wrapped.ReadFile.return_value = 1
+                    elif stage != "digest":
+                        def fail(*args):
+                            ctypes.set_last_error(5)
+                            return 0
+                        getattr(wrapped, stage).side_effect = fail
+                    with mock.patch.object(file_identity, "_windows_file_api", return_value=wrapped):
+                        if stage == "digest":
+                            with mock.patch.object(file_identity.hashlib, "sha256", side_effect=RuntimeError("digest failure")):
+                                with self.assertRaisesRegex(RuntimeError, "digest failure"):
+                                    file_sha256_unbuffered(path)
+                        else:
+                            with self.assertRaises(OSError):
+                                file_sha256_unbuffered(path)
+                    self.assertEqual(wrapped.CloseHandle.call_count, 1)
+                    self.assertEqual(wrapped.VirtualFree.call_count, int(stage in {"ReadFile", "short_read", "digest"}))
+                    # The fixture is writable again only after the denied-write handle closes.
+                    path.write_bytes(b"fixture")
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows unbuffered file API")
+    def test_unbuffered_denies_writers_and_replacement_while_reading(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "protected.bin"
+            path.write_bytes(b"fixture")
+            api = file_identity._windows_file_api()
+            wrapped = mock.Mock(wraps=api)
+
+            def read(*args):
+                with self.assertRaises(OSError):
+                    path.write_bytes(b"changed")
+                with self.assertRaises(OSError):
+                    path.unlink()
+                return api.ReadFile(*args)
+
+            wrapped.ReadFile.side_effect = read
+            with mock.patch.object(file_identity, "_windows_file_api", return_value=wrapped):
+                self.assertEqual(file_sha256_unbuffered(path), hashlib.sha256(b"fixture").hexdigest().upper())
+            with path.open("r+b"):
+                with self.assertRaises(OSError):
+                    file_sha256_unbuffered(path)
+
     def test_fixed_content_and_empty_file_match_reference(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

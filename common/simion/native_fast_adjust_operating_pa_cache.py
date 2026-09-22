@@ -24,7 +24,9 @@ from common.simion.pa_family_cache import (
     MaterializedFamily,
     PAFamilyCacheError,
     canonical_pa_family_cache_key,
+    ensure_pa_family_cache,
     materialize_pa_family_cache,
+    migrate_current_pa_family_cache,
     probe_pa_family_cache,
     publish_pa_family_cache,
     validate_pa_family_cache_generation,
@@ -378,6 +380,25 @@ def probe_native_operating_pa_cache(
     )
 
 
+def ensure_native_operating_pa_cache(
+    cache_root: str | Path,
+    identity: Mapping[str, object],
+    *,
+    lock_timeout_s: float = 30.0,
+) -> CacheProbe:
+    """Return a usable native operating cache state, repairing one v2 member."""
+
+    try:
+        return ensure_pa_family_cache(
+            cache_root,
+            _backend_identity(identity),
+            expected_filenames=_filenames(identity),
+            lock_timeout_s=lock_timeout_s,
+        )
+    except PAFamilyCacheError as exc:
+        raise NativeOperatingPACacheError(str(exc)) from exc
+
+
 def validate_native_operating_pa_cache_generation(
     generation_directory: str | Path,
     *,
@@ -441,6 +462,26 @@ def publish_native_operating_pa_cache(
         raise NativeOperatingPACacheError(str(exc)) from exc
 
 
+def migrate_native_operating_pa_cache(
+    cache_root: str | Path,
+    identity: Mapping[str, object],
+    *,
+    lock_timeout_s: float = 30.0,
+) -> CachePublication:
+    """Migrate the current native operating group to recoverable schema v2."""
+
+    canonical = canonical_native_operating_pa_identity(identity)
+    try:
+        return migrate_current_pa_family_cache(
+            cache_root,
+            _backend_identity(canonical),
+            _filenames(canonical),
+            lock_timeout_s=lock_timeout_s,
+        )
+    except PAFamilyCacheError as exc:
+        raise NativeOperatingPACacheError(str(exc)) from exc
+
+
 def materialize_native_operating_pa_cache(
     generation_directory: str | Path,
     destination_directory: str | Path,
@@ -449,14 +490,19 @@ def materialize_native_operating_pa_cache(
 ) -> MaterializedFamily:
     """Materialize validated standalone outputs as writable private files."""
 
-    manifest = validate_native_operating_pa_cache_generation(
-        generation_directory, expected_identity=expected_identity
-    )
-    names = tuple(str(record["name"]) for record in manifest["files"])
     try:
-        return materialize_pa_family_cache(
+        if expected_identity is None:
+            manifest = validate_native_operating_pa_cache_generation(generation_directory)
+            names = tuple(str(record["name"]) for record in manifest["files"])
+        else:
+            names = _filenames(expected_identity)
+        result = materialize_pa_family_cache(
             generation_directory, destination_directory, expected_filenames=names
         )
+        validate_native_operating_pa_cache_generation(
+            result.source_generation_directory, expected_identity=expected_identity
+        )
+        return result
     except PAFamilyCacheError as exc:
         raise NativeOperatingPACacheError(str(exc)) from exc
 
@@ -466,6 +512,7 @@ __all__ = [
     "ALGORITHM_ID",
     "CacheDisposition",
     "EXPORT_RECEIPT_SUFFIX",
+    "ensure_native_operating_pa_cache",
     "NativeOperatingPACacheError",
     "NativeOperatingPAExport",
     "PA_FORMAT_VERSION",
@@ -473,6 +520,7 @@ __all__ = [
     "canonical_native_operating_pa_cache_key",
     "canonical_native_operating_pa_identity",
     "materialize_native_operating_pa_cache",
+    "migrate_native_operating_pa_cache",
     "native_operating_pa_group_identity",
     "native_operating_pa_member_identity",
     "probe_native_operating_pa_cache",

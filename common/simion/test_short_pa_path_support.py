@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 import uuid
@@ -108,10 +109,10 @@ try{Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes ([int64]$env
             self.assertEqual(result["remaining"], 0)
             self.assertEqual(result["value"], "writable-after-failure")
 
-    def test_immutable_source_guard_uses_unbuffered_private_probe_for_large_source(self) -> None:
+    def test_immutable_source_guard_hashes_unbuffered_without_probe_or_pa_copy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.pa"
-            payload = b"manifest-view-from-unbuffered-probe"
+            payload = b"manifest-view-from-unbuffered-direct-read"
             source.write_bytes(payload)
             script = r"""
 Set-StrictMode -Version Latest
@@ -119,6 +120,7 @@ $ErrorActionPreference='Stop'
 . $env:PA_HELPER
 $global:MassSpectrometryShortPaUnbufferedThresholdBytes=1
 function Get-OpenPaStreamSha256 {param([IO.FileStream]$Stream);throw 'buffered source hash must not be used'}
+function Copy-StandalonePaBytes {throw 'verification must not copy a PA or create a probe'}
 $probeCountBefore=@(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'immutable_pa_source_probe_*').Count
 $identity=Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 $env:PA_SHA
 $probeCountAfter=@(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'immutable_pa_source_probe_*').Count
@@ -136,6 +138,39 @@ Unprotect-ImmutablePaSource -Source $env:PA_SOURCE|Out-Null
             self.assertEqual(result["sha"].lower(), hashlib.sha256(payload).hexdigest())
             self.assertEqual(result["probe_delta"], 0)
             self.assertEqual(result["remaining"], 0)
+
+    def test_unbuffered_verification_failure_does_not_copy_or_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.pa"
+            source.write_bytes(b"locked source")
+            script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$global:MassSpectrometryShortPaUnbufferedThresholdBytes=1
+function Get-OpenPaStreamSha256 {throw 'buffered fallback forbidden'}
+function Copy-StandalonePaBytes {throw 'PA probe forbidden'}
+$before=(Get-Location).Path
+$stream=[IO.File]::Open($env:PA_SOURCE,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+$failed=$false
+try{
+  try{Get-ImmutablePaSourceVerificationSha256 -Stream $stream -Length $stream.Length|Out-Null}
+  catch{$failed=$true;if($_.Exception.Message-notlike'*Unbuffered immutable PA source verification failed*'){throw}}
+  if(-not$stream.CanRead){throw 'Caller-owned source guard was closed'}
+}finally{$stream.Dispose()}
+if((Get-Location).Path-ne$before){throw 'Verification leaked the working directory'}
+[IO.File]::WriteAllText($env:PA_SOURCE,'released')
+[pscustomobject]@{failed=$failed;released=[IO.File]::ReadAllText($env:PA_SOURCE)}|ConvertTo-Json -Compress
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source)}, timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertTrue(result["failed"])
+            self.assertEqual(result["released"], "released")
 
     def test_short_copy_with_large_manifest_identity_verifies_locked_source_hash(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="simion_manifest_unbuffered_copy_"))
@@ -721,6 +756,48 @@ Remove-ShortPaCopy -Path $copy
                 result["identity_sha256"].lower(),
                 hashlib.sha256(b"guarded-private-pa").hexdigest(),
             )
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+
+    def test_guarded_private_copy_is_readable_by_independent_python_hasher(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_pa_cross_process_read_"))
+        source = root / "source.pa"
+        destination = root / "copy.pa"
+        payload = (b"guarded-cross-process-pa" * 4096) + b"end"
+        source.write_bytes(payload)
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION `
+  -ExpectedBytes ([int64]$env:PA_BYTES) -ExpectedSha256 $env:PA_SHA -GuardDestinationReadOnly
+$observed=& $env:PYTHON -c 'import sys; from common.contracts.file_identity import file_sha256; print(file_sha256(sys.argv[1]))' $copy
+if($LASTEXITCODE-ne0){throw 'Independent Python hash failed.'}
+Remove-ShortPaCopy -Path $copy
+[pscustomobject]@{observed_sha256=($observed|Select-Object -Last 1);removed=-not(Test-Path -LiteralPath $copy)}|ConvertTo-Json -Compress
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=HELPER.parents[2], check=True, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                env={
+                    **os.environ,
+                    "PA_HELPER": str(HELPER),
+                    "PA_SOURCE": str(source),
+                    "PA_DESTINATION": str(destination),
+                    "PA_BYTES": str(len(payload)),
+                    "PA_SHA": hashlib.sha256(payload).hexdigest(),
+                    "PYTHON": sys.executable,
+                    "PYTHONPATH": str(HELPER.parents[2]),
+                },
+                timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(
+                result["observed_sha256"], hashlib.sha256(payload).hexdigest().upper()
+            )
+            self.assertTrue(result["removed"])
         finally:
             shutil.rmtree(root, ignore_errors=False)
 

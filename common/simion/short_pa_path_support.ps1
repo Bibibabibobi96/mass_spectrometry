@@ -109,27 +109,22 @@ function Get-ImmutablePaSourceVerificationSha256 {
   if($Length-lt$global:MassSpectrometryShortPaUnbufferedThresholdBytes){
     return Get-OpenPaStreamSha256 -Stream $Stream
   }
-  # A large PA can have a stale buffered source view even while an unbuffered
-  # /J copy reproduces the manifest bytes.  Keep the source handle open only as
-  # the no-write/no-delete lock and verify one private unbuffered projection.
-  $directory=Join-Path ([IO.Path]::GetTempPath()) ('immutable_pa_source_probe_'+[guid]::NewGuid().ToString('N'))
-  $probe=Join-Path $directory 'source_probe.pa'
-  [IO.Directory]::CreateDirectory($directory)|Out-Null
+  # Keep the caller's no-write/no-delete handle throughout the direct
+  # unbuffered read. The shared Python API owns Win32 alignment and failure
+  # handling; no temporary PA projection or buffered fallback is needed.
+  if(-not$Stream.CanRead-or$Stream.Length-ne$Length){throw 'Immutable PA source stream length differs.'}
+  $identityRepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+  $identityPython=Join-Path $identityRepoRoot '.venv\Scripts\python.exe'
+  if(-not(Test-Path -LiteralPath $identityPython -PathType Leaf)){throw "Repository Python is unavailable: $identityPython"}
+  Push-Location -LiteralPath $identityRepoRoot
   try{
-    Copy-StandalonePaBytes -SourceStream $Stream -Destination $probe -Length $Length
-    $item=Get-Item -LiteralPath $probe -Force
-    if([int64]$item.Length-ne$Length){throw 'Immutable PA source probe has the wrong length.'}
-    return (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash
-  }finally{
-    if(Test-Path -LiteralPath $probe -PathType Leaf){
-      $attributes=[IO.File]::GetAttributes($probe)
-      [IO.File]::SetAttributes($probe,$attributes-band(-bnot[IO.FileAttributes]::ReadOnly))
-      [IO.File]::Delete($probe)
+    $digest=@(& $identityPython -m common.contracts.file_identity --unbuffered $Stream.Name)
+    if($LASTEXITCODE-ne0){throw 'Unbuffered immutable PA source verification failed.'}
+    if($digest.Count-ne1-or[string]$digest[0]-cnotmatch'^[0-9A-F]{64}$'-or$Stream.Length-ne$Length){
+      throw 'Unbuffered immutable PA identity output or source length differs.'
     }
-    if(Test-Path -LiteralPath $directory -PathType Container){
-      [IO.Directory]::Delete($directory,$false)
-    }
-  }
+    return [string]$digest[0]
+  }finally{Pop-Location}
 }
 
 function Assert-PublishedPaManifestRecord {
@@ -323,7 +318,7 @@ function New-ShortPaCopy {
         stream=$sourceGuard
         length=[int64]$sourceGuard.Length
         sha256=$verifiedSourceHash
-        verification_kind=if($manifestBackedUnbuffered){'locked_unbuffered_manifest_snapshot'}else{'locked_source_stream'}
+        verification_kind=if($manifestBackedUnbuffered){'locked_unbuffered_manifest_hash'}else{'locked_source_stream'}
         reference_count=0
       }
       $global:MassSpectrometryShortPaSourceGuards[$sourcePath]=$sourceGuardRecord

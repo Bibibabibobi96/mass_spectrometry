@@ -10,8 +10,10 @@ from typing import Any
 
 try:
     from common.contracts.file_identity import file_sha256
+    from common.contracts.write_run_manifest import require_completed_terminal_publication
 except ModuleNotFoundError:
     from file_identity import file_sha256
+    from write_run_manifest import require_completed_terminal_publication
 
 
 def retention_api() -> tuple[Any, Any, Any, Any]:
@@ -136,6 +138,7 @@ def main() -> None:
             "consumed record selectors require --consumer-projection-id"
         )
     manifest_path = args.manifest.resolve()
+    require_completed_terminal_publication(manifest_path)
     manifest_dir = manifest_path.parent
     manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     schema_version = manifest.get("schema_version", 1)

@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import csv
 import io
-import math
-import random
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256 as sha256
+from common.ion_release.mt19937_disk_cone_rf_phase import (
+    STRATEGY,
+)
+from common.ion_release.release import generate_release_states
 
 
 SEED = 2026072801
@@ -25,8 +27,6 @@ SOURCE_Z_MM = -1.5
 MASS_AMU = 100.0
 CHARGE_STATE = 1
 KINETIC_ENERGY_EV = 2.0
-AMU_KG = 1.66053906660e-27
-ELEMENTARY_CHARGE_C = 1.602176634e-19
 COLUMNS = (
     "particle_id",
     "birth_time_s",
@@ -42,36 +42,46 @@ COLUMNS = (
 
 
 def generate_rows(seed: int, total_count: int) -> list[dict[str, object]]:
+    """Return the legacy family rows through the repository release registry API.
+
+    The historical CSV records use Python ``repr`` strings.  Keeping that
+    conversion here preserves the frozen tables while the sampling algorithm
+    itself is owned by :mod:`common.ion_release`.
+    """
     if total_count < 1:
         raise ValueError("particle count must be positive")
-    rng = random.Random(seed)
-    speed_m_s = math.sqrt(
-        2.0 * KINETIC_ENERGY_EV * ELEMENTARY_CHARGE_C / (MASS_AMU * AMU_KG)
+    spec = {
+        "schema_version": 1,
+        "role": "repository_ion_release",
+        "frame_id": "rf_multipole_source_local_cartesian_v1",
+        "particle_count": total_count,
+        "mother_particle_count": total_count,
+        "geometry": {
+            "shape": "disk",
+            "center_mm": [0.0, 0.0, SOURCE_Z_MM],
+            "radius_mm": SOURCE_RADIUS_MM,
+        },
+        "species": {"mass_amu": MASS_AMU, "charge_state": CHARGE_STATE},
+        "sampling": {
+            "strategy": STRATEGY,
+            "seed": seed,
+            "rf_frequency_hz": RF_FREQUENCY_HZ,
+            "kinetic_energy_ev": KINETIC_ENERGY_EV,
+            "cone_half_angle_deg": MAX_DIVERGENCE_DEG,
+        },
+    }
+    text_fields = (
+        "birth_time_s", "x_mm", "y_mm", "z_mm", "vx_m_s", "vy_m_s",
+        "vz_m_s", "mass_amu",
     )
-    cone_cosine = math.cos(math.radians(MAX_DIVERGENCE_DEG))
-    rows: list[dict[str, object]] = []
-    for particle_id in range(1, total_count + 1):
-        birth_time_s = rng.random() / RF_FREQUENCY_HZ
-        radius_mm = SOURCE_RADIUS_MM * math.sqrt(rng.random())
-        position_angle = 2.0 * math.pi * rng.random()
-        direction_cosine = 1.0 - rng.random() * (1.0 - cone_cosine)
-        direction_sine = math.sqrt(1.0 - direction_cosine * direction_cosine)
-        direction_angle = 2.0 * math.pi * rng.random()
-        rows.append(
-            {
-                "particle_id": particle_id,
-                "birth_time_s": repr(birth_time_s),
-                "x_mm": repr(radius_mm * math.cos(position_angle)),
-                "y_mm": repr(radius_mm * math.sin(position_angle)),
-                "z_mm": repr(SOURCE_Z_MM),
-                "vx_m_s": repr(speed_m_s * direction_sine * math.cos(direction_angle)),
-                "vy_m_s": repr(speed_m_s * direction_sine * math.sin(direction_angle)),
-                "vz_m_s": repr(speed_m_s * direction_cosine),
-                "mass_amu": repr(MASS_AMU),
-                "charge_state": CHARGE_STATE,
-            }
-        )
-    return rows
+    return [
+        {
+            "particle_id": state["particle_id"],
+            **{field: repr(state[field]) for field in text_fields},
+            "charge_state": state["charge_state"],
+        }
+        for state in generate_release_states(spec)
+    ]
 
 
 def rows() -> list[dict[str, object]]:

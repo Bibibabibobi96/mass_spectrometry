@@ -27,6 +27,7 @@ from common.contracts.particle_count_policy import (
     validate_positive_particle_count,
     validate_prefix_particle_sources,
 )
+from common.contracts.particle_physics import kinetic_energy_ev
 
 
 COLUMNS = (
@@ -157,19 +158,16 @@ def _derive_rows(
         derived = dict(row)
         derived["birth_time_s"] = rendered_time
         if target_kinetic_energy_ev is not None:
-            mass_kg = float(row["mass_amu"]) * 1.66053906660e-27
             velocities = [float(row[column]) for column in ("vx_m_s", "vy_m_s", "vz_m_s")]
-            source_energy = 0.5 * mass_kg * sum(value * value for value in velocities) / 1.602176634e-19
+            source_energy = kinetic_energy_ev(float(row["mass_amu"]), *velocities)
             if not math.isfinite(source_energy) or source_energy <= 0.0:
                 raise ValueError(f"particle {row['particle_id']} has nonpositive source energy")
             scale = math.sqrt(target_kinetic_energy_ev / source_energy)
             for column, velocity in zip(("vx_m_s", "vy_m_s", "vz_m_s"), velocities, strict=True):
                 derived[column] = repr(velocity * scale)
-            derived_energy = (
-                0.5
-                * mass_kg
-                * sum(float(derived[column]) ** 2 for column in ("vx_m_s", "vy_m_s", "vz_m_s"))
-                / 1.602176634e-19
+            derived_energy = kinetic_energy_ev(
+                float(row["mass_amu"]),
+                *(float(derived[column]) for column in ("vx_m_s", "vy_m_s", "vz_m_s")),
             )
             maximum_energy_error = max(maximum_energy_error, abs(derived_energy - target_kinetic_energy_ev))
             source_energies.append(source_energy)

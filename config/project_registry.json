@@ -16,7 +16,7 @@
     },
     {
       "descriptor": "projects/parallel_mirror_dual_stripe_mr_tof/config/project.json",
-      "sha256": "606268D75ECAD80634D13BF5AE16AE49D72D49CE1FCC4153FA32863B5BAA3291"
+      "sha256": "C956B6C1F8C6AB9C6603D205A567A54D89300B2D08AE6320D388D677A94EF64C"
     },
     {
       "descriptor": "projects/rf_hexapole_ion_optics/config/project.json",
@@ -260,12 +260,14 @@
       "family_id": "tof_mass_analyzers",
       "display_name": "开放路径平行镜双条带多次反射飞行时间质量分析器",
       "purpose": "平行等时镜与两套独立偏压、独立形状漂移条带构成的开放路径MR-TOF质量分析",
-      "lifecycle_status": "prototype",
+      "lifecycle_status": "candidate",
       "toolchains": [
+        "python",
+        "simion",
         "solidworks"
       ],
       "contracts": {
-        "baseline": null,
+        "baseline": "config/simion_candidate_two_zone.json",
         "resolved": null,
         "analysis": null,
         "interface": null,
@@ -277,9 +279,15 @@
         {
           "capability_id": "multiple_reflection_mass_analysis",
           "function": "mass_analysis",
-          "status": "prototype",
+          "status": "candidate",
           "modes": [],
-          "metrics": [],
+          "metrics": [
+            "detection_fraction",
+            "target_oscillation_fraction",
+            "time_of_flight",
+            "mass_resolving_power",
+            "spatial_return_residual"
+          ],
           "design_variables": []
         }
       ],
@@ -289,10 +297,10 @@
         "identity_contract": null
       },
       "known_gaps": [
-        "SolidWorks assembly references and coordinate systems are not audited",
-        "The reviewed dual-stripe theory is not yet bound to baseline and resolved parameter contracts",
-        "COMSOL and SIMION models do not exist",
-        "Performance and formal acceptance contracts are not defined"
+        "Resolved geometry is deterministically derived and frozen per run; no standalone checked-in resolved JSON is promoted as a second authority",
+        "The native corridor PA family still requires real-build equivalence, IOB priority and end-to-end flight qualification",
+        "No independent COMSOL field or trajectory model currently qualifies the three-dimensional SIMION candidate",
+        "Manufacturing tolerances, complete source distributions, space charge and Formal performance acceptance remain open"
       ]
     },
     {

@@ -76,8 +76,17 @@ particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s,mass_amu,charge_sta
 时钟、释放面、质量、电荷和动能，并绑定 CSV 与 resolved SHA。家族母样本、允许前缀、精确路径与
 SHA 由项目 `particle_source_profiles.json` 绑定；粒子数等级由公共机器政策定义。
 
+RF 家族母样本的随机圆盘位置、filled-cone 方向和 RF 相位出生时间由
+[`common/ion_release/mt19937_disk_cone_rf_phase.py`](../ion_release/mt19937_disk_cone_rf_phase.py)
+的受注册 disk 策略生成；本目录的 family builder 只选择冻结参数并发布既有的嵌套 CSV，不能再维护
+第二份随机采样实现。
+
+`ideal_transport.py` 也只投影该公共注册表的
+`mt19937_uniform_disk_sqrt_cone_rf_phase_v1` 状态到 SI 传输状态；该策略保留 L1 历史的五次 MT19937
+取样序列和 `sqrt(u)` 圆锥角，因此不改变既有理想场对照的粒子序列。
+
 默认源仍必须位于唯一的规范释放面并满足设计的单能源模型。唯一受支持的例外是由
-[`continuous_axial_volume_source.py`](sources/continuous_axial_volume_source.py)生成、且其receipt与CSV
+[`common/ion_release/continuous_axial_volume.py`](../ion_release/continuous_axial_volume.py)生成、且其receipt与CSV
 哈希互相绑定的连续轴向体积快照：它表示离子源内部的一个同一时刻圆柱体状态，位置与三向速度独立采样，
 不预设`z-vz`相关；它不能被解释为已经通过多极杆后的出口束流。
 

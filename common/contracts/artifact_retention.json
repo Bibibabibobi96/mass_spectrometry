@@ -35,6 +35,7 @@
   "dense_trajectory_globs": [
     "trajectory_samples*.csv",
     "trajectory_samples*.csv.gz",
+    "*.trace.log",
     "*trajectory*.h5",
     "*trajectory*.hdf5"
   ],

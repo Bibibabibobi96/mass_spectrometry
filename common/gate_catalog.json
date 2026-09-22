@@ -547,6 +547,38 @@
       }
     },
     {
+      "stage": "parallel_mirror_dual_stripe_mr_tof_static",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "project_id": "parallel_mirror_dual_stripe_mr_tof",
+      "matches": [
+        {
+          "prefix": "projects/parallel_mirror_dual_stripe_mr_tof/",
+          "reason": "parallel_mirror_dual_stripe_mr_tof_path_changed"
+        },
+        {
+          "prefix": "projects/orthogonal_accelerator/",
+          "reason": "orthogonal_accelerator_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1",
+        "parameters": {
+          "Level": "Core",
+          "PythonExe": "{python}"
+        }
+      },
+      "repository_integration_command": {
+        "runner": "powershell",
+        "script": "projects/parallel_mirror_dual_stripe_mr_tof/verify_project.ps1",
+        "parameters": {
+          "Level": "Static",
+          "PythonExe": "{python}"
+        }
+      }
+    },
+    {
       "stage": "single_reflection_oa_tof_mass_analyzer_static",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",

@@ -20,7 +20,7 @@ from common.multipole.particle_source_preflight import (
     validate_source,
 )
 from common.multipole.simion_particle_source import render_canonical_source
-from common.multipole.sources.continuous_axial_volume_source import materialize
+from common.ion_release.release import materialize_release_from_file as materialize
 from common.multipole.test_compile_design_request import design_request
 
 

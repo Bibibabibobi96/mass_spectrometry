@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import json
 import math
-import random
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +12,8 @@ import numpy as np
 
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
+from common.ion_release.mt19937_disk_cone_rf_phase import IDEAL_TRANSPORT_STRATEGY
+from common.ion_release.release import generate_release_states
 from common.multipole.family_contract import VoltageDrive, from_high_order_baseline
 
 
@@ -134,26 +135,36 @@ def adiabaticity(
 def source_particles(contract: dict[str, Any]) -> list[dict[str, float]]:
     source = contract["particle_source"]
     validate_positive_particle_count(int(source["count"]))
-    rng = random.Random(int(source["seed"]))
-    mass_kg = float(source["mass_amu"]) * AMU_KG
-    speed = math.sqrt(2 * float(source["kinetic_energy_eV"]) * ELEMENTARY_CHARGE_C / mass_kg)
-    particles = []
-    period_s = 1 / float(contract["rf"]["frequency_Hz"])
-    for particle_id in range(1, int(source["count"]) + 1):
-        radius = float(source["maximum_source_radius_mm"]) * 1e-3 * math.sqrt(rng.random())
-        angle = 2 * math.pi * rng.random()
-        cone = math.radians(float(source["maximum_divergence_deg"])) * math.sqrt(rng.random())
-        velocity_angle = 2 * math.pi * rng.random()
-        particles.append({
-            "particle_id": particle_id,
-            "birth_time_s": rng.random() * period_s,
-            "x_m": radius * math.cos(angle),
-            "y_m": radius * math.sin(angle),
-            "vx_m_s": speed * math.sin(cone) * math.cos(velocity_angle),
-            "vy_m_s": speed * math.sin(cone) * math.sin(velocity_angle),
-            "vz_m_s": speed * math.cos(cone),
-        })
-    return particles
+    states = generate_release_states({
+        "schema_version": 1,
+        "role": "repository_ion_release",
+        "frame_id": "multipole_ideal_transport_local_cartesian_v1",
+        "particle_count": int(source["count"]),
+        "mother_particle_count": int(source["count"]),
+        "geometry": {
+            "shape": "disk", "center_mm": [0.0, 0.0, 0.0],
+            "radius_mm": float(source["maximum_source_radius_mm"]),
+        },
+        "species": {"mass_amu": float(source["mass_amu"]), "charge_state": int(source["charge_state"])},
+        "sampling": {
+            "strategy": IDEAL_TRANSPORT_STRATEGY, "seed": int(source["seed"]),
+            "rf_frequency_hz": float(contract["rf"]["frequency_Hz"]),
+            "kinetic_energy_ev": float(source["kinetic_energy_eV"]),
+            "cone_half_angle_deg": float(source["maximum_divergence_deg"]),
+        },
+    })
+    return [
+        {
+            "particle_id": int(state["particle_id"]),
+            "birth_time_s": float(state["birth_time_s"]),
+            "x_m": float(state["x_mm"]) * 1e-3,
+            "y_m": float(state["y_mm"]) * 1e-3,
+            "vx_m_s": float(state["vx_m_s"]),
+            "vy_m_s": float(state["vy_m_s"]),
+            "vz_m_s": float(state["vz_m_s"]),
+        }
+        for state in states
+    ]
 
 
 def _derivative(

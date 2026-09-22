@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -25,7 +26,19 @@ def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        # Windows sharing/lock conflicts and access denial can be short-lived
+        # during concurrent readers or filesystem filtering.  This bounded
+        # 0.75-second retry window does not reinterpret persistent denial as
+        # success, change ACLs, or rewrite the already-flushed candidate.
+        delays = (0.05, 0.1, 0.2, 0.4)
+        for attempt in range(len(delays) + 1):
+            try:
+                os.replace(temporary, path)
+                break
+            except OSError as exc:
+                if getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == len(delays):
+                    raise
+                time.sleep(delays[attempt])
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -33,6 +46,7 @@ def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
 
 def remove_recorded_files(
     root: Path, records: Iterable[dict[str, Any]], *, missing_ok: bool = False,
+    identities_verified: bool = False,
 ) -> Iterator[dict[str, Any]]:
     """Yield each removed record after size/SHA revalidation; never scan for files.
 
@@ -48,8 +62,11 @@ def remove_recorded_files(
             raise ValueError(f"recorded removal is a symbolic link: {path}")
         if missing_ok and not path.exists():
             continue
-        if (not path.is_file() or path.stat().st_size != record["bytes"]
-                or file_sha256(path) != record["sha256"]):
+        if (
+            not path.is_file()
+            or path.stat().st_size != record["bytes"]
+            or (not identities_verified and file_sha256(path) != record["sha256"])
+        ):
             raise ValueError(f"recorded removal file identity changed: {path}")
         try:
             try:

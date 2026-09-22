@@ -21,7 +21,7 @@ import time
 from typing import Any, Iterable, Mapping
 from uuid import uuid4
 
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import file_sha256, file_sha256_unbuffered
 
 
 SHA256 = re.compile(r"^[0-9A-Fa-f]{64}$")
@@ -136,7 +136,9 @@ def inventory_declared_files(
     return inventory_named_files(root, [record["name"] for record in expected])
 
 
-def inventory_named_files(directory: str | Path, filenames: Iterable[str]) -> list[dict[str, Any]]:
+def inventory_named_files(
+    directory: str | Path, filenames: Iterable[str], *, unbuffered_large_files: bool = False,
+) -> list[dict[str, Any]]:
     """Hash a caller-ordered list of direct files; reject invalid names."""
     root = Path(directory)
     records = []
@@ -146,7 +148,12 @@ def inventory_named_files(directory: str | Path, filenames: Iterable[str]) -> li
         path = root / name
         if not path.is_file():
             raise ValueError(f"declared cache file is missing: {path}")
-        records.append({"name": name, "bytes": path.stat().st_size, "sha256": file_sha256(path)})
+        size = path.stat().st_size
+        hash_file = file_sha256_unbuffered if (
+            unbuffered_large_files and os.name == "nt"
+            and size >= _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES
+        ) else file_sha256
+        records.append({"name": name, "bytes": size, "sha256": hash_file(path)})
     return validate_direct_inventory(records)
 
 

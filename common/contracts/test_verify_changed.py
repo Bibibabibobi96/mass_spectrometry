@@ -270,6 +270,21 @@ class ChangedGateContractTests(unittest.TestCase):
         )
         self.assertEqual(routed_integrations, integration_gates)
 
+    def test_mrtof_uses_fast_changed_gate_and_complete_solver_free_l2_gate(self) -> None:
+        route = next(
+            item for item in self.routes
+            if item.get("project_id") == "parallel_mirror_dual_stripe_mr_tof"
+        )
+        self.assertEqual(
+            route["command"]["parameters"],
+            {"Level": "Core", "PythonExe": "{python}"},
+        )
+        self.assertEqual(
+            route["repository_integration_command"]["parameters"],
+            {"Level": "Static", "PythonExe": "{python}"},
+        )
+        self.assertNotIn("SimionExe", json.dumps(route))
+
     def test_plan_mode_is_fail_closed_for_dependency_selection(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:

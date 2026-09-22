@@ -228,10 +228,26 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(sum(r["budget"]["cpu_cores"] for r in records if r["status"] == "acquired"), 4)
 
     def test_io_and_named_resource_are_global(self) -> None:
+        self.policy["io_slots"] = 1
         self.acquire(1, budget(io=1, exclusive=["gui"]))
         self.assertEqual(self.acquire(2, budget(io=1))["reason"], "io_budget_full")
         self.assertEqual(self.acquire(3, budget(exclusive=["gui"]))["reason"], "exclusive_resource_in_use")
         self.assertEqual(self.acquire(4)["status"], "acquired")
+
+    def test_simion_flight_can_share_io_capacity_with_one_response_refine(self) -> None:
+        response = self.policy["profiles"]["simion-dirichlet-response"]
+        flight = self.policy["profiles"]["simion-flight"]
+        self.assertEqual(self.acquire(1, response)["status"], "acquired")
+        self.assertEqual(self.acquire(2, flight)["status"], "acquired")
+        self.assertTrue(flight["heavy_stage"])
+        self.assertEqual(flight["io_slots"], 1)
+
+    def test_zero_host_io_capacity_uses_live_telemetry_without_static_limit(self) -> None:
+        self.assertEqual(self.policy["io_slots"], 0)
+        self.assertEqual(self.acquire(1, budget(io=1))["status"], "acquired")
+        self.assertEqual(self.acquire(2, budget(io=1))["status"], "acquired")
+        self.snapshot["io_pressure"] = True
+        self.assertEqual(self.acquire(3, budget(io=1))["reason"], "io_pressure")
 
     def test_unknown_peak_does_not_classify_work_as_heavy(self) -> None:
         self.acquire(1, self.policy["profiles"]["heavy-compute"])
@@ -382,6 +398,52 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.snapshot["unknown_process_ids"] = [999]
         self.assertEqual(self.acquire(2)["status"], "acquired")
 
+    def test_definitely_exited_identity_is_pruned_after_snapshot_race(self) -> None:
+        self.acquire(1, budget(cpu=4))
+        self.snapshot["processes"] = [p for p in self.snapshot["processes"] if p["pid"] != 1]
+        # The adapter saw a CIM row without CreationDate, then native process
+        # lookup proved the owner had exited before this snapshot completed.
+        self.snapshot["unknown_process_ids"] = [1]
+        self.snapshot["definitely_exited_process_ids"] = [1]
+        self.assertEqual(self.acquire(2, budget(cpu=4))["status"], "acquired")
+        self.assertEqual([record["token"] for record in self.call("status")["records"]], ["2"])
+
+    def test_definitely_exited_identity_cannot_conflict_with_live_observation(self) -> None:
+        self.acquire(1)
+        self.snapshot["definitely_exited_process_ids"] = [1]
+        with self.assertRaisesRegex(ValueError, "conflicts with a live"):
+            self.acquire(2)
+
+    def test_live_owner_can_release_exact_waited_child_despite_unreadable_recycled_pid(self) -> None:
+        self.acquire(1, budget(cpu=4))
+        self.snapshot["processes"].append(
+            dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=GIB)
+        )
+        self.call("register", token="1", process_id=99)
+        self.snapshot["processes"] = [process for process in self.snapshot["processes"] if process["pid"] != 99]
+        self.snapshot["unknown_process_ids"] = [99]
+        result = self.call(
+            "release", token="1",
+            completed_work_processes=[dict(pid=99, started="0000000000000000002")],
+        )
+        self.assertEqual(result["status"], "released")
+        self.assertEqual(self.acquire(2, budget(cpu=4))["status"], "acquired")
+
+    def test_completion_evidence_rejects_descendant_and_unregistered_or_mismatched_identity(self) -> None:
+        self.acquire(1)
+        self.snapshot["processes"].append(
+            dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=GIB)
+        )
+        self.call("register", token="1", process_id=99)
+        self.snapshot["processes"] = [process for process in self.snapshot["processes"] if process["pid"] != 99]
+        self.snapshot["unknown_process_ids"] = [99]
+        with self.assertRaisesRegex(ValueError, "live reservation owner"):
+            self.call("release", 2, token="1", completed_work_processes=[dict(pid=99, started="0000000000000000002")])
+        with self.assertRaisesRegex(ValueError, "exact registered"):
+            self.call("release", token="1", completed_work_processes=[dict(pid=99, started="wrong")])
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            self.call("release", token="1")
+
     def test_reopen_persistent_ledger_retains_live_reservations(self) -> None:
         self.acquire(1, budget(cpu=4))
         self.assertEqual(self.acquire(2)["status"], "waiting")
@@ -398,6 +460,7 @@ class HostResourceSchedulerTests(unittest.TestCase):
 
     def test_phase_cannot_exceed_host_capacity(self) -> None:
         self.acquire(1)
+        self.policy["io_slots"] = 1
         for resources in (budget(cpu=5), budget(io=2), budget(memory=16*GIB)):
             with self.assertRaises(ValueError):
                 self.call("transition", token="1", stage="too-big", budget=resources, retained_memory_bytes=0)
@@ -437,14 +500,24 @@ class HostResourceSchedulerTests(unittest.TestCase):
     def test_live_solver_prevents_phase_release_of_exclusive_resource(self) -> None:
         self.acquire(1, budget(exclusive=["solver-server"]))
         self.snapshot["processes"].append(dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=2*GIB))
+        self.call("register", token="1", process_id=99)
         with self.assertRaisesRegex(ValueError, "live descendants"):
             self.call("transition", token="1", stage="postprocess", budget=budget(), retained_memory_bytes=0)
         self.assertEqual(self.acquire(2, budget(exclusive=["solver-server"]))["reason"], "exclusive_resource_in_use")
+
+    def test_unregistered_control_descendant_does_not_hold_stage_boundary(self) -> None:
+        self.acquire(1)
+        self.snapshot["processes"].append(dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=2*GIB))
+        result = self.call("transition", token="1", stage="next", budget=budget(), retained_memory_bytes=0)
+        self.assertEqual(result["status"], "acquired")
+        self.assertIn(99, result["live_process_ids"])
+        self.assertEqual(result["live_work_process_ids"], [])
 
     def test_system_console_does_not_block_phase_but_stays_in_memory_accounting(self) -> None:
         self.acquire(1)
         self.snapshot["processes"].append(dict(pid=99, parent_pid=1, started="0000000000000000002",
                                                 memory_bytes=GIB, is_system_console_host=True))
+        self.call("register", token="1", process_id=99)
         result = self.call("transition", token="1", stage="next", budget=budget(), retained_memory_bytes=0)
         self.assertEqual(result["status"], "acquired")
         self.assertIn(99, result["live_process_ids"])

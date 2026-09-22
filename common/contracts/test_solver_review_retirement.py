@@ -12,8 +12,14 @@ from pathlib import Path
 from unittest import mock
 
 from common.contracts.capacity_protection import create_capacity_protection_lease
+from common.contracts.capacity_ledger import initialize_capacity_ledger
 from common.contracts.solver_review_retirement import (
-    RetirementError, apply_retirement, main, plan_retirement, verify_retirement,
+    LEGACY_INITIALIZATION_SUMMARY,
+    RetirementError,
+    apply_retirement,
+    main,
+    plan_retirement,
+    verify_retirement,
 )
 
 
@@ -35,6 +41,7 @@ class SolverReviewRetirementTest(unittest.TestCase):
         self.runs = self.artifacts / "projects" / "p" / "runs"
         self.target = self._run("20260101_000000__build__simion__old", "2026-01-01T00:00:00Z")
         self.replacement = self._run("20260102_000000__build__simion__new", "2026-01-02T00:00:00Z")
+        initialize_capacity_ledger(self.artifacts, objects=[])
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -50,7 +57,7 @@ class SolverReviewRetirementTest(unittest.TestCase):
     def _run(self, run_id: str, recorded: str, *, status: str = "success") -> Path:
         run = self.runs / run_id
         simion = run / "simion"
-        simion.mkdir(parents=True)
+        simion.mkdir(parents=True, exist_ok=True)
         roles = {
             "candidate_contract": run / "candidate.json",
             "resolved_prototype_contract": run / "resolved.json",
@@ -91,6 +98,21 @@ class SolverReviewRetirementTest(unittest.TestCase):
         )
         summary_record["bytes"] = summary_path.stat().st_size
         summary_record["sha256"] = _sha(summary_path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def _make_real_legacy_initialization_fixture(self, run: Path) -> None:
+        """Match the historical success-manifest/unbound-init-summary shape."""
+
+        (run / "summary.json").write_text(
+            json.dumps(LEGACY_INITIALIZATION_SUMMARY), encoding="utf-8"
+        )
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["outputs"] = [
+            record
+            for record in manifest["outputs"]
+            if Path(record["path"]).name != "summary.json"
+        ]
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     def _rename_input_role(self, run: Path, old: str, new: str) -> None:
@@ -158,6 +180,161 @@ class SolverReviewRetirementTest(unittest.TestCase):
         self.assertEqual(
             verify_retirement(self.target)["target_terminal_status"], "success"
         )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_real_legacy_initialization_summary_can_use_superseded_entrypoint(
+        self, _scan: mock.Mock,
+    ) -> None:
+        self._make_real_legacy_initialization_fixture(self.target)
+
+        plan = plan_retirement(
+            self.artifacts,
+            self.repo,
+            self.target,
+            self.replacement,
+            "new verified package supersedes legacy initialized solver review",
+            self.compatibility_roles,
+        )
+
+        self.assertTrue(plan["target_legacy_initialization_summary"])
+        self.assertGreater(plan["bytes_to_release"], 0)
+        self.assertIn(
+            "summary.json", {item["path"] for item in plan["preserved_files"]}
+        )
+        with mock.patch.dict(
+            os.environ,
+            {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"},
+        ):
+            receipt = apply_retirement(plan)
+        self.assertTrue(receipt["target_legacy_initialization_summary"])
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual(
+            json.loads((self.target / "summary.json").read_text(encoding="utf-8")),
+            LEGACY_INITIALIZATION_SUMMARY,
+        )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_legacy_initialization_summary_requires_exact_template(
+        self, _scan: mock.Mock,
+    ) -> None:
+        mutations = {
+            "extra_field": lambda value: value.update(unexpected=True),
+            "reason_text": lambda value: value.update(
+                reason=f"{value['reason']} "
+            ),
+            "role": lambda value: value.update(role="run_package_checkpoint_summary"),
+            "schema": lambda value: value.update(schema_version=2),
+            "running": lambda value: value.update(status="running"),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                self._run(
+                    self.target.name, "2026-01-01T00:00:00Z"
+                )
+                self._make_real_legacy_initialization_fixture(self.target)
+                summary = dict(LEGACY_INITIALIZATION_SUMMARY)
+                mutate(summary)
+                (self.target / "summary.json").write_text(
+                    json.dumps(summary), encoding="utf-8"
+                )
+
+                with self.assertRaisesRegex(
+                    RetirementError, "target is not a complete"
+                ):
+                    plan_retirement(
+                        self.artifacts,
+                        self.repo,
+                        self.target,
+                        self.replacement,
+                        "near-match is not legacy authority",
+                        self.compatibility_roles,
+                    )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_legacy_exception_does_not_admit_replacement_or_non_solver_review(
+        self, _scan: mock.Mock,
+    ) -> None:
+        self._make_real_legacy_initialization_fixture(self.replacement)
+        with self.assertRaisesRegex(
+            RetirementError, "replacement is not a complete success"
+        ):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "replacement must remain complete",
+                self.compatibility_roles,
+            )
+
+        self._run(
+            self.replacement.name, "2026-01-02T00:00:00Z"
+        )
+        self._make_real_legacy_initialization_fixture(self.target)
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["artifact_retention"] = {
+            "policy_version": 1,
+            "class": "compact",
+            "reason": None,
+        }
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["run_config"]["bytes"] = config_path.stat().st_size
+        manifest["run_config"]["sha256"] = _sha(config_path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(RetirementError, "not solver_review"):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "compact target is not eligible",
+                self.compatibility_roles,
+            )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_checkpoint_manifest_is_not_terminalized_from_success_summary(
+        self, _scan: mock.Mock,
+    ) -> None:
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["status"] = "checkpoint"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        with self.assertRaisesRegex(RetirementError, "target is not a complete"):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "summary cannot terminalize a checkpoint manifest",
+                self.compatibility_roles,
+            )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_active_lease_blocks_legacy_initialization_target(
+        self, _scan: mock.Mock,
+    ) -> None:
+        self._make_real_legacy_initialization_fixture(self.target)
+        create_capacity_protection_lease(
+            self.artifacts,
+            lease_id="active-producer-consumer-chain",
+            owner="test",
+            ttl_seconds=3600,
+            protected_paths=[self.target],
+        )
+
+        with self.assertRaisesRegex(RetirementError, "active capacity protection lease"):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "active chain must remain protected",
+                self.compatibility_roles,
+            )
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_failed_target_with_identity_equal_role_mapping_can_be_retired(
@@ -325,13 +502,15 @@ class SolverReviewRetirementTest(unittest.TestCase):
         )
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=["docs/x.md"])
-    def test_document_reference_fails_closed(self, _scan: mock.Mock) -> None:
+    def test_historical_document_reference_is_audited_not_a_heavy_dependency(
+        self, _scan: mock.Mock,
+    ) -> None:
         self._set_status(self.target, "failed")
-        with self.assertRaises(RetirementError):
-            plan_retirement(
-                self.artifacts, self.repo, self.target, self.replacement,
-                "compatible", self.compatibility_roles,
-            )
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "compatible", self.compatibility_roles,
+        )
+        self.assertEqual(plan["historical_document_references"], ["docs/x.md"])
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_capacity_protection_lease_blocks_failed_target(self, _scan: mock.Mock) -> None:
@@ -384,7 +563,44 @@ class SolverReviewRetirementTest(unittest.TestCase):
         self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
         self.assertTrue((self.target / "simion" / "analyzer.pa0").is_file())
 
-    def test_apply_rechecks_new_git_document_reference(self) -> None:
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_apply_audits_late_terminal_downstream_reference_without_blocking(
+        self, _scan: mock.Mock,
+    ) -> None:
+        plan = plan_retirement(
+            self.artifacts,
+            self.repo,
+            self.target,
+            self.replacement,
+            "terminal references remain historical",
+            self.compatibility_roles,
+        )
+        downstream = self.runs / "20260103_000000__analysis__python__late-history"
+        downstream.mkdir(parents=True)
+        config_path = downstream / "run_config.json"
+        config_path.write_text(
+            json.dumps({"source_run": str(self.target)}), encoding="utf-8"
+        )
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "failed"}),
+            encoding="utf-8",
+        )
+
+        with mock.patch.dict(
+            os.environ,
+            {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"},
+        ):
+            receipt = apply_retirement(plan)
+
+        self.assertEqual(
+            receipt["apply_historical_downstream_references"][0][
+                "run_config_path"
+            ],
+            str(config_path),
+        )
+        self.assertFalse((self.target / "simion" / "analyzer.pa0").exists())
+
+    def test_apply_records_new_historical_document_reference_without_blocking(self) -> None:
         with mock.patch(
             "common.contracts.solver_review_retirement._git_document_references",
             return_value=[],
@@ -396,24 +612,222 @@ class SolverReviewRetirementTest(unittest.TestCase):
             scan.return_value = ["docs/new-reference.md"]
             with mock.patch.dict(
                 os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}
-            ), self.assertRaisesRegex(RetirementError, "gained active references"):
-                apply_retirement(plan)
-        self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
-        self.assertTrue((self.target / "simion" / "analyzer.pa0").is_file())
+            ):
+                receipt = apply_retirement(plan)
+        self.assertEqual(
+            receipt["apply_historical_document_references"],
+            ["docs/new-reference.md"],
+        )
+        self.assertFalse((self.target / "simion" / "analyzer.pa0").exists())
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
-    def test_downstream_reference_blocks_failed_target(self, _scan: mock.Mock) -> None:
+    def test_downstream_manifest_reference_preserves_light_evidence_only(self, _scan: mock.Mock) -> None:
         self._set_status(self.target, "failed")
         downstream = self.runs / "20260103_000000__analysis__python__consumer"
         downstream.mkdir(parents=True)
         (downstream / "run_config.json").write_text(
-            json.dumps({"source_run": self.target.name}), encoding="utf-8"
+            json.dumps(
+                {
+                    "inputs": {
+                        "source_manifest": str(self.target / "run_manifest.json")
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "checkpoint"}),
+            encoding="utf-8",
+        )
+
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "referenced manifest remains immutable", self.compatibility_roles,
+        )
+        self.assertEqual(
+            plan["active_preserved_file_references"][0]["path"],
+            "run_manifest.json",
+        )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_active_reference_to_preserved_light_file_does_not_pin_heavy_payload(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__light-consumer"
+        downstream.mkdir(parents=True)
+        (downstream / "run_config.json").write_text(
+            json.dumps({"source_summary": str(self.target / "summary.json")}),
+            encoding="utf-8",
+        )
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "checkpoint"}),
+            encoding="utf-8",
+        )
+
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "preserved evidence remains available", self.compatibility_roles,
+        )
+
+        self.assertEqual(plan["active_preserved_file_references"][0]["path"], "summary.json")
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_active_reference_to_nested_heavy_file_blocks_retirement(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__payload-consumer"
+        downstream.mkdir(parents=True)
+        (downstream / "run_config.json").write_text(
+            json.dumps({"source_pa": str(self.target / "simion" / "analyzer.pa0")}),
+            encoding="utf-8",
+        )
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "checkpoint"}),
+            encoding="utf-8",
         )
 
         with self.assertRaisesRegex(RetirementError, "active references"):
             plan_retirement(
                 self.artifacts, self.repo, self.target, self.replacement,
-                "referenced targets remain immutable", self.compatibility_roles,
+                "active payload cannot retire", self.compatibility_roles,
+            )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_terminal_downstream_reference_is_historical_audit_not_blocker(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__historical"
+        downstream.mkdir(parents=True)
+        config_path = downstream / "run_config.json"
+        config_path.write_text(
+            json.dumps({"source_run": self.target.name}), encoding="utf-8"
+        )
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "success"}),
+            encoding="utf-8",
+        )
+
+        plan = plan_retirement(
+            self.artifacts,
+            self.repo,
+            self.target,
+            self.replacement,
+            "terminal consumers are historical evidence",
+            self.compatibility_roles,
+        )
+
+        self.assertEqual(
+            plan["historical_downstream_references"],
+            [
+                {
+                    "run_config_path": str(config_path),
+                    "manifest_status": "success",
+                    "reason": "configured_target_run_dependency",
+                }
+            ],
+        )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_unreadable_active_run_config_blocks_conservatively(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__uncertain"
+        downstream.mkdir(parents=True)
+        (downstream / "run_config.json").write_text("{", encoding="utf-8")
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "checkpoint"}),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            RetirementError, "run_config_unreadable_reference_uncertain"
+        ):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "uncertain active consumers block",
+                self.compatibility_roles,
+            )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_corrupt_active_run_config_is_audit_only_when_manifest_identity_differs(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__corrupt-config"
+        downstream.mkdir(parents=True)
+        config_path = downstream / "run_config.json"
+        original = json.dumps(
+            {"source_pa": str(self.target / "simion" / "analyzer.pa0")},
+            separators=(",", ":"),
+        ).encode()
+        config_path.write_bytes(original)
+        manifest = {
+            "run_id": downstream.name,
+            "status": "checkpoint",
+            "run_config": {
+                "path": str(config_path),
+                "exists": True,
+                "bytes": len(original),
+                "sha256": hashlib.sha256(original).hexdigest().upper(),
+            },
+        }
+        (downstream / "run_manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        # Simulate the observed all-zero/corrupt file while retaining the
+        # manifest's last-known identity.
+        config_path.write_bytes(b"\x00" * len(original))
+
+        plan = plan_retirement(
+            self.artifacts,
+            self.repo,
+            self.target,
+            self.replacement,
+            "corrupt downstream config is not usable evidence of a consumer",
+            self.compatibility_roles,
+        )
+
+        self.assertEqual(plan["active_preserved_file_references"], [])
+        self.assertEqual(
+            plan["corrupt_run_config_reference_unavailable"][0]["reason"],
+            "corrupt_run_config_reference_unavailable",
+        )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_unreadable_active_run_config_with_matching_manifest_identity_still_blocks(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__matching-invalid-config"
+        downstream.mkdir(parents=True)
+        config_path = downstream / "run_config.json"
+        invalid = b"{"
+        config_path.write_bytes(invalid)
+        manifest = {
+            "run_id": downstream.name,
+            "status": "checkpoint",
+            "run_config": {
+                "path": str(config_path),
+                "exists": True,
+                "bytes": len(invalid),
+                "sha256": hashlib.sha256(invalid).hexdigest().upper(),
+            },
+        }
+        (downstream / "run_manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(
+            RetirementError, "run_config_unreadable_reference_uncertain"
+        ):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "matching but unparsable config remains uncertain",
+                self.compatibility_roles,
             )
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
@@ -481,7 +895,13 @@ class SolverReviewRetirementTest(unittest.TestCase):
                 with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
                     with self.assertRaises(RetirementError):
                         apply_retirement(plan)
-                self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
+                marker = json.loads(
+                    (self.target / "solver_review_retirement_receipt.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(marker["status"], "preflight_pending")
+                self.assertEqual(marker["lifecycle_status"], "retirement_pending")
                 for item in plan["removed_files"]:
                     self.assertTrue((self.target / item["path"]).is_file())
                 path.write_bytes(original)

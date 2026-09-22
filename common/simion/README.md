@@ -40,8 +40,10 @@ oaTOF、single-flight或具体电极编号。
 [`pa_family_cache.py`](pa_family_cache.py)提供完整静电PA-family的内容寻址复用：调用方必须给出完整的
 数值身份（resolved geometry、GEM、basis namespace、xyz网格、网格相位、surface、SIMION可执行文件身份、
 Refine策略和构建器身份）以及精确文件清单。它只缓存并逐字节核验`.pa#`、`.pa0`和basis数组；新发布的
-generation payload和manifest同时设为文件系统只读。schema v2为每组等长payload发布一份流式XOR冗余；单文件
-组的XOR即完整副本，因此所有payload都具备单成员恢复能力。同一身份命中时可原子复制到新的run-local目录，
+generation payload和manifest同时设为文件系统只读。schema v2默认按每组等长payload发布流式XOR冗余；单文件
+组的XOR即完整副本，因此不可重建或高成本PA具备单成员恢复能力。调用方只有在payload可由完整内容身份确定性
+重建时，才可显式采用`none_reconstructible`策略：仍逐文件SHA-256、只读封装和原子发布，但不复制等体积XOR。
+同一身份命中时可原子复制到新的run-local目录，
 但完整 family 物化只服务字节审计、迁移或受控 build 边界，不授权供应商进程再次打开其中的 `.paN`；
 SIMION 运行必须消费构建 staging 导出的 standalone `.pa`。任一缺失、额外、哈希不同或损坏 generation
 均失败关闭。IOB、Fast Adjust
@@ -50,11 +52,75 @@ SIMION 运行必须消费构建 staging 导出的 standalone `.pa`。任一缺�
 key只允许一个写者，并同时建立容量门禁可见的TTL保护租约；遗留锁失败关闭并需按artifact保留规则审计后处置，
 绝不由缓存代码猜测为可删除。v1迁移或v2单成员恢复均发布到新的successor generation，manifest将前一代SHA-256
 冻结为`predecessor_generation_sha256`，完整验证新payload和parity后最后切换pointer；旧generation不原位修改，
-也不因失去current身份就自动删除。
-非Python消费者使用唯一命令行桥接：`python -m common.simion.pa_family_cache --action
-probe|publish|repair|materialize --cache-root <root> --identity <identity.json> --filenames <name,...>`；发布另给
-`--source-directory`，物化另给`--destination-directory`。identity JSON和文件清单由器件适配层派生，
-该CLI不接受或推断物理参数，命中／缺失的建场决定也仍属于调用方。
+也不因失去current身份就自动删除。生产消费者使用`ensure`：current generation单成员损坏时自动发布
+successor并原子推进pointer；显式冻结的旧generation在物化或subset验证时也可生成直接successor，但若
+current已指向别代则绝不回退pointer，返回值必须把predecessor与repair receipt写入本次运行证据。
+普通 current 命中先走封存 metadata 快路（manifest、精确文件名、大小、只读状态和 parity 结构）；发现长度、可写位、
+指针或结构异常时才回退到逐字节验证与修复，不把正常命中变成整套 PA 重读。
+原生family只走确定的`<root>/.transactions/<cache-key>/transaction.json`事务；common同时拥有同目录内的
+`payload`和scratch。状态只有`building / prepared / published / retired`，错误只写`last_error`而不增加状态。
+builder把每个成员先写到返回的确定性scratch，再以原子改名落入`payload`；common看到完整精确清单后建立连续稳定的
+持久化视图并封存，返回`verify`。调用方提交绑定cache key与inventory的SIMION验证证据后，common在同一事务内
+完成parity、generation原子发布、pointer和容量ledger交接。中断后重复`advance-transaction`从同一状态收敛，
+不重新Refine。生产`artifacts/`缺少可信容量ledger时在修改payload前失败关闭；fixture可在其外独立运行。
+尚未验证的封存成员与其轻量receipt身份不一致时，owner可在同一个`advance-transaction`调用中传入
+`--member-recovery <json>`（Python参数`member_recovery`）。请求固定为schema v1、role
+`simion_pa_family_member_recovery`，绑定`cache_key`、`owner`、旧`inventory_sha256`、`receipt`
+文件记录和非空`members`；每个成员提供`sealed`、`expected`两个`name/bytes/sha256`记录及
+`receipt_record_path`数组（JSON对象键或非负数组下标）。owner核对旧清单、receipt字节身份和实际引用，
+仅接受同名但身份不同的成员；不为该检查重读PA。只有`building`且没有verification或generation身份
+可以恢复，不能同时提交验证证据。事务内`member_recovery` journal原子记录请求和旧清单并清空活动inventory，
+随后只移除请求成员及被其失效的receipt，其余成员不动。中断后的普通advance重放该journal，完成后的相同
+请求不再删除已经重建的成员。此可选journal是既有冻结building事务的原子扩展，不新增生命周期状态；
+之后仍走正常缺失成员构建、重新生成receipt、封存、验证及发布，禁止项目直接改台账或整包重算。
+若这些保留成员的随后封存库存出现瞬态读取差异，可在同一入口传
+`--retained-inventory-recovery <json>`（Python 参数 `retained_inventory_recovery`）。请求只含
+`schema_version: 1`、`cache_key`、`owner`、当前 `inventory_sha256` 与明确的非空 `names`，不接受调用者提供
+替代哈希。owner 仅在 `building`、无验证／发布身份、原成员恢复已完成且清单完整时处理；名字必须是原
+`member_recovery.files` 中未删除／重建、但与当前库存不同的保留成员。锁内逐个以只读 `/J` 私有快照核对
+原库存身份，全部成功才原子更新选中记录、库存摘要与恢复证据；PA 和 receipt 字节、其余库存均不改变。
+任一快照失败均不部分更新。完成后的相同请求幂等返回正常 `verify` 阶段，不再复制或扫描 PA；随后仍须提交
+绑定新库存摘要的正常 SIMION 验证证据。此功能只修复已证明的库存读取差异，不接受损坏字节或跳过物理验证。
+生产`artifacts/`事务若使用`--published-pin-reason`，该pin与发布在ledger同一原子handoff中生效，不存在发布后
+再pin的窗口；这类长期资产不进入自动退休。未pin的generation也只能由固定PA manager入口
+`approve_pa_family_cache_retirement(cache_root, cache_key, generation)`退休：它在PA key锁内核对唯一transaction、
+current generation和sealed manifest，并复用manifest中的成员SHA/bytes生成完整文件清单，不重读大型PA。容量ledger
+在decision lock内核对manager、无pin和无租约后，先回调PA owner原子写`retired` transaction，再发布绑定generation
+及完整清单的唯一disposition。实际删除器只消费该disposition；批准或删除中断后沿同一记录幂等恢复，不重新Refine。
+物理删除完成前probe不再返回HIT；完成后同一identity自动开启新的`building`周期。
+发布后校验拒绝某一generation时，rollback也在同一key锁内先进入`writing`：恢复predecessor后以其SHA-256、
+key root实际字节和`ready/last_used_epoch`同步ledger。若首代被拒而没有predecessor，key root只剩回滚收据，
+则不虚构published identity或零字节retired状态，而把该可删除证据根登记为`rebuildable_payload/ready`；回滚中断
+则以实际残留字节保留`published_cache/writing`和错误收据，供显式恢复。
+非Python消费者只使用三个命令行action：`probe`、`advance-transaction`和`materialize`。
+已发布的 `none_reconstructible` generation 若只有一个封存哈希错误，可由原 owner 显式调用
+`advance-transaction --publication-metadata-correction <json>`。请求字段为 `schema_version: 1`、
+`cache_key`、`owner`、`generation_sha256`、`inventory_sha256`、`member_name`、`sealed_sha256`、
+`retained_sha256`；当前工作流可另传 `capacity_lease_id/capacity_lease_owner`，两者仅为本次授权上下文，
+不参与纠错身份。成员必须仍在已完成 member recovery 的原始保留清单中、从未删除重建；原清单 SHA 必须
+等于当前 Windows unbuffered SHA，且修正后所有保留成员均与原清单一致。除该成员外不重新读取 PA 字节。
+owner 在扫描前核对原 pointer 和其他活跃消费者，并核验旧真实格式验证报告及 verifier 的哈希。
+该入口不修改原 verification、不重跑 SIMION，不把 published 伪装为 building；pending journal 优先于
+普通 advance/probe，阻止重新发布错误身份。同 key-root 内撤回 pointer、同卷 rename 原只读载荷至 owner staging，
+将原 manifest 原样移存 `metadata-correction/original_manifest.json`，写入 successor manifest 后 rename 发布。
+PA 全程不写、不复制、不 hardlink，旧 generation 路径失效；这是有证据的错误发布撤回例外，绝非允许原位修改发布资产。
+独立 `metadata-correction/receipt.json` 明确 `no_solver_rerun: true`、原验证报告、原/新 inventory 与持久字节证明，
+CLI 返回 `publication_metadata_correction_receipt` 供运行器冻结。原生 `.paN` 即使移到 staging 仍禁止 SIMION 打开。
+每个 rename/pointer 边界可从同一 journal 续作；容量始终沿同一 key-root owner 对象 `writing→ready` 登记实际逻辑字节，
+保留原 pin，仅增加轻量证据，不走 stage handoff 或预留另一整包。完整纠错证据也纳入既有 owner retirement 清单。
+需要随 PA family 生成 standalone response receipt 时，同一 `advance-transaction` 可传
+`--response-receipt <json>`（Python 参数 `response_receipt`）。规范只含
+`schema_version: 1`、`receipt_name`（已声明的直接 JSON 成员）、`exporter_path` 和
+`exports: [{response_id, source_name, standalone_name}, ...]`，不接受外部 PA 哈希。
+owner 先登记该规范，等待所有数据成员齐全，再在锁内逐成员 flush、扫描一次并置为只读；receipt
+writer 只复用本次内存 inventory，最后仅计算小 receipt 的哈希并联合封存。源映射必须属于该 family。
+相同规范或普通 advance 均可重放已登记事务；已经封存时只核对元数据，不再次扫描 PA。
+规范变化、已有未归属 receipt 或失败的写入均不能发布；未封存的中断写入由 owner 按原规范重建。
+未传入此选项且未登记规范的既有事务行为不变；单独 receipt writer 继续支持独立构建调用。
+`advance-transaction`返回`build / verify / complete`之一，以及确定的transaction、build与scratch路径；验证完成时
+追加`--verification-evidence <json>`，昂贵长期资产再追加`--published-pin-reason <reason>`。`materialize`使用
+`--destination-directory`。`probe`和`materialize`不建立隐式长租约，工作流仍须用显式TTL租约覆盖从命中到消费
+完成的删除竞争。Python层保留验证、修复和迁移原语；它们不再形成另一套原生family发布CLI或恢复状态机。
 
 当运行只消费同一 generation 中已经独立导出的 standalone 成员时，Python 调用方可使用
 `validate_pa_family_cache_subset(...)`：它仍验证 generation manifest、cache key、身份元数据和 generation
@@ -70,6 +136,8 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 [`compare_pa_fields_at_samples.lua`](compare_pa_fields_at_samples.lua)在调用方提供的项目坐标样点比较两个
 已解PA的电势和三分量场，并允许两个PA分别选择严格`z`反射；旧的仅B侧反射调用仍兼容。它不选择局部域、
 轨迹portal、实例优先级或接受阈值。
+[`field_comparison.py`](field_comparison.py)统一读取该比较CSV、拒绝缺列与非有限残差，并计算RMS和最大残差；
+样点分组、物理区域、身份绑定及接受阈值仍由消费项目定义。
 [`build_dirichlet_patch_operating_pa.lua`](build_dirichlet_patch_operating_pa.lua)从一个已解父工作点 standalone
 `.pa` 或一次性 `.pa0` 直接采样
 六面Dirichlet边界，把调用方明确给出的局部电极电压写入同源raw局部几何并只Refine一个工作点。它用于局部
@@ -79,10 +147,7 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 `ID=V`稀疏电压表另存为临时工作点PA0；它不Refine、不覆盖源family，也不拥有电极分组或电压选择。
 该入口只适用于新建、可写、一次性的 build staging family，禁止对已发布 cache 或其物化副本执行。
 它可避免构建期逐节点Lua叠加和重复建场；调用方仍须验证family identity、
-几何网格、实例位置和跨局部域接口。若裁剪后的局部域不含某个实体、但仍依赖它的Dirichlet边界响应，
-SIMION原生Fast Adjust会拒绝超出局部实体计数的响应；此时
-[`adjust_operating_pa_from_basis.lua`](adjust_operating_pa_from_basis.lua)从已解基准工作点只叠加调用方列出的
-非零电压增量响应，不Refine，也不假定响应归一化。零增量应直接复用基准PA0。
+几何网格、实例位置和跨局部域接口。
 
 ### Standalone 工作点与响应合成 API
 
@@ -142,8 +207,13 @@ surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SI
 | API | 输入与职责 |
 |---|---|
 | `New-ShortPaCopy -Source <PA> -Destination <short.pa> -ExpectedBytes <n> -ExpectedSha256 <sha>` | 持有禁止写入/删除/替换源文件的句柄并建立目标不存在的独立普通副本；拒绝 `.paN` 响应成员。Windows 大 PA 使用 `robocopy /J`，以私有目标的长度／SHA-256直接核对 manifest，不再用可能滞后的缓冲源视图否决正确落盘字节；较小文件仍核对同一受护源流和目标 |
-| `Protect-ImmutablePaSource ...` / `Unprotect-*` | 为确需直接只读检查的 immutable 源建立进程期 `FileShare.Read` 保护；大 PA 同样以一次 `/J` 私有探针核对 manifest。它不是把公共 cache 路径交给 SIMION 的许可 |
+| `Protect-ImmutablePaSource ...` / `Unprotect-*` | 为确需直接只读检查的 immutable 源建立进程期 `FileShare.Read` 保护；大 PA 直接无缓冲读取并核对 manifest，不建立额外 PA 探针。它不是把公共 cache 路径交给 SIMION 的许可 |
 | `Remove-ShortPaCopyDirectory -Path <directory>` | 仅清理系统临时目录下匹配前缀的已登记独立副本并释放源句柄；默认前缀为 `simion_pa_links_` |
+
+`Get-ImmutablePaSourceVerificationSha256` 的大文件路径在源保护句柄持续持有期间，从仓库根通过
+`.venv` 的 `python -m common.contracts.file_identity --unbuffered <path>` 调用公共
+`file_sha256_unbuffered`。这消除了每次验证额外的整件 `/J` 探针复制与临时 PA 空间；真正需要的运行副本
+仍走原有 `/J` 复制及目标校验。无缓冲读取失败直接失败关闭，不回退普通缓冲读取；小文件行为不变。
 
 短副本恢复为可写，但“改名”不能证明来源于 family 的响应已经失去 `.paN` 语义。已发布 cache 中的
 family 成员即使完整物化到私有目录也不得再次交给供应商进程；`r66` 证明复制后的成员仍可能导致原 cache
@@ -221,12 +291,11 @@ immutable generation 摘要，以及按 manifest 文件清单完整物化为可�
 原子发布整个目录；不为同一大型 family 重复执行源预哈希、staging 复哈希和发布后复哈希。目标副本不继承只读源
 的时间戳或只读属性。它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的哈希频率。公共 PA-family
 cache 与集成项目 v3 cache 共用该物化原语，同时分别保留自身的 identity、provider-run、断点恢复和 SIMION 写者
-生命周期安全策略。对于刚完成求解、准备进入不可变缓存的 staging family，调用方使用
-`--require-stable-inventory`要求连续两次完整字节清单一致；这覆盖 SIMION 可见进程退出后仍可能发生的延迟 PA
-落盘。稳定性确认仅发生在一次性发布边界，普通缓存命中不会因此重复读取整个大型 family。
-普通命中仍先读取每个 payload 一次。Windows 大 PA 若普通缓冲读取与 manifest 不一致，则在不写、不 flush
-源文件的前提下建立一次 `/J` 私有快照；只有快照长度和 SHA-256 精确命中 manifest 才接受。快照仍不匹配时保持
-`corrupt`。这明确处理同一路径的缓冲视图／持久视图分叉，禁止对已发布源以 ReadWrite 打开或原位“修复”。
+生命周期安全策略。刚完成求解的 transaction payload 只能在所有生产者退出后封存：事务锁内先 flush 每个
+可写成员，再生成一次完整字节清单并立刻置为只读。该清单是随后收据绑定、generation identity 与发布的唯一
+payload 权威；不得再复制完整 family 或重复扫描来“确认”同一个已封存边界。普通命中只检查 sealed manifest、
+精确名称/大小和只读状态，不重读整个大型 family；发现异常时才走完整审计或恢复。已发布源绝不以 ReadWrite
+打开、flush 或原位“修复”。
 
 Windows上的独立大PA投影由[`short_pa_path_support.ps1`](short_pa_path_support.ps1)在`8 MiB`及以上使用
 `robocopy /J`非缓冲复制，再核对目标SHA-256；较小文件仍使用受写穿透保护的流式复制。本机已复现普通

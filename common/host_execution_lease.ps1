@@ -2,7 +2,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:HostResourcePolicyPath = Join-Path $PSScriptRoot 'host_resource_policy.json'
-$script:HostResourceStatePath = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'MassSpectrometry/host_resources.sqlite3'
+# Keep one scheduler alongside the shared artifact ledger.  Desktop child
+# processes may be denied both ProgramData and LocalApplicationData, whereas
+# this repository's artifact root is the common writable control plane for
+# every project workflow in the workspace.
+$script:HostResourceStatePath = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'artifacts\common\host_resources.sqlite3'
 
 function Get-HostResourceBudget {
   [CmdletBinding()]
@@ -33,39 +37,211 @@ function Test-HostResourceConsoleProcess {
   return [string]::Equals($ImagePath, $consoleImage, [StringComparison]::OrdinalIgnoreCase)
 }
 
+function Get-HostResourceIoPressure {
+  <# Scope physical-disk telemetry to the volume that contains this repository.
+
+     A queue on an unrelated, unmounted, or secondary disk must not serialize
+     solver work whose inputs and outputs are on another volume.  Missing or
+     unmappable target-volume telemetry still fails closed.
+  #>
+  param(
+    [Parameter(Mandatory)][object[]]$Disks,
+    [string]$TargetPath = $PSScriptRoot
+  )
+  $policy=Get-Content -LiteralPath $script:HostResourcePolicyPath -Raw|ConvertFrom-Json -AsHashtable
+  [double]$threshold=$policy.io_pressure_queue_length_threshold
+  if([double]::IsNaN($threshold)-or[double]::IsInfinity($threshold)-or$threshold-lt1){
+    throw 'Host resource policy has an invalid I/O pressure queue threshold.'
+  }
+  if($Disks.Count-eq0){return $true}
+  $root=[IO.Path]::GetPathRoot([IO.Path]::GetFullPath($TargetPath))
+  if($root-match'^[A-Za-z]:\\$'){
+    $volume=$root.TrimEnd([IO.Path]::DirectorySeparatorChar)
+    $targetDisks=@($Disks|Where-Object{
+      @(([string]$_.Name)-split'\s+') -contains $volume
+    })
+    if($targetDisks.Count-eq0){return $true}
+  }else{$targetDisks=@($Disks)}
+  return @($targetDisks|Where-Object{[double]$_.CurrentDiskQueueLength-ge$threshold}).Count-gt0
+}
+
+function Get-HostResourceNativeProcessCreationTicks {
+  <# Query creation time with PROCESS_QUERY_LIMITED_INFORMATION when .NET/CIM is denied. #>
+  param([Parameter(Mandatory)][int]$ProcessId)
+  if ($null -eq ('MassSpectrometry.NativeProcessIdentity' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace MassSpectrometry {
+  public static class NativeProcessIdentity {
+    const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetProcessTimes(IntPtr handle, out long creation, out long exit, out long kernel, out long user);
+    public static bool TryGetCreationTicks(int processId, out long ticks) {
+      ticks=0; IntPtr handle=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, (uint)processId);
+      if (handle==IntPtr.Zero) return false;
+      try { long exit, kernel, user; return GetProcessTimes(handle, out ticks, out exit, out kernel, out user); }
+      finally { CloseHandle(handle); }
+    }
+  }
+}
+'@
+  }
+  [int64]$ticks=0
+  if ([MassSpectrometry.NativeProcessIdentity]::TryGetCreationTicks($ProcessId, [ref]$ticks)) {
+    return [DateTime]::FromFileTimeUtc($ticks).Ticks.ToString('D19')
+  }
+  return $null
+}
+
 function Get-HostResourceSnapshot {
   <# Fresh OS observations; a missing snapshot blocks admission, never releases leases. #>
-  $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
-  $cpu = @(Get-CimInstance Win32_Processor -ErrorAction Stop)
-  $load = ($cpu | Measure-Object LoadPercentage -Average).Average
-  $unknownProcessIds = [Collections.Generic.List[int]]::new()
-  $processes = @(foreach ($process in Get-CimInstance Win32_Process -ErrorAction Stop) {
-    if ($null -eq $process.CreationDate) {
-      $unknownProcessIds.Add([int]$process.ProcessId)
-      continue
+  try {
+    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+    $cpu = @(Get-CimInstance Win32_Processor -ErrorAction Stop)
+    $load = ($cpu | Measure-Object LoadPercentage -Average).Average
+    $unknownProcessIds = [Collections.Generic.List[int]]::new()
+    $definitelyExitedProcessIds = [Collections.Generic.List[int]]::new()
+    $processes = @(foreach ($process in Get-CimInstance Win32_Process -ErrorAction Stop) {
+      if ($null -eq $process.CreationDate) {
+        # CIM can deny CreationDate for a live process. A native limited query
+        # still identifies it without treating an unreadable PID as dead.
+        $started = Get-HostResourceNativeProcessCreationTicks -ProcessId ([int]$process.ProcessId)
+        if ($null -ne $started) {
+          @{ pid = [int]$process.ProcessId; parent_pid = [int]$process.ParentProcessId; started = $started
+             memory_bytes = [int64][Math]::Max([int64]$process.WorkingSetSize, [int64]$process.PrivatePageCount)
+             is_system_console_host = Test-HostResourceConsoleProcess -ImagePath $process.ExecutablePath }
+          continue
+        }
+        # A CIM row can outlive a short-lived process. Only an explicit native
+        # no-such-process result authorizes scheduler recovery; all access or
+        # metadata failures remain unknown and therefore fail closed.
+        $exited = $false
+        try {
+          $probe = [Diagnostics.Process]::GetProcessById([int]$process.ProcessId)
+          try { $exited = $probe.HasExited } finally { $probe.Dispose() }
+        } catch [ArgumentException] { $exited = $true }
+        catch { $exited = $false }
+        if ($exited) { $definitelyExitedProcessIds.Add([int]$process.ProcessId) }
+        else { $unknownProcessIds.Add([int]$process.ProcessId) }
+        continue
+      }
+      @{
+        pid = [int]$process.ProcessId
+        parent_pid = [int]$process.ParentProcessId
+        started = $process.CreationDate.ToUniversalTime().Ticks.ToString('D19')
+        memory_bytes = [int64][Math]::Max([int64]$process.WorkingSetSize, [int64]$process.PrivatePageCount)
+        is_system_console_host = Test-HostResourceConsoleProcess -ImagePath $process.ExecutablePath
+      }
+    })
+    $totalMemoryBytes = [int64]$os.TotalVisibleMemorySize * 1KB
+    $availableMemoryBytes = [int64]$os.FreePhysicalMemory * 1KB
+  } catch {
+    # Sandboxed child processes can be denied WMI/CIM while retaining ordinary
+    # process and performance-counter access.  Use independent Win32/.NET
+    # telemetry here; failure of either source still closes admission.
+    Write-Verbose "CIM telemetry unavailable; using native fallback: $($_.Exception.Message)"
+    if ($null -eq ('MassSpectrometry.NativeMemoryStatus' -as [type])) {
+      Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace MassSpectrometry {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto)] public class NativeMemoryStatus {
+    public uint dwLength = (uint)Marshal.SizeOf(typeof(NativeMemoryStatus));
+    public uint dwMemoryLoad; public ulong ullTotalPhys; public ulong ullAvailPhys;
+    public ulong ullTotalPageFile; public ulong ullAvailPageFile; public ulong ullTotalVirtual;
+    public ulong ullAvailVirtual; public ulong ullAvailExtendedVirtual;
+    [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GlobalMemoryStatusEx([In, Out] NativeMemoryStatus status);
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct ProcessEntry {
+      public uint dwSize; public uint cntUsage; public uint th32ProcessID; public IntPtr th32DefaultHeapID;
+      public uint th32ModuleID; public uint cntThreads; public uint th32ParentProcessID;
+      public int pcPriClassBase; public uint dwFlags;
+      [MarshalAs(UnmanagedType.ByValTStr, SizeConst=260)] public string szExeFile;
     }
-    @{
-      pid = [int]$process.ProcessId
-      parent_pid = [int]$process.ParentProcessId
-      started = $process.CreationDate.ToUniversalTime().Ticks.ToString('D19')
-      memory_bytes = [int64][Math]::Max([int64]$process.WorkingSetSize, [int64]$process.PrivatePageCount)
-      is_system_console_host = Test-HostResourceConsoleProcess -ImagePath $process.ExecutablePath
+    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint processId);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool Process32First(IntPtr snapshot, ref ProcessEntry entry);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool Process32Next(IntPtr snapshot, ref ProcessEntry entry);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+    public static int ParentProcessId(int processId) {
+      IntPtr snapshot=CreateToolhelp32Snapshot(0x00000002, 0);
+      if (snapshot == IntPtr.Zero || snapshot == new IntPtr(-1)) return -1;
+      try {
+        ProcessEntry entry=new ProcessEntry(); entry.dwSize=(uint)Marshal.SizeOf(typeof(ProcessEntry));
+        if (!Process32First(snapshot, ref entry)) return -1;
+        do { if (entry.th32ProcessID == (uint)processId) return (int)entry.th32ParentProcessID; }
+        while (Process32Next(snapshot, ref entry));
+        return -1;
+      } finally { CloseHandle(snapshot); }
     }
-  })
-  # I/O slots serialize uncalibrated bulk writers. Observe an actual queue,
-  # rather than treating low CPU usage as evidence that a disk is idle.
+  }
+}
+'@
+    }
+    $memory = [MassSpectrometry.NativeMemoryStatus]::new()
+    if (-not [MassSpectrometry.NativeMemoryStatus]::GlobalMemoryStatusEx($memory)) {
+      throw 'Native memory telemetry is unavailable.'
+    }
+    $sample = Get-Counter '\Processor Information(_Total)\% Processor Time' -ErrorAction Stop
+    $load = [double](@($sample.CounterSamples | Select-Object -First 1)[0].CookedValue)
+    if (-not [double]::IsFinite($load) -or $load -lt 0 -or $load -gt 100) { throw 'Native CPU telemetry is invalid.' }
+    $unknownProcessIds = [Collections.Generic.List[int]]::new()
+    $definitelyExitedProcessIds = [Collections.Generic.List[int]]::new()
+    $processes = @(foreach ($process in [Diagnostics.Process]::GetProcesses()) {
+      try {
+        $started = $process.StartTime.ToUniversalTime().Ticks.ToString('D19')
+        $parent=[MassSpectrometry.NativeMemoryStatus]::ParentProcessId([int]$process.Id)
+        if($parent-lt0){$parent=0}
+        @{ pid=[int]$process.Id; parent_pid=$parent; started=$started
+           memory_bytes=[int64]$process.WorkingSet64; is_system_console_host=$false }
+      } catch {
+        $started=Get-HostResourceNativeProcessCreationTicks -ProcessId ([int]$process.Id)
+        if($null-ne$started){
+          $parent=[MassSpectrometry.NativeMemoryStatus]::ParentProcessId([int]$process.Id)
+          if($parent-lt0){$parent=0}
+          @{ pid=[int]$process.Id; parent_pid=$parent; started=$started
+             memory_bytes=[int64]$process.WorkingSet64; is_system_console_host=$false }
+          continue
+        }
+        # An exited process is neither a live descendant nor an unavailable
+        # identity. Preserve fail-closed handling only when both OS paths
+        # cannot read a live process creation identity.
+        if($process.HasExited){$definitelyExitedProcessIds.Add([int]$process.Id)}else{$unknownProcessIds.Add([int]$process.Id)}
+      }
+      finally { $process.Dispose() }
+    })
+    $totalMemoryBytes = [int64]$memory.ullTotalPhys
+    $availableMemoryBytes = [int64]$memory.ullAvailPhys
+  }
+  # I/O slots consult the configured target-volume queue threshold. A single
+  # queued request is normal bulk I/O, not proof that the disk is saturated.
   $ioPressure = $true
   try {
     $disks = @(Get-CimInstance Win32_PerfFormattedData_PerfDisk_PhysicalDisk -ErrorAction Stop |
       Where-Object Name -ne '_Total')
-    $ioPressure = $disks.Count -eq 0 -or @($disks | Where-Object CurrentDiskQueueLength -gt 0).Count -gt 0
-  } catch { Write-Verbose "Disk telemetry unavailable: $($_.Exception.Message)" }
+    $ioPressure = Get-HostResourceIoPressure -Disks $disks -TargetPath $PSScriptRoot
+  } catch {
+    # WMI disk telemetry may be denied to a desktop child even though the
+    # standard Windows performance counter remains available.  Use the total
+    # physical-disk queue as a conservative fallback; an unavailable counter
+    # still leaves admission closed.
+    try {
+      $sample = Get-Counter '\PhysicalDisk(_Total)\Current Disk Queue Length' -ErrorAction Stop
+      $queue = [double](@($sample.CounterSamples | Select-Object -First 1)[0].CookedValue)
+      if (-not [double]::IsFinite($queue) -or $queue -lt 0) { throw 'Disk queue telemetry is invalid.' }
+      $policy = Get-Content -LiteralPath $script:HostResourcePolicyPath -Raw | ConvertFrom-Json -AsHashtable
+      $ioPressure = $queue -ge [double]$policy.io_pressure_queue_length_threshold
+      Write-Verbose "CIM disk telemetry unavailable; used physical-disk queue fallback: $queue"
+    } catch {
+      Write-Verbose "Disk telemetry unavailable: $($_.Exception.Message)"
+    }
+  }
   return @{
-    complete = $true; processes = $processes; unknown_process_ids = $unknownProcessIds.ToArray()
+    complete = $true; processes = $processes; unknown_process_ids = $unknownProcessIds.ToArray(); definitely_exited_process_ids = $definitelyExitedProcessIds.ToArray()
     logical_processors = [Environment]::ProcessorCount
     cpu_percent = $load
-    total_memory_bytes = [int64]$os.TotalVisibleMemorySize * 1KB
-    available_memory_bytes = [int64]$os.FreePhysicalMemory * 1KB
+    total_memory_bytes = $totalMemoryBytes
+    available_memory_bytes = $availableMemoryBytes
     io_pressure = $ioPressure
   }
 }
@@ -203,6 +379,7 @@ function Enter-HostResourceStage {
     token=[string]$record.token;status=[string]$record.status;reason=[string]$record.reason
     inherited=$inherited;state_path=$StatePath;role=$Role;stage=$Stage;run_id=$RunId
     owner_pid=$PID;previous_environment=$previous;environment_set=(-not $NoEnvironment)
+    registered_work_processes=@{};completed_work_processes=[Collections.Generic.List[object]]::new()
   }
   try {
     if (-not $NoWait) { $lease = Wait-HostResourceStage -Lease $lease }
@@ -234,8 +411,23 @@ function Update-HostResourceStage {
     }
     return $Lease
   }
-  $record = Invoke-HostResourceTransaction -StatePath $Lease.state_path -Request @{
-    operation='transition';token=$Lease.token;stage=$Stage;budget=$Budget;retained_memory_bytes=$RetainedMemoryBytes
+  # A completed child can remain visible for one process-snapshot interval.
+  # Do not turn that normal hand-off into a failed physics run: refresh until
+  # the scheduler sees the terminal child disappear, while retaining the
+  # existing lease and its admission promise throughout.
+  $deadline = [DateTime]::UtcNow.AddSeconds(30)
+  while ($true) {
+    try {
+      $record = Invoke-HostResourceTransaction -StatePath $Lease.state_path -Request @{
+        operation='transition';token=$Lease.token;stage=$Stage;budget=$Budget;retained_memory_bytes=$RetainedMemoryBytes
+      }
+      break
+    } catch {
+      if ($_.Exception.Message -notmatch 'live descendants still own this stage' -or [DateTime]::UtcNow -ge $deadline) {
+        throw
+      }
+      Start-Sleep -Milliseconds 100
+    }
   }
   $Lease.stage=$Stage; $Lease.status=[string]$record.status; $Lease.reason=[string]$record.reason
   return Wait-HostResourceStage -Lease $Lease
@@ -244,9 +436,32 @@ function Update-HostResourceStage {
 function Register-HostResourceProcess {
   [CmdletBinding()]
   param([Parameter(Mandatory)]$Lease, [Parameter(Mandatory)][int]$ProcessId)
-  $null = Invoke-HostResourceTransaction -StatePath $Lease.state_path -Request @{
+  $record = Invoke-HostResourceTransaction -StatePath $Lease.state_path -Request @{
     operation='register';token=$Lease.token;process_id=$ProcessId
   }
+  $registered=@($record.processes|Where-Object{[int]$_.pid-eq$ProcessId})
+  if($registered.Count-ne1){throw 'Scheduler did not return one exact registered work-process identity.'}
+  $Lease.registered_work_processes[[string]$ProcessId]=[string]$registered[0].started
+  return $Lease
+}
+
+function Wait-HostResourceProcess {
+  <# Synchronously wait one registered child and retain its exact completion proof. #>
+  [CmdletBinding()]
+  param([Parameter(Mandatory)]$Lease,[Parameter(Mandatory)]$Process)
+  if($Lease.inherited){throw 'An inherited lease cannot attest work-process completion.'}
+  $pid=[int]$Process.Id;$key=[string]$pid
+  if(-not $Lease.registered_work_processes.ContainsKey($key)){throw 'Completion requires a process registered by this lease.'}
+  $expected=[string]$Lease.registered_work_processes[$key]
+  try{$actual=$Process.StartTime.ToUniversalTime().Ticks.ToString('D19')}catch{throw 'Completion requires a readable registered process creation identity.'}
+  if($actual-ne$expected){throw 'Completion process identity differs from the registered work process.'}
+  $Process.WaitForExit()
+  if(-not $Process.HasExited){throw 'Synchronous work-process wait did not reach terminal state.'}
+  foreach($completed in @($Lease.completed_work_processes)){
+    if([int]$completed.pid-eq$pid-and[string]$completed.started-eq$expected){return $Lease}
+  }
+  $Lease.completed_work_processes.Add([pscustomobject]@{pid=$pid;started=$expected})
+  return $Lease
 }
 
 function Exit-HostResourceStage {
@@ -254,7 +469,9 @@ function Exit-HostResourceStage {
   param([Parameter(Mandatory)]$Lease)
   try {
     if (-not $Lease.inherited) {
-      $result = Invoke-HostResourceTransaction -StatePath $Lease.state_path -Request @{operation='release';token=$Lease.token}
+      $request=@{operation='release';token=$Lease.token}
+      if($Lease.completed_work_processes.Count-gt0){$request.completed_work_processes=@($Lease.completed_work_processes)}
+      $result = Invoke-HostResourceTransaction -StatePath $Lease.state_path -Request $request
       Write-Host "HOST_RESOURCE=RELEASE ROLE=$($Lease.role) STAGE=$($Lease.stage) STATUS=$($result.status)"
     }
   } finally {

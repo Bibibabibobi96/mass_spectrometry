@@ -57,6 +57,54 @@ def _identity(process: dict[str, Any]) -> tuple[int, str]:
     return int(process["pid"]), str(process["started"])
 
 
+def _definitely_exited_process_ids(snapshot: dict[str, Any], processes: dict[int, dict[str, Any]]) -> set[int]:
+    """Return identities the adapter proved absent after its failed metadata read."""
+    values = snapshot.get("definitely_exited_process_ids", [])
+    if not isinstance(values, list) or any(isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0 for pid in values):
+        raise ValueError("invalid definitely exited process identity observation")
+    exited = set(values)
+    if len(exited) != len(values) or exited.intersection(processes):
+        raise ValueError("definitely exited process identity conflicts with a live process observation")
+    return exited
+
+
+def _completed_work_identities(
+    request: dict[str, Any], record: dict[str, Any] | None, processes: dict[int, dict[str, Any]]
+) -> set[tuple[int, str]]:
+    """Validate owner-supplied synchronous-wait evidence for one release.
+
+    This is intentionally narrower than a process snapshot: the original,
+    still-live lease owner may attest only to exact work roots that it already
+    registered and synchronously waited for through the host adapter.
+    """
+    values = request.get("completed_work_processes", [])
+    if request["operation"] != "release":
+        if values:
+            raise ValueError("completion evidence is valid only for release")
+        return set()
+    if not isinstance(values, list):
+        raise ValueError("invalid completed work-process evidence")
+    if not values:
+        return set()
+    if record is None or record["status"] != "acquired":
+        raise ValueError("completion evidence requires an acquired reservation")
+    owner = request.get("owner")
+    if owner != record["owner"] or _identity(owner) != _identity(processes.get(int(owner["pid"]), {"pid": 0, "started": ""})):
+        raise ValueError("completion evidence requires the live reservation owner")
+    registered = {_identity(process) for process in record["work_roots"]}
+    completed: set[tuple[int, str]] = set()
+    for value in values:
+        if not isinstance(value, dict) or set(value) != {"pid", "started"}:
+            raise ValueError("completed work-process evidence must name one exact identity")
+        pid, started = _identity(value)
+        if pid <= 0 or not started or (pid, started) not in registered:
+            raise ValueError("completion evidence is not an exact registered work process")
+        if (pid, started) in completed:
+            raise ValueError("completion evidence repeats a work process")
+        completed.add((pid, started))
+    return completed
+
+
 def _processes(snapshot: dict[str, Any]) -> dict[int, dict[str, Any]]:
     if snapshot.get("complete") is not True:
         raise ValueError("host process snapshot is incomplete; admission is closed")
@@ -107,6 +155,31 @@ def _refresh(record: dict[str, Any], processes: dict[int, dict[str, Any]]) -> bo
     # verified system image, classified by the OS adapter, is not stage work.
     record["console_host_process_ids"] = sorted(
         pid for pid in live if processes[pid].get("is_system_console_host") is True)
+    # A reservation's owner creates short-lived control clients (the atomic
+    # scheduler itself, manifest verifiers, and similar helpers).  They are
+    # descendants for telemetry, but they do not own a solver stage.  Only a
+    # process explicitly registered by the workflow, and descendants it
+    # creates, may hold a stage boundary open.
+    work_roots = {_identity(p) for p in record.setdefault("work_roots", [])}
+    work_live = {pid for pid, started in work_roots
+                 if pid in processes and str(processes[pid]["started"]) == started}
+    work_parent_birth = {pid: started for pid, started in work_roots}
+    changed = True
+    while changed:
+        changed = False
+        for pid, process in processes.items():
+            parent = int(process.get("parent_pid", 0))
+            if pid in work_live or parent not in work_parent_birth:
+                continue
+            if str(process["started"]) < work_parent_birth[parent]:
+                continue
+            if parent in processes and str(processes[parent]["started"]) != work_parent_birth[parent]:
+                if str(process["started"]) >= str(processes[parent]["started"]):
+                    continue
+            work_live.add(pid)
+            work_parent_birth[pid] = str(process["started"])
+            changed = True
+    record["live_work_process_ids"] = sorted(work_live)
     return bool(live)
 
 
@@ -134,7 +207,7 @@ def _reason(candidate: dict[str, Any], records: list[dict[str, Any]], snapshot: 
         return "memory_pressure"
     if sum(r["budget"]["cpu_cores"] for r in active) + budget["cpu_cores"] > snapshot["logical_processors"]:
         return "cpu_budget_full"
-    if sum(r["budget"]["io_slots"] for r in active) + budget["io_slots"] > policy["io_slots"]:
+    if policy["io_slots"] > 0 and sum(r["budget"]["io_slots"] for r in active) + budget["io_slots"] > policy["io_slots"]:
         return "io_budget_full"
     if budget["io_slots"] and snapshot.get("io_pressure", True):
         return "io_pressure"
@@ -196,7 +269,9 @@ def transact(path: Path, request: dict[str, Any], snapshot: dict[str, Any], poli
 
 def _validate_capacity(budget: dict[str, Any], snapshot: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
     budget = validate_budget(budget)
-    if budget["cpu_cores"] > snapshot["logical_processors"] or budget["io_slots"] > policy["io_slots"]:
+    if budget["cpu_cores"] > snapshot["logical_processors"] or (
+        policy["io_slots"] > 0 and budget["io_slots"] > policy["io_slots"]
+    ):
         raise ValueError("request exceeds configured host CPU or I/O capacity")
     if not _is_heavy(budget) and 100 * budget["cpu_cores"] / snapshot["logical_processors"] > policy["cpu_admission_percent"]:
         raise ValueError("light request exceeds the CPU admission ceiling even on an idle host")
@@ -207,12 +282,20 @@ def _validate_capacity(budget: dict[str, Any], snapshot: dict[str, Any], policy:
 
 def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, Any], processes: dict[int, dict[str, Any]], policy: dict[str, Any]) -> dict[str, Any]:
     records = state["records"]
+    token = request.get("token")
+    requested_record = next((record for record in records if record["token"] == token), None)
+    completed = _completed_work_identities(request, requested_record, processes)
     unknown = set(snapshot.get("unknown_process_ids", []))
-    if any(unknown.intersection(p["pid"] for p in r["processes"]) for r in records):
-        raise ValueError("a reserved process creation identity is unavailable; reservations are unchanged")
+    exited = _definitely_exited_process_ids(snapshot, processes)
+    unavailable = unknown - exited
+    for record in records:
+        unavailable_record_pids = unavailable.intersection(process["pid"] for process in record["processes"])
+        if record is requested_record:
+            unavailable_record_pids.difference_update(pid for pid, _ in completed)
+        if unavailable_record_pids:
+            raise ValueError("a reserved process creation identity is unavailable; reservations are unchanged")
     records[:] = [r for r in records if _refresh(r, processes)]
     operation = request["operation"]
-    token = request.get("token")
     record = next((r for r in records if r["token"] == token), None)
     owner = request.get("owner")
     if operation == "request":
@@ -221,7 +304,7 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
                 raise ValueError("request owner creation identity is not live")
             budget = _validate_capacity(request["budget"], snapshot, policy)
             state["sequence"] += 1
-            record = {"token": token or uuid.uuid4().hex, "owner": owner, "processes": [owner],
+            record = {"token": token or uuid.uuid4().hex, "owner": owner, "processes": [owner], "work_roots": [],
                       "role": request["role"], "run_id": request.get("run_id", ""), "stage": request["stage"],
                       "budget": budget, "sequence": state["sequence"], "status": "waiting", "reason": "queued",
                       "retained_bytes": 0, "bypasses": 0}
@@ -240,8 +323,8 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
     if operation == "transition":
         if record["status"] != "acquired":
             raise ValueError("stage transition requires an acquired grant")
-        if any(pid != int(record["owner"]["pid"]) and pid not in record["console_host_process_ids"]
-               for pid in record["live_process_ids"]):
+        if any(pid not in record["console_host_process_ids"]
+               for pid in record["live_work_process_ids"]):
             raise ValueError("live descendants still own this stage; wait for their terminal state before transition")
         retained = request["retained_memory_bytes"]
         if isinstance(retained, bool) or not isinstance(retained, int) or retained < 0:
@@ -257,6 +340,9 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
         if process is None or int(process["pid"]) not in record["live_process_ids"]:
             raise ValueError("registered process must be a live descendant of the owner")
         record["processes"].append({"pid": process["pid"], "started": process["started"]})
+        work_identity = {"pid": process["pid"], "started": process["started"]}
+        if _identity(work_identity) not in {_identity(p) for p in record["work_roots"]}:
+            record["work_roots"].append(work_identity)
     elif operation == "inherit":
         if record["status"] != "acquired":
             raise ValueError("cannot inherit a waiting reservation")

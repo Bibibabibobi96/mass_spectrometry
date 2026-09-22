@@ -1,7 +1,6 @@
 import json
 import io
 import os
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
+from common.contracts.capacity_ledger import initialize_capacity_ledger
 from common.contracts import reconcile_interrupted_compact_runs as reconciliation
 from common.contracts.reconcile_interrupted_compact_runs import reconcile, summarize
 from common.contracts.capacity_protection import create_capacity_protection_lease
@@ -21,6 +21,7 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         self.runs = self.artifact_root / "projects" / "fixture_project" / "runs"
         self.run = self.runs / "20260828_190000__test__simion__interrupted-compact"
         self.run.mkdir(parents=True)
+        initialize_capacity_ledger(self.artifact_root, objects=[])
         config = {"schema_version": 2, "run_id": self.run.name, "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None}}
         (self.run / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
         (self.run / "summary.json").write_text('{"status":"interrupted"}\n', encoding="utf-8")
@@ -31,6 +32,19 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
+
+    def _write_consumer(self, name: str, source: Path, *, status: str = "checkpoint") -> Path:
+        consumer = self.runs / name
+        consumer.mkdir()
+        (consumer / "run_config.json").write_text(
+            json.dumps({"run_id": consumer.name, "source_file": str(source)}),
+            encoding="utf-8",
+        )
+        (consumer / "run_manifest.json").write_text(
+            json.dumps({"run_id": consumer.name, "status": status}),
+            encoding="utf-8",
+        )
+        return consumer
 
     def test_plan_and_apply_remove_only_unrecorded_heavy_payload(self) -> None:
         pa = self.run / "field.pa0"
@@ -44,7 +58,6 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         # This temporary fixture has no solver; do not observe unrelated host jobs.
         with (
             patch.dict(os.environ, {reconciliation.HOST_LEASE_OWNER_ENV: "123"}),
-            patch.object(reconciliation.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout="")),
         ):
             result = reconcile(self.runs, apply=True)[0]
         self.assertTrue(result["applied"])
@@ -65,7 +78,6 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         self.assertIn("capacity protection lease", report["reason"])
         with (
             patch.dict(os.environ, {reconciliation.HOST_LEASE_OWNER_ENV: "123"}),
-            patch.object(reconciliation, "assert_no_active_simion"),
             self.assertRaisesRegex(ValueError, "capacity protection lease"),
         ):
             reconciliation.apply_run(self.run)
@@ -81,7 +93,6 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         path.write_text(json.dumps(manifest), encoding="utf-8")
         with (
             patch.dict(os.environ, {reconciliation.HOST_LEASE_OWNER_ENV: "123"}),
-            patch.object(reconciliation, "assert_no_active_simion"),
             self.assertRaisesRegex(ValueError, "manifest-recorded"),
         ):
             reconciliation.apply_run(self.run)
@@ -136,12 +147,10 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         (self.run / "field.pa0").write_bytes(b"solver")
         with (
             patch.dict(os.environ, {reconciliation.HOST_LEASE_OWNER_ENV: ""}),
-            patch.object(reconciliation, "assert_no_active_simion") as simion_guard,
             patch.object(reconciliation, "inspect_run") as inspect,
             self.assertRaisesRegex(RuntimeError, "shared HostExecutionLease"),
         ):
             reconciliation.apply_run(self.run)
-        simion_guard.assert_not_called()
         inspect.assert_not_called()
 
     def test_refuses_noncompact_or_noninterrupted_summary(self) -> None:
@@ -196,7 +205,6 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         (second / "second.pa0").write_bytes(b"b")
         with (
             patch.dict(os.environ, {reconciliation.HOST_LEASE_OWNER_ENV: "123"}),
-            patch.object(reconciliation.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout="")),
         ):
             reconcile(self.runs, apply=True, max_apply_runs=1)
         self.assertEqual(sum(path.exists() for path in (self.run / "first.pa0", second / "second.pa0")), 1)
@@ -224,20 +232,80 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
         self.assertTrue(report["eligible"])
         self.assertEqual(report["removable_file_count"], 1)
 
-    @unittest.skipUnless(sys.platform == "win32", "Windows tasklist guard")
-    def test_active_simion_blocks_apply_before_mutation(self) -> None:
+    def test_active_direct_file_reference_skips_only_that_heavy_payload(self) -> None:
+        occupied = self.run / "occupied.pa0"
+        removable = self.run / "unreferenced.pa0"
+        occupied.write_bytes(b"occupied")
+        removable.write_bytes(b"removable")
+        self._write_consumer(
+            "20260828_200000__test__python__active-consumer", occupied
+        )
+
+        report = reconciliation.inspect_run(self.run, verify_manifest_records=False)
+
+        self.assertEqual(
+            [item["path"] for item in report["occupied"]], ["occupied.pa0"]
+        )
+        self.assertEqual(
+            [item["path"] for item in report["removable"]], ["unreferenced.pa0"]
+        )
+        self.assertEqual(report["removable_bytes"], len(b"removable"))
+
+    def test_active_light_file_reference_does_not_pin_unrelated_heavy_payload(self) -> None:
+        heavy = self.run / "field.pa0"
+        heavy.write_bytes(b"solver")
+        self._write_consumer(
+            "20260828_200001__test__python__light-consumer",
+            self.run / "summary.json",
+        )
+
+        report = reconciliation.inspect_run(self.run, verify_manifest_records=False)
+
+        self.assertEqual(report["occupied"], [])
+        self.assertEqual([item["path"] for item in report["removable"]], ["field.pa0"])
+
+    def test_terminal_direct_file_reference_is_audit_not_occupancy(self) -> None:
+        heavy = self.run / "field.pa0"
+        heavy.write_bytes(b"solver")
+        self._write_consumer(
+            "20260828_200002__test__python__historical-consumer",
+            heavy,
+            status="success",
+        )
+
+        report = reconciliation.inspect_run(self.run, verify_manifest_records=False)
+
+        self.assertEqual(report["occupied"], [])
+        self.assertEqual(len(report["historical_references"]), 1)
+
+    def test_external_manifest_input_is_verified_read_only_and_never_removed(self) -> None:
+        external = Path(self.temporary.name) / "frozen-parent.json"
+        external.write_text('{"parent":true}\n', encoding="utf-8")
+        manifest_path = self.run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["inputs"]["parent"] = {
+            "path": str(external),
+            "bytes": external.stat().st_size,
+            "sha256": file_sha256(external),
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        heavy = self.run / "field.pa0"
+        heavy.write_bytes(b"solver")
+
+        report = reconciliation.inspect_run(self.run)
+
+        self.assertEqual([item["path"] for item in report["removable"]], ["field.pa0"])
+        self.assertTrue(external.is_file())
+
+    def test_unrelated_active_simion_is_not_a_global_apply_blocker(self) -> None:
         payload = self.run / "field.pa0"
         payload.write_bytes(b"solver")
         with (
             patch.dict(os.environ, {reconciliation.HOST_LEASE_OWNER_ENV: "123"}),
-            patch.object(reconciliation.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout='"SIMION.exe","1234","Console","1","1024 K"\n',
-            )) as listing,
         ):
-            with self.assertRaisesRegex(RuntimeError, "refusing compact reconciliation while SIMION is active"):
-                reconcile(self.runs, apply=True)
-        listing.assert_called_once()
-        self.assertTrue(payload.exists())
+            result = reconcile(self.runs, apply=True)[0]
+        self.assertTrue(result["applied"])
+        self.assertFalse(payload.exists())
 
     def test_apply_preserves_light_files_triad_and_writes_receipt(self) -> None:
         heavy = self.run / "field.pa0"
@@ -250,7 +318,6 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
 
         with (
             patch.dict(os.environ, {reconciliation.HOST_LEASE_OWNER_ENV: "123"}),
-            patch.object(reconciliation, "assert_no_active_simion"),
         ):
             reconciliation.apply_run(self.run)
 
@@ -286,7 +353,6 @@ class InterruptedCompactReconciliationTests(unittest.TestCase):
             ),
             patch("sys.stdout", stdout),
             patch.dict(os.environ, {reconciliation.HOST_LEASE_OWNER_ENV: "123"}),
-            patch.object(reconciliation, "assert_no_active_simion"),
         ):
             reconciliation.main()
         applied = json.loads(stdout.getvalue())

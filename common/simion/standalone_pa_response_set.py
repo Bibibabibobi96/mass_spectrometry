@@ -10,13 +10,16 @@ runtime inputs.
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
 import json
 from pathlib import Path
 import re
+import stat
 from typing import Any, Mapping, Sequence
 
 from common.contracts.file_identity import file_sha256
+from common.simion.cache_generation import _flush_writable_source
 
 
 SCHEMA_VERSION = 1
@@ -136,6 +139,7 @@ def write_standalone_pa_response_set(
     receipt_path: str | Path,
     *,
     policy_id: str = POLICY_ID,
+    _owner_inventory: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Write the pre-publication receipt for one detached response set.
 
@@ -163,13 +167,33 @@ def write_standalone_pa_response_set(
     if not isinstance(policy_id, str) or not policy_id:
         raise StandalonePaResponseSetError("standalone response policy_id is invalid")
 
+    # Internal handoff from the transaction owner immediately after its one
+    # flush/inventory/read-only boundary; never accepted by this module's CLI.
+    indexed = None if _owner_inventory is None else _manifest_records(
+        {"schema_version": 1, "files": list(_owner_inventory)}
+    )
+
+    def record(name: str) -> dict[str, Any]:
+        path = root / name
+        if indexed is None:
+            _flush_writable_source(path)
+            return _file_record(path)
+        item = indexed.get(name.lower())
+        if (item is None or item["name"] != name or path.is_symlink() or not path.is_file()
+                or path.stat().st_size != item["bytes"] or path.stat().st_mode & stat.S_IWUSR):
+            raise StandalonePaResponseSetError("owner inventory does not cover response")
+        return dict(item)
+
     response_records: list[dict[str, Any]] = []
     for export in _normalize_exports(exports):
+        # The receipt and the later transaction seal must observe the same
+        # persisted producer bytes. Reuse the cache owner's flush primitive;
+        # immutable retained members require no write handle.
         response_records.append(
             {
                 "response_id": export.response_id,
-                "source": _file_record(root / export.source_name),
-                "standalone": _file_record(root / export.standalone_name),
+                "source": record(export.source_name),
+                "standalone": record(export.standalone_name),
             }
         )
     receipt = {
@@ -188,8 +212,18 @@ def write_standalone_pa_response_set(
 
 
 def _manifest_records(manifest: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
-    if not isinstance(manifest, Mapping) or manifest.get("schema_version") != 3:
-        raise StandalonePaResponseSetError("cache generation manifest must use schema v3")
+    """Return the direct inventory shared by PA-cache manifest generations.
+
+    The response receipt needs only the sealed direct-file inventory.  Both
+    generation-manifest v3 and the public PA-family-cache v1/v2 manifests use
+    the same exact ``files`` record schema, so requiring the former would make
+    a valid PA-family publication unusable solely because its owner added (or
+    has not yet added) unrelated cache metadata.
+    """
+    if not isinstance(manifest, Mapping) or manifest.get("schema_version") not in {1, 2, 3}:
+        raise StandalonePaResponseSetError(
+            "cache generation manifest must use a supported direct-inventory schema"
+        )
     records = manifest.get("files")
     if not isinstance(records, list) or not records:
         raise StandalonePaResponseSetError("cache generation manifest inventory is empty")
@@ -244,11 +278,14 @@ def _verify_generation_file(
     expected: Mapping[str, Any],
     *,
     role: str,
+    inventory_is_verified: bool,
 ) -> dict[str, Any]:
     name = str(expected["name"])
     manifest_record = manifest_records.get(name.lower())
     if manifest_record != dict(expected):
         raise StandalonePaResponseSetError(f"{role} is not exactly covered by manifest")
+    if inventory_is_verified:
+        return manifest_record
     actual = _file_record(root / name)
     if actual != dict(expected):
         raise StandalonePaResponseSetError(f"{role} bytes differ from receipt")
@@ -262,6 +299,7 @@ def validate_standalone_pa_response_set(
     *,
     expected_response_ids: Sequence[int] | None = None,
     expected_policy_id: str = POLICY_ID,
+    inventory_is_verified: bool = False,
 ) -> tuple[StandalonePaRecord, ...]:
     """Validate a published response receipt and return standalone records only."""
 
@@ -277,11 +315,12 @@ def validate_standalone_pa_response_set(
         raise StandalonePaResponseSetError(
             "standalone response receipt is not covered by manifest"
         )
-    actual_receipt = _file_record(root / receipt_name)
-    if actual_receipt != receipt_manifest_record:
-        raise StandalonePaResponseSetError(
-            "standalone response receipt bytes differ from manifest"
-        )
+    if not inventory_is_verified:
+        actual_receipt = _file_record(root / receipt_name)
+        if actual_receipt != receipt_manifest_record:
+            raise StandalonePaResponseSetError(
+                "standalone response receipt bytes differ from manifest"
+            )
     try:
         receipt = json.loads((root / receipt_name).read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -340,13 +379,18 @@ def validate_standalone_pa_response_set(
         normalized_exports, normalized_receipt_records, strict=True
     ):
         _verify_generation_file(
-            root, records, source, role=f"native response {export.response_id}"
+            root,
+            records,
+            source,
+            role=f"native response {export.response_id}",
+            inventory_is_verified=inventory_is_verified,
         )
         verified = _verify_generation_file(
             root,
             records,
             standalone,
             role=f"standalone response {export.response_id}",
+            inventory_is_verified=inventory_is_verified,
         )
         selected.append(
             StandalonePaRecord(
@@ -386,3 +430,47 @@ def select_standalone_pa_records(
             "runtime selection contains a native PA-family member"
         )
     return records
+
+
+def main(arguments: Sequence[str] | None = None) -> int:
+    """Validate a sealed response receipt without rereading its PA payload."""
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--validate-sealed-receipt", action="store_true")
+    parser.add_argument("--generation-directory", type=Path)
+    parser.add_argument("--inventory", type=Path)
+    parser.add_argument("--receipt-name")
+    parser.add_argument("--expected-response-ids")
+    args = parser.parse_args(arguments)
+    if not args.validate_sealed_receipt:
+        parser.error("--validate-sealed-receipt is required")
+    if (
+        args.generation_directory is None
+        or args.inventory is None
+        or not args.receipt_name
+        or not args.expected_response_ids
+    ):
+        parser.error(
+            "sealed receipt validation requires generation directory, inventory, receipt name, and response ids"
+        )
+    try:
+        inventory = json.loads(args.inventory.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StandalonePaResponseSetError("sealed response inventory is unreadable") from exc
+    try:
+        expected = tuple(int(value) for value in args.expected_response_ids.split(","))
+    except ValueError as exc:
+        raise StandalonePaResponseSetError("expected response ids are invalid") from exc
+    records = validate_standalone_pa_response_set(
+        args.generation_directory,
+        inventory,
+        args.receipt_name,
+        expected_response_ids=expected,
+        inventory_is_verified=True,
+    )
+    print(json.dumps({"role": ROLE, "status": "pass", "responses": len(records)}, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

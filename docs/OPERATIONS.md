@@ -71,6 +71,10 @@ L2用于显式全仓审计，纯文档提交不默认运行L2。
 额度，不要求先完成峰值测量；声明额度不代表测得的占用上界，已有测量的检查可使用较小额度。
 PA输入准备、GEM转PA、缓存物化与纯IOB组装默认按轻任务准入，不因属于PA工作流而整段判重；
 原生refine以及已知内部调用refine的Lua操作须在重阶段执行，结束后可回到轻准备阶段。
+重任务身份与I/O标记相互独立：SIMION飞行仍持有唯一重任务许可；会批量读写的阶段以非零`io_slots`
+标记启用目标卷实时压力检查。当前没有可复现基准支持固定并发流数，因此主机`io_slots=0`明确表示
+telemetry-only，不执行静态槽位求和，也不会因猜测的槽数误报`io_budget_full`；若将来用吞吐基准启用正数
+容量，它才表示所有活动阶段的并发I/O权重上限。CPU、内存、重任务互斥和实时I/O压力始终独立生效。
 轻任务可与重任务或其他轻任务并行；实际CPU加上
 轻任务预计核占用、累计预算、可用内存及I/O压力必须允许新增工作。观测不完整时停止新增准入，不能把缺少
 观测解释为资源空闲。实际反复表现为高负载的普通任务应在中央策略标为重任务，不在项目复制分类规则。
@@ -128,8 +132,9 @@ PID与创建时间继续识别后代，确认相关进程退出才回收。状�
 ### artifact结构门禁
 
 清理时先运行卫生门禁检查源码与工作区顶层，再按[生命周期](LIFECYCLE.md#保留与清理策略)盘点产物、
-活动引用和相关系统临时目录。`reconcile_artifact_capacity.py --artifact-root ..\artifacts`默认只给出
-容量plan；未核对候选不得追加`--apply`。清理收据统一放在
+活动引用和相关系统临时目录。`reconcile_artifact_capacity.py --artifact-root ..\artifacts`只执行
+ledger-only日常startup/maintenance；历史全盘扫描必须显式调用`legacy_capacity_backfill.py`。
+未核对候选不得追加`--apply`。清理收据统一放在
 `artifacts/common/capacity_disposal_receipts/`，不留在工作区顶层。主机资源许可不替代容量保护租约，
 调用与保护参数见[公共容量合同](../common/contracts/README.md#运行身份与生命周期)。
 
@@ -142,6 +147,12 @@ PID与创建时间继续识别后代，确认相关进程退出才回收。状�
 它检查目录合同、`run_id/archive_id`、三件套和manifest身份；项目 artifact 默认不读取大二进制，
 但已注册的公共 SIMION PA-family cache 会对其当前 generation 的完整 payload 做字节级验证。因此它适合
 每次产物整理后运行，但不放进不具备本机artifacts的GitHub Workflow。命名合同单元测试仍属于轻量门禁。
+
+公共 PA-family generation 是发布介质，不是求解器工作目录。SIMION 不得直接接收 generation 路径、
+Junction、硬链接或原生 `.paN` 的物化副本；运行时只消费按 manifest `bytes + SHA-256` 建立的独立
+standalone 私有副本。公共 `New-ShortPaCopy` 对父目录含 `cache_manifest.json` 的来源强制要求这两项身份，
+缺少任一项即失败。Windows 大 PA 若普通缓冲读取与 `/J` 持久读取分叉，不得对发布源 ReadWrite/Flush；
+应先用 manifest-bound `/J` 快照验证，并把旧文件对象隔离后以同字节的新对象原子替换，禁止原位修补。
 
 ### COMSOL R2025b 执行入口
 

@@ -32,6 +32,20 @@ try {
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $testRoot 'host.sqlite3'
   $env:SIMULATION_PYTHON_EXE=$python
   . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
+  & {
+    # Exercise the real wrapper under StrictMode without any capacity mutation.
+    function Enter-HostExecutionLease { return [pscustomobject]@{} }
+    function Exit-HostExecutionLease { param($Lease) }
+    function Invoke-RunToolRootContext {
+      return '{"satisfied_after_apply":false,"execution_mode":"maintenance","measured_after_bytes":700,"free_bytes_after":200,"required_free_bytes":295,"target_bytes":600,"removed_bytes":28}'
+    }
+    $message=$null
+    try {
+      Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot -ExecutionMode maintenance
+    } catch { $message=$_.Exception.Message }
+    Assert-Equal $message 'Artifact capacity gate blocked maintenance: CAPACITY_TARGET_NOT_MET; measured_after_bytes=700; free_bytes_after=200; required_free_bytes=295; target_bytes=600; removed_bytes=28' `
+      'Maintenance must fail with its receipt measurements, not a missing startup property.'
+  }
   $originalLocation=(Get-Location).Path
   [Environment]::SetEnvironmentVariable('PYTHONPATH','run-artifact-test-pythonpath')
   [Environment]::SetEnvironmentVariable('PYTHONNOUSERSITE','run-artifact-test-nousersite')
@@ -53,73 +67,34 @@ try {
 
   $capacityRoot=Join-Path $testRoot 'capacity_artifacts'
   New-Item -ItemType Directory -Path $capacityRoot -Force|Out-Null
-  $publishedKey='1111111111111111111111111111111111111111111111111111111111111111'
-  $publishedGeneration='generation-one'
-  $publishedKeyRoot=Join-Path $capacityRoot "projects\p\cache\pa\$publishedKey"
-  $publishedGenerationRoot=Join-Path $publishedKeyRoot "generations\$publishedGeneration"
-  New-Item -ItemType Directory -Path $publishedGenerationRoot -Force|Out-Null
-  Write-RunJson -Path (Join-Path $publishedGenerationRoot 'cache_manifest.json') -Value ([ordered]@{
-    schema_version=3;role='simion_test_pa_cache';cache_key=$publishedKey
-    generation_sha256=$publishedGeneration
+  New-Item -ItemType Directory -Path (Join-Path $capacityRoot 'projects') -Force|Out-Null
+  New-Item -ItemType Directory -Path (Join-Path $capacityRoot 'common') -Force|Out-Null
+  Write-RunJson -Path (Join-Path $capacityRoot 'common\capacity_ledger.json') -Value ([ordered]@{
+    schema_version=1;role='artifact_capacity_ledger';artifact_root=$capacityRoot
+    status='calibrated';complete=$true;resident_bytes=0;objects=@()
   })
-  Write-RunJson -Path (Join-Path $publishedKeyRoot 'current_generation.json') -Value ([ordered]@{
-    generation_relative_path="generations/$publishedGeneration"
-  })
-  $publishedSnapshotPath=Join-Path $testRoot 'published_pa_cache_protection_snapshot.json'
-  $publishedSnapshot=New-PublishedPaCacheProtectionSnapshot -Python $python `
-    -RepoRoot $repoRoot -ArtifactRoot $capacityRoot -OutputPath $publishedSnapshotPath
-  Assert-Equal $publishedSnapshot.protected_cache_key_count 1 `
-    'Published PA cache snapshot count changed.'
-  $publishedSnapshotKeys=@($publishedSnapshot.protected_cache_keys)
-  Assert-Equal $publishedSnapshotKeys[0] $publishedKey `
-    'Published PA cache snapshot key changed.'
-  if(-not(Test-Path -LiteralPath $publishedSnapshotPath -PathType Leaf)){
-    throw 'Published PA cache snapshot was not frozen to its requested path.'
-  }
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -m common.contracts.reconcile_artifact_capacity `
+      --artifact-root $capacityRoot --create-protection-lease test-capacity `
+      --lease-owner run-artifact-support --lease-ttl-seconds 3600 --protect-path projects
+    if($LASTEXITCODE-ne 0){throw 'Capacity protection lease fixture creation failed.'}
+  } | Out-Null
   $capacityReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0
+    -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId test-capacity
   Assert-Equal $capacityReceipt.role 'artifact_capacity_gate' 'Capacity gate role changed.'
   Assert-Equal $capacityReceipt.satisfied_after_apply $true 'Capacity gate did not publish a satisfied receipt.'
   $policy=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'artifact_capacity_policy.json') -Raw |
     ConvertFrom-Json
   $defaultTargetReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot $capacityRoot -MinimumFreeGiB 0
+    -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId test-capacity
   Assert-Equal $defaultTargetReceipt.target_bytes ([int64]$policy.target_gib * 1GB) `
     'Omitted target must use the shared capacity policy.'
-  Assert-Equal $defaultTargetReceipt.minimum_free_bytes 0 `
-    'Explicit zero disk reserve must override the shared default.'
-  $explicitBuildRun=Join-Path $capacityRoot `
-    'projects\p\runs\20260101_000000__build__simion__rebuildable'
-  $capacityExplicitBuildReceipt=Invoke-ArtifactCapacityGate -Python $python `
-    -RepoRoot $repoRoot -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0 `
-    -RebuildableSuccessBuildRuns @($explicitBuildRun)
-  Assert-Equal ($capacityExplicitBuildReceipt -is [pscustomobject]) $true `
-    'Capacity gate must return the JSON object without a collection wrapper.'
-  Assert-Equal @($capacityExplicitBuildReceipt.explicit_rebuildable_success_build_runs).Count 1 `
-    'Capacity gate did not preserve explicit success-build authorization.'
-  Assert-Equal ([IO.Path]::GetFullPath(
-      [string]$capacityExplicitBuildReceipt.explicit_rebuildable_success_build_runs[0])) `
-    ([IO.Path]::GetFullPath($explicitBuildRun)) `
-    'Capacity gate changed the explicit success-build run path.'
-  $secondExplicitBuildRun=Join-Path $capacityRoot `
-    'projects\p\runs\20260101_000001__build__simion__second-rebuildable'
-  $multipleBuildReceipt=Invoke-ArtifactCapacityGate -Python $python `
-    -RepoRoot $repoRoot -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0 `
-    -RebuildableSuccessBuildRuns @($explicitBuildRun,$secondExplicitBuildRun)
-  Assert-Equal @($multipleBuildReceipt.explicit_rebuildable_success_build_runs).Count 2 `
-    'Capacity gate changed the multiple-path authorization count.'
-  $actualBuildPaths=@($multipleBuildReceipt.explicit_rebuildable_success_build_runs | ForEach-Object {
-    [IO.Path]::GetFullPath([string]$_)
-  })
-  foreach($expectedBuildPath in @($explicitBuildRun,$secondExplicitBuildRun)) {
-    Assert-Equal ($actualBuildPaths -contains [IO.Path]::GetFullPath($expectedBuildPath)) $true `
-      'Capacity gate split or changed one of the multiple authorized paths.'
-  }
+  Assert-Equal $defaultTargetReceipt.minimum_free_bytes ([int64]$policy.minimum_free_gib * 1GB) `
+    'Minimum-free watermark must come from the shared capacity policy.'
   $capacityFastReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0 `
-    -KnownMeasuredBytes 0 -MaximumNewArtifactBytes 0
-  Assert-Equal $capacityFastReceipt.measurement_mode 'SAFE_NO_RECONCILIATION' `
-    'Capacity gate fast path did not preserve its receipt mode.'
+    -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId test-capacity
+  Assert-Equal $capacityFastReceipt.measurement_mode 'STARTUP_LEDGER' `
+    'Capacity gate startup did not use the ledger path.'
 
   $interruptedDir = Join-Path $testRoot '20260723_170001__test__cross__lifecycle-interrupted__n100'
   New-Item -ItemType Directory -Path $interruptedDir -Force | Out-Null

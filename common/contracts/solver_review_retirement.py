@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import posixpath
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,17 @@ from common.contracts.verify_run_manifest import record_path, verify_record
 
 RECEIPT_NAME = "solver_review_retirement_receipt.json"
 HEAVY_ROLES = {"solver_native_binary", "dense_trajectory"}
+TERMINAL_STATUSES = {
+    "success", "completed", "failed", "interrupted", "cancelled", "aborted",
+}
+LEGACY_INITIALIZATION_SUMMARY = {
+    "schema_version": 1,
+    "role": "run_package_initialization_summary",
+    "status": "checkpoint",
+    "reason": "Run package initialized; task-specific inputs are not frozen yet.",
+}
+
+
 class RetirementError(ValueError):
     """One retirement precondition or verification condition failed."""
 
@@ -47,6 +59,7 @@ def _under(path: Path, root: Path) -> Path:
 
 def _load_run(
     run: Path, *, allowed_statuses: Iterable[str] = ("success",), label: str = "run",
+    allow_legacy_initialization_summary: bool = False,
 ) -> dict[str, Any]:
     required = {name: _json(run / name) for name in ("run_config.json", "summary.json", "run_manifest.json")}
     config, summary, manifest = required.values()
@@ -58,7 +71,14 @@ def _load_run(
     allowed = set(allowed_statuses)
     manifest_status = manifest.get("status")
     summary_status = summary.get("status")
-    if manifest_status not in allowed or summary_status != manifest_status:
+    legacy_initialization_summary = (
+        allow_legacy_initialization_summary
+        and manifest_status == "success"
+        and summary == LEGACY_INITIALIZATION_SUMMARY
+    )
+    if manifest_status not in allowed or (
+        summary_status != manifest_status and not legacy_initialization_summary
+    ):
         expected = "/".join(sorted(allowed))
         raise RetirementError(
             f"{label} is not a complete {expected} run: {run_id} "
@@ -66,12 +86,22 @@ def _load_run(
         )
     if config.get("formal_gate_passed") is not False or manifest.get("formal_eligible") is not False:
         raise RetirementError(f"Formal or ambiguously non-Formal run cannot be retired: {run_id}")
-    retention = validate_retention(config.get("artifact_retention"))
+    try:
+        retention = validate_retention(config.get("artifact_retention"))
+        manifest_retention = validate_retention(manifest.get("artifact_retention"))
+    except ValueError as exc:
+        raise RetirementError(f"invalid solver_review retention: {run_id}: {exc}") from exc
     if retention.class_id != "solver_review":
         raise RetirementError(f"run is not solver_review: {run_id}")
-    if manifest.get("artifact_retention", {}).get("class") != "solver_review":
+    if manifest_retention.class_id != "solver_review":
         raise RetirementError(f"manifest retention differs: {run_id}")
-    return {"dir": run, "config": config, "summary": summary, "manifest": manifest}
+    return {
+        "dir": run,
+        "config": config,
+        "summary": summary,
+        "manifest": manifest,
+        "legacy_initialization_summary": legacy_initialization_summary,
+    }
 
 
 def _recorded_at(run: dict[str, Any]) -> datetime:
@@ -97,19 +127,142 @@ def _git_document_references(repository: Path, run_id: str) -> list[str]:
     return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
 
 
-def _downstream_references(artifact_root: Path, target: Path, run_id: str) -> list[str]:
-    references: list[str] = []
-    needle_path = str(target)
-    for path in artifact_root.glob("projects/*/runs/*/run_config.json"):
-        if path.parent.resolve() == target.resolve():
+def structured_target_references(value: Any, target: Path, run_id: str) -> set[str]:
+    """Return exact structured references below ``target``.
+
+    The empty string denotes the target run as a whole.  Other values are
+    normalized target-relative paths.  Arbitrary prose and substring matches
+    are deliberately ignored; callers decide whether a referenced file is in
+    the payload they propose to remove or in the light evidence they retain.
+    """
+
+    if isinstance(value, dict):
+        return set().union(
+            *(structured_target_references(member, target, run_id) for member in value.values())
+        ) if value else set()
+    if isinstance(value, (list, tuple)):
+        return set().union(
+            *(structured_target_references(member, target, run_id) for member in value)
+        ) if value else set()
+    if not isinstance(value, str):
+        return set()
+    raw = value.strip().replace("\\", "/")
+    if not raw:
+        return set()
+    normalized = posixpath.normpath(raw).rstrip("/").casefold()
+    normalized_run_id = run_id.casefold()
+    target_path = target.resolve().as_posix().rstrip("/").casefold()
+    if normalized in {normalized_run_id, target_path} or normalized.endswith(
+        f"/runs/{normalized_run_id}"
+    ):
+        return {""}
+    prefixes = (f"{target_path}/", f"/runs/{normalized_run_id}/")
+    for prefix in prefixes:
+        if prefix == prefixes[1]:
+            marker = normalized.rfind(prefix)
+            if marker < 0:
+                continue
+            relative = normalized[marker + len(prefix):]
+        elif normalized.startswith(prefix):
+            relative = normalized[len(prefix):]
+        else:
             continue
+        if relative and relative != "." and not relative.startswith("../"):
+            return {relative}
+    return set()
+
+
+def _downstream_references(
+    artifact_root: Path, target: Path, run_id: str, *,
+    removable_paths: Iterable[str] = (), preserved_paths: Iterable[str] = (),
+) -> dict[str, list[dict[str, str]]]:
+    references: dict[str, list[dict[str, str]]] = {
+        "active": [],
+        "active_preserved": [],
+        "historical": [],
+        "corrupt_run_config_reference_unavailable": [],
+    }
+    removable = {posixpath.normpath(item).casefold() for item in removable_paths}
+    preserved = {posixpath.normpath(item).casefold() for item in preserved_paths}
+    for run_dir in artifact_root.glob("projects/*/runs/*"):
+        if not run_dir.is_dir() or run_dir.resolve() == target.resolve():
+            continue
+        path = run_dir / "run_config.json"
+        manifest_path = run_dir / "run_manifest.json"
+        manifest: dict[str, Any] | None = None
         try:
-            text = path.read_text(encoding="utf-8-sig")
-        except (OSError, UnicodeDecodeError) as exc:
-            raise RetirementError(f"cannot scan downstream run config: {path}: {exc}") from exc
-        if run_id in text or needle_path in text:
-            references.append(str(path))
-    return sorted(references)
+            manifest = _json(manifest_path)
+            manifest_status = str(manifest.get("status", "")).lower()
+            if manifest.get("run_id") not in {None, run_dir.name}:
+                manifest_status = "invalid_or_unreadable"
+        except RetirementError:
+            manifest_status = "missing_or_unreadable"
+        category = (
+            "historical" if manifest_status in TERMINAL_STATUSES else "active"
+        )
+        config: dict[str, Any] | None = None
+        if path.exists():
+            try:
+                config = _json(path)
+            except RetirementError:
+                # A non-terminal run with a damaged run_config must not pin
+                # every retirement target merely because its path exists.
+                # First use the valid manifest's local run_config record to
+                # distinguish content corruption from an unreadable parser.
+                manifest_record = manifest.get("run_config") if manifest else None
+                identity_matches = False
+                identity_checkable = False
+                if isinstance(manifest_record, dict):
+                    try:
+                        recorded_path = record_path(manifest_record, base_dir=run_dir)
+                        identity_checkable = recorded_path == path
+                        if identity_checkable:
+                            verify_record(
+                                "downstream run_config",
+                                manifest_record,
+                                base_dir=run_dir,
+                            )
+                            identity_matches = True
+                    except (AssertionError, KeyError, OSError, TypeError, ValueError):
+                        identity_matches = False
+                if category == "active" and identity_checkable and not identity_matches:
+                    references["corrupt_run_config_reference_unavailable"].append(
+                        {
+                            "run_config_path": str(path),
+                            "manifest_status": manifest_status,
+                            "reason": "corrupt_run_config_reference_unavailable",
+                        }
+                    )
+                else:
+                    references[category].append(
+                        {
+                            "run_config_path": str(path),
+                            "manifest_status": manifest_status,
+                            "reason": "run_config_unreadable_reference_uncertain",
+                        }
+                    )
+        configured = set()
+        if config is not None:
+            configured.update(structured_target_references(config, target, run_id))
+        if manifest is not None:
+            configured.update(structured_target_references(manifest, target, run_id))
+        for relative in sorted(configured):
+            item = {
+                "run_config_path": str(path),
+                "manifest_status": manifest_status,
+                "reason": "configured_target_run_dependency" if not relative else "configured_target_file_dependency",
+            }
+            if relative:
+                item["path"] = relative
+            if category == "historical":
+                references[category].append(item)
+            elif not relative or relative in removable:
+                references["active"].append(item)
+            elif relative in preserved:
+                references["active_preserved"].append(item)
+    for category in references:
+        references[category].sort(key=lambda item: (item["run_config_path"], item.get("path", "")))
+    return references
 
 
 def _manifest_records(
@@ -134,7 +287,10 @@ def _manifest_records(
         result[path] = {"manifest_role": role, "bytes": record.get("bytes"), "sha256": record.get("sha256")}
     if record_path(manifest["run_config"], base_dir=run["dir"]) != run["dir"] / "run_config.json":
         raise RetirementError("manifest does not bind the local run config")
-    if run["dir"] / "summary.json" not in result:
+    if (
+        run["dir"] / "summary.json" not in result
+        and not run.get("legacy_initialization_summary")
+    ):
         raise RetirementError("manifest does not bind the local summary")
     def configured_paths(value: Any, *, name: str) -> list[Path]:
         if value is None or value == "":
@@ -318,7 +474,10 @@ def plan_retirement(
         ]
         prior_pending_sha = file_sha256(target_run / RECEIPT_NAME)
     target = _load_run(
-        target_run, allowed_statuses=("success", "failed"), label="target"
+        target_run,
+        allowed_statuses=("success", "failed"),
+        label="target",
+        allow_legacy_initialization_summary=True,
     )
     replacement = _load_run(replacement_run, label="replacement")
     _manifest_records(replacement)
@@ -333,11 +492,6 @@ def plan_retirement(
     if target["config"].get("project") != replacement["config"].get("project"):
         raise RetirementError("replacement belongs to another project")
     document_refs = _git_document_references(repository_root, target_run.name)
-    downstream_refs = _downstream_references(artifact_root, target_run, target_run.name)
-    if document_refs or downstream_refs:
-        raise RetirementError(
-            f"target still has active references: git_documents={document_refs}, downstream={downstream_refs}"
-        )
     leases = protection.load_capacity_protection_leases(artifact_root)
     if protection.path_is_protected(target_run, leases["protected_paths"]):
         raise RetirementError("target is covered by an active capacity protection lease")
@@ -353,6 +507,18 @@ def plan_retirement(
     if not removed:
         raise RetirementError("target contains no governed heavy payload")
     preserved = [item for item in inventory if item not in removed]
+    downstream_refs = _downstream_references(
+        artifact_root,
+        target_run,
+        target_run.name,
+        removable_paths=(item["path"] for item in removed),
+        preserved_paths=(item["path"] for item in preserved),
+    )
+    if downstream_refs["active"]:
+        raise RetirementError(
+            "target still has active references in downstream run_config: "
+            f"{downstream_refs['active']}"
+        )
     return {
         "schema_version": 1,
         "role": "solver_review_retirement_plan",
@@ -366,6 +532,9 @@ def plan_retirement(
         "compatibility_assertion": compatibility_assertion.strip(),
         "compatibility_checks": topology,
         "target_terminal_status": target["manifest"]["status"],
+        "target_legacy_initialization_summary": target[
+            "legacy_initialization_summary"
+        ],
         "target_manifest": {"bytes": (target_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(target_run / "run_manifest.json")},
         "replacement_manifest": {"bytes": (replacement_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(replacement_run / "run_manifest.json")},
         "original_file_inventory": inventory,
@@ -373,6 +542,12 @@ def plan_retirement(
         "preserved_files": preserved,
         "bytes_to_release": sum(item["bytes"] for item in removed_current),
         "total_retired_bytes": sum(item["bytes"] for item in removed),
+        "historical_document_references": document_refs,
+        "historical_downstream_references": downstream_refs["historical"],
+        "active_preserved_file_references": downstream_refs["active_preserved"],
+        "corrupt_run_config_reference_unavailable": downstream_refs[
+            "corrupt_run_config_reference_unavailable"
+        ],
         "capacity_protection_audit": leases["audit"],
         "recovery_of_pending_receipt_sha256": prior_pending_sha,
     }
@@ -381,6 +556,55 @@ def plan_retirement(
 def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
     if not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
         raise RetirementError("apply requires the shared HostExecutionLease")
+    try:
+        artifact_root = Path(plan["artifact_root"]).resolve()
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RetirementError("retirement plan lacks governed root identity") from exc
+    target = _under(Path(plan["target_run_path"]), artifact_root)
+    receipt_path = target / RECEIPT_NAME
+    with protection.capacity_decision_lock(artifact_root):
+        leases = protection.load_capacity_protection_leases(artifact_root)
+        if protection.path_is_protected(target, leases["protected_paths"]):
+            raise RetirementError(
+                "target gained an active capacity protection lease before apply"
+            )
+        downstream = _downstream_references(
+            artifact_root,
+            target,
+            target.name,
+            removable_paths=(item["path"] for item in plan["removed_files"]),
+            preserved_paths=(item["path"] for item in plan["preserved_files"]),
+        )
+        if downstream["active"]:
+            raise RetirementError(
+                "target gained active references before retirement decision: "
+                f"{downstream['active']}"
+            )
+        if receipt_path.exists():
+            marker = _json(receipt_path)
+            if not (
+                marker.get("lifecycle_status") == "retirement_pending"
+                and marker.get("target_manifest") == plan.get("target_manifest")
+                and marker.get("replacement_manifest") == plan.get("replacement_manifest")
+            ):
+                raise RetirementError("target already has another retirement marker")
+        else:
+            _atomic_json(
+                receipt_path,
+                {
+                    **plan,
+                    "role": "solver_review_retirement_receipt",
+                    "status": "preflight_pending",
+                    "lifecycle_status": "retirement_pending",
+                    "started_at_utc": datetime.now(timezone.utc).isoformat().replace(
+                        "+00:00", "Z"
+                    ),
+                },
+            )
+    return _apply_retirement_locked(plan)
+
+
+def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
     try:
         artifact_root = Path(plan["artifact_root"]).resolve()
         repository_root = Path(plan["repository_root"]).resolve()
@@ -394,10 +618,17 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
     replacement_state = _load_run(replacement, label="replacement")
     _manifest_records(replacement_state)
     target_state = _load_run(
-        target, allowed_statuses=("success", "failed"), label="target"
+        target,
+        allowed_statuses=("success", "failed"),
+        label="target",
+        allow_legacy_initialization_summary=True,
     )
     if plan.get("target_terminal_status") != target_state["manifest"]["status"]:
         raise RetirementError("target terminal status changed before apply")
+    if bool(plan.get("target_legacy_initialization_summary")) != bool(
+        target_state["legacy_initialization_summary"]
+    ):
+        raise RetirementError("target legacy summary state changed before apply")
     if _recorded_at(replacement_state) <= _recorded_at(target_state):
         raise RetirementError("replacement is not newer than target before apply")
     checks = plan.get("compatibility_checks")
@@ -417,11 +648,17 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
     if refreshed_topology != checks:
         raise RetirementError("retirement compatibility changed before apply")
     document_refs = _git_document_references(repository_root, target.name)
-    downstream_refs = _downstream_references(artifact_root, target, target.name)
-    if document_refs or downstream_refs:
+    downstream_refs = _downstream_references(
+        artifact_root,
+        target,
+        target.name,
+        removable_paths=(item["path"] for item in plan["removed_files"]),
+        preserved_paths=(item["path"] for item in plan["preserved_files"]),
+    )
+    if downstream_refs["active"]:
         raise RetirementError(
-            f"target gained active references before apply: "
-            f"git_documents={document_refs}, downstream={downstream_refs}"
+            "target gained active references in downstream run_config before apply: "
+            f"{downstream_refs['active']}"
         )
     leases = protection.load_capacity_protection_leases(artifact_root)
     if protection.path_is_protected(target, leases["protected_paths"]):
@@ -440,6 +677,12 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
         "role": "solver_review_retirement_receipt",
         "lifecycle_status": "retirement_pending",
         "started_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "apply_historical_document_references": document_refs,
+        "apply_historical_downstream_references": downstream_refs["historical"],
+        "apply_active_preserved_file_references": downstream_refs["active_preserved"],
+        "apply_corrupt_run_config_reference_unavailable": downstream_refs[
+            "corrupt_run_config_reference_unavailable"
+        ],
         "apply_capacity_protection_audit": leases["audit"],
     }
     _atomic_json(receipt_path, pending)
@@ -453,7 +696,9 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
                 removed_bytes += item["bytes"]
                 continue
             try:
-                for _ in remove_recorded_files(target, [item]):
+                for _ in remove_recorded_files(
+                    target, [item], identities_verified=True
+                ):
                     pass
             except ValueError as exc:
                 raise RetirementError(str(exc)) from exc
@@ -493,9 +738,20 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
     target_status = receipt.get("target_terminal_status", "success")
     if target_status not in {"success", "failed"}:
         raise RetirementError("retirement target terminal status is invalid")
-    if (
-        _json(run_dir / "run_manifest.json").get("status") != target_status
-        or _json(run_dir / "summary.json").get("status") != target_status
+    manifest_status = _json(run_dir / "run_manifest.json").get("status")
+    summary = _json(run_dir / "summary.json")
+    legacy_initialization_summary = receipt.get(
+        "target_legacy_initialization_summary", False
+    )
+    if not isinstance(legacy_initialization_summary, bool):
+        raise RetirementError("retirement target legacy summary flag is invalid")
+    if manifest_status != target_status or (
+        summary.get("status") != target_status
+        and not (
+            legacy_initialization_summary
+            and target_status == "success"
+            and summary == LEGACY_INITIALIZATION_SUMMARY
+        )
     ):
         raise RetirementError("retirement target terminal status differs")
     replacement = Path(receipt["replacement_run_path"])

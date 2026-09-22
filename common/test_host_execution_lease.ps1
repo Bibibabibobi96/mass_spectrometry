@@ -26,6 +26,9 @@ try {
   $env:SIMULATION_PYTHON_EXE = $PythonExe
   . $leaseSource
   . (Join-Path $PSScriptRoot 'contracts/run_artifact_support.ps1')
+  $nativeTicks = Get-HostResourceNativeProcessCreationTicks -ProcessId $PID
+  $managedTicks = (Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks.ToString('D19')
+  Assert-True ($nativeTicks -eq $managedTicks) 'Native limited process query did not preserve the current creation identity.'
   $ordinary = Get-HostResourceBudget -Role GATE -Stage unlisted-ordinary-check
   Assert-True (-not $ordinary.heavy_stage -and -not $ordinary.unknown_peak -and $ordinary.memory_bytes -eq 2GB) `
     'Ordinary unclassified GATE work must default to its declared light budget.'
@@ -41,6 +44,15 @@ try {
   foreach ($stageCase in @(@('SIMION','pa_refine'), @('SIMION','flight'), @('GATE','theory_compute'))) {
     Assert-True ((Get-HostResourceBudget -Role $stageCase[0] -Stage $stageCase[1]).heavy_stage) 'Listed stage lost heavy classification.'
   }
+  foreach ($flightStage in @('flight','mrtof_flight')) {
+    $flight=Get-HostResourceBudget -Role SIMION -Stage $flightStage
+    Assert-True ($flight.heavy_stage-and$flight.io_slots-eq1) `
+      'SIMION flight must retain heavy exclusion without reserving every I/O stream.'
+  }
+  $dirichletResponse=Get-HostResourceBudget -Role SIMION -Stage dirichlet_response_refine
+  Assert-True (-not$dirichletResponse.heavy_stage-and$dirichletResponse.io_slots-eq1-and
+    $dirichletResponse.memory_bytes-eq6GB-and$dirichletResponse.cpu_cores-eq2) `
+    'Measured Dirichlet-response admission profile is invalid.'
   foreach ($prepareStage in @('prepare','pa_prepare','mrtof_pa_prepare','analyzer_local_pa_prepare','accelerator_pa_prepare')) {
     Assert-True (-not (Get-HostResourceBudget -Role SIMION -Stage $prepareStage).heavy_stage) `
       'An unlisted PA preparation stage must remain light.'
@@ -52,6 +64,17 @@ try {
     'A same-name executable outside the Windows system directory was incorrectly exempted.'
   Assert-True (-not (Test-HostResourceConsoleProcess -ImagePath $null)) `
     'An unknown executable image was incorrectly exempted.'
+  $diskFixture=@(
+    [pscustomobject]@{Name='0';CurrentDiskQueueLength=3},
+    [pscustomobject]@{Name='2 C:';CurrentDiskQueueLength=0}
+  )
+  Assert-True (-not (Get-HostResourceIoPressure -Disks $diskFixture -TargetPath 'C:\repo')) `
+    'An unrelated physical-disk queue incorrectly blocked the repository volume.'
+  $diskFixture[1].CurrentDiskQueueLength=2
+  Assert-True (Get-HostResourceIoPressure -Disks $diskFixture -TargetPath 'C:\repo') `
+    'A queue on the repository volume was not observed.'
+  Assert-True (Get-HostResourceIoPressure -Disks @($diskFixture[0]) -TargetPath 'C:\repo') `
+    'Missing repository-volume telemetry did not fail closed.'
   $realSnapshot = ${function:Get-HostResourceSnapshot}
   function Get-HostResourceSnapshot {
     $value = & $realSnapshot
@@ -87,7 +110,7 @@ try {
   $lease = Enter-HostExecutionLease -Role SIMION -Stage mrtof_postprocess
   try {
     $capacity = Invoke-ArtifactCapacityGate -Python $PythonExe -RepoRoot (Split-Path -Parent $PSScriptRoot) `
-      -ArtifactRoot $capacityRoot -TargetGiB 500 -MinimumFreeGiB 0
+      -ArtifactRoot $capacityRoot
     Assert-True $capacity.satisfied_after_apply 'Nested capacity gate did not complete.'
     $records = @((Get-HostResourceStatus -StatePath $statePath).records)
     Assert-True ($records.Count -eq 1 -and $records[0].token -eq $lease.token) 'Capacity child changed its parent grant.'

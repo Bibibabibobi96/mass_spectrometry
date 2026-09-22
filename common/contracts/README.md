@@ -26,6 +26,22 @@ artifact路径，因此run ID、输入/输出身份、SHA和历史引用不变�
 manifest、正式资产和外部artifact；`repository_text_sha256`只用于Git治理的文本依赖，先把行尾规范为
 LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍负责路径范围、字节数和证据资格。
 
+大PA的owner可显式调用`file_sha256_unbuffered`，默认`file_sha256`不变。该入口仅支持Windows 8+，
+以只读且仅share-read的`CreateFileW`句柄、`FILE_FLAG_NO_BUFFERING`、实际存储扇区信息和对齐的
+`VirtualAlloc`缓冲区顺序读取一次；尾块请求按扇区向上取整，只哈希`ReadFile`实际返回的文件字节。
+无临时全文件副本、无源写入或flush，API/短读/未知对齐失败不回退普通读取。调用者必须先确认求解器
+已经完成且无活动映射写入者；不同视图的哈希不一致仍是身份失败，不能选一个能匹配旧清单的值当成功。
+这只绕过Windows系统数据缓存，不保证硬件缓存已持久化，也不把无缓冲结果自动升级为发布资格。
+
+官方接口核查（Microsoft Win32，Windows 8+/Server 2012+；查阅2026-09-21）：
+[File buffering](https://learn.microsoft.com/en-us/windows/win32/fileio/file-buffering)定义无缓冲尺寸、地址对齐和硬件缓存边界；
+[CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)定义只读/share-read打开；
+[FILE_STORAGE_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_storage_info)及
+[GetFileInformationByHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getfileinformationbyhandleex)提供同一文件句柄的扇区信息；
+[VirtualAlloc](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc)提供可显式对齐的内存；
+[ReadFile](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile)定义同步读和跨EOF尾读。
+这是基于官方API的项目SHA-256实现，用于显式核对异常的大文件缓存视图；不支持这些接口的存储失败关闭。
+
 `verify_run_manifest.py`默认且在发布时始终复核run config、全部输入、全部输出和适用的保留合同。已经冻结的
 历史run若有不再被下游读取的大型记录丢失或损坏，下游可用具名`--consumer-projection-id`，并逐项提供
 `--consumed-input NAME PATH`／`--consumed-output PATH`；入口仍复核manifest状态、run config、项目／模式等
@@ -44,49 +60,75 @@ LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍
 writer/verifier同时扫描未列出的重型文件，防止通过漏报output绕过。schema v1只承担历史兼容，不因
 新增合同而失效；未迁移入口由测试中的具名棘轮清单约束，新建或实质修改时必须退出该清单。
 
-`reconcile_artifact_capacity.py`与`artifact_capacity_policy.json`是唯一的跨项目容量清理政策；
-[`capacity_protection.py`](capacity_protection.py)实现TTL租约与路径保护，供容量清理、compact修复、
-solver-review退休和布局检查直接复用；命令仍只由容量入口提供。
-`Invoke-ArtifactCapacityGate`是`run_artifact_support.ps1`提供的PowerShell生命周期适配器。运行器必须由
-冻结或实际测得的新增字节、显式受保护run路径和缓存键调用它，并把返回的 applied receipt 作为run输出；
-适配器自动取得或继承公共`HostExecutionLease`；轻重任务可并行，因此主机许可本身不保证缓存消费与
-容量清理互斥。调用方必须保护实际消费路径和缓存键，跨任务使用下述TTL容量保护租约；无法确认其他
-活动消费者时不得执行删除。Python入口的`--apply`拒绝没有主机租约标记的直接调用，snapshot和只读plan
-不受影响。该适配器不定义项目缓存角色、物理参数或第二套删除优先级。候选发现同时识别项目`cache/<role>/<key>`
-的`generation_relative_path`指针和已注册公共SIMION PA-family cache的`generation_sha256`指针；二者都必须
-形成pointer→selected generation→manifest的闭合身份链；无manifest的staging需人工确认归属后处置，不能仅凭年龄自动删除。
-跨run或跨项目需要在终态manifest之外临时保留可重建缓存/运行目录时，使用同一Python入口在
-`artifacts/common/capacity_protection_leases/<lease-id>.json`创建TTL保护租约：
-`--create-protection-lease <id> --lease-owner <owner> --lease-ttl-seconds <seconds>`，并以可重复的
-`--protect-cache-key`或`--protect-path`声明目标。生产者结束、消费者尚未启动的空窗继续使用同一lease ID；
-长任务须在到期前调用
-`--renew-protection-lease <id> --lease-owner <same-owner> --lease-ttl-seconds <seconds>`续租，续租只原子延长
-同一owner和同一保护范围，保留原`created_at_utc`且不能缩短到期时间，也不能增加key或path；跨步骤链
-明确完成、被替代或放弃后才用
-`--delete-protection-lease <id>`释放。过期租约不能续租，避免已经出现保护空窗后伪装成连续租约；此时须先
-重新核实目标仍存在且未被处置，再创建新ID。
-每次plan/apply都会自动合并所有owner尚未过期的租约。过期租约只保留审计记录而不再保护，仍有效但
-损坏、路径越界或格式错误的租约会令容量门禁失败关闭；因此进程崩溃不会把可重建大缓存永久钉住。
-容量工具只把pointer、selected generation与cache manifest身份闭合的真实cache key和活动run引用取交集；
-run文本中的普通文件SHA-256不会被计为活动cache key。
-容量审计只枚举`projects/<project>/runs/<run_id>`直接子目录，不把archive、scratch或run内部的嵌套结果误认成
-活动run。若遗留run的summary已写`success/failed/interrupted`等终态而manifest仍为`checkpoint`或缺失，运行：
-`--audit-checkpoint-terminalization`取得只读清单。容量治理继续按manifest将它视为活动run，不根据summary、
-日期或进程缺失自动释放；负责人核实实际进程、输出、引用和provenance后，必须复用
-`Write-VerifiedRunManifest`或`Write-TerminalRunRecord`发布验证过的终态manifest。容量工具不提供第二套
-terminalize命令，也不自动改写三件套。
-超过策略宽限期、没有run_config/summary/manifest且不被活动run引用的旧run-shaped目录按L1处理，删除前在
-`artifacts/common/capacity_disposal_receipts/`保存逐文件身份。成功run默认始终受保护；仅当调用者通过
-`Invoke-ArtifactCapacityGate -RebuildableSuccessBuildRuns <exact-run-path>`逐项授权时，门禁才检查该对象
-确为非Formal success `build`、没有活动引用，并只清理manifest未记录的重型副本。历史`solver_review`
-允许逐字段完全匹配旧初始化模板的checkpoint summary与success manifest并存；manifest保持终态权威，summary
-仍保留且任何模板漂移均拒绝。原三件套、全部已记录输出和带SHA-256的
-`capacity_retirement_actions.json`保留，普通成功仿真或分析run不能通过该参数准入。
+`reconcile_artifact_capacity.py`与`artifact_capacity_policy.json`实现日常容量治理，只有三项职责：
+启动检查、生命周期登记和维护清理。唯一权威状态是[`capacity_ledger.py`](capacity_ledger.py)维护的
+`capacity_ledger.json`及[`capacity_protection.py`](capacity_protection.py)维护的公共租约，不存在第二套项目级门禁。
+
+台账只使用三类对象：`light_evidence`保留必要证据，`published_cache`保存公共可复用重型资产，
+`rebuildable_payload`保存可重建载荷。对象状态只使用`writing/ready/retirement_pending/retired`；pin必须说明理由，
+发布缓存必须绑定SHA-256代际。`writing`必须登记`owner/recovery_reason/review_deadline`，可列出消费者；到期后
+startup失败关闭并报告精确对象，不能自动删除，也不能无限期成为未知垃圾。完整台账不允许未分类对象。
+
+所有生产`New-RunPackage`调用都必须启用`CapacityLedgerLifecycleEnabled`：创建时登记精确run目录为
+`rebuildable_payload/writing`；终态retention完成后，只有不含求解器原生二进制、稠密轨迹或大型可选文件且不超过
+统一light-evidence预算的run，才能按实际大小登记为`light_evidence/ready`；否则保持writing并列出问题文件。
+公共缓存发布入口负责把唯一缓存代际登记为
+`published_cache/ready`，run只保存身份和轻量结果。
+
+跨“构建→发布→装配→飞行”的工作流只持有一个由`Enter-ArtifactWorkflowCapacitySession`建立的租约；
+子步骤用`Update-ArtifactWorkflowCapacitySession`扩展输入保护并更新“从当前时刻起仍可能新增的峰值字节”，
+最后一个消费者结束后由`Exit-ArtifactWorkflowCapacitySession`释放。输入保护和新增空间承诺分别记录，
+共享输入只计一次。调用方不得传裸`KnownMeasuredBytes/MaximumNewArtifactBytes/RequiredHeadroomBytes`，也不得覆盖
+`TargetGiB/MinimumFreeGiB`。
+
+startup只查询磁盘空闲并读取台账、当前租约和全部活动承诺；不遍历artifact、run或缓存，不哈希PA，
+不做历史清理。缺失/损坏台账、当前租约scope不完整、未知承诺、影响当前输入或使容量不可判定的writing复核逾期、
+以及空间不足都明确失败关闭；无关逾期writing只报告warning。
+正常目标为5秒；超过5秒或60秒只发性能warning，不改变安全结论。历史发现只由显式一次性
+`legacy_capacity_calibration.py`/`legacy_capacity_backfill.py`执行，不能从日常路径隐式触发。
+
+maintenance先处理`ready`、未pin且无租约保护的`rebuildable_payload`。`published_cache`不会进入通用删除队列；
+已开始的退休优先续做；同类可重建载荷按字节数降序选择，达到容量目标即停止，避免为很小的空间缺口
+逐项重写上千次全量账本。published cache 仍沿用最近使用时间顺序，所有身份与保护检查保持不变。
+维护仅向其固定owner manager请求精确代际退休，manager在同一决策锁内提交owner终态和sealed disposition后，
+删除器才按该唯一清单执行。`light_evidence`不参与自动删除。删除与消费仅在短决策锁内复核身份、租约和退休状态，
+大型删除在锁外执行并增量更新固定处置记录；中断只重放同一记录，不重新扫描或重复哈希整棵对象树。
+已发布代际禁止原位修改；Refine、Fast Adjust和其他写操作只能
+使用独立工作副本。日常维护不依赖旧`compact/solver_review/L1-L3`分类，这些旧语义只留在迁移工具中。
+
+失败PA事务若已无任何payload或scratch文件，可由其唯一[PA owner](../simion/pa_family_cache.py)通过
+`advance-transaction --abandon-empty-transaction <request.json>`显式收尾：绑定owner、原事务SHA、inventory及
+失败producer证据，拒绝已有publication、实际pin、活动租约或消费者引用；任何残留载荷均保留并拒绝。
+事务真实转为`retired`，保留原事务全文、verification和失败原因；同路径容量对象按证据实际字节登记为
+`light_evidence/ready`。同请求可重放owner已落盘而台账未落盘的中断；`physical_bytes_removed=0`明确表示仅
+纠正失准占用，不能报告为物理释放，也不授权非空事务退休或删除。
+
+当前工作站的受管产物目标和物理空闲底线只由[`artifact_capacity_policy.json`](artifact_capacity_policy.json)配置。前者允许原生 SIMION PA family 在
+旧代际完成等价验证前短期共存，后者仍为系统盘、求解器暂存和其他已登记工作流保留硬余量。该水位不授权
+调用方省略完整峰值预算：大型 family 必须采用同卷原子发布，GUI/solver 可写副本应延迟到旧代际退休后
+物化；若活动承诺后的预测空闲低于该配置底线，startup仍须失败关闭。不得把空闲底线设为零来绕过容量规划。
+
+用户明确要求较低清理目标时，可在同一维护入口使用
+`reconcile_artifact_capacity.py --execution-mode maintenance --maintenance-target-gib 600`。
+该目标只作用于本次维护，必须为有限正数且不高于公共policy目标；不得与租约操作或startup并用。
+项目生产调用仍不得覆盖全局准入水位，物理空闲底线和policy文件保持不变。
+
+公共 JSON 原子落盘在 Windows 替换遇到错误 5/32/33 时，复用已刷盘临时文件最多尝试五次，累计
+等待不超过 0.75 秒；持续失败仍抛出原异常，保留旧目标并清理此次临时文件，不修改权限。
+[Windows 官方错误码](https://learn.microsoft.com/zh-cn/windows/win32/debug/system-error-codes--0-499-)
+分别定义拒绝访问、共享冲突和锁冲突；错误 5 不保证是瞬态，上述有界重试是本项目策略。
+
+增量台账由本入口及既有发布/删除/终态收尾入口维护，而不是新建第二套治理工具。台账最小记录为：
+`artifact_root`身份、对象路径/角色、字节数、不可变代际身份、状态、最后一次成功发布/删除收据、活动峰值承诺
+和待核对标记；台账缺失、版本不符或存在待核对标记时，startup只能阻塞并请求maintenance校准。台账不能用
+文件大小或时间戳冒充内容验证，也不能在发布、删除或运行收尾之外自行推断外部写入；首次建立或发现不一致时
+才做一次完整扫描，之后按收据增量更新。
 
 `reconcile_interrupted_compact_runs.py --run-dir <exact-run>`提供单run plan/apply；只接受正规终态且
-manifest/summary一致的`failed`或`interrupted` compact run。apply必须持有共享`HostExecutionLease`且确认
-没有活动SIMION，只删除manifest未记录并由retention合同判为可重建的重型文件。checkpoint不能由该入口
-推断终态。
+manifest/summary一致的`failed`或`interrupted` compact run。apply必须持有共享`HostExecutionLease`；
+无关SIMION进程不再形成全机禁令。入口按规范化结构字段识别指向目标run内具体文件的活动消费者：被引用的
+重型文件逐项跳过并报告，指向保留轻量证据的引用不阻塞其他重载；只删除manifest未记录并由retention合同
+判为可重建的重型文件。checkpoint不能由该入口推断终态。
 
 `artifact_identity_archive.py`只读解析已经完成的行政改名归档：它校验冻结的逐文件身份、归档包装、
 裁剪journal和唯一活动位置，并把旧manifest中的绝对路径按精确前缀映射到归档payload。仓库不再提供
@@ -100,9 +142,18 @@ manifest/summary一致的`failed`或`interrupted` compact run。apply必须持�
 和人工审阅后的兼容性说明，并逐项声明本设计线判定兼容所需的同名输入角色；历史角色改名则用
 `TARGET_ROLE=REPLACEMENT_ROLE`逐项映射，两端manifest记录的字节数和SHA-256必须相同。入口失败关闭检查
 target为一致的success/failed终态、replacement为success、两端均非Formal、replacement更新、项目与mode一致、
-两端均具备调用者声明的角色、target没有Git
-Markdown或下游run_config引用，且不受活动容量保护租约
+两端均具备调用者声明的角色、target没有活动下游run_config引用，且不受活动容量保护租约
 覆盖；两端完整manifest记录与config/summary/输入绑定必须通过字节数和SHA验证，apply前再次复核。
+Git Markdown中的历史run引用只进入plan/receipt审计，不等于对其重型载荷的活动依赖。旧run若具有精确的初始化
+checkpoint summary模板而manifest已是success，允许仅对target使用该兼容形状；replacement仍必须是summary/
+manifest一致、证据完整的success。
+下游扫描只把manifest缺失或非终态run中结构化配置值精确指向target run、路径或manifest的依赖作为活动阻塞；
+活动run_config无法解析时失败关闭。已经终态的相同引用只写入plan/receipt历史审计，不永久钉住被取代重载，
+apply会重新执行同一分类。
+对于非终态run，若run_config无法解析，退休入口先用有效manifest中绑定的本地
+`run_config`字节数和SHA-256核对实际文件：身份已损坏时只记录
+`corrupt_run_config_reference_unavailable`审计项，并继续检查manifest自身的结构化引用；身份仍匹配而仅解析失败时，
+仍按`run_config_unreadable_reference_uncertain`失败关闭。这样损坏的旧引用不会锁死所有target，真正不可判定的配置仍不会被忽略。
 只删除`solver_native_binary`和`dense_trajectory`，不删除轻量IOB、报告或三件套。
 
 apply前先在target内原子写入pending receipt，逐文件验证原始SHA-256后删除，最后写成

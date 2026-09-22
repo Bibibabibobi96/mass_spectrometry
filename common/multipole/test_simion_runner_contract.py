@@ -447,10 +447,10 @@ if($scenario-eq'inherited_light'){
         for token in (
             "common.simion.pa_family_cache",
             "--action',$Operation",
-            "-Operation probe -IdentityPath $paBasisIdentityPath",
+            "-Operation ensure -IdentityPath $paBasisIdentityPath",
             "-Operation publish -IdentityPath $paBasisIdentityPath",
             "-Operation materialize -IdentityPath $paBasisIdentityPath",
-            "SIMION PA-basis cache is corrupt:",
+            "'probe','ensure','publish','materialize'",
             "Assert-MultipolePaBasisNames",
             "SIMION GEM must declare exactly one PA surface mode.",
             "if($paSurface-eq'fractional'){$paBasisNames=@('quad_monolithic.pa-surf')+$paBasisNames}",

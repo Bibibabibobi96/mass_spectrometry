@@ -4,6 +4,8 @@ import io
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -14,23 +16,1005 @@ from pathlib import Path
 
 from common.contracts.capacity_protection import (
     CapacityProtectionLeaseError,
-    create_capacity_protection_lease,
+    create_capacity_protection_lease as _create_capacity_protection_lease,
     load_capacity_protection_leases,
     renew_capacity_protection_lease,
 )
-from common.contracts import reconcile_artifact_capacity as capacity
-from common.contracts.reconcile_artifact_capacity import (
+from common.contracts import capacity_ledger
+from common.contracts import reconcile_artifact_capacity as normal_capacity
+from common.contracts import legacy_capacity_backfill as capacity
+from common.contracts.legacy_capacity_backfill import (
     _current_generation_pointers,
     _directory_bytes,
     apply,
     audit_checkpoint_terminalization,
     main,
-    plan,
+    plan as _plan,
     snapshot_published_pa_cache_keys,
 )
 
 
+def plan(*args, **kwargs):
+    """Legacy fixture helper: exhaustive behavior is explicit in tests only."""
+
+    kwargs.setdefault("execution_mode", "legacy-backfill")
+    return _plan(*args, **kwargs)
+
+
+def create_capacity_protection_lease(root: Path, **kwargs):
+    """Give lease-focused fixtures the calibrated ledger required in production."""
+
+    if capacity_ledger.load_capacity_ledger(root) is None:
+        capacity_ledger.initialize_capacity_ledger(root, objects=[])
+    return _create_capacity_protection_lease(root, **kwargs)
+
+
+class MaintenanceTargetCliTest(unittest.TestCase):
+    def test_maintenance_reaches_target_with_large_payload_and_resumes_pending_first(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            objects = [
+                {"path": "small/old", "bytes": 1},
+                {"path": "large/new", "bytes": 100},
+                {"path": "protected/largest", "bytes": 1000, "pin": True, "pin_reason": "active input"},
+                {"path": "pending/tiny", "bytes": 1, "status": "retirement_pending"},
+            ]
+            capacity_ledger.initialize_capacity_ledger(root, objects=[
+                {"class": "rebuildable_payload", "status": "ready", "pin": False, **item}
+                for item in objects
+            ])
+            receipt = normal_capacity.plan(
+                root, target_bytes=1002, minimum_free_bytes=0, execution_mode="maintenance",
+            )
+            self.assertTrue(receipt["satisfied"])
+            self.assertEqual([Path(item["path"]).relative_to(root).as_posix() for item in receipt["planned"]],
+                             ["pending/tiny", "large/new"])
+
+    def test_target_changes_only_requested_maintenance_plan(self) -> None:
+        policy = normal_capacity._capacity_policy()
+        for arguments, expected in (
+            (["--execution-mode", "maintenance", "--maintenance-target-gib", "600"], 600),
+            (["--execution-mode", "maintenance"], policy["target_gib"]),
+            ([], policy["target_gib"]),
+        ):
+            with self.subTest(arguments=arguments), patch.object(
+                sys, "argv", ["capacity", "--artifact-root", "unused", *arguments]
+            ), patch.object(normal_capacity, "plan", return_value={}) as planner, redirect_stdout(io.StringIO()):
+                normal_capacity.main()
+                self.assertEqual(planner.call_args.kwargs["target_bytes"], int(expected * normal_capacity.GIB))
+                self.assertEqual(planner.call_args.kwargs["minimum_free_bytes"], int(policy["minimum_free_gib"] * normal_capacity.GIB))
+
+    def test_invalid_target_rejected_before_plan_or_lease_mutation(self) -> None:
+        policy = normal_capacity._capacity_policy()
+        cases = [
+            ["--maintenance-target-gib", "600"],
+            ["--execution-mode", "maintenance", "--create-protection-lease", "test", "--maintenance-target-gib", "600"],
+        ]
+        cases.extend(
+            ["--execution-mode", "maintenance", "--maintenance-target-gib", value]
+            for value in (str(policy["target_gib"] + 1), "nan", "inf", "-inf", "0", "-1")
+        )
+        for arguments in cases:
+            with self.subTest(arguments=arguments), patch.object(
+                sys, "argv", ["capacity", "--artifact-root", "unused", *arguments]
+            ), patch.object(normal_capacity, "plan") as planner, patch.object(
+                normal_capacity, "_lease_action"
+            ) as lease_action, redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                normal_capacity.main()
+            self.assertEqual(raised.exception.code, 2)
+            planner.assert_not_called()
+            lease_action.assert_not_called()
+
+
 class ArtifactCapacityPlanTest(unittest.TestCase):
+    def test_capacity_ledger_requires_explicit_initialized_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialized = capacity_ledger.initialize_capacity_ledger(
+                root,
+                objects=[{
+                    "path": "reports/baseline.json",
+                    "class": "light_evidence",
+                    "bytes": 11,
+                    "status": "ready",
+                    "pin": True,
+                    "pin_reason": "unique calibrated baseline",
+                }],
+            )
+            self.assertTrue(initialized["complete"])
+            self.assertEqual(initialized["resident_bytes"], 11)
+            with self.assertRaises(FileExistsError):
+                capacity_ledger.initialize_capacity_ledger(root, objects=[])
+            with self.assertRaisesRegex(ValueError, "baseline is invalid"):
+                capacity_ledger.initialize_capacity_ledger(
+                    root,
+                    objects=[{
+                        "path": "bad/object", "class": "legacy_payload",
+                        "bytes": 1, "status": "ready", "pin": False,
+                    }],
+                    overwrite=True,
+                )
+            self.assertEqual(
+                capacity_ledger.load_capacity_ledger(root)["resident_bytes"], 11,
+            )
+
+    def test_ledger_enforces_four_states_pin_reason_cache_identity_and_disjoint_ranges(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capacity_ledger.initialize_capacity_ledger(root, objects=[])
+            with self.assertRaisesRegex(ValueError, "class/status"):
+                capacity_ledger.record_capacity_object(
+                    root, path="legacy", object_class="rebuildable_payload",
+                    bytes_count=1, status="superseded",
+                )
+            with self.assertRaisesRegex(ValueError, "pin_reason"):
+                capacity_ledger.record_capacity_object(
+                    root, path="pinned", object_class="light_evidence",
+                    bytes_count=1, pin=True,
+                )
+            with self.assertRaisesRegex(ValueError, "generation identity"):
+                capacity_ledger.record_capacity_object(
+                    root, path="cache/generation", object_class="published_cache",
+                    bytes_count=1,
+                )
+            capacity_ledger.record_capacity_object(
+                root, path="objects/parent", object_class="rebuildable_payload",
+                bytes_count=1,
+            )
+            with self.assertRaisesRegex(ValueError, "ranges cannot overlap"):
+                capacity_ledger.record_capacity_object(
+                    root, path="objects/parent/child", object_class="light_evidence",
+                    bytes_count=1,
+                )
+            with self.assertRaisesRegex(ValueError, "ranges cannot overlap"):
+                capacity_ledger.record_capacity_object(
+                    root, path="objects", object_class="light_evidence", bytes_count=1,
+                )
+
+    def test_ledger_rejects_symlink_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as outside:
+            root = Path(temporary)
+            link = root / "outside-link"
+            try:
+                link.symlink_to(Path(outside), target_is_directory=True)
+            except OSError as exc:
+                if os.name != "nt":
+                    self.skipTest(f"host cannot create a test symlink: {exc}")
+                created = subprocess.run(
+                    ["cmd", "/d", "/c", "mklink", "/J", str(link), outside],
+                    cwd=root, text=True, capture_output=True, check=False, timeout=30,
+                )
+                if created.returncode != 0:
+                    self.skipTest(f"host cannot create a test junction: {created.stderr}")
+            try:
+                capacity_ledger.initialize_capacity_ledger(root, objects=[])
+                with self.assertRaisesRegex(ValueError, "below artifact root"):
+                    capacity_ledger.record_capacity_object(
+                        root, path=link / "payload", object_class="rebuildable_payload",
+                        bytes_count=1,
+                    )
+            finally:
+                if link.is_symlink():
+                    link.unlink()
+                elif link.exists():
+                    os.rmdir(link)
+
+    def test_pending_query_and_lease_registration_fail_closed_without_valid_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "pending state is unknown"):
+                capacity_ledger.pending_disposal_targets(root)
+            with self.assertRaisesRegex(ValueError, "pending state is unknown"):
+                _create_capacity_protection_lease(
+                    root, lease_id="missing-ledger", owner="test", ttl_seconds=60,
+                    protected_paths=[root / "payload"],
+                )
+            ledger = root / "common" / "capacity_ledger.json"
+            ledger.parent.mkdir(exist_ok=True)
+            ledger.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "pending state is unknown"):
+                capacity_ledger.pending_disposal_targets(root)
+
+    def test_maintenance_selects_only_ready_unpinned_heavy_classes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ledger = root / "common" / "capacity_ledger.json"
+            capacity_ledger.initialize_capacity_ledger(
+                root,
+                objects=[
+                    {
+                        "path": "evidence/report", "class": "light_evidence",
+                        "bytes": 1, "status": "ready", "pin": False,
+                    },
+                    {
+                        "path": "runs/writing", "class": "rebuildable_payload",
+                        "bytes": 2, "status": "writing", "pin": False,
+                        "owner": "test", "recovery_reason": "fixture_incomplete",
+                        "review_deadline": "2026-09-27",
+                    },
+                    {
+                        "path": "cache/generation", "class": "published_cache",
+                        "bytes": 3, "status": "ready", "pin": False,
+                        "identity": "e" * 64,
+                    },
+                    {
+                        "path": "runs/pinned", "class": "rebuildable_payload",
+                        "bytes": 4, "status": "ready", "pin": True,
+                        "pin_reason": "unique evidence",
+                    },
+                ],
+            )
+            receipt = plan(
+                root, target_bytes=0, minimum_free_bytes=0,
+                execution_mode="maintenance", capacity_ledger=ledger,
+            )
+            self.assertEqual(
+                [item["path"] for item in receipt["planned"]],
+                [str((root / "cache" / "generation").resolve())],
+            )
+            create_capacity_protection_lease(
+                root, lease_id="consumer", owner="test", ttl_seconds=60,
+                protected_paths=[root / "cache" / "generation"],
+            )
+            with self.assertRaisesRegex(ValueError, "not eligible"):
+                capacity_ledger.retire_capacity_object(
+                    root, path="cache/generation", bytes_removed=3,
+                )
+            protected_receipt = plan(
+                root, target_bytes=0, minimum_free_bytes=0,
+                execution_mode="maintenance", capacity_ledger=ledger,
+            )
+            self.assertEqual(protected_receipt["planned"], [])
+
+    def test_startup_import_does_not_load_legacy_reconciliation(self) -> None:
+        script = """
+import sys
+import tempfile
+from pathlib import Path
+from common.contracts import reconcile_artifact_capacity as capacity
+with tempfile.TemporaryDirectory() as temporary:
+    assert Path(temporary).is_dir()
+assert 'common.contracts.reconcile_interrupted_compact_runs' not in sys.modules
+assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[2],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_startup_uses_ledger_and_lease_without_scanning_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "projects").mkdir()
+            ledger = root / "common" / "capacity_ledger.json"
+            ledger.parent.mkdir(exist_ok=True)
+            ledger.write_text(json.dumps({
+                "schema_version": 1,
+                "role": "artifact_capacity_ledger",
+                "status": "calibrated",
+                "complete": True,
+                "artifact_root": str(root),
+                "resident_bytes": 1000,
+                "objects": [{
+                    "path": "projects/existing", "class": "light_evidence",
+                    "bytes": 1000, "status": "ready", "pin": False,
+                }],
+            }), encoding="utf-8")
+            create_capacity_protection_lease(
+                root, lease_id="current", owner="test", ttl_seconds=3600,
+                protected_paths=[root / "projects"], committed_new_bytes=100,
+            )
+            with patch.object(capacity, "_directory_bytes", side_effect=AssertionError("startup scanned")):
+                receipt = plan(
+                    root, target_bytes=2000, minimum_free_bytes=0,
+                    maximum_new_artifact_bytes=100,
+                    execution_mode="startup",
+                    capacity_ledger=ledger,
+                    capacity_protection_lease_id="current",
+                )
+            self.assertTrue(receipt["satisfied"])
+            self.assertEqual(receipt["measurement_mode"], "STARTUP_LEDGER")
+            self.assertFalse(receipt["candidate_discovery_performed"])
+
+    def test_startup_warns_on_unrelated_overdue_writing_but_blocks_required_input(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": "scratch/old", "class": "rebuildable_payload",
+                "bytes": 1, "status": "writing", "pin": False,
+                "owner": "old", "recovery_reason": "review",
+                "review_deadline": "2000-01-01",
+            }])
+            required = root / "projects" / "current"
+            create_capacity_protection_lease(
+                root, lease_id="current", owner="test", ttl_seconds=3600,
+                protected_paths=[required], committed_new_bytes=0,
+            )
+            warning = normal_capacity.plan(
+                root, target_bytes=100, minimum_free_bytes=0,
+                execution_mode="startup",
+                protected_paths=[required], capacity_protection_lease_id="current",
+            )
+            self.assertTrue(warning["satisfied"])
+            self.assertEqual(warning["overdue_writing_object_count"], 1)
+            self.assertEqual(warning["blocking_overdue_writing_object_count"], 0)
+            capacity_ledger.record_capacity_object(
+                root, path=required, object_class="rebuildable_payload", bytes_count=1,
+                status="writing", owner="current", recovery_reason="review",
+                review_deadline="2000-01-01",
+            )
+            blocked = normal_capacity.plan(
+                root, target_bytes=100, minimum_free_bytes=0,
+                execution_mode="startup",
+                protected_paths=[required], capacity_protection_lease_id="current",
+            )
+            self.assertFalse(blocked["satisfied"])
+            self.assertEqual(blocked["blocking_reason"], "WRITING_RECOVERY_REVIEW_OVERDUE")
+
+    def test_startup_fails_closed_without_trusted_ledger_or_current_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            receipt = plan(
+                root, target_bytes=2000, minimum_free_bytes=0,
+                maximum_new_artifact_bytes=100, execution_mode="startup",
+            )
+            self.assertFalse(receipt["satisfied"])
+            self.assertEqual(receipt["blocking_reason"], "SAFETY_DECISION_UNAVAILABLE")
+            self.assertFalse(receipt["candidate_discovery_performed"])
+
+    def test_increased_commitment_survives_failed_startup_revalidation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capacity_ledger.initialize_capacity_ledger(root, objects=[])
+            started = datetime.now(timezone.utc)
+            create_capacity_protection_lease(
+                root, lease_id="growing", owner="workflow", ttl_seconds=120,
+                protected_paths=[root / "future"], committed_new_bytes=100,
+                now=started,
+            )
+            renew_capacity_protection_lease(
+                root, lease_id="growing", owner="workflow", ttl_seconds=300,
+                committed_new_bytes=200,
+                now=datetime.fromtimestamp(started.timestamp() + 60, timezone.utc),
+            )
+            with patch.object(capacity.shutil, "disk_usage", return_value=Mock(free=150)):
+                receipt = plan(
+                    root, target_bytes=1000, minimum_free_bytes=0,
+                    maximum_new_artifact_bytes=200, execution_mode="startup",
+                    capacity_protection_lease_id="growing",
+                )
+            self.assertFalse(receipt["satisfied"])
+            leases = load_capacity_protection_leases(
+                root, now=datetime.fromtimestamp(started.timestamp() + 120, timezone.utc),
+            )
+            self.assertEqual(leases["committed_new_bytes"], 200)
+
+    def test_lease_pending_check_reads_only_the_capacity_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "common").mkdir()
+            (root / "common" / "capacity_ledger.json").write_text(json.dumps({
+                "schema_version": 1,
+                "role": "artifact_capacity_ledger",
+                "status": "calibrated",
+                "complete": True,
+                "artifact_root": str(root),
+                "resident_bytes": 10,
+                "objects": [{
+                    "path": "projects/p/cache/key",
+                    "class": "rebuildable_payload",
+                    "bytes": 10,
+                    "status": "retirement_pending",
+                }],
+            }), encoding="utf-8")
+            target = root / "projects" / "p" / "cache" / "key"
+            target.parent.mkdir(parents=True)
+            with self.assertRaisesRegex(ValueError, "disposal became pending"):
+                create_capacity_protection_lease(
+                    root, lease_id="pending", owner="test", ttl_seconds=60,
+                    protected_paths=[target],
+                )
+
+    def test_maintenance_uses_ledger_and_applies_one_object_without_full_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "projects" / "p" / "runs" / "rebuildable"
+            target.mkdir(parents=True)
+            payload = target / "payload.pa0"
+            payload.write_bytes(b"payload")
+            payload_bytes = payload.stat().st_size
+            ledger = root / "common" / "capacity_ledger.json"
+            ledger.parent.mkdir(exist_ok=True)
+            ledger.write_text(json.dumps({
+                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "status": "calibrated", "complete": True,
+                "artifact_root": str(root), "resident_bytes": payload_bytes,
+                "objects": [{
+                    "path": "projects/p/runs/rebuildable",
+                    "class": "rebuildable_payload", "bytes": payload_bytes,
+                    "status": "ready",
+                }],
+            }), encoding="utf-8")
+            with patch.object(capacity, "_directory_bytes", side_effect=AssertionError("maintenance scanned")):
+                receipt = plan(
+                    root, target_bytes=1, minimum_free_bytes=0,
+                    execution_mode="maintenance", capacity_ledger=ledger,
+                )
+                self.assertEqual(receipt["measurement_mode"], "LEDGER_MAINTENANCE")
+                applied = apply(receipt)
+            self.assertFalse(target.exists())
+            self.assertEqual(applied["removed_bytes"], payload_bytes)
+
+    def test_ledger_object_api_allows_only_three_classes_and_pin(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ledger = root / "common" / "capacity_ledger.json"
+            ledger.parent.mkdir()
+            ledger.write_text(json.dumps({
+                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "status": "calibrated", "complete": True,
+                "artifact_root": str(root), "resident_bytes": 0, "objects": [],
+            }), encoding="utf-8")
+            self.assertEqual(
+                capacity.record_capacity_object(
+                    root, path="evidence/report.json", object_class="light_evidence",
+                    bytes_count=10,
+                )["class"],
+                "light_evidence",
+            )
+            capacity.record_capacity_object(
+                root, path="cache/key", object_class="published_cache", bytes_count=20,
+                identity="a" * 64,
+            )
+            capacity.record_capacity_object(
+                root, path="runs/old", object_class="rebuildable_payload", bytes_count=30,
+                status="ready", pin=True, pin_reason="unique scientific evidence",
+            )
+            with self.assertRaises(ValueError):
+                capacity.record_capacity_object(
+                    root, path="runs/bad", object_class="solver_review", bytes_count=1,
+                )
+            with self.assertRaises(ValueError):
+                capacity.record_capacity_object(
+                    root, path="runs/pending", object_class="rebuildable_payload",
+                    bytes_count=1, status="retirement_pending",
+                )
+            with self.assertRaises(ValueError):
+                capacity.retire_capacity_object(root, path="runs/old", bytes_removed=30)
+
+    def test_ledger_retirement_updates_resident_bytes_without_scanning(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ledger_path = root / "common" / "capacity_ledger.json"
+            ledger_path.parent.mkdir()
+            ledger_path.write_text(json.dumps({
+                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "status": "calibrated", "complete": True,
+                "artifact_root": str(root), "resident_bytes": 0, "objects": [],
+            }), encoding="utf-8")
+            capacity.record_capacity_object(
+                root, path="runs/old", object_class="rebuildable_payload",
+                bytes_count=30, status="ready",
+            )
+            with self.assertRaisesRegex(ValueError, "one complete object"):
+                capacity.retire_capacity_object(
+                    root, path="runs/old", bytes_removed=20,
+                )
+            with patch.object(capacity, "_directory_bytes", side_effect=AssertionError("ledger scanned")):
+                entry = capacity.retire_capacity_object(
+                    root, path="runs/old", bytes_removed=30,
+                )
+            self.assertEqual(entry["status"], "retired")
+            self.assertEqual(entry["bytes"], 30)
+            ledger = json.loads(ledger_path.read_text())
+            self.assertEqual(ledger["resident_bytes"], 0)
+
+    def test_touch_updates_only_ready_cache_last_used_time_monotonically(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capacity_ledger.initialize_capacity_ledger(
+                root,
+                objects=[{
+                    "path": "cache/generation", "class": "published_cache",
+                    "bytes": 7, "status": "ready", "pin": False,
+                    "identity": "f" * 64,
+                }, {
+                    "path": "runs/payload", "class": "rebuildable_payload",
+                    "bytes": 3, "status": "ready", "pin": False,
+                }],
+            )
+            touched = capacity_ledger.touch_capacity_object(
+                root, path="cache/generation", when_epoch=100.5,
+            )
+            self.assertEqual(touched["last_used_epoch"], 100.5)
+            self.assertEqual(touched["bytes"], 7)
+            self.assertEqual(touched["identity"], "f" * 64)
+            self.assertEqual(touched["status"], "ready")
+            with self.assertRaisesRegex(ValueError, "move backwards"):
+                capacity_ledger.touch_capacity_object(
+                    root, path="cache/generation", when_epoch=100,
+                )
+            with self.assertRaisesRegex(ValueError, "ready published_cache"):
+                capacity_ledger.touch_capacity_object(
+                    root, path="runs/payload", when_epoch=101,
+                )
+            with self.assertRaisesRegex(ValueError, "finite nonnegative"):
+                capacity_ledger.touch_capacity_object(
+                    root, path="cache/generation", when_epoch=float("nan"),
+                )
+
+    def test_pa_manager_approves_exact_unpinned_generation_idempotently(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "cache" / ("a" * 64)
+            target.mkdir(parents=True)
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(),
+                "class": "published_cache", "bytes": 7, "status": "ready",
+                "pin": False, "identity": "b" * 64,
+                "manager": capacity_ledger.PA_CACHE_MANAGER,
+            }])
+            files = [{"path": "payload.pa0", "bytes": 7, "sha256": "c" * 64}]
+            kwargs = {
+                "path": target, "expected_identity": "b" * 64,
+                "expected_bytes": 7,
+                "disposition_id": "d" * 64, "manifest_sha256": "e" * 64,
+                "files": files, "commit_owner_retirement": lambda _: None,
+            }
+            requested = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0, execution_mode="maintenance",
+            )
+            self.assertEqual(requested["planned"][0]["operation"], "request_retirement")
+            approved = capacity_ledger.approve_published_cache_retirement(root, **kwargs)
+            self.assertEqual(approved["class"], "rebuildable_payload")
+            self.assertFalse(approved["pin"])
+            self.assertIn(target.resolve(), capacity_ledger.pending_disposal_targets(root))
+            self.assertEqual(
+                capacity_ledger.approve_published_cache_retirement(root, **kwargs), approved,
+            )
+            with self.assertRaisesRegex(ValueError, "not eligible"):
+                capacity_ledger.retire_capacity_object(root, path=target)
+            normal = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0, execution_mode="maintenance",
+            )
+            self.assertEqual(normal["planned"][0]["operation"], "retire_approved_disposition")
+            with self.assertRaisesRegex(ValueError, "conflicts"):
+                capacity_ledger.approve_published_cache_retirement(
+                    root, **{**kwargs, "disposition_id": "f" * 64},
+                )
+
+    def test_maintenance_delegates_published_cache_then_executes_disposition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache_key = "a" * 64
+            generation = "b" * 64
+            target = root / "common" / "simion" / "pa_family_cache" / cache_key
+            target.mkdir(parents=True)
+            (target / "payload.pa0").write_bytes(b"payload")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(),
+                "class": "published_cache", "bytes": 7, "status": "ready",
+                "pin": False, "identity": generation,
+                "manager": capacity_ledger.PA_CACHE_MANAGER,
+            }])
+            planned = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            self.assertEqual(planned["planned"][0]["operation"], "request_retirement")
+
+            def approve(cache_root, actual_key, actual_generation):
+                self.assertEqual(Path(cache_root), target.parent)
+                self.assertEqual(actual_key, cache_key)
+                self.assertEqual(actual_generation, generation)
+                return capacity_ledger.approve_published_cache_retirement(
+                    root, path=target, expected_identity=generation,
+                    expected_bytes=7, disposition_id="d" * 64,
+                    manifest_sha256="e" * 64,
+                    files=[{"path": "payload.pa0", "bytes": 7, "sha256": "f" * 64}],
+                    commit_owner_retirement=lambda _: None,
+                )
+
+            with patch(
+                "common.simion.pa_family_cache.approve_pa_family_cache_retirement",
+                side_effect=approve,
+            ) as manager:
+                applied = normal_capacity.apply(planned)
+            manager.assert_called_once_with(target.parent, cache_key, generation)
+            self.assertEqual(applied["removed_bytes"], 7)
+            self.assertFalse(target.exists())
+            entry = capacity_ledger.load_capacity_ledger(root)["objects"][0]
+            self.assertEqual(entry["status"], "retired")
+            self.assertIn("disposition", entry)
+
+    def test_approved_recovers_target_removed_before_complete_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "cache" / ("a" * 64)
+            target.mkdir(parents=True)
+            (target / "one.bin").write_bytes(b"abc")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(), "class": "published_cache",
+                "bytes": 3, "status": "ready", "pin": False, "identity": "b" * 64,
+                "manager": capacity_ledger.PA_CACHE_MANAGER,
+            }])
+            capacity_ledger.approve_published_cache_retirement(
+                root, path=target, expected_identity="b" * 64, expected_bytes=3,
+                disposition_id="d" * 64, manifest_sha256="e" * 64,
+                files=[{"path": "one.bin", "bytes": 3, "sha256": "1" * 64}],
+                commit_owner_retirement=lambda _: None,
+            )
+            planned = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            original_write = normal_capacity.write_json_atomic
+            interrupted = False
+
+            def interrupt_complete(path, value):
+                nonlocal interrupted
+                if value.get("status") == "complete" and not interrupted:
+                    interrupted = True
+                    raise RuntimeError("injected approved complete-receipt interruption")
+                return original_write(path, value)
+
+            with patch.object(normal_capacity, "write_json_atomic", interrupt_complete):
+                with self.assertRaisesRegex(RuntimeError, "approved complete-receipt"):
+                    normal_capacity.apply(planned)
+            self.assertFalse(target.exists())
+            resumed = normal_capacity.plan(
+                root, target_bytes=100, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            normal_capacity.apply(resumed)
+            self.assertEqual(
+                capacity_ledger.load_capacity_ledger(root)["objects"][0]["status"],
+                "retired",
+            )
+            self.assertNotIn(target.resolve(), capacity_ledger.pending_disposal_targets(root))
+
+    def test_approved_disposition_resumes_same_receipt_without_rehash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "cache" / ("a" * 64)
+            target.mkdir(parents=True)
+            (target / "one.bin").write_bytes(b"abc")
+            (target / "two.bin").write_bytes(b"defg")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(), "class": "published_cache",
+                "bytes": 7, "status": "ready", "pin": False, "identity": "b" * 64,
+                "manager": capacity_ledger.PA_CACHE_MANAGER,
+            }])
+            capacity_ledger.approve_published_cache_retirement(
+                root, path=target, expected_identity="b" * 64, expected_bytes=7,
+                disposition_id="d" * 64,
+                manifest_sha256="e" * 64,
+                files=[
+                    {"path": "one.bin", "bytes": 3, "sha256": "1" * 64},
+                    {"path": "two.bin", "bytes": 4, "sha256": "2" * 64},
+                ], commit_owner_retirement=lambda _: None,
+            )
+            receipt = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0, execution_mode="maintenance",
+            )
+            original = normal_capacity._delete_approved_file
+            calls = 0
+
+            def interrupt_after_delete(*args, **kwargs):
+                nonlocal calls
+                original(*args, **kwargs)
+                calls += 1
+                if calls == 1:
+                    raise RuntimeError("injected disposal interruption")
+
+            with patch.object(normal_capacity, "_delete_approved_file", interrupt_after_delete):
+                with self.assertRaisesRegex(RuntimeError, "injected"):
+                    normal_capacity.apply(receipt)
+            fixed = (
+                root / "common" / "capacity_disposal_receipts"
+                / f"ledger_disposition_{'d' * 64}.json"
+            )
+            self.assertTrue(fixed.is_file())
+            resumed = normal_capacity.plan(
+                root, target_bytes=100, minimum_free_bytes=0, execution_mode="maintenance",
+            )
+            self.assertEqual(resumed["planned"][0]["must_resume"], True)
+            with patch.object(normal_capacity, "file_sha256", side_effect=AssertionError("rehash")):
+                normal_capacity.apply(resumed)
+            self.assertFalse(target.exists())
+            self.assertEqual(capacity_ledger.load_capacity_ledger(root)["objects"][0]["status"], "retired")
+
+    def test_complete_disposition_receipt_resumes_only_ledger_finalize(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "cache" / ("a" * 64)
+            target.mkdir(parents=True)
+            (target / "one.bin").write_bytes(b"abc")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(), "class": "published_cache",
+                "bytes": 3, "status": "ready", "pin": False, "identity": "b" * 64,
+                "manager": capacity_ledger.PA_CACHE_MANAGER,
+            }])
+            capacity_ledger.approve_published_cache_retirement(
+                root, path=target, expected_identity="b" * 64, expected_bytes=3,
+                disposition_id="d" * 64, manifest_sha256="e" * 64,
+                files=[{"path": "one.bin", "bytes": 3, "sha256": "1" * 64}],
+                commit_owner_retirement=lambda _: None,
+            )
+            planned = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            original_finalize = capacity_ledger.finalize_retirement
+            calls = 0
+
+            def fail_first_finalize(*args, **kwargs):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise RuntimeError("injected post-disposal finalize interruption")
+                return original_finalize(*args, **kwargs)
+
+            with patch.object(
+                capacity_ledger, "finalize_retirement", fail_first_finalize,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "post-disposal finalize"):
+                    normal_capacity.apply(planned)
+                self.assertFalse(target.exists())
+                resumed = normal_capacity.plan(
+                    root, target_bytes=100, minimum_free_bytes=0,
+                    execution_mode="maintenance",
+                )
+                normal_capacity.apply(resumed)
+            entry = capacity_ledger.load_capacity_ledger(root)["objects"][0]
+            self.assertEqual(entry["status"], "retired")
+            self.assertIn("disposition", entry)
+
+    def test_approved_disposition_rejects_unlisted_extra_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "cache" / ("a" * 64)
+            target.mkdir(parents=True)
+            (target / "one.bin").write_bytes(b"abc")
+            (target / "extra.bin").write_bytes(b"")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(), "class": "published_cache",
+                "bytes": 3, "status": "ready", "pin": False, "identity": "b" * 64,
+                "manager": capacity_ledger.PA_CACHE_MANAGER,
+            }])
+            capacity_ledger.approve_published_cache_retirement(
+                root, path=target, expected_identity="b" * 64, expected_bytes=3,
+                disposition_id="d" * 64,
+                manifest_sha256="e" * 64,
+                files=[{"path": "one.bin", "bytes": 3, "sha256": "1" * 64}],
+                commit_owner_retirement=lambda _: None,
+            )
+            receipt = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0, execution_mode="maintenance",
+            )
+            with self.assertRaisesRegex(ValueError, "sealed file inventory"):
+                normal_capacity.apply(receipt)
+
+    def test_plain_rebuildable_retirement_resumes_one_fixed_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "runs" / "rebuildable"
+            target.mkdir(parents=True)
+            (target / "one.bin").write_bytes(b"abc")
+            (target / "two.bin").write_bytes(b"defg")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(),
+                "class": "rebuildable_payload", "bytes": 7,
+                "status": "ready", "pin": False,
+            }])
+            planned = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            original = normal_capacity._delete_ledger_file
+            calls = 0
+
+            def interrupt_after_delete(*args, **kwargs):
+                nonlocal calls
+                original(*args, **kwargs)
+                calls += 1
+                if calls == 1:
+                    raise RuntimeError("injected ordinary disposal interruption")
+
+            with patch.object(normal_capacity, "_delete_ledger_file", interrupt_after_delete):
+                with self.assertRaisesRegex(RuntimeError, "injected ordinary"):
+                    normal_capacity.apply(planned)
+            fixed_receipts = list(
+                (root / normal_capacity.DISPOSAL_RECEIPT_DIRECTORY).glob("ledger_*.json")
+            )
+            self.assertEqual(len(fixed_receipts), 1)
+            resumed = normal_capacity.plan(
+                root, target_bytes=100, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            self.assertTrue(resumed["planned"][0]["must_resume"])
+            with patch.object(
+                normal_capacity, "_inventory_target",
+                side_effect=AssertionError("ordinary retirement rescanned target"),
+            ):
+                normal_capacity.apply(resumed)
+            self.assertFalse(target.exists())
+            self.assertEqual(
+                capacity_ledger.load_capacity_ledger(root)["objects"][0]["status"],
+                "retired",
+            )
+            self.assertEqual(
+                list((root / normal_capacity.DISPOSAL_RECEIPT_DIRECTORY).glob("ledger_*.json")),
+                fixed_receipts,
+            )
+
+    def test_plain_rebuildable_retirement_uses_its_recorded_identity_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "runs" / "rebuildable"
+            target.mkdir(parents=True)
+            (target / "one.bin").write_bytes(b"abc")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(),
+                "class": "rebuildable_payload", "bytes": 3,
+                "status": "ready", "pin": False,
+            }])
+            planned = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            original = normal_capacity.remove_recorded_files
+
+            def checked_remove(root_path, records, **kwargs):
+                self.assertTrue(kwargs.get("identities_verified"))
+                return original(root_path, records, **kwargs)
+
+            with patch.object(normal_capacity, "remove_recorded_files", checked_remove):
+                normal_capacity.apply(planned)
+            self.assertFalse(target.exists())
+
+    def test_plain_recovers_target_removed_before_complete_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "runs" / "rebuildable"
+            target.mkdir(parents=True)
+            (target / "one.bin").write_bytes(b"abc")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(),
+                "class": "rebuildable_payload", "bytes": 3,
+                "status": "ready", "pin": False,
+            }])
+            planned = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            original_write = normal_capacity.write_json_atomic
+            interrupted = False
+
+            def interrupt_complete(path, value):
+                nonlocal interrupted
+                if value.get("status") == "complete" and not interrupted:
+                    interrupted = True
+                    raise RuntimeError("injected plain complete-receipt interruption")
+                return original_write(path, value)
+
+            with patch.object(normal_capacity, "write_json_atomic", interrupt_complete):
+                with self.assertRaisesRegex(RuntimeError, "plain complete-receipt"):
+                    normal_capacity.apply(planned)
+            self.assertFalse(target.exists())
+            resumed = normal_capacity.plan(
+                root, target_bytes=100, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            normal_capacity.apply(resumed)
+            self.assertEqual(
+                capacity_ledger.load_capacity_ledger(root)["objects"][0]["status"],
+                "retired",
+            )
+
+    def test_direct_retire_rejects_manager_approved_disposition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "cache" / ("a" * 64)
+            target.mkdir(parents=True)
+            (target / "one.bin").write_bytes(b"x")
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(), "class": "published_cache",
+                "bytes": 1, "status": "ready", "pin": False, "identity": "b" * 64,
+                "manager": capacity_ledger.PA_CACHE_MANAGER,
+            }])
+            capacity_ledger.approve_published_cache_retirement(
+                root, path=target, expected_identity="b" * 64, expected_bytes=1,
+                disposition_id="d" * 64, manifest_sha256="e" * 64,
+                files=[{"path": "one.bin", "bytes": 1, "sha256": "f" * 64}],
+                commit_owner_retirement=lambda _: None,
+            )
+            with self.assertRaisesRegex(ValueError, "not eligible"):
+                capacity_ledger.retire_capacity_object(root, path=target)
+
+    def test_record_rejects_missing_or_uncalibrated_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "uncalibrated"):
+                capacity.record_capacity_object(
+                    root, path="cache/key", object_class="published_cache",
+                    bytes_count=1, identity="b" * 64,
+                )
+            ledger = root / "common" / "capacity_ledger.json"
+            ledger.parent.mkdir(exist_ok=True)
+            ledger.write_text(json.dumps({
+                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "artifact_root": str(root), "resident_bytes": 0, "objects": [],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "uncalibrated"):
+                capacity.record_capacity_object(
+                    root, path="cache/key", object_class="published_cache",
+                    bytes_count=1, identity="b" * 64,
+                )
+
+    def test_loader_rejects_duplicate_paths_and_resident_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ledger = root / "common" / "capacity_ledger.json"
+            ledger.parent.mkdir()
+            base = {
+                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "status": "calibrated", "complete": True,
+                "artifact_root": str(root), "resident_bytes": 1,
+                "objects": [{
+                    "path": "cache/key", "class": "published_cache", "bytes": 1,
+                    "status": "ready", "pin": False, "identity": "c" * 64,
+                }],
+            }
+            ledger.write_text(json.dumps({**base, "resident_bytes": 2}), encoding="utf-8")
+            self.assertIsNone(capacity._load_capacity_ledger(root, ledger))
+            duplicate = dict(base)
+            duplicate["resident_bytes"] = 2
+            duplicate["objects"] = [*base["objects"], dict(base["objects"][0])]
+            ledger.write_text(json.dumps(duplicate), encoding="utf-8")
+            self.assertIsNone(capacity._load_capacity_ledger(root, ledger))
+            ledger.write_text(
+                json.dumps({**base, "unclassified_bytes": 1}), encoding="utf-8",
+            )
+            self.assertIsNone(capacity._load_capacity_ledger(root, ledger))
+
+    def test_ledger_removal_does_not_hold_decision_lock_during_io(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "cache" / "old"
+            target.mkdir(parents=True)
+            ledger = root / "common" / "capacity_ledger.json"
+            ledger.parent.mkdir()
+            ledger.write_text(json.dumps({
+                "schema_version": 1, "role": "artifact_capacity_ledger",
+                "status": "calibrated", "complete": True,
+                "artifact_root": str(root), "resident_bytes": 7,
+                "objects": [{
+                    "path": "cache/old", "class": "rebuildable_payload", "bytes": 7,
+                    "status": "ready", "pin": False,
+                }],
+            }), encoding="utf-8")
+
+            def remove_without_global_lock(*args, **kwargs):
+                with capacity.protection.capacity_decision_lock(root, timeout_seconds=0.01):
+                    pass
+                target.rmdir()
+                return root / "receipt.json", 7
+
+            with patch.object(capacity, "_remove_tree_with_receipt", side_effect=remove_without_global_lock):
+                result = capacity._apply_ledger_object(root, {
+                    "path": str(target), "operation": "retire_ledger_object",
+                }, ledger)
+            self.assertEqual(result["bytes"], 7)
+            document = json.loads(ledger.read_text())
+            self.assertEqual(document["objects"][0]["status"], "retired")
+            self.assertEqual(document["resident_bytes"], 0)
+
     def test_cli_watermarks_follow_policy_and_explicit_overrides(self) -> None:
         policy = capacity._capacity_policy()
         policy.update(target_gib=37, minimum_free_gib=11)
@@ -289,8 +1273,10 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
 
             self.assertEqual(audit["findings"], [])
             policy = capacity._capacity_policy()
+            from common.contracts import reconcile_interrupted_compact_runs as compact
+
             with patch.object(
-                capacity.compact,
+                compact,
                 "inspect_run",
                 return_value={"removable_bytes": 0},
             ) as inspected:
@@ -475,7 +1461,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 receipt["protection_lease_audit"][0]["status"], "expired_ignored"
             )
 
-    def test_active_lease_renews_atomically_without_scope_change(self) -> None:
+    def test_active_lease_renews_atomically_and_can_release_commitment(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             protected = root / "projects" / "p" / "runs" / "handoff"
@@ -488,6 +1474,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 ttl_seconds=120,
                 protected_cache_keys=["a" * 64],
                 protected_paths=[protected],
+                committed_new_bytes=100,
                 now=started,
             )
 
@@ -496,6 +1483,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 lease_id="cross-step",
                 owner="producer-consumer-chain",
                 ttl_seconds=300,
+                committed_new_bytes=40,
                 now=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
             )
 
@@ -506,11 +1494,63 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             self.assertEqual(renewed["protected_paths"], created["protected_paths"])
             self.assertEqual(renewed["created_at_utc"], created["created_at_utc"])
             self.assertEqual(renewed["expires_at_utc"], "2026-01-01T00:06:00Z")
+            self.assertEqual(renewed["committed_new_bytes"], 40)
+            self.assertFalse(renewed["bootstrap_renewal"])
             loaded = load_capacity_protection_leases(
                 root, now=datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc)
             )
             self.assertEqual(loaded["audit"][0]["status"], "active")
             self.assertEqual(loaded["protected_cache_keys"], {"a" * 64})
+
+    def test_missing_ledger_allows_only_exact_scope_bootstrap_renewal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            protected = root / "projects" / "p" / "runs" / "active"
+            protected.mkdir(parents=True)
+            started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            create_capacity_protection_lease(
+                root, lease_id="bootstrap", owner="same-owner", ttl_seconds=120,
+                protected_paths=[protected], committed_new_bytes=100, now=started,
+            )
+            (root / "common" / "capacity_ledger.json").unlink()
+            with self.assertRaisesRegex(ValueError, "cannot expand protection scope"):
+                renew_capacity_protection_lease(
+                    root, lease_id="bootstrap", owner="same-owner", ttl_seconds=300,
+                    protected_paths=[root / "new-scope"],
+                    now=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+                )
+            for commitment in (99, 101):
+                with self.subTest(commitment=commitment), self.assertRaisesRegex(
+                    ValueError, "cannot change committed_new_bytes",
+                ):
+                    renew_capacity_protection_lease(
+                        root, lease_id="bootstrap", owner="same-owner", ttl_seconds=300,
+                        committed_new_bytes=commitment,
+                        now=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+                    )
+            renewed = renew_capacity_protection_lease(
+                root, lease_id="bootstrap", owner="same-owner", ttl_seconds=300,
+                protected_paths=[protected], committed_new_bytes=100,
+                now=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+            )
+            self.assertTrue(renewed["bootstrap_renewal"])
+            self.assertEqual(renewed["renewal_mode"], "bootstrap_missing_capacity_ledger")
+            self.assertFalse(renewed["scope_extended"])
+
+    def test_bootstrap_renewal_does_not_accept_a_damaged_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            create_capacity_protection_lease(
+                root, lease_id="damaged", owner="same-owner", ttl_seconds=120,
+                protected_cache_keys=["a" * 64], now=started,
+            )
+            (root / "common" / "capacity_ledger.json").write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "pending state is unknown"):
+                renew_capacity_protection_lease(
+                    root, lease_id="damaged", owner="same-owner", ttl_seconds=300,
+                    now=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+                )
 
     def test_lease_renewal_rejects_wrong_owner_and_expired_lease(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -563,7 +1603,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
 
             stderr = io.StringIO()
             with patch("sys.argv", [
-                "reconcile_artifact_capacity", "--artifact-root", str(root),
+                "legacy_capacity_backfill", "--artifact-root", str(root),
                 "--target-gib", "1", "--minimum-free-gib", "0",
             ]), redirect_stderr(stderr), self.assertRaises(SystemExit) as exited:
                 main()
@@ -606,32 +1646,35 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
 
     def test_cli_creates_renews_and_deletes_named_lease(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
+            capacity_ledger.initialize_capacity_ledger(Path(temporary), objects=[])
             output = io.StringIO()
             with patch("sys.argv", [
-                "reconcile_artifact_capacity", "--artifact-root", temporary,
+                "legacy_capacity_backfill", "--artifact-root", temporary,
                 "--create-protection-lease", "cli-run", "--lease-owner", "test",
                 "--lease-ttl-seconds", "60", "--protect-cache-key", "a" * 64,
+                "--committed-new-bytes", "100",
             ]), redirect_stdout(output):
                 main()
             created = json.loads(output.getvalue())
             self.assertTrue(Path(created["path"]).is_file())
+            self.assertEqual(created["committed_new_bytes"], 100)
 
             output = io.StringIO()
             with patch("sys.argv", [
-                "reconcile_artifact_capacity", "--artifact-root", temporary,
+                "legacy_capacity_backfill", "--artifact-root", temporary,
                 "--renew-protection-lease", "cli-run", "--lease-owner", "test",
-                "--lease-ttl-seconds", "120",
+                "--lease-ttl-seconds", "120", "--protect-cache-key", "b" * 64,
+                "--committed-new-bytes", "200",
             ]), redirect_stdout(output):
                 main()
             renewed = json.loads(output.getvalue())
             self.assertTrue(renewed["renewed"])
-            self.assertEqual(
-                renewed["protected_cache_keys"], created["protected_cache_keys"]
-            )
+            self.assertEqual(renewed["protected_cache_keys"], ["a" * 64, "b" * 64])
+            self.assertEqual(renewed["committed_new_bytes"], 200)
 
             output = io.StringIO()
             with patch("sys.argv", [
-                "reconcile_artifact_capacity", "--artifact-root", temporary,
+                "legacy_capacity_backfill", "--artifact-root", temporary,
                 "--delete-protection-lease", "cli-run",
             ]), redirect_stdout(output):
                 main()
@@ -643,7 +1686,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary, patch(
             "sys.argv",
             [
-                "reconcile_artifact_capacity",
+                "legacy_capacity_backfill",
                 "--artifact-root",
                 temporary,
                 "--apply",
@@ -663,7 +1706,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
         entries = MagicMock()
         entries.__enter__.return_value = iter([child])
         with patch(
-            "common.contracts.reconcile_artifact_capacity.os.scandir",
+            "common.contracts.legacy_capacity_backfill.os.scandir",
             side_effect=[entries, FileNotFoundError("temporary child removed")],
         ):
             self.assertEqual(_current_generation_pointers(root), [])
@@ -672,7 +1715,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
         root = Path("capacity-root").absolute()
         for error_type in (PermissionError, OSError):
             with self.subTest(error=error_type), patch(
-                "common.contracts.reconcile_artifact_capacity.os.scandir",
+                "common.contracts.legacy_capacity_backfill.os.scandir",
                 side_effect=error_type("unreadable directory"),
             ), self.assertRaises(error_type):
                 _current_generation_pointers(root)
@@ -698,7 +1741,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
         entries = MagicMock()
         entries.__enter__.return_value = iter([child, survivor])
         with patch(
-            "common.contracts.reconcile_artifact_capacity.os.scandir",
+            "common.contracts.legacy_capacity_backfill.os.scandir",
             side_effect=[entries, FileNotFoundError("temporary child removed")],
         ):
             self.assertEqual(_directory_bytes(root), {root: 123})
@@ -715,7 +1758,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 entries = MagicMock()
                 entries.__enter__.return_value = iter([child])
                 with patch(
-                    "common.contracts.reconcile_artifact_capacity.os.scandir",
+                    "common.contracts.legacy_capacity_backfill.os.scandir",
                     return_value=entries,
                 ):
                     self.assertEqual(_directory_bytes(root), {root: 0})
@@ -733,14 +1776,14 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                     entries = MagicMock()
                     entries.__enter__.return_value = iter([child])
                     with patch(
-                        "common.contracts.reconcile_artifact_capacity.os.scandir",
+                        "common.contracts.legacy_capacity_backfill.os.scandir",
                         side_effect=[entries, error_type("unreadable directory")],
                     ), self.assertRaises(error_type):
                         _directory_bytes(root)
 
     def test_measurement_does_not_hide_missing_root(self) -> None:
         with patch(
-            "common.contracts.reconcile_artifact_capacity.os.scandir",
+            "common.contracts.legacy_capacity_backfill.os.scandir",
             side_effect=FileNotFoundError("artifact root missing"),
         ), self.assertRaises(FileNotFoundError):
             _directory_bytes(Path("capacity-root").absolute())
@@ -1268,7 +2311,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             # The artifact watermark alone is satisfied, but the host volume
             # is 512 bytes short of its governed free-space floor.
             with patch(
-                "common.contracts.reconcile_artifact_capacity.shutil.disk_usage",
+                "common.contracts.legacy_capacity_backfill.shutil.disk_usage",
                 return_value=shutil._ntuple_diskusage(10_000, 9_700, 300),
             ):
                 receipt = plan(root, target_bytes=10_000, minimum_free_bytes=812)
@@ -1400,13 +2443,13 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with patch(
-                "common.contracts.reconcile_artifact_capacity._directory_bytes",
+                "common.contracts.legacy_capacity_backfill._directory_bytes",
                 side_effect=AssertionError("full walk must not run"),
             ), patch(
-                "common.contracts.reconcile_artifact_capacity._active_cache_keys",
+                "common.contracts.legacy_capacity_backfill._active_cache_keys",
                 side_effect=AssertionError("manifest scan must not run"),
             ), patch(
-                "common.contracts.reconcile_artifact_capacity.shutil.disk_usage",
+                "common.contracts.legacy_capacity_backfill.shutil.disk_usage",
                 return_value=shutil._ntuple_diskusage(10_000, 9_000, 9_000),
             ):
                 receipt = plan(
@@ -1422,16 +2465,16 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with patch(
-                "common.contracts.reconcile_artifact_capacity._active_cache_keys",
+                "common.contracts.legacy_capacity_backfill._active_cache_keys",
                 side_effect=AssertionError("manifest scan must not run"),
             ), patch(
-                "common.contracts.reconcile_artifact_capacity._cache_candidates",
+                "common.contracts.legacy_capacity_backfill._cache_candidates",
                 side_effect=AssertionError("cache scan must not run"),
             ), patch(
-                "common.contracts.reconcile_artifact_capacity._compact_candidates",
+                "common.contracts.legacy_capacity_backfill._compact_candidates",
                 side_effect=AssertionError("compact scan must not run"),
             ), patch(
-                "common.contracts.reconcile_artifact_capacity.shutil.disk_usage",
+                "common.contracts.legacy_capacity_backfill.shutil.disk_usage",
                 return_value=shutil._ntuple_diskusage(10_000, 9_000, 9_000),
             ):
                 receipt = plan(root, target_bytes=1_000, minimum_free_bytes=500)

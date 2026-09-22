@@ -6,7 +6,7 @@
 -- simion --nogui lua build_dirichlet_patch_basis.lua RAW_PA# OUTPUT_PA
 --   SOURCE_PA_PATHS_PIPE_SEPARATED ACTIVE_RAW_IDS_COMMA_SEPARATED
 --   SOURCE_PROJECT_ORIGIN_X,Y,Z PATCH_PROJECT_ORIGIN_X,Y,Z RESERVED_DASH
---   SOURCE_RAW_PA# SOURCE_ACTIVE_IDS_COMMA_SEPARATED
+--   SOURCE_RAW_PA# SOURCE_ACTIVE_IDS_COMMA_SEPARATED [OUTPUT_BASIS_VOLTAGE]
 
 local raw_path=assert(arg[1], 'raw local PA# required')
 local output_path=assert(arg[2], 'output PA required')
@@ -17,6 +17,11 @@ local patch_origin_text=assert(arg[6], 'patch project origin required')
 assert(arg[7]==nil or arg[7]=='-', 'argument 7 is reserved and must be omitted or "-"')
 local source_raw_path=arg[8]
 local source_active_text=arg[9]
+local output_basis_voltage=arg[10] and assert(tonumber(arg[10]),
+  'output basis voltage must be numeric') or nil
+if output_basis_voltage~=nil then
+  assert(output_basis_voltage>0, 'output basis voltage must be positive')
+end
 
 local function split(text, separator_pattern)
   local values={}
@@ -107,13 +112,24 @@ if #sources>0 and source_raw_path and source_raw_path~='-' then
     assert(item.count>0, 'source raw PA has no nodes for an active source electrode ID')
     local scale=math.max(1,math.abs(item.minimum),math.abs(item.maximum))
     assert(math.abs(item.maximum-item.minimum)<=1e-6*scale,
-      'coarse response PA active geometry-electrode voltage spread is too large')
+      string.format(
+        'coarse response PA active geometry-electrode voltage spread is too large: source=%s physical_id=%d min=%.17g max=%.17g',
+        source_paths[index],source_active_ids[index],item.minimum,item.maximum))
     local value=(item.minimum+item.maximum)/2
-    assert(math.abs(value)>1e-12, 'coarse response PA active geometry-electrode voltage is zero')
+    assert(math.abs(value)>1e-12,
+      string.format(
+        'coarse response PA active geometry-electrode voltage is zero: source=%s physical_id=%d value=%.17g',
+        source_paths[index],source_active_ids[index],value))
     if basis_voltage==nil then basis_voltage=value else
       local comparison_scale=math.max(1,math.abs(basis_voltage),math.abs(value))
-      assert(math.abs(value-basis_voltage)<=1e-12*comparison_scale,
-        'coarse response PA basis voltages differ')
+      -- SIMION PA potentials are stored in single precision.  Equivalent
+      -- 1 V electrode faces can therefore differ by roughly half a float ULP
+      -- (observed 2.98023224e-8 V).  Use the same format-aware relative
+      -- tolerance as the within-electrode spread check above.
+      assert(math.abs(value-basis_voltage)<=1e-6*comparison_scale,
+        string.format(
+          'coarse response PA basis voltages differ: reference=%.17g source=%s physical_id=%d value=%.17g',
+          basis_voltage,source_paths[index],source_active_ids[index],value))
     end
   end
 else
@@ -121,18 +137,30 @@ else
     local value=legacy_source_basis_voltage(source)
     if basis_voltage==nil then basis_voltage=value else
       local scale=math.max(1,math.abs(basis_voltage),math.abs(value))
-      assert(math.abs(value-basis_voltage)<=1e-12*scale,
+      assert(math.abs(value-basis_voltage)<=1e-6*scale,
         'coarse response PA basis voltages differ')
     end
   end
 end
 if #sources==0 then basis_voltage=0 end
-local target=assert(simion.pas:open(raw_path), 'cannot open raw local geometry PA')
-assert(target.dx_mm>0 and target.dy_mm>0 and target.dz_mm>0, 'local PA scale must be positive')
+-- The geometry PA is a shared frozen input.  Never use it as the writable
+-- target: SIMION may defer PA-family writes until close, which would make
+-- concurrent response builds unsafe even when each save path is distinct.
+local geometry=assert(simion.pas:open(raw_path), 'cannot open raw local geometry PA')
+assert(geometry.dx_mm>0 and geometry.dy_mm>0 and geometry.dz_mm>0,
+  'local PA scale must be positive')
+local target=assert(simion.pas:open(), 'cannot create local response PA')
+target:size(geometry.nx,geometry.ny,geometry.nz)
+target.symmetry=geometry.symmetry
+target.dx_mm,target.dy_mm,target.dz_mm=geometry.dx_mm,geometry.dy_mm,geometry.dz_mm
+target.potential_type=geometry.potential_type
+if geometry.potential_type=='magnetic' then target.ng=geometry.ng end
+target.refined=false
+target.refinable=true
 
 local boundary_count,physical_count=0,0
 for z=0,target.nz-1 do for y=0,target.ny-1 do for x=0,target.nx-1 do
-  local raw_value,is_physical=target:point(x,y,z)
+  local raw_value,is_physical=geometry:point(x,y,z)
   local is_boundary=x==0 or y==0 or z==0 or x==target.nx-1 or y==target.ny-1 or z==target.nz-1
   if is_physical then
     local identifier=math.floor(raw_value+0.5)
@@ -156,13 +184,19 @@ for z=0,target.nz-1 do for y=0,target.ny-1 do for x=0,target.nx-1 do
     target:point(x,y,z,0,false)
   end
 end end end
+geometry:close()
 target:save(output_path)
 target:close()
 for _,source in ipairs(sources) do source:close() end
 
 local solved=assert(simion.pas:open(output_path), 'cannot reopen local response PA')
 solved:refine()
+if output_basis_voltage~=nil then
+  assert(math.abs(basis_voltage)>1e-12,
+    'output basis voltage requires a non-zero solved source basis')
+  solved:potentials_scale(0, output_basis_voltage/basis_voltage)
+end
 solved:save(output_path)
 solved:close()
-print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_points=%d basis_voltage=%.15g output=%s',
-  boundary_count,physical_count,basis_voltage,output_path))
+print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_points=%d source_basis_voltage=%.15g output_basis_voltage=%.15g output=%s',
+  boundary_count,physical_count,basis_voltage,output_basis_voltage or basis_voltage,output_path))

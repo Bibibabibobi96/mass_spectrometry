@@ -45,7 +45,7 @@ function Invoke-AnalysisLifecycle {
   $package=New-RunPackage -Python $Python -RepoRoot $Repository -ArtifactRoot $artifactRoot `
     -RunId ([string]$Plan.analysis_run_id) -Project ([string]$Plan.project_id) `
     -Mode ([string]$Plan.mode) -Software @('Python 3.11') `
-    -RetentionContractEnabled -RetentionClass compact
+    -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled
   try{
     $outputs=[ordered]@{}
     foreach($property in $Plan.fixed_output_roles.PSObject.Properties){
