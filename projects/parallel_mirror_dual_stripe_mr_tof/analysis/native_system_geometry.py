@@ -1,4 +1,4 @@
-"""Emit the two shield-decoupled SIMION PA components for the MR-TOF Candidate.
+"""Emit MR-owned static geometry projections for the native system runtime.
 
 The analyser and its pulsed accelerator are separate PA instances.  They share
 only the resolved project-frame geometry receipt; the grounded accelerator
@@ -21,7 +21,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 def _require_release(contract: dict[str, object]) -> None:
     if contract.get("simion_geometry_release_status") != "cad_topology_and_top_level_pose_qualified":
-        raise CandidateContractError("split PA generation requires the qualified CAD topology/pose release")
+        raise CandidateContractError("native system geometry requires the qualified CAD topology/pose release")
 
 
 def _span(contract: dict[str, object], key: str) -> tuple[float, float, float]:
@@ -77,7 +77,7 @@ def build_analyzer_gem(contract_path: Path) -> str:
 
 
 def _analyzer_geometry_lines(resolved: dict[str, object]) -> list[str]:
-    """Return the single geometry emitter shared by global and local analyser PAs."""
+    """Return the geometry emitter shared by the global fallback and native corridor."""
     lines: list[str] = []
     lines.extend(_mirror_lines(resolved))
     lines.extend(_mirror_ground_shield_lines(resolved))

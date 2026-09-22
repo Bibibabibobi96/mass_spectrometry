@@ -15,7 +15,7 @@ def _provider_two_zone_axial_length_mm() -> float:
     """Read the sealed two-zone length from the provider's active profile.
 
     MR retains the global exit anchor, but it does not own the gap dimensions.
-    Reading the provider contract here lets the legacy split-PA projection use
+    Reading the provider contract here keeps the static MR pose projection on
     the same resolved repeller-to-exit distance as the provider GEM.
     """
     profile_path = (

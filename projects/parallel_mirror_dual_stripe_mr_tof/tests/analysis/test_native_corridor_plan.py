@@ -40,7 +40,7 @@ class NativeCorridorPlanTest(unittest.TestCase):
         self.assertNotIn('analyzer_local_refinement_plan', source)
 
     def test_mr_cache_cannot_build_an_accelerator(self) -> None:
-        source = (PROJECT / 'analysis' / 'simion_pa_family_cache.py').read_text(encoding='utf-8-sig')
+        source = (PROJECT / 'analysis' / 'native_corridor_identity.py').read_text(encoding='utf-8-sig')
         self.assertNotIn('"accelerator"', source)
         self.assertNotIn('standalone_response', source)
         self.assertNotIn('build_accelerator_gem', source)

@@ -153,7 +153,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
         from common.simion import pa_family_cache as cache_module
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import (
             native_corridor_freeze as module,
-            simion_pa_family_cache as adapter,
+            native_corridor_identity as identity,
         )
 
         original = module.file_sha256
@@ -166,7 +166,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
         with (
             patch.object(module, "file_sha256", side_effect=guarded),
             patch.object(cache_module, "file_sha256", side_effect=guarded),
-            patch.object(adapter, "file_sha256", side_effect=guarded),
+            patch.object(identity, "file_sha256", side_effect=guarded),
         ):
             result = self._freeze(self.root / "no_pa_hash")
         self.assertEqual(result["disposition"], "published")

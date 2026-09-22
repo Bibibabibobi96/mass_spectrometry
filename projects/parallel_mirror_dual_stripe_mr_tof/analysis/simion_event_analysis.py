@@ -79,10 +79,6 @@ REQUIRED_FIELDS = {
     "central_plane_directional": {"ion", "n", "direction_z", "t_us", "x_mm", "y_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "detector": {"ion", "t_us", "x_mm", "y_mm", "z_mm"},
     "detector_plane": {"ion", "direction_z", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
-    "patch_interface": {
-        "ion", "name", "region", "face", "n", "direction", "t_us",
-        "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us",
-    },
     "instance_transition": {"ion", "t_us", "instance", "x_mm", "y_mm", "z_mm"},
     "accelerator_pulse_off": {
         "ion", "t_us", "from_instance", "to_instance", "x_mm", "y_mm", "z_mm",

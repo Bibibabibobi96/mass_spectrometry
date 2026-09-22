@@ -14,7 +14,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     derive_operating_energy_envelope, derive_two_zone_focus, derive_two_zone_placement,
     load_contract, resolve_trajectory_profile, write_gem,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.split_candidate_geometry import (
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
     build_analyzer_gem, build_detector_gem, resolve_static_iob_origins,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import (
@@ -194,8 +194,8 @@ def _contains_csg(sections, slots, point, triangle=None):
 
 class SimionCandidateReferenceTest(unittest.TestCase):
     def test_mr_delegates_accelerator_electrode_topology_to_component_owner(self) -> None:
-        source = (PROJECT / "analysis" / "split_candidate_geometry.py").read_text(encoding="utf-8")
-        self.assertIn("compile_closed_two_zone_accelerator", source)
+        source = (PROJECT / "analysis" / "native_system_geometry.py").read_text(encoding="utf-8")
+        self.assertIn("build_analyzer_gem", source)
         self.assertNotIn("render_closed_two_zone_local_pa", source)
         self.assertNotIn("emit_ideal_grid", source)
         self.assertNotIn("emit_open_rectangular_frame", source)

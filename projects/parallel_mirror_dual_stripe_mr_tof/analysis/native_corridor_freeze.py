@@ -32,9 +32,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geomet
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_pa_family_cache import (
-    build_pa_family_identity,
-    pa_family_filenames,
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_identity import (
+    build_native_corridor_identity,
+    native_corridor_family_filenames,
 )
 
 
@@ -138,7 +138,7 @@ def _derived_recipe(
         raise CandidateContractError(
             "coarse generation must contain only mrtof_analyzer.pa#"
         )
-    output_names = pa_family_filenames("analyzer_corridor")[2:]
+    output_names = native_corridor_family_filenames()[2:]
     responses: list[dict[str, Any]] = []
     for local_id in range(1, 9):
         physical_ids = grouped[local_id]
@@ -265,9 +265,8 @@ def freeze_native_corridor_inputs(
             gem_path.write_text(
                 build_native_corridor_gem(contract_path), encoding="utf-8", newline="\n"
             )
-        identity = build_pa_family_identity(
+        identity = build_native_corridor_identity(
             contract_path,
-            "analyzer_corridor",
             gem_path,
             simion_executable,
             simion_release,

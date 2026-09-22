@@ -39,7 +39,7 @@ capacity baseline，并用最新 cache 的精确 retirement authorization 走增
 
 [候选合同](../config/simion_candidate_two_zone.json)提供物理输入和机械约束，
 [resolved_geometry.py](../analysis/resolved_geometry.py)生成求解器无关的毫米几何，
-[split_candidate_geometry.py](../analysis/split_candidate_geometry.py)分别适配三份 GEM。
+[native_system_geometry.py](../analysis/native_system_geometry.py)派生 MR 静态角色的几何投影；full-corridor GEM 由[native_corridor_geometry.py](../analysis/native_corridor_geometry.py)直接派生。
 项目坐标固定为：`z`是快速反射方向、`y`是慢漂移方向、`x`是横向聚焦方向；
 `z=0`是中央注入／第一时间焦点交接面，不是最终质量焦点或必然的空间束腰。
 
@@ -278,9 +278,9 @@ equivalence and flight qualification remain Candidate work.
 活动入口只使用 full-corridor native response bank。历史 pilot 组装器及其独立暂存路径已删除；原生
 family 由受据保护的 native runtime 在私有工作目录创建，已发布 generation 从不被 SIMION 原位写入。
 
-原生 response-bank 的唯一项目适配入口是
-[`simion_pa_family_cache.py`](../analysis/simion_pa_family_cache.py)。它只描述 MR 的
-`analyzer_corridor` 完整八通道 family；内容寻址、最终 inventory 和原子发布均由公共 PA
+原生 response-bank 的唯一项目 identity 入口是
+[`native_corridor_identity.py`](../analysis/native_corridor_identity.py)。它只描述完整八通道
+native corridor family；内容寻址、最终 inventory 和原子发布均由公共 PA
 transaction 执行。加速器不属于此缓存：运行时只消费 OA provider receipt。新的 IOB 只由
 `build_native_corridor_iob.lua` 从已封存的 global fallback、native corridor、provider accelerator
 和 detector 组成四实例系统，并在保存/重载时验证角色、位置、网格与重叠优先级。它不会保存、
@@ -358,7 +358,7 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 | N=100 全局关断时钟冻结 | [run_freeze_bunch_pulse_schedule.ps1](../analysis/run_freeze_bunch_pulse_schedule.ps1) | 消费同源 static pilot 的完整安全出口队列，不运行 SIMION |
 | N>1 源 z—能量—末段时序诊断 | [run_source_z_energy_timing_diagnostic.ps1](../analysis/run_source_z_energy_timing_diagnostic.ps1) | 只读消费完整 success flight，不启动 SIMION；输出 compact Candidate 诊断 |
 
-源 z 诊断入口复用飞行 manifest、冻结源表、原生事件解析、公共容量和 retention 合同；单日志与按 receipt
+源 z 诊断入口复用飞行 manifest、冻结源表、原生事件解析、公共容量和 retention 合同；末段只比较实际发出的正镜转向和沿 `-z` detector plane 事件，不依赖已退役的五区 patch-interface 交接。单日志与按 receipt
 重编号的 batch 日志均须完整覆盖 `1..N`。安全出口时间和轴向动能统计使用全部冻结粒子；target-K、
 P2 前后、额外正镜转折和探测器的配对时序只使用具有完整事件链的全部探测命中。碰撞粒子继续进入终态
 计数和事件覆盖，不允许删尾、源筛选、峰筛选或把缺失下游事件补零。输出的斜率、相关、FWHM 和有符号

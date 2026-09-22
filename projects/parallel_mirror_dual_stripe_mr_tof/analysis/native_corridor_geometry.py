@@ -15,7 +15,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan i
     derive_native_corridor_plan,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_candidate_geometry import _number
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.split_candidate_geometry import (
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
     _analyzer_geometry_lines,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry

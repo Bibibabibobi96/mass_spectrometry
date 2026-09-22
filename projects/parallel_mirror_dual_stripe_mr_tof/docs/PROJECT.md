@@ -23,9 +23,7 @@ receipt 实现变更记录在 continuation receipt，发布后不再允许修改
 负 `z` 出口栅、合计 `36 mm` 加速间距，以及 `16/20/24 mm` aperture/electrode/guard y 高度。
 MR 不得改写其环、壳体、端部或孔径拓扑，也不得复制或构建 accelerator PA；release 的动力学参数
 仅进入 component flight，不进入 PA identity。
-仍在系统装配中使用的旧 split-PA compatibility projection 只保留 MR 的全局出口锚点和 y 位姿；其
-repeller-to-exit 长度直接读取 provider r2 profile 的 `36 mm`，不能再从旧 MR `30.6 mm` gap 派生。
-这使历史装配链与 provider GEM 的轴向坐标一致，但不把旧 PA/flight runner 误称为已退休。
+MR static pose projection 只保留全局出口锚点和 y 位姿；repeller-to-exit 长度直接读取 provider r2 profile 的 `36 mm`，不能从项目侧的旧 gap 派生。该投影只绑定现有四角色运行时，不持有或选择 accelerator PA。
 MR 的确定性 `N=100/N=1000` 圆柱束团仅声明本地 frame、圆柱和相空间参数，并调用
 [`common/ion_release`](../../../common/ion_release/README.md) 的 centre-first Halton 采样核；项目代码只保留
 receipt、SIMION FLY2 和坐标投影，不再拥有第二套圆柱采样实现。
