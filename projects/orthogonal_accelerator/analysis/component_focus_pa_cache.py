@@ -75,6 +75,8 @@ def main() -> int:
                       "generation_sha256": result.generation_directory.name if result.generation_directory else None,
                       "identity": value}
         else:
+            if not isinstance(args.owner, str) or not args.owner.strip():
+                raise ValueError("advance-transaction requires a nonempty owner")
             evidence = (
                 json.loads(args.verification_evidence.read_text(encoding="utf-8-sig"))
                 if args.verification_evidence is not None else None

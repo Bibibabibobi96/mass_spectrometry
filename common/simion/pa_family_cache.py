@@ -1327,14 +1327,33 @@ def _record_artifact_cache_state(
     if binding is None:
         return
     try:
+        ledger = capacity_ledger.load_capacity_ledger(binding.artifact_root)
+        _, key_relative = capacity_ledger.capacity_object_path(
+            binding.artifact_root, binding.key_root
+        )
+        existing = (
+            next(
+                (item for item in ledger["objects"] if item.get("path") == key_relative),
+                None,
+            )
+            if ledger is not None else None
+        )
+        owner = existing.get("owner") if isinstance(existing, dict) else None
+        if not isinstance(owner, str) or not owner.strip():
+            raise ValueError("PA cache range has no managed owner")
         recovery = {}
         if status == "writing":
+            transaction = (
+                binding.key_root.parent / TRANSACTION_DIRECTORY
+                / binding.key_root.name / TRANSACTION_NAME
+            )
             recovery = {
-                "owner": "common.simion.pa_family_cache",
                 "recovery_reason": "pa_cache_publication_incomplete",
                 "review_deadline": (
                     datetime.now(timezone.utc).date() + timedelta(days=7)
                 ).isoformat(),
+                "recovery_task": "resume or retire the exact PA owner transaction",
+                "recovery_evidence_paths": (transaction,),
             }
         capacity_ledger.record_capacity_object(
             binding.artifact_root,
@@ -1345,6 +1364,7 @@ def _record_artifact_cache_state(
             identity=generation_sha256,
             pin=published_pin_reason is not None,
             pin_reason=published_pin_reason,
+            owner=owner,
             **recovery,
         )
     except (OSError, RuntimeError, ValueError) as exc:
@@ -1475,6 +1495,10 @@ def _require_managed_pa_consumer_binding(
     cache_key = str(manifest["cache_key"])
     generation = str(manifest["generation_sha256"])
     binding = _artifact_ledger_binding(cache_root, cache_key, required=False)
+    if _artifact_root_for_cache(cache_root) is not None and binding is None:
+        raise PAFamilyCacheError(
+            "managed PA consumption requires a valid capacity ledger binding"
+        )
     if binding is None:
         return
     if not isinstance(capacity_lease_id, str) or not capacity_lease_id:
@@ -1536,6 +1560,17 @@ def _complete_artifact_cache_rollback(
         _touch_artifact_cache(binding, predecessor_generation_sha256)
         return
     try:
+        ledger = capacity_ledger.load_capacity_ledger(binding.artifact_root)
+        _, key_relative = capacity_ledger.capacity_object_path(
+            binding.artifact_root, binding.key_root
+        )
+        entry = next(
+            (item for item in (ledger or {}).get("objects", []) if item.get("path") == key_relative),
+            None,
+        )
+        owner = entry.get("owner") if isinstance(entry, dict) else None
+        if not isinstance(owner, str) or not owner.strip():
+            raise ValueError("rolled-back PA cache has no managed owner")
         # With no predecessor there is no published family identity to claim.
         # The rollback receipt is still resident evidence, so model the whole
         # key root as one removable rebuildable payload rather than falsely
@@ -1546,6 +1581,7 @@ def _complete_artifact_cache_rollback(
             object_class="rebuildable_payload",
             bytes_count=_key_root_bytes(binding.key_root),
             status="ready",
+            owner=owner,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         raise PAFamilyCacheError(
@@ -1915,6 +1951,8 @@ def _record_transaction_stage(
             owner=owner,
             recovery_reason="pa_family_transaction_incomplete",
             review_deadline=(datetime.now(timezone.utc).date() + timedelta(days=7)).isoformat(),
+            recovery_task="resume or retire the exact PA owner transaction",
+            recovery_evidence_paths=(transaction / TRANSACTION_NAME,),
             consumers=(key_root,),
         )
     except (OSError, RuntimeError, ValueError) as exc:
@@ -1967,6 +2005,12 @@ def _handoff_transaction_stage(
             published_path=key_root,
             published_identity=generation_sha256,
             published_bytes=_key_root_bytes(key_root),
+            published_owner=owner,
+            # Kept only for the current compatibility signature.  The range
+            # ledger owns neither duplicate retention text nor a second route.
+            published_retention_reason="managed by PA owner transaction",
+            published_review_deadline=(datetime.now(timezone.utc).date() + timedelta(days=7)).isoformat(),
+            published_retirement_route="pa_manager_disposition",
             published_pin_reason=published_pin_reason,
         )
     except (OSError, RuntimeError, ValueError) as exc:
@@ -2844,7 +2888,8 @@ def _abandon_empty_transaction(
               "failed_producer_manifest_path", "failed_producer_manifest_sha256", "reason"}
     key = canonical_pa_family_cache_key(identity)
     if (not isinstance(request, Mapping) or set(request) != fields or request["schema_version"] != 1
-            or request["cache_key"] != key or request["owner"] != f"common.simion.pa_family_cache:{key[:32]}"
+            or request["cache_key"] != key
+            or not isinstance(request["owner"], str) or not request["owner"].strip()
             or request["reason"] != "payload_absent_failed_transaction_abandoned"
             or any(not isinstance(request[name], str) or SHA256.fullmatch(request[name]) is None
                    for name in ("transaction_sha256", "inventory_sha256", "failed_producer_manifest_sha256"))):
@@ -2861,6 +2906,7 @@ def _abandon_empty_transaction(
         journal = document.get("abandonment")
         if journal is None:
             if (document["status"] not in {"building", "prepared"} or document["generation_sha256"] is not None
+                    or document["owner"] != request["owner"]
                     or file_sha256(transaction_path) != request["transaction_sha256"]
                     or document["inventory_sha256"] != request["inventory_sha256"]):
                 raise PAFamilyCacheError("abandonment transaction or inventory identity differs")
@@ -2951,9 +2997,22 @@ def advance_pa_family_cache_transaction(
     names = _family_names(filenames)
     receipt_spec = None if response_receipt is None else _normalize_response_receipt(response_receipt, names)
     root = Path(cache_root)
+    # A repository artifact family becomes a heavy, durable write as soon as
+    # this call returns its transaction build directory.  Its caller must
+    # therefore identify the owner before that directory is exposed.  Local
+    # and fixture caches retain the small compatibility API because they are
+    # outside the governed artifact root.
     root.mkdir(parents=True, exist_ok=True)
     transaction = root / TRANSACTION_DIRECTORY / cache_key
     transaction_path = transaction / TRANSACTION_NAME
+    if (
+        _artifact_root_for_cache(root) is not None
+        and owner is None
+        and not transaction_path.exists()
+    ):
+        raise PAFamilyCacheError(
+            "artifact PA transaction requires an explicit nonempty owner"
+        )
     payload = transaction / "payload"
     build_scratch = transaction / "build-scratch"
     ledger_binding = _transaction_ledger_binding(root, cache_key, transaction)
