@@ -84,10 +84,15 @@ startup失败关闭并报告精确对象，不能自动删除，也不能无限�
 startup只查询磁盘空闲并读取台账、当前租约和全部活动承诺；不遍历artifact、run或缓存，不哈希PA，
 不做历史清理。缺失/损坏台账、当前租约scope不完整、未知承诺、影响当前输入或使容量不可判定的writing复核逾期、
 以及空间不足都明确失败关闭；无关逾期writing只报告warning。
-正常目标为5秒；超过5秒或60秒只发性能warning，不改变安全结论。历史发现只由显式一次性`legacy_capacity_calibration.py --workspace-root <simulation_repo>`
+startup与maintenance均报告总耗时和分段耗时；正常目标为5秒，超过5秒或60秒只发性能warning，不改变安全结论。历史发现只由显式一次性`legacy_capacity_calibration.py --workspace-root <simulation_repo>`
 执行，不能从日常路径隐式触发。它同时登记artifact根与仓库`scratch/`、`generated/`两个外部
 受管范围；二者只在校准时计量，启动仅使用冻结的台账数值。`legacy_capacity_backfill.py`
 只承担历史恢复，不能提供日常准入或容量水位覆盖。
+
+缺少现行事务而已被明确放弃的历史范围，只能由其目标项目 owner 在
+`artifacts/common/capacity_calibration/owner_dispositions/`提供一次性、身份绑定的范围处置记录。显式校准会复核
+该记录所列完整清单和权威证据，再复用既有 sealed disposition、处置收据和重放路径；日常启动与维护不扫描
+这些范围，也不会为它们推断 owner、终态或删除资格。
 
 历史仓库 source `scratch/` 的删除只能使用`historical_source_scratch_retirement.py`：它要求
 校准外部范围、owner批准证据及其SHA-256，并在证据中逐项列出规范化的`retirement_targets`子目录。入口拒绝

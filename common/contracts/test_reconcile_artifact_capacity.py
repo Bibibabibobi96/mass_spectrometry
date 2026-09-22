@@ -144,6 +144,67 @@ class MaintenanceTargetCliTest(unittest.TestCase):
                 self.assertEqual(planner.call_args.kwargs["target_bytes"], int(expected * normal_capacity.GIB))
                 self.assertEqual(planner.call_args.kwargs["minimum_free_bytes"], int(policy["minimum_free_gib"] * normal_capacity.GIB))
 
+    def test_maintenance_apply_reports_end_to_end_timing_and_threshold_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "runs" / "retire"
+            target.mkdir(parents=True)
+            (target / "payload.pa0").write_bytes(b"payload")
+            _initialize_fixture_ledger(root, objects=[{
+                "path": "runs/retire", "class": "rebuildable_payload",
+                "bytes": 7, "status": "ready", "pin": False,
+            }])
+            receipt = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            # A plan and its subsequent apply are one maintenance operation.
+            # Give the already-produced plan a known duration without sleeping.
+            receipt["timing"]["total_seconds"] = 61.0
+
+            applied = normal_capacity.apply(receipt)
+
+            timing = applied["timing"]
+            self.assertGreaterEqual(timing["total_seconds"], 61.0)
+            self.assertEqual(set(timing["phases_seconds"]), {"plan", "apply", "post_verify"})
+            self.assertEqual(timing["phases_seconds"]["plan"], 61.0)
+            self.assertTrue(any(
+                warning["name"] == "plan"
+                and warning["code"] == "PERFORMANCE_REVIEW_REQUIRED"
+                for warning in timing["performance_warnings"]
+            ))
+
+    def test_compact_maintenance_reports_planned_actual_and_failure_reasons(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "runs" / "blocked"
+            target.mkdir(parents=True)
+            (target / "payload.pa0").write_bytes(b"payload")
+            _initialize_fixture_ledger(root, objects=[{
+                "path": "runs/blocked", "class": "rebuildable_payload",
+                "bytes": 7, "status": "ready", "pin": False,
+            }])
+            receipt = normal_capacity.plan(
+                root, target_bytes=0, minimum_free_bytes=0,
+                execution_mode="maintenance",
+            )
+            with patch.object(
+                normal_capacity, "_apply_ledger_object",
+                side_effect=ValueError("retryable target validation"),
+            ):
+                applied = normal_capacity.apply(receipt)
+
+            compact = normal_capacity._compact_maintenance_output(applied)
+            self.assertEqual(compact["planned_vs_actual"], {
+                "planned_object_count": 1, "planned_bytes": 7,
+                "actual_removed_object_count": 0, "actual_removed_bytes": 0,
+                "unremoved_object_count": 1, "unremoved_bytes": 7,
+            })
+            self.assertEqual(compact["failure_reason_summary"], [{
+                "operation": "retire_ledger_object", "reason": "ValueError",
+                "object_count": 1,
+            }])
+
     def test_invalid_target_rejected_before_plan_or_lease_mutation(self) -> None:
         policy = normal_capacity._capacity_policy()
         cases = [

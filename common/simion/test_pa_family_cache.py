@@ -15,7 +15,7 @@ from unittest.mock import patch
 import common.simion.cache_generation as cache_generation
 import common.simion.pa_family_cache as pa_family_cache
 import common.simion.standalone_pa_response_set as response_set
-from common.contracts import capacity_ledger, capacity_protection
+from common.contracts import capacity_ledger, capacity_protection, reconcile_artifact_capacity
 
 from common.simion.pa_family_cache import (
     CacheDisposition,
@@ -31,6 +31,7 @@ from common.simion.pa_family_cache import (
     publish_pa_family_cache,
     repair_pa_family_cache_generation,
     approve_pa_family_cache_retirement,
+    release_pa_family_cache_retirement_pin,
     rollback_pa_family_cache_publication,
     validate_pa_family_cache_generation,
     validate_pa_family_cache_subset,
@@ -1459,6 +1460,11 @@ class PAFamilyCacheTest(unittest.TestCase):
             by_path[key_relative]["identity"],
             published.generation_sha256,
         )
+        self.assertIs(by_path[key_relative]["pin"], True)
+        self.assertEqual(by_path[key_relative]["pin_reason"], reason)
+        maintenance = reconcile_artifact_capacity.plan(
+            artifacts, target_bytes=0, minimum_free_bytes=0, execution_mode="maintenance")
+        self.assertNotIn(str(cache / published.cache_key), [item["path"] for item in maintenance["planned"]])
 
     def test_artifact_transaction_owner_approves_exact_retirement_idempotently(self) -> None:
         artifacts, cache = self._artifact_cache()
@@ -1531,6 +1537,62 @@ class PAFamilyCacheTest(unittest.TestCase):
             approve_pa_family_cache_retirement(
                 cache, published.cache_key, published.generation_sha256
             )
+
+    def test_owner_pin_release_requires_intent_and_reconciles_ledger(self) -> None:
+        artifacts, cache = self._artifact_cache()
+        reason = "fixture pinned until replacement"
+        first = advance_pa_family_cache_transaction(
+            cache, identity(), self.names, owner=self.artifact_owner, published_pin_reason=reason)
+        self._land_transaction_members(first, self.names)
+        prepared = advance_pa_family_cache_transaction(
+            cache, identity(), self.names, owner=self.artifact_owner, published_pin_reason=reason)
+        published = advance_pa_family_cache_transaction(
+            cache, identity(), self.names, verification_evidence=self._verification_evidence(prepared),
+            owner=self.artifact_owner, published_pin_reason=reason)
+        replacement_path = artifacts / "replacement" / "run_manifest.json"
+        replacement_path.parent.mkdir(parents=True)
+        replacement_path.write_bytes(b"verified replacement")
+        evidence = {
+            "schema_version": 1, "role": "simion_pa_family_cache_replacement_evidence",
+            "status": "verified", "cache_key": published.cache_key,
+            "generation_sha256": "E" * 64, "source_path": "replacement/run_manifest.json",
+            "source_sha256": pa_family_cache.file_sha256(replacement_path).upper(),
+        }
+        evidence_sha = pa_family_cache.canonical_json_sha256(evidence)
+        intent = {
+            "schema_version": 1, "role": "simion_pa_family_cache_retirement_intent",
+            "status": "approved", "cache_key": published.cache_key,
+            "generation_sha256": published.generation_sha256, "owner": self.artifact_owner,
+            "replacement_generation_sha256": "E" * 64, "replacement_evidence_sha256": evidence_sha,
+        }
+        released = release_pa_family_cache_retirement_pin(
+            cache, published.cache_key, published.generation_sha256, owner=self.artifact_owner,
+            retirement_intent=intent, replacement_evidence=evidence)
+        self.assertEqual(released.status, "published")
+        ledger = capacity_ledger.load_capacity_ledger(artifacts)
+        _, relative = capacity_ledger.capacity_object_path(artifacts, cache / published.cache_key)
+        entry = next(item for item in ledger["objects"] if item["path"] == relative)
+        self.assertIs(entry["pin"], False)
+        transaction = json.loads((published.transaction_directory / "transaction.json").read_text())
+        self.assertIsNone(transaction["published_pin_reason"])
+        self.assertIn("pin_release", transaction)
+        retired = approve_pa_family_cache_retirement(cache, published.cache_key, published.generation_sha256)
+        self.assertEqual(retired.status, "retired")
+
+    def test_owner_pin_release_rejects_missing_or_mismatched_replacement_evidence(self) -> None:
+        _, cache = self._artifact_cache()
+        first = advance_pa_family_cache_transaction(
+            cache, identity(), self.names, owner=self.artifact_owner, published_pin_reason="fixture pin")
+        self._land_transaction_members(first, self.names)
+        prepared = advance_pa_family_cache_transaction(
+            cache, identity(), self.names, owner=self.artifact_owner, published_pin_reason="fixture pin")
+        published = advance_pa_family_cache_transaction(
+            cache, identity(), self.names, verification_evidence=self._verification_evidence(prepared),
+            owner=self.artifact_owner, published_pin_reason="fixture pin")
+        with self.assertRaisesRegex(PAFamilyCacheError, "replacement evidence"):
+            release_pa_family_cache_retirement_pin(
+                cache, published.cache_key, published.generation_sha256, owner=self.artifact_owner,
+                retirement_intent={}, replacement_evidence={})
 
     def test_artifact_transaction_retirement_lease_blocks_without_state_change(self) -> None:
         artifacts, cache = self._artifact_cache()

@@ -792,6 +792,30 @@ def _apply_ledger_object(root: Path, item: dict[str, Any], ledger_path: Path) ->
     return {"path": str(target), "bytes": removed, "disposal_receipt": str(disposal_receipt)}
 
 
+def _maintenance_apply_timings(receipt: dict[str, Any]) -> _PhaseTimings:
+    """Continue a maintenance plan's timing receipt through apply and recheck.
+
+    Planning and retirement happen in separate calls so callers can inspect a
+    plan before taking a host lease.  When they do apply that exact plan, the
+    routine receipt must still show the whole maintenance operation rather
+    than making a long deletion look like a fast one.
+    """
+
+    plan_seconds = 0.0
+    timing = receipt.get("timing")
+    if isinstance(timing, dict):
+        value = timing.get("total_seconds")
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            plan_seconds = max(0.0, float(value))
+    timings = _timings()
+    timings.phases["plan"] = plan_seconds
+    # `_PhaseTimings.finish` derives the end-to-end total from its start.  A
+    # plan has already completed, so shift that start back without sleeping or
+    # introducing a second timing implementation.
+    timings.started -= plan_seconds
+    return timings
+
+
 def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     """Apply a startup recheck or exact ledger retirement plan."""
 
@@ -813,46 +837,85 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
         return refreshed
     if receipt.get("measurement_mode") != "LEDGER_MAINTENANCE":
         raise ValueError("only startup or ledger maintenance receipts can be applied")
+    timings = _maintenance_apply_timings(receipt)
     ledger_path = Path(receipt["capacity_ledger"])
     removed: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
-    for item in receipt["planned"]:
-        try:
-            removed.append(_apply_ledger_object(root, item, ledger_path))
-        except (OSError, ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
-            # Each target has a durable pending receipt before its bytes are
-            # removed.  A target-local failure is therefore resumable and
-            # cannot prevent independent governed retirements.  The ledger is
-            # the one global authority: its loss stops the pass immediately.
-            if capacity_ledger.load_capacity_ledger(root, ledger_path) is None:
-                raise RuntimeError("capacity ledger became unavailable during maintenance") from exc
-            failed.append({
-                "path": item["path"], "operation": item["operation"],
-                "error": f"{type(exc).__name__}: {exc}",
-            })
-    ledger = capacity_ledger.load_capacity_ledger(root, ledger_path)
-    free_after = shutil.disk_usage(root).free
-    outcome = dict(receipt)
-    outcome.update(
-        applied=True, removed=removed,
-        removed_bytes=sum(item["bytes"] for item in removed),
-        measured_after_bytes=None if ledger is None else int(ledger["resident_bytes"]),
-        free_bytes_after=free_after,
-        failed=failed,
-    )
-    if ledger is not None:
-        leases = protection.load_capacity_protection_leases(root)
-        outcome["management_summary_after_apply"] = _maintenance_management_summary(
-            root, ledger, leases, target_bytes=int(receipt["target_bytes"]),
-            required_free_bytes=int(receipt["required_free_bytes"]),
-            free_bytes=free_after,
+    with timings.phase("apply"):
+        for item in receipt["planned"]:
+            try:
+                removed.append(_apply_ledger_object(root, item, ledger_path))
+            except (OSError, ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
+                # Each target has a durable pending receipt before its bytes are
+                # removed.  A target-local failure is therefore resumable and
+                # cannot prevent independent governed retirements.  The ledger is
+                # the one global authority: its loss stops the pass immediately.
+                if capacity_ledger.load_capacity_ledger(root, ledger_path) is None:
+                    raise RuntimeError("capacity ledger became unavailable during maintenance") from exc
+                failed.append({
+                    "path": item["path"], "operation": item["operation"],
+                    "error": f"{type(exc).__name__}: {exc}",
+                })
+    with timings.phase("post_verify"):
+        ledger = capacity_ledger.load_capacity_ledger(root, ledger_path)
+        free_after = shutil.disk_usage(root).free
+        outcome = dict(receipt)
+        outcome.update(
+            applied=True, removed=removed,
+            removed_bytes=sum(item["bytes"] for item in removed),
+            measured_after_bytes=None if ledger is None else int(ledger["resident_bytes"]),
+            free_bytes_after=free_after,
+            failed=failed,
         )
-    outcome["satisfied_after_apply"] = bool(
-        ledger is not None
-        and int(ledger["resident_bytes"]) <= int(receipt["target_bytes"])
-        and free_after >= int(receipt["required_free_bytes"])
-    )
+        if ledger is not None:
+            leases = protection.load_capacity_protection_leases(root)
+            outcome["management_summary_after_apply"] = _maintenance_management_summary(
+                root, ledger, leases, target_bytes=int(receipt["target_bytes"]),
+                required_free_bytes=int(receipt["required_free_bytes"]),
+                free_bytes=free_after,
+            )
+        outcome["satisfied_after_apply"] = bool(
+            ledger is not None
+            and int(ledger["resident_bytes"]) <= int(receipt["target_bytes"])
+            and free_after >= int(receipt["required_free_bytes"])
+        )
+    outcome["timing"] = timings.finish()
     return outcome
+
+
+def _planned_vs_actual(receipt: dict[str, Any]) -> dict[str, int]:
+    """Summarize plan execution without leaking target paths into CLI output."""
+
+    planned_count = len(receipt.get("planned", []))
+    planned_bytes = int(receipt.get("planned_bytes", sum(
+        int(item["bytes"]) for item in receipt.get("planned", [])
+    )))
+    actual_count = len(receipt.get("removed", []))
+    actual_bytes = int(receipt.get("removed_bytes", 0))
+    return {
+        "planned_object_count": planned_count,
+        "planned_bytes": planned_bytes,
+        "actual_removed_object_count": actual_count,
+        "actual_removed_bytes": actual_bytes,
+        "unremoved_object_count": max(0, planned_count - actual_count),
+        "unremoved_bytes": max(0, planned_bytes - actual_bytes),
+    }
+
+
+def _failure_reason_summary(receipt: dict[str, Any]) -> list[dict[str, Any]]:
+    """Aggregate local retirement failures while retaining detailed evidence elsewhere."""
+
+    groups: dict[tuple[str, str], int] = {}
+    for item in receipt.get("failed", []):
+        operation = str(item.get("operation", "unknown_operation"))
+        error = str(item.get("error", "unknown_error"))
+        error_type = error.partition(":")[0].strip() or "unknown_error"
+        key = (operation, error_type)
+        groups[key] = groups.get(key, 0) + 1
+    return [
+        {"operation": operation, "reason": reason, "object_count": count}
+        for (operation, reason), count in sorted(groups.items())
+    ]
 
 
 def _compact_maintenance_output(receipt: dict[str, Any]) -> dict[str, Any]:
@@ -873,6 +936,8 @@ def _compact_maintenance_output(receipt: dict[str, Any]) -> dict[str, Any]:
             "planned_count": len(receipt.get("planned", [])),
             "removed_count": len(receipt.get("removed", [])),
             "failed_count": len(receipt.get("failed", [])),
+            "planned_vs_actual": _planned_vs_actual(receipt),
+            "failure_reason_summary": _failure_reason_summary(receipt),
         }
     actions: dict[tuple[str, str, str], dict[str, Any]] = {}
     for item in summary["blocked_owner_actions"]:
@@ -909,6 +974,8 @@ def _compact_maintenance_output(receipt: dict[str, Any]) -> dict[str, Any]:
             "bytes": int(receipt.get("removed_bytes", 0)),
         },
         "failed_object_count": len(receipt.get("failed", [])),
+        "planned_vs_actual": _planned_vs_actual(receipt),
+        "failure_reason_summary": _failure_reason_summary(receipt),
         "governed": {
             "object_count": sum(int(item["object_count"]) for item in groups),
             "bytes": sum(int(item["bytes"]) for item in groups),

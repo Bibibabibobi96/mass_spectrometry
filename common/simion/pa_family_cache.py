@@ -1834,10 +1834,10 @@ def _load_transaction(
         "generation_sha256", "published_pin_reason", "retirement", "last_error",
     }
     if (not isinstance(document, dict) or not required <= set(document)
-            or set(document) - required - {"member_recovery", "response_receipt", "retained_inventory_recovery", "publication_metadata_correction", "abandonment"}):
+            or set(document) - required - {"member_recovery", "response_receipt", "retained_inventory_recovery", "publication_metadata_correction", "abandonment", "pin_release"}):
         raise PAFamilyCacheError("PA cache transaction fields differ")
     if (
-        document["schema_version"] != 1
+            document["schema_version"] != 1
         or document["role"] != TRANSACTION_ROLE
         or document["cache_key"] != cache_key
         or _canonical_identity(document["identity"]) != _canonical_identity(identity)
@@ -1877,6 +1877,14 @@ def _load_transaction(
             raise PAFamilyCacheError("PA cache transaction retirement identity differs")
     elif retirement is not None:
         raise PAFamilyCacheError("active PA cache transaction declares retirement")
+    if "pin_release" in document:
+        release = document["pin_release"]
+        if (not isinstance(release, dict) or set(release) != {
+                "retirement_intent_sha256", "replacement_evidence_sha256"}
+                or any(SHA256.fullmatch(str(release.get(key, ""))) is None for key in release)):
+            raise PAFamilyCacheError("PA cache transaction pin release differs")
+        if document["published_pin_reason"] is not None or document["status"] != "published":
+            raise PAFamilyCacheError("PA cache transaction pin release state differs")
     if "member_recovery" in document:
         journal = document["member_recovery"]
         if not isinstance(journal, dict) or set(journal) != {"request", "files", "complete"} or type(journal["complete"]) is not bool:
@@ -3215,6 +3223,83 @@ def advance_pa_family_cache_transaction(
             except Exception:
                 pass
             raise
+
+
+def release_pa_family_cache_retirement_pin(
+    cache_root: str | Path, cache_key: str, expected_generation_sha256: str, *,
+    owner: str, retirement_intent: Mapping[str, Any], replacement_evidence: Mapping[str, Any],
+    lock_timeout_s: float = 30.0,
+) -> TransactionAdvance:
+    """Release one PA publication pin after its owner supplies replacement evidence.
+
+    This changes no payload and never authorizes deletion.  Capacity can only
+    proceed through the ordinary exact-generation retirement approval later.
+    """
+    if (not isinstance(cache_key, str) or SHA256.fullmatch(cache_key) is None
+            or not isinstance(expected_generation_sha256, str)
+            or SHA256.fullmatch(expected_generation_sha256) is None
+            or not isinstance(owner, str) or not owner.strip()):
+        raise PAFamilyCacheError("PA pin release identity is invalid")
+    root = Path(cache_root)
+    artifact_root = _artifact_root_for_cache(root)
+    if artifact_root is None:
+        raise PAFamilyCacheError("PA pin release requires an artifact-root cache")
+    evidence_required = {"schema_version", "role", "status", "cache_key", "generation_sha256", "source_path", "source_sha256"}
+    intent_required = {"schema_version", "role", "status", "cache_key", "generation_sha256", "owner", "replacement_generation_sha256", "replacement_evidence_sha256"}
+    if (not isinstance(replacement_evidence, Mapping) or set(replacement_evidence) != evidence_required
+            or replacement_evidence.get("schema_version") != 1
+            or replacement_evidence.get("role") != "simion_pa_family_cache_replacement_evidence"
+            or replacement_evidence.get("status") != "verified"
+            or replacement_evidence.get("cache_key") != cache_key
+            or not isinstance(replacement_evidence.get("source_path"), str) or not replacement_evidence["source_path"]
+            or any(SHA256.fullmatch(str(replacement_evidence.get(key, ""))) is None for key in ("generation_sha256", "source_sha256"))):
+        raise PAFamilyCacheError("PA pin release replacement evidence differs")
+    evidence_relative = Path(str(replacement_evidence["source_path"]))
+    if evidence_relative.is_absolute() or evidence_relative.drive or any(part in {"", ".", ".."} for part in evidence_relative.parts):
+        raise PAFamilyCacheError("PA pin release replacement evidence path differs")
+    evidence_path = artifact_root
+    for part in evidence_relative.parts:
+        evidence_path /= part
+        if evidence_path.is_symlink():
+            raise PAFamilyCacheError("PA pin release replacement evidence is indirect")
+    if not evidence_path.is_file() or file_sha256(evidence_path).upper() != replacement_evidence["source_sha256"].upper():
+        raise PAFamilyCacheError("PA pin release replacement evidence identity differs")
+    evidence_sha = canonical_json_sha256(dict(replacement_evidence))
+    if (not isinstance(retirement_intent, Mapping) or set(retirement_intent) != intent_required
+            or retirement_intent.get("schema_version") != 1
+            or retirement_intent.get("role") != "simion_pa_family_cache_retirement_intent"
+            or retirement_intent.get("status") != "approved"
+            or retirement_intent.get("cache_key") != cache_key
+            or retirement_intent.get("generation_sha256") != expected_generation_sha256
+            or retirement_intent.get("owner") != owner
+            or retirement_intent.get("replacement_generation_sha256") != replacement_evidence["generation_sha256"]
+            or retirement_intent.get("replacement_evidence_sha256") != evidence_sha
+            or SHA256.fullmatch(str(retirement_intent.get("replacement_generation_sha256", ""))) is None
+            or retirement_intent["replacement_generation_sha256"] == expected_generation_sha256):
+        raise PAFamilyCacheError("PA pin release retirement intent differs")
+    transaction = root / TRANSACTION_DIRECTORY / cache_key
+    binding = _transaction_ledger_binding(root, cache_key, transaction)
+    if binding is None:
+        raise PAFamilyCacheError("PA pin release requires a governed artifact ledger")
+    with _PAFamilyCacheKeyLock(root, cache_key, lock_timeout_s):
+        document = _load_transaction_by_key(transaction / TRANSACTION_NAME, cache_key)
+        if (document["status"] != "published" or document["generation_sha256"] != expected_generation_sha256
+                or document["owner"] != owner):
+            raise PAFamilyCacheError("PA pin release transaction differs")
+        intent_sha = canonical_json_sha256(dict(retirement_intent))
+        release = {"retirement_intent_sha256": intent_sha, "replacement_evidence_sha256": evidence_sha}
+        if document["published_pin_reason"] is None:
+            if document.get("pin_release") != release:
+                raise PAFamilyCacheError("PA pin release is not the recorded owner release")
+        else:
+            document["published_pin_reason"] = None
+            document["pin_release"] = release
+            _write_transaction(transaction / TRANSACTION_NAME, document)
+        _record_artifact_cache_state(
+            _ArtifactLedgerBinding(artifact_root=binding[0], key_root=binding[2]),
+            expected_generation_sha256, "ready",
+        )
+        return _transaction_progress(document, transaction, transaction / "payload", transaction / "build-scratch", action_required="retire_or_consume")
 
 
 def approve_pa_family_cache_retirement(

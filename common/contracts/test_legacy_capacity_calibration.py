@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import sys
@@ -10,6 +11,8 @@ from pathlib import Path
 from unittest import mock
 
 from common.contracts import capacity_ledger
+from common.contracts import legacy_owner_disposition
+from common.contracts.file_identity import file_sha256
 from common.contracts import legacy_capacity_calibration as calibration
 from common.contracts.legacy_capacity_calibration import (
     CalibrationError,
@@ -28,6 +31,36 @@ GENERATION = "B" * 64
 def _write_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def _write_owner_disposition(root: Path, target: Path, *, owner: str = "instrument") -> Path:
+    manifest = target / "owner_manifest.json"
+    _write_json(manifest, {"role": "legacy_owner_terminal", "status": "obsolete"})
+    payload = target / "payload.bin"
+    payload.write_bytes(b"retire me")
+    files = [
+        {"path": item.relative_to(target).as_posix(), "bytes": item.stat().st_size,
+         "sha256": file_sha256(item).upper()}
+        for item in sorted(target.rglob("*")) if item.is_file()
+    ]
+    evidence = next(item for item in files if item["path"] == "owner_manifest.json")
+    target_path = target.relative_to(root).as_posix()
+    seed = {
+        "owner": owner, "target_path": target_path,
+        "authority_evidence": {"path": evidence["path"], "sha256": evidence["sha256"]},
+        "generation": "D" * 64, "manifest_sha256": evidence["sha256"], "files": files,
+    }
+    disposition_id = hashlib.sha256(json.dumps(seed, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest().upper()
+    document = {
+        "schema_version": 1, "role": "artifact_capacity_owner_retirement_disposition",
+        "status": "retire_approved", "owner": owner, "target_path": target_path,
+        "authority_evidence": seed["authority_evidence"],
+        "disposition": {"id": disposition_id, "generation": seed["generation"],
+                        "manifest_sha256": evidence["sha256"], "files": files},
+    }
+    path = root / "common" / "capacity_calibration" / "owner_dispositions" / f"{disposition_id}.json"
+    _write_json(path, document)
+    return path
 
 
 def _write_legacy_v1_ledger(root: Path, *, resident_bytes: int = 0) -> Path:
@@ -141,6 +174,77 @@ def _write_frozen_input_cache(root: Path) -> Path:
 
 
 class LegacyCapacityCalibrationTests(unittest.TestCase):
+    def test_calibration_binds_sealed_generic_owner_disposition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "reviews"
+            target.mkdir(parents=True)
+            _write_owner_disposition(root, target)
+            report = build_calibration_inventory(root, review_deadline="2026-10-22")
+            entry = next(item for item in report["objects"] if item["path"] == "projects/instrument/reviews")
+            self.assertEqual(entry["class"], "rebuildable_payload")
+            self.assertEqual(entry["status"], "ready")
+            self.assertIn("disposition", entry)
+            self.assertEqual(report["unresolved"], [])
+
+    def test_calibration_rejects_extra_or_changed_owner_disposition_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "reviews"
+            target.mkdir(parents=True)
+            _write_owner_disposition(root, target)
+            (target / "unlisted.bin").write_bytes(b"must block")
+            with self.assertRaisesRegex(CalibrationError, "owner disposition is invalid"):
+                build_calibration_inventory(root, review_deadline="2026-10-22")
+
+    def test_calibration_rejects_owner_that_differs_from_project_namespace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "reviews"
+            target.mkdir(parents=True)
+            _write_owner_disposition(root, target, owner="another-project")
+            with self.assertRaisesRegex(CalibrationError, "owner disposition is invalid"):
+                build_calibration_inventory(root, review_deadline="2026-10-22")
+
+    def test_calibration_rejects_target_path_with_link_or_reparse_ancestor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "reviews"
+            target.mkdir(parents=True)
+            _write_owner_disposition(root, target)
+            original = legacy_owner_disposition._link_or_reparse
+            with mock.patch.object(
+                legacy_owner_disposition, "_link_or_reparse",
+                side_effect=lambda path: path.name == "instrument" or original(path),
+            ), self.assertRaisesRegex(CalibrationError, "owner disposition is invalid"):
+                build_calibration_inventory(root, review_deadline="2026-10-22")
+
+    def test_owner_disposition_replaces_unbound_legacy_pa_cache_writing_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            _write_common_cache(root)
+            target = root / "common" / "simion" / "pa_family_cache" / KEY
+            _write_owner_disposition(root, target, owner="common.simion.pa_family_cache")
+            report = build_calibration_inventory(root, review_deadline="2026-10-22")
+            entry = next(item for item in report["objects"] if item["path"] == target.relative_to(root).as_posix())
+            self.assertEqual(entry["class"], "rebuildable_payload")
+            self.assertEqual(entry["status"], "ready")
+            self.assertIn("disposition", entry)
+
+    def test_owner_disposition_rejects_transaction_bound_pa_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            _write_common_cache(root)
+            target = root / "common" / "simion" / "pa_family_cache" / KEY
+            _write_owner_disposition(root, target, owner="common.simion.pa_family_cache")
+            _write_json(target.parent / ".transactions" / KEY / "transaction.json", {
+                "schema_version": 1, "role": "simion_pa_family_cache_transaction",
+                "status": "published", "cache_key": KEY, "generation_sha256": GENERATION,
+                "owner": "fixture-owner", "verification": {},
+            })
+            with self.assertRaisesRegex(CalibrationError, "cannot bypass"):
+                build_calibration_inventory(root, review_deadline="2026-10-22")
+
     def test_canonical_v2_to_v3_migration_binds_range_owners_and_writing_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"

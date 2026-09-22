@@ -65,6 +65,10 @@ current已指向别代则绝不回退pointer，返回值必须把predecessor与r
 历史校准若只能从 pointer／manifest 证明字节身份、却找不到该 owner transaction，则把该 key 登记为带 owner
 和期限的`writing`恢复对象，而非 ready published cache；它不能消费或退休，直到真实 owner 恢复事务或通过授权
 disposition 收尾，校准不会伪造 transaction。
+对于确已被不同已验证 generation 替代的已 pin PA，唯一 owner 可调用
+`release_pa_family_cache_retirement_pin`，以替代 generation 的受管证据及其 SHA-256 绑定一次 retirement
+intent；该操作只解除 transaction pin 并同步 ledger，随后仍须通过通常的 exact-generation retirement
+disposition 删除。它不提供通用 unpin，也不接受不可核验的路径或摘要。
 builder把每个成员先写到返回的确定性scratch，再以原子改名落入`payload`；common看到完整精确清单后建立连续稳定的
 持久化视图并封存，返回`verify`。调用方提交绑定cache key与inventory的SIMION验证证据后，common在同一事务内
 完成parity、generation原子发布、pointer和容量ledger交接。中断后重复`advance-transaction`从同一状态收敛，

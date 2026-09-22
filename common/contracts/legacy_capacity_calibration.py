@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from common.contracts import capacity_ledger, capacity_protection
+from common.contracts.legacy_owner_disposition import load_legacy_owner_disposition
 from common.contracts.artifact_retention import (
     classify_file,
     validate_retention,
@@ -300,8 +301,18 @@ def _common_pa_cache(
             and isinstance(transaction.get("verification"), dict)
         )
         if transaction_bound:
+            pin_reason = transaction.get("published_pin_reason")
+            if pin_reason is not None and (
+                not isinstance(pin_reason, str) or not pin_reason.strip()
+            ):
+                return None, _unresolved(
+                    root, key, "common_pa_cache_transaction_pin_is_invalid",
+                    review_deadline, evidence=(*evidence, transaction_path),
+                    owner_hint="common.simion.pa_family_cache",
+                )
             candidate = _candidate(
                 root, key, "published_cache", identity=generation,
+                pin=pin_reason is not None, pin_reason=pin_reason,
                 evidence=(*evidence, transaction_path),
             )
             candidate["manager"] = capacity_ledger.PA_CACHE_MANAGER
@@ -797,6 +808,22 @@ def build_calibration_inventory(
     )
     objects: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
+    disposition_directory = root / "common" / "capacity_calibration" / "owner_dispositions"
+    approved_dispositions: dict[str, dict[str, Any]] = {}
+    if disposition_directory.exists():
+        if not disposition_directory.is_dir() or disposition_directory.is_symlink():
+            raise CalibrationError("owner disposition directory is not a regular directory")
+        for document_path in sorted(disposition_directory.iterdir()):
+            if not document_path.is_file() or document_path.is_symlink() or document_path.suffix != ".json":
+                raise CalibrationError("owner disposition directory permits only direct JSON documents")
+            try:
+                approved = load_legacy_owner_disposition(root, document_path)
+            except ValueError as exc:
+                raise CalibrationError(f"owner disposition is invalid: {document_path}") from exc
+            target = approved["path"]
+            if target in approved_dispositions:
+                raise CalibrationError("multiple owner dispositions target one managed range")
+            approved_dispositions[target] = approved
     for child in sorted(root.iterdir()):
         _report_progress(progress, "scan_artifact_root_entry", child)
         if child.name == "common" and child.is_dir():
@@ -878,6 +905,24 @@ def build_calibration_inventory(
             unresolved.append(_unresolved(
                 root, child, "artifact_root_role_unrecognized", review_deadline,
             ))
+    if approved_dispositions:
+        normal_by_path = {item["path"]: item for item in objects}
+        for target, approved in approved_dispositions.items():
+            normal = normal_by_path.get(target)
+            legacy_unbound_pa = (
+                normal is not None
+                and normal.get("class") == "published_cache"
+                and normal.get("status") == "writing"
+                and normal.get("recovery_reason") == "legacy_pa_cache_missing_owner_transaction"
+                and normal.get("owner_hint") == capacity_ledger.PA_CACHE_MANAGER
+            )
+            if normal is not None and normal.get("class") == "published_cache" and not legacy_unbound_pa:
+                raise CalibrationError(
+                    "owner disposition cannot bypass a normal published-cache retirement route"
+                )
+            objects = [item for item in objects if item["path"] != target]
+            unresolved = [item for item in unresolved if item["path"] != target]
+            objects.append(approved)
     protected_count, protected_bytes, leases = _protect_active_dependencies(root, objects)
     for item in objects:
         # The calibrated item is the managed range.  Its single owner covers
@@ -972,8 +1017,8 @@ def build_calibration_inventory(
         "artifact_root": str(root),
         "generated_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "review_deadline": review_deadline,
-        "metadata_only": True,
-        "payload_hashes_computed": False,
+        "metadata_only": not bool(approved_dispositions),
+        "payload_hashes_computed": bool(approved_dispositions),
         "excluded_governance_paths": ["common/capacity_calibration"],
         "classified_bytes": classified_bytes,
         "unresolved_bytes": unresolved_bytes,
