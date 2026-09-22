@@ -196,6 +196,45 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             self.assertEqual(destination.read_bytes(), before)
             self.assertFalse((root / calibration.LEDGER_MIGRATION_DIRECTORY).exists())
 
+    def test_canonical_v2_to_v3_migration_maps_only_known_common_governance_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            known = [
+                "common/capacity_disposal_receipts",
+                "common/capacity_calibration/ledger_migrations",
+                "common/capacity_protection_leases",
+                "common/.capacity_ledger.json.fixture",
+                "common/execution_aliases",
+                "common/host_resources.sqlite3",
+            ]
+            _write_v2_ledger(root, [
+                {
+                    "path": path, "class": "light_evidence", "bytes": index + 1,
+                    "status": "ready", "pin": False,
+                }
+                for index, path in enumerate(known)
+            ])
+            migrated = migrate_canonical_v2_ledger_to_v3(
+                root, review_deadline="2026-10-22",
+            )
+            owners = {item["path"]: item["owner"] for item in migrated["objects"]}
+            self.assertEqual(owners["common/capacity_disposal_receipts"], "common.capacity_lifecycle")
+            self.assertEqual(owners["common/capacity_calibration/ledger_migrations"], "common.capacity_lifecycle")
+            self.assertEqual(owners["common/capacity_protection_leases"], "common.capacity_lifecycle")
+            self.assertEqual(owners["common/.capacity_ledger.json.fixture"], "common.capacity_lifecycle")
+            self.assertEqual(owners["common/execution_aliases"], "common.run_artifact_support")
+            self.assertEqual(owners["common/host_resources.sqlite3"], "common.host_resources")
+
+            other = Path(temporary) / "other-artifacts"
+            other.mkdir()
+            _write_v2_ledger(other, [{
+                "path": "common/arbitrary_unmanaged_path", "class": "light_evidence",
+                "bytes": 1, "status": "ready", "pin": False,
+            }])
+            with self.assertRaisesRegex(CalibrationError, "cannot establish owner"):
+                migrate_canonical_v2_ledger_to_v3(other, review_deadline="2026-10-22")
+
     def test_canonical_v2_to_v3_migration_refuses_unrelated_valid_v3(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"

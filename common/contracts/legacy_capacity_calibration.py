@@ -34,6 +34,15 @@ LEGACY_LEDGER_KEYS = {
     "resident_bytes", "objects",
 }
 LEDGER_MIGRATION_DIRECTORY = Path("common") / "capacity_calibration" / "ledger_migrations"
+COMMON_CAPACITY_LIFECYCLE_ROOTS = {
+    "capacity_disposal_receipts",
+    "capacity_calibration",
+    "capacity_protection_leases",
+}
+COMMON_GOVERNANCE_OWNERS = {
+    "execution_aliases": "common.run_artifact_support",
+    "host_resources.sqlite3": "common.host_resources",
+}
 TERMINAL_RUN_STATUSES = {
     "success", "completed", "failed", "interrupted", "cancelled", "aborted",
 }
@@ -1601,10 +1610,30 @@ def _legacy_v3_duties(
             continue
         path = item["path"]
         parts = Path(path).parts
+        governance_root = (
+            len(parts) >= 2
+            and parts[0] == "common"
+            and (
+                parts[1] in COMMON_CAPACITY_LIFECYCLE_ROOTS
+                or parts[1].startswith(".capacity_ledger.json.")
+            )
+        )
+        common_owner = (
+            COMMON_GOVERNANCE_OWNERS.get(parts[1])
+            if len(parts) >= 2 and parts[0] == "common" else None
+        )
         if len(parts) >= 4 and parts[:3] == ("common", "simion", "pa_family_cache"):
             owner = capacity_ledger.PA_CACHE_MANAGER
             route = "pa_manager_disposition"
             retention_reason = "legacy calibrated PA family cache awaiting manager review"
+        elif governance_root:
+            owner = "common.capacity_lifecycle"
+            route = "owner_managed_disposition"
+            retention_reason = "legacy calibrated common capacity-governance record awaiting lifecycle review"
+        elif common_owner is not None:
+            owner = common_owner
+            route = "owner_managed_disposition"
+            retention_reason = "legacy calibrated common runtime record awaiting owner review"
         elif len(parts) >= 2 and parts[0] == "projects" and parts[1]:
             owner = parts[1]
             route = "owner_managed_disposition"
@@ -1614,7 +1643,13 @@ def _legacy_v3_duties(
                 f"v2 to v3 migration cannot establish owner from canonical path: {path}"
             )
         existing_owner = item.get("owner")
-        if existing_owner is not None and existing_owner != owner:
+        allowed_legacy_governance_owners = {
+            "common", "common.capacity_ledger", "common.run_artifact_support",
+        }
+        if existing_owner is not None and existing_owner != owner and not (
+            (governance_root or common_owner is not None)
+            and existing_owner in allowed_legacy_governance_owners
+        ):
             raise CalibrationError(
                 f"v2 to v3 migration owner conflicts with canonical path: {path}"
             )
