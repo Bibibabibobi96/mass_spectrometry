@@ -154,21 +154,62 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
         return {"activated_count": 0, "activated_bytes": 0}
     if not directory.is_dir() or directory.is_symlink():
         raise ValueError("owner disposition directory is not a regular directory")
-    documents = sorted(directory.glob("*.json"))
-    approved: list[tuple[Path, dict[str, Any]]] = []
-    seen: set[str] = set()
-    for document_path in documents:
-        candidate = load_legacy_owner_disposition(root, document_path)
-        if candidate["path"] in seen:
-            raise ValueError("multiple owner dispositions target one managed range")
-        seen.add(candidate["path"])
-        approved.append((document_path, candidate))
-    if not approved:
-        return {"activated_count": 0, "activated_bytes": 0}
     with capacity_protection.capacity_decision_lock(root):
         ledger = capacity_ledger.load_capacity_ledger(root)
         if ledger is None:
             raise ValueError("capacity ledger is missing or invalid")
+        archived_count = 0
+        for document_path in sorted(directory.glob("*.json")):
+            try:
+                raw = json.loads(document_path.read_text(encoding="utf-8-sig"))
+                disposition = raw["disposition"]
+                disposition_id = disposition["id"].upper()
+                target_path = _relative(raw["target_path"])
+                authorization = {
+                    "owner": raw["owner"], "target_path": target_path,
+                    "authority_evidence": raw["authority_evidence"],
+                }
+            except (KeyError, TypeError, ValueError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError("owner disposition document is unreadable") from exc
+            entry = next((item for item in ledger["objects"] if item.get("path") == target_path), None)
+            receipt_path = root / "common" / "capacity_disposal_receipts" / f"ledger_disposition_{disposition_id}.json"
+            if (
+                entry is None or entry.get("status") != "retired"
+                or entry.get("disposition", {}).get("id") != disposition_id
+                or not receipt_path.is_file()
+            ):
+                continue
+            try:
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError("completed owner disposition receipt is unreadable") from exc
+            if (
+                receipt.get("role") != "artifact_capacity_disposal_receipt"
+                or receipt.get("status") != "complete"
+                or receipt.get("disposition", {}).get("id") != disposition_id
+                or receipt.get("target_path") != str((root / target_path).resolve(strict=False))
+            ):
+                continue
+            existing_authorization = receipt.get("owner_disposition_authorization")
+            if existing_authorization is not None and existing_authorization != authorization:
+                raise ValueError("completed owner disposition receipt authorization conflicts")
+            if existing_authorization is None:
+                receipt["owner_disposition_authorization"] = authorization
+                write_json_atomic(receipt_path, receipt)
+            document_path.unlink()
+            archived_count += 1
+
+        approved: list[tuple[Path, dict[str, Any]]] = []
+        seen: set[str] = set()
+        for document_path in sorted(directory.glob("*.json")):
+            candidate = load_legacy_owner_disposition(root, document_path)
+            if candidate["path"] in seen:
+                raise ValueError("multiple owner dispositions target one managed range")
+            seen.add(candidate["path"])
+            approved.append((document_path, candidate))
+        if not approved:
+            return {"activated_count": 0, "activated_bytes": 0,
+                    "archived_document_count": archived_count}
         activated: list[dict[str, Any]] = []
         for _, candidate in approved:
             target, relative = capacity_ledger.capacity_object_path(root, candidate["path"])
@@ -198,4 +239,5 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
     return {
         "activated_count": len(activated),
         "activated_bytes": sum(item["bytes"] for item in activated),
+        "archived_document_count": archived_count,
     }

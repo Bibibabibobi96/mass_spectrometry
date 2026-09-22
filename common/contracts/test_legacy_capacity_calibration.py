@@ -273,6 +273,38 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                 legacy_owner_disposition.activate_owner_dispositions(root)["activated_count"], 0,
             )
 
+    def test_completed_owner_disposition_document_is_archived_into_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            _write_common_cache(root)
+            target = root / "common" / "simion" / "pa_family_cache" / KEY
+            document = _write_owner_disposition(
+                root, target, owner="common.simion.pa_family_cache", generation=GENERATION,
+            )
+            candidate = legacy_owner_disposition.load_legacy_owner_disposition(root, document)
+            target_bytes = candidate["bytes"]
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": candidate["path"], "class": "rebuildable_payload", "bytes": target_bytes,
+                "status": "retired", "pin": False, "owner": candidate["owner_hint"],
+                "disposition": candidate["disposition"], "retired_at_utc": "2026-09-22T00:00:00Z",
+            }], external_scopes=[])
+            receipt = root / "common" / "capacity_disposal_receipts" / (
+                f"ledger_disposition_{candidate['disposition']['id']}.json"
+            )
+            _write_json(receipt, {
+                "role": "artifact_capacity_disposal_receipt", "status": "complete",
+                "disposition": candidate["disposition"], "target_path": str(target.resolve()),
+            })
+            import shutil
+            shutil.rmtree(target)
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual(outcome["archived_document_count"], 1)
+            self.assertFalse(document.exists())
+            self.assertEqual(
+                json.loads(receipt.read_text(encoding="utf-8"))["owner_disposition_authorization"]["owner"],
+                "common.simion.pa_family_cache",
+            )
+
     def test_canonical_v2_to_v3_migration_binds_range_owners_and_writing_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"
