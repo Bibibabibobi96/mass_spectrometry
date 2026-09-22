@@ -25,7 +25,7 @@ $family=(Resolve-Path -LiteralPath $PABuildRunPath).Path
 & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') (Join-Path $family 'run_manifest.json') --require-status success --require-project orthogonal_accelerator --require-mode component_focus_pa_build
 if($LASTEXITCODE-ne0){throw 'Fast-Adjust controller requires a verified published provider PA build run'}
 $artifactRoot=Join-Path $workspaceRoot 'artifacts'
-$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $artifactRoot 'projects\orthogonal_accelerator') -RunId $RunId -Project orthogonal_accelerator -Mode component_focus_fast_adjust -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Bounded provider-owned component voltage search using one existing published native Fast-Adjust PA family.' -AdditionalDirectories @('simion') -UseShortExecutionPath
+$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $artifactRoot 'projects\orthogonal_accelerator') -RunId $RunId -Project orthogonal_accelerator -Mode component_focus_fast_adjust -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Bounded provider-owned component voltage search using one existing published native Fast-Adjust PA family.' -AdditionalDirectories @('simion') -UseShortExecutionPath -CapacityLedgerLifecycleEnabled
 $done=$false;$failureDetail='';$stage='freeze_inputs'
 try {
     $campaign=Copy-VerifiedRunInput (Resolve-Path -LiteralPath $CampaignPath).Path (Join-Path $package.input_dir 'campaign.json')
