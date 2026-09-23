@@ -934,7 +934,6 @@ try{
   foreach($guard in $privateIobPaGuards){$guard.Dispose()}
   $privateIobPaGuards.Clear()
   if($null-ne$iobInputCopyDir-and-not$RetainGuiWorkbench){Remove-ShortPaCopyDirectory -Path $iobInputCopyDir}
-  if($null-ne$basisLinkDir){Remove-ShortPaCopyDirectory -Path $basisLinkDir}
   foreach($path in @($batchPaCopyDirectories)){
     if(Test-Path -LiteralPath $path -PathType Container){
       Remove-ShortPaCopiesUnderDirectory -Path $path -ExpectedNamePrefix 'batch_'

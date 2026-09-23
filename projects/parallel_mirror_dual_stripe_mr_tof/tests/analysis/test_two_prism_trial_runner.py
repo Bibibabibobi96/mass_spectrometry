@@ -21,6 +21,7 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
                      "useNativeCorridor", "hybridFixedResponseScreening",
                      "localOperatingCacheReceipt", "batchTemplateRecord"):
             self.assertNotIn(name, self.source)
+        self.assertNotIn("basisLinkDir", self.source)
 
     def test_native_runtime_preserves_four_instance_and_bundle_identity(self):
         for token in ("build_native_corridor_iob.lua", "4_instance_seed.iob",
