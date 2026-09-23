@@ -4,7 +4,7 @@
   "routes": [
     {
       "stage": "host_resource_scheduler_tests",
-      "dependency_profile": "stdlib",
+      "dependency_profile": "locked",
       "repository_integration_group": "fast",
       "matches": [
         { "exact": "common/host_resource_scheduler.py", "reason": "host_scheduler_changed" },

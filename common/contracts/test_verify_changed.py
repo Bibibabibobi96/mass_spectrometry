@@ -134,7 +134,7 @@ class ChangedGateContractTests(unittest.TestCase):
             self.assertEqual(set(self.routed_stages(path)), {stage}, path)
         routes = [route for route in self.routes if route["stage"] == stage]
         self.assertEqual(len(routes), 1)
-        self.assertEqual(routes[0]["dependency_profile"], "stdlib")
+        self.assertEqual(routes[0]["dependency_profile"], "locked")
         self.assertEqual(routes[0]["repository_integration_group"], "fast")
         self.assertEqual(routes[0]["command"]["arguments"],
                          ["-m", "unittest", "common.test_host_resource_scheduler", "common.test_host_resource_python"])
