@@ -125,10 +125,18 @@ try {
   # temporary artifact root and this private ledger, never production storage.
   $capacityRoot = Join-Path $testRoot 'artifacts'
   New-Item -ItemType Directory -Path $capacityRoot | Out-Null
+  Invoke-RunToolRootContext -RepoRoot (Split-Path -Parent $PSScriptRoot) -Operation {
+    & $PythonExe -c "from pathlib import Path; from common.contracts import capacity_ledger; import sys; capacity_ledger.initialize_capacity_ledger(Path(sys.argv[1]), objects=[])" $capacityRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Host lease capacity ledger fixture initialization failed.' }
+    & $PythonExe -m common.contracts.reconcile_artifact_capacity `
+      --artifact-root $capacityRoot --create-protection-lease host-lease-capacity `
+      --lease-owner host-lease-test --lease-ttl-seconds 3600 --protect-path projects
+    if ($LASTEXITCODE -ne 0) { throw 'Host lease capacity protection fixture creation failed.' }
+  } | Out-Null
   $lease = Enter-HostExecutionLease -Role SIMION -Stage mrtof_postprocess
   try {
     $capacity = Invoke-ArtifactCapacityGate -Python $PythonExe -RepoRoot (Split-Path -Parent $PSScriptRoot) `
-      -ArtifactRoot $capacityRoot
+      -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId host-lease-capacity
     Assert-True $capacity.satisfied_after_apply 'Nested capacity gate did not complete.'
     $records = @((Get-HostResourceStatus -StatePath $statePath).records)
     Assert-True ($records.Count -eq 1 -and $records[0].token -eq $lease.token) 'Capacity child changed its parent grant.'
