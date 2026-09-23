@@ -20,7 +20,6 @@ from common.contracts import capacity_protection as protection
 from common.contracts.execution_aliases import execution_alias_root_is_valid
 from common.contracts.historical_source_scratch_retirement import apply as apply_source_scratch_disposition
 from common.contracts.historical_source_scratch_retirement import plan as plan_source_scratch_disposition
-from common.contracts.legacy_owner_disposition import activate_owner_dispositions
 from common.contracts.file_identity import file_sha256
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
 
@@ -1089,6 +1088,13 @@ def _audit_pa_transaction_owner(root: Path) -> dict[str, int]:
     from common.simion.pa_family_cache import audit_pa_transaction_maintenance
 
     return audit_pa_transaction_maintenance(root / "common" / "simion" / "pa_family_cache")
+
+
+def activate_owner_dispositions(root: Path) -> dict[str, Any]:
+    """Load owner-retirement logic only for an actual maintenance action."""
+
+    from common.contracts.legacy_owner_disposition import activate_owner_dispositions as activate
+    return activate(root)
 
 
 def _run_maintenance_owner_actions(root: Path) -> tuple[dict[str, dict[str, int]], list[dict[str, str]]]:
