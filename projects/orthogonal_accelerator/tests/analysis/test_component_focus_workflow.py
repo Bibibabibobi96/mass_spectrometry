@@ -4,9 +4,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from projects.orthogonal_accelerator.analysis.component_focus_pa_cache import identity
-from projects.orthogonal_accelerator.analysis.component_focus_mr_runtime_receipt import project
+from projects.orthogonal_accelerator.analysis.component_focus_mr_runtime_receipt import (
+    MrRuntimeReceiptError, project, write_receipt,
+)
 from projects.orthogonal_accelerator.analysis.component_focus_workflow import (
     ComponentFocusWorkflowError,
     compile_workflow,
@@ -105,6 +108,23 @@ class ComponentFocusWorkflowTests(unittest.TestCase):
         self.assertIn("one_provider_cache_probe__at_most_one_native_build", runner)
         self.assertNotIn("build_component_focus_pa.lua", runner)
 
+    @staticmethod
+    def _record(path: Path) -> dict:
+        import hashlib
+        return {"path": str(path.resolve()), "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+    def _write_pa_child_manifest(self, root: Path, result: Path) -> Path:
+        config = root / "pa_run_config.json"
+        config.write_text(json.dumps({"run_id": "20260923_120000__sim__simion__component-focus-pa",
+                                      "project": "orthogonal_accelerator",
+                                      "mode": "component_focus_pa_build"}), encoding="utf-8")
+        manifest = root / "manifest.json"
+        manifest.write_text(json.dumps({"role": "simulation_run_manifest", "status": "success",
+                                        "project": "orthogonal_accelerator", "mode": "component_focus_pa_build",
+                                        "run_config": self._record(config), "outputs": [self._record(result)]}), encoding="utf-8")
+        return manifest
+
     def test_mr_runtime_receipt_projects_only_small_provider_identity_records(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -113,31 +133,78 @@ class ComponentFocusWorkflowTests(unittest.TestCase):
             names = ["orthogonal_accelerator_focus.pa#"] + [f"orthogonal_accelerator_focus.pa{i}" for i in range(10)]
             for name in names:
                 (generation / name).write_bytes(name.encode())
-            cache = {"cache_key": "key", "generation_sha256": "generation", "files": [{"name": name} for name in names]}
+            cache = {"files": [{"name": name, "bytes": len(name), "sha256": "0" * 64} for name in names]}
             (generation / "cache_manifest.json").write_text(json.dumps(cache), encoding="utf-8")
             workflow = root / "workflow.json"
             workflow.write_text(json.dumps({"role": "orthogonal_accelerator_component_focus_workflow_receipt", "status": "candidate_complete"}), encoding="utf-8")
             result = root / "result.json"
             result.write_text(json.dumps({"disposition": "hit", "cache_key": "key", "generation_sha256": "generation", "generation_directory": str(generation)}), encoding="utf-8")
-            manifest = root / "manifest.json"; manifest.write_text("{}", encoding="utf-8")
+            manifest = self._write_pa_child_manifest(root, result)
             campaign = root / "campaign.json"
             campaign.write_text(json.dumps({"operating_point": {"final_energy_per_charge_v": 4372.0, "electrode_voltages_v": [0, 5000, 3800, 0, 3000, 2400, 1800, 1200, 600]}}), encoding="utf-8")
             plan = root / "plan.json"
             plan.write_text(json.dumps({"geometry_profile_id": "profile", "layout": {"gap_1_mm": 6, "gap_2_mm": 30, "aperture_height_y_mm": 16}, "theory_seed": {"release_position_from_repeller_mm": 2.4}}), encoding="utf-8")
-            receipt = project(workflow_receipt_path=workflow, pa_result_path=result, pa_manifest_path=manifest, campaign_path=campaign, plan_path=plan)
+            original_read_bytes = Path.read_bytes
+
+            def forbid_pa_payload_read(path: Path) -> bytes:
+                if path.resolve() == (generation / "orthogonal_accelerator_focus.pa0").resolve():
+                    raise AssertionError("runtime receipt must not hash or read controller PA payload")
+                return original_read_bytes(path)
+
+            with patch("projects.orthogonal_accelerator.analysis.component_focus_mr_runtime_receipt.validate_pa_family_cache_generation", return_value=cache), patch.object(Path, "read_bytes", forbid_pa_payload_read):
+                receipt = project(workflow_receipt_path=workflow, pa_result_path=result, pa_manifest_path=manifest, campaign_path=campaign, plan_path=plan)
         self.assertEqual(receipt["status"], "published_read_only")
         self.assertEqual(receipt["mrtof_projection"]["endpoint_voltages_v"], [5000.0, 3800.0, 0.0])
         self.assertEqual(receipt["mrtof_projection"]["geometry"]["repeller_to_exit_mm"], 36.0)
         self.assertEqual(receipt["read_only_controller_pa0"]["path"], str((generation / "orthogonal_accelerator_focus.pa0").resolve()))
+        self.assertEqual(receipt["read_only_controller_pa0"]["sha256"], "0" * 64)
 
     def test_mr_runtime_receipt_rejects_workflow_without_complete_focus_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             workflow = root / "workflow.json"
             workflow.write_text(json.dumps({"role": "orthogonal_accelerator_component_focus_workflow_receipt", "status": "candidate_incomplete"}), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "complete N=100 time focus"):
-                project(workflow_receipt_path=workflow, pa_result_path=workflow, pa_manifest_path=workflow,
-                        campaign_path=workflow, plan_path=workflow)
+            with patch("projects.orthogonal_accelerator.analysis.component_focus_mr_runtime_receipt._verify_pa_child_source"):
+                with self.assertRaisesRegex(ValueError, "complete N=100 time focus"):
+                    project(workflow_receipt_path=workflow, pa_result_path=workflow, pa_manifest_path=workflow,
+                            campaign_path=workflow, plan_path=workflow)
+
+    def _write_active_owner(self, root: Path) -> Path:
+        results = root / "results"
+        results.mkdir()
+        config = root / "run_config.json"
+        value = {"schema_version": 2, "run_id": "20260923_120000__sim__simion__component-focus-workflow",
+                 "project": "orthogonal_accelerator", "mode": "component_focus_workflow",
+                 "artifact_retention": {"policy_version": 1, "class": "solver_review", "reason": "test"},
+                 "capacity_ledger_lifecycle": {"enabled": True}}
+        config.write_text(json.dumps(value), encoding="utf-8")
+        manifest = root / "run_manifest.json"
+        manifest.write_text(json.dumps({"role": "simulation_run_manifest", "status": "checkpoint",
+                                        "project": value["project"], "mode": value["mode"],
+                                        "run_config": self._record(config)}), encoding="utf-8")
+        return results / "mrtof_runtime_receipt.json"
+
+    def test_mr_runtime_receipt_output_requires_active_owner_lifecycle_envelope(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = self._write_active_owner(root)
+            write_receipt({"role": "test"}, output)
+            self.assertTrue(output.is_file())
+            with self.assertRaisesRegex(MrRuntimeReceiptError, "already exists"):
+                write_receipt({"role": "test"}, output)
+            with self.assertRaisesRegex(MrRuntimeReceiptError, "owner run results"):
+                write_receipt({"role": "test"}, root / "unowned.json")
+
+    def test_mr_runtime_receipt_output_rejects_owner_without_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = self._write_active_owner(root)
+            config = root / "run_config.json"
+            value = json.loads(config.read_text(encoding="utf-8"))
+            value.pop("capacity_ledger_lifecycle")
+            config.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(MrRuntimeReceiptError, "lifecycle envelope"):
+                write_receipt({"role": "test"}, output)
 
 
 if __name__ == "__main__":
