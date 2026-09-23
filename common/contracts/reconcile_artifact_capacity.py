@@ -646,6 +646,14 @@ def _reconcile_execution_alias_root(root: Path) -> dict[str, int]:
         or recorded.get("owner") != "common.run_artifact_support"
     ):
         raise RuntimeError("execution alias root has an unexpected ledger identity")
+    stale_count = 0
+    for alias in alias_root.iterdir():
+        # A dangling junction is an administrative residue, not a target tree:
+        # remove the junction itself only after the root validator has proved
+        # that its recorded target remains inside artifacts.
+        if not alias.exists():
+            alias.rmdir()
+            stale_count += 1
     previous_bytes = int(recorded["bytes"])
     if previous_bytes:
         capacity_ledger.record_capacity_object(
@@ -653,7 +661,7 @@ def _reconcile_execution_alias_root(root: Path) -> dict[str, int]:
             owner="common.run_artifact_support",
         )
     return {
-        "corrected_count": int(previous_bytes != 0),
+        "corrected_count": int(previous_bytes != 0) + stale_count,
         "released_bytes": previous_bytes,
     }
 
