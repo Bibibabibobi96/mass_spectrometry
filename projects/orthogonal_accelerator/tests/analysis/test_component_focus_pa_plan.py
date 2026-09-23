@@ -68,6 +68,9 @@ class ComponentFocusPAPlanTests(unittest.TestCase):
         self.assertIn("'--owner',$capacity.owner", runner)
         self.assertNotIn("--action','publish'", runner)
         self.assertNotIn('--source-directory', runner)
+        self.assertIn("$temporary=Join-Path ([string]$transaction.scratch_directory)", runner)
+        self.assertNotIn('[IO.Path]::GetTempPath()', runner)
+        self.assertIn('Remove-Item -LiteralPath $temporary -Recurse -Force', runner)
 
     def test_cache_adapter_forbids_direct_artifact_publication(self) -> None:
         root=Path(__file__).resolve().parents[2]
