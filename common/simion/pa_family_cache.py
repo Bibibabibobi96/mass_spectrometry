@@ -1948,7 +1948,9 @@ def _load_transaction(
                 "retirement_intent_sha256", "replacement_evidence_sha256"}
                 or any(SHA256.fullmatch(str(release.get(key, ""))) is None for key in release)):
             raise PAFamilyCacheError("PA cache transaction pin release differs")
-        if document["published_pin_reason"] is not None or document["status"] != "published":
+        # A released pin remains evidence after the subsequently approved
+        # generation retirement; older valid transactions retain this record.
+        if document["published_pin_reason"] is not None or document["status"] not in {"published", "retired"}:
             raise PAFamilyCacheError("PA cache transaction pin release state differs")
     if "member_recovery" in document:
         journal = document["member_recovery"]
@@ -3952,16 +3954,23 @@ def audit_pa_transaction_maintenance(cache_root: str | Path) -> dict[str, int]:
         return result
     if not directory.is_dir() or directory.is_symlink():
         raise PAFamilyCacheError("PA transaction directory is not a regular directory")
+    closed_transactions = True
+    transaction_count = 0
     for transaction in sorted(directory.iterdir()):
         if not transaction.is_dir() or transaction.is_symlink() or SHA256.fullmatch(transaction.name) is None:
             result["invalid_count"] += 1
+            closed_transactions = False
             continue
+        transaction_count += 1
         result["checked_count"] += 1
         try:
             document = _load_transaction_by_key(transaction / TRANSACTION_NAME, transaction.name)
         except PAFamilyCacheError:
             result["invalid_count"] += 1
+            closed_transactions = False
             continue
+        if document["status"] not in {"published", "retired"}:
+            closed_transactions = False
         if document["status"] in {"prepared", "published", "retired"}:
             result["replayable_count"] += 1
         elif document["files"]:
@@ -3974,6 +3983,15 @@ def audit_pa_transaction_maintenance(cache_root: str | Path) -> dict[str, int]:
                 result["missing_failure_evidence_count"] += 1
             else:
                 result["replayable_count"] += 1
+    if artifact_root is not None and transaction_count and closed_transactions:
+        # A former aggregate transaction range may predate per-transaction
+        # closure.  Once all constituent records are valid and closed, retain
+        # the small evidence container as ready without opening PA members.
+        capacity_ledger.record_capacity_object(
+            artifact_root, path=directory, object_class="light_evidence",
+            bytes_count=_key_root_bytes(directory), status="ready",
+            owner=capacity_ledger.PA_CACHE_MANAGER,
+        )
     return result
 
 

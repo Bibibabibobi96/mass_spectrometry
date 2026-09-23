@@ -1698,6 +1698,25 @@ class PAFamilyCacheTest(unittest.TestCase):
         self.assertIn("pin_release", transaction)
         retired = approve_pa_family_cache_retirement(cache, published.cache_key, published.generation_sha256)
         self.assertEqual(retired.status, "retired")
+        self.assertIs(probe_pa_family_cache(cache, identity()).disposition, CacheDisposition.MISS)
+
+    def test_pa_audit_closes_legacy_transaction_container_after_all_records_close(self) -> None:
+        artifacts, cache = self._artifact_cache()
+        published = self._publish_governed_transaction(cache)
+        approve_pa_family_cache_retirement(cache, published.cache_key, published.generation_sha256)
+        container = cache / ".transactions"
+        capacity_ledger.record_capacity_object(
+            artifacts, path=container, object_class="rebuildable_payload",
+            bytes_count=self._tree_bytes(container), status="writing", owner=self.artifact_owner,
+            recovery_reason="pa_transaction_recovery_required",
+            recovery_task="fixture closes aggregate transaction container",
+            review_deadline="2026-10-01",
+        )
+        audit = pa_family_cache.audit_pa_transaction_maintenance(cache)
+        self.assertEqual(audit["invalid_count"], 0)
+        _, relative = capacity_ledger.capacity_object_path(artifacts, container)
+        entry = next(item for item in capacity_ledger.load_capacity_ledger(artifacts)["objects"] if item["path"] == relative)
+        self.assertEqual((entry["class"], entry["status"]), ("light_evidence", "ready"))
 
     def test_owner_pin_release_rejects_missing_or_mismatched_replacement_evidence(self) -> None:
         _, cache = self._artifact_cache()
