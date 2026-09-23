@@ -10,6 +10,7 @@ from common.contracts.capacity_ledger import initialize_capacity_ledger, load_ca
 from common.contracts.run_capacity_lifecycle import (
     assert_retention_complete,
     finalize_ready,
+    register_writing_range,
     register_writing,
     resume_partial_retirements,
     resume_terminal_runs,
@@ -17,6 +18,22 @@ from common.contracts.run_capacity_lifecycle import (
 
 
 class RunCapacityLifecycleTests(unittest.TestCase):
+    def test_prewrite_range_registers_empty_direct_run_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run = root / "projects" / "p" / "runs" / "prewrite"
+            run.mkdir(parents=True)
+            receipt = register_writing_range(root, run)
+            self.assertEqual(receipt["action"], "register_writing_range")
+            entry = load_capacity_ledger(root)["objects"][0]
+            self.assertEqual(entry["path"], "projects/p/runs/prewrite")
+            self.assertEqual(entry["bytes"], 0)
+            self.assertEqual(entry["recovery_reason"], "run_package_initialization_incomplete")
+            (run / "unexpected.json").write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "must not contain files"):
+                register_writing_range(root, run)
+
     def fixture(self, root: Path, run_id: str) -> tuple[Path, Path]:
         run = root / "projects" / "p" / "runs" / run_id
         run.mkdir(parents=True)

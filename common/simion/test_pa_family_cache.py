@@ -371,8 +371,32 @@ class PAFamilyCacheTest(unittest.TestCase):
     def _artifact_cache(self, *, initialize_ledger: bool = True) -> tuple[Path, Path]:
         artifacts = self.root / "artifacts"
         artifacts.mkdir()
+        producer_directory = (
+            artifacts / "projects" / "fixture" / "runs"
+            / "20260923_120000__test__simion__pa-producer__n1"
+        )
+        producer_directory.mkdir(parents=True)
+        self.producer_run_config = producer_directory / "run_config.json"
+        self.producer_run_config.write_text(json.dumps({
+            "schema_version": 2,
+            "run_id": producer_directory.name,
+            "project": "fixture",
+            "capacity_ledger_lifecycle": {
+                "schema_version": 1,
+                "enabled": True,
+                "artifact_root": str(artifacts.resolve()),
+                "light_evidence_budget_bytes": 1,
+            },
+        }), encoding="utf-8")
         if initialize_ledger:
             capacity_ledger.initialize_capacity_ledger(artifacts, objects=[])
+            capacity_ledger.record_capacity_object(
+                artifacts, path=producer_directory, object_class="rebuildable_payload",
+                bytes_count=self.producer_run_config.stat().st_size, status="writing",
+                owner=self.artifact_owner, recovery_reason="fixture producer is active",
+                recovery_task="fixture owner closes producer", review_deadline="2026-10-01",
+                recovery_evidence_paths=(self.producer_run_config,),
+            )
         return artifacts, artifacts / "common" / "simion" / "pa_family_cache"
 
     def _ledger_entry(self, artifacts: Path, cache_key: str) -> dict[str, object]:
@@ -462,6 +486,29 @@ class PAFamilyCacheTest(unittest.TestCase):
             advance_pa_family_cache_transaction(
                 cache, identity(), self.names, owner=self.artifact_owner
             )
+
+    def test_artifact_transaction_rejects_unregistered_or_external_producer_before_payload(self) -> None:
+        artifacts, cache = self._artifact_cache()
+        with self.assertRaisesRegex(PAFamilyCacheError, "direct governed runs"):
+            advance_pa_family_cache_transaction(
+                cache, identity(), self.names, owner=self.artifact_owner,
+                producer_run_config=self.root / "run_config.json",
+            )
+        unregistered = artifacts / "projects" / "fixture" / "runs" / "20260923_120001__test__simion__unregistered__n1"
+        unregistered.mkdir(parents=True)
+        config = unregistered / "run_config.json"
+        config.write_text(json.dumps({
+            "capacity_ledger_lifecycle": {
+                "schema_version": 1, "enabled": True,
+                "artifact_root": str(artifacts.resolve()), "light_evidence_budget_bytes": 1,
+            },
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(PAFamilyCacheError, "not registered"):
+            advance_pa_family_cache_transaction(
+                cache, identity(), self.names, owner=self.artifact_owner,
+                producer_run_config=config,
+            )
+        self.assertFalse((cache / ".transactions").exists())
         building = advance_pa_family_cache_transaction(
             cache, identity(), self.names, owner=self.artifact_owner,
             producer_run_config=self.producer_run_config,

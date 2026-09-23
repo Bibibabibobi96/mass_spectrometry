@@ -1274,6 +1274,60 @@ def _artifact_root_for_cache(cache_root: Path) -> Path | None:
     )
 
 
+def _governed_producer_provenance(
+    artifact_root: Path, producer_run_config: Path,
+) -> dict[str, str]:
+    """Validate the already-registered run range that produced a PA request.
+
+    This reads only the small run configuration and the capacity ledger.  The
+    PA payload is deliberately outside this provenance check.
+    """
+
+    try:
+        source = producer_run_config.resolve(strict=True)
+    except OSError as exc:
+        raise PAFamilyCacheError("PA producer run config is not resolvable") from exc
+    if source.is_symlink() or not source.is_file():
+        raise PAFamilyCacheError("PA producer run config must be a regular existing file")
+    run_directory = source.parent
+    if source.name != "run_config.json" or run_directory.parent.name != "runs":
+        raise PAFamilyCacheError(
+            "PA producer run config must be a direct governed runs/<run-id>/run_config.json"
+        )
+    try:
+        _, run_relative = capacity_ledger.capacity_object_path(artifact_root, run_directory)
+        config = json.loads(source.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise PAFamilyCacheError("PA producer run config is invalid or outside artifacts") from exc
+    if not isinstance(config, dict):
+        raise PAFamilyCacheError("PA producer run config must be one JSON object")
+    lifecycle = config.get("capacity_ledger_lifecycle")
+    if not isinstance(lifecycle, dict) or lifecycle.get("schema_version") != 1 or lifecycle.get("enabled") is not True:
+        raise PAFamilyCacheError("PA producer run config lacks capacity-ledger lifecycle")
+    try:
+        declared_root = Path(str(lifecycle.get("artifact_root", ""))).resolve(strict=True)
+    except OSError as exc:
+        raise PAFamilyCacheError("PA producer artifact root is invalid") from exc
+    if declared_root != artifact_root.resolve(strict=True):
+        raise PAFamilyCacheError("PA producer artifact root differs from the cache artifact root")
+    ledger = capacity_ledger.load_capacity_ledger(artifact_root)
+    if ledger is None:
+        raise PAFamilyCacheError("PA producer requires a calibrated capacity ledger")
+    entry = next((item for item in ledger["objects"] if item.get("path") == run_relative), None)
+    if (
+        entry is None
+        or entry.get("class") not in {"rebuildable_payload", "light_evidence"}
+        or entry.get("status") not in {"writing", "ready"}
+        or not isinstance(entry.get("owner"), str)
+        or not entry["owner"].strip()
+    ):
+        raise PAFamilyCacheError("PA producer run range is not registered in the capacity ledger")
+    return {
+        "run_config_path": str(source),
+        "run_config_sha256": file_sha256(source),
+    }
+
+
 def _artifact_ledger_binding(
     cache_root: Path, cache_key: str, *, required: bool
 ) -> _ArtifactLedgerBinding | None:
@@ -3190,15 +3244,9 @@ def advance_pa_family_cache_transaction(
             raise PAFamilyCacheError(
                 "artifact PA transaction requires a producer run config before payload creation"
             )
-        source = Path(producer_run_config)
-        if source.is_symlink() or not source.is_file():
-            raise PAFamilyCacheError("PA producer run config must be a regular existing file")
-        producer = {
-            "run_config_path": str(source.resolve(strict=True)),
-            # This is a small, frozen control record.  PA member bytes are never
-            # read here; their inventory is sealed only at the existing boundary.
-            "run_config_sha256": file_sha256(source),
-        }
+        artifact_root = _artifact_root_for_cache(root)
+        assert artifact_root is not None
+        producer = _governed_producer_provenance(artifact_root, Path(producer_run_config))
     payload = transaction / "payload"
     build_scratch = transaction / "build-scratch"
     ledger_binding = _transaction_ledger_binding(root, cache_key, transaction)

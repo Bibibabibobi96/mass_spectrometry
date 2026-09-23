@@ -88,6 +88,42 @@ def _inventory(run_dir: Path) -> tuple[int, list[dict[str, Any]]]:
     return sum(int(item["bytes"]) for item in records), records
 
 
+def register_writing_range(artifact_root: Path, run_directory: Path) -> dict[str, Any]:
+    """Register an empty run range before its first managed file is written."""
+
+    root = artifact_root.resolve(strict=True)
+    try:
+        run_dir = run_directory.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("pre-write run range is missing") from exc
+    if run_dir.is_symlink() or not run_dir.is_dir() or run_dir.parent.name != "runs":
+        raise ValueError("pre-write run range must be a direct runs/<run-id> directory")
+    capacity_ledger.capacity_object_path(root, run_dir)
+    total, records = _inventory(run_dir)
+    if records:
+        raise ValueError("pre-write run range must not contain files")
+    entry = capacity_ledger.record_capacity_object(
+        root, path=run_dir, object_class="rebuildable_payload", bytes_count=total,
+        status="writing",
+        **_run_lifecycle_duties(
+            run_dir, review_days=WRITING_REVIEW_DAYS,
+            reason="registered run range awaiting initialization",
+        ),
+        recovery_reason="run_package_initialization_incomplete",
+        recovery_task="run owner must initialize or retire the registered range",
+    )
+    return {
+        "schema_version": 1,
+        "role": "run_capacity_lifecycle_receipt",
+        "action": "register_writing_range",
+        "status": "writing",
+        "run_directory": str(run_dir),
+        "bytes": total,
+        "file_count": 0,
+        "ledger_entry": entry,
+    }
+
+
 def register_writing(artifact_root: Path, run_config: Path) -> dict[str, Any]:
     run_dir, _, budget = _run_context(artifact_root, run_config)
     total, records = _inventory(run_dir)
@@ -452,17 +488,26 @@ def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--action", choices=("register-writing", "assert-retention", "finalize-ready"), required=True)
+    parser.add_argument("--action", choices=("register-writing-range", "register-writing", "assert-retention", "finalize-ready"), required=True)
     parser.add_argument("--artifact-root", type=Path, required=True)
-    parser.add_argument("--run-config", type=Path, required=True)
+    parser.add_argument("--run-config", type=Path)
+    parser.add_argument("--run-directory", type=Path)
     args = parser.parse_args()
     action = {
+        "register-writing-range": register_writing_range,
         "register-writing": register_writing,
         "assert-retention": assert_retention_complete,
         "finalize-ready": finalize_ready,
     }[args.action]
     try:
-        result = action(args.artifact_root, args.run_config)
+        if args.action == "register-writing-range":
+            if args.run_directory is None or args.run_config is not None:
+                raise ValueError("register-writing-range requires --run-directory only")
+            result = action(args.artifact_root, args.run_directory)
+        else:
+            if args.run_config is None or args.run_directory is not None:
+                raise ValueError(f"{args.action} requires --run-config only")
+            result = action(args.artifact_root, args.run_config)
     except (OSError, RuntimeError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, indent=2))

@@ -125,13 +125,25 @@ function Invoke-RunCapacityLifecycleAdapter {
   param(
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][ValidateSet('register-writing','assert-retention','finalize-ready')][string]$Action,
+    [Parameter(Mandatory)][ValidateSet('register-writing-range','register-writing','assert-retention','finalize-ready')][string]$Action,
     [Parameter(Mandatory)][string]$ArtifactRoot,
-    [Parameter(Mandatory)][string]$RunConfig
+    [string]$RunConfig='',
+    [string]$RunDirectory=''
   )
+  if($Action-eq'register-writing-range'){
+    if([string]::IsNullOrWhiteSpace($RunDirectory)-or-not[string]::IsNullOrWhiteSpace($RunConfig)){
+      throw 'register-writing-range requires RunDirectory only.'
+    }
+    $runArgument=@('--run-directory',$RunDirectory)
+  }else{
+    if([string]::IsNullOrWhiteSpace($RunConfig)-or-not[string]::IsNullOrWhiteSpace($RunDirectory)){
+      throw "$Action requires RunConfig only."
+    }
+    $runArgument=@('--run-config',$RunConfig)
+  }
   $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
     & $Python -m common.contracts.run_capacity_lifecycle --action $Action `
-      --artifact-root $ArtifactRoot --run-config $RunConfig
+      --artifact-root $ArtifactRoot @runArgument
     if($LASTEXITCODE-ne 0){throw "Run capacity lifecycle $Action failed."}
   })
   return ((@($output)-join "`n")|ConvertFrom-Json)
@@ -560,6 +572,15 @@ function New-RunPackage {
   if($null-ne$governedArtifactsRoot-and(-not$RetentionContractEnabled-or-not$CapacityLedgerLifecycleEnabled)){
     throw 'Runs beneath artifacts require retention and capacity-ledger lifecycle before package creation.'
   }
+  if($CapacityLedgerLifecycleEnabled){
+    if([string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){
+      if($null-eq$governedArtifactsRoot){
+        throw 'Could not derive the workspace artifacts root for capacity-ledger lifecycle.'
+      }
+      $CapacityLedgerArtifactRoot=$governedArtifactsRoot.FullName
+    }
+    $CapacityLedgerArtifactRoot=[IO.Path]::GetFullPath($CapacityLedgerArtifactRoot)
+  }
   $python=[IO.Path]::GetFullPath($Python)
   if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Run Python environment is missing: $python"}
   $pythonVersion=(& $python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
@@ -570,16 +591,26 @@ function New-RunPackage {
   if($LASTEXITCODE-ne 0 -or -not($validation-match '^ARTIFACT_ID=PASS ')){throw "Invalid run_id: $RunId"}
   $artifactRunDir=Join-Path $ArtifactRoot "runs\$RunId"
   if(Test-Path -LiteralPath $artifactRunDir){throw "Run already exists: $artifactRunDir"}
+  if($CapacityLedgerLifecycleEnabled){
+    New-Item -ItemType Directory -Path $artifactRunDir -ErrorAction Stop|Out-Null
+    try{
+      $null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $RepoRoot `
+        -Action register-writing-range -ArtifactRoot $CapacityLedgerArtifactRoot -RunDirectory $artifactRunDir
+    }catch{
+      [IO.Directory]::Delete($artifactRunDir,$false)
+      throw
+    }
+  }
   $runDir=$artifactRunDir
   $executionAlias=$null
   if($UseShortExecutionPath){
-    New-Item -ItemType Directory -Force -Path $artifactRunDir|Out-Null
+    if(-not$CapacityLedgerLifecycleEnabled){New-Item -ItemType Directory -Force -Path $artifactRunDir|Out-Null}
     try{
       $aliasRecord=New-RunExecutionAlias -TargetDirectory $artifactRunDir `
         -AdditionalDirectories $AdditionalDirectories -ExecutionRoot $ExecutionRoot `
         -ExpectedExecutionRelativePaths $ExpectedExecutionRelativePaths
     }catch{
-      [IO.Directory]::Delete($artifactRunDir,$true)
+      if(-not$CapacityLedgerLifecycleEnabled){[IO.Directory]::Delete($artifactRunDir,$true)}
       throw
     }
     $executionAlias=$aliasRecord.execution_alias
@@ -608,17 +639,6 @@ function New-RunPackage {
       reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})}
   }
   if($CapacityLedgerLifecycleEnabled){
-    if([string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){
-      $capacityRootCandidate=[IO.DirectoryInfo][IO.Path]::GetFullPath($ArtifactRoot)
-      while($null-ne$capacityRootCandidate-and$capacityRootCandidate.Name-ne'artifacts'){
-        $capacityRootCandidate=$capacityRootCandidate.Parent
-      }
-      if($null-eq$capacityRootCandidate){
-        throw 'Could not derive the workspace artifacts root for capacity-ledger lifecycle.'
-      }
-      $CapacityLedgerArtifactRoot=$capacityRootCandidate.FullName
-    }
-    $CapacityLedgerArtifactRoot=[IO.Path]::GetFullPath($CapacityLedgerArtifactRoot)
     $capacityPolicy=Get-Content -LiteralPath (Join-Path $RepoRoot 'common\contracts\artifact_capacity_policy.json') `
       -Raw -Encoding UTF8|ConvertFrom-Json
     [int64]$lightBudget=$capacityPolicy.light_evidence_budget_bytes

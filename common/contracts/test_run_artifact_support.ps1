@@ -65,6 +65,33 @@ try {
   Assert-Equal ([Environment]::GetEnvironmentVariable('PYTHONNOUSERSITE')) 'run-artifact-test-nousersite' `
     'Tool context did not restore PYTHONNOUSERSITE.'
 
+  $governedRoot=Join-Path $testRoot 'artifacts'
+  $governedProjectRoot=Join-Path $governedRoot 'projects\fixture_project'
+  $prewriteRun=Join-Path $governedProjectRoot 'runs\20260723_165959__test__cross__prewrite-rejected__n1'
+  try {
+    New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $governedProjectRoot `
+      -RunId '20260723_165959__test__cross__prewrite-rejected__n1' -Project fixture_project `
+      -Mode contract_test -Software @('contract test') | Out-Null
+    throw 'Expected governed pre-write lifecycle rejection did not occur.'
+  } catch {
+    if ($_.Exception.Message -notmatch 'require retention and capacity-ledger lifecycle') { throw }
+  }
+  if(Test-Path -LiteralPath $prewriteRun){throw 'Governed pre-write rejection created an unmanaged run range.'}
+  New-Item -ItemType Directory -Path $governedProjectRoot -Force|Out-Null
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -c "from pathlib import Path; from common.contracts import capacity_ledger; import sys; capacity_ledger.initialize_capacity_ledger(Path(sys.argv[1]), objects=[])" $governedRoot
+    if($LASTEXITCODE-ne0){throw 'Governed pre-write ledger fixture initialization failed.'}
+  } | Out-Null
+  $governedPackage=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $governedProjectRoot `
+    -RunId '20260723_165958__test__cross__prewrite-registered__n1' -Project fixture_project `
+    -Mode contract_test -Software @('contract test') -RetentionContractEnabled -RetentionClass compact `
+    -CapacityLedgerLifecycleEnabled
+  $governedLedger=Get-Content -LiteralPath (Join-Path $governedRoot 'common\capacity_ledger.json') -Raw|ConvertFrom-Json
+  $governedEntry=@($governedLedger.objects|Where-Object {$_.path -eq 'projects/fixture_project/runs/20260723_165958__test__cross__prewrite-registered__n1'})
+  Assert-Equal $governedEntry.Count 1 'Governed package must retain exactly one registered run range.'
+  Assert-Equal $governedEntry[0].status 'writing' 'Governed package range must remain writing after initialization.'
+  Assert-Equal $governedEntry[0].recovery_reason 'run_manifest_not_terminal' 'Initialization must replace the pre-write recovery reason.'
+
   $capacityRoot=Join-Path $testRoot 'capacity_artifacts'
   New-Item -ItemType Directory -Path $capacityRoot -Force|Out-Null
   New-Item -ItemType Directory -Path (Join-Path $capacityRoot 'projects') -Force|Out-Null
