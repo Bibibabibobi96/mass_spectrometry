@@ -56,20 +56,17 @@ if ([string]::IsNullOrWhiteSpace($CandidateRunRoot)) {
   throw 'Formal Validate requires -CandidateRunRoot.'
 }
 $candidateRoot = (Resolve-Path -LiteralPath $CandidateRunRoot).Path
-$runDir = Join-Path $artifactRoot "runs\$RunId"
-$inputDir = Join-Path $runDir 'inputs'
-$resultDir = Join-Path $runDir 'results'
-$logDir = Join-Path $runDir 'logs'
-if (Test-Path -LiteralPath $runDir) { throw "Formal vNext run already exists: $RunId" }
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
-if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
-New-Item -ItemType Directory -Path $runDir,$inputDir,$resultDir,$logDir | Out-Null
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 $runRecordComplete = $false
-Initialize-RunRecord -RunDir $runDir -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' `
-  -Mode 'formal_vnext_zero_change_validation' -ProjectRoot $projectRoot `
-  -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
-  -TerminalSummaryRole 'oa_tof_terminal_run_summary'
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+  -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'formal_vnext_zero_change_validation' `
+  -Software @('COMSOL 6.4','SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass qualification `
+  -RetentionReason 'Formal validation evidence requires retention.' -CapacityLedgerLifecycleEnabled
+$runDir = $package.artifact_run_dir
+$inputDir = $package.input_dir
+$resultDir = $package.result_dir
+$logDir = $package.log_dir
+$lifecycleConfig = Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8 | ConvertFrom-Json
 trap {
   if (-not $runRecordComplete) {
     Complete-FailedRun -Python $python -RepoRoot $repoRoot `
@@ -184,7 +181,9 @@ foreach ($entry in $simionInputs.GetEnumerator()) {
   if ($entry.Value -notin @($ion,$iob)) { $inputs[$entry.Key] = $entry.Value }
 }
 [ordered]@{
-  schema_version=1; run_id=$RunId; project='single_reflection_oa_tof_mass_analyzer'
+  schema_version=2; run_id=$RunId; project='single_reflection_oa_tof_mass_analyzer'
+  artifact_retention=$($lifecycleConfig.artifact_retention)
+  capacity_ledger_lifecycle=$($lifecycleConfig.capacity_ledger_lifecycle)
   mode='formal_vnext_zero_change_validation'; project_root=$projectRoot
   formal_gate_passed=$false; promotion_authorized=$false
   inputs=$inputs

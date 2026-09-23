@@ -29,9 +29,11 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
         )
         self.assertIn("Copy-VerifiedRunInput", runner)
         self.assertIn("Complete-FailedRun", runner)
+        self.assertIn("-RetentionClass qualification", runner)
+        self.assertIn("-CapacityLedgerLifecycleEnabled", runner)
         self.assertLess(
             runner.index("$runRecordComplete = $false"),
-            runner.index("Initialize-RunRecord"),
+            runner.index("New-RunPackage"),
         )
         self.assertIn("$candidateManifestSource --require-status success", runner)
         self.assertIn("$candidateDiffPath", runner)

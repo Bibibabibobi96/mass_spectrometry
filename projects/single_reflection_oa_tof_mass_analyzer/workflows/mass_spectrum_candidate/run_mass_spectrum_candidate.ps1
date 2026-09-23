@@ -24,14 +24,14 @@ Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $runDir = Join-Path $artifactRoot "runs\$RunId"
-$inputDir = Join-Path $runDir 'inputs'
-$resultDir = Join-Path $runDir 'results'
-$logDir = Join-Path $runDir 'logs'
 $resumeExisting = $ResumeAfterComsol -or $ReanalyzeOnly
 if ($ResumeAfterComsol -and $ReanalyzeOnly) {
   throw 'ResumeAfterComsol and ReanalyzeOnly are mutually exclusive.'
 }
 if ($resumeExisting) {
+  $inputDir = Join-Path $runDir 'inputs'
+  $resultDir = Join-Path $runDir 'results'
+  $logDir = Join-Path $runDir 'logs'
   if (-not (Test-Path -LiteralPath $runDir -PathType Container) -or
       -not (Test-Path -LiteralPath $resultDir -PathType Container)) {
     throw "Resume requires the existing run and result directories: $RunId"
@@ -41,24 +41,34 @@ if ($resumeExisting) {
   if (-not (Test-Path -LiteralPath $inputDir -PathType Container)) {
     throw "Resume requires the existing frozen input directory: $inputDir"
   }
+  $existingLifecycle = Get-Content -LiteralPath (Join-Path $runDir 'run_config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($null -eq $existingLifecycle.artifact_retention -or
+      $null -eq $existingLifecycle.capacity_ledger_lifecycle -or
+      -not [bool]$existingLifecycle.capacity_ledger_lifecycle.enabled) {
+    throw 'Resume requires an existing governed retention and capacity-ledger lifecycle.'
+  }
 } else {
   if ((Test-Path -LiteralPath $runDir) -or (Test-Path -LiteralPath $resultDir)) {
     throw "Candidate mass-spectrum run already exists: $RunId"
   }
-  New-Item -ItemType Directory -Path $runDir,$inputDir,$resultDir,$logDir | Out-Null
-  $ionDir = New-Item -ItemType Directory -Path (Join-Path $runDir 'ions')
-  $comsolDir = New-Item -ItemType Directory -Path (Join-Path $runDir 'comsol')
+  . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+  $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+    -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'mass_spectrum_candidate' `
+    -Software @('COMSOL 6.4','SIMION 2020','Python 3.11') -RetentionContractEnabled `
+    -RetentionClass solver_review -RetentionReason 'Candidate mass-spectrum solver evidence requires review.' `
+    -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('ions','comsol')
+  $runDir = $package.artifact_run_dir
+  $inputDir = $package.input_dir
+  $resultDir = $package.result_dir
+  $logDir = $package.log_dir
+  $ionDir = Get-Item -LiteralPath (Join-Path $runDir 'ions')
+  $comsolDir = Get-Item -LiteralPath (Join-Path $runDir 'comsol')
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+$lifecycleConfig = Get-Content -LiteralPath (Join-Path $runDir 'run_config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $executionAlias = $null
 $runtimeAlias = $null
 $runtimeRoot = $null
-if (-not $resumeExisting) {
-  Initialize-RunRecord -RunDir $runDir -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' `
-    -Mode 'mass_spectrum_candidate' -ProjectRoot $projectRoot `
-    -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
-    -TerminalSummaryRole 'oa_tof_terminal_run_summary'
-}
 $runRecordComplete = $false
 trap {
   if ($null -ne $runtimeAlias) {
@@ -414,7 +424,9 @@ $runInputs = [ordered]@{
   formal_simion_runtime_receipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
 }
 $runConfig = [ordered]@{
-  schema_version = 1
+  schema_version = 2
+  artifact_retention = $lifecycleConfig.artifact_retention
+  capacity_ledger_lifecycle = $lifecycleConfig.capacity_ledger_lifecycle
   role = 'oa_tof_mass_spectrum_run_config'
   run_id = $RunId
   project = 'single_reflection_oa_tof_mass_analyzer'

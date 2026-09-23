@@ -57,19 +57,24 @@ if ($ValidateConfigOnly) {
 }
 if (-not $OutputDir) {
   $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-  $OutputDir = Join-Path $artifactRoot "runs\${stamp}__test__simion__field-idealization__n${N}"
+  $runId = "${stamp}__test__simion__field-idealization__n${N}"
+} else {
+  $runId = Split-Path -Leaf ([IO.Path]::GetFullPath($OutputDir))
 }
-New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run (Split-Path -Leaf $OutputDir)
-if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $(Split-Path -Leaf $OutputDir)" }
-$runId = Split-Path -Leaf $OutputDir
+& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $runId
+if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $runId" }
+$expectedOutputDir = [IO.Path]::GetFullPath((Join-Path $artifactRoot "runs\$runId"))
+if ($OutputDir -and [IO.Path]::GetFullPath($OutputDir) -cne $expectedOutputDir) {
+  throw 'OutputDir must be the canonical artifacts/runs/run_id directory.'
+}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-Initialize-RunRecord -RunDir $OutputDir -RunId $runId -Project 'single_reflection_oa_tof_mass_analyzer' `
-  -Mode 'simion_field_idealization_sweep' -ProjectRoot $projectRoot `
-  -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
-  -TerminalSummaryRole 'oa_tof_terminal_run_summary'
 $runRecordComplete = $false
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+  -RunId $runId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'simion_field_idealization_sweep' `
+  -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
+  -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('runtime_package')
+$OutputDir = $package.artifact_run_dir
+$lifecycleConfig = Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8 | ConvertFrom-Json
 trap {
   if (-not $runRecordComplete) {
     Write-TerminalRunRecord -RunDir $OutputDir -Status failed `
@@ -127,7 +132,9 @@ if (-not (Test-Path -LiteralPath $ionFile)) { throw "ION file is missing: $ionFi
 Assert-DiagnosticPackage $runtimeDir
 
 $runConfig = [ordered]@{
-  schema_version=1; run_id=(Split-Path -Leaf $OutputDir); project='single_reflection_oa_tof_mass_analyzer'
+  schema_version=2; run_id=(Split-Path -Leaf $OutputDir); project='single_reflection_oa_tof_mass_analyzer'
+  artifact_retention=$($lifecycleConfig.artifact_retention)
+  capacity_ledger_lifecycle=$($lifecycleConfig.capacity_ledger_lifecycle)
   mode='simion_field_idealization_feasibility'; purpose='simion_field_idealization_feasibility'
   status='configured'; formal_gate_passed=$false; particle_count=$N; seed=$Seed
   inputs=[ordered]@{

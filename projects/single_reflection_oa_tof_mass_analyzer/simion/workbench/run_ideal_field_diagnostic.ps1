@@ -21,26 +21,30 @@ $artifactRoot = Join-Path $projectRoot 'artifacts\projects\single_reflection_oa_
 $formalDir = Join-Path $artifactRoot 'formal\simion'
 $componentRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer'
 . (Join-Path $componentRoot 'oatof_lifecycle_preflight.ps1')
-if (-not $OutputDir) {
-  if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__test__simion__ideal-field-matrix__n${N}" }
-  $OutputDir = Join-Path $artifactRoot "runs\$RunId"
+if (-not $RunId) {
+  if ($OutputDir) { $RunId = Split-Path -Leaf ([IO.Path]::GetFullPath($OutputDir)) }
+  else { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__test__simion__ideal-field-matrix__n${N}" }
 }
-if (-not $RunId) { $RunId = Split-Path -Leaf $OutputDir }
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
-$OutputDir = [IO.Path]::GetFullPath($OutputDir)
-$artifactResultDir = Join-Path $OutputDir 'results'
-$artifactLogDir = Join-Path $OutputDir 'logs'
-$artifactSimionDir = Join-Path $OutputDir 'simion'
-$inputDir = Join-Path $OutputDir 'inputs'
-New-Item -ItemType Directory -Force -Path $OutputDir,$inputDir,$artifactResultDir,$artifactLogDir,$artifactSimionDir | Out-Null
+$expectedOutputDir = [IO.Path]::GetFullPath((Join-Path $artifactRoot "runs\$RunId"))
+if ($OutputDir -and [IO.Path]::GetFullPath($OutputDir) -cne $expectedOutputDir) {
+  throw 'OutputDir must be the canonical artifacts/runs/RunId directory.'
+}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-Initialize-RunRecord -RunDir $OutputDir -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' `
-  -Mode 'simion_ideal_field_matrix' -ProjectRoot (Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer') `
-  -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
-  -TerminalSummaryRole 'oa_tof_terminal_run_summary'
 $runRecordComplete = $false
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+  -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'simion_ideal_field_matrix' `
+  -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review `
+  -RetentionReason 'Public ideal-field diagnostic workbench evidence requires review.' `
+  -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion')
+$OutputDir = $package.artifact_run_dir
+$inputDir = $package.input_dir
+$artifactResultDir = $package.result_dir
+$artifactLogDir = $package.log_dir
+$artifactSimionDir = Join-Path $OutputDir 'simion'
+$lifecycleConfig = Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8 | ConvertFrom-Json
 $executionAlias = $null
 $runtimeRoot = $null
 $runtimeAlias = $null
@@ -174,7 +178,7 @@ try {
 $summaryCsv = Join-Path $resultDir 'ideal_field_matrix_summary.csv'
 $summaries | Export-Csv -LiteralPath $summaryCsv -NoTypeInformation -Encoding UTF8
 $runConfig = Join-Path $OutputDir 'run_config.json'
-[ordered]@{schema_version=1;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='simion_ideal_field_matrix';project_root=(Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer');inputs=[ordered]@{formal_iob=$formalIob;formal_simion_runtime_receipt=$runtimeReceipt};formal_gate_passed=$false;particles=$N;seed=$Seed} |
+[ordered]@{schema_version=2;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='simion_ideal_field_matrix';project_root=(Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer');artifact_retention=$($lifecycleConfig.artifact_retention);capacity_ledger_lifecycle=$($lifecycleConfig.capacity_ledger_lifecycle);inputs=[ordered]@{formal_iob=$formalIob;formal_simion_runtime_receipt=$runtimeReceipt};formal_gate_passed=$false;particles=$N;seed=$Seed} |
   ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 $summaryPath = Join-Path $OutputDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_ideal_field_matrix_summary';status='success';cases=$summaries.Count;results='results/ideal_field_matrix_summary.csv'} |

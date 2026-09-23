@@ -26,24 +26,21 @@ $vectorAnalysis = Join-Path $projectRoot 'analysis\compare_vector_field_samples.
 
 . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
-if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 
-$runDir = Join-Path $artifactRoot "runs\$RunId"
-if (Test-Path -LiteralPath $runDir) { throw "Run already exists: $runDir" }
-$inputDir = Join-Path $runDir 'inputs'
-$resultDir = Join-Path $runDir 'results'
-$logDir = Join-Path $runDir 'logs'
-New-Item -ItemType Directory -Path $runDir,$inputDir,$resultDir,$logDir | Out-Null
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+$runRecordComplete = $false
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+  -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'formal_cross_solver_diagnostics' `
+  -Software @('COMSOL 6.4','SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review `
+  -RetentionReason 'Formal diagnostic solver evidence requires review.' -CapacityLedgerLifecycleEnabled
+$runDir = $package.artifact_run_dir
+$inputDir = $package.input_dir
+$resultDir = $package.result_dir
+$logDir = $package.log_dir
 $executionAlias = $null
 $runtimeAlias = $null
 $runtimeRoot = $null
-Initialize-RunRecord -RunDir $runDir -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' `
-  -Mode 'formal_cross_solver_diagnostics' -ProjectRoot $projectRoot `
-  -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
-  -TerminalSummaryRole 'oa_tof_terminal_run_summary'
-$runRecordComplete = $false
+$lifecycleConfig = Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8 | ConvertFrom-Json
 trap {
   if ($null -ne $runtimeAlias) {
     try { Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot }
@@ -274,7 +271,9 @@ $summary = Join-Path $runDir 'summary.json'
 
 $runConfig = Join-Path $runDir 'run_config.json'
 [ordered]@{
-  schema_version=1;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer'
+  schema_version=2;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer'
+  artifact_retention=$($lifecycleConfig.artifact_retention)
+  capacity_ledger_lifecycle=$($lifecycleConfig.capacity_ledger_lifecycle)
   mode='formal_cross_solver_diagnostics';project_root=$projectRoot
   inputs=[ordered]@{
     formal_validation=$formalValidationPath;resolved_geometry=$resolvedGeometryPath

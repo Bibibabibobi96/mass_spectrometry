@@ -18,21 +18,16 @@ $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__test__comsol__particle-count__n$ParticleCount"
 }
-& $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
-if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
-$caseDir = Join-Path $artifactRoot "runs\$RunId"
-$resultDir = Join-Path $caseDir 'results'
-$logDir = Join-Path $caseDir 'logs'
-if (Test-Path -LiteralPath $caseDir) {
-  throw "Extreme-N case already exists: $caseDir"
-}
-New-Item -ItemType Directory -Path $caseDir,$resultDir,$logDir -Force | Out-Null
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-Initialize-RunRecord -RunDir $caseDir -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' `
-  -Mode 'comsol_extreme_particle_count_threshold' -ProjectRoot $projectRoot `
-  -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
-  -TerminalSummaryRole 'oa_tof_terminal_run_summary'
 $runRecordComplete = $false
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+  -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'comsol_extreme_particle_count_threshold' `
+  -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -RetentionContractEnabled `
+  -RetentionClass compact -CapacityLedgerLifecycleEnabled
+$caseDir = $package.artifact_run_dir
+$resultDir = $package.result_dir
+$logDir = $package.log_dir
+$lifecycleConfig = Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8 | ConvertFrom-Json
 trap {
   if (-not $runRecordComplete) {
     Write-TerminalRunRecord -RunDir $caseDir -Status failed `
@@ -171,7 +166,9 @@ $summary | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $summaryPath -Enco
 $runConfigPath = Join-Path $caseDir 'run_config.json'
 $manifestPath = Join-Path $caseDir 'run_manifest.json'
 [ordered]@{
-  schema_version = 1
+  schema_version = 2
+  artifact_retention = $lifecycleConfig.artifact_retention
+  capacity_ledger_lifecycle = $lifecycleConfig.capacity_ledger_lifecycle
   role = 'oa_tof_comsol_extreme_particle_count_run_config'
   run_id = $RunId
   project = 'single_reflection_oa_tof_mass_analyzer'
