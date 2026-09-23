@@ -87,7 +87,7 @@ repeller 依次位于更大的 `+z`；OA profile 派生其 y 站位、焦距、�
 `build_native_corridor_iob.lua` 只组装已封存的四个角色，在保存/重载时验证角色、位置、网格和优先级。
 OA accelerator 从 provider receipt 读取，MR 没有 accelerator GEM、PA family、build staging 或缓存路径。
 
-#### Single full-flight corridor (current migration authority)
+### Single full-flight corridor (current migration authority)
 
 The detached bank runner `run_native_corridor_response_bank.ps1` can continue
 an already-started bank with `-TransactionCacheKey <key>`. It retains that
