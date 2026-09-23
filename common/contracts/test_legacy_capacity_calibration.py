@@ -273,6 +273,30 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                 legacy_owner_disposition.activate_owner_dispositions(root)["activated_count"], 0,
             )
 
+    def test_owner_disposition_consolidates_complete_historical_writing_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "runs" / "abandoned"
+            target.mkdir(parents=True)
+            _write_owner_disposition(root, target)
+            files = [
+                item for item in target.rglob("*") if item.is_file()
+            ]
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": item.relative_to(root).as_posix(),
+                "class": "rebuildable_payload", "bytes": item.stat().st_size,
+                "status": "writing", "pin": False, "owner": "instrument",
+                "recovery_reason": "run_manifest_not_terminal",
+                "review_deadline": "2026-10-22",
+            } for item in files], external_scopes=[])
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual(outcome["activated_count"], 1)
+            objects = capacity_ledger.load_capacity_ledger(root)["objects"]
+            self.assertEqual(len(objects), 1)
+            self.assertEqual(objects[0]["path"], target.relative_to(root).as_posix())
+            self.assertEqual(objects[0]["status"], "ready")
+            self.assertIn("disposition", objects[0])
+
     def test_completed_owner_disposition_document_is_archived_into_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"

@@ -67,13 +67,20 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
         document = json.loads(document_path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("owner disposition document is unreadable") from exc
-    if not isinstance(document, dict) or set(document) != {
+    version = document.get("schema_version") if isinstance(document, dict) else None
+    expected_fields = {
         "schema_version", "role", "status", "owner", "target_path",
         "authority_evidence", "disposition",
-    }:
+    }
+    if version == 3:
+        expected_fields.add("decision")
+    if not isinstance(document, dict) or set(document) != expected_fields:
         raise ValueError("owner disposition document schema differs")
-    if document.get("schema_version") != 2 or document.get("role") != ROLE or document.get("status") != "retire_approved":
+    if version not in {2, 3} or document.get("role") != ROLE or document.get("status") != "retire_approved":
         raise ValueError("owner disposition document role or status differs")
+    decision = document.get("decision")
+    if version == 3 and decision != "explicit_user_authorized_abandonment":
+        raise ValueError("owner disposition decision differs")
     owner = document.get("owner")
     if not isinstance(owner, str) or not owner.strip():
         raise ValueError("owner disposition owner is invalid")
@@ -113,12 +120,15 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
         records.append({"path": relative, "bytes": record["bytes"]})
     if evidence_path not in seen or manifest_path != evidence_path:
         raise ValueError("owner disposition evidence is not bound to inventory")
-    expected_id = hashlib.sha256(_canonical({
+    identity_seed = {
         "owner": owner.strip(), "target_path": target_relative,
         "authority_evidence": {"path": evidence_path},
         "generation": disposition["generation"].upper(),
         "manifest_path": manifest_path, "files": records,
-    }).encode("utf-8")).hexdigest().upper()
+    }
+    if version == 3:
+        identity_seed["decision"] = decision
+    expected_id = hashlib.sha256(_canonical(identity_seed).encode("utf-8")).hexdigest().upper()
     if disposition["id"].upper() != expected_id or document_path.name != f"{expected_id}.json":
         raise ValueError("owner disposition id or filename differs")
     actual: dict[str, int] = {}
@@ -134,18 +144,85 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
     return {
         "path": target_relative, "class": "rebuildable_payload", "bytes": sum(item["bytes"] for item in records),
         "status": "ready", "pin": False, "owner_hint": owner.strip(),
+        "explicit_user_abandonment": version == 3,
         "disposition": {"id": expected_id, "generation": disposition["generation"].upper(),
                         "manifest_path": manifest_path, "files": records},
     }
 
 
-def activate_owner_dispositions(root: Path) -> dict[str, Any]:
-    """Bind owner-approved legacy PA ranges into the current ledger.
+def _activate_candidate(
+    root: Path, ledger: dict[str, Any], candidate: dict[str, Any],
+    *, approved_paths: set[str],
+) -> dict[str, Any] | None:
+    """Bind one sealed whole-range decision without inferring abandonment.
 
-    This is the narrow bridge for the historical case where a valid PA family
-    predates its owner transaction.  It never discovers candidates, changes a
-    transaction-bound family, or removes bytes.  Maintenance calls it before
-    planning so owner intent remains the sole admission route to deletion.
+    Legacy calibration recorded some ranges file-by-file.  An owner may later
+    seal the *whole* unchanged range for retirement.  Consolidating those
+    rows is administrative only: the exact disposition still drives removal.
+    """
+
+    target, relative = capacity_ledger.capacity_object_path(root, candidate["path"])
+    prefix = relative + "/"
+    entries = [
+        item for item in ledger["objects"]
+        if item.get("path") == relative or item.get("path", "").startswith(prefix)
+    ]
+    expected = {
+        "path": relative, "class": "rebuildable_payload",
+        "bytes": candidate["bytes"], "status": "ready", "pin": False,
+        "owner": candidate["owner_hint"], "disposition": candidate["disposition"],
+    }
+    if len(entries) == 1 and entries[0] == expected:
+        return None
+    # The original PA-only bridge remains strict.  Generic ranges may be
+    # represented by one writing directory or by its complete writing-file
+    # inventory, but never by a partial, pinned, or live-consumed range.
+    if (
+        len(entries) == 1
+        and entries[0].get("class") == "published_cache"
+        and entries[0].get("status") == "writing"
+        and entries[0].get("recovery_reason") == "legacy_pa_cache_missing_owner_transaction"
+        and entries[0].get("owner") == candidate["owner_hint"]
+        and entries[0].get("identity", "").upper() == candidate["disposition"]["generation"]
+        and entries[0].get("bytes") == candidate["bytes"]
+    ):
+        capacity_ledger._assert_unleased(root, target)
+    else:
+        if not entries or any(
+            item.get("class") != "rebuildable_payload"
+            or item.get("status") != "writing"
+            or item.get("pin") is not False
+            or item.get("owner") != candidate["owner_hint"]
+            or item.get("disposition")
+            for item in entries
+        ):
+            raise ValueError("owner disposition conflicts with the current managed writing range")
+        active_paths = {item["path"] for item in entries}
+        recorded_bytes = sum(int(item["bytes"]) for item in entries)
+        if recorded_bytes != candidate["bytes"] and not candidate["explicit_user_abandonment"]:
+            raise ValueError("owner disposition bytes differ from managed writing range")
+        for item in entries:
+            for consumer in item.get("consumers", []):
+                if consumer not in active_paths and not any(
+                    consumer == approved or consumer.startswith(approved + "/")
+                    for approved in approved_paths
+                ):
+                    raise ValueError("owner disposition has an external resident consumer")
+        capacity_ledger._assert_unleased(root, target)
+    retired_paths = {item["path"] for item in entries}
+    ledger["objects"] = [
+        item for item in ledger["objects"] if item.get("path") not in retired_paths
+    ] + [expected]
+    if 'recorded_bytes' in locals() and recorded_bytes != candidate["bytes"]:
+        ledger["resident_bytes"] += candidate["bytes"] - recorded_bytes
+    return {"path": relative, "bytes": candidate["bytes"]}
+
+
+def activate_owner_dispositions(root: Path) -> dict[str, Any]:
+    """Bind sealed owner decisions into the existing retirement path.
+
+    It never discovers candidates or infers owner authority.  Maintenance
+    consumes an exact owner-provided disposition before it plans deletion.
     """
 
     root = root.resolve(strict=False)
@@ -211,29 +288,13 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
             return {"activated_count": 0, "activated_bytes": 0,
                     "archived_document_count": archived_count}
         activated: list[dict[str, Any]] = []
+        approved_paths = {candidate["path"] for _, candidate in approved}
         for _, candidate in approved:
-            target, relative = capacity_ledger.capacity_object_path(root, candidate["path"])
-            entry = next((item for item in ledger["objects"] if item.get("path") == relative), None)
-            expected = {
-                "path": relative, "class": "rebuildable_payload",
-                "bytes": candidate["bytes"], "status": "ready", "pin": False,
-                "owner": candidate["owner_hint"], "disposition": candidate["disposition"],
-            }
-            if entry == expected:
-                continue
-            if (
-                entry is None or entry.get("class") != "published_cache"
-                or entry.get("status") != "writing"
-                or entry.get("recovery_reason") != "legacy_pa_cache_missing_owner_transaction"
-                or entry.get("owner") != candidate["owner_hint"]
-                or entry.get("identity", "").upper() != candidate["disposition"]["generation"]
-                or entry.get("bytes") != candidate["bytes"]
-            ):
-                raise ValueError("owner disposition conflicts with the current legacy PA ledger entry")
-            capacity_ledger._assert_unleased(root, target)
-            entry.clear()
-            entry.update(expected)
-            activated.append({"path": relative, "bytes": candidate["bytes"]})
+            activated_entry = _activate_candidate(
+                root, ledger, candidate, approved_paths=approved_paths,
+            )
+            if activated_entry is not None:
+                activated.append(activated_entry)
         if activated:
             write_json_atomic(capacity_ledger.resolve_ledger_path(root), ledger)
     return {

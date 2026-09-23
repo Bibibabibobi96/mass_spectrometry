@@ -584,8 +584,19 @@ def _maintenance_plan(
         measured - max(0, required_free - free_bytes),
     )
     projected = measured
-    planned: list[dict[str, Any]] = []
+    # A sealed owner abandonment is an explicit retirement decision, not a
+    # speculative capacity eviction.  Consume it even when the current water
+    # mark already passes, so an approved historical payload cannot remain a
+    # permanent resident merely because the disk happens to be spacious.
+    planned: list[dict[str, Any]] = [
+        candidate for candidate in candidates
+        if candidate["operation"] == "retire_approved_disposition"
+    ]
+    planned_paths = {candidate["path"] for candidate in planned}
+    projected -= sum(candidate["bytes"] for candidate in planned)
     for candidate in candidates:
+        if candidate["path"] in planned_paths:
+            continue
         if projected <= limit and not candidate["must_resume"]:
             break
         planned.append(candidate)
