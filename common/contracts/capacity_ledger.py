@@ -816,6 +816,82 @@ def approve_published_cache_retirement(
         return dict(entry)
 
 
+def _assert_abandoned_pa_transaction_allowed(
+    root: Path, target: Path, relative: str, owner: str, cache_key: str,
+    ledger: dict[str, Any], *, allow_transaction_container: bool = False,
+) -> dict[str, Any]:
+    by_path = {item["path"]: item for item in ledger["objects"]}
+    entry = by_path.get(relative)
+    is_transaction_container = False
+    if entry is None and allow_transaction_container:
+        container = "common/simion/pa_family_cache/.transactions"
+        candidate = by_path.get(container)
+        if (relative.startswith(container + "/") and candidate is not None
+                and candidate.get("owner") == PA_CACHE_MANAGER):
+            entry = candidate
+            is_transaction_container = True
+    if (entry is None or entry.get("pin", False) or "pin_reason" in entry
+            or not ((entry.get("status") == "writing"
+                     and entry.get("class") == "rebuildable_payload"
+                     and (entry.get("owner") == owner or is_transaction_container))
+                    or (entry.get("status") == "ready" and entry.get("class") == "light_evidence"))):
+        raise ValueError("abandonment requires the unpinned writing stage owner")
+    _assert_unleased(root, target)
+    leases = protection.load_capacity_protection_leases(root)
+    if cache_key.lower() in leases["protected_cache_keys"]:
+        raise ValueError("abandonment cache key has an active protection lease")
+    for consumer in entry.get("consumers", []):
+        _assert_unleased(root, root / consumer)
+        other = by_path.get(consumer)
+        if other is not None and other["status"] != "retired":
+            raise ValueError("abandonment has a resident consumer")
+    for other in ledger["objects"]:
+        if other is entry or other["status"] == "retired":
+            continue
+        if protection.path_is_protected(target, {root / value for value in other.get("consumers", [])}):
+            raise ValueError("abandonment is referenced by another writing owner")
+    return entry
+
+
+def assert_abandoned_pa_transaction_allowed(
+    root: Path, *, path: Path, owner: str, cache_key: str,
+) -> dict[str, Any]:
+    """Check the existing PA-owner retirement protections without mutation."""
+    root = root.resolve()
+    target, relative = capacity_object_path(root, path)
+    with protection.capacity_decision_lock(root):
+        ledger = load_capacity_ledger(root)
+        if ledger is None:
+            raise ValueError("capacity ledger is missing or invalid")
+        return dict(_assert_abandoned_pa_transaction_allowed(
+            root, target, relative, owner, cache_key, ledger, allow_transaction_container=True,
+        ))
+
+
+def reconcile_pa_transaction_container_bytes(
+    root: Path, *, path: Path, owner: str, cache_key: str, resident_bytes: int,
+) -> dict[str, Any]:
+    """Reconcile a legacy transaction-container range from metadata-only bytes."""
+    if isinstance(resident_bytes, bool) or not isinstance(resident_bytes, int) or resident_bytes < 0:
+        raise ValueError("transaction container bytes must be nonnegative")
+    root = root.resolve()
+    target, relative = capacity_object_path(root, path)
+    with protection.capacity_decision_lock(root):
+        ledger = load_capacity_ledger(root)
+        if ledger is None:
+            raise ValueError("capacity ledger is missing or invalid")
+        entry = _assert_abandoned_pa_transaction_allowed(
+            root, target, relative, owner, cache_key, ledger, allow_transaction_container=True,
+        )
+        if entry["path"] == relative:
+            raise ValueError("exact transaction ranges are reconciled by their owner retirement")
+        old_bytes = int(entry["bytes"])
+        entry["bytes"] = resident_bytes
+        ledger["resident_bytes"] += resident_bytes - old_bytes
+        write_json_atomic(resolve_ledger_path(root), ledger)
+        return dict(entry)
+
+
 def reconcile_abandoned_pa_transaction(
     root: Path, *, path: Path, owner: str, cache_key: str,
     commit_owner_retirement: Callable[[], None],
@@ -831,27 +907,7 @@ def reconcile_abandoned_pa_transaction(
         ledger = load_capacity_ledger(root)
         if ledger is None:
             raise ValueError("capacity ledger is missing or invalid")
-        by_path = {item["path"]: item for item in ledger["objects"]}
-        entry = by_path.get(relative)
-        if (entry is None or entry.get("pin", False) or "pin_reason" in entry
-                or not ((entry.get("status") == "writing"
-                         and entry.get("class") == "rebuildable_payload" and entry.get("owner") == owner)
-                        or (entry.get("status") == "ready" and entry.get("class") == "light_evidence"))):
-            raise ValueError("abandonment requires the unpinned writing stage owner")
-        _assert_unleased(root, target)
-        leases = protection.load_capacity_protection_leases(root)
-        if cache_key.lower() in leases["protected_cache_keys"]:
-            raise ValueError("abandonment cache key has an active protection lease")
-        for consumer in entry.get("consumers", []):
-            _assert_unleased(root, root / consumer)
-            other = by_path.get(consumer)
-            if other is not None and other["status"] != "retired":
-                raise ValueError("abandonment has a resident consumer")
-        for other in ledger["objects"]:
-            if other is entry or other["status"] == "retired":
-                continue
-            if protection.path_is_protected(target, {root / value for value in other.get("consumers", [])}):
-                raise ValueError("abandonment is referenced by another writing owner")
+        entry = _assert_abandoned_pa_transaction_allowed(root, target, relative, owner, cache_key, ledger)
         commit_owner_retirement()
         retained_bytes = (target / "transaction.json").stat().st_size
         old_bytes = entry["bytes"]

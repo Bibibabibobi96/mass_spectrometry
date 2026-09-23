@@ -235,6 +235,60 @@ class PAFamilyCacheTest(unittest.TestCase):
                   "--abandon-empty-transaction", str(request_path)])
         self.assertEqual(json.loads(output.getvalue())["status"], "retired")
 
+    def test_cancel_unpublished_transaction_removes_only_staged_payload_and_replays(self):
+        artifacts, cache = self._artifact_cache()
+        first = advance_pa_family_cache_transaction(
+            cache, identity(), self.names, owner=self.artifact_owner,
+            producer_run_config=self.producer_run_config,
+        )
+        payload = first.build_directory / "field.pa0"
+        payload.write_bytes(b"unpublished-payload")
+        transaction_path = first.transaction_directory / "transaction.json"
+        document = json.loads(transaction_path.read_text())
+        request = {
+            "schema_version": 2, "cache_key": first.cache_key, "owner": document["owner"],
+            "transaction_sha256": pa_family_cache.file_sha256(transaction_path),
+            "inventory_sha256": document["inventory_sha256"],
+            "reason": "explicit_user_cancelled_unpublished_transaction",
+        }
+        result = advance_pa_family_cache_transaction(
+            cache, identity(), self.names, cancel_unpublished_transaction=request,
+        )
+        self.assertEqual(result.status, "retired")
+        self.assertFalse(payload.exists())
+        retained = json.loads(transaction_path.read_text())
+        self.assertEqual(retained["abandonment"]["producer_evidence"], "missing")
+        self.assertEqual(retained["abandonment"]["physical_bytes_removed"], len(b"unpublished-payload"))
+        self.assertEqual(retained["abandonment"]["status"], "complete")
+        self.assertEqual(self._ledger_entry(artifacts, first.cache_key)["class"], "light_evidence")
+        before = transaction_path.read_bytes()
+        advance_pa_family_cache_transaction(cache, identity(), self.names, cancel_unpublished_transaction=request)
+        self.assertEqual(before, transaction_path.read_bytes())
+
+    def test_cancel_unpublished_transaction_rejects_protected_or_unapproved_content(self):
+        artifacts, cache = self._artifact_cache()
+        first = advance_pa_family_cache_transaction(
+            cache, identity(), self.names, owner=self.artifact_owner,
+            producer_run_config=self.producer_run_config,
+        )
+        payload = first.build_directory / "field.pa0"
+        payload.write_bytes(b"unpublished-payload")
+        transaction_path = first.transaction_directory / "transaction.json"
+        document = json.loads(transaction_path.read_text())
+        request = {
+            "schema_version": 2, "cache_key": first.cache_key, "owner": document["owner"],
+            "transaction_sha256": pa_family_cache.file_sha256(transaction_path),
+            "inventory_sha256": document["inventory_sha256"],
+            "reason": "explicit_user_cancelled_unpublished_transaction",
+        }
+        capacity_protection.create_capacity_protection_lease(
+            artifacts, lease_id="cancel-protected", owner="fixture", ttl_seconds=600,
+            protected_cache_keys=[first.cache_key],
+        )
+        with self.assertRaisesRegex(ValueError, "active capacity protection lease"):
+            advance_pa_family_cache_transaction(cache, identity(), self.names, cancel_unpublished_transaction=request)
+        self.assertTrue(payload.exists())
+
     def test_response_receipt_seal_hashes_data_once_and_replays_without_data_reads(self):
         first, names, spec = self._response_receipt_fixture()
         with (patch.object(cache_generation, "file_sha256", wraps=cache_generation.file_sha256) as hashed,

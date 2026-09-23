@@ -5,11 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts import capacity_ledger
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.run_capacity_lifecycle import (
     assert_retention_complete,
     finalize_ready,
     register_writing,
+    resume_partial_retirements,
     resume_terminal_runs,
 )
 
@@ -201,6 +203,63 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(entry["class"], "light_evidence")
             self.assertEqual(entry["status"], "ready")
             self.assertIn("terminal manifest", entry["retention_reason"])
+
+    def test_partial_retirement_removes_only_authorized_heavy_file_and_replays(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run, _ = self.fixture(root, "mixed-historical")
+            heavy = run / "simion" / "field.pa0"
+            heavy.parent.mkdir()
+            heavy.write_bytes(b"rebuildable")
+            preserved = run / "summary.json"
+            initialize_capacity_ledger(root, objects=[])
+            capacity_ledger.record_capacity_object(
+                root, path=heavy, object_class="rebuildable_payload", bytes_count=heavy.stat().st_size,
+                status="writing", owner="p", recovery_reason="structured_nonterminal_run_reference",
+                review_deadline="2026-10-01", recovery_task="explicit_user_authorized_abandonment",
+            )
+            capacity_ledger.record_capacity_object(
+                root, path=preserved, object_class="light_evidence", bytes_count=preserved.stat().st_size,
+                status="writing", owner="p", recovery_reason="structured_nonterminal_run_reference",
+                review_deadline="2026-10-01",
+            )
+
+            result = resume_partial_retirements(root)
+            self.assertEqual(result, {"completed_count": 1, "removed_bytes": len(b"rebuildable"), "blocked_count": 0})
+            self.assertFalse(heavy.exists())
+            self.assertTrue(preserved.exists())
+            receipt = json.loads((run / "partial_retirement_actions.json").read_text(encoding="utf-8"))
+            self.assertEqual(receipt["status"], "complete")
+            self.assertEqual(receipt["preserved"], "all unlisted run files")
+            entry = load_capacity_ledger(root)["objects"][0]
+            self.assertEqual((entry["status"], entry["bytes"]), ("retired", len(b"rebuildable")))
+            self.assertEqual(resume_partial_retirements(root), {
+                "completed_count": 0, "removed_bytes": 0, "blocked_count": 0,
+            })
+
+    def test_partial_retirement_preserves_file_when_active_consumer_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run, _ = self.fixture(root, "consumer-protected")
+            heavy = run / "field.pa0"
+            heavy.write_bytes(b"protected")
+            consumer = root / "projects" / "p" / "runs" / "current"
+            consumer.mkdir(parents=True)
+            initialize_capacity_ledger(root, objects=[])
+            capacity_ledger.record_capacity_object(
+                root, path=heavy, object_class="rebuildable_payload", bytes_count=heavy.stat().st_size,
+                status="writing", owner="p", recovery_reason="structured_nonterminal_run_reference",
+                review_deadline="2026-10-01", recovery_task="explicit_user_authorized_abandonment",
+                consumers=[consumer],
+            )
+            capacity_ledger.record_capacity_object(
+                root, path=consumer, object_class="rebuildable_payload", bytes_count=0,
+                status="ready", owner="p",
+            )
+            self.assertEqual(resume_partial_retirements(root), {
+                "completed_count": 0, "removed_bytes": 0, "blocked_count": 1,
+            })
+            self.assertTrue(heavy.exists())
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ from uuid import uuid4
 
 from common.contracts import capacity_ledger, capacity_protection
 from common.contracts.file_identity import canonical_json_sha256, file_sha256, file_sha256_unbuffered
+from common.contracts.recorded_file_removal import remove_recorded_files
 from common.simion.cache_generation import (
     _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES,
     _flush_writable_source,
@@ -2989,6 +2990,124 @@ def _abandon_empty_transaction(
             binding[0], path=transaction, owner=document["owner"], cache_key=key,
             commit_owner_retirement=commit,
         )
+    return _transaction_progress(document, transaction, transaction / "payload",
+                                     transaction / "build-scratch", action_required="complete")
+
+
+def _cancel_unpublished_transaction(
+    root: Path, identity: Mapping[str, Any], filenames: Sequence[str],
+    request: Mapping[str, Any], lock_timeout_s: float,
+) -> TransactionAdvance:
+    """Retire an explicitly cancelled, unpublished transaction without producer fiction.
+
+    The exact transaction identity authorizes the cancellation.  The owner
+    writes the metadata-only payload list before removal, records every
+    deletion in the transaction journal, and retains the original transaction
+    text, including any missing producer evidence.
+    """
+    fields = {"schema_version", "cache_key", "owner", "transaction_sha256", "inventory_sha256", "reason"}
+    key = canonical_pa_family_cache_key(identity)
+    if (not isinstance(request, Mapping) or set(request) != fields or request["schema_version"] != 2
+            or request["cache_key"] != key or not isinstance(request["owner"], str) or not request["owner"].strip()
+            or request["reason"] != "explicit_user_cancelled_unpublished_transaction"
+            or not isinstance(request["transaction_sha256"], str)
+            or SHA256.fullmatch(request["transaction_sha256"]) is None
+            or (request["inventory_sha256"] is not None and (
+                not isinstance(request["inventory_sha256"], str)
+                or SHA256.fullmatch(request["inventory_sha256"]) is None))):
+        raise PAFamilyCacheError("unpublished transaction cancellation request differs")
+    transaction = root / TRANSACTION_DIRECTORY / key
+    transaction_path = transaction / TRANSACTION_NAME
+    binding = _transaction_ledger_binding(root, key, transaction)
+    if binding is None:
+        raise PAFamilyCacheError("transaction cancellation requires a governed artifact ledger")
+    allowed_roots = {"payload", "build-scratch", "recovery-scratch"}
+    with _PAFamilyCacheKeyLock(root, key, lock_timeout_s):
+        document = _load_transaction(transaction_path, cache_key=key, identity=identity, filenames=filenames)
+        allowance = capacity_ledger.assert_abandoned_pa_transaction_allowed(
+            binding[0], path=transaction, owner=document["owner"], cache_key=key,
+        )
+        journal = document.get("abandonment")
+        if journal is None:
+            if (document["status"] not in {"building", "prepared"} or document["generation_sha256"] is not None
+                    or document["owner"] != request["owner"] or file_sha256(transaction_path) != request["transaction_sha256"]
+                    or document["inventory_sha256"] != request["inventory_sha256"]):
+                raise PAFamilyCacheError("transaction cancellation identity differs")
+            prior = json.loads(json.dumps(document))
+            records: list[dict[str, Any]] = []
+            for item in transaction.rglob("*"):
+                relative = item.relative_to(transaction)
+                if item.is_symlink() or getattr(item.lstat(), "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                    raise PAFamilyCacheError("transaction cancellation refuses links")
+                if item.is_file() and item != transaction_path:
+                    if not relative.parts or relative.parts[0] not in allowed_roots:
+                        raise PAFamilyCacheError("transaction cancellation found unapproved retained file")
+                    records.append({"path": relative.as_posix(), "bytes": item.stat().st_size})
+                elif item.is_dir() and relative.parts and relative.parts[0] not in allowed_roots:
+                    raise PAFamilyCacheError("transaction cancellation found unapproved retained directory")
+            journal = {
+                "request": dict(request), "prior_transaction": prior,
+                "prior_transaction_text": transaction_path.read_bytes().decode("utf-8"),
+                "producer_evidence": "missing", "status": "pending", "files": sorted(records, key=lambda item: item["path"]),
+                "physical_bytes_removed": 0,
+            }
+            document["abandonment"] = journal
+            _write_transaction(transaction_path, document)
+        else:
+            required = {"request", "prior_transaction", "prior_transaction_text", "producer_evidence", "status", "files", "physical_bytes_removed"}
+            if (not isinstance(journal, dict) or set(journal) != required or journal.get("request") != dict(request)
+                    or journal.get("producer_evidence") != "missing" or journal.get("status") not in {"pending", "complete"}
+                    or not isinstance(journal.get("files"), list) or not isinstance(journal.get("physical_bytes_removed"), int)):
+                raise PAFamilyCacheError("transaction cancellation replay evidence differs")
+            prior = journal["prior_transaction"]
+            original_text = journal["prior_transaction_text"]
+            if (hashlib.sha256(original_text.encode("utf-8")).hexdigest().upper() != request["transaction_sha256"]
+                    or json.loads(original_text.lstrip("\ufeff")) != prior):
+                raise PAFamilyCacheError("transaction cancellation original evidence differs")
+        for record in journal["files"]:
+            if not isinstance(record, dict) or set(record) != {"path", "bytes"} or not isinstance(record["bytes"], int):
+                raise PAFamilyCacheError("transaction cancellation file receipt differs")
+            path = transaction / record["path"]
+            if path.exists():
+                next(remove_recorded_files(transaction, [record], identities_verified=True))
+                journal["physical_bytes_removed"] += record["bytes"]
+                _write_transaction(transaction_path, document)
+        if document["status"] != "retired":
+            document["status"] = "retired"
+            document["retirement"] = {"id": canonical_json_sha256(request), "generation": None}
+            journal["status"] = "complete"
+            _write_transaction(transaction_path, document)
+        def commit() -> None:
+            if (root / key).exists():
+                raise PAFamilyCacheError("transaction cancellation refuses an existing publication root")
+            if any((transaction / record["path"]).exists() for record in journal["files"]):
+                raise PAFamilyCacheError("transaction cancellation payload remains")
+        _, transaction_relative = capacity_ledger.capacity_object_path(binding[0], transaction)
+        if allowance["path"] == transaction_relative:
+            capacity_ledger.reconcile_abandoned_pa_transaction(
+                binding[0], path=transaction, owner=document["owner"], cache_key=key,
+                commit_owner_retirement=commit,
+            )
+        else:
+            commit()
+            capacity_ledger.reconcile_pa_transaction_container_bytes(
+                binding[0], path=transaction, owner=document["owner"], cache_key=key,
+                resident_bytes=_key_root_bytes(transaction.parent),
+            )
+            transactions = [item for item in transaction.parent.iterdir() if item.is_dir() and not item.is_symlink()]
+            try:
+                all_closed = transactions and all(SHA256.fullmatch(item.name) is not None for item in transactions) and all(
+                    _load_transaction_by_key(item / TRANSACTION_NAME, item.name)["status"] in {"published", "retired"}
+                    for item in transactions
+                )
+            except PAFamilyCacheError:
+                all_closed = False
+            if all_closed:
+                capacity_ledger.record_capacity_object(
+                    binding[0], path=transaction.parent, object_class="light_evidence",
+                    bytes_count=_key_root_bytes(transaction.parent), status="ready",
+                    owner=capacity_ledger.PA_CACHE_MANAGER,
+                )
         return _transaction_progress(document, transaction, transaction / "payload",
                                      transaction / "build-scratch", action_required="complete")
 
@@ -3009,6 +3128,7 @@ def advance_pa_family_cache_transaction(
     retained_inventory_recovery: Mapping[str, Any] | None = None,
     publication_metadata_correction: Mapping[str, Any] | None = None,
     abandon_empty_transaction: Mapping[str, Any] | None = None,
+    cancel_unpublished_transaction: Mapping[str, Any] | None = None,
 ) -> TransactionAdvance:
     """Advance one deterministic build/verify/publish transaction idempotently."""
 
@@ -3018,6 +3138,13 @@ def advance_pa_family_cache_transaction(
             raise PAFamilyCacheError("empty transaction abandonment cannot accompany build or recovery")
         return _abandon_empty_transaction(
             Path(cache_root), identity, filenames, abandon_empty_transaction, lock_timeout_s
+        )
+    if cancel_unpublished_transaction is not None:
+        if any(value is not None for value in (verification_evidence, member_recovery, response_receipt,
+                                               retained_inventory_recovery, publication_metadata_correction)):
+            raise PAFamilyCacheError("transaction cancellation cannot accompany build or recovery")
+        return _cancel_unpublished_transaction(
+            Path(cache_root), identity, filenames, cancel_unpublished_transaction, lock_timeout_s
         )
     if owner is not None and (
         not isinstance(owner, str) or not owner.strip() or len(owner.strip()) > 256
@@ -3822,6 +3949,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     parser.add_argument("--retained-inventory-recovery", type=Path)
     parser.add_argument("--publication-metadata-correction", type=Path)
     parser.add_argument("--abandon-empty-transaction", type=Path)
+    parser.add_argument("--cancel-unpublished-transaction", type=Path)
     parser.add_argument("--destination-directory", type=Path)
     parser.add_argument("--recovery-policy", choices=("xor", "none"), default="xor")
     parser.add_argument("--published-pin-reason")
@@ -3845,6 +3973,8 @@ def main(arguments: Sequence[str] | None = None) -> int:
         parser.error("publication metadata correction is accepted only by advance-transaction")
     if args.action != "advance-transaction" and args.abandon_empty_transaction is not None:
         parser.error("empty transaction abandonment is accepted only by advance-transaction")
+    if args.action != "advance-transaction" and args.cancel_unpublished_transaction is not None:
+        parser.error("unpublished transaction cancellation is accepted only by advance-transaction")
     if args.action != "materialize" and (
         args.capacity_lease_id is not None or args.capacity_lease_owner is not None
     ):
@@ -3921,6 +4051,10 @@ def main(arguments: Sequence[str] | None = None) -> int:
             abandon_empty_transaction=(
                 json.loads(args.abandon_empty_transaction.read_text(encoding="utf-8-sig"))
                 if args.abandon_empty_transaction is not None else None
+            ),
+            cancel_unpublished_transaction=(
+                json.loads(args.cancel_unpublished_transaction.read_text(encoding="utf-8-sig"))
+                if args.cancel_unpublished_transaction is not None else None
             ),
         )
         document = {
