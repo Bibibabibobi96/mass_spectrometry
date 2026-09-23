@@ -178,7 +178,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "prefix": "common/contracts/",
+          "regex": "^common/contracts/(?!test_verify_changed\\.py$)",
           "reason": "common_contracts_changed"
         }
       ],

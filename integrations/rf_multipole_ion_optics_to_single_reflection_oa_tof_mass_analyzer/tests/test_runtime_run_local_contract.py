@@ -526,7 +526,6 @@ Write-Output 'CONTINUATION_CAPACITY_PROTECTION=PASS'
         self.assertIn("CONTINUATION_CAPACITY_PROTECTION=PASS", completed.stdout)
 
     def test_cache_publication_updates_parent_scope_and_remaining_commitment(self) -> None:
-        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         artifacts = (INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1").read_text(
             encoding="utf-8"
         )

@@ -434,10 +434,7 @@ class ChangedGateContractTests(unittest.TestCase):
         routed = self.routed_stages("common/contracts/test_verify_changed.py")
         self.assertEqual(
             routed,
-            {
-                "common_contracts": "common_contracts_changed",
-                "gate_contract_tests": "changed_scope_contract_tests_changed",
-            },
+            {"gate_contract_tests": "changed_scope_contract_tests_changed"},
         )
 
     def test_multipole_tests_do_not_route_to_runtime_consumers(self) -> None:
