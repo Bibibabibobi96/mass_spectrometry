@@ -549,6 +549,17 @@ function New-RunPackage {
   if(-not$CapacityLedgerLifecycleEnabled-and-not[string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){
     throw 'CapacityLedgerArtifactRoot requires CapacityLedgerLifecycleEnabled.'
   }
+  # Shared artifacts are governed ranges.  Reject an incomplete lifecycle
+  # declaration before this helper creates the run directory or checkpoint.
+  $artifactParent=[IO.DirectoryInfo][IO.Path]::GetFullPath($ArtifactRoot)
+  $governedArtifactsRoot=$null
+  while($null-ne$artifactParent){
+    if($artifactParent.Name-eq'artifacts'){$governedArtifactsRoot=$artifactParent;break}
+    $artifactParent=$artifactParent.Parent
+  }
+  if($null-ne$governedArtifactsRoot-and(-not$RetentionContractEnabled-or-not$CapacityLedgerLifecycleEnabled)){
+    throw 'Runs beneath artifacts require retention and capacity-ledger lifecycle before package creation.'
+  }
   $python=[IO.Path]::GetFullPath($Python)
   if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Run Python environment is missing: $python"}
   $pythonVersion=(& $python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
