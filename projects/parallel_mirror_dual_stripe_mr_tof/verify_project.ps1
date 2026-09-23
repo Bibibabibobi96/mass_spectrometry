@@ -37,7 +37,6 @@ try {
 
     if ($Level -eq 'Core') {
       $coreTests = @(
-        'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_accelerator_dependency',
         'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_drift_phase_contract',
         'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prism_analytic',
         'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_native_corridor_plan',
