@@ -371,6 +371,16 @@ function Initialize-RunRecord {
     [Parameter(Mandatory)][string]$TerminalSummaryRole,
     [string[]]$Software=@()
   )
+  # New governed runs must reserve their complete range before any checkpoint
+  # file is written.  This legacy helper remains for non-governed fixtures and
+  # historical readers, but cannot create a new run below the artifacts root.
+  $runParent=[IO.DirectoryInfo][IO.Path]::GetFullPath($RunDir)
+  while($null-ne$runParent){
+    if($runParent.Name-eq'artifacts'){
+      throw 'Initialize-RunRecord cannot create a run beneath artifacts; use New-RunPackage with retention and capacity-ledger lifecycle.'
+    }
+    $runParent=$runParent.Parent
+  }
   $config=Join-Path $RunDir 'run_config.json'
   $summary=Join-Path $RunDir 'summary.json'
   Write-RunJson -Path $config -Depth 5 -Value ([ordered]@{

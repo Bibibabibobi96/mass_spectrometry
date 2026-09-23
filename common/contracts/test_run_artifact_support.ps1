@@ -91,6 +91,20 @@ try {
   Assert-Equal $governedEntry.Count 1 'Governed package must retain exactly one registered run range.'
   Assert-Equal $governedEntry[0].status 'writing' 'Governed package range must remain writing after initialization.'
   Assert-Equal $governedEntry[0].recovery_reason 'run_manifest_not_terminal' 'Initialization must replace the pre-write recovery reason.'
+  $legacyGovernedDir=Join-Path $governedProjectRoot 'runs\20260723_165957__test__cross__legacy-initialize-rejected__n1'
+  New-Item -ItemType Directory -Path $legacyGovernedDir -Force|Out-Null
+  try {
+    Initialize-RunRecord -RunDir $legacyGovernedDir `
+      -RunId (Split-Path -Leaf $legacyGovernedDir) -Project fixture_project -Mode contract_test `
+      -ProjectRoot $projectRoot -RepoRoot $repoRoot -Python $python `
+      -ProvisionalSummaryRole 'fixture_provisional_summary' -TerminalSummaryRole 'fixture_terminal_summary'
+    throw 'Expected direct governed Initialize-RunRecord rejection did not occur.'
+  } catch {
+    if ($_.Exception.Message -notmatch 'cannot create a run beneath artifacts') { throw }
+  }
+  if(Test-Path -LiteralPath (Join-Path $legacyGovernedDir 'run_config.json')){
+    throw 'Rejected governed Initialize-RunRecord wrote a config before lifecycle registration.'
+  }
 
   $capacityRoot=Join-Path $testRoot 'capacity_artifacts'
   New-Item -ItemType Directory -Path $capacityRoot -Force|Out-Null
