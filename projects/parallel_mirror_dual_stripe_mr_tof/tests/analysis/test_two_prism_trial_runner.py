@@ -59,6 +59,8 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
         self.assertIn("orthogonal_accelerator_mrtof_runtime_receipt", self.source)
         self.assertIn("published_read_only", self.source)
         self.assertIn("Provider receipt input identity differs from its declared record.", self.source)
+        self.assertIn("$acceleratorConsumerProjectionId='mrtof_accelerator_provider_receipt_v1'", self.source)
+        self.assertIn("--consumer-projection-id $acceleratorConsumerProjectionId --consumed-output $acceleratorProviderReceipt", self.source)
 
 if __name__ == "__main__":
     unittest.main()

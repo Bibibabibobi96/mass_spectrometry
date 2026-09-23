@@ -249,7 +249,9 @@ foreach($manifest in @($mirrorManifest,$stripeManifest)){
   & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifest --require-status success
   if($LASTEXITCODE-ne 0){throw "Upstream run manifest is not verified success: $manifest"}
 }
-& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $acceleratorManifest --require-status success --require-project orthogonal_accelerator --require-mode component_focus_workflow --consumed-output $acceleratorProviderReceipt
+$acceleratorConsumerProjectionId='mrtof_accelerator_provider_receipt_v1'
+& $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $acceleratorManifest --require-status success --require-project orthogonal_accelerator --require-mode component_focus_workflow `
+  --consumer-projection-id $acceleratorConsumerProjectionId --consumed-output $acceleratorProviderReceipt
 if($LASTEXITCODE-ne0){throw 'Provider accelerator workflow manifest is not verified success.'}
 $providerAccelerator=Get-Content -Raw -LiteralPath $acceleratorProviderReceipt|ConvertFrom-Json -Depth 40
 if([string]$providerAccelerator.role-ne'orthogonal_accelerator_mrtof_runtime_receipt'-or[string]$providerAccelerator.status-ne'published_read_only'){
