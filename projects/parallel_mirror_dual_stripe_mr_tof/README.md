@@ -41,5 +41,5 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 
 - [项目身份整合](docs/history/20260802__mrtof-project-identity-consolidation.md)
 - [CAD 审计上下文冻结](docs/history/20260911__cad-audit-context-freeze.md)
-
 - [项目状态与 SIMION 旧时间线快照](docs/history/20260911__project-and-simion-status-freeze.md)：保存整治前完整原文与工作区 SHA-256。
+- [Native runtime 与容量代码度量快照](docs/history/20260921_native_runtime_capacity_cloc.md)

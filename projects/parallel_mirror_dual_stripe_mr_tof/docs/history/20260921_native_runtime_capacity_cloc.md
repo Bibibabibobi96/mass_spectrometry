@@ -1,5 +1,7 @@
 # Native runtime and capacity code-metrics snapshot
 
+> DOC_STATUS: ARCHIVED_READ_ONLY
+
 This archived validation snapshot records CLOC 2.10 output from the repository's
 `common/report_cloc_delta.ps1` at the time shown below. It covers the complete
 baseline-to-WORKTREE delta, including pre-existing work; it is not the size of
