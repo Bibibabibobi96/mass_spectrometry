@@ -28,6 +28,25 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
                       "native_corridor_private_fast_adjust_family"):
             self.assertIn(token, self.source)
 
+    def test_retained_gui_workbench_is_run_local_and_lifecycle_managed(self):
+        for token in (
+            "[switch]$RetainGuiWorkbench",
+            "'solver_review'",
+            "Retained SIMION GUI workbench with private run-local IOB companions.",
+            "Join-Path $artifactSolverDir 'gui_workbench'",
+            "Join-Path $temporarySolverDir 'pa_inputs'",
+            "Retained GUI workbench requires a private native runtime family",
+            "PA payloads have already been bound through the runtime and published",
+            "pa_dependencies=$guiPaDependencies",
+        ):
+            self.assertIn(token, self.source)
+        self.assertIn(
+            "if($null-ne$iobInputCopyDir-and-not$RetainGuiWorkbench)", self.source
+        )
+        self.assertNotIn(
+            "Get-ChildItem -LiteralPath $temporarySolverDir -Recurse -File", self.source
+        )
+
     def test_bunch_batches_do_not_clone_the_native_pa_family(self):
         self.assertIn("A batch owns only its source and IOB", self.source)
         self.assertIn("shared_native_corridor_runtime__four_instances__no_refine", self.source)

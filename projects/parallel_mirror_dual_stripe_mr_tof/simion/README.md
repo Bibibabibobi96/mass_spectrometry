@@ -289,6 +289,11 @@ transaction 执行。加速器不属于此缓存：运行时只消费 OA provide
 GUI 审查包由 native system runtime bundle 生成，并绑定上述四个冻结输入；不再发布局域五区或
 三组件工作台。
 
+`run_two_prism_trial.ps1 -RetainGuiWorkbench` 以 `solver_review` 在本次受管 run 的
+`simion/gui_workbench/` 写入 IOB 与所有非 PA 伴随文件；IOB 的私有 PA 输入也留在该目录，
+避免绝对路径指向系统临时目录或上游 run。收据只复用已发布 runtime／provider 身份记录 PA，
+不会为 GUI 包递归枚举或重哈希 PA。GUI 关闭后由该 run 的 owner disposition 路由退休。
+
 单中心时间步三档对照由
 [single_center_timestep_convergence.py](../analysis/single_center_timestep_convergence.py) 及受管入口
 [run_single_center_timestep_convergence.ps1](../analysis/run_single_center_timestep_convergence.ps1) 完成。

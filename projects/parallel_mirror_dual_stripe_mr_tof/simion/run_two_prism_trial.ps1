@@ -23,6 +23,7 @@ param(
   [double]$AcceleratorSourceYOffsetMm=0.0,
   [pscustomobject]$CapacityWorkflowSession=$null,
   [pscustomobject]$NativeCorridorRuntimeSession=$null,
+  [switch]$RetainGuiWorkbench,
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe=''
@@ -307,8 +308,8 @@ if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmm
 . (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
 . (Join-Path $repoRoot 'common\simion\short_pa_path_support.ps1')
 . (Join-Path $PSScriptRoot 'native_corridor_runtime_support.ps1')
-$retentionClass='compact'
-$retentionReason=''
+$retentionClass=if($RetainGuiWorkbench){'solver_review'}else{'compact'}
+$retentionReason=if($RetainGuiWorkbench){'Retained SIMION GUI workbench with private run-local IOB companions.'}else{''}
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'finite_3d_two_prism_voltage_trial' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled -RetentionClass $retentionClass -RetentionReason $retentionReason `
@@ -333,7 +334,11 @@ $batchWaveResult=$null
 $fixedMirrorStripeAuthority=$null;$fixedMirrorStripeAuthorityLocal=$null
 $stripeOperatingProvenance=$null
 $nativeRuntimeReceiptPath=$null;$nativeBankFrozenInputs=@();$nativeRuntime=$null
+$guiWorkbenchDirectory=$null
 try{
+  if($RetainGuiWorkbench-and$null-ne$NativeCorridorRuntimeSession){
+    throw 'Retained GUI workbench requires a private native runtime family in its own governed run; shared runtime sessions are not portable GUI dependencies.'
+  }
   if($ownsCapacitySession){
     $failureStage='capacity_startup'
     $initialProtectedRuns=@($geometryRun,$mirrorRun,$stripeRun,$acceleratorRun,$nativeCorridorRun,$nativeBankGeneration)
@@ -470,7 +475,15 @@ try{
       throw 'Materialized trial Fly2 identity differs from the complete frozen bunch receipt.'
     }
   }
-  $temporarySolverDir=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_downstream_'+[guid]::NewGuid().ToString('N'))
+  # A retained Workbench stores absolute paths for its IOB companions.  Build
+  # it directly below the pre-registered solver_review run so GUI reload never
+  # depends on an ungoverned system-temp directory.
+  $temporarySolverDir=if($RetainGuiWorkbench){
+    Join-Path $artifactSolverDir 'gui_workbench'
+  }else{
+    Join-Path ([IO.Path]::GetTempPath()) ('mrtof_downstream_'+[guid]::NewGuid().ToString('N'))
+  }
+  if($RetainGuiWorkbench){$guiWorkbenchDirectory=$temporarySolverDir}
   New-Item -ItemType Directory -Path $temporarySolverDir|Out-Null
   $temporaryAnalyzer=$globalFallbackAnalyzer
   $temporaryIob=Join-Path $temporarySolverDir 'mrtof_three_component_candidate.iob'
@@ -494,7 +507,11 @@ try{
   # use verified disposable short-name copies; GUI-review runs retain private
   # run-local copies and never bind the upstream files into their IOB.
   $failureStage='project_iob_pa_inputs'
-  $iobInputCopyDir=Join-Path ([IO.Path]::GetTempPath()) ('simion_pa_links_'+[guid]::NewGuid().ToString('N'))
+  $iobInputCopyDir=if($RetainGuiWorkbench){
+    Join-Path $temporarySolverDir 'pa_inputs'
+  }else{
+    Join-Path ([IO.Path]::GetTempPath()) ('simion_pa_links_'+[guid]::NewGuid().ToString('N'))
+  }
   New-Item -ItemType Directory -Path $iobInputCopyDir|Out-Null
   $iobProjectionRoot=$iobInputCopyDir
   function Copy-IobPaInput {
@@ -715,7 +732,7 @@ try{
     -Budget (Get-HostResourceBudget -Role SIMION -Stage 'mrtof_postprocess') -RetainedMemoryBytes 0
   foreach($guard in $privateIobPaGuards){$guard.Dispose()}
   $privateIobPaGuards.Clear()
-  if($null-ne$iobInputCopyDir){Remove-ShortPaCopyDirectory -Path $iobInputCopyDir;$iobInputCopyDir=$null}
+  if($null-ne$iobInputCopyDir-and-not$RetainGuiWorkbench){Remove-ShortPaCopyDirectory -Path $iobInputCopyDir;$iobInputCopyDir=$null}
   $rawLog=Join-Path $logDir 'native_two_prism_flight.log';$observation=Join-Path $resultDir 'two_prism_trial_observation.json'
   $failureStage='analyze_trial'
   Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
@@ -758,13 +775,34 @@ try{
   if($RetainGuiWorkbench){
     $guiWorkbenchIob=$temporaryIob
     $guiWorkbenchReceipt=Join-Path $resultDir 'gui_workbench_receipt.json'
-    $guiWorkbenchOutputs=@(Get-ChildItem -LiteralPath $temporarySolverDir -File|Sort-Object Name|ForEach-Object{$_.FullName})
+    if([IO.Path]::GetFullPath($temporarySolverDir)-ne[IO.Path]::GetFullPath($guiWorkbenchDirectory)){
+      throw 'Retained GUI workbench escaped its registered solver_review directory.'
+    }
+    # PA payloads have already been bound through the runtime and published
+    # manifests.  Do not recursively enumerate or hash them again merely to
+    # retain a GUI package; the receipt carries those existing identities.
+    $guiWorkbenchOutputs=@(
+      $guiWorkbenchIob,
+      [IO.Path]::ChangeExtension($guiWorkbenchIob,'.lua'),
+      [IO.Path]::ChangeExtension($guiWorkbenchIob,'.fly2'),
+      $guiWorkbenchIob.Replace('.iob','.priority.lua'),
+      $guiWorkbenchIob.Replace('.iob','.operating_point.lua'),
+      $guiWorkbenchIob.Replace('.iob','.voltage_map.lua'),
+      $guiWorkbenchIob.Replace('.iob','.mirror_cycle_counter.lua'),
+      $guiWorkbenchIob.Replace('.iob','.source_states.lua')
+    )|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -Unique
     $guiFiles=@($guiWorkbenchOutputs|ForEach-Object{$item=Get-Item -LiteralPath $_;[ordered]@{name=$item.Name;path=$item.FullName;bytes=[int64]$item.Length;sha256=(Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash}})
+    $guiPaDependencies=@(
+      [ordered]@{role='global_fallback';path=$iobAnalyzerInput;bytes=[int64](Get-Item -LiteralPath $iobAnalyzerInput).Length;source=$globalFallbackRecord},
+      [ordered]@{role='accelerator';path=$iobAcceleratorInput;bytes=[int64](Get-Item -LiteralPath $iobAcceleratorInput).Length;source=$acceleratorExpected},
+      [ordered]@{role='detector';path=$iobDetectorInput;bytes=[int64](Get-Item -LiteralPath $iobDetectorInput).Length;source=$detectorRecord},
+      [ordered]@{role='native_corridor';directory=(Split-Path -Parent ([string]$nativeRuntime.controller_path));source_raw=$nativeRuntime.receipt.source_raw;source_responses=$nativeRuntime.receipt.source_responses}
+    )
     Write-RunJson -Path $guiWorkbenchReceipt -Depth 14 -Value ([ordered]@{
       schema_version=1;role='simion_gui_review_workbench';status='success';qualification=$summaryQualification;
-      iob_path=$guiWorkbenchIob;iob_sha256=(Get-FileHash -LiteralPath $guiWorkbenchIob -Algorithm SHA256).Hash;
+      directory=$guiWorkbenchDirectory;iob_path=$guiWorkbenchIob;iob_sha256=(Get-FileHash -LiteralPath $guiWorkbenchIob -Algorithm SHA256).Hash;
       global_operating_pa_path=$temporaryAnalyzer;global_operating_pa_sha256=$temporaryAnalyzerHash;
-      source_accelerator_pa=$sourceAccelerator;accelerator_binding='manifest_bound_standalone_operating_pa__field_gate_only';source_detector_pa=$sourceDetector;files=$guiFiles
+      source_accelerator_pa=$sourceAccelerator;accelerator_binding='manifest_bound_standalone_operating_pa__field_gate_only';source_detector_pa=$sourceDetector;files=$guiFiles;pa_dependencies=$guiPaDependencies
     })
     # The IOB stores the absolute paths passed to SIMION. Keeping this exact
     # directory in place is therefore part of the review artifact contract.
@@ -889,7 +927,7 @@ try{
   Remove-RunPackageExecutionAlias -Package $package
   foreach($guard in $privateIobPaGuards){$guard.Dispose()}
   $privateIobPaGuards.Clear()
-  if($null-ne$iobInputCopyDir){Remove-ShortPaCopyDirectory -Path $iobInputCopyDir}
+  if($null-ne$iobInputCopyDir-and-not$RetainGuiWorkbench){Remove-ShortPaCopyDirectory -Path $iobInputCopyDir}
   if($null-ne$basisLinkDir){Remove-ShortPaCopyDirectory -Path $basisLinkDir}
   foreach($path in @($batchPaCopyDirectories)){
     if(Test-Path -LiteralPath $path -PathType Container){
