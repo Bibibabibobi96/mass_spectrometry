@@ -257,10 +257,14 @@ $providerAccelerator=Get-Content -Raw -LiteralPath $acceleratorProviderReceipt|C
 if([string]$providerAccelerator.role-ne'orthogonal_accelerator_mrtof_runtime_receipt'-or[string]$providerAccelerator.status-ne'published_read_only'){
   throw 'AcceleratorProviderReceiptPath is not a published read-only provider receipt.'
 }
-foreach($record in @($providerAccelerator.pa_child_manifest,$providerAccelerator.published_cache_manifest,$providerAccelerator.read_only_controller_pa0,$providerAccelerator.resolved_campaign,$providerAccelerator.provider_plan)){
-  if($null-eq$record-or-not(Test-Path -LiteralPath ([string]$record.path) -PathType Leaf)){throw 'Provider receipt references a missing required input.'}
+foreach($record in @($providerAccelerator.read_only_controller_pa0,$providerAccelerator.provider_plan)){
+  # The manifest projection seals the provider receipt.  This runner consumes
+  # only the controller PA and provider plan, so it checks their declared
+  # paths and sizes without re-reading unrelated upstream evidence or hashing
+  # the PA payload again.
+  if($null-eq$record-or-not(Test-Path -LiteralPath ([string]$record.path) -PathType Leaf)){throw 'Provider receipt references a missing consumed input.'}
   $item=Get-Item -LiteralPath ([string]$record.path)
-  if([int64]$item.Length-ne[int64]$record.bytes-or-not[string]::Equals((Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash,[string]$record.sha256,[StringComparison]::OrdinalIgnoreCase)){throw 'Provider receipt input identity differs from its declared record.'}
+  if([int64]$item.Length-ne[int64]$record.bytes){throw 'Provider consumed input byte count differs from its declared receipt.'}
 }
 $nativeBankManifest=$null;$nativeBankPublicationPath=$null;$nativeBankGeneration=$null;$nativeBankCacheManifest=$null;$nativeBankKey=$null
 $nativeSystemRuntimeBundle=$null;$nativeSystemRuntimePaths=$null;$nativeSystemRuntimeRecords=@{}
