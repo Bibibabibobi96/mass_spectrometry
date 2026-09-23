@@ -27,6 +27,7 @@ jobs:
         run: |
           git config --local core.autocrlf false
           git reset --hard HEAD
+          git checkout-index --force --all
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
