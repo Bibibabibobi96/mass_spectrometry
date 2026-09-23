@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_runtime import (
     build_native_system_runtime_bundle,
+    rebind_accelerator_provider,
     resolve_native_system_runtime_bundle,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
@@ -109,6 +110,26 @@ class NativeSystemRuntimeTest(unittest.TestCase):
             bundle_path = root / "bundle.json"
             bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
             self.assertEqual(resolve_native_system_runtime_bundle(bundle_path, native_corridor_runtime_receipt=_receipt())["accelerator"], controller)
+
+    def test_rebind_replaces_only_provider_and_retains_static_records(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            requests = {role: self._request(root, role) for role in ("global_fallback", "detector")}
+            provider = self._provider(root)
+            bundle = build_native_system_runtime_bundle(
+                native_corridor_runtime_receipt=_receipt(), component_requests=requests,
+                accelerator_provider_receipt=provider,
+            )
+            bundle_path = root / "bundle.json"
+            bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+            rebound = rebind_accelerator_provider(
+                base_bundle_path=bundle_path, native_corridor_runtime_receipt=_receipt(),
+                accelerator_provider_receipt=provider,
+            )
+            self.assertEqual(rebound["components"][0], bundle["components"][0])
+            self.assertEqual(rebound["components"][2], bundle["components"][2])
+            self.assertFalse(rebound["pa_copy_performed"])
+            self.assertFalse(rebound["pa_refine_performed"])
 
     def test_cli_builds_and_resolves_explicit_identity_paths_without_payload_read(self) -> None:
         with TemporaryDirectory() as temporary:

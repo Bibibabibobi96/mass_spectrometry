@@ -4,7 +4,6 @@ import copy
 import hashlib
 import json
 import math
-import re
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,10 +14,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     load_contract, resolve_trajectory_profile, write_gem,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
-    build_analyzer_gem, build_detector_gem, resolve_static_iob_origins,
-)
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import (
-    build_two_zone_accelerator_requirements,
+    build_analyzer_gem, resolve_accelerator_iob_origin,
+    resolve_static_iob_origins,
 )
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import derive_shielded_rectangular_enclosure
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
@@ -330,6 +327,47 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             resolve_geometry(contract)
 
+    def test_provider_local_accelerator_pose_uses_mr_prism_anchor_without_overlap(self) -> None:
+        contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
+        plan = {
+            "schema_version": 1,
+            "role": "orthogonal_accelerator_component_focus_pa_plan",
+            "status": "derived",
+            "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+            "numerical_domain": {
+                "span_mm": [44.5, 24.5, 50.0],
+                "iob_origin_mm": [-22.25, -12.25, 0.0],
+                "local_exit_z_mm": 6.0,
+            },
+            "requirements": {"placement": {"focus_y_mm": 0.0, "global_exit_z_mm": 0.0}},
+            "layout": {
+                "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+                "static_minimum_y_extent_mm": 24.0,
+            },
+        }
+        origin = resolve_accelerator_iob_origin(contract, plan)
+        self.assertEqual(origin, (-22.25, -57.25, -6.0))
+        focus_y = contract["accelerator"]["focus_y_anchor"]["project_y_mm"]
+        accelerator_y_max = focus_y + 12.0
+        resolved = resolve_geometry(contract)
+        prism2 = next(
+            item for item in resolved["prism_ground_shields"]
+            if item["station"] == "central_ground_left"
+        )
+        prism2_y_min = min(point[0] for point in prism2["outer_polygon_yz_mm"])
+        self.assertAlmostEqual(prism2_y_min - accelerator_y_max, 1.0)
+        stripe_y_min = min(
+            point[0] for stripe in resolved["stripe_electrodes"]
+            for point in stripe["polygon_yz_mm"]
+        )
+        self.assertLess(accelerator_y_max, prism2_y_min)
+        self.assertLess(accelerator_y_max, stripe_y_min)
+
+        wrong_profile = copy.deepcopy(plan)
+        wrong_profile["layout"]["geometry_profile_id"] = "wrong"
+        with self.assertRaisesRegex(CandidateContractError, "profile differs"):
+            resolve_accelerator_iob_origin(contract, wrong_profile)
+
     def test_operating_point_variation_is_derived_and_rejects_ambiguous_overrides(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
@@ -544,7 +582,14 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertGreater(focus.focus_after_exit_mm, 0.0)
         self.assertAlmostEqual(placement.exit_grid_z_mm - focus.focus_after_exit_mm, placement.focus_z_mm)
         self.assertEqual(contract["accelerator"]["focus_project_position_mm"], [0.0, None, 0.0])
-        self.assertAlmostEqual(placement.focus_y_mm, -55.328)
+        self.assertAlmostEqual(placement.focus_y_mm, -45.0)
+        shifted = copy.deepcopy(contract)
+        shifted["accelerator"]["focus_y_anchor"]["project_y_mm"] = -46.0
+        self.assertAlmostEqual(derive_two_zone_placement(shifted).focus_y_mm, -46.0)
+        too_close = copy.deepcopy(contract)
+        too_close["accelerator"]["focus_y_anchor"]["project_y_mm"] = -44.0
+        with self.assertRaisesRegex(CandidateContractError, "clearance"):
+            resolve_geometry(too_close)
         self.assertGreater(placement.repeller_z_mm, placement.grid_1_z_mm)
         self.assertGreater(placement.grid_1_z_mm, placement.exit_grid_z_mm)
         self.assertEqual(energy.net_gain_center_minimum_v, 3500.0)
@@ -1060,12 +1105,11 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             resolved["metadata"]["required_accelerator_guard_to_central_prism_ground_shield_clearance_y_mm"],
         )
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
-        contract["accelerator"]["electrode_outer_height_y_mm"] = 40.0
-        contract["accelerator"]["grounded_guard_outer_height_y_mm"] = 48.0
+        contract["accelerator"]["focus_y_anchor"]["project_y_mm"] = -44.0
         with self.assertRaises(CandidateContractError):
             resolve_geometry(contract)
-        self.assertEqual([item["id"] for item in resolved["accelerator_stage_2_rings"]], [26, 27, 28, 29, 30])
-        self.assertAlmostEqual(resolved["metadata"]["accelerator_stage_2_ring_pitch_mm"], 5.6)
+        self.assertNotIn("accelerator_stage_2_rings", resolved)
+        self.assertNotIn("accelerator_stage_2_ring_pitch_mm", resolved["metadata"])
         self.assertEqual(
             resolved["metadata"]["stripe_curve_pose_model"],
             "theory_bspline_parameterization__native_knot_control_contract",
@@ -1165,11 +1209,12 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual(receipt["resolved_geometry_sha256"], geometry_fingerprint(resolved))
         self.assertEqual(receipt["electrode_ids"]["mirrors"], list(range(1, 11)))
         self.assertEqual(receipt["electrode_ids"]["stripes"], [11, 12, 13, 14])
-        # Frozen to the r51 GUI-review Candidate, including both accelerator
-        # support frames.  This identity does not grant Formal qualification.
+        # Frozen to the r51 GUI-review Candidate plus the independently
+        # configurable, clearance-gated accelerator assembly pose.  This
+        # identity does not grant Formal qualification.
         self.assertEqual(
             geometry_fingerprint(resolved),
-            "b23c47eae454aa0b232f9f9ced0360253c1ef03a846d3f5fec8ec8f696e0a9a2",
+            "982114b10e99db0d109f601925d87969972799bac3901d753a6b6a4a44eb7b3d",
         )
         self.assertEqual(
             geometry_fingerprint({"stripe_electrodes": resolved["stripe_electrodes"]}),
@@ -1202,6 +1247,8 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertNotIn("adjustable V_repeller = 4480", program)
         self.assertIn("n = 100", bunch)
         self.assertIn("simion.command('fly", launcher)
+        self.assertIn("--particles=", launcher)
+        self.assertIn("particle override must be a Fly2 file", launcher)
 
     def test_event_analysis_retains_losses_and_refuses_small_sample_fwhm(self) -> None:
         events = [

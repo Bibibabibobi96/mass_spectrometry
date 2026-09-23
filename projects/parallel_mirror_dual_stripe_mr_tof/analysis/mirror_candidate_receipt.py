@@ -180,7 +180,12 @@ def load_managed_mirror_candidate(
         # then compare only the exact mirror-stage inputs: unrelated later
         # topology requirements must not reinterpret an unchanged mirror.
         parent_contract = _load_json(contract_path, "managed mirror frozen contract")
-        downstream_contract = load_contract(downstream_contract_path.resolve())
+        try:
+            downstream_contract = load_contract(downstream_contract_path.resolve())
+        except CandidateContractError as error:
+            raise CandidateContractError(
+                "downstream contract changed one or more mirror-stage inputs or is invalid"
+            ) from error
     if canonical_json_sha256(mirror_stage_contract_projection(parent_contract)) != canonical_json_sha256(
         mirror_stage_contract_projection(downstream_contract)
     ):

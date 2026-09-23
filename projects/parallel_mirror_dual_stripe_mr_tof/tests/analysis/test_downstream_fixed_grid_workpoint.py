@@ -173,6 +173,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
             "selected_axial_energy_per_charge_v": 4372.0,
             "source_slow_kinetic_energy_per_charge_v": 4.96,
             "fly2_sha256": "same-source", "drift_phase_contract": {"half_oscillations": 51},
+            "nonaccelerator_mesh_mm_per_gu": [1, 1, 1],
         }
         def record(name, content):
             path = folder / name
@@ -181,7 +182,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
         manifest = {
             "status": "success", "project": "parallel_mirror_dual_stripe_mr_tof",
             "mode": "finite_3d_two_prism_voltage_trial",
-            "run_config": record("run_config.json", {"parameters": {"local_region_mesh_mm_per_gu": [[0.25]*3]*5}}),
+            "run_config": record("run_config.json", {"parameters": {}}),
             "outputs": [record("two_prism_trial_observation.json", observation),
                         record("two_prism_trial_materialization.json", materialization),
                         {"path": str(folder / "unused_corrupt.pa"), "exists": True, "bytes": 100, "sha256": "bad"}],

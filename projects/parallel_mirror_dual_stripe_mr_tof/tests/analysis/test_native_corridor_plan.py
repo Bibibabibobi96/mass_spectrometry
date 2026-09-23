@@ -93,7 +93,7 @@ class NativeCorridorPlanTest(unittest.TestCase):
         self.assertIn("adjustable V_mirror_E = mirror_voltages[5]", source)
         self.assertIn("simion.wb.instances[role_instance('native_corridor')].pa", source)
         self.assertIn('local requested = native_corridor_values(values.analyser)', source)
-        self.assertIn('corridor:fast_adjust(requested)', source)
+        self.assertIn(".pa:fast_adjust(requested)", source)
         self.assertIn('local accelerator_instance = accelerator_instance_number()', source)
         self.assertIn('local maximum_instance = maximum_instance_number()', source)
         self.assertNotIn('local accelerator_instance = local_refinement.enabled and 7 or 2', source)

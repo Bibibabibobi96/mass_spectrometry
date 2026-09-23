@@ -252,7 +252,7 @@ def reconstruct_checkpoint(
                 f"iteration {iteration} uses a retired non-native PA binding"
             )
         identity_path = _manifest_output(child_manifest, "native_corridor_runtime_family.json")
-        protection_path = _manifest_output(child_manifest, "local_operating_cache_protection_renewal.json")
+        protection_path = _manifest_output(child_manifest, "native_corridor_protection_renewal.json")
         baseline_path = _manifest_output(child_manifest, "artifact_capacity_gate_terminal.json")
         materialization = _load(materialization_path, "child materialization")
         actual = _voltages(materialization)

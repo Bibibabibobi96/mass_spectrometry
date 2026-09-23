@@ -32,7 +32,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
 _CLOCK_BASIS = "ion_time_of_flight_us_from_common_tob_zero_release"
 _SAMPLING_METHOD = "center_first_halton_position_energy_angle_v1"
 _SOURCE_DEFINITION_ROLE = "mrtof_ideal_bunch_source_definition"
-_CURRENT_SOURCE_DEFINITION_SCHEMA = 3
+_CURRENT_SOURCE_DEFINITION_SCHEMA = 4
 _COORDINATE_SEMANTICS = {
     "x": "transverse_mirror_focusing",
     "y": "slow_drift_positive_stripe_function_argument",
@@ -148,12 +148,13 @@ def materialize_bunch_source_from_definition(
     fly2_path: Path,
     receipt_path: Path,
     geometry_contract_path: Path | None = None,
+    accelerator_provider_receipt_path: Path | None = None,
 ) -> dict[str, Any]:
     """Materialize a cohort only from one complete frozen source definition."""
     definition = _load_object(definition_path, "bunch source definition")
     schema_version = definition.get("schema_version")
     if (
-        schema_version not in (1, 2, _CURRENT_SOURCE_DEFINITION_SCHEMA)
+        schema_version not in (1, 2, 3, _CURRENT_SOURCE_DEFINITION_SCHEMA)
         or definition.get("role") != _SOURCE_DEFINITION_ROLE
         or definition.get("status") != "frozen"
     ):
@@ -168,11 +169,18 @@ def materialize_bunch_source_from_definition(
     )
     if schema_version in (1, 2):
         required = (*required, "center_workbench_mm")
-    else:
+    elif schema_version == 3:
         required = (
             *required,
             "center_rule",
             "center_offset_workbench_mm",
+            "field_cache_dependency",
+        )
+    else:
+        required = (
+            *required,
+            "center_rule",
+            "source_y_offset_mm",
             "field_cache_dependency",
         )
     missing = [name for name in required if name not in definition]
@@ -184,7 +192,7 @@ def materialize_bunch_source_from_definition(
     resolved_center = _vector3(
         definition["center_workbench_mm"], "source centre"
     ) if schema_version in (1, 2) else None
-    if schema_version in (2, _CURRENT_SOURCE_DEFINITION_SCHEMA):
+    if schema_version in (2, 3, _CURRENT_SOURCE_DEFINITION_SCHEMA):
         if geometry_contract_path is None:
             raise CandidateContractError(
                 "schema-2 bunch source definition requires its geometry contract"
@@ -230,7 +238,7 @@ def materialize_bunch_source_from_definition(
                 or str(authority.get("geometry_contract_sha256", "")).lower() != geometry_sha
             ):
                 raise CandidateContractError("bunch source centre authority is invalid")
-        else:
+        elif schema_version == 3:
             if (
                 definition.get("center_rule")
                 != "resolved_accelerator_release_position"
@@ -246,6 +254,57 @@ def materialize_bunch_source_from_definition(
                 expected + delta
                 for expected, delta in zip(expected_center, offset, strict=True)
             )
+        else:
+            if (
+                definition.get("center_rule")
+                != "resolved_provider_accelerator_release_position"
+                or definition.get("field_cache_dependency") != "none"
+            ):
+                raise CandidateContractError(
+                    "schema-4 source placement must use the provider release position and remain field-cache independent"
+                )
+            if accelerator_provider_receipt_path is None:
+                raise CandidateContractError(
+                    "schema-4 bunch source definition requires its accelerator provider receipt"
+                )
+            provider = _load_object(
+                accelerator_provider_receipt_path, "accelerator provider receipt"
+            )
+            projection = provider.get("mrtof_projection")
+            provider_geometry = (
+                projection.get("geometry") if isinstance(projection, dict) else None
+            )
+            if (
+                provider.get("role") != "orthogonal_accelerator_mrtof_runtime_receipt"
+                or provider.get("status") != "published_read_only"
+                or not isinstance(provider_geometry, dict)
+                or provider_geometry.get("acceleration_direction") != "-z"
+            ):
+                raise CandidateContractError(
+                    "accelerator provider receipt lacks a published MR geometry projection"
+                )
+            source_y_offset = _finite(
+                definition["source_y_offset_mm"], "source y offset"
+            )
+            release = _finite(
+                provider_geometry.get("release_position_in_gap_1_mm"),
+                "provider accelerator release position",
+            )
+            repeller_to_exit = _finite(
+                provider_geometry.get("repeller_to_exit_mm"),
+                "provider accelerator repeller-to-exit distance",
+            )
+            resolved_center = (
+                0.0,
+                placement.focus_y_mm + source_y_offset,
+                repeller_to_exit - release,
+            )
+            provider_binding = {
+                "path": str(accelerator_provider_receipt_path.resolve()),
+                "bytes": accelerator_provider_receipt_path.stat().st_size,
+                "sha256": file_sha256(accelerator_provider_receipt_path).lower(),
+                "derived_release_z_mm": resolved_center[2],
+            }
         geometry_binding = {
             "path": str(geometry_contract_path.resolve()),
             "bytes": geometry_contract_path.stat().st_size,
@@ -287,12 +346,19 @@ def materialize_bunch_source_from_definition(
         receipt["geometry_contract"] = geometry_binding
         if schema_version == 2:
             receipt["center_authority"] = dict(definition["center_authority"])
-        else:
+        elif schema_version == 3:
             receipt["center_rule"] = definition["center_rule"]
             receipt["center_offset_workbench_mm"] = list(
                 _vector3(definition["center_offset_workbench_mm"], "source centre offset")
             )
             receipt["field_cache_dependency"] = "none"
+        else:
+            receipt["center_rule"] = definition["center_rule"]
+            receipt["source_y_offset_mm"] = _finite(
+                definition["source_y_offset_mm"], "source y offset"
+            )
+            receipt["field_cache_dependency"] = "none"
+            receipt["accelerator_provider_receipt"] = provider_binding
     receipt_path.write_text(
         json.dumps(receipt, indent=2, sort_keys=True) + "\n",
         encoding="utf-8", newline="\n",
@@ -470,7 +536,7 @@ def load_verified_bunch_source_receipt(receipt_path: Path) -> dict[str, Any]:
             or file_sha256(path).lower() != str(record.get("sha256", "")).lower()
         ):
             raise CandidateContractError(f"bunch source {key} identity changed")
-    for key in ("definition", "geometry_contract"):
+    for key in ("definition", "geometry_contract", "accelerator_provider_receipt"):
         record = receipt.get(key)
         if record is None:
             continue
@@ -861,6 +927,7 @@ def main() -> int:
     materialize.add_argument("--fly2", required=True, type=Path)
     materialize.add_argument("--receipt", required=True, type=Path)
     materialize.add_argument("--geometry-contract", type=Path)
+    materialize.add_argument("--accelerator-provider-receipt", type=Path)
     freeze = subparsers.add_parser("freeze-schedule")
     freeze.add_argument("--source-receipt", required=True, type=Path)
     freeze.add_argument("--pilot-log", required=True, type=Path)
@@ -876,6 +943,7 @@ def main() -> int:
             fly2_path=arguments.fly2,
             receipt_path=arguments.receipt,
             geometry_contract_path=arguments.geometry_contract,
+            accelerator_provider_receipt_path=arguments.accelerator_provider_receipt,
         )
         print(
             "MRTOF_BUNCH_SOURCE_MATERIALIZE=PASS "

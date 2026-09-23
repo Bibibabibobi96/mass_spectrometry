@@ -141,19 +141,12 @@ def derive_first_prism_l0(contract: dict[str, Any]) -> FirstPrismL0:
     target = first.get("target_interface")
     if not isinstance(entry, dict) or not isinstance(target, dict):
         raise PrismL0Error("first-prism requires entry_reference and target_interface")
-    entry_position = entry.get("position_project_mm")
-    if not isinstance(entry_position, list) or len(entry_position) != 3:
-        raise PrismL0Error("first-prism entry position must be a project-frame point")
-    entry_x, entry_y, entry_z = (_number(value, "first-prism entry position") for value in entry_position)
+    if entry.get("position_authority") != "accelerator_focus_project_position":
+        raise PrismL0Error("first-prism entry position must derive from the accelerator focus")
     entry_direction = _unit(entry.get("direction_project"), "first-prism entry direction")
     placement = derive_two_zone_placement(contract)
     focus_x = _number(contract.get("accelerator", {}).get("focus_project_position_mm", [None])[0], "accelerator focus x")
-    if (
-        abs(entry_x - focus_x) > 1e-9
-        or abs(entry_y - placement.focus_y_mm) > 1e-9
-        or abs(entry_z - placement.focus_z_mm) > 1e-9
-    ):
-        raise PrismL0Error("first-prism entry must agree with the derived two-zone focus")
+    entry_x, entry_y, entry_z = focus_x, placement.focus_y_mm, placement.focus_z_mm
     if any(abs(component - expected) > 1e-12 for component, expected in zip(entry_direction, (0.0, 0.0, -1.0))):
         raise PrismL0Error("reference first-prism entry must be purely along negative project z")
     prisms = contract.get("prisms", {}).get("electrodes", [])

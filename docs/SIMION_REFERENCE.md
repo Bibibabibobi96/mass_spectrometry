@@ -35,6 +35,30 @@ IOB 路径写入该项目 `docs/SIMION.md` 或 `docs/PROJECT.md`。
 [Multiple PAs](https://simion.com/info/multiple_pas.html)、
 [Trajectory Programming Techniques](https://simion.com/info/trajectory_programming.html)。
 
+### Fly'm 粒子并行规范
+
+**状态：COMPLETE；SIMION 2020 N=100 真实运行通过。** Fly'm 本身不是多线程计算器。仓库对相互独立的
+粒子采用 SIMION 官方建议的进程级拆分：只装配一次只读 IOB，启动多个独立 SIMION 进程，每个进程
+通过 `--particles` 消费一个互不重叠的连续粒子区间，最后按全局粒子 ID 无损合并日志。禁止为了并行
+为每批重建 IOB、复制/Refine PA、修改 Program 或建立项目私有 worker-count 算法。
+
+并发数必须由仓库资源调度器决定：未知画像先保留首个正式粒子批次，观察固定 45 秒后以实测进程树
+内存和 CPU 重规划；首批是正式结果，不是丢弃的探针。每个进程会独立加载共享 PA，这是 SIMION
+进程隔离的必要成本。IOB 必须绑定生命周期覆盖完整飞行的 PA 路径；短期 execution alias 不得写入
+需要在飞行期间延迟打开 `.pa1..paN` 的 IOB。粒子切片、合并覆盖、终态数量和失败批次必须进入运行证据。
+
+真实复验 `20260924_023000__sim__simion__mrtof-yminus45-n100-pilot-r7__n100-static` 使用一个共享 IOB、
+三个粒子区间 `1..10`、`11..60`、`61..100`；45 秒观测得到 `10.57 GiB/process`，调度器选择并发 2，
+三批均自然 `exit 0`，100/100 粒子完整合并，总批次墙钟 `2023.961 s`。该证据只授予并行执行和无损
+合并能力，不授予对应物理结果 Candidate/Formal 资格。该次包装器在合并后因已结束的重型 lease
+转换失败而以 failed manifest 收尾；该多余转换已退役，观测与 collection gate 从既有合并日志恢复，
+没有重飞粒子。后续 success manifest 仍须由下一次正常运行给出，不能把本段当作物理资格捷径。
+
+官方依据（查阅于 2026-09-23）：[Multi-core CPUs](https://simion.com/info/multicore.html)、
+[High Performance Computing Cluster](https://mail.simion.com/info/hpc_cluster.html)、
+[Command Line Interface](https://mail.simion.com/info/command_line_interface.html)。官方说明的核心模式是多个
+SIMION 实例分别飞行不同粒子子集，再合并输出；本节是仓库内该方法的唯一规范位置。
+
 ### 长PA输入路径
 
 **状态：COMPLETE；SIMION 2020 真实运行通过。已关闭范围：SIMION 只读 standalone PA 的长路径输入。**

@@ -50,11 +50,15 @@ V_mirror_B,V_mirror_C,V_mirror_D,V_mirror_E=-12,22,32,52
 V_stripe_1,V_stripe_2,V_prism_1,V_prism_2=-8,12,99,-77
 runtime_fast_adjust_enable=0
 segment.fast_adjust()
-assert(#calls==1 and calls[1]=='adjust2','native GUI Fast Adjust must update only the corridor role')
+assert(#calls==3 and calls[1]=='adjust2' and calls[2]=='adjust3' and calls[3]=='adjust2',
+  'run initialization must adjust both roles and the GUI edit only its changed role')
 local values=simion.wb.instances[2].pa.values
 for id=1,8 do assert(values[id]~=nil,'missing native channel '..id) end
 assert(values[1]==-6 and values[2]==11 and values[3]==16 and values[4]==26)
 assert(values[5]==-4 and values[6]==6 and values[7]==99 and values[8]==-77)
+local accelerator_values=simion.wb.instances[3].pa.values
+for id=1,9 do assert(accelerator_values[id]~=nil,'missing accelerator channel '..id) end
+assert(accelerator_values[2]==40 and accelerator_values[3]==30 and accelerator_values[4]==0)
 ion_number,ion_time_of_flight,ion_instance=1,0.2,2
 ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=1,2,3
 segment.efield_adjust()

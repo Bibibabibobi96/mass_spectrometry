@@ -88,7 +88,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
             "controller_refine": "solutions={0}",
         }
         protection = {
-            "schema_version": 1, "role": "mrtof_local_operating_cache_protection_renewal", "status": "success",
+            "schema_version": 1, "role": "mrtof_native_corridor_protection_renewal", "status": "success",
             "lease_id": "lease", "lease_owner": "owner", "cache_key": key, "generation_directory": path,
             "renewal": {"lease_id": "lease", "owner": "owner", "protected_cache_keys": [key]},
         }

@@ -17,6 +17,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial
     _apply_trajectory_step_scale,
     _accelerator_safe_exit_observation,
     _load_frozen_accelerator_pulse_schedule,
+    _mirror_regions,
     _resolve_trial_geometry,
     _fixed_mirror_stripe_source_state,
     _schema5_native_source_state,
@@ -37,6 +38,31 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 
 class TwoPrismSimionTrialTest(unittest.TestCase):
+    def test_mirror_regions_projects_the_single_resolved_geometry(self) -> None:
+        resolved = {
+            "mirror_ground_shields": [{"box": [0, 0, -9, 1, 1, -8]}],
+            "mirror_electrodes": [
+                {"box": [0, 0, -7, 1, 1, -6]},
+                {"box": [0, 0, 6, 1, 1, 7]},
+            ],
+            "mirror_e_closures": [{"box": [0, 0, 8, 1, 1, 9]}],
+        }
+        self.assertEqual(
+            _mirror_regions(resolved),
+            {"negative": [-9, -6], "positive": [6, 9]},
+        )
+
+    def test_cli_uses_only_the_declared_workbench_accelerator_instance(self) -> None:
+        source = Path(two_prism_simion_trial.__file__).read_text(encoding="utf-8")
+        self.assertIn("accelerator_instance=args.workbench_accelerator_instance", source)
+        self.assertNotIn("accelerator_instance=args.accelerator_instance", source)
+
+    def test_provider_pose_comes_only_from_the_active_mr_contract(self) -> None:
+        source = Path(two_prism_simion_trial.__file__).read_text(encoding="utf-8")
+        provider_branch = source[source.index("if provider_geometry is None:"):]
+        self.assertIn("placement = derive_two_zone_placement(contract)", provider_branch)
+        self.assertNotIn("placement = derive_two_zone_placement(reviewed_contract)", provider_branch)
+
     def test_terminal_mirror_variation_is_authority_bound_and_envelope_checked(self) -> None:
         contract_path = Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json"
         contract = two_prism_simion_trial.load_contract(contract_path)
@@ -115,15 +141,39 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             )
 
     def test_trial_geometry_keeps_reviewed_conductors_and_current_event_authority(self) -> None:
-        reviewed = {"identity": "reviewed-physical-geometry"}
+        reviewed = {
+            "identity": "reviewed-physical-geometry",
+            "accelerator": {"reviewed_conductor": "retained"},
+        }
         current = {"identity": "current-topology-and-observation-authority"}
+        accelerator = {
+            "accelerator": {
+                "component_source_cylinder": {"radius_mm": 0.1, "height_mm": 2.0},
+                "focus_y_anchor": {"project_y_mm": -45.0},
+                "unused_provider_field": "not-forwarded",
+            },
+        }
         expected = {"resolved": True}
         with patch.object(
             two_prism_simion_trial, "resolve_geometry", return_value=expected,
         ) as resolver:
-            self.assertIs(_resolve_trial_geometry(reviewed, current), expected)
-        resolver.assert_called_once_with(
-            reviewed, inherited_dual_stripe_topology_contract=current,
+            self.assertIs(_resolve_trial_geometry(reviewed, current, accelerator), expected)
+        forwarded = resolver.call_args.args[0]
+        self.assertEqual(forwarded["identity"], "reviewed-physical-geometry")
+        self.assertEqual(forwarded["accelerator"]["reviewed_conductor"], "retained")
+        self.assertEqual(
+            forwarded["accelerator"]["component_source_cylinder"],
+            accelerator["accelerator"]["component_source_cylinder"],
+        )
+        self.assertEqual(
+            forwarded["accelerator"]["focus_y_anchor"],
+            accelerator["accelerator"]["focus_y_anchor"],
+        )
+        self.assertNotIn("unused_provider_field", forwarded["accelerator"])
+        self.assertNotIn("component_source_cylinder", reviewed["accelerator"])
+        self.assertEqual(
+            resolver.call_args.kwargs,
+            {"inherited_dual_stripe_topology_contract": current},
         )
 
     @staticmethod

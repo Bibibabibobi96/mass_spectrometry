@@ -191,7 +191,7 @@ def _trial(manifest_path: Path, freeze_dir: Path | None = None, *, require_targe
             "source_slow_kinetic_energy_per_charge_v": materialization["source_slow_kinetic_energy_per_charge_v"],
             "fly2_sha256": materialization["fly2_sha256"],
             "drift_phase_contract": materialization["drift_phase_contract"],
-            "local_region_mesh_mm_per_gu": documents["run_config"]["parameters"]["local_region_mesh_mm_per_gu"],
+            "nonaccelerator_mesh_mm_per_gu": materialization["nonaccelerator_mesh_mm_per_gu"],
         },
     }
 
@@ -413,7 +413,7 @@ def _transport_invariants(trial: Mapping[str, Any]) -> dict[str, Any]:
         "source_slow_kinetic_energy_per_charge_v": frozen["source_slow_kinetic_energy_per_charge_v"],
         "drift_phase_contract": frozen["drift_phase_contract"],
         "trajectory_profile": frozen["trajectory_profile"],
-        "local_region_mesh_mm_per_gu": frozen["local_region_mesh_mm_per_gu"],
+        "nonaccelerator_mesh_mm_per_gu": frozen["nonaccelerator_mesh_mm_per_gu"],
     }
 
 

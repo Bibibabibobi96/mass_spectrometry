@@ -563,9 +563,10 @@ def derive_two_zone_focus(
 def derive_two_zone_placement(contract: dict[str, Any]) -> TwoZonePlacement:
     """Place the -z accelerator so its first time focus lies on the z=0 plane.
 
-    The focus plane constrains only z.  Its y coordinate is the independently
-    declared injection-line coordinate and must not be silently collapsed to
-    the project origin.
+    The focus plane constrains only z.  Its y coordinate is an independently
+    configurable MR assembly coordinate and must not be silently collapsed to
+    the provider-local origin.  Full geometry resolution separately gates the
+    resulting accelerator-to-Prism2 and accelerator-to-Stripe clearances.
     """
     accelerator = contract["accelerator"]
     if accelerator.get("axis") != "z_negative":
@@ -576,22 +577,12 @@ def derive_two_zone_placement(contract: dict[str, Any]) -> TwoZonePlacement:
     focus_x = _number(focus_position[0], "focus_project_position_mm[0]")
     focus_z = _number(focus_position[2], "focus_project_position_mm[2]")
     anchor = accelerator.get("focus_y_anchor")
-    if not isinstance(anchor, dict) or anchor.get("method") != "audited_triangle_y_bounds_midpoint":
-        raise CandidateContractError("accelerator focus y must be derived from an audited prism station")
-    station = anchor.get("prism_station")
-    prisms = contract.get("prisms", {}).get("electrodes", [])
-    matching = [item for item in prisms if isinstance(item, dict) and item.get("station") == station]
-    if len(matching) != 1:
-        raise CandidateContractError("accelerator focus y anchor must select exactly one prism station")
-    coordinates = matching[0].get("polygons_yz_mm", [])
-    y_values = [
-        _number(polygon[index], "accelerator focus prism y coordinate")
-        for polygon in coordinates if isinstance(polygon, list)
-        for index in range(0, len(polygon), 2)
-    ]
-    if not y_values:
-        raise CandidateContractError("accelerator focus prism has no y-coordinate evidence")
-    focus_y = (min(y_values) + max(y_values)) / 2.0
+    if (
+        not isinstance(anchor, dict)
+        or anchor.get("method") != "configurable_project_y_with_resolved_clearance_gate"
+    ):
+        raise CandidateContractError("accelerator focus y must use the configurable clearance-gated MR pose")
+    focus_y = _number(anchor.get("project_y_mm"), "accelerator focus project y")
     if abs(focus_x) > 1e-12 or abs(focus_z) > 1e-12 or accelerator.get("focus_plane_constraint") != "z=0":
         raise CandidateContractError(
             "first time focus must lie on the x=0, z=0 central injection plane"

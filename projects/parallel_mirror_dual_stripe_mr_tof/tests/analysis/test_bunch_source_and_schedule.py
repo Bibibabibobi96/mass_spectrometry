@@ -55,6 +55,20 @@ CANDIDATE_DEFINITION = PROJECT / "config" / "candidate_bunch_source_n100.json"
 
 
 class BunchSourceAndScheduleTest(unittest.TestCase):
+    @staticmethod
+    def _write_provider_receipt(path: Path) -> Path:
+        path.write_text(json.dumps({
+            "schema_version": 1,
+            "role": "orthogonal_accelerator_mrtof_runtime_receipt",
+            "status": "published_read_only",
+            "mrtof_projection": {"geometry": {
+                "acceleration_direction": "-z",
+                "repeller_to_exit_mm": 34.0,
+                "release_position_in_gap_1_mm": 2.0,
+            }},
+        }), encoding="utf-8")
+        return path
+
     def _definition(self) -> dict:
         return {
             "schema_version": 1,
@@ -197,67 +211,70 @@ class BunchSourceAndScheduleTest(unittest.TestCase):
     def test_current_candidate_definition_matches_resolved_accelerator_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            provider = self._write_provider_receipt(root / "provider.json")
             receipt = materialize_bunch_source_from_definition(
                 definition_path=CANDIDATE_DEFINITION,
                 geometry_contract_path=GEOMETRY_CONTRACT,
+                accelerator_provider_receipt_path=provider,
                 state_table_path=root / "source.csv",
                 fly2_path=root / "source.fly2",
                 receipt_path=root / "source.json",
             )
             contract = load_contract(GEOMETRY_CONTRACT)
             placement = derive_two_zone_placement(contract)
-            release = float(contract["accelerator"]["release_position_in_gap_1_mm"])
             definition = json.loads(CANDIDATE_DEFINITION.read_text(encoding="utf-8"))
-            offset = definition["center_offset_workbench_mm"]
             expected = [
-                offset[0],
-                placement.focus_y_mm + offset[1],
-                placement.repeller_z_mm - release + offset[2],
+                0.0,
+                placement.focus_y_mm + definition["source_y_offset_mm"],
+                34.0 - 2.0,
             ]
             self.assertEqual(
-                definition["center_rule"], "resolved_accelerator_release_position"
+                definition["center_rule"], "resolved_provider_accelerator_release_position"
             )
-            self.assertEqual(
-                definition["center_offset_workbench_mm"],
-                [0.0, -1.71093484735312, 0.0],
-            )
+            self.assertEqual(definition["source_y_offset_mm"], -1.71093484735312)
             self.assertEqual(
                 definition["kinetic_energy_center_ev"], 4.961131691875479
             )
             self.assertEqual(definition["field_cache_dependency"], "none")
-            self.assertEqual(receipt["particle_count"], 100)
+            self.assertEqual(definition["aperture_plane_axes"], [0, 2])
+            self.assertEqual(definition["acceleration_axis"], 1)
+            self.assertEqual(receipt["particle_count"], 1000)
             self.assertEqual(receipt["mother_particle_count"], 1000)
             self.assertEqual(receipt["geometry_contract"]["derived_center_workbench_mm"], expected)
+            self.assertEqual(expected, [0.0, -46.71093484735312, 32.0])
+            self.assertEqual(receipt["accelerator_provider_receipt"]["derived_release_z_mm"], 32.0)
             self.assertEqual(receipt["field_cache_dependency"], "none")
             self.assertEqual(receipt["common_time_of_birth_us"], 0.0)
             self.assertEqual(receipt["species"], {"mass_th": 524.0, "charge_e": 1})
-            self.assertEqual(Path(receipt["state_table"]["path"]).read_text().count("\n"), 101)
-            self.assertEqual(Path(receipt["fly2"]["path"]).read_text().count("standard_beam {"), 100)
+            self.assertEqual(Path(receipt["state_table"]["path"]).read_text().count("\n"), 1001)
+            self.assertEqual(Path(receipt["fly2"]["path"]).read_text().count("standard_beam {"), 1000)
             load_verified_bunch_source_receipt(root / "source.json")
             frozen_definition = root / "definition.json"
             frozen_definition.write_text(CANDIDATE_DEFINITION.read_text(encoding="utf-8"), encoding="utf-8")
             frozen_receipt = materialize_bunch_source_from_definition(
                 definition_path=frozen_definition,
                 geometry_contract_path=GEOMETRY_CONTRACT,
+                accelerator_provider_receipt_path=provider,
                 state_table_path=root / "bound.csv",
                 fly2_path=root / "bound.fly2",
                 receipt_path=root / "bound.json",
             )
-            self.assertEqual(frozen_receipt["particle_count"], 100)
+            self.assertEqual(frozen_receipt["particle_count"], 1000)
             frozen_definition.write_text("{}\n", encoding="utf-8")
             with self.assertRaisesRegex(CandidateContractError, "definition identity changed"):
                 load_verified_bunch_source_receipt(root / "bound.json")
 
-    def test_schema3_definition_rejects_coupled_placement_or_wrong_frame(self) -> None:
+    def test_schema4_definition_rejects_coupled_placement_or_wrong_frame(self) -> None:
         source = json.loads(CANDIDATE_DEFINITION.read_text(encoding="utf-8"))
         cases = (
-            ("rule", lambda value: value.__setitem__("center_rule", "absolute"), "run time"),
+            ("rule", lambda value: value.__setitem__("center_rule", "absolute"), "provider release position"),
             ("cache", lambda value: value.__setitem__("field_cache_dependency", "geometry"), "field-cache independent"),
             ("axis", lambda value: value["coordinate_semantics"].__setitem__("y", "wrong"), "identity project/workbench"),
         )
         for label, mutate, message in cases:
             with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
+                provider = self._write_provider_receipt(root / "provider.json")
                 definition = json.loads(json.dumps(source))
                 mutate(definition)
                 path = root / "definition.json"
@@ -266,6 +283,7 @@ class BunchSourceAndScheduleTest(unittest.TestCase):
                     materialize_bunch_source_from_definition(
                         definition_path=path,
                         geometry_contract_path=GEOMETRY_CONTRACT,
+                        accelerator_provider_receipt_path=provider,
                         state_table_path=root / "source.csv",
                         fly2_path=root / "source.fly2",
                         receipt_path=root / "source.json",

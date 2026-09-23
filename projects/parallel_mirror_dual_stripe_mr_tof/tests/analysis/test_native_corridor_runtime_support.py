@@ -73,14 +73,14 @@ try{
   if((Test-Path -LiteralPath $alias)-or-not(Test-Path -LiteralPath $session.directory)){throw 'Suspend deleted payload or left alias'}
   $session=New-Session;$args.Session=$session;$args.RunId='resumed'
   $resumed=Get-NativeCorridorRuntimeFamily @args
-  if($script:builds-ne1-or$script:inventories-ne2-or-not$resumed.receipt.reused){throw 'Cross-session resume rebuilt or lacked exactly one inventory'}
+  if($script:builds-ne1-or$script:inventories-ne1-or-not$resumed.receipt.reused){throw 'Cross-session resume rebuilt or reread the sealed payload'}
   $blocked=$false;try{[IO.File]::WriteAllText($resumed.controller_path,'changed')}catch{$blocked=$true}
   if(-not$blocked){throw 'Restored private family is writable'}
   Suspend-NativeCorridorRuntimeSession -Session $session
   $path=Join-Path $session.directory 'mrtof_analyzer_corridor.pa1'
-  (Get-Item -LiteralPath $path).IsReadOnly=$false;[IO.File]::WriteAllText($path,'changed-1');(Get-Item -LiteralPath $path).IsReadOnly=$true
+  (Get-Item -LiteralPath $path).IsReadOnly=$false;[IO.File]::WriteAllText($path,'changed-size');(Get-Item -LiteralPath $path).IsReadOnly=$true
   $session=New-Session;$args.Session=$session
-  try{$null=Get-NativeCorridorRuntimeFamily @args;throw 'Changed SHA accepted'}catch{if($_.Exception.Message-notlike'*member SHA differs*'){throw}}
+  try{$null=Get-NativeCorridorRuntimeFamily @args;throw 'Changed byte count accepted'}catch{if($_.Exception.Message-notlike'*member byte count differs*'){throw}}
   if($script:builds-ne1-or-not(Test-Path -LiteralPath $session.directory)){throw 'Invalid family was reconstructed or deleted'}
   [IO.File]::WriteAllText($binary,'changed generator')
   try{$null=Get-NativeCorridorRuntimeFamily @args;throw 'Changed generator accepted'}catch{if($_.Exception.Message-notlike'*generator identity differs*'){throw}}

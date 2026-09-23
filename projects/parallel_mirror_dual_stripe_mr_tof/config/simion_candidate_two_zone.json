@@ -2098,11 +2098,7 @@
       "station": "accelerator_exit",
       "local_angle_convention": "positive_beta_is_positive_project_y_about_negative_project_z",
       "entry_reference": {
-        "position_project_mm": [
-          0,
-          -55.328,
-          0
-        ],
+        "position_authority": "accelerator_focus_project_position",
         "direction_project": [
           0,
           0,
@@ -2221,8 +2217,9 @@
       0
     ],
     "focus_y_anchor": {
-      "prism_station": "accelerator_exit",
-      "method": "audited_triangle_y_bounds_midpoint"
+      "method": "configurable_project_y_with_resolved_clearance_gate",
+      "project_y_mm": -45.0,
+      "semantics": "MR assembly variable. Full resolved geometry must retain the declared clearance from the Prism2 grounded shield and must not overlap the Stripe assembly; changing it creates a new frozen geometry identity."
     },
     "focus_plane_constraint": "z=0",
     "repeller_v": 4533.333333333333,

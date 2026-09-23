@@ -8,6 +8,7 @@ permitted.
 from __future__ import annotations
 
 import argparse
+import copy
 from pathlib import Path
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_candidate_geometry import (
@@ -16,7 +17,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_candidate_geo
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
-    CandidateContractError, load_contract,
+    CandidateContractError, derive_two_zone_placement, load_contract,
 )
 
 def _require_release(contract: dict[str, object]) -> None:
@@ -100,8 +101,20 @@ def _detector_origin(
     topology_contract: dict[str, object] | None = None,
 ) -> tuple[float, float, float]:
     """Return the independent detector PA origin derived only from its resolved box."""
+    geometry_contract = contract
+    if topology_contract is not None:
+        geometry_contract = copy.deepcopy(contract)
+        reviewed_accelerator = geometry_contract.get("accelerator")
+        active_accelerator = topology_contract.get("accelerator")
+        if not isinstance(reviewed_accelerator, dict) or not isinstance(active_accelerator, dict):
+            raise CandidateContractError("detector pose lacks its accelerator geometry projection")
+        for key in ("component_source_cylinder", "focus_y_anchor"):
+            value = active_accelerator.get(key)
+            if not isinstance(value, dict):
+                raise CandidateContractError(f"detector pose accelerator projection lacks {key}")
+            reviewed_accelerator[key] = copy.deepcopy(value)
     detector = resolve_geometry(
-        contract,
+        geometry_contract,
         inherited_dual_stripe_topology_contract=topology_contract,
     )["detector"]
     box = detector["box"]
@@ -167,6 +180,81 @@ def resolve_static_iob_origins(
             topology_contract=inherited_dual_stripe_topology_contract,
         ),
     }
+
+
+def resolve_accelerator_iob_origin(
+    contract: dict[str, object],
+    provider_plan: dict[str, object],
+) -> tuple[float, float, float]:
+    """Project one provider-local accelerator PA onto the MR injection line.
+
+    The provider plan deliberately uses an exit-origin component frame whose
+    transverse centre is ``y=0``.  That local coordinate is not an MR assembly
+    pose.  The global y coordinate comes only from the independently
+    configurable, clearance-gated MR assembly coordinate.
+    """
+    if (
+        provider_plan.get("role") != "orthogonal_accelerator_component_focus_pa_plan"
+        or provider_plan.get("status") != "derived"
+    ):
+        raise CandidateContractError("accelerator provider plan is not a derived component PA plan")
+    domain = provider_plan.get("numerical_domain")
+    requirements = provider_plan.get("requirements")
+    layout = provider_plan.get("layout")
+    if not isinstance(domain, dict) or not isinstance(requirements, dict) or not isinstance(layout, dict):
+        raise CandidateContractError("accelerator provider plan lacks domain, requirements, or layout")
+    span = domain.get("span_mm")
+    local_origin = domain.get("iob_origin_mm")
+    placement = requirements.get("placement")
+    if (
+        not isinstance(span, list) or len(span) != 3
+        or not isinstance(local_origin, list) or len(local_origin) != 3
+        or not isinstance(placement, dict)
+    ):
+        raise CandidateContractError("accelerator provider pose fields are incomplete")
+    spans = tuple(float(value) for value in span)
+    provider_origin = tuple(float(value) for value in local_origin)
+    if min(spans) <= 0.0 or provider_origin != (-spans[0] / 2.0, -spans[1] / 2.0, 0.0):
+        raise CandidateContractError("accelerator provider local IOB origin rule differs")
+    local_exit_z = float(domain.get("local_exit_z_mm"))
+    global_exit_z = float(placement.get("global_exit_z_mm"))
+    if not all(value == value and abs(value) < float("inf") for value in (*spans, local_exit_z, global_exit_z)):
+        raise CandidateContractError("accelerator provider pose contains a non-finite value")
+
+    resolved = resolve_geometry(contract)
+    profile_id = layout.get("geometry_profile_id")
+    if profile_id != resolved["metadata"]["accelerator_component_geometry_profile_id"]:
+        raise CandidateContractError("accelerator provider geometry profile differs from the MR contract")
+    focus_y = derive_two_zone_placement(contract).focus_y_mm
+    physical_y_extent = float(layout.get("static_minimum_y_extent_mm"))
+    if physical_y_extent <= 0.0:
+        raise CandidateContractError("accelerator provider physical y extent must be positive")
+    accelerator_y_max = focus_y + physical_y_extent / 2.0
+    central_shields = [
+        item for item in resolved["prism_ground_shields"]
+        if item.get("station") == "central_ground_left"
+    ]
+    if len(central_shields) != 1:
+        raise CandidateContractError("accelerator pose requires exactly one Prism2 grounded shield")
+    shield_y_min = min(float(point[0]) for point in central_shields[0]["outer_polygon_yz_mm"])
+    required_clearance = float(
+        contract["accelerator"]["minimum_clearance_to_central_prism_ground_shield_y_mm"]
+    )
+    if shield_y_min - accelerator_y_max < required_clearance:
+        raise CandidateContractError("accelerator pose overlaps or approaches the Prism2 shield too closely")
+    stripe_y_min = min(
+        float(point[0])
+        for stripe in resolved["stripe_electrodes"]
+        for point in stripe["polygon_yz_mm"]
+    )
+    if accelerator_y_max >= stripe_y_min:
+        raise CandidateContractError("accelerator pose overlaps the Stripe assembly")
+
+    return (
+        provider_origin[0],
+        focus_y + provider_origin[1],
+        global_exit_z + provider_origin[2] - local_exit_z,
+    )
 
 
 

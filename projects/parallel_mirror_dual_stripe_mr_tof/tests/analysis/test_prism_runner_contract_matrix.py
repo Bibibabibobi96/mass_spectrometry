@@ -192,7 +192,7 @@ class PrismRunnerContractMatrixTests(unittest.TestCase):
             "$childRunId = '{0}-iter-{1:D2}'", "terminal_reason='solver_failure'",
             "Enter-ArtifactWorkflowCapacitySession", "CapacityWorkflowSession=$capacitySession",
             "Update-ArtifactWorkflowCapacitySession", "Exit-ArtifactWorkflowCapacitySession",
-            "local_operating_cache_protection_renewal.json", "--cache-protection-renewal",
+            "native_corridor_protection_renewal.json", "--cache-protection-renewal",
             "$operatingCacheKey = [string]$cacheBinding.cache_key",
             "ResumeSuccessfulChildManifest", "if (-not $resumeThisIteration)",
             "Child materialization does not match the controller's requested voltage vector",
@@ -213,13 +213,15 @@ class PrismRunnerContractMatrixTests(unittest.TestCase):
             self.assertNotIn(token, source, token)
         argument_binding = source.index("CapacityWorkflowSession=$capacitySession")
         loop = source.index("for ($iteration = $startIteration;")
-        release = source.index("Exit-ArtifactWorkflowCapacitySession", loop)
         self.assertLess(argument_binding, loop)
-        self.assertLess(loop, release)
+        native_checkpoint = source.index("Save-NativeWorkflowCheckpoint -Reason", loop)
+        native_release = source.index("Exit-ArtifactWorkflowCapacitySession", native_checkpoint)
+        self.assertLess(native_checkpoint, native_release)
         terminal = source.index("$capacityTerminal = Update-ArtifactWorkflowCapacitySession")
         manifest = source.index("Write-VerifiedRunManifest", terminal)
+        final_release = source.index("Exit-ArtifactWorkflowCapacitySession", manifest)
         self.assertLess(terminal, manifest)
-        self.assertLess(manifest, release)
+        self.assertLess(manifest, final_release)
 
 
 if __name__ == "__main__":

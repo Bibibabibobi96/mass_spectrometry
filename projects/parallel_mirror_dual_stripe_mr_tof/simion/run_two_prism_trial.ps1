@@ -329,22 +329,15 @@ $privateIobPaGuards=[Collections.Generic.List[IO.FileStream]]::new()
 $capacityProtectionRenewalPath=$null
 $guiWorkbenchIob=$null;$guiWorkbenchReceipt=$null
 $guiWorkbenchOutputs=@()
-$batchBundleReceiptPath=$null
-$batchRuntimeRoot=$null;$batchPaCopyDirectories=@();$batchMergeReceipt=$null
+$batchRuntimeRoot=$null;$batchMergeReceipt=$null
 $dispatchRequestPath=$null;$resourceProfilesPath=$null;$runtimeDispatchPlanPath=$null
 $batchPlanPath=$null;$batchResourceUsagePath=$null;$resourceProfilePath=$null
-$scopedCompositionDispatchRequestPath=$null;$scopedCompositionResourceProfilesPath=$null
-$scopedCompositionDispatchPlanPath=$null;$scopedCompositionResourceUsagePath=$null
-$scopedCompositionResourceProfilePath=$null;$scopedCompositionLanePlanPaths=@()
 $batchWaveResult=$null
 $fixedMirrorStripeAuthority=$null;$fixedMirrorStripeAuthorityLocal=$null
 $stripeOperatingProvenance=$null
 $nativeRuntimeReceiptPath=$null;$nativeBankFrozenInputs=@();$nativeRuntime=$null
 $guiWorkbenchDirectory=$null
 try{
-  if($RetainGuiWorkbench-and$null-ne$NativeCorridorRuntimeSession){
-    throw 'Retained GUI workbench requires a private native runtime family in its own governed run; shared runtime sessions are not portable GUI dependencies.'
-  }
   if($ownsCapacitySession){
     $failureStage='capacity_startup'
     $initialProtectedRuns=@($geometryRun,$mirrorRun,$stripeRun,$acceleratorRun,$nativeCorridorRun,$nativeBankGeneration)
@@ -409,8 +402,9 @@ try{
   [int64]$nativeFamilyPeakBytes=10*[int64]$nativeRawRecord[0].bytes
   if($null-ne$NativeCorridorRuntimeSession-and $null-ne$NativeCorridorRuntimeSession.PSObject.Properties['resident_bytes'] -and [int64]$NativeCorridorRuntimeSession.resident_bytes-gt0){$nativeFamilyPeakBytes=0}
   [int64]$iobProjectionBytes=[int64](Get-Item -LiteralPath $sourceAnalyzer).Length+[int64](Get-Item -LiteralPath $sourceDetector).Length
-  if(-not$acceleratorPulseRequested){$iobProjectionBytes+=[int64](Get-Item -LiteralPath $sourceAccelerator).Length}
-  $requiredBytes+=$nativeFamilyPeakBytes+$iobProjectionBytes+[int64](Get-Item -LiteralPath $sourceAccelerator).Length
+  # The accelerator stays in its provider-owned read-only family and is bound
+  # directly; only analyzer and detector projections consume new run capacity.
+  $requiredBytes+=$nativeFamilyPeakBytes+$iobProjectionBytes
   $protectedPaths=@($package.artifact_run_dir,$nativeCorridorRun,$nativeBankGeneration)
   $startupProtectedCacheKeys=@($nativeBankKey)
   [int64]$committedNewBytes=[math]::Max($requiredBytes,26214400)
@@ -491,11 +485,23 @@ try{
   }
   if($RetainGuiWorkbench){$guiWorkbenchDirectory=$temporarySolverDir}
   New-Item -ItemType Directory -Path $temporarySolverDir|Out-Null
+  # The seed IOB cannot be opened unless its four blank PA companions share
+  # its directory.  They are structural placeholders only: copy one private
+  # template and create three same-volume aliases instead of transporting or
+  # hashing four identical payloads.
+  $privateIobSeed=Join-Path $temporarySolverDir '4_instance_seed.iob'
+  Copy-Item -LiteralPath (Join-Path $solverDir '4_instance_seed.iob') -Destination $privateIobSeed
+  $privateSeedPlaceholder=Join-Path $temporarySolverDir 'iob_seed_placeholder_01.pa0'
+  Copy-Item -LiteralPath (Join-Path $repoRoot 'common\simion\assets\iob_instance_seeds\iob_seed_placeholder_01.pa0') -Destination $privateSeedPlaceholder
+  foreach($seedIndex in 2..4){
+    $seedAlias=Join-Path $temporarySolverDir ('iob_seed_placeholder_{0:D2}.pa0'-f$seedIndex)
+    $null=New-Item -ItemType HardLink -Path $seedAlias -Target $privateSeedPlaceholder
+  }
   $temporaryAnalyzer=$globalFallbackAnalyzer
   $temporaryIob=Join-Path $temporarySolverDir 'mrtof_three_component_candidate.iob'
   $posePath=Join-Path $resultDir 'resolved_iob_pose.json'
-  $poseCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract,mirror_power_supply_limits; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import resolve_static_iob_origins; reviewed=Path(sys.argv[1]); receipt=json.loads(Path(sys.argv[2]).read_text(encoding='utf-8')); active=load_contract(Path(sys.argv[3])); policy=active['accelerator']['detector_return_path']; limits=mirror_power_supply_limits(active); static=resolve_static_iob_origins(reviewed,inherited_detector_return_path=policy,inherited_dual_stripe_topology_contract=active,inherited_mirror_power_supply_limits_v=limits); plan=json.loads(Path(receipt['provider_plan']['path']).read_text(encoding='utf-8')); domain=plan['numerical_domain']; place=plan['requirements']['placement']; span=domain['span_mm']; origin=[-float(span[0])/2,float(place['focus_y_mm'])-float(span[1])/2,float(place['global_exit_z_mm'])-float(domain['local_exit_z_mm'])]; Path(sys.argv[4]).write_text(json.dumps({'origins_mm':{'analyzer':static['analyzer'],'accelerator':origin,'detector':static['detector']},'mesh_mm_per_gu':{'analyzer':active['simion']['component_mesh_mm_per_gu']['analyzer'],'accelerator':domain['mesh_mm_per_gu'],'detector':active['simion']['component_mesh_mm_per_gu']['detector']},'analyzer_geometry_authority':'reviewed_analyzer_contract','accelerator_geometry_authority':'oa_provider_plan','detector_return_policy_authority':'current_trajectory_contract'},indent=2)+'\n',encoding='utf-8')"
-  Invoke-ProjectPython -Arguments @('-c',$poseCode,$reviewed,$acceleratorGeometry,$trajectoryContract,$posePath)
+  $poseCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract,mirror_power_supply_limits; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import resolve_accelerator_iob_origin,resolve_static_iob_origins; reviewed=Path(sys.argv[1]); receipt=json.loads(Path(sys.argv[2]).read_text(encoding='utf-8')); active=load_contract(Path(sys.argv[3])); policy=active['accelerator']['detector_return_path']; limits=mirror_power_supply_limits(active); static=resolve_static_iob_origins(reviewed,inherited_detector_return_path=policy,inherited_dual_stripe_topology_contract=active,inherited_mirror_power_supply_limits_v=limits); plan=json.loads(Path(receipt['provider_plan']['path']).read_text(encoding='utf-8')); domain=plan['numerical_domain']; origin=resolve_accelerator_iob_origin(active,plan); Path(sys.argv[4]).write_text(json.dumps({'origins_mm':{'analyzer':static['analyzer'],'accelerator':origin,'detector':static['detector']},'mesh_mm_per_gu':{'analyzer':active['simion']['component_mesh_mm_per_gu']['analyzer'],'accelerator':domain['mesh_mm_per_gu'],'detector':active['simion']['component_mesh_mm_per_gu']['detector']},'analyzer_geometry_authority':'reviewed_analyzer_contract','accelerator_geometry_authority':'oa_provider_plan__mr_configurable_clearance_gated_y_pose','detector_return_policy_authority':'current_trajectory_contract'},indent=2)+'\n',encoding='utf-8')"
+  Invoke-ProjectPython -Arguments @('-c',$poseCode,$reviewed,$acceleratorLocal,$trajectoryContract,$posePath)
   $pose=Get-Content -LiteralPath $posePath -Raw -Encoding UTF8|ConvertFrom-Json
   $voltageSourceHash=(Get-FileHash -LiteralPath $globalFallbackAnalyzer -Algorithm SHA256).Hash
   $failureStage='prepare_native_corridor'
@@ -508,10 +514,10 @@ try{
   $capacitySession=$cacheScopeUpdate.session
   $capacityProtectionRenewalPath=Join-Path $resultDir 'native_corridor_protection_renewal.json'
   Write-RunJson -Path $capacityProtectionRenewalPath -Depth 20 -Value ([ordered]@{schema_version=1;role='mrtof_native_corridor_protection_renewal';status='success';lease_id=$capacitySession.lease_id;lease_owner=$capacitySession.owner;lease_ttl_seconds=$capacitySession.lease_ttl_seconds;cache_key=$nativeBankKey;cache_keys=@($nativeBankKey);generation_directory=$nativeBankGeneration;renewal=$cacheScopeUpdate.renewal})
-  # Never expose a frozen runtime PA directly to SIMION.  IOB loading
-  # can write a PA after the command appears to finish.  Compact runs therefore
-  # use verified disposable short-name copies; GUI-review runs retain private
-  # run-local copies and never bind the upstream files into their IOB.
+  # Never expose a frozen runtime PA to the automated flight. IOB loading can
+  # write a PA after the command appears to finish, so every flight uses
+  # verified disposable short-name copies. A retained GUI IOB is rebound only
+  # after the flight to stable read-only sources and keeps no copied PA payload.
   $failureStage='project_iob_pa_inputs'
   $iobInputCopyDir=if($RetainGuiWorkbench){
     Join-Path $temporarySolverDir 'pa_inputs'
@@ -544,9 +550,12 @@ try{
     return New-ShortPaCopy -Source $Source -Destination $destination -GuardDestinationReadOnly
   }
   $analyzerExpected=$globalFallbackRecord
-  $acceleratorExpected=$nativeSystemRuntimeRecords['accelerator']
   $iobAnalyzerInput=Copy-IobPaInput -Source $temporaryAnalyzer -Name 'iob_input_analyzer.pa' -ExpectedRecord $analyzerExpected
-  $iobAcceleratorInput=Copy-IobPaInput -Source $sourceAccelerator -Name 'iob_input_accelerator.pa' -ExpectedRecord $acceleratorExpected
+  # The published read-only accelerator PA0 must remain beside its PA#/PA1..9
+  # basis family for in-memory Fast Adjust.  Bind it directly: copying only PA0
+  # silently removes the field, while copying the whole family per trial is
+  # unnecessary transport.
+  $iobAcceleratorInput=$sourceAccelerator
   $iobDetectorInput=Copy-IobPaInput -Source $sourceDetector -Name 'iob_input_detector.pa' -ExpectedRecord $detectorRecord
   $failureStage='build_temporary_iob'
   $iobProgramPath=Join-Path $solverDir 'mrtof_three_component_candidate.lua'
@@ -563,12 +572,19 @@ try{
       -SimionExe $simion -ResourceLease $resourceLease -RunId $RunId
     }
     $resourceLease=$nativeRuntime.resource_lease
+    # The receipt binds the durable checkpoint controller.  Do not embed the
+    # disposable execution junction in an IOB that outlives materialization;
+    # SIMION opens pa1..pa8 lazily during Fast Adjust.
+    $nativeControllerForIob=[IO.Path]::GetFullPath([string]$nativeRuntime.receipt.controller_path)
+    if(-not(Test-Path -LiteralPath $nativeControllerForIob -PathType Leaf)){
+      throw 'Native runtime receipt controller is missing.'
+    }
     $nativeRuntimeReceiptPath=Join-Path $resultDir 'native_corridor_runtime_family.json'
     Write-RunJson -Path $nativeRuntimeReceiptPath -Depth 40 -Value $nativeRuntime.receipt
     $nativeOrigins=@(@($pose.origins_mm.analyzer),@($nativeBankCache.identity.grid_phase.origin_mm),@($pose.origins_mm.accelerator),@($pose.origins_mm.detector))
     $nativeOriginArguments=@();foreach($origin in $nativeOrigins){foreach($value in $origin){$nativeOriginArguments+=Format-InvariantNumber ([double]$value)}}
     $buildArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'build_native_corridor_iob.lua'),'--',
-      (Join-Path $solverDir '4_instance_seed.iob'),$iobAnalyzerInput,[string]$nativeRuntime.controller_path,$iobAcceleratorInput,$iobDetectorInput,
+      $privateIobSeed,$iobAnalyzerInput,$nativeControllerForIob,$iobAcceleratorInput,$iobDetectorInput,
       $temporaryIob,$iobProgramPath,$iobFly2Path,$sidecar,(Join-Path $solverDir 'mrtof_three_component_candidate.voltage_map.lua'),
       (Join-Path $solverDir 'native_corridor_priority_contract.lua'))+$nativeOriginArguments
     $failureStage='build_temporary_iob'
@@ -581,6 +597,12 @@ try{
       -Budget (Get-HostResourceBudget -Role SIMION -Stage 'mrtof_flight') -RetainedMemoryBytes 0
     Invoke-SimionStage -Stage 'native_two_prism_flight' -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$temporaryIob) -ResourceLease $resourceLease
   }else{
+    # SIMION's supported parallel Fly'm pattern is multiple independent
+    # processes using one IOB and distinct particle files.  Build the common
+    # read-only workbench once; the repository scheduler owns process count.
+    Invoke-SimionStage -Stage 'build_temporary_iob' -Arguments $buildArguments -ResourceLease $resourceLease
+    $temporaryFly2=[IO.Path]::ChangeExtension($temporaryIob,'.fly2')
+    if(-not(Test-RunFilesIdentical -Left $fly2Input -Right $temporaryFly2)){throw 'Shared IOB companion Fly2 differs from the frozen bunch source.'}
     $failureStage='plan_bunch_dispatch'
     $dispatchRequestPath=Join-Path $resultDir 'simion_dispatch_request.json'
     $resourceProfilesPath=Join-Path $resultDir 'simion_resource_profiles.json'
@@ -590,7 +612,7 @@ try{
     Invoke-ProjectPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $artifactRoot "projects\$projectId\runs"),'--output',$resourceProfilesPath)
     Write-RunJson -Path $dispatchRequestPath -Depth 10 -Value ([ordered]@{
       solver='SIMION';field_kind='electrostatic';particle_count=[int]$trial.source_particle_count;independent_particles=$true
-      frontend_grid_profile_id='mrtof_native_corridor_four_instance'
+      frontend_grid_profile_id=('mrtof_native_corridor_four_instance__bank_'+[string]$nativeBankCache.generation_sha256)
       oatof_numerical_profile_id=$null
       trajectory_quality_profile_id=[string]$trial.trajectory_profile.profile_id
       time_integration_profile_id='mrtof_candidate_adaptive_time_step'
@@ -598,9 +620,9 @@ try{
       accelerator_overlay_cell_mm_xyz=$null;reflectron_cell_mm=$null
       trajectory_quality=[double]$trial.trajectory_profile.trajectory_quality;rf_steps_per_period=$null
       accelerator_field_profile_id='mrtof_two_zone_standalone_operating_pa'
-      frontend_pa0_sha256=$temporaryAnalyzerHash
-      accelerator_overlay_pa0_sha256=(Get-FileHash -LiteralPath $sourceAccelerator -Algorithm SHA256).Hash
-      reflectron_pa0_sha256=(Get-FileHash -LiteralPath $sourceDetector -Algorithm SHA256).Hash
+      frontend_pa0_sha256=[string]$nativeBankCache.generation_sha256
+      accelerator_overlay_pa0_sha256=[string]$nativeSystemRuntimeRecords['accelerator'].sha256
+      reflectron_pa0_sha256=[string]$nativeSystemRuntimeRecords['detector'].sha256
       case_input_sha256=[string]$trial.operating_point_lua_sha256
       workload_topology_id='mrtof_native_corridor_four_instance_two_prism_full_flight'
       field_loading_policy_id='shared_native_corridor_runtime__four_instances__no_refine'
@@ -610,8 +632,6 @@ try{
     $batchRuntimeRoot=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_batch_runtime_'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $batchRuntimeRoot|Out-Null
     $batchRecords=@{}
-    $batchBundleReceiptPath=Join-Path $resultDir 'batch_iob_bundle_portability_receipt.json'
-    $batchBundleReceipt=$null
     function New-MrtofBatchRecord {
       param([Parameter(Mandatory)]$PlannedBatch)
       $batchIndex=[int]$PlannedBatch.index;$batchCount=[int]$PlannedBatch.count
@@ -620,45 +640,16 @@ try{
       $batchParticleIdMax=$sourceParticleIdMin+[int]$PlannedBatch.particle_id_max-1
       $batchOffset=$batchParticleIdMin-1
       $batchDir=Join-Path $batchRuntimeRoot ('batch_{0:D2}'-f$batchIndex)
-      $batchPaDir=$batchDir
       New-Item -ItemType Directory -Path $batchDir|Out-Null
-      # Every New-ShortPaCopy below registers a source guard that deliberately
-      # prevents its operating PA from being written or deleted.  Record the
-      # owning batch directory immediately so the post-flight cleanup releases
-      # those guards before removing either the batch tree or the upstream
-      # temporary operating-PA directory.
-      $script:batchPaCopyDirectories+=@($batchPaDir)
       $batchFly2=Join-Path $batchDir 'mrtof_batch_source.fly2'
       # PowerShell includes every uncaptured pipeline value in a function's
       # return value.  Keep diagnostics visible without allowing them to turn
       # the structured batch record below into a heterogeneous array.
       Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','materialize','--receipt',$bunchSourceLocal,'--particle-id-min',([string]$batchParticleIdMin),'--particle-id-max',([string]$batchParticleIdMax),'--output',$batchFly2) | Out-Host
-      # Keep the projected standalone names identical to the established IOB
-      # builder contract.  The private directory supplies batch isolation; a
-      # new generic filename would be rejected as an ambiguous PA binding.
-      $batchIob=Join-Path $batchDir 'mrtof_batch.iob'
-      # A batch owns only its source and IOB; the guarded native family is shared.
-      # Its eight response arrays remain in the workflow-owned controller, avoiding
-      # a per-batch PA clone.
-      $batchBuild=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'build_native_corridor_iob.lua'),'--',
-        (Join-Path $solverDir '4_instance_seed.iob'),$iobAnalyzerInput,[string]$nativeRuntime.controller_path,$iobAcceleratorInput,$iobDetectorInput,
-        $batchIob,$iobProgramPath,$batchFly2,$sidecar,(Join-Path $solverDir 'mrtof_three_component_candidate.voltage_map.lua'),
-        (Join-Path $solverDir 'native_corridor_priority_contract.lua'))+$nativeOriginArguments
-      Invoke-SimionStage -Stage ('build_native_batch_iob_{0:D2}'-f$batchIndex) -Arguments $batchBuild -ResourceLease $resourceLease | Out-Host
-      $batchCompanion=[IO.Path]::ChangeExtension($batchIob,'.fly2')
-      if(-not(Test-RunFilesIdentical -Left $batchFly2 -Right $batchCompanion)){throw "Batch $batchIndex IOB companion Fly2 differs from its planned source slice."}
-      $paPaths=@()
-      $batchPrefix=[IO.Path]::GetFullPath($batchDir).TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
-      foreach($paPath in $paPaths){
-        if(-not[IO.Path]::GetFullPath([string]$paPath).StartsWith($batchPrefix,[StringComparison]::OrdinalIgnoreCase)){throw "Batch $batchIndex PA escapes its private bundle."}
-      }
-      $paIdentities=@($paPaths|ForEach-Object{Get-ShortPaCopyIdentity -Path $_})
-      if(@($paIdentities|Where-Object{-not$_.destination_read_only}).Count-ne0){throw "Batch $batchIndex has a writable private PA before IOB assembly."}
+      $batchIob=$temporaryIob
       return [pscustomobject]@{
         index=$batchIndex;count=$batchCount;offset=$batchOffset;runtime_dir=$batchDir;iob=$batchIob
-        source_fly2=$batchFly2;companion_fly2=$batchCompanion;pa_paths=$paPaths
-        pa_hashes_before=if($paIdentities.Count){@($paIdentities|ForEach-Object{[string]$_.sha256})}else{@()}
-        companion_hashes_before=@()
+        source_fly2=$batchFly2
         stdout=Join-Path $logDir ('native_two_prism_flight__batch{0:D2}.log'-f$batchIndex)
         stderr=Join-Path $logDir ('native_two_prism_flight__batch{0:D2}.stderr.log'-f$batchIndex)
         scheduler_batch=$PlannedBatch
@@ -669,7 +660,7 @@ try{
       return [pscustomobject]@{
         name=('mrtof_simion_batch_{0:D2}'-f$Record.index);scheduler_batch=$Record.scheduler_batch
         file_path=$simion;working_directory=$Record.runtime_dir;stdout=$Record.stdout;stderr=$Record.stderr;environment=@{}
-        argument_list=[string[]]@('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$Record.iob)
+        argument_list=[string[]]@('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$Record.iob,$Record.source_fly2)
       }
     }
     $initialBatchPlan=Get-Content -Raw -LiteralPath $batchPlanPath|ConvertFrom-Json
@@ -690,7 +681,6 @@ try{
       Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,'--output',$batchPlanPath)
       $existingRecords=@($formal.process_record)
       $replanned=Get-Content -Raw -LiteralPath $batchPlanPath|ConvertFrom-Json
-      $additionalBatchCount=[int]$replanned.batch_count-$(if($firstBatchCompleted){0}else{1})
       foreach($planned in @($replanned.batches)){
         $plannedIndex=[int]$planned.index
         if($batchRecords.ContainsKey($plannedIndex)){
@@ -701,12 +691,6 @@ try{
         }else{
           $batchRecords[$plannedIndex]=New-MrtofBatchRecord -PlannedBatch $planned
         }
-      }
-    }
-    foreach($record in @($batchRecords.Values)){
-      foreach($paPath in @($record.pa_paths)){
-        $identity=Protect-ShortPaCopyDestination -Path $paPath
-        if(-not$identity.destination_write_guarded){throw "Batch $($record.index) private PA write guard was not established before flight."}
       }
     }
     $finalBatchPlan=Get-Content -Raw -LiteralPath $batchPlanPath|ConvertFrom-Json
@@ -727,15 +711,10 @@ try{
   # The immutable sources and cache generations were verified before staging.
   # SIMION flies private short-path copies, so rescanning every multi-gigabyte
   # upstream PA after flight adds I/O cost without checking the bytes SIMION used.
-  if($isBunchFlight){
-    foreach($path in @($batchPaCopyDirectories)){
-      Remove-ShortPaCopiesUnderDirectory -Path $path -ExpectedNamePrefix 'batch_'
-    }
-    $batchPaCopyDirectories=@()
-    if($null-ne$batchRuntimeRoot){Remove-TemporarySolverDirectory -Path $batchRuntimeRoot;$batchRuntimeRoot=$null}
-  }
-  $resourceLease=Update-HostResourceStage -Lease $resourceLease -Stage 'mrtof_postprocess' `
-    -Budget (Get-HostResourceBudget -Role SIMION -Stage 'mrtof_postprocess') -RetainedMemoryBytes 0
+  if($isBunchFlight-and$null-ne$batchRuntimeRoot){Remove-TemporarySolverDirectory -Path $batchRuntimeRoot;$batchRuntimeRoot=$null}
+  # All SIMION workers are terminal here.  Post-processing is ordinary Python
+  # over compact logs and must not reacquire or transition a heavy solver
+  # reservation that the host scheduler may already have retired.
   foreach($guard in $privateIobPaGuards){$guard.Dispose()}
   $privateIobPaGuards.Clear()
   if($null-ne$iobInputCopyDir-and-not$RetainGuiWorkbench){Remove-ShortPaCopyDirectory -Path $iobInputCopyDir;$iobInputCopyDir=$null}
@@ -771,6 +750,7 @@ try{
       peak_active_workers=[int]$usageDocument.execution_wave.peak_concurrency
       bottleneck=$bottleneck
       estimation_kind=[string]$dispatchDocument.estimation.kind
+      execution_method='official_shared_iob__per_process_particles_override'
       parallelism_result=$(if([int]$usageDocument.execution_wave.peak_concurrency-gt1){'parallel_workers_observed'}elseif([int]$dispatchDocument.limits.maximum_concurrency-eq1){"planner_limited_by_$bottleneck"}else{'runtime_admission_remained_serial__inspect_resource_usage_pause_events'})
     }
   }
@@ -779,6 +759,38 @@ try{
   Write-RunJson -Path $summary -Value $summaryValue
   $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   if($RetainGuiWorkbench){
+    $guiNativeController=[string]$nativeRuntime.controller_path
+    if($null-ne$NativeCorridorRuntimeSession){
+      # Flights use the short execution alias, but that alias is removed when
+      # the workflow closes. The retained GUI package instead binds the same
+      # persistent, read-only checkpoint family.
+      $stableNativeController=Join-Path ([string]$NativeCorridorRuntimeSession.directory) 'mrtof_analyzer_corridor.pa0'
+      if(-not(Test-Path -LiteralPath $stableNativeController -PathType Leaf)){throw 'Retained GUI workbench native checkpoint controller is missing.'}
+      $guiNativeController=$stableNativeController
+      $nativeRuntime.controller_path=$stableNativeController
+    }
+    # Reassemble only the tiny IOB against stable read-only component paths,
+    # then retire the short-path PA projections used by the flight. No PA is
+    # copied, refined, rebuilt, rewritten, or retained for GUI parity.
+    $guiBuildArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'build_native_corridor_iob.lua'),'--',
+      $privateIobSeed,$globalFallbackAnalyzer,$guiNativeController,$sourceAccelerator,$sourceDetector,
+      $temporaryIob,$iobProgramPath,$iobFly2Path,$sidecar,(Join-Path $solverDir 'mrtof_three_component_candidate.voltage_map.lua'),
+      (Join-Path $solverDir 'native_corridor_priority_contract.lua'))+$nativeOriginArguments
+    Invoke-SimionStage -Stage 'rebind_retained_gui_iob' -Arguments $guiBuildArguments -ResourceLease $resourceLease
+    $retainedFly2=[IO.Path]::ChangeExtension($temporaryIob,'.fly2')
+    if(-not(Test-RunFilesIdentical -Left $fly2Input -Right $retainedFly2)){throw 'Retained GUI IOB companion Fly2 differs after stable PA binding.'}
+    foreach($guard in $privateIobPaGuards){$guard.Dispose()}
+    $privateIobPaGuards.Clear()
+    foreach($projectedPa in @($iobAnalyzerInput,$iobDetectorInput)){Remove-ShortPaCopy -Path $projectedPa}
+    if($null-ne$iobInputCopyDir){
+      if((Get-ChildItem -LiteralPath $iobInputCopyDir -Force|Measure-Object).Count-ne0){throw 'Retained GUI PA projection directory is not empty after exact cleanup.'}
+      [IO.Directory]::Delete($iobInputCopyDir,$false)
+      $iobInputCopyDir=$null
+    }
+    $null=Remove-IobSeedPlaceholderCompanions -Directory $temporarySolverDir -Count 4
+    $iobAnalyzerInput=$globalFallbackAnalyzer
+    $iobAcceleratorInput=$sourceAccelerator
+    $iobDetectorInput=$sourceDetector
     $guiWorkbenchIob=$temporaryIob
     $guiWorkbenchReceipt=Join-Path $resultDir 'gui_workbench_receipt.json'
     if([IO.Path]::GetFullPath($temporarySolverDir)-ne[IO.Path]::GetFullPath($guiWorkbenchDirectory)){
@@ -800,7 +812,7 @@ try{
     $guiFiles=@($guiWorkbenchOutputs|ForEach-Object{$item=Get-Item -LiteralPath $_;[ordered]@{name=$item.Name;path=$item.FullName;bytes=[int64]$item.Length;sha256=(Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash}})
     $guiPaDependencies=@(
       [ordered]@{role='global_fallback';path=$iobAnalyzerInput;bytes=[int64](Get-Item -LiteralPath $iobAnalyzerInput).Length;source=$globalFallbackRecord},
-      [ordered]@{role='accelerator';path=$iobAcceleratorInput;bytes=[int64](Get-Item -LiteralPath $iobAcceleratorInput).Length;source=$acceleratorExpected},
+      [ordered]@{role='accelerator';path=$iobAcceleratorInput;bytes=[int64](Get-Item -LiteralPath $iobAcceleratorInput).Length;source=$nativeSystemRuntimeRecords['accelerator']},
       [ordered]@{role='detector';path=$iobDetectorInput;bytes=[int64](Get-Item -LiteralPath $iobDetectorInput).Length;source=$detectorRecord},
       [ordered]@{role='native_corridor';directory=(Split-Path -Parent ([string]$nativeRuntime.controller_path));source_raw=$nativeRuntime.receipt.source_raw;source_responses=$nativeRuntime.receipt.source_responses}
     )
@@ -808,7 +820,7 @@ try{
       schema_version=1;role='simion_gui_review_workbench';status='success';qualification=$summaryQualification;
       directory=$guiWorkbenchDirectory;iob_path=$guiWorkbenchIob;iob_sha256=(Get-FileHash -LiteralPath $guiWorkbenchIob -Algorithm SHA256).Hash;
       global_operating_pa_path=$temporaryAnalyzer;global_operating_pa_sha256=$temporaryAnalyzerHash;
-      source_accelerator_pa=$sourceAccelerator;accelerator_binding='manifest_bound_standalone_operating_pa__field_gate_only';source_detector_pa=$sourceDetector;files=$guiFiles;pa_dependencies=$guiPaDependencies
+      source_accelerator_pa=$sourceAccelerator;accelerator_binding='published_read_only_pa_family__in_memory_fast_adjust';source_detector_pa=$sourceDetector;files=$guiFiles;pa_dependencies=$guiPaDependencies
     })
     # The IOB stores the absolute paths passed to SIMION. Keeping this exact
     # directory in place is therefore part of the review artifact contract.
@@ -826,7 +838,6 @@ try{
     fixed_mirror_stripe_downstream_authority=if($null-eq$fixedMirrorStripeAuthority){$null}else{Join-Path $artifactResultDir 'fixed_mirror_stripe_downstream_authority.json'}
     terminal_time_mirror_voltage_variation=if($null-eq$mirrorVoltageVariation){$null}else{Join-Path $artifactSolverDir 'terminal_time_mirror_voltage_variation.json'}
     accelerator_run_manifest=$acceleratorManifest
-    accelerator_family_run_manifest=$null
     accelerator_pulse_schedule=$acceleratorPulseSchedule
     bunch_source_receipt=if($null-eq$bunchSourceReceipt){$null}else{Join-Path $artifactSolverDir 'bunch_source_receipt.json'}
     bunch_source_run_manifest=$bunchSourceManifest
@@ -836,7 +847,6 @@ try{
     simion_repository_dispatch_plan=$runtimeDispatchPlanPath
     simion_execution_batch_plan=$batchPlanPath
     batch_log_merge_receipt=$batchMergeReceipt
-    batch_iob_bundle_portability_receipt=if($null-eq$batchBundleReceiptPath-or-not(Test-Path -LiteralPath $batchBundleReceiptPath -PathType Leaf)){$null}else{Join-Path $artifactResultDir 'batch_iob_bundle_portability_receipt.json'}
     trajectory_numerics_contract=Join-Path $artifactSolverDir 'trajectory_numerics_contract.json'
     iob_builder=Join-Path $artifactSolverDir 'build_native_corridor_iob.lua'
     iob_seed=Join-Path $artifactSolverDir '4_instance_seed.iob'
@@ -855,17 +865,14 @@ try{
     voltage_map=Join-Path $flightArtifactRoot 'mrtof_three_component_candidate.voltage_map.lua'
     flight_launcher=Join-Path $artifactSolverDir 'run_iob_flight.lua'
     trial_materializer=Join-Path $artifactSolverDir 'two_prism_simion_trial.py'
-    basis_adjuster=Join-Path $artifactSolverDir 'compose_standalone_pa.lua'
     native_global_fallback_pa=$globalFallbackAnalyzer
     read_only_accelerator_pa=$sourceAccelerator
-    read_only_accelerator_family=$null
-    writable_accelerator_family_materialization=$null
     read_only_detector_pa=$sourceDetector
     trial_materialization=Join-Path $artifactResultDir 'two_prism_trial_materialization.json'
     frozen_source_fly2=Join-Path $artifactSolverDir 'downstream_trial_source.input.fly2'
     gui_workbench_iob=$guiWorkbenchIob
     gui_workbench_receipt=$guiWorkbenchReceipt
-    local_operating_cache_protection_renewal=$capacityProtectionRenewalPath
+    native_corridor_protection_renewal=$capacityProtectionRenewalPath
   }
   if(-not$config.Contains('provenance')){$config['provenance']=[ordered]@{}}
   $config['provenance']['upstream_manifest_verification']=[ordered]@{
@@ -898,14 +905,9 @@ try{
   if($null-ne$nativeRuntimeReceiptPath){$manifestOutputs+=$nativeRuntimeReceiptPath}
   if(Test-Path -LiteralPath $rawLog -PathType Leaf){$manifestOutputs+=$rawLog}
   if($null-ne$fixedMirrorStripeAuthority){$manifestOutputs+=$fixedMirrorStripeAuthority}
-  foreach($path in @($dispatchRequestPath,$resourceProfilesPath,$runtimeDispatchPlanPath,$batchPlanPath,$batchResourceUsagePath,$batchMergeReceipt,$resourceProfilePath,
-      $scopedCompositionDispatchRequestPath,$scopedCompositionResourceProfilesPath,$scopedCompositionDispatchPlanPath,
-      $scopedCompositionResourceUsagePath,$scopedCompositionResourceProfilePath)+@($scopedCompositionLanePlanPaths)){
+  foreach($path in @($dispatchRequestPath,$resourceProfilesPath,$runtimeDispatchPlanPath,$batchPlanPath,$batchResourceUsagePath,$batchMergeReceipt,$resourceProfilePath)){
     if($null-ne$path-and(Test-Path -LiteralPath $path -PathType Leaf)){$manifestOutputs+=$path}
   }
-  if($null-ne$batchBundleReceiptPath-and(Test-Path -LiteralPath $batchBundleReceiptPath -PathType Leaf)){$manifestOutputs+=$batchBundleReceiptPath}
-  $batchRelocatedInspectionReport=Join-Path $resultDir 'batch_iob_relocated_structure.txt'
-  if(Test-Path -LiteralPath $batchRelocatedInspectionReport -PathType Leaf){$manifestOutputs+=$batchRelocatedInspectionReport}
   if($isBunchFlight){foreach($record in @($batchRecords.Values)){foreach($path in @($record.stdout,$record.stderr)){if(Test-Path -LiteralPath $path -PathType Leaf){$manifestOutputs+=$path}}}}
   if($null-ne$capacityProtectionRenewalPath){$manifestOutputs+=$capacityProtectionRenewalPath}
   if($null-ne$guiWorkbenchReceipt){$manifestOutputs+=$guiWorkbenchReceipt}
@@ -934,11 +936,6 @@ try{
   foreach($guard in $privateIobPaGuards){$guard.Dispose()}
   $privateIobPaGuards.Clear()
   if($null-ne$iobInputCopyDir-and-not$RetainGuiWorkbench){Remove-ShortPaCopyDirectory -Path $iobInputCopyDir}
-  foreach($path in @($batchPaCopyDirectories)){
-    if(Test-Path -LiteralPath $path -PathType Container){
-      Remove-ShortPaCopiesUnderDirectory -Path $path -ExpectedNamePrefix 'batch_'
-    }
-  }
   if($null-ne$batchRuntimeRoot-and(Test-Path -LiteralPath $batchRuntimeRoot -PathType Container)){Remove-TemporarySolverDirectory -Path $batchRuntimeRoot}
   if($null-ne$temporarySolverDir-and-not$RetainGuiWorkbench){Remove-TemporarySolverDirectory -Path $temporarySolverDir}
   if($ownsCapacitySession-and$null-ne$capacitySession){

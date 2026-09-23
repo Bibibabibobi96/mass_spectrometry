@@ -198,13 +198,22 @@ def rebind_accelerator_provider(*, base_bundle_path: Path, native_corridor_runti
     if (base.get("role") != "mrtof_native_system_runtime_bundle" or not isinstance(components, list)
             or [item.get("role") for item in components if isinstance(item, Mapping)] != list(_COMPONENT_ROLES)):
         raise CandidateContractError("base native system runtime bundle contract is invalid")
-    retained = {str(item["role"]): item for item in components if isinstance(item, Mapping)}
-    requests = {role: {"manifest_path": str(retained[role].get("source_manifest_path", "")),
-                       "pa_path": str(retained[role].get("pa_path", ""))}
-                for role in ("global_fallback", "detector")}
-    return build_native_system_runtime_bundle(native_corridor_runtime_receipt=native_corridor_runtime_receipt,
-                                              component_requests=requests,
-                                              accelerator_provider_receipt=accelerator_provider_receipt)
+    resolve_native_system_runtime_bundle(
+        base_bundle_path, native_corridor_runtime_receipt=native_corridor_runtime_receipt,
+    )
+    retained = {str(item["role"]): dict(item) for item in components if isinstance(item, Mapping)}
+    accelerator = _provider_accelerator_record(accelerator_provider_receipt)
+    return {
+        "schema_version": 1,
+        "role": "mrtof_native_system_runtime_bundle",
+        "status": "prepared",
+        "project": base.get("project"),
+        "native_bank_identity": native_bank_identity(native_corridor_runtime_receipt),
+        "components": [retained["global_fallback"], accelerator, retained["detector"]],
+        "pa_copy_performed": False,
+        "pa_refine_performed": False,
+        "legacy_local_workbench_allowed": False,
+    }
 
 
 def _read_receipt_argument(path: str) -> dict[str, Any]:

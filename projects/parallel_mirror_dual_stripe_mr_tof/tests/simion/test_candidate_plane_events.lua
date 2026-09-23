@@ -25,11 +25,15 @@ loadfile=function(path)
   if path=='virtual/source.mirror_cycle_counter.lua' then
     return assert(original_loadfile(directory..'mirror_cycle_counter.lua'))
   end
+  if path=='virtual/source.priority.lua' then
+    return assert(original_loadfile(directory..'native_corridor_priority_contract.lua'))
+  end
   return original_loadfile(path)
 end
 simion={workbench_program=function() segment={} end,
   early_access=function(version) assert(version==8.2) end,wb={instances={
-  {filename='mrtof_analyzer.pa0'}, {filename='mrtof_analyzer_corridor.pa0',pa={fast_adjust=function() end}}, {filename='orthogonal_accelerator_focus.pa0'}, {filename='mrtof_detector.pa#'}}}}
+  {filename='mrtof_analyzer.pa0'}, {filename='mrtof_analyzer_corridor.pa0',pa={fast_adjust=function() end}},
+  {filename='orthogonal_accelerator_focus.pa0',pa={fast_adjust=function() end}}, {filename='mrtof_detector.pa#'}}}}
 local records={}
 print=function(value) records[#records+1]=value end
 assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
@@ -115,18 +119,20 @@ loadfile=function(path)
   end
   return fallback_loadfile(path)
 end
-local submissions={}
+local submissions,accelerator_submissions={},{}
 local adjustment_flush_start=flush_count
 simion.wb.instances={
   {filename='mrtof_analyzer.pa0'},
   {filename='mrtof_analyzer_corridor.pa0',pa={fast_adjust=function(_,values)
     submissions[#submissions+1]=values
   end}},
-  {filename='orthogonal_accelerator_focus.pa0'}, {filename='mrtof_detector.pa#'}}
+  {filename='orthogonal_accelerator_focus.pa0',pa={fast_adjust=function(_,values)
+    accelerator_submissions[#accelerator_submissions+1]=values
+  end}}, {filename='mrtof_detector.pa#'}}
 assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
 segment.initialize_run()
 for _=1,10 do segment.fast_adjust() end
-assert(#submissions==1 and #submissions[1]==8)
+assert(#submissions==1 and #submissions[1]==8 and #accelerator_submissions==1)
 local first_prism=submissions[1][7]
 V_prism_1=V_prism_1+1
 segment.fast_adjust(); segment.fast_adjust()
@@ -136,16 +142,18 @@ segment.fast_adjust()
 assert(#submissions==3 and submissions[3][7]==first_prism)
 V_repeller=V_repeller+1 -- Accelerator changes do not alter corridor channels.
 segment.fast_adjust()
-assert(#submissions==3)
+assert(#submissions==3 and #accelerator_submissions==2)
 segment.initialize_run(); segment.fast_adjust(); segment.fast_adjust()
-assert(#submissions==4)
+assert(#submissions==4 and #accelerator_submissions==3)
 local adjustment_begins,adjustment_completions=0,0
 for _,line in ipairs(records) do
   if line:match('^MRTOF_NATIVE_FAST_ADJUST begin ') then adjustment_begins=adjustment_begins+1 end
   if line:match('^MRTOF_NATIVE_FAST_ADJUST complete ') then adjustment_completions=adjustment_completions+1 end
 end
-assert(adjustment_begins==4 and adjustment_completions==4)
-assert(flush_count-adjustment_flush_start==8,'flush only the four actual begin/complete pairs')
+assert(adjustment_begins==6 and adjustment_completions==6,
+  string.format('unexpected Fast Adjust log pairs: begin=%d complete=%d',adjustment_begins,adjustment_completions))
+assert(flush_count-adjustment_flush_start==10,
+  string.format('unexpected Fast Adjust flush count: %d',flush_count-adjustment_flush_start))
 
 print=original_print
 io.flush=original_flush

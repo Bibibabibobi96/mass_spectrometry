@@ -54,6 +54,15 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
         self.assertIn("stop_below_collection_hard_minimum", source[stop:cohort])
         self.assertIn("Write-VerifiedRunManifest", source[stop:cohort])
 
+    def test_user_can_pause_cleanly_after_n100_pilot(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        stop = source.index("if($StopAfterPilot)")
+        freeze = source.index("$failureStage='freeze_global_pulse'")
+        self.assertLess(stop, freeze)
+        self.assertIn("status='pilot_complete'", source[stop:freeze])
+        self.assertIn("paused_before_global_pulse_freeze_and_n1000_at_user_request", source[stop:freeze])
+        self.assertIn("Write-VerifiedRunManifest", source[stop:freeze])
+
     def test_recovery_uses_the_bound_theory_seed_and_one_open_runtime(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         for token in (

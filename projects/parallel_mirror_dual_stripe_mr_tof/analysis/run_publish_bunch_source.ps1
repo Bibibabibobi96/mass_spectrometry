@@ -2,6 +2,7 @@
 param(
   [Parameter(Mandatory)][string]$SourceDefinitionPath,
   [Parameter(Mandatory)][string]$GeometryContractPath,
+  [Parameter(Mandatory)][string]$AcceleratorProviderReceiptPath,
   [string]$RunId='',
   [string]$PythonExe=''
 )
@@ -14,6 +15,7 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 $sourceDefinition=(Resolve-Path -LiteralPath $SourceDefinitionPath).Path
 $geometryContract=(Resolve-Path -LiteralPath $GeometryContractPath).Path
+$acceleratorProviderReceipt=(Resolve-Path -LiteralPath $AcceleratorProviderReceiptPath).Path
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__mrtof-bunch-source-n100'
 }
@@ -45,10 +47,13 @@ try{
     -Destination (Join-Path $package.input_dir 'bunch_source_definition.json')
   $frozenGeometry=Copy-VerifiedRunInput -Source $geometryContract `
     -Destination (Join-Path $package.input_dir 'geometry_contract.json')
+  $frozenAcceleratorProviderReceipt=Copy-VerifiedRunInput -Source $acceleratorProviderReceipt `
+    -Destination (Join-Path $package.input_dir 'accelerator_provider_receipt.json')
   $configuration=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $configuration.inputs=[ordered]@{
     bunch_source_definition=$frozenDefinition
     geometry_contract=$frozenGeometry
+    accelerator_provider_receipt=$frozenAcceleratorProviderReceipt
   }
   $configuration.parameters=[ordered]@{
     lifecycle_stage='candidate_functional_source_materialization'
@@ -68,6 +73,7 @@ try{
     $env:PYTHONPATH=$repoRoot
     & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule `
       materialize-source --definition $frozenDefinition --geometry-contract $frozenGeometry `
+      --accelerator-provider-receipt $frozenAcceleratorProviderReceipt `
       --state-table $stateTable --fly2 $fly2 --receipt $receipt 2>&1|Tee-Object -FilePath $log
     if($LASTEXITCODE-ne 0){throw 'Bunch source materialization failed.'}
   }finally{

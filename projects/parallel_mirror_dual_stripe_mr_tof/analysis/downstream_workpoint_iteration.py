@@ -114,7 +114,12 @@ def resolve_operating_cache_binding(
         raise CandidateContractError("operating PA cache identity is invalid")
     if not native and (not isinstance(identity.get("members"), list) or not isinstance(identity.get("synthesis"), Mapping)):
         raise CandidateContractError("operating PA cache identity is incomplete")
-    if protection.get("schema_version") != 1 or protection.get("role") != "mrtof_local_operating_cache_protection_renewal":
+    expected_protection_role = (
+        "mrtof_native_corridor_protection_renewal"
+        if native
+        else "mrtof_local_operating_cache_protection_renewal"
+    )
+    if protection.get("schema_version") != 1 or protection.get("role") != expected_protection_role:
         raise CandidateContractError("operating-cache protection receipt is invalid")
     if protection.get("status") != "success":
         raise CandidateContractError("operating-cache protection renewal did not succeed")

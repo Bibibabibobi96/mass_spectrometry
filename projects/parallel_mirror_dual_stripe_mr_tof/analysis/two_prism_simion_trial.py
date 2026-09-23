@@ -9,6 +9,7 @@ in +project-y; the accelerator field supplies the fast -project-z energy.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -138,10 +139,23 @@ def _accelerator_energy_binding(
 def _resolve_trial_geometry(
     reviewed_geometry_contract: dict[str, Any],
     current_topology_contract: dict[str, Any],
+    accelerator_placement_contract: dict[str, Any],
 ) -> dict[str, Any]:
-    """Resolve reviewed conductors with current non-geometric event authority."""
+    """Resolve reviewed conductors with the two consumed accelerator overrides."""
+    resolved_contract = copy.deepcopy(reviewed_geometry_contract)
+    reviewed_accelerator = resolved_contract.get("accelerator")
+    placement_accelerator = accelerator_placement_contract.get("accelerator")
+    if not isinstance(reviewed_accelerator, dict) or not isinstance(
+        placement_accelerator, dict,
+    ):
+        raise CandidateContractError("accelerator geometry projection is unavailable")
+    for key in ("component_source_cylinder", "focus_y_anchor"):
+        value = placement_accelerator.get(key)
+        if not isinstance(value, dict):
+            raise CandidateContractError(f"accelerator geometry projection lacks {key}")
+        reviewed_accelerator[key] = copy.deepcopy(value)
     return resolve_geometry(
-        reviewed_geometry_contract,
+        resolved_contract,
         inherited_dual_stripe_topology_contract=current_topology_contract,
     )
 
@@ -768,13 +782,8 @@ def _static_return_diagnostic(
     return result
 
 
-def _mirror_regions(
-    contract: dict[str, Any], *, topology_contract: dict[str, Any] | None = None,
-) -> dict[str, list[float]]:
-    resolved = resolve_geometry(
-        contract,
-        inherited_dual_stripe_topology_contract=topology_contract,
-    )
+def _mirror_regions(resolved: dict[str, Any]) -> dict[str, list[float]]:
+    """Project mirror z regions from the already resolved geometry."""
     boxes = [
         item["box"]
         for key in ("mirror_ground_shields", "mirror_electrodes", "mirror_e_closures")
@@ -1101,10 +1110,11 @@ def materialize_trial(
     else:
         if provider_geometry.get("acceleration_direction") != "-z":
             raise CandidateContractError("provider accelerator must accelerate along -z")
-        # The MR geometry retains the audited y anchor.  The provider owns the
-        # local z dimensions and exit-origin placement, so old MR gap geometry
-        # cannot re-enter this branch.
-        placement = derive_two_zone_placement(reviewed_contract)
+        # The active MR contract owns the configurable Workbench y pose.  The
+        # provider owns local z dimensions and exit-origin placement; the
+        # historical analyzer review must not be required to carry a newer
+        # assembly-only pose variable.
+        placement = derive_two_zone_placement(contract)
         release = _finite(provider_geometry.get("release_position_in_gap_1_mm"), "provider accelerator release")
         repeller_to_exit = _finite(provider_geometry.get("repeller_to_exit_mm"), "provider repeller-to-exit distance")
         aperture_height_y = _finite(provider_geometry.get("aperture_height_y_mm"), "provider accelerator aperture height y")
@@ -1154,6 +1164,7 @@ def materialize_trial(
         # trajectory contract, as the IOB pose resolver does, while retaining
         # the reviewed contract as the sole physical geometry source.
         trajectory_contract,
+        accelerator_geometry_contract,
     )
     detector = resolved["detector"]
     low_field_reference = resolved["two_prism_low_field_reference_section"]
@@ -1162,9 +1173,7 @@ def materialize_trial(
     low_field_aperture = low_field_reference.get("transit_aperture_project_mm")
     if not isinstance(low_field_aperture, dict):
         raise CandidateContractError("resolved P2 reference plane lacks its transit aperture")
-    regions = _mirror_regions(
-        reviewed_contract, topology_contract=trajectory_contract,
-    )
+    regions = _mirror_regions(resolved)
     prism_regions: dict[str, list[float]] = {}
     shields_by_station = {
         item["station"]: item for item in reviewed_contract["prisms"]["ground_shields"]
@@ -1818,7 +1827,7 @@ def main() -> int:
             bunch_source_receipt_path=args.bunch_source_receipt,
             bunch_particle_id_min=args.bunch_particle_id_min,
             bunch_particle_id_max=args.bunch_particle_id_max,
-            accelerator_instance=args.accelerator_instance,
+            accelerator_instance=args.workbench_accelerator_instance,
             fly2_path=args.fly2,
             sidecar_path=args.sidecar,
             receipt_path=args.receipt,

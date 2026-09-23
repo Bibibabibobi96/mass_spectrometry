@@ -33,7 +33,7 @@ for local_id, physical_ids in ipairs(native_corridor_voltage_groups) do
   assert(type(physical_ids) == 'table' and #physical_ids > 0,
     'native-corridor voltage group is empty for local ID '..local_id)
 end
-local applied_native_corridor_values
+local applied_native_corridor_values, applied_accelerator_values
 local voltage_map_path = program_path:gsub('%.lua$', '.voltage_map.lua')
 local voltage_map = assert(loadfile(voltage_map_path), 'missing run-local voltage mapper: '..voltage_map_path)()
 local cycle_counter_path = program_path:gsub('%.lua$', '.mirror_cycle_counter.lua')
@@ -346,7 +346,7 @@ local function emit_cycle_events(events)
 end
 
 function segment.initialize_run()
-  applied_native_corridor_values = nil
+  applied_native_corridor_values, applied_accelerator_values = nil, nil
   sim_trajectory_quality = trajectory_quality
   previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
   turns, slow_turns, crossings, y0_crossings, p1_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}
@@ -373,6 +373,10 @@ function segment.initialize_run()
     assert(matched,
       string.format('native-corridor role %s resolved to the wrong PA at instance %d', role, instance))
   end
+  -- SIMION does not invoke fast_adjust automatically when a PA0 controller is
+  -- loaded without adj_elect globals.  Apply both consumed voltage tables once
+  -- here, immediately before the run, without saving either PA.
+  segment.fast_adjust()
   print('MRTOF_CANDIDATE: status=prototype geometry=native_corridor_4_instance fast_adjust=8_channel')
 end
 
@@ -381,17 +385,28 @@ function segment.fast_adjust()
   local values=voltage_map(current_mirror_voltages,{V_stripe_1,V_stripe_2},{V_prism_1,V_prism_2},
     {V_repeller,V_grid1,V_grid2},accelerator_ring_voltages,V_nonaccelerator_scale)
   local requested = native_corridor_values(values.analyser)
-  local changed = applied_native_corridor_values == nil
+  local corridor_changed = applied_native_corridor_values == nil
   for local_id = 1,8 do
-    if changed or requested[local_id] ~= applied_native_corridor_values[local_id] then changed = true; break end
+    if corridor_changed or requested[local_id] ~= applied_native_corridor_values[local_id] then corridor_changed = true; break end
   end
-  if not changed then return end
-  local corridor = simion.wb.instances[role_instance('native_corridor')].pa
-  print('MRTOF_NATIVE_FAST_ADJUST begin channels=8 values='..table.concat(requested, ','))
+  local accelerator_changed = applied_accelerator_values == nil
+  for local_id = 1,9 do
+    if accelerator_changed or values.accelerator[local_id] ~= applied_accelerator_values[local_id] then accelerator_changed = true; break end
+  end
+  if not corridor_changed and not accelerator_changed then return end
+  print(string.format('MRTOF_NATIVE_FAST_ADJUST begin corridor=%s accelerator=%s',
+    tostring(corridor_changed), tostring(accelerator_changed)))
   io.flush()
-  corridor:fast_adjust(requested)
-  applied_native_corridor_values = requested
-  print('MRTOF_NATIVE_FAST_ADJUST complete channels=8')
+  if corridor_changed then
+    simion.wb.instances[role_instance('native_corridor')].pa:fast_adjust(requested)
+    applied_native_corridor_values = requested
+  end
+  if accelerator_changed then
+    simion.wb.instances[accelerator_instance_number()].pa:fast_adjust(values.accelerator)
+    applied_accelerator_values = values.accelerator
+  end
+  print(string.format('MRTOF_NATIVE_FAST_ADJUST complete corridor=%s accelerator=%s',
+    tostring(corridor_changed), tostring(accelerator_changed)))
   io.flush()
 end
 

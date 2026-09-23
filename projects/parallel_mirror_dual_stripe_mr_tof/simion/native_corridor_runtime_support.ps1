@@ -202,8 +202,17 @@ function Open-NativeCorridorRuntimeCheckpoint {
   }
   try{
     Protect-ManagedNativeFamily -Session $Session
-    $members=@(Get-NativeRuntimeInventory -Directory $directory -Python $Python -RepoRoot $RepoRoot)
-    if(($members|ConvertTo-Json -Compress)-ne($checkpoint.members|ConvertTo-Json -Compress)){throw 'Native checkpoint member SHA differs; payload retained.'}
+    $members=@($checkpoint.members)
+    $expectedNames=@(0..8|ForEach-Object{'mrtof_analyzer_corridor.pa'+$_})
+    if($members.Count-ne9-or@(Compare-Object @($members.name) $expectedNames).Count-ne0){throw 'Native checkpoint member inventory differs; payload retained.'}
+    foreach($member in $members){
+      $file=Get-Item -LiteralPath (Join-Path $directory ([string]$member.name))
+      if([int64]$file.Length-ne[int64]$member.bytes){throw 'Native checkpoint member byte count differs; payload retained.'}
+    }
+    # The creation checkpoint already sealed every member SHA. Resume needs
+    # only the consumed family, so byte counts plus read-only live guards are
+    # sufficient; rereading roughly 75 GB on every controller start adds no
+    # new consumed evidence.
     $Session|Add-Member -NotePropertyName members -NotePropertyValue $members -Force
     $Session|Add-Member -NotePropertyName generator_identity -NotePropertyValue $generators -Force
     $Session.runtime=[pscustomobject]@{receipt=$checkpoint.runtime_receipt;controller_path=(Join-Path $directory 'mrtof_analyzer_corridor.pa0')}

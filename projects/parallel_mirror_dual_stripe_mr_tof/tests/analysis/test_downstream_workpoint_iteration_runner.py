@@ -316,6 +316,21 @@ Write-Output 'BOOTSTRAP=PASS'
         self.assertIn("$arguments.NativeSystemRuntimeBundlePath=$NativeSystemRuntimeBundlePath", source)
         self.assertIn("native_system_runtime_bundle=(Resolve-Path -LiteralPath $NativeSystemRuntimeBundlePath).Path", source)
 
+    def test_gui_retention_is_limited_to_bootstrap_baseline(self):
+        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("[switch]$RetainBaselineGuiWorkbench", source)
+        self.assertIn(
+            "if($axis-lt0-and$RetainBaselineGuiWorkbench){$arguments.RetainGuiWorkbench=$true}",
+            source,
+        )
+        self.assertNotIn("$trialArguments.RetainGuiWorkbench", source)
+
+    def test_direct_native_checkpoint_reuse_is_independent_of_iob_pose(self):
+        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("Open-NativeCorridorRuntimeCheckpoint", source)
+        self.assertIn("IOB\n  # poses", source)
+        self.assertNotIn("Native runtime physical problem differs", source)
+
     def test_provider_receipt_is_preserved_through_workpoint_and_bunch_handoff(self):
         source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
         bunch = (PROJECT / "analysis/run_native_corridor_bunch_screening.ps1").read_text(encoding="utf-8-sig")
@@ -341,6 +356,15 @@ Write-Output 'BOOTSTRAP=PASS'
         self.assertIn("'--consumed-output',$materialization", source)
         self.assertIn("'--consumed-output',$cacheIdentity", source)
         self.assertIn("'--consumed-output',$childProtectionPath", source)
+
+    def test_success_can_continue_directly_to_standard_bunch_screening(self):
+        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("[string]$BunchSourceReceiptPath = ''", source)
+        self.assertIn("$terminalDecision.terminal_reason-eq'success'", source)
+        self.assertIn("Suspend-NativeCorridorRuntimeSession -Session $nativeRuntimeSession", source)
+        self.assertIn("$capacitySession=$null", source)
+        self.assertIn("BunchSourceReceiptPath=$BunchSourceReceiptPath", source)
+        self.assertIn("& $bunchScreeningRunner @screeningArguments", source)
 
 
 if __name__ == "__main__":

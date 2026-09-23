@@ -6,6 +6,7 @@ param(
   [string]$InitialPilotRunPath='',
   [string]$RecoveryPlanPath='',
   [switch]$RecoverTransport,
+  [switch]$StopAfterPilot,
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe=''
@@ -297,6 +298,26 @@ try{
     foreach($stageResult in $recoveryStages){foreach($path in @($stageResult.plan_path,$stageResult.selection_path)+@($stageResult.observation_paths)){if($null-ne$path-and(Test-Path -LiteralPath $path -PathType Leaf)){$hardStopOutputs+=@($path)}}}
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $hardStopOutputs
     $terminalized=$true;Write-Host "MRTOF_NATIVE_BUNCH_SCREENING=HARD_STOP RUN_ID=$RunId";return
+  }
+
+  if($StopAfterPilot){
+    $failureStage='publish_pilot_only'
+    $result=Join-Path $package.result_dir 'bunch_screening_result.json'
+    Write-RunJson -Path $result -Depth 20 -Value ([ordered]@{
+      schema_version=1;role='mrtof_native_corridor_bunch_screening';status='pilot_complete'
+      pa_reuse='one_checkpointed_native_fast_adjust_family__no_pa_copy_or_refine'
+      pilot_run_manifest=$pilotManifest;pilot_collection_gate=$pilotGate
+      next_action='paused_before_global_pulse_freeze_and_n1000_at_user_request'
+    })
+    Write-RunJson -Path $package.summary -Depth 20 -Value ([ordered]@{
+      schema_version=1;role='mrtof_native_corridor_bunch_screening_summary';status='pilot_complete'
+      pilot_collection_gate=$pilotGateData;pa_reuse='shared_checkpointed_native_runtime'
+    })
+    $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
+    $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -RemainingCommittedNewBytes 0
+    $capacitySession=$terminal.session;$terminalPath=Join-Path $package.result_dir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
+    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs @($package.summary,$result,$startup,$terminalPath,$retention)
+    $terminalized=$true;Write-Host "MRTOF_NATIVE_BUNCH_SCREENING=PILOT_COMPLETE RUN_ID=$RunId";return
   }
 
   $failureStage='freeze_global_pulse'

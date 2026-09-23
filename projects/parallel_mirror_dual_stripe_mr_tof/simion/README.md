@@ -43,6 +43,16 @@ capacity baseline，并用最新 cache 的精确 retirement authorization 走增
 项目坐标固定为：`z`是快速反射方向、`y`是慢漂移方向、`x`是横向聚焦方向；
 `z=0`是中央注入／第一时间焦点交接面，不是最终质量焦点或必然的空间束腰。
 
+加速器全局 y 位置由 `accelerator.focus_y_anchor.project_y_mm` 单独配置；它是 MR 装配变量，
+不进入 OA provider PA identity，也不触发任一 PA 的构建、复制或 Refine。每次装配从 provider plan
+读取实际局部 PA 原点和实体 y 外包络，再把该变量投影到 Workbench，并以 resolved Prism2 屏蔽件和
+Stripe 几何失败关闭地检查净间隙。当前初值为 `-45 mm`：r3 加速器实体 y 上边界为 `-33 mm`，
+Prism2 屏蔽件下边界为 `-32 mm`，保留合同要求的 `1 mm` 间隙；数值 PA 包络可重叠以支持优先级，
+但导体实体不得相交。
+已有 native corridor checkpoint 的复用身份只由该 PA family 的 cache key、generation 和成员哈希决定；
+加速器或其他独立静态 PA 的 Workbench 位姿不是 corridor PA 的生成输入，因此改变 y 后必须新建 flight
+身份和新算残差/Jacobian，但不得据此重建 corridor family。
+
 GEM、PA、IOB和Workbench GUI只读地接受冻结输入，不持有下一轮可调几何真值。
 `geometry_receipt`记录resolved几何哈希、坐标、单位、电极ID和孔槽；各组件必须来自同一合同。
 五电极镜保留30-mm束槽、有限长槽及内侧开槽／外侧闭合盖板。四块Stripe对应两套电压组：
@@ -54,8 +64,8 @@ Stripe、中央接地件及棱镜屏蔽由完整实体扣除有限矩形槽，�
 `orthogonal_accelerator` provider 独占。MR 的
 [accelerator_dependency.json](../config/accelerator_dependency.json)只声明接口需求；完整飞行只
 消费 provider `mrtof_runtime_receipt.json`。离子从 exit grid 沿项目 `-z` 离开，出口、grid1、
-repeller 依次位于更大的 `+z`；OA profile 派生其 y 站位、焦距、网格和 IOB 位姿，MR 不选择端部、
-环、壳体或孔径拓扑。
+repeller 依次位于更大的 `+z`；OA profile 派生局部外形、焦距和网格，MR 只选择独立 PA 的全局刚体 y
+站位并执行装配净间隙门禁，不选择端部、环、壳体或孔径拓扑。
 
 ## Native runtime 的四个角色
 
@@ -413,15 +423,18 @@ ID 在日志合并时严格恢复为原全局 ID，结果标记为非 Formal 的
 [bunch_source_and_schedule.py](../analysis/bunch_source_and_schedule.py)提供求解器无关的确定性母束团前缀、
 逐粒子唯一 `accelerator_safe_exit` 检查、`max(exit)+guard` 推导和 N 粒子共同关断事件校验。
 [candidate_bunch_source_n100.json](../config/candidate_bunch_source_n100.json)冻结当前 Candidate 束团：
-位置半径 `0.1 mm`、加速轴全宽 `2.0 mm`、由固定镜/Stripe exact-K handoff 选择的
+母队列 `N=1000`，前 `100` 行作为完全相同的 pilot 前缀；圆柱轴为项目 `y`，高度 `1.0 mm`，
+`x-z` 截面半径 `0.5 mm`。能量为固定镜/Stripe exact-K handoff 选择的
 `4.961131692 eV` 慢能中心及 `0.1 eV` 全宽、角度 `0.2 deg`；源中心相对加速器机械轴的
 `y=-1.710934847 mm` 偏移来自真实出口慢向速度割线和独立出口验证。该源定义及其展宽与 PA/cache
 身份完全解耦，改变粒子分布不触发 Refine。
-全宽、`524 Th/+1`、共同 `tob=0`。schema-3 源定义不保存绝对释放坐标或几何哈希；它声明
-`resolved_accelerator_release_position`和相对偏移，发布入口从本次冻结几何解析绝对中心并写入运行收据。
+物种为 `524 Th/+1`、共同 `tob=0`。schema-4 源定义不保存绝对释放坐标或三维偏移魔数；它声明
+`resolved_provider_accelerator_release_position`及具物理校准依据的 y 偏移。发布入口从 MR 几何合同解析
+全局 y 位姿，从同次 OA provider receipt 解析 `repeller_to_exit-release_position` 的 z 释放位置，并写入收据。
 源定义及其采样状态不参与PA-family或operating-PA缓存身份。
-[run_publish_bunch_source.ps1](../analysis/run_publish_bunch_source.ps1)把完整定义和几何合同复制为 run-local
-输入并发布 N=100 CSV、逐粒子 Fly2 与 receipt，全程不运行 SIMION。该源已由唯一完整飞行入口通过公共
+[run_publish_bunch_source.ps1](../analysis/run_publish_bunch_source.ps1)把完整定义、MR 几何合同和 OA provider
+receipt 复制为 run-local 输入并发布 N=1000 CSV、逐粒子 Fly2 与 receipt，全程不运行 SIMION。N=100 pilot
+只选择该母队列的前缀。历史较小源已由唯一完整飞行入口通过公共
 资源调度器执行 static pilot：100/100 粒子安全出射并达到目标 `K=25.5`，88/100 命中检测器，12 粒子发生
 真实电极碰撞；这只证明静态 Candidate 束团链和事件完整性，不是固定时钟或分辨率资格。
 [run_freeze_bunch_pulse_schedule.ps1](../analysis/run_freeze_bunch_pulse_schedule.ps1)是后续 static pilot 的
@@ -463,6 +476,11 @@ standalone response 与中性名 raw mask，绝不把 generation 路径或目录
 已修正的失败证据，不得写成成功。当前 r51 的 22 件 native family 只读复核为 22/22 与冻结记录一致；先前瞬时
 读差异没有已确认写者，也不能归因于 SIMION。r41 继续作为本链可靠完成验证的 provider。
 
+### 已退役的八实例工作台（冻结历史）
+
+以下记录仅保留历史 PA 隔离与输入链证据。对应五局域／八实例组装器和运行入口已删除，不能用于
+当前 native corridor 工作流。
+
 当前受管重建链为 r88--r90 的三个逐字节复现 generation、r91/r92 的两个 cache-hit provider，以及工作台
 `20260917_010000__build__simion__mrtof-local-r55-detached-r94`。r94 的 IOB 仍只含全局分析器、五局域替代、
 独立加速器和独立探测器八个运行 PA；原路径和长 artifact 路径检查均通过，且在检查后删除十个仅用于载入
@@ -479,6 +497,9 @@ seed 的 placeholder `.pa0`，共 `164034040 bytes`，清理收据保存在 run 
 官方 API 用法查[SIMION 参考](../../../docs/SIMION_REFERENCE.md)；执行结果只从本次受管 manifest 与日志读取。
 ### N>1 automatic single-wave dispatch
 
+跨项目并行规则统一见 [SIMION Fly'm 粒子并行规范](../../../docs/SIMION_REFERENCE.md#flym-粒子并行规范)；
+本节只记录 MR-TOF 映射和物理门禁。
+
 `run_two_prism_trial.ps1 -BunchSourceReceiptPath ...` remains the only full-flight
 runner.  It verifies that the receipt, state table, and full Fly2 are unique
 outputs of one successful source-run manifest.  The repository resource
@@ -491,11 +512,10 @@ Each planned batch is one contiguous global particle-ID interval and keeps the
 source's common `tob=0`.  SIMION sees local IDs `1..n`; merge uses only the
 planner's `simion_particle_id_offset`, rejects incomplete/overlapping coverage,
 retains every non-completion line, and emits exactly one global Fly-completion
-sentinel before the ordinary cohort analysis.  Each batch receives a private native runtime bundle and a private IOB with the
-same four roles: global fallback, native corridor, provider accelerator and
-detector.  It reuses the sealed response bank through the runtime family; no
-batch performs PA composition or Refine.  The receipt binds the four role
-identities, poses, program companions and batch-specific Fly2.  Capacity is
-reserved once for the protected runtime family rather than once per worker
-copy.  The run manifest binds the source manifest, scheduler request/profile/
-plan, particle-batch plan, resource usage, merge receipt and retained raw logs.
+sentinel before the ordinary cohort analysis.  All workers reuse one read-only
+IOB with the same four roles: global fallback, native corridor, provider
+accelerator and detector.  A worker differs only by its `--particles` Fly2
+slice; no batch copies, composes or Refines PA, and no batch rebuilds an IOB.
+Capacity is reserved once for the protected runtime family.  The run manifest
+binds the source manifest, scheduler request/profile/plan, particle-batch plan,
+resource usage, merge receipt and retained raw logs.

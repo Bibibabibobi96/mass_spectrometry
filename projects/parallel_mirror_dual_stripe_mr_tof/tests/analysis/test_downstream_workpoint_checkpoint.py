@@ -103,6 +103,7 @@ class CheckpointFixture:
             "mirror_voltages_v": [0, -5900, -2600, 4200, 6030],
             "selected_axial_energy_per_charge_v": 4372.0, "source_slow_kinetic_energy_per_charge_v": 4.96,
             "fly2_sha256": "same-source", "drift_phase_contract": {"half_oscillations": 51},
+            "nonaccelerator_mesh_mm_per_gu": [1, 1, 1],
         }
         observation = {
             "prism_voltages_v": expected[2:],
@@ -122,8 +123,8 @@ class CheckpointFixture:
             "published_native_members_opened": False, "controller_refine": "solutions={0}",
         })
         key = bank["cache_key"]
-        protection = write_json(result / "local_operating_cache_protection_renewal.json", {
-            "schema_version": 1, "role": "mrtof_local_operating_cache_protection_renewal", "status": "success",
+        protection = write_json(result / "native_corridor_protection_renewal.json", {
+            "schema_version": 1, "role": "mrtof_native_corridor_protection_renewal", "status": "success",
             "lease_id": f"lease-{iteration}", "lease_owner": "owner", "cache_key": key,
             "generation_directory": generation,
             "renewal": {"lease_id": f"lease-{iteration}", "owner": "owner", "protected_cache_keys": [key]},
@@ -142,9 +143,6 @@ class CheckpointFixture:
             "prism_2_voltage_v": expected[3],
         }})
         config_path = child / "run_config.json"
-        config = json.loads(config_path.read_text())
-        config["parameters"]["local_region_mesh_mm_per_gu"] = [[0.25] * 3] * 5
-        write_json(config_path, config)
         doc = json.loads(manifest.read_text())
         doc["run_config"] = {"path": str(config_path), "sha256": sha(config_path), "bytes": config_path.stat().st_size}
         write_json(manifest, doc)

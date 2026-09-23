@@ -15,6 +15,15 @@ receipt 实现变更记录在 continuation receipt，发布后不再允许修改
 而把完整新建容量误计为这次恢复需求。其他失败事务及未终态 run 仍由各自 owner 恢复或退休，
 不得修改台账伪造收尾或自动删除仍在恢复期限的资产。
 
+最新 OA r3 GUI 装配暴露出局部／全局坐标混用：provider plan 的组件局部 `focus_y_mm=0` 被直接当成
+MR 全局 y，导致加速器实体同时进入 Stripe 与 Prism2 屏蔽件。组合器现只把 provider 值解释为局部坐标，
+MR 全局位置改由 `accelerator.focus_y_anchor.project_y_mm` 配置并通过 resolved 几何门禁。首轮选择
+`y=-45 mm`；r3 加速器实体半高 `12 mm`，其 y 上边界 `-33 mm` 与 Prism2 屏蔽件下边界 `-32 mm`
+之间保留 `1 mm`，且与 y 从 `0 mm` 开始的 Stripe 分离。该变量只改变四实例 IOB 中 accelerator PA
+的刚体平移和冻结运行身份；现有 OA r3 PA family、MR global fallback、native corridor response-bank
+和 detector PA 全部只读复用，不构建、复制或 Refine。首棱镜入口位置也从同一变量派生，不再保存第二个
+数值副本。自动电压搜索须以新位姿建立新的中心基线和四轴 stencil，不能继承旧 y 位姿的残差/Jacobian。
+
 加速器由 `orthogonal_accelerator` provider 独占生成。MR 只提交
 [`accelerator_component_request_n100.json`](../config/accelerator_component_request_n100.json) 中的
 `-z` 两区时焦需求和既有 common 圆柱 release；
@@ -27,6 +36,10 @@ MR static pose projection 只保留全局出口锚点和 y 位姿；repeller-to-
 MR 的确定性 `N=100/N=1000` 圆柱束团仅声明本地 frame、圆柱和相空间参数，并调用
 [`common/ion_release`](../../../common/ion_release/README.md) 的 centre-first Halton 采样核；项目代码只保留
 receipt、SIMION FLY2 和坐标投影，不再拥有第二套圆柱采样实现。
+当前用户指定源是沿项目 `y` 的 `1.0 mm` 高圆柱，`x-z` 截面半径 `0.5 mm`；N=100 是同一 N=1000
+母队列的严格前缀。圆柱中心与已通过全部工作点容差的中心单离子起点相同。source-definition schema-4
+只保留经过真实出口校准的 `source_y_offset_mm` 输入；全局 y 基准来自 MR 几何合同，z 释放位置直接由
+本次 OA provider receipt 的 `repeller_to_exit_mm-release_position_in_gap_1_mm` 派生，不保存合同差值魔数。
 
 `20260921_105422__build__simion__mrtof-native-corridor-response-bank` 已完成上述四成员恢复，
 SIMION 格式／响应检查通过，但随后 receipt 门禁在未重建的 `response2.pa`、`response7.pa`
@@ -115,8 +128,9 @@ producer 身份保留，`physical_bytes_removed=0`。重新规划后受管 resid
 `SeedTrialManifest` 路径自动运行同场基线、四轴正扰动和既有 Jacobian audit，再进入既有有界迭代。
 `forward_stencil_steps_v=[0.1,0.1,0.1,0.1]` 沿用已成功 r2 audit 的四轴数值步长，独立于 2 V
 Newton trust cap；历史五区 Jacobian 不得跨场使用。调度行为、bank 身份与 checkpoint 已有轻量回归，
-真实 native 中心基线已通过，工作点收敛尚未完成。当前还不能称为端到端全自动：N>1 batch 的旧八实例 PA
-结构、native 四实例 pulse 权威及 N100/N1000 续接仍需贯通，不能仅删除单粒子限制。
+真实 native 中心基线和四残差工作点已通过。N>1 已使用一个共享 IOB、每进程独立 `--particles` 切片和
+仓库资源调度器贯通；20260924 的 N=100 静态 pilot 三批均自然成功并完整合并，但探测器仅命中 9/100，
+collection gate 为 hard-stop，诊断分辨率约 2940.9，因此未启动 N=1000，也未获得性能资格。
 控制器现在将物理可行性和候选接受分开：预测与实测方向冲突或连续同方向拒绝会保存拒绝证据并从最近
 接受点自动刷新 S1/S2 独立局部导数。刷新探测复用 native runtime、child manifest 和全部事件门禁，
 只补尚未验证的列；新模型须解释已保存的相邻 S 观测后，才以独立持久化的正常增步与异常回退范围继续。
@@ -516,6 +530,11 @@ exact-K 轴向目标为 `4198.824969860909 eV/q`，但从真实出口速度得�
 `energy_match_qualification=diagnostic_only__no_user_authorized_acceptance_tolerance` 字段，不再把源收据的
 声明目标误称为真实能量匹配。前三支延拓仍是其冻结入口态下的有效数值证据，但在加速器有限三维出口
 重新匹配 exact-K 后必须重算，不能单独据此宣称固定几何物理上无解。
+
+### 已退役五局域工作台的冻结证据
+
+以下内容只解释已封存运行。相关五局域 PA、八实例 IOB 和执行入口已经删除，不能作为现役 native
+corridor 链的配置、几何或工作点 authority。
 
 此前三维诊断采用 r51 开放回程栅格几何、旧镜/Stripe receipt、r48 加速器焦点诊断和 r94 五局域工作台。
 其中轴向能量中心 `4165.847974123505 eV/q` 仅标识旧试点，不能与独立 `4000 eV` 加速器筛查点混用，
@@ -1410,9 +1429,10 @@ P2 后的正镜及终端支路。线性去趋势的诊断 FWHM 为 `0.00153069 u
 严格位于第一区内部；完整宽度、半宽、标准差和FWHM不得混用。该值属于加速器有限源区设计／接受度，
 不属于某次随机或确定性粒子抽样。
 
-实际N=100/N=1000源继续由独立schema-3 source-definition声明，其中`x/y/z`空间宽度、能量宽度、角宽、粒子数
+实际N=100/N=1000源继续由独立 schema-4 source-definition 声明，其中圆柱轴/半径/高度、能量宽度、角宽、粒子数
 和共同出生时刻均可独立更改。源文件不再保存加速器绝对释放坐标或几何SHA；它只声明
-`resolved_accelerator_release_position`和相对偏移，运行物化时才从本次冻结几何解析绝对坐标并记录于收据。
+`resolved_provider_accelerator_release_position`和经真实出口校准的 y 偏移，运行物化时从 MR 几何合同与
+本次 OA provider receipt 共同解析绝对坐标并记录于收据。
 PA-family内容身份只包含规范GEM、网格、格点相位、SIMION与构建器身份；
 operating-PA内容身份只额外包含响应PA及实际电压系数。两类缓存均不包含源分布。改变源分布不得触发
 Refine或场合成；只有加速器理论因新的设计条件给出不同电压时，才需从既有响应族组合一个新的

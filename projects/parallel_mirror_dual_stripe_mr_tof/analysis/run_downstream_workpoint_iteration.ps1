@@ -8,11 +8,13 @@ param(
   [Parameter(Mandatory)][string]$StripeRunPath,
   [Parameter(Mandatory)][string]$AcceleratorProviderReceiptPath,
   [string]$NativeSystemRuntimeBundlePath = '',
+  [string]$BunchSourceReceiptPath = '',
   [switch]$PulseAcceleratorUntilInitialExit,
   [string]$AcceleratorPulseSchedulePath = '',
   [string]$TrajectoryProfileId = '',
   [double]$TrajectoryStepScale = 1.0,
   [double]$AcceleratorSourceYOffsetMm = 0.0,
+  [switch]$RetainBaselineGuiWorkbench,
   [string]$ResumeParentCheckpoint = '',
   # A new controller contract may alter acceptance tolerances without changing
   # any PA-producing input.  Reuse only a checkpointed private runtime family;
@@ -36,6 +38,7 @@ $project = 'parallel_mirror_dual_stripe_mr_tof'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json' }
 $trialRunner = Join-Path $PSScriptRoot '..\simion\run_two_prism_trial.ps1'
+$bunchScreeningRunner = Join-Path $PSScriptRoot 'run_native_corridor_bunch_screening.ps1'
 $artifactRoot = Join-Path (Split-Path -Parent $repoRoot) "artifacts\projects\$project"
 $artifactWorkspaceRoot = Join-Path (Split-Path -Parent $repoRoot) 'artifacts'
 if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__simion__mrtof-downstream-auto-workpoint' }
@@ -134,7 +137,7 @@ function Save-WorkpointBootstrap {
   }
 }
 function Invoke-WorkpointStencil {
-  param([Parameter(Mandatory)]$Bootstrap,[Parameter(Mandatory)][string]$BootstrapPath)
+  param([Parameter(Mandatory)]$Bootstrap,[Parameter(Mandatory)][string]$BootstrapPath,[switch]$RetainBaselineGuiWorkbench)
   $seedVoltages=[double[]]$Bootstrap.seed_voltages_v
   $steps=[double[]]$Bootstrap.forward_steps_v
   if(-not$Bootstrap.Contains('attempts')){$Bootstrap['attempts']=@()}
@@ -174,6 +177,7 @@ function Invoke-WorkpointStencil {
       }else{
         $bootstrapId=$RunId+$(if($axis-lt0){'-baseline'}else{'-stencil-'+($axis+1)})+$(if($direction-eq-1){'-reverse'}else{''})
         $arguments=New-CenterTrialArguments -Voltages $voltages -ChildRunId $bootstrapId
+        if($axis-lt0-and$RetainBaselineGuiWorkbench){$arguments.RetainGuiWorkbench=$true}
         & $trialRunner @arguments | Out-Host
         $manifest=Join-Path $artifactRoot "runs\$bootstrapId\run_manifest.json"
       }
@@ -707,15 +711,11 @@ try {
       $priorProblem=(Get-Content -LiteralPath (Join-Path $resumeParentRun 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable).parameters.native_recovery_problem
       if(($priorProblem|ConvertTo-Json -Compress)-ne($nativeRecoveryProblem|ConvertTo-Json -Compress)){throw 'Native recovery scientific problem differs; retained family is not rebuilt.'}
     }
-  if($runtimeOwnerRun-and-not$resumeParentRun){
-      # Direct reuse retains field/trajectory identity but intentionally admits
-      # a new acceptance contract (for example a Candidate tolerance change).
-      $priorProblem=(Get-Content -LiteralPath (Join-Path $runtimeOwnerRun 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable).parameters.native_recovery_problem
-      $priorPhysical=[ordered]@{};$currentPhysical=[ordered]@{}
-      foreach($key in $nativeRecoveryProblem.Keys){if($key-ne'contract_sha256'){$currentPhysical[$key]=$nativeRecoveryProblem[$key]}}
-      foreach($key in $priorProblem.Keys){if($key-ne'contract_sha256'){$priorPhysical[$key]=$priorProblem[$key]}}
-      if(($priorPhysical|ConvertTo-Json -Compress)-ne($currentPhysical|ConvertTo-Json -Compress)){throw 'Native runtime physical problem differs; retained family is not rebuilt.'}
-    }
+  # Direct NativeRuntimeCheckpoint reuse is limited to the already verified
+  # native corridor PA family. Open-NativeCorridorRuntimeCheckpoint binds its
+  # cache key, generation and member hashes above. Static PA choices, IOB
+  # poses, trajectory settings and acceptance contracts are flight inputs,
+  # not PA-producing identities, so they must not force a corridor rebuild.
   $earlyConfig=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
   $earlyConfig.parameters.native_recovery_problem=$nativeRecoveryProblem
   Write-RunJson -Path $package.run_config -Depth 30 -Value $earlyConfig
@@ -768,7 +768,7 @@ try {
     $bootstrapConfig.parameters.voltage_seed_consumer_projection=$seedProjection
     Write-RunJson -Path $package.run_config -Depth 20 -Value $bootstrapConfig
     $auditRunner=Join-Path $PSScriptRoot 'run_downstream_fixed_grid_workpoint.ps1'
-    $InitialWorkpointManifest=Invoke-WorkpointStencil -Bootstrap $bootstrap -BootstrapPath $bootstrapPath
+    $InitialWorkpointManifest=Invoke-WorkpointStencil -Bootstrap $bootstrap -BootstrapPath $bootstrapPath -RetainBaselineGuiWorkbench:$RetainBaselineGuiWorkbench
   }
   $initialManifest = (Resolve-Path -LiteralPath $InitialWorkpointManifest).Path
   & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $initialManifest `
@@ -966,7 +966,7 @@ try {
     $observation = Get-ManifestOutputPath -ManifestPath $childManifest -FileName 'two_prism_trial_observation.json'
     $materialization = Get-ManifestOutputPath -ManifestPath $childManifest -FileName 'two_prism_trial_materialization.json'
     $cacheIdentity = Get-ManifestOutputPath -ManifestPath $childManifest -FileName 'native_corridor_runtime_family.json'
-    $childProtectionPath = Get-ManifestOutputPath -ManifestPath $childManifest -FileName 'local_operating_cache_protection_renewal.json'
+    $childProtectionPath = Get-ManifestOutputPath -ManifestPath $childManifest -FileName 'native_corridor_protection_renewal.json'
     # The parent consumes these four compact, named records.  The child has
     # already performed its own full publication validation, so rehashing every
     # child PA here would only repeat multi-GiB reads without strengthening this
@@ -1127,6 +1127,24 @@ try {
     Save-NativeWorkflowCheckpoint -Reason ([string]$terminalDecision.terminal_reason) -WorkflowOutcome $nativeOutcome -FinalDecision $terminalDecision
     $terminalized=$true
     Write-Host "MRTOF_DOWNSTREAM_AUTO_WORKPOINT=$($terminalDecision.terminal_reason) CHECKPOINT=$nativeOutcome RUN_ID=$RunId"
+    if($terminalDecision.terminal_reason-eq'success'-and-not[string]::IsNullOrWhiteSpace($BunchSourceReceiptPath)){
+      # Release the workpoint owner's runtime and capacity lease before the
+      # downstream workflow reopens the same checkpointed family.  The handoff
+      # therefore remains one-way and never nests two owners of the large PA set.
+      Suspend-NativeCorridorRuntimeSession -Session $nativeRuntimeSession
+      $nativeRuntimeSession=$null
+      $null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession
+      $capacitySession=$null
+      $screeningArguments=@{
+        WorkpointRunPath=$package.artifact_run_dir
+        NativeCorridorBankRunPath=$NativeCorridorBankRunPath
+        BunchSourceReceiptPath=$BunchSourceReceiptPath
+        RunId=$RunId+'-bunch'
+        PythonExe=$python
+      }
+      if($SimionExe){$screeningArguments.SimionExe=$SimionExe}
+      & $bunchScreeningRunner @screeningArguments
+    }
     return
   }
   Write-RunJson -Path $package.summary -Depth 20 -Value ([ordered]@{

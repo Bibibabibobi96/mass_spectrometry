@@ -64,7 +64,10 @@ def _same_mirror_physics(
         contract.pop("accelerator", None)
         contract.pop("particle_source", None)
         contract.pop("downstream_fixed_grid_workpoint_profile", None)
+        _remove_path(contract, "prism_transport", "first_prism", "entry_reference")
         _remove_path(contract, "simion", "accelerator_pa_span_mm")
+        _remove_path(contract, "simion", "analyzer_spatial_convergence")
+        _remove_path(contract, "simion", "native_corridor")
         _remove_path(
             contract,
             "simion",
