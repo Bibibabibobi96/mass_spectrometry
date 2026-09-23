@@ -215,6 +215,7 @@ try{
     NativeSystemRuntimeBundlePath=$nativeSystemRuntimeBundlePath
     NativeCorridorBankRunPath=$bankRun;NativeCorridorRuntimeSession=$nativeRuntimeSession;CapacityWorkflowSession=$capacitySession
     BunchSourceReceiptPath=$sourceReceipt;BunchParticleIdMin=1;BunchParticleIdMax=100
+    RetainGuiWorkbench=$true
     Stripe1VoltageV=$voltages[0];Stripe2VoltageV=$voltages[1];Prism1VoltageV=$voltages[2];Prism2VoltageV=$voltages[3]
     TrajectoryProfileId=[string]$problem.trajectory_profile;TrajectoryStepScale=[double]$problem.trajectory_step_scale
     AcceleratorSourceYOffsetMm=[double]$problem.source_y_offset_mm;RunId=$pilotRunId;PythonExe=$python
@@ -338,6 +339,7 @@ try{
     NativeSystemRuntimeBundlePath=$nativeSystemRuntimeBundlePath
     NativeCorridorBankRunPath=$bankRun;NativeCorridorRuntimeSession=$nativeRuntimeSession;CapacityWorkflowSession=$capacitySession
     BunchSourceReceiptPath=$sourceReceipt;AcceleratorPulseSchedulePath=$schedule
+    RetainGuiWorkbench=$true
     Stripe1VoltageV=$voltages[0];Stripe2VoltageV=$voltages[1];Prism1VoltageV=$voltages[2];Prism2VoltageV=$voltages[3]
     TrajectoryProfileId=[string]$problem.trajectory_profile;TrajectoryStepScale=[double]$problem.trajectory_step_scale
     AcceleratorSourceYOffsetMm=[double]$problem.source_y_offset_mm;RunId=$cohortRunId;PythonExe=$python

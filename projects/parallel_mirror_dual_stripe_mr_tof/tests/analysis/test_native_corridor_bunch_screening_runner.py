@@ -19,6 +19,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
             "[string]$RecoveryPlanPath=''",
             "$pilotRunId=$RunId+'__n100-static'",
             "$cohortRunId=$RunId+'__n1000-fixed-clock'",
+            "RetainGuiWorkbench=$true",
             "run_freeze_bunch_pulse_schedule.ps1",
             "$guardUs=[double]$pilotData.trajectory_profile.maximum_step_us",
             "one_checkpointed_native_fast_adjust_family__no_pa_copy_or_refine",
@@ -26,6 +27,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
         ):
             self.assertIn(token, source)
         self.assertNotIn("New-NativeCorridorRuntimeFamily", source)
+        self.assertEqual(source.count("RetainGuiWorkbench=$true"), 2)
 
     def test_native_bunch_flights_forward_only_the_bound_system_bundle(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")

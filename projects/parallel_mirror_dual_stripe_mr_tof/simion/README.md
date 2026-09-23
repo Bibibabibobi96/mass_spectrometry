@@ -300,9 +300,10 @@ GUI 审查包由 native system runtime bundle 生成，并绑定上述四个冻�
 三组件工作台。
 
 `run_two_prism_trial.ps1 -RetainGuiWorkbench` 以 `solver_review` 在本次受管 run 的
-`simion/gui_workbench/` 写入 IOB 与所有非 PA 伴随文件；IOB 的私有 PA 输入也留在该目录，
-避免绝对路径指向系统临时目录或上游 run。收据只复用已发布 runtime／provider 身份记录 PA，
-不会为 GUI 包递归枚举或重哈希 PA。GUI 关闭后由该 run 的 owner disposition 路由退休。
+`simion/gui_workbench/` 写入 IOB 与所有非 PA 伴随文件。IOB 在飞行后重绑到已发布的稳定只读
+PA，临时 PA 投影随即删除；收据只复用 runtime／provider 身份，不为 GUI 包递归枚举或
+重哈希 PA。N=100 和 N=1000 串团飞行默认开启此开关，因此不再随运行时临时目录丢失小型 GUI 审查包。
+GUI 关闭后由该 run 的 owner disposition 路由退休。
 
 单中心时间步三档对照由
 [single_center_timestep_convergence.py](../analysis/single_center_timestep_convergence.py) 及受管入口
