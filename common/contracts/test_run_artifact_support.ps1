@@ -110,10 +110,10 @@ try {
   New-Item -ItemType Directory -Path $capacityRoot -Force|Out-Null
   New-Item -ItemType Directory -Path (Join-Path $capacityRoot 'projects') -Force|Out-Null
   New-Item -ItemType Directory -Path (Join-Path $capacityRoot 'common') -Force|Out-Null
-  Write-RunJson -Path (Join-Path $capacityRoot 'common\capacity_ledger.json') -Value ([ordered]@{
-    schema_version=1;role='artifact_capacity_ledger';artifact_root=$capacityRoot
-    status='calibrated';complete=$true;resident_bytes=0;objects=@()
-  })
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python -c "from pathlib import Path; from common.contracts import capacity_ledger; import sys; capacity_ledger.initialize_capacity_ledger(Path(sys.argv[1]), objects=[])" $capacityRoot
+    if($LASTEXITCODE-ne0){throw 'Capacity ledger fixture initialization failed.'}
+  } | Out-Null
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
     & $python -m common.contracts.reconcile_artifact_capacity `
       --artifact-root $capacityRoot --create-protection-lease test-capacity `

@@ -26,6 +26,24 @@ try {
   $env:SIMULATION_PYTHON_EXE = $PythonExe
   . $leaseSource
   . (Join-Path $PSScriptRoot 'contracts/run_artifact_support.ps1')
+  $realTransaction=${function:Invoke-HostResourceTransaction}
+  try {
+    function Invoke-HostResourceTransaction {
+      param([hashtable]$Request,[string]$StatePath)
+      return [pscustomobject]@{processes=@(
+        [pscustomobject]@{pid=4242;started='0000000000000000001'},
+        [pscustomobject]@{pid=4242;started='0000000000000000001'}
+      )}
+    }
+    $duplicateLease=[pscustomobject]@{
+      state_path=$statePath;token='duplicate-registration-test';registered_work_processes=@{}
+    }
+    $duplicateLease=Register-HostResourceProcess -Lease $duplicateLease -ProcessId 4242
+    Assert-True ($duplicateLease.registered_work_processes['4242']-eq'0000000000000000001') `
+      'Duplicate scheduler observations of one process identity must register once.'
+  } finally {
+    Set-Item -Path function:Invoke-HostResourceTransaction -Value $realTransaction
+  }
   $nativeTicks = Get-HostResourceNativeProcessCreationTicks -ProcessId $PID
   $managedTicks = (Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks.ToString('D19')
   Assert-True ($nativeTicks -eq $managedTicks) 'Native limited process query did not preserve the current creation identity.'

@@ -440,8 +440,19 @@ function Register-HostResourceProcess {
     operation='register';token=$Lease.token;process_id=$ProcessId
   }
   $registered=@($record.processes|Where-Object{[int]$_.pid-eq$ProcessId})
-  if($registered.Count-ne1){throw 'Scheduler did not return one exact registered work-process identity.'}
-  $Lease.registered_work_processes[[string]$ProcessId]=[string]$registered[0].started
+  # A scheduler refresh may report the same live process twice while merging
+  # discovery and registration.  One (pid, started) identity remains one
+  # process; distinct or incomplete identities still fail closed.
+  $identities=[ordered]@{}
+  foreach($candidate in $registered){
+    $started=[string]$candidate.started
+    $identity="${ProcessId}:$started"
+    if(-not$identities.Contains($identity)){$identities[$identity]=$candidate}
+  }
+  if($identities.Count-ne1-or[string]::IsNullOrWhiteSpace([string](@($identities.Values)[0].started))){
+    throw 'Scheduler did not return one exact registered work-process identity.'
+  }
+  $Lease.registered_work_processes[[string]$ProcessId]=[string](@($identities.Values)[0].started)
   return $Lease
 }
 
