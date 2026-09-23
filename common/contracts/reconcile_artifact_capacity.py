@@ -1067,6 +1067,12 @@ def _resume_terminal_run_owner(root: Path) -> dict[str, int]:
     return resume_terminal_runs(root)
 
 
+def _resume_partial_run_retirement_owner(root: Path) -> dict[str, int]:
+    from common.contracts.run_capacity_lifecycle import resume_partial_retirements
+
+    return resume_partial_retirements(root)
+
+
 def _recover_capacity_ledger_owner(root: Path) -> dict[str, int]:
     return capacity_ledger.recover_stale_atomic_ledger_temps(root)
 
@@ -1089,6 +1095,9 @@ def _run_maintenance_owner_actions(root: Path) -> tuple[dict[str, dict[str, int]
         ("terminal_run_lifecycle", _resume_terminal_run_owner, {
             "checked_count": 0, "finalized_count": 0, "blocked_count": 0,
             "migrated_count": 0, "migrated_bytes": 0,
+        }),
+        ("partial_run_retirement", _resume_partial_run_retirement_owner, {
+            "completed_count": 0, "removed_bytes": 0, "blocked_count": 0,
         }),
         ("pa_transaction_audit", _audit_pa_transaction_owner, {
             "checked_count": 0, "replayable_count": 0, "awaiting_verification_count": 0,

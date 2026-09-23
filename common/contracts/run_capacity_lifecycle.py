@@ -16,7 +16,7 @@ from typing import Any
 from common.contracts import capacity_ledger
 from common.contracts import capacity_protection
 from common.contracts.artifact_retention import classify_file
-from common.contracts.recorded_file_removal import write_json_atomic
+from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
 
 
 TERMINAL_STATUSES = {"success", "failed", "interrupted"}
@@ -26,6 +26,7 @@ HEAVY_RETENTION_ROLES = {
 WRITING_REVIEW_DAYS = 7
 READY_REVIEW_DAYS = 30
 LEGACY_LIGHT_EVIDENCE_BUDGET_BYTES = 26_214_400
+PARTIAL_RETIREMENT_RECEIPT = "partial_retirement_actions.json"
 
 
 def _run_lifecycle_duties(run_dir: Path, *, review_days: int, reason: str) -> dict[str, str]:
@@ -359,6 +360,94 @@ def resume_terminal_runs(artifact_root: Path) -> dict[str, int]:
         "checked_count": checked, "finalized_count": finalized, "blocked_count": blocked,
         **legacy,
     }
+
+
+def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
+    """Resume owner-approved heavy-file retirement without retiring its run.
+
+    A historical run can retain its frozen configuration, results and receipt
+    while only explicitly listed, classified heavy payloads are removed.  The
+    caller supplies a sealed list under the run; this function never discovers
+    deletion candidates and never hashes PA payload merely to delete it.
+    """
+
+    root = Path(artifact_root).resolve(strict=False)
+    ledger = capacity_ledger.load_capacity_ledger(root)
+    if ledger is None:
+        raise ValueError("partial retirement requires a valid capacity ledger")
+    completed = removed_bytes = blocked = 0
+    for entry in list(ledger["objects"]):
+        if not (
+            entry.get("status") == "writing"
+            and entry.get("class") == "rebuildable_payload"
+            and entry.get("recovery_reason") in {
+                "structured_nonterminal_run_reference", "run_contract_missing_or_invalid",
+            }
+        ):
+            continue
+        path = root / entry["path"]
+        if not path.is_file() or classify_file(path, bytes_count=int(entry["bytes"])) not in HEAVY_RETENTION_ROLES:
+            continue
+        consumers = entry.get("consumers", [])
+        consumer_entries = {
+            item["path"]: item for item in ledger["objects"] if item.get("path") in consumers
+        }
+        if any(
+            item.get("status") not in {"writing", "retired"}
+            for item in consumer_entries.values()
+        ):
+            blocked += 1
+            continue
+        # A pending per-file receipt is the sealed approval and replay record.
+        run_dir = next((parent for parent in path.parents if parent.parent.name == "runs"), None)
+        if run_dir is None:
+            blocked += 1
+            continue
+        receipt_path = run_dir / PARTIAL_RETIREMENT_RECEIPT
+        record = {"path": path.relative_to(run_dir).as_posix(), "bytes": int(entry["bytes"])}
+        if receipt_path.exists():
+            receipt = _load_json(receipt_path, "partial retirement receipt")
+            if receipt.get("role") != "run_partial_retirement_actions" or receipt.get("status") not in {"pending", "complete"}:
+                blocked += 1
+                continue
+            if record not in receipt.get("removed", []):
+                receipt["removed"].append(record)
+                receipt["status"] = "pending"
+                write_json_atomic(receipt_path, receipt)
+        else:
+            # A file is eligible only under the user's already-recorded
+            # explicit abandonment decision; ordinary writing payloads remain
+            # with their originating workflow.
+            if entry.get("recovery_task") != "explicit_user_authorized_abandonment":
+                continue
+            receipt = {
+                "schema_version": 1, "role": "run_partial_retirement_actions",
+                "status": "pending", "removed": [record], "removed_bytes": 0,
+                "preserved": "all unlisted run files",
+            }
+            write_json_atomic(receipt_path, receipt)
+        if path.exists():
+            next(remove_recorded_files(run_dir, [record], identities_verified=True))
+            receipt["removed_bytes"] += record["bytes"]
+            write_json_atomic(receipt_path, receipt)
+        with capacity_protection.capacity_decision_lock(root):
+            current = capacity_ledger.load_capacity_ledger(root)
+            if current is None:
+                raise ValueError("capacity ledger disappeared during partial retirement")
+            target = next((item for item in current["objects"] if item.get("path") == entry["path"]), None)
+            if target is None:
+                raise ValueError("partial retirement ledger entry disappeared")
+            if target.get("status") != "retired":
+                target.clear()
+                target.update({"path": entry["path"], "class": "rebuildable_payload",
+                               "bytes": record["bytes"], "status": "retired", "pin": False})
+                current["resident_bytes"] -= record["bytes"]
+                write_json_atomic(capacity_ledger.resolve_ledger_path(root), current)
+        receipt["status"] = "complete"
+        write_json_atomic(receipt_path, receipt)
+        completed += 1
+        removed_bytes += record["bytes"]
+    return {"completed_count": completed, "removed_bytes": removed_bytes, "blocked_count": blocked}
 
 
 def main() -> int:
