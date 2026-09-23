@@ -83,6 +83,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
             recovery_policy="none",
         )
         self.source_manifest = source_publication.generation_directory / "cache_manifest.json"
+        self.initial_source_manifest = self.source_manifest
         self.coarse_manifest = coarse_publication.generation_directory / "cache_manifest.json"
         self.basis_paths = [
             source_publication.generation_directory / path.name for path in self.basis_paths
@@ -96,11 +97,51 @@ class NativeCorridorFreezeTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def _freeze(self, output: Path) -> dict[str, object]:
+    def _governed_output(self) -> tuple[Path, Path]:
+        run = (
+            self.root
+            / "artifacts"
+            / "projects"
+            / "parallel_mirror_dual_stripe_mr_tof"
+            / "runs"
+            / "20260923_120000__build__simion__mrtof-native-corridor-response-bank"
+        )
+        inputs = run / "inputs"
+        inputs.mkdir(parents=True, exist_ok=True)
+        config = {
+            "schema_version": 2,
+            "run_id": run.name,
+            "project": "parallel_mirror_dual_stripe_mr_tof",
+            "mode": "native_corridor_detached_response_bank",
+            "inputs": {},
+            "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None},
+            "capacity_ledger_lifecycle": {"schema_version": 1, "enabled": True},
+        }
+        (run / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+        manifest = {
+            "schema_version": 2,
+            "role": "simulation_run_manifest",
+            "status": "checkpoint",
+            "run_id": run.name,
+            "project": "parallel_mirror_dual_stripe_mr_tof",
+            "mode": "native_corridor_detached_response_bank",
+        }
+        (run / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        return run / "run_config.json", inputs / "native_corridor_freeze"
+
+    def _freeze(
+        self, output: Path | None = None, run_config: Path | None = None
+    ) -> dict[str, object]:
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import (
             native_corridor_freeze as freeze_module,
             native_corridor_geometry as geometry_module,
         )
+
+        if run_config is None:
+            run_config, governed_output = self._governed_output()
+            output = governed_output if output is None else output
+        elif output is None:
+            raise AssertionError("explicit governed run config requires an output")
 
         with (
             patch.object(
@@ -121,11 +162,12 @@ class NativeCorridorFreezeTest(unittest.TestCase):
                 simion_executable=self.simion,
                 simion_release="SIMION fixture",
                 output_directory=output,
+                run_config_path=run_config,
                 canonical_gem_path=self.gem,
             )
 
     def test_freeze_is_four_files_and_identical_rerun_is_hit(self) -> None:
-        output = self.root / "frozen"
+        _, output = self._governed_output()
         first = self._freeze(output)
         first_bytes = {name: (output / name).read_bytes() for name in FROZEN_NAMES}
         second = self._freeze(output)
@@ -168,7 +210,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
             patch.object(cache_module, "file_sha256", side_effect=guarded),
             patch.object(identity, "file_sha256", side_effect=guarded),
         ):
-            result = self._freeze(self.root / "no_pa_hash")
+            result = self._freeze()
         self.assertEqual(result["disposition"], "published")
 
     def _replace_source_generation(self, names: list[str]) -> None:
@@ -195,19 +237,48 @@ class NativeCorridorFreezeTest(unittest.TestCase):
         for index, (names, message) in enumerate(cases):
             with self.subTest(case=index):
                 self._replace_source_generation(names)
-                output = self.root / f"invalid_{index}"
+                _, output = self._governed_output()
                 with self.assertRaisesRegex(CandidateContractError, message):
                     self._freeze(output)
                 self.assertFalse(output.exists())
 
     def test_existing_nonidentical_freeze_fails_closed(self) -> None:
-        output = self.root / "frozen"
+        _, output = self._governed_output()
         self._freeze(output)
         target = output / FROZEN_NAMES[0]
         target.chmod(target.stat().st_mode | stat.S_IWRITE)
         target.write_text("{}\n", encoding="utf-8")
         with self.assertRaisesRegex(CandidateContractError, "differs"):
             self._freeze(output)
+
+    def test_rejects_arbitrary_or_incomplete_artifact_scope_before_writing(self) -> None:
+        run_config, output = self._governed_output()
+        for target, message in (
+            (self.root / "arbitrary", "pre-registered response-bank input range"),
+            (self.root / "artifacts" / "projects" / "parallel_mirror_dual_stripe_mr_tof" / "cache" / "native_corridor_frozen_inputs" / "new", "pre-registered response-bank input range"),
+        ):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(CandidateContractError, message):
+                    self._freeze(target, run_config)
+                self.assertFalse(target.exists())
+        config = json.loads(run_config.read_text(encoding="utf-8"))
+        config.pop("capacity_ledger_lifecycle")
+        run_config.write_text(json.dumps(config), encoding="utf-8")
+        with self.assertRaisesRegex(CandidateContractError, "owner, lifecycle, and checkpoint closure"):
+            self._freeze(output, run_config)
+        self.assertFalse(output.exists())
+
+    def test_failed_attempt_leaves_no_output_and_replay_publishes_once(self) -> None:
+        _, output = self._governed_output()
+        self._replace_source_generation(["wrong-name.pa"])
+        with self.assertRaisesRegex(CandidateContractError, "non-response member"):
+            self._freeze(output)
+        self.assertFalse(output.exists())
+        self.source_manifest = self.initial_source_manifest
+        first = self._freeze(output)
+        second = self._freeze(output)
+        self.assertEqual(first["disposition"], "published")
+        self.assertEqual(second["disposition"], "hit")
 
 
 if __name__ == "__main__":

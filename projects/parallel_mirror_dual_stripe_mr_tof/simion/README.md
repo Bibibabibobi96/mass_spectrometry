@@ -271,11 +271,13 @@ The old five-region handoff and fixed-operating executables have been atomically
 retired.  Historical evidence remains under `docs/history` and prior run records;
 no active entry point can select those paths.
 
-The runner consumes one frozen input directory containing the common-cache
-identity, derived plan, coarse-basis recipe, and freeze manifest.  On a cache
-hit it performs no GEM, basis, Refine, or PA copy.  On a miss it retains only a
-small SIMION verification log and ordinary run evidence; all reusable heavy
-bytes remain under the one common transaction/generation authority.
+The runner reads the prior frozen package only as an immutable source, then
+re-freezes its four small inputs under its already registered response-bank run.
+The run's normal success, failure, and replay paths therefore own those files;
+the old cache directory is never a new output target. On a cache hit it performs
+no GEM, basis, Refine, or PA copy. On a miss it retains only a small SIMION
+verification log and ordinary run evidence; all reusable heavy bytes remain
+under the one common transaction/generation authority.
 
 The first corrected 10-kV-reference Candidate was published as cache key
 `C4F9B280FD7D748BF1AEBC528C038D76FA0E66A142F0D6246B1D7D6AED480BDE`,

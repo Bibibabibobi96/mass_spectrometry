@@ -26,10 +26,7 @@ $projectArtifactRoot=Join-Path $artifactRoot "projects\$projectId"
 $cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
-$frozen=(Resolve-Path -LiteralPath $FrozenInputDirectory).Path
-$freezeManifest=Join-Path $frozen 'native_corridor_freeze_manifest.json'
-$recipePath=Join-Path $frozen 'native_corridor_response_recipe.json'
-$planPath=Join-Path $frozen 'native_corridor_plan.json'
+$legacyFrozen=(Resolve-Path -LiteralPath $FrozenInputDirectory).Path
 $bankModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_response_bank'
 $bankMembers=@('mrtof_analyzer_corridor.pa#')+@(1..8|ForEach-Object{'mrtof_analyzer_corridor.pa{0}'-f$_})+@(1..8|ForEach-Object{'mrtof_analyzer_corridor.response{0}.pa'-f$_})+@('mrtof_analyzer_corridor.standalone_responses.json')
 $pinReason='MR-TOF detached native-corridor response bank required to construct private Fast Adjust execution families'
@@ -101,6 +98,44 @@ function Invoke-CacheProbe {
   $arguments=@('-m','common.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,
     '--identity',$IdentityPath,'--filenames',($bankMembers-join','))
   return ((@(Invoke-ProjectPython -Arguments $arguments)-join"`n")|ConvertFrom-Json -Depth 40)
+}
+
+function Get-FrozenInputGenerationManifests {
+  param([Parameter(Mandatory)][string]$FrozenDirectory)
+  $recipePath=Join-Path $FrozenDirectory 'native_corridor_response_recipe.json'
+  $manifestPath=Join-Path $FrozenDirectory 'native_corridor_freeze_manifest.json'
+  foreach($path in @($recipePath,$manifestPath, (Join-Path $FrozenDirectory 'native_corridor_plan.json'), (Join-Path $FrozenDirectory 'native_corridor_identity.json'))){
+    if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Frozen native-corridor source is incomplete: $path"}
+  }
+  $recipe=Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 40
+  $basisPaths=@($recipe.response_recipes|ForEach-Object{@($_.source_basis_paths)}|ForEach-Object{[IO.Path]::GetFullPath([string]$_)})
+  if($basisPaths.Count-eq0){throw 'Frozen native-corridor source has no response basis paths.'}
+  $basisDirectories=@($basisPaths|ForEach-Object{Split-Path -Parent $_}|Sort-Object -Unique)
+  $coarseRaw=[string]$recipe.coarse_raw_member.name
+  $coarseGeneration=[string]$recipe.coarse_raw_generation_identity.generation_sha256
+  $coarseKey=[string]$recipe.coarse_raw_generation_identity.cache_key
+  if($basisDirectories.Count-ne1-or[IO.Path]::GetFileName($coarseRaw)-ne$coarseRaw-or$coarseKey-notmatch'^[0-9a-fA-F]{64}$'-or$coarseGeneration-notmatch'^[0-9a-fA-F]{64}$'){
+    throw 'Frozen native-corridor source generation identity is invalid.'
+  }
+  $sourceManifest=Join-Path $basisDirectories[0] 'cache_manifest.json'
+  $coarseManifest=Join-Path $cacheRoot "$($coarseKey.ToUpperInvariant())\generations\$($coarseGeneration.ToUpperInvariant())\cache_manifest.json"
+  foreach($path in @($sourceManifest,$coarseManifest)){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Frozen native-corridor source generation manifest is missing: $path"}}
+  return [pscustomobject]@{source_manifest=(Resolve-Path -LiteralPath $sourceManifest).Path;coarse_manifest=(Resolve-Path -LiteralPath $coarseManifest).Path;source_freeze_manifest=(Resolve-Path -LiteralPath $manifestPath).Path}
+}
+
+function New-ManagedFrozenInputs {
+  param([Parameter(Mandatory)]$Package,[Parameter(Mandatory)][string]$LegacyFrozenDirectory)
+  $source=Get-FrozenInputGenerationManifests -FrozenDirectory $LegacyFrozenDirectory
+  $destination=Join-Path ([string]$Package.input_dir) 'native_corridor_freeze'
+  Invoke-ProjectPython -Arguments @(
+    '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_freeze',
+    '--contract',(Join-Path $projectRoot 'config\simion_candidate_two_zone.json'),
+    '--source-generation-manifest',$source.source_manifest,
+    '--coarse-generation-manifest',$source.coarse_manifest,
+    '--simion-executable',$simion,'--simion-release','SIMION 2020',
+    '--output-directory',$destination,'--run-config',[string]$Package.run_config
+  )|Out-Null
+  return [pscustomobject]@{directory=(Resolve-Path -LiteralPath $destination).Path;source_freeze_manifest=$source.source_freeze_manifest}
 }
 
 function Move-NewMember {
@@ -225,10 +260,18 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $proje
   -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled -UseShortExecutionPath
 $resultDir=$package.result_dir;$summary=$package.summary;$runConfig=$package.run_config
 $identityPath=Join-Path $resultDir 'response_bank_identity.json';$verificationLog=Join-Path $resultDir 'response_bank_private_verify.log';$evidencePath=Join-Path $resultDir 'response_bank_verification.json'
-$terminalized=$false;$failureStage='identity';$capacitySession=$null;$publication=$null
+$terminalized=$false;$failureStage='freeze_managed_inputs';$capacitySession=$null;$publication=$null
+$managedFrozen=$null;$frozen='';$freezeManifest='';$recipePath='';$planPath='';$frozenOutputs=@()
 $continuationOutputs=@();$memberRecoveryPath='';$retainedInventoryRecoveryPath='';$publishedReuse=$false
 $publicationCorrectionPath='';$correctPublication=-not[string]::IsNullOrWhiteSpace($CorrectPublishedInventoryMember)
 try {
+  $managedFrozen=New-ManagedFrozenInputs -Package $package -LegacyFrozenDirectory $legacyFrozen
+  $frozen=[string]$managedFrozen.directory
+  $freezeManifest=Join-Path $frozen 'native_corridor_freeze_manifest.json'
+  $recipePath=Join-Path $frozen 'native_corridor_response_recipe.json'
+  $planPath=Join-Path $frozen 'native_corridor_plan.json'
+  $frozenOutputs=@($freezeManifest,(Join-Path $frozen 'native_corridor_identity.json'),$planPath,$recipePath)
+  $failureStage='identity'
   Invoke-ProjectPython -Arguments @('-m',$bankModule,'--frozen-input-directory',$frozen,'--simion-executable',$simion,'--simion-release','SIMION 2020','--output',$identityPath)|Out-Null
   if($RecoverMembers.Count-gt0-and-not$TransactionCacheKey){throw 'Member recovery requires an explicit frozen transaction key.'}
   if($RecoverRetainedInventoryMembers.Count-gt0-and(-not$TransactionCacheKey-or$RecoverMembers.Count-gt0)){throw 'Retained inventory repair requires an explicit frozen transaction and cannot rebuild members.'}
@@ -365,9 +408,15 @@ try {
   $failureStage='publish_run'
   $publicationPath=Join-Path $resultDir 'pa_family_cache_publication.json';Write-RunJson -Path $publicationPath -Depth 30 -Value $publication
   $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -ProtectedCacheKeys @([string]$publication.cache_key) -RemainingCommittedNewBytes 0;$capacitySession=$terminal.session
+  $configuration=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  $configuration.inputs=[ordered]@{
+    native_corridor_freeze_manifest=$freezeManifest
+    native_corridor_freeze_source_manifest=[string]$managedFrozen.source_freeze_manifest
+  }
+  Write-RunJson -Path $runConfig -Depth 20 -Value $configuration
   Write-RunJson -Path $summary -Depth 20 -Value ([ordered]@{schema_version=1;role='mrtof_native_corridor_detached_response_bank';status='success';cache_key=[string]$publication.cache_key;generation_sha256=[string]$publication.generation_sha256;published_bank_reused=$publishedReuse;published_inventory_corrected=$correctPublication;solver_rerun_for_metadata_correction=$false;runtime_input='detached_standalone_responses_only';native_published_member_opening='forbidden'})
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
-  $outputs=@($summary,$identityPath,$publicationPath,$retention)+$continuationOutputs
+  $outputs=@($summary,$identityPath,$publicationPath,$retention)+$frozenOutputs+$continuationOutputs
   foreach($path in @($verificationLog,$evidencePath)){if(Test-Path -LiteralPath $path -PathType Leaf){$outputs+=@($path)}}
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
   $terminalized=$true;Write-Host "MRTOF_NATIVE_CORRIDOR_RESPONSE_BANK=PASS RUN_ID=$RunId CACHE_KEY=$($publication.cache_key)"

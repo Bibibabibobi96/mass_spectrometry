@@ -43,6 +43,9 @@ IDENTITY_NAME = "native_corridor_identity.json"
 RECIPE_NAME = "native_corridor_response_recipe.json"
 MANIFEST_NAME = "native_corridor_freeze_manifest.json"
 FROZEN_NAMES = (PLAN_NAME, IDENTITY_NAME, RECIPE_NAME, MANIFEST_NAME)
+PROJECT_ID = "parallel_mirror_dual_stripe_mr_tof"
+RESPONSE_BANK_MODE = "native_corridor_detached_response_bank"
+FREEZE_RELATIVE_DIRECTORY = Path("inputs") / "native_corridor_freeze"
 
 
 def _canonical_json(document: object) -> bytes:
@@ -220,6 +223,63 @@ def _seal_frozen_directory(directory: Path) -> None:
         path.chmod(path.stat().st_mode & ~stat.S_IWRITE)
 
 
+def _validate_governed_freeze_scope(
+    run_config_path: Path, output_directory: Path
+) -> tuple[Path, dict[str, Any]]:
+    """Require the pre-registered response-bank input range before writing.
+
+    The freeze is a small immutable input bundle, but it is still a durable
+    artifact.  Keep it in the owning response-bank run rather than a project
+    cache, so its normal run manifest and failed/interrupted closure own it.
+    """
+
+    config_path = run_config_path.resolve()
+    output = output_directory.resolve()
+    if not config_path.is_file() or config_path.name != "run_config.json":
+        raise CandidateContractError("corridor freeze requires an owning run_config.json")
+    run_directory = config_path.parent
+    if (
+        run_directory.parent.name != "runs"
+        or run_directory.parent.parent.name != PROJECT_ID
+        or run_directory.parent.parent.parent.name != "projects"
+        or run_directory.parent.parent.parent.parent.name != "artifacts"
+    ):
+        raise CandidateContractError("corridor freeze requires a governed MR-TOF artifact run")
+    expected_output = (run_directory / FREEZE_RELATIVE_DIRECTORY).resolve()
+    if output != expected_output:
+        raise CandidateContractError(
+            "corridor freeze output must be the pre-registered response-bank input range"
+        )
+    if not expected_output.parent.is_dir():
+        raise CandidateContractError("corridor freeze input range was not pre-created")
+    try:
+        configuration = json.loads(config_path.read_text(encoding="utf-8-sig"))
+        manifest = json.loads(
+            (run_directory / "run_manifest.json").read_text(encoding="utf-8-sig")
+        )
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CandidateContractError(
+            "corridor freeze requires a pre-registered response-bank run"
+        ) from exc
+    if (
+        configuration.get("run_id") != run_directory.name
+        or configuration.get("project") != PROJECT_ID
+        or configuration.get("mode") != RESPONSE_BANK_MODE
+        or not isinstance(configuration.get("artifact_retention"), dict)
+        or configuration.get("capacity_ledger_lifecycle", {}).get("enabled") is not True
+        or not isinstance(configuration.get("inputs"), dict)
+        or manifest.get("role") != "simulation_run_manifest"
+        or manifest.get("status") != "checkpoint"
+        or manifest.get("run_id") != run_directory.name
+        or manifest.get("project") != PROJECT_ID
+        or manifest.get("mode") != RESPONSE_BANK_MODE
+    ):
+        raise CandidateContractError(
+            "corridor freeze requires owner, lifecycle, and checkpoint closure evidence"
+        )
+    return run_directory, configuration
+
+
 def freeze_native_corridor_inputs(
     *,
     contract_path: Path,
@@ -228,6 +288,7 @@ def freeze_native_corridor_inputs(
     simion_executable: Path,
     simion_release: str,
     output_directory: Path,
+    run_config_path: Path,
     canonical_gem_path: Path | None = None,
 ) -> dict[str, Any]:
     """Atomically publish one deterministic four-file corridor freeze package.
@@ -240,11 +301,13 @@ def freeze_native_corridor_inputs(
     contract_path = contract_path.resolve()
     simion_executable = simion_executable.resolve()
     output_directory = output_directory.resolve()
+    run_directory, configuration = _validate_governed_freeze_scope(
+        run_config_path, output_directory
+    )
     if not contract_path.is_file() or not simion_executable.is_file():
         raise CandidateContractError("corridor freeze requires contract and SIMION executable")
     if not isinstance(simion_release, str) or not simion_release.strip():
         raise CandidateContractError("corridor freeze requires a SIMION release label")
-    output_directory.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(
         tempfile.mkdtemp(prefix=f".{output_directory.name}.freeze-", dir=output_directory.parent)
     )
@@ -283,6 +346,12 @@ def freeze_native_corridor_inputs(
             "schema_version": 1,
             "role": "mrtof_native_corridor_frozen_inputs",
             "status": "frozen",
+            "owner_run": {
+                "run_id": configuration["run_id"],
+                "project": configuration["project"],
+                "mode": configuration["mode"],
+                "run_config_path": str(run_directory / "run_config.json"),
+            },
             "pa_family_cache_key": canonical_pa_family_cache_key(identity),
             "inputs": {
                 "baseline_contract": {
@@ -336,6 +405,7 @@ def main() -> int:
     parser.add_argument("--simion-executable", required=True, type=Path)
     parser.add_argument("--simion-release", required=True)
     parser.add_argument("--output-directory", required=True, type=Path)
+    parser.add_argument("--run-config", required=True, type=Path)
     parser.add_argument("--canonical-gem", type=Path)
     arguments = parser.parse_args()
     result = freeze_native_corridor_inputs(
@@ -345,6 +415,7 @@ def main() -> int:
         simion_executable=arguments.simion_executable,
         simion_release=arguments.simion_release,
         output_directory=arguments.output_directory,
+        run_config_path=arguments.run_config,
         canonical_gem_path=arguments.canonical_gem,
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

@@ -128,6 +128,16 @@ Write-Output 'CONTINUATION_FIXTURE=PASS'
         self.assertNotIn("mrtof_analyzer_corridor.pa0", source)
         self.assertNotIn("run_analyzer_local_pa_family", source)
 
+    def test_runner_republishes_frozen_inputs_inside_its_pre_registered_run(self) -> None:
+        source = (PROJECT / "simion" / "run_native_corridor_response_bank.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("function New-ManagedFrozenInputs", source)
+        self.assertIn("--output-directory',$destination,'--run-config',[string]$Package.run_config", source)
+        self.assertIn("$managedFrozen=New-ManagedFrozenInputs -Package $package", source)
+        self.assertLess(source.index("$package=New-RunPackage"), source.index("$managedFrozen=New-ManagedFrozenInputs"))
+        self.assertIn("native_corridor_freeze_manifest=$freezeManifest", source)
+        self.assertIn("native_corridor_freeze_source_manifest=[string]$managedFrozen.source_freeze_manifest", source)
+        self.assertIn("+$frozenOutputs+$continuationOutputs", source)
+
     def test_private_verifier_requires_eight_native_and_detached_pairs(self) -> None:
         source = (PROJECT / "simion" / "verify_native_corridor_response_bank.lua").read_text(encoding="utf-8-sig")
         self.assertIn("eight native/detached response pairs are required", source)
