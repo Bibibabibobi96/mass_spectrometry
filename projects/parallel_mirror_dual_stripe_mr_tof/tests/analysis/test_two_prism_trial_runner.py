@@ -65,5 +65,16 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
         self.assertIn("@($providerAccelerator.read_only_controller_pa0,$providerAccelerator.provider_plan)", self.source)
         self.assertNotIn("$providerAccelerator.pa_child_manifest", self.source)
 
+    def test_trajectory_contract_authority_precedes_its_derived_inputs(self):
+        authority = "$trajectoryContractSource=Join-Path $repoRoot"
+        self.assertLess(
+            self.source.index(authority),
+            self.source.index("$selectedContract=$trajectoryContractSource"),
+        )
+        self.assertLess(
+            self.source.index(authority),
+            self.source.index("$acceleratorGeometryContract=$trajectoryContractSource"),
+        )
+
 if __name__ == "__main__":
     unittest.main()

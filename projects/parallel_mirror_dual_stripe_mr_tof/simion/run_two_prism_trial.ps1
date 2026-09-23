@@ -364,9 +364,9 @@ try{
   $stripeOperatingProvenance='native_corridor_frozen_response_bank'
   $globalFallbackAnalyzer=$sourceAnalyzer
   $reviewedContract=$geometryReviewedContract
+  $trajectoryContractSource=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\config\simion_candidate_two_zone.json'
   $selectedContract=$trajectoryContractSource
   $acceleratorGeometryContract=$trajectoryContractSource
-  $trajectoryContractSource=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\config\simion_candidate_two_zone.json'
   $mirrorSummary=Join-Path $mirrorRun 'summary.json'
   $stripeSummary=Join-Path $stripeRun 'summary.json'
   $acceleratorReceipt=$acceleratorProviderReceipt
