@@ -207,7 +207,17 @@ def _activate_candidate(
                     consumer == approved or consumer.startswith(approved + "/")
                     for approved in approved_paths
                 ):
-                    raise ValueError("owner disposition has an external resident consumer")
+                    consumer_entry = next(
+                        (candidate for candidate in ledger["objects"]
+                         if candidate.get("path") == consumer), None,
+                    )
+                    if not (
+                        candidate["explicit_user_abandonment"]
+                        and consumer_entry is not None
+                        and consumer_entry.get("status") in {"writing", "retired"}
+                    ):
+                        raise ValueError("owner disposition has an external resident consumer")
+                    capacity_ledger._assert_unleased(root, root / consumer)
         capacity_ledger._assert_unleased(root, target)
     retired_paths = {item["path"] for item in entries}
     ledger["objects"] = [

@@ -297,6 +297,48 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             self.assertEqual(objects[0]["status"], "ready")
             self.assertIn("disposition", objects[0])
 
+    def test_explicit_abandonment_allows_only_retired_external_consumer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "runs" / "abandoned"
+            target.mkdir(parents=True)
+            document = _write_owner_disposition(root, target)
+            raw = json.loads(document.read_text(encoding="utf-8"))
+            raw["schema_version"] = 3
+            raw["decision"] = "explicit_user_authorized_abandonment"
+            seed = {
+                "owner": raw["owner"], "target_path": raw["target_path"],
+                "authority_evidence": raw["authority_evidence"],
+                "generation": raw["disposition"]["generation"],
+                "manifest_path": raw["disposition"]["manifest_path"],
+                "files": raw["disposition"]["files"], "decision": raw["decision"],
+            }
+            disposition_id = hashlib.sha256(json.dumps(
+                seed, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")).hexdigest().upper()
+            raw["disposition"]["id"] = disposition_id
+            document.unlink()
+            document = document.with_name(f"{disposition_id}.json")
+            _write_json(document, raw)
+            files = [item for item in target.rglob("*") if item.is_file()]
+            consumer = "projects/instrument/runs/retired-consumer"
+            capacity_ledger.initialize_capacity_ledger(root, objects=[
+                {
+                    "path": item.relative_to(root).as_posix(),
+                    "class": "rebuildable_payload", "bytes": item.stat().st_size,
+                    "status": "writing", "pin": False, "owner": "instrument",
+                    "recovery_reason": "run_manifest_not_terminal",
+                    "review_deadline": "2026-10-22", "consumers": [consumer],
+                }
+                for item in files
+            ] + [{
+                "path": consumer, "class": "rebuildable_payload", "bytes": 0,
+                "status": "retired", "pin": False,
+            }], external_scopes=[])
+            self.assertEqual(
+                legacy_owner_disposition.activate_owner_dispositions(root)["activated_count"], 1,
+            )
+
     def test_completed_owner_disposition_document_is_archived_into_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"
