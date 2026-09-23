@@ -506,7 +506,7 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIsNotNone(selected, result.stdout)
         self.assertEqual(set(selected[1].split(",")), {
             "repository_hygiene", "repository_text_bytes", "documentation",
-            "development_standards", "ruff_changed_python", "common_contracts",
+            "development_standards", "ruff_changed_python", "gate_contract_tests",
         })
 
     def test_full_scope_does_not_repeat_contract_tests(self) -> None:
@@ -525,7 +525,7 @@ class ChangedGateContractTests(unittest.TestCase):
         cases = (
             (["common/contracts/expected_values.py"], "expected_values_tests", True),
             (["common/contracts/test_expected_values.py"], "expected_values_tests", True),
-            (["common/contracts/test_verify_changed.py"], "gate_contract_tests", True),
+            (["common/contracts/test_verify_changed.py"], "gate_contract_tests", False),
             (["common/contracts/test_report_cloc_delta.py"], "cloc_contract_tests", True),
             (["common/contracts/file_identity.py", "pyproject.toml"], "python_dependency_contract", True),
             (["common/verify_changed.ps1"], "gate_contract_tests", False),
