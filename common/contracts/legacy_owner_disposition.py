@@ -10,6 +10,7 @@ large payload merely to delete it.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import re
@@ -18,10 +19,17 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts import capacity_ledger, capacity_protection
+from common.contracts.artifact_retention import classify_file
+from common.contracts.run_capacity_lifecycle import (
+    HEAVY_RETENTION_ROLES,
+    partial_retirement_is_protected,
+    recorded_heavy_identity,
+)
 from common.contracts.recorded_file_removal import write_json_atomic
 
 SHA256 = re.compile(r"[0-9A-Fa-f]{64}")
 ROLE = "artifact_capacity_owner_retirement_disposition"
+OWNER_DISPOSITION_DIRECTORY = Path("common") / "capacity_calibration" / "owner_dispositions"
 
 
 def _canonical(value: object) -> str:
@@ -59,6 +67,207 @@ def _expected_owner(target_relative: str) -> str:
     raise ValueError("owner disposition target has no approved owner namespace")
 
 
+def _run_target(target_relative: str) -> tuple[str, str]:
+    """Require the narrow historical-run scope of user abandonment.
+
+    GUI review packages and PA generations have their own owners and retirement
+    protocols.  This bridge is deliberately limited to an exact project run,
+    so it cannot turn an arbitrary registered directory into a deletion plan.
+    """
+
+    parts = Path(target_relative).parts
+    if len(parts) != 4 or parts[0] != "projects" or parts[2] != "runs":
+        raise ValueError("owner disposition authoring requires one exact project run target")
+    owner, run_id = parts[1], parts[3]
+    if not owner or not run_id:
+        raise ValueError("owner disposition authoring run target is invalid")
+    return owner, run_id
+
+
+def _target_inventory(target: Path) -> list[dict[str, Any]]:
+    """Freeze paths and sizes only; retirement must not re-read payload bytes."""
+
+    records: list[dict[str, Any]] = []
+    for item in sorted(target.rglob("*"), key=lambda candidate: candidate.as_posix()):
+        if _link_or_reparse(item):
+            raise ValueError("owner disposition target contains a symbolic link")
+        if item.is_file():
+            records.append({
+                "path": item.relative_to(target).as_posix(),
+                "bytes": item.stat().st_size,
+            })
+    if not records:
+        raise ValueError("owner disposition inventory is empty")
+    return records
+
+
+def _range_contains(range_path: str, path: str) -> bool:
+    return path == range_path or path.startswith(range_path + "/")
+
+
+def _ranges_overlap(left: str, right: str) -> bool:
+    return _range_contains(left, right) or _range_contains(right, left)
+
+
+def _regular_target_file(target: Path, relative: str) -> Path:
+    """Return one target-local file without allowing an intermediate link."""
+
+    candidate = target
+    for part in Path(relative).parts:
+        candidate = candidate / part
+        if _link_or_reparse(candidate):
+            raise ValueError("owner disposition target path traverses a symbolic link")
+    if not candidate.is_file():
+        raise ValueError("owner disposition partial inventory differs from target")
+    return candidate
+
+
+def _partial_run_records(
+    root: Path, ledger: dict[str, Any], *, target: Path, target_relative: str, owner: str,
+) -> list[dict[str, Any]]:
+    """Return only preclassified, manifest-identified heavy file entries.
+
+    A directory range cannot be split safely by an abandonment document.  The
+    existing partial-retirement executor already owns that transition, so the
+    owner document is limited to exact leaf ledger entries it can consume.
+    """
+
+    entries = ledger["objects"]
+    overlaps = [
+        item for item in entries
+        if item.get("status") != "retired" and _ranges_overlap(str(item.get("path", "")), target_relative)
+    ]
+    if any(not _range_contains(target_relative, str(item["path"])) for item in overlaps):
+        raise ValueError("owner disposition target is only part of a registered range")
+    records: list[dict[str, Any]] = []
+    for entry in overlaps:
+        path = root / str(entry["path"])
+        if not path.is_file():
+            continue
+        path = _regular_target_file(target, path.relative_to(target).as_posix())
+        if classify_file(path, bytes_count=int(entry["bytes"])) not in HEAVY_RETENTION_ROLES:
+            continue
+        if (
+            entry.get("class") != "rebuildable_payload"
+            or entry.get("status") != "writing"
+            or entry.get("owner") != owner
+            or entry.get("pin") is not False
+            or entry.get("disposition")
+            or entry.get("recovery_reason") not in {
+                "structured_nonterminal_run_reference", "run_contract_missing_or_invalid",
+            }
+        ):
+            raise ValueError("owner disposition heavy file is not an eligible owner-managed writing entry")
+        if path.stat().st_size != int(entry["bytes"]):
+            raise ValueError("owner disposition heavy file differs from its registered bytes")
+        if partial_retirement_is_protected(root, ledger, entry, path):
+            raise ValueError("owner disposition heavy file has active protection")
+        identity = recorded_heavy_identity(target, path, int(entry["bytes"]))
+        if identity is None:
+            raise ValueError("owner disposition heavy file lacks one manifest identity")
+        records.append({
+            "path": path.relative_to(target).as_posix(),
+            "bytes": int(entry["bytes"]),
+        })
+    if not records:
+        raise ValueError("owner disposition run has no classified eligible heavy ledger file")
+    return sorted(records, key=lambda item: item["path"])
+
+
+def _read_owner_disposition_target(document_path: Path) -> str:
+    """Read only small governance metadata while checking target conflicts."""
+
+    try:
+        document = json.loads(document_path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("owner disposition document is unreadable") from exc
+    if not isinstance(document, dict):
+        raise ValueError("owner disposition document is unreadable")
+    return _relative(document.get("target_path"))
+
+
+def author_owner_disposition(
+    root: Path, *, target_path: Path | str, authority_evidence_path: Path | str,
+) -> dict[str, Any]:
+    """Seal an explicitly authorized historical run for the existing owner route.
+
+    The caller's use of this narrow owner entry is the explicit abandonment
+    decision.  It records only existing heavy *file* ranges that the partial
+    retirement executor can remove.  Configurations, results, unlisted files,
+    and directory ranges remain untouched.  It does not activate or remove
+    the run; maintenance remains the sole execution path.
+    """
+
+    root = root.resolve(strict=False)
+    target, target_relative = capacity_ledger.capacity_object_path(root, target_path)
+    target_relative = _relative(target_relative)
+    owner, _ = _run_target(target_relative)
+    if not target.is_dir() or _link_or_reparse(target):
+        raise ValueError("owner disposition target is not a regular directory")
+    evidence, evidence_relative = capacity_ledger.capacity_object_path(root, authority_evidence_path)
+    if not _range_contains(target_relative, evidence_relative) or not evidence.is_file() or _link_or_reparse(evidence):
+        raise ValueError("owner disposition authority evidence must be a regular file in the target run")
+    evidence_in_target = Path(evidence_relative).relative_to(Path(target_relative)).as_posix()
+
+    with capacity_protection.capacity_decision_lock(root):
+        ledger = capacity_ledger.load_capacity_ledger(root)
+        if ledger is None:
+            raise ValueError("capacity ledger is missing or invalid")
+        if evidence_in_target not in {record["path"] for record in _target_inventory(target)}:
+            raise ValueError("owner disposition authority evidence is not in the target inventory")
+        records = _partial_run_records(
+            root, ledger, target=target, target_relative=target_relative,
+            owner=owner,
+        )
+        generation = hashlib.sha256(_canonical({
+            "owner": owner, "target_path": target_relative, "files": records,
+        }).encode("utf-8")).hexdigest().upper()
+        identity_seed = {
+            "owner": owner, "target_path": target_relative,
+        "authority_evidence": {"path": evidence_in_target},
+        "generation": generation, "manifest_path": evidence_in_target,
+        "files": records, "decision": "explicit_user_authorized_abandonment",
+        "scope": "partial_run_heavy_files",
+        }
+        disposition_id = hashlib.sha256(_canonical(identity_seed).encode("utf-8")).hexdigest().upper()
+        document = {
+            "schema_version": 3, "role": ROLE, "status": "retire_approved",
+            "owner": owner, "target_path": target_relative,
+            "authority_evidence": {"path": evidence_in_target},
+            "decision": "explicit_user_authorized_abandonment",
+            "scope": "partial_run_heavy_files",
+            "disposition": {
+                "id": disposition_id, "generation": generation,
+                "manifest_path": evidence_in_target, "files": records,
+            },
+        }
+        directory = root / OWNER_DISPOSITION_DIRECTORY
+        document_path = directory / f"{disposition_id}.json"
+        if document_path.exists():
+            existing = load_legacy_owner_disposition(root, document_path)
+            if (
+                existing["path"] != target_relative
+                or existing["disposition"] != document["disposition"]
+                or not existing["explicit_user_abandonment"]
+            ):
+                raise ValueError("existing owner disposition conflicts with sealed authorization")
+            return {
+                "document_path": str(document_path), "disposition_id": disposition_id,
+                "bytes": sum(record["bytes"] for record in records), "created": False,
+            }
+        if directory.exists() and (not directory.is_dir() or directory.is_symlink()):
+            raise ValueError("owner disposition directory is not a regular directory")
+        if directory.exists():
+            for existing_path in sorted(directory.glob("*.json")):
+                if _read_owner_disposition_target(existing_path) == target_relative:
+                    raise ValueError("existing owner disposition already targets this run")
+        write_json_atomic(document_path, document)
+        return {
+            "document_path": str(document_path), "disposition_id": disposition_id,
+            "bytes": sum(record["bytes"] for record in records), "created": True,
+        }
+
+
 def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, Any]:
     """Return a verified ledger candidate from one fixed governance document."""
 
@@ -72,8 +281,12 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
         "schema_version", "role", "status", "owner", "target_path",
         "authority_evidence", "disposition",
     }
+    scope = document.get("scope") if isinstance(document, dict) else None
+    partial_run = scope == "partial_run_heavy_files"
     if version == 3:
         expected_fields.add("decision")
+    if partial_run:
+        expected_fields.add("scope")
     if not isinstance(document, dict) or set(document) != expected_fields:
         raise ValueError("owner disposition document schema differs")
     if version not in {2, 3} or document.get("role") != ROLE or document.get("status") != "retire_approved":
@@ -88,6 +301,8 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
     expected_owner = _expected_owner(target_relative)
     if owner.strip() != expected_owner:
         raise ValueError("owner disposition owner differs from target namespace")
+    if partial_run:
+        _run_target(target_relative)
     target = root
     for part in Path(target_relative).parts:
         target = target / part
@@ -118,7 +333,7 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
             raise ValueError("owner disposition inventory record is invalid")
         seen.add(relative)
         records.append({"path": relative, "bytes": record["bytes"]})
-    if evidence_path not in seen or manifest_path != evidence_path:
+    if manifest_path != evidence_path or (not partial_run and evidence_path not in seen):
         raise ValueError("owner disposition evidence is not bound to inventory")
     identity_seed = {
         "owner": owner.strip(), "target_path": target_relative,
@@ -128,23 +343,32 @@ def load_legacy_owner_disposition(root: Path, document_path: Path) -> dict[str, 
     }
     if version == 3:
         identity_seed["decision"] = decision
+    if partial_run:
+        identity_seed["scope"] = scope
     expected_id = hashlib.sha256(_canonical(identity_seed).encode("utf-8")).hexdigest().upper()
     if disposition["id"].upper() != expected_id or document_path.name != f"{expected_id}.json":
         raise ValueError("owner disposition id or filename differs")
-    actual: dict[str, int] = {}
-    for item in target.rglob("*"):
-        if item.is_symlink():
-            raise ValueError("owner disposition target contains a symbolic link")
-        if item.is_file():
-            relative = item.relative_to(target).as_posix()
-            actual[relative] = item.stat().st_size
     declared = {item["path"]: item["bytes"] for item in records}
-    if actual != declared:
-        raise ValueError("owner disposition inventory differs from target")
+    if partial_run:
+        for relative, bytes_count in declared.items():
+            item = _regular_target_file(target, relative)
+            if item.stat().st_size != bytes_count:
+                raise ValueError("owner disposition partial inventory differs from target")
+    else:
+        actual: dict[str, int] = {}
+        for item in target.rglob("*"):
+            if item.is_symlink():
+                raise ValueError("owner disposition target contains a symbolic link")
+            if item.is_file():
+                relative = item.relative_to(target).as_posix()
+                actual[relative] = item.stat().st_size
+        if actual != declared:
+            raise ValueError("owner disposition inventory differs from target")
     return {
         "path": target_relative, "class": "rebuildable_payload", "bytes": sum(item["bytes"] for item in records),
         "status": "ready", "pin": False, "owner_hint": owner.strip(),
         "explicit_user_abandonment": version == 3,
+        "partial_run": partial_run,
         "disposition": {"id": expected_id, "generation": disposition["generation"].upper(),
                         "manifest_path": manifest_path, "files": records},
     }
@@ -228,6 +452,48 @@ def _activate_candidate(
     return {"path": relative, "bytes": candidate["bytes"]}
 
 
+def _activate_partial_candidate(
+    root: Path, ledger: dict[str, Any], candidate: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Mark only sealed heavy file ranges for the existing partial executor."""
+
+    target, relative = capacity_ledger.capacity_object_path(root, candidate["path"])
+    owner, _ = _run_target(relative)
+    by_path = {str(item["path"]): item for item in ledger["objects"]}
+    changed = False
+    for record in candidate["disposition"]["files"]:
+        path = _regular_target_file(target, str(record["path"]))
+        file_relative = capacity_ledger.capacity_object_path(root, path)[1]
+        entry = by_path.get(file_relative)
+        if entry is None:
+            raise ValueError("owner disposition partial file is no longer registered")
+        if entry.get("status") == "retired":
+            continue
+        if (
+            not path.is_file()
+            or path.stat().st_size != int(record["bytes"])
+            or entry.get("class") != "rebuildable_payload"
+            or entry.get("status") != "writing"
+            or entry.get("owner") != owner
+            or entry.get("pin") is not False
+            or entry.get("disposition")
+            or entry.get("recovery_reason") not in {
+                "structured_nonterminal_run_reference", "run_contract_missing_or_invalid",
+            }
+            or classify_file(path, bytes_count=int(entry["bytes"])) not in HEAVY_RETENTION_ROLES
+            or partial_retirement_is_protected(root, ledger, entry, path)
+            or recorded_heavy_identity(target, path, int(entry["bytes"])) is None
+        ):
+            raise ValueError("owner disposition partial file is no longer eligible")
+        if entry.get("recovery_task") != "explicit_user_authorized_abandonment":
+            entry["recovery_task"] = "explicit_user_authorized_abandonment"
+            changed = True
+    return {
+        "path": relative,
+        "bytes": candidate["bytes"],
+    } if changed else None
+
+
 def activate_owner_dispositions(root: Path) -> dict[str, Any]:
     """Bind sealed owner decisions into the existing retirement path.
 
@@ -249,6 +515,8 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
         for document_path in sorted(directory.glob("*.json")):
             try:
                 raw = json.loads(document_path.read_text(encoding="utf-8-sig"))
+                if raw.get("scope") == "partial_run_heavy_files":
+                    continue
                 disposition = raw["disposition"]
                 disposition_id = disposition["id"].upper()
                 target_path = _relative(raw["target_path"])
@@ -298,11 +566,16 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
             return {"activated_count": 0, "activated_bytes": 0,
                     "archived_document_count": archived_count}
         activated: list[dict[str, Any]] = []
-        approved_paths = {candidate["path"] for _, candidate in approved}
+        approved_paths = {
+            candidate["path"] for _, candidate in approved if not candidate["partial_run"]
+        }
         for _, candidate in approved:
-            activated_entry = _activate_candidate(
-                root, ledger, candidate, approved_paths=approved_paths,
-            )
+            if candidate["partial_run"]:
+                activated_entry = _activate_partial_candidate(root, ledger, candidate)
+            else:
+                activated_entry = _activate_candidate(
+                    root, ledger, candidate, approved_paths=approved_paths,
+                )
             if activated_entry is not None:
                 activated.append(activated_entry)
         if activated:
@@ -312,3 +585,25 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
         "activated_bytes": sum(item["bytes"] for item in activated),
         "archived_document_count": archived_count,
     }
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Expose only the owner-authoring step; maintenance remains separate."""
+
+    parser = argparse.ArgumentParser(
+        description="Seal one registered abandoned project run for owner maintenance.",
+    )
+    parser.add_argument("--workspace-root", required=True, type=Path)
+    parser.add_argument("--target-path", required=True)
+    parser.add_argument("--authority-evidence-path", required=True)
+    arguments = parser.parse_args(argv)
+    print(json.dumps(author_owner_disposition(
+        arguments.workspace_root,
+        target_path=arguments.target_path,
+        authority_evidence_path=arguments.authority_evidence_path,
+    ), ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

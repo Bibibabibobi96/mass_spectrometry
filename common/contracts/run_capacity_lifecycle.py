@@ -450,7 +450,7 @@ def _approved_partial_receipt(path: Path) -> dict[str, Any]:
     return receipt
 
 
-def _retirement_is_protected(
+def partial_retirement_is_protected(
     root: Path, ledger: dict[str, Any], entry: dict[str, Any], path: Path,
 ) -> bool:
     """Reject any live reference or lease before a physical removal."""
@@ -469,7 +469,7 @@ def _retirement_is_protected(
     )
 
 
-def _recorded_heavy_identity(run_dir: Path, path: Path, bytes_count: int) -> str | None:
+def recorded_heavy_identity(run_dir: Path, path: Path, bytes_count: int) -> str | None:
     """Return one pre-existing manifest identity without reading payload bytes."""
 
     try:
@@ -519,9 +519,9 @@ def _eligible_partial_entries(root: Path, ledger: dict[str, Any], run_dir: Path)
             continue
         if classify_file(path, bytes_count=int(entry["bytes"])) not in HEAVY_RETENTION_ROLES:
             continue
-        if _retirement_is_protected(root, ledger, entry, path):
+        if partial_retirement_is_protected(root, ledger, entry, path):
             continue
-        sha256 = _recorded_heavy_identity(run_dir, path, int(entry["bytes"]))
+        sha256 = recorded_heavy_identity(run_dir, path, int(entry["bytes"]))
         if sha256 is None:
             continue
         records.append({
@@ -589,8 +589,8 @@ def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
                             and path.is_file()
                             and classify_file(path, bytes_count=int(entry["bytes"])) in HEAVY_RETENTION_ROLES
                             and (
-                                _retirement_is_protected(root, ledger, entry, path)
-                                or _recorded_heavy_identity(run_dir, path, int(entry["bytes"])) is None
+                                partial_retirement_is_protected(root, ledger, entry, path)
+                                or recorded_heavy_identity(run_dir, path, int(entry["bytes"])) is None
                             )
                         ):
                             blocked += 1
@@ -623,7 +623,7 @@ def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
                     if entry is None:
                         raise ValueError("partial retirement ledger entry disappeared")
                     if absolute.exists():
-                        if _retirement_is_protected(root, ledger, entry, absolute):
+                        if partial_retirement_is_protected(root, ledger, entry, absolute):
                             raise ValueError("partial retirement approved file is protected")
                         current = absolute.stat()
                         if (
