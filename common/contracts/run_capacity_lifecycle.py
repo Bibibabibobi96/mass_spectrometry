@@ -27,6 +27,9 @@ WRITING_REVIEW_DAYS = 7
 READY_REVIEW_DAYS = 30
 LEGACY_LIGHT_EVIDENCE_BUDGET_BYTES = 26_214_400
 PARTIAL_RETIREMENT_RECEIPT = "partial_retirement_actions.json"
+PARTIAL_RETIREMENT_RECEIPT_FIELDS = {
+    "schema_version", "role", "status", "approved", "removed_bytes", "preserved",
+}
 
 
 def _run_lifecycle_duties(run_dir: Path, *, review_days: int, reason: str) -> dict[str, str]:
@@ -398,91 +401,253 @@ def resume_terminal_runs(artifact_root: Path) -> dict[str, int]:
     }
 
 
-def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
-    """Resume owner-approved heavy-file retirement without retiring its run.
+def _partial_retirement_run(path: Path) -> Path | None:
+    """Return the direct run parent for one candidate file."""
 
-    A historical run can retain its frozen configuration, results and receipt
-    while only explicitly listed, classified heavy payloads are removed.  The
-    caller supplies a sealed list under the run; this function never discovers
-    deletion candidates and never hashes PA payload merely to delete it.
-    """
+    return next((parent for parent in path.parents if parent.parent.name == "runs"), None)
 
-    root = Path(artifact_root).resolve(strict=False)
-    ledger = capacity_ledger.load_capacity_ledger(root)
-    if ledger is None:
-        raise ValueError("partial retirement requires a valid capacity ledger")
-    completed = removed_bytes = blocked = 0
-    for entry in list(ledger["objects"]):
+
+def _approved_partial_receipt(path: Path) -> dict[str, Any]:
+    """Load one immutable partial-retirement approval list."""
+
+    receipt = _load_json(path, "partial retirement receipt")
+    if (
+        set(receipt) != PARTIAL_RETIREMENT_RECEIPT_FIELDS
+        or receipt.get("schema_version") != 2
+        or receipt.get("role") != "run_partial_retirement_actions"
+        or receipt.get("status") not in {"pending", "complete"}
+        or receipt.get("preserved") != "all unlisted run files"
+        or isinstance(receipt.get("removed_bytes"), bool)
+        or not isinstance(receipt.get("removed_bytes"), int)
+        or receipt["removed_bytes"] < 0
+    ):
+        raise ValueError("partial retirement receipt differs from the sealed schema")
+    approved = receipt.get("approved")
+    if not isinstance(approved, list) or not approved:
+        raise ValueError("partial retirement receipt has no approved files")
+    expected_paths: list[str] = []
+    for record in approved:
+        if (
+            not isinstance(record, dict)
+            or set(record) != {"path", "bytes", "sha256", "mtime_ns"}
+            or not isinstance(record["path"], str)
+            or Path(record["path"]).is_absolute()
+            or Path(record["path"]).as_posix() != record["path"]
+            or isinstance(record["bytes"], bool)
+            or not isinstance(record["bytes"], int)
+            or record["bytes"] < 0
+            or isinstance(record["mtime_ns"], bool)
+            or not isinstance(record["mtime_ns"], int)
+            or record["mtime_ns"] < 0
+            or not isinstance(record["sha256"], str)
+            or len(record["sha256"]) != 64
+            or any(character not in "0123456789abcdef" for character in record["sha256"].lower())
+        ):
+            raise ValueError("partial retirement receipt has an invalid approved file")
+        expected_paths.append(record["path"])
+    if expected_paths != sorted(set(expected_paths)):
+        raise ValueError("partial retirement receipt approved files must be sorted and unique")
+    return receipt
+
+
+def _retirement_is_protected(
+    root: Path, ledger: dict[str, Any], entry: dict[str, Any], path: Path,
+) -> bool:
+    """Reject any live reference or lease before a physical removal."""
+
+    if entry.get("pin") is True:
+        return True
+    leases = capacity_protection.load_capacity_protection_leases(root)
+    if capacity_protection.path_is_protected(path, leases["protected_paths"]):
+        return True
+    by_path = {str(item["path"]): item for item in ledger["objects"]}
+    # Missing consumer records are ambiguous and therefore protected.  A
+    # writing consumer is live too; only a retired consumer releases a file.
+    return any(
+        consumer not in by_path or by_path[consumer].get("status") != "retired"
+        for consumer in entry.get("consumers", [])
+    )
+
+
+def _recorded_heavy_identity(run_dir: Path, path: Path, bytes_count: int) -> str | None:
+    """Return one pre-existing manifest identity without reading payload bytes."""
+
+    try:
+        manifest = _load_json(run_dir / "run_manifest.json", "run manifest")
+    except ValueError:
+        return None
+    outputs = manifest.get("outputs")
+    if not isinstance(outputs, list):
+        return None
+    identities: set[str] = set()
+    for output in outputs:
+        if not isinstance(output, dict):
+            continue
+        raw_path = output.get("path")
+        sha256 = output.get("sha256")
+        if not isinstance(raw_path, str) or not isinstance(sha256, str):
+            continue
+        candidate = Path(raw_path)
+        candidate = candidate if candidate.is_absolute() else run_dir / candidate
+        if candidate.resolve(strict=False) != path.resolve(strict=False):
+            continue
+        if output.get("bytes") != bytes_count:
+            return None
+        normalized = sha256.upper()
+        if len(normalized) != 64 or any(character not in "0123456789ABCDEF" for character in normalized):
+            return None
+        identities.add(normalized)
+    return next(iter(identities)) if len(identities) == 1 else None
+
+
+def _eligible_partial_entries(root: Path, ledger: dict[str, Any], run_dir: Path) -> list[dict[str, Any]]:
+    """Return this run's explicitly authorized, presently removable files."""
+
+    records: list[dict[str, Any]] = []
+    for entry in ledger["objects"]:
         if not (
             entry.get("status") == "writing"
             and entry.get("class") == "rebuildable_payload"
             and entry.get("recovery_reason") in {
                 "structured_nonterminal_run_reference", "run_contract_missing_or_invalid",
             }
+            and entry.get("recovery_task") == "explicit_user_authorized_abandonment"
         ):
             continue
-        path = root / entry["path"]
-        if not path.is_file() or classify_file(path, bytes_count=int(entry["bytes"])) not in HEAVY_RETENTION_ROLES:
+        path = root / str(entry["path"])
+        if _partial_retirement_run(path) != run_dir or not path.is_file():
             continue
-        consumers = entry.get("consumers", [])
-        consumer_entries = {
-            item["path"]: item for item in ledger["objects"] if item.get("path") in consumers
-        }
-        if any(
-            item.get("status") not in {"writing", "retired"}
-            for item in consumer_entries.values()
-        ):
-            blocked += 1
+        if classify_file(path, bytes_count=int(entry["bytes"])) not in HEAVY_RETENTION_ROLES:
             continue
-        # A pending per-file receipt is the sealed approval and replay record.
-        run_dir = next((parent for parent in path.parents if parent.parent.name == "runs"), None)
-        if run_dir is None:
-            blocked += 1
+        if _retirement_is_protected(root, ledger, entry, path):
             continue
-        receipt_path = run_dir / PARTIAL_RETIREMENT_RECEIPT
-        record = {"path": path.relative_to(run_dir).as_posix(), "bytes": int(entry["bytes"])}
-        if receipt_path.exists():
-            receipt = _load_json(receipt_path, "partial retirement receipt")
-            if receipt.get("role") != "run_partial_retirement_actions" or receipt.get("status") not in {"pending", "complete"}:
+        sha256 = _recorded_heavy_identity(run_dir, path, int(entry["bytes"]))
+        if sha256 is None:
+            continue
+        records.append({
+            "path": path.relative_to(run_dir).as_posix(),
+            "bytes": int(entry["bytes"]),
+            "sha256": sha256,
+            "mtime_ns": path.stat().st_mtime_ns,
+        })
+    return sorted(records, key=lambda item: str(item["path"]))
+
+
+def _retire_approved_ledger_entry(
+    ledger: dict[str, Any], entry: dict[str, Any], record: dict[str, Any],
+) -> None:
+    """Apply exactly one physical removal to the resident-byte ledger once."""
+
+    if entry.get("status") == "retired":
+        return
+    if (
+        entry.get("status") != "writing"
+        or entry.get("class") != "rebuildable_payload"
+        or int(entry.get("bytes", -1)) != int(record["bytes"])
+    ):
+        raise ValueError("partial retirement ledger entry differs from the approved file")
+    path = str(entry["path"])
+    entry.clear()
+    entry.update({
+        "path": path, "class": "rebuildable_payload",
+        "bytes": int(record["bytes"]), "status": "retired", "pin": False,
+    })
+    ledger["resident_bytes"] -= int(record["bytes"])
+
+
+def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
+    """Execute only prewritten exact approvals and replay interrupted removals.
+
+    Each pending receipt is a durable approval journal.  A missing approved
+    file means a previous invocation completed the physical unlink before it
+    could publish the ledger transition, so replay records the byte retirement
+    exactly once instead of rediscovering or deleting any other run file.
+    """
+
+    root = Path(artifact_root).resolve(strict=False)
+    completed = removed_bytes = blocked = 0
+    with capacity_protection.capacity_decision_lock(root):
+        ledger = capacity_ledger.load_capacity_ledger(root)
+        if ledger is None:
+            raise ValueError("partial retirement requires a valid capacity ledger")
+        run_dirs = sorted({
+            run_dir for item in ledger["objects"]
+            if (run_dir := _partial_retirement_run(root / str(item["path"]))) is not None
+        }, key=str)
+        for run_dir in run_dirs:
+            receipt_path = run_dir / PARTIAL_RETIREMENT_RECEIPT
+            if not receipt_path.exists():
+                approved = _eligible_partial_entries(root, ledger, run_dir)
+                if not approved:
+                    for entry in ledger["objects"]:
+                        path = root / str(entry["path"])
+                        if (
+                            _partial_retirement_run(path) == run_dir
+                            and entry.get("status") == "writing"
+                            and entry.get("class") == "rebuildable_payload"
+                            and entry.get("recovery_task") == "explicit_user_authorized_abandonment"
+                            and path.is_file()
+                            and classify_file(path, bytes_count=int(entry["bytes"])) in HEAVY_RETENTION_ROLES
+                            and (
+                                _retirement_is_protected(root, ledger, entry, path)
+                                or _recorded_heavy_identity(run_dir, path, int(entry["bytes"])) is None
+                            )
+                        ):
+                            blocked += 1
+                            break
+                    continue
+                receipt = {
+                    "schema_version": 2,
+                    "role": "run_partial_retirement_actions",
+                    "status": "pending",
+                    "approved": approved,
+                    "removed_bytes": 0,
+                    "preserved": "all unlisted run files",
+                }
+                write_json_atomic(receipt_path, receipt)
+            else:
+                try:
+                    receipt = _approved_partial_receipt(receipt_path)
+                except ValueError:
+                    blocked += 1
+                    continue
+            if receipt["status"] == "complete":
+                continue
+            by_path = {str(item["path"]): item for item in ledger["objects"]}
+            run_removed = 0
+            try:
+                for record in receipt["approved"]:
+                    absolute = run_dir / str(record["path"])
+                    relative = capacity_ledger.capacity_object_path(root, absolute)[1]
+                    entry = by_path.get(relative)
+                    if entry is None:
+                        raise ValueError("partial retirement ledger entry disappeared")
+                    if absolute.exists():
+                        if _retirement_is_protected(root, ledger, entry, absolute):
+                            raise ValueError("partial retirement approved file is protected")
+                        current = absolute.stat()
+                        if (
+                            current.st_size != int(record["bytes"])
+                            or current.st_mtime_ns != int(record["mtime_ns"])
+                        ):
+                            raise ValueError("partial retirement approved file changed after approval")
+                        # The approved SHA-256 was sealed by the existing run
+                        # manifest.  Re-hashing a multi-GiB PA here would make
+                        # retirement itself a second full payload scan.
+                        next(remove_recorded_files(run_dir, [record], identities_verified=True))
+                    _retire_approved_ledger_entry(ledger, entry, record)
+                    run_removed += int(record["bytes"])
+                if not capacity_ledger._is_valid_capacity_ledger(root, ledger):
+                    raise ValueError("partial retirement would invalidate the capacity ledger")
+                write_json_atomic(capacity_ledger.resolve_ledger_path(root), ledger)
+            except (OSError, ValueError):
                 blocked += 1
                 continue
-            if record not in receipt.get("removed", []):
-                receipt["removed"].append(record)
-                receipt["status"] = "pending"
-                write_json_atomic(receipt_path, receipt)
-        else:
-            # A file is eligible only under the user's already-recorded
-            # explicit abandonment decision; ordinary writing payloads remain
-            # with their originating workflow.
-            if entry.get("recovery_task") != "explicit_user_authorized_abandonment":
-                continue
-            receipt = {
-                "schema_version": 1, "role": "run_partial_retirement_actions",
-                "status": "pending", "removed": [record], "removed_bytes": 0,
-                "preserved": "all unlisted run files",
-            }
+            receipt["removed_bytes"] = run_removed
+            receipt["status"] = "complete"
             write_json_atomic(receipt_path, receipt)
-        if path.exists():
-            next(remove_recorded_files(run_dir, [record], identities_verified=True))
-            receipt["removed_bytes"] += record["bytes"]
-            write_json_atomic(receipt_path, receipt)
-        with capacity_protection.capacity_decision_lock(root):
-            current = capacity_ledger.load_capacity_ledger(root)
-            if current is None:
-                raise ValueError("capacity ledger disappeared during partial retirement")
-            target = next((item for item in current["objects"] if item.get("path") == entry["path"]), None)
-            if target is None:
-                raise ValueError("partial retirement ledger entry disappeared")
-            if target.get("status") != "retired":
-                target.clear()
-                target.update({"path": entry["path"], "class": "rebuildable_payload",
-                               "bytes": record["bytes"], "status": "retired", "pin": False})
-                current["resident_bytes"] -= record["bytes"]
-                write_json_atomic(capacity_ledger.resolve_ledger_path(root), current)
-        receipt["status"] = "complete"
-        write_json_atomic(receipt_path, receipt)
-        completed += 1
-        removed_bytes += record["bytes"]
+            completed += 1
+            removed_bytes += run_removed
     return {"completed_count": completed, "removed_bytes": removed_bytes, "blocked_count": blocked}
 
 
