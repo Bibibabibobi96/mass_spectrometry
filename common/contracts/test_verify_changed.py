@@ -49,6 +49,44 @@ class ChangedGateContractTests(unittest.TestCase):
                     break
         return selected
 
+    def test_catalog_invoker_reads_current_native_exit_code(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        for gate in (CHANGED_GATE, INTEGRATION_GATE):
+            assignment = next(
+                line for line in gate.read_text(encoding="utf-8").splitlines()
+                if line.startswith("$catalogCommandInvoker = ")
+            )
+            with self.subTest(gate=gate.name):
+                script = r"""
+$ErrorActionPreference='Stop'
+. ./common/gate_catalog_support.ps1
+$pythonProbe='__PYTHON__'
+& $pythonProbe -c 'pass'
+__ASSIGNMENT__
+$invoke={
+  param($Command)
+  & $catalogCommandInvoker -Command $Command -RepoRoot $PWD.Path -PythonExe $pythonProbe
+}.GetNewClosure()
+& $invoke -Command ([pscustomobject]@{runner='python';arguments=@('-c','pass')})
+$rejected=$false
+try {
+  & $invoke -Command ([pscustomobject]@{runner='python';arguments=@('-c','raise SystemExit(7)')})
+} catch { $rejected=$_.Exception.Message -like '*exit code 7*' }
+if(-not $rejected){throw 'Catalog accepted a failed native command'}
+Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
+""".replace("__PYTHON__", sys.executable.replace("'", "''")).replace(
+                    "__ASSIGNMENT__", assignment
+                )
+                result = subprocess.run(
+                    [pwsh, "-NoProfile", "-NonInteractive", "-Command", script],
+                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                    timeout=30, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("CATALOG_FAILURE_PROPAGATION=PASS", result.stdout)
+
     def test_documentation_only_fast_path_runs_without_project_gates(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:

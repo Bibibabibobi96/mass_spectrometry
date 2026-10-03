@@ -231,7 +231,7 @@ if ($FullScope) {
         'no_python_path_changed' 'locked'
 }
 
-$catalogCommandInvoker = ${function:Invoke-GateCatalogCommand}.GetNewClosure()
+$catalogCommandInvoker = ${function:Invoke-GateCatalogCommand}
 $routeCommandInvoker = {
     param($Command)
     & $catalogCommandInvoker -Command $Command -RepoRoot $repoRoot `
