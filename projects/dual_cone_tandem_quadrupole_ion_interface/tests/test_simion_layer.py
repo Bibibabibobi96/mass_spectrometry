@@ -48,6 +48,26 @@ def load(path: Path) -> dict:
 
 class SimionGeometryTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_project_gate_stops_before_ruff_when_unittest_fails(self) -> None:
+        source = (PROJECT / "verify_project.ps1").read_text(encoding="utf-8")
+        start = source.index("    & $PythonExe -m unittest discover")
+        guard = source[source.index("    if ($LASTEXITCODE", start):
+                       source.index("    & $PythonExe -m ruff", start)]
+        script = (
+            "$ErrorActionPreference='Stop'; & '" + sys.executable.replace("'", "''")
+            + "' -c 'raise SystemExit(7)'\n" + guard
+            + "Write-Output 'PROJECT_GATE=PASS'"
+        )
+        result = subprocess.run(
+            [shutil.which("pwsh"), "-NoProfile", "-Command", script],
+            cwd=PROJECT.parents[1], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Dual-cone interface static tests failed", result.stderr)
+        self.assertNotIn("PROJECT_GATE=PASS", result.stdout)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_c0_cache_and_refine_use_the_correct_host_stage(self) -> None:
         runner = PROJECT / "workflows/gas_assisted_transport/run_c0_gem_smoke.ps1"
         source = runner.read_text(encoding="utf-8")
@@ -76,7 +96,7 @@ $script:HostResourceStatePath=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
 $script:HostResourcePolicyPath=Join-Path $env:C0_TEST_REPO 'common/host_resource_policy.json'
 if($args -contains 'publish'-and$env:C0_TEST_PARENT-ne'heavy'){
  if(@((Get-HostResourceStatus).records)[0].budget.heavy_stage){throw 'Publication retained refine permission'}}
-if($args -contains 'probe'){Write-Output ('{"disposition":"'+$env:C0_TEST_CACHE+'"}')}
+if($args -contains 'ensure'){Write-Output ('{"disposition":"'+$env:C0_TEST_CACHE+'"}')}
 $global:LASTEXITCODE=0
 """, encoding="utf-8")
             (root / "simion.ps1").write_text("""

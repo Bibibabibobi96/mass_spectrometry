@@ -40,6 +40,8 @@ $frozenPythonRelativePaths = @(
     'common\contracts\file_identity.py',
     'common\ion_release\__init__.py',
     'common\ion_release\cylinder.py',
+    'common\ion_release\mt19937_disk_cone_rf_phase.py',
+    'common\ion_release\numpy_box_cone.py',
     'common\ion_release\numpy_ion11_box.py',
     'common\multipole\__init__.py',
     'common\multipole\particle_source_preflight.py'

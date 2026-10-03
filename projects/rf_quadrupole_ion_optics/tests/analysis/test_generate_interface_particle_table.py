@@ -338,6 +338,20 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     code_root / "common" / "ion_release" / "cylinder.py",
                 ),
                 (
+                    REPOSITORY_ROOT
+                    / "common"
+                    / "ion_release"
+                    / "mt19937_disk_cone_rf_phase.py",
+                    code_root
+                    / "common"
+                    / "ion_release"
+                    / "mt19937_disk_cone_rf_phase.py",
+                ),
+                (
+                    REPOSITORY_ROOT / "common" / "ion_release" / "numpy_box_cone.py",
+                    code_root / "common" / "ion_release" / "numpy_box_cone.py",
+                ),
+                (
                     REPOSITORY_ROOT / "common" / "ion_release" / "numpy_ion11_box.py",
                     code_root / "common" / "ion_release" / "numpy_ion11_box.py",
                 ),

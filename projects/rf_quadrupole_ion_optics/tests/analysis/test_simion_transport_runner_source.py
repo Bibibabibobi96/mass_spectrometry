@@ -13,6 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.capacity_ledger import initialize_capacity_ledger
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.multipole.particle_source_preflight import COLUMNS
 from common.multipole.verify_resolved_design import verify as verify_resolved_design
@@ -863,6 +864,8 @@ $hostExecutionOutcome='success'
                 }
             )
             artifact_root = root / "artifacts"
+            artifact_root.mkdir()
+            initialize_capacity_ledger(artifact_root, objects=[])
             run_id = "20260725_120000__test__simion__source-preflight"
             result = subprocess.run(
                 [
