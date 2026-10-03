@@ -23,7 +23,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
     tau_g_derivative_at_turn,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+    compile_dual_stripe_edge_evaluators,
     compile_dual_stripe_path_length_evaluator,
+    dual_stripe_total_path_scale,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
@@ -52,6 +54,7 @@ class StripeHardBoundary:
 
     bias_v: float
     width_at_y_mm: Callable[[float], float]
+    width_derivative_at_y_mm: Callable[[float], float] | None = None
 
     def width_mm(self, y_mm: float) -> float:
         width = _finite(self.width_at_y_mm(_finite(y_mm, "stripe y")), "Stripe width")
@@ -82,7 +85,15 @@ def stripes_from_contract(
 
     first_width = compile_dual_stripe_path_length_evaluator(contract, "set_1")
     second_width = compile_dual_stripe_path_length_evaluator(contract, "set_2")
-    return StripeHardBoundary(first_bias, first_width), StripeHardBoundary(second_bias, second_width)
+    def path_derivative(set_name: str) -> Callable[[float], float]:
+        edges = compile_dual_stripe_edge_evaluators(contract, set_name, 1)
+        scale = dual_stripe_total_path_scale(contract, set_name)
+        return lambda y: scale * (edges.upper_dz_dy(y) - edges.lower_dz_dy(y))
+
+    return (
+        StripeHardBoundary(first_bias, first_width, path_derivative("set_1")),
+        StripeHardBoundary(second_bias, second_width, path_derivative("set_2")),
+    )
 
 
 @dataclass(frozen=True)
@@ -627,6 +638,21 @@ def adiabatic_fast_phase_oscillation_count(
             tuple(stripe.bias_v for stripe in stripes),
         )
 
+    def directed_slope(y_mm: float) -> float:
+        action_slope = 0.0
+        for stripe in stripes:
+            if stripe.width_derivative_at_y_mm is None:
+                raise CandidateContractError("fast-phase endpoint requires a Stripe width derivative")
+            slope = _finite(stripe.width_derivative_at_y_mm(y_mm), "Stripe width derivative")
+            action_slope += 2.0 * (math.sqrt(energy - stripe.bias_v) - math.sqrt(energy)) * slope
+        scaled_slope = -direction * length * action_slope / mirror_period
+        if scaled_slope <= 0.0:
+            raise CandidateContractError("fast-phase endpoint is not a positive simple slow turn")
+        return scaled_slope
+
+    endpoint_slope: float | None = None
+    cancellation_fraction = math.sqrt(math.ulp(1.0))
+
     previous: float | None = None
     for refinement in range(max_refinements):
         order = initial_panels * (2 ** refinement)
@@ -636,7 +662,19 @@ def adiabatic_fast_phase_oscillation_count(
             u = 0.5 * (float(node) + 1.0)
             eta = 1.0 - u * u
             y_mm = physical_y(eta)
-            integrand = 2.0 * u / (local_period(y_mm) * math.sqrt(one_way_energy(y_mm)))
+            if u * u <= cancellation_fraction:
+                # Integral of Phi' over delta=L*u²: its midpoint rule has
+                # relative error O(delta²*Phi'''/Phi'), without subtracting
+                # near-equal potentials. Cancel u analytically, not by clipping
+                # kinetic energy. sqrt(eps) bounds delta/L; ordinary interior
+                # nodes retain the original branch and convergence checks.
+                if endpoint_slope is None:
+                    endpoint_slope = directed_slope(turning)
+                midpoint = turning - direction * length * u * u / 2.0
+                slope = endpoint_slope if midpoint == turning else directed_slope(midpoint)
+                integrand = 2.0 / (local_period(y_mm) * math.sqrt(slope))
+            else:
+                integrand = 2.0 * u / (local_period(y_mm) * math.sqrt(one_way_energy(y_mm)))
             integral += float(weight) * integrand
         current = length * 0.5 * integral
         if previous is not None and abs(current - previous) <= tolerance * max(1.0, abs(current)):

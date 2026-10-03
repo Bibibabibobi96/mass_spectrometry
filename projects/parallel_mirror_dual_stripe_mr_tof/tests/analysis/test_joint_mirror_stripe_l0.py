@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 import json
 
@@ -39,6 +40,67 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff impo
 
 
 class JointMirrorStripeL0Test(unittest.TestCase):
+    def test_rounded_fast_phase_endpoint_matches_linear_analytic_count(self) -> None:
+        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0"
+        # Constant T and linear Phi give K=2*sqrt(L/Phi_slope)/T.
+        # Include u=0 to reproduce the endpoint produced by rounded 1-u*u.
+        for direction in (-1.0, 1.0):
+            stripe = StripeHardBoundary(
+                1.0, lambda y: 10.0 + direction * y, lambda _y: direction,
+            )
+            with self.subTest(direction=direction), patch(
+                module + ".gauss_legendre_rule", return_value=([-1.0, 1.0], [1.0, 1.0]),
+            ), patch(module + ".coupled_reduced_period_mm_per_sqrt_v", return_value=3.0):
+                count = adiabatic_fast_phase_oscillation_count(
+                    mirror_reduced_period_mm_per_sqrt_v=2.0, energy_per_charge_v=4.0,
+                    stripes=(stripe,), entry_y_mm=0.0, turning_y_mm=direction,
+                )
+            self.assertAlmostEqual(count, 2.0 / (3.0 * math.sqrt(2.0 - math.sqrt(3.0))), places=12)
+
+    def test_rounded_fast_phase_endpoint_rejects_missing_or_zero_derivative(self) -> None:
+        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0"
+        for stripe, message in (
+            (StripeHardBoundary(1.0, lambda y: 10.0 + y), "requires a Stripe width derivative"),
+            (StripeHardBoundary(1.0, lambda y: 10.0 + 2*y-y*y, lambda y: 2-2*y), "positive simple slow turn"),
+        ):
+            with self.subTest(message=message), patch(
+                module + ".gauss_legendre_rule", return_value=([-1.0, 1.0], [1.0, 1.0]),
+            ), self.assertRaisesRegex(CandidateContractError, message):
+                adiabatic_fast_phase_oscillation_count(
+                    mirror_reduced_period_mm_per_sqrt_v=2.0, energy_per_charge_v=4.0,
+                    stripes=(stripe,), entry_y_mm=0.0, turning_y_mm=1.0,
+                )
+
+    def test_fast_phase_still_rejects_negative_interior_slow_energy(self) -> None:
+        stripe = StripeHardBoundary(1.0, lambda y: 10+y+10*y*(1-y), lambda y: 11-20*y)
+        with self.assertRaisesRegex(CandidateContractError, "left the physical slow branch"):
+            adiabatic_fast_phase_oscillation_count(
+                mirror_reduced_period_mm_per_sqrt_v=2.0, energy_per_charge_v=4.0,
+                stripes=(stripe,), entry_y_mm=0.0, turning_y_mm=1.0,
+            )
+
+    def test_nonlinear_endpoint_regularization_matches_stable_cubic_on_both_sides(self) -> None:
+        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0"
+        stripe = StripeHardBoundary(1.0, lambda y: 10+y+y**3, lambda y: 1+3*y*y)
+        coefficient = 2.0 - math.sqrt(3.0)
+        for factor in (0.5, 2.0):
+            delta = factor * math.sqrt(math.ulp(1.0))
+            u = math.sqrt(delta)
+            # Phi(1)-Phi(1-delta) = a*delta*(4-3*delta+delta²).
+            # A repeated one-node probe isolates the integrand across the
+            # numerical switch, rather than treating it as a quadrature rule.
+            expected = 2.0 / (3.0 * math.sqrt(coefficient * (4-3*delta+delta*delta)))
+            with self.subTest(factor=factor), patch(
+                module + ".gauss_legendre_rule", return_value=([2*u-1], [2.0]),
+            ), patch(module + ".coupled_reduced_period_mm_per_sqrt_v", return_value=3.0):
+                actual = adiabatic_fast_phase_oscillation_count(
+                    mirror_reduced_period_mm_per_sqrt_v=2.0, energy_per_charge_v=4.0,
+                    stripes=(stripe,), entry_y_mm=0.0, turning_y_mm=1.0,
+                )
+            # Midpoint truncation here is O(delta²)/24, below float64 roundoff;
+            # the unchanged subtraction side is limited by cancellation.
+            self.assertLess(abs(actual/expected-1), 2e-15 if factor < 1 else 1e-8)
+
     def test_spatial_return_derivative_does_not_renormalize_each_perturbed_turn(self) -> None:
         residual = spatial_return_kappa_derivative_residual(
             mirror_reduced_period_mm_per_sqrt_v=10.0,
