@@ -63,7 +63,8 @@ class FamilyDependencyResolutionTests(unittest.TestCase):
             item for item in dependencies
             if item["provider_project"] == "orthogonal_accelerator"
             or item["id"] in {
-                "oatof_accelerator_geometry_builder", "common_simion_gem_primitives"
+                "oatof_accelerator_geometry_builder", "common_simion_gem_primitives",
+                "common_particle_physics",
             }
         ]
         expected_component_sources = {
@@ -88,7 +89,11 @@ class FamilyDependencyResolutionTests(unittest.TestCase):
 $contract = Get-Content -LiteralPath '{INVENTORY}' -Raw | ConvertFrom-Json
 $selected = @($contract.dependencies | Where-Object {{
   $_.provider_project -eq 'orthogonal_accelerator' -or
-  $_.id -in @('oatof_accelerator_geometry_builder', 'common_simion_gem_primitives')
+  $_.id -in @(
+    'oatof_accelerator_geometry_builder',
+    'common_simion_gem_primitives',
+    'common_particle_physics'
+  )
 }})
 foreach ($dependency in $selected) {{
   $identity = Copy-RfFrozenDependency -RepoRoot '{REPO_ROOT}' -InputDir '{output}' -Dependency $dependency
@@ -116,10 +121,12 @@ foreach ($dependency in $selected) {{
                  "from projects.orthogonal_accelerator.analysis import accelerator_time_focus as two; "
                  "from projects.orthogonal_accelerator.analysis import three_zone_ideal_theory as three; "
                  "from projects.orthogonal_accelerator.simion import sectioned_accelerator as geometry; "
+                 "from common.contracts import particle_physics; "
                  "from common.simion import gem_primitives; "
                  "assert Path(two.__file__).is_relative_to(Path.cwd()); "
                  "assert Path(three.__file__).is_relative_to(Path.cwd()); "
                  "assert Path(geometry.__file__).is_relative_to(Path.cwd()); "
+                 "assert Path(particle_physics.__file__).is_relative_to(Path.cwd()); "
                  "assert Path(gem_primitives.__file__).is_relative_to(Path.cwd()); "
                  "assert two.accelerator_state(2240, 1760, 3, 16.8); "
                  "assert three.AffineSource; print('FROZEN_ACCELERATOR_IMPORT=PASS')"],
@@ -135,7 +142,9 @@ foreach ($dependency in $selected) {{
         )
         self.assertIn("$acceleratorDependencyPublication = Publish-RfOatofDependencyInventory", runner)
         self.assertIn("$acceleratorDependencyIdentities = @($acceleratorDependencies", runner)
-        self.assertIn("$_.id -eq 'common_simion_gem_primitives'", runner)
+        self.assertIn(
+            "@('common_simion_gem_primitives','common_particle_physics')", runner
+        )
         self.assertIn("$runConfiguration.inputs[$identity.frozen_input_name] = $identity.snapshot_path", runner)
         self.assertIn("$runConfiguration.parameters.accelerator_provider_source_identity", runner)
         self.assertIn("Accelerator provider source changed while preparing the run", runner)

@@ -136,8 +136,24 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(final["waves"][0]["batch_count"], 6)
         self.assertEqual(sum(counts), 5_000)
         self.assertEqual(counts[0] + counts[-1], counts[1])
-        self.assertEqual(final["estimation"]["memory_safety_factor"], 1.10)
+        self.assertEqual(final["estimation"]["memory_safety_factor"], 1.05)
         self.assertTrue(final["estimation"]["retained_first_batch_counts_toward_concurrency"])
+
+    def test_running_first_batch_credits_head_start_when_work_is_indivisible(self) -> None:
+        initial = plan_simion_dispatch(
+            self.request(particle_count=100), [], available_memory_bytes=10_000,
+            total_physical_memory_bytes=20_000,
+        )
+        final = plan_adaptive_followup(
+            initial, GIB, observed_cpu_percent=10,
+            available_memory_bytes=int(6.5 * GIB), total_physical_memory_bytes=10 * GIB,
+            first_batch_completed=False,
+        )
+        self.assertEqual(final["limits"]["maximum_concurrency"], 6)
+        counts = [item["count"] for item in final["waves"][0]["batches"]]
+        self.assertEqual(counts, [10, 17, 17, 17, 17, 16, 6])
+        self.assertEqual(sum(counts), 100)
+        self.assertEqual(counts[0] + counts[-1], 16)
 
     def test_adaptive_followup_does_not_freeze_background_cpu_into_lane_count(self) -> None:
         initial = plan_simion_dispatch(
@@ -254,10 +270,10 @@ class ResourceSchedulerTests(unittest.TestCase):
             total_physical_memory_bytes=int(47.924 * 1024**3),
             first_batch_completed=False,
         )
-        # Two further 1.10x peak budgets fit after the 1 GiB reserve.  The formal
-        # first batch already consumes the third, retained lane.
-        self.assertEqual(final["limits"]["memory_capacity"], 3)
-        self.assertEqual(final["limits"]["maximum_concurrency"], 3)
+        # Three further 1.05x peak budgets fit after the 1 GiB reserve.  The
+        # formal first batch already consumes the fourth, retained lane.
+        self.assertEqual(final["limits"]["memory_capacity"], 4)
+        self.assertEqual(final["limits"]["maximum_concurrency"], 4)
 
     def test_live_formal_first_does_not_invent_an_extra_lane_when_none_fits(self) -> None:
         """The retained first lane is not evidence that one sibling fits."""
@@ -308,7 +324,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         event = format_dispatch_decision_event(plan)
         self.assertIn("MEASUREMENT=EXACT_HISTORICAL_PROFILE", event)
         self.assertIn("BATCHES=4", event)
-        self.assertIn("PROCESS_MEMORY_BUDGET=1.10GiB", event)
+        self.assertIn("PROCESS_MEMORY_BUDGET=1.05GiB", event)
 
     def test_smaller_observed_batch_profile_cannot_schedule_larger_batches(self) -> None:
         plan = plan_simion_dispatch(

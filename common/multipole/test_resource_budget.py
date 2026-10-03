@@ -545,6 +545,68 @@ if($scenario-eq'inherited_light'){
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    def test_formal_observation_uses_sustained_tail_cpu_not_startup_peak(self) -> None:
+        """A short Fast Adjust-like CPU burst must not serialize the flight."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch = root / "dispatch.json"
+            dispatch.write_text(
+                json.dumps({
+                    "role": "simion_repository_dispatch_plan",
+                    "estimation": {"kind": "formal_first_batch_observation"},
+                    "host": {"logical_processors": 16},
+                    "limits": {
+                        "formal_observation_seconds": 45,
+                        "memory_critical_reserve_bytes": 512 * 1024**2,
+                        "memory_critical_seconds": 15,
+                    },
+                }),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            stdout, stderr = root / "stdout.log", root / "stderr.log"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Get-RepositoryAvailableMemoryBytes{return [int64](64GB)};"
+                "function Get-SystemCpuPercent{return [double]0};"
+                "$script:sampleCalls=0;$script:ticks=[int64]0;"
+                "$script:now=[datetime]'2026-09-17T00:00:00Z';"
+                "function Get-RepositoryUtcNow{return $script:now};"
+                "function Start-Sleep {param([int]$Milliseconds);"
+                "$script:now=$script:now.AddMilliseconds($Milliseconds)};"
+                "function Get-ManagedSolverProcessSample {"
+                "param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds);"
+                "$script:sampleCalls+=1;$root=[string]$RootProcessIds[0];"
+                "if($script:sampleCalls-gt1){"
+                "$script:ticks+=$(if($script:sampleCalls-le71){[int64]72000000}else{[int64]5000000})};"
+                "[pscustomobject]@{tracked_process_ids=@([int]$root);active_process_ids=@([int]$root);"
+                "working_set_bytes=1;private_bytes=1;managed_memory_bytes=1;"
+                "total_processor_time_ticks=$script:ticks;"
+                "processor_time_ticks_by_process_id=@{$root=$script:ticks}}"
+                "};"
+                "$spec=[pscustomobject]@{name='formal';file_path=(Get-Process -Id $PID).Path;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 60');"
+                f"stdout='{stdout}';stderr='{stderr}';environment=@{{}};working_directory='{root}'}};"
+                f"$r=Start-ObservedFormalProcess -DispatchPlanPath '{dispatch}' -ProcessSpecification $spec;"
+                "try{"
+                "if([math]::Abs([double]$r.observed_process_cpu_percent-6.25)-gt0.001){"
+                "Write-Error ('unexpected sustained CPU: '+$r.observed_process_cpu_percent);exit 3};"
+                "if([double]$r.observed_process_cpu_peak_percent-lt89.0){exit 4};"
+                "if($r.observed_process_cpu_measurement-ne'median_final_observation_window'){exit 5}"
+                "}finally{Stop-Process -Id $r.process_record.root_process_id -Force -ErrorAction SilentlyContinue}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_completed_first_formal_observation_still_writes_admission_receipt(self) -> None:
         """A naturally completed N=1 observation skips the dispatch loop safely."""
         with tempfile.TemporaryDirectory() as directory:

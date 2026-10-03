@@ -645,6 +645,7 @@ function Start-ObservedFormalProcess {
     -Details @{OBSERVATION_SECONDS=$seconds;MEASUREMENT='FIRST_FORMAL_BATCH'}
   $previousTicks=[int64]0;$previousTicksByProcessId=@{};$previousAt=$record.started_at
   $peakCpu=[double]0;$peakBackground=[double]0;$systemCpu=[double]0;$lastSystemAt=$null
+  $cpuSamples=[Collections.Generic.List[object]]::new()
   $criticalSince=$null;$resourceBudgetExceeded=$false
   $observationComplete=$false;$completedDuringObservation=$false
   # The formal first batch remains alive after the frozen observation window.  Its
@@ -714,6 +715,7 @@ function Start-ObservedFormalProcess {
         $lastSystemAt=$now
       }
       $peakBackground=[math]::Max($peakBackground,[math]::Max(0.0,$systemCpu-$cpu))
+      $cpuSamples.Add([pscustomobject]@{at=$now;percent=[math]::Max(0.0,$cpu)})
     }
     $previousTicks=[int64]$sample.total_processor_time_ticks
     if($sample.PSObject.Properties.Name-contains'processor_time_ticks_by_process_id'){
@@ -755,10 +757,32 @@ function Start-ObservedFormalProcess {
       -Details @{EXIT_CODE=$record.exit_code;NATURAL=$(if($record.pressure_terminated){'false'}else{'true'});MEASUREMENT='FIRST_FORMAL_BATCH';WALL_CLOCK_SECONDS=([math]::Round(((Get-RepositoryUtcNow)-$record.started_at).TotalSeconds,3));MORE_PENDING='UNKNOWN'}
     $record.process.Dispose()
   }
+  # Fast Adjust and PA loading can briefly use many cores even though the
+  # independent-particle flight that follows is single-core.  Memory remains
+  # peak-based, but lane planning uses the median of the final observation
+  # window so a short startup burst cannot serialize a long formal cohort.
+  # A batch that finishes inside the observation window has no established
+  # steady phase, so it conservatively keeps the observed peak.
+  $sustainedCpu=$peakCpu
+  $cpuMeasurement='peak_completed_inside_observation'
+  if($observationComplete-and-not$completedDuringObservation){
+    $tailSeconds=[math]::Min(10.0,[math]::Max(3.0,[math]::Floor($seconds/4.0)))
+    $tailStart=$record.started_at.AddSeconds([math]::Max(0.0,$seconds-$tailSeconds))
+    [double[]]$tailCpu=@($cpuSamples|Where-Object{$_.at-ge$tailStart}|ForEach-Object{[double]$_.percent}|Sort-Object)
+    if($tailCpu.Count-gt0){
+      $middle=[int][math]::Floor($tailCpu.Count/2)
+      $sustainedCpu=if(($tailCpu.Count%2)-eq1){$tailCpu[$middle]}else{($tailCpu[$middle-1]+$tailCpu[$middle])/2.0}
+      $cpuMeasurement='median_final_observation_window'
+    }
+  }
   $record|Add-Member -NotePropertyName completed_during_observation `
     -NotePropertyValue ([bool]$completedDuringObservation) -Force
   $record|Add-Member -NotePropertyName observed_process_cpu_percent `
+    -NotePropertyValue ([math]::Round($sustainedCpu,3)) -Force
+  $record|Add-Member -NotePropertyName observed_process_cpu_peak_percent `
     -NotePropertyValue ([math]::Round($peakCpu,3)) -Force
+  $record|Add-Member -NotePropertyName observed_process_cpu_measurement `
+    -NotePropertyValue $cpuMeasurement -Force
   $record|Add-Member -NotePropertyName observed_background_cpu_percent `
     -NotePropertyValue ([math]::Round($peakBackground,3)) -Force
   return [pscustomobject]@{
@@ -770,7 +794,9 @@ function Start-ObservedFormalProcess {
     observed_peak_process_tree_working_set_bytes=[int64]$record.peak_managed_memory_bytes
     observed_peak_process_tree_managed_memory_bytes=[int64]$record.peak_managed_memory_bytes
     observed_peak_process_tree_resident_working_set_bytes=[int64]$record.peak_working_set_bytes
-    observed_process_cpu_percent=[math]::Round($peakCpu,3)
+    observed_process_cpu_percent=[math]::Round($sustainedCpu,3)
+    observed_process_cpu_peak_percent=[math]::Round($peakCpu,3)
+    observed_process_cpu_measurement=$cpuMeasurement
     observed_background_cpu_percent=[math]::Round($peakBackground,3)
     available_memory_bytes=Get-RepositoryAvailableMemoryBytes
     total_physical_memory_bytes=[int64][MultipoleMemoryStatus]::TotalBytes()
@@ -1157,6 +1183,8 @@ function Invoke-ResourceBudgetedProcesses {
       peak_managed_memory_bytes=[int64]$first.peak_managed_memory_bytes
       completed_naturally=[bool]$first.completed_during_observation
       process_cpu_percent=[double]$first.observed_process_cpu_percent
+      process_cpu_peak_percent=$(if($first.PSObject.Properties.Name-contains'observed_process_cpu_peak_percent'){[double]$first.observed_process_cpu_peak_percent}else{[double]$first.observed_process_cpu_percent})
+      process_cpu_measurement=$(if($first.PSObject.Properties.Name-contains'observed_process_cpu_measurement'){[string]$first.observed_process_cpu_measurement}else{'legacy_peak'})
       background_cpu_percent=[double]$first.observed_background_cpu_percent
     }
   }

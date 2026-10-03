@@ -48,12 +48,12 @@ MAXIMUM_MEMORY_RECOVERY_ATTEMPTS = 2
 # fail closed rather than repeatedly churn workers until Windows becomes
 # unresponsive.
 MAXIMUM_MEMORY_DANGER_TERMINATION_ATTEMPTS = 2
-KNOWN_MEMORY_SAFETY_FACTOR = 1.10
+KNOWN_MEMORY_SAFETY_FACTOR = 1.05
 # The first formal batch's observed peak receives the same headroom as an
 # exact historical profile. It can remain active after the observation window;
 # the executor retains it and guards sibling admission with the system reserve
 # and live peak checks, including growth beyond the initial observed peak.
-OBSERVED_MEMORY_SAFETY_FACTOR = 1.10
+OBSERVED_MEMORY_SAFETY_FACTOR = 1.05
 RESOURCE_IDENTITY_KEYS = (
     "solver", "field_kind", "frontend_grid_profile_id",
     "oatof_numerical_profile_id", "trajectory_quality_profile_id",
@@ -352,9 +352,10 @@ def _batches_after_formal_first(
 
     The first formal batch may already have completed when this is called.  It
     is still a partial lane, rather than a reason to make every following
-    lane smaller.  Keep the original lane target and emit its remainder as a
-    final batch.  That gives the same total work per logical lane whether the
-    full-lifecycle observation finished quickly or slowly.
+    lane smaller.  Give the already-started lane the floor load and distribute
+    indivisible work to the earlier-started sibling lanes.  Emit the retained
+    lane's remainder as one final batch.  This keeps logical lane loads within
+    one item while crediting the formal lane for its observation head start.
     """
     first_count = first["count"]
     remaining = work_count - first_count
@@ -363,7 +364,7 @@ def _batches_after_formal_first(
     if concurrency == 1:
         tail_counts = [remaining]
     else:
-        target_lane_load = max(first_count, math.ceil(work_count / concurrency))
+        target_lane_load = max(first_count, work_count // concurrency)
         first_lane_remainder = target_lane_load - first_count
         other_lane_counts = _balanced_lane_loads(
             remaining - first_lane_remainder, concurrency - 1

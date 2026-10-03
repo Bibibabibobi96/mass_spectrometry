@@ -1245,7 +1245,7 @@ try {
   $acceleratorDependencies = @($runtime.dependency_contract.dependencies |
     Where-Object {
       ($_.provider_project -eq 'orthogonal_accelerator' -or
-        $_.id -eq 'common_simion_gem_primitives') -and
+        $_.id -in @('common_simion_gem_primitives','common_particle_physics')) -and
       @($_.consumers) -contains 'single_flight_transport'
     })
   if ($acceleratorDependencies.Count -eq 0) {

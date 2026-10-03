@@ -461,17 +461,21 @@ function Wait-HostResourceProcess {
   [CmdletBinding()]
   param([Parameter(Mandatory)]$Lease,[Parameter(Mandatory)]$Process)
   if($Lease.inherited){throw 'An inherited lease cannot attest work-process completion.'}
-  $pid=[int]$Process.Id;$key=[string]$pid
+  $workProcessId=[int]$Process.Id;$key=[string]$workProcessId
   if(-not $Lease.registered_work_processes.ContainsKey($key)){throw 'Completion requires a process registered by this lease.'}
   $expected=[string]$Lease.registered_work_processes[$key]
-  try{$actual=$Process.StartTime.ToUniversalTime().Ticks.ToString('D19')}catch{throw 'Completion requires a readable registered process creation identity.'}
-  if($actual-ne$expected){throw 'Completion process identity differs from the registered work process.'}
+  $actual=Get-HostResourceNativeProcessCreationTicks -ProcessId $workProcessId
+  if([string]::IsNullOrWhiteSpace([string]$actual)){throw 'Completion requires a readable registered process creation identity.'}
+  # Win32_Process.CreationDate is microsecond-granular, while GetProcessTimes
+  # retains the final 100 ns digit.  They identify the same process within one
+  # CIM quantum; anything larger remains a real identity mismatch.
+  if([Math]::Abs([int64]$actual-[int64]$expected)-ge10){throw 'Completion process identity differs from the registered work process.'}
   $Process.WaitForExit()
   if(-not $Process.HasExited){throw 'Synchronous work-process wait did not reach terminal state.'}
   foreach($completed in @($Lease.completed_work_processes)){
-    if([int]$completed.pid-eq$pid-and[string]$completed.started-eq$expected){return $Lease}
+    if([int]$completed.pid-eq$workProcessId-and[string]$completed.started-eq$expected){return $Lease}
   }
-  $Lease.completed_work_processes.Add([pscustomobject]@{pid=$pid;started=$expected})
+  $Lease.completed_work_processes.Add([pscustomobject]@{pid=$workProcessId;started=$expected})
   return $Lease
 }
 
