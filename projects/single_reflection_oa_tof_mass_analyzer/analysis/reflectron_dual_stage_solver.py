@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from common.contracts.particle_physics import (
-    ELEMENTARY_CHARGE_C,
     LEGACY_OA_TOF_ATOMIC_MASS_CONSTANT_KG as ATOMIC_MASS_CONSTANT_KG,
     thomson_to_kg_per_c,
 )

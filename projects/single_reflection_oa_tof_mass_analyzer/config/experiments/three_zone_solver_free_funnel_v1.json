@@ -37,8 +37,8 @@
     },
     "reflectron_theory": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
-      "bytes": 25234,
-      "sha256": "2C8D1D1FCD58DFF73BEA9E019F92F7C4E8B1129AF398CB80CBCAD0321C843871"
+      "bytes": 25371,
+      "sha256": "13854076A4162D1E64BE8A4FA11B2447694DB2D958E0834F6CF12179456A9EA3"
     },
     "three_zone_theory": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_ideal_theory.py",
@@ -87,8 +87,8 @@
     },
     "accelerator_two_zone_theory": {
       "path": "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
-      "bytes": 46099,
-      "sha256": "84B42376A06E7C4846147D9AA844B81292AD05F0287EA16F3790219EC1300E35"
+      "bytes": 50064,
+      "sha256": "C0C4103F3975F1349C0075535F88051337733F0121FE98C256022AF2E8A3778D"
     },
     "accelerator_three_zone_theory": {
       "path": "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",

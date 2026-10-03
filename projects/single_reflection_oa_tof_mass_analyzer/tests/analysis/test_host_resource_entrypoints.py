@@ -230,7 +230,10 @@ function Get-CimInstance {
   switch($ClassName) {
     Win32_OperatingSystem { [pscustomobject]@{TotalVisibleMemorySize=32MB;FreePhysicalMemory=24MB} }
     Win32_Processor { [pscustomobject]@{LoadPercentage=0} }
-    Win32_PerfFormattedData_PerfDisk_PhysicalDisk { [pscustomobject]@{Name='fixture';CurrentDiskQueueLength=0} }
+    Win32_PerfFormattedData_PerfDisk_PhysicalDisk {
+      $volume=[IO.Path]::GetPathRoot($PWD.Path).TrimEnd([IO.Path]::DirectorySeparatorChar)
+      [pscustomobject]@{Name=('0 ' + $volume);CurrentDiskQueueLength=0}
+    }
     Win32_Process { [pscustomobject]@{ProcessId=$PID;ParentProcessId=0;CreationDate=[datetime]'2026-01-01';WorkingSetSize=32MB;PrivatePageCount=32MB;ExecutablePath='fixture.exe'} }
   }
 }

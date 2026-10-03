@@ -29,6 +29,8 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
   不规范化 run 输入的换行；已有不同 JSON 序列化合同保持原身份。理论 CLI 的递归预期值比较复用
   `common/contracts/expected_values.py`，不改变理论公式与容差。此复用只属于无求解器回归，不更新 Formal 资格。
   孔径分析的多项式残差诊断复用 `common/analysis/longitudinal_fit.py`，保留项目单位、字段与样本标准差口径。
+- Static门禁通过包模块入口执行反射镜理论自检，使其公共合同导入与正常项目运行一致；活动三区理论合同的
+  authority仅由现有authoring刷新入口更新。这些静态与无求解器检查不更新Formal或真实飞行资格。
 
 - 正交加速器领域实现已拆到独立`orthogonal_accelerator`项目：纯二区／三区计算和器件构建从该项目
   调用，当前接口由`../config/accelerator_dependency.json`声明。本项目保留具体仪器参数、装配坐标、
