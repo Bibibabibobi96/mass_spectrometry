@@ -547,6 +547,35 @@ ion_volts不参与粒子轨迹计算，未同步它只影响电势记录含义�
 对照，预算60秒/1 GiB/10 MiB；沿用现有有效性标记，未知点占位绝不参与实际求梯度。
 该小测试的三个可重建PA及自有scratch已退役，原始数值与源码保留，生产PA/GUI未改变。
 
+最终接口小试验[064000 SIMION](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_064000__analysis__simion__scalar-native-support/summary.json)
+用343单位脉冲和12查询位置实测，官方field_array V-mode与field_vc逐轴换算最大差4.44e-15 V/mm；
+单位线性势最大差7.11e-15 V/mm。全部272个精确非零响应向量落在每轴floor(q)-2至ceil(q)+2盒内。
+该盒仅作当前无镜像真空数组的保守诊断裕量，非任意模型通用证明；盒越域或触及未知值直接停止，
+不让存储占位参与梯度。原始支持表保留，唯一调用1.099秒、峰值14.87 MiB，无飞行或Refine。
+
+同B标量势[064901](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_064901__analysis__cross__mrtof-corrected-b-scalar-v-h025/summary.json)
+已导出：同盒及0.25 mm，recover off，81245941有效/1337560无效节点；查询239.31秒、
+总283.97秒、峰值7.54 GiB，V及valid两PA约1.231 GiB，未重新求场。保留供后续消费者，
+已退休仅自有临时副本。下一对照只飞原中心ID1及原x+0.5的ID11，不换源/工作电压/步长/碰撞；
+预算1800秒/16 GiB/256 MiB新增，官方V-mode求梯度，原OA/detector优先级不变、不增加真空覆盖实例。
+场表示仍未取得资格，不把导出成功、原生接口通过或小样本终态当作R改善。
+
+[065922 V-mode两射线](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_065922__analysis__simion__mrtof-b-vmode-two-ray/summary.json)
+已按预算停止：中心有K=24.5/49及detector/code1记录，TOF764.359890497 us，目标K慢向残差
+-0.657440 mm，已采样最大|x|1.396743 mm。原ID11在469.270234 us、x=-1.500053 mm触及
+保守节点盒边界；数组本身到x=-2 mm，但查询裕量需要x>=-1.5 mm。这是数值覆盖失败，非碰撞。
+批次异常退出未写terminal，中心的严格事件合同不通过；不补造终态、不计算50%收集率或R。
+真实总耗时480.78秒、峰值11.73 GiB；没有扩盒或续飞。相对PPR中心的绝对TOF差-1.860468 ns
+不是束团峰宽误差。原碰撞、OA/detector和源保留；自有工作副本已清，导出场仍保留供诊断。
+
+复用实际事件查询同B原始V的[075000能量比较](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_075000__analysis__cross__mrtof-vmode-energy-consistency/results/comparison.json)
+获得11个有效点，ID11的n40缺失保留；总57.71秒、峰值5.76 GiB，无新飞行或求场。
+相对各自P2，中心n40的K+qV偏差由PPR的-25.61094变为V-mode的+0.383756 eV；
+ID11 n30由-4.93058变为-0.249466 eV。该比较支持优先保留标量势路线，但两路线轨迹不同，
+不能将此比值当精度改善倍数或TOF误差界，更不能称当前场收敛。
+下一项仅查询冻结V数组在少量实际转折附近的±x节点，区分明显势不对称与横向放大线索；
+预算60秒/2 GiB/16 MiB、不飞行/Refine、不强置Ex=0、不自动扩大导出域。
+
 ### 自动链续算的工作点一致性
 
 本轮测试修复仅调整测试输入及输出捕获：已知解析基准显式冻结 K=25.5/y=-45，
