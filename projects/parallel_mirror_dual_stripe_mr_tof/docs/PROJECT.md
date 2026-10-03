@@ -405,6 +405,75 @@ raw Ex/Ey/Ez差RMS为0.32212/0.09182/0.10328 V/mm，PPR为0.02563/0.04831/0.1176
 宣布准确。本轮只确认局部尺寸下降及场表示敏感性，未飞粒子、未测得分辨率改善、未证明场收敛。
 新MPH保留供后续消费，完整manifest通过；自身约2.10 GB重复scratch已冻结后清理，源A及PA未动。
 
+后续场导出复用安装版官方`examples/matlab/simion_pa_save.m`，不另写PA格式。
+小样本真实兼容证据为[054000读回结果](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_054000__analysis__cross__official-pa-bulk-compat/summary.json)：
+MATLAB语法兼容外，仅把官方示例的`max(points(:))`文件头上界改为`max(1,max(abs(points(:))))`；
+供应商`lib/cpp/simion/pa.h`明确要求max_voltage为正，它是电极编码上界，不是对场值施加缩放。
+原示例在全负Ez上生成负上界，已被真实SIMION拒绝；修正没有改变任何节点载荷。
+四数组各24633点原生读回与冻结文本逐值差为0，Ex/Ey/Ez负节点分别13190/129/24633，
+全部非电极，网格一致，既有field_array插值及无效单元/越域拒绝检查通过。
+四张PA写盘合计0.0172秒、MATLAB任务0.120秒，含启动和读回37.39秒；不能外推整域吞吐。
+这是标量传输兼容，不是COMSOL场准确度或整程时间资格；供应商兼容副本仅在产物中冻结，
+未提交公开仓库。四张已完成消费的测试PA共788480字节经现有retention退役，原始文本、
+源码及读回日志保留可重建；不删除后续整程飞行依赖的场PA或既有GUI资产。
+
+修正B的粗场导出已实际完成：[050659结果](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_050659__analysis__cross__mrtof-corrected-b-raw-export/summary.json)。
+只读原MPH，以65536点分块查询raw Ex/Ey/Ez，x=-2至2、y=-60至360、z=-290至290 mm，
+采样间距0.5 mm；8787609点中8762130有效、25479无效，独立valid掩码禁止消费无效插值单元。
+查询43.02秒、四PA写盘0.22秒、含启动85.68秒，峰值6.28 GiB、产物约268 MiB；
+未复制模型、重新求场或调压，无全量文本中间件。四PA固定保留供整程消费者，重复scratch已清理。
+下一试验仅中心、Ey正负0.2 eV、原N13的x=0.5 mm射线，原source/ID到runtime ID映射冻结；
+保留四实例碰撞及正式回调，仅替换global/corridor电场，不替换OA和detector。
+预算1800秒/12 GiB/256 MiB新增，内存根据既有8.476 GiB单进程峰值及新增场数组给出。
+域外/无效单元终止算数值覆盖失败，不回退旧场、不计作物理碰撞；不以四颗计算正式分辨率。
+该外部E工作台只作诊断，原PA云图不自动显示COMSOL场，不替换六套GUI或声称新增GUI对等资格。
+
+上述raw整程试验实际未完成：[051810失败证据](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_051810__analysis__simion__mrtof-b-raw-four-ray-coverage-failed/summary.json)。
+首颗中心到736.488938 us，在(0.014612,-0.464885,34.964566) mm触发无效插值单元，
+0自然终态、其余三颗未飞；真实Fly158.01秒、总181.87秒、峰值约9.30 GiB，未超预算。
+原生只读IOB查询确认该点是真空，但八角中的(0,-0.5,34.5)及(0.5,-0.5,34.5)为电极且mask=0，
+其余六角真空且mask=1；这是近电极模板覆盖失败，不是该位置真实碰撞，不允许用零值补齐。
+中心在OA安全出口仍x约-2e-22 mm，P1平面4.028 us已x=-0.02216 mm，记录最大|x|为
+1.31370 mm@722.648 us；这些离散事件不证明连续包络或精确首次离面时刻。未得到检测器TOF，
+不计算Ey斜率、四射线相对TOF或R，也不能把raw桥接作为已合格对称场参照。
+
+唯一改变原生场恢复的[051905 PPR导出](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_051905__analysis__cross__mrtof-corrected-b-ppr-export/summary.json)
+已完成：同MPH、同电压/盒/0.5 mm网格，recover由off变ppr，无强制Ex=0；有效/无效点计数相同。
+查询52.08秒、四PA写0.22秒、总94.94秒、峰值6.68 GiB。后续同四源对照用于隔离场表示敏感性，
+不将PPR更平滑或中心更对称当成准确证明；原无效模板守卫、碰撞及全部正式飞行回调不变。
+
+该PPR对照已冻结为[053453部分飞行证据](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_053453__analysis__simion__mrtof-b-ppr-four-ray-coverage-failed/summary.json)：
+中心在734.934176 us、48次转折后撞P2接地屏蔽（electrode 20），没有目标K或检测器资格；
+Ey-0.2 eV射线完成K=24.5/49并于764.353877 us命中检测器，y=-52.300205 mm。
+Ey+0.2 eV射线在324.575157 us、y=360.000287 mm越出导出盒，属数值覆盖失败；x+0.5 mm未飞。
+真实Fly299.36秒、总323.42秒、峰值约9.30 GiB；不能称四射线闭合，也不能由不同拓扑计算Ey导数。
+原程序没有terminal事件，保留既有严格分析器的missing-terminal结果，不冒称Formal终态合同通过。
+中心OA安全出口与原场一致，但P1出口面已出现dy=+0.081227 mm、角度4.519168至4.622525度；
+P2参考面dy=+0.828091 mm、角度2.000010至2.027349度，首次主转折dy=+1.367738 mm。
+因此分歧早于长程传播，尚不能唯一归因Stripe或把旧空间资格迁移到新场。
+诊断装配期间原生加载曾对global fallback在内存Refine，随后wb:save尝试写PA被只读保护拒绝；
+不能把包装日志no_pa_save标签当作没有保存尝试的证据。原共享PA保护保留，不新增全量哈希。
+下一步仅扩展同B/PPR/0.5 mm导出盒的y上限至模型内463 mm，预算300秒、16 GiB、512 MiB新增；
+只补未完成的Ey+及x+射线，前两条保留原导出身份，不重飞或更改电压、碰撞、有效性掩码。
+
+扩覆盖[053808导出](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_053808__analysis__cross__mrtof-corrected-b-ppr-coverage/summary.json)
+实际10940103点、10772055有效，查询59.75秒、总104.18秒、峰值6.70 GiB、四PA约333.9 MiB；
+没有重新求场。旧、新导出在五个已有轨迹点的15个电场分量差均为0，不作为全域相同或精度证明。
+[054525补跑](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261004_054525__analysis__simion__mrtof-b-ppr-remaining-two-ray/summary.json)
+两条均达到终态，无覆盖失败：Ey+完成K=24.5/49但相位y残差+19.371008 mm，
+随后于759.500750 us因unexpected_post_return_mirror_turn被程序终止（code=4），不是电极碰撞。
+x+0.5 mm射线也达到K=24.5/49、相位y残差+3.536651 mm，随后于749.672179 us撞P2接地屏蔽
+（electrode 20，z约-97 mm）。两条总281.86秒、峰值约9.46 GiB；已记录事件的最大y为
+374.600102 mm、最大绝对x约0.971577 mm，不是连续或全源包络界。原前两条没有重飞。
+因此此固定电压PPR桥接对照仅一条获得探测器资格，无法给出同拓扑的四射线时间响应或正式R；
+这是场表示/工作点迁移问题的证据，尚不能判定COMSOL或原SIMION哪一方准确。
+
+下一项只隔离导出插值：同B解、PPR、扩展盒、几何、边界、电压及源，将采样间距0.5改为
+0.25 mm；82583501点、四PA约2.461 GiB，预登记900秒/16 GiB/3 GiB新增。
+复用官方writer和既有分块查询，仅移动本次新PA发布以避免重复载荷；不建网或重新求场。
+随后同四射线、原步长和碰撞在新采样上重飞，预算1800秒/16 GiB/256 MiB新增；
+原0.5 mm终态不能冒充新采样结果。此阶段不调压、不自动增加第三档、不运行N=100。
+
 ### 自动链续算的工作点一致性
 
 本轮测试修复仅调整测试输入及输出捕获：已知解析基准显式冻结 K=25.5/y=-45，
