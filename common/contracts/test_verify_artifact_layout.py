@@ -12,6 +12,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from common.contracts import capacity_ledger
 from common.contracts.capacity_protection import create_capacity_protection_lease
 from common.contracts.verify_artifact_layout import (
     main,
@@ -21,7 +22,10 @@ from common.contracts.verify_artifact_layout import (
     verify_integration_cache_entry,
     verify_verified_pulse_cache_entry,
 )
-from common.simion.pa_family_cache import publish_pa_family_cache
+from common.simion.pa_family_cache import (
+    VERIFICATION_EVIDENCE_ROLE,
+    advance_pa_family_cache_transaction,
+)
 
 
 RUN_ID = "20260721_120000__sim__cross__formal-validation__n100"
@@ -68,15 +72,41 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
 
     def write_common_pa_family_cache(self, artifacts: Path) -> Path:
         cache_root = artifacts / "common" / "simion" / "pa_family_cache"
-        source = artifacts.parent / "source"
-        source.mkdir(parents=True)
-        (source / "family.pa0").write_text("PA family\n", encoding="utf-8")
-        publication = publish_pa_family_cache(
-            cache_root,
-            self._common_pa_family_identity(),
-            source,
-            ("family.pa0",),
+        producer = artifacts / "projects" / "fixture" / "runs" / RUN_ID
+        config = producer / "run_config.json"
+        write_json(config, {
+            "run_id": RUN_ID, "project": "fixture",
+            "capacity_ledger_lifecycle": {
+                "schema_version": 1, "enabled": True,
+                "artifact_root": str(artifacts.resolve()),
+            },
+        })
+        capacity_ledger.initialize_capacity_ledger(artifacts, objects=[])
+        capacity_ledger.record_capacity_object(
+            artifacts, path=producer, object_class="light_evidence",
+            bytes_count=config.stat().st_size, owner="layout-test",
         )
+        arguments = (cache_root, self._common_pa_family_identity(), ("family.pa0",))
+        building = advance_pa_family_cache_transaction(
+            *arguments, owner="layout-test", producer_run_config=config, recovery_policy="none",
+        )
+        (building.build_directory / "family.pa0").write_text("PA family\n", encoding="utf-8")
+        prepared = advance_pa_family_cache_transaction(*arguments, recovery_policy="none")
+        verifier = producer / "verify_fixture.txt"
+        output = producer / "verification_output.txt"
+        verifier.write_text("layout fixture verifier", encoding="utf-8")
+        output.write_text("layout fixture verification passed", encoding="utf-8")
+        publication = advance_pa_family_cache_transaction(
+            *arguments, recovery_policy="none", verification_evidence={
+                "schema_version": 1, "role": VERIFICATION_EVIDENCE_ROLE, "status": "pass",
+                "cache_key": prepared.cache_key, "inventory_sha256": prepared.inventory_sha256,
+                "solver_release": "SIMION 2020",
+                "verifier_path": str(verifier), "verifier_sha256": record(verifier, producer)["sha256"],
+                "verification_output_path": str(output),
+                "verification_output_sha256": record(output, producer)["sha256"],
+            },
+        )
+        self.assertEqual(publication.status, "published")
         return publication.generation_directory
 
     def write_reusable_cache(
@@ -174,7 +204,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             verify_artifacts_root(projects)
 
             runtime = generation.parents[2] / ".staging"
-            (runtime / "partial-generation").mkdir()
+            (runtime / "partial-generation").mkdir(parents=True)
             with self.assertRaisesRegex(AssertionError, "runtime directory is not empty"):
                 verify_artifacts_root(projects)
             (runtime / "partial-generation").rmdir()
@@ -200,6 +230,52 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             payload.unlink()
             receipt.write_text("invalid JSON", encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "invalid capacity disposal receipt"):
+                verify_artifacts_root(projects)
+
+    def test_common_pa_transaction_metadata_is_read_only_and_payloads_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            generation = self.write_common_pa_family_cache(artifacts)
+            cache = generation.parents[2]
+            transaction = cache / ".transactions" / generation.parents[1].name
+            metadata = transaction / "transaction.json"
+            original = metadata.read_bytes()
+            ledger = artifacts / capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH
+            ledger_before = ledger.read_bytes()
+            verify_artifacts_root(projects)
+            self.assertEqual(metadata.read_bytes(), original)
+            self.assertEqual(ledger.read_bytes(), ledger_before)
+            payload = transaction / "unexpected.pa0"
+            payload.write_bytes(b"unregistered payload")
+            with self.assertRaisesRegex(AssertionError, "unexpected PA-family transaction payload"):
+                verify_artifacts_root(projects)
+            payload.unlink()
+            metadata.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "invalid PA-family transaction"):
+                verify_artifacts_root(projects)
+            metadata.write_bytes(original)
+            invalid_lock = cache / ".locks" / "unregistered.pa0"
+            invalid_lock.write_bytes(b"not a lock")
+            with self.assertRaisesRegex(AssertionError, "invalid PA-family lock file"):
+                verify_artifacts_root(projects)
+
+    def test_artifacts_root_validates_public_ledger_and_rejects_extra_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            capacity_ledger.initialize_capacity_ledger(artifacts, objects=[])
+            verify_artifacts_root(projects)
+            extra = artifacts / "common" / "unexpected.json"
+            extra.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "unexpected common artifact entries"):
+                verify_artifacts_root(projects)
+            extra.unlink()
+            ledger = artifacts / capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH
+            ledger.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "invalid capacity ledger"):
                 verify_artifacts_root(projects)
 
     def test_artifacts_root_accepts_capacity_protection_leases(self) -> None:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +18,7 @@ from common.contracts.run_capacity_lifecycle import (
     register_writing,
     resume_partial_retirements,
     resume_terminal_runs,
+    seal_checkpoint,
 )
 
 
@@ -91,6 +94,118 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(ledger["objects"][0]["class"], "light_evidence")
             self.assertEqual(ledger["objects"][0]["status"], "ready")
             self.assertEqual(ledger["objects"][0]["bytes"], ready["bytes"])
+
+    def test_seal_checkpoint_preserves_bytes_pin_and_readonly_continuation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.fixture(root, "paused")
+            register_writing(root, config)
+            (run / "run_manifest.json").write_text(json.dumps({"status": "checkpoint"}), encoding="utf-8")
+            (run / "handoff.json").write_text('{"source":"retained PA owner"}', encoding="utf-8")
+            entry = load_capacity_ledger(root)["objects"][0]
+            capacity_ledger.record_capacity_object(
+                root, path=run, object_class=entry["class"], bytes_count=entry["bytes"],
+                status="writing", owner="p", recovery_reason="run_manifest_not_terminal",
+                review_deadline="2000-01-01", pin=True, pin_reason="required handoff",
+            )
+            before = {p.name: p.read_bytes() for p in run.iterdir()}
+            result = seal_checkpoint(root, config, owner="p", writing_stopped=True)
+            self.assertEqual(result["run_status"], "checkpoint")
+            self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir()})
+            entry = load_capacity_ledger(root)["objects"][0]
+            self.assertTrue(entry["pin"])
+            self.assertEqual(entry["pin_reason"], "required handoff")
+            self.assertEqual(entry["status"], "ready")
+            self.assertEqual(entry["bytes"], sum(map(len, before.values())))
+            self.assertEqual(seal_checkpoint(root, config, owner="p", writing_stopped=True), result)
+            with self.assertRaisesRegex(ValueError, "new run"):
+                register_writing(root, config)
+
+    def test_seal_checkpoint_rejects_unconfirmed_wrong_owner_and_noncheckpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.fixture(root, "paused")
+            register_writing(root, config)
+            for owner, stopped in (("p", False), ("other", True)):
+                with self.assertRaisesRegex(ValueError, "owner.*stopped"):
+                    seal_checkpoint(root, config, owner=owner, writing_stopped=stopped)
+            (run / "run_manifest.json").write_text('{"status":"success"}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "checkpoint manifest"):
+                seal_checkpoint(root, config, owner="p", writing_stopped=True)
+            self.assertEqual(load_capacity_ledger(root)["objects"][0]["status"], "writing")
+
+    def test_seal_checkpoint_defers_active_lease_and_keeps_consumers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.fixture(root, "paused")
+            register_writing(root, config)
+            (run / "run_manifest.json").write_text('{"status":"checkpoint"}', encoding="utf-8")
+            capacity_protection.create_capacity_protection_lease(
+                root, lease_id="reader-or-writer", owner="p", ttl_seconds=60,
+                protected_paths=[run / "handoff.json"], committed_new_bytes=0,
+            )
+            with self.assertRaisesRegex(ValueError, "active protection"):
+                seal_checkpoint(root, config, owner="p", writing_stopped=True)
+            capacity_protection.delete_capacity_protection_lease(root, lease_id="reader-or-writer")
+            capacity_ledger.record_capacity_object(
+                root, path=run, object_class="rebuildable_payload", bytes_count=0,
+                status="writing", owner="p", recovery_reason="run_manifest_not_terminal",
+                review_deadline="2000-01-01", consumers=[root / "projects/p/runs/consumer"],
+            )
+            before = load_capacity_ledger(root)
+            with self.assertRaisesRegex(ValueError, "consumers require owner handoff"):
+                seal_checkpoint(root, config, owner="p", writing_stopped=True)
+            self.assertEqual(load_capacity_ledger(root), before)
+
+    def test_seal_checkpoint_refuses_heavy_payload_without_removing_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.fixture(root, "paused")
+            register_writing(root, config)
+            (run / "run_manifest.json").write_text('{"status":"checkpoint"}', encoding="utf-8")
+            payload = run / "field.pa0"
+            payload.write_bytes(b"retained")
+            with self.assertRaisesRegex(ValueError, "not light evidence"):
+                seal_checkpoint(root, config, owner="p", writing_stopped=True)
+            self.assertEqual(payload.read_bytes(), b"retained")
+            self.assertEqual(load_capacity_ledger(root)["objects"][0]["status"], "writing")
+
+    def test_seal_checkpoint_atomic_failure_is_replayable_through_public_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.fixture(root, "paused")
+            register_writing(root, config)
+            (run / "run_manifest.json").write_text('{"status":"checkpoint"}', encoding="utf-8")
+            before = load_capacity_ledger(root)
+            with patch("common.contracts.run_capacity_lifecycle.write_json_atomic", side_effect=OSError("interrupted")):
+                with self.assertRaisesRegex(OSError, "interrupted"):
+                    seal_checkpoint(root, config, owner="p", writing_stopped=True)
+            self.assertEqual(load_capacity_ledger(root), before)
+            command = [sys.executable, "-m", "common.contracts.run_capacity_lifecycle",
+                       "--action", "seal-checkpoint", "--artifact-root", str(root),
+                       "--run-config", str(config), "--owner", "p", "--confirm-writing-stopped"]
+            completed = subprocess.run(command, capture_output=True, text=True, check=False,
+                                       cwd=Path(__file__).resolve().parents[2], timeout=30)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(json.loads(completed.stdout)["run_status"], "checkpoint")
+
+    def test_seal_checkpoint_rejects_oversize_light_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.fixture(root, "paused")
+            register_writing(root, config)
+            (run / "run_manifest.json").write_text('{"status":"checkpoint"}', encoding="utf-8")
+            with (run / "large.json").open("wb") as stream:
+                stream.truncate(26_214_401)
+            with self.assertRaisesRegex(ValueError, "not light evidence"):
+                seal_checkpoint(root, config, owner="p", writing_stopped=True)
+            self.assertEqual(load_capacity_ledger(root)["objects"][0]["status"], "writing")
 
     def test_oversize_fails_closed_and_remains_writing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

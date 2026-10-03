@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from datetime import datetime, timezone
 from unittest import mock
 
 from common.contracts import capacity_ledger
@@ -174,6 +175,12 @@ def _write_frozen_input_cache(root: Path) -> Path:
 
 
 class LegacyCapacityCalibrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Fixture review dates are relative to this test epoch, not the wall clock.
+        clock = mock.patch.object(calibration, "datetime", wraps=datetime)
+        self.addCleanup(clock.stop)
+        clock.start().now.return_value = datetime(2026, 9, 20, tzinfo=timezone.utc)
+
     def test_calibration_binds_sealed_generic_owner_disposition(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"

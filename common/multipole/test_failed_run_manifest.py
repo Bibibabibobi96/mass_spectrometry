@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from common.contracts.capacity_ledger import initialize_capacity_ledger
 from common.multipole import _transport_run_artifacts as artifacts
 from common.multipole.run_round_rod_transport import execute as execute_round_rod
 
@@ -28,26 +29,31 @@ def _transport_run(run_id: str, outputs: tuple[str, ...]):
 class FailedRunManifestTest(unittest.TestCase):
     def test_new_run_package_emits_only_the_package_object(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            artifact_root = Path(directory) / "artifacts"
+            capacity_root = Path(directory) / "artifacts"
+            capacity_root.mkdir()
+            initialize_capacity_ledger(capacity_root, objects=[])
+            artifact_root = capacity_root / "projects" / "fixture"
             support = ROOT / "common/contracts/run_artifact_support.ps1"
             python = Path(sys.executable)
             command = (
                 f". '{support}'; "
                 f"$package=New-RunPackage -Python '{python}' "
                 f"-RepoRoot '{ROOT}' -ArtifactRoot '{artifact_root}' "
+                "-RetentionContractEnabled -CapacityLedgerLifecycleEnabled "
                 "-RunId '20260723_120000__test__python__package-output' "
                 "-Project 'fixture' -Mode 'package_output' -Software @('Python 3.11'); "
                 "Write-Output $package.run_dir"
             )
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                check=True,
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 cwd=ROOT,
                 timeout=30,
             )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             output_lines = [line for line in result.stdout.splitlines() if line.strip()]
             expected_run = (
                 artifact_root

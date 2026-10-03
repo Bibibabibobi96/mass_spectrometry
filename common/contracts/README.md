@@ -63,12 +63,20 @@ writer/verifier同时扫描未列出的重型文件，防止通过漏报output�
 `reconcile_artifact_capacity.py`与`artifact_capacity_policy.json`实现日常容量治理，只有三项职责：
 启动检查、生命周期登记和维护清理。唯一权威状态是[`capacity_ledger.py`](capacity_ledger.py)维护的
 `capacity_ledger.json`及[`capacity_protection.py`](capacity_protection.py)维护的公共租约，不存在第二套项目级门禁。
+artifact布局检查接受该精确台账文件并复用台账校验器；租约目录的既有decision lock由公共租约读取器识别，
+它是内核互斥所用的保留文件，不是JSON证据。其他未登记common文件仍拒绝。
+公共PA布局检查复用owner的只读事务校验入口，接受严格事务元数据及具名key锁；未完成的非空payload、
+build-scratch或未知文件仍不能作为干净缓存布局通过，不调用会修改台账的maintenance审计。
 
 维护的容量判据与startup一致：`resident_bytes + committed_new_bytes <= target_bytes`，并满足
 `free_bytes >= minimum_free_bytes + committed_new_bytes`。apply结束时重新读取承诺，不能以规划时的旧租约
 宣布成功。未带`--apply`的维护只读；带`--apply`时先检查HostExecutionLease，再执行登记、续做和删除。
 默认报告按owner、类别、状态汇总全部受管占用，并单列缺少已注册退休manager的缓存；不得把它们报告成
 “容量需要时即可删除”。可重建范围的删除仅核对批准范围、路径、类型和字节数，不为待丢弃载荷新增全文哈希。
+
+相同代际在不同缓存根可产生相同 disposition ID。若该 ID 的既有处置收据身份匹配、已经 complete、但
+对应另一个绝对目标，维护仅为新目标使用带规范路径摘要的独立收据名；旧收据不变，普通无冲突命名不变。
+pending、损坏收据和目标专属收据的身份/目标冲突仍失败关闭；摘要只编码路径，不读取 PA 载荷。
 
 容量达标与生命周期闭合是不同判据。`satisfied=true`只表示本次容量判据通过，不表示所有历史`writing`
 已恢复、所有缓存已有退休入口或工作区外部范围均已实时计量。当前仍需补齐的闭环是：由既有run/PA/review
@@ -77,6 +85,15 @@ owner入口根据真实证据产生可重放的收尾决定，由同一maintenan
 历史checkpoint不自动改写为失败；活动消费者与已封存证据仍须保护。验收须覆盖中断重放、缺owner或处置能力
 拒绝新建、未知路径拒绝准入、单对象失败后继续独立对象，以及保留期到期后的实际处置；仅缩减台账占用
 或输出行动清单不能视为这一闭环完成。不新增第二份台账、通用任务调度器或平行删除入口。
+
+已停止写入且只剩轻量证据的 checkpoint 可由 owner 显式调用
+`python -m common.contracts.run_capacity_lifecycle --action seal-checkpoint --artifact-root <root> --run-config <run_config.json> --owner <project> --confirm-writing-stopped`。
+owner 必须先确认本次写入进程及子进程已结束，并承诺续算使用新 run；本动作不自动探测未登记进程。
+它沿用 run 的轻量预算及文件角色判据，在容量决策锁内检查保护租约并登记实际字节为 `light_evidence/ready`，
+不改 manifest 的 checkpoint 状态，不写删 run 文件，不改变 pin 或外部 PA 引用。`ready` 仅表示固定 resident，
+不表示科学任务完成；重复调用可重放，原 run 不得重新 register-writing。
+租约没有读写区别，任何重叠均暂缓；非空 consumers 因现有 ready 合同不能保留该字段而明确拒绝，不静默移除引用。
+含 PA 等重型角色、超预算、无精确登记或不属于该 owner 的范围不接受封存，仍交原 owner 处理。
 
 maintenance 以固定顺序调用 owner continuation；某一历史 owner 的 JSON 或处置失败只记录该 action 的
 错误，仍继续其他彼此独立的 run、PA、scratch 与别名续做。终态历史 run 若已经逐项登记、总量在轻量

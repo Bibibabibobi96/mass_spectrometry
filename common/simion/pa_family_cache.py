@@ -1999,6 +1999,16 @@ def _load_transaction_by_key(transaction_path: Path, cache_key: str) -> dict[str
     )
 
 
+def load_pa_family_cache_transaction(cache_root: str | Path, cache_key: str) -> dict[str, Any]:
+    """Validate one owner transaction read-only, without payload reads or ledger writes."""
+    if not isinstance(cache_key, str) or SHA256.fullmatch(cache_key) is None:
+        raise PAFamilyCacheError("PA cache transaction key identity is invalid")
+    path = Path(cache_root) / TRANSACTION_DIRECTORY / cache_key / TRANSACTION_NAME
+    if path.is_symlink() or not path.is_file():
+        raise PAFamilyCacheError("PA cache transaction must be a regular file")
+    return _load_transaction_by_key(path, cache_key)
+
+
 def _transaction_ledger_binding(
     cache_root: Path, cache_key: str, transaction_directory: Path
 ) -> tuple[Path, Path, Path] | None:

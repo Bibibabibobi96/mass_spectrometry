@@ -104,6 +104,48 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertEqual(action["removed_file_count"], 1)
         self.assertEqual(action["removed"][0]["retention_role"], "solver_native_binary")
 
+    def test_compact_keeps_small_gui_workbench_without_pa_payloads(self) -> None:
+        self.write_config("compact", None)
+        workbench = self.run / "simion" / "gui_workbench"
+        workbench.mkdir(parents=True)
+        iob = workbench / "candidate.iob"
+        fly2 = workbench / "candidate.fly2"
+        lua = workbench / "candidate.lua"
+        pa = workbench / "candidate.pa0"
+        iob.write_bytes(b"small workbench\n")
+        fly2.write_text("particles { }\n", encoding="utf-8")
+        lua.write_text("return {}\n", encoding="utf-8")
+        pa.write_bytes(b"rebuildable field payload")
+
+        action_path = apply_retention(self.config)
+
+        self.assertTrue(iob.exists())
+        self.assertTrue(fly2.exists())
+        self.assertTrue(lua.exists())
+        self.assertFalse(pa.exists())
+        self.assertEqual(classify_file(iob), "lightweight_optional")
+        self.assertEqual(classify_file(fly2), "lightweight_optional")
+        action = json.loads(action_path.read_text(encoding="utf-8"))
+        self.assertEqual(action["removed_file_count"], 1)
+        self.assertEqual(action["removed"][0]["path"], "simion/gui_workbench/candidate.pa0")
+        self.assertEqual(action["removed"][0]["retention_role"], "solver_native_binary")
+
+    def test_compact_removes_rebuildable_simion_trj_cache(self) -> None:
+        self.write_config("compact", None)
+        simion = self.run / "simion"
+        simion.mkdir()
+        trajectory_cache = simion / "trj7.tmp"
+        trajectory_cache.write_bytes(b"rebuildable trajectory cache")
+
+        action_path = apply_retention(self.config)
+
+        self.assertFalse(trajectory_cache.exists())
+        self.assertEqual(classify_file(trajectory_cache), "dense_trajectory")
+        action = json.loads(action_path.read_text(encoding="utf-8"))
+        self.assertEqual(action["removed_file_count"], 1)
+        self.assertEqual(action["removed"][0]["path"], "simion/trj7.tmp")
+        self.assertEqual(action["removed"][0]["retention_role"], "dense_trajectory")
+
     def test_failed_compact_can_retain_only_explicit_completed_native_trace(self) -> None:
         self.write_config("compact", None)
         logs = self.run / "logs"

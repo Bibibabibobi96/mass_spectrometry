@@ -914,6 +914,20 @@ def _remove_approved_disposition(
         root / DISPOSAL_RECEIPT_DIRECTORY / f"ledger_disposition_{disposition['id']}.json"
     )
     if receipt_path.exists():
+        prior = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+        if (
+            prior.get("role") == "artifact_capacity_disposal_receipt"
+            and prior.get("disposition") == disposition
+            and prior.get("status") == "complete"
+            and isinstance(prior.get("target_path"), str)
+            and Path(prior["target_path"]).is_absolute()
+            and Path(prior["target_path"]).resolve() != target.resolve()
+        ):
+            # Identical generations at different cache roots share disposition IDs.
+            # Preserve the completed receipt; disambiguate only this collision.
+            target_id = hashlib.sha256(os.path.normcase(str(target.resolve())).encode("utf-8")).hexdigest()
+            receipt_path = receipt_path.with_name(f"ledger_disposition_{disposition['id']}_{target_id}.json")
+    if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
         if (
             receipt.get("role") != "artifact_capacity_disposal_receipt"

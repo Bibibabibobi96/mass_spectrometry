@@ -954,6 +954,60 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             self.assertEqual(entry["status"], "retired")
             self.assertIn("disposition", entry)
 
+    def test_same_disposition_at_two_roots_preserves_completed_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            disposition = {"id": "d" * 64, "generation": "b" * 64,
+                           "manifest_sha256": "e" * 64,
+                           "files": [{"path": "one.bin", "bytes": 3, "sha256": "1" * 64}]}
+            entry = {"bytes": 3, "disposition": disposition}
+            first = root / "old_cache" / "key"
+            second = root / "new_cache" / "key"
+            for target in (first, second):
+                target.mkdir(parents=True)
+                (target / "one.bin").write_bytes(b"abc")
+            original, _ = normal_capacity._remove_approved_disposition(root, first, entry)
+            frozen = original.read_bytes()
+            with patch.object(normal_capacity, "file_sha256", side_effect=AssertionError("rehash")):
+                alternate, _ = normal_capacity._remove_approved_disposition(root, second, entry)
+                replay, _ = normal_capacity._remove_approved_disposition(root, second, entry)
+            self.assertNotEqual(original, alternate)
+            self.assertEqual(replay, alternate)
+            self.assertEqual(original.read_bytes(), frozen)
+            self.assertFalse(first.exists())
+            self.assertFalse(second.exists())
+            record = json.loads(alternate.read_text())
+            self.assertEqual(record["target_path"], str(second))
+            self.assertEqual(record["status"], "complete")
+            record["target_path"] = str(root / "wrong_target")
+            alternate.write_text(json.dumps(record))
+            with self.assertRaisesRegex(ValueError, "conflicts with ledger"):
+                normal_capacity._remove_approved_disposition(root, second, entry)
+
+    def test_other_target_pending_disposition_is_not_bypassed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "cache" / "key"
+            target.mkdir(parents=True)
+            payload = target / "one.bin"
+            payload.write_bytes(b"abc")
+            disposition = {"id": "d" * 64, "files": [{"path": "one.bin", "bytes": 3}]}
+            receipt = root / normal_capacity.DISPOSAL_RECEIPT_DIRECTORY / f"ledger_disposition_{'d' * 64}.json"
+            receipt.parent.mkdir(parents=True)
+            receipt.write_text(json.dumps({"role": "artifact_capacity_disposal_receipt",
+                                          "status": "pending", "disposition": disposition,
+                                          "target_path": str(root / "other")}))
+            frozen = receipt.read_bytes()
+            with self.assertRaisesRegex(ValueError, "conflicts with ledger"):
+                normal_capacity._remove_approved_disposition(root, target, {"bytes": 3, "disposition": disposition})
+            self.assertEqual(receipt.read_bytes(), frozen)
+            self.assertEqual(payload.read_bytes(), b"abc")
+            receipt.write_text("{")
+            with self.assertRaises(json.JSONDecodeError):
+                normal_capacity._remove_approved_disposition(root, target, {"bytes": 3, "disposition": disposition})
+            self.assertEqual(receipt.read_text(), "{")
+            self.assertEqual(payload.read_bytes(), b"abc")
+
     def test_approved_disposition_rejects_unlisted_extra_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

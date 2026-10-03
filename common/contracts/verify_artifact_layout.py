@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 from common.contracts import capacity_protection as protection
+from common.contracts import capacity_ledger
 from common.contracts.artifact_retention import validate_retention
 
 from common.contracts.artifact_naming import (
@@ -23,6 +24,7 @@ from common.contracts.file_identity import file_sha256
 
 from common.simion.pa_family_cache import (
     PAFamilyCacheError,
+    load_pa_family_cache_transaction,
     validate_pa_family_cache_generation,
 )
 from common.simion.cache_generation import (
@@ -787,7 +789,7 @@ def verify_common_pa_family_cache(cache_root: Path) -> None:
     The common cache is a disposable performance layer, but its active payload
     is still a possible run input.  Its layout is therefore intentionally
     narrower than a project artifact root: only content-addressed keys and
-    empty publisher runtime directories are admitted.
+    registered owner transaction metadata and empty staging directories are admitted.
     """
 
     if not cache_root.exists():
@@ -796,6 +798,33 @@ def verify_common_pa_family_cache(cache_root: Path) -> None:
         raise AssertionError(f"{cache_root}: common PA-family cache is not a directory")
     key_names: set[str] = set()
     for node in cache_root.iterdir():
+        if node.name == ".transactions":
+            if not node.is_dir() or node.is_symlink():
+                raise AssertionError(f"{node}: invalid PA-family transaction directory")
+            for transaction in node.iterdir():
+                if (not transaction.is_dir() or transaction.is_symlink()
+                        or PA_FAMILY_CACHE_NODE_SHA256.fullmatch(transaction.name) is None):
+                    raise AssertionError(f"{transaction}: invalid PA-family transaction node")
+                try:
+                    load_pa_family_cache_transaction(cache_root, transaction.name)
+                except PAFamilyCacheError as exc:
+                    raise AssertionError(f"{transaction}: invalid PA-family transaction") from exc
+                for member in transaction.iterdir():
+                    if member.name == "transaction.json":
+                        continue
+                    if (member.name not in {"payload", "build-scratch"} or member.is_symlink()
+                            or not member.is_dir() or any(member.iterdir())):
+                        raise AssertionError(f"{member}: unexpected PA-family transaction payload")
+            continue
+        if node.name == ".locks":
+            if not node.is_dir() or node.is_symlink():
+                raise AssertionError(f"{node}: invalid PA-family lock directory")
+            # Lock bytes are kernel-lock storage, not a JSON identity document.
+            for lock in node.iterdir():
+                if (not lock.is_file() or lock.is_symlink() or lock.suffix != ".lock"
+                        or PA_FAMILY_CACHE_NODE_SHA256.fullmatch(lock.stem) is None):
+                    raise AssertionError(f"{lock}: invalid PA-family lock file")
+            continue
         if node.name in PA_FAMILY_CACHE_RUNTIME_DIRECTORIES:
             if not node.is_dir() or any(node.iterdir()):
                 raise AssertionError(f"{node}: PA-family cache runtime directory is not empty")
@@ -870,12 +899,19 @@ def verify_artifacts_root(projects: Path) -> None:
         allowed_common = {
             "simion", "capacity_protection_leases", "capacity_disposal_receipts",
             "capacity_calibration",
+            capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH.name,
         }
         if (
             not common.is_dir()
             or ({item.name for item in common.iterdir()} - allowed_common)
         ):
             raise AssertionError("artifacts/common: unexpected common artifact entries")
+        ledger_path = artifacts / capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH
+        if ledger_path.exists() and (
+            not ledger_path.is_file() or ledger_path.is_symlink()
+            or capacity_ledger.load_capacity_ledger(artifacts) is None
+        ):
+            raise AssertionError("artifacts/common: invalid capacity ledger")
         receipts = common / "capacity_disposal_receipts"
         if receipts.exists():
             if not receipts.is_dir() or receipts.is_symlink():

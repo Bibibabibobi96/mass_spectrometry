@@ -33,6 +33,7 @@
     }
   },
   "dense_trajectory_globs": [
+    "trj*.tmp",
     "trajectory_samples*.csv",
     "trajectory_samples*.csv.gz",
     "*.trace.log",
