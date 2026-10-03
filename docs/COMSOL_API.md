@@ -293,6 +293,17 @@ pg.create('traj1', 'ParticleTrajectories');
 绘图组、派生值和导出必须保存为GUI节点。图片导出使用`Image`导出节点并设置`plotgroup`、
 文件名和尺寸。保存MPH后重新检查数据集引用、绘图、派生值Evaluate和导出路径。
 
+### 更新已嵌入模型的插值数据
+
+外部文件插值函数的`importData()`将数据嵌入模型；保存并重载后，不能假定修改filename再调用
+importData就会替换旧载荷。本机COMSOL 6.4小函数试验复现了该路径的Unsupported function
+operation；先`discardData()`、明确`source=file`、设置新filename再`importData()`，求值由
+10变20，随后在既有三维网格的真实静电重解中通过。此经验适用于更新已嵌入数据的函数，
+不要求新建函数的正常首次导入额外执行discardData，也不改变物理边界或插值方法。
+官方[函数API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.34.html)
+分别定义importData的嵌入、discardData的丢弃及refresh的重新读取语义；按函数当前数据来源选择，
+不把三者无条件串联。2026-10-04的独立小函数试验与模型复用验证只证明接口交接，不是场收敛证据。
+
 ## 数值提取
 
 `mphinterp`适合指定坐标插值，`mpheval`适合在FEM网格实体上求值：
