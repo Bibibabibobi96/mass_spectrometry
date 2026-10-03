@@ -3,7 +3,7 @@ function out = configure_corridor_reference_electrostatics(model, comp, geom, ge
 % Two-sided x domains use even extension of the positive-half five faces.
 % Consumes finalized geometry and physical-ID-indexed voltages; no mesh,
 % study, solver or save. This adapter does not confer numerical qualification.
-% COMSOL 6.4 API checked 2026-10-02; native Interpolation grid + Box selections:
+% COMSOL 6.4 API checked 2026-10-04; native Interpolation grid + Box selections:
 % https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.34.html
 % https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.56.html
 % https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_fileformats.53.05.html
@@ -60,6 +60,10 @@ faceArguments = {'y,z','x,z','x,z','x,y','x,y',''};
 if ~halfDomain
     faceArguments = {'y,z','abs(x),z','abs(x),z','abs(x),y','abs(x),y','y,z'};
 end
+argumentAxes = [2,3;1,3;1,3;1,2;1,2;2,3];
+% Grid files retain positive-half x coordinates even for the full domain.
+gridLow = [0, box(2:3)];
+gridHigh = box(4:6);
 faces = struct('name', {}, 'selection_tag', {}, 'boundary_ids', {}, ...
     'function_tag', {}, 'function_name', {}, 'file', {});
 covered = [];
@@ -100,8 +104,9 @@ for k = 1:numel(names)
         f.set('interp', 'linear');
         f.set('extrap', 'none');
         f.importData();
-        % This order passed the actual five-face import/node comparison.
-        f.set('argunit', {'mm','mm'});
+        % Axis numbers denote mm. Normalize once at the boundary expression;
+        % dimensional argument conversion after snapping can cross an endpoint.
+        f.set('argunit', {'1','1'});
         f.set('fununit', {'V'});
     elseif ~halfDomain
         % The negative x endpoint consumes the same original xmax function.
@@ -112,12 +117,21 @@ for k = 1:numel(names)
     if k <= 5 || ~halfDomain
         potential = es.create(['mrc_outer_potential_', name], 'ElectricPotential', 2);
         potential.selection.named(selectionTag);
-        potential.set('V0', sprintf('%s(%s)', functionName, faceArguments{k}));
+        coordinateArguments = strsplit(faceArguments{k}, ',');
+        snapped = cell(1, 2);
+        for argumentIndex = 1:2
+            axisIndex = argumentAxes(k, argumentIndex);
+            numericMm = sprintf('(%s)/(1[mm])', coordinateArguments{argumentIndex});
+            snapped{argumentIndex} = snap_endpoint_expression(numericMm, ...
+                gridLow(axisIndex), gridHigh(axisIndex));
+        end
+        potential.set('V0', sprintf('%s(%s,%s)', functionName, snapped{1}, snapped{2}));
     end
     faces(k) = struct('name', name, 'selection_tag', selectionTag, ...
         'boundary_ids', ids, 'function_tag', functionTag, ...
         'function_name', functionName, 'file', file);
 end
+
 assert(isempty(setdiff(exteriorIds, covered)), 'MRTOF:UnassignedVacuumExterior', ...
     'Non-electrode vacuum boundaries remain outside the six corridor faces.');
 % Only the half-domain xmin remains a natural Zero Charge boundary.
@@ -135,4 +149,15 @@ out = struct('physics_tag', 'es', 'material_tag', 'mrc_vacuum', ...
         selection.geom(geomTag, 2);
         selection.set(ids);
     end
+end
+
+function expression = snap_endpoint_expression(value, low, high)
+% Representation-only budget, not a physical tolerance: 16 machine spacings
+% cover observed mesh-plane roundoff. Interior and farther-outside values stay
+% unchanged; extrap=none still rejects missing coverage beyond this budget.
+tolerance = 16 * eps(max([1, abs(low), abs(high)]));
+expression = sprintf(['if((%s)<%.17g&&(%s)>=%.17g,%.17g,', ...
+    'if((%s)>%.17g&&(%s)<=%.17g,%.17g,(%s)))'], ...
+    value, low, value, low-tolerance, low, ...
+    value, high, value, high+tolerance, high, value);
 end
