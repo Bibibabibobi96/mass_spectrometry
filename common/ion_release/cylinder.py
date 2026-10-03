@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import random
+from statistics import NormalDist
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -202,6 +203,8 @@ def generate_center_first_halton_cylinder_phase_space(
     kinetic_energy_full_width_ev: float,
     nominal_direction: Sequence[float],
     angular_full_width_deg: float,
+    kinetic_energy_distribution: str = "uniform",
+    kinetic_energy_sigma_ev: float | None = None,
 ) -> list[dict[str, Any]]:
     """Generate a prefix-stable centre-first cylinder phase-space cohort.
 
@@ -209,6 +212,8 @@ def generate_center_first_halton_cylinder_phase_space(
     than choosing a solver velocity representation.  Callers supply their
     local Cartesian frame and may choose the ordered transverse axes; this
     makes the cylinder orientation explicit without encoding project geometry.
+    Gaussian kinetic energy uses sigma in eV and the same base-7 latent
+    quantiles; nonpositive samples fail rather than being clipped or redrawn.
     """
     if isinstance(particle_count, bool) or not isinstance(particle_count, int) or particle_count < 1:
         raise ValueError("particle_count must be a positive integer")
@@ -226,6 +231,15 @@ def generate_center_first_halton_cylinder_phase_space(
     height = _number(height_mm, "height_mm", positive=True)
     energy_center = _number(kinetic_energy_center_ev, "kinetic_energy_center_ev", positive=True)
     energy_width = _number(kinetic_energy_full_width_ev, "kinetic_energy_full_width_ev")
+    if kinetic_energy_distribution not in {"uniform", "gaussian"}:
+        raise ValueError("unsupported kinetic_energy_distribution")
+    if kinetic_energy_distribution == "gaussian":
+        sigma = _number(kinetic_energy_sigma_ev, "kinetic_energy_sigma_ev", positive=True)
+        normal = NormalDist()
+        if energy_width != 0.0:
+            raise ValueError("Gaussian energy uses sigma, not a full width")
+    elif kinetic_energy_sigma_ev is not None:
+        raise ValueError("uniform energy does not accept sigma")
     if energy_width < 0.0 or energy_center <= energy_width / 2.0:
         raise ValueError("kinetic-energy interval is not physical")
     nominal = _unit(_vector3(list(nominal_direction), "nominal_direction"), "nominal_direction")
@@ -243,6 +257,8 @@ def generate_center_first_halton_cylinder_phase_space(
             azimuth = 2.0 * math.pi * _radical_inverse(offset, 3)
             axial = _radical_inverse(offset, 5) - 0.5
             energy_delta = energy_width * (_radical_inverse(offset, 7) - 0.5)
+            if kinetic_energy_distribution == "gaussian":
+                energy_delta = sigma * normal.inv_cdf(_radical_inverse(offset, 7))
             tilt_1 = half_angle * (2.0 * _radical_inverse(offset, 11) - 1.0)
             tilt_2 = half_angle * (2.0 * _radical_inverse(offset, 13) - 1.0)
         position = list(center)
@@ -253,6 +269,8 @@ def generate_center_first_halton_cylinder_phase_space(
             nominal[index] + tilt_1 * tangent_1[index] + tilt_2 * tangent_2[index]
             for index in range(3)
         ), "sampled direction")
+        if not math.isfinite(energy_center + energy_delta) or energy_center + energy_delta <= 0.0:
+            raise ValueError("Gaussian kinetic-energy sample is nonpositive; no clipping or resampling")
         samples.append({
             "particle_id": offset + 1,
             "position_mm": position,
@@ -274,6 +292,8 @@ def generate_halton_cylinder_phase_space(
     kinetic_energy_full_width_ev: float,
     nominal_direction: Sequence[float],
     angular_full_width_deg: float,
+    kinetic_energy_distribution: str = "uniform",
+    kinetic_energy_sigma_ev: float | None = None,
 ) -> list[dict[str, Any]]:
     """Generate a prefix-stable volume cohort without a forced centre state.
 
@@ -294,6 +314,8 @@ def generate_halton_cylinder_phase_space(
         kinetic_energy_full_width_ev=kinetic_energy_full_width_ev,
         nominal_direction=nominal_direction,
         angular_full_width_deg=angular_full_width_deg,
+        kinetic_energy_distribution=kinetic_energy_distribution,
+        kinetic_energy_sigma_ev=kinetic_energy_sigma_ev,
     )[1:]
     for particle_id, sample in enumerate(samples, 1):
         sample["particle_id"] = particle_id

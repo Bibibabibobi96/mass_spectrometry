@@ -56,6 +56,54 @@ CANDIDATE_DEFINITION = PROJECT / "config" / "candidate_bunch_source_n100.json"
 
 
 class BunchSourceAndScheduleTest(unittest.TestCase):
+    def test_gaussian_formal_energy_receipt_and_pairing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = self._write_provider_receipt(root / "provider.json")
+            definition = json.loads(CANDIDATE_DEFINITION.read_text(encoding="utf-8"))
+            definition.update(cohort_role="formal_volume", kinetic_energy_distribution="gaussian",
+                              kinetic_energy_full_width_ev=0., angular_full_width_deg=0.)
+            for name in list(definition):
+                if name.startswith("controlled_"):
+                    definition.pop(name)
+            receipts, tables = [], []
+            for sigma in (0.1, 0.2, 0.3):
+                definition["kinetic_energy_sigma_ev"] = sigma
+                path = root / f"definition_{sigma}.json"
+                path.write_text(json.dumps(definition), encoding="utf-8")
+                receipt = materialize_bunch_source_from_definition(
+                    definition_path=path, geometry_contract_path=GEOMETRY_CONTRACT,
+                    accelerator_provider_receipt_path=provider,
+                    state_table_path=root / f"states_{sigma}.csv",
+                    fly2_path=root / f"source_{sigma}.fly2", receipt_path=root / f"receipt_{sigma}.json",
+                )
+                load_verified_bunch_source_receipt(root / f"receipt_{sigma}.json")
+                self.assertEqual(receipt["release_energy_distribution"]["sigma_ev"], sigma)
+                self.assertEqual(receipt["sampling_method"], "halton_volume_position_gaussian_release_ey_v1")
+                self.assertNotIn("center_particle_state", receipt)
+                receipts.append(receipt)
+                with Path(receipt["state_table"]["path"]).open(newline="") as stream:
+                    tables.append(list(csv.DictReader(stream)))
+            self.assertEqual(len({r["particle_states_sha256"] for r in receipts}), 3)
+            self.assertEqual(receipts[0]["latent_mother_sequence"], receipts[1]["latent_mother_sequence"])
+            self.assertEqual(receipts[0]["latent_mother_sequence"], receipts[2]["latent_mother_sequence"])
+            selected = resolve_bunch_source_interval(receipt_path=root / "receipt_0.2.json",
+                                                    particle_id_min=1, particle_id_max=10)
+            self.assertEqual(selected["source_cohort"]["release_energy_distribution"]["sigma_ev"], 0.2)
+            for rows in zip(*tables):
+                for row in rows[1:]:
+                    self.assertEqual({k: v for k, v in row.items() if k != "kinetic_energy_ev"},
+                                     {k: v for k, v in rows[0].items() if k != "kinetic_energy_ev"})
+            definition["angular_full_width_deg"] = 0.1
+            path.write_text(json.dumps(definition), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "zero-angle"):
+                materialize_bunch_source_from_definition(
+                    definition_path=path, geometry_contract_path=GEOMETRY_CONTRACT,
+                    accelerator_provider_receipt_path=provider,
+                    state_table_path=root / "invalid.csv", fly2_path=root / "invalid.fly2",
+                    receipt_path=root / "invalid.json",
+                )
+
     @staticmethod
     def _write_provider_receipt(path: Path) -> Path:
         path.write_text(json.dumps({

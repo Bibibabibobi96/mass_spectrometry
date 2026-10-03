@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from statistics import NormalDist
 from pathlib import Path
 
 from common.ion_release.cylinder import (
@@ -55,6 +56,43 @@ def gaussian_spec() -> dict[str, object]:
 
 
 class CylinderReleaseTests(unittest.TestCase):
+    def test_gaussian_energy_preserves_latent_pairing_and_prefix(self) -> None:
+        args = dict(center_mm=[0., 0., 0.], transverse_axes=(0, 2), axis=1,
+                    radius_mm=0.5, height_mm=1., kinetic_energy_center_ev=5.,
+                    kinetic_energy_full_width_ev=0., nominal_direction=[0., 1., 0.],
+                    angular_full_width_deg=0., kinetic_energy_distribution="gaussian")
+        cohorts = [generate_halton_cylinder_phase_space(
+            particle_count=100, kinetic_energy_sigma_ev=sigma, **args,
+        ) for sigma in (0.1, 0.2, 0.3)]
+        large = generate_halton_cylinder_phase_space(
+            particle_count=1000, kinetic_energy_sigma_ev=0.2, **args,
+        )
+        self.assertEqual(cohorts[1], large[:100])
+        self.assertAlmostEqual(cohorts[1][0]["kinetic_energy_ev"],
+                               5. + 0.2 * NormalDist().inv_cdf(1. / 7.))
+        for rows in zip(*cohorts):
+            for row, sigma in zip(rows, (0.1, 0.2, 0.3)):
+                self.assertEqual(row["position_mm"], rows[0]["position_mm"])
+                self.assertEqual(row["direction"], rows[0]["direction"])
+                self.assertAlmostEqual((row["kinetic_energy_ev"] - 5.) / sigma,
+                                       (rows[0]["kinetic_energy_ev"] - 5.) / 0.1)
+        self.assertNotEqual(cohorts[0][0]["position_mm"], [0., 0., 0.])
+        with self.assertRaisesRegex(ValueError, "not a full width"):
+            generate_halton_cylinder_phase_space(
+                particle_count=100, kinetic_energy_sigma_ev=0.2,
+                **{**args, "kinetic_energy_full_width_ev": 0.1},
+            )
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            generate_halton_cylinder_phase_space(
+                particle_count=100, kinetic_energy_sigma_ev=0.2,
+                **{**args, "kinetic_energy_distribution": "normal_velocity"},
+            )
+        for sigma in (None, -0.1, float("nan"), float("inf"), 10.):
+            with self.subTest(sigma=sigma), self.assertRaises(ValueError):
+                generate_halton_cylinder_phase_space(
+                    particle_count=100, kinetic_energy_sigma_ev=sigma, **args,
+                )
+
     def test_halton_full_volume_is_deterministic_and_prefix_stable(self) -> None:
         small = generate_release_states(halton_spec(100))
         large = generate_release_states(halton_spec(1000))

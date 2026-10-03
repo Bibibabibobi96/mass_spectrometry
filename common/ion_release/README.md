@@ -1,5 +1,12 @@
 # 公共离子释放
 
+`generate_halton_cylinder_phase_space` 的显式 `kinetic_energy_distribution="gaussian"`
+接受 `kinetic_energy_sigma_ev`（eV），此时 `kinetic_energy_full_width_ev=0`。
+它把既有 base-7 Halton 分位值经标准正态逆CDF转换；不同 sigma 保持相同位置、方向、ID及标准化能量序列，
+不重定中心、不重标样本方差、不裁尾或重抽。出现非正动能时失败。该功能是动能分布，不是
+`seeded_independent_gaussian_cylinder_v1` 的速度分布；调用方负责声明该动能对应哪个物理方向。
+默认 uniform 分支保持原序列不变，正式体积队列与受控参考队列继续分开。
+
 此目录拥有与项目、几何和求解器无关的离子释放采样、canonical CSV 和 receipt 身份。`release.py` 是 canonical
 状态物化的唯一公共入口，使用闭合的 `(geometry.shape, sampling.strategy)` 注册表分派；连续轴向体积源保留其
 既有的闭合 `(source_region_model, method)` key。未知几何、策略或连续源 key 均失败关闭，不使用插件发现或项目回调。需要保留既有求解器表序列的 sampler 在本目录显式具名，返回 solver-neutral 的

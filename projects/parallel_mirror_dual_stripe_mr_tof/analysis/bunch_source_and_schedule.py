@@ -45,6 +45,7 @@ _EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD = (
 )
 _LEGACY_SAMPLING_METHOD = "center_first_halton_position_energy_angle_v1"
 _FORMAL_VOLUME_SAMPLING_METHOD = "halton_volume_position_energy_angle_v1"
+_GAUSSIAN_VOLUME_SAMPLING_METHOD = "halton_volume_position_gaussian_release_ey_v1"
 _CONTROLLED_DIAGNOSTIC_COHORT_ROLE = "controlled_diagnostic"
 _FORMAL_VOLUME_COHORT_ROLE = "formal_volume"
 _SOURCE_DEFINITION_ROLE = "mrtof_ideal_bunch_source_definition"
@@ -113,12 +114,14 @@ def deterministic_ideal_bunch_states(
     charge_e: int,
     common_time_of_birth_us: float = 0.0,
     cohort_role: str = _CONTROLLED_DIAGNOSTIC_COHORT_ROLE,
+    kinetic_energy_distribution: str = "uniform",
+    kinetic_energy_sigma_ev: float | None = None,
 ) -> list[dict[str, Any]]:
     """Return an explicit, byte-stable ideal cohort with a centre-first prefix.
 
-    All spreads are full widths.  The first particle is exactly the nominal
-    centre state.  Later particles use fixed Halton coordinates; no solver RNG
-    participates in the source identity.
+    Widths are full widths except an explicit Gaussian energy sigma in eV.
+    Formal volume samples have no forced centre. Diagnostic cohorts retain
+    their centre and controlled pairs; no solver RNG participates.
     """
     try:
         validate_standard_particle_count(particle_count)
@@ -133,6 +136,16 @@ def deterministic_ideal_bunch_states(
         raise CandidateContractError("acceleration axis must complement the aperture plane")
     if cohort_role not in {_CONTROLLED_DIAGNOSTIC_COHORT_ROLE, _FORMAL_VOLUME_COHORT_ROLE}:
         raise CandidateContractError("source cohort role is invalid")
+    if kinetic_energy_distribution not in {"uniform", "gaussian"}:
+        raise CandidateContractError("unsupported kinetic-energy distribution")
+    if kinetic_energy_distribution == "gaussian" and (
+        cohort_role != _FORMAL_VOLUME_COHORT_ROLE
+        or list(nominal_direction_workbench) != [0.0, 1.0, 0.0]
+        or angular_full_width_deg != 0.0
+    ):
+        raise CandidateContractError("Gaussian release Ey requires formal volume and zero-angle +y direction")
+    if kinetic_energy_distribution == "uniform" and kinetic_energy_sigma_ev is not None:
+        raise CandidateContractError("uniform energy does not accept sigma")
     if cohort_role == _FORMAL_VOLUME_COHORT_ROLE and any(value is not None for value in (
         controlled_focus_half_span_mm,
         controlled_slow_energy_half_span_ev_per_charge,
@@ -160,6 +173,11 @@ def deterministic_ideal_bunch_states(
         sampler_arguments.update({
             "controlled_axis": 2,
             "controlled_axis_half_span_mm": controlled_focus_half_span_mm,
+        })
+    else:
+        sampler_arguments.update({
+            "kinetic_energy_distribution": kinetic_energy_distribution,
+            "kinetic_energy_sigma_ev": kinetic_energy_sigma_ev,
         })
     try:
         samples = sampler(**sampler_arguments)
@@ -479,6 +497,8 @@ def materialize_bunch_source_from_definition(
         charge_e=definition["charge_e"],
         common_time_of_birth_us=definition["common_time_of_birth_us"],
         cohort_role=cohort_role,
+        kinetic_energy_distribution=definition.get("kinetic_energy_distribution", "uniform"),
+        kinetic_energy_sigma_ev=definition.get("kinetic_energy_sigma_ev"),
     )
     nominal_center_state = {
         "tob_us": _finite(definition["common_time_of_birth_us"], "common time of birth"),
@@ -610,6 +630,27 @@ def materialize_bunch_source_from_definition(
         "bytes": definition_path.stat().st_size,
         "sha256": file_sha256(definition_path).lower(),
     }
+    if definition.get("kinetic_energy_distribution") == "gaussian":
+        receipt["sampling_method"] = _GAUSSIAN_VOLUME_SAMPLING_METHOD
+        receipt["release_energy_distribution"] = {
+            "kind": "gaussian", "component": "Ey", "unit": "eV",
+            "center_ev": nominal_center_state["kinetic_energy_ev"],
+            "sigma_ev": definition["kinetic_energy_sigma_ev"],
+            "nonpositive_policy": "fail_without_clipping_or_resampling",
+            "latent_sequence": "halton_base7_inverse_standard_normal_v1",
+            "latent_index_start": 1,
+            "mother_particle_count": definition["mother_particle_count"],
+        }
+        receipt["latent_mother_sequence"] = {
+            "method": "halton_position_base2_3_5_energy_base7_v1",
+            "index_start": 1, "mother_particle_count": definition["mother_particle_count"],
+            "position_energy_correlation": "no_intentional_correlation__distinct_halton_dimensions",
+            "nominal_center_state": nominal_center_state,
+            "aperture_plane_axes": definition["aperture_plane_axes"],
+            "cylinder_axis": definition["acceleration_axis"],
+            "radius_mm": definition["position_radius_mm"],
+            "height_mm": definition["acceleration_axis_full_width_mm"],
+        }
     if geometry_binding is not None:
         receipt["geometry_contract"] = geometry_binding
         if schema_version == 2:
@@ -814,7 +855,7 @@ def load_verified_bunch_source_receipt(receipt_path: Path) -> dict[str, Any]:
             _SAMPLING_METHOD, _SLOW_ENERGY_SAMPLING_METHOD,
             _ABERRATION_SENTINEL_SAMPLING_METHOD,
             _EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD,
-            _LEGACY_SAMPLING_METHOD, _FORMAL_VOLUME_SAMPLING_METHOD,
+            _LEGACY_SAMPLING_METHOD, _FORMAL_VOLUME_SAMPLING_METHOD, _GAUSSIAN_VOLUME_SAMPLING_METHOD,
         }
         or receipt.get("clock_basis") != _CLOCK_BASIS
     ):
@@ -824,7 +865,7 @@ def load_verified_bunch_source_receipt(receipt_path: Path) -> dict[str, Any]:
         raise CandidateContractError("bunch source cohort role is invalid")
     if (
         cohort_role == _FORMAL_VOLUME_COHORT_ROLE
-        and receipt.get("sampling_method") != _FORMAL_VOLUME_SAMPLING_METHOD
+        and receipt.get("sampling_method") not in {_FORMAL_VOLUME_SAMPLING_METHOD, _GAUSSIAN_VOLUME_SAMPLING_METHOD}
     ):
         raise CandidateContractError("formal volume source has the wrong sampling method")
     species = receipt.get("species")
@@ -1095,7 +1136,10 @@ def source_cohort_identity(receipt: Mapping[str, Any]) -> dict[str, Any]:
     )
     if any(key not in receipt for key in keys):
         raise CandidateContractError("bunch source receipt lacks cohort identity")
-    return {key: receipt[key] for key in keys}
+    return {
+        **{key: receipt[key] for key in keys},
+        **{key: receipt[key] for key in ("release_energy_distribution", "latent_mother_sequence") if key in receipt},
+    }
 
 
 def resolve_bunch_source_interval(
