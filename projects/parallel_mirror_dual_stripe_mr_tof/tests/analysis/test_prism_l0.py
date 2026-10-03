@@ -20,6 +20,7 @@ class FirstPrismL0Test(unittest.TestCase):
         self.contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
 
     def test_derives_total_energy_partition_triangle_crossings_and_static_seed(self) -> None:
+        self.contract["accelerator"]["focus_y_anchor"]["project_y_mm"] = -45.0
         result = derive_first_prism_l0(self.contract)
         self.assertEqual(result.total_kinetic_energy_ev, 4005.0)
         self.assertEqual(result.drift_kinetic_energy_ev, 5.0)

@@ -11,6 +11,233 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class WorkpointBootstrapTests(unittest.TestCase):
+    def test_read_only_runtime_asset_survives_successful_owner_terminalization(self):
+        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(
+            encoding="utf-8-sig"
+        )
+        self.assertIn("$runtimeOwnerStatus-notin@('checkpoint','success')", source)
+        self.assertIn("--require-status $runtimeOwnerStatus", source)
+        self.assertIn("if($runtimeOwnerRun-and$runtimeOwnerStatus-ne'success')", source)
+        self.assertIn("if($ownerStatus-notin@('checkpoint','success'))", source)
+        self.assertIn("-FinalDecision $caughtDecision", source)
+        self.assertNotIn("Native runtime owner is already terminal.", source)
+
+    def test_fresh_chain_derives_grouped_candidate_without_replaying_baseline(self):
+        script = r"""
+param($Source,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'New-InitialGroupedWorkpointDecision'},$true)
+Invoke-Expression $node.Extent.Text
+$repoRoot=$Root;$python='Invoke-MockController'
+function Invoke-RunToolRootContext {param($RepoRoot,[scriptblock]$Operation)& $Operation}
+function Get-ManifestOutputPath {
+  param($ManifestPath,$FileName)
+  return Join-Path $Root $FileName
+}
+function Invoke-MockController {
+  param([Parameter(ValueFromRemainingArguments=$true)][object[]]$CommandArgs)
+  $outputIndex=[array]::IndexOf($CommandArgs,'--output')
+  if($outputIndex-lt0){throw 'controller output missing'}
+  $decision=@{
+    schema_version=1;role='mrtof_downstream_workpoint_iteration_decision';state='continue'
+    terminal_reason=$null;iteration=1;coordinate_group='prism_1_prism_2'
+    proposed_voltages_v=@(-25.,50.,201.,-202.)
+  }
+  $decision|ConvertTo-Json -Depth 10|Set-Content -LiteralPath ([string]$CommandArgs[$outputIndex+1])
+  Write-Output 'MOCK_CONTROLLER=PASS'
+  $global:LASTEXITCODE=0
+}
+$baselineManifest=Join-Path $Root 'baseline-run-manifest.json';'{}'|Set-Content $baselineManifest
+'{}'|Set-Content (Join-Path $Root 'two_prism_trial_observation.json')
+@{stripe_biases_v=@(-25.,50.);prism_voltages_v=@(200.,-200.)}|ConvertTo-Json|Set-Content (Join-Path $Root 'two_prism_trial_materialization.json')
+$history=Join-Path $Root 'history.json';@{decisions=@()}|ConvertTo-Json|Set-Content $history
+$proposalPath=Join-Path $Root 'proposal.json'
+$proposal=@{baseline_manifest=$baselineManifest;proposed_voltages_v=@(-24.,51.,205.,-205.)}
+$proposal|ConvertTo-Json|Set-Content $proposalPath
+$result=New-InitialGroupedWorkpointDecision -Proposal $proposal -ProposalPath $proposalPath `
+  -ContractPath (Join-Path $Root 'contract.json') -HistoryPath $history -OutputPath (Join-Path $Root 'initial.json')
+if($result.coordinate_group-ne'prism_1_prism_2'){throw 'initial decision did not preserve P-first grouping'}
+if($result.proposed_voltages_v[0]-ne-25-or$result.proposed_voltages_v[1]-ne50){throw 'initial decision changed Stripe voltages'}
+if($result.proposed_voltages_v[2]-eq200-and$result.proposed_voltages_v[3]-eq-200){throw 'initial decision replayed the baseline'}
+if(@((Get-Content $history -Raw|ConvertFrom-Json).decisions).Count-ne0){throw 'bootstrap decision polluted iteration history'}
+'INITIAL_GROUPED_DECISION=PASS'
+"""
+        source = PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"
+        runner_source = source.read_text(encoding="utf-8-sig")
+        self.assertIn("if (-not $resumeIterationCheckpoint) {", runner_source)
+        self.assertIn(
+            "$current = @($initialGroupedDecision.proposed_voltages_v",
+            runner_source,
+        )
+        with TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "initial-grouped-decision.ps1"
+            fixture.write_text(script, encoding="utf-8")
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(fixture), str(source), temporary],
+                cwd=PROJECT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=40,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("INITIAL_GROUPED_DECISION=PASS", result.stdout)
+
+    def test_terminal_mirror_variation_is_forwarded_to_every_center_trial(self):
+        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(
+            encoding="utf-8-sig"
+        )
+        self.assertIn("[string]$MirrorVoltageVariationPath = ''", source)
+        self.assertIn("$arguments.MirrorVoltageVariationPath = $variationVariable.Value", source)
+        self.assertIn("terminal_time_mirror_voltage_variation.json", source)
+
+    def test_bootstrap_checkpoint_without_iteration_lineage_resumes_stencil(self):
+        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(
+            encoding="utf-8-sig"
+        )
+        self.assertEqual(
+            source.count("$auditRunner = Join-Path $PSScriptRoot 'run_downstream_fixed_grid_workpoint.ps1'"),
+            1,
+        )
+        self.assertIn(
+            "$resumeIterationCheckpoint=[bool]($ResumeParentCheckpoint-and-not$freshBootstrap)",
+            source,
+        )
+        self.assertIn("$resumeLineageOutputs.Count-eq0", source)
+        self.assertIn(
+            "$InitialWorkpointManifest=Invoke-WorkpointStencil -Bootstrap $bootstrap",
+            source,
+        )
+        self.assertIn("$resumeIterationCheckpoint=$true", source)
+        self.assertIn(
+            "$configuration.inputs.resume_parent_checkpoint=$frozenResumeParentManifest",
+            source,
+        )
+
+    def test_continuation_transport_seed_uses_contract_neighborhood(self):
+        script = r"""
+param($Source,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Find-ContinuationTransportSeed'},$true);Invoke-Expression $node.Extent.Text
+$RunId='auto';$RetainBaselineGuiWorkbench=$false;$artifactRoot=$Root;$script:flights=@()
+function New-CenterTrialArguments {param($PrismVoltages,$ChildRunId)@{PrismVoltages=$PrismVoltages;ChildRunId=$ChildRunId}}
+function Invoke-MockTrial {param($PrismVoltages,$ChildRunId)$script:flights+=,@($PrismVoltages);$d=Join-Path $artifactRoot ('runs/'+$ChildRunId);New-Item -ItemType Directory -Path $d -Force|Out-Null;@{stripe_biases_v=@(-25.,50.);prism_voltages_v=@($PrismVoltages)}|ConvertTo-Json|Set-Content (Join-Path $d 'm.json')}
+function Get-ManifestOutputPath {param($ManifestPath,$FileName)Join-Path (Split-Path $ManifestPath) 'm.json'}
+function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages)@{passed=([math]::Abs($Voltages[2]-221.253125)-lt1e-9);reasons=@('incomplete')}}
+$trialRunner='Invoke-MockTrial';$seed=[pscustomobject]@{prism_voltages_v=@(219.0625,-173.75);prism_voltage_bounds_v=@(@(120.,280.),@(-200.,400.))};$profile=[pscustomobject]@{jacobian_relative_step_tiers=[pscustomobject]@{coarse=.01;medium=.0025;fine=.0005}}
+$result=Find-ContinuationTransportSeed $seed $profile
+if($script:flights.Count-ne2-or$result.attempts.Count-ne2-or[math]::Abs($script:flights[1][0]-221.253125)-gt1e-9){throw 'wrong bounded search'}
+if($result.voltages_v[0]-ne-25-or$result.voltages_v[1]-ne50){throw 'stripe authority lost'}
+'CONTINUATION_TRANSPORT_SEED=PASS'
+"""
+        with TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "continuation-seed.ps1"
+            fixture.write_text(script, encoding="utf-8")
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(fixture), str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary], cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=40)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("CONTINUATION_TRANSPORT_SEED=PASS", result.stdout)
+
+    def test_continuation_entry_delegates_stripe_authority(self):
+        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn('$continuation=$summary.continuation', source)
+        self.assertIn('New-CenterTrialArguments -PrismVoltages $prisms', source)
+        self.assertNotIn('221.253125', source)
+
+    def test_continuation_pair_identity_binds_contract_stripe_k_and_y(self):
+        script = r"""
+param($Source,$Root)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+foreach($name in @('Resolve-RunRecordPath','Assert-ContinuationPairIdentity')){
+  $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
+  Invoke-Expression $node.Extent.Text
+}
+$project='parallel_mirror_dual_stripe_mr_tof'
+function Write-Json($Path,$Value){$Value|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $Path}
+$stripeDir=Join-Path $Root 'stripe';New-Item -ItemType Directory -Path $stripeDir|Out-Null
+$stripeManifest=Join-Path $stripeDir 'run_manifest.json'
+Write-Json $stripeManifest @{schema_version=2;run_id='stripe-k24p5';status='success';project=$project;mode='dual_stripe_fixed_grid_native_downstream_seed'}
+$frozenStripeManifest=Join-Path $Root 'frozen-stripe.json'
+Write-Json $frozenStripeManifest @{schema_version=2;run_id='stripe-k24p5';status='success';project=$project;mode='dual_stripe_fixed_grid_native_downstream_seed'}
+$contract=Join-Path $Root 'contract.json'
+Write-Json $contract @{nominal=@{target_drift_period_ratio=24.5};accelerator=@{focus_y_anchor=@{project_y_mm=-45.0}}}
+$coverage=Join-Path $Root 'coverage.json'
+Write-Json $coverage @{schema_version=2;run_id='coverage-k24p5-yminus45';status='success';project=$project;mode='two_prism_segmented_voltage_branch_coverage'}
+$continuationSummary=Join-Path $Root 'summary.json'
+Write-Json $continuationSummary @{inputs=@{
+  accelerator_exit_source_receipt=@{pair_identity=@{target_drift_period_ratio=24.5;accelerator_y_anchor_mm=-45.0}}
+  stripe_seed=@{source_stripe_run_id='stripe-k24p5'}
+}}
+$continuation=Join-Path $Root 'continuation.json'
+Write-Json $continuation @{outputs=@(@{path=$continuationSummary});inputs=@{
+  parent_coverage_run_manifest=@{path=$coverage}
+  downstream_contract=@{path=$contract}
+  parent_fixed_mirror_stripe_run_manifest=@{path=$frozenStripeManifest}
+}}
+$result=Assert-ContinuationPairIdentity $continuation $contract $stripeDir
+if($result.target_drift_period_ratio-ne24.5-or$result.accelerator_y_anchor_mm-ne-45.0-or$result.stripe_run_id-ne'stripe-k24p5'){throw 'pair identity lost'}
+$otherContract=Join-Path $Root 'other-contract.json'
+Write-Json $otherContract @{nominal=@{target_drift_period_ratio=23.5};accelerator=@{focus_y_anchor=@{project_y_mm=-45.0}}}
+try{$null=Assert-ContinuationPairIdentity $continuation $otherContract $stripeDir;throw 'K mismatch accepted'}catch{if($_.Exception.Message-notlike'*target K differs*'){throw}}
+Write-Json $otherContract @{nominal=@{target_drift_period_ratio=24.5};accelerator=@{focus_y_anchor=@{project_y_mm=-50.0}}}
+try{$null=Assert-ContinuationPairIdentity $continuation $otherContract $stripeDir;throw 'y mismatch accepted'}catch{if($_.Exception.Message-notlike'*y anchor differs*'){throw}}
+Write-Json $stripeManifest @{schema_version=2;run_id='other-stripe';status='success';project=$project;mode='dual_stripe_fixed_grid_native_downstream_seed'}
+try{$null=Assert-ContinuationPairIdentity $continuation $contract $stripeDir;throw 'Stripe mismatch accepted'}catch{if($_.Exception.Message-notlike'*Stripe authority differs*'){throw}}
+'CONTINUATION_PAIR_IDENTITY=PASS'
+"""
+        with TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "continuation-pair.ps1"
+            fixture.write_text(script, encoding="utf-8")
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(fixture),
+                 str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), temporary],
+                cwd=PROJECT, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=40,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("CONTINUATION_PAIR_IDENTITY=PASS", result.stdout)
+
+    def test_parent_owns_one_host_lease_for_all_child_trials(self):
+        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
+        self.assertEqual(source.count("Enter-HostResourceStage -Role SIMION"), 1)
+        self.assertEqual(source.count("Update-HostResourceStage -Lease $resourceLease"), 1)
+        self.assertIn("$preparedRuntime=Get-NativeCorridorRuntimeFamily", source)
+        self.assertLess(
+            source.index("$preparedRuntime=Get-NativeCorridorRuntimeFamily"),
+            source.index("Update-HostResourceStage -Lease $resourceLease"),
+        )
+        self.assertLess(
+            source.index("Update-HostResourceStage -Lease $resourceLease"),
+            source.index("$InitialWorkpointManifest=Invoke-WorkpointStencil"),
+        )
+        self.assertIn("$arguments.InheritedHostResourceLease=$script:resourceLease", source)
+        self.assertIn("Exit-HostResourceStage -Lease $resourceLease", source)
+        self.assertLess(
+            source.index("Enter-HostResourceStage -Role SIMION"),
+            source.index("$InitialWorkpointManifest=Invoke-WorkpointStencil"),
+        )
+        self.assertLess(
+            source.rindex("Exit-HostResourceStage -Lease $resourceLease"),
+            source.rindex("Invoke-HostExecutionCompletionNotification"),
+        )
+
+    def test_accelerator_y_anchor_is_a_run_local_contract_variable(self):
+        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn('[Nullable[double]]$AcceleratorYAnchorMm = $null', source)
+        self.assertIn('$resolvedContract.accelerator.focus_y_anchor.project_y_mm=[double]$AcceleratorYAnchorMm', source)
+        self.assertIn('$script:contract=$frozenContract', source)
+        self.assertIn('$arguments.ContractPath=$script:contract', source)
+
+    def test_prism_discovery_window_is_a_complete_run_input(self):
+        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn('[Nullable[double]]$Prism1SearchMaximumV = $null', source)
+        self.assertIn('Prism search-window override requires four finite bounds.', source)
+        self.assertIn('$window.prism_1=@([double]$Prism1SearchMinimumV,[double]$Prism1SearchMaximumV)', source)
+        self.assertIn('$window.prism_2=@([double]$Prism2SearchMinimumV,[double]$Prism2SearchMaximumV)', source)
+
     def test_recovery_anchor_binds_the_matching_child_materialization(self):
         script = r"""
 param($Source,$Root)
@@ -44,6 +271,28 @@ Write-Output 'RECOVERY_ANCHOR_BINDING=PASS'
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('RECOVERY_ANCHOR_BINDING=PASS', result.stdout)
+
+    def test_recovery_probe_run_id_includes_trigger_iteration(self):
+        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn("$probeId='{0}-ri{1:D2}r{2}-{3}{4}'", source)
+        self.assertIn("[int]$state.trigger.iteration", source)
+        self.assertIn("[int]$state.recovery_round", source)
+        self.assertIn("$directionLabel=if($direction-eq1){'p'}else{'n'}", source)
+        self.assertIn('[int]$stored.trigger.iteration-eq[int]$Decision.iteration', source)
+        self.assertIn('[string]$stored.trigger.reason-eq[string]$Decision.recovery_state.model_invalid_reason', source)
+
+    def test_recovery_handoffs_renew_parent_capacity_session(self):
+        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
+        self.assertEqual(source.count('$recoveryCapacity=Update-ArtifactWorkflowCapacitySession'), 2)
+        self.assertEqual(source.count('$capacitySession=$recoveryCapacity.session'), 2)
+        self.assertEqual(source.count('$protectionReceipts += $recoveryCapacityPath'), 2)
+
+    def test_repeat_recovery_starts_at_persisted_fine_relative_tier(self):
+        source = (PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn("if([int]$state.recovery_policy_version-lt7)", source)
+        self.assertIn("$_.Contains('recovery_resume_proposal')", source)
+        self.assertIn("jacobian_relative_step_tiers.fine", source)
+        self.assertIn("refresh_independent_s_columns_at_persisted_fine_relative_tier", source)
 
     def test_physical_gate_reverse_fallback_resume_and_voltage_binding(self):
         script = r"""
@@ -199,6 +448,7 @@ Write-Output 'RESUME_CHECKPOINT=PASS'
         repo = PROJECT.parents[1]
         script = r"""
 param($Source,$repoRoot,$python,$SeedTrialManifest,$Inputs)
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
@@ -245,9 +495,18 @@ Write-Output 'SEED_PROJECTION=PASS'
             self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
             self.assertIn("SEED_PROJECTION=PASS", good.stdout)
             receipt.write_text("{}")
-            bad = subprocess.run(command, cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", check=False, timeout=40)
+            bad = subprocess.run(
+                command,
+                cwd=PROJECT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                check=False,
+                timeout=40,
+            )
             self.assertNotEqual(bad.returncode, 0)
-            self.assertIn("Manifest output hash differs", bad.stdout + bad.stderr)
+            self.assertIn("Manifest output hash differs", bad.stdout)
         source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text()
         self.assertIn("$configuration.parameters.voltage_seed_consumer_projection=$seedProjection", source)
         self.assertIn("$configuration.inputs.voltage_seed_materialization=$frozenSeedMaterialization", source)
@@ -331,6 +590,11 @@ Write-Output 'BOOTSTRAP=PASS'
         self.assertIn("IOB\n  # poses", source)
         self.assertNotIn("Native runtime physical problem differs", source)
 
+    def test_resume_compares_bundle_content_not_run_local_copy_path(self):
+        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("if($key-ne'native_system_runtime_bundle')", source)
+        self.assertIn("Test-RunFilesIdentical -Left $priorBundle -Right $currentBundle", source)
+
     def test_provider_receipt_is_preserved_through_workpoint_and_bunch_handoff(self):
         source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
         bunch = (PROJECT / "analysis/run_native_corridor_bunch_screening.ps1").read_text(encoding="utf-8-sig")
@@ -339,7 +603,7 @@ Write-Output 'BOOTSTRAP=PASS'
         self.assertIn("accelerator_provider_receipt=(Resolve-Path -LiteralPath $AcceleratorProviderReceiptPath).Path", source)
         self.assertIn("$arguments.AcceleratorProviderReceiptPath=$AcceleratorProviderReceiptPath", source)
         self.assertIn("$problem.accelerator_provider_receipt", bunch)
-        self.assertIn("$pilotArguments.AcceleratorProviderReceiptPath=$providerReceipt", bunch)
+        self.assertIn("$cohortArguments.AcceleratorProviderReceiptPath=$providerReceipt", bunch)
         self.assertIn("$cohortArguments.AcceleratorProviderReceiptPath=$providerReceipt", bunch)
         for obsolete in (
             "LocalWorkbenchRunPath", "LocalResponseFamilyRunPath",
@@ -365,6 +629,23 @@ Write-Output 'BOOTSTRAP=PASS'
         self.assertIn("$capacitySession=$null", source)
         self.assertIn("BunchSourceReceiptPath=$BunchSourceReceiptPath", source)
         self.assertIn("& $bunchScreeningRunner @screeningArguments", source)
+
+    def test_one_contract_budget_bounds_all_real_center_flights(self):
+        source = (PROJECT / "analysis/run_downstream_workpoint_iteration.ps1").read_text(
+            encoding="utf-8-sig"
+        )
+        self.assertIn("$maximumFlightAttempts = $maximumIterations", source)
+        self.assertIn(
+            "if($null-eq$terminalDecision-and$null-eq$pendingRecoveryDecision){",
+            source,
+        )
+        self.assertIn("$terminalDecision=$checkpoint.terminal_decision", source)
+        self.assertNotIn("3 * $maximumIterations", source)
+        self.assertIn("maximum main real centre-flight count", source)
+        self.assertLess(
+            source.index("if ($null -eq $terminalDecision -and $startIteration -gt $maximumFlightAttempts)"),
+            source.index("Invoke-SLocalModelRecovery -Decision $pendingRecoveryDecision"),
+        )
 
 
 if __name__ == "__main__":

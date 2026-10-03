@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import unittest
+import json
+import shutil
+import subprocess
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+POWERSHELL_UTF8 = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);\n"
 
 
 CASES = {
@@ -37,7 +42,6 @@ CASES = {
         "session": True,
         "required": (
             "[Parameter(Mandatory)][string]$FlightRunPath",
-            "--require-mode finite_3d_two_prism_voltage_trial",
             "Copy-VerifiedRunInput",
             "Apply-RunArtifactRetention",
             "source_z_energy_timing_diagnostic",
@@ -126,6 +130,74 @@ CASES = {
 
 
 class ManagedAnalysisRunnerContractTests(unittest.TestCase):
+    def test_powershell_utf8_diagnostics_override_legacy_console_encoding(self) -> None:
+        shell = shutil.which("pwsh")
+        if shell is None:
+            self.skipTest("PowerShell 7 is required")
+        legacy = "[Console]::OutputEncoding=[Text.Encoding]::GetEncoding(936);"
+        failure = "throw ('IDENTITY_REJECTED '+[char]0x6D4B+[char]0x8BD5)"
+        for reset in (False, True):
+            with self.subTest(utf8_reset=reset):
+                result = subprocess.run(
+                    [shell, "-NoProfile", "-NonInteractive", "-Command",
+                     legacy + (POWERSHELL_UTF8 if reset else "") + failure],
+                    cwd=PROJECT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    timeout=30, check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                if reset:
+                    self.assertIn("IDENTITY_REJECTED \u6d4b\u8bd5", result.stdout.decode("utf-8"))
+                else:
+                    with self.assertRaises(UnicodeDecodeError):
+                        result.stdout.decode("utf-8")
+
+    def test_source_z_diagnostic_checks_actual_flight_identity(self) -> None:
+        shell = shutil.which("pwsh")
+        if shell is None:
+            self.skipTest("PowerShell 7 is required for the production identity regression")
+        source = (PROJECT / CASES["source_z_timing_diagnostic"]["path"]).read_text(encoding="utf-8-sig")
+        start = source.index("$sourceManifestData=Get-Content")
+        check = source[start:source.index("$sourceObservation=", start)]
+        valid = {
+            "status": "success", "project": PROJECT.name,
+            "mode": "finite_3d_two_prism_voltage_trial",
+        }
+        with TemporaryDirectory() as temporary:
+            manifest = Path(temporary) / "run_manifest.json"
+            for field in (None, "status", "project", "mode"):
+                with self.subTest(changed_field=field):
+                    document = dict(valid)
+                    if field is not None:
+                        document[field] = "wrong_identity"
+                    manifest.write_text(json.dumps(document), encoding="utf-8")
+                    script = (
+                        POWERSHELL_UTF8
+                        + "Set-StrictMode -Version Latest; $ErrorActionPreference='Stop'\n"
+                        + "$projectId='" + PROJECT.name + "'\n"
+                        + "$sourceManifest='" + str(manifest).replace("'", "''") + "'\n"
+                        + check + "Write-Output 'IDENTITY_ACCEPTED'"
+                    )
+                    result = subprocess.run(
+                        [shell, "-NoProfile", "-NonInteractive", "-Command", script],
+                        cwd=PROJECT,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding="utf-8",
+                        timeout=30,
+                        check=False,
+                    )
+                    if field is None:
+                        self.assertEqual(result.returncode, 0, result.stdout)
+                        self.assertEqual(result.stdout.strip(), "IDENTITY_ACCEPTED")
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertNotIn("IDENTITY_ACCEPTED", result.stdout)
+                        self.assertIn(
+                            "Flight source manifest has the wrong status, project, or mode.",
+                            result.stdout,
+                        )
+
     def test_runner_contract_matrix(self) -> None:
         for name, case in CASES.items():
             with self.subTest(case=name):

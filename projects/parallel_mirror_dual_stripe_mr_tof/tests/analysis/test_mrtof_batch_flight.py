@@ -27,6 +27,7 @@ class MrtofBatchFlightTest(unittest.TestCase):
             receipt = {
                 "source_profile_id": "fixture", "frame_id": "fixture",
                 "sampling_method": "fixture", "particle_count": 4,
+                "cohort_role": "controlled_diagnostic",
                 "mother_particle_count": 4, "prefix_rule": "fixture",
                 "clock_basis": "fixture", "expected_particle_ids_sha256": "A" * 64,
                 "particle_states_sha256": "B" * 64,
@@ -57,6 +58,7 @@ class MrtofBatchFlightTest(unittest.TestCase):
             receipt = {
                 "source_profile_id": "fixture", "frame_id": "fixture",
                 "sampling_method": "fixture", "particle_count": 100,
+                "cohort_role": "formal_volume",
                 "mother_particle_count": 1000, "prefix_rule": "fixture",
                 "clock_basis": "fixture", "expected_particle_ids_sha256": "A" * 64,
                 "particle_states_sha256": "B" * 64,
@@ -93,6 +95,7 @@ class MrtofBatchFlightTest(unittest.TestCase):
             receipt = {
                 "source_profile_id": "fixture", "frame_id": "fixture",
                 "sampling_method": "fixture", "particle_count": 1,
+                "cohort_role": "controlled_diagnostic",
                 "mother_particle_count": 100, "prefix_rule": "fixture",
                 "clock_basis": "fixture", "expected_particle_ids_sha256": "A" * 64,
                 "particle_states_sha256": "B" * 64,

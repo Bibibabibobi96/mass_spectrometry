@@ -11,7 +11,6 @@ from common.ion_release.mt19937_disk_cone_rf_phase import (
     _render,
     generate_mt19937_disk_cone_rf_phase_states,
     generate_mt19937_disk_sqrt_cone_rf_phase_states,
-    materialize_mt19937_disk_cone_rf_phase_release,
     validate_materialized_mt19937_disk_cone_rf_phase_release,
     validate_mt19937_disk_cone_rf_phase_release_spec,
     validate_mt19937_disk_sqrt_cone_rf_phase_release_spec,

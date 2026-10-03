@@ -210,9 +210,6 @@ def audit_operating_point(
         raise CandidateContractError("P1 Jacobian trial must perturb only P1 by a positive step")
     if not (p2_delta[1] > 0.0 and p2_delta[0] == 0.0):
         raise CandidateContractError("P2 Jacobian trial must perturb only P2 by a positive step")
-    if not math.isclose(float(p1_delta[0]), float(p2_delta[1]), rel_tol=0.0, abs_tol=1e-12):
-        raise CandidateContractError("P1 and P2 Jacobian steps must be equal")
-
     seed_r = np.asarray(seed["residual_vector"], dtype=float)
     jacobian = np.column_stack((
         (np.asarray(p1_trial["residual_vector"]) - seed_r) / p1_delta[0],
@@ -252,7 +249,7 @@ def audit_operating_point(
         "seed": seed,
         "jacobian_trials": [p1_trial, p2_trial],
         "finite_difference_scheme": "forward_about_solver_neutral_hard_boundary_seed",
-        "finite_difference_step_v": float(p1_delta[0]),
+        "finite_difference_steps_v": [float(p1_delta[0]), float(p2_delta[1])],
         "physical_jacobian_rows": jacobian.tolist(),
         "parameter_scales_v": parameter_scales,
         "residual_scales": {

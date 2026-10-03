@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from common.contracts.file_identity import file_sha256
+from common.contracts.particle_physics import kinetic_energy_ev
 from common.ion_release.release import validate_materialized_release
 from common.simion.particle_source import render_source_states, render_standard_beams
 
@@ -86,7 +87,7 @@ def materialize(
     if (
         mapping.get("source_frame") != spec["frame_id"]
         or mapping.get("workbench_mapping") != "identity_xyz_with_local_exit_z_translation_v1"
-        or mapping.get("iob_origin_rule") != "negative_half_transverse_span__local_z_zero_v1"
+        or mapping.get("iob_origin_rule") != "x_mirror_plane__negative_half_y__local_z_zero_v1"
         or set(mapping) != _PROJECTION_FIELDS
         or not isinstance(mapping.get("local_pa_span_mm"), list)
         or len(mapping["local_pa_span_mm"]) != 3
@@ -105,11 +106,12 @@ def materialize(
         if not source_minimum < source_z < source_maximum:
             raise ValueError("release source is outside the provider first acceleration gap")
         vx, vy, vz = (_finite(row[key], key) for key in ("vx_m_s", "vy_m_s", "vz_m_s"))
-        energy = _finite(spec["sampling"]["kinetic_energy"]["center_ev"], "release energy")
+        mass = _finite(row["mass_amu"], "release mass")
+        energy = kinetic_energy_ev(mass, vx, vy, vz)
         time_of_birth = _finite(row["birth_time_s"], "release birth time") * 1.0e6
         x, y = _finite(row["x_mm"], "release x"), _finite(row["y_mm"], "release y")
         z = source_z + exit_z
-        beams.append({"tob": time_of_birth, "mass": _finite(row["mass_amu"], "release mass"),
+        beams.append({"tob": time_of_birth, "mass": mass,
                       "charge": int(row["charge_state"]), "x": x, "y": y, "z": z,
                       "direction": (vx, vy, vz), "ke": energy, "cwf": 1, "color": 3})
         source_states.append({"particle_id": expected, "t": time_of_birth, "x": x, "y": y, "z": z,

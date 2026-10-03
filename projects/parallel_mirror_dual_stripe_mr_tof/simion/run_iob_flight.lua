@@ -15,8 +15,10 @@ if particles then
   local file = assert(io.open(particles, 'rb'), 'missing particle override: '..particles)
   file:close()
 end
--- SIMION 2020 official geometry_optimization example uses this supported
--- command path for headless Workbench flying.
+-- Headless analysis consumes explicit event output, not SIMION's replay cache.
+-- Match the repository SIMION runner: avoid generating trj*.tmp files that
+-- compact retention would immediately remove.  The IOB and Fly2 remain fully
+-- usable for a later interactive GUI flight.
 local particle_option = particles and (' --particles="'..particles..'"') or ''
-simion.command('fly'..particle_option..' "'..iob..'"')
+simion.command('fly --retain-trajectories=0'..particle_option..' "'..iob..'"')
 print('IOB_FLIGHT: PASS iob='..iob)

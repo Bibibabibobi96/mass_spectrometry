@@ -1,5 +1,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+$nativeCorridorRepoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+. (Join-Path $nativeCorridorRepoRoot 'common\simion\short_pa_path_support.ps1')
+. (Join-Path $nativeCorridorRepoRoot 'common\simion\native_fast_adjust_runtime_support.ps1')
 
 # Production adapter for run_two_prism_trial: only standalone source copies
 # enter SIMION; the native family belongs to a flight or its sequential workflow.
@@ -7,6 +10,8 @@ function New-NativeCorridorRuntimeFamily {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$BankGenerationDirectory,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$GenerationSha256,
     [Parameter(Mandatory)][string]$DestinationDirectory,
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
@@ -14,60 +19,61 @@ function New-NativeCorridorRuntimeFamily {
     [Parameter(Mandatory)]$ResourceLease,
     [Parameter(Mandatory)][string]$RunId
   )
-  $generation=(Resolve-Path -LiteralPath $BankGenerationDirectory).Path
-  $destination=[IO.Path]::GetFullPath($DestinationDirectory)
-  $code=@'
-import json,sys
-from pathlib import Path
-from common.simion.pa_family_cache import probe_pa_family_cache, CacheDisposition
-from common.simion.standalone_pa_response_set import validate_standalone_pa_response_set
-p=Path(sys.argv[1]); m=json.loads((p/'cache_manifest.json').read_text())
-assert m['identity']['geometry']['component_role']=='mrtof_native_corridor_detached_response_bank'
-probe=probe_pa_family_cache(p.parents[2],m['identity'],expected_filenames=[x['name'] for x in m['files']])
-assert probe.disposition is CacheDisposition.HIT and probe.generation_directory.resolve()==p.resolve(), 'bank must be the sealed current generation'
-records=validate_standalone_pa_response_set(p,m,'mrtof_analyzer_corridor.standalone_responses.json',expected_response_ids=range(1,9),inventory_is_verified=True)
-raw=next(x for x in m['files'] if x['name']=='mrtof_analyzer_corridor.pa#')
-print(json.dumps({'cache_key':m['cache_key'],'generation_sha256':m['generation_sha256'],'raw':raw,'responses':[vars(x) for x in records]}))
-'@
-  $text=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    & $Python -c $code $generation
-    if($LASTEXITCODE-ne0){throw 'Native corridor bank metadata validation failed.'}
-  })
-  $bank=($text-join"`n")|ConvertFrom-Json -Depth 40
-  New-Item -ItemType Directory -Path $destination -Force|Out-Null
-  if(@(Get-ChildItem -LiteralPath $destination -Force).Count-ne0){throw 'Native execution family directory must be empty.'}
-  $controller=Join-Path $destination 'mrtof_analyzer_corridor.pa0'
-  $privateRaw=$null;$privateResponse=$null
-  try {
-    $privateRaw=New-ShortPaCopy -Source (Join-Path $generation ([string]$bank.raw.name)) `
-      -Destination (Join-Path $destination 'mrtof_analyzer_corridor.pa#') `
-      -ExpectedBytes ([int64]$bank.raw.bytes) -ExpectedSha256 ([string]$bank.raw.sha256)
-    $ResourceLease=Update-HostResourceStage -Lease $ResourceLease -Stage pa_refine `
-      -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
-    & $SimionExe --nogui --noprompt lua (Join-Path $PSScriptRoot 'create_native_corridor_controller.lua') $privateRaw $controller | Out-Host
-    if($LASTEXITCODE-ne0){throw 'Native execution controller construction failed.'}
-    $ResourceLease=Update-HostResourceStage -Lease $ResourceLease -Stage mrtof_prepare `
-      -Budget (Get-HostResourceBudget -Role SIMION -Stage mrtof_prepare) -RetainedMemoryBytes 0
-    Remove-ShortPaCopy -Path $privateRaw;$privateRaw=$null
-    foreach($record in $bank.responses){
-      $privateResponse=New-ShortPaCopy -Source (Join-Path $generation ([string]$record.name)) `
-        -Destination (Join-Path $destination 'source_response.pa') `
-        -ExpectedBytes ([int64]$record.bytes) -ExpectedSha256 ([string]$record.sha256) -GuardDestinationReadOnly
-      $native=Join-Path $destination ('mrtof_analyzer_corridor.pa{0}'-f$record.response_id)
-      & $SimionExe --nogui --noprompt lua (Join-Path $PSScriptRoot 'assemble_native_local_family.lua') --append $privateResponse $native | Out-Host
-      if($LASTEXITCODE-ne0){throw "Native execution response export failed: $($record.response_id)"}
-      Remove-ShortPaCopy -Path $privateResponse;$privateResponse=$null
-    }
-    return [pscustomobject]@{
-      controller_path=$controller;resource_lease=$ResourceLease
-      receipt=[ordered]@{schema_version=1;role='mrtof_private_native_corridor_family';status='prepared';run_id=$RunId;
-        cache_key=[string]$bank.cache_key;generation_sha256=[string]$bank.generation_sha256;generation_directory=$generation;
-        source_responses=@($bank.responses);source_raw=$bank.raw;controller_path=$controller;
-        response_refine_performed=$false;controller_refine='solutions={0}';published_native_members_opened=$false}
-    }
-  } finally {
-    if($null-ne$privateResponse){Remove-ShortPaCopy -Path $privateResponse}
-    if($null-ne$privateRaw){Remove-ShortPaCopy -Path $privateRaw}
+  return New-NativeFastAdjustRuntimeFamily -GenerationDirectory $BankGenerationDirectory `
+    -ExpectedCacheKey $CacheKey -ExpectedGenerationSha256 $GenerationSha256 `
+    -ReceiptName 'mrtof_analyzer_corridor.standalone_responses.json' `
+    -RawName 'mrtof_analyzer_corridor.pa#' -FamilyPrefix 'mrtof_analyzer_corridor' `
+    -ExpectedResponseIds @(1..8) -DestinationDirectory $DestinationDirectory `
+    -Python $Python -RepoRoot $RepoRoot -SimionExe $SimionExe -ResourceLease $ResourceLease `
+    -RunId $RunId -ReceiptRole 'mrtof_private_native_corridor_family'
+}
+
+function Get-NativeAcceleratorRuntimeFamily {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Session,
+    [Parameter(Mandatory)][string]$ProviderReceiptPath,
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$SimionExe,
+    [Parameter(Mandatory)]$ResourceLease,
+    [Parameter(Mandatory)][string]$RunId
+  )
+  $provider=Get-Content -LiteralPath $ProviderReceiptPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 60
+  if([string]$provider.role-ne'orthogonal_accelerator_mrtof_runtime_receipt'-or
+     [string]$provider.status-ne'published_standalone_response_bank'-or
+     $null-eq$provider.standalone_response_bank){throw 'Accelerator provider lacks its standalone response bank.'}
+  $bank=$provider.standalone_response_bank
+  $ids=@($bank.response_ids|ForEach-Object{[int]$_})
+  if($ids.Count-lt1-or@(Compare-Object $ids @(1..$ids.Count)).Count-ne0){throw 'Accelerator response namespace is incomplete.'}
+  $binding=$provider.private_runtime_checkpoint
+  if($null-eq$binding-or$null-eq$binding.checkpoint){throw 'Accelerator provider lacks its private runtime checkpoint.'}
+  $checkpoint=(Resolve-Path -LiteralPath ([string]$binding.checkpoint.path)).Path
+  $checkpointFile=Get-Item -LiteralPath $checkpoint
+  if([int64]$checkpointFile.Length-ne[int64]$binding.checkpoint.bytes-or
+     (Get-FileHash -LiteralPath $checkpoint -Algorithm SHA256).Hash-ne[string]$binding.checkpoint.sha256){throw 'Accelerator private runtime checkpoint record differs.'}
+  $saved=Get-Content -LiteralPath $checkpoint -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
+  $directory=(Resolve-Path -LiteralPath ([string]$saved.directory)).Path
+  if($null-ne$Session.PSObject.Properties['accelerator_guards']){foreach($guard in $Session.accelerator_guards){$guard.Dispose()}}
+  if($null-ne$Session.PSObject.Properties['accelerator_execution_alias']-and$Session.accelerator_execution_alias){Remove-RunExecutionAlias -ExecutionAlias $Session.accelerator_execution_alias -TargetDirectory ([string]$Session.accelerator_runtime_directory)}
+  $alias=New-RunExecutionAlias -TargetDirectory $directory
+  $Session|Add-Member -NotePropertyName accelerator_execution_alias -NotePropertyValue $alias.execution_alias -Force
+  $Session|Add-Member -NotePropertyName accelerator_runtime_directory -NotePropertyValue $directory -Force
+  $expected=@(0..$ids.Count|ForEach-Object{'orthogonal_accelerator_focus.pa'+$_})
+  if([string]$saved.role-ne'orthogonal_accelerator_shared_runtime_checkpoint'-or[string]$saved.status-ne'prepared'-or
+     [string]$saved.generation_sha256-ne[string]$provider.pa_family.generation_sha256-or
+     [string]$saved.cache_key-ne[string]$provider.pa_family.cache_key-or
+     [IO.Path]::GetFullPath([string]$binding.directory)-ne$directory-or
+     [IO.Path]::GetFullPath([string]$binding.controller_path)-ne[IO.Path]::GetFullPath((Join-Path $directory $expected[0]))-or
+     @($saved.members).Count-ne$expected.Count-or@(Compare-Object @($saved.members.name) $expected).Count-ne0){throw 'Accelerator runtime checkpoint belongs to another field identity.'}
+  foreach($record in @($saved.members)){$file=Get-Item -LiteralPath (Join-Path $directory ([string]$record.name));if($file.Length-ne[int64]$record.bytes-or-not$file.IsReadOnly){throw 'Accelerator runtime checkpoint member differs.'}}
+  $guards=@();foreach($name in $expected){$guards+=,[IO.File]::Open((Join-Path $directory $name),[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
+  $Session|Add-Member -NotePropertyName accelerator_guards -NotePropertyValue $guards -Force
+  $Session|Add-Member -NotePropertyName accelerator_checkpoint_path -NotePropertyValue $checkpoint -Force
+  return [pscustomobject]@{
+    controller_path=(Join-Path ([string]$alias.execution_alias) 'orthogonal_accelerator_focus.pa0')
+    persistent_controller_path=(Join-Path $directory 'orthogonal_accelerator_focus.pa0')
+    resource_lease=$ResourceLease;checkpoint_path=$checkpoint;reused=$true
   }
 }
 
@@ -139,13 +145,18 @@ function Suspend-NativeCorridorRuntimeSession {
     Remove-RunExecutionAlias -ExecutionAlias $Session.execution_alias -TargetDirectory $Session.directory
     $Session.execution_alias=$null
   }
+  if($null-ne$Session.PSObject.Properties['accelerator_guards']){foreach($guard in $Session.accelerator_guards){$guard.Dispose()};$Session.accelerator_guards=@()}
+  if($null-ne$Session.PSObject.Properties['accelerator_execution_alias']-and$Session.accelerator_execution_alias){
+    Remove-RunExecutionAlias -ExecutionAlias $Session.accelerator_execution_alias -TargetDirectory ([string]$Session.accelerator_runtime_directory)
+    $Session.accelerator_execution_alias=$null
+  }
 }
 
 function Get-NativeFamilyGeneratorIdentity {
   param([Parameter(Mandatory)][string]$SimionExe)
   $identity=[ordered]@{}
-  foreach($name in @('create_native_corridor_controller.lua','assemble_native_local_family.lua')){
-    $identity[$name]=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name) -Algorithm SHA256).Hash
+  foreach($name in @('native_fast_adjust_runtime_support.ps1','assemble_native_fast_adjust_family.lua')){
+    $identity[$name]=(Get-FileHash -LiteralPath (Join-Path $nativeCorridorRepoRoot 'common\simion' $name) -Algorithm SHA256).Hash
   }
   $identity.simion_binary_sha256=(Get-FileHash -LiteralPath $SimionExe -Algorithm SHA256).Hash
   return $identity
@@ -192,13 +203,14 @@ function Open-NativeCorridorRuntimeCheckpoint {
   if($CapacityWorkflowSession.status-ne'active'-or$Session.lease_id-ne$CapacityWorkflowSession.lease_id){throw 'Native checkpoint requires the current active workflow lease.'}
   $directory=Assert-NativeCorridorRuntimeSessionDirectory -Session $Session
   $checkpoint=Get-Content -LiteralPath $Session.checkpoint_path -Raw|ConvertFrom-Json -AsHashtable
-  $generators=Get-NativeFamilyGeneratorIdentity -SimionExe $SimionExe
   if($checkpoint.role-ne'mrtof_native_runtime_checkpoint'-or$checkpoint.status-ne'prepared'-or
      [IO.Path]::GetFullPath([string]$checkpoint.directory)-ne$directory-or
      $checkpoint.runtime_receipt.cache_key-ne$CacheKey-or$checkpoint.runtime_receipt.generation_sha256-ne$GenerationSha256-or
      [IO.Path]::GetFullPath([string]$checkpoint.runtime_receipt.generation_directory)-ne[IO.Path]::GetFullPath($BankGenerationDirectory)-or
-     ($checkpoint.generator_identity|ConvertTo-Json -Compress)-ne($generators|ConvertTo-Json -Compress)){
-    throw 'Native checkpoint bank or family generator identity differs; payload retained.'
+     $checkpoint.runtime_receipt.controller_refine-ne'solutions={0}'-or
+     [bool]$checkpoint.runtime_receipt.response_refine_performed-or
+     [bool]$checkpoint.runtime_receipt.published_native_members_opened){
+    throw 'Native checkpoint field or PA-family format identity differs; payload retained.'
   }
   try{
     Protect-ManagedNativeFamily -Session $Session
@@ -214,7 +226,12 @@ function Open-NativeCorridorRuntimeCheckpoint {
     # sufficient; rereading roughly 75 GB on every controller start adds no
     # new consumed evidence.
     $Session|Add-Member -NotePropertyName members -NotePropertyValue $members -Force
-    $Session|Add-Member -NotePropertyName generator_identity -NotePropertyValue $generators -Force
+    # Generator and SIMION hashes are provenance of the one-time materializer,
+    # not the identity of an already sealed PA family.  Field identity is the
+    # response-bank generation above; format identity is the pa0..pa8 inventory
+    # and controller/response semantics.  Editing a generator comment or
+    # updating the executable must not invalidate unchanged read-only arrays.
+    $Session|Add-Member -NotePropertyName generator_identity -NotePropertyValue $checkpoint.generator_identity -Force
     $Session.runtime=[pscustomobject]@{receipt=$checkpoint.runtime_receipt;controller_path=(Join-Path $directory 'mrtof_analyzer_corridor.pa0')}
     $Session.resident_bytes=[int64](($members|Measure-Object -Property bytes -Sum).Sum)
   }catch{Suspend-NativeCorridorRuntimeSession -Session $Session;throw}
@@ -243,6 +260,7 @@ function Get-ManagedNativeCorridorRuntimeFamily {
   }
   if(-not$reused){
     $runtime=New-NativeCorridorRuntimeFamily -BankGenerationDirectory $BankGenerationDirectory `
+      -CacheKey $CacheKey -GenerationSha256 $GenerationSha256 `
       -DestinationDirectory $Session.execution_alias -Python $Python -RepoRoot $RepoRoot -SimionExe $SimionExe `
       -ResourceLease $ResourceLease -RunId $RunId
     $ResourceLease=$runtime.resource_lease
@@ -259,6 +277,8 @@ function Get-ManagedNativeCorridorRuntimeFamily {
     })
     Move-Item -LiteralPath ($Session.checkpoint_path+'.pending') -Destination $Session.checkpoint_path -Force
     $ownerOutputs=@((Join-Path $Session.owner_run_directory 'summary.json'),$Session.checkpoint_path)
+    $acceleratorCheckpoint=Join-Path $Session.owner_run_directory 'results/accelerator_runtime_checkpoint.json'
+    if(Test-Path -LiteralPath $acceleratorCheckpoint){$ownerOutputs+=$acceleratorCheckpoint}
     $bootstrapPath=Join-Path $Session.owner_run_directory 'results/workpoint_bootstrap.json'
     if(Test-Path -LiteralPath $bootstrapPath){$ownerOutputs+=$bootstrapPath}
     Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $Session.owner_run_config `
@@ -266,7 +286,7 @@ function Get-ManagedNativeCorridorRuntimeFamily {
       -Outputs $ownerOutputs | Out-Host
     $null=Invoke-RunCapacityLifecycleAdapter -Python $Python -RepoRoot $RepoRoot -Action register-writing `
       -ArtifactRoot $CapacityWorkflowSession.artifact_root -RunConfig $Session.owner_run_config
-    $remaining=[math]::Max(0,[int64]$CapacityWorkflowSession.committed_new_bytes-10*[int64]$runtime.receipt.source_raw.bytes)
+    $remaining=[math]::Max([int64]0,[int64]$CapacityWorkflowSession.committed_new_bytes-10*[int64]$runtime.receipt.source_raw.bytes)
     $null=Update-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoRoot -Session $CapacityWorkflowSession -RemainingCommittedNewBytes $remaining
   }
   $runtime=$Session.runtime

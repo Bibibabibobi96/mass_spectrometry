@@ -113,7 +113,7 @@ class TwoPrismOperatingPointTest(unittest.TestCase):
     def test_audits_full_rank_jacobian_and_selects_last_iteration(self) -> None:
         seed = self._trial("seed", [100.0, -100.0], [-4.0, 0.05])
         p1 = self._trial("p1", [102.0, -100.0], [-3.6, 0.19])
-        p2 = self._trial("p2", [100.0, -98.0], [-3.86, 0.18])
+        p2 = self._trial("p2", [100.0, -97.0], [-3.79, 0.245])
         final = self._trial("final", [133.0, -134.0], [1e-5, 2e-5])
         result = audit_operating_point(
             contract_path=self.contract,
@@ -123,6 +123,7 @@ class TwoPrismOperatingPointTest(unittest.TestCase):
             iteration_manifests=[final],
         )
         self.assertEqual(result["classification"]["status"], "square_exact")
+        self.assertEqual(result["finite_difference_steps_v"], [2.0, 3.0])
         self.assertEqual(result["selected_prism_voltages_v"], [133.0, -134.0])
         self.assertEqual(
             result["qualification"],

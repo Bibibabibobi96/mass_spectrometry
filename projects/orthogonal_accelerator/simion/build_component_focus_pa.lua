@@ -1,7 +1,10 @@
--- Build one native Fast Adjust family (PA# plus PA0 through PA9).
+-- Build one profile-sized native Fast Adjust family.
 -- These are native solution arrays required by SIMION's pa:fast_adjust, not
 -- detached standalone response PAs.
 local gem, output = assert(arg[1], 'GEM required'), assert(arg[2], 'PA# required')
+local electrode_count = assert(tonumber(arg[3]), 'electrode count required')
+assert(electrode_count >= 1 and electrode_count == math.floor(electrode_count),
+  'electrode count must be a positive integer')
 assert(gem:match('%.gem$') and output:match('%.pa#$'), 'GEM and PA# paths required')
 local staged = output:gsub('%.pa#$', '.source.gem')
 local source = assert(io.open(gem, 'rb')); local body = source:read('*a'); source:close()
@@ -15,9 +18,11 @@ os.remove(staged); os.remove(staged:gsub('%.gem$', '.processed.gem'))
 local family = assert(simion.pas:open(output))
 family:refine{solutions={0}}
 family:load(output)
-family:refine{solutions={1,2,3,4,5,6,7,8,9}}
+local solutions = {}
+for solution=1,electrode_count do solutions[#solutions+1] = solution end
+family:refine{solutions=solutions}
 family:close()
-for solution=0,9 do
+for solution=0,electrode_count do
   assert(io.open(output:gsub('%.pa#$', '.pa'..solution), 'rb'), 'solution array was not created: '..solution)
 end
-print('ACCELERATOR_COMPONENT_FOCUS_PA=PASS family=pa_hash_plus_pa0_through_pa9 detached_response_bank=false')
+print(string.format('ACCELERATOR_COMPONENT_FOCUS_PA=PASS electrode_count=%d detached_response_bank=false', electrode_count))

@@ -15,6 +15,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_coverage import (
     deterministic_sobol_voltage_pairs,
+    load_segmented_operating_authority,
     run_coverage,
     validate_accelerator_exit_source_binding,
 )
@@ -22,6 +23,22 @@ from common.contracts.file_identity import file_sha256
 
 
 class TwoPrismSegmentedCoverageTests(unittest.TestCase):
+    def test_fixed_grid_stripe_target_k_must_match_downstream_contract(self) -> None:
+        fixed = SimpleNamespace(
+            contract={"nominal": {"target_drift_period_ratio": 24.5}},
+            target_period_ratio=25.5,
+        )
+        with patch(
+            "projects.parallel_mirror_dual_stripe_mr_tof.analysis."
+            "two_prism_segmented_coverage.load_fixed_mirror_stripe_operating_point",
+            return_value=fixed,
+        ):
+            with self.assertRaisesRegex(CandidateContractError, "target K differs"):
+                load_segmented_operating_authority(
+                    contract_path=Path("contract.json"),
+                    fixed_mirror_stripe_manifest_path=Path("stripe.json"),
+                )
+
     def test_unscrambled_sobol_is_deterministic_and_domain_bound(self) -> None:
         first = deterministic_sobol_voltage_pairs(
             p1_bounds_v=(120.0, 280.0), p2_bounds_v=(-150.0, 400.0), sample_count=8,
@@ -146,6 +163,72 @@ class TwoPrismSegmentedCoverageTests(unittest.TestCase):
                     source_receipt_path=path, source_handoff_receipt=handoff,
                     managed=SimpleNamespace(axial_energy_per_charge_v=4198.0, design=object()),
                 )
+
+    def test_fixed_grid_exit_source_is_bound_to_k_slow_energy_and_y_anchor(self) -> None:
+        receipt = {
+            "schema_version": 1,
+            "role": "mrtof_finite_3d_two_prism_voltage_trial",
+            "status": "materialized",
+            "qualification": "single_center_trial__not_an_operating_point",
+            "particle_mass_th": 524.0,
+            "charge_state": 1,
+            "selected_axial_energy_per_charge_v": 4372.0,
+            "source_slow_kinetic_energy_per_charge_v": 5.375,
+            "target_drift_period_ratio": 24.5,
+            "source_position_project_mm": [0.0, -46.7, 32.0],
+            "source_y_offset_from_accelerator_axis_mm": -1.7,
+        }
+        observation = {
+            "source_release_state": {
+                "position_mm": [0.0, -46.7, 32.0],
+                "kinetic_energy_per_charge_v": 5.375,
+            }
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt_path = root / "two_prism_trial_materialization.json"
+            observation_path = root / "two_prism_trial_observation.json"
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            observation_path.write_text(json.dumps(observation), encoding="utf-8")
+            handoff = {
+                "particle_mass_th": 524.0,
+                "charge_state": 1,
+                "position_mm": [0.0, -45.0, -6.0],
+                "kinetic_energy_components_ev": {"y": 2.75, "z": 4371.75},
+                "input": {"accelerator_exit_observation": {
+                    "source_receipt_sha256": file_sha256(receipt_path).lower(),
+                }},
+            }
+            arguments = dict(
+                source_receipt_path=receipt_path,
+                source_handoff_receipt=handoff,
+                managed=SimpleNamespace(axial_energy_per_charge_v=4372.0, design=object()),
+                observation_path=observation_path,
+                expected_slow_energy_per_charge_v=5.375,
+                expected_target_k=24.5,
+                expected_accelerator_y_anchor_mm=-45.0,
+            )
+            with patch(
+                "projects.parallel_mirror_dual_stripe_mr_tof.analysis."
+                "two_prism_segmented_coverage.axial_potential_v",
+                return_value=0.25,
+            ):
+                result = validate_accelerator_exit_source_binding(**arguments)
+                self.assertEqual(result["pair_identity"]["target_drift_period_ratio"], 24.5)
+                self.assertEqual(
+                    result["exit_slow_energy_diagnostic"],
+                    {
+                        "measured_exit_slow_kinetic_energy_per_charge_v": 2.75,
+                        "theoretical_release_slow_energy_seed_per_charge_v": 5.375,
+                        "measured_exit_minus_release_seed_v": -2.625,
+                        "qualification": "diagnostic_only__no_user_authorized_acceptance_tolerance",
+                    },
+                )
+                receipt["source_slow_kinetic_energy_per_charge_v"] = 4.961
+                receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+                handoff["input"]["accelerator_exit_observation"]["source_receipt_sha256"] = file_sha256(receipt_path).lower()
+                with self.assertRaisesRegex(CandidateContractError, "K/slow-energy authority"):
+                    validate_accelerator_exit_source_binding(**arguments)
 
 
 if __name__ == "__main__":

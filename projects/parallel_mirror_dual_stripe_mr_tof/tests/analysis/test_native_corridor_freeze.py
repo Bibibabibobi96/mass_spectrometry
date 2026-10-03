@@ -18,6 +18,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_freeze
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry import (
     build_native_corridor_gem,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_identity import (
+    build_native_corridor_identity,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
@@ -50,8 +53,6 @@ class NativeCorridorFreezeTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        self.source_payload = self.root / "source_payload"
-        self.source_payload.mkdir()
         self.physical_ids = sorted(
             int(physical)
             for physical, local in self.canonical_plan[
@@ -59,22 +60,10 @@ class NativeCorridorFreezeTest(unittest.TestCase):
             ].items()
             if int(local) > 0
         )
-        self.basis_paths = []
-        for identifier in self.physical_ids:
-            path = self.source_payload / f"mrtof_analyzer.response{identifier}.pa"
-            path.write_bytes((f"basis-{identifier}" * 3).encode("ascii"))
-            self.basis_paths.append(path)
         self.coarse_payload = self.root / "coarse_payload"
         self.coarse_payload.mkdir()
         self.coarse_raw = self.coarse_payload / "mrtof_analyzer.pa#"
         self.coarse_raw.write_bytes(b"coarse-raw-fixture")
-        source_publication = publish_pa_family_cache(
-            self.root / "source_cache",
-            _identity("source"),
-            self.source_payload,
-            [path.name for path in self.basis_paths],
-            recovery_policy="none",
-        )
         coarse_publication = publish_pa_family_cache(
             self.root / "coarse_cache",
             _identity("coarse"),
@@ -82,12 +71,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
             [self.coarse_raw.name],
             recovery_policy="none",
         )
-        self.source_manifest = source_publication.generation_directory / "cache_manifest.json"
-        self.initial_source_manifest = self.source_manifest
         self.coarse_manifest = coarse_publication.generation_directory / "cache_manifest.json"
-        self.basis_paths = [
-            source_publication.generation_directory / path.name for path in self.basis_paths
-        ]
         self.coarse_raw = coarse_publication.generation_directory / self.coarse_raw.name
         self.simion = self.root / "simion.exe"
         self.simion.write_bytes(b"synthetic-simion")
@@ -157,7 +141,6 @@ class NativeCorridorFreezeTest(unittest.TestCase):
         ):
             return freeze_native_corridor_inputs(
                 contract_path=CONTRACT,
-                source_generation_manifest=self.source_manifest,
                 coarse_generation_manifest=self.coarse_manifest,
                 simion_executable=self.simion,
                 simion_release="SIMION fixture",
@@ -190,6 +173,28 @@ class NativeCorridorFreezeTest(unittest.TestCase):
         self.assertEqual(len(recipe["response_recipes"]), 8)
         self.assertEqual(recipe["response_recipes"][0]["physical_ids"], [2, 7])
         self.assertEqual(recipe["response_recipes"][-1]["physical_ids"], [17])
+        self.assertEqual(
+            recipe["response_recipes"][0]["scratch_basis_names"],
+            ["mrtof_analyzer.pa2", "mrtof_analyzer.pa7"],
+        )
+        self.assertNotIn("source_generation_identity", recipe)
+        self.assertEqual(
+            set(manifest["inputs"]),
+            {
+                "baseline_contract",
+                "canonical_gem",
+                "simion_identity",
+                "coarse_raw_generation",
+            },
+        )
+        identity = json.loads((output / FROZEN_NAMES[1]).read_text(encoding="utf-8"))
+        self.assertIn(
+            "physical_basis_builder_sha256", identity["builder_identity"]
+        )
+        self.assertNotIn(
+            "source_generation",
+            identity["refine_policy"]["response_recipe_identity"],
+        )
 
     def test_freeze_never_hashes_large_pa_payloads(self) -> None:
         from common.simion import pa_family_cache as cache_module
@@ -213,7 +218,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
             result = self._freeze()
         self.assertEqual(result["disposition"], "published")
 
-    def _replace_source_generation(self, names: list[str]) -> None:
+    def _replace_coarse_generation(self, names: list[str]) -> None:
         payload = self.root / ("variant_" + str(len(list(self.root.glob("variant_*")))))
         payload.mkdir()
         for name in names:
@@ -225,22 +230,41 @@ class NativeCorridorFreezeTest(unittest.TestCase):
             names,
             recovery_policy="none",
         )
-        self.source_manifest = publication.generation_directory / "cache_manifest.json"
+        self.coarse_manifest = publication.generation_directory / "cache_manifest.json"
 
-    def test_missing_extra_and_wrong_source_response_ids_fail(self) -> None:
-        canonical_names = [path.name for path in self.basis_paths]
+    def test_missing_extra_and_wrong_coarse_members_fail(self) -> None:
         cases = (
-            (canonical_names[:-1], "missing="),
-            (canonical_names + ["mrtof_analyzer.response20.pa"], "extra="),
-            (canonical_names[:-1] + ["wrong-name.pa"], "non-response member"),
+            (["mrtof_analyzer.pa#", "extra.pa"], "coarse generation must contain only"),
+            (["wrong-name.pa"], "coarse generation must contain only"),
         )
         for index, (names, message) in enumerate(cases):
             with self.subTest(case=index):
-                self._replace_source_generation(names)
+                self._replace_coarse_generation(names)
                 _, output = self._governed_output()
                 with self.assertRaisesRegex(CandidateContractError, message):
                     self._freeze(output)
                 self.assertFalse(output.exists())
+
+    def test_identity_rejects_physical_groups_that_differ_from_plan(self) -> None:
+        _, output = self._governed_output()
+        self._freeze(output)
+        recipe_path = output / FROZEN_NAMES[2]
+        recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+        recipe["response_recipes"][0]["physical_ids"] = [2]
+        recipe["response_recipes"][0]["scratch_basis_names"] = [
+            "mrtof_analyzer.pa2"
+        ]
+        recipe_path.chmod(recipe_path.stat().st_mode | stat.S_IWRITE)
+        recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
+        with self.assertRaisesRegex(CandidateContractError, "groups differ"):
+            build_native_corridor_identity(
+                CONTRACT,
+                self.gem,
+                self.simion,
+                "SIMION fixture",
+                recipe_path,
+                self.coarse_raw,
+            )
 
     def test_existing_nonidentical_freeze_fails_closed(self) -> None:
         _, output = self._governed_output()
@@ -270,11 +294,12 @@ class NativeCorridorFreezeTest(unittest.TestCase):
 
     def test_failed_attempt_leaves_no_output_and_replay_publishes_once(self) -> None:
         _, output = self._governed_output()
-        self._replace_source_generation(["wrong-name.pa"])
-        with self.assertRaisesRegex(CandidateContractError, "non-response member"):
+        original_manifest = self.coarse_manifest
+        self._replace_coarse_generation(["wrong-name.pa"])
+        with self.assertRaisesRegex(CandidateContractError, "coarse generation must contain only"):
             self._freeze(output)
         self.assertFalse(output.exists())
-        self.source_manifest = self.initial_source_manifest
+        self.coarse_manifest = original_manifest
         first = self._freeze(output)
         second = self._freeze(output)
         self.assertEqual(first["disposition"], "published")

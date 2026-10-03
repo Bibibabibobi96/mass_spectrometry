@@ -128,6 +128,17 @@ owner 先登记该规范，等待所有数据成员齐全，再在锁内逐成�
 writer 只复用本次内存 inventory，最后仅计算小 receipt 的哈希并联合封存。源映射必须属于该 family。
 相同规范或普通 advance 均可重放已登记事务；已经封存时只核对元数据，不再次扫描 PA。
 规范变化、已有未归属 receipt 或失败的写入均不能发布；未封存的中断写入由 owner 按原规范重建。
+
+[`native_fast_adjust_runtime_support.ps1`](native_fast_adjust_runtime_support.ps1)和
+[`assemble_native_fast_adjust_family.lua`](assemble_native_fast_adjust_family.lua)把已发布 raw `.pa#` 与上述
+standalone 响应重组为一套受管、只读的私有原生 Fast Adjust family。控制器只执行一次`solutions={0}`；响应
+逐个从 standalone `.pa` 复制到全新`.paN`对象，不再次Refine，也不打开已发布generation中的原生`.paN`。
+首次构造核对generation身份及小型response receipt字节；PA载荷沿现有短副本记录核对，不额外扫描整库。
+同一场身份的后续K、电压、粒子源、TE1和GUI只复用producer-owned checkpoint，不按trial重复重组。
+该边界已由 OA provider `20261003_152000__sim__simion__mrtof-oa-private-runtime-provider-r04` 与 MRTOF
+safe-exit `20261003_153100__sim__simion__mrtof-oa-private-runtime-safe-exit-n100` 真实贯通：后者复用既有
+checkpoint、无 PA Refine 或全族复制，100/100 粒子到达声明的加速器几何出口。该证据只验证运行时复用与
+出口传输，不授予下游整机分辨率资格。
 未传入此选项且未登记规范的既有事务行为不变；单独 receipt writer 继续支持独立构建调用。
 `advance-transaction`返回`build / verify / complete`之一，以及确定的transaction、build与scratch路径；验证完成时
 追加`--verification-evidence <json>`，昂贵长期资产再追加`--published-pin-reason <reason>`。`materialize`使用
@@ -145,6 +156,8 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 
 局部Dirichlet PA使用
 [`build_dirichlet_patch_basis.lua`](build_dirichlet_patch_basis.lua)从一个或多个已解父basis复制六面边界响应。
+父basis参数既可写成单一路径，也可写成 `PATH,COEFFICIENT|...` 的线性组合；系数由调用方已经冻结的
+工作电压提供，构建器只做同一点电势叠加，不推导电压或增加响应身份。
 局部活动实体必须与父basis使用同一激励归一化；构建器从父PA的非零实体节点读取并交叉核对该值，不假定
 `1 V`或`10000 V`。[`measure_pa_basis_voltage.lua`](measure_pa_basis_voltage.lua)则用raw PA的电极ID把真实
 几何实体与同样标为physical的Dirichlet边界节点区分开，供运行证据记录归一化。
@@ -222,7 +235,7 @@ surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SI
 | API | 输入与职责 |
 |---|---|
 | `New-ShortPaCopy -Source <PA> -Destination <short.pa> -ExpectedBytes <n> -ExpectedSha256 <sha>` | 持有禁止写入/删除/替换源文件的句柄并建立目标不存在的独立普通副本；拒绝 `.paN` 响应成员。Windows 大 PA 使用 `robocopy /J`，以私有目标的长度／SHA-256直接核对 manifest，不再用可能滞后的缓冲源视图否决正确落盘字节；较小文件仍核对同一受护源流和目标 |
-| `Protect-ImmutablePaSource ...` / `Unprotect-*` | 为确需直接只读检查的 immutable 源建立进程期 `FileShare.Read` 保护；大 PA 直接无缓冲读取并核对 manifest，不建立额外 PA 探针。它不是把公共 cache 路径交给 SIMION 的许可 |
+| `Protect-ImmutablePaSource ...` / `Unprotect-*` | 为确需直接只读消费的 immutable 源建立进程期 `FileShare.Read` 保护；大 PA 首次直接无缓冲读取并核对 manifest，不建立额外 PA 探针，同一进程后续复用同一保护。只有已经确认不在 Fast Adjust 后执行 `wb:save()` 等写操作的加载／飞行路径，才可把受护源直接交给 SIMION；存在明确写入路径时仍使用一次性私有副本。 |
 | `Remove-ShortPaCopyDirectory -Path <directory>` | 仅清理系统临时目录下匹配前缀的已登记独立副本并释放源句柄；默认前缀为 `simion_pa_links_` |
 
 `Get-ImmutablePaSourceVerificationSha256` 的大文件路径在源保护句柄持续持有期间，从仓库根通过
@@ -343,7 +356,9 @@ parity损坏、pointer并发漂移或新generation任一验证失败均保持旧
 解集合，不能复用同一内存画像。该字段只区分实际加载行为，不改变 PA 缓存身份或资源预算公式。
 
 完全相同的历史数值身份可直接复用单进程保守峰值并跳过观察。没有历史时，首个正式批次取
-`ceil(N/min(N,10))`个粒子；它最多观察45秒但始终继续运行，若提前自然完成也直接保留结果。实测后按CPU
+`ceil(N/min(N,10))`个粒子；它最多观察45秒但始终继续运行，若提前自然完成也直接保留结果。内存使用
+整个窗口的进程树峰值；CPU 使用最后最多10秒的中位持续占用，并另记窗口峰值，避免 PA 加载或
+Fast Adjust 的短时多核峰值把随后长时间单核飞行误判为单路。若批次在观察窗口内自然完成，则 CPU 仍保守使用峰值。实测后按CPU
 `floor((95%-后台占用)/max(10%,单进程实测))`和内存
 `floor((当前可用内存-1 GiB)/单进程安全预算)`的较小值确定最终并发。Windows 设置页虽显示为
 “GB”，但本公共合同按其二进制容量语义明确记为`GiB = 1024³ bytes`，避免歧义。首次正式观测与精确历史画像

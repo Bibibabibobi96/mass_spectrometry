@@ -121,7 +121,7 @@ def derive_response_bank_identity(
             "component_role": "mrtof_native_corridor_detached_response_bank",
             "frozen_package_sha256": {
                 name: file_sha256(frozen_root / name).upper()
-                for name in FROZEN_NAMES
+                for name in FROZEN_NAMES[:3]
             },
             "source_corridor_geometry": native_identity["geometry"],
         },

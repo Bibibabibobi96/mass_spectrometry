@@ -147,7 +147,10 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
     @staticmethod
     def _contract():
         path = Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json"
-        return json.loads(path.read_text(encoding="utf-8-sig"))
+        contract = json.loads(path.read_text(encoding="utf-8-sig"))
+        # Synthetic frozen trials below deliberately describe K=25.5.
+        contract["nominal"]["target_drift_period_ratio"] = 25.5
+        return contract
 
     @staticmethod
     def _write_trial(folder, trial):
@@ -202,9 +205,10 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
         self.assertEqual(controls["lower_bounds_v"][0], -4372.0)
         self.assertLess(controls["upper_bounds_v"][1], 4272.0)
         self.assertEqual(controls["parameter_scales_v"], [25, 50, 190, 190])
+        np.testing.assert_allclose(controls["maximum_abs_step_v"], [0.25, 0.5, 1.9, 1.9])
         self.assertAlmostEqual(controls["residual_scales"][1], 0.000174722, places=8)
         missing = copy.deepcopy(contract)
-        del missing["downstream_fixed_grid_workpoint_profile"]["maximum_abs_step_v"]
+        del missing["downstream_fixed_grid_workpoint_profile"]["jacobian_relative_step_tiers"]
         with self.assertRaises(KeyError):
             resolve_numerics(missing, baseline)
 

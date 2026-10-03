@@ -77,27 +77,40 @@ def materialize_accelerator_exit_transport_source(
         observation = json.loads(observation_path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise CandidateContractError("accelerator-exit observation is not readable JSON") from error
-    if (
-        not isinstance(observation, dict)
-        or observation.get("schema_version") != 1
-        or observation.get("role") != "mrtof_accelerator_exit_observation"
-        or observation.get("status") != "observed"
-        or observation.get("qualification") != "source_to_accelerator_exit_diagnostic_only"
-        or observation.get("coordinate_frame") != "project"
-    ):
+    if not isinstance(observation, dict) or observation.get("schema_version") != 1:
         raise CandidateContractError("accelerator-exit observation identity is invalid")
-
-    inputs = observation.get("inputs")
-    if not isinstance(inputs, dict) or set(inputs) != {
-        "log_sha256", "source_receipt_sha256",
-    }:
-        raise CandidateContractError("accelerator-exit observation input identity is incomplete")
-    log_sha = _required_sha256(inputs["log_sha256"], "accelerator-exit log SHA-256")
-    source_sha = _required_sha256(
-        inputs["source_receipt_sha256"], "accelerator-exit source-receipt SHA-256",
-    )
-
-    safe_exit = observation.get("safe_exit_state")
+    if observation.get("role") == "mrtof_accelerator_exit_observation":
+        if (
+            observation.get("status") != "observed"
+            or observation.get("qualification") != "source_to_accelerator_exit_diagnostic_only"
+            or observation.get("coordinate_frame") != "project"
+        ):
+            raise CandidateContractError("accelerator-exit observation identity is invalid")
+        inputs = observation.get("inputs")
+        if not isinstance(inputs, dict) or set(inputs) != {
+            "log_sha256", "source_receipt_sha256",
+        }:
+            raise CandidateContractError("accelerator-exit observation input identity is incomplete")
+        log_sha = _required_sha256(inputs["log_sha256"], "accelerator-exit log SHA-256")
+        source_sha = _required_sha256(
+            inputs["source_receipt_sha256"], "accelerator-exit source-receipt SHA-256",
+        )
+        safe_exit = observation.get("safe_exit_state")
+    elif observation.get("role") == "mrtof_finite_3d_two_prism_trial_observation":
+        nested = observation.get("accelerator_safe_exit_observation")
+        if not isinstance(nested, dict) or nested.get("status") != "observed":
+            raise CandidateContractError("current trial lacks one valid accelerator safe exit")
+        log_identity = nested.get("input_log")
+        trial_identity = nested.get("trial_identity")
+        if not isinstance(log_identity, dict) or not isinstance(trial_identity, dict):
+            raise CandidateContractError("current trial safe-exit identity is incomplete")
+        log_sha = _required_sha256(log_identity.get("sha256"), "accelerator-exit log SHA-256")
+        source_sha = _required_sha256(
+            trial_identity.get("sha256"), "accelerator-exit trial-receipt SHA-256",
+        )
+        safe_exit = nested.get("state")
+    else:
+        raise CandidateContractError("accelerator-exit observation identity is invalid")
     required_state_fields = {
         "ion", "time_us", "position_mm", "velocity_mm_per_us", "particle_mass_th",
         "charge_state", "kinetic_energy_ev", "from_instance", "to_instance",

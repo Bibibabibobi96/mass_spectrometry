@@ -22,6 +22,22 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class NativeCorridorResponseBankTest(unittest.TestCase):
+    def test_empty_transaction_payload_counts_as_zero_bytes(self) -> None:
+        source = (PROJECT / 'simion/run_native_corridor_response_bank.ps1').read_text(encoding='utf-8-sig')
+        function = source.split('function Get-ExistingTransactionPayloadBytes {', 1)[1].split('\nfunction ', 1)[0]
+        with TemporaryDirectory() as temporary:
+            payload = Path(temporary) / '.transactions' / ('A' * 64) / 'payload'
+            payload.mkdir(parents=True)
+            script = 'function Get-ExistingTransactionPayloadBytes {' + function + '\n'
+            script += f"$cacheRoot='{Path(temporary).as_posix()}';"
+            script += "$value=Get-ExistingTransactionPayloadBytes -CacheKey ('A'*64);if($value-ne0){exit 3};'PASS'"
+            result = subprocess.run(
+                ['pwsh', '-NoProfile', '-NonInteractive', '-Command', script],
+                cwd=PROJECT, capture_output=True, text=True, timeout=30,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('PASS', result.stdout)
+
     def test_published_correction_request_preserves_frozen_identity_on_retry(self) -> None:
         script = r'''
 param($Source,$Root)
@@ -102,6 +118,11 @@ Write-Output 'CONTINUATION_FIXTURE=PASS'
         self.assertEqual(names[-1], RECEIPT_NAME)
         self.assertNotIn("mrtof_analyzer_corridor.pa0", names)
 
+    def test_cache_identity_excludes_run_specific_freeze_manifest_hash(self) -> None:
+        source = (PROJECT / 'analysis/native_corridor_response_bank.py').read_text(encoding='utf-8-sig')
+        self.assertIn('for name in FROZEN_NAMES[:3]', source)
+        self.assertNotIn('for name in FROZEN_NAMES\n', source)
+
     def test_private_receipt_selects_only_detached_runtime_inputs(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -118,6 +139,9 @@ Write-Output 'CONTINUATION_FIXTURE=PASS'
     def test_runner_exports_before_receipt_and_never_materializes_published_family(self) -> None:
         source = (PROJECT / "simion" / "run_native_corridor_response_bank.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("-InternalResponseId $ResponseId", source)
+        self.assertIn("native_corridor_response_{0:D2}.log", source)
+        self.assertIn("Tee-Object -FilePath $responseLog", source)
+        self.assertNotIn("nativeCorridorDispatchArtifacts", source)
         self.assertIn("Current corridor compiler output differs from the frozen native geometry identity", source)
         self.assertIn("export_standalone_pa.lua", source)
         self.assertIn("--write-receipt-directory", source)
@@ -135,8 +159,14 @@ Write-Output 'CONTINUATION_FIXTURE=PASS'
         self.assertIn("$managedFrozen=New-ManagedFrozenInputs -Package $package", source)
         self.assertLess(source.index("$package=New-RunPackage"), source.index("$managedFrozen=New-ManagedFrozenInputs"))
         self.assertIn("native_corridor_freeze_manifest=$freezeManifest", source)
-        self.assertIn("native_corridor_freeze_source_manifest=[string]$managedFrozen.source_freeze_manifest", source)
+        self.assertIn("coarse_raw_generation_manifest=$directCoarseManifest", source)
+        self.assertIn("Provide exactly one frozen input directory or coarse raw generation manifest", source)
         self.assertIn("+$frozenOutputs+$continuationOutputs", source)
+        self.assertNotIn("--source-generation-manifest", source)
+        self.assertIn("-InternalCoarseBasisDirectory $CoarseBasisDirectory", source)
+        self.assertIn("$coarseBasisDirectory=[string]$coarseBank.directory", source)
+        self.assertIn("Ensure-CoarseBasisBank", source)
+        self.assertIn("native_corridor_coarse_basis_bank", source)
 
     def test_private_verifier_requires_eight_native_and_detached_pairs(self) -> None:
         source = (PROJECT / "simion" / "verify_native_corridor_response_bank.lua").read_text(encoding="utf-8-sig")

@@ -1,7 +1,6 @@
 """Contract tests for MR's narrow request into the accelerator provider."""
 from __future__ import annotations
 
-import json
 import unittest
 from pathlib import Path
 
@@ -28,11 +27,12 @@ class AcceleratorComponentProviderAdapterTests(unittest.TestCase):
         runner = (self.project / "simion" / "run_accelerator_component_provider.ps1").read_text(encoding="utf-8")
 
         self.assertIn("run_component_focus_workflow.ps1", runner)
-        self.assertIn("& $provider -RunId $RunId -RequestPath", runner)
-        self.assertIn("-ReleaseSpecPath (Resolve-Path -LiteralPath $ReleaseSpecPath).Path", runner)
+        self.assertIn("& $provider @arguments", runner)
+        self.assertIn("ReleaseSpecPath=(Resolve-Path -LiteralPath $ReleaseSpecPath).Path", runner)
+        self.assertIn("$arguments.RuntimeCheckpointPath=", runner)
         self.assertNotIn("@providerArgs", runner)
-        self.assertIn("-RequestPath", runner)
-        self.assertIn("-ReleaseSpecPath", runner)
+        self.assertIn("RequestPath=(Resolve-Path -LiteralPath $RequestPath).Path", runner)
+        self.assertIn("ReleaseSpecPath=(Resolve-Path -LiteralPath $ReleaseSpecPath).Path", runner)
 
 
 if __name__ == "__main__":

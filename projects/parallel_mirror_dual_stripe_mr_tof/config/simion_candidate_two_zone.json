@@ -1,6 +1,19 @@
 {
   "schema_version": 1,
   "project_id": "parallel_mirror_dual_stripe_mr_tof",
+  "peak_analysis": {
+    "method_id": "common_gaussian_kde_time_v1",
+    "resolution_definition": "mean_tof_us/(2*direct_fwhm_tof_us)",
+    "time_basis": "instrument_arrival_us_from_common_zero_birth",
+    "settings": {
+      "grid_points": 4001,
+      "bandwidth_multiplier": 1.06,
+      "mode_threshold_fraction": 0.1,
+      "standardized_grid_min": -6.0,
+      "standardized_grid_max": 6.0,
+      "standardized_grid_points": 2001
+    }
+  },
   "status": "candidate_hardware_geometry__theory_operating_point_pending",
   "simion_geometry_release_status": "cad_topology_and_top_level_pose_qualified",
   "geometry_authority": {
@@ -63,7 +76,7 @@
   },
   "nominal": {
     "energy_per_charge_v": 4000,
-    "target_drift_period_ratio": 25.5,
+    "target_drift_period_ratio": 24.5,
     "fast_path_symmetry": "opposite_mirror_turn__z_reflected_nonoverlapping"
   },
   "downstream_fixed_grid_workpoint_profile": {
@@ -74,11 +87,16 @@
     "angle_residual_scale_degrees": 0.01,
     "slow_turn_residual_scale_mm": 1.0,
     "return_phase_residual_scale_mm": 1.0,
-    "maximum_abs_step_v": [2.0, 2.0, 2.0, 2.0],
-    "forward_stencil_steps_v": [0.1, 0.1, 0.1, 0.1],
+    "jacobian_relative_step_tiers": {
+      "coarse": 0.01,
+      "medium": 0.0025,
+      "fine": 0.0005,
+      "medium_maximum_scaled_residual": 10.0,
+      "fine_maximum_scaled_residual": 2.0
+    },
     "automatic_iteration": {
       "schema_version": 1,
-      "maximum_iterations": 8,
+      "maximum_iterations": 16,
       "damping_factor": 0.5,
       "minimum_step_linf_v": 1e-06,
       "minimum_relative_improvement": 0.01,
@@ -93,7 +111,7 @@
         "Stripe_target_phase_y_minus_origin_mm": 0.1
       }
     },
-    "semantics": "One local forward-Jacobian proposal for S1/S2/P1/P2 in that order. Stripe bounds reuse the seed search envelope at the selected axial energy: [-energy,-minimum_bias] and [minimum_bias,nextafter(energy-half_window,-infinity)], preserving the current negative/positive branch. Prism bounds reuse the existing initial discovery window. Parameter scales are absolute baseline voltages. The tangent-ratio scale is derived from the angle scale around the frozen target angle; the two 1-mm downstream scales remain numerical optimization controls. The automatic loop converts the tangent-ratio residual to degrees before applying its named acceptance tolerance; the other three tolerances are in millimetres. It first repairs P1/P2 when their two conditions fail, otherwise changes only S1/S2, and applies the declared damping and existing 2-V trust limits. Rank tolerance is owned by dual_stripe_l0.determination_numerics. Every accepted point and every new step requires a real trajectory on reused response fields; no Refine or PA geometry rebuild is implied."
+    "semantics": "One local forward-Jacobian proposal for S1/S2/P1/P2 in that order. Finite differences and trust limits share the contract-owned coarse, medium and fine relative tiers; the current maximum scaled residual selects the tier. Each axis limit is the selected relative tier times max(abs(current voltage),1 V), so Stripe and Prism use one percentage rule without fixed-voltage steps. Stripe bounds reuse the seed search envelope at the selected axial energy: [-energy,-minimum_bias] and [minimum_bias,nextafter(energy-half_window,-infinity)], preserving the current negative/positive branch. Prism bounds reuse the existing initial discovery window. Parameter scales are absolute baseline voltages. The tangent-ratio scale is derived from the angle scale around the frozen target angle; the two 1-mm downstream scales remain numerical optimization controls. The automatic loop converts the tangent-ratio residual to degrees before applying its named acceptance tolerance; the other three tolerances are in millimetres. It first repairs P1/P2 when their two conditions fail, otherwise changes only S1/S2. Rank tolerance is owned by dual_stripe_l0.determination_numerics. Every accepted point and every new step requires a real trajectory on reused response fields; no Refine or PA geometry rebuild is implied."
   },
   "accelerator_energy_contract": {
     "pre_acceleration_kinetic_energy_per_charge_v": 5,
@@ -1776,7 +1794,7 @@
         "mechanical_component": "grounded_1_single_frame",
         "topology": "single_continuous_frame_with_rectangular_slots",
         "x_mm": [
-          -24,
+          -12,
           12
         ],
         "outer_polygon_yz_mm": [
@@ -1826,7 +1844,7 @@
         ],
         "cad_negative_inner_mirror_face_z_mm": -102,
         "cad_required_mirror_clearance_mm": 2,
-        "cad_evidence": "Top-level composed CAD pose under the unified v2 frame: grounded-1 is one continuous body x=[-24,12], y=[-77,-33], z=[-100,-30] mm. Its local x=[-20,20] channel maps to project y=[-75,-35] mm, so the two 2-mm end lands at y=[-77,-75] and [-35,-33] are retained automatically by subtracting this finite rectangular slot from the one body; no bridge solids are added.",
+        "cad_evidence": "The CAD main frame is x=[-12,12]. The one-sided x=[-24,-12] mounting foot is intentionally retired from the electrostatic design because it is outside the beam frame and breaks x=0 field symmetry; the finite beam-channel end lands remain unchanged.",
         "body_sections": [
           {
             "x_mm": [
@@ -1851,46 +1869,6 @@
                 -30
               ]
             ]
-          },
-          {
-            "x_mm": [
-              -24,
-              -12
-            ],
-            "outer_polygon_yz_mm": [
-              [
-                -33.0,
-                -100
-              ],
-              [
-                -70.0,
-                -100
-              ],
-              [
-                -70.0,
-                -30
-              ],
-              [
-                -33.0,
-                -30
-              ],
-              [
-                -33.0,
-                -53
-              ],
-              [
-                -52.0,
-                -53
-              ],
-              [
-                -52.0,
-                -77
-              ],
-              [
-                -33.0,
-                -77
-              ]
-            ]
           }
         ],
         "cad_body_topology_identity": {
@@ -1907,7 +1885,7 @@
         "mechanical_component": "grounded_2_single_cross_frame",
         "topology": "single_continuous_frame_with_cross_aperture",
         "x_mm": [
-          -24,
+          -12,
           12
         ],
         "outer_polygon_yz_mm": [
@@ -1965,7 +1943,7 @@
           ],
           "y_mm": [
             -28.0,
-            -6.0
+            -4.0
           ],
           "z_mm": [
             -40,
@@ -1975,9 +1953,9 @@
             57,
             57
           ],
-          "stripe_side_wall_y_mm": 3,
+          "stripe_side_wall_y_mm": 1,
           "far_stripe_side_wall_y_mm": 4,
-          "cad_measurement": "user measurement 2026-09-03 transformed into the unified v2 frame: 4-mm x width, 80-mm z opening with 57-mm end lands, 22-mm y opening; from the far Stripe side y=-32, leave 4 mm then open y=-28..-6, leaving 3 mm to the effective Stripe-side y=-3 frame edge.",
+          "cad_measurement": "The 2026-09-03 CAD measurement supplied the original 4 x 22 x 80 mm opening with a 3-mm Stripe-side wall. The active symmetric candidate intentionally thins only that wall to 1 mm, extending the y opening to -28..-4 while retaining the measured 4-mm far-side wall, 4-mm x channel, 80-mm z opening, and 57-mm end lands. This is a design change, not a CAD-copy claim.",
           "boolean_operation": "union"
         },
         "body_sections": [
@@ -2018,54 +1996,6 @@
               [
                 -3.0,
                 -21
-              ]
-            ]
-          },
-          {
-            "x_mm": [
-              -24,
-              -12
-            ],
-            "outer_polygon_yz_mm": [
-              [
-                -3.0,
-                -97
-              ],
-              [
-                -32.0,
-                -97
-              ],
-              [
-                -32.0,
-                -57
-              ],
-              [
-                -3.0,
-                -57
-              ]
-            ]
-          },
-          {
-            "x_mm": [
-              -24,
-              -12
-            ],
-            "outer_polygon_yz_mm": [
-              [
-                -3.0,
-                57
-              ],
-              [
-                -32.0,
-                57
-              ],
-              [
-                -32.0,
-                97
-              ],
-              [
-                -3.0,
-                97
               ]
             ]
           }
@@ -2218,7 +2148,7 @@
     ],
     "focus_y_anchor": {
       "method": "configurable_project_y_with_resolved_clearance_gate",
-      "project_y_mm": -45.0,
+      "project_y_mm": -50.0,
       "semantics": "MR assembly variable. Full resolved geometry must retain the declared clearance from the Prism2 grounded shield and must not overlap the Stripe assembly; changing it creates a new frozen geometry identity."
     },
     "focus_plane_constraint": "z=0",
@@ -2424,9 +2354,11 @@
       }
     },
     "native_corridor": {
-      "mesh_mm_per_gu": [0.25, 0.25, 0.25],
+      "mesh_mm_per_gu": [0.25, 0.2, 0.2],
+      "surface_mode": "fractional",
       "margin_mm": [5.0, 5.0, 5.0],
-      "x_envelope_rule": "mirror_slot_transverse_half_width_plus_margin",
+      "x_envelope_rule": "x_mirrored_positive_half_beam_slot_and_prism_ground_shield_extent_plus_margin",
+      "mirror_axes": ["x"],
       "yz_envelope_geometry_roles": ["mirror_electrodes", "mirror_ground_shields", "mirror_e_closures"],
       "storage_bytes_per_grid_point_estimate": 8,
       "response_voltage_groups": [[2, 7], [3, 8], [4, 9], [5, 10], [11, 12], [13, 14], [16], [17]],

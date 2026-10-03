@@ -6,10 +6,13 @@ import unittest
 from pathlib import Path
 
 from common.ion_release.cylinder import (
+    apply_controlled_slow_energy_pair,
     GAUSSIAN_STRATEGY,
     HALTON_STRATEGY,
     ROLE,
+    generate_center_axis_pair_halton_cylinder_phase_space,
     generate_center_first_halton_cylinder_phase_space,
+    generate_halton_cylinder_phase_space,
     generate_cylinder_release_states,
     validate_cylinder_release_spec,
 )
@@ -86,6 +89,101 @@ class CylinderReleaseTests(unittest.TestCase):
         })
         self.assertNotEqual(small[1]["position_mm"][0], 1.0)
         self.assertNotEqual(small[1]["position_mm"][1], 2.0)
+
+    def test_volume_halton_has_no_forced_center_and_keeps_prefix(self) -> None:
+        arguments = {
+            "center_mm": [1.0, 2.0, 3.0], "transverse_axes": (1, 0), "axis": 2,
+            "radius_mm": 1.0, "height_mm": 1.0,
+            "kinetic_energy_center_ev": 5.0, "kinetic_energy_full_width_ev": 0.2,
+            "nominal_direction": [0.0, 1.0, 0.0], "angular_full_width_deg": 0.4,
+        }
+        small = generate_halton_cylinder_phase_space(particle_count=100, **arguments)
+        large = generate_halton_cylinder_phase_space(particle_count=1000, **arguments)
+        center_first = generate_center_first_halton_cylinder_phase_space(
+            particle_count=101, **arguments,
+        )
+        self.assertEqual(small, large[:100])
+        self.assertEqual(small[0]["position_mm"], center_first[1]["position_mm"])
+        self.assertNotEqual(small[0]["position_mm"], [1.0, 2.0, 3.0])
+        self.assertEqual([row["particle_id"] for row in small], list(range(1, 101)))
+    def test_axis_pair_changes_only_one_coordinate_before_halton_tail(self) -> None:
+        arguments = {
+            "center_mm": [1.0, 2.0, 3.0], "transverse_axes": (0, 2), "axis": 1,
+            "controlled_axis": 2, "radius_mm": 0.5, "height_mm": 1.0,
+            "kinetic_energy_center_ev": 5.0, "kinetic_energy_full_width_ev": 0.2,
+            "nominal_direction": [0.0, 1.0, 0.0], "angular_full_width_deg": 0.4,
+        }
+        small = generate_center_axis_pair_halton_cylinder_phase_space(
+            particle_count=100, **arguments,
+        )
+        large = generate_center_axis_pair_halton_cylinder_phase_space(
+            particle_count=1000, **arguments,
+        )
+        self.assertEqual(small, large[:100])
+        self.assertEqual([row["position_mm"] for row in small[:3]], [
+            [1.0, 2.0, 3.0], [1.0, 2.0, 2.5], [1.0, 2.0, 3.5],
+        ])
+        for row in small[:3]:
+            self.assertEqual(row["kinetic_energy_ev"], 5.0)
+            self.assertEqual(row["direction"], [0.0, 1.0, 0.0])
+
+    def test_axis_pair_can_use_a_smaller_controlled_span_inside_the_volume(self) -> None:
+        samples = generate_center_axis_pair_halton_cylinder_phase_space(
+            particle_count=100,
+            center_mm=[1.0, 2.0, 3.0],
+            transverse_axes=(0, 2),
+            axis=1,
+            controlled_axis=2,
+            controlled_axis_half_span_mm=0.1,
+            radius_mm=0.5,
+            height_mm=1.0,
+            kinetic_energy_center_ev=5.0,
+            kinetic_energy_full_width_ev=0.2,
+            nominal_direction=[0.0, 1.0, 0.0],
+            angular_full_width_deg=0.4,
+        )
+        self.assertEqual(
+            [row["position_mm"] for row in samples[:3]],
+            [[1.0, 2.0, 3.0], [1.0, 2.0, 2.9], [1.0, 2.0, 3.1]],
+        )
+        with self.assertRaisesRegex(ValueError, "exceeds the cylinder envelope"):
+            generate_center_axis_pair_halton_cylinder_phase_space(
+                particle_count=100,
+                center_mm=[1.0, 2.0, 3.0],
+                transverse_axes=(0, 2),
+                axis=1,
+                controlled_axis=2,
+                controlled_axis_half_span_mm=0.6,
+                radius_mm=0.5,
+                height_mm=1.0,
+                kinetic_energy_center_ev=5.0,
+                kinetic_energy_full_width_ev=0.2,
+                nominal_direction=[0.0, 1.0, 0.0],
+                angular_full_width_deg=0.4,
+            )
+
+    def test_controlled_slow_energy_pair_changes_only_center_energy(self) -> None:
+        source = generate_center_first_halton_cylinder_phase_space(
+            particle_count=100,
+            center_mm=[1.0, 2.0, 3.0], transverse_axes=(0, 2), axis=1,
+            radius_mm=0.5, height_mm=1.0,
+            kinetic_energy_center_ev=5.0, kinetic_energy_full_width_ev=0.2,
+            nominal_direction=[0.0, 1.0, 0.0], angular_full_width_deg=0.4,
+        )
+
+        result = apply_controlled_slow_energy_pair(
+            source, charge_state=2, half_span_ev_per_charge=0.037,
+        )
+        self.assertEqual(result[0]["kinetic_energy_ev"], 5.0)
+        self.assertAlmostEqual(result[1]["kinetic_energy_ev"], 4.926)
+        self.assertAlmostEqual(result[2]["kinetic_energy_ev"], 5.074)
+        for row in result[:3]:
+            expected = dict(source[0])
+            expected["particle_id"] = row["particle_id"]
+            expected["kinetic_energy_ev"] = row["kinetic_energy_ev"]
+            self.assertEqual(row, expected)
+        self.assertEqual(result[3:], source[3:])
+        self.assertEqual(source[1]["particle_id"], 2)
 
     def test_gaussian_strategy_obeys_axis_and_volume_bounds(self) -> None:
         states = generate_cylinder_release_states(gaussian_spec())

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
 import hashlib
 import json
 import math
@@ -20,6 +21,10 @@ from common.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,
+)
+from projects.orthogonal_accelerator.analysis.component_focus_analysis import (
+    _component_energy_per_charge_v,
+    _target_axial_energy_per_charge_v,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
     resolve_drift_phase_contract,
@@ -38,6 +43,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight imp
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
     native_stripe_geometry_projection_sha256,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
+    resolve_accelerator_iob_origin,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
@@ -72,6 +80,21 @@ def _sha256(path: Path) -> str:
 
 
 _GLOBAL_PULSE_TIME_BASIS = "ion_time_of_flight_us_from_common_tob_zero_release"
+
+
+def _collision_geometry_projection(resolved: dict[str, Any]) -> dict[str, Any]:
+    """Freeze only the resolved solids needed to name terminal collisions."""
+    keys = (
+        "mirror_electrodes", "mirror_slot", "mirror_inner_shield_slot",
+        "mirror_ground_shields", "mirror_e_closures", "stripe_electrodes",
+        "stripe_slot", "central_ground_electrodes", "central_ground_slots",
+        "prism_electrodes", "prism_ground_shields",
+    )
+    return {
+        "schema_version": 1,
+        "mesh_mm_per_gu": 0.25,
+        **{key: copy.deepcopy(resolved[key]) for key in keys},
+    }
 
 
 def _apply_trajectory_step_scale(
@@ -133,6 +156,394 @@ def _accelerator_energy_binding(
         "applied_net_gain_parameter_v": applied,
         "target_axial_energy_per_charge_v": target,
         "finite_3d_gain_correction_v": correction,
+    }
+
+
+def _provider_exit_energy_contract(projection: dict[str, Any]) -> dict[str, Any]:
+    """Project only the OA component energy targets needed by MR diagnostics."""
+    release = projection.get("accepted_release")
+    acceptance = projection.get("provider_exit_energy_acceptance")
+    if not isinstance(release, dict) or not isinstance(acceptance, dict):
+        raise CandidateContractError("provider receipt lacks exit-energy acceptance")
+    center = acceptance.get("center_particle")
+    tolerances = acceptance.get("tolerances")
+    if acceptance.get("passed") is not True or not isinstance(center, dict) or not isinstance(tolerances, dict):
+        raise CandidateContractError("provider exit-energy acceptance is incomplete or failed")
+    targets = {
+        "Ex": _finite(
+            center.get("source_transverse_energy_per_charge_v"),
+            "provider target transverse energy",
+        ),
+        "Ey": _finite(
+            release.get("slow_energy_center_per_charge_v"),
+            "provider target slow energy",
+        ),
+        "Ez": _finite(
+            acceptance.get("target_axial_energy_per_charge_v"),
+            "provider target axial energy",
+        ),
+    }
+    limits = {
+        "Ex": _finite(
+            tolerances.get("maximum_exit_transverse_energy_error_per_charge_v"),
+            "provider transverse-energy tolerance",
+        ),
+        "Ey": _finite(
+            tolerances.get("maximum_exit_slow_energy_error_per_charge_v"),
+            "provider slow-energy tolerance",
+        ),
+        "Ez": _finite(
+            tolerances.get("maximum_exit_axial_energy_error_per_charge_v"),
+            "provider axial-energy tolerance",
+        ),
+    }
+    velocity_bias_tolerance = _finite(
+        tolerances.get("maximum_exit_transverse_velocity_bias_mm_per_us"),
+        "provider transverse-velocity bias tolerance",
+    )
+    if any(value < 0.0 for value in limits.values()) or velocity_bias_tolerance < 0.0:
+        raise CandidateContractError("provider exit-energy tolerances must be nonnegative")
+    expected_slow = _finite(
+        center.get("source_slow_energy_per_charge_v"),
+        "provider center source slow energy",
+    )
+    expected_axial = _finite(
+        center.get("expected_exit_axial_energy_per_charge_v"),
+        "provider center expected axial energy",
+    )
+    projection_axial = _finite(
+        projection.get("target_axial_energy_per_charge_v"),
+        "provider projection target axial energy",
+    )
+    if abs(expected_slow - targets["Ey"]) > 1e-9:
+        raise CandidateContractError("provider slow-energy targets differ")
+    if abs(expected_axial - targets["Ez"]) > 1e-9 or abs(projection_axial - targets["Ez"]) > 1e-9:
+        raise CandidateContractError("provider axial-energy targets differ")
+    return {
+        "targets_per_charge_v": targets,
+        "absolute_tolerances_per_charge_v": limits,
+        "maximum_exit_transverse_velocity_bias_mm_per_us": velocity_bias_tolerance,
+        "authority": "orthogonal_accelerator_provider_exit_energy_acceptance",
+    }
+
+
+def _source_transverse_reference(
+    *, bunch_source: dict[str, Any] | None, bunch_selection: dict[str, Any] | None,
+    mass_th: float, charge_state: int, slow_energy_per_charge_v: float,
+) -> dict[str, Any]:
+    """Freeze only source x/vx statistics required by the assembled safe-exit check."""
+    rows: list[tuple[int, float, float]] = []
+    if bunch_selection is not None:
+        for particle_id, state in zip(
+            bunch_selection["particle_ids"], bunch_selection["states"], strict=True,
+        ):
+            direction = state["direction_workbench"]
+            speed = math.sqrt(
+                2.0 * float(state["kinetic_energy_ev"]) * ELEMENTARY_CHARGE_C
+                / (float(state["mass_th"]) * AMU_KG)
+            ) / 1000.0
+            rows.append((int(particle_id), float(state["position_workbench_mm"][0]), speed * float(direction[0])))
+    elif bunch_source is not None:
+        with Path(bunch_source["state_table"]["path"]).open(
+            "r", encoding="utf-8", newline="",
+        ) as stream:
+            for row in csv.DictReader(stream):
+                speed = math.sqrt(
+                    2.0 * float(row["kinetic_energy_ev"]) * ELEMENTARY_CHARGE_C
+                    / (float(row["mass_th"]) * AMU_KG)
+                ) / 1000.0
+                rows.append((int(row["particle_id"]), float(row["x_mm"]), speed * float(row["direction_x"])))
+    else:
+        speed = math.sqrt(
+            2.0 * slow_energy_per_charge_v * abs(charge_state) * ELEMENTARY_CHARGE_C
+            / (mass_th * AMU_KG)
+        ) / 1000.0
+        rows.append((1, 0.0, speed * 0.0))
+    declared_center_particle_id: int | None = 1 if bunch_source is None else None
+    if bunch_source is not None and bunch_source.get("center_particle_state") is not None:
+        center_particle_id = bunch_source["center_particle_state"].get("particle_id")
+        if type(center_particle_id) is not int or center_particle_id <= 0:
+            raise CandidateContractError("bunch source center particle identity is invalid")
+        declared_center_particle_id = center_particle_id
+    center = (
+        next((row for row in rows if row[0] == declared_center_particle_id), None)
+        if declared_center_particle_id is not None else None
+    )
+    if not rows:
+        raise CandidateContractError("source transverse reference is empty")
+    return {
+        "particle_count": len(rows),
+        "center_particle_id": declared_center_particle_id if center is not None else None,
+        "center_x_mm": center[1] if center is not None else None,
+        "center_vx_mm_per_us": center[2] if center is not None else None,
+        "mean_x_mm": sum(row[1] for row in rows) / len(rows),
+        "mean_vx_mm_per_us": sum(row[2] for row in rows) / len(rows),
+    }
+
+
+def _accelerator_geometric_exit_reference(
+    *, contract: dict[str, Any], provider_plan: dict[str, Any],
+    resolved_campaign: dict[str, Any], bunch_source: dict[str, Any] | None,
+    bunch_selection: dict[str, Any] | None, mass_th: float, charge_state: int,
+    slow_energy_per_charge_v: float, focus_y_mm: float, release_z_mm: float,
+    source_y_offset_mm: float,
+) -> dict[str, Any]:
+    """Project the OA provider's per-particle geometric-exit targets into MR coordinates."""
+    provider_origin = resolve_accelerator_iob_origin(contract, provider_plan)
+    domain = provider_plan["numerical_domain"]
+    placement = provider_plan["requirements"]["placement"]
+    local_exit_z_mm = _finite(domain.get("local_exit_z_mm"), "provider local exit z")
+    global_exit_z_mm = _finite(placement.get("global_exit_z_mm"), "provider global exit z")
+    if not math.isclose(
+        provider_origin[2] + local_exit_z_mm,
+        global_exit_z_mm,
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ):
+        raise CandidateContractError("accelerator provider exit-plane mapping differs")
+    layout = provider_plan.get("layout")
+    if (
+        not isinstance(layout, dict)
+        or resolved_campaign.get("role") != "orthogonal_accelerator_component_focus_campaign"
+        or resolved_campaign.get("geometry_profile_id") != layout.get("geometry_profile_id")
+    ):
+        raise CandidateContractError("accelerator resolved campaign differs from the provider plan")
+    release_spec = resolved_campaign.get("release_spec")
+    species = release_spec.get("species") if isinstance(release_spec, dict) else None
+    if (
+        not isinstance(species, dict)
+        or _finite(species.get("mass_amu"), "provider release mass") != mass_th
+        or _finite(species.get("charge_state"), "provider release charge") != charge_state
+    ):
+        raise CandidateContractError("accelerator resolved campaign species differs from the MR source")
+    acceptance = resolved_campaign.get("acceptance")
+    if not isinstance(acceptance, dict):
+        raise CandidateContractError("accelerator resolved campaign lacks exit acceptance")
+    tolerances = {
+        "Ex": _finite(
+            acceptance.get("maximum_exit_transverse_energy_error_per_charge_v"),
+            "provider transverse-energy tolerance",
+        ),
+        "Ey": _finite(
+            acceptance.get("maximum_exit_slow_energy_error_per_charge_v"),
+            "provider slow-energy tolerance",
+        ),
+        "Ez": _finite(
+            acceptance.get("maximum_exit_axial_energy_error_per_charge_v"),
+            "provider axial-energy tolerance",
+        ),
+    }
+    plane_tolerance_mm = _finite(
+        acceptance.get("focus_plane_tolerance_mm"), "provider exit-plane tolerance",
+    )
+    raw_states: list[dict[str, Any]] = []
+    if bunch_selection is not None:
+        raw_states = [
+            {"particle_id": particle_id, **state}
+            for particle_id, state in zip(
+                bunch_selection["particle_ids"], bunch_selection["states"], strict=True,
+            )
+        ]
+    elif bunch_source is not None:
+        raise CandidateContractError(
+            "accelerator exit reference requires the existing typed source selection"
+        )
+    else:
+        raw_states = [{
+            "particle_id": 1,
+            "mass_th": mass_th,
+            "charge_e": charge_state,
+            "kinetic_energy_ev": slow_energy_per_charge_v * abs(charge_state),
+            "position_workbench_mm": [0.0, focus_y_mm + source_y_offset_mm, release_z_mm],
+            "direction_workbench": [0.0, 1.0, 0.0],
+        }]
+    rows: list[dict[str, Any]] = []
+    for raw in raw_states:
+        if "position_workbench_mm" in raw:
+            position = [_finite(value, "source position") for value in raw["position_workbench_mm"]]
+            direction = [_finite(value, "source direction") for value in raw["direction_workbench"]]
+        else:
+            position = [_finite(raw[name], f"source {name}") for name in ("x_mm", "y_mm", "z_mm")]
+            direction = [
+                _finite(raw[name], f"source {name}")
+                for name in ("direction_x", "direction_y", "direction_z")
+            ]
+        particle_id = int(raw["particle_id"])
+        row_mass = _finite(raw.get("mass_th"), "source mass")
+        row_charge = _finite(raw.get("charge_e", charge_state), "source charge")
+        if row_mass != mass_th or row_charge != charge_state:
+            raise CandidateContractError("MR source particle species differs from the trial")
+        kinetic_energy = _finite(raw.get("kinetic_energy_ev"), "source kinetic energy")
+        speed_m_s = math.sqrt(2.0 * kinetic_energy * ELEMENTARY_CHARGE_C / (row_mass * AMU_KG))
+        velocity = [speed_m_s * component for component in direction]
+        source_provider = [
+            position[0], position[1] - focus_y_mm, position[2] - global_exit_z_mm,
+        ]
+        source_energy = {
+            name: _component_energy_per_charge_v(row_mass, row_charge, velocity[index])
+            for index, name in enumerate(("Ex", "Ey", "Ez"))
+        }
+        expected_exit = {
+            "Ex": source_energy["Ex"],
+            "Ey": source_energy["Ey"],
+            "Ez": (
+                _target_axial_energy_per_charge_v(
+                    resolved_campaign, source_provider[2],
+                )
+                + source_energy["Ez"]
+            ),
+        }
+        rows.append({
+            "particle_id": particle_id,
+            "source_position_provider_mm": source_provider,
+            "source_velocity_provider_m_per_s": velocity,
+            "source_component_energy_per_charge_v": source_energy,
+            "expected_exit_component_energy_per_charge_v": expected_exit,
+        })
+    expected_ids = [int(row["particle_id"]) for row in rows]
+    if len(expected_ids) != len(set(expected_ids)):
+        raise CandidateContractError("accelerator exit reference contains duplicate particle identities")
+    return {
+        "status": "derived",
+        "event_kind": "accelerator_geometric_exit",
+        "scope": "all_source_particles__not_detector_survivors",
+        "source_frame": resolved_campaign["release_spec"]["frame_id"],
+        "source_frame_origin_project_mm": [0.0, focus_y_mm, global_exit_z_mm],
+        "exit_plane_project_z_mm": global_exit_z_mm,
+        "exit_plane_tolerance_mm": plane_tolerance_mm,
+        "expected_particle_ids": expected_ids,
+        "absolute_tolerances_per_charge_v": tolerances,
+        "particle_rows": rows,
+    }
+
+
+def _accelerator_geometric_exit_validation(
+    *, events: list[dict[str, Any]], reference: dict[str, Any] | None,
+    expected_particle_ids: list[int], mass_th: float, charge_state: float,
+) -> dict[str, Any]:
+    """Compare every observed geometric-exit crossing with its frozen OA target."""
+    if not isinstance(reference, dict):
+        return {"status": "unavailable__geometric_exit_reference_not_frozen", "passed": None}
+    reference_rows = reference.get("particle_rows")
+    reference_ids = reference.get("expected_particle_ids")
+    if (
+        not isinstance(reference_rows, list)
+        or reference_ids != expected_particle_ids
+        or [row.get("particle_id") for row in reference_rows] != expected_particle_ids
+    ):
+        raise CandidateContractError(
+            "accelerator geometric-exit reference differs from the source cohort"
+        )
+    tolerances = reference.get("absolute_tolerances_per_charge_v")
+    if not isinstance(tolerances, dict):
+        raise CandidateContractError("accelerator geometric-exit reference lacks tolerances")
+    tolerance_by_component = {
+        component: _finite(tolerances.get(component), f"geometric-exit {component} tolerance")
+        for component in ("Ex", "Ey", "Ez")
+    }
+    plane_z = _finite(reference.get("exit_plane_project_z_mm"), "geometric-exit plane z")
+    plane_tolerance = _finite(
+        reference.get("exit_plane_tolerance_mm"), "geometric-exit plane tolerance",
+    )
+    by_id: dict[int, dict[str, Any]] = {}
+    duplicates: list[int] = []
+    unknown: list[int] = []
+    expected_set = set(expected_particle_ids)
+    for event in events:
+        if event["kind"] != "accelerator_geometric_exit":
+            continue
+        particle_id = int(event["ion"])
+        if particle_id not in expected_set:
+            unknown.append(particle_id)
+        elif particle_id in by_id:
+            duplicates.append(particle_id)
+        else:
+            by_id[particle_id] = event
+    reference_by_id = {int(row["particle_id"]): row for row in reference_rows}
+    rows: list[dict[str, Any]] = []
+    for particle_id in expected_particle_ids:
+        event = by_id.get(particle_id)
+        if event is None:
+            continue
+        measured = {
+            component: _component_energy_per_charge_v(
+                mass_th, charge_state, _finite(event[velocity], velocity) * 1000.0,
+            )
+            for component, velocity in zip(
+                ("Ex", "Ey", "Ez"),
+                ("vx_mm_us", "vy_mm_us", "vz_mm_us"),
+                strict=True,
+            )
+        }
+        expected = reference_by_id[particle_id][
+            "expected_exit_component_energy_per_charge_v"
+        ]
+        residual = {
+            component: measured[component] - _finite(
+                expected.get(component), f"expected geometric-exit {component}",
+            )
+            for component in ("Ex", "Ey", "Ez")
+        }
+        plane_residual = _finite(event.get("z_mm"), "geometric-exit z") - plane_z
+        component_passed = {
+            component: abs(residual[component]) <= tolerance_by_component[component]
+            for component in ("Ex", "Ey", "Ez")
+        }
+        plane_passed = abs(plane_residual) <= plane_tolerance
+        direction_passed = _finite(event.get("vz_mm_us"), "geometric-exit vz") < 0.0
+        rows.append({
+            "particle_id": particle_id,
+            "event_time_us": _finite(event.get("t_us"), "geometric-exit time"),
+            "event_position_project_mm": [
+                _finite(event.get(name), f"geometric-exit {name}")
+                for name in ("x_mm", "y_mm", "z_mm")
+            ],
+            "measured_component_energy_per_charge_v": measured,
+            "expected_component_energy_per_charge_v": expected,
+            "residual_per_charge_v": residual,
+            "component_within_tolerance": component_passed,
+            "exit_plane_residual_mm": plane_residual,
+            "exit_plane_within_tolerance": plane_passed,
+            "negative_z_direction": direction_passed,
+            "passed": all(component_passed.values()) and plane_passed and direction_passed,
+        })
+    missing = [particle_id for particle_id in expected_particle_ids if particle_id not in by_id]
+    complete = not missing and not duplicates and not unknown
+    maxima = {
+        component: max(
+            (abs(row["residual_per_charge_v"][component]) for row in rows),
+            default=None,
+        )
+        for component in ("Ex", "Ey", "Ez")
+    }
+    exceeded_ids = {
+        component: [
+            row["particle_id"] for row in rows
+            if not row["component_within_tolerance"][component]
+        ]
+        for component in ("Ex", "Ey", "Ez")
+    }
+    passed = complete and len(rows) == len(expected_particle_ids) and all(
+        row["passed"] for row in rows
+    )
+    return {
+        "status": "passed" if passed else "incomplete" if not complete else "failed",
+        "passed": passed,
+        "scope": "all_source_particles_at_provider_geometric_exit__not_detector_survivors",
+        "surface_note": (
+            "provider geometric exit plane; distinct from accelerator_safe_exit at the PA boundary"
+        ),
+        "exit_plane_project_z_mm": plane_z,
+        "exit_plane_tolerance_mm": plane_tolerance,
+        "absolute_tolerances_per_charge_v": tolerance_by_component,
+        "expected_particle_count": len(expected_particle_ids),
+        "observed_particle_count": len(rows),
+        "missing_particle_ids": missing,
+        "duplicate_particle_ids": sorted(set(duplicates)),
+        "unknown_particle_ids": sorted(set(unknown)),
+        "maximum_absolute_residual_per_charge_v": maxima,
+        "out_of_tolerance_particle_ids": exceeded_ids,
+        "particle_rows": rows,
     }
 
 
@@ -347,8 +758,10 @@ def _apply_terminal_mirror_variation(
         variation.get("schema_version") != 1
         or variation.get("role") != "mrtof_terminal_time_mirror_voltage_variation"
         or variation.get("status") != "screening_candidate_materialized"
-        or variation.get("qualification")
-        != "diagnostic_only__complete_3d_detector_response_pending"
+        or variation.get("qualification") not in {
+            "diagnostic_only__complete_3d_detector_response_pending",
+            "bare_mirror_prediction_outside_old_zero_slope_budget__complete_system_response_required",
+        }
     ):
         raise CandidateContractError("terminal-time mirror variation identity is invalid")
     base = _vector(
@@ -482,10 +895,25 @@ def _finite(value: Any, label: str) -> float:
     return float(value)
 
 
-def _vector(value: Any, count: int, label: str) -> list[float]:
-    if not isinstance(value, list) or len(value) != count:
-        raise CandidateContractError(f"{label} must contain {count} values")
+def _vector(value: Any, count: int | None, label: str) -> list[float]:
+    if not isinstance(value, list) or not value or (count is not None and len(value) != count):
+        expected = f"{count} values" if count is not None else "at least one value"
+        raise CandidateContractError(f"{label} must contain {expected}")
     return [_finite(item, label) for item in value]
+
+
+def _accelerator_ring_voltages(
+    accelerator: dict[str, Any], provider_geometry: dict[str, Any] | None,
+) -> list[float]:
+    """Bind the runtime ring vector to the active provider profile."""
+    voltages = _vector(accelerator.get("ring_voltages_v"), None, "accelerator ring voltages")
+    if provider_geometry is not None:
+        ring_count = provider_geometry.get("ring_count")
+        if type(ring_count) is not int or ring_count <= 0 or len(voltages) != ring_count:
+            raise CandidateContractError(
+                "provider accelerator ring voltages differ from its profile ring count"
+            )
+    return voltages
 
 
 def _single_center_source_state(trial: dict[str, Any]) -> tuple[ProjectPhaseSpaceState, dict[str, Any]]:
@@ -528,6 +956,107 @@ def _single_center_source_state(trial: dict[str, Any]) -> tuple[ProjectPhaseSpac
         "kinetic_energy_ev": derived_energy_ev,
         "kinetic_energy_per_charge_v": derived_energy_ev / abs(charge),
         "direction_project": list(state.unit_direction_project),
+    }
+
+
+def _bunch_center_workpoint_validation(
+    events: list[dict[str, Any]], trial: dict[str, Any],
+) -> dict[str, Any]:
+    """Measure the four existing workpoint residuals on frozen particle 1."""
+    frozen = trial.get("source_center_state")
+    if frozen is None:
+        return {"status": "not_available__legacy_source_receipt"}
+    if not isinstance(frozen, dict) or frozen.get("particle_id") != 1:
+        raise CandidateContractError("bunch centre state must be frozen particle 1")
+    position = _vector(frozen.get("position_workbench_mm"), 3, "bunch centre position")
+    direction = _vector(frozen.get("direction_workbench"), 3, "bunch centre direction")
+    direction_norm = math.sqrt(sum(value * value for value in direction))
+    mass = _finite(frozen.get("mass_th"), "bunch centre mass")
+    energy = _finite(frozen.get("kinetic_energy_ev"), "bunch centre energy")
+    charge = frozen.get("charge_e")
+    if (
+        direction_norm <= 0.0 or mass <= 0.0 or energy <= 0.0
+        or not isinstance(charge, int) or isinstance(charge, bool) or charge == 0
+    ):
+        raise CandidateContractError("bunch centre state is not physical")
+    direction = [value / direction_norm for value in direction]
+    speed_m_s = math.sqrt(2.0 * energy * ELEMENTARY_CHARGE_C / (mass * AMU_KG))
+    source = ProjectPhaseSpaceState(
+        tuple(position), tuple(value * speed_m_s / 1000.0 for value in direction),
+    )
+    try:
+        observation = observation_from_simion_events(events, source, ion_number=1)
+        residuals = dict(prism_handoff_residuals(
+            observation,
+            target_positive_mirror_turn_y_mm=float(trial["target_positive_mirror_turn_y_mm"]),
+            target_tangent_ratio_vy_over_vz=float(
+                trial["target_low_field_tangent_ratio_vy_over_vz"]
+            ),
+        ))
+        target_ratio = _finite(
+            trial["target_low_field_tangent_ratio_vy_over_vz"],
+            "target low-field tangent ratio",
+        )
+        actual_ratio = (
+            observation.p2_shield_low_field_reference.velocity_mm_per_us[1]
+            / observation.p2_shield_low_field_reference.velocity_mm_per_us[2]
+        )
+        origins = [
+            event for event in events
+            if event.get("kind") == "drift_phase_origin" and event.get("ion") == 1
+        ]
+        if len(origins) != 1:
+            raise CandidateContractError("bunch centre requires one drift phase origin")
+        origin_time = _finite(origins[0].get("t_us"), "bunch centre phase-origin time")
+        slow_turns = [
+            event for event in events
+            if event.get("kind") == "slow_turn" and event.get("ion") == 1
+            and float(event["t_us"]) > origin_time
+        ]
+        target_k = _finite(trial.get("target_drift_period_ratio"), "target K")
+        target_samples = [
+            event for event in events
+            if event.get("kind") == "target_k_phase_sample" and event.get("ion") == 1
+            and float(event["t_us"]) > origin_time
+            and float(event["k"]) == target_k
+        ]
+        if not slow_turns or len(target_samples) != 1:
+            raise CandidateContractError(
+                "bunch centre requires a slow turn and one exact target-K phase sample"
+            )
+        residuals.update({
+            "Stripe_slow_turn_y_minus_L_mm": (
+                _finite(slow_turns[0].get("y_mm"), "bunch centre slow-turn y")
+                - _finite(trial.get("target_slow_turn_y_mm"), "target slow-turn y")
+            ),
+            "Stripe_target_phase_y_minus_origin_mm": (
+                _finite(target_samples[0].get("y_mm"), "bunch centre target-phase y")
+                - _finite(
+                    trial.get("target_positive_mirror_turn_y_mm"),
+                    "target phase-origin y",
+                )
+            ),
+        })
+    except CandidateContractError as error:
+        return {"status": "incomplete", "reason": str(error)}
+    return {
+        "status": "observed",
+        "particle_id": 1,
+        "residuals": residuals,
+        "physical_acceptance_residuals": {
+            "P1_P2_positive_mirror_turn_y_mm": residuals[
+                "P1_P2_positive_mirror_turn_y_mm"
+            ],
+            "P1_P2_P2_shield_low_field_angle_degrees": math.degrees(
+                math.atan(actual_ratio) - math.atan(target_ratio)
+            ),
+            "Stripe_slow_turn_y_minus_L_mm": residuals[
+                "Stripe_slow_turn_y_minus_L_mm"
+            ],
+            "Stripe_target_phase_y_minus_origin_mm": residuals[
+                "Stripe_target_phase_y_minus_origin_mm"
+            ],
+        },
     }
 
 
@@ -626,8 +1155,36 @@ def _accelerator_safe_exit_observation(
                 errors.append("accelerator_safe_exit_does_not_precede_P1_pass")
         except CandidateContractError as error:
             errors.append(str(error))
+    signed_bias = None
+    reference = trial.get("source_transverse_reference")
+    exit_contract = trial.get("accelerator_exit_energy_contract")
+    if isinstance(reference, dict) and isinstance(exit_contract, dict):
+        try:
+            tolerance = _finite(
+                exit_contract.get("maximum_exit_transverse_velocity_bias_mm_per_us"),
+                "accelerator exit transverse-velocity bias tolerance",
+            )
+            delta_x = position[0] - _finite(reference.get("center_x_mm"), "source center x")
+            delta_vx = velocity[0] - _finite(
+                reference.get("center_vx_mm_per_us"), "source center vx",
+            )
+            passed = abs(delta_vx) <= tolerance
+            signed_bias = {
+                "comparison": "source_to_accelerator_safe_exit",
+                "center_delta_x_mm": delta_x,
+                "center_delta_vx_mm_per_us": delta_vx,
+                "maximum_absolute_velocity_bias_mm_per_us": tolerance,
+                "passed": passed,
+            }
+            if not passed:
+                errors.append("accelerator_safe_exit_transverse_velocity_bias_exceeds_provider_tolerance")
+        except (CandidateContractError, IndexError) as error:
+            errors.append(str(error))
     if errors:
-        return {**base, "status": "invalid", "state": None, "errors": errors}
+        return {
+            **base, "status": "invalid", "state": None, "errors": errors,
+            "signed_transverse_bias": signed_bias,
+        }
     return {
         **base,
         "status": "observed",
@@ -644,6 +1201,7 @@ def _accelerator_safe_exit_observation(
             "from_instance": from_instance,
             "to_instance": to_instance,
         },
+        "signed_transverse_bias": signed_bias,
         "p1_ordering": (
             "verified_safe_exit_before_P1_entry"
             if p1_entries
@@ -938,6 +1496,8 @@ def materialize_trial(
     accelerator_instance: int = 3,
     trajectory_step_scale: float = 1.0,
     source_y_offset_mm: float = 0.0,
+    accelerator_provider_plan_path: Path | None = None,
+    accelerator_resolved_campaign_path: Path | None = None,
 ) -> dict[str, Any]:
     if accelerator_instance != 3:
         raise CandidateContractError("workbench accelerator instance must be 3")
@@ -961,15 +1521,17 @@ def materialize_trial(
     stripe = _load(stripe_summary_path)
     accelerator = _load(accelerator_receipt_path)
     provider_geometry: dict[str, Any] | None = None
+    provider_exit_energy_contract: dict[str, Any] | None = None
     if accelerator.get("role") == "orthogonal_accelerator_mrtof_runtime_receipt":
-        if accelerator.get("status") != "published_read_only":
-            raise CandidateContractError("provider accelerator receipt is not published read-only")
+        if accelerator.get("status") != "published_standalone_response_bank":
+            raise CandidateContractError("provider accelerator receipt lacks its published standalone response bank")
         projection = accelerator.get("mrtof_projection")
         if not isinstance(projection, dict):
             raise CandidateContractError("provider accelerator receipt lacks its MR projection")
         provider_geometry = projection.get("geometry")
         if not isinstance(provider_geometry, dict):
             raise CandidateContractError("provider accelerator receipt lacks its geometry projection")
+        provider_exit_energy_contract = _provider_exit_energy_contract(projection)
         accelerator = projection
     fixed_authority = (
         _load(fixed_mirror_stripe_authority_path)
@@ -1015,6 +1577,16 @@ def materialize_trial(
         _p2_handoff_targets(seed, contract)
     )
     accelerator_energy = _accelerator_energy_binding(accelerator, energy)
+    if (
+        provider_exit_energy_contract is not None
+        and abs(
+            float(provider_exit_energy_contract["targets_per_charge_v"]["Ey"])
+            - slow_energy
+        ) > 1e-9
+    ):
+        raise CandidateContractError(
+            "provider target slow energy and trial release slow energy differ"
+        )
     stripe_biases = _vector(seed.get("stripe_biases_v"), 2, "Stripe biases")
     if stripe_biases_override_v is not None:
         stripe_biases = [
@@ -1022,7 +1594,7 @@ def materialize_trial(
             _finite(stripe_biases_override_v[1], "Stripe 2 override"),
         ]
     endpoint_voltages = _vector(accelerator.get("endpoint_voltages_v"), 3, "accelerator endpoint voltages")
-    ring_voltages = _vector(accelerator.get("ring_voltages_v"), 5, "accelerator ring voltages")
+    ring_voltages = _accelerator_ring_voltages(accelerator, provider_geometry)
     p1 = _finite(prism_1_v, "P1 voltage")
     p2 = _finite(prism_2_v, "P2 voltage")
     phase_contract = resolve_drift_phase_contract(contract)
@@ -1210,6 +1782,41 @@ def materialize_trial(
         f"accelerator_pulse_off_time_us = {fixed_pulse_off_time:.17g}, "
         if fixed_pulse_off_time is not None else ""
     )
+    if (accelerator_provider_plan_path is None) != (accelerator_resolved_campaign_path is None):
+        raise CandidateContractError(
+            "accelerator provider plan and resolved campaign must be supplied together"
+        )
+    accelerator_geometric_exit_reference = None
+    if accelerator_provider_plan_path is not None:
+        exit_source_selection = bunch_selection
+        if bunch_source is not None and exit_source_selection is None:
+            if bunch_source_receipt_path is None:
+                raise CandidateContractError(
+                    "full bunch exit reference requires its frozen source receipt"
+                )
+            exit_source_selection = resolve_bunch_source_interval(
+                receipt_path=bunch_source_receipt_path,
+                particle_id_min=1,
+                particle_id_max=int(bunch_source["particle_count"]),
+            )
+        accelerator_geometric_exit_reference = _accelerator_geometric_exit_reference(
+            contract=contract,
+            provider_plan=_load(accelerator_provider_plan_path),
+            resolved_campaign=_load(accelerator_resolved_campaign_path),
+            bunch_source=bunch_source,
+            bunch_selection=exit_source_selection,
+            mass_th=mass,
+            charge_state=charge,
+            slow_energy_per_charge_v=slow_energy,
+            focus_y_mm=placement.focus_y_mm,
+            release_z_mm=release_z,
+            source_y_offset_mm=source_y_offset,
+        )
+    exit_plane_lua = (
+        "accelerator_exit_plane_project_z_mm = "
+        f"{accelerator_geometric_exit_reference['exit_plane_project_z_mm']:.17g}, "
+        if accelerator_geometric_exit_reference is not None else ""
+    )
     sidecar = (
         "-- Generated run-local finite-3D P1/P2 voltage trial; do not edit.\n"
         f"return {{ qualification = 'p1_p2_finite_3d_voltage_trial_only', mirror_voltages_v = {_lua_vector(mirror_voltages)}, "
@@ -1226,6 +1833,7 @@ def materialize_trial(
         f"target_drift_period_ratio = {target_k:.17g}, target_half_oscillation_count = {phase_contract.target_half_oscillation_count}, "
         f"runtime_fast_adjust_enable = {'true' if runtime_fast_adjust_enable else 'false'}, "
         f"accelerator_safe_exit_only = {'true' if accelerator_safe_exit_only else 'false'}, "
+        f"{exit_plane_lua}"
         f"runtime_accelerator_field_gate_enable = {'true' if accelerator_pulse_requested else 'false'}, "
         f"accelerator_pulse_mode = '{accelerator_pulse_mode}', "
         f"{accelerator_pulse_time_lua}"
@@ -1239,6 +1847,13 @@ def materialize_trial(
         mirror_voltages
         + mirror_voltages
         + [stripe_biases[0], stripe_biases[0], stripe_biases[1], stripe_biases[1], 0.0, p1, p2, 0.0, 0.0, 0.0]
+    )
+    source_transverse_reference = _source_transverse_reference(
+        bunch_source=bunch_source,
+        bunch_selection=bunch_selection,
+        mass_th=mass,
+        charge_state=charge,
+        slow_energy_per_charge_v=slow_energy,
     )
     receipt = {
         "schema_version": 1,
@@ -1276,10 +1891,21 @@ def materialize_trial(
             if bunch_selection is not None
             else source_cohort_identity(bunch_source) if bunch_source is not None else None
         ),
+        "source_center_state": (
+            bunch_source.get("center_particle_state")
+            if bunch_source is not None else None
+        ),
+        "peak_analysis_contract": contract["peak_analysis"],
+        "source_cohort_role": bunch_source.get("cohort_role") if bunch_source else None,
+        "source_transverse_reference": source_transverse_reference,
         "source_expected_particle_ids": (
             bunch_selection["particle_ids"]
             if bunch_selection is not None
             else bunch_source["expected_particle_ids"] if bunch_source is not None else [1]
+        ),
+        "source_volume_particle_id_min": (
+            bunch_source.get("volume_particle_id_min")
+            if bunch_source is not None else None
         ),
         "source_selection": (
             bunch_selection["source_cohort"]["selection"]
@@ -1301,6 +1927,8 @@ def materialize_trial(
         "accelerator_finite_3d_gain_correction_v": accelerator_energy[
             "finite_3d_gain_correction_v"
         ],
+        "accelerator_exit_energy_contract": provider_exit_energy_contract,
+        "accelerator_geometric_exit_reference": accelerator_geometric_exit_reference,
         "analyzer_electrode_voltages_v": analyzer_values,
         "target_positive_mirror_turn_y_mm": target_turn_y,
         "target_nominal_injection_angle_degrees": target_angle_degrees,
@@ -1354,6 +1982,7 @@ def materialize_trial(
         "nonaccelerator_mesh_mm_per_gu": list(
             simion["component_mesh_mm_per_gu"]["analyzer"]
         ),
+        "collision_geometry": _collision_geometry_projection(resolved),
         "inputs": {
             "contract_sha256": _sha256(contract_path),
             "accelerator_geometry_contract_sha256": _sha256(
@@ -1432,14 +2061,23 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
         if event["kind"] == "accelerator_global_pulse_applied"
     ]
     if pulse_mode == "initial_exit_triggered_single_center":
-        if len(exit_pulse_events) != 1 or global_pulse_events:
+        safe_exit_only = (
+            trial.get("execution_scope") == "accelerator_safe_exit_envelope_only"
+        )
+        if safe_exit_only and (exit_pulse_events or global_pulse_events):
+            raise CandidateContractError(
+                "accelerator safe-exit-only trial must stop before pulse-off"
+            )
+        if not safe_exit_only and (
+            len(exit_pulse_events) != 1 or global_pulse_events
+        ):
             raise CandidateContractError(
                 "initial-exit-triggered accelerator trial must emit exactly one pulse-off event"
             )
         accelerator_instance = int(trial.get("accelerator_instance", 3))
         if accelerator_instance != 3:
             raise CandidateContractError("trial has an invalid native accelerator instance")
-        if (
+        if not safe_exit_only and (
             int(exit_pulse_events[0]["from_instance"]) != accelerator_instance
             or int(exit_pulse_events[0]["to_instance"]) == accelerator_instance
         ):
@@ -1475,6 +2113,9 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
         "role": "mrtof_finite_3d_two_prism_trial_observation",
         "status": "p2_low_field_and_positive_mirror_turn_incomplete",
         "qualification": "single_center_trial__not_an_operating_point",
+        "execution_scope": trial.get(
+            "execution_scope", "complete_three_dimensional_static_return",
+        ),
         "prism_voltages_v": trial["prism_voltages_v"],
         "event_counts": kinds,
         "log_sha256": _sha256(log_path),
@@ -1509,6 +2150,19 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
             int(completion_matches[0].group("splats"))
             if len(completion_matches) == 1 else None
         )
+        exit_energy_contract = trial.get("accelerator_exit_energy_contract")
+        exit_energy_contract = (
+            exit_energy_contract if isinstance(exit_energy_contract, dict) else {}
+        )
+        energy_targets = exit_energy_contract.get("targets_per_charge_v")
+        energy_targets = energy_targets if isinstance(energy_targets, dict) else {}
+        energy_tolerances = exit_energy_contract.get("absolute_tolerances_per_charge_v")
+        energy_tolerances = energy_tolerances if isinstance(energy_tolerances, dict) else {}
+        charge_state = trial.get("charge_state")
+        charge_e = (
+            _finite(charge_state, "particle charge state")
+            if charge_state is not None else None
+        )
         cohort = summarize_events(
             events,
             _finite(trial.get("target_drift_period_ratio"), "target drift period ratio"),
@@ -1520,7 +2174,47 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
                 "selected axial energy",
             ),
             mass_th=_finite(trial.get("particle_mass_th"), "particle mass"),
+            charge_e=charge_e,
+            theoretical_transverse_energy_per_charge_v=(
+                energy_targets.get("Ex")
+            ),
+            theoretical_release_slow_energy_per_charge_v=(
+                energy_targets.get(
+                    "Ey", trial.get("source_slow_kinetic_energy_per_charge_v")
+                )
+            ),
+            theoretical_axial_energy_per_charge_v=(
+                energy_targets.get(
+                    "Ez", trial.get("accelerator_target_axial_energy_per_charge_v")
+                )
+            ),
+            transverse_energy_tolerance_per_charge_v=energy_tolerances.get("Ex"),
+            slow_energy_tolerance_per_charge_v=energy_tolerances.get("Ey"),
+            axial_energy_tolerance_per_charge_v=energy_tolerances.get("Ez"),
+            source_transverse_reference=trial.get("source_transverse_reference"),
+            transverse_velocity_bias_tolerance_mm_per_us=(
+                exit_energy_contract.get(
+                    "maximum_exit_transverse_velocity_bias_mm_per_us"
+                )
+            ),
+            collision_geometry=trial.get("collision_geometry"),
+            volume_particle_id_min=trial.get("source_volume_particle_id_min"),
+            peak_analysis_contract=trial.get("peak_analysis_contract"),
+            cohort_role=trial.get("source_cohort_role"),
         )
+        geometric_exit_reference = trial.get("accelerator_geometric_exit_reference")
+        geometric_exit_validation = (
+            _accelerator_geometric_exit_validation(
+                events=events,
+                reference=geometric_exit_reference,
+                expected_particle_ids=expected_ids,
+                mass_th=_finite(trial.get("particle_mass_th"), "particle mass"),
+                charge_state=_finite(trial.get("charge_state"), "particle charge state"),
+            )
+            if isinstance(geometric_exit_reference, dict)
+            else {"status": "unavailable__geometric_exit_reference_not_frozen", "passed": None}
+        )
+        cohort["accelerator_geometric_exit_validation"] = geometric_exit_validation
         safe_exit_ids = sorted({
             int(event["ion"])
             for event in events if event["kind"] == "accelerator_safe_exit"
@@ -1531,15 +2225,71 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
             len(safe_exit_ids) / source_particle_count
         )
         cohort["accelerator_safe_exit_complete"] = safe_exit_ids == expected_ids
+        signed_bias = (
+            cohort.get("prism_phase_space_diagnostic", {})
+            .get("surfaces", {})
+            .get("accelerator_safe_exit", {})
+            .get("signed_transverse_bias")
+        )
+        cohort["accelerator_safe_exit_signed_transverse_bias"] = signed_bias
+        signed_bias_required = (
+            isinstance(exit_energy_contract, dict)
+            and bool(exit_energy_contract)
+            and trial.get("source_selection") is None
+            and trial.get("source_center_state") is not None
+        )
+        signed_bias_passed = (
+            isinstance(signed_bias, dict) and signed_bias.get("passed") is True
+        )
+        short_exit_scope = (
+            trial.get("execution_scope") == "accelerator_safe_exit_envelope_only"
+        )
+        if short_exit_scope:
+            for key in (
+                "detection_rate", "detector_tof_fwhm_us", "detector_tof_mean_us",
+                "detector_tof_median_us", "mass_resolution_t_over_2fwhm",
+                "target_k_fraction", "target_k_handoff_tof_fwhm_us",
+                "target_k_handoff_tof_median_us",
+            ):
+                cohort[key] = None
+            cohort["peak_analysis"] = {
+                "status": "not_applicable__accelerator_geometric_exit_scope"
+            }
+            cohort["volume_only"] = None
+            cohort["detector_performance_scope"] = (
+                "not_applicable__accelerator_geometric_exit_scope"
+            )
+        short_exit_passed = (
+            short_exit_scope
+            and cohort["event_integrity_passed"]
+            and geometric_exit_validation.get("passed") is True
+        )
         result.update({
-            "status": "bunch_observed" if cohort["event_integrity_passed"] else "bunch_observation_invalid",
+            "status": (
+                "accelerator_geometric_exit_observed"
+                if short_exit_passed
+                else "accelerator_geometric_exit_invalid"
+                if short_exit_scope
+                else "bunch_observed"
+                if cohort["event_integrity_passed"]
+                and (not signed_bias_required or signed_bias_passed)
+                else "bunch_observation_invalid"
+            ),
             "qualification": (
-                "candidate_bunch_selection_diagnostic__not_formal"
+                "accelerator_geometric_exit_envelope_accepted"
+                if short_exit_passed
+                else "accelerator_geometric_exit_envelope_rejected"
+                if short_exit_scope
+                else "candidate_bunch_selection_diagnostic__not_formal"
                 if trial.get("source_selection") is not None
                 else "candidate_bunch__not_formal"
             ),
             "cohort_analysis": cohort,
+            "accelerator_geometric_exit_validation": geometric_exit_validation,
             "source_release_state": None,
+            "center_particle_workpoint_validation": (
+                _bunch_center_workpoint_validation(events, trial)
+            ),
             "accelerator_safe_exit_observation": {
                 "status": "complete_cohort_observed" if safe_exit_ids == expected_ids else "incomplete_cohort",
                 "particle_ids": safe_exit_ids,
@@ -1772,6 +2522,8 @@ def main() -> int:
     materialize.add_argument("--fixed-mirror-stripe-authority", type=Path)
     materialize.add_argument("--mirror-voltage-variation", type=Path)
     materialize.add_argument("--accelerator-receipt", required=True, type=Path)
+    materialize.add_argument("--accelerator-provider-plan", required=True, type=Path)
+    materialize.add_argument("--accelerator-resolved-campaign", required=True, type=Path)
     materialize.add_argument("--prism-1-v", required=True, type=float)
     materialize.add_argument("--prism-2-v", required=True, type=float)
     materialize.add_argument("--stripe-1-v", type=float)
@@ -1814,6 +2566,8 @@ def main() -> int:
             fixed_mirror_stripe_authority_path=args.fixed_mirror_stripe_authority,
             mirror_voltage_variation_path=args.mirror_voltage_variation,
             accelerator_receipt_path=args.accelerator_receipt,
+            accelerator_provider_plan_path=args.accelerator_provider_plan,
+            accelerator_resolved_campaign_path=args.accelerator_resolved_campaign,
             prism_1_v=args.prism_1_v,
             prism_2_v=args.prism_2_v,
             stripe_biases_override_v=stripe_override,
@@ -1835,7 +2589,16 @@ def main() -> int:
         print(f"MRTOF_TWO_PRISM_TRIAL_MATERIALIZE=PASS P1={result['prism_voltages_v'][0]:.12g} P2={result['prism_voltages_v'][1]:.12g}")
     elif args.command == "analyze":
         result = analyze_trial(log_path=args.log, trial_receipt_path=args.trial_receipt, output_path=args.output)
-        print(f"MRTOF_TWO_PRISM_TRIAL_ANALYZE=PASS STATUS={result['status']}")
+        short_exit_failed = (
+            result.get("execution_scope") == "accelerator_safe_exit_envelope_only"
+            and result.get("status") != "accelerator_geometric_exit_observed"
+        )
+        print(
+            f"MRTOF_TWO_PRISM_TRIAL_ANALYZE={'FAIL' if short_exit_failed else 'PASS'} "
+            f"STATUS={result['status']}"
+        )
+        if short_exit_failed:
+            return 1
     else:
         result = freeze_single_center_pulse_schedule(
             center_run_path=args.center_run, output_path=args.output,

@@ -27,10 +27,10 @@ function Copy-StandalonePaBytes {
     [Parameter(Mandatory)][int64]$Length
   )
   if($Length-ge$global:MassSpectrometryShortPaUnbufferedThresholdBytes){
-    # On this Windows host, buffered FileStream/Copy-Item copies of multi-GB
-    # PA files have reproduced same-length single-byte corruption while the
-    # source remained stable.  Robocopy /J is the supported unbuffered path
-    # and reproduced the frozen SHA on the same source and volume.
+    # On this Windows host, buffered reads of multi-GB PA copies have returned
+    # a false same-length single-byte-different view while an unbuffered read
+    # recovered the frozen persistent bytes.  Robocopy /J keeps this staging
+    # path independent of that ambiguous buffered view.
     $sourcePath=[IO.Path]::GetFullPath($SourceStream.Name)
     $destinationPath=[IO.Path]::GetFullPath($Destination)
     $destinationParent=Split-Path -Parent $destinationPath
@@ -238,10 +238,11 @@ function Unprotect-AllImmutablePaSources {
 function New-ShortPaCopy {
   <#
     Expose a verified PA input to legacy SIMION through a short same-volume
-    path using a disposable standalone copy.  SIMION may write a PA after the
-    invoking process appears to have finished, so a hard link is not an
-    isolation boundary.  The caller owns full family integrity checks and
-    must remove the copy directory before publishing a run.
+    path using a disposable standalone copy.  Use this only when the specific
+    consumer performs a confirmed write-capable operation, such as saving a
+    Workbench after Fast Adjust; ordinary IOB load or Fly does not by itself
+    imply a PA write.  A hard link is not isolation for a confirmed writer.
+    The caller owns family integrity checks and removes the copy before publish.
   #>
   [CmdletBinding()]
   param(
@@ -299,12 +300,11 @@ function New-ShortPaCopy {
       $manifestBackedUnbuffered=($ExpectedBytes-ge0-and
         -not[string]::IsNullOrWhiteSpace($expectedHash)-and
         [int64]$sourceGuard.Length-ge$global:MassSpectrometryShortPaUnbufferedThresholdBytes)
-      # A manifest is an identity contract, not evidence that the bytes still
-      # satisfy it.  Large PA payloads on this host have experienced stable,
-      # same-length single-bit changes without a useful timestamp change.  An
-      # expected hash therefore must be confirmed from the locked source on
-      # first use in this process; trusting the manifest here only discovers a
-      # bad source after several multi-gigabyte destination copies.
+      # A manifest is an identity contract, not a live byte observation.
+      # Buffered reads of large payloads on this host have returned a false
+      # same-length single-byte-different view without a useful timestamp
+      # change.  Confirm the first locked source through the unbuffered reader
+      # before making several large destination copies.
       $verifiedSourceHash=if($manifestBackedUnbuffered){
         $actual=Get-ImmutablePaSourceVerificationSha256 -Stream $sourceGuard -Length ([int64]$sourceGuard.Length)
         if(-not[string]::Equals($actual,$expectedHash,[StringComparison]::Ordinal)){
@@ -350,11 +350,9 @@ function New-ShortPaCopy {
       Copy-StandalonePaBytes -SourceStream $sourceGuard -Destination $destinationPath -Length $sourceLength
       $destinationAttributes=[IO.File]::GetAttributes($destinationPath)
       [IO.File]::SetAttributes($destinationPath,$destinationAttributes-band(-bnot[IO.FileAttributes]::ReadOnly))
-      # File.Copy closes its managed handle synchronously, but large PA copies
-      # can still sit behind a filesystem/filter-driver write cache.  Force the
-      # completed standalone copy through that boundary before hashing it;
-      # otherwise a byte-equal source can intermittently compare unequal in a
-      # long sequence of several-hundred-megabyte PA projections.
+      # Flush the completed standalone destination before checking it.  The
+      # historical failure was a buffered reader returning a false unequal
+      # view; it was not evidence that the persistent destination was damaged.
       $flushStream=[IO.File]::Open(
         $destinationPath,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::Read
       )

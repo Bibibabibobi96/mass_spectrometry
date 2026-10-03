@@ -64,8 +64,8 @@ assert(#detector_box == 6 and detector_box[1] < detector_box[4]
   and detector_box[2] < detector_box[5] and detector_box[3] < detector_box[6],
   'numerical detector box must be positive')
 assert(type(first_prism_l0.target_plane_z_mm) == 'number', 'P1 interface needs a z plane')
-assert(#stripe_biases == 2 and #prism_voltages == 2 and #accelerator_voltages == 3 and #accelerator_ring_voltages == 5,
-  'operating point requires two Stripe, two prism, three endpoint, and five stage-2 ring voltages')
+assert(#stripe_biases == 2 and #prism_voltages == 2 and #accelerator_voltages == 3 and #accelerator_ring_voltages > 0,
+  'operating point requires two Stripe, two prism, three endpoint, and nonempty stage-2 ring voltages')
 for index,value in ipairs(prism_voltages) do
   assert(type(value)=='number' and value==value and math.abs(value)<math.huge,
     'prism voltage '..index..' must be finite')
@@ -107,6 +107,7 @@ assert(accelerator_field_gate_requested == nil
   'runtime_accelerator_field_gate_enable must be boolean when present')
 local accelerator_pulse_mode = operating_point.accelerator_pulse_mode or 'static'
 local accelerator_safe_exit_only = operating_point.accelerator_safe_exit_only or false
+local accelerator_exit_plane_z = operating_point.accelerator_exit_plane_project_z_mm
 assert(type(accelerator_safe_exit_only) == 'boolean',
   'accelerator_safe_exit_only must be boolean')
 assert(accelerator_pulse_mode == 'static'
@@ -166,6 +167,7 @@ local return_sequence_error = {}
 local selected_instances = {}
 local accelerator_pulse_complete = {}
 local accelerator_safe_exit_observed = {}
+local accelerator_geometric_exit_observed = {}
 local p2_low_field_reference_emitted = {}
 
 local function role_instance(role)
@@ -356,28 +358,26 @@ function segment.initialize_run()
   selected_instances = {}
   accelerator_pulse_complete = {}
   accelerator_safe_exit_observed = {}
+  accelerator_geometric_exit_observed = {}
   assert(simion.wb and #simion.wb.instances == maximum_instance_number(),
     'native-corridor flight requires exactly four role-bound instances')
-  local role_patterns = {
-    global_fallback = {'mrtof_analyzer%.pa0$', 'analyzer_operating%.pa0$', 'iob_input_analyzer%.pa$'},
-    native_corridor = {'mrtof_analyzer_corridor%.pa0$', 'iob_input_native_corridor%.pa0$', 'iob_input_corridor%.pa0$'},
-    accelerator = {'orthogonal_accelerator_focus%.pa0$', 'iob_input_accelerator%.pa$'},
-    detector = {'mrtof_detector%.pa#$', 'iob_input_detector%.pa$'},
-  }
-  for role,patterns in pairs(role_patterns) do
+  -- Roles are the explicit priority-contract slots verified when the IOB is
+  -- built.  Published PA basenames are provenance details, not role identity;
+  -- direct read-only reuse must not require old per-trial projection names.
+  for index,role in ipairs(expected_roles) do
     local instance = role_instance(role)
+    assert(instance == index,
+      string.format('native-corridor role %s resolved to wrong instance %d', role, instance))
     local filename = assert(simion.wb.instances[instance].filename,
       'native-corridor role '..role..' has no PA filename')
-    local matched = false
-    for _,pattern in ipairs(patterns) do matched = matched or filename:match(pattern) ~= nil end
-    assert(matched,
-      string.format('native-corridor role %s resolved to the wrong PA at instance %d', role, instance))
+    assert(type(filename) == 'string' and #filename > 0,
+      'native-corridor role '..role..' has an empty PA filename')
   end
   -- SIMION does not invoke fast_adjust automatically when a PA0 controller is
   -- loaded without adj_elect globals.  Apply both consumed voltage tables once
   -- here, immediately before the run, without saving either PA.
   segment.fast_adjust()
-  print('MRTOF_CANDIDATE: status=prototype geometry=native_corridor_4_instance fast_adjust=8_channel')
+  print('MRTOF_CANDIDATE: status=prototype geometry=native_corridor_4_instance corridor_fast_adjust=8_channel accelerator_fast_adjust=profile_sized')
 end
 
 function segment.fast_adjust()
@@ -390,7 +390,7 @@ function segment.fast_adjust()
     if corridor_changed or requested[local_id] ~= applied_native_corridor_values[local_id] then corridor_changed = true; break end
   end
   local accelerator_changed = applied_accelerator_values == nil
-  for local_id = 1,9 do
+  for local_id = 1,#values.accelerator do
     if accelerator_changed or values.accelerator[local_id] ~= applied_accelerator_values[local_id] then accelerator_changed = true; break end
   end
   if not corridor_changed and not accelerator_changed then return end
@@ -523,6 +523,23 @@ function segment.other_actions()
     local counter = cycle_counters[ion_number]
     local state = counter:state()
     local dz = ion_pz_mm - pz
+    if accelerator_exit_plane_z ~= nil
+        and not accelerator_geometric_exit_observed[ion_number]
+        and state.stage == 'before_main_drift'
+        and prism_stage[ion_number] == 'awaiting_p1_exit'
+        and pz > accelerator_exit_plane_z and ion_pz_mm <= accelerator_exit_plane_z then
+      local exit = interpolated_sample(
+        cycle_sample(px, py, pz, pvx, pvy, pvz, pt),
+        cycle_sample(ion_px_mm, ion_py_mm, ion_pz_mm,
+          ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight),
+        (accelerator_exit_plane_z-pz)/dz)
+      if exit.vz_mm_us < 0 then
+        accelerator_geometric_exit_observed[ion_number] = true
+        print(string.format('MRTOF_EVENT accelerator_geometric_exit ion=%d localization=linear_bracket t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, exit.t_us, exit.x_mm, exit.y_mm, accelerator_exit_plane_z,
+          exit.vx_mm_us, exit.vy_mm_us, exit.vz_mm_us))
+      end
+    end
     if pz > first_prism_l0.target_plane_z_mm and ion_pz_mm <= first_prism_l0.target_plane_z_mm then
       local fraction = (first_prism_l0.target_plane_z_mm-pz) / dz
       local vz = pvz + fraction*(ion_vz_mm-pvz)
@@ -582,13 +599,18 @@ function segment.other_actions()
         and ion_pz_mm >= p2_low_field_reference.z_mm then
       local reference = interpolated_sample(before, after,
         (p2_low_field_reference.z_mm-pz)/dz)
-      if reference.x_mm >= p2_low_field_reference.x_min_mm
+      local inside_aperture = reference.x_mm >= p2_low_field_reference.x_min_mm
           and reference.x_mm <= p2_low_field_reference.x_max_mm
           and reference.y_mm >= p2_low_field_reference.y_min_mm
           and reference.y_mm <= p2_low_field_reference.y_max_mm
-          and reference.vy_mm_us > 0
-          and reference.vz_mm_us > 0 then
-        p2_low_field_reference_emitted[ion_number] = true
+      local direction_ok = reference.vy_mm_us > 0 and reference.vz_mm_us > 0
+      p2_low_field_reference_emitted[ion_number] = true
+      print(string.format('MRTOF_EVENT p2_low_field_crossing ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g inside_aperture=%d direction_ok=%d',
+        ion_number, reference.t_us, reference.x_mm, reference.y_mm,
+        reference.z_mm, reference.vx_mm_us, reference.vy_mm_us,
+        reference.vz_mm_us, inside_aperture and 1 or 0,
+        direction_ok and 1 or 0))
+      if inside_aperture and direction_ok then
         print(string.format('MRTOF_EVENT p2_low_field_reference ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
           ion_number, reference.t_us, reference.x_mm, reference.y_mm,
           reference.z_mm, reference.vx_mm_us, reference.vy_mm_us,
@@ -700,8 +722,9 @@ function segment.other_actions()
 end
 
 function segment.terminate()
-  print(string.format('MRTOF_EVENT terminal ion=%d splat=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g turns=%d central_crossings=%d',
+  print(string.format('MRTOF_EVENT terminal ion=%d splat=%d instance=%d volts=%.12g t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g turns=%d central_crossings=%d',
     ion_number, splat_codes[ion_number] or 0,
+    ion_instance, ion_volts,
     ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
     ion_vx_mm, ion_vy_mm, ion_vz_mm,
     turns[ion_number] or 0, crossings[ion_number] or 0))

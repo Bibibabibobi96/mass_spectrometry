@@ -60,6 +60,33 @@ local function events(kind)
 end
 local function value(line,key) return tonumber(assert(line:match(key..'=([^ ]+)'))) end
 
+-- Provider-derived geometric exit is optional, not an implicit z=0 plane.
+begin(3,-1); step(-1,-1,4)
+assert(#events('accelerator_geometric_exit')==0)
+point.accelerator_exit_plane_project_z_mm=2
+assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+begin(3,-1,1,2,2); step(1,-1,2,3,6,2)
+local exits=events('accelerator_geometric_exit')
+assert(#exits==1 and exits[1]:match('localization=linear_bracket'))
+assert(value(exits[1],'t_us')==1 and value(exits[1],'x_mm')==2
+  and value(exits[1],'y_mm')==4 and value(exits[1],'z_mm')==2
+  and value(exits[1],'vy_mm_us')==2 and value(exits[1],'vz_mm_us')==-1)
+assert(#events('central_plane')==0 and ion_splat==0)
+step(3,-1,3); step(1,-1,4)
+assert(#events('accelerator_geometric_exit')==1)
+begin(3,-1); step(2,-1,1); step(1,-1,2)
+assert(#events('accelerator_geometric_exit')==1)
+begin(1,1); step(3,1,2)
+assert(#events('accelerator_geometric_exit')==0)
+
+-- A later crossing after P1 cannot masquerade as the initial OA exit.
+point.accelerator_exit_plane_project_z_mm=-7
+assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+begin(-4,-1); step(-6,-1,2); step(-8,-1,4)
+assert(#events('p1_plane')==1 and #events('accelerator_geometric_exit')==0)
+point.accelerator_exit_plane_project_z_mm=nil
+assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+
 -- A geometric detector crossing before the complete return chain is diagnostic only.
 begin(12,-1); step(8,-1,4); assert(#events('detector')==0)
 begin(7,1); step(11,1,4); assert(#events('detector')==0)

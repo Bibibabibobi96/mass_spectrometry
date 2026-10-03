@@ -34,7 +34,7 @@ class TwoZoneGeometryTest(unittest.TestCase):
         result = compile_closed_two_zone_accelerator(self.requirements())
         self.assertEqual((result.source_cylinder_radius_mm, result.source_cylinder_height_mm), (1.0, 1.0))
         self.assertEqual(result.source_center_z_mm, 32.0)
-        self.assertEqual(result.static_minimum_y_extent_mm, 24.0)
+        self.assertEqual(result.static_minimum_y_extent_mm, 34.0)
         self.assertEqual(result.static_axial_length_mm, 38.0)
         layout = result.layout.to_dict()
         self.assertEqual(layout["geometry_profile_id"], "closed_two_zone_compact_mr_axial_r3_gap1_4mm")
@@ -42,9 +42,12 @@ class TwoZoneGeometryTest(unittest.TestCase):
         self.assertEqual(layout["source_cylinder"], {"radius_mm": 1.0, "height_mm": 1.0})
         self.assertEqual(layout["source_z_minimum_mm"], 37.0)
         self.assertEqual(layout["source_z_maximum_mm"], 39.0)
-        self.assertEqual(layout["static_minimum_y_extent_mm"], 24.0)
+        self.assertEqual(layout["aperture_height_y_mm"], 26.0)
+        self.assertEqual(layout["static_minimum_y_extent_mm"], 34.0)
         self.assertEqual(layout["static_axial_length_mm"], 38.0)
-        for actual, expected in zip(layout["ring_centers_z_mm"], (31.0, 26.0, 21.0, 16.0, 11.0)):
+        self.assertEqual(layout["ring_count"], 15)
+        expected_centers = tuple(36.0 - 30.0 * index / 16.0 for index in range(1, 16))
+        for actual, expected in zip(layout["ring_centers_z_mm"], expected_centers):
             self.assertAlmostEqual(actual, expected)
         self.assertIn("Closed positive-z grounded cap", result.gem)
         self.assertIn("Solid repeller; no coaxial return aperture", result.gem)

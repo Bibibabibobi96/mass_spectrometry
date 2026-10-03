@@ -11,6 +11,22 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class NativeCorridorRuntimeSupportTest(unittest.TestCase):
+    def test_support_loads_its_short_pa_copy_dependency(self) -> None:
+        source = (PROJECT / 'simion/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn("common\\simion\\short_pa_path_support.ps1", source)
+        self.assertIn("[math]::Max([int64]0,[int64]$CapacityWorkflowSession.committed_new_bytes", source)
+
+    def test_accelerator_reuses_provider_owned_checkpoint_without_materialization(self) -> None:
+        source = (PROJECT / 'simion/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
+        function = source.split('function Get-NativeAcceleratorRuntimeFamily {', 1)[1].split(
+            'function Assert-NativeCorridorRuntimeSessionDirectory {', 1,
+        )[0]
+        self.assertIn('$provider.private_runtime_checkpoint', function)
+        self.assertIn('persistent_controller_path=', function)
+        self.assertIn('accelerator_runtime_directory', function)
+        self.assertNotIn('New-NativeFastAdjustRuntimeFamily', function)
+        self.assertNotIn('Write-VerifiedRunManifest', function)
+
     def test_managed_family_survives_session_and_resumes_without_reconstruction(self):
         script = r"""
 param($Repo,$Root,$Python)
@@ -27,7 +43,7 @@ function New-NativeCorridorRuntimeFamily {
   $script:builds++
   foreach($i in 0..8){[IO.File]::WriteAllText((Join-Path $DestinationDirectory ('mrtof_analyzer_corridor.pa'+$i)),('fixture-'+$i))}
   return [pscustomobject]@{controller_path=(Join-Path $DestinationDirectory 'mrtof_analyzer_corridor.pa0');resource_lease=$ResourceLease;
-    receipt=[ordered]@{run_id=$RunId;cache_key=('A'*64);generation_sha256=('B'*64);generation_directory=$BankGenerationDirectory;source_raw=@{bytes=10};controller_path='temporary'}}
+    receipt=[ordered]@{run_id=$RunId;cache_key=('A'*64);generation_sha256=('B'*64);generation_directory=$BankGenerationDirectory;source_raw=@{bytes=10};controller_path='temporary';controller_refine='solutions={0}';response_refine_performed=$false;published_native_members_opened=$false}}
 }
 function Invoke-RunCapacityLifecycleAdapter {param($Python,$RepoRoot,$Action,$ArtifactRoot,$RunConfig)
   if($Action-ne'register-writing'-or$RunConfig-ne(Join-Path $owner 'run_config.json')){throw 'Wrong owner accounting'}
@@ -82,8 +98,11 @@ try{
   $session=New-Session;$args.Session=$session
   try{$null=Get-NativeCorridorRuntimeFamily @args;throw 'Changed byte count accepted'}catch{if($_.Exception.Message-notlike'*member byte count differs*'){throw}}
   if($script:builds-ne1-or-not(Test-Path -LiteralPath $session.directory)){throw 'Invalid family was reconstructed or deleted'}
+  (Get-Item -LiteralPath $path).IsReadOnly=$false;[IO.File]::WriteAllText($path,'fixture-1');(Get-Item -LiteralPath $path).IsReadOnly=$true
   [IO.File]::WriteAllText($binary,'changed generator')
-  try{$null=Get-NativeCorridorRuntimeFamily @args;throw 'Changed generator accepted'}catch{if($_.Exception.Message-notlike'*generator identity differs*'){throw}}
+  $session=New-Session;$args.Session=$session
+  $afterGeneratorChange=Get-NativeCorridorRuntimeFamily @args
+  if(-not$afterGeneratorChange.receipt.reused-or$script:builds-ne1-or$script:inventories-ne1){throw 'Generator provenance change invalidated sealed PA payload'}
   Write-Output 'MANAGED_NATIVE_RECOVERY=PASS'
 }finally{
   Suspend-NativeCorridorRuntimeSession -Session $session
@@ -111,7 +130,7 @@ $lease=$null;$guards=@()
 try{
   $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId ('native-readonly-fixture-'+[guid]::NewGuid().ToString('N'))
   $project=Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof'
-  & $Simion --nogui --noprompt lua (Join-Path $project 'tests/simion/test_native_local_family_fixture.lua') $Root (Join-Path $project 'simion/assemble_native_local_family.lua')
+  & $Simion --nogui --noprompt lua (Join-Path $project 'tests/simion/test_native_local_family_fixture.lua') $Root
   if($LASTEXITCODE-ne0){throw 'Tiny native fixture construction failed'}
   $iobFixture=Join-Path $project 'tests/simion/test_native_corridor_iob_fixture.lua'
   & $Simion --nogui --noprompt lua $iobFixture $Root prepare
@@ -190,13 +209,15 @@ function Remove-ShortPaCopy { param($Path) Remove-Item -LiteralPath $Path;$scrip
 function Update-HostResourceStage { param($Lease,$Stage,$Budget,$RetainedMemoryBytes) $script:stages+=@($Stage);return $Lease }
 function Get-HostResourceBudget { param($Role,$Stage) return @{} }
 function Invoke-FixtureSimion {
-  $destination=$args[-1]
+  $modeIndex=if($args.Contains('--controller')){[array]::IndexOf($args,'--controller')}else{[array]::IndexOf($args,'--append')}
+  if($modeIndex-lt0){throw 'Fixture assembly mode is missing'}
+  $destination=$args[$modeIndex+2]
   [IO.File]::WriteAllText($destination,'new object')
   $global:LASTEXITCODE=0
 }
-$result=New-NativeCorridorRuntimeFamily -BankGenerationDirectory $Root -DestinationDirectory (Join-Path $Root 'private') -Python 'unused' -RepoRoot $Root -SimionExe 'Invoke-FixtureSimion' -ResourceLease ([pscustomobject]@{id='fixture'}) -RunId 'fixture'
+$result=New-NativeCorridorRuntimeFamily -BankGenerationDirectory $Root -CacheKey ('A'*64) -GenerationSha256 ('B'*64) -DestinationDirectory (Join-Path $Root 'private') -Python 'unused' -RepoRoot $Root -SimionExe 'Invoke-FixtureSimion' -ResourceLease ([pscustomobject]@{id='fixture'}) -RunId 'fixture'
 if($script:active-ne0-or$script:copies-ne9){throw 'Source release/count differs'}
-if(($script:stages-join',')-ne'pa_refine,mrtof_prepare'){throw 'Controller heavy stage differs'}
+if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'Controller heavy stage differs'}
 if(@(Get-ChildItem (Join-Path $Root 'private') -File).Count-ne9){throw 'Expected controller and eight responses'}
 if(-not(Test-Path $result.controller_path)){throw 'Controller missing'}
 if($result.receipt.published_native_members_opened-or$result.receipt.response_refine_performed){throw 'Wrong provenance'}
@@ -208,7 +229,7 @@ Write-Output 'STREAM_FIXTURE=PASS'
                 ['pwsh', '-NoProfile', '-NonInteractive', '-File', str(path),
                  '-Support', str(PROJECT / 'simion/native_corridor_runtime_support.ps1'),
                  '-Root', str(root), '-Bank', json.dumps(bank)],
-                cwd=PROJECT, capture_output=True, text=True, timeout=30,
+                cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', timeout=30,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('STREAM_FIXTURE=PASS', result.stdout)

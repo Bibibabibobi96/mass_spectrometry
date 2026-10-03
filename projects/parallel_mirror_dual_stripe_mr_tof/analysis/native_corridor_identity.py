@@ -41,7 +41,6 @@ def _corridor_response_identity(response_recipe_path: Path, coarse_raw_path: Pat
     recipes = document.get("response_recipes") if isinstance(document, dict) else None
     if not isinstance(recipes, list) or len(recipes) != 8:
         raise CandidateContractError("corridor response recipe must contain eight response_recipes")
-    source_generation = document.get("source_generation_identity")
     coarse_generation = document.get("coarse_raw_generation_identity")
 
     def trusted_generation(value: object, label: str) -> dict[str, Any]:
@@ -55,8 +54,10 @@ def _corridor_response_identity(response_recipe_path: Path, coarse_raw_path: Pat
             raise CandidateContractError(f"corridor {label} generation identity is not a SHA-256 pair")
         return {"cache_key": cache_key.upper(), "generation_sha256": generation.upper()}
 
-    if not isinstance(source_generation, dict) or not isinstance(coarse_generation, dict):
-        raise CandidateContractError("corridor response recipe must carry verified source/coarse generation identities")
+    if document.get("schema_version") != 2 or not isinstance(coarse_generation, dict):
+        raise CandidateContractError(
+            "corridor response recipe must carry one verified coarse generation identity"
+        )
     coarse_record = coarse_generation.get("member")
     if not isinstance(coarse_record, dict):
         coarse_record = document.get("coarse_raw_member")
@@ -72,29 +73,31 @@ def _corridor_response_identity(response_recipe_path: Path, coarse_raw_path: Pat
     for expected_id, item in enumerate(sorted(recipes, key=lambda value: int(value.get("local_id", -1))), 1):
         if not isinstance(item, dict) or int(item.get("local_id", -1)) != expected_id:
             raise CandidateContractError("corridor response recipes must cover local IDs 1..8")
-        paths = item.get("source_basis_paths")
+        names = item.get("scratch_basis_names")
         physical_ids = item.get("physical_ids")
-        source_records = item.get("source_basis_identities")
-        if (not isinstance(paths, list) or not paths or not isinstance(physical_ids, list)
-                or len(paths) != len(physical_ids) or not isinstance(source_records, list)
-                or len(source_records) != len(paths)):
+        expected_names = [f"mrtof_analyzer.pa{value}" for value in physical_ids or []]
+        if (
+            not isinstance(names, list)
+            or not names
+            or not isinstance(physical_ids, list)
+            or names != expected_names
+        ):
             raise CandidateContractError(f"corridor response recipe {expected_id} has invalid basis inventory")
-        sources = []
-        for record in source_records:
-            if not isinstance(record, dict):
-                raise CandidateContractError(f"corridor response recipe {expected_id} basis identity is invalid")
-            size, sha = record.get("bytes"), str(record.get("sha256", ""))
-            if not isinstance(size, int) or size < 0 or len(sha) != 64 or any(
-                character not in "0123456789abcdefABCDEF" for character in sha
-            ):
-                raise CandidateContractError(f"corridor response recipe {expected_id} basis identity is invalid")
-            sources.append({"sha256": sha.upper(), "bytes": size})
-        normalized.append({"local_id": expected_id, "physical_ids": [int(value) for value in physical_ids],
-                           "source_basis": sources, "output_filename": str(item.get("output_filename", ""))})
+        normalized.append(
+            {
+                "local_id": expected_id,
+                "physical_ids": [int(value) for value in physical_ids],
+                "scratch_basis_names": names,
+                "output_filename": str(item.get("output_filename", "")),
+            }
+        )
+    if not coarse_raw_path.is_file() or coarse_raw_path.name != "mrtof_analyzer.pa#":
+        raise CandidateContractError("corridor coarse raw member path is invalid")
+    if coarse_raw_path.stat().st_size != coarse_bytes:
+        raise CandidateContractError("corridor coarse raw member size differs")
     return {
         "recipe_sha256": file_sha256(response_recipe_path),
         "recipe_size_bytes": response_recipe_path.stat().st_size,
-        "source_generation": trusted_generation(source_generation, "source"),
         "response_count": len(normalized), "responses": normalized,
         "coarse_raw_generation": {**trusted_generation(coarse_generation, "coarse raw"),
                                    "member": {"sha256": coarse_sha.upper(), "bytes": coarse_bytes}},
@@ -112,6 +115,25 @@ def build_native_corridor_identity(
     if not gem_path.is_file() or not simion_executable.is_file() or not response_recipe_path.is_file():
         raise CandidateContractError("native corridor identity requires existing GEM, recipe, and SIMION executable files")
     plan = derive_native_corridor_plan(contract_path)
+    response_identity = _corridor_response_identity(
+        response_recipe_path, coarse_raw_path
+    )
+    grouped = {
+        local_id: sorted(
+            int(physical_id)
+            for physical_id, mapped_local_id in plan[
+                "physical_to_local_electrode_id"
+            ].items()
+            if int(mapped_local_id) == local_id
+        )
+        for local_id in range(1, 9)
+    }
+    if [item["physical_ids"] for item in response_identity["responses"]] != [
+        grouped[local_id] for local_id in range(1, 9)
+    ]:
+        raise CandidateContractError(
+            "corridor response recipe physical groups differ from the corridor plan"
+        )
     canonical_gem = build_native_corridor_gem(contract_path).encode("utf-8")
     if gem_path.read_bytes() != canonical_gem:
         raise CandidateContractError("native corridor GEM differs from the canonical contract-derived GEM")
@@ -134,17 +156,18 @@ def build_native_corridor_identity(
         "grid_phase": {"origin_mm": list(plan["box_project_mm"][:3]),
                        "pa_span_mm": [plan["box_project_mm"][index + 3] - plan["box_project_mm"][index] for index in range(3)],
                        "grid_shape": plan["grid_shape"]},
-        "surface": "none",
+        "surface": str(plan["surface_mode"]),
         "simion_identity": {"release": simion_release, "executable_sha256": file_sha256(simion_executable)},
         "refine_policy": {"mode": "installed_default", "convergence_override": None,
                           "solutions": "pa0_and_each_declared_basis", "native_corridor_direct_response": True,
                           "native_response_output_basis_voltage_v": 10000.0,
                           "cache_recovery_policy": "none_reconstructible",
-                          "response_recipe_identity": _corridor_response_identity(response_recipe_path, coarse_raw_path)},
+                          "response_recipe_identity": response_identity},
         "builder_identity": {"identity_schema": "mrtof_analyzer_corridor_identity_v1",
                              "verification_order": "fast_adjust_before_final_inventory_and_seal_v1",
                              "native_corridor_geometry_generator_sha256": file_sha256(project / "analysis" / "native_corridor_geometry.py"),
-                             "native_corridor_controller_sha256": file_sha256(simion_directory / "create_native_corridor_controller.lua"),
+                             "native_fast_adjust_assembler_sha256": file_sha256(common_simion / "assemble_native_fast_adjust_family.lua"),
+                             "physical_basis_builder_sha256": file_sha256(simion_directory / "build_component_basis.lua"),
                              "id_remapper_sha256": file_sha256(common_simion / "remap_pa_electrode_ids.lua"),
                              "dirichlet_builder_sha256": file_sha256(common_simion / "build_dirichlet_patch_basis.lua")},
     }

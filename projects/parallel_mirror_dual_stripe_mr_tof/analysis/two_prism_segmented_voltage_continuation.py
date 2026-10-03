@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
@@ -78,6 +78,103 @@ class ContinuationControls:
         ):
             if type(value) is not int or value <= 0:
                 raise CandidateContractError(f"{label} must be a positive integer")
+
+
+def select_coverage_continuation_seed(coverage: Mapping[str, Any]) -> dict[str, Any]:
+    """Select the unique same-topology, same-P1 strict P2 sign bracket."""
+    branches = [
+        branch for branch in coverage.get("coverage", {}).get("combined", {}).get("branches", [])
+        if isinstance(branch, Mapping) and branch.get("both_residual_ranges_enclose_zero") is True
+    ]
+    if len(branches) != 1:
+        raise CandidateContractError(
+            "coverage must contain exactly one branch enclosing both residual zeros"
+        )
+    branch = branches[0]
+    signature = branch.get("topology_signature_sha256")
+    minimum = branch.get("minimum_scaled_residual_sample")
+    if not isinstance(signature, str) or not signature or not isinstance(minimum, Mapping):
+        raise CandidateContractError("coverage branch lacks its topology or minimum sample")
+    names = coverage.get("controls", {}).get("residual_names")
+    residual_name = "P1_P2_P2_shield_low_field_signed_vy_over_vz"
+    if not isinstance(names, list) or residual_name not in names:
+        raise CandidateContractError("coverage does not identify the P2 angle residual")
+    angle_index = names.index(residual_name)
+    unique: dict[tuple[float, float], Mapping[str, Any]] = {}
+    sampled = [
+        *coverage.get("coverage", {}).get("local", {}).get("samples", []),
+        *coverage.get("coverage", {}).get("sobol", {}).get("samples", []),
+    ]
+    for sample in sampled:
+        if (
+            not isinstance(sample, Mapping)
+            or sample.get("status") != "legal_topology"
+            or sample.get("topology_signature_sha256") != signature
+        ):
+            continue
+        voltages = sample.get("prism_voltages_v")
+        residuals = sample.get("residual_vector")
+        if not isinstance(voltages, list) or len(voltages) != 2 or not isinstance(residuals, list):
+            continue
+        try:
+            p1, p2 = (float(value) for value in voltages)
+            angle = float(residuals[angle_index])
+        except (IndexError, TypeError, ValueError):
+            continue
+        if all(math.isfinite(value) for value in (p1, p2, angle)):
+            unique[(p1, p2)] = sample
+    by_p1: dict[float, list[tuple[float, float]]] = {}
+    for (p1, p2), sample in unique.items():
+        by_p1.setdefault(p1, []).append((p2, float(sample["residual_vector"][angle_index])))
+    minimum_voltages = minimum.get("prism_voltages_v")
+    if not isinstance(minimum_voltages, list) or len(minimum_voltages) != 2:
+        raise CandidateContractError("coverage minimum sample has invalid prism voltages")
+    minimum_p1, minimum_p2 = (float(value) for value in minimum_voltages)
+    if not all(math.isfinite(value) for value in (minimum_p1, minimum_p2)):
+        raise CandidateContractError("coverage minimum sample prism voltages must be finite")
+    brackets: list[dict[str, float]] = []
+    for p1, group in by_p1.items():
+        ordered = sorted(group, key=lambda item: item[0])
+        for lower, upper in zip(ordered, ordered[1:], strict=False):
+            if lower[1] * upper[1] >= 0.0:
+                continue
+            midpoint = 0.5 * (lower[0] + upper[0])
+            brackets.append({
+                "initial_p1_v": p1,
+                "initial_p2_lower_v": lower[0],
+                "initial_p2_upper_v": upper[0],
+                "score": abs(p1 - minimum_p1) + abs(midpoint - minimum_p2),
+            })
+    if not brackets:
+        raise CandidateContractError(
+            "selected topology has no sampled same-P1 P2 sign bracket"
+        )
+    ordered_brackets = sorted(
+        brackets,
+        key=lambda item: (item["score"], item["initial_p1_v"], item["initial_p2_lower_v"]),
+    )
+    if len(ordered_brackets) > 1 and math.isclose(
+        ordered_brackets[0]["score"], ordered_brackets[1]["score"],
+        rel_tol=0.0, abs_tol=1e-12,
+    ):
+        raise CandidateContractError("selected topology has an ambiguous nearest P2 sign bracket")
+    sobol = coverage.get("controls", {}).get("sobol", {})
+    p1_bounds = sobol.get("p1_bounds_v")
+    p2_bounds = sobol.get("p2_bounds_v")
+    if (
+        not isinstance(p1_bounds, list) or len(p1_bounds) != 2
+        or not isinstance(p2_bounds, list) or len(p2_bounds) != 2
+    ):
+        raise CandidateContractError("coverage voltage bounds are invalid")
+    selected = ordered_brackets[0]
+    return {
+        "selection_mode": "coverage_unique_branch_same_p1_strict_p2_sign_bracket",
+        "topology_signature_sha256": signature,
+        "minimum_scaled_residual_sample": dict(minimum),
+        **selected,
+        "p1_bounds_v": [float(value) for value in p1_bounds],
+        "p2_bounds_v": [float(value) for value in p2_bounds],
+    }
 
 
 class _Budget:
@@ -980,7 +1077,8 @@ def main() -> None:
     authority.add_argument("--fixed-mirror-stripe-manifest", type=Path)
     parser.add_argument("--stripe-seed-manifest", type=Path)
     parser.add_argument("--expected-observation-sha256", required=True)
-    parser.add_argument("--expected-topology-signature-sha256", required=True)
+    parser.add_argument("--auto-select-initial-bracket", action="store_true")
+    parser.add_argument("--expected-topology-signature-sha256")
     parser.add_argument(
         "--solve-mode",
         choices=("angle_then_y", "y_then_angle_diagnostic"),
@@ -989,6 +1087,9 @@ def main() -> None:
     for name in (
         "initial-p1-v", "initial-p2-lower-v", "initial-p2-upper-v",
         "p1-min-v", "p1-max-v", "p2-min-v", "p2-max-v",
+    ):
+        parser.add_argument(f"--{name}", type=float)
+    for name in (
         "angle-tolerance-deg", "positive-turn-y-tolerance-mm", "p2-root-tolerance-v",
         "initial-p1-step-v", "minimum-p1-step-v", "maximum-p1-step-v",
         "p1-step-growth-factor", "p2-initial-half-width-v",
@@ -1014,12 +1115,45 @@ def main() -> None:
         or coverage.get("status") != "coverage_complete"
     ):
         raise CandidateContractError("coverage summary identity is invalid")
+    selection_values = (
+        args.expected_topology_signature_sha256,
+        args.initial_p1_v, args.initial_p2_lower_v, args.initial_p2_upper_v,
+        args.p1_min_v, args.p1_max_v, args.p2_min_v, args.p2_max_v,
+    )
+    if args.auto_select_initial_bracket:
+        if any(value is not None for value in selection_values):
+            raise CandidateContractError(
+                "automatic continuation selection forbids explicit topology, bracket, or bounds"
+            )
+        selection = select_coverage_continuation_seed(coverage)
+    else:
+        if any(value is None for value in selection_values):
+            raise CandidateContractError(
+                "explicit continuation selection requires topology, bracket, and voltage bounds"
+            )
+        selection = {
+            "selection_mode": "explicit",
+            "topology_signature_sha256": args.expected_topology_signature_sha256,
+            "initial_p1_v": args.initial_p1_v,
+            "initial_p2_lower_v": args.initial_p2_lower_v,
+            "initial_p2_upper_v": args.initial_p2_upper_v,
+            "p1_bounds_v": [args.p1_min_v, args.p1_max_v],
+            "p2_bounds_v": [args.p2_min_v, args.p2_max_v],
+        }
+    expected_signature = str(selection["topology_signature_sha256"])
+    initial_p1_v = float(selection["initial_p1_v"])
+    initial_p2_bracket_v = (
+        float(selection["initial_p2_lower_v"]),
+        float(selection["initial_p2_upper_v"]),
+    )
+    p1_bounds_v = tuple(float(value) for value in selection["p1_bounds_v"])
+    p2_bounds_v = tuple(float(value) for value in selection["p2_bounds_v"])
     branch_ids = {
         branch.get("topology_signature_sha256")
         for branch in coverage.get("coverage", {}).get("combined", {}).get("branches", [])
         if isinstance(branch, dict)
     }
-    if args.expected_topology_signature_sha256 not in branch_ids:
+    if expected_signature not in branch_ids:
         raise CandidateContractError("expected topology signature is absent from coverage")
     expected_inputs = coverage.get("inputs", {})
     for label, path, expected in (
@@ -1074,6 +1208,26 @@ def main() -> None:
     source_binding = validate_accelerator_exit_source_binding(
         source_receipt_path=args.accelerator_exit_source_receipt,
         source_handoff_receipt=source_receipt, managed=managed,
+        observation_path=(
+            args.accelerator_exit_observation
+            if operating_authority_kind == "fixed_grid_mirror_variable_slow_energy_stripe"
+            else None
+        ),
+        expected_slow_energy_per_charge_v=(
+            slow_energy
+            if operating_authority_kind == "fixed_grid_mirror_variable_slow_energy_stripe"
+            else None
+        ),
+        expected_target_k=(
+            float(managed.contract["nominal"]["target_drift_period_ratio"])
+            if operating_authority_kind == "fixed_grid_mirror_variable_slow_energy_stripe"
+            else None
+        ),
+        expected_accelerator_y_anchor_mm=(
+            float(managed.contract["accelerator"]["focus_y_anchor"]["project_y_mm"])
+            if operating_authority_kind == "fixed_grid_mirror_variable_slow_energy_stripe"
+            else None
+        ),
     )
     prism_ids = (
         int(managed.contract["prism_transport"]["first_prism"]["electrode_id"]),
@@ -1099,8 +1253,8 @@ def main() -> None:
         "residual_scales": tuple(residual_scales),
     }
     controls = ContinuationControls(
-        p1_bounds_v=(args.p1_min_v, args.p1_max_v),
-        p2_bounds_v=(args.p2_min_v, args.p2_max_v),
+        p1_bounds_v=p1_bounds_v,
+        p2_bounds_v=p2_bounds_v,
         angle_ratio_tolerance=angle_ratio_tolerance,
         positive_turn_y_tolerance_mm=args.positive_turn_y_tolerance_mm,
         p2_root_tolerance_v=args.p2_root_tolerance_v,
@@ -1124,9 +1278,9 @@ def main() -> None:
     )
     result = continuation(
         _evaluate,
-        expected_signature_sha256=args.expected_topology_signature_sha256,
-        initial_p1_v=args.initial_p1_v,
-        initial_p2_bracket_v=(args.initial_p2_lower_v, args.initial_p2_upper_v),
+        expected_signature_sha256=expected_signature,
+        initial_p1_v=initial_p1_v,
+        initial_p2_bracket_v=initial_p2_bracket_v,
         controls=controls,
     )
     output = {
@@ -1144,6 +1298,7 @@ def main() -> None:
             "materialized_source_receipt_sha256": file_sha256(args.source_receipt_output).lower(),
         },
         "controls": {
+            "coverage_initial_selection": selection,
             "solve_mode": args.solve_mode,
             "angle_tolerance_deg": args.angle_tolerance_deg,
             "derived_angle_ratio_tolerance": angle_ratio_tolerance,

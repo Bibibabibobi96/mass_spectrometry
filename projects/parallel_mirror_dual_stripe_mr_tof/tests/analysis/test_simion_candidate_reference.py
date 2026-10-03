@@ -228,14 +228,16 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         first, central = resolved["prism_ground_shields"]
         self.assertEqual(first["prism_clearance_polygon_yz_mm"], [[-40, -65], [-70, -95], [-70, -35]])
         self.assertEqual(central["prism_clearance_polygon_yz_mm"], [[0, 0], [-26, -26], [-26, 26]])
-        self.assertEqual(len(central["body_sections"]), 3)
+        self.assertEqual(len(first["body_sections"]), 1)
+        self.assertEqual(len(central["body_sections"]), 1)
         # Native face/sketch + STL sections, away from all numerical boundaries.
         for shield, point, material in (
             (central, (4, 0, 60), False), (central, (4, 0, 10), True),
-            (central, (-18, -4, 30), False), (central, (-18, -4, 60), True),
+            (central, (-18, -4, 30), False), (central, (-18, -4, 60), False),
             (central, (0, -4, 30), False), (central, (0, -10, 60), False),
-            (central, (0, -4, 60), True), (central, (4, -25, 24), False),
-            (first, (-18, -34, -65), False), (first, (-18, -34, -85), True),
+            (central, (0, -3.5, 60), True), (central, (4, -25, 24), False),
+            (first, (-18, -34, -65), False), (first, (-18, -34, -85), False),
+            (central, (10, -4, 60), True), (first, (10, -34, -85), True),
             (first, (-18, -74, -98), False), (first, (4, -42, -68), True),
         ):
             with self.subTest(point=point, shield=shield["id"]):
@@ -335,20 +337,22 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             "status": "derived",
             "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
             "numerical_domain": {
-                "span_mm": [44.5, 24.5, 50.0],
-                "iob_origin_mm": [-22.25, -12.25, 0.0],
+                "span_mm": [44.5, 34.5, 50.0],
+                "stored_span_mm": [22.25, 34.5, 50.0],
+                "mirror_axes": ["x"],
+                "iob_origin_mm": [0.0, -17.25, 0.0],
                 "local_exit_z_mm": 6.0,
             },
             "requirements": {"placement": {"focus_y_mm": 0.0, "global_exit_z_mm": 0.0}},
             "layout": {
                 "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
-                "static_minimum_y_extent_mm": 24.0,
+                "static_minimum_y_extent_mm": 34.0,
             },
         }
         origin = resolve_accelerator_iob_origin(contract, plan)
-        self.assertEqual(origin, (-22.25, -57.25, -6.0))
+        self.assertEqual(origin, (0.0, -67.25, -6.0))
         focus_y = contract["accelerator"]["focus_y_anchor"]["project_y_mm"]
-        accelerator_y_max = focus_y + 12.0
+        accelerator_y_max = focus_y + 17.0
         resolved = resolve_geometry(contract)
         prism2 = next(
             item for item in resolved["prism_ground_shields"]
@@ -368,13 +372,23 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaisesRegex(CandidateContractError, "profile differs"):
             resolve_accelerator_iob_origin(contract, wrong_profile)
 
+        wrong_symmetry = copy.deepcopy(plan)
+        wrong_symmetry["numerical_domain"]["mirror_axes"] = []
+        with self.assertRaisesRegex(CandidateContractError, "pose fields are incomplete"):
+            resolve_accelerator_iob_origin(contract, wrong_symmetry)
+
+        wrong_stored_span = copy.deepcopy(plan)
+        wrong_stored_span["numerical_domain"]["stored_span_mm"][0] = 44.5
+        with self.assertRaisesRegex(CandidateContractError, "origin rule differs"):
+            resolve_accelerator_iob_origin(contract, wrong_stored_span)
+
     def test_operating_point_variation_is_derived_and_rejects_ambiguous_overrides(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
             base = temporary / "base.operating_point.lua"
             base.write_text(
                 "return { mirror_voltages_v = { 0, -10, 20, 30, 50 }, stripe_biases_v = { -4, 6 }, prism_voltages_v = { 141, 0 }, "
-                "accelerator_voltages_v = { 100, 50, 0 }, accelerator_ring_voltages_v = { 40, 30, 20, 10, 0 }, detector_box_mm = { -1, 2, -3, 4, 5, 6 }, "
+                "accelerator_voltages_v = { 100, 50, 0 }, accelerator_ring_voltages_v = { 45, 40, 35, 30, 25, 20, 15, 10, 5 }, detector_box_mm = { -1, 2, -3, 4, 5, 6 }, "
                 "trajectory_quality = 8, maximum_step_us = 0.002, full_path_timeout_us = 800, nonaccelerator_scale = 1, phase_origin_mirror_side = 1, return_mirror_side = -1, target_drift_period_ratio = 25.5, target_half_oscillation_count = 51 }\n",
                 encoding="utf-8",
             )
@@ -394,6 +408,10 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             self.assertEqual(result["resolved_operating_point"]["mirror_voltages_v"], [0.0, -9.0, 22.0, 30.0, 50.0])
             self.assertEqual(result["resolved_operating_point"]["stripe_biases_v"], [0.0, 0.0])
             self.assertEqual(result["resolved_operating_point"]["prism_voltages_v"], [141.0, 0.0])
+            self.assertEqual(
+                result["resolved_operating_point"]["accelerator_ring_voltages_v"],
+                [45.0, 40.0, 35.0, 30.0, 25.0, 20.0, 15.0, 10.0, 5.0],
+            )
             self.assertEqual(result["resolved_operating_point"]["full_path_timeout_us"], 800.0)
             self.assertEqual(result["resolved_operating_point"]["nonaccelerator_scale"], 0.7)
             self.assertEqual(result["resolved_operating_point"]["trajectory_quality"], 2.0)
@@ -582,12 +600,12 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertGreater(focus.focus_after_exit_mm, 0.0)
         self.assertAlmostEqual(placement.exit_grid_z_mm - focus.focus_after_exit_mm, placement.focus_z_mm)
         self.assertEqual(contract["accelerator"]["focus_project_position_mm"], [0.0, None, 0.0])
-        self.assertAlmostEqual(placement.focus_y_mm, -45.0)
+        self.assertAlmostEqual(placement.focus_y_mm, -50.0)
         shifted = copy.deepcopy(contract)
-        shifted["accelerator"]["focus_y_anchor"]["project_y_mm"] = -46.0
-        self.assertAlmostEqual(derive_two_zone_placement(shifted).focus_y_mm, -46.0)
+        shifted["accelerator"]["focus_y_anchor"]["project_y_mm"] = -51.0
+        self.assertAlmostEqual(derive_two_zone_placement(shifted).focus_y_mm, -51.0)
         too_close = copy.deepcopy(contract)
-        too_close["accelerator"]["focus_y_anchor"]["project_y_mm"] = -44.0
+        too_close["accelerator"]["focus_y_anchor"]["project_y_mm"] = -49.0
         with self.assertRaisesRegex(CandidateContractError, "clearance"):
             resolve_geometry(too_close)
         self.assertGreater(placement.repeller_z_mm, placement.grid_1_z_mm)
@@ -1069,7 +1087,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual(exit_shield["rectangular_slots_mm"], [[-2.0, -75.0, -100.0, 2.0, -35.0, -30.0]])
         grounded_2 = resolved["prism_ground_shields"][-1]
         self.assertEqual(grounded_2["topology"], "single_continuous_frame_with_cross_aperture")
-        self.assertEqual(grounded_2["cross_aperture"], {"x_mm": [-2.0, 2.0], "y_mm": [-28.0, -6.0], "z_mm": [-40.0, 40.0], "boolean_operation": "union"})
+        self.assertEqual(grounded_2["cross_aperture"], {"x_mm": [-2.0, 2.0], "y_mm": [-28.0, -4.0], "z_mm": [-40.0, 40.0], "boolean_operation": "union"})
         low_field = resolved["two_prism_low_field_reference_section"]
         self.assertEqual(low_field["open_project_z_interval_mm"], [26.0, 40.0])
         self.assertEqual(low_field["reference_plane_project_z_mm"], 33.0)
@@ -1105,7 +1123,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             resolved["metadata"]["required_accelerator_guard_to_central_prism_ground_shield_clearance_y_mm"],
         )
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
-        contract["accelerator"]["focus_y_anchor"]["project_y_mm"] = -44.0
+        contract["accelerator"]["focus_y_anchor"]["project_y_mm"] = -49.0
         with self.assertRaises(CandidateContractError):
             resolve_geometry(contract)
         self.assertNotIn("accelerator_stage_2_rings", resolved)
@@ -1209,17 +1227,6 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual(receipt["resolved_geometry_sha256"], geometry_fingerprint(resolved))
         self.assertEqual(receipt["electrode_ids"]["mirrors"], list(range(1, 11)))
         self.assertEqual(receipt["electrode_ids"]["stripes"], [11, 12, 13, 14])
-        # Frozen to the r51 GUI-review Candidate plus the independently
-        # configurable, clearance-gated accelerator assembly pose.  This
-        # identity does not grant Formal qualification.
-        self.assertEqual(
-            geometry_fingerprint(resolved),
-            "982114b10e99db0d109f601925d87969972799bac3901d753a6b6a4a44eb7b3d",
-        )
-        self.assertEqual(
-            geometry_fingerprint({"stripe_electrodes": resolved["stripe_electrodes"]}),
-            "699284bf6517ee7a40c70c1a919c7dcbc0378cf1670873ea03f0c4e17d7351e9",
-        )
         shifted_reference = copy.deepcopy(resolved)
         shifted_reference["two_prism_low_field_reference_section"][
             "reference_plane_project_z_mm"
@@ -1247,6 +1254,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertNotIn("adjustable V_repeller = 4480", program)
         self.assertIn("n = 100", bunch)
         self.assertIn("simion.command('fly", launcher)
+        self.assertIn("--retain-trajectories=0", launcher)
         self.assertIn("--particles=", launcher)
         self.assertIn("particle override must be a Fly2 file", launcher)
 

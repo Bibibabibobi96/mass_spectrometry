@@ -261,6 +261,194 @@ def generate_center_first_halton_cylinder_phase_space(
         })
     return samples
 
+
+def generate_halton_cylinder_phase_space(
+    *,
+    particle_count: int,
+    center_mm: Sequence[float],
+    transverse_axes: Sequence[int],
+    axis: int,
+    radius_mm: float,
+    height_mm: float,
+    kinetic_energy_center_ev: float,
+    kinetic_energy_full_width_ev: float,
+    nominal_direction: Sequence[float],
+    angular_full_width_deg: float,
+) -> list[dict[str, Any]]:
+    """Generate a prefix-stable volume cohort without a forced centre state.
+
+    The samples are the ordinary Halton sequence positions 1..N.  This keeps
+    formal volume cohorts free of diagnostic sentinels while reusing the same
+    repository-wide cylinder sampler.
+    """
+    if isinstance(particle_count, bool) or not isinstance(particle_count, int) or particle_count < 1:
+        raise ValueError("particle_count must be a positive integer")
+    samples = generate_center_first_halton_cylinder_phase_space(
+        particle_count=particle_count + 1,
+        center_mm=center_mm,
+        transverse_axes=transverse_axes,
+        axis=axis,
+        radius_mm=radius_mm,
+        height_mm=height_mm,
+        kinetic_energy_center_ev=kinetic_energy_center_ev,
+        kinetic_energy_full_width_ev=kinetic_energy_full_width_ev,
+        nominal_direction=nominal_direction,
+        angular_full_width_deg=angular_full_width_deg,
+    )[1:]
+    for particle_id, sample in enumerate(samples, 1):
+        sample["particle_id"] = particle_id
+    return samples
+
+
+def generate_center_axis_pair_halton_cylinder_phase_space(
+    *,
+    particle_count: int,
+    center_mm: Sequence[float],
+    transverse_axes: Sequence[int],
+    axis: int,
+    controlled_axis: int,
+    controlled_axis_half_span_mm: float | None = None,
+    radius_mm: float,
+    height_mm: float,
+    kinetic_energy_center_ev: float,
+    kinetic_energy_full_width_ev: float,
+    nominal_direction: Sequence[float],
+    angular_full_width_deg: float,
+) -> list[dict[str, Any]]:
+    """Add a centre-state axis pair to the normal Halton cylinder cohort.
+
+    Particle 1 is the nominal centre, particles 2 and 3 differ from it only
+    by ``-extent`` and ``+extent`` on ``controlled_axis``.  Remaining
+    particles retain the ordinary deterministic Halton sequence.  The pair is
+    therefore usable for a controlled first-order response while the complete
+    cohort still samples the requested position, energy, and angle envelope.
+    """
+    samples = generate_center_first_halton_cylinder_phase_space(
+        particle_count=particle_count,
+        center_mm=center_mm,
+        transverse_axes=transverse_axes,
+        axis=axis,
+        radius_mm=radius_mm,
+        height_mm=height_mm,
+        kinetic_energy_center_ev=kinetic_energy_center_ev,
+        kinetic_energy_full_width_ev=kinetic_energy_full_width_ev,
+        nominal_direction=nominal_direction,
+        angular_full_width_deg=angular_full_width_deg,
+    )
+    if type(controlled_axis) is not int or controlled_axis not in (0, 1, 2):
+        raise ValueError("controlled_axis must be a Cartesian axis")
+    if particle_count < 3:
+        raise ValueError("controlled axis-pair sampling requires at least three particles")
+    center = list(_vector3(list(center_mm), "center_mm"))
+    nominal = list(_unit(_vector3(list(nominal_direction), "nominal_direction"), "nominal_direction"))
+    envelope_extent = height_mm / 2.0 if controlled_axis == axis else radius_mm
+    extent = envelope_extent if controlled_axis_half_span_mm is None else _number(
+        controlled_axis_half_span_mm, "controlled_axis_half_span_mm", positive=True
+    )
+    if extent > envelope_extent:
+        raise ValueError("controlled_axis_half_span_mm exceeds the cylinder envelope")
+    for particle_id, sign in ((2, -1.0), (3, 1.0)):
+        position = list(center)
+        position[controlled_axis] += sign * extent
+        samples[particle_id - 1] = {
+            "particle_id": particle_id,
+            "position_mm": position,
+            "kinetic_energy_ev": float(kinetic_energy_center_ev),
+            "direction": list(nominal),
+        }
+    return samples
+
+
+def apply_controlled_slow_energy_pair(
+    samples: Sequence[Mapping[str, Any]],
+    *,
+    charge_state: int,
+    half_span_ev_per_charge: float,
+    negative_particle_id: int = 2,
+    positive_particle_id: int = 3,
+) -> list[dict[str, Any]]:
+    """Replace samples 1..3 by centre, ``E_y-``, ``E_y+`` states.
+
+    The caller owns the meaning of the release direction.  This solver-neutral
+    helper changes only ``particle_id`` and ``kinetic_energy_ev`` on copies of
+    the centre state; position, direction, birth state, and species fields are
+    retained byte-for-byte.  The explicit energy half-span is expressed per
+    unit charge; its distribution-specific choice remains with the caller.
+    """
+    if (
+        type(negative_particle_id) is not int
+        or type(positive_particle_id) is not int
+        or negative_particle_id < 2
+        or positive_particle_id < 2
+        or negative_particle_id == positive_particle_id
+        or max(negative_particle_id, positive_particle_id) > len(samples)
+    ):
+        raise ValueError("controlled slow-energy particle IDs are invalid")
+    if len(samples) < 3:
+        raise ValueError("controlled slow-energy sampling requires at least three particles")
+    if isinstance(charge_state, bool) or not isinstance(charge_state, int) or charge_state == 0:
+        raise ValueError("charge_state must be a nonzero integer")
+    half_span = _number(
+        half_span_ev_per_charge, "half_span_ev_per_charge", positive=True,
+    ) * abs(charge_state)
+    center = dict(samples[0])
+    center_energy = _number(
+        center.get("kinetic_energy_ev"), "centre kinetic_energy_ev", positive=True,
+    )
+    if center_energy <= half_span:
+        raise ValueError("controlled slow-energy lower endpoint is not physical")
+    result = [dict(sample) for sample in samples]
+    for particle_id, energy in (
+        (1, center_energy),
+        (negative_particle_id, center_energy - half_span),
+        (positive_particle_id, center_energy + half_span),
+    ):
+        state = dict(center)
+        state["particle_id"] = particle_id
+        state["kinetic_energy_ev"] = energy
+        result[particle_id - 1] = state
+    return result
+
+
+def apply_controlled_position_pair(
+    samples: Sequence[Mapping[str, Any]],
+    *,
+    controlled_axis: int,
+    half_span_mm: float,
+    negative_particle_id: int,
+    positive_particle_id: int,
+    position_key: str = "position_mm",
+) -> list[dict[str, Any]]:
+    """Replace two states by a centre-state Cartesian position pair."""
+    if type(controlled_axis) is not int or controlled_axis not in (0, 1, 2):
+        raise ValueError("controlled_axis must be a Cartesian axis")
+    if (
+        type(negative_particle_id) is not int
+        or type(positive_particle_id) is not int
+        or negative_particle_id < 2
+        or positive_particle_id < 2
+        or negative_particle_id == positive_particle_id
+        or max(negative_particle_id, positive_particle_id) > len(samples)
+    ):
+        raise ValueError("controlled position-pair particle IDs are invalid")
+    if not isinstance(position_key, str) or not position_key:
+        raise ValueError("position_key must identify the position vector")
+    half_span = _number(half_span_mm, "half_span_mm", positive=True)
+    center = dict(samples[0])
+    center_position = list(_vector3(center.get(position_key), f"centre {position_key}"))
+    result = [dict(sample) for sample in samples]
+    for particle_id, sign in (
+        (negative_particle_id, -1.0),
+        (positive_particle_id, 1.0),
+    ):
+        state = dict(center)
+        position = list(center_position)
+        position[controlled_axis] += sign * half_span
+        state["particle_id"] = particle_id
+        state[position_key] = position
+        result[particle_id - 1] = state
+    return result
+
 def generate_cylinder_release_states(spec: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Generate explicit canonical states from a validated cylinder-release spec."""
     validate_cylinder_release_spec(spec)

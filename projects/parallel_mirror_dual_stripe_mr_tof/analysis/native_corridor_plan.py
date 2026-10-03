@@ -71,10 +71,32 @@ def derive_native_corridor_plan(contract_path: Path) -> dict[str, Any]:
     settings = _native_settings(contract)
     resolved = resolve_geometry(contract)
     mesh = _numbers(settings.get("mesh_mm_per_gu"), "native corridor mesh", 3)
+    surface_mode = settings.get("surface_mode")
+    if surface_mode not in {"none", "fractional"}:
+        raise CandidateContractError("native corridor surface mode must be none or fractional")
     margin = _numbers(settings.get("margin_mm"), "native corridor margin", 3)
     if any(value <= 0.0 for value in mesh) or any(value < 0.0 for value in margin):
         raise CandidateContractError("native corridor mesh/margin must be nonnegative and nonzero")
     slot = _numbers(resolved.get("mirror_slot"), "resolved mirror slot", 6)
+    if settings.get("x_envelope_rule") != "x_mirrored_positive_half_beam_slot_and_prism_ground_shield_extent_plus_margin":
+        raise CandidateContractError("native corridor x envelope rule differs")
+    if settings.get("mirror_axes") != ["x"]:
+        raise CandidateContractError("native corridor must use the qualified x mirror plane")
+    x_edges = [slot[0], slot[3]]
+    shields = resolved.get("prism_ground_shields")
+    if not isinstance(shields, list) or not shields:
+        raise CandidateContractError("native corridor Prism ground shields are missing")
+    for shield in shields:
+        if not isinstance(shield, Mapping):
+            raise CandidateContractError("native corridor Prism ground shield is invalid")
+        sections = shield.get("body_sections")
+        if not isinstance(sections, list) or not sections:
+            raise CandidateContractError("native corridor Prism ground-shield body sections are missing")
+        for section in sections:
+            if not isinstance(section, Mapping):
+                raise CandidateContractError("native corridor Prism ground-shield body section is invalid")
+            x_edges.extend(_numbers(section.get("x"), "native corridor Prism ground-shield x interval", 2))
+    x_half_span = max(abs(value) for value in x_edges) + margin[0]
     roles = settings.get("yz_envelope_geometry_roles")
     if not isinstance(roles, list) or not roles:
         raise CandidateContractError("native corridor y/z geometry roles are missing")
@@ -90,8 +112,8 @@ def derive_native_corridor_plan(contract_path: Path) -> dict[str, Any]:
     if not boxes:
         raise CandidateContractError("native corridor has no geometry envelope")
     box = [
-        slot[0] - margin[0], min(item[1] for item in boxes) - margin[1], min(item[2] for item in boxes) - margin[2],
-        slot[3] + margin[0], max(item[4] for item in boxes) + margin[1], max(item[5] for item in boxes) + margin[2],
+        0.0, min(item[1] for item in boxes) - margin[1], min(item[2] for item in boxes) - margin[2],
+        x_half_span, max(item[4] for item in boxes) + margin[1], max(item[5] for item in boxes) + margin[2],
     ]
     shape = _grid_shape(box, mesh)
     mapping, fixed_ids = _native_mapping(settings)
@@ -106,6 +128,8 @@ def derive_native_corridor_plan(contract_path: Path) -> dict[str, Any]:
         "status": "candidate__not_flown",
         "box_project_mm": box,
         "mesh_mm_per_gu": mesh,
+        "surface_mode": surface_mode,
+        "mirror_axes": ["x"],
         "grid_shape": shape,
         "bytes_per_grid_point_estimate": bytes_per_point,
         "grid_points_per_array": points,
@@ -118,6 +142,6 @@ def derive_native_corridor_plan(contract_path: Path) -> dict[str, Any]:
         "native_family_members": 10,
         "physical_to_local_electrode_id": mapping,
         "fixed_zero_electrode_ids": fixed_ids,
-        "derivation": "resolved_mirror_slot_x_and_mirror_conductor_yz_envelopes_plus_native_contract_margin",
+        "derivation": "resolved_x_symmetric_positive_half_beam_slot_and_prism_ground_shield_extent_plus_mirror_conductor_yz_envelopes_and_native_margin",
         "qualification": "planning_only__no_corridor_pa_built_or_flown",
     }

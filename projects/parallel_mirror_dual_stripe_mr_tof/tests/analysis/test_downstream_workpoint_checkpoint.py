@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import tempfile
@@ -56,6 +57,13 @@ class CheckpointFixture:
         }
         self.contract = {"downstream_fixed_grid_workpoint_profile": {
             "schema_version": 1,
+            "jacobian_relative_step_tiers": {
+                "coarse": 0.01,
+                "medium": 0.0025,
+                "fine": 0.0005,
+                "medium_maximum_scaled_residual": 10.0,
+                "fine_maximum_scaled_residual": 2.0,
+            },
             "automatic_iteration": {
                 "schema_version": 1, "maximum_iterations": 8, "damping_factor": 0.5,
                 "minimum_step_linf_v": 1e-6, "minimum_relative_improvement": 0.01,
@@ -184,6 +192,20 @@ class DownstreamWorkpointCheckpointTests(unittest.TestCase):
         self.assertEqual(result["next_iteration"], 3)
         self.assertEqual(result["current_voltages_v"], fixture.decisions[-1]["proposed_voltages_v"])
 
+    def test_reconstructs_terminal_success_for_publish_only_replay(self):
+        fixture = self.fixture()
+        write_json(fixture.results / "iteration_02_decision.json", fixture.decisions[1])
+        fixture.add_child(3, [0.0, 0.0, 0.0, 0.0], record=False)
+        result = fixture.reconstruct(latest=fixture.children[-1])
+        self.assertEqual(result["completed_iterations"], 3)
+        self.assertEqual(result["next_iteration"], 4)
+        self.assertEqual(result["terminal_decision"]["state"], "terminal")
+        self.assertEqual(result["terminal_decision"]["terminal_reason"], "success")
+        self.assertEqual(
+            result["current_voltages_v"],
+            fixture.decisions[-1]["observation_record"]["voltages_v"],
+        )
+
     def test_native_checkpoint_replays_and_rejects_cross_bank_jacobian(self):
         fixture = self.fixture()
         result = fixture.reconstruct()
@@ -273,6 +295,79 @@ class DownstreamWorkpointCheckpointTests(unittest.TestCase):
         fixture = self.fixture()
         fixture.write_lineage(replayed_iteration=2)
         self.assertEqual(fixture.reconstruct()["completed_iterations"], 2)
+
+    def test_explicit_earlier_child_rewinds_a_continuous_successful_lineage(self):
+        fixture = self.fixture()
+        fixture.write_lineage()
+        result = fixture.reconstruct(latest=fixture.children[0])
+        self.assertEqual(result["completed_iterations"], 1)
+        self.assertEqual(result["next_iteration"], 2)
+        self.assertEqual(result["ignored_trailing_lineage_iterations"], [2])
+        self.assertEqual(len(result["lineage_children"]), 1)
+
+    def test_ignores_one_trailing_failed_child_without_physical_observation(self):
+        fixture = self.fixture()
+        failed_run = fixture.root / f"{fixture.run_id}-iter-03"
+        failed_manifest = write_json(failed_run / "run_manifest.json", {
+            "schema_version": 2,
+            "role": "simulation_run_manifest",
+            "run_id": failed_run.name,
+            "project": "parallel_mirror_dual_stripe_mr_tof",
+            "mode": "finite_3d_two_prism_voltage_trial",
+            "status": "failed",
+            "outputs": [],
+        })
+        fixture.write_lineage()
+        lineage_path = fixture.results / "iteration_lineage.json"
+        lineage = json.loads(lineage_path.read_text())
+        lineage["children"].append({
+            "iteration": 3,
+            "child_manifest": str(failed_manifest),
+            "child_manifest_sha256": sha(failed_manifest),
+        })
+        write_json(lineage_path, lineage)
+        write_json(fixture.results / "iteration_02_decision.json", fixture.decisions[1])
+        write_json(fixture.results / "iteration_03_decision.json", {
+            "schema_version": 1,
+            "role": "mrtof_downstream_workpoint_iteration_decision",
+            "state": "terminal",
+            "terminal_reason": "solver_failure",
+            "iteration": 3,
+        })
+        result = fixture.reconstruct(latest=fixture.children[-1])
+        self.assertEqual(result["completed_iterations"], 2)
+        self.assertEqual(result["next_iteration"], 3)
+
+    def test_replays_resolved_recovery_before_later_successful_child(self):
+        fixture = self.fixture()
+        recovery_required = {
+            "schema_version": 1,
+            "role": "mrtof_downstream_workpoint_iteration_decision",
+            "state": "recovery_required",
+            "terminal_reason": None,
+            "iteration": 1,
+            "coordinate_group": "stripe_1_stripe_2",
+            "recovery_state": {"accepted_anchor": fixture.decisions[0]["observation_record"]},
+        }
+        recovery_model = {
+            "schema_version": 1,
+            "role": "mrtof_downstream_workpoint_iteration_recovery_model",
+            "state": "continue",
+            "recovery_after_iteration": 1,
+            "coordinate_group": "stripe_1_stripe_2",
+        }
+        recovery_proposal = copy.deepcopy(fixture.decisions[0])
+        recovery_proposal["iteration"] = 2
+        recovery_proposal["recovery_resume_proposal"] = True
+        write_json(fixture.results / "iteration_01_decision.json", recovery_required)
+        write_json(fixture.results / "iteration_02_decision.json", fixture.decisions[1])
+        write_json(fixture.results / "iteration_history.json", {
+            "decisions": [recovery_required, recovery_model, recovery_proposal, fixture.decisions[1]],
+        })
+        fixture.write_lineage()
+        result = fixture.reconstruct()
+        self.assertEqual(result["completed_iterations"], 2)
+        self.assertEqual(result["next_iteration"], 3)
 
     def test_rejects_contract_or_jacobian_change(self):
         fixture = self.fixture()

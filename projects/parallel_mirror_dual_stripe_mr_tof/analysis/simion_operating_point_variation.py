@@ -51,6 +51,19 @@ def _field(source: str, name: str, count: int | None = None) -> float | list[flo
     return _numbers(match.group(1), name, count)
 
 
+def _vector_field(source: str, name: str) -> list[float]:
+    match = re.search(rf"\b{re.escape(name)}\s*=\s*\{{([^}}]+)\}}", source)
+    if not match:
+        raise OperatingPointVariationError(f"base operating point lacks {name}")
+    try:
+        values = [float(value.strip()) for value in match.group(1).split(",")]
+    except ValueError as error:
+        raise OperatingPointVariationError(f"{name} contains a non-numeric value") from error
+    if not values or not all(math.isfinite(value) for value in values):
+        raise OperatingPointVariationError(f"{name} requires at least one finite value")
+    return values
+
+
 _PHASE_FIELDS = (
     "phase_origin_mirror_side",
     "return_mirror_side",
@@ -81,7 +94,7 @@ def load_operating_point(
         "stripe_biases_v": _field(source, "stripe_biases_v", 2),
         "prism_voltages_v": _field(source, "prism_voltages_v", 2),
         "accelerator_voltages_v": _field(source, "accelerator_voltages_v", 3),
-        "accelerator_ring_voltages_v": _field(source, "accelerator_ring_voltages_v", 5),
+        "accelerator_ring_voltages_v": _vector_field(source, "accelerator_ring_voltages_v"),
         "detector_box_mm": _field(source, "detector_box_mm", 6),
         "trajectory_quality": _field(source, "trajectory_quality"),
         "maximum_step_us": _field(source, "maximum_step_us"),

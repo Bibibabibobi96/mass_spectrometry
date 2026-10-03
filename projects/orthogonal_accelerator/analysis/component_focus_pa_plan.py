@@ -35,7 +35,7 @@ def _ceil_mesh(value: float, mesh: float) -> float:
 
 
 def _validate_theory_seed(campaign: dict[str, Any], layout: dict[str, Any]) -> dict[str, float]:
-    """Bind the exit-frame source and nine PA voltages to the 1-D two-zone seed."""
+    """Bind the exit-frame source and profile-sized PA voltages to the 1-D seed."""
     geometry = campaign["release_spec"]["geometry"]
     source_center = float(geometry["center_mm"][2])
     source_half_height = float(geometry["height_mm"]) / 2.0
@@ -44,6 +44,9 @@ def _validate_theory_seed(campaign: dict[str, Any], layout: dict[str, Any]) -> d
         raise ComponentFocusPAPlanError("campaign source cylinder is outside provider first acceleration gap")
     release_position = gap_1 + gap_2 - source_center
     voltages = [float(value) for value in campaign["operating_point"]["electrode_voltages_v"]]
+    ring_count = int(layout["ring_count"])
+    if len(voltages) != 4 + ring_count:
+        raise ComponentFocusPAPlanError("campaign voltage count differs from the geometry profile")
     state = accelerator_state(
         voltages[1], voltages[2], gap_1, gap_2,
         exit_v=voltages[3], release_position_mm=release_position,
@@ -55,7 +58,7 @@ def _validate_theory_seed(campaign: dict[str, Any], layout: dict[str, Any]) -> d
     if not math.isclose(state.first_order_focus_drift_mm, expected_focus, rel_tol=0.0, abs_tol=1.0e-8):
         raise ComponentFocusPAPlanError("campaign first-gap voltages do not reproduce the declared time-focus plane")
     for index, voltage in enumerate(voltages[4:], 1):
-        expected_ring = voltages[2] + (voltages[3] - voltages[2]) * index / 6.0
+        expected_ring = voltages[2] + (voltages[3] - voltages[2]) * index / (ring_count + 1)
         if not math.isclose(voltage, expected_ring, rel_tol=0.0, abs_tol=1.0e-9):
             raise ComponentFocusPAPlanError("campaign second-region rings do not linearly interpolate grid1 to exit")
     return {"source_center_exit_mm": source_center, "release_position_from_repeller_mm": release_position,
@@ -111,12 +114,23 @@ def derive(campaign_path: Path) -> dict[str, Any]:
     # Read the provider-owned profile once: neither the consumer campaign nor
     # the numerical plan may carry a duplicate physical repeller position.
     repeller_to_exit_mm = float(profile["gap_1_mm"]) + float(profile["gap_2_mm"])
+    release_geometry = campaign["release_spec"]["geometry"]
+    source_radius = float(release_geometry["radius_mm"])
+    source_height = float(release_geometry["height_mm"])
+    qualified_radius = float(profile["qualified_source_envelope_radius_mm"])
+    qualified_height = float(profile["qualified_source_envelope_height_mm"])
+    if source_radius > qualified_radius or source_height > qualified_height:
+        raise ComponentFocusPAPlanError(
+            "campaign source exceeds the geometry profile's qualified source envelope"
+        )
+    # The PA is a hardware asset, not a source-specific artifact.  Compile and
+    # cache it against the profile's qualified envelope so a smaller release or
+    # a changed source position does not create an identical new PA family.
     requirements = {
         "schema_version": 1,
         "role": "orthogonal_accelerator_two_zone_requirements",
         "variant_id": "two_zone", "acceleration_direction": "-z",
-        "source_cylinder": {"radius_mm": campaign["release_spec"]["geometry"]["radius_mm"],
-                            "height_mm": campaign["release_spec"]["geometry"]["height_mm"]},
+        "source_cylinder": {"radius_mm": qualified_radius, "height_mm": qualified_height},
         "focus": {"mode": "two_zone_time_focus", "focus_plane": "component_focus_plane"},
         "compaction": {"axes": ["y", "z"], "objective": "minimize_subject_to_focus"},
         "local_pa": {"span_mm": [spans[0], spans[1], 1.0], "mesh_mm_per_gu": mesh_xyz,
@@ -141,6 +155,9 @@ def derive(campaign_path: Path) -> dict[str, Any]:
     if focus_local < focus_padding - 1e-9 or focus_local <= 0.0:
         raise ComponentFocusPAPlanError("derived focus plane is outside the PA")
     theory_seed = _validate_theory_seed(campaign, compiled.layout.to_dict())
+    electrode_count = 4 + int(profile["ring_count"])
+    physical_span = [spans[0], spans[1], resolved_span_z]
+    stored_span = [spans[0] / 2.0, spans[1], resolved_span_z]
     return {
         "schema_version": 1,
         "role": "orthogonal_accelerator_component_focus_pa_plan",
@@ -148,11 +165,14 @@ def derive(campaign_path: Path) -> dict[str, Any]:
         "qualification": "numerical_domain_layout_only__native_build_and_focus_pending",
         "campaign_path": str(campaign_path.resolve()),
         "geometry_profile_id": compiled.layout.geometry_profile_id,
-        "cache_policy": "one_native_fast_adjust_family_pa_hash_and_pa0_through_pa9__published_read_only_no_detached_response_bank",
+        "cache_policy": "one_native_fast_adjust_family__manifest_bound_standalone_runtime_responses",
+        "electrode_count": electrode_count,
         "numerical_domain": {
-            "span_mm": [spans[0], spans[1], resolved_span_z],
+            "span_mm": physical_span,
+            "stored_span_mm": stored_span,
+            "mirror_axes": ["x"],
             "mesh_mm_per_gu": mesh_xyz,
-            "iob_origin_mm": [-spans[0] / 2.0, -spans[1] / 2.0, 0.0],
+            "iob_origin_mm": [0.0, -spans[1] / 2.0, 0.0],
             "focus_plane_local_z_mm": focus_local,
             "focus_plane_padding_mm": focus_padding,
             "positive_z_enclosure_padding_mm": enclosure_padding,

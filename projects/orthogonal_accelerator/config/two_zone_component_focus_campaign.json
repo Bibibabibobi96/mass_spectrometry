@@ -42,16 +42,27 @@
     "acceleration_direction": "-z",
     "focus_plane_offset_from_exit_mm": 0.0,
     "instance_center_y_mm": 0.0,
+    "finite_3d_gain_correction_v": 0.0,
     "electrode_voltages_v": [
       0.0,
       4748.232329423991,
       3994.2379835760084,
       0.0,
-      3328.531652980007,
-      2662.8253223840056,
-      1997.1189917880045,
-      1331.4126611920028,
-      665.7063305960014
+      3744.598109602508,
+      3494.9582356290075,
+      3245.318361655507,
+      2995.6784876820066,
+      2746.0386137085056,
+      2496.398739735005,
+      2246.7588657615047,
+      1997.1189917880042,
+      1747.4791178145038,
+      1497.8392438410033,
+      1248.1993698675026,
+      998.5594958940021,
+      748.9196219205016,
+      499.27974794700106,
+      249.63987397350053
     ]
   },
   "numerics": {
@@ -62,7 +73,11 @@
     "required_transport_fraction": 1.0,
     "maximum_focus_peak_to_peak_time_ns": 1.5,
     "time_spread_exceedance": "warning",
-    "focus_plane_tolerance_mm": 0.1
+    "focus_plane_tolerance_mm": 0.1,
+    "maximum_exit_slow_energy_error_per_charge_v": 0.05,
+    "maximum_exit_axial_energy_error_per_charge_v": 0.05,
+    "maximum_exit_transverse_energy_error_per_charge_v": 0.05,
+    "maximum_exit_transverse_velocity_bias_mm_per_us": 0.0001
   },
   "simion_projection": {
     "source_frame": "orthogonal_accelerator_exit_origin_v1",
@@ -72,7 +87,7 @@
       64.0,
       50.0
     ],
-    "iob_origin_rule": "negative_half_transverse_span__local_z_zero_v1",
+    "iob_origin_rule": "x_mirror_plane__negative_half_y__local_z_zero_v1",
     "local_exit_z_mm": 6.0,
     "focus_plane_padding_mm": 6.0,
     "positive_z_enclosure_padding_mm": 6.0,

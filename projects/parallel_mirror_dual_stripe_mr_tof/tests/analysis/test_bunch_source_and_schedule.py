@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import csv
 import json
 import unittest
 import tempfile
 from pathlib import Path
 
 from common.contracts.particle_count_policy import validate_prefix_particle_sources
-from common.ion_release.cylinder import generate_center_first_halton_cylinder_phase_space
+from common.ion_release.cylinder import generate_center_axis_pair_halton_cylinder_phase_space
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
     bunch_identity,
     derive_bunch_pulse_schedule,
@@ -60,7 +61,7 @@ class BunchSourceAndScheduleTest(unittest.TestCase):
         path.write_text(json.dumps({
             "schema_version": 1,
             "role": "orthogonal_accelerator_mrtof_runtime_receipt",
-            "status": "published_read_only",
+            "status": "published_standalone_response_bank",
             "mrtof_projection": {"geometry": {
                 "acceleration_direction": "-z",
                 "repeller_to_exit_mm": 34.0,
@@ -102,17 +103,35 @@ class BunchSourceAndScheduleTest(unittest.TestCase):
             "accelerator_ring_voltages_v": [3500.0, 3000.0, 2500.0],
             "trajectory_profile": {"profile_id": "pilot", "maximum_step_us": 0.002},
             "inputs": {"reviewed_contract_sha256": "a" * 64},
+            "target_drift_period_ratio": 25.5,
+            "target_half_oscillation_count": 51,
             "continue_main_drift": True,
             "x_symmetry_plane_constraint": False,
         }
         with self.assertRaisesRegex(CandidateContractError, "complete 3-D flight scope"):
             solver_problem_identity_from_trial_receipt(trial)
 
+    def test_solver_identity_requires_target_k_and_derived_half_count(self) -> None:
+        trial = {
+            "selected_axial_energy_per_charge_v": 4000.0,
+            "mirror_voltages_v": [0.0, 1000.0, 2000.0, 3000.0, 4100.0],
+            "stripe_biases_v": [-25.0, 50.0],
+            "prism_voltages_v": [190.0, -190.0],
+            "accelerator_endpoint_voltages_v": [4000.0, 1000.0, 0.0],
+            "accelerator_ring_voltages_v": [3500.0, 3000.0, 2500.0],
+            "trajectory_profile": {"profile_id": "pilot", "maximum_step_us": 0.002},
+            "inputs": {"reviewed_contract_sha256": "a" * 64},
+            "flight_scope": "complete_three_dimensional_static_return",
+        }
+        with self.assertRaisesRegex(CandidateContractError, "target_drift_period_ratio"):
+            solver_problem_identity_from_trial_receipt(trial)
+
     def test_bunch_sampler_projects_the_common_cylinder_phase_space(self) -> None:
         states = _states(100)
-        common_samples = generate_center_first_halton_cylinder_phase_space(
+        common_samples = generate_center_axis_pair_halton_cylinder_phase_space(
             particle_count=100, center_mm=[0.0, -55.0, -60.0],
             transverse_axes=(0, 1), axis=2, radius_mm=0.1, height_mm=0.2,
+            controlled_axis=2,
             kinetic_energy_center_ev=5.0, kinetic_energy_full_width_ev=0.1,
             nominal_direction=[0.0, 1.0, 0.0], angular_full_width_deg=0.2,
         )
@@ -136,6 +155,11 @@ class BunchSourceAndScheduleTest(unittest.TestCase):
         self.assertEqual(n100[0]["position_workbench_mm"], [0.0, -55.0, -60.0])
         self.assertEqual(n100[0]["kinetic_energy_ev"], 5.0)
         self.assertEqual(n100[0]["direction_workbench"], [0.0, 1.0, 0.0])
+        self.assertEqual(n100[1]["position_workbench_mm"], [0.0, -55.0, -60.1])
+        self.assertEqual(n100[2]["position_workbench_mm"], [0.0, -55.0, -59.9])
+        for row in n100[:3]:
+            self.assertEqual(row["kinetic_energy_ev"], 5.0)
+            self.assertEqual(row["direction_workbench"], [0.0, 1.0, 0.0])
         self.assertEqual([row["particle_id"] for row in n100], list(range(1, 101)))
 
     def test_source_identity_and_fly2_are_byte_stable(self) -> None:
@@ -161,6 +185,7 @@ class BunchSourceAndScheduleTest(unittest.TestCase):
                     receipt_path=root / f"n{count}.json",
                 )
                 self.assertEqual(receipt["particle_count"], count)
+                self.assertEqual(receipt["center_particle_state"], states[0])
                 self.assertEqual(receipt["state_table"]["bytes"], table.stat().st_size)
                 paths[count] = table
                 self.assertEqual(
@@ -196,6 +221,8 @@ class BunchSourceAndScheduleTest(unittest.TestCase):
                 receipt_path=root / "source.json",
             )
             self.assertEqual(receipt["particle_count"], 100)
+            self.assertEqual(receipt["controlled_focus_pair"]["negative_particle_id"], 2)
+            self.assertEqual(receipt["controlled_focus_pair"]["positive_particle_id"], 3)
             self.assertIn("definition", receipt)
             incomplete = self._definition()
             del incomplete["angular_full_width_deg"]
@@ -207,6 +234,31 @@ class BunchSourceAndScheduleTest(unittest.TestCase):
                     fly2_path=root / "bad.fly2",
                     receipt_path=root / "bad.json",
                 )
+
+    def test_slow_energy_triplet_has_independent_receipt_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            definition = self._definition()
+            definition["charge_e"] = 2
+            definition["controlled_slow_energy_half_span_ev_per_charge"] = 0.05
+            definition_path = root / "definition.json"
+            definition_path.write_text(json.dumps(definition), encoding="utf-8")
+            receipt_path = root / "source.json"
+            receipt = materialize_bunch_source_from_definition(
+                definition_path=definition_path,
+                state_table_path=root / "source.csv",
+                fly2_path=root / "source.fly2",
+                receipt_path=receipt_path,
+            )
+            self.assertNotIn("controlled_focus_pair", receipt)
+            self.assertEqual(
+                receipt["controlled_slow_energy_pair"]["coordinate_span_ev"], 0.2,
+            )
+            rows = (root / "source.csv").read_text(encoding="utf-8").splitlines()
+            self.assertIn(",5,", rows[1])
+            self.assertIn(",4.9000000000000004,", rows[2])
+            self.assertIn(",5.0999999999999996,", rows[3])
+            load_verified_bunch_source_receipt(receipt_path)
 
     def test_current_candidate_definition_matches_resolved_accelerator_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -236,18 +288,76 @@ class BunchSourceAndScheduleTest(unittest.TestCase):
                 definition["kinetic_energy_center_ev"], 4.961131691875479
             )
             self.assertEqual(definition["field_cache_dependency"], "none")
+            self.assertEqual(definition["cohort_role"], "controlled_diagnostic")
+            self.assertEqual(receipt["cohort_role"], "controlled_diagnostic")
             self.assertEqual(definition["aperture_plane_axes"], [0, 2])
             self.assertEqual(definition["acceleration_axis"], 1)
-            self.assertEqual(receipt["particle_count"], 1000)
+            self.assertEqual(
+                definition["controlled_focus_half_span_fraction_of_radius"], 0.2
+            )
+            self.assertEqual(definition["controlled_envelope_half_span_fraction"], 1.0)
+            self.assertEqual(receipt["controlled_focus_pair"]["coordinate_span_mm"], 0.2)
+            self.assertEqual(
+                receipt["sampling_method"],
+                "center_local_and_envelope_position_slow_energy_pairs_then_halton_v1",
+            )
+            self.assertEqual(
+                receipt["controlled_slow_energy_pair"]["negative_particle_id"], 4,
+            )
+            self.assertEqual(
+                receipt["controlled_transverse_x_pair"],
+                {
+                    "coordinate": "x_mm",
+                    "negative_particle_id": 6,
+                    "positive_particle_id": 7,
+                    "coordinate_span_mm": 0.2,
+                    "fixed_variables": (
+                        "position_y_z__kinetic_energy__direction__mass__charge__birth_time"
+                    ),
+                },
+            )
+            with Path(receipt["state_table"]["path"]).open(
+                "r", encoding="utf-8", newline="",
+            ) as stream:
+                sentinel_rows = list(csv.DictReader(stream))[:13]
+            self.assertEqual(
+                [float(row["z_mm"]) for row in sentinel_rows[:3]],
+                [32.0, 31.9, 32.1],
+            )
+            self.assertEqual(
+                [float(row["kinetic_energy_ev"]) for row in sentinel_rows[3:5]],
+                [definition["kinetic_energy_center_ev"] - 0.05,
+                 definition["kinetic_energy_center_ev"] + 0.05],
+            )
+            self.assertEqual(
+                [float(row["x_mm"]) for row in sentinel_rows[5:7]], [-0.1, 0.1],
+            )
+            self.assertEqual(
+                [float(row["y_mm"]) for row in sentinel_rows[7:9]],
+                [expected[1] - 0.5, expected[1] + 0.5],
+            )
+            self.assertEqual(
+                [float(row["x_mm"]) for row in sentinel_rows[9:11]], [-0.5, 0.5],
+            )
+            self.assertEqual(
+                [float(row["z_mm"]) for row in sentinel_rows[11:13]], [31.5, 32.5],
+            )
+            self.assertEqual(receipt["controlled_head_particle_count"], 13)
+            self.assertEqual(receipt["volume_particle_id_min"], 14)
+            self.assertEqual(
+                [pair["name"] for pair in receipt["controlled_position_pairs"]],
+                ["local_z", "local_x", "envelope_y", "envelope_x", "envelope_z"],
+            )
+            self.assertEqual(receipt["particle_count"], 100)
             self.assertEqual(receipt["mother_particle_count"], 1000)
             self.assertEqual(receipt["geometry_contract"]["derived_center_workbench_mm"], expected)
-            self.assertEqual(expected, [0.0, -46.71093484735312, 32.0])
+            self.assertEqual(expected[0:1] + expected[2:3], [0.0, 32.0])
             self.assertEqual(receipt["accelerator_provider_receipt"]["derived_release_z_mm"], 32.0)
             self.assertEqual(receipt["field_cache_dependency"], "none")
             self.assertEqual(receipt["common_time_of_birth_us"], 0.0)
             self.assertEqual(receipt["species"], {"mass_th": 524.0, "charge_e": 1})
-            self.assertEqual(Path(receipt["state_table"]["path"]).read_text().count("\n"), 1001)
-            self.assertEqual(Path(receipt["fly2"]["path"]).read_text().count("standard_beam {"), 1000)
+            self.assertEqual(Path(receipt["state_table"]["path"]).read_text().count("\n"), 101)
+            self.assertEqual(Path(receipt["fly2"]["path"]).read_text().count("standard_beam {"), 100)
             load_verified_bunch_source_receipt(root / "source.json")
             frozen_definition = root / "definition.json"
             frozen_definition.write_text(CANDIDATE_DEFINITION.read_text(encoding="utf-8"), encoding="utf-8")
@@ -259,11 +369,49 @@ class BunchSourceAndScheduleTest(unittest.TestCase):
                 fly2_path=root / "bound.fly2",
                 receipt_path=root / "bound.json",
             )
-            self.assertEqual(frozen_receipt["particle_count"], 1000)
+            self.assertEqual(frozen_receipt["particle_count"], 100)
             frozen_definition.write_text("{}\n", encoding="utf-8")
             with self.assertRaisesRegex(CandidateContractError, "definition identity changed"):
                 load_verified_bunch_source_receipt(root / "bound.json")
 
+    def test_schema4_formal_volume_source_contains_no_controlled_head(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = self._write_provider_receipt(root / "provider.json")
+            definition = json.loads(CANDIDATE_DEFINITION.read_text(encoding="utf-8"))
+            definition["source_profile_id"] += "__formal_volume"
+            definition["cohort_role"] = "formal_volume"
+            for name in (
+                "controlled_focus_half_span_fraction_of_radius",
+                "controlled_envelope_half_span_fraction",
+                "controlled_slow_energy_half_span_ev_per_charge",
+            ):
+                definition.pop(name)
+            definition_path = root / "formal_definition.json"
+            definition_path.write_text(json.dumps(definition), encoding="utf-8")
+            receipt = materialize_bunch_source_from_definition(
+                definition_path=definition_path,
+                geometry_contract_path=GEOMETRY_CONTRACT,
+                accelerator_provider_receipt_path=provider,
+                state_table_path=root / "formal.csv",
+                fly2_path=root / "formal.fly2",
+                receipt_path=root / "formal.json",
+            )
+            self.assertEqual(receipt["cohort_role"], "formal_volume")
+            self.assertEqual(
+                receipt["sampling_method"], "halton_volume_position_energy_angle_v1",
+            )
+            self.assertNotIn("center_particle_state", receipt)
+            self.assertNotIn("controlled_focus_pair", receipt)
+            self.assertNotIn("controlled_position_pairs", receipt)
+            self.assertNotIn("volume_particle_id_min", receipt)
+            nominal = receipt["nominal_center_state"]
+            with (root / "formal.csv").open("r", encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            first_position = [float(rows[0][name]) for name in ("x_mm", "y_mm", "z_mm")]
+            self.assertNotEqual(first_position, nominal["position_workbench_mm"])
+            self.assertEqual([int(row["particle_id"]) for row in rows], list(range(1, 101)))
+            load_verified_bunch_source_receipt(root / "formal.json")
     def test_schema4_definition_rejects_coupled_placement_or_wrong_frame(self) -> None:
         source = json.loads(CANDIDATE_DEFINITION.read_text(encoding="utf-8"))
         cases = (

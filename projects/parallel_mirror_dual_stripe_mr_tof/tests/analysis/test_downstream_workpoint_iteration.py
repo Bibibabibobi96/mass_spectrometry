@@ -142,6 +142,13 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
         }
         contract = {"downstream_fixed_grid_workpoint_profile": {
             "schema_version": 1,
+            "jacobian_relative_step_tiers": {
+                "coarse": 0.01,
+                "medium": 0.0025,
+                "fine": 0.0005,
+                "medium_maximum_scaled_residual": 10.0,
+                "fine_maximum_scaled_residual": 2.0,
+            },
             "automatic_iteration": {
                 "schema_version": 1,
                 "maximum_iterations": 8,
@@ -174,6 +181,15 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
         result = decide_iteration(*self.fixtures(), [], 1)
         self.assertEqual(result["coordinate_group"], "stripe_1_stripe_2")
         self.assertEqual(result["applied_correction_v"][2:], [0.0, 0.0])
+
+    def test_trust_limit_uses_relative_convergence_tiers(self):
+        prior, observation, materialization, contract = self.fixtures()
+        for residual, expected in ((2.0, 0.01), (0.05, 0.0025), (0.015, 0.0005)):
+            candidate = copy.deepcopy(observation)
+            candidate["residuals"][prior["residual_names"][2]] = residual
+            candidate["residuals"][prior["residual_names"][3]] = residual
+            result = decide_iteration(prior, candidate, materialization, contract, [], 1)
+            self.assertEqual(result["relative_trust_limit"], expected)
 
     def test_accepts_only_real_residual_and_detector_contract(self):
         prior, observation, materialization, contract = self.fixtures()
@@ -273,6 +289,40 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
         self.assertAlmostEqual(second["backtrack_factor"], 0.25)
         self.assertEqual(second["proposed_voltages_v"], [-24.3375, 51.9625, 190.15, -191.985])
 
+    def test_valid_improving_topology_midpoint_becomes_new_anchor_below_global_floor(self):
+        prior, observation, materialization, contract = self.fixtures()
+        observation["residuals"]["P1_P2_positive_mirror_turn_y_mm"] = 0.2
+        seed = decide_iteration(prior, observation, materialization, contract, [], 1)
+
+        collided = copy.deepcopy(observation)
+        collided["termination_diagnostic"]["physical_collision"] = True
+        collided_materialization = copy.deepcopy(materialization)
+        collided_materialization["stripe_biases_v"] = seed["proposed_voltages_v"][:2]
+        collided_materialization["prism_voltages_v"] = seed["proposed_voltages_v"][2:]
+        backtrack = decide_iteration(
+            prior, collided, collided_materialization, contract, [seed], 2
+        )
+        self.assertEqual(backtrack["coordinate_group"], "physical_topology_backtrack")
+
+        midpoint = copy.deepcopy(observation)
+        midpoint["residuals"]["P1_P2_positive_mirror_turn_y_mm"] = 0.199
+        midpoint_materialization = copy.deepcopy(materialization)
+        midpoint_materialization["stripe_biases_v"] = backtrack["proposed_voltages_v"][:2]
+        midpoint_materialization["prism_voltages_v"] = backtrack["proposed_voltages_v"][2:]
+        result = decide_iteration(
+            prior, midpoint, midpoint_materialization, contract, [seed, backtrack], 3
+        )
+
+        self.assertTrue(result["candidate_accepted"])
+        self.assertEqual(
+            result["prediction_assessment"]["acceptance_basis"],
+            "improving_topology_backtrack",
+        )
+        self.assertEqual(
+            result["accepted_workpoint"]["voltages_v"],
+            result["observation_record"]["voltages_v"],
+        )
+
     def test_uses_separate_advance_and_backtrack_multipliers_when_configured(self):
         prior, observation, materialization, contract = self.fixtures()
         loop = contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]
@@ -282,6 +332,102 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
         result = decide_iteration(prior, observation, materialization, contract, [], 1)
         self.assertAlmostEqual(result["backtrack_factor"], 0.25)
         self.assertAlmostEqual(result["recovery_state"]["advance_multiplier"], 0.75)
+
+    def test_valid_prism_backtrack_bisects_remaining_known_invalid_gap(self):
+        prior, observation, materialization, contract = self.fixtures()
+        residual_name = prior["residual_names"][0]
+        observation["residuals"][residual_name] = 0.2
+        seed = decide_iteration(prior, observation, materialization, contract, [], 1)
+
+        invalid = copy.deepcopy(observation)
+        invalid["termination_diagnostic"]["physical_collision"] = True
+        invalid_materialization = copy.deepcopy(materialization)
+        invalid_materialization["prism_voltages_v"] = seed["proposed_voltages_v"][2:]
+        backtrack = decide_iteration(
+            prior, invalid, invalid_materialization, contract, [seed], 2
+        )
+
+        second_invalid_materialization = copy.deepcopy(materialization)
+        second_invalid_materialization["prism_voltages_v"] = backtrack["proposed_voltages_v"][2:]
+        second_backtrack = decide_iteration(
+            prior, invalid, second_invalid_materialization, contract, [seed, backtrack], 3
+        )
+
+        valid = copy.deepcopy(observation)
+        valid["residuals"][residual_name] = 0.18
+        valid_materialization = copy.deepcopy(materialization)
+        valid_materialization["prism_voltages_v"] = second_backtrack["proposed_voltages_v"][2:]
+        result = decide_iteration(
+            prior, valid, valid_materialization, contract, [seed, backtrack, second_backtrack], 4
+        )
+
+        invalid_origin = backtrack["proposed_voltages_v"][2:]
+        current = valid_materialization["prism_voltages_v"]
+        remaining_linf = max(abs(a - b) for a, b in zip(invalid_origin, current, strict=True))
+        applied_linf = max(abs(value) for value in result["applied_correction_v"][2:])
+        self.assertLessEqual(applied_linf, 0.5 * remaining_linf + 1e-12)
+        self.assertEqual(
+            result["recovery_state"]["topology_boundary_voltages_v"],
+            backtrack["proposed_voltages_v"],
+        )
+
+        limited = copy.deepcopy(observation)
+        limited["residuals"][residual_name] = 0.1795
+        limited_materialization = copy.deepcopy(materialization)
+        limited_materialization["prism_voltages_v"] = result["proposed_voltages_v"][2:]
+        accepted = decide_iteration(
+            prior,
+            limited,
+            limited_materialization,
+            contract,
+            [seed, backtrack, second_backtrack, result],
+            5,
+        )
+        self.assertTrue(accepted["candidate_accepted"])
+        self.assertEqual(
+            accepted["prediction_assessment"]["acceptance_basis"],
+            "improving_topology_backtrack",
+        )
+        self.assertEqual(
+            accepted["recovery_state"]["topology_boundary_voltages_v"],
+            backtrack["proposed_voltages_v"],
+        )
+
+    def test_residual_rejection_preserves_existing_topology_boundary(self):
+        prior, observation, materialization, contract = self.fixtures()
+        residual_name = prior["residual_names"][0]
+        observation["residuals"][residual_name] = 0.2
+        seed = decide_iteration(prior, observation, materialization, contract, [], 1)
+
+        invalid = copy.deepcopy(observation)
+        invalid["termination_diagnostic"]["physical_collision"] = True
+        invalid_materialization = copy.deepcopy(materialization)
+        invalid_materialization["prism_voltages_v"] = seed["proposed_voltages_v"][2:]
+        backtrack = decide_iteration(
+            prior, invalid, invalid_materialization, contract, [seed], 2
+        )
+
+        valid = copy.deepcopy(observation)
+        valid["residuals"][residual_name] = 0.19
+        valid_materialization = copy.deepcopy(materialization)
+        valid_materialization["prism_voltages_v"] = backtrack["proposed_voltages_v"][2:]
+        bounded = decide_iteration(
+            prior, valid, valid_materialization, contract, [seed, backtrack], 3
+        )
+
+        worse = copy.deepcopy(observation)
+        worse["residuals"][residual_name] = 0.195
+        worse_materialization = copy.deepcopy(materialization)
+        worse_materialization["prism_voltages_v"] = bounded["proposed_voltages_v"][2:]
+        rejected = decide_iteration(
+            prior, worse, worse_materialization, contract, [seed, backtrack, bounded], 4
+        )
+        self.assertFalse(rejected["candidate_accepted"])
+        self.assertEqual(rejected["invalid_trial_reason"], "residual_stagnation")
+        self.assertEqual(
+            rejected["recovery_state"]["topology_boundary_voltages_v"],
+            bounded["recovery_state"]["topology_boundary_voltages_v"],
+        )
 
     def test_opposite_prediction_direction_requests_local_s_recovery(self):
         prior, observation, materialization, contract = self.fixtures()
@@ -319,19 +465,26 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
     def test_best_physical_handoff_keeps_a_valid_subthreshold_improvement(self):
         prior, observation, materialization, contract = self.fixtures()
         accepted = decide_iteration(prior, observation, materialization, contract, [], 1)
+        for name in prior["residual_names"]:
+            accepted["observation_record"]["physical_acceptance_residuals"][name] = 0.0
+        accepted["observation_record"]["scaled_residual_norm"] = 1.0
+        accepted["observation_record"]["maximum_scaled_abs_residual"] = 1.0
         subthreshold = copy.deepcopy(accepted)
         subthreshold["candidate_accepted"] = False
         subthreshold["invalid_trial_reason"] = "residual_stagnation"
-        subthreshold["observation_record"]["scaled_residual_norm"] = 1.0
-        subthreshold["observation_record"]["physical_acceptance_residuals"][prior["residual_names"][3]] = 0.02
+        subthreshold["observation_record"]["scaled_residual_norm"] = 0.01
+        subthreshold["observation_record"]["maximum_scaled_abs_residual"] = 0.01
+        subthreshold["observation_record"]["physical_acceptance_residuals"][prior["residual_names"][3]] = 0.0
         handoff = select_best_physical_workpoint([accepted, subthreshold])
-        self.assertEqual(handoff["status"], "warning")
+        self.assertEqual(handoff["status"], "within_tolerance")
         self.assertEqual(handoff["selected_history_ordinal"], 2)
         self.assertEqual(handoff["selected_workpoint"]["voltages_v"], subthreshold["observation_record"]["voltages_v"])
 
     def test_best_physical_handoff_prefers_lower_prism_magnitude_after_p_qualification(self):
         prior, observation, materialization, contract = self.fixtures()
         high_voltage = decide_iteration(prior, observation, materialization, contract, [], 1)
+        for name in prior["residual_names"]:
+            high_voltage["observation_record"]["physical_acceptance_residuals"][name] = 0.0
         lower_voltage = copy.deepcopy(high_voltage)
         lower_voltage["observation_record"]["voltages_v"][2:] = [180.0, -180.0]
         handoff = select_best_physical_workpoint([high_voltage, lower_voltage])
@@ -346,9 +499,21 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
         handoff = select_best_physical_workpoint([better_residual, lower_voltage])
         self.assertEqual(handoff["selected_history_ordinal"], 2)
 
+    def test_terminal_success_is_eligible_without_candidate_accepted_marker(self):
+        prior, observation, materialization, contract = self.fixtures()
+        terminal = decide_iteration(prior, observation, materialization, contract, [], 1)
+        for name in prior["residual_names"]:
+            terminal["observation_record"]["physical_acceptance_residuals"][name] = 0.0
+        terminal.pop("candidate_accepted", None)
+        terminal["terminal_reason"] = "success"
+        handoff = select_best_physical_workpoint([terminal])
+        self.assertEqual(handoff["status"], "within_tolerance")
+
     def test_best_physical_handoff_rejects_invalid_or_p_unqualified_lower_voltage_records(self):
         prior, observation, materialization, contract = self.fixtures()
         accepted = decide_iteration(prior, observation, materialization, contract, [], 1)
+        for name in prior["residual_names"]:
+            accepted["observation_record"]["physical_acceptance_residuals"][name] = 0.0
         invalid = copy.deepcopy(accepted)
         invalid["candidate_accepted"] = False
         invalid["invalid_trial_reason"] = "collision_or_invalid_topology"
@@ -359,7 +524,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
         p_unqualified["observation_record"]["voltages_v"][2:] = [2.0, -2.0]
         p_unqualified["observation_record"]["physical_acceptance_residuals"][
             "P1_P2_positive_mirror_turn_y_mm"
-        ] = 0.02
+        ] = 1.0
         handoff = select_best_physical_workpoint([invalid, p_unqualified, accepted])
         self.assertEqual(handoff["selected_history_ordinal"], 3)
 
@@ -417,6 +582,101 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
         self.assertTrue(result["prediction_assessment"]["first_real_prediction_acceptance_required"])
         self.assertLessEqual(max(abs(value) for value in result["applied_correction_v"][:2]), 0.02)
         self.assertEqual(result["applied_correction_v"][2:], [0.0, 0.0])
+
+    def test_recovery_anchor_replay_is_not_a_two_point_cycle(self):
+        prior, observation, materialization, contract = self.fixtures()
+        seed = decide_iteration(prior, observation, materialization, contract, [], 1)
+        intervening = copy.deepcopy(seed)
+        intervening["observation_record"]["voltages_v"][0] += 0.1
+        intervening["candidate_accepted"] = False
+        intervening["coordinate_group"] = "physical_topology_backtrack"
+        intervening["rejected_coordinate_group"] = "stripe_1_stripe_2"
+        intervening["accepted_workpoint"] = seed["observation_record"]
+        recovered_model = {
+            "coordinate_group": "stripe_1_stripe_2",
+            "local_s_physical_jacobian_columns": [
+                [-0.0015, 0.00018], [1.4e-7, 1.8e-7], [1.245, -2.092], [5.646, -0.715],
+            ],
+            "local_s_model_validation": {
+                "passed": True,
+                "validation_status": "provisional_no_nearby_history",
+                "first_correction_requires_real_prediction_acceptance": True,
+                "first_correction_max_linf_v": 0.02,
+            },
+        }
+        result = decide_iteration(
+            prior, observation, materialization, contract,
+            [seed, intervening, recovered_model], 3, recovery_resume=True,
+        )
+        self.assertEqual(result["state"], "continue", result)
+        self.assertIsNone(result["terminal_reason"])
+        self.assertTrue(result["recovery_resume_proposal"])
+
+    def test_trusted_recovery_radius_grows_gradually_after_first_real_prediction(self):
+        prior, observation, materialization, contract = self.fixtures()
+        seed = decide_iteration(prior, observation, materialization, contract, [], 1)
+        recovered_model = {
+            "coordinate_group": "stripe_1_stripe_2",
+            "local_s_physical_jacobian_columns": [
+                [-0.0015, 0.00018], [1.4e-7, 1.8e-7], [1.245, -2.092], [5.646, -0.715],
+            ],
+            "local_s_model_validation": {
+                "passed": True,
+                "validation_status": "provisional_no_nearby_history",
+                "first_correction_requires_real_prediction_acceptance": True,
+                "first_correction_max_linf_v": 0.02,
+            },
+        }
+        first = decide_iteration(
+            prior, observation, materialization, contract, [seed, recovered_model], 2,
+            recovery_resume=True,
+        )
+        measured = copy.deepcopy(observation)
+        measured["residuals"] = copy.deepcopy(first["predicted_physical_acceptance_residuals"])
+        next_materialization = copy.deepcopy(materialization)
+        next_materialization["stripe_biases_v"] = first["proposed_voltages_v"][:2]
+        second = decide_iteration(
+            prior, measured, next_materialization, contract, [seed, recovered_model, first], 2,
+        )
+        self.assertEqual(second["state"], "continue")
+        self.assertLessEqual(max(abs(value) for value in second["applied_correction_v"][:2]), 0.04)
+        self.assertEqual(second["prediction_assessment"]["recovery_trust_bound_v"], 0.04)
+
+    def test_trusted_bounded_recovery_prediction_is_not_rejected_by_global_improvement_floor(self):
+        prior, observation, materialization, contract = self.fixtures()
+        contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"][
+            "minimum_relative_improvement"
+        ] = 0.5
+        seed = decide_iteration(prior, observation, materialization, contract, [], 1)
+        recovered_model = {
+            "coordinate_group": "stripe_1_stripe_2",
+            "local_s_physical_jacobian_columns": [
+                [-0.0015, 0.00018], [1.4e-7, 1.8e-7], [1.245, -2.092], [5.646, -0.715],
+            ],
+            "local_s_model_validation": {
+                "passed": True,
+                "validation_status": "provisional_no_nearby_history",
+                "first_correction_requires_real_prediction_acceptance": True,
+                "first_correction_max_linf_v": 0.02,
+            },
+        }
+        first = decide_iteration(
+            prior, observation, materialization, contract, [seed, recovered_model], 2,
+            recovery_resume=True,
+        )
+        measured = copy.deepcopy(observation)
+        measured["residuals"] = copy.deepcopy(first["predicted_physical_acceptance_residuals"])
+        next_materialization = copy.deepcopy(materialization)
+        next_materialization["stripe_biases_v"] = first["proposed_voltages_v"][:2]
+        second = decide_iteration(
+            prior, measured, next_materialization, contract, [seed, recovered_model, first], 2,
+        )
+        self.assertEqual(second["state"], "continue")
+        self.assertTrue(second["candidate_accepted"])
+        self.assertEqual(
+            second["prediction_assessment"]["acceptance_basis"],
+            "trusted_recovery_prediction",
+        )
 
     def test_refresh_s_local_jacobian_requires_independent_anchor_perturbations(self):
         prior, observation, materialization, contract = self.fixtures()

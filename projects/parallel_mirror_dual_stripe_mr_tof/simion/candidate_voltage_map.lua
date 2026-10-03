@@ -16,7 +16,8 @@ return function(mirrors,stripes,prisms,endpoints,rings,scale)
   vector(stripes,2,'Stripe voltages')
   vector(prisms,2,'prism voltages')
   vector(endpoints,3,'accelerator endpoint voltages')
-  vector(rings,5,'accelerator ring voltages')
+  assert(type(rings)=='table' and #rings>0,'accelerator ring voltages must be nonempty')
+  for index=1,#rings do finite(rings[index],'accelerator ring voltage['..index..']') end
   finite(scale,'nonaccelerator scale')
   assert(mirrors[1]==0,'mirror A must remain grounded')
   local analyser={}
@@ -34,7 +35,7 @@ return function(mirrors,stripes,prisms,endpoints,rings,scale)
   analyser[17]=prisms[2]
   analyser[18]=0
   analyser[20]=0
-  -- Accelerator PA local IDs: ground/repeller/grid1/exit/rings = 1..9.
+  -- Accelerator PA local IDs: ground/repeller/grid1/exit/rings = 1..(4+#rings).
   local accelerator={[1]=0,[2]=endpoints[1],[3]=endpoints[2],[4]=endpoints[3]}
   for index,voltage in ipairs(rings) do accelerator[4+index]=voltage end
   return {analyser=analyser,accelerator=accelerator}

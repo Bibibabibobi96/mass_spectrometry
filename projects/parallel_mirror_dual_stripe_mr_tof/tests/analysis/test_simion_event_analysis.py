@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -13,12 +14,13 @@ import unittest
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _particle_source_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
     SOURCE_COUNT_KEYS, _mirrored_branch_turn_diagnostics, analyze_log,
-    load_particle_source, parse_events, summarize_events,
+    collision_diagnostics, load_particle_source, parse_events, summarize_events, peak_time_metrics,
 )
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 PROGRAM = REPOSITORY_ROOT / "projects" / "parallel_mirror_dual_stripe_mr_tof" / "simion" / "mrtof_candidate.lua"
+PEAK_CONTRACT = json.loads((Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json").read_text())["peak_analysis"]
 
 
 def terminal(ion: int, **changes: object) -> dict[str, object]:
@@ -135,6 +137,30 @@ def current_fixture_manifest(root: Path) -> Path:
 
 
 class SimionEventAnalysisTest(unittest.TestCase):
+    def test_peak_metrics_match_common_units_and_mean_resolution(self):
+        from common.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
+        times = [700.0 + index * .001 for index in range(12)]
+        actual = peak_time_metrics(times, mass_th=524, analysis_contract=PEAK_CONTRACT, cohort_role="formal_volume")
+        expected, _ = compute_peak_metrics(times, 524, AnalysisSettings(**PEAK_CONTRACT["settings"]))
+        self.assertEqual(actual["fwhm"] * 1000, expected["direct_fwhm_tof_ns"])
+        self.assertEqual(actual["time_equivalent_resolution"], expected["time_equivalent_resolution"])
+        self.assertEqual(actual["analysis_contract"], PEAK_CONTRACT)
+
+    def test_peak_metrics_unavailable_for_diagnostics_or_degenerate_samples(self):
+        for times, role in (([], "formal_volume"), ([1.0, 2.0], "formal_volume"), ([1.0] * 13, "formal_volume"), ([1.0, 2.0, 3.0], "controlled_diagnostic")):
+            with self.subTest(times=times, role=role):
+                result = peak_time_metrics(times, mass_th=524, analysis_contract=PEAK_CONTRACT, cohort_role=role)
+                self.assertIsNone(result["time_equivalent_resolution"])
+                self.assertIsNone(result["fwhm"])
+
+    def test_peak_metrics_reject_missing_settings_and_invalid_times(self):
+        contract = copy.deepcopy(PEAK_CONTRACT)
+        del contract["settings"]["bandwidth_multiplier"]
+        with self.assertRaises(ValueError):
+            peak_time_metrics([1., 2., 3.], mass_th=524, analysis_contract=contract, cohort_role="formal_volume")
+        with self.assertRaises(ValueError):
+            peak_time_metrics([1., 2., float("nan")], mass_th=524, analysis_contract=PEAK_CONTRACT, cohort_role="formal_volume")
+
     def test_mirrored_nonretracing_turn_pairs_use_z_reflection_not_retrace(self):
         common = {"ion": 1, "vx_mm_us": 0.0, "vz_mm_us": 0.0}
         events = [
@@ -171,6 +197,7 @@ class SimionEventAnalysisTest(unittest.TestCase):
             "MRTOF_EVENT fast_turn", "MRTOF_EVENT slow_turn", "MRTOF_EVENT slow_coordinate_y0",
             "MRTOF_EVENT central_plane_directional", "MRTOF_EVENT p1_plane",
             "MRTOF_EVENT prism_pass", "MRTOF_EVENT pre_injection_mirror_turn",
+            "MRTOF_EVENT p2_low_field_crossing",
             "MRTOF_EVENT p2_low_field_reference",
             "MRTOF_EVENT drift_phase_origin", "MRTOF_EVENT drift_phase_return",
             "MRTOF_EVENT drift_phase_candidate", "MRTOF_EVENT drift_coordinate_return",
@@ -204,6 +231,376 @@ class SimionEventAnalysisTest(unittest.TestCase):
             "vy_mm_us": 1.2,
             "vz_mm_us": 34.8,
         }])
+        raw = parse_events(
+            "MRTOF_EVENT p2_low_field_crossing ion=2 t_us=4.6 "
+            "x_mm=0.1 y_mm=-0.3 z_mm=33 "
+            "vx_mm_us=0.2 vy_mm_us=1.3 vz_mm_us=-34.7 "
+            "inside_aperture=0 direction_ok=0\n"
+        )[0]
+        self.assertEqual(raw["inside_aperture"], 0)
+        self.assertEqual(raw["direction_ok"], 0)
+        self.assertEqual(raw["vz_mm_us"], -34.7)
+
+    def test_prism_phase_space_uses_all_surface_arrivals_not_detector_survivors(self):
+        def phase_event(
+            kind: str, ion: int, time: float, x: float, y: float,
+            vx: float, vy: float, vz: float, **extra: object,
+        ) -> dict[str, object]:
+            return {
+                "kind": kind, "ion": ion, "t_us": time,
+                "x_mm": x, "y_mm": y, "z_mm": 33.0,
+                "vx_mm_us": vx, "vy_mm_us": vy, "vz_mm_us": vz,
+                **extra,
+            }
+
+        events = [
+            terminal(1, splat=1, x_mm=0.0, y_mm=-50.0, z_mm=97.0),
+            terminal(2, splat=-1, x_mm=0.2, y_mm=-5.5, z_mm=-97.0),
+            terminal(3, splat=2, x_mm=0.3, y_mm=100.0, z_mm=200.0),
+            terminal(4, splat=3, x_mm=0.4, y_mm=150.0, z_mm=-250.0),
+            phase_event("p2_low_field_crossing", 1, 1.0, -1.0, -2.0,
+                        -1.0, 1.0, 10.0, inside_aperture=1, direction_ok=1),
+            phase_event("p2_low_field_crossing", 2, 1.1, 0.0, 0.0,
+                        0.0, 2.0, 10.0, inside_aperture=0, direction_ok=1),
+            phase_event("p2_low_field_crossing", 3, 1.2, 1.0, 2.0,
+                        1.0, 3.0, -10.0, inside_aperture=1, direction_ok=0),
+            # The legacy event exists only for the accepted centre ray.  Its
+            # presence must not hide the two rejected raw crossings above.
+            phase_event("p2_low_field_reference", 1, 1.0, -1.0, -2.0,
+                        -1.0, 1.0, 10.0),
+        ]
+        result = summarize_events(
+            events, 25.5, 4, expected_particle_ids=(1, 2, 3, 4),
+            mass_th=524.0, charge_e=1.0,
+            source_transverse_reference={
+                "center_particle_id": 1,
+                "center_x_mm": 0.0, "center_vx_mm_per_us": 1.0,
+                "mean_x_mm": 0.0, "mean_vx_mm_per_us": 1.0,
+            },
+        )
+        diagnostic = result["prism_phase_space_diagnostic"]
+        self.assertEqual(
+            diagnostic["scope"],
+            "all_source_particles_at_each_logged_surface__not_detector_survivors",
+        )
+        surface = diagnostic["surfaces"]["p2_fixed_observation_plane"]
+        self.assertEqual(
+            surface["observation_semantics"],
+            "raw_plane_crossing_with_aperture_and_direction_flags",
+        )
+        self.assertEqual(surface["reached_particle_ids"], [1, 2, 3])
+        self.assertEqual(surface["missing_particle_ids"], [4])
+        self.assertEqual(surface["outside_declared_aperture_particle_ids"], [2])
+        self.assertEqual(surface["failed_declared_direction_particle_ids"], [3])
+        self.assertEqual(surface["wrong_axial_direction_particle_ids"], [3])
+        self.assertEqual(surface["terminal_code_histogram_reached"], {
+            "-1": 1, "1": 1, "2": 1,
+        })
+        self.assertEqual(surface["terminal_code_histogram_missing"], {"3": 1})
+        self.assertEqual(
+            surface["terminal_locations_reached"]["-1"]["location_event_count"], 1,
+        )
+        self.assertEqual(surface["terminal_locations_reached"]["-1"]["y"]["mean"], -5.5)
+        self.assertEqual(
+            surface["terminal_locations_missing"]["3"]["z"]["mean"], -250.0,
+        )
+        self.assertEqual(surface["slow_plane_angle"]["sample_count"], 3)
+        self.assertEqual(surface["transverse_plane_angle"]["sample_count"], 3)
+        components = surface["kinetic_energy_per_charge"]
+        self.assertEqual(components["status"], "evaluated")
+        self.assertEqual(components["Ex"]["sample_count"], 3)
+        self.assertEqual(components["Ey"]["sample_count"], 3)
+        self.assertEqual(components["Ez"]["sample_count"], 3)
+        self.assertEqual(components["center_particle_id"], 1)
+        self.assertGreater(components["center"]["Ez"], components["center"]["Ey"])
+        target = components["fixed_observation_plane_target_diagnostic"]
+        self.assertEqual(target["qualification"],
+                         "diagnostic_only__low_field_plateau_not_formally_validated")
+        self.assertEqual(
+            target["axial_energy_acceptance"]["status"],
+            "not_applicable__downstream_fields_intentionally_change_component_energies",
+        )
+        self.assertEqual(
+            target["slow_energy_acceptance"]["status"],
+            "not_applicable__downstream_fields_intentionally_change_component_energies",
+        )
+        self.assertIsNone(target["slow_energy_acceptance"]["absolute_tolerance_per_charge_v"])
+        self.assertIsNone(target["axial_energy_acceptance"]["absolute_tolerance_per_charge_v"])
+        for name in (
+            "y_vs_slow_angle", "x_vs_transverse_angle",
+            "slow_angle_vs_energy", "transverse_angle_vs_energy",
+        ):
+            with self.subTest(correlation=name):
+                self.assertGreater(surface["correlations"][name], 0.9)
+        self.assertEqual(result["detector_hit_count"], 0)
+
+    def test_p2_energy_targets_and_downstream_drift_use_full_source_cohort(self):
+        mass = 524.0
+        component = lambda speed: 0.5 * mass * 1.66053906660e-27 * speed**2 * 1.0e6 / 1.602176634e-19
+        events = [
+            terminal(1, splat=1, x_mm=0.0, y_mm=1.0, z_mm=2.0),
+            terminal(2, splat=-1, x_mm=3.0, y_mm=4.0, z_mm=5.0),
+            terminal(3, splat=2, x_mm=6.0, y_mm=7.0, z_mm=8.0),
+            {"kind": "accelerator_safe_exit", "ion": 1, "t_us": 0.5,
+             "x_mm": 0.0, "y_mm": -53.0, "z_mm": -6.0,
+             "vx_mm_us": 1.0, "vy_mm_us": 2.0, "vz_mm_us": -10.0,
+             "from_instance": 3, "to_instance": 2},
+            {"kind": "p2_low_field_crossing", "ion": 1, "t_us": 1.0,
+             "x_mm": 0.0, "y_mm": 0.0, "z_mm": 33.0,
+             "vx_mm_us": 1.0, "vy_mm_us": 2.0, "vz_mm_us": 10.0,
+             "inside_aperture": 1, "direction_ok": 1},
+            {"kind": "drift_phase_origin", "ion": 1, "t_us": 2.0,
+             "x_mm": 0.0, "y_mm": 5.0, "z_mm": 280.0,
+             "vx_mm_us": 0.0, "vy_mm_us": 1.0, "vz_mm_us": 0.0},
+            {"kind": "central_plane_directional", "ion": 1, "n": 1, "direction_z": -1,
+             "t_us": 3.0, "x_mm": 0.0, "y_mm": 6.0,
+             "vx_mm_us": 0.0, "vy_mm_us": 1.0, "vz_mm_us": -10.0},
+            {"kind": "slow_turn", "ion": 1, "n": 1, "t_us": 4.0,
+             "x_mm": 0.0, "y_mm": 105.0, "z_mm": -280.0},
+            {"kind": "target_k", "ion": 1, "k": 25.5, "t_us": 5.0,
+             "x_mm": 0.0, "y_mm": 5.0, "z_mm": -280.0},
+            {"kind": "drift_phase_origin", "ion": 2, "t_us": 2.1,
+             "x_mm": 0.0, "y_mm": -2.0, "z_mm": 280.0,
+             "vx_mm_us": 0.0, "vy_mm_us": 1.0, "vz_mm_us": 0.0},
+            {"kind": "central_plane_directional", "ion": 2, "n": 1, "direction_z": -1,
+             "t_us": 3.1, "x_mm": 0.0, "y_mm": -1.0,
+             "vx_mm_us": 0.0, "vy_mm_us": 1.0, "vz_mm_us": -10.0},
+            {"kind": "slow_turn", "ion": 2, "n": 1, "t_us": 4.1,
+             "x_mm": 0.0, "y_mm": 98.0, "z_mm": -280.0},
+        ]
+        result = summarize_events(
+            events, 25.5, 3, expected_particle_ids=(1, 2, 3),
+            mass_th=mass, charge_e=1.0,
+            theoretical_transverse_energy_per_charge_v=component(1.0),
+            theoretical_axial_energy_per_charge_v=component(10.0),
+            theoretical_release_slow_energy_per_charge_v=component(2.0),
+            transverse_energy_tolerance_per_charge_v=0.05,
+            slow_energy_tolerance_per_charge_v=0.05,
+            axial_energy_tolerance_per_charge_v=0.05,
+            source_transverse_reference={
+                "center_particle_id": 1,
+                "center_x_mm": 0.0, "center_vx_mm_per_us": 1.0,
+                "mean_x_mm": 0.0, "mean_vx_mm_per_us": 1.0,
+            },
+        )
+        diagnostic = result["prism_phase_space_diagnostic"]["surfaces"][
+            "p2_fixed_observation_plane"
+        ]["kinetic_energy_per_charge"]["fixed_observation_plane_target_diagnostic"]
+        self.assertEqual(diagnostic["status"], "evaluated__diagnostic_only")
+        self.assertAlmostEqual(diagnostic["measured_minus_theoretical_axial_energy_per_charge_v"], 0.0)
+        self.assertAlmostEqual(diagnostic["measured_minus_theoretical_release_slow_energy_per_charge_v"], 0.0)
+        self.assertEqual(
+            diagnostic["slow_energy_acceptance"]["status"],
+            "not_applicable__downstream_fields_intentionally_change_component_energies",
+        )
+        self.assertIsNone(diagnostic["slow_energy_acceptance"]["within_tolerance"])
+        self.assertIsNone(diagnostic["axial_energy_acceptance"]["within_tolerance"])
+        component_targets = result["prism_phase_space_diagnostic"]["surfaces"][
+            "p2_fixed_observation_plane"
+        ]["kinetic_energy_per_charge"]["component_target_diagnostic"]["components"]
+        self.assertEqual(
+            component_targets["Ex"]["acceptance"]["status"],
+            "not_applicable__downstream_fields_intentionally_change_component_energies",
+        )
+        self.assertAlmostEqual(component_targets["Ey"]["measured_minus_theoretical_per_charge_v"], 0.0)
+        self.assertAlmostEqual(component_targets["Ez"]["measured_minus_theoretical_per_charge_v"], 0.0)
+        safe_exit = result["prism_phase_space_diagnostic"]["surfaces"][
+            "accelerator_safe_exit"
+        ]["kinetic_energy_per_charge"]["component_target_diagnostic"]
+        self.assertEqual(safe_exit["comparison_scope"], "center_particle_only")
+        for component_name in ("Ex", "Ey", "Ez"):
+            acceptance = safe_exit["components"][component_name]["acceptance"]
+            self.assertEqual(acceptance["status"], "evaluated__center_particle_only")
+            self.assertTrue(acceptance["within_tolerance"])
+
+        drift = result["downstream_drift_capability"]
+        self.assertEqual(drift["scope"], "all_source_particles__not_detector_survivors")
+        self.assertEqual(drift["first_main_drift"]["reached_particle_ids"], [1, 2])
+        self.assertAlmostEqual(drift["first_main_drift"]["arrival_fraction"], 2 / 3)
+        self.assertEqual(drift["target_k"]["reached_particle_ids"], [1])
+        self.assertAlmostEqual(drift["target_k"]["fraction"], 1 / 3)
+        self.assertEqual(drift["main_slow_turn"]["drift_length"]["mean"], 100.0)
+        missing = drift["missing_first_main_drift_terminal_attribution"]
+        self.assertEqual(missing["terminal_code_histogram"], {"2": 1})
+        self.assertEqual(missing["particle_rows"][0]["z_mm"], 8.0)
+
+    def test_safe_exit_signed_bias_uses_source_to_exit_delta(self):
+        events = [
+            terminal(1), terminal(2),
+            {"kind": "accelerator_safe_exit", "ion": 1, "t_us": 0.5,
+             "x_mm": 0.11, "y_mm": -53.0, "z_mm": -6.0,
+             "vx_mm_us": 0.01005, "vy_mm_us": 2.0, "vz_mm_us": -10.0,
+             "from_instance": 3, "to_instance": 2},
+            {"kind": "accelerator_safe_exit", "ion": 2, "t_us": 0.6,
+             "x_mm": 0.31, "y_mm": -53.0, "z_mm": -6.0,
+             "vx_mm_us": 0.03005, "vy_mm_us": 2.0, "vz_mm_us": -10.0,
+             "from_instance": 3, "to_instance": 2},
+        ]
+        result = summarize_events(
+            events, 25.5, 2, expected_particle_ids=(1, 2), mass_th=524.0,
+            charge_e=1.0,
+            source_transverse_reference={
+                "particle_count": 2, "center_particle_id": 1,
+                "center_x_mm": 0.1, "center_vx_mm_per_us": 0.01,
+                "mean_x_mm": 0.2, "mean_vx_mm_per_us": 0.02,
+            },
+            transverse_velocity_bias_tolerance_mm_per_us=0.0001,
+        )
+        bias = result["prism_phase_space_diagnostic"]["surfaces"][
+            "accelerator_safe_exit"
+        ]["signed_transverse_bias"]
+        self.assertAlmostEqual(bias["center_delta_vx_mm_per_us"], 0.00005)
+        self.assertAlmostEqual(bias["mean_delta_vx_mm_per_us"], 0.00005)
+        self.assertAlmostEqual(bias["center_delta_x_mm"], 0.01)
+        self.assertAlmostEqual(bias["mean_delta_x_mm"], 0.01)
+        self.assertTrue(bias["passed"])
+
+    def test_phase_space_center_requires_explicit_source_identity(self):
+        events = [
+            terminal(1), terminal(2),
+            {"kind": "accelerator_safe_exit", "ion": 1, "t_us": 0.5,
+             "x_mm": 0.1, "y_mm": -53.0, "z_mm": -6.0,
+             "vx_mm_us": 1.0, "vy_mm_us": 2.0, "vz_mm_us": -10.0,
+             "from_instance": 3, "to_instance": 2},
+            {"kind": "accelerator_safe_exit", "ion": 2, "t_us": 0.6,
+             "x_mm": 0.2, "y_mm": -53.0, "z_mm": -6.0,
+             "vx_mm_us": 2.0, "vy_mm_us": 3.0, "vz_mm_us": -10.0,
+             "from_instance": 3, "to_instance": 2},
+        ]
+        formal = summarize_events(
+            events, 25.5, 2, expected_particle_ids=(1, 2), mass_th=524.0,
+            charge_e=1.0,
+            source_transverse_reference={
+                "center_particle_id": None,
+                "center_x_mm": None, "center_vx_mm_per_us": None,
+                "mean_x_mm": 0.15, "mean_vx_mm_per_us": 1.5,
+            },
+        )["prism_phase_space_diagnostic"]["surfaces"]["accelerator_safe_exit"]
+        self.assertIsNone(formal["center_state"])
+        self.assertIsNone(formal["kinetic_energy_per_charge"]["center_particle_id"])
+        self.assertIsNone(formal["kinetic_energy_per_charge"]["center"])
+        self.assertEqual(
+            formal["kinetic_energy_per_charge"]["component_target_diagnostic"][
+                "comparison_scope"
+            ],
+            "unavailable__source_has_no_declared_center",
+        )
+
+        controlled = summarize_events(
+            events, 25.5, 2, expected_particle_ids=(1, 2), mass_th=524.0,
+            charge_e=1.0,
+            source_transverse_reference={
+                "center_particle_id": 2,
+                "center_x_mm": 0.2, "center_vx_mm_per_us": 2.0,
+                "mean_x_mm": 0.15, "mean_vx_mm_per_us": 1.5,
+            },
+        )["prism_phase_space_diagnostic"]["surfaces"]["accelerator_safe_exit"]
+        self.assertEqual(controlled["center_state"]["ion"], 2)
+        self.assertEqual(controlled["kinetic_energy_per_charge"]["center_particle_id"], 2)
+
+    def test_prism_phase_space_pairs_p2_entry_and_exit_by_particle_id(self):
+        def p2_event(kind: str, ion: int, time: float, vx: float, vy: float,
+                     vz: float) -> dict[str, object]:
+            return {
+                "kind": kind, "ion": ion, "n": 2, "t_us": time,
+                "x_mm": float(ion), "y_mm": 2.0 * ion, "z_mm": 33.0,
+                "vx_mm_us": vx, "vy_mm_us": vy, "vz_mm_us": vz,
+            }
+
+        events = [
+            terminal(1), terminal(2), terminal(3),
+            p2_event("prism_entry", 1, 1.0, 0.0, 0.0, 10.0),
+            p2_event("prism_pass", 1, 2.0, 1.0, 10.0, 10.0),
+            p2_event("prism_entry", 2, 1.1, 0.0, 2.0, 10.0),
+            p2_event("prism_pass", 3, 2.1, 0.0, 3.0, 10.0),
+        ]
+        result = summarize_events(
+            events, 25.5, 3, expected_particle_ids=(1, 2, 3),
+            mass_th=524.0, charge_e=1.0,
+        )
+        diagnostic = result["prism_phase_space_diagnostic"]
+        self.assertEqual(
+            diagnostic["surfaces"]["p2_entry"]["reached_particle_ids"], [1, 2],
+        )
+        self.assertEqual(
+            diagnostic["surfaces"]["p2_exit"]["reached_particle_ids"], [1, 3],
+        )
+        for surface_name in ("p2_entry", "p2_exit"):
+            components = diagnostic["surfaces"][surface_name]["kinetic_energy_per_charge"]
+            self.assertEqual(components["status"], "evaluated")
+            self.assertEqual(components["Ex"]["sample_count"], 2)
+            self.assertEqual(components["Ey"]["sample_count"], 2)
+            self.assertEqual(components["Ez"]["sample_count"], 2)
+        paired = diagnostic["p2_entry_to_exit"]
+        self.assertEqual(paired["common_particle_ids"], [1])
+        self.assertAlmostEqual(paired["slow_angle_change"]["mean"], 45.0)
+        self.assertAlmostEqual(
+            paired["transverse_angle_change"]["mean"],
+            math.degrees(math.atan2(1.0, 10.0)),
+        )
+        expected_energy_change = (
+            0.5 * 524.0 * 1.66053906660e-27 * 101.0e6 / 1.602176634e-19
+        )
+        self.assertAlmostEqual(
+            paired["kinetic_energy_change"]["mean"], expected_energy_change,
+        )
+
+    def test_paired_segment_angle_attribution_uses_same_particles_and_linear_residuals(self):
+        def event(kind: str, ion: int, time: float, vx: float, vy: float,
+                  vz: float, **extra: object) -> dict[str, object]:
+            return {
+                "kind": kind, "ion": ion, "t_us": time,
+                "x_mm": float(ion), "y_mm": 2.0 * ion, "z_mm": 33.0,
+                "vx_mm_us": vx, "vy_mm_us": vy, "vz_mm_us": vz,
+                **extra,
+            }
+
+        events = [terminal(1), terminal(2), terminal(3)]
+        for ion, scale in ((1, 1.0), (2, 2.0)):
+            events.extend([
+                event("accelerator_safe_exit", ion, 1.0, scale, scale, -10.0,
+                      from_instance=7, to_instance=1),
+                event("prism_entry", ion, 2.0, 2 * scale, 2 * scale, -10.0, n=1),
+                event("prism_pass", ion, 3.0, 3 * scale, 3 * scale, -10.0, n=1),
+                event("prism_entry", ion, 4.0, 4 * scale, 4 * scale, 10.0, n=2),
+                event("prism_pass", ion, 5.0, 5 * scale, 5 * scale, 10.0, n=2),
+            ])
+        # Ion 3 reaches only P1 entry; the paired sets must expose its missing endpoints.
+        events.append(event("prism_entry", 3, 2.2, 3.0, 3.0, -10.0, n=1))
+        result = summarize_events(
+            events, 25.5, 3, expected_particle_ids=(1, 2, 3),
+            mass_th=524.0, charge_e=1.0,
+        )
+        paired = result["prism_phase_space_diagnostic"]["paired_angle_attribution"]
+        direct = paired["accelerator_safe_exit_to_p1_exit"]
+        self.assertEqual(direct["common_particle_ids"], [1, 2])
+        self.assertIn("includes_intervening_drift_and_p1", direct["segment_semantics"])
+        for surface_name in ("accelerator_safe_exit", "p1_exit", "p2_exit"):
+            energy = result["prism_phase_space_diagnostic"]["surfaces"][surface_name][
+                "kinetic_energy_per_charge"
+            ]
+            self.assertEqual(energy["Ex"]["sample_count"], 2)
+            self.assertEqual(energy["Ey"]["sample_count"], 2)
+            self.assertEqual(energy["Ez"]["sample_count"], 2)
+            self.assertIn("component_target_diagnostic", energy)
+        accelerator = paired["accelerator_safe_exit_to_p1_entry"]
+        self.assertEqual(accelerator["common_particle_ids"], [1, 2])
+        self.assertEqual(accelerator["missing_input_particle_ids"], [3])
+        self.assertEqual(accelerator["missing_output_particle_ids"], [])
+        self.assertEqual(accelerator["slow_plane"]["output_minus_input"]["sample_count"], 2)
+        self.assertIsNotNone(accelerator["slow_plane"]["linear_output_vs_input"]["slope"])
+        self.assertAlmostEqual(
+            accelerator["slow_plane"]["linear_output_vs_input"]["residual"]["standard_deviation"],
+            0.0, places=12,
+        )
+        self.assertIn("must_not_be_subtracted", accelerator["spread_semantics"])
+        p1 = paired["p1_entry_to_p1_exit"]
+        self.assertEqual(p1["common_particle_ids"], [1, 2])
+        self.assertEqual(p1["missing_output_particle_ids"], [3])
+        between = paired["p1_exit_to_p2_exit"]
+        self.assertEqual(between["common_particle_ids"], [1, 2])
+        self.assertIn("includes_intervening_transport_and_p2", between["segment_semantics"])
+        self.assertEqual(paired["p2_entry_to_p2_exit"]["common_particle_ids"], [1, 2])
 
     def test_retired_patch_interface_event_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "unknown_event_or_missing_fields"):
@@ -263,11 +660,32 @@ class SimionEventAnalysisTest(unittest.TestCase):
     def test_complete_cohort_keeps_actual_losses_and_detector_metrics(self):
         events = ([terminal(i, splat=1) for i in range(1, 9)] + [terminal(9)]
                   + [event for ion in range(1, 9) for event in static_return_chain(ion)])
-        result = summarize_events(events, 25.5, 9, expected_particle_ids=tuple(range(1, 10)))
+        result = summarize_events(events, 25.5, 9, expected_particle_ids=tuple(range(1, 10)),
+                                  peak_analysis_contract=PEAK_CONTRACT, cohort_role="formal_volume", mass_th=524)
         self.assertTrue(result["all_losses_retained"])
         self.assertEqual(result["electrode_collision_count"], 1)
         self.assertEqual(result["detection_rate"], 8 / 9)
         self.assertGreater(result["mass_resolution_t_over_2fwhm"], 0)
+
+    def test_volume_only_metrics_are_supplemental_to_all_particle_metrics(self):
+        expected = tuple(range(1, 23))
+        events = (
+            [terminal(ion, splat=1) for ion in expected]
+            + [event for ion in expected for event in static_return_chain(ion)]
+        )
+        result = summarize_events(
+            events, 25.5, len(expected), expected_particle_ids=expected,
+            volume_particle_id_min=14,
+        )
+        volume = result["volume_only"]
+        self.assertEqual(result["detector_hit_count"], 22)
+        self.assertEqual(volume["status"], "supplemental_not_formal_replacement")
+        self.assertEqual(volume["particle_id_min"], 14)
+        self.assertEqual(volume["expected_particle_count"], 9)
+        self.assertEqual(volume["detector_hit_count"], 9)
+        self.assertEqual(volume["detection_rate"], 1.0)
+        self.assertIsNone(volume["detector_tof_fwhm_us"])
+        self.assertIsNone(volume["mass_resolution_t_over_2fwhm"])
 
     def test_single_particle_topology_events_preserve_y0_and_full_period(self):
         events = [
@@ -499,6 +917,81 @@ class SimionEventAnalysisTest(unittest.TestCase):
             summary = analyze_log(log, output, input_manifest=manifest, source_key="center_fly2")
             self.assertFalse(summary["event_integrity_passed"])
             self.assertEqual(summary["fly_completion_count"], 2)
+
+    def test_terminal_instance_and_voltage_are_optional_backward_compatible_fields(self):
+        legacy = ("MRTOF_EVENT terminal ion=1 splat=-1 t_us=100 x_mm=0 y_mm=0 z_mm=0 "
+                  "vx_mm_us=0 vy_mm_us=0 vz_mm_us=0 turns=2 central_crossings=2")
+        current = legacy.replace("splat=-1", "splat=-1 instance=2 volts=0")
+        self.assertNotIn("instance", parse_events(legacy)[0])
+        self.assertEqual(parse_events(current)[0]["instance"], 2)
+        self.assertEqual(parse_events(current)[0]["volts"], 0)
+
+    def test_geometric_exit_event_parses_as_a_complete_velocity_state(self):
+        event = parse_events(
+            "MRTOF_EVENT accelerator_geometric_exit ion=7 localization=linear_bracket "
+            "t_us=1.25 x_mm=0.1 y_mm=-55 z_mm=0 "
+            "vx_mm_us=0.2 vy_mm_us=1.3 vz_mm_us=-34.7\n"
+        )[0]
+        self.assertEqual(event["kind"], "accelerator_geometric_exit")
+        self.assertEqual(event["ion"], 7)
+        self.assertEqual(event["vz_mm_us"], -34.7)
+
+    def test_collision_geometry_names_shared_id_and_refuses_ambiguous_overlap(self):
+        geometry = {
+            "mesh_mm_per_gu": 0.25,
+            "mirror_electrodes": [], "mirror_slot": [-1, -1, -1, 1, 1, 1],
+            "mirror_inner_shield_slot": [-1, -1, -1, 1, 1, 1],
+            "mirror_ground_shields": [{"box": [-5, 20, -10, 5, 30, -9]}],
+            "mirror_e_closures": [],
+            "stripe_electrodes": [{
+                "id": 12, "x": [-2, 2],
+                "polygon_yz_mm": [[-1, -10], [1, -10], [1, -9], [-1, -9]],
+                "terminal_polygon_yz_mm": [[40, 40], [41, 40], [41, 41], [40, 41]],
+            }],
+            "stripe_slot": [-1, 50, 50, 1, 51, 51],
+            "central_ground_electrodes": [{
+                "x": [-2, 2],
+                "polygon_yz_mm": [[-1, -10], [1, -10], [1, -9], [-1, -9]],
+            }],
+            "central_ground_slots": [],
+            "prism_electrodes": [],
+            "prism_ground_shields": [{
+                "id": 20, "x": [-5, 5],
+                "outer_polygon_yz_mm": [[-10, -10], [-3, -10], [-3, 10], [-10, 10]],
+                "body_sections": [{
+                    "x": [-5, 5],
+                    "polygon_yz_mm": [[-10, -10], [-3, -10], [-3, 10], [-10, 10]],
+                }],
+                "rectangular_slots_mm": [],
+                "prism_clearance_polygon_yz_mm": [[-9, 0], [-8, -1], [-8, 1]],
+                "cross_aperture": {},
+            }],
+        }
+        events = [
+            {"kind": "accelerator_safe_exit", "ion": 1, "t_us": 1},
+            {"kind": "terminal", "ion": 1, "splat": -1, "t_us": 2,
+             "x_mm": 0, "y_mm": -5, "z_mm": -10},
+            {"kind": "terminal", "ion": 2, "splat": -1, "t_us": 3,
+             "x_mm": 3, "y_mm": 25, "z_mm": -9.5},
+            {"kind": "terminal", "ion": 3, "splat": -1, "t_us": 4,
+             "x_mm": 0, "y_mm": 0, "z_mm": -9.5},
+        ]
+        result = collision_diagnostics(events, geometry)
+        self.assertEqual(result["collision_component_histogram"], {
+            "mirror_inner_ground_shields": 1,
+            "p2_central_prism_ground_shield": 1,
+            "unclassified": 1,
+        })
+        self.assertEqual(result["electrode_id_histogram"], {"15": 1, "20": 1})
+        self.assertEqual(result["dominant_collision_component"], "p2_central_prism_ground_shield")
+        first = result["collision_particles"][0]
+        self.assertEqual(first["component"], "p2_central_prism_ground_shield")
+        self.assertEqual(first["last_completed_stage"], "accelerator_safe_exit")
+        ambiguous = result["collision_particles"][2]
+        self.assertEqual(ambiguous["component"], "unclassified")
+        self.assertEqual({item["component"] for item in ambiguous["candidate_components"]}, {
+            "central_ion_foil_2_ground", "stripe_set_1",
+        })
 
 
 if __name__ == "__main__":

@@ -1,20 +1,7 @@
 """Generate the full MR-TOF Candidate GEM from resolved physical geometry."""
 from __future__ import annotations
 
-import argparse
-from pathlib import Path
 from typing import Iterable
-
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
-    geometry_fingerprint,
-    resolve_geometry,
-    write_geometry_receipt,
-)
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
-    CandidateContractError,
-    derive_two_zone_placement,
-    load_contract,
-)
 
 
 def _number(value: float) -> str:

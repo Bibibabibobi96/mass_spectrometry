@@ -37,7 +37,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_po
 
 
 def _trajectory_physics_identity(manifest: Mapping[str, Any], raw_sha256: str) -> str:
-    """Hash trajectory settings that affect a flight, excluding acceptance only."""
+    """Hash flight physics, excluding the downstream solver/controller policy."""
     record = manifest.get("inputs", {}).get("trajectory_numerics_contract")
     if not isinstance(record, Mapping):
         raise CandidateContractError("trial manifest lacks its trajectory numerics contract")
@@ -46,13 +46,9 @@ def _trajectory_physics_identity(manifest: Mapping[str, Any], raw_sha256: str) -
     if file_sha256(path).lower() != str(raw_sha256).lower():
         raise CandidateContractError("trial trajectory contract identity differs from materialization")
     contract = _load_object(path)
-    try:
-        automatic = contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]
-        acceptance = automatic.pop("acceptance_tolerances")
-    except (KeyError, AttributeError) as exc:
-        raise CandidateContractError("trajectory contract lacks automatic-iteration acceptance tolerances") from exc
-    if not isinstance(acceptance, Mapping):
-        raise CandidateContractError("trajectory acceptance tolerances must be an object")
+    profile = contract.pop("downstream_fixed_grid_workpoint_profile", None)
+    if not isinstance(profile, Mapping):
+        raise CandidateContractError("trajectory contract lacks downstream workpoint profile")
     encoded = json.dumps(contract, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -150,14 +146,24 @@ def _trial(manifest_path: Path, freeze_dir: Path | None = None, *, require_targe
     if not isinstance(inputs, dict):
         raise CandidateContractError("downstream workpoint trial lacks frozen input identities")
     inputs = dict(inputs)
+    # These three records currently point at the same resolved project contract.
+    # Compare its flight-physics projection once; controller step sizes, trust
+    # limits, iteration budget, and acceptance thresholds are not flight inputs.
+    raw_contract_identity = inputs.pop("contract_sha256", None)
+    raw_accelerator_identity = inputs.pop("accelerator_geometry_contract_sha256", None)
     raw_trajectory_identity = inputs.pop("trajectory_contract_sha256", None)
     if raw_trajectory_identity is None:
         # Legacy non-native trial fixtures predate the trajectory contract
         # input.  Their complete input map remains the strict identity.
-        pass
+        if raw_contract_identity is not None:
+            inputs["contract_sha256"] = raw_contract_identity
+        if raw_accelerator_identity is not None:
+            inputs["accelerator_geometry_contract_sha256"] = raw_accelerator_identity
     elif not isinstance(raw_trajectory_identity, str) or not raw_trajectory_identity:
         raise CandidateContractError("downstream workpoint trial has an invalid trajectory contract identity")
     else:
+        if raw_contract_identity != raw_trajectory_identity or raw_accelerator_identity != raw_trajectory_identity:
+            raise CandidateContractError("resolved contract input identities disagree")
         inputs["trajectory_physics_contract_sha256"] = _trajectory_physics_identity(
             manifest, raw_trajectory_identity
         )
@@ -186,6 +192,7 @@ def _trial(manifest_path: Path, freeze_dir: Path | None = None, *, require_targe
             "source_direction_project": materialization.get("source_direction_project"),
             "trajectory_profile": materialization.get("trajectory_profile"),
             "accelerator_pulse": materialization.get("accelerator_pulse"),
+            "accelerator_instance": materialization.get("accelerator_instance"),
             "mirror_voltages_v": materialization["mirror_voltages_v"],
             "selected_axial_energy_per_charge_v": materialization["selected_axial_energy_per_charge_v"],
             "source_slow_kinetic_energy_per_charge_v": materialization["source_slow_kinetic_energy_per_charge_v"],
@@ -240,13 +247,18 @@ def resolve_numerics(contract: Mapping[str, Any], baseline: Mapping[str, Any]) -
     target_angle = math.atan(target_ratio)
     ratio_scale = min(math.tan(target_angle + angle_scale) - target_ratio,
                       target_ratio - math.tan(target_angle - angle_scale))
+    tiers = profile["jacobian_relative_step_tiers"]
+    coarse_relative_step = _finite(tiers["coarse"], "coarse relative voltage step")
+    if coarse_relative_step <= 0.0:
+        raise CandidateContractError("coarse relative voltage step must be positive")
+    parameter_scales = [max(abs(value), 1.0) for value in voltage]
     return {
         "lower_bounds_v": [-energy, floor, prism_window["prism_1"][0], prism_window["prism_2"][0]],
         "upper_bounds_v": [-floor, math.nextafter(energy - deviation, -math.inf), prism_window["prism_1"][1], prism_window["prism_2"][1]],
-        "parameter_scales_v": [abs(value) for value in voltage],
+        "parameter_scales_v": parameter_scales,
         "residual_scales": [profile["position_residual_scale_mm"], ratio_scale,
                             profile["slow_turn_residual_scale_mm"], profile["return_phase_residual_scale_mm"]],
-        "maximum_abs_step_v": profile["maximum_abs_step_v"],
+        "maximum_abs_step_v": [coarse_relative_step * value for value in parameter_scales],
         "relative_rank_tolerance": contract["dual_stripe_l0"]["determination_numerics"]["relative_singular_value_rank_tolerance"],
         "compatibility_tolerance": contract["dual_stripe_l0"]["determination_numerics"]["scaled_irreducible_residual_norm_tolerance"],
     }

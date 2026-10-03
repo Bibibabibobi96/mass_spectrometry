@@ -10,20 +10,29 @@ import unittest
 from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simion_trial
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
+    materialize_bunch_source,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
     _accelerator_energy_binding,
+    _accelerator_geometric_exit_reference,
+    _accelerator_geometric_exit_validation,
+    _accelerator_ring_voltages,
     _apply_terminal_mirror_variation,
     _apply_trajectory_step_scale,
     _accelerator_safe_exit_observation,
+    _bunch_center_workpoint_validation,
     _load_frozen_accelerator_pulse_schedule,
     _mirror_regions,
     _resolve_trial_geometry,
     _fixed_mirror_stripe_source_state,
     _schema5_native_source_state,
+    _source_transverse_reference,
     _single_center_source_state,
     _single_center_source_fly2,
     _p2_handoff_targets,
+    _provider_exit_energy_contract,
     _static_return_diagnostic,
     _termination_diagnostic,
     analyze_trial,
@@ -38,6 +47,372 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 
 class TwoPrismSimionTrialTest(unittest.TestCase):
+    def test_formal_volume_transverse_reference_does_not_invent_a_center(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            table = Path(directory) / "source.csv"
+            table.write_text(
+                "particle_id,mass_th,kinetic_energy_ev,x_mm,direction_x\n"
+                "1,524,5,0.25,0\n2,524,5,-0.25,0\n",
+                encoding="utf-8",
+            )
+            formal = _source_transverse_reference(
+                bunch_source={"state_table": {"path": str(table)}},
+                bunch_selection=None,
+                mass_th=524.0,
+                charge_state=1,
+                slow_energy_per_charge_v=5.0,
+            )
+            self.assertIsNone(formal["center_particle_id"])
+            self.assertIsNone(formal["center_x_mm"])
+            self.assertEqual(formal["mean_x_mm"], 0.0)
+
+    def test_transverse_reference_uses_declared_center_particle_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            table = Path(directory) / "source.csv"
+            table.write_text(
+                "particle_id,mass_th,kinetic_energy_ev,x_mm,direction_x\n"
+                "1,524,5,0.25,0\n7,524,5,-0.1,0\n",
+                encoding="utf-8",
+            )
+            controlled = _source_transverse_reference(
+                bunch_source={
+                    "state_table": {"path": str(table)},
+                    "center_particle_state": {"particle_id": 7},
+                },
+                bunch_selection=None,
+                mass_th=524.0,
+                charge_state=1,
+                slow_energy_per_charge_v=5.0,
+            )
+            self.assertEqual(controlled["center_particle_id"], 7)
+            self.assertEqual(controlled["center_x_mm"], -0.1)
+
+    def test_provider_exit_energy_contract_projects_three_targets_and_tolerances(self) -> None:
+        projection = {
+            "target_axial_energy_per_charge_v": 4000.0,
+            "accepted_release": {"slow_energy_center_per_charge_v": 5.0},
+            "provider_exit_energy_acceptance": {
+                "passed": True,
+                "target_axial_energy_per_charge_v": 4000.0,
+                "tolerances": {
+                    "maximum_exit_transverse_energy_error_per_charge_v": 0.01,
+                    "maximum_exit_slow_energy_error_per_charge_v": 0.02,
+                    "maximum_exit_axial_energy_error_per_charge_v": 0.03,
+                    "maximum_exit_transverse_velocity_bias_mm_per_us": 0.0001,
+                },
+                "center_particle": {
+                    "source_transverse_energy_per_charge_v": 0.0,
+                    "source_slow_energy_per_charge_v": 5.0,
+                    "expected_exit_axial_energy_per_charge_v": 4000.0,
+                },
+            },
+        }
+        contract = _provider_exit_energy_contract(projection)
+        self.assertEqual(contract["targets_per_charge_v"], {"Ex": 0.0, "Ey": 5.0, "Ez": 4000.0})
+        self.assertEqual(
+            contract["absolute_tolerances_per_charge_v"],
+            {"Ex": 0.01, "Ey": 0.02, "Ez": 0.03},
+        )
+        self.assertEqual(
+            contract["maximum_exit_transverse_velocity_bias_mm_per_us"], 0.0001,
+        )
+
+    def test_geometric_exit_validation_uses_all_declared_particles(self) -> None:
+        mass = 524.0
+        component = two_prism_simion_trial._component_energy_per_charge_v
+        expected = {
+            "Ex": component(mass, 1.0, 0.0),
+            "Ey": component(mass, 1.0, 1000.0),
+            "Ez": component(mass, 1.0, -10000.0),
+        }
+        reference = {
+            "expected_particle_ids": [1, 2],
+            "exit_plane_project_z_mm": 0.0,
+            "exit_plane_tolerance_mm": 0.1,
+            "absolute_tolerances_per_charge_v": {"Ex": 0.05, "Ey": 0.05, "Ez": 0.05},
+            "particle_rows": [
+                {"particle_id": particle_id,
+                 "expected_exit_component_energy_per_charge_v": expected}
+                for particle_id in (1, 2)
+            ],
+        }
+        events = [
+            {"kind": "accelerator_geometric_exit", "ion": 1, "t_us": 1.0,
+             "x_mm": 0.0, "y_mm": -55.0, "z_mm": 0.0,
+             "vx_mm_us": 0.0, "vy_mm_us": 1.0, "vz_mm_us": -10.0},
+            {"kind": "accelerator_geometric_exit", "ion": 2, "t_us": 1.1,
+             "x_mm": 0.1, "y_mm": -55.1, "z_mm": 0.0,
+             "vx_mm_us": 0.0, "vy_mm_us": 1.0, "vz_mm_us": -11.0},
+        ]
+        result = _accelerator_geometric_exit_validation(
+            events=events, reference=reference, expected_particle_ids=[1, 2],
+            mass_th=mass, charge_state=1.0,
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["observed_particle_count"], 2)
+        self.assertEqual(result["out_of_tolerance_particle_ids"]["Ez"], [2])
+        self.assertFalse(result["passed"])
+        events[1]["vz_mm_us"] = -10.0
+        passed = _accelerator_geometric_exit_validation(
+            events=events, reference=reference, expected_particle_ids=[1, 2],
+            mass_th=mass, charge_state=1.0,
+        )
+        self.assertEqual(passed["status"], "passed")
+        self.assertTrue(passed["passed"])
+
+    def test_geometric_exit_reference_uses_provider_exit_origin_coordinates(self) -> None:
+        provider_plan = {
+            "numerical_domain": {"local_exit_z_mm": 6.0},
+            "requirements": {"placement": {"global_exit_z_mm": 0.0}},
+            "layout": {
+                "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+            },
+        }
+        campaign = {
+            "role": "orthogonal_accelerator_component_focus_campaign",
+            "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+            "release_spec": {
+                "frame_id": "orthogonal_accelerator_exit_origin_v1",
+                "species": {"mass_amu": 524.0, "charge_state": 1},
+            },
+            "operating_point": {
+                "electrode_voltages_v": [0.0, 4749.0, 3995.0, 0.0],
+                "finite_3d_gain_correction_v": 0.0,
+            },
+            "acceptance": {
+                "focus_plane_tolerance_mm": 0.1,
+                "maximum_exit_transverse_energy_error_per_charge_v": 0.05,
+                "maximum_exit_slow_energy_error_per_charge_v": 0.05,
+                "maximum_exit_axial_energy_error_per_charge_v": 0.05,
+            },
+        }
+        selection = {
+            "particle_ids": [7],
+            "states": [{
+                "mass_th": 524.0, "charge_e": 1, "kinetic_energy_ev": 5.3,
+                "position_workbench_mm": [0.2, -56.35182899425077, 32.0],
+                "direction_workbench": [0.0, 1.0, 0.0],
+            }],
+        }
+        with patch.object(
+            two_prism_simion_trial,
+            "resolve_accelerator_iob_origin",
+            return_value=(0.0, -72.25, -6.0),
+        ):
+            result = _accelerator_geometric_exit_reference(
+                contract={}, provider_plan=provider_plan, resolved_campaign=campaign,
+                bunch_source=None, bunch_selection=selection, mass_th=524.0,
+                charge_state=1, slow_energy_per_charge_v=5.3,
+                focus_y_mm=-55.0, release_z_mm=32.0, source_y_offset_mm=0.0,
+            )
+        row = result["particle_rows"][0]
+        self.assertEqual(result["source_frame_origin_project_mm"], [0.0, -55.0, 0.0])
+        self.assertAlmostEqual(row["source_position_provider_mm"][1], -1.35182899425077)
+        self.assertEqual(row["source_position_provider_mm"][2], 32.0)
+        self.assertEqual(result["expected_particle_ids"], [7])
+        self.assertGreater(
+            row["expected_exit_component_energy_per_charge_v"]["Ez"], 0.0,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            states = [
+                {
+                    "particle_id": particle_id, "tob_us": 0.0,
+                    "mass_th": 524.0, "charge_e": 1,
+                    "kinetic_energy_ev": 5.3,
+                    "position_workbench_mm": [
+                        0.1 * particle_id, -55.0 - 0.1 * particle_id, 32.0,
+                    ],
+                    "direction_workbench": [0.0, 1.0, 0.0],
+                }
+                for particle_id in range(1, 101)
+            ]
+            receipt_path = root / "receipt.json"
+            receipt = materialize_bunch_source(
+                states=states, mother_particle_count=100,
+                source_profile_id="test", frame_id="mrtof_workbench",
+                state_table_path=root / "states.csv", fly2_path=root / "source.fly2",
+                receipt_path=receipt_path, cohort_role="formal_volume",
+            )
+            typed_selection = two_prism_simion_trial.resolve_bunch_source_interval(
+                receipt_path=receipt_path, particle_id_min=1, particle_id_max=100,
+            )
+            with patch.object(
+                two_prism_simion_trial,
+                "resolve_accelerator_iob_origin",
+                return_value=(0.0, -72.25, -6.0),
+            ):
+                full = _accelerator_geometric_exit_reference(
+                    contract={}, provider_plan=provider_plan,
+                    resolved_campaign=campaign, bunch_source=receipt,
+                    bunch_selection=typed_selection, mass_th=524.0,
+                    charge_state=1, slow_energy_per_charge_v=5.3,
+                    focus_y_mm=-55.0, release_z_mm=32.0,
+                    source_y_offset_mm=0.0,
+                )
+            self.assertEqual(full["expected_particle_ids"], list(range(1, 101)))
+            self.assertAlmostEqual(
+                full["particle_rows"][0]["source_position_provider_mm"][1], -0.1,
+            )
+
+    def test_short_exit_analysis_failure_returns_nonzero(self) -> None:
+        observed = {
+            "execution_scope": "accelerator_safe_exit_envelope_only",
+            "status": "accelerator_geometric_exit_invalid",
+        }
+        with (
+            patch.object(two_prism_simion_trial, "analyze_trial", return_value=observed),
+            patch("sys.argv", [
+                "two_prism_simion_trial.py", "analyze",
+                "--log", "flight.log", "--trial-receipt", "trial.json",
+                "--output", "observation.json",
+            ]),
+        ):
+            self.assertEqual(two_prism_simion_trial.main(), 1)
+
+    def test_short_exit_scope_rejects_energy_residual_without_detector_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mass = 100.0
+            component = two_prism_simion_trial._component_energy_per_charge_v
+            expected = {
+                "Ex": component(mass, 1.0, 0.0),
+                "Ey": component(mass, 1.0, 1000.0),
+                "Ez": component(mass, 1.0, -10000.0),
+            }
+            reference = {
+                "expected_particle_ids": [1, 2],
+                "exit_plane_project_z_mm": 0.0,
+                "exit_plane_tolerance_mm": 0.1,
+                "absolute_tolerances_per_charge_v": {
+                    "Ex": 0.05, "Ey": 0.05, "Ez": 0.05,
+                },
+                "particle_rows": [
+                    {"particle_id": particle_id,
+                     "expected_exit_component_energy_per_charge_v": expected}
+                    for particle_id in (1, 2)
+                ],
+            }
+            trial = root / "trial.json"
+            trial.write_text(json.dumps({
+                "prism_switch": None,
+                "prism_voltages_v": [177.0, -179.0],
+                "source_particle_count": 2,
+                "source_cohort": {"role": "formal_volume"},
+                "source_expected_particle_ids": [1, 2],
+                "selected_axial_energy_per_charge_v": 4000.0,
+                "particle_mass_th": mass,
+                "charge_state": 1,
+                "target_drift_period_ratio": 25.5,
+                "accelerator_pulse": {"mode": "static"},
+                "execution_scope": "accelerator_safe_exit_envelope_only",
+                "accelerator_geometric_exit_reference": reference,
+            }), encoding="utf-8")
+            log = root / "flight.log"
+            log.write_text("status,Fly completed. 2 splats\n", encoding="utf-8")
+            events = [
+                {"kind": "accelerator_geometric_exit", "ion": 1, "t_us": 1.0,
+                 "x_mm": 0.0, "y_mm": -55.0, "z_mm": 0.0,
+                 "vx_mm_us": 0.0, "vy_mm_us": 1.0, "vz_mm_us": -10.0},
+                {"kind": "accelerator_geometric_exit", "ion": 2, "t_us": 1.1,
+                 "x_mm": 0.1, "y_mm": -55.1, "z_mm": 0.0,
+                 "vx_mm_us": 0.0, "vy_mm_us": 1.0, "vz_mm_us": -11.0},
+            ]
+            cohort = {
+                "event_integrity_passed": True,
+                "particle_terminal_count": 2,
+                "splat_code_histogram": {"5": 2},
+                "all_losses_retained": True,
+                "detection_rate": 0.0,
+                "peak_analysis": {"status": "unavailable"},
+            }
+            with (
+                patch.object(two_prism_simion_trial, "parse_events", return_value=events),
+                patch.object(two_prism_simion_trial, "summarize_events", return_value=cohort),
+            ):
+                result = analyze_trial(
+                    log_path=log, trial_receipt_path=trial,
+                    output_path=root / "observation.json",
+                )
+            self.assertEqual(result["status"], "accelerator_geometric_exit_invalid")
+            self.assertEqual(
+                result["qualification"],
+                "accelerator_geometric_exit_envelope_rejected",
+            )
+            self.assertFalse(result["accelerator_geometric_exit_validation"]["passed"])
+            self.assertIsNone(result["cohort_analysis"]["detection_rate"])
+            self.assertEqual(
+                result["cohort_analysis"]["peak_analysis"]["status"],
+                "not_applicable__accelerator_geometric_exit_scope",
+            )
+
+    def test_provider_ring_vector_follows_profile_count(self) -> None:
+        for ring_count in (9, 10, 15):
+            voltages = [float(index) for index in range(ring_count)]
+            self.assertEqual(
+                _accelerator_ring_voltages(
+                    {"ring_voltages_v": voltages}, {"ring_count": ring_count},
+                ),
+                voltages,
+            )
+        with self.assertRaisesRegex(CandidateContractError, "profile ring count"):
+            _accelerator_ring_voltages(
+                {"ring_voltages_v": [1.0] * 9}, {"ring_count": 10},
+            )
+
+    def test_runtime_fast_adjust_uses_profile_sized_accelerator_vector(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[2] / "simion" / "mrtof_candidate.lua"
+        ).read_text(encoding="utf-8")
+        self.assertIn("for local_id = 1,#values.accelerator do", source)
+        self.assertNotIn("for local_id = 1,9 do", source)
+
+    def test_bunch_center_particle_reuses_the_four_workpoint_residuals(self) -> None:
+        def state(kind: str, time: float, y: float, z: float, vy: float, vz: float, **extra):
+            return {
+                "kind": kind, "ion": 1, "t_us": time,
+                "x_mm": 0.0, "y_mm": y, "z_mm": z,
+                "vx_mm_us": 0.0, "vy_mm_us": vy, "vz_mm_us": vz,
+                **extra,
+            }
+
+        events = [
+            state("prism_pass", 1.0, -40.0, -101.0, 1.0, -2.0, n=1),
+            state("pre_injection_mirror_turn", 2.0, -30.0, -280.0, 1.0, 0.0),
+            state("prism_pass", 3.0, -10.0, 97.0, 1.0, 2.0, n=2),
+            state("p2_low_field_reference", 3.25, -1.0, 33.0, 1.0, 2.0),
+            state("pre_origin_positive_mirror_turn", 3.5, 0.02, 280.0, 1.0, 0.0),
+            state("drift_phase_origin", 4.0, 0.0, 0.0, 1.0, -2.0),
+            state("slow_turn", 10.0, 340.03, 0.0, 0.0, 0.0, n=1),
+            state("target_k_phase_sample", 20.0, -0.04, -280.0, -1.0, 0.0, k=25.5),
+        ]
+        trial = {
+            "source_center_state": {
+                "particle_id": 1, "tob_us": 0.0, "mass_th": 524.0,
+                "charge_e": 1, "kinetic_energy_ev": 5.0,
+                "position_workbench_mm": [0.0, -55.0, 32.0],
+                "direction_workbench": [0.0, 1.0, 0.0],
+            },
+            "target_positive_mirror_turn_y_mm": 0.0,
+            "target_low_field_tangent_ratio_vy_over_vz": 0.5,
+            "target_slow_turn_y_mm": 340.0,
+            "target_drift_period_ratio": 25.5,
+        }
+        result = _bunch_center_workpoint_validation(events, trial)
+        self.assertEqual(result["status"], "observed")
+        self.assertEqual(result["particle_id"], 1)
+        self.assertAlmostEqual(result["residuals"]["P1_P2_positive_mirror_turn_y_mm"], 0.02)
+        self.assertAlmostEqual(result["residuals"]["P1_P2_P2_shield_low_field_signed_vy_over_vz"], 0.0)
+        self.assertAlmostEqual(result["residuals"]["Stripe_slow_turn_y_minus_L_mm"], 0.03)
+        self.assertAlmostEqual(result["residuals"]["Stripe_target_phase_y_minus_origin_mm"], -0.04)
+        self.assertAlmostEqual(
+            result["physical_acceptance_residuals"][
+                "P1_P2_P2_shield_low_field_angle_degrees"
+            ],
+            0.0,
+        )
+
     def test_mirror_regions_projects_the_single_resolved_geometry(self) -> None:
         resolved = {
             "mirror_ground_shields": [{"box": [0, 0, -9, 1, 1, -8]}],
@@ -85,6 +460,15 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         )
         self.assertEqual(target, variation["target_mirror_voltages_v"])
         self.assertEqual(identity["mode"], "TE1")
+        advisory = copy.deepcopy(variation)
+        advisory["qualification"] = (
+            "bare_mirror_prediction_outside_old_zero_slope_budget__complete_system_response_required"
+        )
+        advisory_target, _ = _apply_terminal_mirror_variation(
+            variation=advisory, base_voltages=base, contract=contract,
+            axial_energy_v=4372.010347796,
+        )
+        self.assertEqual(advisory_target, variation["target_mirror_voltages_v"])
         invalid = copy.deepcopy(variation)
         invalid["base_mirror_voltages_v"][1] += 1
         with self.assertRaisesRegex(CandidateContractError, "not bound"):
@@ -739,6 +1123,19 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             with self.assertRaisesRegex(CandidateContractError, "exactly one pulse-off"):
                 analyze_trial(log_path=log, trial_receipt_path=receipt,
                               output_path=root / "missing.json")
+            safe_exit_only = json.loads(receipt.read_text(encoding="utf-8"))
+            safe_exit_only["execution_scope"] = "accelerator_safe_exit_envelope_only"
+            receipt.write_text(json.dumps(safe_exit_only), encoding="utf-8")
+            result = analyze_trial(
+                log_path=log,
+                trial_receipt_path=receipt,
+                output_path=root / "safe-exit-only.json",
+            )
+            self.assertEqual(
+                result["accelerator_pulse_diagnostic"]["pulse_off_event_count"], 0
+            )
+            safe_exit_only["execution_scope"] = "complete_three_dimensional_static_return"
+            receipt.write_text(json.dumps(safe_exit_only), encoding="utf-8")
             log.write_text(
                 "MRTOF_EVENT accelerator_pulse_off ion=1 t_us=1.86 "
                 "from_instance=3 to_instance=1 x_mm=0 y_mm=-55 z_mm=-5.7\n",
@@ -856,7 +1253,14 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                 "source_expected_particle_ids": [97, 98],
                 "source_selection": {"particle_id_min": 97, "particle_id_max": 98},
                 "selected_axial_energy_per_charge_v": 4000.0,
+                "source_slow_kinetic_energy_per_charge_v": 5.0,
+                "accelerator_target_axial_energy_per_charge_v": 4000.0,
+                "accelerator_exit_energy_contract": {
+                    "targets_per_charge_v": {"Ex": 0.0, "Ey": 5.0, "Ez": 4000.0},
+                    "absolute_tolerances_per_charge_v": {"Ex": 0.01, "Ey": 0.02, "Ez": 0.03},
+                },
                 "particle_mass_th": 100.0,
+                "charge_state": 1,
                 "target_drift_period_ratio": 25.5,
                 "accelerator_pulse": {"mode": "static"},
             }), encoding="utf-8")
@@ -889,6 +1293,25 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             self.assertEqual(result["qualification"], "candidate_bunch_selection_diagnostic__not_formal")
             self.assertEqual(summarize.call_args.kwargs["expected_particle_ids"], (97, 98))
             self.assertEqual(summarize.call_args.args[2], 2)
+            self.assertEqual(summarize.call_args.kwargs["charge_e"], 1.0)
+            self.assertEqual(
+                summarize.call_args.kwargs["theoretical_transverse_energy_per_charge_v"], 0.0,
+            )
+            self.assertEqual(
+                summarize.call_args.kwargs["theoretical_release_slow_energy_per_charge_v"], 5.0,
+            )
+            self.assertEqual(
+                summarize.call_args.kwargs["theoretical_axial_energy_per_charge_v"], 4000.0,
+            )
+            self.assertEqual(
+                summarize.call_args.kwargs["transverse_energy_tolerance_per_charge_v"], 0.01,
+            )
+            self.assertEqual(
+                summarize.call_args.kwargs["slow_energy_tolerance_per_charge_v"], 0.02,
+            )
+            self.assertEqual(
+                summarize.call_args.kwargs["axial_energy_tolerance_per_charge_v"], 0.03,
+            )
 
     def test_one_particle_frozen_selection_uses_bunch_analysis(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1281,6 +1704,22 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             )
             self.assertEqual(native_exit["status"], "observed")
             self.assertEqual(native_exit["state"]["from_instance"], 3)
+            biased_exit = _accelerator_safe_exit_observation(
+                [dict(base, vx_mm_us=0.001)],
+                {
+                    **trial,
+                    "source_transverse_reference": {
+                        "center_x_mm": 0.0,
+                        "center_vx_mm_per_us": 0.0,
+                    },
+                    "accelerator_exit_energy_contract": {
+                        "maximum_exit_transverse_velocity_bias_mm_per_us": 0.0001,
+                    },
+                },
+                log_path=log, trial_receipt_path=receipt,
+            )
+            self.assertEqual(biased_exit["status"], "invalid")
+            self.assertFalse(biased_exit["signed_transverse_bias"]["passed"])
             pass_before_exit = _accelerator_safe_exit_observation(
                 [{
                     "kind": "prism_pass", "ion": 1, "n": 1, "t_us": 0.4,

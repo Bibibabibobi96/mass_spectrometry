@@ -100,6 +100,7 @@ def load_accelerator_dependency(
         "flight_source": "caller_supplied_repository_ion_release_spec__run_input_only__excluded_from_pa_geometry_identity",
         "compaction_objective": "minimize_y_z_subject_to_focus",
         "geometry_authority": "provider_owned__consumer_requests_only_source_envelope_mesh_and_rigid_placement",
+        "exit_energy_acceptance": "caller_supplied_positive_Ex_Ey_Ez_and_signed_x_velocity_bias_tolerances__center_and_complete_release_cohort_must_pass_at_true_exit_plane",
     }}:
         raise ValueError("accelerator provider request API differs")
     profiles = provider["geometry_profiles"]

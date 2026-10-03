@@ -719,6 +719,7 @@ class DualStripeL0MathTest(unittest.TestCase):
 
     def test_manufactured_basis_inverse_derives_nominal_biases_and_reports_K_residual(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        contract["nominal"]["target_drift_period_ratio"] = 25.5
         coefficients = contract["dual_stripe_l0"]["dimensionless_paper_target"][
             "published_printed_reference_c0_to_c5"
         ]

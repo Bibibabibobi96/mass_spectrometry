@@ -204,21 +204,34 @@ def resolve_accelerator_iob_origin(
     if not isinstance(domain, dict) or not isinstance(requirements, dict) or not isinstance(layout, dict):
         raise CandidateContractError("accelerator provider plan lacks domain, requirements, or layout")
     span = domain.get("span_mm")
+    stored_span = domain.get("stored_span_mm")
+    mirror_axes = domain.get("mirror_axes")
     local_origin = domain.get("iob_origin_mm")
     placement = requirements.get("placement")
     if (
         not isinstance(span, list) or len(span) != 3
+        or not isinstance(stored_span, list) or len(stored_span) != 3
         or not isinstance(local_origin, list) or len(local_origin) != 3
+        or mirror_axes != ["x"]
         or not isinstance(placement, dict)
     ):
         raise CandidateContractError("accelerator provider pose fields are incomplete")
     spans = tuple(float(value) for value in span)
+    stored_spans = tuple(float(value) for value in stored_span)
     provider_origin = tuple(float(value) for value in local_origin)
-    if min(spans) <= 0.0 or provider_origin != (-spans[0] / 2.0, -spans[1] / 2.0, 0.0):
+    expected_stored_spans = (spans[0] / 2.0, spans[1], spans[2])
+    if (
+        min(spans) <= 0.0
+        or stored_spans != expected_stored_spans
+        or provider_origin != (0.0, -spans[1] / 2.0, 0.0)
+    ):
         raise CandidateContractError("accelerator provider local IOB origin rule differs")
     local_exit_z = float(domain.get("local_exit_z_mm"))
     global_exit_z = float(placement.get("global_exit_z_mm"))
-    if not all(value == value and abs(value) < float("inf") for value in (*spans, local_exit_z, global_exit_z)):
+    if not all(
+        value == value and abs(value) < float("inf")
+        for value in (*spans, *stored_spans, local_exit_z, global_exit_z)
+    ):
         raise CandidateContractError("accelerator provider pose contains a non-finite value")
 
     resolved = resolve_geometry(contract)

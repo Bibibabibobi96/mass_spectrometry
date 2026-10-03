@@ -22,9 +22,24 @@ RUN = (
     / "20260917_211500__analysis__python__dual-stripe-fixed-mirror-variable-slow-energy-r3"
 )
 MANIFEST = RUN / "run_manifest.json"
+R130_CONTRACT = (
+    REPOSITORY.parent / "artifacts" / "projects"
+    / "parallel_mirror_dual_stripe_mr_tof" / "runs"
+    / "20260917_223000__sim__simion__mrtof-measured-chord-root-fixed-grid-r130"
+    / "inputs" / "simion_candidate_two_zone.json"
+)
+DOWNSTREAM_SLOW_ENERGY_POLICY = (
+    "5 eV is the nominal adjustable slow-axis source seed, not a fixed equality. "
+    "For a qualified fixed mirror, the native Stripe spatial-return inverse and "
+    "T_D/T_0=K analytically select the nearby slow-energy centre and both Stripe "
+    "biases; measured or simulated source spread is added around that selected centre."
+)
 
 
-@unittest.skipUnless(MANIFEST.is_file(), "fixed-mirror Stripe r3 evidence is unavailable")
+@unittest.skipUnless(
+    MANIFEST.is_file() and R130_CONTRACT.is_file(),
+    "fixed-mirror Stripe r3 or r130 frozen evidence is unavailable",
+)
 class FixedMirrorStripeOperatingPointTests(unittest.TestCase):
     def test_loads_one_joined_downstream_authority(self) -> None:
         point = load_fixed_mirror_stripe_operating_point(MANIFEST)
@@ -37,19 +52,26 @@ class FixedMirrorStripeOperatingPointTests(unittest.TestCase):
         self.assertEqual(len(point.mirror_voltages_v), 5)
         self.assertEqual(len(point.stripe_biases_v), 2)
 
-    def test_rebinds_only_the_authorized_slow_energy_policy_to_current_contract(self) -> None:
-        current_contract = PROJECT / "config" / "simion_candidate_two_zone.json"
-        point = load_fixed_mirror_stripe_operating_point(MANIFEST, current_contract)
+    def test_rebinds_only_the_authorized_slow_energy_policy(self) -> None:
+        contract = json.loads(R130_CONTRACT.read_text(encoding="utf-8-sig"))
+        contract["prism_transport"]["energy_partition"][
+            "candidate_operating_partition"
+        ] = DOWNSTREAM_SLOW_ENERGY_POLICY
+        with tempfile.TemporaryDirectory() as directory:
+            downstream_contract = Path(directory) / "simion_candidate_two_zone.json"
+            downstream_contract.write_text(
+                json.dumps(contract, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            point = load_fixed_mirror_stripe_operating_point(
+                MANIFEST,
+                downstream_contract,
+            )
 
         self.assertEqual(
-            point.contract["prism_transport"]["two_prism_injection_l0"]
-            ["voltage_polarity_contract"]["first_prism_required_sign"],
-            "positive",
-        )
-        self.assertEqual(
-            point.contract["prism_transport"]["two_prism_injection_l0"]
-            ["voltage_polarity_contract"]["second_prism_required_sign"],
-            "negative",
+            point.contract["prism_transport"]["energy_partition"]
+            ["candidate_operating_partition"],
+            DOWNSTREAM_SLOW_ENERGY_POLICY,
         )
 
     def test_rejects_nonterminal_manifest_before_reading_values(self) -> None:

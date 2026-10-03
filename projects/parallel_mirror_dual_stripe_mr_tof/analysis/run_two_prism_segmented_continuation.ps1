@@ -1,15 +1,15 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)][string]$CoverageRunManifest,
-  [Parameter(Mandatory)][string]$ExpectedTopologySignatureSha256,
+  [string]$ExpectedTopologySignatureSha256='',
   [ValidateSet('angle_then_y','y_then_angle_diagnostic')][string]$SolveMode = 'angle_then_y',
-  [Parameter(Mandatory)][double]$InitialP1V,
-  [Parameter(Mandatory)][double]$InitialP2LowerV,
-  [Parameter(Mandatory)][double]$InitialP2UpperV,
-  [Parameter(Mandatory)][double]$P1MinimumV,
-  [Parameter(Mandatory)][double]$P1MaximumV,
-  [Parameter(Mandatory)][double]$P2MinimumV,
-  [Parameter(Mandatory)][double]$P2MaximumV,
+  [Nullable[double]]$InitialP1V=$null,
+  [Nullable[double]]$InitialP2LowerV=$null,
+  [Nullable[double]]$InitialP2UpperV=$null,
+  [Nullable[double]]$P1MinimumV=$null,
+  [Nullable[double]]$P1MaximumV=$null,
+  [Nullable[double]]$P2MinimumV=$null,
+  [Nullable[double]]$P2MaximumV=$null,
   [Parameter(Mandatory)][double]$AngleToleranceDeg,
   [Parameter(Mandatory)][double]$PositiveMirrorTurnYToleranceMm,
   [Parameter(Mandatory)][double]$P2RootToleranceV,
@@ -47,6 +47,12 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
 $coverageManifest = (Resolve-Path -LiteralPath $CoverageRunManifest).Path
+$explicitSelection=@(@($ExpectedTopologySignatureSha256,$InitialP1V,$InitialP2LowerV,$InitialP2UpperV,
+  $P1MinimumV,$P1MaximumV,$P2MinimumV,$P2MaximumV)|Where-Object{$null-ne$_-and-not[string]::IsNullOrWhiteSpace([string]$_)})
+$automaticSelection=$explicitSelection.Count-eq0
+if(-not$automaticSelection-and$explicitSelection.Count-ne8){
+  throw 'Explicit continuation selection requires topology, bracket, and all voltage bounds.'
+}
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mrtof-two-prism-segmented-continuation'
 }
@@ -68,7 +74,8 @@ $failureStage = 'preflight'
 $capacitySession = $null
 
 function Invoke-ProjectPython {
-  param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogPath)
+  param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogPath,
+    [pscustomobject]$ResourceLease=$null)
   Push-Location -LiteralPath $repoRoot
   $savedPythonPath = $env:PYTHONPATH
   $savedOpenBlasThreads = $env:OPENBLAS_NUM_THREADS
@@ -81,8 +88,33 @@ function Invoke-ProjectPython {
     $env:OMP_NUM_THREADS = '1'
     $env:MKL_NUM_THREADS = '1'
     $env:NUMEXPR_NUM_THREADS = '1'
-    & $python @Arguments 2>&1 | Tee-Object -FilePath $LogPath
-    if ($LASTEXITCODE -ne 0) { throw "MR-TOF continuation stage failed: $($Arguments -join ' ')" }
+    if($null-eq$ResourceLease){
+      & $python @Arguments 2>&1 | Tee-Object -FilePath $LogPath
+      if ($LASTEXITCODE -ne 0) { throw "MR-TOF continuation stage failed: $($Arguments -join ' ')" }
+    }else{
+      $start=[Diagnostics.ProcessStartInfo]::new()
+      $start.FileName=$python;$start.WorkingDirectory=$repoRoot;$start.UseShellExecute=$false;$start.CreateNoWindow=$true
+      $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+      $start.StandardOutputEncoding=[Text.UTF8Encoding]::new($false);$start.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
+      foreach($argument in $Arguments){$start.ArgumentList.Add($argument)}
+      $start.Environment['PYTHONPATH']=$repoRoot;$start.Environment['OPENBLAS_NUM_THREADS']='1';$start.Environment['OMP_NUM_THREADS']='1'
+      $start.Environment['MKL_NUM_THREADS']='1';$start.Environment['NUMEXPR_NUM_THREADS']='1'
+      $process=[Diagnostics.Process]::Start($start)
+      try{
+        $registered=$false
+        try{Register-HostResourceProcess -Lease $ResourceLease -ProcessId $process.Id|Out-Null;$registered=$true}
+        catch{if(-not$process.HasExited-or-not$_.Exception.Message.Contains('registered process must be a live descendant')){throw}}
+        $workPid=[int]$process.Id
+        $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
+        if($registered){
+          Wait-HostResourceProcess -Lease $ResourceLease -Process $process|Out-Null
+        }else{$process.WaitForExit()}
+        $text=$stdout.GetAwaiter().GetResult()+$stderr.GetAwaiter().GetResult()
+        [IO.File]::WriteAllText($LogPath,$text,[Text.UTF8Encoding]::new($false))
+        if($text){Write-Host $text.TrimEnd()}
+        if($process.ExitCode-ne0){throw "MR-TOF continuation stage failed: $($Arguments -join ' ')"}
+      }finally{$process.Dispose()}
+    }
   } finally {
     $env:PYTHONPATH = $savedPythonPath
     $env:OPENBLAS_NUM_THREADS = $savedOpenBlasThreads
@@ -218,11 +250,12 @@ try {
   }
   foreach ($entry in $sourceInputs.GetEnumerator()) { $configuration.inputs[$entry.Key] = $entry.Value }
   $configuration.parameters = [ordered]@{
-    expected_topology_signature_sha256 = $ExpectedTopologySignatureSha256.ToLowerInvariant()
+    selection_mode = $(if($automaticSelection){'coverage_auto'}else{'explicit'})
+    expected_topology_signature_sha256 = $(if($automaticSelection){$null}else{$ExpectedTopologySignatureSha256.ToLowerInvariant()})
     solve_mode = $SolveMode
-    initial_bracket_v = [ordered]@{ p1 = $InitialP1V; p2 = @($InitialP2LowerV, $InitialP2UpperV) }
-    p1_bounds_v = @($P1MinimumV, $P1MaximumV)
-    p2_bounds_v = @($P2MinimumV, $P2MaximumV)
+    initial_bracket_v = $(if($automaticSelection){$null}else{[ordered]@{ p1 = [double]$InitialP1V; p2 = @([double]$InitialP2LowerV, [double]$InitialP2UpperV) }})
+    p1_bounds_v = $(if($automaticSelection){$null}else{@([double]$P1MinimumV, [double]$P1MaximumV)})
+    p2_bounds_v = $(if($automaticSelection){$null}else{@([double]$P2MinimumV, [double]$P2MaximumV)})
     continuation = [ordered]@{
     angle_tolerance_deg = $AngleToleranceDeg
       positive_mirror_turn_y_tolerance_mm = $PositiveMirrorTurnYToleranceMm
@@ -264,13 +297,7 @@ try {
     '--source-receipt-output', $sourceReceipt,
     '--output', $summary,
     '--expected-observation-sha256', ([string]$observationRecord.sha256).ToLowerInvariant(),
-    '--expected-topology-signature-sha256', $ExpectedTopologySignatureSha256.ToLowerInvariant(),
     '--solve-mode', $SolveMode,
-    '--initial-p1-v', $InitialP1V.ToString('R', $culture),
-    '--initial-p2-lower-v', $InitialP2LowerV.ToString('R', $culture),
-    '--initial-p2-upper-v', $InitialP2UpperV.ToString('R', $culture),
-    '--p1-min-v', $P1MinimumV.ToString('R', $culture), '--p1-max-v', $P1MaximumV.ToString('R', $culture),
-    '--p2-min-v', $P2MinimumV.ToString('R', $culture), '--p2-max-v', $P2MaximumV.ToString('R', $culture),
     '--angle-tolerance-deg', $AngleToleranceDeg.ToString('R', $culture),
     '--positive-turn-y-tolerance-mm', $PositiveMirrorTurnYToleranceMm.ToString('R', $culture),
     '--p2-root-tolerance-v', $P2RootToleranceV.ToString('R', $culture),
@@ -297,6 +324,20 @@ try {
     '--stage-a-maximum-reduced-time', $StageAMaximumReducedTimeMmPerSqrtV.ToString('R', $culture),
     '--stage-b-maximum-reduced-time', $StageBMaximumReducedTimeMmPerSqrtV.ToString('R', $culture)
   )
+  if($automaticSelection){
+    $arguments += '--auto-select-initial-bracket'
+  }else{
+    $arguments += @(
+      '--expected-topology-signature-sha256', $ExpectedTopologySignatureSha256.ToLowerInvariant(),
+      '--initial-p1-v', ([double]$InitialP1V).ToString('R', $culture),
+      '--initial-p2-lower-v', ([double]$InitialP2LowerV).ToString('R', $culture),
+      '--initial-p2-upper-v', ([double]$InitialP2UpperV).ToString('R', $culture),
+      '--p1-min-v', ([double]$P1MinimumV).ToString('R', $culture),
+      '--p1-max-v', ([double]$P1MaximumV).ToString('R', $culture),
+      '--p2-min-v', ([double]$P2MinimumV).ToString('R', $culture),
+      '--p2-max-v', ([double]$P2MaximumV).ToString('R', $culture)
+    )
+  }
   if ($fixedMode) {
     $arguments += @('--fixed-mirror-stripe-manifest', $frozenFixedMirrorStripe)
   } else {
@@ -305,7 +346,7 @@ try {
   $lease = $null
   try {
     $lease = Enter-HostExecutionLease -Role GATE -Stage theory_compute -RunId $RunId
-    Invoke-ProjectPython -Arguments $arguments -LogPath $logPath
+    Invoke-ProjectPython -Arguments $arguments -LogPath $logPath -ResourceLease $lease
   } finally {
     if ($lease) { Exit-HostExecutionLease -Lease $lease }
   }

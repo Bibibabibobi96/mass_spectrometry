@@ -1093,8 +1093,8 @@ def resolve_geometry(
                 raise CandidateContractError("native prism body section has invalid x bounds or contour")
             sections.append({"x": sx, "polygon_yz_mm": polygon})
         if topology == "single_continuous_frame_with_rectangular_slots":
-            if item.get("mechanical_component") != "grounded_1_single_frame" or x != [-24.0, 12.0]:
-                raise CandidateContractError("accelerator-exit shield must be the single CAD grounded-1 frame")
+            if item.get("mechanical_component") != "grounded_1_single_frame" or x != [-12.0, 12.0]:
+                raise CandidateContractError("accelerator-exit shield must use the symmetric grounded-1 main frame")
             slot_items = item.get("rectangular_slots_mm")
             if not isinstance(slot_items, list) or len(slot_items) != 1 or not isinstance(slot_items[0], dict):
                 raise CandidateContractError("grounded-1 requires exactly one CAD rectangular beam-channel slot")
@@ -1110,10 +1110,10 @@ def resolve_geometry(
             cross_y = [float(value) for value in cross_aperture.get("y_mm", [])]
             cross_z = [float(value) for value in cross_aperture.get("z_mm", [])]
             lands = [float(value) for value in cross_aperture.get("reflection_axis_end_lands_z_mm", [])]
-            if channel != [-2.0, 2.0] or cross_y != [-28.0, -6.0] or cross_z != [-40.0, 40.0] or lands != [57.0, 57.0]:
-                raise CandidateContractError("grounded-2 cross aperture must retain the CAD-measured 4 x 22 x 80 mm opening")
-            if float(cross_aperture.get("stripe_side_wall_y_mm", 0.0)) != 3.0 or float(cross_aperture.get("far_stripe_side_wall_y_mm", 0.0)) != 4.0:
-                raise CandidateContractError("grounded-2 cross aperture requires its measured 3-mm and 4-mm y walls")
+            if channel != [-2.0, 2.0] or cross_y != [-28.0, -4.0] or cross_z != [-40.0, 40.0] or lands != [57.0, 57.0]:
+                raise CandidateContractError("grounded-2 candidate cross aperture must retain the 4 x 24 x 80 mm opening")
+            if float(cross_aperture.get("stripe_side_wall_y_mm", 0.0)) != 1.0 or float(cross_aperture.get("far_stripe_side_wall_y_mm", 0.0)) != 4.0:
+                raise CandidateContractError("grounded-2 candidate cross aperture requires its 1-mm and 4-mm y walls")
             if cross_aperture.get("boolean_operation") != "union":
                 raise CandidateContractError("grounded-2 cross aperture is the union of two rectangular slots, not their intersection")
         else:

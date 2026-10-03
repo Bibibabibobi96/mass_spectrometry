@@ -9,6 +9,7 @@ param(
   [string]$InternalBuildDirectory='',
   [string]$InternalScratchDirectory='',
   [string]$InternalCoarseRawGeometryPath='',
+  [string]$InternalCoarseBasisDirectory='',
   [string]$InternalCoarseOrigin=''
 )
 
@@ -49,10 +50,11 @@ function Invoke-ProjectPython {
 }
 
 function Get-NativeCorridorTransactionArguments {
-  param([string]$VerificationEvidence='')
+  param([string]$Owner='',[string]$VerificationEvidence='')
   $arguments=@('-m','common.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,
     '--identity',$identityPath,'--filenames',($familyMembers-join','),'--recovery-policy','none',
-    '--published-pin-reason',$publishedPinReason)
+    '--published-pin-reason',$publishedPinReason,'--producer-run-config',$runConfig)
+  if($Owner){$arguments+=@('--owner',$Owner)}
   if($VerificationEvidence){$arguments+=@('--verification-evidence',$VerificationEvidence)}
   return @($arguments)
 }
@@ -164,12 +166,29 @@ function Publish-NativeCorridorBuiltMember {
   Move-Item -LiteralPath $ScratchPath -Destination $DestinationPath
 }
 
+function Ensure-CoarsePhysicalBasis {
+  param(
+    [Parameter(Mandatory)][string]$CoarseRawGeometryPath,
+    [Parameter(Mandatory)][string]$CoarseBasisDirectory
+  )
+  $recipe=Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
+  $physicalIds=@($recipe.response_recipes|ForEach-Object{@($_.physical_ids)}|ForEach-Object{[int]$_}|Sort-Object -Unique)
+  $basisNames=@($recipe.response_recipes|ForEach-Object{@($_.scratch_basis_names)}|ForEach-Object{[string]$_}|Sort-Object -Unique)
+  if($physicalIds.Count-eq0-or$basisNames.Count-ne$physicalIds.Count){throw 'Frozen corridor recipe has invalid scratch physical-basis members.'}
+  $rawName=Split-Path -Leaf $CoarseRawGeometryPath
+  $expectedNames=@($physicalIds|ForEach-Object{$rawName-replace '\.pa#$',(".pa{0}"-f$_)})
+  if(Compare-Object @($basisNames|Sort-Object) @($expectedNames|Sort-Object)){throw 'Frozen corridor scratch basis names differ from physical IDs.'}
+  $missingIds=@($physicalIds|Where-Object{-not(Test-Path -LiteralPath (Join-Path $CoarseBasisDirectory ($rawName-replace '\.pa#$',(".pa{0}"-f$_))) -PathType Leaf)})
+  if($missingIds.Count-ne0){throw "Published coarse donor bank is incomplete: $($missingIds-join ',')"}
+}
+
 function Invoke-NativeCorridorResponseMemberBuild {
   param(
     [Parameter(Mandatory)][ValidateRange(1,8)][int]$ResponseId,
     [Parameter(Mandatory)][string]$BuildDirectory,
     [Parameter(Mandatory)][string]$ScratchDirectory,
     [Parameter(Mandatory)][string]$CoarseRawGeometryPath,
+    [Parameter(Mandatory)][string]$CoarseBasisDirectory,
     [Parameter(Mandatory)][string]$CoarseOrigin
   )
   $name='mrtof_analyzer_corridor.pa{0}'-f$ResponseId
@@ -184,24 +203,22 @@ function Invoke-NativeCorridorResponseMemberBuild {
   $recipe=Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
   $record=@($recipe.response_recipes|Where-Object{[int]$_.local_id-eq$ResponseId})
   if($record.Count-ne1){throw "Frozen native-corridor recipe lacks exactly one response ID $ResponseId."}
+  Ensure-CoarsePhysicalBasis -CoarseRawGeometryPath $CoarseRawGeometryPath -CoarseBasisDirectory $CoarseBasisDirectory
   $coarseOriginValues=@($CoarseOrigin-split','|ForEach-Object{[double]$_.Trim()})
   $corridorOriginValues=@($plan.box_project_mm[0..2]|ForEach-Object{[double]$_})
   if($coarseOriginValues.Count-ne3-or$corridorOriginValues.Count-ne3){throw 'Native-corridor origins must have three axes.'}
   $aliases=@();$lease=$null
   try{
-    $buildAlias=New-RunExecutionAlias -TargetDirectory ([IO.Path]::GetFullPath($BuildDirectory));$aliases+=@($buildAlias)
     $scratchAlias=New-RunExecutionAlias -TargetDirectory $memberScratch;$aliases+=@($scratchAlias)
     $sourceAliases=@{}
-    $sourcePaths=@($record[0].source_basis_paths|ForEach-Object{(Resolve-Path -LiteralPath $_).Path})
-    foreach($directory in @((Split-Path -Parent ([IO.Path]::GetFullPath($CoarseRawGeometryPath))))+@($sourcePaths|ForEach-Object{Split-Path -Parent $_})|Sort-Object -Unique){
+    $sourcePaths=@($record[0].scratch_basis_names|ForEach-Object{(Resolve-Path -LiteralPath (Join-Path $CoarseBasisDirectory ([string]$_))).Path})
+    foreach($directory in @($sourcePaths|ForEach-Object{Split-Path -Parent $_})|Sort-Object -Unique){
       $alias=New-RunExecutionAlias -TargetDirectory $directory;$aliases+=@($alias)
       $sourceAliases[[IO.Path]::GetFullPath($directory)]=[string]$alias.execution_alias
     }
-    $rawFinal=Join-Path ([string]$buildAlias.execution_alias) 'mrtof_analyzer_corridor.pa#'
     if(-not(Test-Path -LiteralPath (Join-Path ([IO.Path]::GetFullPath($BuildDirectory)) 'mrtof_analyzer_corridor.pa#') -PathType Leaf)){
       throw 'Native-corridor raw geometry must be complete before response dispatch.'
     }
-    $coarseRawExecution=Join-Path $sourceAliases[[IO.Path]::GetFullPath((Split-Path -Parent $CoarseRawGeometryPath))] (Split-Path -Leaf $CoarseRawGeometryPath)
     $sourceExecution=@($sourcePaths|ForEach-Object{
       Join-Path $sourceAliases[[IO.Path]::GetFullPath((Split-Path -Parent $_))] (Split-Path -Leaf $_)
     })
@@ -209,10 +226,29 @@ function Invoke-NativeCorridorResponseMemberBuild {
     $basis=$sourceExecution-join'|'
     $sourceActive=@($record[0].physical_ids|ForEach-Object{[int]$_})-join','
     $lease=Enter-HostExecutionLease -Role SIMION -Stage dirichlet_response_refine -RunId $RunId
+    $responseGem=Join-Path $memberScratch 'prebiased_response.gem'
+    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--contract',$contract,'--output',$responseGem,'--active-physical-ids',$sourceActive,'--basis-voltage-v','10000')|Out-Null
+    $compiledMemberExecution=Join-Path ([string]$scratchAlias.execution_alias) 'prebiased_response.pa#'
+    & (Join-Path $repoRoot 'common\simion\run_gem2pa.ps1') -SimionExe $simion `
+      -GemPath (Join-Path ([string]$scratchAlias.execution_alias) 'prebiased_response.gem') `
+      -OutputPaPath $compiledMemberExecution
+    $compiledMember=Join-Path $memberScratch 'prebiased_response.pa#'
+    if(-not(Test-Path -LiteralPath $compiledMember -PathType Leaf)){throw "Compiled native-corridor response is missing for ID $ResponseId"}
+    $compiledSurface=Join-Path $memberScratch 'prebiased_response.pa-surf'
+    $memberPath=Join-Path $memberScratch $name
+    Move-Item -LiteralPath $compiledMember -Destination $memberPath
+    if([string]$plan.surface_mode-eq'fractional'){
+      if(-not(Test-Path -LiteralPath $compiledSurface -PathType Leaf)){throw "Fractional native-corridor response is missing its surface companion for ID $ResponseId"}
+      $memberSurface=Join-Path $memberScratch 'mrtof_analyzer_corridor.pa-surf'
+      Move-Item -LiteralPath $compiledSurface -Destination $memberSurface
+      if(-not(Test-Path -LiteralPath $memberSurface -PathType Leaf)){throw "Renamed fractional surface companion is missing for ID $ResponseId"}
+    }elseif(Test-Path -LiteralPath $compiledSurface){
+      throw "surface=none unexpectedly produced a surface companion for ID $ResponseId"
+    }
     & $simion --nogui --noprompt lua (Join-Path $repoRoot 'common\simion\build_dirichlet_patch_basis.lua') `
-      $rawFinal $scratchMember $basis ([string]$ResponseId) ($coarseOriginValues-join',') ($corridorOriginValues-join',') '-' $coarseRawExecution $sourceActive '10000'
+      $scratchMember $basis ($coarseOriginValues-join',') ($corridorOriginValues-join',') 'x_mirror_five_faces'
     if($LASTEXITCODE-ne0){throw "Native-corridor response build failed for ID $ResponseId"}
-    Publish-NativeCorridorBuiltMember -ScratchPath (Join-Path $memberScratch $name) -DestinationPath $destination
+    Publish-NativeCorridorBuiltMember -ScratchPath $memberPath -DestinationPath $destination
     Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
     Write-Host "MRTOF_NATIVE_CORRIDOR_MEMBER=BUILT ID=$ResponseId PATH=$destination"
   }finally{
@@ -227,6 +263,7 @@ function Invoke-NativeCorridorResponseWave {
     [Parameter(Mandatory)][string]$BuildDirectory,
     [Parameter(Mandatory)][string]$ScratchDirectory,
     [Parameter(Mandatory)][string]$CoarseRawGeometryPath,
+    [Parameter(Mandatory)][string]$CoarseBasisDirectory,
     [Parameter(Mandatory)][string]$CoarseOrigin
   )
   $records=@()
@@ -237,7 +274,8 @@ function Invoke-NativeCorridorResponseWave {
       $arguments=@('-NoProfile','-File',$PSCommandPath,'-FrozenInputDirectory',$frozenDirectory,
         '-RunId',$RunId,'-SimionExe',$simion,'-PythonExe',$python,'-InternalResponseId',([string]$id),
         '-InternalBuildDirectory',$BuildDirectory,'-InternalScratchDirectory',$ScratchDirectory,
-        '-InternalCoarseRawGeometryPath',$CoarseRawGeometryPath,'-InternalCoarseOrigin',$CoarseOrigin)
+        '-InternalCoarseRawGeometryPath',$CoarseRawGeometryPath,'-InternalCoarseBasisDirectory',$CoarseBasisDirectory,
+        '-InternalCoarseOrigin',$CoarseOrigin)
       $argumentText=@($arguments|ForEach-Object{ConvertTo-GateProcessArgument ([string]$_)})-join' '
       $process=Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $argumentText `
         -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput $stdout `
@@ -268,6 +306,7 @@ function Invoke-NativeCorridorFamilyBuild {
     [Parameter(Mandatory)][pscustomobject]$CapacitySession,
     [Parameter(Mandatory)][string]$CacheKey,
     [Parameter(Mandatory)][string]$CoarseRawGeometryPath,
+    [Parameter(Mandatory)][string]$CoarseBasisDirectory,
     [Parameter(Mandatory)][string]$CoarseOrigin
   )
   $buildDirectory=[IO.Path]::GetFullPath([string]$State.build_directory)
@@ -307,15 +346,12 @@ function Invoke-NativeCorridorFamilyBuild {
     $rawFinal=Join-Path $buildExecution 'mrtof_analyzer_corridor.pa#'
     if('mrtof_analyzer_corridor.pa#'-in$missing){
       $gem=Join-Path $scratchDirectory 'mrtof_analyzer_corridor.gem'
-      $physicalRaw=Join-Path $scratchExecution 'physical_corridor.pa#'
+      $mappedGem=Join-Path $scratchDirectory 'mrtof_analyzer_corridor.local.gem'
       $rawScratch=Join-Path $scratchExecution 'mrtof_analyzer_corridor.pa#'
-      & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry --contract $contract --output $gem
-      if($LASTEXITCODE-ne0){throw 'Canonical corridor GEM generation failed.'}
-      & $simion --nogui --noprompt gem2pa $gem $physicalRaw 2>&1|Set-Content -LiteralPath $buildLog
-      if($LASTEXITCODE-ne0){throw 'Canonical corridor GEM compilation failed.'}
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--contract',$contract,'--output',$gem)|Out-Null
       $mapping=@($plan.physical_to_local_electrode_id.PSObject.Properties|Sort-Object {[int]$_.Name}|ForEach-Object{"$($_.Name):$($_.Value)"})-join','
-      & $simion --nogui --noprompt lua (Join-Path $repoRoot 'common\simion\remap_pa_electrode_ids.lua') $physicalRaw $rawScratch $mapping 2>&1|Add-Content -LiteralPath $buildLog
-      if($LASTEXITCODE-ne0){throw 'Canonical corridor electrode remap failed.'}
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--contract',$contract,'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
+      & (Join-Path $repoRoot 'common\simion\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $rawScratch 2>&1|Set-Content -LiteralPath $buildLog
       Publish-NativeCorridorBuiltMember -ScratchPath (Join-Path $scratchDirectory 'mrtof_analyzer_corridor.pa#') -DestinationPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa#')
     }
     if('mrtof_analyzer_corridor.pa0'-in$missing){
@@ -327,7 +363,7 @@ function Invoke-NativeCorridorFamilyBuild {
       $controllerScratch=Join-Path ([string]$controllerAlias.execution_alias) 'mrtof_analyzer_corridor.pa0'
       Copy-Item -LiteralPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa#') -Destination $controllerRaw
       try{
-        & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'create_native_corridor_controller.lua') $controllerRawExecution $controllerScratch 2>&1|Add-Content -LiteralPath $buildLog
+        & $simion --nogui --noprompt lua (Join-Path $repoRoot 'common\simion\assemble_native_fast_adjust_family.lua') --controller $controllerRawExecution $controllerScratch 8 2>&1|Add-Content -LiteralPath $buildLog
         if($LASTEXITCODE-ne0){throw 'Native-corridor controller creation failed.'}
         Publish-NativeCorridorBuiltMember -ScratchPath (Join-Path $controllerDirectory 'mrtof_analyzer_corridor.pa0') -DestinationPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa0')
       }finally{
@@ -337,8 +373,10 @@ function Invoke-NativeCorridorFamilyBuild {
     Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
     $responseIds=@(1..8|Where-Object{('mrtof_analyzer_corridor.pa{0}'-f$_)-in$missing})
     if($responseIds.Count-gt0){
+      Ensure-CoarsePhysicalBasis -CoarseRawGeometryPath $CoarseRawGeometryPath -CoarseBasisDirectory $CoarseBasisDirectory
       Invoke-NativeCorridorResponseWave -ResponseIds $responseIds -BuildDirectory $buildDirectory `
-        -ScratchDirectory $scratchDirectory -CoarseRawGeometryPath $CoarseRawGeometryPath -CoarseOrigin $CoarseOrigin
+        -ScratchDirectory $scratchDirectory -CoarseRawGeometryPath $CoarseRawGeometryPath `
+        -CoarseBasisDirectory $CoarseBasisDirectory -CoarseOrigin $CoarseOrigin
     }
   }finally{
     if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome failed -RunId $RunId}
@@ -394,15 +432,16 @@ function Write-NativeCorridorFamilyVerificationEvidence {
 }
 
 if($InternalResponseId-gt0){
-  foreach($value in @($InternalBuildDirectory,$InternalScratchDirectory,$InternalCoarseRawGeometryPath,$InternalCoarseOrigin)){
+  foreach($value in @($InternalBuildDirectory,$InternalScratchDirectory,$InternalCoarseRawGeometryPath,$InternalCoarseBasisDirectory,$InternalCoarseOrigin)){
     if([string]::IsNullOrWhiteSpace($value)){throw 'Internal response worker requires complete transaction paths and coarse origin.'}
   }
   Invoke-NativeCorridorResponseMemberBuild -ResponseId $InternalResponseId `
     -BuildDirectory $InternalBuildDirectory -ScratchDirectory $InternalScratchDirectory `
-    -CoarseRawGeometryPath $InternalCoarseRawGeometryPath -CoarseOrigin $InternalCoarseOrigin
+    -CoarseRawGeometryPath $InternalCoarseRawGeometryPath -CoarseBasisDirectory $InternalCoarseBasisDirectory `
+    -CoarseOrigin $InternalCoarseOrigin
   exit 0
 }
-if(@($InternalBuildDirectory,$InternalScratchDirectory,$InternalCoarseRawGeometryPath,$InternalCoarseOrigin)|Where-Object{-not[string]::IsNullOrWhiteSpace($_)}){
+if(@($InternalBuildDirectory,$InternalScratchDirectory,$InternalCoarseRawGeometryPath,$InternalCoarseBasisDirectory,$InternalCoarseOrigin)|Where-Object{-not[string]::IsNullOrWhiteSpace($_)}){
   throw 'Internal response worker paths are forbidden without InternalResponseId.'
 }
 
@@ -441,6 +480,9 @@ try{
     $coarseRaw=Join-Path $coarseGenerationDirectory ([string]$recipe.coarse_raw_member.name)
     if(-not(Test-Path -LiteralPath $coarseRaw -PathType Leaf)){throw "Frozen coarse raw member is missing: $coarseRaw"}
     $coarseOrigin=@($coarseManifest.identity.grid_phase.analyzer_origin_mm)-join','
+    $basisCount=@($recipe.response_recipes|ForEach-Object{@($_.scratch_basis_names)}|ForEach-Object{[string]$_}|Sort-Object -Unique).Count
+    if($basisCount-le0){throw 'Frozen response recipe has no scratch physical basis.'}
+    $remainingPeakBytes+=([int64]$basisCount+1)*[int64](Get-Item -LiteralPath $coarseRaw).Length
   }
   $failureStage='capacity_startup'
   $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
@@ -452,13 +494,16 @@ try{
     $writerLock=Enter-NativeCorridorWriterLock -Root $cacheRoot -CacheKey $cacheKey
   }
   $advance={param($evidence)
-    $arguments=Get-NativeCorridorTransactionArguments -VerificationEvidence $evidence
+    $transactionPath=Join-Path $cacheRoot ('.transactions\'+$cacheKey+'\transaction.json')
+    $owner=if(Test-Path -LiteralPath $transactionPath -PathType Leaf){''}else{[string]$capacitySession.owner}
+    $arguments=Get-NativeCorridorTransactionArguments -Owner $owner -VerificationEvidence $evidence
     return ((@(Invoke-ProjectPython -Arguments $arguments)-join"`n")|ConvertFrom-Json -Depth 40)
   }
   $build={param($state)
     $script:failureStage='transaction_build'
     Invoke-NativeCorridorFamilyBuild -State $state -CapacitySession $capacitySession `
-      -CacheKey $cacheKey -CoarseRawGeometryPath $coarseRaw -CoarseOrigin $coarseOrigin
+      -CacheKey $cacheKey -CoarseRawGeometryPath $coarseRaw `
+      -CoarseBasisDirectory (Join-Path ([string]$state.scratch_directory) 'coarse-basis') -CoarseOrigin $coarseOrigin
   }
   $preverify={param($state)
     $script:failureStage='transaction_preverify'

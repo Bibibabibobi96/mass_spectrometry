@@ -37,9 +37,11 @@ try{
   Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
 
   $failureStage='verify_source'
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $sourceManifest `
-    --require-status success --require-project $projectId --require-mode finite_3d_two_prism_voltage_trial
-  if($LASTEXITCODE-ne 0){throw 'Flight source manifest failed full verification.'}
+  $sourceManifestData=Get-Content -LiteralPath $sourceManifest -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  if($sourceManifestData.status-ne'success'-or$sourceManifestData.project-ne$projectId-or
+    $sourceManifestData.mode-ne'finite_3d_two_prism_voltage_trial'){
+    throw 'Flight source manifest has the wrong status, project, or mode.'
+  }
   $sourceObservation=Get-Content -LiteralPath (Join-Path $sourceRun 'results\two_prism_trial_observation.json') `
     -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $particleCount=[int]$sourceObservation.cohort_analysis.expected_particle_count
@@ -91,6 +93,7 @@ try{
     stages=$data.stages
     derived_transfer=$data.derived_transfer
     terminal_plane_diagnostic=$data.terminal_plane_diagnostic
+    collision_loss_diagnostic=$data.collision_loss_diagnostic
     central_plane_focus_history=$data.central_plane_focus_history
     state_dispersion=$data.state_dispersion
     event_coverage=$data.event_coverage

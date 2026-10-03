@@ -189,6 +189,31 @@ def _profile(contract: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[st
     return profile, loop
 
 
+def _relative_voltage_step(profile: Mapping[str, Any], maximum_scaled_residual: float) -> float:
+    tiers = profile.get("jacobian_relative_step_tiers")
+    if not isinstance(tiers, Mapping) or set(tiers) != {
+        "coarse", "medium", "fine", "medium_maximum_scaled_residual",
+        "fine_maximum_scaled_residual",
+    }:
+        raise CandidateContractError("relative voltage step tiers are invalid")
+    coarse = _finite(tiers["coarse"], "coarse relative voltage step")
+    medium = _finite(tiers["medium"], "medium relative voltage step")
+    fine = _finite(tiers["fine"], "fine relative voltage step")
+    medium_limit = _finite(
+        tiers["medium_maximum_scaled_residual"], "medium relative-step threshold"
+    )
+    fine_limit = _finite(
+        tiers["fine_maximum_scaled_residual"], "fine relative-step threshold"
+    )
+    if not 0.0 < fine < medium < coarse or not 0.0 < fine_limit < medium_limit:
+        raise CandidateContractError("relative voltage step tiers must decrease toward convergence")
+    if maximum_scaled_residual <= fine_limit:
+        return fine
+    if maximum_scaled_residual <= medium_limit:
+        return medium
+    return coarse
+
+
 def _observation_record(
     observation: Mapping[str, Any], materialization: Mapping[str, Any], profile: Mapping[str, Any]
 ) -> tuple[dict[str, Any], np.ndarray, np.ndarray]:
@@ -276,14 +301,14 @@ def _accepted_anchor(
 
 
 def select_best_physical_workpoint(history: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """Select the lowest-demand P-qualified physical flight for downstream use.
+    """Select the lowest-demand fully qualified flight for downstream use.
 
     A controller can reject a physically complete flight solely because its
     improvement is below the iteration floor.  That evidence remains eligible
     for Candidate bunch screening; topology/collision failures never are.  P
     voltage magnitude is the primary selection criterion once P1/P2 have met
     their physical constraints.  Residuals then distinguish electrically
-    equivalent choices.
+    equivalent choices. No warning-only point can authorize bunch flight.
     """
     candidates: list[tuple[tuple[float, float, float, float, int], Mapping[str, Any]]] = []
     for ordinal, item in enumerate(history, start=1):
@@ -293,6 +318,7 @@ def select_best_physical_workpoint(history: Sequence[Mapping[str, Any]]) -> dict
         eligible = (
             (item.get("candidate_accepted") is True and item.get("invalid_trial_reason") is None)
             or item.get("invalid_trial_reason") == "residual_stagnation"
+            or item.get("terminal_reason") == "success"
         )
         if not eligible or not isinstance(record, Mapping):
             continue
@@ -310,9 +336,11 @@ def select_best_physical_workpoint(history: Sequence[Mapping[str, Any]]) -> dict
                 continue
             if not all(name in tolerances for name in ACCEPTANCE_NAMES):
                 continue
-            p_residuals = _record_physical_vector(record)[:2]
-            p_tolerances = _record_tolerances(record)[:2]
-            if np.any(p_tolerances <= 0.0) or np.any(np.abs(p_residuals) > p_tolerances):
+            physical_residuals = _record_physical_vector(record)
+            physical_tolerances = _record_tolerances(record)
+            if np.any(physical_tolerances <= 0.0) or np.any(
+                np.abs(physical_residuals) > physical_tolerances
+            ):
                 continue
         except (CandidateContractError, KeyError, TypeError):
             continue
@@ -321,24 +349,13 @@ def select_best_physical_workpoint(history: Sequence[Mapping[str, Any]]) -> dict
         candidates.append(((p_peak_abs_v, p_total_abs_v, norm, maximum, ordinal), record))
     if not candidates:
         raise CandidateContractError(
-            "history has no topology-valid, P1/P2-qualified physical workpoint eligible for downstream screening"
+            "history has no topology-valid workpoint satisfying every downstream tolerance"
         )
     (p_peak_abs_v, p_total_abs_v, norm, maximum, ordinal), record = min(candidates, key=lambda value: value[0])
-    residuals = record["physical_acceptance_residuals"]
-    tolerances = record["acceptance_tolerances"]
-    warnings = [
-        {
-            "residual": name,
-            "value": float(residuals[name]),
-            "tolerance": float(tolerances[name]),
-        }
-        for name in (RESIDUAL_NAMES[0], RESIDUAL_NAMES[2], RESIDUAL_NAMES[3])
-        if name in tolerances and abs(float(residuals[name])) > float(tolerances[name])
-    ]
     return {
         "schema_version": 1,
         "role": "mrtof_best_physical_workpoint_handoff",
-        "status": "warning" if warnings else "within_tolerance",
+        "status": "within_tolerance",
         "qualification": "candidate_bunch_screening_authorized",
         "selected_history_ordinal": ordinal,
         "selected_workpoint": dict(record),
@@ -355,7 +372,7 @@ def select_best_physical_workpoint(history: Sequence[Mapping[str, Any]]) -> dict
             "maximum_abs_v": p_peak_abs_v,
             "sum_abs_v": p_total_abs_v,
         },
-        "warnings": warnings,
+        "warnings": [],
         "next_action": "materialize_private_composed_operating_pa_then_run_complete_n100_n1000_bunches",
     }
 
@@ -386,6 +403,7 @@ def _recovery_state(
     backtrack_multiplier: float,
     rejected_line_count: int = 0,
     recovery_origin_voltages_v: Sequence[float] | None = None,
+    topology_boundary_voltages_v: Sequence[float] | None = None,
     model_invalid_reason: str | None = None,
     trusted_prediction_count: int = 0,
 ) -> dict[str, Any]:
@@ -401,6 +419,10 @@ def _recovery_state(
         "recovery_origin_voltages_v": (
             _vector(recovery_origin_voltages_v, 4, "recovery origin voltages").tolist()
             if recovery_origin_voltages_v is not None else None
+        ),
+        "topology_boundary_voltages_v": (
+            _vector(topology_boundary_voltages_v, 4, "topology boundary voltages").tolist()
+            if topology_boundary_voltages_v is not None else None
         ),
         "model_invalid_reason": model_invalid_reason,
         "trusted_prediction_count": trusted_prediction_count,
@@ -767,6 +789,14 @@ def _invalid_trial_backtrack(
             backtrack_multiplier=backtrack_multiplier,
             rejected_line_count=repeated_rejections + 1,
             recovery_origin_voltages_v=origin,
+            topology_boundary_voltages_v=(
+                current
+                if reason == "collision_or_invalid_topology"
+                else (
+                    previous_state.get("topology_boundary_voltages_v")
+                    if isinstance(previous_state, Mapping) else None
+                )
+            ),
         ),
         "next_action": "retry_real_center_flight_with_reduced_step_on_reused_fixed_response_fields",
     }
@@ -882,7 +912,10 @@ def decide_iteration(
         if isinstance(item, Mapping) and isinstance(item.get("observation_record"), Mapping)
     ]
     cycle_tolerance = _finite(loop["cycle_voltage_tolerance_v"], "cycle voltage tolerance")
-    if len(previous_records) >= 2:
+    # Recovery intentionally replays the accepted anchor once to derive the
+    # first candidate from the newly measured local S columns.  It is not a
+    # second real flight and therefore cannot be a physical two-point cycle.
+    if not recovery_resume and len(previous_records) >= 2:
         two_back = _vector(previous_records[-2].get("voltages_v"), 4, "two-back voltages")
         if float(np.max(np.abs(voltages - two_back))) <= cycle_tolerance:
             return _terminal(
@@ -944,11 +977,39 @@ def decide_iteration(
         (1.0 - improvement_floor) * anchor_active_norm
     )
     previous_decision = history[-1] if history and isinstance(history[-1], Mapping) else None
+    previous_state = _latest_recovery_state(history)
+    previous_assessment = (
+        previous_decision.get("prediction_assessment")
+        if isinstance(previous_decision, Mapping) else None
+    )
+    boundary_limited_candidate = bool(
+        coordinate_group == "prism_1_prism_2"
+        and isinstance(previous_assessment, Mapping)
+        and previous_assessment.get("topology_boundary_radius_linf_v") is not None
+        and isinstance(previous_state, Mapping)
+        and isinstance(previous_state.get("topology_boundary_voltages_v"), list)
+    )
     prediction_assessment: dict[str, Any] = {
         "anchor_active_scaled_norm": anchor_active_norm,
         "actual_active_scaled_norm": current_active_norm,
         "accepted": accepted,
     }
+    if (
+        isinstance(previous_decision, Mapping)
+        and (
+            previous_decision.get("coordinate_group") == "physical_topology_backtrack"
+            or boundary_limited_candidate
+        )
+        and anchor_active_norm is not None
+        and current_active_norm < anchor_active_norm
+    ):
+        # A real collision established a topology boundary.  A valid midpoint
+        # or subsequent boundary-limited candidate that improves the residual
+        # must become the new valid endpoint even when its deliberately small
+        # step cannot clear the ordinary percentage-improvement floor.
+        accepted = True
+        prediction_assessment["accepted"] = True
+        prediction_assessment["acceptance_basis"] = "improving_topology_backtrack"
     if isinstance(previous_decision, Mapping) and previous_decision.get("coordinate_group") == coordinate_group:
         predicted = previous_decision.get("predicted_physical_acceptance_residuals")
         if isinstance(predicted, Mapping) and anchor is not None:
@@ -967,6 +1028,24 @@ def decide_iteration(
             })
     direction_wrong = _prediction_direction_error(previous_decision, record, rows)
     prediction_assessment["prediction_direction_wrong"] = direction_wrong
+    rho = prediction_assessment.get("realized_over_predicted_reduction")
+    trusted_recovery_prediction = bool(
+        isinstance(previous_decision, Mapping)
+        and previous_decision.get("recovery_resume_proposal") is True
+        and isinstance(rho, (int, float))
+        and math.isfinite(float(rho))
+        and float(rho) >= 0.75
+        and float(prediction_assessment.get("actual_reduction", 0.0)) > 0.0
+        and not direction_wrong
+    )
+    if trusted_recovery_prediction:
+        # The first correction after a fine local refresh is intentionally
+        # radius-limited.  Judge it by agreement with that measured model;
+        # the global percentage-improvement floor would otherwise reject the
+        # very small safe step before its trust radius can grow.
+        accepted = True
+        prediction_assessment["accepted"] = True
+        prediction_assessment["acceptance_basis"] = "trusted_recovery_prediction"
     rejected_line_count = _same_rejected_line(history, anchor, coordinate_group)
     if not accepted:
         rejected_line_count += 1
@@ -991,8 +1070,9 @@ def decide_iteration(
         rejected = _invalid_trial_backtrack(
             prior=prior, materialization=materialization, loop=loop, history=history, iteration=iteration,
             reason="residual_stagnation",
-            detail=(f"{coordinate_group} candidate was physically valid but its scaled residual norm "
-                    f"rose from {anchor_active_norm:.6g} to {current_active_norm:.6g}"),
+            detail=(f"{coordinate_group} candidate was physically valid but did not meet the minimum "
+                    f"relative-improvement floor: scaled residual norm {anchor_active_norm:.6g} -> "
+                    f"{current_active_norm:.6g}"),
         )
         rejected["observation_record"] = record
         rejected["prediction_assessment"] = prediction_assessment
@@ -1004,6 +1084,9 @@ def decide_iteration(
             backtrack_multiplier=_factor(loop, "backtrack_multiplier", "damping_factor"),
             rejected_line_count=rejected_line_count,
             recovery_origin_voltages_v=rejected.get("recovery_state", {}).get("recovery_origin_voltages_v"),
+            topology_boundary_voltages_v=(
+                rejected.get("recovery_state", {}).get("topology_boundary_voltages_v")
+            ),
         )
         return rejected
 
@@ -1045,7 +1128,7 @@ def decide_iteration(
         if relative >= improvement_floor:
             break
         non_improving += 1
-    if non_improving >= non_improving_limit and not recovery_resume:
+    if non_improving >= non_improving_limit and not recovery_resume and not trusted_recovery_prediction:
         return _terminal(
             "residual_stagnation", iteration=iteration,
             detail=(f"{coordinate_group} residual norm failed to improve for "
@@ -1111,7 +1194,6 @@ def decide_iteration(
         return _terminal("solver_failure", iteration=iteration,
                          detail=f"two-coordinate scaled solve failed: {exc}", record=record)
     raw = normalized * parameter_scales
-    previous_state = _latest_recovery_state(history)
     advance_multiplier = _factor(loop, "advance_multiplier", "damping_factor")
     trusted_prediction_count = 0
     if isinstance(previous_state, Mapping):
@@ -1137,12 +1219,41 @@ def decide_iteration(
         else:
             prediction_assessment["prediction_confidence"] = "unmeasured"
     raw *= advance_multiplier
-    maximum = _vector(numerics.get("maximum_abs_step_v"), 4, "maximum voltage step")[indices]
+    relative_step = _relative_voltage_step(
+        profile, _finite(record["maximum_scaled_abs_residual"], "maximum scaled residual")
+    )
+    maximum = relative_step * np.maximum(np.abs(voltages[indices]), 1.0)
+    topology_boundary_origin = None
+    if coordinate_group == "prism_1_prism_2" and isinstance(previous_state, Mapping):
+        stored_boundary = previous_state.get("topology_boundary_voltages_v")
+        if isinstance(stored_boundary, list):
+            origin = _vector(stored_boundary, 4, "stored topology boundary voltages")
+            remaining = origin[indices] - voltages[indices]
+            if float(raw @ remaining) > 0.0:
+                # A real flight already proved ``origin`` invalid and the
+                # current point valid.  Continue toward that boundary only by
+                # bisecting the remaining voltage gap; otherwise the normal
+                # percentage trust tier can repeatedly jump across it.
+                boundary_radius = (
+                    _factor(loop, "backtrack_multiplier", "damping_factor")
+                    * float(np.max(np.abs(remaining)))
+                )
+                if boundary_radius > 0.0:
+                    maximum = np.minimum(maximum, boundary_radius)
+                    topology_boundary_origin = origin
+                    prediction_assessment["topology_boundary_radius_linf_v"] = boundary_radius
     provisional_bound = None
     if recovery_resume:
         for item in reversed(history):
             if not isinstance(item, Mapping) or item.get("coordinate_group") != coordinate_group:
                 continue
+            recovery_model = item.get("recovery_state", {}).get("model")
+            if isinstance(recovery_model, Mapping) and recovery_model.get("trusted_radius_linf_v") is not None:
+                provisional_bound = _finite(
+                    recovery_model["trusted_radius_linf_v"], "S recovery trusted radius"
+                )
+                maximum = np.minimum(maximum, provisional_bound)
+                break
             validation = item.get("local_s_model_validation")
             if isinstance(validation, Mapping) and (
                 validation.get("validation_status") == "provisional_no_nearby_history"
@@ -1155,6 +1266,20 @@ def decide_iteration(
                 if provisional_bound <= 0.0:
                     raise CandidateContractError("provisional S recovery correction bound must be positive")
                 maximum = np.minimum(maximum, provisional_bound)
+                break
+    else:
+        for item in reversed(history):
+            if not isinstance(item, Mapping) or item.get("recovery_resume_proposal") is not True:
+                continue
+            assessment = item.get("prediction_assessment")
+            if isinstance(assessment, Mapping) and assessment.get("provisional_local_model_bound_v") is not None:
+                provisional_bound = _finite(
+                    assessment["provisional_local_model_bound_v"], "persisted S recovery trusted radius"
+                )
+                # Grow only after each trusted real prediction.  Never jump
+                # directly from the recovered local radius back to the 1% tier.
+                maximum = np.minimum(maximum, provisional_bound * (2.0 ** min(trusted_prediction_count, 4)))
+                prediction_assessment["recovery_trust_bound_v"] = float(np.max(maximum))
                 break
     lower = _vector(numerics.get("lower_bounds_v"), 4, "lower voltage bounds")[indices]
     upper = _vector(numerics.get("upper_bounds_v"), 4, "upper voltage bounds")[indices]
@@ -1205,10 +1330,12 @@ def decide_iteration(
             advance_multiplier=advance_multiplier,
             backtrack_multiplier=_factor(loop, "backtrack_multiplier", "damping_factor"),
             trusted_prediction_count=trusted_prediction_count,
+            topology_boundary_voltages_v=topology_boundary_origin,
         ),
         "local_physical_jacobian_rows": jacobian.tolist(),
         "scaled_subsystem_condition_number": condition_number,
         "model_solver": model_solver,
+        "relative_trust_limit": relative_step,
         "predicted_physical_acceptance_residuals": dict(
             zip(RESIDUAL_NAMES, predicted_physical.tolist(), strict=True)
         ),
@@ -1309,7 +1436,7 @@ def main() -> int:
     parser.add_argument("--recovery-resume", action="store_true",
                         help="derive the first bounded S candidate from a saved accepted anchor; no flight is implied")
     parser.add_argument("--select-best-physical-workpoint", action="store_true",
-                        help="emit the best complete physical workpoint for warning-qualified bunch screening")
+                        help="emit the best fully qualified physical workpoint for bunch screening")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     if args.select_best_physical_workpoint:

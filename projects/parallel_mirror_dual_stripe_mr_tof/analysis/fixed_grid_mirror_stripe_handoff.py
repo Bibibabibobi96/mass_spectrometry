@@ -64,6 +64,12 @@ def _same_mirror_physics(
         contract.pop("accelerator", None)
         contract.pop("particle_source", None)
         contract.pop("downstream_fixed_grid_workpoint_profile", None)
+        # Prism shields affect the assembled transport field, not the frozen
+        # mirror-electrode voltage solution.  Current-field N=1/N=100 stages
+        # validate their consequences; changing them must not sever the
+        # r130 mirror-theory seed lineage.
+        _remove_path(contract, "prisms", "ground_shields")
+        _remove_path(contract, "nominal", "target_drift_period_ratio")
         _remove_path(contract, "prism_transport", "first_prism", "entry_reference")
         _remove_path(contract, "simion", "accelerator_pa_span_mm")
         _remove_path(contract, "simion", "analyzer_spatial_convergence")
@@ -113,7 +119,7 @@ def load_fixed_grid_mirror_point(manifest_path: Path, downstream_contract: Path)
             )
         ):
             raise CandidateContractError(
-                "downstream contract changes more than the explicit slow-energy policy"
+                "downstream contract changes more than the explicit K/slow-energy policy"
             )
     if point.get("role") != "mrtof_fixed_grid_mirror_voltage_point" or period.get("role") != "mrtof_bare_mirror_real_field_period_comparison" or native.get("role") != "mrtof_native_simion_transverse_l1_analysis" or probe.get("role") != "mrtof_native_simion_transverse_l1_probe":
         raise CandidateContractError("fixed-grid evidence roles differ")

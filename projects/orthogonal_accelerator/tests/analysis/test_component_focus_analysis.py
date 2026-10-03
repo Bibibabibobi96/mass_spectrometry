@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.particle_physics import kinetic_energy_ev, speed_m_s_from_kinetic_energy_ev
 from common.ion_release.release import generate_release_states, materialize_release
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import ComponentFocusError, analyze
 
@@ -33,13 +34,20 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def write_events(self, *, focus_z: float = 0.0) -> Path:
-        rows = ["kind,ion,code,t_us,x_mm,y_mm,z_mm,vz_mm_us"]
+        rows = ["kind,ion,code,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us"]
+        voltages = json.loads(self.campaign.read_text(encoding="utf-8"))["operating_point"]["electrode_voltages_v"]
+        target = voltages[1] - (voltages[1] - voltages[2]) * 0.5
         for particle_id, state in self.states.items():
             x, y, z = state["x_mm"], state["y_mm"], state["z_mm"]
+            source_axial = kinetic_energy_ev(100.0, 0.0, 0.0, state["vz_m_s"])
+            particle_target = target + (voltages[1] - voltages[2]) * (state["z_mm"] - 32.0) / 4.0
+            exit_vz = -speed_m_s_from_kinetic_energy_ev(100.0, particle_target + source_axial) / 1000.0
+            exit_vy = state["vy_m_s"] / 1000.0
             rows.extend((
-                f"source,{particle_id},,0,{x},{y},{z},",
-                f"focus,{particle_id},,0.1,0,0,{focus_z},-10",
-                f"terminal,{particle_id},1,{particle_id},0,0,{focus_z},",
+                f"source,{particle_id},,0,{x},{y},{z},{state['vx_m_s']/1000.0},{exit_vy},{state['vz_m_s']/1000.0}",
+                f"exit,{particle_id},,0.09,0,0,0,0,{exit_vy},{exit_vz}",
+                f"focus,{particle_id},,0.1,0,0,{focus_z},0,{exit_vy},{exit_vz}",
+                f"terminal,{particle_id},1,{particle_id},0,0,{focus_z},0,{exit_vy},{exit_vz}",
             ))
         path = self.root / "component_focus.events.csv"
         path.write_text("\n".join(rows) + "\n", encoding="utf-8")
@@ -52,6 +60,36 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         self.assertEqual(result["loss_particle_count"], 0)
         self.assertEqual(result["transport_fraction"], 1.0)
         self.assertTrue(result["time_focus_assessment"]["passed"])
+        self.assertTrue(result["exit_energy_assessment"]["passed"])
+        self.assertEqual(result["hard_gate"], {"complete_transport_passed": True, "exit_slow_energy_passed": True, "exit_axial_energy_passed": True, "exit_transverse_energy_passed": True, "exit_transverse_velocity_bias_passed": True})
+
+    def test_signed_transverse_velocity_bias_is_a_hard_gate(self) -> None:
+        events = self.write_events()
+        lines = events.read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            fields = line.split(",")
+            if fields[0] == "exit":
+                fields[7] = "0.001"
+                lines[index] = ",".join(fields)
+        events.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        result = analyze(events, self.receipt, self.campaign)
+        self.assertEqual(result["status"], "candidate_incomplete")
+        self.assertFalse(result["hard_gate"]["exit_transverse_velocity_bias_passed"])
+        self.assertAlmostEqual(
+            result["exit_energy_assessment"]["cohort"]["mean_delta_vx_mm_per_us"],
+            0.001,
+        )
+
+    def test_exit_energy_failure_is_a_hard_gate(self) -> None:
+        events = self.write_events()
+        lines = events.read_text(encoding="utf-8").splitlines()
+        fields = lines[2].split(",")
+        fields[8] = "1"
+        lines[2] = ",".join(fields)
+        events.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        result = analyze(events, self.receipt, self.campaign)
+        self.assertEqual(result["status"], "candidate_incomplete")
+        self.assertFalse(result["hard_gate"]["exit_slow_energy_passed"])
 
     def test_accepts_with_warning_when_the_longitudinal_time_spread_exceeds_target(self) -> None:
         events = self.write_events()
@@ -107,7 +145,13 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         runner = (ROOT / "simion" / "run_component_focus_flight.ps1").read_text(encoding="utf-8")
         self.assertIn("pa_build_run_manifest_sha256", runner)
         self.assertIn("cache_manifest_sha256", runner)
-        self.assertIn("orthogonal_accelerator_focus.pa0", runner)
+        self.assertIn("[Parameter(Mandatory)][string]$RuntimeControllerPath", runner)
+        self.assertIn("$controller=(Resolve-Path -LiteralPath $RuntimeControllerPath).Path", runner)
+        self.assertIn("$expectedRuntimeNames=@(0..$electrodeCount", runner)
+        self.assertIn("Flight refuses a controller inside the published cache generation", runner)
+        self.assertIn("Private runtime family inventory differs from the provider electrode namespace", runner)
+        self.assertNotIn("Get-FileHash (Join-Path $runtimeDirectory", runner)
+        self.assertNotIn("Get-FileHash $controller", runner)
         self.assertNotIn("Copy-Item -LiteralPath $controller", runner)
         self.assertIn("component_focus_input.fly2", runner)
         self.assertIn("fly --trajectory-quality $($c.numerics.trajectory_quality) --particles $fly --programs 1 --retain-trajectories 0 $iob", runner)
@@ -126,14 +170,16 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         program = (ROOT / "simion" / "component_focus.lua").read_text(encoding="utf-8")
         self.assertEqual(program.count("io.open("), 1)
         self.assertIn("event_file=assert(io.open('component_focus.events.csv','w')", program)
-        self.assertIn("kind,ion,code,t_us,x_mm,y_mm,z_mm,vz_mm_us", program)
+        self.assertIn("kind,ion,code,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us", program)
         source = program.index("emit_event('source'")
+        exit_event = program.index("emit_event('exit'")
         focus = program.index("emit_event('focus'")
         capture = program.index("local function capture_focus")
         terminal = program.index("finalize_particle(particle,current,1)", capture)
         splat = program.index("ion_splat=1", capture)
         capture_call = program.index("capture_focus(ion_number,focus,current)", focus)
         self.assertLess(source, focus)
+        self.assertGreater(exit_event, source)
         self.assertLess(focus, capture_call)
         self.assertLess(capture, terminal)
         self.assertLess(terminal, splat)
@@ -148,6 +194,8 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         self.assertIn("if dt_to_plane>0 and ion_time_step>dt_to_plane then ion_time_step=dt_to_plane end", program)
         self.assertIn("if math.abs(dz)<=point.focus_plane_tolerance_mm then record_focus(ion_number,current) end", program)
         self.assertIn("capture_focus(ion_number,focus,current)", program)
+        self.assertIn("previous.z>point.local_exit_z_mm", program)
+        self.assertIn("record_exit(ion_number", program)
         tstep = program[program.index("function segment.tstep_adjust()"):program.index("function segment.initialize()")]
         self.assertNotIn("ion_splat", tstep)
         self.assertIn("authoritative source-states companion required", program)

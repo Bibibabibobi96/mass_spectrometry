@@ -46,8 +46,8 @@ capacity baseline，并用最新 cache 的精确 retirement authorization 走增
 加速器全局 y 位置由 `accelerator.focus_y_anchor.project_y_mm` 单独配置；它是 MR 装配变量，
 不进入 OA provider PA identity，也不触发任一 PA 的构建、复制或 Refine。每次装配从 provider plan
 读取实际局部 PA 原点和实体 y 外包络，再把该变量投影到 Workbench，并以 resolved Prism2 屏蔽件和
-Stripe 几何失败关闭地检查净间隙。当前初值为 `-45 mm`：r3 加速器实体 y 上边界为 `-33 mm`，
-Prism2 屏蔽件下边界为 `-32 mm`，保留合同要求的 `1 mm` 间隙；数值 PA 包络可重叠以支持优先级，
+Stripe 几何失败关闭地检查净间隙。当前正式起点为 `-50 mm`：加速器实体 y 上边界为 `-33 mm`，
+Prism2 屏蔽件下边界为 `-32 mm`，保留合同要求的 `1 mm` 间隙；`-45 mm` 不再进入活动工况列表。数值 PA 包络可重叠以支持优先级，
 但导体实体不得相交。
 已有 native corridor checkpoint 的复用身份只由该 PA family 的 cache key、generation 和成员哈希决定；
 加速器或其他独立静态 PA 的 Workbench 位姿不是 corridor PA 的生成输入，因此改变 y 后必须新建 flight
@@ -66,6 +66,8 @@ Stripe、中央接地件及棱镜屏蔽由完整实体扣除有限矩形槽，�
 消费 provider `mrtof_runtime_receipt.json`。离子从 exit grid 沿项目 `-z` 离开，出口、grid1、
 repeller 依次位于更大的 `+z`；OA profile 派生局部外形、焦距和网格，MR 只选择独立 PA 的全局刚体 y
 站位并执行装配净间隙门禁，不选择端部、环、壳体或孔径拓扑。
+provider 的加速器 PA 以 `x=0` 为镜像面，只保存 `x>=0` 半域；MR 保持其物理全宽不变，
+将实例 `x` 原点放在镜像面，并在 IOB 重载时要求 `3dplanar[x]` 对称性。
 
 ## Native runtime 的四个角色
 
@@ -149,15 +151,17 @@ private controller and streams the eight native responses. The four-instance
 IOB uses accelerator instance 3.
 
 `analysis/run_native_corridor_bunch_screening.ps1` reopens the checkpointed
-native runtime once for the N=100 static pilot and, only after its collection
-gate passes, the N=1000 fixed-clock cohort. A hard-stop first runs the bounded
-theory Stripe pair; if neither candidate clears the gate, it automatically runs
-two independent reverse S-axis probes from the same accepted anchor. P1/P2 stay
-fixed, all completed candidate manifests are reused, and the stage plans,
-ranked observations, and selections remain manifest-bound evidence. Only an
-event-valid candidate above the hard collection minimum can reach the clock and
-N=1000 stages. This continuation does not rebuild, copy, Refine, or materialize
-the native PA family.
+native runtime once and runs exactly one static cohort. The current Candidate
+path runs the requested N=3, N=13, or N=100 static cohort; it does not create a
+pulse pilot, fixed-clock replay, or N=1000 flight. N=3 is the controlled focus
+fallback, while N=13 is the controlled focus/Ey/local-x/full-envelope diagnostic;
+neither supplies formal collection, FWHM, or resolution acceptance. The optional
+`-TrajectoryStepScaleOverride` only reduces the frozen workpoint maximum step for
+a numerical-sensitivity flight and leaves PA, voltage, source, and scheduling
+semantics unchanged.
+Only an event-valid N=100 baseline with collection strictly above 40% may enter
+TE1; final acceptance requires at least 80%. This continuation does not rebuild,
+copy, Refine, or materialize the native PA family.
 
 The existing `analysis/run_downstream_workpoint_iteration.ps1` accepts the same
 bank parameter. Supply either a same-bank `-InitialWorkpointManifest` or
@@ -170,9 +174,9 @@ Stencil steps
 come from `downstream_fixed_grid_workpoint_profile.forward_stencil_steps_v`,
 initially 0.1 V per axis as used by the successful historical r2 audit. A failed
 child stops the stencil; native bank key/generation bind the Jacobian, children,
-and checkpoint. N100/N1000 source, pulse and batch continuation are not yet
-automatically connected to this parent; the checkpointed bunch-screening
-consumer is the separate continuation boundary.
+and checkpoint. `run_native_candidate_chain.ps1` is the thin automatic
+continuation from that accepted N=1 workpoint through common source,
+N=100 and detector-plane TE1 comparison.
 
 The automatic parent owns one private native runtime family across its baseline,
 stencil and iteration children. The family lives inside its owner run; the common
@@ -301,11 +305,14 @@ transaction 执行。加速器不属于此缓存：运行时只消费 OA provide
 GUI 审查包由 native system runtime bundle 生成，并绑定上述四个冻结输入；不再发布局域五区或
 三组件工作台。
 
-`run_two_prism_trial.ps1 -RetainGuiWorkbench` 以 `solver_review` 在本次受管 run 的
+`run_two_prism_trial.ps1 -RetainGuiWorkbench` 仅在继承工作流共享 native runtime checkpoint 时启用，
+以 compact 保留策略在本次受管 run 的
 `simion/gui_workbench/` 写入 IOB 与所有非 PA 伴随文件。IOB 在飞行后重绑到已发布的稳定只读
-PA，临时 PA 投影随即删除；收据只复用 runtime／provider 身份，不为 GUI 包递归枚举或
-重哈希 PA。N=100 和 N=1000 串团飞行默认开启此开关，因此不再随运行时临时目录丢失小型 GUI 审查包。
-GUI 关闭后由该 run 的 owner disposition 路由退休。
+PA；global fallback 与 detector 在首次消费时验证一次并由工作流进程保持只读句柄，后续 N=1/TE1
+trial 直接复用，不再逐次复制或重哈希。收据只复用 runtime／provider 身份，不为 GUI 包递归枚举或
+重哈希 PA。独立 runner 若没有共享 checkpoint 则直接失败关闭，禁止为 GUI 重复物化整个 PA family。
+当前 N=100 串团飞行默认开启此开关。compact 明确保留可由 SIMION GUI 手动打开和复现的
+IOB、Fly2、Lua 及小型 JSON/receipt，只删除可再生 `trj*.tmp` 和临时 PA payload；N=1000 当前不启动。
 
 单中心时间步三档对照由
 [single_center_timestep_convergence.py](../analysis/single_center_timestep_convergence.py) 及受管入口
@@ -372,9 +379,28 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 |---|---|---|
 | provider-owned N=100 两区组件飞行 | [run_accelerator_component_provider.ps1](run_accelerator_component_provider.ps1) | 只请求并消费 provider 的统一 receipt；不构成 P1/P2、整机返回或分辨率资格 |
 | N=1 或 N>1 完整飞行 | [run_two_prism_trial.ps1](run_two_prism_trial.ps1) | 四残差与 `P2 → 正镜 → z>0,v_z<0` 静态回程观测 |
-| N=100 冻结束团源发布 | [run_publish_bunch_source.ps1](../analysis/run_publish_bunch_source.ps1) | 只生成 CSV/Fly2/receipt，不运行 SIMION |
+| N=1000 冻结母队列源发布 | [run_publish_bunch_source.ps1](../analysis/run_publish_bunch_source.ps1) | 只生成 CSV/Fly2/receipt；N=100 使用其有序前缀，不运行 SIMION |
 | N=100 全局关断时钟冻结 | [run_freeze_bunch_pulse_schedule.ps1](../analysis/run_freeze_bunch_pulse_schedule.ps1) | 消费同源 static pilot 的完整安全出口队列，不运行 SIMION |
 | N>1 源 z—能量—末段时序诊断 | [run_source_z_energy_timing_diagnostic.ps1](../analysis/run_source_z_energy_timing_diagnostic.ps1) | 只读消费完整 success flight，不启动 SIMION；输出 compact Candidate 诊断 |
+| N=1 到检测器平面 TE1 的完整 Candidate 链 | [run_native_candidate_chain.ps1](../analysis/run_native_candidate_chain.ps1) | 顺序复用现有 P/S 迭代、common 源、N=100、诊断和连续 TE1 求根；不复制物理实现 |
+| 六工况串行 campaign | [run_native_candidate_campaign.ps1](../analysis/run_native_candidate_campaign.ps1) | 按冻结 K/y 顺序调用完整 condition 链、断点续接并发布统一 `comparison.json` |
+
+完整 Candidate 链只接受一个 continuation 起点，或为断点恢复接受一个已经验证的全容差 N=1
+工作点。正常路径依次完成真实 P1/P2、S1/S2 迭代，随后才按该工作点冻结的加速器 y 位姿发布 common
+N=1000 母队列并取前 100 粒子。基线、TE1 probe 与连续 root 各自只执行一次 static N=100；其中受控
+`+-20%` 焦点对双侧命中时直接提供导数。任一端损失才只飞中心、`+-10%` 的三粒子区间，仍失败最后
+尝试 `+-5%`；三粒子结果只供焦点导数，完整 N=100 仍独占收集率、FWHM 与分辨率。`+-5%` 仍失败即
+终止该工况调焦，不继续缩小。当前释放
+模式和禁止加速器重入的返回拓扑不需要为了筛选额外计算关断时钟。最后比较相同粒子前缀的收集率、检测器 `dt/dz`、FWHM 与
+`t/(2 FWHM)`，不删损失粒子、不去趋势，也不把 N=100 Candidate 诊断称为 Formal。基线收集率
+`<=40%` 时硬停止 TE1 并交回 campaign；`>40%` 才允许调焦，最终只有收集率 `>=80%` 才满足收集门禁。
+
+campaign 工况表由
+[`native_candidate_campaign_k_y_scan.json`](../config/native_candidate_campaign_k_y_scan.json) 冻结为
+`y=-50 mm` 下 `K=25.5/24.5/23.5`，随后 `y=-55 mm` 下相同三个 K；`y=-45 mm` 仅为历史证据。
+每个工况由 condition 入口自动串接 exact-K 理论、该 K 专属 P1/P2 coverage/continuation、真实 N=1
+P/S 迭代、common N=100 前缀、baseline 和 TE1。checkpoint 跳过已完成工况，未终态工况使用新 run
+identity；所有终态汇总到 `comparison.json`。该薄入口不复制物理算法、PA 管理或资源调度，且本轮不启动 N=1000。
 
 源 z 诊断入口复用飞行 manifest、冻结源表、原生事件解析、公共容量和 retention 合同；末段只比较实际发出的正镜转向和沿 `-z` detector plane 事件，不依赖已退役的五区 patch-interface 交接。单日志与按 receipt
 重编号的 batch 日志均须完整覆盖 `1..N`。安全出口时间和轴向动能统计使用全部冻结粒子；target-K、
@@ -419,7 +445,8 @@ ID 在日志合并时严格恢复为原全局 ID，结果标记为非 Formal 的
 `0.002 us`（r28）和 `0.001 us`（r29）复核，均保持 97 在 electrode-20 的 `z=-97 mm` 孔唇碰撞、
 98 通过；因此后续应改善返回包络，不改动已加工孔径或过滤源粒子。
 
-加速器有 `static`、仅 N=1 的 `initial_exit_triggered_single_center` 和 `fixed_global_time` 三种互斥模式。
+底层飞行器仍保留 `static`、仅 N=1 的 `initial_exit_triggered_single_center` 和 `fixed_global_time` 三种互斥模式；
+活动 Candidate screening 只使用 `static`。后两种入口暂不接入自动候选链，留给以后专门的加速器脉冲波形研究。
 固定时钟必须通过 `-AcceleratorPulseSchedulePath` 消费冻结收据，在共同 `tob=0` 的 `ion_time_of_flight`
 上关闭 standalone 加速器实例的电场；`tstep_adjust` 落到计划边界，事件记录实际与计划时刻。电极实体与
 碰撞几何始终由同一 PA 保留。禁止用裸时间参数替代身份收据。
@@ -519,6 +546,15 @@ sentinel before the ordinary cohort analysis.  All workers reuse one read-only
 IOB with the same four roles: global fallback, native corridor, provider
 accelerator and detector.  A worker differs only by its `--particles` Fly2
 slice; no batch copies, composes or Refines PA, and no batch rebuilds an IOB.
+
+Each naturally completed batch is also published immediately as a manifest-
+bound checkpoint through the repository common continuation protocol.  A new
+run may pass `-BatchContinuationRunPath`; only an ordered prefix of whole,
+completed batches is imported, while an incomplete batch is replayed in full.
+The screening wrapper exposes the same path separately for its pilot and cohort.
+Recovery reuses the frozen small contracts and existing PA identity manifests;
+it neither rehashes nor transports PA payloads and does not change the resource
+scheduler.
 Capacity is reserved once for the protected runtime family.  The run manifest
 binds the source manifest, scheduler request/profile/plan, particle-batch plan,
 resource usage, merge receipt and retained raw logs.

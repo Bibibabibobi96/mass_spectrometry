@@ -80,26 +80,24 @@ def _component_record(
 
 
 def _provider_accelerator_record(provider_receipt_path: Path) -> dict[str, Any]:
-    """Bind an OA-owned controller through its published runtime receipt."""
+    """Bind an OA-owned standalone response bank through its provider receipt."""
     receipt_path = provider_receipt_path.resolve()
     receipt = _load_json(receipt_path, "accelerator provider receipt")
-    controller = receipt.get("read_only_controller_pa0")
+    response_bank = receipt.get("standalone_response_bank")
     if (receipt.get("role") != "orthogonal_accelerator_mrtof_runtime_receipt"
-            or receipt.get("status") != "published_read_only"
-            or not isinstance(controller, Mapping)):
-        raise CandidateContractError("accelerator provider receipt is not published OA runtime evidence")
-    pa_path = Path(str(controller.get("path", ""))).resolve()
-    expected_bytes, expected_sha = controller.get("bytes"), controller.get("sha256")
-    if (pa_path.suffix.lower() != ".pa0" or not isinstance(expected_bytes, int) or expected_bytes < 1
-            or not isinstance(expected_sha, str) or _SHA256.fullmatch(expected_sha) is None
-            or not pa_path.is_file() or pa_path.stat().st_size != expected_bytes):
-        raise CandidateContractError("accelerator provider controller identity is unavailable")
-    # The provider receipt binds the controller hash.  This projection must not
-    # reread the PA payload merely to assemble MR's dependency receipt.
+            or receipt.get("status") != "published_standalone_response_bank"
+            or not isinstance(response_bank, Mapping)
+            or response_bank.get("published_native_members_opened") is not False):
+        raise CandidateContractError("accelerator provider receipt is not a runtime-safe standalone response bank")
+    generation = Path(str(response_bank.get("generation_directory", ""))).resolve()
+    response_ids = response_bank.get("response_ids")
+    if (not generation.is_dir() or response_ids != list(range(1, len(response_ids) + 1))
+            or not isinstance(response_bank.get("receipt_name"), str)):
+        raise CandidateContractError("accelerator provider response-bank identity is unavailable")
     return {"role": "accelerator", "source_kind": "orthogonal_accelerator_provider_receipt",
-            "pa_path": str(pa_path), "bytes": expected_bytes, "sha256": expected_sha.upper(),
             "provider_receipt_path": str(receipt_path), "provider_receipt_sha256": _sha256(receipt_path),
-            "provider_pa_family": receipt.get("pa_family")}
+            "provider_pa_family": receipt.get("pa_family"),
+            "standalone_response_bank": dict(response_bank)}
 
 
 def build_native_system_runtime_bundle(
@@ -163,9 +161,9 @@ def resolve_native_system_runtime_bundle(
         if component.get("source_kind") == "orthogonal_accelerator_provider_receipt":
             refreshed = _provider_accelerator_record(Path(str(component.get("provider_receipt_path", ""))))
             if (refreshed["provider_receipt_sha256"] != component.get("provider_receipt_sha256")
-                    or refreshed["pa_path"] != component.get("pa_path") or refreshed["sha256"] != component.get("sha256")):
+                    or refreshed["standalone_response_bank"] != component.get("standalone_response_bank")):
                 raise CandidateContractError("accelerator provider receipt identity changed")
-            resolved["accelerator"] = Path(refreshed["pa_path"])
+            resolved["accelerator"] = Path(refreshed["provider_receipt_path"])
             continue
         manifest_path = Path(str(component.get("source_manifest_path", ""))).resolve()
         if _sha256(manifest_path) != component.get("source_manifest_sha256"):
@@ -198,10 +196,18 @@ def rebind_accelerator_provider(*, base_bundle_path: Path, native_corridor_runti
     if (base.get("role") != "mrtof_native_system_runtime_bundle" or not isinstance(components, list)
             or [item.get("role") for item in components if isinstance(item, Mapping)] != list(_COMPONENT_ROLES)):
         raise CandidateContractError("base native system runtime bundle contract is invalid")
-    resolve_native_system_runtime_bundle(
-        base_bundle_path, native_corridor_runtime_receipt=native_corridor_runtime_receipt,
-    )
     retained = {str(item["role"]): dict(item) for item in components if isinstance(item, Mapping)}
+    if base.get("native_bank_identity") != native_bank_identity(native_corridor_runtime_receipt):
+        raise CandidateContractError("base native system runtime bundle belongs to another native bank")
+    for role in ("global_fallback", "detector"):
+        component = retained[role]
+        manifest_path = Path(str(component.get("source_manifest_path", ""))).resolve()
+        pa_path = Path(str(component.get("pa_path", ""))).resolve()
+        if (_sha256(manifest_path) != component.get("source_manifest_sha256")
+                or pa_path.suffix.lower() != ".pa"
+                or not isinstance(component.get("bytes"), int)
+                or not pa_path.is_file() or pa_path.stat().st_size != component.get("bytes")):
+            raise CandidateContractError(f"base native system runtime {role} identity changed")
     accelerator = _provider_accelerator_record(accelerator_provider_receipt)
     return {
         "schema_version": 1,
@@ -210,6 +216,41 @@ def rebind_accelerator_provider(*, base_bundle_path: Path, native_corridor_runti
         "project": base.get("project"),
         "native_bank_identity": native_bank_identity(native_corridor_runtime_receipt),
         "components": [retained["global_fallback"], accelerator, retained["detector"]],
+        "pa_copy_performed": False,
+        "pa_refine_performed": False,
+        "legacy_local_workbench_allowed": False,
+    }
+
+
+def rebind_analyzer(*, base_bundle_path: Path, native_corridor_runtime_receipt: Mapping[str, Any],
+                    global_fallback_manifest: Path, global_fallback_pa: Path) -> dict[str, Any]:
+    """Replace the analyzer bank/fallback while retaining verified static components."""
+    base_path = base_bundle_path.resolve()
+    base = _load_json(base_path, "base native system runtime bundle")
+    components = base.get("components")
+    if (base.get("role") != "mrtof_native_system_runtime_bundle" or not isinstance(components, list)
+            or [item.get("role") for item in components if isinstance(item, Mapping)] != list(_COMPONENT_ROLES)):
+        raise CandidateContractError("base native system runtime bundle contract is invalid")
+    prior_identity = base.get("native_bank_identity")
+    if not isinstance(prior_identity, Mapping):
+        raise CandidateContractError("base native system runtime bundle lacks native bank identity")
+    prior_receipt = {
+        "schema_version": 1, "role": "mrtof_private_native_corridor_family", "status": "prepared",
+        "response_refine_performed": False, "published_native_members_opened": False,
+        "controller_refine": "solutions={0}", **prior_identity,
+    }
+    resolve_native_system_runtime_bundle(base_path, native_corridor_runtime_receipt=prior_receipt)
+    retained = {str(item["role"]): dict(item) for item in components if isinstance(item, Mapping)}
+    global_fallback = _component_record("global_fallback", {
+        "manifest_path": str(global_fallback_manifest), "pa_path": str(global_fallback_pa),
+    }, project_id=str(base.get("project")))
+    return {
+        "schema_version": 1,
+        "role": "mrtof_native_system_runtime_bundle",
+        "status": "prepared",
+        "project": base.get("project"),
+        "native_bank_identity": native_bank_identity(native_corridor_runtime_receipt),
+        "components": [global_fallback, retained["accelerator"], retained["detector"]],
         "pa_copy_performed": False,
         "pa_refine_performed": False,
         "legacy_local_workbench_allowed": False,
@@ -256,6 +297,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
     rebind.add_argument("--base-bundle", required=True, metavar="PATH")
     rebind.add_argument("--accelerator-provider-receipt", required=True, metavar="PATH")
     rebind.add_argument("--bundle-output", required=True, metavar="PATH")
+    analyzer = commands.add_parser("rebind-analyzer", help="Replace the native bank and global fallback.")
+    analyzer.add_argument("--native-corridor-runtime-receipt", required=True, metavar="PATH")
+    analyzer.add_argument("--base-bundle", required=True, metavar="PATH")
+    analyzer.add_argument("--global-fallback-manifest", required=True, metavar="PATH")
+    analyzer.add_argument("--global-fallback-pa", required=True, metavar="PATH")
+    analyzer.add_argument("--bundle-output", required=True, metavar="PATH")
     return parser
 
 
@@ -276,6 +323,15 @@ def main(argv: list[str] | None = None) -> int:
             bundle = rebind_accelerator_provider(base_bundle_path=Path(arguments.base_bundle),
                                                  native_corridor_runtime_receipt=receipt,
                                                  accelerator_provider_receipt=Path(arguments.accelerator_provider_receipt))
+            _write_new_json(Path(arguments.bundle_output), bundle)
+            output = bundle
+        elif arguments.command == "rebind-analyzer":
+            bundle = rebind_analyzer(
+                base_bundle_path=Path(arguments.base_bundle),
+                native_corridor_runtime_receipt=receipt,
+                global_fallback_manifest=Path(arguments.global_fallback_manifest),
+                global_fallback_pa=Path(arguments.global_fallback_pa),
+            )
             _write_new_json(Path(arguments.bundle_output), bundle)
             output = bundle
         else:

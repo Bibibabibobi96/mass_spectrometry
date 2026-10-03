@@ -8,18 +8,19 @@ local source_states=assert(loadfile(program_path:gsub('%.lua$','.source_states.l
 local previous_state={}
 local terminal_written={}
 local focus_written={}
+local exit_written={}
 local event_file=nil
 local function state_now()
- return {t=ion_time_of_flight,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vz=ion_vz_mm}
+ return {t=ion_time_of_flight,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}
 end
-local function emit_event(kind,particle,code,state,vz)
+local function emit_event(kind,particle,code,state)
  assert(event_file,'component focus event recorder is unavailable')
- event_file:write(string.format('%s,%d,%s,%.12g,%.12g,%.12g,%.12g,%s\n',kind,particle,code or '',state.t,state.x,state.y,state.z-point.local_exit_z_mm,vz and string.format('%.12g',vz) or ''))
+ event_file:write(string.format('%s,%d,%s,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n',kind,particle,code or '',state.t,state.x,state.y,state.z-point.local_exit_z_mm,state.vx,state.vy,state.vz))
  event_file:flush()
 end
 local function emit_authoritative_source(particle)
  local source=assert(source_states[particle],'authoritative source state is missing')
- emit_event('source',particle,nil,source,nil)
+ emit_event('source',particle,nil,source)
 end
 local function ensure_source(particle,current)
  if previous_state[particle] then return previous_state[particle] end
@@ -29,14 +30,20 @@ local function ensure_source(particle,current)
 end
 local function finalize_particle(particle,state,code)
  if terminal_written[particle] then return end
- emit_event('terminal',particle,code or 2,state,nil)
+ emit_event('terminal',particle,code or 2,state)
  terminal_written[particle]=true
 end
 local function record_focus(particle,focus)
  if focus_written[particle] then return end
  assert(focus.vz<0,'focus capture must be -z directed')
- emit_event('focus',particle,nil,focus,focus.vz)
+ emit_event('focus',particle,nil,focus)
  focus_written[particle]=true
+end
+local function record_exit(particle,state)
+ if exit_written[particle] then return end
+ assert(state.vz<0,'exit capture must be -z directed')
+ emit_event('exit',particle,nil,state)
+ exit_written[particle]=true
 end
 local function capture_focus(particle,focus,current)
  record_focus(particle,focus)
@@ -50,7 +57,7 @@ function segment.initialize_run()
  assert(point.focus_plane_tolerance_mm>0,'focus-plane tolerance must be positive')
  assert(point.field_mode=='native' or point.field_mode=='zone1_ideal' or point.field_mode=='zone2_ideal' or point.field_mode=='full_ideal','field mode is invalid')
  event_file=assert(io.open('component_focus.events.csv','w'),'component focus event CSV cannot be opened')
- event_file:write('kind,ion,code,t_us,x_mm,y_mm,z_mm,vz_mm_us\n')
+ event_file:write('kind,ion,code,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n')
  event_file:flush()
  local pa=simion.wb.instances[1].pa;pa:fast_adjust(point.voltages)
  sim_trajectory_quality=point.trajectory_quality
@@ -74,7 +81,12 @@ end
 function segment.tstep_adjust()
  ion_time_step=math.min(ion_time_step,point.maximum_step_us)
  local current=state_now()
- if focus_written[ion_number] or current.vz>=-1e-12 then return end
+ if current.vz>=-1e-12 then return end
+ if not exit_written[ion_number] and current.z>point.local_exit_z_mm then
+  local dt_to_exit=(current.z-point.local_exit_z_mm)/(-current.vz)
+  if dt_to_exit>0 and ion_time_step>dt_to_exit then ion_time_step=dt_to_exit end
+ end
+ if focus_written[ion_number] then return end
  local dz=current.z-point.focus_plane_local_z_mm
  if dz>0 then
   local dt_to_plane=dz/(-current.vz)
@@ -100,9 +112,13 @@ function segment.other_actions()
   previous_state[ion_number]=current
   return
  end
+ if previous.z>point.local_exit_z_mm and current.z<=point.local_exit_z_mm and current.vz<0 then
+  local f=(point.local_exit_z_mm-previous.z)/(current.z-previous.z)
+  record_exit(ion_number,{t=previous.t+f*(current.t-previous.t),x=previous.x+f*(current.x-previous.x),y=previous.y+f*(current.y-previous.y),z=point.local_exit_z_mm,vx=previous.vx+f*(current.vx-previous.vx),vy=previous.vy+f*(current.vy-previous.vy),vz=previous.vz+f*(current.vz-previous.vz)})
+ end
  if previous.z>point.focus_plane_local_z_mm and current.z<=point.focus_plane_local_z_mm and current.vz<0 then
   local f=(point.focus_plane_local_z_mm-previous.z)/(current.z-previous.z)
-  local focus={t=previous.t+f*(current.t-previous.t),x=previous.x+f*(current.x-previous.x),y=previous.y+f*(current.y-previous.y),z=point.focus_plane_local_z_mm,vz=previous.vz+f*(current.vz-previous.vz)}
+  local focus={t=previous.t+f*(current.t-previous.t),x=previous.x+f*(current.x-previous.x),y=previous.y+f*(current.y-previous.y),z=point.focus_plane_local_z_mm,vx=previous.vx+f*(current.vx-previous.vx),vy=previous.vy+f*(current.vy-previous.vy),vz=previous.vz+f*(current.vz-previous.vz)}
   capture_focus(ion_number,focus,current)
  end
  previous_state[ion_number]=current

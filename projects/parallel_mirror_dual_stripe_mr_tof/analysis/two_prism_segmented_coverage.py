@@ -169,6 +169,14 @@ def load_segmented_operating_authority(
             fixed_mirror_stripe_manifest_path,
             contract_path,
         )
+        contract_target_k = _finite(
+            fixed.contract.get("nominal", {}).get("target_drift_period_ratio"),
+            "downstream contract target K",
+        )
+        if fixed.target_period_ratio != contract_target_k:
+            raise CandidateContractError(
+                "fixed-mirror Stripe target K differs from the downstream contract"
+            )
         context = SegmentedOperatingContext(
             design=fixed.mirror_design,
             axial_energy_per_charge_v=fixed.axial_energy_per_charge_v,
@@ -219,6 +227,10 @@ def load_segmented_operating_authority(
 def validate_accelerator_exit_source_binding(
     *, source_receipt_path: Path, source_handoff_receipt: dict[str, Any],
     managed: ManagedExactKOperatingPoint | SegmentedOperatingContext,
+    observation_path: Path | None = None,
+    expected_slow_energy_per_charge_v: float | None = None,
+    expected_target_k: float | None = None,
+    expected_accelerator_y_anchor_mm: float | None = None,
 ) -> dict[str, Any]:
     """Bind source identity and report, without hiding, its measured exact-K mismatch."""
     try:
@@ -240,12 +252,21 @@ def validate_accelerator_exit_source_binding(
         receipt = json.loads(source_receipt_path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise CandidateContractError("accelerator-exit source receipt is not readable JSON") from error
+    legacy_source = (
+        isinstance(receipt, dict)
+        and receipt.get("role") == "mrtof_accelerator_exit_center_source"
+        and receipt.get("qualification") == "source_to_accelerator_exit_diagnostic_input_only"
+    )
+    current_trial = (
+        isinstance(receipt, dict)
+        and receipt.get("role") == "mrtof_finite_3d_two_prism_voltage_trial"
+        and receipt.get("qualification") == "single_center_trial__not_an_operating_point"
+    )
     if (
         not isinstance(receipt, dict)
         or receipt.get("schema_version") != 1
-        or receipt.get("role") != "mrtof_accelerator_exit_center_source"
         or receipt.get("status") != "materialized"
-        or receipt.get("qualification") != "source_to_accelerator_exit_diagnostic_input_only"
+        or not (legacy_source or current_trial)
     ):
         raise CandidateContractError("accelerator-exit source receipt identity is invalid")
     if (
@@ -262,6 +283,94 @@ def validate_accelerator_exit_source_binding(
         raise CandidateContractError(
             "accelerator-exit source selected axial energy differs from exact-K"
         )
+    pair_identity: dict[str, Any] | None = None
+    strict_pair_values = (
+        observation_path,
+        expected_slow_energy_per_charge_v,
+        expected_target_k,
+        expected_accelerator_y_anchor_mm,
+    )
+    if any(value is not None for value in strict_pair_values):
+        if any(value is None for value in strict_pair_values):
+            raise CandidateContractError(
+                "fixed-grid accelerator-exit pair identity inputs are incomplete"
+            )
+        if not current_trial:
+            raise CandidateContractError(
+                "fixed-grid coverage requires a current two-prism trial source receipt"
+            )
+        expected_slow = _finite(
+            expected_slow_energy_per_charge_v, "expected source slow energy",
+        )
+        expected_k = _finite(expected_target_k, "expected target K")
+        expected_anchor = _finite(
+            expected_accelerator_y_anchor_mm, "expected accelerator y anchor",
+        )
+        receipt_slow = _finite(
+            receipt.get("source_slow_kinetic_energy_per_charge_v"),
+            "accelerator-exit receipt source slow energy",
+        )
+        receipt_k = _finite(
+            receipt.get("target_drift_period_ratio"),
+            "accelerator-exit receipt target K",
+        )
+        receipt_position = receipt.get("source_position_project_mm")
+        if not isinstance(receipt_position, list) or len(receipt_position) != 3:
+            raise CandidateContractError(
+                "accelerator-exit receipt source position is incomplete"
+            )
+        receipt_y = _finite(receipt_position[1], "accelerator-exit receipt source y")
+        receipt_offset = _finite(
+            receipt.get("source_y_offset_from_accelerator_axis_mm"),
+            "accelerator-exit receipt source y offset",
+        )
+        if (
+            not math.isclose(receipt_slow, expected_slow, rel_tol=0.0, abs_tol=1e-12)
+            or not math.isclose(receipt_k, expected_k, rel_tol=0.0, abs_tol=1e-12)
+        ):
+            raise CandidateContractError(
+                "accelerator-exit receipt differs from the fixed-grid K/slow-energy authority"
+            )
+        if not math.isclose(
+            receipt_y - receipt_offset, expected_anchor, rel_tol=0.0, abs_tol=1e-12,
+        ):
+            raise CandidateContractError(
+                "accelerator-exit receipt source position differs from the accelerator y anchor"
+            )
+        try:
+            observation = json.loads(
+                observation_path.read_text(encoding="utf-8-sig")
+            )
+            release = observation["source_release_state"]
+            release_position = release["position_mm"]
+        except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as error:
+            raise CandidateContractError(
+                "accelerator-exit observation lacks its source release state"
+            ) from error
+        release_slow = _finite(
+            release.get("kinetic_energy_per_charge_v"),
+            "accelerator-exit observation release energy",
+        )
+        if not isinstance(release_position, list) or len(release_position) != 3:
+            raise CandidateContractError(
+                "accelerator-exit observation release position is incomplete"
+            )
+        release_y = _finite(
+            release_position[1], "accelerator-exit observation release y",
+        )
+        if (
+            not math.isclose(release_slow, expected_slow, rel_tol=0.0, abs_tol=1e-12)
+            or not math.isclose(release_y, receipt_y, rel_tol=0.0, abs_tol=1e-12)
+        ):
+            raise CandidateContractError(
+                "accelerator-exit observation release state differs from its K/y materialization"
+            )
+        pair_identity = {
+            "target_drift_period_ratio": receipt_k,
+            "theoretical_release_slow_energy_seed_per_charge_v": receipt_slow,
+            "accelerator_y_anchor_mm": expected_anchor,
+            "source_y_offset_mm": receipt_offset,
+        }
     try:
         position = source_handoff_receipt["position_mm"]
         components = source_handoff_receipt["kinetic_energy_components_ev"]
@@ -279,7 +388,7 @@ def validate_accelerator_exit_source_binding(
         axial_kinetic_per_charge_v
         + (1.0 if charge > 0 else -1.0) * mirror_potential_v
     )
-    return {
+    result = {
         "sha256": actual_sha,
         "selected_axial_energy_per_charge_v": source_energy,
         "measured_axial_kinetic_energy_per_charge_v": axial_kinetic_per_charge_v,
@@ -292,6 +401,23 @@ def validate_accelerator_exit_source_binding(
             "diagnostic_only__no_user_authorized_acceptance_tolerance"
         ),
     }
+    if pair_identity is not None:
+        result["pair_identity"] = pair_identity
+        measured_exit_slow = _finite(
+            components.get("y"), "accelerator-exit measured slow kinetic energy",
+        ) / abs(charge)
+        release_seed = pair_identity[
+            "theoretical_release_slow_energy_seed_per_charge_v"
+        ]
+        result["exit_slow_energy_diagnostic"] = {
+            "measured_exit_slow_kinetic_energy_per_charge_v": measured_exit_slow,
+            "theoretical_release_slow_energy_seed_per_charge_v": release_seed,
+            "measured_exit_minus_release_seed_v": measured_exit_slow - release_seed,
+            "qualification": (
+                "diagnostic_only__no_user_authorized_acceptance_tolerance"
+            ),
+        }
+    return result
 
 
 def deterministic_sobol_voltage_pairs(
@@ -526,6 +652,32 @@ def main() -> None:
     source_binding = validate_accelerator_exit_source_binding(
         source_receipt_path=args.accelerator_exit_source_receipt,
         source_handoff_receipt=source_receipt, managed=managed,
+        observation_path=(
+            args.accelerator_exit_observation
+            if operating_authority_kind == "fixed_grid_mirror_variable_slow_energy_stripe"
+            else None
+        ),
+        expected_slow_energy_per_charge_v=(
+            source_energy
+            if operating_authority_kind == "fixed_grid_mirror_variable_slow_energy_stripe"
+            else None
+        ),
+        expected_target_k=(
+            _finite(
+                managed.contract.get("nominal", {}).get("target_drift_period_ratio"),
+                "downstream contract target K",
+            )
+            if operating_authority_kind == "fixed_grid_mirror_variable_slow_energy_stripe"
+            else None
+        ),
+        expected_accelerator_y_anchor_mm=(
+            _finite(
+                managed.contract.get("accelerator", {}).get("focus_y_anchor", {}).get("project_y_mm"),
+                "downstream contract accelerator y anchor",
+            )
+            if operating_authority_kind == "fixed_grid_mirror_variable_slow_energy_stripe"
+            else None
+        ),
     )
     prism_ids = (
         int(managed.contract["prism_transport"]["first_prism"]["electrode_id"]),

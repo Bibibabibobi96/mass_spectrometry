@@ -13,6 +13,7 @@ from unittest.mock import patch
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_runtime import (
     build_native_system_runtime_bundle,
     rebind_accelerator_provider,
+    rebind_analyzer,
     resolve_native_system_runtime_bundle,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
@@ -36,13 +37,14 @@ class NativeSystemRuntimeTest(unittest.TestCase):
         return {"manifest_path": str(manifest), "pa_path": str(pa)}
 
     def _provider(self, root: Path) -> Path:
-        controller = root / "oa.pa0"
-        controller.write_bytes(b"provider-controller")
+        generation = root / "oa-generation"
+        generation.mkdir(exist_ok=True)
         receipt = root / "provider.json"
         receipt.write_text(json.dumps({
-            "role": "orthogonal_accelerator_mrtof_runtime_receipt", "status": "published_read_only",
-            "read_only_controller_pa0": {"path": str(controller), "bytes": controller.stat().st_size,
-                                           "sha256": hashlib.sha256(controller.read_bytes()).hexdigest()},
+            "role": "orthogonal_accelerator_mrtof_runtime_receipt", "status": "published_standalone_response_bank",
+            "standalone_response_bank": {"generation_directory": str(generation),
+                "receipt_name": "orthogonal_accelerator_focus.standalone_responses.json",
+                "response_ids": list(range(1, 20)), "published_native_members_opened": False},
             "pa_family": {"cache_key": "C" * 64, "generation_sha256": "D" * 64},
         }), encoding="utf-8")
         return receipt
@@ -65,7 +67,7 @@ class NativeSystemRuntimeTest(unittest.TestCase):
             bundle_path = root / "native_system_runtime_bundle.json"
             bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
             paths = resolve_native_system_runtime_bundle(bundle_path, native_corridor_runtime_receipt=_receipt())
-        self.assertEqual(paths["accelerator"].name, "oa.pa0")
+        self.assertEqual(paths["accelerator"].name, "provider.json")
         self.assertFalse(bundle["pa_copy_performed"])
         self.assertFalse(bundle["pa_refine_performed"])
 
@@ -86,20 +88,12 @@ class NativeSystemRuntimeTest(unittest.TestCase):
     def test_provider_accelerator_reuses_its_receipt_without_reading_pa_payload(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            controller = root / "oa.pa0"
-            controller.write_bytes(b"provider-controller")
-            provider = root / "provider.json"
-            provider.write_text(json.dumps({
-                "role": "orthogonal_accelerator_mrtof_runtime_receipt", "status": "published_read_only",
-                "read_only_controller_pa0": {"path": str(controller), "bytes": controller.stat().st_size,
-                                               "sha256": hashlib.sha256(controller.read_bytes()).hexdigest()},
-                "pa_family": {"cache_key": "C" * 64, "generation_sha256": "D" * 64},
-            }), encoding="utf-8")
+            provider = self._provider(root)
             requests = {role: self._request(root, role) for role in ("global_fallback", "detector")}
             original_read_bytes = Path.read_bytes
 
             def reject_provider_pa(path: Path) -> bytes:
-                if path == controller:
+                if path.suffix.lower() in (".pa", ".pa0"):
                     raise AssertionError("provider PA payload must not be read by MR bundle binding")
                 return original_read_bytes(path)
 
@@ -109,7 +103,7 @@ class NativeSystemRuntimeTest(unittest.TestCase):
                                                             accelerator_provider_receipt=provider)
             bundle_path = root / "bundle.json"
             bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
-            self.assertEqual(resolve_native_system_runtime_bundle(bundle_path, native_corridor_runtime_receipt=_receipt())["accelerator"], controller)
+            self.assertEqual(resolve_native_system_runtime_bundle(bundle_path, native_corridor_runtime_receipt=_receipt())["accelerator"], provider.resolve())
 
     def test_rebind_replaces_only_provider_and_retains_static_records(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -130,6 +124,29 @@ class NativeSystemRuntimeTest(unittest.TestCase):
             self.assertEqual(rebound["components"][2], bundle["components"][2])
             self.assertFalse(rebound["pa_copy_performed"])
             self.assertFalse(rebound["pa_refine_performed"])
+
+    def test_rebind_analyzer_replaces_bank_and_global_fallback_only(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            requests = {role: self._request(root, role) for role in ("global_fallback", "detector")}
+            bundle = build_native_system_runtime_bundle(
+                native_corridor_runtime_receipt=_receipt(), component_requests=requests,
+                accelerator_provider_receipt=self._provider(root),
+            )
+            bundle_path = root / "bundle.json"
+            bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+            replacement = self._request(root, "replacement_global_fallback")
+            new_receipt = {**_receipt(), "cache_key": "E" * 64, "generation_sha256": "F" * 64}
+            rebound = rebind_analyzer(
+                base_bundle_path=bundle_path, native_corridor_runtime_receipt=new_receipt,
+                global_fallback_manifest=Path(replacement["manifest_path"]),
+                global_fallback_pa=Path(replacement["pa_path"]),
+            )
+            self.assertEqual(rebound["native_bank_identity"], {
+                "cache_key": "E" * 64, "generation_sha256": "F" * 64,
+            })
+            self.assertEqual(rebound["components"][1:], bundle["components"][1:])
+            self.assertEqual(rebound["components"][0]["pa_path"], str(Path(replacement["pa_path"]).resolve()))
 
     def test_cli_builds_and_resolves_explicit_identity_paths_without_payload_read(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -154,7 +171,7 @@ class NativeSystemRuntimeTest(unittest.TestCase):
                 "resolve", "--native-corridor-runtime-receipt", str(receipt_path), "--bundle", str(bundle_path),
             ], cwd=Path(__file__).resolve().parents[4], text=True, capture_output=True, check=False, timeout=30)
             self.assertEqual(resolved.returncode, 0, resolved.stderr)
-            self.assertEqual(Path(json.loads(resolved.stdout)["accelerator"]), (root / "oa.pa0").resolve())
+            self.assertEqual(Path(json.loads(resolved.stdout)["accelerator"]), provider.resolve())
 
 
 if __name__ == "__main__":

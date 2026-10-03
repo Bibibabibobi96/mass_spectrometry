@@ -7,8 +7,10 @@ class FieldContrastTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as tmp:
    root=Path(tmp); paths=[]
    for i,value in enumerate((8.,7.,2.,1.)):
-    p=root/f'{i}.json';p.write_text(json.dumps({'focus_metrics':{'peak_to_peak_t_ns':value}}));paths.append(p)
+    energy={'center_particle':{},'cohort':{},'tolerances':{},'passed':False}
+    p=root/f'{i}.json';p.write_text(json.dumps({'focus_metrics':{'peak_to_peak_t_ns':value},'exit_energy_assessment':energy}));paths.append(p)
    result=reduce(*paths)
    self.assertEqual(result['dominant_finite_field_region'],'zone2_finite_field')
    self.assertEqual(result['recommended_next_geometry_action'],'increase_zone2_ring_count_before_expanding_y_or_mesh')
+   self.assertEqual(set(result['exit_Ex_Ey_Ez_assessment']),{'native','zone1_ideal','zone2_ideal','full_ideal'})
 if __name__=='__main__':unittest.main()

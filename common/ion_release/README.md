@@ -11,6 +11,10 @@ latent 或 phase-space 值，不绕过 canonical materialization 合同。
 局部 Cartesian `frame_id`、位置、物种和相空间请求；项目适配器负责把该状态映射到 SIMION、COMSOL 或其他
 求解器，公共层不选择释放面、场、器件坐标变换或物理验收阈值。
 
+需要在同一次完整束团飞行中辨识某一坐标的一阶响应时，使用
+`generate_center_axis_pair_halton_cylinder_phase_space`。它仅将粒子 2、3 固定为中心状态在指定轴的负、正边界，
+其余粒子继续使用相同 Halton 包络；因此受控坐标对可作诊断，最终统计仍使用完整束团。
+
 `cylinder` 由 [`cylinder.py`](cylinder.py) 实现两种完整圆柱体积策略：
 
 - `center_first_halton_cylinder_v1`：首粒子精确位于中心，后续粒子覆盖完整圆柱、能量和角度区间。只改变

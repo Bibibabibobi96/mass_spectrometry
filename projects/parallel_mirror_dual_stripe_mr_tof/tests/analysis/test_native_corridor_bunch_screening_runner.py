@@ -8,99 +8,130 @@ RUNNER = Path(__file__).resolve().parents[2] / "analysis" / "run_native_corridor
 
 
 class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
-    def test_screening_reuses_one_checkpointed_family_for_both_cohorts(self) -> None:
+    def test_screening_runs_one_static_cohort_from_checkpointed_family(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         for token in (
             "Open-NativeCorridorRuntimeCheckpoint -Session $nativeRuntimeSession",
             "NativeCorridorRuntimeSession=$nativeRuntimeSession",
             "NativeSystemRuntimeBundlePath=$nativeSystemRuntimeBundlePath",
-            "BunchParticleIdMin=1;BunchParticleIdMax=100",
-            "[string]$InitialPilotRunPath=''",
-            "[string]$RecoveryPlanPath=''",
-            "$pilotRunId=$RunId+'__n100-static'",
-            "$cohortRunId=$RunId+'__n1000-fixed-clock'",
+            "[string]$InitialCohortRunPath=''",
+            "[ValidateSet(3,13,100,1000)][int]$CohortParticleCount=1000",
+            "$cohortRunId=New-CohortRunId",
+            "BunchParticleIdMax=$CohortParticleCount",
             "RetainGuiWorkbench=$true",
-            "run_freeze_bunch_pulse_schedule.ps1",
-            "$guardUs=[double]$pilotData.trajectory_profile.maximum_step_us",
+            "[string]$MirrorVoltageVariationPath=''",
+            "$cohortArguments.MirrorVoltageVariationPath=$mirrorVoltageVariation",
             "one_checkpointed_native_fast_adjust_family__no_pa_copy_or_refine",
+            "accelerator_field_mode='static'",
             "Suspend-NativeCorridorRuntimeSession -Session $nativeRuntimeSession",
         ):
             self.assertIn(token, source)
         self.assertNotIn("New-NativeCorridorRuntimeFamily", source)
-        self.assertEqual(source.count("RetainGuiWorkbench=$true"), 2)
+        self.assertEqual(source.count("RetainGuiWorkbench=$true"), 1)
+        self.assertNotIn("AcceleratorPulseSchedulePath", source)
+        self.assertNotIn("run_freeze_bunch_pulse_schedule.ps1", source)
+
+    def test_workpoint_mirror_variation_is_inherited_when_not_explicit(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn(
+            "$workpointConfig.inputs.terminal_time_mirror_voltage_variation",
+            source,
+        )
+        self.assertIn(
+            "$cohortArguments.MirrorVoltageVariationPath=$mirrorVoltageVariation",
+            source,
+        )
+
+    def test_controlled_diagnostic_sizes_are_explicit(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("[switch]$FocusDiagnosticOnly", source)
+        self.assertIn(
+            "[ValidateSet('','focus_z','slow_energy','controlled_aberration')]",
+            source,
+        )
+        self.assertIn(
+            "$requiredDiagnosticCount = if($DiagnosticPurpose -eq 'controlled_aberration'){13}",
+            source,
+        )
+        self.assertIn(
+            "focus_z/slow_energy use N=3 and controlled_aberration uses N=13.",
+            source,
+        )
+
+    def test_numerical_probe_can_override_only_the_trajectory_step_scale(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("[Nullable[double]]$TrajectoryStepScaleOverride=$null", source)
+        self.assertIn("TrajectoryStepScaleOverride must be in (0,1].", source)
+        self.assertIn(
+            "TrajectoryStepScale=$(if($null-eq$trajectoryStepScale){[double]$problem.trajectory_step_scale}else{$trajectoryStepScale})",
+            source,
+        )
+
+    def test_source_center_y_must_match_workpoint_accelerator_pose(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("$contractData.accelerator.focus_y_anchor.project_y_mm", source)
+        self.assertIn("$sourceData.nominal_center_state.position_workbench_mm[1]", source)
+        self.assertIn("source centre does not match the workpoint accelerator y pose", source)
 
     def test_native_bunch_flights_forward_only_the_bound_system_bundle(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         self.assertIn("Workpoint has no native system runtime bundle identity.", source)
         self.assertIn("NativeSystemRuntimeBundlePath=$nativeSystemRuntimeBundlePath", source)
         self.assertIn("Workpoint must bind an OA accelerator provider receipt.", source)
-        self.assertIn("$pilotArguments.AcceleratorProviderReceiptPath=$providerReceipt", source)
         self.assertIn("$cohortArguments.AcceleratorProviderReceiptPath=$providerReceipt", source)
         self.assertNotIn("AcceleratorRunPath", source)
         self.assertNotIn("accelerator_run", source)
         self.assertNotIn("LocalWorkbenchRunPath=[string]$problem.local_workbench", source)
 
-    def test_verified_initial_pilot_can_resume_without_reflight(self) -> None:
+    def test_bunch_flights_reuse_the_workpoint_frozen_contract(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
-        self.assertIn("if($null-ne$initialPilotRun)", source)
+        self.assertIn("$workpointContract=(Resolve-Path -LiteralPath (Join-Path $workpointRun 'inputs\\contract.json')).Path", source)
+        self.assertIn("Workpoint frozen contract identity differs from its physical-problem identity.", source)
+        self.assertEqual(source.count("ContractPath=$workpointContract"), 1)
+
+    def test_legacy_warning_handoff_is_reselected_from_verified_history(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("if($handoffData.status-ne'within_tolerance')", source)
+        self.assertIn("Get-VerifiedManifestOutput -ManifestPath $workpointManifest -Name 'iteration_history.json'", source)
+        self.assertIn("--select-best-physical-workpoint','--history',$history", source)
+        self.assertIn("$handoffData.status-ne'within_tolerance'", source)
+
+    def test_verified_initial_static_cohort_can_resume_without_reflight(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("if($null-ne$initialCohortRun)", source)
+        self.assertIn(
+            "$cohortSummary.source_cohort.mother_particle_count-ne[int]$sourceData.mother_particle_count",
+            source,
+        )
+        self.assertNotIn(
+            "$cohortSummary.source_cohort.mother_particle_count-ne[int]$sourceData.particle_count",
+            source,
+        )
         self.assertIn("source_cohort.selection.parent_particle_states_sha256", source)
-        self.assertIn("Initial pilot does not bind the requested frozen N=1000 source prefix.", source)
-        self.assertLess(source.index("if($null-ne$initialPilotRun)"), source.index("& $trialRunner @pilotArguments"))
+        self.assertIn("$cohortVoltages=@($cohortSummary.stripe_biases_v)+@($cohortSummary.prism_voltages_v)", source)
+        self.assertIn("Cohort run does not bind the requested source, workpoint voltages, and static accelerator mode.", source)
+        self.assertLess(source.index("if($null-ne$initialCohortRun)"), source.index("& $trialRunner @cohortArguments"))
         self.assertNotIn("New-ShortPaCopy", source)
 
-    def test_n100_hard_stop_preserves_evidence_and_prevents_n1000(self) -> None:
-        source = RUNNER.read_text(encoding="utf-8-sig")
-        stop = source.index("if([bool]$pilotGateData.hard_stop)")
-        cohort = source.index("$failureStage='cohort_n1000'")
-        self.assertLess(stop, cohort)
-        self.assertIn("stop_below_collection_hard_minimum", source[stop:cohort])
-        self.assertIn("Write-VerifiedRunManifest", source[stop:cohort])
-
-    def test_user_can_pause_cleanly_after_n100_pilot(self) -> None:
-        source = RUNNER.read_text(encoding="utf-8-sig")
-        stop = source.index("if($StopAfterPilot)")
-        freeze = source.index("$failureStage='freeze_global_pulse'")
-        self.assertLess(stop, freeze)
-        self.assertIn("status='pilot_complete'", source[stop:freeze])
-        self.assertIn("paused_before_global_pulse_freeze_and_n1000_at_user_request", source[stop:freeze])
-        self.assertIn("Write-VerifiedRunManifest", source[stop:freeze])
-
-    def test_recovery_uses_the_bound_theory_seed_and_one_open_runtime(self) -> None:
+    def test_incomplete_cohort_can_use_common_batch_continuation(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         for token in (
-            "[switch]$RecoverTransport",
-            "'bunch_transport_recovery_plan.json'",
-            "analysis.bunch_transport_recovery','plan'",
-            "'run_bunch_transport_recovery_probes'",
-            "NativeCorridorRuntimeSession=$nativeRuntimeSession",
-            "MRTOF_BUNCH_TRANSPORT_RECOVERY=SELECTED",
-            "bunch_transport_recovery_selection.json",
-            "function Invoke-ProjectPython",
-            "function New-RecoveryCandidateRunId",
-            "$env:PYTHONPATH=$repoRoot",
-            "$candidateRunId=New-RecoveryCandidateRunId",
-            "if(-not(Test-Path -LiteralPath $candidateManifest -PathType Leaf)){& $trialRunner @candidateArguments}",
+            "[string]$CohortBatchContinuationRunPath=''",
+            "$cohortArguments.BatchContinuationRunPath=$CohortBatchContinuationRunPath",
         ):
             self.assertIn(token, source)
-        recovery = source[source.index("if([bool]$pilotGateData.hard_stop-and$RecoverTransport)"):]
-        self.assertNotIn("New-NativeCorridorRuntimeFamily", recovery)
 
-    def test_unrecoverable_theory_stage_automatically_refreshes_reverse_axes(self) -> None:
+    def test_static_cohort_collection_gate_is_the_only_downstream_gate(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
-        recovery = source[source.index("if([bool]$pilotGateData.hard_stop-and$RecoverTransport)"):]
-        for token in (
-            "function Invoke-BunchTransportRecoveryStage",
-            "-Stage theory",
-            "if($selectedRecovery.status-ne'selected')",
-            "-Stage reverse_axis",
-            "bunch_transport_recovery_reverse_axis_plan.json",
-            "bunch_transport_recovery_reverse_axis_selection.json",
-            "recovery_stages=$recoveryStageEvidence",
-        ):
-            self.assertIn(token, source)
-        self.assertEqual(source.count("foreach($candidate in @($planData.candidates))"), 1)
-        self.assertLess(recovery.index("-Stage theory"), recovery.index("-Stage reverse_axis"))
+        self.assertIn("stop_below_collection_hard_minimum", source)
+        self.assertIn("[bool]$cohortGateData.hard_stop", source)
+        self.assertNotIn("pilotGate", source)
 
+    def test_cohort_run_id_keeps_revision_at_the_end(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("function New-CohortRunId", source)
+        self.assertIn("$cohortRunId=New-CohortRunId", source)
+        self.assertNotIn('$RunId+"__n$CohortParticleCount-static"', source)
 
 if __name__ == "__main__":
     unittest.main()

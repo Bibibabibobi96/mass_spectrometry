@@ -12,8 +12,8 @@
       0.0,
       32.0
     ],
-    "axis": "z",
-    "radius_mm": 1.0,
+    "axis": "y",
+    "radius_mm": 0.5,
     "height_mm": 1.0
   },
   "species": {
@@ -31,6 +31,6 @@
       1.0,
       0.0
     ],
-    "angular_full_width_deg": 0.2
+    "angular_full_width_deg": 0.0
   }
 }

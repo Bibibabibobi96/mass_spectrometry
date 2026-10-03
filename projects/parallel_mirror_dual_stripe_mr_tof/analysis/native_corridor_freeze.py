@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import stat
 import tempfile
@@ -99,12 +98,10 @@ def _trusted_generation(manifest_path: Path, label: str) -> dict[str, Any]:
 
 def _derived_recipe(
     plan: Mapping[str, Any],
-    source_manifest_path: Path,
     coarse_manifest_path: Path,
 ) -> tuple[dict[str, Any], Path, dict[str, Any]]:
-    """Derive all eight response groups from the plan and two generations."""
+    """Derive eight response groups from one coarse raw generation."""
 
-    source = _trusted_generation(source_manifest_path, "source generation")
     coarse = _trusted_generation(coarse_manifest_path, "coarse raw generation")
     mapping_value = plan.get("physical_to_local_electrode_id")
     if not isinstance(mapping_value, dict):
@@ -116,27 +113,6 @@ def _derived_recipe(
     }
     if any(not physical_ids for physical_ids in grouped.values()):
         raise CandidateContractError("corridor plan does not define all local response IDs 1..8")
-    expected_physical_ids = {physical for values in grouped.values() for physical in values}
-    response_pattern = re.compile(r"mrtof_analyzer\.response([1-9][0-9]*)\.pa")
-    observed_by_id: dict[int, dict[str, Any]] = {}
-    for name, record in source["records"].items():
-        match = response_pattern.fullmatch(name)
-        if match is None:
-            raise CandidateContractError(
-                f"source generation contains a non-response member: {name}"
-            )
-        physical_id = int(match.group(1))
-        if physical_id in observed_by_id:
-            raise CandidateContractError(
-                f"source generation repeats physical response ID {physical_id}"
-            )
-        observed_by_id[physical_id] = record
-    if set(observed_by_id) != expected_physical_ids:
-        missing = sorted(expected_physical_ids - set(observed_by_id))
-        extra = sorted(set(observed_by_id) - expected_physical_ids)
-        raise CandidateContractError(
-            f"source generation response IDs differ; missing={missing}, extra={extra}"
-        )
     if set(coarse["records"]) != {"mrtof_analyzer.pa#"}:
         raise CandidateContractError(
             "coarse generation must contain only mrtof_analyzer.pa#"
@@ -145,19 +121,13 @@ def _derived_recipe(
     responses: list[dict[str, Any]] = []
     for local_id in range(1, 9):
         physical_ids = grouped[local_id]
-        records = [observed_by_id[physical_id] for physical_id in physical_ids]
         responses.append(
             {
                 "group": f"local_response_{local_id}",
                 "local_id": local_id,
                 "physical_ids": physical_ids,
-                "source_basis_paths": [
-                    str((source["generation_directory"] / record["name"]).resolve())
-                    for record in records
-                ],
-                "source_basis_identities": [
-                    {"bytes": record["bytes"], "sha256": record["sha256"]}
-                    for record in records
+                "scratch_basis_names": [
+                    f"mrtof_analyzer.pa{physical_id}" for physical_id in physical_ids
                 ],
                 "output_filename": output_names[local_id - 1],
             }
@@ -167,12 +137,8 @@ def _derived_recipe(
         coarse["generation_directory"] / coarse_record["name"]
     ).resolve()
     recipe = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "mrtof_native_corridor_response_recipe",
-        "source_generation_identity": {
-            "cache_key": source["cache_key"],
-            "generation_sha256": source["generation_sha256"],
-        },
         "coarse_raw_generation_identity": {
             "cache_key": coarse["cache_key"],
             "generation_sha256": coarse["generation_sha256"],
@@ -185,11 +151,6 @@ def _derived_recipe(
         "response_recipes": responses,
     }
     provenance = {
-        "source_generation": {
-            "cache_key": source["cache_key"],
-            "generation_sha256": source["generation_sha256"],
-            "manifest": source["manifest"],
-        },
         "coarse_raw_generation": {
             "cache_key": coarse["cache_key"],
             "generation_sha256": coarse["generation_sha256"],
@@ -283,7 +244,6 @@ def _validate_governed_freeze_scope(
 def freeze_native_corridor_inputs(
     *,
     contract_path: Path,
-    source_generation_manifest: Path,
     coarse_generation_manifest: Path,
     simion_executable: Path,
     simion_release: str,
@@ -315,7 +275,6 @@ def freeze_native_corridor_inputs(
         plan = derive_native_corridor_plan(contract_path)
         recipe, coarse_raw_path, upstream = _derived_recipe(
             plan,
-            source_generation_manifest,
             coarse_generation_manifest,
         )
         plan_path = stage / PLAN_NAME
@@ -400,7 +359,6 @@ def freeze_native_corridor_inputs(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contract", required=True, type=Path)
-    parser.add_argument("--source-generation-manifest", required=True, type=Path)
     parser.add_argument("--coarse-generation-manifest", required=True, type=Path)
     parser.add_argument("--simion-executable", required=True, type=Path)
     parser.add_argument("--simion-release", required=True)
@@ -410,7 +368,6 @@ def main() -> int:
     arguments = parser.parse_args()
     result = freeze_native_corridor_inputs(
         contract_path=arguments.contract,
-        source_generation_manifest=arguments.source_generation_manifest,
         coarse_generation_manifest=arguments.coarse_generation_manifest,
         simion_executable=arguments.simion_executable,
         simion_release=arguments.simion_release,

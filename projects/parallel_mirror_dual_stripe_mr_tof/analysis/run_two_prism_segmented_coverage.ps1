@@ -69,7 +69,8 @@ $resultDir = $package.result_dir; $logDir = $package.log_dir; $terminalized = $f
 $capacitySession = $null
 
 function Invoke-ProjectPython {
-  param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogPath)
+  param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogPath,
+    [pscustomobject]$ResourceLease=$null)
   Push-Location -LiteralPath $repoRoot
   $savedPythonPath = $env:PYTHONPATH
   $savedOpenBlasThreads = $env:OPENBLAS_NUM_THREADS
@@ -78,8 +79,33 @@ function Invoke-ProjectPython {
   $savedNumExprThreads = $env:NUMEXPR_NUM_THREADS
   try {
     $env:PYTHONPATH = $repoRoot; $env:OPENBLAS_NUM_THREADS = '1'; $env:OMP_NUM_THREADS = '1'; $env:MKL_NUM_THREADS = '1'; $env:NUMEXPR_NUM_THREADS = '1'
-    & $python @Arguments 2>&1 | Tee-Object -FilePath $LogPath
-    if ($LASTEXITCODE -ne 0) { throw "MR-TOF coverage stage failed: $($Arguments -join ' ')" }
+    if($null-eq$ResourceLease){
+      & $python @Arguments 2>&1 | Tee-Object -FilePath $LogPath
+      if ($LASTEXITCODE -ne 0) { throw "MR-TOF coverage stage failed: $($Arguments -join ' ')" }
+    }else{
+      $start=[Diagnostics.ProcessStartInfo]::new()
+      $start.FileName=$python;$start.WorkingDirectory=$repoRoot;$start.UseShellExecute=$false;$start.CreateNoWindow=$true
+      $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+      $start.StandardOutputEncoding=[Text.UTF8Encoding]::new($false);$start.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
+      foreach($argument in $Arguments){$start.ArgumentList.Add($argument)}
+      $start.Environment['PYTHONPATH']=$repoRoot;$start.Environment['OPENBLAS_NUM_THREADS']='1';$start.Environment['OMP_NUM_THREADS']='1'
+      $start.Environment['MKL_NUM_THREADS']='1';$start.Environment['NUMEXPR_NUM_THREADS']='1'
+      $process=[Diagnostics.Process]::Start($start)
+      try{
+        $registered=$false
+        try{Register-HostResourceProcess -Lease $ResourceLease -ProcessId $process.Id|Out-Null;$registered=$true}
+        catch{if(-not$process.HasExited-or-not$_.Exception.Message.Contains('registered process must be a live descendant')){throw}}
+        $workPid=[int]$process.Id
+        $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
+        if($registered){
+          Wait-HostResourceProcess -Lease $ResourceLease -Process $process|Out-Null
+        }else{$process.WaitForExit()}
+        $text=$stdout.GetAwaiter().GetResult()+$stderr.GetAwaiter().GetResult()
+        [IO.File]::WriteAllText($LogPath,$text,[Text.UTF8Encoding]::new($false))
+        if($text){Write-Host $text.TrimEnd()}
+        if($process.ExitCode-ne0){throw "MR-TOF coverage stage failed: $($Arguments -join ' ')"}
+      }finally{$process.Dispose()}
+    }
   } finally {
     $env:PYTHONPATH = $savedPythonPath; $env:OPENBLAS_NUM_THREADS = $savedOpenBlasThreads; $env:OMP_NUM_THREADS = $savedOmpThreads
     $env:MKL_NUM_THREADS = $savedMklThreads; $env:NUMEXPR_NUM_THREADS = $savedNumExprThreads; Pop-Location
@@ -95,15 +121,19 @@ try {
   $startupPath = Join-Path $resultDir 'artifact_capacity_gate_startup.json'; Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
 
   $failureStage = 'verify_inputs'
-  $verifyLog = Join-Path $logDir 'accelerator_exit_manifest_verification.log'
-  Invoke-ProjectPython -Arguments @('-m','common.contracts.verify_run_manifest',$exitManifest,'--require-status','success','--require-project',$projectId) -LogPath $verifyLog
   $exit = Get-Content -LiteralPath $exitManifest -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-  $observationRecords = @($exit.outputs | Where-Object { [IO.Path]::GetFileName([string]$_.path) -eq 'accelerator_exit_observation.json' })
-  if ($observationRecords.Count -ne 1) { throw 'Accelerator-exit manifest must declare exactly one accelerator_exit_observation.json output.' }
-  $sourceReceiptRecords = @($exit.outputs | Where-Object { [IO.Path]::GetFileName([string]$_.path) -eq 'accelerator_exit_source_receipt.json' })
-  if ($sourceReceiptRecords.Count -ne 1) { throw 'Accelerator-exit manifest must declare exactly one accelerator_exit_source_receipt.json output.' }
+  if($exit.schema_version-ne2-or$exit.project-ne$projectId-or$exit.status-ne'success'-or
+    $exit.mode-ne'finite_3d_two_prism_voltage_trial'){
+    throw 'Accelerator-exit parent must be one successful finite-3D two-prism trial.'
+  }
+  $observationRecords = @($exit.outputs | Where-Object { [IO.Path]::GetFileName([string]$_.path) -in @('accelerator_exit_observation.json','two_prism_trial_observation.json') })
+  if ($observationRecords.Count -ne 1) { throw 'Accelerator-exit manifest must declare exactly one supported N=1 observation output.' }
+  $sourceReceiptRecords = @($exit.outputs | Where-Object { [IO.Path]::GetFileName([string]$_.path) -in @('accelerator_exit_source_receipt.json','two_prism_trial_materialization.json') })
+  if ($sourceReceiptRecords.Count -ne 1) { throw 'Accelerator-exit manifest must declare exactly one supported N=1 source receipt.' }
   $observation = (Resolve-Path -LiteralPath ([string]$observationRecords[0].path)).Path
   $exitSourceReceipt = (Resolve-Path -LiteralPath ([string]$sourceReceiptRecords[0].path)).Path
+  Assert-VerifiedRunRecordHash -Path $observation -Record $observationRecords[0] -Label 'accelerator-exit observation'
+  Assert-VerifiedRunRecordHash -Path $exitSourceReceipt -Record $sourceReceiptRecords[0] -Label 'accelerator-exit source receipt'
   $expectedObservationSha = ([string]$observationRecords[0].sha256).ToLowerInvariant()
 
   $failureStage = 'freeze_inputs'
@@ -169,6 +199,7 @@ try {
   }
   foreach ($entry in $sourceInputs.GetEnumerator()) { $configuration.inputs[$entry.Key] = $entry.Value }
   $configuration.parameters = [ordered]@{
+    accelerator_exit_consumer_projection='parent_identity_and_two_consumed_outputs__unconsumed_records_not_asserted'
     requested_p1_bounds_v=if ($explicitBoundCount -eq 4) { @($P1MinimumV,$P1MaximumV) } else { $null }
     requested_p2_bounds_v=if ($explicitBoundCount -eq 4) { @($P2MinimumV,$P2MaximumV) } else { $null }
     voltage_domain_source=if ($explicitBoundCount -eq 4) { 'explicit_signed_override' } else { 'contract_current_initial_search_window' }
@@ -212,7 +243,7 @@ try {
     )
   }
   $lease = $null
-  try { $lease = Enter-HostExecutionLease -Role GATE -Stage theory_compute -RunId $RunId; Invoke-ProjectPython -Arguments $args -LogPath $logPath }
+  try { $lease = Enter-HostExecutionLease -Role GATE -Stage theory_compute -RunId $RunId; Invoke-ProjectPython -Arguments $args -LogPath $logPath -ResourceLease $lease }
   finally { if ($lease) { Exit-HostExecutionLease -Lease $lease } }
   foreach ($pair in $sourceChecks) {
     if (-not (Test-RunFilesIdentical -Left $pair.source -Right $pair.frozen)) { throw "Frozen analytic source changed during execution: $($pair.source)" }
@@ -225,7 +256,7 @@ try {
   $capacitySession = $terminal.session
   $terminalPath = Join-Path $resultDir 'artifact_capacity_gate_terminal.json'; Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('Python 3.11','SciPy') `
-    -Outputs @($summary,$sourceReceipt,$startupPath,$terminalPath,$retention,$verifyLog,$logPath)
+    -Outputs @($summary,$sourceReceipt,$startupPath,$terminalPath,$retention,$logPath)
   $terminalized = $true; Write-Host "MRTOF_TWO_PRISM_SEGMENTED_COVERAGE=PASS RUN_ID=$RunId SUMMARY=$summary"
 } catch {
   if (-not $terminalized) { Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary -SummaryRole 'mrtof_two_prism_segmented_voltage_branch_coverage' -Reason $_.Exception.Message -Software @('Python 3.11','SciPy') -Status failed -FailureStage $failureStage; $terminalized = $true }

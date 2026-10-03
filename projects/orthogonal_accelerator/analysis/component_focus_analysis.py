@@ -15,13 +15,15 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any
 
+from common.contracts.particle_physics import kinetic_energy_ev
 from common.ion_release.release import validate_materialized_release, validate_release_spec
 from projects.orthogonal_accelerator.simion.two_zone_candidate import _load_geometry_profile
 
-_CSV_FIELDS = ("kind", "ion", "code", "t_us", "x_mm", "y_mm", "z_mm", "vz_mm_us")
+_CSV_FIELDS = ("kind", "ion", "code", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
 _REQUIRED = {
     "source": frozenset({"ion", "t_us", "x_mm", "y_mm", "z_mm"}),
-    "focus": frozenset({"ion", "t_us", "x_mm", "y_mm", "z_mm", "vz_mm_us"}),
+    "exit": frozenset({"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"}),
+    "focus": frozenset({"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"}),
     "terminal": frozenset({"ion", "code", "t_us", "x_mm", "y_mm", "z_mm"}),
 }
 
@@ -58,29 +60,34 @@ def _load_campaign(path: Path) -> dict[str, Any]:
     except ValueError as error:
         raise ComponentFocusError(f"component-focus release specification is invalid: {error}") from error
     point, numerics, acceptance, projection = (value["operating_point"], value["numerics"], value["acceptance"], value["simion_projection"])
-    if not isinstance(point, dict) or set(point) != {"acceleration_direction", "focus_plane_offset_from_exit_mm", "electrode_voltages_v", "instance_center_y_mm"}:
+    if not isinstance(point, dict) or set(point) != {"acceleration_direction", "focus_plane_offset_from_exit_mm", "electrode_voltages_v", "instance_center_y_mm", "finite_3d_gain_correction_v"}:
         raise ComponentFocusError("component-focus operating point is invalid")
     if (point["acceleration_direction"] != "-z"
             or _finite(point["focus_plane_offset_from_exit_mm"], "focus plane") > 0.0
-            or not math.isfinite(_finite(point["instance_center_y_mm"], "instance center y"))):
+            or not math.isfinite(_finite(point["instance_center_y_mm"], "instance center y"))
+            or not math.isfinite(_finite(point["finite_3d_gain_correction_v"], "finite-3D gain correction"))):
         raise ComponentFocusError("component-focus must declare an exit or downstream -z focus plane")
+    profile = _load_geometry_profile(value["geometry_profile_id"])
+    electrode_count = 4 + int(profile["ring_count"])
     voltages = point["electrode_voltages_v"]
-    if not isinstance(voltages, list) or len(voltages) != 9:
-        raise ComponentFocusError("component-focus must declare all nine electrode voltages")
+    if not isinstance(voltages, list) or len(voltages) != electrode_count:
+        raise ComponentFocusError(
+            f"component-focus must declare all {electrode_count} profile electrodes"
+        )
     for voltage in voltages:
         _finite(voltage, "operating-point voltage")
     if not isinstance(numerics, dict) or set(numerics) != {"trajectory_quality", "maximum_step_us"} or min(_finite(numerics[key], f"numerics.{key}") for key in numerics) <= 0.0:
         raise ComponentFocusError("component-focus numerical settings are invalid")
-    if not isinstance(acceptance, dict) or set(acceptance) != {"required_transport_fraction", "maximum_focus_peak_to_peak_time_ns", "time_spread_exceedance", "focus_plane_tolerance_mm"}:
+    if not isinstance(acceptance, dict) or set(acceptance) != {"required_transport_fraction", "maximum_focus_peak_to_peak_time_ns", "time_spread_exceedance", "focus_plane_tolerance_mm", "maximum_exit_slow_energy_error_per_charge_v", "maximum_exit_axial_energy_error_per_charge_v", "maximum_exit_transverse_energy_error_per_charge_v", "maximum_exit_transverse_velocity_bias_mm_per_us"}:
         raise ComponentFocusError("component-focus acceptance settings are invalid")
     required_transport = _finite(acceptance["required_transport_fraction"], "required transport fraction")
     if (required_transport != 1.0
             or acceptance["time_spread_exceedance"] != "warning"
-            or min(_finite(acceptance[key], key) for key in ("maximum_focus_peak_to_peak_time_ns", "focus_plane_tolerance_mm")) <= 0.0):
+            or min(_finite(acceptance[key], key) for key in ("maximum_focus_peak_to_peak_time_ns", "focus_plane_tolerance_mm", "maximum_exit_slow_energy_error_per_charge_v", "maximum_exit_axial_energy_error_per_charge_v", "maximum_exit_transverse_energy_error_per_charge_v", "maximum_exit_transverse_velocity_bias_mm_per_us")) <= 0.0):
         raise ComponentFocusError("component-focus acceptance settings are invalid")
     if (not isinstance(projection, dict) or set(projection) != {"source_frame", "workbench_mapping", "local_pa_span_mm", "iob_origin_rule", "local_exit_z_mm", "focus_plane_padding_mm", "positive_z_enclosure_padding_mm", "semantics"}
             or projection["workbench_mapping"] != "identity_xyz_with_local_exit_z_translation_v1"
-            or projection["iob_origin_rule"] != "negative_half_transverse_span__local_z_zero_v1"
+            or projection["iob_origin_rule"] != "x_mirror_plane__negative_half_y__local_z_zero_v1"
             or projection["source_frame"] != value["release_spec"]["frame_id"]
             or not isinstance(projection["local_pa_span_mm"], list) or len(projection["local_pa_span_mm"]) != 3
             or min(_finite(item, "projection PA span") for item in projection["local_pa_span_mm"]) <= 0.0
@@ -223,6 +230,126 @@ def _events(path: Path) -> dict[int, dict[str, dict[str, float]]]:
         bucket[kind] = fields
     return result
 
+
+def _component_energy_per_charge_v(mass_amu: float, charge_state: float, velocity_m_s: float) -> float:
+    return kinetic_energy_ev(mass_amu, velocity_m_s, 0.0, 0.0) / abs(charge_state)
+
+
+def _target_axial_energy_per_charge_v(campaign: dict[str, Any], release_z_mm: float | None = None) -> float:
+    profile = _load_geometry_profile(campaign["geometry_profile_id"])
+    gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
+    release_z = _finite(
+        campaign["release_spec"]["geometry"]["center_mm"][2] if release_z_mm is None else release_z_mm,
+        "release z",
+    )
+    release_position = gap1 + gap2 - release_z
+    if not 0.0 < release_position < gap1:
+        raise ComponentFocusError("release centre is outside provider first acceleration gap")
+    voltages = campaign["operating_point"]["electrode_voltages_v"]
+    repeller, grid1, exit_v = (_finite(voltages[index], "energy target voltage") for index in (1, 2, 3))
+    applied = repeller - exit_v - (repeller - grid1) * release_position / gap1
+    correction = _finite(campaign["operating_point"]["finite_3d_gain_correction_v"], "finite-3D gain correction")
+    return applied - correction
+
+
+def _exit_energy_assessment(
+    sources: dict[int, dict[str, float]], events: dict[int, dict[str, dict[str, float]]],
+    campaign: dict[str, Any], plane_tolerance: float,
+) -> dict[str, Any]:
+    species, acceptance = campaign["release_spec"]["species"], campaign["acceptance"]
+    mass = _finite(species["mass_amu"], "release mass")
+    charge = _finite(species["charge_state"], "release charge state")
+    if mass <= 0.0 or charge == 0.0:
+        raise ComponentFocusError("release species is invalid")
+    target_axial = _target_axial_energy_per_charge_v(campaign)
+    slow_tolerance = _finite(acceptance["maximum_exit_slow_energy_error_per_charge_v"], "exit slow-energy tolerance")
+    axial_tolerance = _finite(acceptance["maximum_exit_axial_energy_error_per_charge_v"], "exit axial-energy tolerance")
+    transverse_tolerance = _finite(acceptance["maximum_exit_transverse_energy_error_per_charge_v"], "exit transverse-energy tolerance")
+    velocity_bias_tolerance = _finite(
+        acceptance["maximum_exit_transverse_velocity_bias_mm_per_us"],
+        "exit transverse-velocity bias tolerance",
+    )
+    rows: list[dict[str, Any]] = []
+    for ion, source in sources.items():
+        exit_state = events[ion].get("exit")
+        if exit_state is None:
+            continue
+        if exit_state["vz_mm_us"] >= 0.0 or abs(exit_state["z_mm"]) > plane_tolerance:
+            raise ComponentFocusError(f"ion {ion} exit event is not a -z crossing of the accelerator exit plane")
+        source_slow = _component_energy_per_charge_v(mass, charge, source["vy_m_s"])
+        source_transverse = _component_energy_per_charge_v(mass, charge, source["vx_m_s"])
+        source_axial = _component_energy_per_charge_v(mass, charge, source["vz_m_s"])
+        measured_slow = _component_energy_per_charge_v(mass, charge, exit_state["vy_mm_us"] * 1000.0)
+        measured_transverse = _component_energy_per_charge_v(mass, charge, exit_state["vx_mm_us"] * 1000.0)
+        measured_axial = _component_energy_per_charge_v(mass, charge, exit_state["vz_mm_us"] * 1000.0)
+        expected_axial = _target_axial_energy_per_charge_v(campaign, source["z_mm"]) + source_axial
+        slow_residual, axial_residual = measured_slow - source_slow, measured_axial - expected_axial
+        transverse_residual = measured_transverse - source_transverse
+        source_vx = source["vx_m_s"] / 1000.0
+        delta_vx = exit_state["vx_mm_us"] - source_vx
+        delta_x = exit_state["x_mm"] - source["x_mm"]
+        rows.append({
+            "particle_id": ion,
+            "source_slow_energy_per_charge_v": source_slow,
+            "measured_exit_slow_energy_per_charge_v": measured_slow,
+            "slow_energy_residual_per_charge_v": slow_residual,
+            "source_transverse_energy_per_charge_v": source_transverse,
+            "measured_exit_transverse_energy_per_charge_v": measured_transverse,
+            "transverse_energy_residual_per_charge_v": transverse_residual,
+            "source_x_mm": source["x_mm"],
+            "measured_exit_x_mm": exit_state["x_mm"],
+            "delta_x_mm": delta_x,
+            "source_vx_mm_per_us": source_vx,
+            "measured_exit_vx_mm_per_us": exit_state["vx_mm_us"],
+            "delta_vx_mm_per_us": delta_vx,
+            "source_axial_energy_per_charge_v": source_axial,
+            "expected_exit_axial_energy_per_charge_v": expected_axial,
+            "measured_exit_axial_energy_per_charge_v": measured_axial,
+            "axial_energy_residual_per_charge_v": axial_residual,
+            "slow_energy_passed": abs(slow_residual) <= slow_tolerance,
+            "axial_energy_passed": abs(axial_residual) <= axial_tolerance,
+            "transverse_energy_passed": abs(transverse_residual) <= transverse_tolerance,
+            "transverse_velocity_bias_passed": abs(delta_vx) <= velocity_bias_tolerance,
+        })
+    center = next((row for row in rows if row["particle_id"] == 1), None)
+    maximum_slow = max((abs(row["slow_energy_residual_per_charge_v"]) for row in rows), default=None)
+    maximum_axial = max((abs(row["axial_energy_residual_per_charge_v"]) for row in rows), default=None)
+    maximum_transverse = max((abs(row["transverse_energy_residual_per_charge_v"]) for row in rows), default=None)
+    mean_delta_x = fmean(row["delta_x_mm"] for row in rows) if rows else None
+    mean_delta_vx = fmean(row["delta_vx_mm_per_us"] for row in rows) if rows else None
+    complete = len(rows) == len(sources)
+    slow_passed = complete and maximum_slow is not None and maximum_slow <= slow_tolerance
+    axial_passed = complete and maximum_axial is not None and maximum_axial <= axial_tolerance
+    transverse_passed = complete and maximum_transverse is not None and maximum_transverse <= transverse_tolerance
+    velocity_bias_passed = (
+        complete and center is not None and mean_delta_vx is not None
+        and abs(center["delta_vx_mm_per_us"]) <= velocity_bias_tolerance
+        and abs(mean_delta_vx) <= velocity_bias_tolerance
+    )
+    return {
+        "exit_plane_relative_z_mm": 0.0,
+        "target_axial_energy_per_charge_v": target_axial,
+        "tolerances": {
+            "maximum_exit_slow_energy_error_per_charge_v": slow_tolerance,
+            "maximum_exit_axial_energy_error_per_charge_v": axial_tolerance,
+            "maximum_exit_transverse_energy_error_per_charge_v": transverse_tolerance,
+            "maximum_exit_transverse_velocity_bias_mm_per_us": velocity_bias_tolerance,
+        },
+        "center_particle": center,
+        "cohort": {
+            "expected_particle_count": len(sources), "measured_particle_count": len(rows),
+            "maximum_absolute_slow_energy_residual_per_charge_v": maximum_slow,
+            "maximum_absolute_axial_energy_residual_per_charge_v": maximum_axial,
+            "maximum_absolute_transverse_energy_residual_per_charge_v": maximum_transverse,
+            "mean_delta_x_mm": mean_delta_x,
+            "mean_delta_vx_mm_per_us": mean_delta_vx,
+            "slow_energy_passed": slow_passed, "axial_energy_passed": axial_passed,
+            "transverse_energy_passed": transverse_passed,
+            "transverse_velocity_bias_passed": velocity_bias_passed,
+        },
+        "passed": slow_passed and axial_passed and transverse_passed and velocity_bias_passed,
+    }
+
 def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Path) -> dict[str, Any]:
     campaign = _load_campaign(campaign_path)
     sources, release = _source_rows(release_receipt_path, campaign)
@@ -258,16 +385,23 @@ def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Pat
         warnings.append("longitudinal_time_spread_exceeds_target")
     transport_ok = fraction == _finite(acceptance["required_transport_fraction"], "required transport")
     focus_ok = peak_to_peak_time_ns is not None and peak_to_peak_time_ns <= _finite(acceptance["maximum_focus_peak_to_peak_time_ns"], "maximum focus time spread")
+    exit_energy = _exit_energy_assessment(sources, events, campaign, plane_tolerance)
+    slow_energy_ok = bool(exit_energy["cohort"]["slow_energy_passed"])
+    axial_energy_ok = bool(exit_energy["cohort"]["axial_energy_passed"])
+    transverse_energy_ok = bool(exit_energy["cohort"]["transverse_energy_passed"])
+    transverse_velocity_bias_ok = bool(exit_energy["cohort"]["transverse_velocity_bias_passed"])
+    hard_gate_passed = transport_ok and slow_energy_ok and axial_energy_ok and transverse_energy_ok and transverse_velocity_bias_ok
     return {
         "schema_version": 1, "role": "orthogonal_accelerator_component_focus_analysis",
-        "status": "candidate_complete" if transport_ok else "candidate_incomplete",
+        "status": "candidate_complete" if hard_gate_passed else "candidate_incomplete",
         "qualification": "candidate_prototype_numeric_component_focus_only",
         "geometry_profile_id": campaign["geometry_profile_id"], "particle_count": total,
         "focus_particle_count": len(hits), "loss_particle_count": total - len(hits), "transport_fraction": fraction,
         "focus_metrics": {"mean_t_us": fmean(focus["t_us"] for _, focus in hits) if hits else None, "peak_to_peak_t_ns": peak_to_peak_time_ns, "transverse_rms_radius_mm": rms_radius},
+        "exit_energy_assessment": exit_energy,
         "arrival_time_diagnostics": _arrival_time_diagnostics(hits),
         "ideal_field_contrast": _ideal_two_zone_contrast(sources, campaign, peak_to_peak_time_ns),
-        "warnings": warnings, "hard_gate": {"complete_transport_passed": transport_ok},
+        "warnings": warnings, "hard_gate": {"complete_transport_passed": transport_ok, "exit_slow_energy_passed": slow_energy_ok, "exit_axial_energy_passed": axial_energy_ok, "exit_transverse_energy_passed": transverse_energy_ok, "exit_transverse_velocity_bias_passed": transverse_velocity_bias_ok},
         "time_focus_assessment": {"passed": focus_ok, "threshold_ns": _finite(acceptance["maximum_focus_peak_to_peak_time_ns"], "maximum focus time spread"), "exceedance_policy": acceptance["time_spread_exceedance"]},
         "identity": {"campaign_sha256": _sha256(campaign_path), "release_receipt_sha256": _sha256(release_receipt_path), "release_state_table_sha256": release["state_table"]["sha256"], "event_csv_sha256": _sha256(event_csv_path)},
         "simion_projection": campaign["simion_projection"],

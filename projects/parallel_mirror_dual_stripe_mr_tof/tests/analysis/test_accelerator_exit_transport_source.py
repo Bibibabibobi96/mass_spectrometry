@@ -94,6 +94,35 @@ class AcceleratorExitTransportSourceTests(unittest.TestCase):
         persisted = json.loads(self.receipt_path.read_text(encoding="utf-8"))
         self.assertEqual(persisted, receipt)
 
+    def test_accepts_current_n1_trial_observation_without_compatibility_copies(self) -> None:
+        trial_receipt = self.root / "two_prism_trial_materialization.json"
+        trial_receipt.write_text("{}\n", encoding="utf-8")
+        current = {
+            "schema_version": 1,
+            "role": "mrtof_finite_3d_two_prism_trial_observation",
+            "accelerator_safe_exit_observation": {
+                "status": "observed",
+                "input_log": {"sha256": "1" * 64},
+                "trial_identity": {
+                    "sha256": hashlib.sha256(trial_receipt.read_bytes()).hexdigest(),
+                },
+                "state": copy.deepcopy(self.observation["safe_exit_state"]),
+            },
+        }
+        actual_sha = self._write(current)
+        state, receipt = materialize_accelerator_exit_transport_source(
+            observation_path=self.observation_path,
+            expected_observation_sha256=actual_sha,
+            expected_particle_mass_th=524.0,
+            expected_charge_state=1,
+            receipt_path=self.receipt_path,
+        )
+        self.assertEqual(state.position_mm, tuple(self.observation["safe_exit_state"]["position_mm"]))
+        self.assertEqual(
+            receipt["input"]["accelerator_exit_observation"]["source_receipt_sha256"],
+            hashlib.sha256(trial_receipt.read_bytes()).hexdigest(),
+        )
+
     def test_rejects_wrong_observation_digest(self) -> None:
         with self.assertRaisesRegex(CandidateContractError, "SHA-256 differs"):
             self._materialize(expected_sha="0" * 64)

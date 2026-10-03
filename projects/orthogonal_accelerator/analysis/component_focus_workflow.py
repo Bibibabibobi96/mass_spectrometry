@@ -86,7 +86,7 @@ def _place_release_at_first_gap_center(request: dict[str, Any], release: dict[st
 
 
 def _operating_point(request: dict[str, Any], release: dict[str, Any]) -> dict[str, Any]:
-    """Derive the nine Fast-Adjust voltages; callers never select them."""
+    """Derive the profile-sized Fast-Adjust voltage vector."""
     focus = request["time_focus"]
     if not isinstance(focus, dict) or set(focus) != {
         "final_energy_per_charge_v", "focus_plane_offset_from_exit_mm",
@@ -103,6 +103,7 @@ def _operating_point(request: dict[str, Any], release: dict[str, Any]) -> dict[s
         raise ComponentFocusWorkflowError("component workflow time_focus voltage bounds are invalid")
     profile = _load_geometry_profile(request["geometry_profile_id"])
     gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
+    ring_count = int(profile["ring_count"])
     center_z = _number(release["geometry"]["center_mm"][2], "release centre z")
     release_position = gap1 + gap2 - center_z
     if not 0.0 < release_position < gap1:
@@ -144,7 +145,10 @@ def _operating_point(request: dict[str, Any], release: dict[str, Any]) -> dict[s
         raise ComponentFocusWorkflowError("provider time-focus voltage root is not bracketed")
     state = state_for(root)
     voltages = [0.0, state.repeller_relative_v, state.intermediate_relative_v, 0.0]
-    voltages.extend(state.intermediate_relative_v * index / 6.0 for index in range(5, 0, -1))
+    voltages.extend(
+        state.intermediate_relative_v * index / (ring_count + 1)
+        for index in range(ring_count, 0, -1)
+    )
     sampling, species, geometry = release["sampling"], release["species"], release["geometry"]
     transverse_speed = speed_m_s_from_kinetic_energy_ev(
         _number(species["mass_amu"], "release mass"),
@@ -157,7 +161,8 @@ def _operating_point(request: dict[str, Any], release: dict[str, Any]) -> dict[s
     )
     instance_center_y = _number(geometry["center_mm"][1], "release centre y") + transverse_speed * transit_s * 500.0
     return {"acceleration_direction": "-z", "focus_plane_offset_from_exit_mm": offset,
-            "electrode_voltages_v": voltages, "instance_center_y_mm": instance_center_y}
+            "electrode_voltages_v": voltages, "instance_center_y_mm": instance_center_y,
+            "finite_3d_gain_correction_v": 0.0}
 
 
 def compile_workflow(request_path: Path, release_path: Path) -> dict[str, Any]:

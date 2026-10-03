@@ -178,9 +178,21 @@ def reconstruct_checkpoint(
         candidate_history = _load(old_history_path, "old parent history").get("decisions")
         if not isinstance(candidate_history, list):
             raise CandidateContractError("old parent history decisions are invalid")
-        recorded_history = candidate_history
+        recorded_history = [
+            item for item in candidate_history
+            if isinstance(item, Mapping)
+            and (
+                ("iteration" in item and int(item["iteration"]) <= completed)
+                or (
+                    "iteration" not in item
+                    and "recovery_after_iteration" in item
+                    and int(item["recovery_after_iteration"]) <= completed
+                )
+            )
+        ]
     lineage_manifests: dict[int, Path] = {}
     lineage_decisions: dict[int, Path] = {}
+    ignored_trailing_iterations: list[int] = []
     old_lineage_path = old_decisions / "iteration_lineage.json"
     if old_lineage_path.is_file():
         old_lineage = _load(old_lineage_path, "old parent lineage")
@@ -193,6 +205,9 @@ def reconstruct_checkpoint(
             child_path = Path(str(item.get("child_manifest", "")))
             if not child_path.is_file() or _sha(child_path).lower() != str(item.get("child_manifest_sha256", "")).lower():
                 raise CandidateContractError("old parent lineage child manifest identity differs")
+            if expected_iteration > completed:
+                ignored_trailing_iterations.append(expected_iteration)
+                continue
             lineage_manifests[expected_iteration] = child_path
             decision_path_text = item.get("decision")
             if decision_path_text is not None:
@@ -214,12 +229,16 @@ def reconstruct_checkpoint(
         for path in old_decisions.glob("iteration_*_decision.json")
         if (match := re.fullmatch(r"iteration_(\d+)_decision\.json", path.name)) is not None
     )
-    if recorded_numbers not in [list(range(1, completed)), list(range(1, completed + 1))]:
+    if (
+        recorded_numbers != list(range(1, len(recorded_numbers) + 1))
+        or len(recorded_numbers) < completed - 1
+    ):
         raise CandidateContractError("old parent decision iterations are not continuous through the latest child")
     latest_baseline: Path | None = None
     latest_cache: dict[str, Any] | None = None
     migrated_latest_terminal = False
     migrated_latest_controller = False
+    terminal_decision: dict[str, Any] | None = None
 
     for iteration in range(1, completed + 1):
         if recorded_history is not None:
@@ -228,6 +247,7 @@ def reconstruct_checkpoint(
                     isinstance(recovery_model, Mapping)
                     and recovery_model.get("role") == "mrtof_downstream_workpoint_iteration_recovery_model"
                     and recovery_model.get("recovery_after_iteration") == iteration - 1
+                    and dict(recovery_model) not in replayed
                 ):
                     replayed.append(dict(recovery_model))
         if iteration in lineage_manifests:
@@ -322,7 +342,39 @@ def reconstruct_checkpoint(
             raise CandidateContractError(f"recorded decision is missing before latest child: iteration {iteration}")
         if decision.get("state") == "recovery_required":
             if iteration != completed:
-                raise CandidateContractError("model recovery must follow the latest completed child")
+                recovery_model = next((
+                    item for item in recorded_history or []
+                    if isinstance(item, Mapping)
+                    and item.get("role") == "mrtof_downstream_workpoint_iteration_recovery_model"
+                    and item.get("recovery_after_iteration") == iteration
+                ), None)
+                recovery_proposal = next((
+                    item for item in recorded_history or []
+                    if isinstance(item, Mapping)
+                    and item.get("recovery_resume_proposal") is True
+                    and item.get("iteration") == iteration + 1
+                ), None)
+                if recovery_model is None or recovery_proposal is None:
+                    raise CandidateContractError("resolved model recovery history is incomplete")
+                replayed.extend([decision, dict(recovery_model), dict(recovery_proposal)])
+                expected = np.asarray(recovery_proposal.get("proposed_voltages_v"), dtype=float)
+                if expected.shape != (4,) or not np.all(np.isfinite(expected)):
+                    raise CandidateContractError("resolved model recovery proposal is invalid")
+                lineage.append({
+                    "iteration": iteration,
+                    "run_id": child_doc["run_id"],
+                    "child_manifest": str(child_manifest.resolve()),
+                    "child_manifest_sha256": _sha(child_manifest),
+                    "observation": str(observation_path),
+                    "materialization": str(materialization_path),
+                    "operating_cache_identity": str(identity_path),
+                    "operating_cache_protection_renewal": str(protection_path),
+                    "operating_cache_key": cache["cache_key"],
+                    "replayed_checkpoint": True,
+                })
+                latest_baseline = baseline_path
+                latest_cache = cache
+                continue
             replayed.append(decision)
             expected = np.asarray(
                 decision["recovery_state"]["accepted_anchor"]["voltages_v"], dtype=float
@@ -343,10 +395,21 @@ def reconstruct_checkpoint(
             latest_cache = cache
             recovery_required = decision
             break
-        if decision.get("state") != "continue":
-            raise CandidateContractError(f"iteration {iteration} is already terminal and cannot be resumed")
+        decision_state = decision.get("state")
+        if decision_state == "terminal":
+            if iteration != completed or decision.get("terminal_reason") != "success":
+                raise CandidateContractError(
+                    f"iteration {iteration} is already terminal and cannot be resumed"
+                )
+            terminal_decision = dict(decision)
+            expected = actual
+        elif decision_state == "continue":
+            expected = np.asarray(decision["proposed_voltages_v"], dtype=float)
+        else:
+            raise CandidateContractError(
+                f"iteration {iteration} has unsupported replay state: {decision_state}"
+            )
         replayed.append(decision)
-        expected = np.asarray(decision["proposed_voltages_v"], dtype=float)
         lineage.append({
             "iteration": iteration,
             "run_id": child_doc["run_id"],
@@ -361,6 +424,8 @@ def reconstruct_checkpoint(
         })
         latest_baseline = baseline_path
         latest_cache = cache
+        if terminal_decision is not None:
+            break
 
     assert latest_baseline is not None and latest_cache is not None
     if recorded_history is not None and len(lineage_decisions) != completed:
@@ -372,10 +437,17 @@ def reconstruct_checkpoint(
             isinstance(item, Mapping)
             and item.get("role") == "mrtof_downstream_workpoint_iteration_recovery_model"
         )]
-        if len(old_history) not in {completed - 1, completed}:
+        resolved_recovery_count = sum(
+            isinstance(item, Mapping) and item.get("recovery_resume_proposal") is True
+            for item in old_history
+        )
+        complete_history_length = completed + resolved_recovery_count
+        if len(old_history) not in {complete_history_length - 1, complete_history_length}:
             raise CandidateContractError("old parent history length differs from the completed child chain")
-        comparable_length = len(old_history) - (1 if (migrated_latest_terminal or migrated_latest_controller)
-                                                 and len(old_history) == completed else 0)
+        comparable_length = len(old_history) - (
+            1 if (migrated_latest_terminal or migrated_latest_controller)
+            and len(old_history) == complete_history_length else 0
+        )
         if old_history[:comparable_length] != replayed_decisions[:comparable_length]:
             raise CandidateContractError("old parent history differs from deterministic replay")
     return {
@@ -389,6 +461,7 @@ def reconstruct_checkpoint(
         "history": {"schema_version": 1, "role": "mrtof_downstream_workpoint_iteration_history", "decisions": replayed},
         "lineage_children": lineage,
         "latest_child_manifest": str(latest_child_manifest.resolve()),
+        "ignored_trailing_lineage_iterations": ignored_trailing_iterations,
         "latest_capacity_baseline_receipt": str(latest_baseline),
         "latest_capacity_baseline_receipt_sha256": _sha(latest_baseline),
         "latest_cache": latest_cache,
@@ -397,6 +470,7 @@ def reconstruct_checkpoint(
         "latest_cache_protection_renewal": lineage[-1]["operating_cache_protection_renewal"],
         "latest_replayed_decision": replayed[-1],
         "recovery_required_decision": locals().get("recovery_required"),
+        "terminal_decision": terminal_decision,
         "recovery_state_path": str(old_decisions / "iteration_recovery_state.json")
         if (old_decisions / "iteration_recovery_state.json").is_file() else None,
     }

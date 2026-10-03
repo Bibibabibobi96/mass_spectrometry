@@ -2,7 +2,6 @@
 -- It creates one raw geometry and eight solved standalone response PAs,
 -- assembles them without Refine, then proves pa:fast_adjust uses pa1..pa8.
 local root = assert(arg[1], 'fixture directory required')
-local assembler = assert(arg[2], 'native assembler path required')
 local function path(name) return root .. '/' .. name end
 local function exists(name)
   local h = io.open(path(name), 'rb')

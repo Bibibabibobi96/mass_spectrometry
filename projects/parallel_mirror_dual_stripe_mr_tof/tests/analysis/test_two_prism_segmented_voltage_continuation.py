@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
@@ -12,6 +13,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_vo
     solve_adaptive_position_domain_slice,
     solve_position_slice_from_legal_anchor,
     solve_position_domain_slice,
+    select_coverage_continuation_seed,
     tangent_ratio_tolerance_from_angle_degrees,
 )
 
@@ -34,6 +36,28 @@ def _controls(**changes) -> ContinuationControls:
     return ContinuationControls(**values)
 
 
+def _coverage(samples, *, branches=None):
+    minimum = {"prism_voltages_v": [10.0, -20.0]}
+    return {
+        "controls": {
+            "residual_names": [
+                "P1_P2_positive_mirror_turn_y_mm",
+                "P1_P2_P2_shield_low_field_signed_vy_over_vz",
+            ],
+            "sobol": {"p1_bounds_v": [0.0, 20.0], "p2_bounds_v": [-40.0, 0.0]},
+        },
+        "coverage": {
+            "combined": {"branches": ([{
+                "topology_signature_sha256": SIGNATURE,
+                "both_residual_ranges_enclose_zero": True,
+                "minimum_scaled_residual_sample": minimum,
+            }] if branches is None else branches)},
+            "local": {"samples": samples},
+            "sobol": {"samples": []},
+        },
+    }
+
+
 def _record(p1: float, p2: float, *, signature: str = SIGNATURE) -> dict:
     return {
         "status": "legal_topology", "topology_signature_sha256": signature,
@@ -42,6 +66,56 @@ def _record(p1: float, p2: float, *, signature: str = SIGNATURE) -> dict:
 
 
 class SegmentedVoltageContinuationTests(unittest.TestCase):
+    def test_coverage_auto_selection_uses_one_same_p1_same_topology_sign_bracket(self):
+        samples = [
+            {"status": "legal_topology", "topology_signature_sha256": SIGNATURE,
+             "prism_voltages_v": [10.0, -21.0], "residual_vector": [1.0, -0.1]},
+            {"status": "legal_topology", "topology_signature_sha256": SIGNATURE,
+             "prism_voltages_v": [10.0, -19.0], "residual_vector": [-1.0, 0.1]},
+            {"status": "legal_topology", "topology_signature_sha256": "other",
+             "prism_voltages_v": [10.0, -20.0], "residual_vector": [0.0, 0.0]},
+        ]
+        result = select_coverage_continuation_seed(_coverage(samples))
+        self.assertEqual(result["topology_signature_sha256"], SIGNATURE)
+        self.assertEqual(result["initial_p1_v"], 10.0)
+        self.assertEqual(result["initial_p2_lower_v"], -21.0)
+        self.assertEqual(result["initial_p2_upper_v"], -19.0)
+        self.assertEqual(result["p1_bounds_v"], [0.0, 20.0])
+
+    def test_coverage_auto_selection_rejects_ambiguous_or_missing_branch(self):
+        sample_pairs = [
+            {"status": "legal_topology", "topology_signature_sha256": SIGNATURE,
+             "prism_voltages_v": [9.0, -21.0], "residual_vector": [1.0, -0.1]},
+            {"status": "legal_topology", "topology_signature_sha256": SIGNATURE,
+             "prism_voltages_v": [9.0, -19.0], "residual_vector": [-1.0, 0.1]},
+            {"status": "legal_topology", "topology_signature_sha256": SIGNATURE,
+             "prism_voltages_v": [11.0, -21.0], "residual_vector": [1.0, -0.1]},
+            {"status": "legal_topology", "topology_signature_sha256": SIGNATURE,
+             "prism_voltages_v": [11.0, -19.0], "residual_vector": [-1.0, 0.1]},
+        ]
+        with self.assertRaisesRegex(CandidateContractError, "ambiguous nearest"):
+            select_coverage_continuation_seed(_coverage(sample_pairs))
+        with self.assertRaisesRegex(CandidateContractError, "exactly one branch"):
+            select_coverage_continuation_seed(_coverage([], branches=[]))
+
+    def test_coverage_auto_selection_never_brackets_across_p1(self):
+        samples = [
+            {"status": "legal_topology", "topology_signature_sha256": SIGNATURE,
+             "prism_voltages_v": [9.0, -21.0], "residual_vector": [1.0, -0.1]},
+            {"status": "legal_topology", "topology_signature_sha256": SIGNATURE,
+             "prism_voltages_v": [11.0, -19.0], "residual_vector": [-1.0, 0.1]},
+        ]
+        with self.assertRaisesRegex(CandidateContractError, "same-P1 P2 sign bracket"):
+            select_coverage_continuation_seed(_coverage(samples))
+    def test_fixed_grid_main_revalidates_pair_identity(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "analysis/two_prism_segmented_voltage_continuation.py"
+        ).read_text(encoding="utf-8-sig")
+        self.assertIn("expected_slow_energy_per_charge_v=(", source)
+        self.assertIn("expected_target_k=(", source)
+        self.assertIn("expected_accelerator_y_anchor_mm=(", source)
+
     def test_position_domain_slice_scans_and_refines_same_signature_root(self) -> None:
         def evaluate(pair):
             p1, p2 = pair

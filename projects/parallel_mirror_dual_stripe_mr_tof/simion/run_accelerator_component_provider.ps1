@@ -3,6 +3,7 @@ param(
   [Parameter(Mandatory)][string]$RunId,
   [string]$RequestPath='',
   [string]$ReleaseSpecPath='',
+  [string]$RuntimeCheckpointPath='',
   [string]$SimionExe=''
 )
 
@@ -17,9 +18,8 @@ foreach($path in @($provider,$RequestPath,$ReleaseSpecPath)){
   if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required accelerator component input is missing: $path"}
 }
 
-if($SimionExe){
-  & $provider -RunId $RunId -RequestPath (Resolve-Path -LiteralPath $RequestPath).Path -ReleaseSpecPath (Resolve-Path -LiteralPath $ReleaseSpecPath).Path -SimionExe $SimionExe
-}else{
-  & $provider -RunId $RunId -RequestPath (Resolve-Path -LiteralPath $RequestPath).Path -ReleaseSpecPath (Resolve-Path -LiteralPath $ReleaseSpecPath).Path
-}
+$arguments=@{RunId=$RunId;RequestPath=(Resolve-Path -LiteralPath $RequestPath).Path;ReleaseSpecPath=(Resolve-Path -LiteralPath $ReleaseSpecPath).Path}
+if($RuntimeCheckpointPath){$arguments.RuntimeCheckpointPath=(Resolve-Path -LiteralPath $RuntimeCheckpointPath).Path}
+if($SimionExe){$arguments.SimionExe=$SimionExe}
+& $provider @arguments
 if($LASTEXITCODE-ne0){throw 'Provider-owned accelerator component workflow failed'}

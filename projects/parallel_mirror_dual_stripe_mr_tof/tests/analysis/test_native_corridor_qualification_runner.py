@@ -9,7 +9,7 @@ import unittest
 
 PROJECT = Path(__file__).resolve().parents[2]
 RUNNER = PROJECT / "simion" / "run_native_corridor_qualification.ps1"
-CONTROLLER = PROJECT / "simion" / "create_native_corridor_controller.lua"
+CONTROLLER = PROJECT.parents[1] / "common" / "simion" / "assemble_native_fast_adjust_family.lua"
 REMOVED_STREAM = PROJECT / "simion" / "run_native_corridor_family_stream.ps1"
 
 
@@ -46,10 +46,24 @@ class NativeCorridorQualificationRunnerTest(unittest.TestCase):
         self.assertIn("$responseIds=@(1..8|Where-Object", source)
         self.assertIn("$scratchDirectory=[IO.Path]::GetFullPath([string]$State.scratch_directory)", source)
         self.assertIn("Move-Item -LiteralPath", source)
+        self.assertIn("prebiased_response.pa-surf", source)
+        self.assertIn("mrtof_analyzer_corridor.pa-surf", source)
+        self.assertIn("Fractional native-corridor response is missing its surface companion", source)
+        self.assertIn("Renamed fractional surface companion is missing", source)
+        self.assertNotIn("& $python -m", source)
         self.assertNotIn("Remove-Item -LiteralPath $buildDirectory", source)
         self.assertNotIn("Remove-Item -LiteralPath $destination", source)
         self.assertNotIn("NewGuid", source)
         self.assertNotIn(".staging", source)
+
+    def test_physical_donors_are_published_read_only_inputs(self) -> None:
+        source = self.source
+        self.assertIn("function Ensure-CoarsePhysicalBasis", source)
+        self.assertIn("scratch_basis_names", source)
+        self.assertIn("Published coarse donor bank is incomplete", source)
+        self.assertNotIn("Scratch coarse physical-basis generation failed", source)
+        family_line = next(line for line in source.splitlines() if "$familyMembers=" in line)
+        self.assertNotIn("mrtof_analyzer.pa", family_line)
 
     def test_controller_uses_one_scratch_prefix_without_lua_whole_file_copy(self) -> None:
         source = self.source
@@ -57,7 +71,8 @@ class NativeCorridorQualificationRunnerTest(unittest.TestCase):
         self.assertIn("$controllerDirectory=Join-Path $scratchDirectory 'controller'", source)
         self.assertIn("Copy-Item -LiteralPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa#')", source)
         self.assertIn("Remove-Item -LiteralPath $controllerRaw", source)
-        self.assertIn("assert(raw_path == native_raw", controller)
+        self.assertIn("assert(raw_path == output:gsub", controller)
+        self.assertIn("--controller $controllerRawExecution $controllerScratch 8", source)
         self.assertNotIn("read('*a')", controller)
 
     def test_response_members_queue_independently_under_public_host_admission(self) -> None:
@@ -133,10 +148,12 @@ class NativeCorridorQualificationRunnerTest(unittest.TestCase):
             "Invoke-Expression ('function Get-NativeCorridorTransactionArguments '+$fn.Body.Extent.Text);"
             "$cacheRoot='cache';$identityPath='identity.json';$familyMembers=@('a','b');"
             "$publishedPinReason='MR-TOF native adjustable analyzer PA family; rebuild only on frozen geometry identity change';"
-            "$a=@(Get-NativeCorridorTransactionArguments);$b=@(Get-NativeCorridorTransactionArguments -VerificationEvidence verify.json);"
+            "$runConfig='run_config.json';"
+            "$a=@(Get-NativeCorridorTransactionArguments -Owner test-owner);"
+            "$b=@(Get-NativeCorridorTransactionArguments -Owner test-owner -VerificationEvidence verify.json);"
             "$pin=[Array]::IndexOf($a,'--published-pin-reason');"
             "if($pin-lt0-or$a[$pin+1]-ne$publishedPinReason-or([Array]::IndexOf($b,'--published-pin-reason'))-lt0-or"
-            "([Array]::IndexOf($b,'--verification-evidence'))-lt0){exit 3};'PASS'"
+            "([Array]::IndexOf($b,'--verification-evidence'))-lt0-or([Array]::IndexOf($a,'--owner'))-lt0){exit 3};'PASS'"
         )
         completed = subprocess.run(
             [pwsh, "-NoProfile", "-Command", command], check=True, cwd=PROJECT,

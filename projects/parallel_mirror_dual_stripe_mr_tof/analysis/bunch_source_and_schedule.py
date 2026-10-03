@@ -17,7 +17,12 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_count_policy import validate_standard_particle_count
-from common.ion_release.cylinder import generate_center_first_halton_cylinder_phase_space
+from common.ion_release.cylinder import (
+    apply_controlled_position_pair,
+    apply_controlled_slow_energy_pair,
+    generate_center_axis_pair_halton_cylinder_phase_space,
+    generate_halton_cylinder_phase_space,
+)
 from common.simion.particle_source import render_standard_beams
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
@@ -30,7 +35,18 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
 
 
 _CLOCK_BASIS = "ion_time_of_flight_us_from_common_tob_zero_release"
-_SAMPLING_METHOD = "center_first_halton_position_energy_angle_v1"
+_SAMPLING_METHOD = "center_z_pair_then_halton_position_energy_angle_v1"
+_SLOW_ENERGY_SAMPLING_METHOD = "center_slow_energy_pair_then_halton_position_energy_angle_v1"
+_ABERRATION_SENTINEL_SAMPLING_METHOD = (
+    "center_z_slow_energy_x_pairs_then_halton_position_energy_angle_v1"
+)
+_EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD = (
+    "center_local_and_envelope_position_slow_energy_pairs_then_halton_v1"
+)
+_LEGACY_SAMPLING_METHOD = "center_first_halton_position_energy_angle_v1"
+_FORMAL_VOLUME_SAMPLING_METHOD = "halton_volume_position_energy_angle_v1"
+_CONTROLLED_DIAGNOSTIC_COHORT_ROLE = "controlled_diagnostic"
+_FORMAL_VOLUME_COHORT_ROLE = "formal_volume"
 _SOURCE_DEFINITION_ROLE = "mrtof_ideal_bunch_source_definition"
 _CURRENT_SOURCE_DEFINITION_SCHEMA = 4
 _COORDINATE_SEMANTICS = {
@@ -86,6 +102,9 @@ def deterministic_ideal_bunch_states(
     acceleration_axis: int,
     position_radius_mm: float,
     acceleration_axis_full_width_mm: float,
+    controlled_focus_half_span_mm: float | None = None,
+    controlled_slow_energy_half_span_ev_per_charge: float | None = None,
+    controlled_envelope_half_span_fraction: float | None = None,
     kinetic_energy_center_ev: float,
     kinetic_energy_full_width_ev: float,
     nominal_direction_workbench: Sequence[float],
@@ -93,6 +112,7 @@ def deterministic_ideal_bunch_states(
     mass_th: float,
     charge_e: int,
     common_time_of_birth_us: float = 0.0,
+    cohort_role: str = _CONTROLLED_DIAGNOSTIC_COHORT_ROLE,
 ) -> list[dict[str, Any]]:
     """Return an explicit, byte-stable ideal cohort with a centre-first prefix.
 
@@ -111,26 +131,45 @@ def deterministic_ideal_bunch_states(
         raise CandidateContractError("aperture plane axes must be two unique axes")
     if acceleration_axis not in (0, 1, 2) or acceleration_axis in aperture_plane_axes:
         raise CandidateContractError("acceleration axis must complement the aperture plane")
+    if cohort_role not in {_CONTROLLED_DIAGNOSTIC_COHORT_ROLE, _FORMAL_VOLUME_COHORT_ROLE}:
+        raise CandidateContractError("source cohort role is invalid")
+    if cohort_role == _FORMAL_VOLUME_COHORT_ROLE and any(value is not None for value in (
+        controlled_focus_half_span_mm,
+        controlled_slow_energy_half_span_ev_per_charge,
+        controlled_envelope_half_span_fraction,
+    )):
+        raise CandidateContractError("formal volume cohort cannot contain controlled sentinels")
+    sampler = (
+        generate_halton_cylinder_phase_space
+        if cohort_role == _FORMAL_VOLUME_COHORT_ROLE
+        else generate_center_axis_pair_halton_cylinder_phase_space
+    )
+    sampler_arguments = {
+        "particle_count": particle_count,
+        "center_mm": _vector3(center_workbench_mm, "source centre"),
+        "transverse_axes": aperture_plane_axes,
+        "axis": acceleration_axis,
+        "radius_mm": _finite(position_radius_mm, "position radius"),
+        "height_mm": _finite(acceleration_axis_full_width_mm, "axial full width"),
+        "kinetic_energy_center_ev": _finite(kinetic_energy_center_ev, "kinetic-energy centre"),
+        "kinetic_energy_full_width_ev": _finite(kinetic_energy_full_width_ev, "kinetic-energy full width"),
+        "nominal_direction": _vector3(nominal_direction_workbench, "nominal direction"),
+        "angular_full_width_deg": _finite(angular_full_width_deg, "angular full width"),
+    }
+    if cohort_role == _CONTROLLED_DIAGNOSTIC_COHORT_ROLE:
+        sampler_arguments.update({
+            "controlled_axis": 2,
+            "controlled_axis_half_span_mm": controlled_focus_half_span_mm,
+        })
     try:
-        samples = generate_center_first_halton_cylinder_phase_space(
-            particle_count=particle_count,
-            center_mm=_vector3(center_workbench_mm, "source centre"),
-            transverse_axes=aperture_plane_axes,
-            axis=acceleration_axis,
-            radius_mm=_finite(position_radius_mm, "position radius"),
-            height_mm=_finite(acceleration_axis_full_width_mm, "axial full width"),
-            kinetic_energy_center_ev=_finite(kinetic_energy_center_ev, "kinetic-energy centre"),
-            kinetic_energy_full_width_ev=_finite(kinetic_energy_full_width_ev, "kinetic-energy full width"),
-            nominal_direction=_vector3(nominal_direction_workbench, "nominal direction"),
-            angular_full_width_deg=_finite(angular_full_width_deg, "angular full width"),
-        )
+        samples = sampler(**sampler_arguments)
     except ValueError as error:
         raise CandidateContractError(str(error)) from error
     mass = _finite(mass_th, "particle mass")
     tob = _finite(common_time_of_birth_us, "common time of birth")
     if mass <= 0 or type(charge_e) is not int or charge_e == 0:
         raise CandidateContractError("source species and energy envelope must be physical")
-    return [{
+    states = [{
         "particle_id": sample["particle_id"],
         "tob_us": tob,
         "mass_th": mass,
@@ -139,6 +178,55 @@ def deterministic_ideal_bunch_states(
         "position_workbench_mm": sample["position_mm"],
         "direction_workbench": sample["direction"],
     } for sample in samples]
+    if controlled_slow_energy_half_span_ev_per_charge is not None:
+        try:
+            combined = controlled_focus_half_span_mm is not None
+            states = apply_controlled_slow_energy_pair(
+                states,
+                charge_state=charge_e,
+                half_span_ev_per_charge=controlled_slow_energy_half_span_ev_per_charge,
+                negative_particle_id=4 if combined else 2,
+                positive_particle_id=5 if combined else 3,
+            )
+            if combined:
+                states = apply_controlled_position_pair(
+                    states,
+                    controlled_axis=0,
+                    half_span_mm=controlled_focus_half_span_mm,
+                    negative_particle_id=6,
+                    positive_particle_id=7,
+                    position_key="position_workbench_mm",
+                )
+                if controlled_envelope_half_span_fraction is not None:
+                    fraction = _finite(
+                        controlled_envelope_half_span_fraction,
+                        "controlled envelope half-span fraction",
+                    )
+                    if not 0.0 < fraction <= 1.0:
+                        raise CandidateContractError(
+                            "controlled envelope half-span fraction must be in (0, 1]"
+                        )
+                    if len(states) < 13:
+                        raise CandidateContractError(
+                            "extended aberration sentinels require at least thirteen particles"
+                        )
+                    envelope_pairs = (
+                        (acceleration_axis, acceleration_axis_full_width_mm / 2.0, 8, 9),
+                        (aperture_plane_axes[0], position_radius_mm, 10, 11),
+                        (aperture_plane_axes[1], position_radius_mm, 12, 13),
+                    )
+                    for axis, half_span, negative_id, positive_id in envelope_pairs:
+                        states = apply_controlled_position_pair(
+                            states,
+                            controlled_axis=axis,
+                            half_span_mm=half_span * fraction,
+                            negative_particle_id=negative_id,
+                            positive_particle_id=positive_id,
+                            position_key="position_workbench_mm",
+                        )
+        except ValueError as error:
+            raise CandidateContractError(str(error)) from error
+    return states
 
 
 def materialize_bunch_source_from_definition(
@@ -182,6 +270,7 @@ def materialize_bunch_source_from_definition(
             "center_rule",
             "source_y_offset_mm",
             "field_cache_dependency",
+            "cohort_role",
         )
     missing = [name for name in required if name not in definition]
     if missing:
@@ -276,7 +365,7 @@ def materialize_bunch_source_from_definition(
             )
             if (
                 provider.get("role") != "orthogonal_accelerator_mrtof_runtime_receipt"
-                or provider.get("status") != "published_read_only"
+                or provider.get("status") != "published_standalone_response_bank"
                 or not isinstance(provider_geometry, dict)
                 or provider_geometry.get("acceleration_direction") != "-z"
             ):
@@ -312,6 +401,65 @@ def materialize_bunch_source_from_definition(
             "derived_center_workbench_mm": list(resolved_center),
         }
     assert resolved_center is not None
+    cohort_role = (
+        definition["cohort_role"]
+        if schema_version == _CURRENT_SOURCE_DEFINITION_SCHEMA
+        else _CONTROLLED_DIAGNOSTIC_COHORT_ROLE
+    )
+    if cohort_role not in {_CONTROLLED_DIAGNOSTIC_COHORT_ROLE, _FORMAL_VOLUME_COHORT_ROLE}:
+        raise CandidateContractError("source cohort role is invalid")
+    controlled_focus_half_span_mm = definition.get("controlled_focus_half_span_mm")
+    controlled_focus_fraction = definition.get(
+        "controlled_focus_half_span_fraction_of_radius"
+    )
+    if controlled_focus_fraction is not None:
+        if controlled_focus_half_span_mm is not None:
+            raise CandidateContractError(
+                "controlled focus span must use one absolute or relative definition"
+            )
+        controlled_focus_fraction = _finite(
+            controlled_focus_fraction, "controlled focus half-span fraction"
+        )
+        if not 0.0 < controlled_focus_fraction <= 1.0:
+            raise CandidateContractError(
+                "controlled focus half-span fraction must be in (0, 1]"
+            )
+        controlled_focus_half_span_mm = (
+            _finite(definition["position_radius_mm"], "position radius")
+            * controlled_focus_fraction
+        )
+    controlled_slow_energy_half_span = definition.get(
+        "controlled_slow_energy_half_span_ev_per_charge"
+    )
+    if controlled_slow_energy_half_span is not None:
+        controlled_slow_energy_half_span = _finite(
+            controlled_slow_energy_half_span,
+            "controlled slow-energy half span per charge",
+        )
+        if controlled_slow_energy_half_span <= 0.0:
+            raise CandidateContractError(
+                "controlled slow-energy half span per charge must be positive"
+            )
+        if controlled_focus_half_span_mm is not None and definition["particle_count"] < 7:
+            raise CandidateContractError("combined aberration sentinels require at least seven particles")
+    combined_sentinels = (
+        controlled_focus_half_span_mm is not None
+        and controlled_slow_energy_half_span is not None
+    )
+    controlled_envelope_fraction = None
+    if combined_sentinels:
+        controlled_envelope_fraction = _finite(
+            definition.get("controlled_envelope_half_span_fraction", 1.0),
+            "controlled envelope half-span fraction",
+        )
+        if not 0.0 < controlled_envelope_fraction <= 1.0:
+            raise CandidateContractError(
+                "controlled envelope half-span fraction must be in (0, 1]"
+            )
+        if definition["particle_count"] < 13:
+            raise CandidateContractError(
+                "extended aberration sentinels require at least thirteen particles"
+            )
     states = deterministic_ideal_bunch_states(
         particle_count=definition["particle_count"],
         mother_particle_count=definition["mother_particle_count"],
@@ -320,6 +468,9 @@ def materialize_bunch_source_from_definition(
         acceleration_axis=definition["acceleration_axis"],
         position_radius_mm=definition["position_radius_mm"],
         acceleration_axis_full_width_mm=definition["acceleration_axis_full_width_mm"],
+        controlled_focus_half_span_mm=controlled_focus_half_span_mm,
+        controlled_slow_energy_half_span_ev_per_charge=controlled_slow_energy_half_span,
+        controlled_envelope_half_span_fraction=controlled_envelope_fraction,
         kinetic_energy_center_ev=definition["kinetic_energy_center_ev"],
         kinetic_energy_full_width_ev=definition["kinetic_energy_full_width_ev"],
         nominal_direction_workbench=definition["nominal_direction_workbench"],
@@ -327,7 +478,18 @@ def materialize_bunch_source_from_definition(
         mass_th=definition["mass_th"],
         charge_e=definition["charge_e"],
         common_time_of_birth_us=definition["common_time_of_birth_us"],
+        cohort_role=cohort_role,
     )
+    nominal_center_state = {
+        "tob_us": _finite(definition["common_time_of_birth_us"], "common time of birth"),
+        "mass_th": _finite(definition["mass_th"], "particle mass"),
+        "charge_e": definition["charge_e"],
+        "kinetic_energy_ev": _finite(definition["kinetic_energy_center_ev"], "kinetic-energy centre"),
+        "position_workbench_mm": list(resolved_center),
+        "direction_workbench": list(_normalize(_vector3(
+            definition["nominal_direction_workbench"], "nominal direction",
+        ))),
+    }
     receipt = materialize_bunch_source(
         states=states,
         mother_particle_count=definition["mother_particle_count"],
@@ -336,6 +498,112 @@ def materialize_bunch_source_from_definition(
         state_table_path=state_table_path,
         fly2_path=fly2_path,
         receipt_path=receipt_path,
+        controlled_focus_pair=(
+            None
+            if cohort_role == _FORMAL_VOLUME_COHORT_ROLE
+            or (controlled_slow_energy_half_span is not None
+            and controlled_focus_half_span_mm is None)
+            else {
+            "coordinate": "z_mm",
+            "negative_particle_id": 2,
+            "positive_particle_id": 3,
+            "coordinate_span_mm": 2.0 * (
+                _finite(controlled_focus_half_span_mm, "controlled focus half span")
+                if controlled_focus_half_span_mm is not None
+                else (
+                    _finite(definition["acceleration_axis_full_width_mm"], "axial full width") / 2.0
+                    if int(definition["acceleration_axis"]) == 2
+                    else _finite(definition["position_radius_mm"], "position radius")
+                )
+            ),
+            "fixed_variables": "position_x_y__kinetic_energy__direction__mass__charge__birth_time",
+            }
+        ),
+        controlled_slow_energy_pair=(
+            {
+                "coordinate": "release_slow_y_kinetic_energy_ev",
+                "negative_particle_id": 4 if combined_sentinels else 2,
+                "positive_particle_id": 5 if combined_sentinels else 3,
+                "half_span_ev_per_charge": controlled_slow_energy_half_span,
+                "coordinate_span_ev": (
+                    2.0 * controlled_slow_energy_half_span * abs(int(definition["charge_e"]))
+                ),
+                "fixed_variables": "position__direction__mass__charge__birth_time",
+            }
+            if controlled_slow_energy_half_span is not None else None
+        ),
+        controlled_transverse_x_pair=(
+            {
+                "coordinate": "x_mm",
+                "negative_particle_id": 6,
+                "positive_particle_id": 7,
+                "coordinate_span_mm": 2.0 * controlled_focus_half_span_mm,
+                "fixed_variables": "position_y_z__kinetic_energy__direction__mass__charge__birth_time",
+            }
+            if combined_sentinels else None
+        ),
+        controlled_position_pairs=(
+            [
+                {
+                    "name": "local_z",
+                    "coordinate": "z_mm",
+                    "negative_particle_id": 2,
+                    "positive_particle_id": 3,
+                    "coordinate_span_mm": 2.0 * controlled_focus_half_span_mm,
+                    "fixed_variables": "all_except_z_mm",
+                    "scope": "local",
+                },
+                {
+                    "name": "local_x",
+                    "coordinate": "x_mm",
+                    "negative_particle_id": 6,
+                    "positive_particle_id": 7,
+                    "coordinate_span_mm": 2.0 * controlled_focus_half_span_mm,
+                    "fixed_variables": "all_except_x_mm",
+                    "scope": "local",
+                },
+                {
+                    "name": "envelope_y",
+                    "coordinate": "y_mm",
+                    "negative_particle_id": 8,
+                    "positive_particle_id": 9,
+                    "coordinate_span_mm": (
+                        _finite(definition["acceleration_axis_full_width_mm"], "axial full width")
+                        * controlled_envelope_fraction
+                    ),
+                    "fixed_variables": "all_except_y_mm",
+                    "scope": "envelope",
+                },
+                {
+                    "name": "envelope_x",
+                    "coordinate": "x_mm",
+                    "negative_particle_id": 10,
+                    "positive_particle_id": 11,
+                    "coordinate_span_mm": (
+                        2.0 * _finite(definition["position_radius_mm"], "position radius")
+                        * controlled_envelope_fraction
+                    ),
+                    "fixed_variables": "all_except_x_mm",
+                    "scope": "envelope",
+                },
+                {
+                    "name": "envelope_z",
+                    "coordinate": "z_mm",
+                    "negative_particle_id": 12,
+                    "positive_particle_id": 13,
+                    "coordinate_span_mm": (
+                        2.0 * _finite(definition["position_radius_mm"], "position radius")
+                        * controlled_envelope_fraction
+                    ),
+                    "fixed_variables": "all_except_z_mm",
+                    "scope": "envelope",
+                },
+            ]
+            if combined_sentinels else None
+        ),
+        controlled_head_particle_count=13 if combined_sentinels else None,
+        cohort_role=cohort_role,
+        nominal_center_state=nominal_center_state,
     )
     receipt["definition"] = {
         "path": str(definition_path.resolve()),
@@ -421,6 +689,13 @@ def materialize_bunch_source(
     state_table_path: Path,
     fly2_path: Path,
     receipt_path: Path,
+    controlled_focus_pair: Mapping[str, Any] | None = None,
+    controlled_slow_energy_pair: Mapping[str, Any] | None = None,
+    controlled_transverse_x_pair: Mapping[str, Any] | None = None,
+    controlled_position_pairs: Sequence[Mapping[str, Any]] | None = None,
+    controlled_head_particle_count: int | None = None,
+    cohort_role: str = _CONTROLLED_DIAGNOSTIC_COHORT_ROLE,
+    nominal_center_state: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write one explicit cohort as a prefix-comparable CSV and Fly2 pair."""
     if not source_profile_id or not frame_id:
@@ -436,6 +711,27 @@ def materialize_bunch_source(
     if type(charge) is not int or charge == 0:
         raise CandidateContractError("bunch source charge must be a nonzero integer")
     identity = bunch_identity(states, mother_particle_count)
+    if cohort_role not in {_CONTROLLED_DIAGNOSTIC_COHORT_ROLE, _FORMAL_VOLUME_COHORT_ROLE}:
+        raise CandidateContractError("source cohort role is invalid")
+    if cohort_role == _FORMAL_VOLUME_COHORT_ROLE:
+        if any(value is not None for value in (
+            controlled_focus_pair, controlled_slow_energy_pair,
+            controlled_transverse_x_pair, controlled_position_pairs,
+        )):
+            raise CandidateContractError("formal volume cohort cannot contain controlled sentinels")
+        identity["sampling_method"] = _FORMAL_VOLUME_SAMPLING_METHOD
+    elif controlled_position_pairs is not None:
+        if controlled_transverse_x_pair is None:
+            raise CandidateContractError("extended sentinels require the local x sentinel")
+        identity["sampling_method"] = _EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD
+    elif controlled_transverse_x_pair is not None:
+        if controlled_focus_pair is None or controlled_slow_energy_pair is None:
+            raise CandidateContractError("transverse sentinel requires the z and slow-energy sentinels")
+        identity["sampling_method"] = _ABERRATION_SENTINEL_SAMPLING_METHOD
+    elif controlled_slow_energy_pair is not None:
+        identity["sampling_method"] = _SLOW_ENERGY_SAMPLING_METHOD
+    elif controlled_focus_pair is None:
+        identity["sampling_method"] = _LEGACY_SAMPLING_METHOD
     columns = (
         "particle_id", "tob_us", "mass_th", "charge_e", "kinetic_energy_ev",
         "x_mm", "y_mm", "z_mm", "direction_x", "direction_y", "direction_z",
@@ -466,6 +762,8 @@ def materialize_bunch_source(
         "frame_id": frame_id,
         "species": {"mass_th": next(iter(masses)), "charge_e": charge},
         "common_time_of_birth_us": next(iter(birth_times)),
+        "cohort_role": cohort_role,
+        "nominal_center_state": dict(nominal_center_state or states[0]),
         **identity,
         "state_table": {
             "path": str(state_table_path.resolve()),
@@ -478,6 +776,22 @@ def materialize_bunch_source(
             "sha256": file_sha256(fly2_path).lower(),
         },
     }
+    if cohort_role == _CONTROLLED_DIAGNOSTIC_COHORT_ROLE:
+        receipt["center_particle_state"] = dict(states[0])
+    if controlled_focus_pair is not None:
+        receipt["controlled_focus_pair"] = dict(controlled_focus_pair)
+    if controlled_slow_energy_pair is not None:
+        receipt["controlled_slow_energy_pair"] = dict(controlled_slow_energy_pair)
+    if controlled_transverse_x_pair is not None:
+        receipt["controlled_transverse_x_pair"] = dict(controlled_transverse_x_pair)
+    if controlled_position_pairs is not None:
+        receipt["controlled_position_pairs"] = [
+            dict(pair) for pair in controlled_position_pairs
+        ]
+        if controlled_head_particle_count is None or controlled_head_particle_count < 1:
+            raise CandidateContractError("controlled head particle count is invalid")
+        receipt["controlled_head_particle_count"] = controlled_head_particle_count
+        receipt["volume_particle_id_min"] = controlled_head_particle_count + 1
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(
         json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n",
@@ -496,10 +810,23 @@ def load_verified_bunch_source_receipt(receipt_path: Path) -> dict[str, Any]:
         or receipt.get("schema_version") != 1
         or receipt.get("role") != "mrtof_deterministic_ideal_bunch_source"
         or receipt.get("status") != "materialized"
-        or receipt.get("sampling_method") != _SAMPLING_METHOD
+        or receipt.get("sampling_method") not in {
+            _SAMPLING_METHOD, _SLOW_ENERGY_SAMPLING_METHOD,
+            _ABERRATION_SENTINEL_SAMPLING_METHOD,
+            _EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD,
+            _LEGACY_SAMPLING_METHOD, _FORMAL_VOLUME_SAMPLING_METHOD,
+        }
         or receipt.get("clock_basis") != _CLOCK_BASIS
     ):
         raise CandidateContractError("bunch source receipt identity is invalid")
+    cohort_role = receipt.get("cohort_role", _CONTROLLED_DIAGNOSTIC_COHORT_ROLE)
+    if cohort_role not in {_CONTROLLED_DIAGNOSTIC_COHORT_ROLE, _FORMAL_VOLUME_COHORT_ROLE}:
+        raise CandidateContractError("bunch source cohort role is invalid")
+    if (
+        cohort_role == _FORMAL_VOLUME_COHORT_ROLE
+        and receipt.get("sampling_method") != _FORMAL_VOLUME_SAMPLING_METHOD
+    ):
+        raise CandidateContractError("formal volume source has the wrong sampling method")
     species = receipt.get("species")
     if (
         not isinstance(species, dict)
@@ -554,6 +881,205 @@ def load_verified_bunch_source_receipt(receipt_path: Path) -> dict[str, Any]:
         rows = list(csv.DictReader(stream))
     if len(rows) != count or [int(row["particle_id"]) for row in rows] != expected:
         raise CandidateContractError("bunch state table differs from its particle contract")
+    nominal_center = receipt.get("nominal_center_state")
+    if not isinstance(nominal_center, dict):
+        nominal_center = receipt.get("center_particle_state")
+    if (
+        not isinstance(nominal_center, dict)
+        or _finite(nominal_center.get("mass_th"), "nominal center mass") <= 0.0
+        or type(nominal_center.get("charge_e")) is not int
+        or nominal_center["charge_e"] == 0
+        or _finite(nominal_center.get("kinetic_energy_ev"), "nominal center energy") <= 0.0
+    ):
+        raise CandidateContractError("bunch nominal center state is invalid")
+    _vector3(nominal_center.get("position_workbench_mm"), "nominal center position")
+    _normalize(_vector3(nominal_center.get("direction_workbench"), "nominal center direction"))
+    center = receipt.get("center_particle_state")
+    if cohort_role == _FORMAL_VOLUME_COHORT_ROLE and center is not None:
+        raise CandidateContractError("formal volume source cannot publish a center particle")
+    if center is not None and (
+        not isinstance(center, dict)
+        or center.get("particle_id") != 1
+        or int(rows[0]["particle_id"]) != 1
+        or float(rows[0]["tob_us"]) != _finite(center.get("tob_us"), "center tob")
+        or float(rows[0]["mass_th"]) != _finite(center.get("mass_th"), "center mass")
+        or int(rows[0]["charge_e"]) != center.get("charge_e")
+        or float(rows[0]["kinetic_energy_ev"]) != _finite(center.get("kinetic_energy_ev"), "center energy")
+        or [float(rows[0][key]) for key in ("x_mm", "y_mm", "z_mm")]
+        != list(_vector3(center.get("position_workbench_mm"), "center position"))
+        or [float(rows[0][key]) for key in ("direction_x", "direction_y", "direction_z")]
+        != list(_normalize(_vector3(center.get("direction_workbench"), "center direction")))
+    ):
+        raise CandidateContractError("bunch center particle differs from its state table")
+    pair = receipt.get("controlled_focus_pair")
+    if receipt.get("sampling_method") in {
+        _SAMPLING_METHOD, _ABERRATION_SENTINEL_SAMPLING_METHOD,
+        _EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD,
+    }:
+        if (
+            not isinstance(pair, dict)
+            or pair.get("coordinate") != "z_mm"
+            or pair.get("negative_particle_id") != 2
+            or pair.get("positive_particle_id") != 3
+            or pair.get("fixed_variables")
+            != "position_x_y__kinetic_energy__direction__mass__charge__birth_time"
+        ):
+            raise CandidateContractError("bunch controlled focus pair is missing")
+        try:
+            span = _finite(pair.get("coordinate_span_mm"), "controlled focus span")
+            center_row, negative_row, positive_row = rows[0], rows[1], rows[2]
+        except IndexError as error:
+            raise CandidateContractError("bunch controlled focus pair is incomplete") from error
+        fixed_columns = (
+            "tob_us", "mass_th", "charge_e", "kinetic_energy_ev", "x_mm", "y_mm",
+            "direction_x", "direction_y", "direction_z",
+        )
+        if (
+            span <= 0.0
+            or any(negative_row[name] != center_row[name] or positive_row[name] != center_row[name]
+                   for name in fixed_columns)
+            or not math.isclose(float(positive_row["z_mm"]) - float(negative_row["z_mm"]), span,
+                                rel_tol=0.0, abs_tol=1e-12)
+            or not math.isclose(
+                (float(positive_row["z_mm"]) + float(negative_row["z_mm"])) / 2.0,
+                float(center_row["z_mm"]), rel_tol=0.0, abs_tol=1e-12,
+            )
+        ):
+            raise CandidateContractError("bunch controlled focus pair differs from its state table")
+    slow_pair = receipt.get("controlled_slow_energy_pair")
+    if receipt.get("sampling_method") in {
+        _SLOW_ENERGY_SAMPLING_METHOD, _ABERRATION_SENTINEL_SAMPLING_METHOD,
+        _EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD,
+    }:
+        expected_negative = (
+            4 if receipt.get("sampling_method") in {
+                _ABERRATION_SENTINEL_SAMPLING_METHOD,
+                _EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD,
+            } else 2
+        )
+        expected_positive = expected_negative + 1
+        if (
+            not isinstance(slow_pair, dict)
+            or slow_pair.get("coordinate") != "release_slow_y_kinetic_energy_ev"
+            or slow_pair.get("negative_particle_id") != expected_negative
+            or slow_pair.get("positive_particle_id") != expected_positive
+            or slow_pair.get("fixed_variables")
+            != "position__direction__mass__charge__birth_time"
+        ):
+            raise CandidateContractError("bunch controlled slow-energy pair is missing")
+        try:
+            span = _finite(slow_pair.get("coordinate_span_ev"), "controlled slow-energy span")
+            center_row = rows[0]
+            negative_row = rows[expected_negative - 1]
+            positive_row = rows[expected_positive - 1]
+        except IndexError as error:
+            raise CandidateContractError("bunch controlled slow-energy pair is incomplete") from error
+        fixed_columns = (
+            "tob_us", "mass_th", "charge_e", "x_mm", "y_mm", "z_mm",
+            "direction_x", "direction_y", "direction_z",
+        )
+        if (
+            span <= 0.0
+            or any(negative_row[name] != center_row[name] or positive_row[name] != center_row[name]
+                   for name in fixed_columns)
+            or not math.isclose(
+                float(positive_row["kinetic_energy_ev"])
+                - float(negative_row["kinetic_energy_ev"]),
+                span, rel_tol=0.0, abs_tol=1e-12,
+            )
+            or not math.isclose(
+                (float(positive_row["kinetic_energy_ev"])
+                 + float(negative_row["kinetic_energy_ev"])) / 2.0,
+                float(center_row["kinetic_energy_ev"]), rel_tol=0.0, abs_tol=1e-12,
+            )
+        ):
+            raise CandidateContractError(
+                "bunch controlled slow-energy pair differs from its state table"
+            )
+    x_pair = receipt.get("controlled_transverse_x_pair")
+    if receipt.get("sampling_method") in {
+        _ABERRATION_SENTINEL_SAMPLING_METHOD,
+        _EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD,
+    }:
+        if (
+            not isinstance(x_pair, dict)
+            or x_pair.get("coordinate") != "x_mm"
+            or x_pair.get("negative_particle_id") != 6
+            or x_pair.get("positive_particle_id") != 7
+            or x_pair.get("fixed_variables")
+            != "position_y_z__kinetic_energy__direction__mass__charge__birth_time"
+        ):
+            raise CandidateContractError("bunch controlled transverse-x pair is missing")
+        span = _finite(x_pair.get("coordinate_span_mm"), "controlled transverse-x span")
+        center_row, negative_row, positive_row = rows[0], rows[5], rows[6]
+        fixed_columns = (
+            "tob_us", "mass_th", "charge_e", "kinetic_energy_ev", "y_mm", "z_mm",
+            "direction_x", "direction_y", "direction_z",
+        )
+        if (
+            span <= 0.0
+            or any(negative_row[name] != center_row[name] or positive_row[name] != center_row[name]
+                   for name in fixed_columns)
+            or not math.isclose(
+                float(positive_row["x_mm"]) - float(negative_row["x_mm"]),
+                span, rel_tol=0.0, abs_tol=1e-12,
+            )
+            or not math.isclose(
+                (float(positive_row["x_mm"]) + float(negative_row["x_mm"])) / 2.0,
+                float(center_row["x_mm"]), rel_tol=0.0, abs_tol=1e-12,
+            )
+        ):
+            raise CandidateContractError(
+                "bunch controlled transverse-x pair differs from its state table"
+            )
+    position_pairs = receipt.get("controlled_position_pairs")
+    if receipt.get("sampling_method") == _EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD:
+        if (
+            not isinstance(position_pairs, list)
+            or [pair.get("name") for pair in position_pairs if isinstance(pair, dict)]
+            != ["local_z", "local_x", "envelope_y", "envelope_x", "envelope_z"]
+            or receipt.get("controlled_head_particle_count") != 13
+            or receipt.get("volume_particle_id_min") != 14
+        ):
+            raise CandidateContractError("bunch controlled position-pair metadata is invalid")
+        center_row = rows[0]
+        coordinate_columns = {"x_mm", "y_mm", "z_mm"}
+        for controlled_position_pair in position_pairs:
+            coordinate = controlled_position_pair.get("coordinate")
+            try:
+                negative_id = int(controlled_position_pair["negative_particle_id"])
+                positive_id = int(controlled_position_pair["positive_particle_id"])
+                span = _finite(
+                    controlled_position_pair.get("coordinate_span_mm"),
+                    "controlled position span",
+                )
+                negative_row = rows[negative_id - 1]
+                positive_row = rows[positive_id - 1]
+            except (IndexError, KeyError, TypeError, ValueError) as error:
+                raise CandidateContractError(
+                    "bunch controlled position pair is incomplete"
+                ) from error
+            fixed_columns = set(center_row) - {"particle_id", coordinate}
+            if (
+                coordinate not in coordinate_columns
+                or span <= 0.0
+                or any(
+                    negative_row[name] != center_row[name]
+                    or positive_row[name] != center_row[name]
+                    for name in fixed_columns
+                )
+                or not math.isclose(
+                    float(positive_row[coordinate]) - float(negative_row[coordinate]),
+                    span, rel_tol=0.0, abs_tol=1e-12,
+                )
+                or not math.isclose(
+                    (float(positive_row[coordinate]) + float(negative_row[coordinate])) / 2.0,
+                    float(center_row[coordinate]), rel_tol=0.0, abs_tol=1e-12,
+                )
+            ):
+                raise CandidateContractError(
+                    "bunch controlled position pair differs from its state table"
+                )
     fly2_text = Path(receipt["fly2"]["path"]).read_text(encoding="utf-8")
     if fly2_text.count("standard_beam {") != count or "circle_distribution" in fly2_text:
         raise CandidateContractError("bunch Fly2 is not an explicit per-particle source")
@@ -563,7 +1089,7 @@ def load_verified_bunch_source_receipt(receipt_path: Path) -> dict[str, Any]:
 def source_cohort_identity(receipt: Mapping[str, Any]) -> dict[str, Any]:
     """Project the immutable source fields used by pilot and fixed-time flights."""
     keys = (
-        "source_profile_id", "frame_id", "sampling_method", "particle_count",
+        "source_profile_id", "frame_id", "cohort_role", "sampling_method", "particle_count",
         "mother_particle_count", "prefix_rule", "clock_basis",
         "expected_particle_ids_sha256", "particle_states_sha256",
     )
@@ -639,6 +1165,7 @@ def solver_problem_identity_from_trial_receipt(
         "selected_axial_energy_per_charge_v", "mirror_voltages_v",
         "stripe_biases_v", "prism_voltages_v", "accelerator_endpoint_voltages_v",
         "accelerator_ring_voltages_v", "trajectory_profile", "inputs",
+        "target_drift_period_ratio", "target_half_oscillation_count",
     )
     missing = [name for name in required if name not in trial_receipt]
     if missing:
@@ -665,8 +1192,6 @@ def solver_problem_identity_from_trial_receipt(
         **{name: trial_receipt[name] for name in required if name != "inputs"},
         "inputs": stable_inputs,
         "flight_scope": flight_scope,
-        "target_drift_period_ratio": trial_receipt.get("target_drift_period_ratio"),
-        "target_half_oscillation_count": trial_receipt.get("target_half_oscillation_count"),
     }
     return {**projection, "canonical_sha256": _canonical_sha256(projection)}
 

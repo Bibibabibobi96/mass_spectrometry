@@ -1,27 +1,20 @@
--- Refine one local electrostatic response with boundary values sampled from
--- one or more coarse response arrays.  This is device-neutral; geometry,
--- origins, voltage grouping, and mesh selection remain contract-owned.
+-- Refine one pre-biased local electrostatic response with boundary values
+-- sampled from one or more coarse response arrays.  The GEM compiler has
+-- already written the physical electrodes at their final basis voltages.
+-- Only the six boundary faces need Lua work; interior nodes remain untouched.
 --
 -- Usage:
--- simion --nogui lua build_dirichlet_patch_basis.lua RAW_PA# OUTPUT_PA
---   SOURCE_PA_PATHS_PIPE_SEPARATED ACTIVE_RAW_IDS_COMMA_SEPARATED
---   SOURCE_PROJECT_ORIGIN_X,Y,Z PATCH_PROJECT_ORIGIN_X,Y,Z RESERVED_DASH
---   SOURCE_RAW_PA# SOURCE_ACTIVE_IDS_COMMA_SEPARATED [OUTPUT_BASIS_VOLTAGE]
+-- simion --nogui lua build_dirichlet_patch_basis.lua PREBIASED_PA
+--   SOURCE_PA_PATHS_OR_PATH_COEFFICIENTS_PIPE_SEPARATED SOURCE_PROJECT_ORIGIN_X,Y,Z
+--   PATCH_PROJECT_ORIGIN_X,Y,Z
 
-local raw_path=assert(arg[1], 'raw local PA# required')
-local output_path=assert(arg[2], 'output PA required')
-local source_text=assert(arg[3], 'coarse response PA path list required')
-local active_text=assert(arg[4], 'active raw electrode IDs required')
-local source_origin_text=assert(arg[5], 'coarse project origin required')
-local patch_origin_text=assert(arg[6], 'patch project origin required')
-assert(arg[7]==nil or arg[7]=='-', 'argument 7 is reserved and must be omitted or "-"')
-local source_raw_path=arg[8]
-local source_active_text=arg[9]
-local output_basis_voltage=arg[10] and assert(tonumber(arg[10]),
-  'output basis voltage must be numeric') or nil
-if output_basis_voltage~=nil then
-  assert(output_basis_voltage>0, 'output basis voltage must be positive')
-end
+local output_path=assert(arg[1], 'pre-biased local PA required')
+local source_text=assert(arg[2], 'coarse response PA path list required')
+local source_origin_text=assert(arg[3], 'coarse project origin required')
+local patch_origin_text=assert(arg[4], 'patch project origin required')
+local boundary_mode=arg[5] or 'six_faces'
+assert(boundary_mode=='six_faces' or boundary_mode=='x_mirror_five_faces', 'invalid boundary mode')
+assert(arg[6]==nil, 'unexpected extra argument')
 
 local function split(text, separator_pattern)
   local values={}
@@ -39,164 +32,65 @@ local function triple(text, label)
   return values
 end
 
-local source_paths=source_text=='-' and {} or split(source_text, '[^|]+')
-local active={}
-for _,value in ipairs(active_text=='-' and {} or split(active_text, '[^,]+')) do
-  local identifier=assert(tonumber(value), 'active ID is not numeric')
-  assert(identifier==math.floor(identifier) and identifier>0, 'active ID must be a positive integer')
-  active[identifier]=true
-end
-assert((#source_paths==0)==(next(active)==nil),
-  'coarse response paths and active local IDs must either both be empty or both be present')
+local source_paths=split(source_text, '[^|]+')
+assert(#source_paths>0, 'at least one coarse response PA is required')
 local source_origin=triple(source_origin_text, 'coarse project origin')
 local patch_origin=triple(patch_origin_text, 'patch project origin')
 
 local sources={}
-for _,path in ipairs(source_paths) do
+for _,entry in ipairs(source_paths) do
+  local path,coefficient_text=entry:match('^(.*),([^,]+)$')
+  local coefficient=coefficient_text and tonumber(coefficient_text) or nil
+  if coefficient==nil then path,coefficient=entry,1 end
+  assert(coefficient==coefficient and math.abs(coefficient)<math.huge,
+    'coarse response coefficient must be finite')
   local pa=assert(simion.pas:open(path), 'cannot open coarse response PA: '..path)
   assert(pa.dx_mm>0 and pa.dy_mm>0 and pa.dz_mm>0, 'coarse PA scale must be positive')
-  sources[#sources+1]=pa
+  sources[#sources+1]={pa=pa,coefficient=coefficient}
 end
 
-local function legacy_source_basis_voltage(pa)
-  -- Compatibility path for callers without a source raw PA.  Physical
-  -- Dirichlet faces can precede geometry electrodes, so contract-aware callers
-  -- must supply source_raw_path and source_active_text below.
-  for z=0,pa.nz-1 do for y=0,pa.ny-1 do for x=0,pa.nx-1 do
-    local value,is_physical=pa:point(x,y,z)
-    if is_physical and math.abs(value)>1e-12 then return value end
-  end end end
-  error('coarse response PA has no non-zero physical basis node')
-end
-
-local basis_voltage=nil
-if #sources>0 and source_raw_path and source_raw_path~='-' then
-  assert(source_active_text and source_active_text~='-',
-    'source active electrode IDs are required with the source raw PA')
-  local source_active_ids={}
-  for _,value in ipairs(split(source_active_text, '[^,]+')) do
-    local identifier=assert(tonumber(value), 'source active electrode ID is not numeric')
-    assert(identifier==math.floor(identifier) and identifier>0,
-      'source active electrode ID must be a positive integer')
-    source_active_ids[#source_active_ids+1]=identifier
-  end
-  assert(#source_active_ids==#sources,
-    'source active electrode IDs must align one-to-one with coarse response paths')
-  local source_raw=assert(simion.pas:open(source_raw_path), 'cannot open source raw geometry PA')
-  local measurements={}
-  local source_index_by_id={}
-  for index,identifier in ipairs(source_active_ids) do
-    assert(source_index_by_id[identifier]==nil, 'source active electrode IDs must be unique')
-    source_index_by_id[identifier]=index
-    measurements[index]={minimum=nil,maximum=nil,count=0}
-    local source=sources[index]
-    assert(source.nx==source_raw.nx and source.ny==source_raw.ny and source.nz==source_raw.nz,
-      'coarse response PA and source raw PA shapes differ')
-  end
-  for z=0,source_raw.nz-1 do for y=0,source_raw.ny-1 do for x=0,source_raw.nx-1 do
-    local raw_value,is_geometry_electrode=source_raw:point(x,y,z)
-    if is_geometry_electrode then
-      local index=source_index_by_id[math.floor(raw_value+0.5)]
-      if index then
-        local value,is_physical=sources[index]:point(x,y,z)
-        assert(is_physical, 'active source geometry electrode is not physical in solved basis')
-        local item=measurements[index]
-        item.minimum=item.minimum and math.min(item.minimum,value) or value
-        item.maximum=item.maximum and math.max(item.maximum,value) or value
-        item.count=item.count+1
-      end
-    end
-  end end end
-  source_raw:close()
-  for index,item in ipairs(measurements) do
-    assert(item.count>0, 'source raw PA has no nodes for an active source electrode ID')
-    local scale=math.max(1,math.abs(item.minimum),math.abs(item.maximum))
-    assert(math.abs(item.maximum-item.minimum)<=1e-6*scale,
-      string.format(
-        'coarse response PA active geometry-electrode voltage spread is too large: source=%s physical_id=%d min=%.17g max=%.17g',
-        source_paths[index],source_active_ids[index],item.minimum,item.maximum))
-    local value=(item.minimum+item.maximum)/2
-    assert(math.abs(value)>1e-12,
-      string.format(
-        'coarse response PA active geometry-electrode voltage is zero: source=%s physical_id=%d value=%.17g',
-        source_paths[index],source_active_ids[index],value))
-    if basis_voltage==nil then basis_voltage=value else
-      local comparison_scale=math.max(1,math.abs(basis_voltage),math.abs(value))
-      -- SIMION PA potentials are stored in single precision.  Equivalent
-      -- 1 V electrode faces can therefore differ by roughly half a float ULP
-      -- (observed 2.98023224e-8 V).  Use the same format-aware relative
-      -- tolerance as the within-electrode spread check above.
-      assert(math.abs(value-basis_voltage)<=1e-6*comparison_scale,
-        string.format(
-          'coarse response PA basis voltages differ: reference=%.17g source=%s physical_id=%d value=%.17g',
-          basis_voltage,source_paths[index],source_active_ids[index],value))
-    end
-  end
-else
-  for _,source in ipairs(sources) do
-    local value=legacy_source_basis_voltage(source)
-    if basis_voltage==nil then basis_voltage=value else
-      local scale=math.max(1,math.abs(basis_voltage),math.abs(value))
-      assert(math.abs(value-basis_voltage)<=1e-6*scale,
-        'coarse response PA basis voltages differ')
-    end
-  end
-end
-if #sources==0 then basis_voltage=0 end
--- The geometry PA is a shared frozen input.  Never use it as the writable
--- target: SIMION may defer PA-family writes until close, which would make
--- concurrent response builds unsafe even when each save path is distinct.
-local geometry=assert(simion.pas:open(raw_path), 'cannot open raw local geometry PA')
-assert(geometry.dx_mm>0 and geometry.dy_mm>0 and geometry.dz_mm>0,
+local target=assert(simion.pas:open(output_path), 'cannot open pre-biased local response PA')
+assert(target.dx_mm>0 and target.dy_mm>0 and target.dz_mm>0,
   'local PA scale must be positive')
-local target=assert(simion.pas:open(), 'cannot create local response PA')
-target:size(geometry.nx,geometry.ny,geometry.nz)
-target.symmetry=geometry.symmetry
-target.dx_mm,target.dy_mm,target.dz_mm=geometry.dx_mm,geometry.dy_mm,geometry.dz_mm
-target.potential_type=geometry.potential_type
-if geometry.potential_type=='magnetic' then target.ng=geometry.ng end
 target.refined=false
 target.refinable=true
 
 local boundary_count,physical_count=0,0
-for z=0,target.nz-1 do for y=0,target.ny-1 do for x=0,target.nx-1 do
-  local raw_value,is_physical=geometry:point(x,y,z)
-  local is_boundary=x==0 or y==0 or z==0 or x==target.nx-1 or y==target.ny-1 or z==target.nz-1
+local function set_boundary(x,y,z)
+  local _,is_physical=target:point(x,y,z)
   if is_physical then
-    local identifier=math.floor(raw_value+0.5)
-    target:point(x,y,z,active[identifier] and basis_voltage or 0,true)
     physical_count=physical_count+1
-  elseif is_boundary then
+  else
     local px=patch_origin[1]+x*target.dx_mm
     local py=patch_origin[2]+y*target.dy_mm
     local pz=patch_origin[3]+z*target.dz_mm
     local potential=0
     for _,source in ipairs(sources) do
-      local sx=(px-source_origin[1])/source.dx_mm
-      local sy=(py-source_origin[2])/source.dy_mm
-      local sz=(pz-source_origin[3])/source.dz_mm
-      assert(source:inside_vc(sx,sy,sz), 'local boundary lies outside a coarse response PA')
-      potential=potential+source:potential_vc(sx,sy,sz)
+      local sx=(px-source_origin[1])/source.pa.dx_mm
+      local sy=(py-source_origin[2])/source.pa.dy_mm
+      local sz=(pz-source_origin[3])/source.pa.dz_mm
+      assert(source.pa:inside_vc(sx,sy,sz), 'local boundary lies outside a coarse response PA')
+      potential=potential+source.coefficient*source.pa:potential_vc(sx,sy,sz)
     end
     target:point(x,y,z,potential,true)
     boundary_count=boundary_count+1
-  else
-    target:point(x,y,z,0,false)
   end
-end end end
-geometry:close()
+end
+for z=0,target.nz-1 do for y=0,target.ny-1 do
+  if boundary_mode=='six_faces' then set_boundary(0,y,z) end
+  set_boundary(target.nx-1,y,z)
+end end
+local open_x_start = boundary_mode=='x_mirror_five_faces' and 0 or 1
+for z=0,target.nz-1 do for x=open_x_start,target.nx-2 do
+  set_boundary(x,0,z); set_boundary(x,target.ny-1,z)
+end end
+for y=1,target.ny-2 do for x=open_x_start,target.nx-2 do
+  set_boundary(x,y,0); set_boundary(x,y,target.nz-1)
+end end
+target:save(output_path)
+for _,source in ipairs(sources) do source.pa:close() end
+target:refine()
 target:save(output_path)
 target:close()
-for _,source in ipairs(sources) do source:close() end
-
-local solved=assert(simion.pas:open(output_path), 'cannot reopen local response PA')
-solved:refine()
-if output_basis_voltage~=nil then
-  assert(math.abs(basis_voltage)>1e-12,
-    'output basis voltage requires a non-zero solved source basis')
-  solved:potentials_scale(0, output_basis_voltage/basis_voltage)
-end
-solved:save(output_path)
-solved:close()
-print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_points=%d source_basis_voltage=%.15g output_basis_voltage=%.15g output=%s',
-  boundary_count,physical_count,basis_voltage,output_basis_voltage or basis_voltage,output_path))
+print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_boundary_points=%d boundary_mode=%s native_basis_voltage=10000 output=%s',
+  boundary_count,physical_count,boundary_mode,output_path))

@@ -5,7 +5,7 @@ local original_loadfile=loadfile
 local map=assert(loadfile(directory..'candidate_voltage_map.lua'))()
 local point={mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   prism_voltages_v={141.3329402510257,0}, accelerator_voltages_v={40,30,0},
-  accelerator_ring_voltages_v={25,20,15,10,5}, nonaccelerator_scale=0.5,
+  accelerator_ring_voltages_v={45,42,39,36,33,30,27,24,21,18,15,12,9,6,3}, nonaccelerator_scale=0.5,
   detector_box_mm={0,0,0,1,1,1},detector_normal_project='+z',
   first_prism_l0={target_plane_z_mm=-101},
   mirror_regions_project={negative={z_min_mm=-20,z_max_mm=-10},positive={z_min_mm=10,z_max_mm=20}},
@@ -18,10 +18,12 @@ local function build(value)
     value.accelerator_voltages_v,value.accelerator_ring_voltages_v,value.nonaccelerator_scale)
 end
 local expected=build(point)
+for index=1,#point.accelerator_ring_voltages_v do
+  assert(expected.accelerator[index+4]==point.accelerator_ring_voltages_v[index])
+end
 for index=1,5 do
   assert(expected.analyser[index]==point.mirror_voltages_v[index]*point.nonaccelerator_scale)
   assert(expected.analyser[index+5]==expected.analyser[index])
-  assert(expected.accelerator[index+4]==point.accelerator_ring_voltages_v[index])
 end
 assert(expected.analyser[11]==-2 and expected.analyser[12]==-2 and expected.analyser[16]==point.prism_voltages_v[1])
 local program_file=assert(io.open(directory..'mrtof_candidate.lua','rb'))
@@ -57,7 +59,9 @@ for id=1,8 do assert(values[id]~=nil,'missing native channel '..id) end
 assert(values[1]==-6 and values[2]==11 and values[3]==16 and values[4]==26)
 assert(values[5]==-4 and values[6]==6 and values[7]==99 and values[8]==-77)
 local accelerator_values=simion.wb.instances[3].pa.values
-for id=1,9 do assert(accelerator_values[id]~=nil,'missing accelerator channel '..id) end
+for id=1,4+#point.accelerator_ring_voltages_v do
+  assert(accelerator_values[id]~=nil,'missing accelerator channel '..id)
+end
 assert(accelerator_values[2]==40 and accelerator_values[3]==30 and accelerator_values[4]==0)
 ion_number,ion_time_of_flight,ion_instance=1,0.2,2
 ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=1,2,3

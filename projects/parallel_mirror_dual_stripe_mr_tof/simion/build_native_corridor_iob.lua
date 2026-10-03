@@ -112,6 +112,8 @@ wb:save(output)
 -- Reopen the saved IOB and check the explicit role-to-priority binding again.
 wb:load(output)
 assert(#wb.instances == 4, 'saved native corridor IOB changed instance count')
+assert(wb.instances[role_instances.accelerator].pa.symmetry == '3dplanar[x]',
+  'saved accelerator PA must retain the provider-declared x mirror plane')
 -- The saved IOB contains geometry, not an adjusted field.  Its flight program
 -- applies the complete validated voltage table on the first Fast Adjust call.
 for index, item in ipairs(priority.instances) do
@@ -125,8 +127,12 @@ for index, item in ipairs(priority.instances) do
 end
 local function bounds(instance)
   local pa = assert(instance.pa, 'instance PA is missing')
-  return instance.x, instance.y, instance.z,
-    instance.x + (pa.nx - 1) * pa.dx_mm * instance.scale,
+  local stored_x_extent = (pa.nx - 1) * pa.dx_mm * instance.scale
+  local x0, x1 = instance.x, instance.x + stored_x_extent
+  if pa.symmetry == '3dplanar[x]' then
+    x0, x1 = instance.x - stored_x_extent, instance.x + stored_x_extent
+  end
+  return x0, instance.y, instance.z, x1,
     instance.y + (pa.ny - 1) * pa.dy_mm * instance.scale,
     instance.z + (pa.nz - 1) * pa.dz_mm * instance.scale
 end
