@@ -153,6 +153,25 @@ mesh.run;
 stats = mphmeshstats(model, 'mesh1');
 ```
 
+选择性网格化时，完整性判据必须限定到实际建网域。COMSOL 6.4 Build 293、R2025b 的真实只读复核中，
+`mphmeshstats`即使传入域选择仍返回`iscomplete=false`，因为该包装结果不能可靠替代“所选域是否全部有网格”
+这一问题；同一模型改用原生`MeshStatistics`选择两个真空域后，`isComplete()`为`true`，
+`getNumElem('tet')`返回两域合计的11992696个四面体。最小读取方式是：
+
+```matlab
+meshStats = model.component('comp1').mesh('mesh1').stat();
+meshStats.selection().geom('geom1', 3).set(int32(domainIds));
+selectedComplete = meshStats.isComplete();
+selectedTetCount = meshStats.getNumElem('tet');
+```
+
+官方[Mesh Statistics](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_mesh.49.026.html)
+和[Mesh Status](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_mesh.49.031.html)
+说明`stat().selection()`限定统计实体，`isComplete()`检查全部所选实体是否已有网格；
+[`model.mesh()` API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.41.html)
+给出`selection.geom(dim).set(entities)`的选择语法。该方法只纠正统计作用域：不把未建网的其他几何域
+判作所选域失败，也不放宽所选域的空网格、单元数、质量或后续求解门禁。
+
 - `hmax`是单元最大尺寸上限，不代表所有单元固定等大。
 - 薄层、间隙、强边缘场和释放区使用局部Size，不靠全局无限加密。
 - 网格成功后仍要检查单元数、最小质量、目标域覆盖和空网格。
@@ -239,6 +258,19 @@ stationary.feature('fc1').set('linsolver', 'i1');
 `ModelUtil.showProgress(path)`可保存原生求解日志，完成后用`ModelUtil.showProgress(false)`恢复。
 详细日志表头包含`LinIt`和`LinRes`；需要证明实际迭代执行时，应保留原生日志并要求正`LinIt`与有限
 `LinRes`，不能用求解器节点存在或Study成功代替。
+
+### SizeExpression 的显式长度单位
+
+COMSOL 6.4 Build 293、R2025b 的真实小立方体建网对照确认：毫米几何并不使无单位
+`sizeexpr='0.0625'`自动成为0.0625 mm。必须在表达式结果上显式携带长度单位，例如
+`'0.0625[mm]'`或`'(无量纲毫米数值表达式)*1[mm]'`；空间条件也显式使用`x/(1[mm])`等。
+同一1-mm立方体、0.25-mm全局hmax及0.04-mm hmin下，无单位表达式与基线均为969个四面体；
+显式mm后为68645个，单元最长边中位数0.06546 mm，与普通Size同目标的68653个相符。
+显式selection.all或importData没有进一步改变该结果；不要靠增加无关API调用修复单位问题。
+官方[SizeExpression API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_mesh.49.101.html)
+说明默认selection覆盖全部实体，importData用于更新后的重新求值；尺寸表达式还受到实体hmin限制。
+2026-10-02的本机对照是接口语义验证，不授予任何仪器网格收敛资格。局部加密须检查实际单元尺寸，
+不能只依据表达式文本声明成功。
 
 ## GPU求解器
 
