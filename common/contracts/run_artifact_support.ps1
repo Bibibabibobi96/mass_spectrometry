@@ -66,6 +66,7 @@ function Invoke-ArtifactCapacityGate {
     [string[]]$ProtectedPaths=@(),
     [string[]]$ProtectedCacheKeys=@(),
     [string]$CapacityProtectionLeaseId='',
+    [ValidateSet('stop','warn')][string]$CapacityThresholdAction='stop',
     [ValidateSet('startup','maintenance')][string]$ExecutionMode='startup',
     [Nullable[double]]$MaintenanceTargetGiB=$null
   )
@@ -111,6 +112,12 @@ function Invoke-ArtifactCapacityGate {
     }
     $reason=[string]$receipt.blocking_reason
     if([string]::IsNullOrWhiteSpace($reason)){$reason='UNSPECIFIED'}
+    if($CapacityThresholdAction-eq'warn'-and
+       $reason-in@('TARGET_CAPACITY_EXCEEDED','MINIMUM_FREE_CAPACITY_UNAVAILABLE')){
+      Write-Warning ("Artifact capacity threshold warning: {0}; resident_bytes={1}; active_commitment_bytes={2}; projected_bytes={3}; target_bytes={4}; required_free_bytes={5}; free_bytes_before={6}; continuing with actual unsatisfied receipt." -f $reason,$receipt.resident_bytes,$receipt.total_active_lease_committed_new_bytes,$receipt.projected_bytes,$receipt.target_bytes,$receipt.required_free_bytes,$receipt.free_bytes_before)
+      Write-Output $receipt
+      return
+    }
     throw ("Artifact capacity gate blocked startup: {0}; resident_bytes={1}; active_commitment_bytes={2}; projected_bytes={3}; target_bytes={4}" -f $reason,$receipt.resident_bytes,$receipt.total_active_lease_committed_new_bytes,$receipt.projected_bytes,$receipt.target_bytes)
   }
   # The JSON root is one object; NoEnumerate wraps it and changes nested-array access.
@@ -156,7 +163,8 @@ function Enter-ArtifactWorkflowCapacitySession {
     [Parameter(Mandatory)][string]$ArtifactRoot,[Parameter(Mandatory)][string]$RunDirectory,
     [Parameter(Mandatory)][long]$CommittedNewBytes,[string]$Owner='',
     [int]$LeaseTtlSeconds=21600,[string[]]$ProtectedPaths=@(),
-    [string[]]$ProtectedCacheKeys=@()
+    [string[]]$ProtectedCacheKeys=@(),
+    [ValidateSet('stop','warn')][string]$CapacityThresholdAction='stop'
   )
   if($CommittedNewBytes-lt0-or$LeaseTtlSeconds-le0){throw 'Workflow capacity session requires nonnegative bytes and a positive TTL.'}
   $leaseId='workflow-'+[guid]::NewGuid().ToString('N')
@@ -174,10 +182,11 @@ function Enter-ArtifactWorkflowCapacitySession {
     # The active lease is the single reservation source.
     $gateParameters=@{Python=$Python;RepoRoot=$RepoRoot;ArtifactRoot=$ArtifactRoot;
       ProtectedPaths=$paths;ProtectedCacheKeys=$ProtectedCacheKeys;
-      CapacityProtectionLeaseId=$leaseId;ExecutionMode='startup'}
+      CapacityProtectionLeaseId=$leaseId;ExecutionMode='startup';CapacityThresholdAction=$CapacityThresholdAction}
     $gate=Invoke-ArtifactCapacityGate @gateParameters
     return [pscustomobject]@{schema_version=1;role='artifact_workflow_capacity_session';
-      status='active';artifact_root=[IO.Path]::GetFullPath($ArtifactRoot);lease_id=$leaseId;
+      status='active';capacity_threshold_action=$CapacityThresholdAction;
+      artifact_root=[IO.Path]::GetFullPath($ArtifactRoot);lease_id=$leaseId;
       owner=$Owner;lease_ttl_seconds=$LeaseTtlSeconds;committed_new_bytes=$CommittedNewBytes;
       protected_paths=@($paths);protected_cache_keys=@($ProtectedCacheKeys|Select-Object -Unique);
       lease=((@($leaseOutput)-join"`n")|ConvertFrom-Json);startup_gate=$gate}

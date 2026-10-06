@@ -136,8 +136,12 @@ try {
   $lease = Enter-HostExecutionLease -Role SIMION -Stage mrtof_postprocess
   try {
     $capacity = Invoke-ArtifactCapacityGate -Python $PythonExe -RepoRoot (Split-Path -Parent $PSScriptRoot) `
-      -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId host-lease-capacity
-    Assert-True $capacity.satisfied_after_apply 'Nested capacity gate did not complete.'
+      -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId host-lease-capacity -CapacityThresholdAction warn
+    # The isolated empty ledger does not determine the real volume's free space.
+    $expectedSatisfied=($capacity.free_bytes_before-ge$capacity.required_free_bytes-and
+      $capacity.projected_bytes-le$capacity.target_bytes)
+    Assert-True ($capacity.satisfied_after_apply-eq$expectedSatisfied) `
+      'Nested capacity gate did not preserve the actual volume decision.'
     $records = @((Get-HostResourceStatus -StatePath $statePath).records)
     Assert-True ($records.Count -eq 1 -and $records[0].token -eq $lease.token) 'Capacity child changed its parent grant.'
   } finally { Exit-HostExecutionLease -Lease $lease; $lease = $null }

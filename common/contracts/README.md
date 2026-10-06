@@ -174,6 +174,12 @@ maintenance先处理`ready`、未pin且无租约保护的`rebuildable_payload`�
 该目标只作用于本次维护，必须为有限正数且不高于公共policy目标；不得与租约操作或startup并用。
 项目生产调用仍不得覆盖全局准入水位，物理空闲底线和policy文件保持不变。
 
+PowerShell 的 `Invoke-ArtifactCapacityGate` 与 `Enter-ArtifactWorkflowCapacitySession` 可显式冻结
+`-CapacityThresholdAction warn`，默认仍为 `stop`。该选项仅将 startup 的
+`TARGET_CAPACITY_EXCEEDED` / `MINIMUM_FREE_CAPACITY_UNAVAILABLE` 两种资源阈值降为 warning，并返回
+原始未满足的 receipt；不改 policy、不伪造满足、不跳过保护租约或峰值承诺。输入/身份、台账损坏、
+未知承诺、恢复逾期及其他原因仍失败关闭，maintenance 仍要求满足容量判据。
+
 公共 JSON 原子落盘在 Windows 替换遇到错误 5/32/33 时，复用已刷盘临时文件最多尝试五次，累计
 等待不超过 0.75 秒；持续失败仍抛出原异常，保留旧目标并清理此次临时文件，不修改权限。
 [Windows 官方错误码](https://learn.microsoft.com/zh-cn/windows/win32/debug/system-error-codes--0-499-)

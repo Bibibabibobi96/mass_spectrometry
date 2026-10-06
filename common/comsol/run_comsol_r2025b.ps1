@@ -14,6 +14,9 @@ param(
     [ValidateRange(10, 3600)]
     [int]$StartupReportTimeoutSeconds = 120,
 
+    [ValidateSet('stop', 'warn')]
+    [string]$StartupReportTimeoutAction = 'stop',
+
     [ValidateRange(0, 64)]
     [int]$ProcessorCount = 0,
 
@@ -164,15 +167,24 @@ try {
         $standardOutputRead = $launcherProcess.StandardOutput.ReadToEndAsync()
         $standardErrorRead = $launcherProcess.StandardError.ReadToEndAsync()
         $reportDeadline = [DateTime]::UtcNow.AddSeconds($StartupReportTimeoutSeconds)
+        $reportTimeoutWarned = $false
         while (-not $launcherProcess.HasExited -and
-               -not (Test-Path -LiteralPath $report -PathType Leaf) -and
-               [DateTime]::UtcNow -lt $reportDeadline) {
+               -not (Test-Path -LiteralPath $report -PathType Leaf)) {
+            if ([DateTime]::UtcNow -ge $reportDeadline) {
+                if ($StartupReportTimeoutAction -eq 'stop') { break }
+                if (-not $reportTimeoutWarned) {
+                    Write-Warning ("COMSOL/MATLAB task report wait exceeded " +
+                        "$StartupReportTimeoutSeconds seconds; continuing the same attempt.")
+                    $reportTimeoutWarned = $true
+                }
+            }
             Receive-HostResourceStage -Lease $resourceLease | Out-Null
             Start-Sleep -Milliseconds 500
             $launcherProcess.Refresh()
         }
         $startupTimedOut = -not $launcherProcess.HasExited -and
-            -not (Test-Path -LiteralPath $report -PathType Leaf)
+            -not (Test-Path -LiteralPath $report -PathType Leaf) -and
+            $StartupReportTimeoutAction -eq 'stop'
         if ($startupTimedOut) {
             try { $launcherProcess.Kill($true) } catch {
                 Stop-Process -Id $launcherProcess.Id -Force -ErrorAction SilentlyContinue
@@ -226,6 +238,7 @@ try {
         Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason $noReportReason
         Update-HostResourceStage -Lease $resourceLease -Stage postprocess `
             -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0 | Out-Null
+        if ($StartupReportTimeoutAction -eq 'warn') { break }
         if ($attempt -lt $StartupAttempts) {
             Write-Warning ("COMSOL/MATLAB exited before the task report was created; " +
                 "retrying clean startup in $StartupRetryDelaySeconds s " +

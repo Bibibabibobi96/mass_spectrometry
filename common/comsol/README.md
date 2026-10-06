@@ -25,8 +25,10 @@
 每次启动前记录已有`comsolmphserver` PID；失败或未创建报告时只终止该次新增PID，再进入重试，
 不得遗留孤立服务器，也不得终止启动前已存在的其他会话。
 `-StartupReportTimeoutSeconds`默认120秒，只限制MATLAB/LiveLink创建首份任务报告的启动阶段；报告
-创建后不限制Study Compute的正常长运行。超时会终止本次进程树、清理本次新增服务器并进入有限
-重试，不能被记录为项目求解器或物理模型失败。
+创建后不限制Study Compute的正常长运行。`-StartupReportTimeoutAction` 默认 `stop`：超时会终止本次
+进程树、清理本次新增服务器并进入有限重试，不能被记录为项目求解器或物理模型失败。
+显式 `warn` 则超阈只提醒一次，继续等待同一进程的报告及真实退出，不因超时杀进程或重启；
+真实退出后缺报告仍失败且不重试，最终退出码和报告判据不变。调用方须冻结这一运行策略。
 `comsolstartup.m`在进入项目任务前把独立bootstrap报告写为`STATUS=RUNNING`，项目任务返回后才覆盖为
 `STATUS=PASS`；异常则覆盖为`STATUS=FAIL`。launcher看到`RUNNING`只表示LiveLink已进入任务，不表示
 科学计算成功，它会继续等待进程终态，并且只接受退出码0与最终`PASS`同时成立。进程退出后若报告仍为

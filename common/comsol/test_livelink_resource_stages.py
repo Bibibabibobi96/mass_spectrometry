@@ -54,17 +54,35 @@ function Start-ComsolLauncherProcess {
     if ($env:STAGE_SCENARIO -in @('running_then_pass','running_without_terminal')) {
         $reportText = "STATUS=RUNNING`n"
     }
-    [IO.File]::WriteAllText($env:COMSOL_BOOTSTRAP_REPORT,$reportText)
+    if ($env:STAGE_SCENARIO -notlike 'timeout_*') {
+        [IO.File]::WriteAllText($env:COMSOL_BOOTSTRAP_REPORT,$reportText)
+    }
     $reader = [pscustomobject]@{}
     $reader | Add-Member ScriptMethod ReadToEndAsync {
         return [Threading.Tasks.Task]::FromResult[string]('')
     }
     $process = [pscustomobject]@{
         Id=999999
-        HasExited=($env:STAGE_SCENARIO -notin @('registration_failure','running_then_pass'))
+        HasExited=($env:STAGE_SCENARIO -notin @('registration_failure','running_then_pass') -and $env:STAGE_SCENARIO -notlike 'timeout_*')
         ExitCode=$(if ($env:STAGE_SCENARIO -eq 'running_without_terminal') { 3 } else { 0 })
         StandardOutput=$reader
         StandardError=$reader
+        RefreshCount=0
+    }
+    $process | Add-Member ScriptMethod Refresh {
+        Write-Event 'refresh_live'
+        $this.RefreshCount++
+        if ($this.RefreshCount -ge 2) {
+            if ($env:STAGE_SCENARIO -eq 'timeout_warn_pass') {
+                [IO.File]::WriteAllText($env:COMSOL_BOOTSTRAP_REPORT,"STATUS=PASS`n")
+            } elseif ($env:STAGE_SCENARIO -eq 'timeout_warn_failure') {
+                [IO.File]::WriteAllText($env:COMSOL_BOOTSTRAP_REPORT,"STATUS=FAIL`nERROR=real failure`n")
+                $this.ExitCode=2
+            } elseif ($env:STAGE_SCENARIO -eq 'timeout_warn_missing') {
+                $this.ExitCode=3
+            }
+            $this.HasExited=$true
+        }
     }
     $process | Add-Member ScriptMethod Kill { param($Tree) Write-Event 'kill'; $this.HasExited=$true }
     $process | Add-Member ScriptMethod WaitForExit {
@@ -131,10 +149,15 @@ $text=$text.Substring(0,$function.Extent.StartOffset)+$double+$text.Substring($f
 $ast=[Management.Automation.Language.Parser]::ParseInput($text,[ref]$tokens,[ref]$errors)
 $function=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-ComsolServerProcessIds'},$true)
 $text=$text.Substring(0,$function.Extent.StartOffset)+'function Get-ComsolServerProcessIds { Write-Event "servers_snapshot"; return @() }'+$text.Substring($function.Extent.EndOffset)
+if ($env:STAGE_SCENARIO -like 'timeout_*') {
+    $text=$text.Replace('$reportDeadline = [DateTime]::UtcNow.AddSeconds($StartupReportTimeoutSeconds)', '$reportDeadline = [DateTime]::UtcNow.AddSeconds(-1)')
+}
 [IO.File]::WriteAllText($path,$text)
 $global:FakeLaunchCount=0
 $global:FakeServerLive=$false
 $arguments=@{TaskScript=(Join-Path $PSScriptRoot 'task.m');ReportPath=(Join-Path $PSScriptRoot 'report.txt');StartupRetryDelaySeconds=1;RunId='test-resource-stages'}
+if ($env:STAGE_SCENARIO -like 'timeout_warn_*') { $arguments.StartupReportTimeoutAction='warn' }
+if ($env:STAGE_SCENARIO -eq 'timeout_stop') { $arguments.StartupAttempts=1 }
 if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
     $resources=if ($env:STAGE_SUPPLIED_BUDGET -eq '2') { @('project-extra') } else { @() }
     $arguments.ResourceBudgets=@{solver=@{schema_version=1;unknown_peak=$false;cpu_cores=[int]$env:STAGE_SUPPLIED_BUDGET;memory_bytes=1024;io_slots=0;exclusive_resources=@($resources)}}
@@ -215,6 +238,29 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
         self.assertNotEqual(code, 0)
         self.assertEqual(events.count("launch"), 1)
         self.assertIn("server_cleanup:task failure", events)
+
+    def test_default_timeout_stops_launcher(self) -> None:
+        code, events, _ = self.run_scenario("timeout_stop")
+        self.assertNotEqual(code, 0)
+        self.assertIn("kill", events)
+        self.assertEqual(events.count("launch"), 1)
+
+    def test_warning_timeout_keeps_same_live_attempt_for_late_report(self) -> None:
+        code, events, output = self.run_scenario("timeout_warn_pass")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("kill", events)
+        self.assertEqual(events.count("launch"), 1)
+        self.assertEqual(events.count("refresh_live"), 2)
+        self.assertEqual(output.count("continuing the same attempt"), 1)
+
+    def test_warning_timeout_does_not_swallow_real_failure_or_missing_report(self) -> None:
+        for scenario in ("timeout_warn_failure", "timeout_warn_missing"):
+            with self.subTest(scenario=scenario):
+                code, events, output = self.run_scenario(scenario)
+                self.assertNotEqual(code, 0, output)
+                self.assertNotIn("kill", events)
+                self.assertEqual(events.count("launch"), 1)
+                self.assertEqual(events[-1], "exit")
 
 
 class LiveLinkBootstrapContractTests(unittest.TestCase):
