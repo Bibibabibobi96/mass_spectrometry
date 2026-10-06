@@ -14,6 +14,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_sched
     resolve_bunch_source_interval,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic import (
+    _association,
     analyze_controlled_aberration_first_batch,
     analyze_source_z_energy_timing,
     build_te1_reference_from_mirror_jacobian,
@@ -1123,6 +1124,23 @@ class SourceZEnergyTimingDiagnosticTests(unittest.TestCase):
             run = _fixture(Path(directory), omit_event=("terminal_detector_plane", 2))
             with self.assertRaisesRegex(CandidateContractError, "ion 2.*terminal detector_plane"):
                 analyze_source_z_energy_timing(run)
+
+
+class DescriptiveAssociationTests(unittest.TestCase):
+    def test_two_samples_keep_slope_without_correlation(self) -> None:
+        result = _association([-1.0, 1.0], [3.0, 7.0], "us/mm")
+        self.assertEqual(result["status"], "descriptive_linear_association")
+        self.assertEqual(result["slope"], 2.0)
+        self.assertEqual(result["slope_unit"], "us/mm")
+        self.assertIsNone(result["pearson_r"])
+        self.assertIsNone(result["r_squared"])
+
+    def test_invalid_vectors_still_fail_closed(self) -> None:
+        for xs, ys in (([0.0, 1.0], [2.0]), ([0.0], [2.0]),
+                       ([0.0, float("nan")], [2.0, 3.0])):
+            with self.subTest(xs=xs, ys=ys):
+                with self.assertRaises(CandidateContractError):
+                    _association(xs, ys, "us/mm")
 
 
 if __name__ == "__main__":

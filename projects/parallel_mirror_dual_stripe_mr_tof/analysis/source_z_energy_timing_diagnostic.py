@@ -975,7 +975,7 @@ def _association(xs: list[float], ys: list[float], slope_unit: str) -> dict[str,
     mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
     variance = sum((value - mx) ** 2 for value in xs)
     slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / variance
-    correlation = _pearson(xs, ys)
+    correlation = _pearson(xs, ys) if len(xs) >= 3 else None
     return {
         "status": "descriptive_linear_association",
         "slope": slope,
