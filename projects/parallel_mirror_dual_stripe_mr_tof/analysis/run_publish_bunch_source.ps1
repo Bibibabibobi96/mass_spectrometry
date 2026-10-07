@@ -38,7 +38,7 @@ try{
   $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
     -CommittedNewBytes 1048576 -ProtectedPaths @($package.artifact_run_dir,$sourceDefinition,$geometryContract,$acceleratorProviderReceipt) `
-    -Owner "mrtof-publish-bunch-source:$RunId"
+    -Owner "mrtof-publish-bunch-source:$RunId" -CapacityThresholdAction warn
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
 

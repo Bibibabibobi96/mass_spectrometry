@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
 import unittest
 import tempfile
 from pathlib import Path
@@ -56,6 +57,42 @@ CANDIDATE_DEFINITION = PROJECT / "config" / "candidate_bunch_source_n100.json"
 
 
 class BunchSourceAndScheduleTest(unittest.TestCase):
+    def test_publisher_capacity_startup_passes_warning_policy(self) -> None:
+        script = r"""
+param($Source)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and
+ $n.GetCommandName()-eq'Enter-ArtifactWorkflowCapacitySession'},$true)
+function Enter-ArtifactWorkflowCapacitySession {
+ param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$Owner,
+       [ValidateSet('stop','warn')]$CapacityThresholdAction='stop')
+ if($CapacityThresholdAction-ne'warn'){throw 'TARGET_CAPACITY_EXCEEDED'}
+ @{status='active';action=$CapacityThresholdAction;protected_count=$ProtectedPaths.Count;
+   committed_bytes=$CommittedNewBytes;owner=$Owner}|ConvertTo-Json -Compress
+}
+$python='python';$repoRoot='repo';$workspaceRoot='workspace';$RunId='fixture'
+$package=@{artifact_run_dir='artifact-run'};$sourceDefinition='source'
+$geometryContract='geometry';$acceleratorProviderReceipt='provider'
+Invoke-Expression $node.Extent.Text
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            command = Path(directory) / "capacity_call.ps1"
+            command.write_text(script, encoding="utf-8")
+            result = subprocess.run([
+                "pwsh", "-NoProfile", "-File", str(command),
+                str(PROJECT / "analysis/run_publish_bunch_source.ps1")],
+                cwd=PROJECT.parents[1], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=40)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        actual = json.loads(result.stdout)
+        self.assertEqual(actual["action"], "warn")
+        self.assertEqual(actual["protected_count"], 4)
+        self.assertEqual(actual["committed_bytes"], 1048576)
+        self.assertEqual(actual["owner"], "mrtof-publish-bunch-source:fixture")
+
     def test_gaussian_formal_energy_receipt_and_pairing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
