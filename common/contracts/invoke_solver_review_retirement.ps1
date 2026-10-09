@@ -3,8 +3,10 @@ param(
   [Parameter(Mandatory)][string]$ArtifactRoot,
   [Parameter(Mandatory)][string]$RepositoryRoot,
   [Parameter(Mandatory)][string]$TargetRun,
-  [Parameter(Mandatory)][string]$ReplacementRun,
-  [Parameter(Mandatory)][string]$CompatibilityAssertion,
+  [string]$ReplacementRun='',
+  [string]$CompatibilityAssertion='',
+  [string]$Owner='',
+  [string]$OwnerAbandonmentReason='',
   [string[]]$CompatibilityInputRoles=@(),
   [string[]]$CompatibilityInputRoleMaps=@(),
   [switch]$Apply
@@ -15,10 +17,23 @@ $ErrorActionPreference = 'Stop'
 $python = Join-Path $RepositoryRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { $python = 'python' }
 $arguments = @('-m','common.contracts.solver_review_retirement','--artifact-root',$ArtifactRoot,
-  '--repository-root',$RepositoryRoot,'--target-run',$TargetRun,'--replacement-run',$ReplacementRun,
-  '--compatibility-assertion',$CompatibilityAssertion)
-if ($CompatibilityInputRoles.Count -eq 0 -and $CompatibilityInputRoleMaps.Count -eq 0) {
-  throw 'At least one compatibility input role or role mapping is required.'
+  '--repository-root',$RepositoryRoot,'--target-run',$TargetRun)
+if ($Owner -or $OwnerAbandonmentReason) {
+  if (-not $Owner.Trim() -or -not $OwnerAbandonmentReason.Trim()) {
+    throw 'Owner completion requires owner and a nonempty abandonment reason.'
+  }
+  if ($ReplacementRun -or $CompatibilityAssertion -or $CompatibilityInputRoles.Count -or $CompatibilityInputRoleMaps.Count) {
+    throw 'Owner completion and superseded modes are mutually exclusive.'
+  }
+  $arguments += @('--owner',$Owner,'--owner-abandonment-reason',$OwnerAbandonmentReason)
+} else {
+  if (-not $ReplacementRun -or -not $CompatibilityAssertion) {
+    throw 'Superseded mode requires replacement and compatibility assertion.'
+  }
+  if ($CompatibilityInputRoles.Count -eq 0 -and $CompatibilityInputRoleMaps.Count -eq 0) {
+    throw 'At least one compatibility input role or role mapping is required.'
+  }
+  $arguments += @('--replacement-run',$ReplacementRun,'--compatibility-assertion',$CompatibilityAssertion)
 }
 foreach ($role in $CompatibilityInputRoles) { $arguments += @('--compatibility-input-role',$role) }
 foreach ($mapping in $CompatibilityInputRoleMaps) { $arguments += @('--compatibility-input-role-map',$mapping) }

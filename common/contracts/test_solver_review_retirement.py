@@ -19,6 +19,7 @@ from common.contracts.solver_review_retirement import (
     apply_retirement,
     main,
     plan_retirement,
+    structured_target_references,
     verify_retirement,
 )
 
@@ -45,6 +46,17 @@ class SolverReviewRetirementTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp.cleanup()
+
+    def test_structured_references_resolves_target_once_for_nested_strings(self) -> None:
+        resolved = self.target.resolve()
+        value = {
+            "paths": [str(self.target / "simion/analyzer.pa0")] * 100,
+            "nested": ({"run": self.target.name}, ["unrelated prose", "", None]),
+        }
+        with mock.patch.object(Path, "resolve", autospec=True, return_value=resolved) as resolve:
+            actual = structured_target_references(value, self.target, self.target.name)
+        self.assertEqual(actual, {"", "simion/analyzer.pa0"})
+        resolve.assert_called_once_with(self.target)
 
     def test_host_lease_wrapper_forwards_role_mappings(self) -> None:
         wrapper = Path(__file__).with_name("invoke_solver_review_retirement.ps1")
@@ -83,6 +95,184 @@ class SolverReviewRetirementTest(unittest.TestCase):
                     "formal_eligible": False, "artifact_retention": config["artifact_retention"]}
         (run / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return run
+
+    def _owner_plan(self, **kwargs: object) -> dict[str, object]:
+        return plan_retirement(
+            self.artifacts, self.repo, self.target, owner="p",
+            owner_abandonment_reason="completed pilot comparison; no further payload consumer",
+            **kwargs,
+        )
+
+    def _nested_window(self, *, sealed: bool = True) -> Path:
+        child = self.target / "windows/window-001"
+        (child / "inputs").mkdir(parents=True)
+        (child / "inputs/field_v.pa").write_bytes(b"window-native")
+        config = json.loads((self.target / "run_config.json").read_text())
+        config["inputs"] = {}
+        (child / "run_config.json").write_text(json.dumps(config))
+        (child / "summary.json").write_text(json.dumps({"run_id": self.target.name, "status": "success"}))
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": _sha(path)}
+        manifest = json.loads((self.target / "run_manifest.json").read_text())
+        manifest["run_config"] = record(child / "run_config.json")
+        manifest["inputs"] = {}
+        manifest["outputs"] = [record(child / "summary.json"), record(child / "inputs/field_v.pa")]
+        (child / "run_manifest.json").write_text(json.dumps(manifest))
+        if sealed:
+            parent = json.loads((self.target / "run_manifest.json").read_text())
+            parent["outputs"].append(record(child / "run_manifest.json"))
+            (self.target / "run_manifest.json").write_text(json.dumps(parent))
+        return child
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_nested_sealed_window_apply_and_verify(self, _scan: mock.Mock) -> None:
+        child = self._nested_window()
+        original = (child / "run_manifest.json").read_bytes()
+        from common.contracts.solver_review_retirement import file_sha256
+        def small_only(path: Path) -> str:
+            self.assertFalse(path.suffix.lower().startswith(".pa"))
+            return file_sha256(path)
+        with mock.patch("common.contracts.solver_review_retirement.file_sha256", side_effect=small_only):
+            plan = self._owner_plan()
+            self.assertEqual(len(plan["removed_files"]), 4)
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                apply_retirement(plan)
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertFalse((child / "inputs/field_v.pa").exists())
+        self.assertEqual((child / "run_manifest.json").read_bytes(), original)
+        self.assertTrue((child / "run_config.json").is_file())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_nested_manifest_requires_parent_seal(self, _scan: mock.Mock) -> None:
+        self._nested_window(sealed=False)
+        with self.assertRaisesRegex(RetirementError, "lacks sealed identity"):
+            self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_nested_manifest_damage_is_rejected(self, _scan: mock.Mock) -> None:
+        child = self._nested_window()
+        with (child / "run_manifest.json").open("a") as stream:
+            stream.write(" ")
+        with self.assertRaises(RetirementError):
+            self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_nested_partial_retirement_replays(self, _scan: mock.Mock) -> None:
+        child = self._nested_window()
+        plan = self._owner_plan()
+        (child / "inputs/field_v.pa").unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps({
+            **plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending",
+        }))
+        resumed = self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_external_child_manifest_rejected(self, _scan: mock.Mock) -> None:
+        parent_path = self.target / "run_manifest.json"
+        parent = json.loads(parent_path.read_text())
+        outside = self.replacement / "run_manifest.json"
+        parent["outputs"].append({"path": str(outside), "exists": True,
+                                  "bytes": outside.stat().st_size, "sha256": _sha(outside)})
+        parent_path.write_text(json.dumps(parent))
+        with self.assertRaisesRegex(RetirementError, "strict local descendant"):
+            self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_apply_preserves_evidence_without_heavy_hash(self, _scan: mock.Mock) -> None:
+        from common.contracts.solver_review_retirement import file_sha256
+
+        def small_only(path: Path) -> str:
+            self.assertFalse(path.name.lower().startswith(("analyzer.pa", "accelerator.pa", "detector.pa")))
+            return file_sha256(path)
+
+        original_manifest = (self.target / "run_manifest.json").read_bytes()
+        with mock.patch("common.contracts.solver_review_retirement.file_sha256", side_effect=small_only):
+            plan = self._owner_plan()
+            self.assertIsNone(plan["replacement_manifest"])
+            self.assertTrue(all(item["identity_source"] == "sealed_manifest" for item in plan["removed_files"]))
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                receipt = apply_retirement(plan)
+            self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual((self.target / "run_manifest.json").read_bytes(), original_manifest)
+        self.assertTrue((self.target / "simion/seed.iob").is_file())
+        self.assertTrue((self.target / "candidate.json").is_file())
+        self.assertFalse((self.target / "simion/analyzer.pa0").exists())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_requires_reason_owner_and_exclusive_mode(self, _scan: mock.Mock) -> None:
+        for values in (
+            {"owner": "p"},
+            {"owner_abandonment_reason": "finished"},
+            {"owner": "other", "owner_abandonment_reason": "finished"},
+            {"owner": "p", "owner_abandonment_reason": "finished", "replacement_run": self.replacement},
+            {"owner": "p", "owner_abandonment_reason": "finished", "compatibility_assertion": "compatible"},
+        ):
+            with self.subTest(values=values), self.assertRaises(RetirementError):
+                plan_retirement(self.artifacts, self.repo, self.target, **values)
+        self._set_status(self.target, "failed")
+        with self.assertRaisesRegex(RetirementError, "complete success"):
+            self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_rejects_lease_and_active_consumer(self, _scan: mock.Mock) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__consumer"
+        downstream.mkdir()
+        config = downstream / "run_config.json"
+        config.write_text(json.dumps({"source": str(self.target / "simion/analyzer.pa0")}), encoding="utf-8")
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._owner_plan()
+        config.write_text("{}", encoding="utf-8")
+        create_capacity_protection_lease(
+            self.artifacts, lease_id="owner-completion-protected", owner="test",
+            ttl_seconds=3600, protected_paths=[self.target],
+        )
+        with self.assertRaisesRegex(RetirementError, "active capacity protection lease"):
+            self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_apply_rechecks_new_consumer_and_removal_scope(self, _scan: mock.Mock) -> None:
+        plan = self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            altered = {**plan, "removed_files": plan["removed_files"] + [plan["preserved_files"][0]]}
+            with self.assertRaisesRegex(RetirementError, "removal scope"):
+                apply_retirement(altered)
+            downstream = self.runs / "20260103_000000__analysis__python__consumer"
+            downstream.mkdir()
+            (downstream / "run_config.json").write_text(json.dumps({"source": str(self.target)}), encoding="utf-8")
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        self.assertTrue((self.target / "simion/analyzer.pa0").is_file())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_pending_receipt_replays_without_replacement(self, _scan: mock.Mock) -> None:
+        plan = self._owner_plan()
+        (self.target / plan["removed_files"][0]["path"]).unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(
+            json.dumps({**plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending"}),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(RetirementError, "manifest identity changed"):
+            plan_retirement(self.artifacts, self.repo, self.target, owner="p", owner_abandonment_reason="different")
+        resumed = self._owner_plan()
+        self.assertTrue(any(item.get("already_removed_before_resume") for item in resumed["removed_files"]))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_cli_plans_without_replacement(self, _scan: mock.Mock) -> None:
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = main([
+                "--artifact-root", str(self.artifacts), "--repository-root", str(self.repo),
+                "--target-run", str(self.target), "--owner", "p", "--owner-abandonment-reason", "completed pilot",
+            ])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output.getvalue())["retirement_mode"], "completed_experiment")
 
     def _set_status(self, run: Path, status: str) -> None:
         summary_path = run / "summary.json"

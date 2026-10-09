@@ -203,6 +203,15 @@ manifest/summary一致的`failed`或`interrupted` compact run。apply必须持�
 
 ### solver_review 被取代后的重型载荷退休
 
+同一入口也接受已结束成功实验的 owner 明确退出：`-Owner <project>` 与
+`-OwnerAbandonmentReason "<完成用途及无人继续消费的具名原因>"`。此模式与 replacement/compatibility
+参数互斥，仅接受非Formal、完整success的solver_review；仍检查租约、活动下游依赖和精确载荷清单，
+保留全部小证据，不将实验退出冒称为被新run取代。待删除的本地重型文件继承manifest已封存身份，
+核对路径、类型和大小而不重复全文哈希；小证据仍校验内容。
+同run的局域子manifest仅在父manifest已封存该严格本地后代时继承；子终态、owner和小证据仍须一致，
+不从目录搜寻未封存manifest，子PA同样不重复全文哈希。
+完成receipt标为`completed_experiment_payload_retired`，由原`--verify`入口验证；原superseded模式及旧receipt语义不变。
+
 `solver_review_retirement.py`是既有完整terminal `success`或`failed`的 `solver_review` run 被明确更新成功运行取代后，退休其可重建
 求解器原生载荷的唯一公共入口。它不是普通容量清理：默认只生成plan；apply必须通过
 `invoke_solver_review_retirement.ps1`取得共享 `HostExecutionLease`，并逐个精确给出target、replacement

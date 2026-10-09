@@ -60,10 +60,11 @@ def _under(path: Path, root: Path) -> Path:
 def _load_run(
     run: Path, *, allowed_statuses: Iterable[str] = ("success",), label: str = "run",
     allow_legacy_initialization_summary: bool = False,
+    expected_run_id: str | None = None,
 ) -> dict[str, Any]:
     required = {name: _json(run / name) for name in ("run_config.json", "summary.json", "run_manifest.json")}
     config, summary, manifest = required.values()
-    run_id = run.name
+    run_id = expected_run_id or run.name
     if config.get("run_id") != run_id or manifest.get("run_id") != run_id:
         raise RetirementError(f"run identity mismatch: {run}")
     if summary.get("run_id") not in {None, run_id}:
@@ -136,40 +137,40 @@ def structured_target_references(value: Any, target: Path, run_id: str) -> set[s
     the payload they propose to remove or in the light evidence they retain.
     """
 
-    if isinstance(value, dict):
-        return set().union(
-            *(structured_target_references(member, target, run_id) for member in value.values())
-        ) if value else set()
-    if isinstance(value, (list, tuple)):
-        return set().union(
-            *(structured_target_references(member, target, run_id) for member in value)
-        ) if value else set()
-    if not isinstance(value, str):
-        return set()
-    raw = value.strip().replace("\\", "/")
-    if not raw:
-        return set()
-    normalized = posixpath.normpath(raw).rstrip("/").casefold()
     normalized_run_id = run_id.casefold()
     target_path = target.resolve().as_posix().rstrip("/").casefold()
-    if normalized in {normalized_run_id, target_path} or normalized.endswith(
-        f"/runs/{normalized_run_id}"
-    ):
-        return {""}
     prefixes = (f"{target_path}/", f"/runs/{normalized_run_id}/")
-    for prefix in prefixes:
-        if prefix == prefixes[1]:
-            marker = normalized.rfind(prefix)
-            if marker < 0:
+
+    def references(member: Any) -> set[str]:
+        if isinstance(member, dict):
+            return set().union(*(references(item) for item in member.values())) if member else set()
+        if isinstance(member, (list, tuple)):
+            return set().union(*(references(item) for item in member)) if member else set()
+        if not isinstance(member, str):
+            return set()
+        raw = member.strip().replace("\\", "/")
+        if not raw:
+            return set()
+        normalized = posixpath.normpath(raw).rstrip("/").casefold()
+        if normalized in {normalized_run_id, target_path} or normalized.endswith(
+            f"/runs/{normalized_run_id}"
+        ):
+            return {""}
+        for prefix in prefixes:
+            if prefix == prefixes[1]:
+                marker = normalized.rfind(prefix)
+                if marker < 0:
+                    continue
+                relative = normalized[marker + len(prefix):]
+            elif normalized.startswith(prefix):
+                relative = normalized[len(prefix):]
+            else:
                 continue
-            relative = normalized[marker + len(prefix):]
-        elif normalized.startswith(prefix):
-            relative = normalized[len(prefix):]
-        else:
-            continue
-        if relative and relative != "." and not relative.startswith("../"):
-            return {relative}
-    return set()
+            if relative and relative != "." and not relative.startswith("../"):
+                return {relative}
+        return set()
+
+    return references(value)
 
 
 def _downstream_references(
@@ -267,6 +268,7 @@ def _downstream_references(
 
 def _manifest_records(
     run: dict[str, Any], *, retired_paths: Iterable[Path] = (),
+    inherit_heavy_identity: bool = False,
 ) -> dict[Path, dict[str, Any]]:
     """Verify every recorded identity, except receipt-bound partial removals."""
     result: dict[Path, dict[str, Any]] = {}
@@ -281,10 +283,23 @@ def _manifest_records(
         try:
             path = record_path(record, base_dir=run["dir"])
             if path not in retired:
-                verify_record(role, record, base_dir=run["dir"])
+                local_heavy = (
+                    inherit_heavy_identity and path.is_relative_to(run["dir"])
+                    and classify_file(path, bytes_count=record.get("bytes", 0)) in HEAVY_ROLES
+                )
+                if local_heavy:
+                    if (not path.is_file() or path.is_symlink()
+                            or path.stat().st_size != record.get("bytes")
+                            or len(str(record.get("sha256", ""))) != 64):
+                        raise RetirementError(f"sealed heavy record differs: {path}")
+                else:
+                    verify_record(role, record, base_dir=run["dir"])
         except (AssertionError, KeyError, OSError) as exc:
             raise RetirementError(f"run evidence identity differs: {role}: {exc}") from exc
-        result[path] = {"manifest_role": role, "bytes": record.get("bytes"), "sha256": record.get("sha256")}
+        identity = {"manifest_role": role, "bytes": record.get("bytes"), "sha256": record.get("sha256")}
+        if path in result and any(result[path][key] != identity[key] for key in ("bytes", "sha256")):
+            raise RetirementError(f"conflicting sealed records: {path}")
+        result[path] = identity
     if record_path(manifest["run_config"], base_dir=run["dir"]) != run["dir"] / "run_config.json":
         raise RetirementError("manifest does not bind the local run config")
     if (
@@ -343,12 +358,35 @@ def _manifest_records(
             for path in paths
         ):
             raise RetirementError(f"manifest does not bind configured input collection: {name}")
+    if inherit_heavy_identity:
+        # Only a verified parent record can introduce a nested manifest; never
+        # discover arbitrary manifests from the filesystem.
+        for path in tuple(result):
+            if path.name != "run_manifest.json":
+                continue
+            if not path.parent.is_relative_to(run["dir"]) or path.parent == run["dir"]:
+                raise RetirementError(f"child manifest is not a strict local descendant: {path}")
+            child = _load_run(path.parent, expected_run_id=run["config"]["run_id"])
+            if (child["config"].get("project") != run["config"].get("project")
+                    or child["manifest"].get("project") != run["manifest"].get("project")):
+                raise RetirementError(f"child manifest owner differs: {path}")
+            for member, identity in _manifest_records(
+                child, retired_paths=retired, inherit_heavy_identity=True,
+            ).items():
+                if member in result and any(result[member][key] != identity[key] for key in ("bytes", "sha256")):
+                    raise RetirementError(f"conflicting sealed records: {member}")
+                result[member] = identity
     return result
 
 
-def _file_inventory(run: dict[str, Any], *, retired_paths: Iterable[Path] = ()) -> list[dict[str, Any]]:
+def _file_inventory(
+    run: dict[str, Any], *, retired_paths: Iterable[Path] = (),
+    inherit_heavy_identity: bool = False,
+) -> list[dict[str, Any]]:
     root: Path = run["dir"]
-    records = _manifest_records(run, retired_paths=retired_paths)
+    records = _manifest_records(
+        run, retired_paths=retired_paths, inherit_heavy_identity=inherit_heavy_identity,
+    )
     inventory: list[dict[str, Any]] = []
     for path in sorted((item for item in root.rglob("*") if item.is_file()), key=lambda item: item.as_posix()):
         if path.name == RECEIPT_NAME:
@@ -356,7 +394,10 @@ def _file_inventory(run: dict[str, Any], *, retired_paths: Iterable[Path] = ()) 
         record = records.get(path.resolve())
         bytes_count = path.stat().st_size
         manifest_sha = str(record.get("sha256")).upper() if record and record.get("sha256") else None
-        actual_sha = file_sha256(path)
+        inherited = inherit_heavy_identity and classify_file(path, bytes_count=bytes_count) in HEAVY_ROLES
+        if inherited and not record:
+            raise RetirementError(f"heavy payload lacks sealed identity: {path}")
+        actual_sha = manifest_sha if inherited else file_sha256(path)
         if record and (record["bytes"] != bytes_count or manifest_sha != actual_sha):
             raise RetirementError(f"manifest identity changed: {path}")
         inventory.append({
@@ -365,7 +406,7 @@ def _file_inventory(run: dict[str, Any], *, retired_paths: Iterable[Path] = ()) 
             "sha256": actual_sha,
             "manifest_sha256": manifest_sha,
             "manifest_identity_matches": manifest_sha is None or manifest_sha == actual_sha,
-            "identity_source": "computed_before_retirement",
+            "identity_source": "sealed_manifest" if inherited else "computed_before_retirement",
             "manifest_role": record.get("manifest_role") if record else None,
             "retention_role": classify_file(path, bytes_count=bytes_count),
         })
@@ -449,18 +490,28 @@ def _topology_compatible(
 
 
 def plan_retirement(
-    artifact_root: Path, repository_root: Path, target_run: Path, replacement_run: Path,
-    compatibility_assertion: str, compatibility_input_roles: Iterable[str],
+    artifact_root: Path, repository_root: Path, target_run: Path, replacement_run: Path | None = None,
+    compatibility_assertion: str = "", compatibility_input_roles: Iterable[str] = (),
     compatibility_input_role_mappings: Iterable[tuple[str, str]] = (),
+    *, owner: str = "", owner_abandonment_reason: str = "",
 ) -> dict[str, Any]:
+    """Plan supersession or owner-approved completion; retain all small evidence."""
+    owner_mode = bool(owner or owner_abandonment_reason)
+    compatibility_input_roles = tuple(compatibility_input_roles)
+    compatibility_input_role_mappings = tuple(compatibility_input_role_mappings)
+    if owner_mode:
+        if not owner.strip() or not owner_abandonment_reason.strip():
+            raise RetirementError("owner completion requires owner and a nonempty abandonment reason")
+        if replacement_run or compatibility_assertion or compatibility_input_roles or compatibility_input_role_mappings:
+            raise RetirementError("owner completion and superseded modes are mutually exclusive")
+    elif replacement_run is None or not compatibility_assertion.strip():
+        raise RetirementError("superseded mode requires replacement and compatibility assertion")
     artifact_root = artifact_root.resolve()
     repository_root = repository_root.resolve()
     target_run = _under(target_run, artifact_root)
-    replacement_run = _under(replacement_run, artifact_root)
+    replacement_run = _under(replacement_run, artifact_root) if replacement_run else None
     if target_run == replacement_run:
         raise RetirementError("target and replacement must differ")
-    if not compatibility_assertion.strip():
-        raise RetirementError("a nonempty compatibility assertion is required")
     prior_pending_sha: str | None = None
     prior_removed_missing: list[dict[str, Any]] = []
     if (target_run / RECEIPT_NAME).exists():
@@ -475,21 +526,29 @@ def plan_retirement(
         prior_pending_sha = file_sha256(target_run / RECEIPT_NAME)
     target = _load_run(
         target_run,
-        allowed_statuses=("success", "failed"),
+        allowed_statuses=("success",) if owner_mode else ("success", "failed"),
         label="target",
-        allow_legacy_initialization_summary=True,
+        allow_legacy_initialization_summary=not owner_mode,
     )
-    replacement = _load_run(replacement_run, label="replacement")
-    _manifest_records(replacement)
+    if owner_mode and target["config"].get("project") != owner.strip():
+        raise RetirementError("completed experiment owner differs from target project")
+    replacement = _load_run(replacement_run, label="replacement") if replacement_run else None
+    if replacement:
+        _manifest_records(replacement)
     if prior_pending_sha and (
         prior["target_manifest"]["sha256"] != file_sha256(target_run / "run_manifest.json")
-        or prior["replacement_manifest"]["sha256"] != file_sha256(replacement_run / "run_manifest.json")
-        or prior["replacement_run_path"] != str(replacement_run)
+        or prior.get("owner", "") != owner.strip()
+        or prior.get("owner_abandonment_reason", "") != owner_abandonment_reason.strip()
+        or prior.get("replacement_manifest") != (
+            {"bytes": (replacement_run / "run_manifest.json").stat().st_size,
+             "sha256": file_sha256(replacement_run / "run_manifest.json")} if replacement_run else None
+        )
+        or prior["replacement_run_path"] != (str(replacement_run) if replacement_run else None)
     ):
         raise RetirementError("pending retirement manifest identity changed")
-    if _recorded_at(replacement) <= _recorded_at(target):
+    if replacement and _recorded_at(replacement) <= _recorded_at(target):
         raise RetirementError("replacement is not newer than target")
-    if target["config"].get("project") != replacement["config"].get("project"):
+    if replacement and target["config"].get("project") != replacement["config"].get("project"):
         raise RetirementError("replacement belongs to another project")
     document_refs = _git_document_references(repository_root, target_run.name)
     leases = protection.load_capacity_protection_leases(artifact_root)
@@ -498,9 +557,10 @@ def plan_retirement(
     topology = _topology_compatible(
         target, replacement, compatibility_input_roles,
         compatibility_input_role_mappings,
-    )
+    ) if replacement else None
     inventory = _file_inventory(
         target, retired_paths=[_under(target_run / item["path"], target_run) for item in prior_removed_missing],
+        inherit_heavy_identity=owner_mode,
     )
     removed_current = [item for item in inventory if item["retention_role"] in HEAVY_ROLES]
     removed = prior_removed_missing + removed_current
@@ -525,8 +585,10 @@ def plan_retirement(
         "status": "eligible",
         "target_run_id": target_run.name,
         "target_run_path": str(target_run),
-        "replacement_run_id": replacement_run.name,
-        "replacement_run_path": str(replacement_run),
+        **({"retirement_mode": "completed_experiment", "owner": owner.strip(),
+            "owner_abandonment_reason": owner_abandonment_reason.strip()} if owner_mode else {}),
+        "replacement_run_id": replacement_run.name if replacement_run else None,
+        "replacement_run_path": str(replacement_run) if replacement_run else None,
         "artifact_root": str(artifact_root),
         "repository_root": str(repository_root),
         "compatibility_assertion": compatibility_assertion.strip(),
@@ -536,7 +598,7 @@ def plan_retirement(
             "legacy_initialization_summary"
         ],
         "target_manifest": {"bytes": (target_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(target_run / "run_manifest.json")},
-        "replacement_manifest": {"bytes": (replacement_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(replacement_run / "run_manifest.json")},
+        "replacement_manifest": {"bytes": (replacement_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(replacement_run / "run_manifest.json")} if replacement_run else None,
         "original_file_inventory": inventory,
         "removed_files": removed,
         "preserved_files": preserved,
@@ -605,23 +667,30 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
 
 
 def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
+    owner_mode = plan.get("retirement_mode") == "completed_experiment"
     try:
         artifact_root = Path(plan["artifact_root"]).resolve()
         repository_root = Path(plan["repository_root"]).resolve()
         target = _under(Path(plan["target_run_path"]), artifact_root)
-        replacement = _under(Path(plan["replacement_run_path"]), artifact_root)
+        replacement = (
+            _under(Path(plan["replacement_run_path"]), artifact_root) if not owner_mode else None
+        )
     except (KeyError, TypeError, ValueError) as exc:
         raise RetirementError("retirement plan lacks governed root identity") from exc
-    for label, path in (("target", target), ("replacement", replacement)):
+    manifest_paths = [("target", target)]
+    if replacement:
+        manifest_paths.append(("replacement", replacement))
+    for label, path in manifest_paths:
         if file_sha256(path / "run_manifest.json") != plan[f"{label}_manifest"]["sha256"]:
             raise RetirementError(f"{label} run manifest changed before apply")
-    replacement_state = _load_run(replacement, label="replacement")
-    _manifest_records(replacement_state)
+    replacement_state = _load_run(replacement, label="replacement") if replacement else None
+    if replacement_state:
+        _manifest_records(replacement_state)
     target_state = _load_run(
         target,
-        allowed_statuses=("success", "failed"),
+        allowed_statuses=("success",) if owner_mode else ("success", "failed"),
         label="target",
-        allow_legacy_initialization_summary=True,
+        allow_legacy_initialization_summary=not owner_mode,
     )
     if plan.get("target_terminal_status") != target_state["manifest"]["status"]:
         raise RetirementError("target terminal status changed before apply")
@@ -629,24 +698,33 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         target_state["legacy_initialization_summary"]
     ):
         raise RetirementError("target legacy summary state changed before apply")
-    if _recorded_at(replacement_state) <= _recorded_at(target_state):
-        raise RetirementError("replacement is not newer than target before apply")
-    checks = plan.get("compatibility_checks")
-    if not isinstance(checks, dict):
-        raise RetirementError("retirement plan lacks compatibility checks")
-    mapped = checks.get("verified_input_role_mappings", [])
-    if not isinstance(mapped, list) or any(not isinstance(item, dict) for item in mapped):
-        raise RetirementError("retirement plan compatibility mappings are invalid")
-    refreshed_topology = _topology_compatible(
-        target_state, replacement_state,
-        checks.get("required_input_roles", ()),
-        [
-            (str(item.get("target_role", "")), str(item.get("replacement_role", "")))
-            for item in mapped
-        ],
-    )
-    if refreshed_topology != checks:
-        raise RetirementError("retirement compatibility changed before apply")
+    if owner_mode:
+        if (plan.get("owner") != target_state["config"].get("project")
+                or not str(plan.get("owner_abandonment_reason", "")).strip()
+                or any(plan.get(key) for key in (
+                    "replacement_run_path", "replacement_run_id", "replacement_manifest",
+                    "compatibility_assertion", "compatibility_checks",
+                ))):
+            raise RetirementError("completed experiment owner decision is invalid")
+    else:
+        if _recorded_at(replacement_state) <= _recorded_at(target_state):
+            raise RetirementError("replacement is not newer than target before apply")
+        checks = plan.get("compatibility_checks")
+        if not isinstance(checks, dict):
+            raise RetirementError("retirement plan lacks compatibility checks")
+        mapped = checks.get("verified_input_role_mappings", [])
+        if not isinstance(mapped, list) or any(not isinstance(item, dict) for item in mapped):
+            raise RetirementError("retirement plan compatibility mappings are invalid")
+        refreshed_topology = _topology_compatible(
+            target_state, replacement_state,
+            checks.get("required_input_roles", ()),
+            [
+                (str(item.get("target_role", "")), str(item.get("replacement_role", "")))
+                for item in mapped
+            ],
+        )
+        if refreshed_topology != checks:
+            raise RetirementError("retirement compatibility changed before apply")
     document_refs = _git_document_references(repository_root, target.name)
     downstream_refs = _downstream_references(
         artifact_root,
@@ -665,12 +743,27 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         raise RetirementError(
             "target gained an active capacity protection lease before apply"
         )
-    _file_inventory(
+    inventory = _file_inventory(
         target_state, retired_paths=[
             _under(target / item["path"], target)
             for item in plan["removed_files"] if item.get("already_removed_before_resume")
         ],
+        inherit_heavy_identity=owner_mode,
     )
+    if owner_mode:
+        planned_inventory = [
+            item for item in plan["original_file_inventory"]
+            if not any(item["path"] == removed["path"] and removed.get("already_removed_before_resume")
+                       for removed in plan["removed_files"])
+        ]
+        if inventory != planned_inventory:
+            raise RetirementError("completed experiment inventory changed before apply")
+        expected_removed = [item for item in inventory if item["retention_role"] in HEAVY_ROLES]
+        actual_removed = [item for item in plan["removed_files"] if not item.get("already_removed_before_resume")]
+        if actual_removed != expected_removed or plan["preserved_files"] != [
+            item for item in inventory if item["retention_role"] not in HEAVY_ROLES
+        ]:
+            raise RetirementError("completed experiment removal scope differs from inventory")
     receipt_path = target / RECEIPT_NAME
     pending = {
         **plan,
@@ -705,7 +798,7 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
             removed_bytes += item["bytes"]
         complete = {
             **pending,
-            "lifecycle_status": "superseded_payload_retired",
+            "lifecycle_status": "completed_experiment_payload_retired" if owner_mode else "superseded_payload_retired",
             "completed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "removed_bytes": removed_bytes,
             "bytes_released_this_apply": plan["bytes_to_release"],
@@ -724,7 +817,9 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
 
 def verify_retirement(run_dir: Path) -> dict[str, Any]:
     receipt = _json(run_dir / RECEIPT_NAME)
-    if receipt.get("role") != "solver_review_retirement_receipt" or receipt.get("lifecycle_status") != "superseded_payload_retired":
+    owner_mode = receipt.get("retirement_mode") == "completed_experiment"
+    expected_status = "completed_experiment_payload_retired" if owner_mode else "superseded_payload_retired"
+    if receipt.get("role") != "solver_review_retirement_receipt" or receipt.get("lifecycle_status") != expected_status:
         raise RetirementError("retirement receipt is not complete")
     if receipt.get("target_run_id") != run_dir.name:
         raise RetirementError("retirement target identity differs")
@@ -754,10 +849,20 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
         )
     ):
         raise RetirementError("retirement target terminal status differs")
-    replacement = Path(receipt["replacement_run_path"])
-    _manifest_records(_load_run(replacement, label="replacement"))
-    if file_sha256(replacement / "run_manifest.json") != receipt["replacement_manifest"]["sha256"]:
-        raise RetirementError("replacement run manifest changed")
+    if owner_mode:
+        if (target_status != "success"
+                or receipt.get("owner") != _json(run_dir / "run_config.json").get("project")
+                or not str(receipt.get("owner_abandonment_reason", "")).strip()
+                or any(receipt.get(key) for key in (
+                    "replacement_run_path", "replacement_run_id", "replacement_manifest",
+                    "compatibility_assertion", "compatibility_checks",
+                ))):
+            raise RetirementError("completed experiment owner decision is invalid")
+    else:
+        replacement = Path(receipt["replacement_run_path"])
+        _manifest_records(_load_run(replacement, label="replacement"))
+        if file_sha256(replacement / "run_manifest.json") != receipt["replacement_manifest"]["sha256"]:
+            raise RetirementError("replacement run manifest changed")
     for item in receipt["removed_files"]:
         if (run_dir / item["path"]).exists():
             raise RetirementError(f"retired heavy payload reappeared: {item['path']}")
@@ -783,6 +888,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--target-run", type=Path)
     parser.add_argument("--replacement-run", type=Path)
     parser.add_argument("--compatibility-assertion")
+    parser.add_argument("--owner", default="")
+    parser.add_argument("--owner-abandonment-reason", default="")
     parser.add_argument("--compatibility-input-role", action="append", default=[])
     parser.add_argument(
         "--compatibility-input-role-map", action="append", default=[],
@@ -795,8 +902,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         if args.verify:
             result = verify_retirement(args.verify.resolve())
         else:
-            if not all((args.artifact_root, args.repository_root, args.target_run, args.replacement_run, args.compatibility_assertion)):
-                parser.error("plan/apply requires artifact root, repository root, target, replacement, and compatibility assertion")
+            if not all((args.artifact_root, args.repository_root, args.target_run)):
+                parser.error("plan/apply requires artifact root, repository root, and target")
             compatibility_roles: list[str] = []
             mapping_values = list(args.compatibility_input_role_map)
             for value in args.compatibility_input_role:
@@ -822,9 +929,10 @@ def main(argv: Iterable[str] | None = None) -> int:
                 mappings.append((target_role, replacement_role))
             result = plan_retirement(
                 args.artifact_root, args.repository_root, args.target_run,
-                args.replacement_run, args.compatibility_assertion,
+                args.replacement_run, args.compatibility_assertion or "",
                 compatibility_roles,
                 mappings,
+                owner=args.owner, owner_abandonment_reason=args.owner_abandonment_reason,
             )
             if args.apply:
                 result = apply_retirement(result)
