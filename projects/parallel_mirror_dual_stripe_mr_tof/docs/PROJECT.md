@@ -1,229 +1,195 @@
 # 开放路径平行镜双条带 MR-TOF 项目状态
 
-返回[项目导航](../README.md)。本页维护当前参数摘要、有效结论、资格边界和开放动作。
-操作通过项目导航进入SIMION实施说明；完整推导见[理论索引](theory/index.md)，机械来源见[CAD](CAD.md)。
-截至2026-10-08已发布证据的当前视图如下；运行中的逐粒子/进程进度以各run记录为准，不在本页累加。
+返回[项目导航](../README.md)。本页只维护当前输入、资格、限制与未完成动作。
+实施入口由项目导航进入；推导见[理论索引](theory/index.md)，机械来源见[CAD](CAD.md)。
+完整旧过程已冻结在[mesh6 响应范围与场诊断里程碑](history/20261010__mesh6-response-range-and-field-diagnostics.md)。
+以下数值是冻结合同的阅读摘要，不是可编辑的第二套参数权威。
 
-## 当前状态
+## 当前决策
 
-主线是 **mesh3工作近似上的空间重闭合 → 冻结候选检查稳健性 → 真实能散性能评估**。
-COMSOL负责求场，SIMION消费标量场并追迹；不再把全部受控轨迹先达到0.2 ns作为工程探索前提。
+旧高放大响应组合的工程等价没有通过，原 staged S 搜索已经中断，不能继续沿其异常 P1 响应调压。
+当前以[直接严格场][direct-field]及其[消费投影][direct-binding]作为临时复核参照，
+不是真值、最终空间闭合点或正式场资格。该场的中心[真实 N=1][direct-n1]仍未闭合 S。
 
-- 当前继承的S1正向半跨度seed有完整返回、中心命中，P段两项通过；慢转折和目标K残差仍未同时闭合。
-- 响应场组合已真实用于调压；固定点物化已证明与原组合在16个查询点及同中心轨迹上等价，并降低飞行成本。
-- 三档Gaussian纯体积源已发布。主条件计划N=100的探索只完成前10颗后人工中断，不能报告完整束团分辨率或收集率。
-- 直接多轴COMSOL场仍遇矩阵组装断言；组合对直接FEM的等价、整程数值资格及最终性能均未通过。
-- 目标仍为主设计源下R≥100000、收集率≥80%。目前没有满足这些要求的当前场候选或Formal资产。
+[既有参数更新诊断][saved-update]已失败：从上述成功保存模型更新现有
+`mrtof_s1_v` 与 `par_dual_s.plistarr`，不重写 V0、不创建参数节点、不重建网格。
+它沿既有表达式同时改变 S1/S2，是一条联动 S 方向，不是独立 S1 响应列。
+实际264.6701119秒后触发 xmodel_assem.cpp:1896，无 LinIt、新场、查询或 MPH；
+20项输出 manifest 验证通过，进程已结束。此负结果不授予响应或飞行资格。
 
-按任务定位：[输入与物理定义](#输入权威与物理定义) · [当前工作点](#当前工作点与空间资格) ·
-[场与数值资格](#电场表示与数值资格) · [源与束团](#真实源与束团证据) ·
-[开放动作](#开放动作与关闭条件) · [历史](#历史与维护边界)。
+停止同类大模型组装重试并保留复现证据。下一路线仅只读评估已有严格直接参照与
+合格旧 S 增量的正确跨锚复用；兼容性及实际消费尚未证明，尚未实施或进行真实消费验证。
+不自主启动电压扫描、N100、盲网格加密或新的优化器。
 
 ## 输入权威与物理定义
 
-本项目只有“名义平行镜＋两套独立形状/偏压Stripe”这一活动硬件线。
-原Astral收敛镜＋单Stripe仅为理论参考，不是另一个活动mode。低压Stripe候选继续有效；
-约±1093 V的形状候选已停止，不能由历史理论曲线重新赋予资格。
+活动硬件只有名义平行伸长镜与两套独立形状、独立偏压 Stripe；Astral 收敛镜/单 Stripe 仅为理论对照。
+COMSOL 求场，SIMION 消费标量场并追迹；两者使用同一冻结物理与 resolved 几何。
+项目 x 是横向、y 是慢漂移、z 是快速反射方向。
 
-| 内容 | 唯一输入或入口 | 使用边界 |
+| 内容 | 权威入口 | 边界 |
 |---|---|---|
-| 项目身份与正式资产状态 | [项目描述符](../config/project.json) | Candidate能力登记不替代本页的运行资格 |
-| 机械及组件设计 | [基础候选合同](../config/simion_candidate_two_zone.json)、[坐标合同](../config/cad_to_theory_frame.json) | 实际运行消费冻结合同及resolved几何；不得用仓库默认值替换既有候选输入 |
-| OA组件依赖 | [依赖合同](../config/accelerator_dependency.json)、[组件请求](../config/accelerator_component_request_n100.json) | 组件源码、provider receipt、位姿与实际电压按run绑定 |
-| 系统理论与变量定义 | [理论索引](theory/index.md) | 镜理论、Stripe作用量、注入和三维传输分层；解析成功不授予整机资格 |
-| 当前物理/数值身份 | 下文具名run的run_config、summary及manifest | 完整电压、source/cohort、field/grid、numerics、clock由冻结证据决定 |
-| 统计与粒子数口径 | [验证方法](../../../docs/VALIDATION_METHODS.md)、[运行口径](../../../docs/OPERATIONS.md#通用验证口径) | 峰宽方法、源、时钟和样本量一致后才比较性能 |
+| 项目身份与能力 | [项目描述符](../config/project.json) | 能力登记不替代运行资格 |
+| 候选几何 | [基础合同](../config/simion_candidate_two_zone.json)、[坐标合同](../config/cad_to_theory_frame.json) | 实际 run 的冻结合同优先于仓库默认值 |
+| OA 组件 | [依赖合同](../config/accelerator_dependency.json)、[组件请求](../config/accelerator_component_request_n100.json) | receipt、位姿、电压与源按 run 绑定 |
+| 当前数值/物理身份 | 下文来源 run 的 config、summary、manifest | 全电压、网格、源、时钟和 solver 分别保留 |
+| 统计与比较 | [验证方法](../../../docs/VALIDATION_METHODS.md) | 只有同源、同口径、完整样本才可比较性能 |
 
-本页电压与源参数是冻结输入的阅读摘要，不是第二套作者配置。K=24.5、OA中心y=−55 mm为当前探索条件；
-其他K、旧y位置和旧PA的结论仅在各自冻结身份下成立。释放慢向动能约5 eV与加速后快速方向约4 keV
-属于不同能量分量，不能混为棱镜或Stripe电压。完整源必须继承OA实际输出，不在后处理补造速度。
-
-当前C0分析域含已知OA、检测器及P1接地罩延长候选；冻结几何、接地外壳和带电边界由场源run决定。
-C0是工程边界假设，不等于已核实的实机腔体CAD；改变壳位置属于物理模型变化，不能当同模型网格加密。
-旧无限元模型仅用于追溯，不继续无界增加外围层数。真空网格分区不代表新增实体壁。
-x=0的对称使用范围取决于冻结几何；不得把OA自身的镜像条件直接套到旧非对称分析器。
-
-### 静态返回与事件定义
-
-项目x为横向、y为慢漂移、z为快速反射方向。P1/P2按注入通过次序命名：
-OA出口 → P1沿−z → 负镜预反射 → P2沿+z → P2后参考截面 → 正镜预转折 → 正侧Stripe。
-主漂移相位从P2后的正镜转折建立；半整数目标K在相反的负镜转折建立返回相位。
-
-回程须自然通过P2、在正镜真实转向，再沿−z到达z>0且法向+z的检测面；P1只属于注入支路。
-去回路径关于z=0镜像而不重合，不能用原路倒放或额外多圈后命中替代。
-镜区外vz反号、首次安全出口后的OA实例重入及错误回程顺序仍按冻结合同拒绝。
-
-target-K采样不切换P/S电压；时钟、目标K、完整返回和检测器命中分别核验。
-程序拓扑拒绝与真实电极碰撞必须分列；穿检测平面不等于有效命中。
-几何OA出口与PA安全出口不是同一截面；出口复验须逐粒子、同截面、同目标，
-不能把纯体积源ID1默认为中心。事件插值及计时精度仍属于数值验证范围。
-
-## 当前工作点与空间资格
-
-当前阶段继承的[正向半跨度N=1 seed][s1-half]冻结K=24.5、mesh3、同源中心及0.0005 μs积分；
-仅S1相对前锚改变。以下展示值的完整精度及全部20电压见该run输入。
-
-| 量 | 当前已完成试探 | 判断 |
-|---|---:|---|
-| P1 / P2 | +189.201653289 / −190.516973636 V | 继承已通过前段锚点 |
-| S1 / S2 | −27.0905059206 / +55.2921771558 V | 低压响应组合消费 |
-| P位置残差 | −0.0198617383 mm | 通过原0.1 mm容差 |
-| P角度残差 | −0.009174836° | 通过原0.01°容差 |
-| 慢转折残差 | +5.114888317 mm | 未闭合 |
-| 目标K位置残差 | −0.2139655212 mm | 未闭合 |
-| 检测器TOF | 764.361581633 μs | 中心命中、49次快速转折；无束团分辨率资格 |
-
-该点改善目标K相位，但慢转折略变差，不称为四项闭合点。
-此前完整返回的015比较锚（S1=−27.0972836304 V、S2=+55.2921771558 V）保留为后备，
-其慢转折/目标K残差约+5.071437693/−2.291643207 mm。
-一次受保护的S联合试探缺少目标K并碰撞，不能用预测残差或缺失事件接受候选。
-
-[新锚阶段迭代][reclosure]继续消费真实中心和原响应模板，重新测量当前锚的有效列；
-当前链继承081900已发布seed，以新运行身份推进，不Resume旧parent，不重飞已有同状态观察。
-已完成的当前锚响应列如下；没有四项闭合终态，也未把任一试探自动替换为新锚。
-
-| 同锚试探 | 实测结果 | 消费边界 |
-|---|---|---|
-| [S1正向1%][s1-forward] | 慢转折残差+0.359990 mm；target-K前撞S1正z电极11 | 缺相位及完整返回，拒绝为完整响应列；11是碰撞标签 |
-| [S1反向1%][s1-reverse] | 检测器764.363394179 μs命中，P仍通过；慢转折/K残差+11.501255194/+2.887600482 mm | 可作同锚有符号割线；有限跨度0.270905059 V，不能当微扰极限导数 |
-
-S2后续试探的运行状态由父链及各stage证据给出，未完成结果不写作闭合。
-P先闭合是阶段顺序，不代表P与S永久解耦；每次S试探仍检查P、唯一目标K、完整返回和碰撞。
-电场增量的线性不等于轨迹Jacobian可跨锚搬用；缺事件不补零，不从失败分支无界外推。
-
-## 电场表示与数值资格
-
-### 当前工作近似
-
-COMSOL使用固定C0几何和Q2电势有限元；mesh3为mesh2复制后对慢返回区域局部细化，
-四面体数20,840,828→22,038,908（增加5.75%）。这不是全域加密。
-已有转折事件覆盖不等于连续束路和未来Gaussian尾部覆盖，细化范围仍须随实际接受度核对。
-
-基场导出间距为[0.25,0.125,0.25] mm，慢返回局窗为[0.25,0.03125,0.25] mm；
-顺序、接管区域、mask、坐标和场身份由binding冻结。所有局窗随同一次目标电压同步更新。
-已确认导体内缺值可按本次规定电势补值；未知真空支撑不得填零或冒充碰撞。
-当前碰撞几何另有0.25 mm离散，电极标签不是电压值，近表面碰撞坐标不代表连续CAD面精度。
-
-### 响应组合与固定点物化
-
-同一线性静电问题的基场和单因素场可按实际电压差组合；几何、边界、材料、网格及有效支撑须一致。
-已有同锚S1/S2组合真实飞行。跨P锚的增量场在物理条件满足时可以复用，
-但当前实现未取得该能力的真实资格；旧锚轨迹Jacobian仍须在新锚实测。
-
-[固定点物化][materialize]复用现有composer生成基场和局窗，不求场、不Refine。
-16点电势最大差2.73×10⁻¹² V、三分量场差为舍入量级，只证明当前权重和查询点的算术等价。
-[同初态中心飞行][materialized-center]保持完整返回及P/S残差，TOF差约10⁻⁶ ns；
-该结果不覆盖离轴、直接FEM等价或原场网格资格。
-
-| 同点消费成本 | 原仿射查询 | 物化后单场 | 适用范围 |
-|---|---:|---:|---|
-| 原生N=1飞行 | 394.37 s | 205.27 s | 同中心、同输入对照 |
-| 公共资源观测峰值 | 26.42 GiB | 15.47 GiB | 按各次实际观测决定并发 |
-| 一次性物化准备 | 不适用 | 207.879 s | 同点复用约两颗起才有净收益 |
-
-探索性单次N=1可直接使用响应组合；固定点多粒子复用可评估物化收益。
-物化seed的真实只读消费已核对科学身份及20通道电压；完整自动bootstrap尚未验收，逐候选物化尚未实现。
-响应系数的误差放大风险需记录，不能把组合权重指标当误差上界。
-正式GUI交付仍须现有单场及工作台对等验证；场回调成功不保证普通GUI场查询显示同一组合场。
-
-### 尚未关闭的误差与失败
-
-| 独立对照 | 已观测结果 | 可支持的判断 |
-|---|---|---|
-| 同消费网格的mesh2→mesh3 | 检测器共同粒子相对中心时间最大变化1.235495 ns | 慢返回FEM影响仍未关闭；不是新增FWHM或总误差界 |
-| 同FEM的细y采样相位 | 共同事件相对时间最大变化2.272969 ns，终止状态也变化 | 场表示敏感性仍在，不能与上一行相减得出收敛阶 |
-| 固定场积分末档收紧 | 最大共同事件变化0.028571 ns | 已测样本积分影响收缩，不能外推全部粒子 |
-| 同FEM原生CPT短段 | 单颗3 μs段穿面时间差约0.000653 ns，完整任务约20分钟 | 局部符合较好，出口速度仍有差异；不支持整体迁移或全程误差界 |
-| 多轴直接场复验 | 再次在矩阵组装触发xmodel_assem.cpp:1896，无有效新解 | 组合对直接FEM的等价资格未完成，软件失败不等于物理无解 |
-
-FEM配对见[完整受控证据][mesh-pair]，原生短段见[CPT结果][cpt]；
-其他受控矩阵与断言失败链见[里程碑快照](history/20261008__field-response-engineering-milestone.md)。
-清除旧解曾恢复多次变压求场，但后续直接场仍失败，不能称断言已永久解决或必须升级才可工作。
-
-约0.2 ns为正式十万判断的总体初始工程预算，不是各环节分别享有的预算，也不是全部探索的统一门槛。
-允许有限精度空间闭合、孔径改善和显著像差筛选；收益须在代表数值配置中保持，适用范围明确。
-正式验收冻结候选几何、电压、源及统计口径后复核，不通过逐网格重新调焦掩盖数值差异。
+当前 C0 分析域包含 OA、检测器、P1 接地罩延长及冻结屏蔽边界。
+C0 是工程外域假设，不等于已完成实机腔体 CAD 资格；移动接地壳属于物理模型变化。
+真空分区不是实体壁，碰撞几何和标量电场 PA 是不同消费者。
+旧 native r15 和旧 mesh3 工作点不能冒称当前 C0/mesh6 同模型场。
 
 ## 真实源与束团证据
 
-三档正式纯体积源已由原publisher发布：σ(Ey)=0.1 eV为对照、0.2 eV为主设计、0.3 eV为压力测试。
-σ是释放事件慢向动能的标准差，不是速度标准差。每档N=100、共同母序列N=1000；
-位置、ID、物种、时钟与标准正态母序列配对，不夹受控中心、不裁尾、不重抽或重标样本方差。
+活动束团目标是释放慢向动能均匀全宽 0.1 eV（中心 ±0.05 eV），
+圆柱 y 高 1 mm、半径 0.5 mm；[调试源发布][uniform-source]只证明源定义，不证明性能。
+Gaussian σ(Ey)=0.1/0.2/0.3 eV 母序列已发布，现属历史，不是活动主目标。
+σ 表示能量而不是速度；不裁尾、不重新抽样，不把窄源结果称为宽源性能。
 
-三档继承前锚中心[0,−56.0518289943,32] mm、5.37438714309 eV、+y方向、524 Th/+1及共同出生时刻，
-圆柱y高1 mm、半径0.5 mm、零角宽。源定义与场资产分离；改变源不自动触发Refine。
-当前源收据：[0.1 eV][source01]、[0.2 eV][source02]、[0.3 eV][source03]；
-源发布本身不授予场、空间返回或束团性能资格，新工作点不得静默混用旧源中心。
+当前受控中心由 common receipt 明确选定：位置 [0, −56.05182899425077, 32] mm、方向 +y、
+释放 Ey=5.374387143093758 eV、质量 524 Th、电荷 +1、出生时刻 0。
+ID6 是同中心其他量不变、x=−0.1 mm 的受控探针，不代表完整体积源或能量探针。
+纯体积队列 ID1 不能默认为中心；母队列到 N1 仅在真实中心显式投影时允许队列文件身份不同。
 
-### 015比较锚的首批探索
+时钟使用 common 出生时刻至事件的实际飞行时间；局部重放保留原入口状态与绝对时钟。
+释放 Ey 与 OA 加速后 Ez、P2 局部 Ey 是不同量，不得互相替代。
+当前 P2 参考面尚不能自动视为经验证的无场理论入口，源保持冻结不变。
 
-[Gaussian σ=0.2 eV探索][gaussian10]沿用015冻结电压及组合场，不是081900最新工作点的束团结果。
-该次计划100颗，只完成ID1..10后主动中断：
-1颗命中、5颗真实电极碰撞、4颗程序拓扑拒绝。summary为interrupted，
-正式收集率和分辨率均为null；后90颗没有完整结果，不能计为损失或与新工作点拼接成N=100。
+## 临时直接参照工作点
 
-| 已完成粒子 | 终止归属 | 解释边界 |
+完整 20 槽电压由[直接场来源][direct-field]冻结；“20 槽”不是 S1 加 20 V。
+镜电压继承实际历史 TE1 状态，当前不再从旧裸镜周期反推更换释放源。
+当前目标 K=24.5、慢转折目标 L=340 mm；全部精度见来源输入。
+
+| 量 | 直接参照值 | 当前判断 |
+|---|---:|---|
+| P1 / P2 | +189.588174112441 / −190.10899285066873 V | 保持新 P 锚 |
+| S1 / S2 | −28.00383247392914 / +55.33397459502199 V | 未闭合 |
+| P 位置 / 角残差 | +0.092762917 mm / +0.002206944° | N1 通过原容差 |
+| 首 slow / exact-K 位置残差 | +3.866470326 / −33.225087274 mm | 两项失败 |
+| 终止 | 752.056583844 μs 复入 OA | 程序拓扑拒绝、非电极碰撞 |
+
+该 N1 的运行 success 表示采集分析完成，不是 detector hit、完整返回或四项闭合。
+旧 affine stage015 的 S 残差约 +24.435/+19.065 mm，不能替换直接参照的实际观察。
+当前参数更新目标 S1/S2 为 −27.72379414918985/+55.11849067144983 V，P 与镜不变；
+该联动方向未获得新解，不授予新的独立 Jacobian 或候选接受资格。
+
+## 电场表示与数值资格
+
+[mesh6 基场][mesh6-field]来自成功 mesh3 的 Copy+局部 Refine：
+局部盒 x=[0,2.5]、y=[343,350.5]、z=[−103,103] mm，
+四面体 22,038,908→22,770,107（+3.32%），31 个真空域、二阶电势 Q2。
+这不是 OA/P1/P2 全段加密，也不证明整源轨迹覆盖或全场收敛。
+当前成功求场保留历史 mesh 引用且活动 mesh6；删除旧 mesh 的副本曾在生成方程阶段失败。
+
+已成功的严格直接路径使用 CG/AMG、loweramg on、实际 Study/Stationary 停止 1e−11。
+不同保存场的全部实际 solver、参数化路径和 DOF 仍保留来源记录；
+不能仅凭同 mesh 标签或参数化标签宣称同离散算子、内存比例或收敛。
+
+| 标量消费者层级 | 间距 x/y/z（mm） | 接管边界 |
 |---|---|---|
-| ID3、ID9 | P2接地屏蔽回程负z端面孔唇 | 当前离散几何的真实碰撞 |
-| ID7 | S2负z端部唇边邻域 | 近表面位置受碰撞网格影响 |
-| ID8 | 中央接地体y=0槽入口 | 不能仅按电极标签推断电势 |
-| ID10 | S1负z端部连接区y=0边缘 | 不代表已达到连续CAD碰撞精度 |
-| 4颗拓扑拒绝 | OA重入或返回顺序异常 | 与上述5颗金属碰撞分列 |
+| base | 0.25 / 0.125 / 0.25 | 冻结全域与有效支撑 |
+| first-slow-return-y | 0.25 / 0.03125 / 0.25 | x±2.25、y330..365、z±289.5 mm |
 
-这些粒子同时含空间和能量差异，不能将失败唯一归因Ey或某个元件。
-中心相位改善不保证有限源接受度；后续S优化须同时观察入口状态、完整返回和孔径裕量。
+有序局窗 first-inclusive 路由，窗外回 base；所有候选的窗口、mask 和电压同步。
+导体内缺值只按本次冻结电势补值，未知真空支撑不能补零；base 的 8870 未知节点与局窗 0 未知如实记录。
+mask 必须符合实际消费者判定，浮点近 1 不等于 binary 1；已有投影只引用真实合法 mask，不伪写原记录。
+adapter 的支撑 guard 是消费保护，不是官方原生梯度差分公式。
+碰撞网格约 0.25 mm；电极标签不是电势值，近表面碰撞不授连续 CAD 精度。
 
-### 仍可引用的历史性能
+## 响应组合的现行限制
 
-同口径common纯体积N=100、统一KDE的历史结果如下；均来自此前离散场，
-不是C0/mesh3响应组合已经确认的装置能力。完整六工况及前后表见[冻结原文](history/20261008__field-response-engineering-milestone.md)。
+已有 schema2 同锚 PS 响应编译、运行时仿射消费与公共固定点 composer。
+组合必须核对完整电压、几何、材料、边界、mesh/Q2、网格、窗口与 mask；缺某轴响应不得改变该轴。
+停止数值兼容仅排除声明的 Study/Stationary stol，实际每场配置和来源不被改写。
+线性物理允许叠加不等于已计算响应具有工程精度；权重 G 只是放大量诊断，不是误差上界。
 
-| 历史源与工作点 | 收集率 | KDE FWHM | R |
-|---|---:|---:|---:|
-| 均匀Ey全宽0.1 eV，K=24.5、OA y=−55 mm | 80% | 4.857 ns | 78695 |
-| Gaussian Ey σ=0.2 eV，同历史工作点 | 78% | 19.888 ns | 19217 |
+旧低 G 同点 N1 对照不能覆盖当前 G≈9.57 且含 P1/P2 的组合。
+当前[83 点实际消费对照][consumer-pair]最大 affine−direct 为 1.78865 V、294.385 V/m。
+[四角色分解][role-query]在所查正镜 fast7/45 点将差量定位到 P1 加权增量，
+Ey 分别约 +294.247/+161.921 V/m；其余响应与负镜对应点近舍入，重构闭合约 1e−12 V。
+这是少量坐标的贡献定位，不是全场误差界、P1 全部失效或唯一 FEM 根因。
 
-六工况改善来自TE1与P/S重闭合联合调整，不是TE1独立贡献；三K同截面出口复验只适用于其冻结输入。
-早期N=1000、缩源诊断和旧五区结果仍保留历史身份，不能用于当前候选的正式验收。
-峰宽、采样不确定性及完整损失必须共同报告；去趋势、删尾或缩源不构成性能改善。
+旧 P1 171500 实际仅 ID16 增加 1%，同 geometry/mesh/grid，原停止 1e−9；
+没有保存该 P1 原生 MPH，不能补造可重载解或直接原生核对。
+严格 literal P1、单参数 P1、新固定锚 S1 三次复验均在 xmodel_assem.cpp row1896 组装失败，
+无线性迭代或新解；不称 OOM、物理不收敛或永久供应商修复。
+已有成功保存模型的参数更新路线亦在同类组装断言失败，当前停止这类大模型重试。
+
+固定点物化与运行时组合已有历史算术/中心等价证据；不能改善响应本身的误差。
+单 N1 物化准备可能抵消查询收益，固定多粒子点才评估摊销；不逐候选自动物化。
+GUI 工作台重开、field callback 成功与 GUI 场查询对等分别验证，不能互相替代。
+
+## 事件、闭合与接受规则
+
+注入次序是 OA→P1(−z)→负镜预反射→P2(+z)→P2 后参考面→正镜预转折→Stripe。
+返回必须自然通过 P2、正镜真实转向、沿−z到检测面；错误顺序、OA 重入及镜区外反号仍拒绝。
+target-K 不切换电压；真实 collision、程序拒绝、目标相位、检测平面和有效命中分别记录。
+
+原四残差是 P 位置/角度与首瞬时 slow/唯一 exact-K 位置，原容差不变。
+合法 target 之前的阶段前缀可用于阶段诊断；之后失败不授完整返回或性能资格。
+缺失/重复/乱序 target 或此前真实非法分支不生成有效阶段列，不以预测补观察。
+
+首 slow 原始值保留；局部 signature 由邻接真实 fast 半周期与 z 方向派生。
+已证相位不同的 S stencil 不作同根 Jacobian；旧缺日志记录明确 unknown，不冒称匹配。
+邻接 vy 变号只作诊断，不硬拒同半周期的平滑根；不把全 slow 数量当匹配键。
+瞬时零点不是唯一周期平均宏观转折；现有诊断量级不能解释全部约 24 mm 超程，亦不新定义理论目标。
+
+既有 staged 入口先 P 后 S，每次 S 候选复核 P；接受新锚后清列重测，不运输跨根旧列。
+候选预算、最小改善、回退与换档沿冻结合同有限执行；本次旧父已中断，不能原身份重启。
+新锚 S Jacobian 必须实测；不混旧 mesh3 列、mesh6 列或旧 P 资格。
+
+## 资格与历史性能
+
+当前未取得四项空间闭合、正常完整返回的最终工作点、整程数值收敛或活动体积源性能。
+同坐标 FEM 梯度、分量数组插值和标量数组求导是不同表示；原生 FEM 梯度不是真值。
+小段同状态传播、少量坐标一致与 N7 受控响应均不能授全源 TOF/FWHM 误差预算。
+mesh 与预条件器同时改变的耗时结果不作单因素提速归因。
+
+| 已保留证据 | 可以说明 | 不能说明 |
+|---|---|---|
+| mesh3/mesh6 受控 N7 及同入口短段 | 具名轨迹、事件和状态的有限响应 | 全场收敛、FWHM 或正式收集率 |
+| strict S2 复验及低 G 对照 | 原保存解停止误差与少量工程改善 | 当前异常 P1/高 G 范围已合格 |
+| 当前直接 N1 与四角色查询 | 本工作点 P 通过、S 失败及少点 P1 贡献 | 新响应族、束团能力或唯一根因 |
+
+历史窄源性能另见[前次里程碑](history/20261008__field-response-engineering-milestone.md)：
+旧均匀 Ey 全宽 0.1 eV、K24.5/y−55 的 N100 为收集率 80%、KDE FWHM4.857 ns、R78695；
+旧 Gaussian σ0.2 eV 为 78%、19.888 ns、R19217。
+它们不是当前 C0/mesh6 能力，也不是 TE1 独立贡献；旧中断 Gaussian 十粒子不能补齐成 N100。
+活动窄源 R≥100000、收集率≥80%仍是目标，不是已有结果。
 
 ## 开放动作与关闭条件
 
-| 动作 | 进入条件 | 关闭条件 |
-|---|---|---|
-| 完成当前锚空间重闭合 | 继承已验证P段和响应资产，真实测当前S列，修正有界 | P/S四项满足原合同且自然完整返回；失败保留后备点及真实原因 |
-| 降低固定点束团成本 | 对将复用的工作点使用已验证物化路径，预算和并发按实测 | 成功资产可由原入口消费，保持科学输入、有效支撑和事件语义；不重复求场/导出 |
-| 获得可信性能候选 | 接受度改善后冻结候选，补直接FEM等价及代表数值配置 | 当前源完成配对N=100；仅对稳定最终候选做N=1000/独立采样，数值与统计不确定性不改变达标判断 |
+1. 只读评估严格直接参照与合格旧 S 增量的跨锚兼容：核对原物理、离散输入、
+   目标 authority、增量来源及真实消费边界；不能更换身份标签把旧增量称为新锚响应。
+2. 评估有证据且主 Agent 明确批准后，才决定最小实现及同目标实际消费/N1验证；
+   当前不创建新场或运行，不预授跨锚可用性，不以自动重试、降 Q2 或改物理制造成功。
+3. 只有输入与工程等价边界可接受后，才恢复原 staged P/S，实测新锚列并复核 P/完整返回。
+   无闭合点不进入 TE1 后续或体积束团性能验收；不通过缩源、删尾、放宽容差制造通过。
 
-新增精度试验必须说明其将改变哪项工程决策，优先真实束路、慢返回、孔径及窗口交接，不无界全域加密。
-固定几何不足时才提出并实测少参数可制造调整；不恢复无依据千伏Stripe，也不以场平滑或中心命中判优。
+容量由[公共策略](../../../common/contracts/artifact_capacity_policy.json)硬准入，资源时间/内存为 warning。
+通过公共 run/lease/manifest/retention 管理，失败证据保留；不私改台账、复用失败 run_id 或覆盖已封存输入。
+当前 provider、GUI、场源与待交接消费者必须保留，旧 IOB 的已退休 PA 依赖需要重装配。
+源码静态门禁不代替商业真实运行、GUI/CAD 或 Formal；正式同步与资格仍待实际完成。
 
-本任务已授权资源阈值采用warning和观测；共享准入、独占会话、进程归属及输入有效性保护仍保留。
-主动中断必须保存实际完成粒子和interrupted终态，不能把未完成数当损失；具体机制见[操作指南](../../../docs/OPERATIONS.md)。
-软件测试、source发布、provider成功和文件物化分别只证明其声明层级。
-当前仍缺整程数值资格、真实高斯源最终性能及适用GUI/CAD/Formal验收；不自动晋升模型成熟度。
+## 有效入口与追溯
 
-## 历史与维护边界
+生产试探使用[原 trial](../simion/run_two_prism_trial.ps1)，场编译使用
+[static binding](../analysis/static_field_binding.py)及[provider](../analysis/corridor_field_provider.py)，
+闭合使用[原 staged 父入口](../analysis/run_downstream_workpoint_iteration.ps1)。
+运行参数必须来自具名冻结合同，不从本页复制局部常量成第二权威。
+软件操作、理论与 CAD 继续由[项目导航](../README.md)进入，不另建横向文档网。
 
-已结束尝试、逐次CLOC/测试清单、资源清理和被取代指令完整冻结于
-[场响应工程探索与文档收缩里程碑](history/20261008__field-response-engineering-milestone.md)；
-更早快照由[项目历史索引](../README.md#历史补充索引)发现。活动运行原始事实以artifacts记录为准。
+完整收缩前状态、旧 mesh3 锚、缺 P2 的历史语境、已结束诊断和失败过程见
+[只读快照](history/20261010__mesh6-response-range-and-field-diagnostics.md)。
+历史中的“当前/下一步”只按冻结时点解释；本页更新替换对应结论，不再追加启动与失败时间线。
 
-更新本页时替换对应结论和资格，不继续追加逐粒子播报或重试时间线；
-开放动作只保留未完成动作、进入条件与关闭条件。完整维护规则见
-[文档权威](../../../docs/REPOSITORY_ARCHITECTURE.md#文档维护与阅读体验)及
-[归档条件](../../../docs/LIFECYCLE.md#history-冻结条件)。
-
-[s1-half]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_081900__sim__simion__mrtof-s1-positive-half-span-bounded-probe/summary.json
-[reclosure]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_083400__sim__simion__mrtof-s-response-new-anchor-reclosure-r02/run_config.json
-[materialize]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_071148__analysis__simion__mrtof-fixed-s-response-materialization-pilot/summary.json
-[materialized-center]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_081100__sim__simion__mrtof-materialized-s-response-center-equivalence/summary.json
-[mesh-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261007_145700__analysis__python__mrtof-mesh3-coherent-n7-paired/summary.json
-[cpt]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261007_135633__analysis__comsol__mrtof-id6-slow-return-raw-cpt__r02/results/result.json
-[source01]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_063100__analysis__python__mrtof-formal-gaussian-ey-sigma0p1/summary.json
-[source02]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_063100__analysis__python__mrtof-formal-gaussian-ey-sigma0p2/summary.json
-[source03]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_063100__analysis__python__mrtof-formal-gaussian-ey-sigma0p3/summary.json
-[gaussian10]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_063800__sim__simion__mrtof-mesh3-gaussian-ey-sigma0p2-n100-exploratory/summary.json
-
-[s1-forward]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_083400__sim__simion__mrtof-s-response-new-anchor-reclosure-r02-stage-001/summary.json
-[s1-reverse]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_083400__sim__simion__mrtof-s-response-new-anchor-reclosure-r02-stage-002/summary.json
+[direct-field]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261010_071000__analysis__comsol__mrtof-stage015-direct-strict-field__r02/results/result.json
+[direct-binding]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261010_075800__analysis__python__mrtof-stage015-direct-consumer-projection/run_manifest.json
+[direct-n1]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261010_080700__sim__simion__mrtof-stage015-direct-n1/summary.json
+[saved-update]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261010_085930__analysis__comsol__mrtof-saved-joint-parameter-update/run_config.json
+[uniform-source]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261008_113647__analysis__python__mrtof-bounded-uniform-ey-debug-source/summary.json
+[mesh6-field]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261009_133000__analysis__comsol__mrtof-mesh6-active-only-field__r02/results/result.json
+[consumer-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261010_080500__analysis__simion__mrtof-stage015-direct-affine-query__r02/summary.json
+[role-query]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261010_081311__analysis__simion__mrtof-stage015-response-role-query/summary.json

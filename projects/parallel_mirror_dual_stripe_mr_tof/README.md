@@ -44,3 +44,4 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 - [项目状态与 SIMION 旧时间线快照](docs/history/20260911__project-and-simion-status-freeze.md)：保存整治前完整原文与工作区 SHA-256。
 - [Native runtime 与容量代码度量快照](docs/history/20260921_native_runtime_capacity_cloc.md)
 - [场响应工程探索与文档收缩里程碑](docs/history/20261008__field-response-engineering-milestone.md)
+- [mesh6 响应范围与场诊断里程碑](docs/history/20261010__mesh6-response-range-and-field-diagnostics.md)
