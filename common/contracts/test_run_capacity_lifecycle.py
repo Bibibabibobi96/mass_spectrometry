@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -19,6 +21,9 @@ from common.contracts.run_capacity_lifecycle import (
     resume_partial_retirements,
     resume_terminal_runs,
     seal_checkpoint,
+)
+from common.contracts.solver_review_retirement import (
+    RECEIPT_NAME, apply_retirement, plan_retirement,
 )
 
 
@@ -94,6 +99,71 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(ledger["objects"][0]["class"], "light_evidence")
             self.assertEqual(ledger["objects"][0]["status"], "ready")
             self.assertEqual(ledger["objects"][0]["bytes"], ready["bytes"])
+
+    def retired_failed_fixture(self, root: Path) -> tuple[Path, Path]:
+        run, config = self.fixture(root, "20260101_000000__build__simion__failed")
+        document = json.loads(config.read_text())
+        document.update(schema_version=2, run_id=run.name, project="p", mode="static_pilot",
+                        inputs={}, formal_gate_passed=False,
+                        artifact_retention={"policy_version": 1, "class": "solver_review", "reason": "review"})
+        config.write_text(json.dumps(document))
+        summary = run / "summary.json"
+        summary.write_text(json.dumps({"run_id": run.name, "status": "failed"}))
+        payload = run / "field.pa"
+        payload.write_bytes(b"unrefined copy")
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "exists": True, "bytes": path.stat().st_size,
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper()}
+        (run / "run_manifest.json").write_text(json.dumps({
+            "schema_version": 2, "run_id": run.name, "project": "p", "mode": "static_pilot",
+            "status": "failed", "formal_eligible": False, "recorded_at_utc": "2026-01-01T00:00:00Z",
+            "run_config": record(config), "inputs": {}, "outputs": [record(summary), record(payload)],
+            "artifact_retention": document["artifact_retention"],
+        }))
+        register_writing(root, config)
+        seal_checkpoint(root, config, owner="p", writing_stopped=True, retain_payload=True,
+                        retention_reason="retain failed preparation evidence")
+        with patch("common.contracts.solver_review_retirement._git_document_references", return_value=[]):
+            plan = plan_retirement(root, root, run, owner="p",
+                                   owner_abandonment_reason="abandoned duplicate; original remains")
+            with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                apply_retirement(plan)
+        return run, config
+
+    def test_failed_retirement_finalizes_without_fabricating_retention_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.retired_failed_fixture(root)
+            before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
+            result = finalize_ready(root, config)
+            self.assertEqual((result["status"], result["terminal_status"]), ("ready", "failed"))
+            self.assertEqual(load_capacity_ledger(root)["resident_bytes"], sum(map(len, before.values())))
+            entry = load_capacity_ledger(root)["objects"][0]
+            self.assertEqual((entry["class"], entry["pin"]), ("light_evidence", False))
+            self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()})
+            self.assertFalse((run / "retention_actions.json").exists())
+
+    def test_retirement_fallback_rejects_corrupt_or_pending_retirement_and_bad_normal_receipt(self) -> None:
+        for case in ("corrupt", "pending", "bad_normal"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                initialize_capacity_ledger(root, objects=[])
+                run, config = self.retired_failed_fixture(root)
+                if case == "bad_normal":
+                    (run / "retention_actions.json").write_text("invalid json")
+                else:
+                    receipt = run / RECEIPT_NAME
+                    if case == "corrupt":
+                        receipt.write_text("invalid json")
+                    else:
+                        document = json.loads(receipt.read_text())
+                        document["lifecycle_status"] = "pending"
+                        receipt.write_text(json.dumps(document))
+                ledger_before = load_capacity_ledger(root)
+                with self.assertRaises(ValueError):
+                    finalize_ready(root, config)
+                self.assertEqual(load_capacity_ledger(root), ledger_before)
 
     def test_seal_checkpoint_preserves_bytes_pin_and_readonly_continuation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -173,6 +243,101 @@ class RunCapacityLifecycleTests(unittest.TestCase):
                 seal_checkpoint(root, config, owner="p", writing_stopped=True)
             self.assertEqual(payload.read_bytes(), b"retained")
             self.assertEqual(load_capacity_ledger(root)["objects"][0]["status"], "writing")
+
+    def stopped_payload_fixture(self, root: Path, status: str) -> tuple[Path, Path]:
+        run, config = self.fixture(root, "retained-" + status)
+        document = json.loads(config.read_text(encoding="utf-8"))
+        document.update(run_id=run.name, project="p")
+        config.write_text(json.dumps(document), encoding="utf-8")
+        (run / "run_manifest.json").write_text(json.dumps({
+            "run_id": run.name, "project": "p", "status": status,
+        }), encoding="utf-8")
+        register_writing(root, config)
+        (run / "field.pa0").write_bytes(b"sealed heavy fixture")
+        return run, config
+
+    def test_stopped_payload_preserves_all_scientific_states_bytes_and_counts_once(self) -> None:
+        for status in ("success", "interrupted", "checkpoint"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                initialize_capacity_ledger(root, objects=[])
+                run, config = self.stopped_payload_fixture(root, status)
+                before = {p.name: p.read_bytes() for p in run.iterdir()}
+                kwargs = dict(owner="p", writing_stopped=True, retain_payload=True,
+                              retention_reason="GUI and next-stage field reuse")
+                result = seal_checkpoint(root, config, **kwargs)
+                ledger = load_capacity_ledger(root)
+                entry = ledger["objects"][0]
+                self.assertEqual(result["run_status"], status)
+                self.assertEqual((entry["class"], entry["status"], entry["pin"]),
+                                 ("rebuildable_payload", "ready", True))
+                self.assertEqual(entry["pin_reason"], kwargs["retention_reason"])
+                self.assertEqual(ledger["resident_bytes"], sum(map(len, before.values())))
+                self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir()})
+                self.assertEqual(seal_checkpoint(root, config, **kwargs), result)
+                self.assertEqual(load_capacity_ledger(root), ledger)
+                with self.assertRaisesRegex(ValueError, "new run"):
+                    register_writing(root, config)
+
+    def test_stopped_payload_rejects_unconfirmed_owner_identity_reason_consumer_and_lease(self) -> None:
+        for case in ("unconfirmed", "owner", "identity", "reason", "consumer", "lease"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                initialize_capacity_ledger(root, objects=[])
+                run, config = self.stopped_payload_fixture(root, "success")
+                kwargs = dict(owner="p", writing_stopped=True, retain_payload=True,
+                              retention_reason="retained field")
+                if case == "unconfirmed":
+                    kwargs["writing_stopped"] = False
+                elif case == "owner":
+                    kwargs["owner"] = "other"
+                elif case == "identity":
+                    manifest = json.loads((run / "run_manifest.json").read_text())
+                    manifest["run_id"] = "different"
+                    (run / "run_manifest.json").write_text(json.dumps(manifest))
+                elif case == "reason":
+                    kwargs["retention_reason"] = " "
+                elif case == "consumer":
+                    capacity_ledger.record_capacity_object(
+                        root, path=run, object_class="rebuildable_payload", bytes_count=0,
+                        status="writing", owner="p", recovery_reason="run_manifest_not_terminal",
+                        review_deadline="2000-01-01", consumers=[root / "projects/p/runs/consumer"],
+                    )
+                else:
+                    capacity_protection.create_capacity_protection_lease(
+                        root, lease_id="active", owner="p", ttl_seconds=60,
+                        protected_paths=[run / "field.pa0"], committed_new_bytes=0,
+                    )
+                ledger = load_capacity_ledger(root)
+                before = {p.name: p.read_bytes() for p in run.iterdir()}
+                with self.assertRaises(ValueError):
+                    seal_checkpoint(root, config, **kwargs)
+                self.assertEqual(load_capacity_ledger(root), ledger)
+                self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir()})
+
+    def test_stopped_payload_cli_and_atomic_replay_keep_original_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.stopped_payload_fixture(root, "interrupted")
+            ledger = load_capacity_ledger(root)
+            with patch("common.contracts.run_capacity_lifecycle.write_json_atomic", side_effect=OSError("interrupted")):
+                with self.assertRaises(OSError):
+                    seal_checkpoint(root, config, owner="p", writing_stopped=True,
+                                    retain_payload=True, retention_reason="GUI")
+            self.assertEqual(load_capacity_ledger(root), ledger)
+            command = [sys.executable, "-m", "common.contracts.run_capacity_lifecycle",
+                       "--action", "seal-stopped-payload", "--artifact-root", str(root),
+                       "--run-config", str(config), "--owner", "p", "--confirm-writing-stopped",
+                       "--retention-reason", "GUI"]
+            result = subprocess.run(command, capture_output=True, text=True, check=True,
+                                    cwd=Path(__file__).resolve().parents[2], timeout=30)
+            self.assertEqual(json.loads(result.stdout)["run_status"], "interrupted")
+            self.assertEqual((run / "field.pa0").read_bytes(), b"sealed heavy fixture")
+            (run / "field.pa0").write_bytes(b"changed bytes count")
+            with self.assertRaisesRegex(ValueError, "resident bytes changed"):
+                seal_checkpoint(root, config, owner="p", writing_stopped=True,
+                                retain_payload=True, retention_reason="GUI")
 
     def test_seal_checkpoint_atomic_failure_is_replayable_through_public_cli(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

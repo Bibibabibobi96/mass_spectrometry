@@ -95,6 +95,15 @@ owner 必须先确认本次写入进程及子进程已结束，并承诺续算�
 租约没有读写区别，任何重叠均暂缓；非空 consumers 因现有 ready 合同不能保留该字段而明确拒绝，不静默移除引用。
 含 PA 等重型角色、超预算、无精确登记或不属于该 owner 的范围不接受封存，仍交原 owner 处理。
 
+已停止写入但仍须保留 PA/MPH 等重载荷的已登记 run，可由同一 owner 显式调用同一入口的
+`--action seal-stopped-payload --artifact-root <root> --run-config <run_config.json> --owner <project> --confirm-writing-stopped --retention-reason "<保留用途>"`。
+它复用原锁、精确 owner、consumer/租约检查和实际文件大小 inventory，只将容量对象登记为
+`rebuildable_payload/ready` 并 pin；不修改 manifest、run 状态、任何文件字节或既有内容身份，不重哈希重载荷。
+只接受原 `success/failed/interrupted/checkpoint` 状态及一致的 config/manifest/run 目录身份；
+非空 consumers、活动租约、未确认 writer/子进程停止或不同 owner 均拒绝。`ready` 仅固定已保留占用，
+不代表科学成功，也不授权删除；后续消费可沿既有保护机制登记，原 run 不得重新 register-writing。
+相同 owner 决定可幂等重放；已有 ready 范围的 resident 大小变化必须由 owner 排查，不静默重计。
+
 maintenance 以固定顺序调用 owner continuation；某一历史 owner 的 JSON 或处置失败只记录该 action 的
 错误，仍继续其他彼此独立的 run、PA、scratch 与别名续做。终态历史 run 若已经逐项登记、总量在轻量
 证据预算内且不含重型角色，可从真实 terminal manifest 收敛为一个 `ready` light-evidence range；有完整
@@ -203,14 +212,18 @@ manifest/summary一致的`failed`或`interrupted` compact run。apply必须持�
 
 ### solver_review 被取代后的重型载荷退休
 
-同一入口也接受已结束成功实验的 owner 明确退出：`-Owner <project>` 与
+同一入口也接受已结束成功或失败实验的 owner 明确退出：`-Owner <project>` 与
 `-OwnerAbandonmentReason "<完成用途及无人继续消费的具名原因>"`。此模式与 replacement/compatibility
-参数互斥，仅接受非Formal、完整success的solver_review；仍检查租约、活动下游依赖和精确载荷清单，
+参数互斥，仅接受非Formal、manifest与summary一致的封存success/failed/interrupted solver_review，不接受checkpoint；中断仅允许owner明确退出，superseded模式仍只接受success/failed；仍检查租约、活动下游依赖和精确载荷清单，
 保留全部小证据，不将实验退出冒称为被新run取代。待删除的本地重型文件继承manifest已封存身份，
 核对路径、类型和大小而不重复全文哈希；小证据仍校验内容。
 同run的局域子manifest仅在父manifest已封存该严格本地后代时继承；子终态、owner和小证据仍须一致，
 不从目录搜寻未封存manifest，子PA同样不重复全文哈希。
-完成receipt标为`completed_experiment_payload_retired`，由原`--verify`入口验证；原superseded模式及旧receipt语义不变。
+完成receipt标为`completed_experiment_payload_retired`，保留实际`target_terminal_status`，不将失败改为成功；由原`--verify`入口验证，原superseded模式及旧receipt语义不变。
+
+退役后仍沿原`run_capacity_lifecycle --action finalize-ready`收尾。仅当普通`retention_actions.json`不存在时，
+该入口允许以原验证器通过的完整solver_review退役receipt作为处置完成证据；已有但损坏或未完成的普通receipt不得被替代。
+后续实际inventory、轻证据预算及无重载荷检查不变，不补造普通receipt，不改原科学终态或manifest。
 
 `solver_review_retirement.py`是既有完整terminal `success`或`failed`的 `solver_review` run 被明确更新成功运行取代后，退休其可重建
 求解器原生载荷的唯一公共入口。它不是普通容量清理：默认只生成plan；apply必须通过

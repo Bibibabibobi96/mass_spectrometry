@@ -526,7 +526,7 @@ def plan_retirement(
         prior_pending_sha = file_sha256(target_run / RECEIPT_NAME)
     target = _load_run(
         target_run,
-        allowed_statuses=("success",) if owner_mode else ("success", "failed"),
+        allowed_statuses=("success", "failed", "interrupted") if owner_mode else ("success", "failed"),
         label="target",
         allow_legacy_initialization_summary=not owner_mode,
     )
@@ -688,7 +688,7 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         _manifest_records(replacement_state)
     target_state = _load_run(
         target,
-        allowed_statuses=("success",) if owner_mode else ("success", "failed"),
+        allowed_statuses=("success", "failed", "interrupted") if owner_mode else ("success", "failed"),
         label="target",
         allow_legacy_initialization_summary=not owner_mode,
     )
@@ -831,7 +831,8 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
     # Receipts written before failed-target retirement existed can only have
     # described successful targets, so preserve their verification contract.
     target_status = receipt.get("target_terminal_status", "success")
-    if target_status not in {"success", "failed"}:
+    allowed_statuses = {"success", "failed", "interrupted"} if owner_mode else {"success", "failed"}
+    if target_status not in allowed_statuses:
         raise RetirementError("retirement target terminal status is invalid")
     manifest_status = _json(run_dir / "run_manifest.json").get("status")
     summary = _json(run_dir / "summary.json")
@@ -850,8 +851,7 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
     ):
         raise RetirementError("retirement target terminal status differs")
     if owner_mode:
-        if (target_status != "success"
-                or receipt.get("owner") != _json(run_dir / "run_config.json").get("project")
+        if (receipt.get("owner") != _json(run_dir / "run_config.json").get("project")
                 or not str(receipt.get("owner_abandonment_reason", "")).strip()
                 or any(receipt.get(key) for key in (
                     "replacement_run_path", "replacement_run_id", "replacement_manifest",

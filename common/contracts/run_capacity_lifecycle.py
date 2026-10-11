@@ -17,6 +17,7 @@ from common.contracts import capacity_ledger
 from common.contracts import capacity_protection
 from common.contracts.artifact_retention import classify_file
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
+from common.contracts.solver_review_retirement import RECEIPT_NAME, verify_retirement
 
 
 TERMINAL_STATUSES = {"success", "failed", "interrupted"}
@@ -26,6 +27,7 @@ HEAVY_RETENTION_ROLES = {
 WRITING_REVIEW_DAYS = 7
 READY_REVIEW_DAYS = 30
 SEALED_CHECKPOINT_REASON = "owner sealed checkpoint; continuation requires a new run"
+SEALED_PAYLOAD_REASON_PREFIX = "owner sealed stopped payload; "
 LEGACY_LIGHT_EVIDENCE_BUDGET_BYTES = 26_214_400
 PARTIAL_RETIREMENT_RECEIPT = "partial_retirement_actions.json"
 PARTIAL_RETIREMENT_RECEIPT_FIELDS = {
@@ -133,10 +135,13 @@ def register_writing(artifact_root: Path, run_config: Path) -> dict[str, Any]:
     ledger = capacity_ledger.load_capacity_ledger(artifact_root)
     relative = run_dir.relative_to(artifact_root.resolve()).as_posix()
     if ledger and any(
-        item["path"] == relative and item.get("retention_reason") == SEALED_CHECKPOINT_REASON
+        item["path"] == relative and (
+            item.get("retention_reason") == SEALED_CHECKPOINT_REASON
+            or str(item.get("retention_reason", "")).startswith(SEALED_PAYLOAD_REASON_PREFIX)
+        )
         for item in ledger["objects"]
     ):
-        raise ValueError("sealed checkpoint is read-only; continuation requires a new run")
+        raise ValueError("sealed run is read-only; continuation requires a new run")
     total, records = _inventory(run_dir)
     entry = capacity_ledger.record_capacity_object(
         artifact_root,
@@ -168,12 +173,18 @@ def register_writing(artifact_root: Path, run_config: Path) -> dict[str, Any]:
 def assert_retention_complete(artifact_root: Path, run_config: Path) -> dict[str, Any]:
     run_dir, config, budget = _run_context(artifact_root, run_config)
     receipt_path = run_dir / "retention_actions.json"
-    receipt = _load_json(receipt_path, "retention receipt")
-    if receipt.get("role") != "artifact_retention_actions" or receipt.get("status") != "complete":
-        raise ValueError("terminal capacity-ledger transition requires completed retention first")
     retention = config.get("artifact_retention")
-    if not isinstance(retention, dict) or receipt.get("retention_class") != retention.get("class"):
-        raise ValueError("retention receipt class differs from the frozen run contract")
+    if not receipt_path.exists() and not receipt_path.is_symlink() and (run_dir / RECEIPT_NAME).exists():
+        if not isinstance(retention, dict) or retention.get("class") != "solver_review":
+            raise ValueError("retirement receipt requires the frozen solver_review contract")
+        verify_retirement(run_dir)
+        receipt_path = run_dir / RECEIPT_NAME
+    else:
+        receipt = _load_json(receipt_path, "retention receipt")
+        if receipt.get("role") != "artifact_retention_actions" or receipt.get("status") != "complete":
+            raise ValueError("terminal capacity-ledger transition requires completed retention first")
+        if not isinstance(retention, dict) or receipt.get("retention_class") != retention.get("class"):
+            raise ValueError("retention receipt class differs from the frozen run contract")
     return {
         "schema_version": 1,
         "role": "run_capacity_lifecycle_receipt",
@@ -239,17 +250,28 @@ def finalize_ready(artifact_root: Path, run_config: Path) -> dict[str, Any]:
 def seal_checkpoint(
     artifact_root: Path, run_config: Path, *, owner: str,
     writing_stopped: bool = False,
+    retain_payload: bool = False, retention_reason: str | None = None,
 ) -> dict[str, Any]:
     """Retain a stopped, light checkpoint without changing its scientific state.
 
     The owner must establish that its writer and children have exited. Leases
     do not distinguish readers from writers, so any overlap postpones sealing.
     No run file is written or removed; continuation must use a new run identity.
+    The explicit payload action retains heavy files pinned, preserves the original
+    manifest status, and requires a named owner retention decision.
     """
     root = artifact_root.resolve(strict=True)
-    run_dir, _, budget = _run_context(root, run_config)
+    run_dir, config, budget = _run_context(root, run_config)
     if not writing_stopped or owner != run_dir.parent.parent.name:
         raise ValueError("checkpoint sealing requires its owner and confirmed stopped writing")
+    if retain_payload:
+        if not isinstance(retention_reason, str) or not retention_reason.strip():
+            raise ValueError("stopped payload sealing requires an explicit owner retention reason")
+        reason = SEALED_PAYLOAD_REASON_PREFIX + retention_reason.strip()
+    else:
+        if retention_reason is not None:
+            raise ValueError("payload retention reason is not valid for light checkpoint sealing")
+        reason = SEALED_CHECKPOINT_REASON
     relative = run_dir.relative_to(root).as_posix()
     with capacity_protection.capacity_decision_lock(root):
         ledger = capacity_ledger.load_capacity_ledger(root)
@@ -258,31 +280,43 @@ def seal_checkpoint(
         entry = next((item for item in ledger["objects"] if item["path"] == relative), None)
         if entry is None or entry.get("owner") != owner or "disposition" in entry:
             raise ValueError("checkpoint sealing requires its exact registered owner range")
+        if retain_payload and entry.get("class") != "rebuildable_payload":
+            raise ValueError("stopped payload must already belong to its rebuildable run owner")
         if entry.get("consumers"):
             raise ValueError("checkpoint consumers require owner handoff before sealing")
         if entry["status"] != "writing" and not (
-            entry["status"] == "ready" and entry.get("retention_reason") == SEALED_CHECKPOINT_REASON
+            entry["status"] == "ready" and entry.get("retention_reason") == reason
         ):
             raise ValueError("checkpoint range is not writing or already sealed")
         leases = capacity_protection.load_capacity_protection_leases(root)
         if capacity_protection.path_is_protected(run_dir, leases["protected_paths"]):
             raise ValueError("checkpoint has an active protection lease; defer sealing")
         manifest = _load_json(run_dir / "run_manifest.json", "run manifest")
-        if manifest.get("status") != "checkpoint":
+        if retain_payload and (
+            manifest.get("status") not in TERMINAL_STATUSES | {"checkpoint"}
+            or manifest.get("run_id") != run_dir.name or manifest.get("project") != owner
+            or config.get("run_id") != run_dir.name or config.get("project") != owner
+        ):
+            raise ValueError("stopped payload requires exact run/project identity and a stopped manifest state")
+        if not retain_payload and manifest.get("status") != "checkpoint":
             raise ValueError("checkpoint sealing requires a checkpoint manifest")
         total, records = _inventory(run_dir)
-        if total > budget or any(
+        if retain_payload and entry["status"] == "ready" and total != int(entry["bytes"]):
+            raise ValueError("sealed stopped payload resident bytes changed; owner must investigate")
+        if not retain_payload and (total > budget or any(
             classify_file(run_dir / item["path"], bytes_count=item["bytes"]) in HEAVY_RETENTION_ROLES
             for item in records
-        ):
+        )):
             raise ValueError("checkpoint is not light evidence; preserve it for its payload owner")
         ledger["resident_bytes"] += total - int(entry["bytes"])
         entry.update(
-            {"class": "light_evidence", "bytes": total, "status": "ready"},
+            {"class": "rebuildable_payload" if retain_payload else "light_evidence", "bytes": total, "status": "ready"},
         )
         entry.update(_run_lifecycle_duties(
-            run_dir, review_days=READY_REVIEW_DAYS, reason=SEALED_CHECKPOINT_REASON,
+            run_dir, review_days=READY_REVIEW_DAYS, reason=reason,
         ))
+        if retain_payload:
+            entry.update(pin=True, pin_reason=entry.get("pin_reason", retention_reason.strip()))
         for field in ("recovery_reason", "recovery_task", "recovery_evidence_paths", "consumers"):
             entry.pop(field, None)
         if not capacity_ledger._is_valid_capacity_ledger(root, ledger):
@@ -290,7 +324,8 @@ def seal_checkpoint(
         write_json_atomic(capacity_ledger.resolve_ledger_path(root), ledger)
     return {
         "schema_version": 1, "role": "run_capacity_lifecycle_receipt",
-        "action": "seal_checkpoint", "status": "ready", "run_status": "checkpoint",
+        "action": "seal_stopped_payload" if retain_payload else "seal_checkpoint",
+        "status": "ready", "run_status": manifest["status"],
         "run_directory": str(run_dir), "bytes": total, "file_count": len(records),
         "continuation": "new_run_required", "ledger_entry": entry,
     }
@@ -721,12 +756,13 @@ def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--action", choices=("register-writing-range", "register-writing", "assert-retention", "finalize-ready", "seal-checkpoint"), required=True)
+    parser.add_argument("--action", choices=("register-writing-range", "register-writing", "assert-retention", "finalize-ready", "seal-checkpoint", "seal-stopped-payload"), required=True)
     parser.add_argument("--artifact-root", type=Path, required=True)
     parser.add_argument("--run-config", type=Path)
     parser.add_argument("--run-directory", type=Path)
     parser.add_argument("--owner")
     parser.add_argument("--confirm-writing-stopped", action="store_true")
+    parser.add_argument("--retention-reason")
     args = parser.parse_args()
     action = {
         "register-writing-range": register_writing_range,
@@ -734,6 +770,7 @@ def main() -> int:
         "assert-retention": assert_retention_complete,
         "finalize-ready": finalize_ready,
         "seal-checkpoint": seal_checkpoint,
+        "seal-stopped-payload": seal_checkpoint,
     }[args.action]
     try:
         if args.action == "register-writing-range":
@@ -743,11 +780,13 @@ def main() -> int:
         else:
             if args.run_config is None or args.run_directory is not None:
                 raise ValueError(f"{args.action} requires --run-config only")
-            if args.action == "seal-checkpoint":
+            if args.action in {"seal-checkpoint", "seal-stopped-payload"}:
                 result = action(args.artifact_root, args.run_config, owner=args.owner,
-                                writing_stopped=args.confirm_writing_stopped)
+                                writing_stopped=args.confirm_writing_stopped,
+                                retain_payload=args.action == "seal-stopped-payload",
+                                retention_reason=args.retention_reason)
             else:
-                if args.owner is not None or args.confirm_writing_stopped:
+                if args.owner is not None or args.confirm_writing_stopped or args.retention_reason is not None:
                     raise ValueError("owner confirmation is only valid for seal-checkpoint")
                 result = action(args.artifact_root, args.run_config)
     except (OSError, RuntimeError, ValueError) as exc:

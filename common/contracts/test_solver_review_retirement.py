@@ -213,9 +213,88 @@ class SolverReviewRetirementTest(unittest.TestCase):
         ):
             with self.subTest(values=values), self.assertRaises(RetirementError):
                 plan_retirement(self.artifacts, self.repo, self.target, **values)
-        self._set_status(self.target, "failed")
-        with self.assertRaisesRegex(RetirementError, "complete success"):
+        for status in ("checkpoint",):
+            self._set_status(self.target, status)
+            with self.subTest(status=status), self.assertRaisesRegex(RetirementError, "complete failed/interrupted/success"):
+                self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_interrupted_preserves_terminal_and_small_evidence(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "interrupted")
+        evidence = {name: (self.target / name).read_bytes() for name in (
+            "run_manifest.json", "summary.json", "run_config.json", "candidate.json", "simion/seed.iob",
+        )}
+        with self.assertRaisesRegex(RetirementError, "complete failed/success"):
+            plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
+                            "replacement does not authorize interrupted retirement", self.compatibility_roles)
+        plan = self._owner_plan()
+        self.assertEqual(plan["target_terminal_status"], "interrupted")
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "interrupted")
+        for name, original in evidence.items():
+            self.assertEqual((self.target / name).read_bytes(), original)
+        self.assertFalse((self.target / "simion/analyzer.pa0").exists())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_interrupted_rechecks_consumer_and_lease(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "interrupted")
+        plan = self._owner_plan()
+        downstream = self.runs / "20260103_000000__analysis__python__consumer"
+        downstream.mkdir()
+        config = downstream / "run_config.json"
+        config.write_text(json.dumps({"source": str(self.target / "simion/analyzer.pa0")}), encoding="utf-8")
+        with self.assertRaisesRegex(RetirementError, "active references"):
             self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        config.write_text("{}", encoding="utf-8")
+        create_capacity_protection_lease(
+            self.artifacts, lease_id="interrupted-owner-protected", owner="test",
+            ttl_seconds=3600, protected_paths=[self.target],
+        )
+        with self.assertRaisesRegex(RetirementError, "active capacity protection lease"):
+            self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "protection"):
+                apply_retirement(plan)
+        self.assertTrue((self.target / "simion/analyzer.pa0").is_file())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_failed_apply_and_verify_preserve_terminal_evidence(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "failed")
+        original_manifest = (self.target / "run_manifest.json").read_bytes()
+        original_summary = (self.target / "summary.json").read_bytes()
+        with self.assertRaisesRegex(RetirementError, "nonempty abandonment reason"):
+            plan_retirement(self.artifacts, self.repo, self.target, owner="p")
+        plan = self._owner_plan()
+        self.assertEqual(plan["target_terminal_status"], "failed")
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            receipt = apply_retirement(plan)
+        self.assertEqual(receipt["target_terminal_status"], "failed")
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "failed")
+        self.assertEqual((self.target / "run_manifest.json").read_bytes(), original_manifest)
+        self.assertEqual((self.target / "summary.json").read_bytes(), original_summary)
+        self.assertTrue((self.target / "simion/seed.iob").is_file())
+        self.assertFalse((self.target / "simion/analyzer.pa0").exists())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_failed_rejects_active_consumer_at_plan_and_apply(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "failed")
+        plan = self._owner_plan()
+        downstream = self.runs / "20260103_000000__analysis__python__consumer"
+        downstream.mkdir()
+        (downstream / "run_config.json").write_text(json.dumps({
+            "source": str(self.target / "simion/analyzer.pa0"),
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        self.assertTrue((self.target / "simion/analyzer.pa0").is_file())
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_owner_completed_rejects_lease_and_active_consumer(self, _scan: mock.Mock) -> None:
