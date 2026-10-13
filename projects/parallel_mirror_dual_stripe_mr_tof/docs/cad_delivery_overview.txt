@@ -1,0 +1,372 @@
+Parallel Mirror Dual Stripe MR TOF
+CAD and Simulation Setup Manual
+
+1. PURPOSE AND SCOPE
+
+This manual describes a multi-reflection time-of-flight analyzer with two
+parallel electrostatic mirrors, two curved Stripe electrode pairs, two Prisms,
+an orthogonal accelerator, and a detector envelope. It provides 53 individual
+parts and seven assemblies in native SolidWorks and Parasolid formats. It
+explains the component functions, coordinates, ion release, electrical
+settings, and observation conditions needed to reproduce the specified
+simulation setup.
+The specified delivery is a simulation-specific variant with all circular
+mounting holes omitted. The hole-free geometry and the native and neutral
+file readback have been checked.
+
+The voltage tables and release settings form one coherent simulation setup.
+Use the complete set together; do not replace individual voltages with values
+from another setup. These settings are not claimed to be globally optimized,
+and a complete-source time focus has not been established. The model is not
+a fabrication drawing set or a physical performance guarantee.
+
+2. COORDINATES, FILES, AND ASSEMBLIES
+
+All positions and dimensions stated here are in millimeters. Voltages are
+relative to the common electrical ground. Kinetic energies are in electron
+volts, velocities in millimeters per microsecond, and event times in
+microseconds. Integration step limits are stated in nanoseconds.
+On CAD import, preserve the units encoded in each file and check the imported
+dimensions against the millimeter extents in this manual. Do not manually
+apply a factor of 1000 just because the CAD kernel uses SI units internally;
+the importer handles the file units.
+
+Assembly axes:
+  x: transverse direction; x=0 is the left/right symmetry plane.
+  y: slow drift direction along the extended analyzer.
+  z: fast acceleration and mirror-reflection direction.
+
+Use the assembly files for world placement. Individual Stripe parts retain
+their original native local coordinates. Other individual parts use local
+axes corresponding to (project y, project z, project x). A part's local origin
+is not necessarily the instrument origin. The complete instance transforms
+are recorded in the supplied part-placement and CAD validation records.
+
+The .SLDASM files retain component references and placements. Keep the supplied
+parts beside these assemblies. Assembly .x_t files contain flattened bodies
+in world coordinates; they do not retain the native component hierarchy.
+Bodies at different voltages are not merged. Individual .x_t files retain the
+declared part-local coordinates. Parasolid is the qualified neutral format
+for these exact curves; unverified STEP files are not substitutes.
+
+Assembly filename stem                         Contents and purpose
+--------------------------------------------  ------------------------------
+mrtof_assembly                                Full 53-part instrument reference
+assembly_oa                                   21 accelerator parts and sheets
+assembly_mirror                               14 mirror electrodes and shields
+assembly_stripe_and_central_ground             5 curved Stripe/central parts
+assembly_prisms_and_shields                    6 injection/return steering parts
+assembly_detector                             1 detector envelope
+assembly_reference                            6 C0 boundary reference faces
+
+Each assembly stem has both .SLDASM and .x_t files. Each part stem listed under
+Complete Part Identification has both .SLDPRT and .x_t files. The English stems
+are retained so that native assembly references remain valid.
+
+3. COMPONENTS AND THEIR FUNCTIONS
+
+Orthogonal accelerator (OA)
+The initial beam travels in +y. The accelerator turns it into fast motion in
+-z while preserving a much slower y drift. It has two acceleration zones:
+the first lies between the repeller at project z=34 mm and the intermediate
+grid at z=30 mm; the second extends from that grid to the exit at z=0 mm.
+The nominal zone lengths are 4 and 30 mm. The two-zone design aims to bring
+ions released at different z positions to a nominal first-order time focus at the
+accelerator exit, z=0 mm. Each zone has a linear nominal potential drop and
+a nominally uniform acceleration field. Along the -z flight direction, the
+first-zone potential decreases from 4749.074377 to 3994.946318 V and the
+second-zone potential decreases to 0 V. The nominal field magnitudes are
+188.532015 and 133.164877 V/mm, both directed in -z for positive ions.
+Real three-dimensional fields near the grids, apertures, and enclosure have
+fringe and edge components and are not uniform everywhere. The voltage ratio
+compensates part of the starting-position timing difference; the exit focus
+is a design purpose, not a claim that the whole release volume has been
+verified to arrive simultaneously.
+Fifteen ring electrodes grade the second-zone potential. The grounded enclosure
+shields the accelerator. Frames support the two modeled grid planes.
+The grids are ideal transparent, zero-thickness equipotential sheets in this
+model. Ions are not lost through collisions with mesh wires; no actual wire
+mesh, transparency loss, or manufacturing detail has been included.
+
+Mirrors
+Each mirror has five voltage groups A through E. The two mirrors reverse the
+fast z motion repeatedly while the ions drift in y. Their shaped fields are
+used to control reflection time and transverse transport. Both mirror ends
+use the same A-E voltages. Grounded inner shields limit unwanted field access.
+The outer closure plates are electrically connected to the E group, not to
+ground. Use the supplied A-E voltage set on both ends. These settings define
+the reflection field for this setup; they do not guarantee correction of all
+energy, angular, transverse, or higher-order time responses.
+
+Stripes and central ground
+S1 and S2 are independently biased pairs of curved electrodes. They guide
+the slow drift and its return while the fast mirror reflections continue.
+Both electrodes of each pair share one voltage. The central curved part is
+grounded. The simulation-specific CAD variant retains the original exact
+native B-spline curves, beam slots, and end geometry, but omits all circular
+mounting holes. No circular mounting hole may penetrate a beam-slot wall.
+The curves are not refitted or replaced by polygons. Field simulations evaluate the same design
+with a discretized boundary and omit non-beam mechanical details.
+
+Prisms and shields
+P1 and P2 steer injection and returning trajectories. Each Prism consists of
+two x-side electrodes at the same voltage and a separate grounded shield.
+P1/P2 labels are steering stages, not the two acceleration zones. The P1
+grounded shield keeps its existing cross-section and is extended toward the
+accelerator outlet, leaving a nominal 1 mm clearance. Its modeled upper end
+is z=-1.5 mm next to the outlet frame ending at z=-0.5 mm. This reduces access
+of surrounding fields to the connecting beam region; the open beam aperture
+still admits edge fields. Neither zero field everywhere nor complete numerical
+convergence follows just from adding a grounded shield.
+
+Detector
+The detector part is a declared receiving envelope at the returning beam end,
+not a detailed MCP detector. Its world extent is x=-25..25, y=-87..-37,
+z=95..97 mm. The active return observation plane is z=97 mm for motion in -z.
+The model does not supply internal channels, gain, timing electronics, or
+detector-response broadening.
+
+C0 reference
+The six reference sheets define a candidate grounded enclosing boundary:
+x=-162.5..162.5, y=-242..558, z=-425..425 mm. These sheets describe an electrical
+boundary assumption, not a manufactured vacuum vessel. Wall thickness, ports,
+mounts, and feedthroughs are not specified. In a half-domain simulation x=0
+is a symmetry boundary, never an additional grounded wall.
+
+4. COMPLETE PART IDENTIFICATION
+
+Filename stem                     English description
+--------------------------------  ------------------------------------------
+mirror_positive_e01               Positive-Z Mirror A Electrode
+mirror_positive_e02               Positive-Z Mirror B Electrode
+mirror_positive_e03               Positive-Z Mirror C Electrode
+mirror_positive_e04               Positive-Z Mirror D Electrode
+mirror_positive_e05               Positive-Z Mirror E Electrode
+mirror_negative_e06               Negative-Z Mirror A Electrode
+mirror_negative_e07               Negative-Z Mirror B Electrode
+mirror_negative_e08               Negative-Z Mirror C Electrode
+mirror_negative_e09               Negative-Z Mirror D Electrode
+mirror_negative_e10               Negative-Z Mirror E Electrode
+mirror_ground_shield_1            Positive-Z Mirror Ground Shield
+mirror_ground_shield_2            Negative-Z Mirror Ground Shield
+mirror_outer_closure_1            Positive-Z Mirror E-Potential Closure
+mirror_outer_closure_2            Negative-Z Mirror E-Potential Closure
+
+s1_electrode_11                   S1 Positive-Z Curved Stripe Electrode
+s1_electrode_12                   S1 Negative-Z Curved Stripe Electrode
+s2_electrode_13                   S2 Positive-Z Curved Stripe Electrode
+s2_electrode_14                   S2 Negative-Z Curved Stripe Electrode
+central_ion_foil_ground           Central Curved Ground Electrode
+
+p1_negative_x                    P1 Negative-X Steering Electrode
+p1_positive_x                    P1 Positive-X Steering Electrode
+p2_negative_x                    P2 Negative-X Steering Electrode
+p2_positive_x                    P2 Positive-X Steering Electrode
+p1_ground_shield                 Extended P1 Ground Shield
+p2_ground_shield                 P2 Ground Shield
+
+oa_enclosure                     Accelerator Ground Enclosure
+oa_repeller                      Accelerator Repeller
+oa_grid_frame_1                  Intermediate Grid Frame
+oa_grid_frame_2                  Exit Grid Frame
+oa_ideal_grid_sheet_1            Ideal Transparent Intermediate Grid
+oa_ideal_grid_sheet_2            Ideal Transparent Exit Grid
+oa_ring_01                       Second-Zone Grading Ring 01
+oa_ring_02                       Second-Zone Grading Ring 02
+oa_ring_03                       Second-Zone Grading Ring 03
+oa_ring_04                       Second-Zone Grading Ring 04
+oa_ring_05                       Second-Zone Grading Ring 05
+oa_ring_06                       Second-Zone Grading Ring 06
+oa_ring_07                       Second-Zone Grading Ring 07
+oa_ring_08                       Second-Zone Grading Ring 08
+oa_ring_09                       Second-Zone Grading Ring 09
+oa_ring_10                       Second-Zone Grading Ring 10
+oa_ring_11                       Second-Zone Grading Ring 11
+oa_ring_12                       Second-Zone Grading Ring 12
+oa_ring_13                       Second-Zone Grading Ring 13
+oa_ring_14                       Second-Zone Grading Ring 14
+oa_ring_15                       Second-Zone Grading Ring 15
+
+detector                         Detector Receiving Envelope
+
+c0_reference_x_0                 C0 Negative-X Boundary Reference
+c0_reference_x_1                 C0 Positive-X Boundary Reference
+c0_reference_y_0                 C0 Negative-Y Boundary Reference
+c0_reference_y_1                 C0 Positive-Y Boundary Reference
+c0_reference_z_0                 C0 Negative-Z Boundary Reference
+c0_reference_z_1                 C0 Positive-Z Boundary Reference
+
+There are 45 solid bodies and eight zero-thickness sheets: the six C0 faces
+and two ideal accelerator grids. These reference sheets are not solid metal
+with an unspecified thickness. Component IDs belong to separate analyzer,
+accelerator, and detector namespaces; identical numbers across namespaces
+do not identify electrically connected parts.
+
+5. ELECTRICAL REFERENCE SETTINGS
+
+Solve an electrostatic field in vacuum with no space-charge coupling. Hold
+all listed electrode and grounded-boundary potentials constant throughout
+the ion flight. The source release time does not trigger voltage switching.
+The provided voltages are simulation reference inputs, not a guarantee of
+final bunch focusing or acceptance.
+
+Displayed voltages are rounded to six decimals for readability. Full-precision
+values and part-to-electrode assignments remain in the supplied parameter data
+and bom.csv. Use those data, not rounded prose, to reproduce a simulation.
+
+Analyzer group          Analyzer IDs       Voltage (V)
+----------------------  -----------------  ----------------
+Mirror A, both ends     1, 6                 0.000000
+Mirror B, both ends     2, 7             -5926.684783
+Mirror C, both ends     3, 8             -2583.070545
+Mirror D, both ends     4, 9              4171.864782
+Mirror E, both ends     5, 10             6011.806453
+S1 curved pair         11, 12             -27.137589
+S2 curved pair         13, 14              54.927333
+Central/mirror ground  15                  0.000000
+P1 x-side pair         16                189.862546
+P2 x-side pair         17               -189.933223
+P1 ground shield       18                  0.000000
+Reserved analyzer slot 19                  0.000000
+P2 ground shield       20                  0.000000
+
+Mirror outer_closure_1 follows analyzer ID 5; outer_closure_2 follows ID 10.
+Reserved slot 19 does not add a physical part. All six C0 reference faces are
+at 0 V. The detector envelope uses detector-namespace ID 25 at 0 V.
+
+Accelerator group       Accelerator ID      Voltage (V)
+----------------------  -----------------  ----------------
+Ground enclosure        15                  0.000000
+Repeller                22               4749.074377
+Intermediate grid/frame 23               3994.946318
+Exit grid/frame         24                  0.000000
+Ring 01                 26               3745.262174
+Ring 02                 27               3495.578029
+Ring 03                 28               3245.893884
+Ring 04                 29               2996.209739
+Ring 05                 30               2746.525594
+Ring 06                 31               2496.841449
+Ring 07                 32               2247.157304
+Ring 08                 33               1997.473159
+Ring 09                 34               1747.789014
+Ring 10                 35               1498.104869
+Ring 11                 36               1248.420725
+Ring 12                 37                998.736580
+Ring 13                 38                749.052435
+Ring 14                 39                499.368290
+Ring 15                 40                249.684145
+
+The current accelerator is held in its static energized state throughout
+this reference flight. No pulse-off time or switching waveform is claimed.
+Conductors at different voltages require insulation and clearance and must
+not be directly connected. Insulators, feeds, tolerances, support structures,
+and voltage ratings require separate mechanical/electrical engineering.
+
+6. ION RELEASE AND PATH
+
+Release center in assembly coordinates:
+  [x, y, z] = [0, -56.05182899425077, 32] mm.
+Release volume:
+  Uniform cylinder, axis y, radius 0.5 mm, height 1.0 mm.
+  x/z offsets lie inside a radius-0.5 mm disk; they are not independent boxes.
+  y extends from -56.55182899425077 to -55.55182899425077 mm.
+Species:
+  Mass 524 atomic mass units; charge state +1.
+Initial motion:
+  Direction +y, with zero nominal x/z velocity and zero angular full width.
+  Mean slow-direction kinetic energy Ey = 5.374387143093758 eV.
+  Ey is kinetic energy, not the y component of the electric field.
+  Uniform energy full width 0.1 eV, i.e. mean +/-0.05 eV.
+  This is a uniform kinetic-energy distribution, not a Gaussian distribution.
+  The equivalent standard deviation of this uniform distribution is
+  approximately 0.028868 eV.
+Birth time:
+  All ions start at t=0; no source-time spread is included.
+
+The accelerator geometric axis is at assembly y=-55 mm; the release center
+has an additional y offset of -1.051828994250772 mm. The net accelerator
+geometry placement [0, -55, -6] mm is applied once. Its exit reference is at
+project z=0. The release position above is already in final assembly coordinates
+and must not receive that placement a second time.
+
+The intended path is OA -> P1 -> negative mirror pre-reflection -> P2 ->
+mirror and Stripe propagation -> natural P2 return -> positive mirror turn
+-> detector. Positive ions leave the accelerator in -z. At the release
+center, the nominal accelerator potential implies an exit z kinetic energy
+of 4372.010347796059 eV for charge +1; this is not the release Ey value.
+
+K and phase counting
+The design ratio K is the time for one slow y excursion from the entry region
+to its drift turning point and back, divided by one complete fast oscillation
+between the two mirrors. K=24.5 corresponds to 24 complete fast periods plus
+one half-period, or 49 half-periods. It does not mean 24.5 individual reflections.
+For phase observation, set count zero at the first positive-z mirror turn
+after P2 with positive y motion. Each subsequent physical mirror turn adds
+one half-period. The target is the opposite-mirror turn at count 49. Earlier
+injection reflections and later return reflections are recorded separately;
+their inclusion in a raw total must not change this main-excursion definition.
+The nominal first positive-mirror turn is at y=0 mm, and the nominal slow
+turn is at y=340 mm. These are matching targets, not forced trajectory resets.
+
+Nominal injection angle and reference state
+The nominal angle is 2.008022871136829 degrees measured in the y-z plane from
+the positive z direction toward positive y. For positive-z travel its tangent
+is vy/vz=0.035060966450536406. It is a theoretical matching value associated
+with the supplied mirror/Stripe setup, not an independent initial angle to
+apply to ions released inside the accelerator.
+Measure the actual angle on the first positive-z crossing of the P2 exit
+reference plane z=33 mm. This lies in the selected reference interval
+z=26..40 mm; it is not assumed to be a perfectly field-free plane.
+One center-ray reference at this plane is:
+  Position [x, y, z] = [0, -9.20013672284, 33] mm.
+  Velocity [vx, vy, vz] = [0, 1.40252949556, 40.1253546944] mm/microsecond.
+  Actual angle atan(vy/vz) = 2.0018843151693746 degrees.
+This is an observed finite-field state for comparison, not a replacement
+release condition. The angle can vary along a trajectory; do not force the
+nominal angle at every plane or inside a mirror turning field.
+
+7. OBSERVATIONS TERMINATION AND MODEL LIMITS
+
+The geometry and voltages are symmetric in x. An ideal center ion released
+with x=0 and vx=0 stays in that symmetry plane. Left/right paired trajectories
+can be mirror images while both arrive later or earlier than the center;
+symmetry alone does not remove transverse even-time response or all aberrations.
+
+Use one clock starting at the common release time t=0. Record crossings of
+the accelerator geometric exit z=0, the P2 exit reference z=33, central z=0
+planes during reflection, mirror turns, the slow y turn, and the final
+detector surface separately. The accelerator exit and an outer numerical
+domain exit are different observations. Crossing z=0 elsewhere in the
+instrument is not evidence of accelerator time focusing.
+
+A mirror turn is an outward-to-inward reversal of vz in the appropriate
+mirror region. A slow turn is a positive-to-negative reversal of vy during
+the main drift excursion. Neither event stops the ion or changes a voltage.
+The target count 49 is a phase observation, not a programmed voltage switch.
+Locate plane crossings and reversal events between trajectory samples;
+nearest output times alone are insufficient for accurate timing.
+
+A detector hit requires the valid return sequence, travel in -z, and contact
+with the z=97 mm receiving plane inside x=-25..25 and y=-87..-37 mm. Earlier
+crossings of the same plane during injection are only observations. Collision
+with any other solid conductor terminates the ray as a loss. Preserve the raw
+collision position and time; a valid detector contact can be localized to the
+receiving plane, but a wall collision must not be relabeled as a hit. Re-entry
+into the accelerator after initial extraction is an invalid return path.
+Leaving available field support or obtaining a nonfinite field is a numerical
+failure, not a physical collision. The ideal transparent OA sheets are field
+boundaries rather than absorbing wire surfaces; the surrounding frames and
+enclosure remain solid collision objects.
+
+For SIMION tracking, the stated reference uses trajectory quality Q=8 and a
+maximum integration step of 4 ns. Field resolution, event localization, and
+collision-surface resolution also affect the result. Check the quantities
+needed for the intended simulation rather than assuming that a small step
+alone proves accuracy. A center-ray detector hit does not establish a time
+focus for the full release volume. Retain all lost ions when evaluating a
+source distribution.
+
+Space charge, realistic angular spread, source birth-time spread, detector
+timing response, manufacturing errors, and actual vacuum-vessel ports are not
+covered by this delivery. The model is an engineering simulation reference,
+not a final physical performance guarantee or fabrication drawing set.
