@@ -17,7 +17,9 @@ from common.contracts import capacity_ledger
 from common.contracts import capacity_protection
 from common.contracts.artifact_retention import classify_file
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
-from common.contracts.solver_review_retirement import RECEIPT_NAME, verify_retirement
+from common.contracts.solver_review_retirement import (
+    RECEIPT_NAME, _assert_runtime_retirement_unprotected, verify_retirement,
+)
 
 
 TERMINAL_STATUSES = {"success", "failed", "interrupted"}
@@ -284,7 +286,21 @@ def seal_checkpoint(
             raise ValueError("stopped payload must already belong to its rebuildable run owner")
         if entry.get("consumers"):
             raise ValueError("checkpoint consumers require owner handoff before sealing")
-        if entry["status"] != "writing" and not (
+        retired_runtime = False
+        if (not retain_payload and entry["status"] == "ready"
+                and entry.get("class") == "rebuildable_payload"
+                and str(entry.get("retention_reason", "")).startswith(SEALED_PAYLOAD_REASON_PREFIX)
+                and (run_dir / RECEIPT_NAME).is_file()):
+            if (run_dir / "retention_actions.json").exists():
+                assert_retention_complete(root, run_config)
+            verified = verify_retirement(run_dir)
+            receipt = _load_json(run_dir / RECEIPT_NAME, "runtime retirement receipt")
+            if (verified["target_terminal_status"] != "checkpoint"
+                    or not isinstance(receipt.get("stopped_checkpoint_runtime"), dict)):
+                raise ValueError("checkpoint closure requires its verified stopped runtime retirement")
+            _assert_runtime_retirement_unprotected(root, run_dir)
+            retired_runtime = True
+        if entry["status"] != "writing" and not retired_runtime and not (
             entry["status"] == "ready" and entry.get("retention_reason") == reason
         ):
             raise ValueError("checkpoint range is not writing or already sealed")
@@ -317,6 +333,9 @@ def seal_checkpoint(
         ))
         if retain_payload:
             entry.update(pin=True, pin_reason=entry.get("pin_reason", retention_reason.strip()))
+        elif retired_runtime:
+            entry.update(pin=False)
+            entry.pop("pin_reason", None)
         for field in ("recovery_reason", "recovery_task", "recovery_evidence_paths", "consumers"):
             entry.pop(field, None)
         if not capacity_ledger._is_valid_capacity_ledger(root, ledger):

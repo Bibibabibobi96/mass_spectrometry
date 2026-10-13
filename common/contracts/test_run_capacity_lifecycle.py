@@ -144,6 +144,98 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()})
             self.assertFalse((run / "retention_actions.json").exists())
 
+    def retired_checkpoint_runtime_fixture(self, root: Path) -> tuple[Path, Path]:
+        """Use the real owner chain on a tiny sealed private runtime family."""
+        run, config = self.fixture(root, "20260101_000000__sim__simion__checkpoint")
+        document = json.loads(config.read_text())
+        document.update(schema_version=2, run_id=run.name, project="p", mode="runtime_iteration",
+                        inputs={}, formal_gate_passed=False)
+        config.write_text(json.dumps(document))
+        summary = run / "summary.json"
+        summary.write_text(json.dumps({"run_id": run.name, "status": "checkpoint"}))
+        directory = run / "runtime/native_family"
+        directory.mkdir(parents=True)
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "exists": True, "bytes": path.stat().st_size,
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper()}
+        members = []
+        for index in range(2):
+            payload = directory / f"field.pa{index}"
+            payload.write_bytes(b"tiny field" + bytes([index]))
+            members.append({"name": payload.name, "bytes": payload.stat().st_size,
+                            "sha256": record(payload)["sha256"]})
+        checkpoint = run / "runtime_checkpoint.json"
+        checkpoint.write_text(json.dumps({
+            "schema_version": 1, "status": "prepared", "directory": str(directory), "members": members,
+            "runtime_receipt": {"status": "prepared", "run_id": run.name,
+                                "controller_path": str(directory / "field.pa0"),
+                                "source_responses": [{"response_id": 1}]},
+        }))
+        (run / "run_manifest.json").write_text(json.dumps({
+            "schema_version": 2, "run_id": run.name, "project": "p", "mode": document["mode"],
+            "status": "checkpoint", "formal_eligible": False, "recorded_at_utc": "2026-01-01T00:00:00Z",
+            "run_config": record(config), "inputs": {}, "outputs": [record(summary), record(checkpoint)],
+            "artifact_retention": document["artifact_retention"],
+        }))
+        register_writing(root, config)
+        seal_checkpoint(root, config, owner="p", writing_stopped=True, retain_payload=True,
+                        retention_reason="private runtime retained for owner handoff")
+        with patch("common.contracts.solver_review_retirement._git_document_references", return_value=[]):
+            plan = plan_retirement(root, root, run, owner="p",
+                                   owner_abandonment_reason="old runtime experiment explicitly closed",
+                                   runtime_checkpoint_path=checkpoint, writing_stopped=True)
+            with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                apply_retirement(plan)
+        return run, config
+
+    def test_retired_checkpoint_runtime_seals_light_without_terminalizing_or_reading_pa(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.retired_checkpoint_runtime_fixture(root)
+            before = {p.relative_to(run).as_posix(): p.read_bytes() for p in run.rglob("*") if p.is_file()}
+            self.assertEqual(load_capacity_ledger(root)["objects"][0]["class"], "rebuildable_payload")
+            result = seal_checkpoint(root, config, owner="p", writing_stopped=True)
+            self.assertEqual((result["status"], result["run_status"]), ("ready", "checkpoint"))
+            entry = load_capacity_ledger(root)["objects"][0]
+            self.assertEqual((entry["class"], entry["pin"]), ("light_evidence", False))
+            self.assertEqual(load_capacity_ledger(root)["resident_bytes"], sum(map(len, before.values())))
+            self.assertEqual(before, {p.relative_to(run).as_posix(): p.read_bytes() for p in run.rglob("*") if p.is_file()})
+            repeated = seal_checkpoint(root, config, owner="p", writing_stopped=True)
+            self.assertEqual(repeated["bytes"], result["bytes"])
+            self.assertFalse((run / "retention_actions.json").exists())
+            with self.assertRaisesRegex(ValueError, "sealed run is read-only"):
+                register_writing(root, config)
+
+    def test_retired_checkpoint_runtime_closure_rejects_bad_receipt_guards_and_new_heavy(self) -> None:
+        for case in ("pending", "changed_checkpoint", "bad_normal", "new_heavy", "lease", "gui", "writer"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                initialize_capacity_ledger(root, objects=[])
+                run, config = self.retired_checkpoint_runtime_fixture(root)
+                if case == "pending":
+                    receipt = run / RECEIPT_NAME
+                    document = json.loads(receipt.read_text())
+                    document["lifecycle_status"] = "retirement_pending"
+                    receipt.write_text(json.dumps(document))
+                elif case == "changed_checkpoint":
+                    (run / "runtime_checkpoint.json").write_text("{}")
+                elif case == "bad_normal":
+                    (run / "retention_actions.json").write_text("invalid json")
+                elif case == "new_heavy":
+                    (run / "new.pa").write_bytes(b"new field")
+                elif case == "lease":
+                    capacity_protection.create_capacity_protection_lease(
+                        root, lease_id="checkpoint-reader", owner="test", ttl_seconds=3600, protected_paths=[run])
+                elif case == "gui":
+                    review = root / "projects/p/reviews/current_gui"
+                    review.mkdir(parents=True)
+                    (review / "inspection_receipt.json").write_text(json.dumps({"status": "ready", "source_run": run.name}))
+                ledger_before = load_capacity_ledger(root)
+                with self.assertRaises(ValueError):
+                    seal_checkpoint(root, config, owner="p", writing_stopped=case != "writer")
+                self.assertEqual(load_capacity_ledger(root), ledger_before)
+
     def test_retirement_fallback_rejects_corrupt_or_pending_retirement_and_bad_normal_receipt(self) -> None:
         for case in ("corrupt", "pending", "bad_normal"):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:

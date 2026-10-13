@@ -1,4 +1,4 @@
-"""Governed retirement of superseded ``solver_review`` native payloads.
+"""Governed retirement of solver-review and explicitly stopped runtime payloads.
 
 The original run manifest remains immutable historical evidence.  A completed
 retirement receipt becomes the only valid verifier for the reduced run.
@@ -61,6 +61,7 @@ def _load_run(
     run: Path, *, allowed_statuses: Iterable[str] = ("success",), label: str = "run",
     allow_legacy_initialization_summary: bool = False,
     expected_run_id: str | None = None,
+    stopped_checkpoint_runtime: bool = False,
 ) -> dict[str, Any]:
     required = {name: _json(run / name) for name in ("run_config.json", "summary.json", "run_manifest.json")}
     config, summary, manifest = required.values()
@@ -92,9 +93,12 @@ def _load_run(
         manifest_retention = validate_retention(manifest.get("artifact_retention"))
     except ValueError as exc:
         raise RetirementError(f"invalid solver_review retention: {run_id}: {exc}") from exc
-    if retention.class_id != "solver_review":
+    required_class = "compact" if stopped_checkpoint_runtime else "solver_review"
+    if stopped_checkpoint_runtime and (manifest_status != "checkpoint" or summary_status != "checkpoint"):
+        raise RetirementError("stopped runtime retirement requires matching checkpoint states")
+    if retention.class_id != required_class:
         raise RetirementError(f"run is not solver_review: {run_id}")
-    if manifest_retention.class_id != "solver_review":
+    if manifest_retention.class_id != required_class:
         raise RetirementError(f"manifest retention differs: {run_id}")
     return {
         "dir": run,
@@ -176,6 +180,7 @@ def structured_target_references(value: Any, target: Path, run_id: str) -> set[s
 def _downstream_references(
     artifact_root: Path, target: Path, run_id: str, *,
     removable_paths: Iterable[str] = (), preserved_paths: Iterable[str] = (),
+    approved_stopped_consumers: Iterable[dict[str, Any]] = (),
 ) -> dict[str, list[dict[str, str]]]:
     references: dict[str, list[dict[str, str]]] = {
         "active": [],
@@ -185,6 +190,7 @@ def _downstream_references(
     }
     removable = {posixpath.normpath(item).casefold() for item in removable_paths}
     preserved = {posixpath.normpath(item).casefold() for item in preserved_paths}
+    stopped = {Path(item["run_path"]).resolve() for item in approved_stopped_consumers}
     for run_dir in artifact_root.glob("projects/*/runs/*"):
         if not run_dir.is_dir() or run_dir.resolve() == target.resolve():
             continue
@@ -201,6 +207,9 @@ def _downstream_references(
         category = (
             "historical" if manifest_status in TERMINAL_STATUSES else "active"
         )
+        explicitly_stopped = run_dir.resolve() in stopped
+        if explicitly_stopped:
+            category = "historical"
         config: dict[str, Any] | None = None
         if path.exists():
             try:
@@ -255,6 +264,8 @@ def _downstream_references(
             }
             if relative:
                 item["path"] = relative
+            if explicitly_stopped:
+                item["classification_basis"] = "owner_explicit_consumer_abandonment_for_this_runtime"
             if category == "historical":
                 references[category].append(item)
             elif not relative or relative in removable:
@@ -379,14 +390,178 @@ def _manifest_records(
     return result
 
 
+def _runtime_checkpoint_members(
+    run: dict[str, Any], checkpoint_path: Path, records: dict[Path, dict[str, Any]],
+    retired_paths: Iterable[Path] = (),
+) -> dict[Path, dict[str, Any]]:
+    """Inherit only a sealed private native family's direct numbered members.
+
+    The checkpoint remains evidence, not a new PA publication.  No payload is
+    hashed; paths, sizes and the existing checkpoint identities govern removal.
+    """
+    checkpoint_path = _under(checkpoint_path, run["dir"])
+    record = records.get(checkpoint_path)
+    if not record or not str(record["manifest_role"]).startswith("output:"):
+        raise RetirementError("runtime checkpoint must be a manifest-bound local output")
+    checkpoint = _json(checkpoint_path)
+    receipt = checkpoint.get("runtime_receipt")
+    members = checkpoint.get("members")
+    if (checkpoint.get("schema_version") != 1 or checkpoint.get("status") != "prepared"
+            or not isinstance(receipt, dict) or receipt.get("status") != "prepared"
+            or receipt.get("run_id") != run["dir"].name
+            or not isinstance(members, list) or not members):
+        raise RetirementError("runtime checkpoint owner or prepared inventory differs")
+    raw_directory = Path(str(checkpoint.get("directory", "")))
+    directory = _under(raw_directory, run["dir"] / "runtime")
+    if (directory.parent != run["dir"] / "runtime" or raw_directory.is_symlink()
+            or directory.parent.is_symlink() or not directory.is_dir()):
+        raise RetirementError("runtime checkpoint directory must be a direct private runtime")
+    controller = _under(Path(str(receipt.get("controller_path", ""))), directory)
+    responses = receipt.get("source_responses")
+    if (controller.parent != directory or controller.suffix.lower() != ".pa0"
+            or not isinstance(responses, list) or not responses
+            or [item.get("response_id") if isinstance(item, dict) else None for item in responses]
+            != list(range(1, len(responses) + 1))):
+        raise RetirementError("runtime checkpoint controller or response inventory differs")
+    expected_names = [controller.stem + ".pa" + str(index) for index in range(len(responses) + 1)]
+    if [item.get("name") if isinstance(item, dict) else None for item in members] != expected_names:
+        raise RetirementError("runtime checkpoint must enumerate exactly its numbered family")
+    retired = set(retired_paths)
+    inherited = {}
+    for item in members:
+        path = directory / item["name"]
+        size, sha = item.get("bytes"), item.get("sha256")
+        if (isinstance(size, bool) or not isinstance(size, int) or size <= 0
+                or not isinstance(sha, str) or len(sha) != 64
+                or any(char not in "0123456789abcdef" for char in sha.lower())
+                or path.is_symlink() or (path not in retired and (
+                    not path.is_file() or path.stat().st_size != size))):
+            raise RetirementError(f"sealed runtime member differs: {path}")
+        identity = {"manifest_role": "runtime_checkpoint_member", "bytes": size, "sha256": sha}
+        if path in records and any(records[path][key] != identity[key] for key in ("bytes", "sha256")):
+            raise RetirementError(f"conflicting sealed runtime member: {path}")
+        inherited[path] = identity
+    return inherited
+
+
+def _assert_runtime_retirement_unprotected(artifact_root: Path, target: Path) -> None:
+    """Reuse the current-GUI owner's explicit source protection projection."""
+    from common.contracts.reconcile_artifact_capacity import (
+        _current_gui_source_paths, _current_gui_source_retention,
+    )
+
+    _current_gui_source_paths.cache_clear()
+    if _current_gui_source_retention(artifact_root, target):
+        raise RetirementError("stopped runtime remains a current GUI source")
+
+
+def _runtime_scope_path(document: dict[str, Any], target: Path) -> Path | None:
+    """Validate the explicit stopped scope in a plan or completed receipt."""
+    if "stopped_checkpoint_runtime" not in document:
+        return None
+    scope = document["stopped_checkpoint_runtime"]
+    if (document.get("retirement_mode") != "completed_experiment"
+            or not isinstance(scope, dict) or set(scope) != {"writing_stopped", "checkpoint"}
+            or scope["writing_stopped"] is not True or not isinstance(scope["checkpoint"], dict)):
+        raise RetirementError("invalid stopped checkpoint runtime scope")
+    record = scope["checkpoint"]
+    if set(record) != {"path", "bytes", "sha256"} or not isinstance(record["path"], str):
+        raise RetirementError("invalid stopped runtime checkpoint record")
+    path = _under(target / record["path"], target)
+    if record["path"] != path.relative_to(target).as_posix():
+        raise RetirementError("runtime checkpoint scope path must be canonical run-relative")
+    try:
+        verify_record("stopped runtime checkpoint", {**record, "exists": True}, base_dir=target)
+    except (AssertionError, KeyError, OSError, TypeError, ValueError) as exc:
+        raise RetirementError("stopped runtime checkpoint identity differs") from exc
+    return path
+
+
+def _freeze_stopped_consumers(
+    paths: Iterable[Path], artifact_root: Path, target: Path, owner: str,
+) -> list[dict[str, Any]]:
+    """Bind stopped consumers to this owner decision without changing their state.
+
+    Writer/child-process cessation is the owner's explicit confirmation at the
+    existing entry point.  Leases, current GUI use and sealed small identities
+    are independently rechecked here; missing manifests never imply cessation.
+    """
+    result = []
+    paths = tuple(paths)
+    if not paths:
+        return result
+    seen = set()
+    leases = protection.load_capacity_protection_leases(artifact_root)
+    for path in paths:
+        run = _under(path, artifact_root)
+        if (run in seen or run == target or path.is_symlink() or not run.is_dir()
+                or run.parent != artifact_root / "projects" / owner / "runs"):
+            raise RetirementError("approved stopped consumer must be a unique same-owner project run")
+        seen.add(run)
+        config, summary, manifest = (_json(run / name) for name in (
+            "run_config.json", "summary.json", "run_manifest.json"))
+        if (config.get("run_id") != run.name or manifest.get("run_id") != run.name
+                or summary.get("run_id") not in {None, run.name}
+                or config.get("project") != owner or manifest.get("project") != owner
+                or manifest.get("status") != "checkpoint" or summary.get("status") != "checkpoint"):
+            raise RetirementError("approved stopped consumer identity or checkpoint state differs")
+        if protection.path_is_protected(run, leases["protected_paths"]):
+            raise RetirementError("approved stopped consumer has an active protection lease")
+        _assert_runtime_retirement_unprotected(artifact_root, run)
+        config_record = manifest.get("run_config")
+        summary_records = [record for record in manifest.get("outputs", [])
+                           if isinstance(record, dict)
+                           and record_path(record, base_dir=run) == run / "summary.json"]
+        if (not isinstance(config_record, dict) or record_path(config_record, base_dir=run) != run / "run_config.json"
+                or len(summary_records) != 1):
+            raise RetirementError("approved stopped consumer must seal its local config and summary")
+        records = {}
+        for name, record in (("run_config", config_record), ("summary", summary_records[0])):
+            try:
+                verify_record("approved stopped consumer " + name, record, base_dir=run)
+            except (AssertionError, KeyError, OSError, TypeError, ValueError) as exc:
+                raise RetirementError("approved stopped consumer sealed evidence differs") from exc
+            records[name] = {"path": str(run / (name + ".json")), "bytes": record["bytes"],
+                             "sha256": str(record["sha256"]).upper()}
+        if not (structured_target_references(config, target, target.name)
+                | structured_target_references(manifest, target, target.name)):
+            raise RetirementError("approved stopped consumer does not reference this retirement target")
+        manifest_path = run / "run_manifest.json"
+        result.append({"run_path": str(run), "run_id": run.name, "owner": owner, **records,
+                       "manifest": {"path": str(manifest_path), "bytes": manifest_path.stat().st_size,
+                                    "sha256": file_sha256(manifest_path)}})
+    return sorted(result, key=lambda item: item["run_path"])
+
+
+def _verify_stopped_consumers(document: dict[str, Any], target: Path) -> list[dict[str, Any]]:
+    """Recheck the same frozen list for apply, pending replay and verification."""
+    approved = document.get("approved_stopped_consumers", [])
+    if not isinstance(approved, list):
+        raise RetirementError("approved stopped consumers must be a frozen list")
+    if not approved:
+        return []
+    if _runtime_scope_path(document, target) is None:
+        raise RetirementError("stopped consumer approval is limited to stopped runtime retirement")
+    if any(not isinstance(item, dict) or not isinstance(item.get("run_path"), str) for item in approved):
+        raise RetirementError("approved stopped consumer record is invalid")
+    refreshed = _freeze_stopped_consumers(
+        [Path(item["run_path"]) for item in approved], Path(document["artifact_root"]), target, document["owner"])
+    if refreshed != approved:
+        raise RetirementError("approved stopped consumer evidence changed")
+    return refreshed
+
+
 def _file_inventory(
     run: dict[str, Any], *, retired_paths: Iterable[Path] = (),
     inherit_heavy_identity: bool = False,
+    runtime_checkpoint_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     root: Path = run["dir"]
     records = _manifest_records(
         run, retired_paths=retired_paths, inherit_heavy_identity=inherit_heavy_identity,
     )
+    if runtime_checkpoint_path is not None:
+        records.update(_runtime_checkpoint_members(run, runtime_checkpoint_path, records, retired_paths))
     inventory: list[dict[str, Any]] = []
     for path in sorted((item for item in root.rglob("*") if item.is_file()), key=lambda item: item.as_posix()):
         if path.name == RECEIPT_NAME:
@@ -494,9 +669,17 @@ def plan_retirement(
     compatibility_assertion: str = "", compatibility_input_roles: Iterable[str] = (),
     compatibility_input_role_mappings: Iterable[tuple[str, str]] = (),
     *, owner: str = "", owner_abandonment_reason: str = "",
+    runtime_checkpoint_path: Path | None = None, writing_stopped: bool = False,
+    approved_stopped_consumers: Iterable[Path] = (),
 ) -> dict[str, Any]:
     """Plan supersession or owner-approved completion; retain all small evidence."""
     owner_mode = bool(owner or owner_abandonment_reason)
+    runtime_mode = runtime_checkpoint_path is not None
+    approved_stopped_consumers = tuple(approved_stopped_consumers)
+    if approved_stopped_consumers and not (owner_mode and runtime_mode and writing_stopped):
+        raise RetirementError("stopped consumer approval requires the confirmed owner runtime scope")
+    if (runtime_mode and (not owner_mode or not writing_stopped)) or (writing_stopped and not runtime_mode):
+        raise RetirementError("runtime retirement requires explicit owner completion and confirmed stopped writing")
     compatibility_input_roles = tuple(compatibility_input_roles)
     compatibility_input_role_mappings = tuple(compatibility_input_role_mappings)
     if owner_mode:
@@ -512,6 +695,8 @@ def plan_retirement(
     replacement_run = _under(replacement_run, artifact_root) if replacement_run else None
     if target_run == replacement_run:
         raise RetirementError("target and replacement must differ")
+    approved_consumers = _freeze_stopped_consumers(
+        approved_stopped_consumers, artifact_root, target_run, owner.strip())
     prior_pending_sha: str | None = None
     prior_removed_missing: list[dict[str, Any]] = []
     if (target_run / RECEIPT_NAME).exists():
@@ -524,11 +709,19 @@ def plan_retirement(
             if not (target_run / item["path"]).is_file()
         ]
         prior_pending_sha = file_sha256(target_run / RECEIPT_NAME)
+        prior_runtime = _runtime_scope_path(prior, target_run)
+        requested_runtime = _under(runtime_checkpoint_path, target_run) if runtime_mode else None
+        if prior_runtime != requested_runtime:
+            raise RetirementError("pending retirement runtime scope changed")
+        if prior.get("approved_stopped_consumers", []) != approved_consumers:
+            raise RetirementError("pending retirement stopped consumer list or identity changed")
     target = _load_run(
         target_run,
-        allowed_statuses=("success", "failed", "interrupted") if owner_mode else ("success", "failed"),
+        allowed_statuses=("checkpoint",) if runtime_mode else (
+            ("success", "failed", "interrupted") if owner_mode else ("success", "failed")),
         label="target",
         allow_legacy_initialization_summary=not owner_mode,
+        stopped_checkpoint_runtime=runtime_mode,
     )
     if owner_mode and target["config"].get("project") != owner.strip():
         raise RetirementError("completed experiment owner differs from target project")
@@ -554,6 +747,9 @@ def plan_retirement(
     leases = protection.load_capacity_protection_leases(artifact_root)
     if protection.path_is_protected(target_run, leases["protected_paths"]):
         raise RetirementError("target is covered by an active capacity protection lease")
+    if runtime_mode:
+        _assert_runtime_retirement_unprotected(artifact_root, target_run)
+        runtime_checkpoint_path = _under(runtime_checkpoint_path, target_run)
     topology = _topology_compatible(
         target, replacement, compatibility_input_roles,
         compatibility_input_role_mappings,
@@ -561,8 +757,11 @@ def plan_retirement(
     inventory = _file_inventory(
         target, retired_paths=[_under(target_run / item["path"], target_run) for item in prior_removed_missing],
         inherit_heavy_identity=owner_mode,
+        runtime_checkpoint_path=runtime_checkpoint_path,
     )
     removed_current = [item for item in inventory if item["retention_role"] in HEAVY_ROLES]
+    if runtime_mode and any(item["manifest_role"] != "runtime_checkpoint_member" for item in removed_current):
+        raise RetirementError("stopped checkpoint retirement is limited to its sealed runtime members")
     removed = prior_removed_missing + removed_current
     if not removed:
         raise RetirementError("target contains no governed heavy payload")
@@ -571,8 +770,10 @@ def plan_retirement(
         artifact_root,
         target_run,
         target_run.name,
-        removable_paths=(item["path"] for item in removed),
+        removable_paths=[item["path"] for item in removed] + (
+            [runtime_checkpoint_path.relative_to(target_run).as_posix()] if runtime_mode else []),
         preserved_paths=(item["path"] for item in preserved),
+        approved_stopped_consumers=approved_consumers,
     )
     if downstream_refs["active"]:
         raise RetirementError(
@@ -587,6 +788,13 @@ def plan_retirement(
         "target_run_path": str(target_run),
         **({"retirement_mode": "completed_experiment", "owner": owner.strip(),
             "owner_abandonment_reason": owner_abandonment_reason.strip()} if owner_mode else {}),
+        **({"stopped_checkpoint_runtime": {
+            "writing_stopped": True,
+            "checkpoint": {"path": runtime_checkpoint_path.relative_to(target_run).as_posix(),
+                           "bytes": runtime_checkpoint_path.stat().st_size,
+                           "sha256": file_sha256(runtime_checkpoint_path)},
+        }} if runtime_mode else {}),
+        **({"approved_stopped_consumers": approved_consumers} if approved_consumers else {}),
         "replacement_run_id": replacement_run.name if replacement_run else None,
         "replacement_run_path": str(replacement_run) if replacement_run else None,
         "artifact_root": str(artifact_root),
@@ -625,6 +833,10 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
     target = _under(Path(plan["target_run_path"]), artifact_root)
     receipt_path = target / RECEIPT_NAME
     with protection.capacity_decision_lock(artifact_root):
+        runtime_checkpoint_path = _runtime_scope_path(plan, target)
+        approved_consumers = _verify_stopped_consumers(plan, target)
+        if runtime_checkpoint_path is not None:
+            _assert_runtime_retirement_unprotected(artifact_root, target)
         leases = protection.load_capacity_protection_leases(artifact_root)
         if protection.path_is_protected(target, leases["protected_paths"]):
             raise RetirementError(
@@ -634,8 +846,10 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
             artifact_root,
             target,
             target.name,
-            removable_paths=(item["path"] for item in plan["removed_files"]),
+            removable_paths=[item["path"] for item in plan["removed_files"]] + (
+                [runtime_checkpoint_path.relative_to(target).as_posix()] if runtime_checkpoint_path is not None else []),
             preserved_paths=(item["path"] for item in plan["preserved_files"]),
+            approved_stopped_consumers=approved_consumers,
         )
         if downstream["active"]:
             raise RetirementError(
@@ -678,6 +892,9 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
     except (KeyError, TypeError, ValueError) as exc:
         raise RetirementError("retirement plan lacks governed root identity") from exc
     manifest_paths = [("target", target)]
+    runtime_checkpoint_path = _runtime_scope_path(plan, target)
+    runtime_mode = runtime_checkpoint_path is not None
+    approved_consumers = _verify_stopped_consumers(plan, target)
     if replacement:
         manifest_paths.append(("replacement", replacement))
     for label, path in manifest_paths:
@@ -688,9 +905,11 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         _manifest_records(replacement_state)
     target_state = _load_run(
         target,
-        allowed_statuses=("success", "failed", "interrupted") if owner_mode else ("success", "failed"),
+        allowed_statuses=("checkpoint",) if runtime_mode else (
+            ("success", "failed", "interrupted") if owner_mode else ("success", "failed")),
         label="target",
         allow_legacy_initialization_summary=not owner_mode,
+        stopped_checkpoint_runtime=runtime_mode,
     )
     if plan.get("target_terminal_status") != target_state["manifest"]["status"]:
         raise RetirementError("target terminal status changed before apply")
@@ -730,8 +949,10 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         artifact_root,
         target,
         target.name,
-        removable_paths=(item["path"] for item in plan["removed_files"]),
+        removable_paths=[item["path"] for item in plan["removed_files"]] + (
+            [runtime_checkpoint_path.relative_to(target).as_posix()] if runtime_mode else []),
         preserved_paths=(item["path"] for item in plan["preserved_files"]),
+        approved_stopped_consumers=approved_consumers,
     )
     if downstream_refs["active"]:
         raise RetirementError(
@@ -743,12 +964,15 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         raise RetirementError(
             "target gained an active capacity protection lease before apply"
         )
+    if runtime_mode:
+        _assert_runtime_retirement_unprotected(artifact_root, target)
     inventory = _file_inventory(
         target_state, retired_paths=[
             _under(target / item["path"], target)
             for item in plan["removed_files"] if item.get("already_removed_before_resume")
         ],
         inherit_heavy_identity=owner_mode,
+        runtime_checkpoint_path=runtime_checkpoint_path,
     )
     if owner_mode:
         planned_inventory = [
@@ -803,7 +1027,7 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
             "removed_bytes": removed_bytes,
             "bytes_released_this_apply": plan["bytes_to_release"],
             "verification_semantics": (
-                "The immutable original run manifest describes the pre-retirement terminal run and is intentionally no "
+                "The immutable original run manifest describes the pre-retirement run and is intentionally no "
                 "longer complete on disk. Consumers must reject it and use this receipt verifier for historical "
                 "provenance only."
             ),
@@ -831,7 +1055,10 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
     # Receipts written before failed-target retirement existed can only have
     # described successful targets, so preserve their verification contract.
     target_status = receipt.get("target_terminal_status", "success")
-    allowed_statuses = {"success", "failed", "interrupted"} if owner_mode else {"success", "failed"}
+    runtime_checkpoint_path = _runtime_scope_path(receipt, run_dir)
+    runtime_mode = runtime_checkpoint_path is not None
+    allowed_statuses = {"checkpoint"} if runtime_mode else (
+        {"success", "failed", "interrupted"} if owner_mode else {"success", "failed"})
     if target_status not in allowed_statuses:
         raise RetirementError("retirement target terminal status is invalid")
     manifest_status = _json(run_dir / "run_manifest.json").get("status")
@@ -863,6 +1090,19 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
         _manifest_records(_load_run(replacement, label="replacement"))
         if file_sha256(replacement / "run_manifest.json") != receipt["replacement_manifest"]["sha256"]:
             raise RetirementError("replacement run manifest changed")
+    _verify_stopped_consumers(receipt, run_dir)
+    if runtime_mode:
+        state = _load_run(run_dir, allowed_statuses=("checkpoint",), stopped_checkpoint_runtime=True)
+        retired_paths = {_under(run_dir / item["path"], run_dir) for item in receipt["removed_files"]}
+        records = _manifest_records(state, retired_paths=retired_paths, inherit_heavy_identity=True)
+        members = _runtime_checkpoint_members(state, runtime_checkpoint_path, records, retired_paths)
+        if retired_paths != set(members) or any(
+            item.get("bytes") != members[_under(run_dir / item["path"], run_dir)]["bytes"]
+            or str(item.get("sha256", "")).upper()
+            != members[_under(run_dir / item["path"], run_dir)]["sha256"].upper()
+            for item in receipt["removed_files"]
+        ):
+            raise RetirementError("retired runtime scope differs from its sealed checkpoint inventory")
     for item in receipt["removed_files"]:
         if (run_dir / item["path"]).exists():
             raise RetirementError(f"retired heavy payload reappeared: {item['path']}")
@@ -890,6 +1130,9 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--compatibility-assertion")
     parser.add_argument("--owner", default="")
     parser.add_argument("--owner-abandonment-reason", default="")
+    parser.add_argument("--runtime-checkpoint", type=Path)
+    parser.add_argument("--confirm-writing-stopped", action="store_true")
+    parser.add_argument("--approved-stopped-consumer", action="append", type=Path, default=[])
     parser.add_argument("--compatibility-input-role", action="append", default=[])
     parser.add_argument(
         "--compatibility-input-role-map", action="append", default=[],
@@ -933,6 +1176,8 @@ def main(argv: Iterable[str] | None = None) -> int:
                 compatibility_roles,
                 mappings,
                 owner=args.owner, owner_abandonment_reason=args.owner_abandonment_reason,
+                runtime_checkpoint_path=args.runtime_checkpoint, writing_stopped=args.confirm_writing_stopped,
+                approved_stopped_consumers=args.approved_stopped_consumer,
             )
             if args.apply:
                 result = apply_retirement(result)

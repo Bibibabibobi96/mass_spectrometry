@@ -7,6 +7,9 @@ param(
   [string]$CompatibilityAssertion='',
   [string]$Owner='',
   [string]$OwnerAbandonmentReason='',
+  [string]$RuntimeCheckpoint='',
+  [switch]$ConfirmWritingStopped,
+  [string[]]$ApprovedStoppedConsumers=@(),
   [string[]]$CompatibilityInputRoles=@(),
   [string[]]$CompatibilityInputRoleMaps=@(),
   [switch]$Apply
@@ -37,6 +40,18 @@ if ($Owner -or $OwnerAbandonmentReason) {
 }
 foreach ($role in $CompatibilityInputRoles) { $arguments += @('--compatibility-input-role',$role) }
 foreach ($mapping in $CompatibilityInputRoleMaps) { $arguments += @('--compatibility-input-role-map',$mapping) }
+if ($RuntimeCheckpoint -or $ConfirmWritingStopped) {
+  if (-not $Owner.Trim() -or -not $OwnerAbandonmentReason.Trim() -or -not $RuntimeCheckpoint -or -not $ConfirmWritingStopped) {
+    throw 'Stopped runtime retirement requires owner, abandonment reason, checkpoint and stopped-writing confirmation.'
+  }
+  $arguments += @('--runtime-checkpoint',$RuntimeCheckpoint,'--confirm-writing-stopped')
+}
+if ($ApprovedStoppedConsumers.Count -gt 0) {
+  if (-not $RuntimeCheckpoint -or -not $ConfirmWritingStopped -or -not $Owner.Trim() -or -not $OwnerAbandonmentReason.Trim()) {
+    throw 'Stopped consumer approval requires the confirmed owner runtime retirement scope.'
+  }
+  foreach ($consumer in $ApprovedStoppedConsumers) { $arguments += @('--approved-stopped-consumer',$consumer) }
+}
 if (-not $Apply) { & $python @arguments; exit $LASTEXITCODE }
 if (-not $PSCmdlet.ShouldProcess($TargetRun, "retire governed solver_review heavy payload")) { return }
 $lease = Enter-HostExecutionLease -Role GATE -Stage artifact_retirement -RunId ([IO.Path]::GetFileName($TargetRun))

@@ -214,12 +214,23 @@ manifest/summary一致的`failed`或`interrupted` compact run。apply必须持�
 
 同一入口也接受已结束成功或失败实验的 owner 明确退出：`-Owner <project>` 与
 `-OwnerAbandonmentReason "<完成用途及无人继续消费的具名原因>"`。此模式与 replacement/compatibility
-参数互斥，仅接受非Formal、manifest与summary一致的封存success/failed/interrupted solver_review，不接受checkpoint；中断仅允许owner明确退出，superseded模式仍只接受success/failed；仍检查租约、活动下游依赖和精确载荷清单，
+参数互斥，普通模式仅接受非Formal、manifest与summary一致的封存success/failed/interrupted solver_review；
+中断仅允许owner明确退出，superseded模式仍只接受success/failed；仍检查租约、活动下游依赖和精确载荷清单，
 保留全部小证据，不将实验退出冒称为被新run取代。待删除的本地重型文件继承manifest已封存身份，
 核对路径、类型和大小而不重复全文哈希；小证据仍校验内容。
 同run的局域子manifest仅在父manifest已封存该严格本地后代时继承；子终态、owner和小证据仍须一致，
 不从目录搜寻未封存manifest，子PA同样不重复全文哈希。
 完成receipt标为`completed_experiment_payload_retired`，保留实际`target_terminal_status`，不将失败改为成功；由原`--verify`入口验证，原superseded模式及旧receipt语义不变。
+
+已停止的compact checkpoint私有原生PA族仅可在同一owner入口显式提供
+`-RuntimeCheckpoint <manifest已封存的族清单> -ConfirmWritingStopped`后退出；普通checkpoint仍拒绝。
+族成员继承该小清单的既有身份，核对精确路径、大小和保护，不重哈希PA、不改原科学三件套。
+若用户已明确放弃仍引用此族的历史checkpoint，可用`-ApprovedStoppedConsumers <精确run数组>`逐项声明；
+owner须确认其writer及子进程均已停止，plan/receipt冻结各自小证据，apply及verify复核同一清单。
+该批准仅适用于本次目标；未列消费者、新消费者、身份漂移、租约和当前GUI继续阻塞。
+历史IOB保留但标为需重装配，不能将其称为仍可直接使用的交付。
+此checkpoint退役后以完整`--verify`通过的receipt沿原`seal-checkpoint`收尾实际light-evidence占用，
+仅该明确范围可解除原stopped-payload保留pin；不将checkpoint改为科学终态，也不放宽普通finalize-ready。
 
 退役后仍沿原`run_capacity_lifecycle --action finalize-ready`收尾。仅当普通`retention_actions.json`不存在时，
 该入口允许以原验证器通过的完整solver_review退役receipt作为处置完成证据；已有但损坏或未完成的普通receipt不得被替代。

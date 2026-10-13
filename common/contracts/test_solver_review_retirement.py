@@ -65,6 +65,12 @@ class SolverReviewRetirementTest(unittest.TestCase):
         self.assertIn("$CompatibilityInputRoles.Count -eq 0", source)
         self.assertIn("$CompatibilityInputRoleMaps.Count -eq 0", source)
         self.assertIn("'--compatibility-input-role-map',$mapping", source)
+        self.assertIn("[string]$RuntimeCheckpoint=''", source)
+        self.assertIn("[switch]$ConfirmWritingStopped", source)
+        self.assertIn("'--runtime-checkpoint',$RuntimeCheckpoint,'--confirm-writing-stopped'", source)
+        self.assertIn("-not $RuntimeCheckpoint -or -not $ConfirmWritingStopped", source)
+        self.assertIn("[string[]]$ApprovedStoppedConsumers=@()", source)
+        self.assertIn("'--approved-stopped-consumer',$consumer", source)
 
     def _run(self, run_id: str, recorded: str, *, status: str = "success") -> Path:
         run = self.runs / run_id
@@ -102,6 +108,285 @@ class SolverReviewRetirementTest(unittest.TestCase):
             owner_abandonment_reason="completed pilot comparison; no further payload consumer",
             **kwargs,
         )
+
+    def _checkpoint_runtime(self) -> Path:
+        """Model sealed small inventory with unlisted private PA members."""
+        for path in (self.target / "simion").glob("*.pa*"):
+            path.unlink()
+        config = json.loads((self.target / "run_config.json").read_text())
+        config["inputs"] = {}
+        config["artifact_retention"] = {"policy_version": 1, "class": "compact", "reason": None}
+        (self.target / "run_config.json").write_text(json.dumps(config))
+        (self.target / "summary.json").write_text(json.dumps({"status": "checkpoint", "run_id": self.target.name}))
+        directory = self.target / "runtime" / "native_family"
+        directory.mkdir(parents=True)
+        members = []
+        for index in range(3):
+            path = directory / f"analyzer.pa{index}"
+            path.write_bytes(b"native" + bytes([index]))
+            members.append({"name": path.name, "bytes": path.stat().st_size, "sha256": _sha(path)})
+        checkpoint = self.target / "results" / "runtime_checkpoint.json"
+        checkpoint.parent.mkdir()
+        checkpoint.write_text(json.dumps({
+            "schema_version": 1, "role": "fixture_native_runtime_checkpoint", "status": "prepared",
+            "directory": str(directory), "members": members,
+            "runtime_receipt": {"status": "prepared", "run_id": self.target.name,
+                                "controller_path": str(directory / "analyzer.pa0"),
+                                "source_responses": [{"response_id": 1}, {"response_id": 2}]},
+        }))
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": _sha(path)}
+        manifest = json.loads((self.target / "run_manifest.json").read_text())
+        manifest.update(status="checkpoint", inputs={}, artifact_retention=config["artifact_retention"],
+                        run_config=record(self.target / "run_config.json"),
+                        outputs=[record(self.target / "summary.json"), record(checkpoint)])
+        (self.target / "run_manifest.json").write_text(json.dumps(manifest))
+        return checkpoint
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_retirement_preserves_originals_without_pa_hash(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        originals = {name: (self.target / name).read_bytes() for name in (
+            "run_config.json", "summary.json", "run_manifest.json", "results/runtime_checkpoint.json")}
+        from common.contracts.solver_review_retirement import file_sha256
+        def small_only(path: Path) -> str:
+            self.assertFalse(path.suffix.lower().startswith(".pa"))
+            return file_sha256(path)
+        with mock.patch("common.contracts.solver_review_retirement.file_sha256", side_effect=small_only):
+            plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+            self.assertEqual(plan["target_terminal_status"], "checkpoint")
+            self.assertEqual(len(plan["removed_files"]), 3)
+            self.assertTrue(all(item["manifest_role"] == "runtime_checkpoint_member" for item in plan["removed_files"]))
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                apply_retirement(plan)
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual(originals, {name: (self.target / name).read_bytes() for name in originals})
+        self.assertTrue((self.target / "simion/seed.iob").exists())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_requires_explicit_scope_and_stopped_owner(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        for kwargs in ({}, {"runtime_checkpoint_path": checkpoint}, {"writing_stopped": True}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(RetirementError):
+                self._owner_plan(**kwargs)
+        with self.assertRaises(RetirementError):
+            plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
+                            "not an owner exit", self.compatibility_roles,
+                            runtime_checkpoint_path=checkpoint, writing_stopped=True)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_rejects_unbound_inventory_and_payload_drift(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        copied = self.target / "results/unbound.json"
+        copied.write_bytes(checkpoint.read_bytes())
+        with self.assertRaisesRegex(RetirementError, "manifest-bound"):
+            self._owner_plan(runtime_checkpoint_path=copied, writing_stopped=True)
+        payload = self.target / "runtime/native_family/analyzer.pa2"
+        payload.write_bytes(b"changed size")
+        with self.assertRaisesRegex(RetirementError, "member differs"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_rechecks_gui_consumer_and_lease(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        review = self.artifacts / "projects/p/reviews/current_view"
+        review.mkdir(parents=True)
+        receipt_path = review / "inspection_receipt.json"
+        receipt_path.write_text(json.dumps({"status": "ready", "source_run": self.target.name}))
+        with self.assertRaisesRegex(RetirementError, "current GUI"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "current GUI"):
+                apply_retirement(plan)
+        receipt_path.unlink()
+        downstream = self.runs / "waiting_consumer"
+        downstream.mkdir()
+        config_path = downstream / "run_config.json"
+        config_path.write_text(json.dumps({"runtime_checkpoint": str(checkpoint)}))
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        config_path.write_text("{}")
+        create_capacity_protection_lease(self.artifacts, lease_id="runtime-owner-protected", owner="test",
+                                         ttl_seconds=3600, protected_paths=[self.target])
+        with self.assertRaisesRegex(RetirementError, "active capacity protection lease"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        self.assertTrue((self.target / "runtime/native_family/analyzer.pa0").exists())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_rejects_extra_unsealed_pa(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        (self.target / "runtime/native_family/unexpected.pa").write_bytes(b"unknown")
+        with self.assertRaisesRegex(RetirementError, "lacks sealed identity"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_partial_retirement_replays(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        first = self.target / plan["removed_files"][0]["path"]
+        first.unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps({
+            **plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending",
+        }))
+        resumed = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        self.assertEqual(resumed["bytes_to_release"], plan["bytes_to_release"] - plan["removed_files"][0]["bytes"])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_rejects_sealed_invalid_member_and_owner(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        original = json.loads(checkpoint.read_text())
+        for case in ("owner", "path", "sha", "missing_member"):
+            value = json.loads(json.dumps(original))
+            if case == "owner":
+                value["runtime_receipt"]["run_id"] = self.replacement.name
+            elif case == "path":
+                value["members"][1]["name"] = "../outside.pa1"
+            elif case == "sha":
+                value["members"][1]["sha256"] = "Z" * 64
+            else:
+                value["members"].pop()
+            checkpoint.write_text(json.dumps(value))
+            manifest_path = self.target / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["outputs"][1].update(bytes=checkpoint.stat().st_size, sha256=_sha(checkpoint))
+            manifest_path.write_text(json.dumps(manifest))
+            with self.subTest(case=case), self.assertRaises(RetirementError):
+                self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+
+    def _stopped_consumer(self, checkpoint: Path, name: str = "stopped-consumer") -> Path:
+        """Match real historical owners: sealed checkpoint, summary has no run_id."""
+        run = self.runs / name
+        run.mkdir()
+        config = run / "run_config.json"
+        config.write_text(json.dumps({"run_id": run.name, "project": "p",
+                                      "inputs": {"native_checkpoint": str(checkpoint)}}))
+        summary = run / "summary.json"
+        summary.write_text(json.dumps({"status": "checkpoint", "role": "iteration_summary"}))
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": _sha(path)}
+        (run / "run_manifest.json").write_text(json.dumps({
+            "run_id": run.name, "project": "p", "status": "checkpoint",
+            "run_config": record(config), "outputs": [record(summary)],
+        }))
+        return run
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_approved_stopped_consumer_exit_is_scoped_and_preserves_scientific_checkpoint(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        consumer = self._stopped_consumer(checkpoint)
+        before = {path.name: path.read_bytes() for path in consumer.iterdir()}
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                                approved_stopped_consumers=[consumer])
+        self.assertEqual(plan["approved_stopped_consumers"][0]["run_path"], str(consumer))
+        self.assertTrue(any(item.get("classification_basis") == "owner_explicit_consumer_abandonment_for_this_runtime"
+                            for item in plan["historical_downstream_references"]))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "checkpoint")
+        self.assertEqual(before, {path.name: path.read_bytes() for path in consumer.iterdir()})
+        with mock.patch("common.contracts.solver_review_retirement.plan_retirement", return_value={}) as planner:
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["--artifact-root", str(self.artifacts), "--repository-root", str(self.repo),
+                                       "--target-run", str(self.target), "--owner", "p", "--owner-abandonment-reason", "old GUI reassembly",
+                                       "--runtime-checkpoint", str(checkpoint), "--confirm-writing-stopped",
+                                       "--approved-stopped-consumer", str(consumer)]), 0)
+            self.assertEqual(planner.call_args.kwargs["approved_stopped_consumers"], [consumer])
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_approved_stopped_consumer_requires_owner_scope_and_new_consumers_still_block(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        consumer = self._stopped_consumer(checkpoint)
+        for values in ({}, {"runtime_checkpoint_path": checkpoint}, {"writing_stopped": True}):
+            with self.subTest(values=values), self.assertRaises(RetirementError):
+                self._owner_plan(approved_stopped_consumers=[consumer], **values)
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                                approved_stopped_consumers=[consumer])
+        self._stopped_consumer(checkpoint, "new-unapproved-consumer")
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_approved_stopped_consumer_bad_evidence_and_owner_fail_closed(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        for case in ("missing_manifest", "config_drift", "summary_drift", "cross_owner", "duplicate"):
+            consumer = self._stopped_consumer(checkpoint, case)
+            if case == "missing_manifest":
+                (consumer / "run_manifest.json").unlink()
+            elif case == "config_drift":
+                (consumer / "run_config.json").write_text("{}")
+            elif case == "summary_drift":
+                (consumer / "summary.json").write_text('{"status":"success"}')
+            elif case == "cross_owner":
+                manifest = consumer / "run_manifest.json"
+                value = json.loads(manifest.read_text())
+                value["project"] = "other"
+                manifest.write_text(json.dumps(value))
+            approved = [consumer, consumer] if case == "duplicate" else [consumer]
+            with self.subTest(case=case), self.assertRaises(RetirementError):
+                self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                                 approved_stopped_consumers=approved)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_approved_stopped_consumer_rechecks_lease_gui_and_identity_before_apply(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        consumer = self._stopped_consumer(checkpoint)
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                                approved_stopped_consumers=[consumer])
+        manifest_path = consumer / "run_manifest.json"
+        original = manifest_path.read_bytes()
+        manifest_path.write_bytes(original + b" ")
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "evidence changed"):
+                apply_retirement(plan)
+        manifest_path.write_bytes(original)
+        review = self.artifacts / "projects/p/reviews/current_consumer"
+        review.mkdir(parents=True)
+        receipt = review / "inspection_receipt.json"
+        receipt.write_text(json.dumps({"status": "ready", "source_run": consumer.name}))
+        with self.assertRaisesRegex(RetirementError, "current GUI"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                             approved_stopped_consumers=[consumer])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "current GUI"):
+                apply_retirement(plan)
+        receipt.unlink()
+        create_capacity_protection_lease(self.artifacts, lease_id="stopped-consumer-reader", owner="test",
+                                         ttl_seconds=3600, protected_paths=[consumer])
+        with self.assertRaisesRegex(RetirementError, "consumer has an active protection lease"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                             approved_stopped_consumers=[consumer])
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_approved_stopped_consumer_pending_replay_requires_exact_list_and_identity(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        consumer = self._stopped_consumer(checkpoint)
+        kwargs = {"runtime_checkpoint_path": checkpoint, "writing_stopped": True,
+                  "approved_stopped_consumers": [consumer]}
+        plan = self._owner_plan(**kwargs)
+        (self.target / plan["removed_files"][0]["path"]).unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps({
+            **plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending",
+        }))
+        with self.assertRaisesRegex(RetirementError, "consumer list or identity changed"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        consumer_manifest = consumer / "run_manifest.json"
+        original = consumer_manifest.read_bytes()
+        consumer_manifest.write_bytes(original + b" ")
+        with self.assertRaisesRegex(RetirementError, "consumer list or identity changed"):
+            self._owner_plan(**kwargs)
+        consumer_manifest.write_bytes(original)
+        resumed = self._owner_plan(**kwargs)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
 
     def _nested_window(self, *, sealed: bool = True) -> Path:
         child = self.target / "windows/window-001"
