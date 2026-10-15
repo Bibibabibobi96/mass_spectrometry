@@ -250,6 +250,18 @@ class ClocDeltaReportTests(unittest.TestCase):
                 '{"profiles":[{"steps":[{"entrypoint":"tests/helper.py"}]}]}\n',
                 encoding="utf-8",
             )
+            local_project = root / "projects" / "local_project"
+            (local_project / "config").mkdir(parents=True)
+            (local_project / "config" / "execution_profiles.json").write_text(
+                '{"role":"ion_processor_execution_profiles","profiles":['
+                '{"profile_id":"native_functional",'
+                '"entrypoint":"simion/run_functional.ps1"}]}\n',
+                encoding="utf-8",
+            )
+            (local_project / "simion").mkdir()
+            (local_project / "simion" / "run_functional.ps1").write_text(
+                "Write-Output 'functional'\n", encoding="utf-8"
+            )
             ignored_test_dir = root / "projects" / "active_project" / "tests"
             ignored_test_dir.mkdir()
             (ignored_test_dir / "helper.py").write_text(
@@ -305,7 +317,7 @@ class ClocDeltaReportTests(unittest.TestCase):
                 "CATEGORY=production",
                 "CATEGORY=tests",
                 "CATEGORY=unclassified",
-                "REASON=active_powershell_entrypoint",
+                "REASON=active_powershell_entrypoint FILES=2",
                 "CLASSIFICATION_WARNING SNAPSHOT=result "
                 "PATH=project/tests/helper.py",
                 "CLASSIFICATION_WARNING SNAPSHOT=result "
@@ -335,12 +347,12 @@ class ClocDeltaReportTests(unittest.TestCase):
             self.assertRegex(
                 output,
                 r"(?s)CATEGORY=production.*LANGUAGE=PowerShell "
-                r"BASE_FILES=0 RESULT_FILES=1 DELTA_FILES=1",
+                r"BASE_FILES=0 RESULT_FILES=2 DELTA_FILES=2",
             )
             self.assertRegex(
                 output,
                 r"(?s)CATEGORY=production.*LANGUAGE=JSON "
-                r"BASE_FILES=2 RESULT_FILES=2 DELTA_FILES=0",
+                r"BASE_FILES=2 RESULT_FILES=3 DELTA_FILES=1",
             )
             self.assertNotIn("Excluded path reached cloc", output)
             identities = re.findall(

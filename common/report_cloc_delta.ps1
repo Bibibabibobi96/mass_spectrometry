@@ -101,6 +101,7 @@ function Get-ExecutionProfileEntrypoints {
       ConvertFrom-Json
     $projectRoot=Split-Path -Parent (Split-Path -Parent $profileFile.full)
     foreach($profile in @($document.profiles)){
+      if($null-eq$profile.PSObject.Properties['steps']){continue}
       foreach($step in @($profile.steps)){
         if($null-eq$step -or [string]::IsNullOrWhiteSpace([string]$step.entrypoint)){continue}
         $full=[IO.Path]::GetFullPath((Join-Path $projectRoot ([string]$step.entrypoint)))
