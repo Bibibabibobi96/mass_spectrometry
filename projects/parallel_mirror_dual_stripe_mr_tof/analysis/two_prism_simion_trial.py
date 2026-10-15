@@ -1353,121 +1353,6 @@ def _mirror_regions(resolved: dict[str, Any]) -> dict[str, list[float]]:
     }
 
 
-def _verify_manifest_record(path: Path, record: dict[str, Any], label: str) -> None:
-    if not path.is_file() or not bool(record.get("exists")):
-        raise CandidateContractError(f"{label} is missing")
-    if Path(str(record.get("path"))).resolve() != path.resolve():
-        raise CandidateContractError(f"{label} path differs from its manifest")
-    if int(record.get("bytes", -1)) != path.stat().st_size:
-        raise CandidateContractError(f"{label} byte count differs from its manifest")
-    if str(record.get("sha256", "")).lower() != _sha256(path).lower():
-        raise CandidateContractError(f"{label} hash differs from its manifest")
-
-
-def freeze_single_center_pulse_schedule(
-    *, center_run_path: Path, output_path: Path,
-) -> dict[str, Any]:
-    """Freeze an N=1 diagnostic global time from a successful exit-triggered run."""
-    run_dir = center_run_path.resolve()
-    manifest_path = run_dir / "run_manifest.json"
-    manifest = _load(manifest_path)
-    if (
-        manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
-        or manifest.get("mode") != "finite_3d_two_prism_voltage_trial"
-        or manifest.get("status") != "success"
-    ):
-        raise CandidateContractError("pulse-schedule source run is not a successful MR-TOF trial")
-    trial_path = run_dir / "results" / "two_prism_trial_materialization.json"
-    observation_path = run_dir / "results" / "two_prism_trial_observation.json"
-    fly2_path = run_dir / "simion" / "downstream_trial_source.input.fly2"
-    output_records = {
-        Path(str(record.get("path"))).resolve(): record
-        for record in manifest.get("outputs", []) if isinstance(record, dict)
-    }
-    for path, label in (
-        (trial_path, "source trial receipt"),
-        (observation_path, "source observation"),
-    ):
-        record = output_records.get(path.resolve())
-        if not isinstance(record, dict):
-            raise CandidateContractError(f"{label} is not bound by the run manifest")
-        _verify_manifest_record(path, record, label)
-    fly2_record = (manifest.get("inputs") or {}).get("frozen_source_fly2")
-    if not isinstance(fly2_record, dict):
-        raise CandidateContractError("source Fly2 is not bound by the run manifest")
-    _verify_manifest_record(fly2_path, fly2_record, "source Fly2")
-    trial = _load(trial_path)
-    observation = _load(observation_path)
-    pulse = trial.get("accelerator_pulse") or {}
-    diagnostic = observation.get("accelerator_pulse_diagnostic") or {}
-    event = diagnostic.get("pulse_off_event")
-    if (
-        pulse.get("mode") != "initial_exit_triggered_single_center"
-        or diagnostic.get("mode") != "initial_exit_triggered_single_center"
-        or diagnostic.get("pulse_off_event_count") != 1
-        or not isinstance(event, dict)
-    ):
-        raise CandidateContractError(
-            "pulse-schedule source must contain one initial-exit-triggered centre event"
-        )
-    if (
-        trial.get("source_particle_count") != 1
-        or trial.get("source_time_of_birth_us") != 0.0
-        or trial.get("source_clock_basis") != _GLOBAL_PULSE_TIME_BASIS
-    ):
-        raise CandidateContractError("pulse-schedule source particle clock is not frozen")
-    accelerator_instance = int(trial.get("accelerator_instance", 3))
-    if (
-        accelerator_instance != 3
-        or int(event.get("from_instance", -1)) != accelerator_instance
-        or int(event.get("to_instance", accelerator_instance)) == accelerator_instance
-    ):
-        raise CandidateContractError("pulse-schedule source event is not the first accelerator exit")
-    pulse_off_time = _finite(event.get("t_us"), "source accelerator pulse-off time")
-    if pulse_off_time <= 0:
-        raise CandidateContractError("source accelerator pulse-off time must be positive")
-    accelerator_receipt_sha256 = str(
-        (trial.get("inputs") or {}).get("accelerator_receipt_sha256", "")
-    )
-    if not accelerator_receipt_sha256:
-        raise CandidateContractError("source trial has no accelerator voltage identity")
-    schedule = {
-        "schema_version": 1,
-        "role": "mrtof_accelerator_global_pulse_schedule",
-        "status": "frozen",
-        "qualification": "single_center_diagnostic__not_a_bunch_schedule",
-        "mode": "fixed_global_time",
-        "time_basis": _GLOBAL_PULSE_TIME_BASIS,
-        "pulse_off_time_us": pulse_off_time,
-        "after_state": {
-            "accelerator_electrode_ids": list(range(1, 10)),
-            "voltage_v": 0.0,
-        },
-        "source": {
-            "center_run_id": str(manifest["run_id"]),
-            "source_particle_count": 1,
-            "run_manifest_sha256": _sha256(manifest_path),
-            "trial_receipt_sha256": _sha256(trial_path),
-            "observation_sha256": _sha256(observation_path),
-            "source_fly2_sha256": _sha256(fly2_path),
-            "accelerator_receipt_sha256": accelerator_receipt_sha256,
-        },
-        "derivation": {
-            "rule": "first_transition_out_of_declared_accelerator_instance",
-            "from_instance": int(event["from_instance"]),
-            "to_instance": int(event["to_instance"]),
-            "event_position_project_mm": [
-                _finite(event.get(key), f"source event {key}")
-                for key in ("x_mm", "y_mm", "z_mm")
-            ],
-            "bunch_safe_exit_envelope": None,
-        },
-    }
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(schedule, indent=2) + "\n", encoding="utf-8")
-    return schedule
-
-
 def materialize_trial(
     *,
     contract_path: Path,
@@ -2546,9 +2431,6 @@ def main() -> int:
     analyze.add_argument("--log", required=True, type=Path)
     analyze.add_argument("--trial-receipt", required=True, type=Path)
     analyze.add_argument("--output", required=True, type=Path)
-    freeze = sub.add_parser("freeze-pulse-schedule")
-    freeze.add_argument("--center-run", required=True, type=Path)
-    freeze.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     if args.command == "materialize":
         stripe_override = None
@@ -2599,14 +2481,6 @@ def main() -> int:
         )
         if short_exit_failed:
             return 1
-    else:
-        result = freeze_single_center_pulse_schedule(
-            center_run_path=args.center_run, output_path=args.output,
-        )
-        print(
-            "MRTOF_ACCELERATOR_PULSE_SCHEDULE=PASS "
-            f"TIME_US={result['pulse_off_time_us']:.12g}"
-        )
     return 0
 
 

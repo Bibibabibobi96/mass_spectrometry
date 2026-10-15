@@ -84,20 +84,6 @@ CASES = {
         ),
         "forbidden": ("SIMION.exe", "refine"),
     },
-    "accelerator_pulse_schedule": {
-        "path": "analysis/run_freeze_accelerator_pulse_schedule.ps1",
-        "session": True,
-        "required": (
-            "CenterRunManifest",
-            "finite_3d_two_prism_voltage_trial",
-            "accelerator_global_pulse_schedule_freeze",
-            "Copy-VerifiedRunInput",
-            "freeze-pulse-schedule",
-            "ion_time_of_flight_us_from_common_tob_zero_release",
-            "pending_multi_particle_safe_exit_envelope",
-        ),
-        "forbidden": ("AcceleratorPulseOffTimeUs", "SIMION-2020"),
-    },
     "target_operating_chain": {
         "path": "analysis/run_target_operating_point_chain.ps1",
         "required": (

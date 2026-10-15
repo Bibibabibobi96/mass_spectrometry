@@ -36,7 +36,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial
     _static_return_diagnostic,
     _termination_diagnostic,
     analyze_trial,
-    freeze_single_center_pulse_schedule,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
     native_stripe_geometry_projection_sha256,
@@ -47,6 +46,12 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 
 class TwoPrismSimionTrialTest(unittest.TestCase):
+    def test_retired_single_center_schedule_command_is_rejected(self) -> None:
+        with patch("sys.argv", ["two_prism_simion_trial", "freeze-pulse-schedule"]), patch("sys.stderr"):
+            with self.assertRaises(SystemExit) as caught:
+                two_prism_simion_trial.main()
+        self.assertEqual(caught.exception.code, 2)
+
     def test_formal_volume_transverse_reference_does_not_invent_a_center(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             table = Path(directory) / "source.csv"
@@ -911,60 +916,6 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             path.write_text(json.dumps(schedule), encoding="utf-8")
             with self.assertRaisesRegex(CandidateContractError, "bunch pulse schedule"):
                 _load_frozen_accelerator_pulse_schedule(path)
-
-    def test_single_center_exit_event_freezes_only_a_diagnostic_schedule(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            run = Path(directory) / "center"
-            results = run / "results"
-            simion = run / "simion"
-            results.mkdir(parents=True)
-            simion.mkdir()
-            trial_path = results / "two_prism_trial_materialization.json"
-            observation_path = results / "two_prism_trial_observation.json"
-            fly2_path = simion / "downstream_trial_source.input.fly2"
-            trial_path.write_text(json.dumps({
-                "source_particle_count": 1,
-                "source_time_of_birth_us": 0.0,
-                "source_clock_basis": "ion_time_of_flight_us_from_common_tob_zero_release",
-                "accelerator_pulse": {"mode": "initial_exit_triggered_single_center"},
-                "inputs": {"accelerator_receipt_sha256": "accelerator-sha"},
-            }), encoding="utf-8")
-            observation_path.write_text(json.dumps({
-                "accelerator_pulse_diagnostic": {
-                    "mode": "initial_exit_triggered_single_center",
-                    "pulse_off_event_count": 1,
-                    "pulse_off_event": {
-                        "t_us": 1.867, "from_instance": 3, "to_instance": 1,
-                        "x_mm": 0.0, "y_mm": -55.0, "z_mm": -5.7,
-                    },
-                },
-            }), encoding="utf-8")
-            fly2_path.write_text("particles {}\n", encoding="utf-8")
-
-            def record(path: Path) -> dict[str, object]:
-                return {
-                    "path": str(path.resolve()), "exists": True,
-                    "bytes": path.stat().st_size,
-                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                }
-
-            manifest_path = run / "run_manifest.json"
-            manifest_path.write_text(json.dumps({
-                "project": "parallel_mirror_dual_stripe_mr_tof",
-                "mode": "finite_3d_two_prism_voltage_trial",
-                "status": "success",
-                "run_id": "center-run",
-                "inputs": {"frozen_source_fly2": record(fly2_path)},
-                "outputs": [record(trial_path), record(observation_path)],
-            }), encoding="utf-8")
-            schedule = freeze_single_center_pulse_schedule(
-                center_run_path=run, output_path=run / "schedule.json",
-            )
-            self.assertEqual(schedule["pulse_off_time_us"], 1.867)
-            self.assertEqual(
-                schedule["qualification"], "single_center_diagnostic__not_a_bunch_schedule"
-            )
-            self.assertIsNone(schedule["derivation"]["bunch_safe_exit_envelope"])
 
     def test_static_return_requires_unique_ordered_negative_z_detector_hit(self) -> None:
         kinds = (
