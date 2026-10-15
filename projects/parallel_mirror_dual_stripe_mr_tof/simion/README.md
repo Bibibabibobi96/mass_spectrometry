@@ -133,6 +133,14 @@ GUI 对等不能由 `efield_adjust` 回调推定，最终交付仍须满足实�
 公共 transaction 是 payload、scratch、发布指针和容量账本的唯一 owner；
 项目不维护第二份 PA 生命周期。缓存命中不得再做 GEM、Refine 或大 PA 复制。
 
+原生响应固定点物化使用项目内的
+[`standalone_pa_composition.py`](../analysis/standalone_pa_composition.py)，尚未取得跨项目公共化资格。
+它按有界float64块组合普通`.pa`，保留电极标志，要求网格及fractional伴随数据一致；
+不Refine、不读取原生family、不修改输入。新PA及sidecar关闭前各执行一次`flush()`和`os.fsync()`；
+刷新失败由owner保留私有残留并失败收尾，不返回成功或重试。
+[Python 3.11官方说明](https://docs.python.org/3.11/library/os.html#os.fsync)要求先刷新Python流，
+Windows使用`_commit`（查阅2026-10-13）；这不保证硬件缓存持久化或场精度，发布仍由公共manifest负责。
+
 [build_native_corridor_iob.lua](build_native_corridor_iob.lua)仅装配已封存四角色，
 检查位姿、网格、对称性及真实重叠优先级。先保存 IOB，再做 Fast Adjust，
 避免 Workbench 保存尝试回写脏 PA；日志中的保存错误即使进程 exit0 也判失败。
