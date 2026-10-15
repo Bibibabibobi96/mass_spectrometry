@@ -190,8 +190,7 @@ native Candidate 链的受控焦点对及回退区间只供导数，不混入正
 解析电压链使用 [run_target_operating_point_chain.ps1](../analysis/run_target_operating_point_chain.ps1)，
 从同一合同串接镜 exact-K 与双 Stripe 反演。P1/P2 分段射击继续使用
 [coverage](../analysis/run_two_prism_segmented_coverage.ps1)、
-[continuation](../analysis/run_two_prism_segmented_continuation.ps1)及
-[operating-point 审计](../analysis/run_two_prism_operating_point.ps1)：continuation 只追踪
+[continuation](../analysis/run_two_prism_segmented_continuation.ps1)：continuation 只追踪
 冻结的单一事件签名，理论覆盖点不能直接称为真实三维工作点。
 
 ### 源身份与诊断源
