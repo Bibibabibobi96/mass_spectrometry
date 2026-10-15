@@ -199,6 +199,14 @@ y／z差商附加差分别不超过2.2737e−9／2.2737e−8 V/m，不能解释�
 25点最大电势增量8.4153e−11 V，四中心慢向差商增量不超过2.2737e−9 V/m，远不足解释1.407–6.020 V/m跨源差。
 原生6080次、Delta1e−6 V、1397.75 s（比原843.10 s增加约65.8%），含复制／查询总1426.782 s；
 这只支持所查点不再优先收紧停止条件，不授完整场、实际受力或轨迹收敛资格，也不证明续算能提速。
+该停止试验复核结束后，两份无人消费的PA／surface已公共退役，释放1,802,340,060 B；全部小证据和14份冻结输入保留，
+可由212434基线重建，原完整manifest不再可作载荷消费资格；处置以来源run的`solver_review_retirement_receipt.json`为准。
+
+[父场z单轴对照][parent-z]固定x=0.50、y=1.00 mm，仅z由1.00改为0.50 mm，保持完整物理输入与1e−5 V。
+四中心慢向差商增量为+3.487–3.519 V/m，跨FEM差由1.407–6.020增至4.926–9.507 V/m；
+x=2面平均电势差却由+1.334991变为−0.128621 V，故电势接近不等于慢向梯度改善，不能选新档作真值。
+原生4520次、Delta1e−5 V、1835.04 s，总1892.045 s；25点均有限且支撑无物理节点。
+这证明父层z离散敏感，不是实际受力、轨迹或峰宽误差；没有联动局域重建或飞行。
 
 ## 剩余时间响应与设计线索
 
@@ -219,9 +227,10 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 
 ## 开放动作与关闭条件
 
-1. 边界单因素、父／中央／FEM、父场直接／组合及停止增量对照已完成。下一项限定父场z由1.00改为0.50 mm，
-   固定x/y、完整物理输入和原1e−5停止控制，先比较同25点，不联动重建中央／镜场或自动追加矩阵。
-   若变化很小，转查中央／边界传递；若显著，仍需检验其轨迹影响，不按更接近FEM选择真值。余下横向／计时差仍待解释。
+1. 边界单因素、父／中央／FEM、父场组合／停止及z单轴对照已完成。下一项仅补父场y由1.00改为0.50 mm，
+   固定x=0.50、z=1.00 mm及原完整物理输入／1e−5停止控制，比较同25点后结束拆轴矩阵，不自动补yz组合。
+   依结果选择父层离散或中央传递的下一决策，不绕过中央层冒充原传递链；仍需检验实际轨迹影响，
+   不按更接近FEM选择真值。余下横向／计时差仍待解释。
    不将FEM donor伪装成原生祖先，不以单镜改善替代整程或束团资格，不逐场调压冒充数值收敛。
 2. 冻结场消费的源码／配置按最小依赖闭包纳管；其余自动闭合工作区改动仍须独立验收发布。
    通用COMSOL改压provider已有多窗编译与发布校验，但求解readback仍绑定sol1/std1，
@@ -262,6 +271,7 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [parent-boundary]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_211107__analysis__simion__parent-boundary-fixed25-query/summary.json
 [direct-parent]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_212434__build__simion__direct-parent-fixed-grid/summary.json
 [parent-stopping]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_215310__build__simion__parent-stopping-increment/summary.json
+[parent-z]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_222113__build__simion__parent-z050-fixed-u/summary.json
 [static-recovery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_193228__analysis__python__native-static-batch-continuation-acceptance/summary.json
 [segment3]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_161302__sim__simion__matched-mesh3-same-entry-mirror/summary.json
 [segment4]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_183100__sim__simion__mesh4-same-entry-positive-mirror/summary.json
