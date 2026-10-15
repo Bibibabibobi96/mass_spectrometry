@@ -232,7 +232,10 @@ owner须确认其writer及子进程均已停止，plan/receipt冻结各自小证
 此checkpoint退役后以完整`--verify`通过的receipt沿原`seal-checkpoint`收尾实际light-evidence占用，
 仅该明确范围可解除原stopped-payload保留pin；不将checkpoint改为科学终态，也不放宽普通finalize-ready。
 
-退役后仍沿原`run_capacity_lifecycle --action finalize-ready`收尾。仅当普通`retention_actions.json`不存在时，
+终态run经`invoke_solver_review_retirement.ps1 -Apply`退役且启用容量生命周期时，wrapper在同一租约内自动调用
+原`run_capacity_lifecycle --action finalize-ready`收尾；直接调用Python退役API时仍须显式收尾。
+收尾失败将非零退出并说明载荷已删、账本待恢复，此时只恢复容量收尾，不重复删除；checkpoint仍按上述专用`seal-checkpoint`路径处理。
+仅当普通`retention_actions.json`不存在时，
 该入口允许以原验证器通过的完整solver_review退役receipt作为处置完成证据；已有但损坏或未完成的普通receipt不得被替代。
 后续实际inventory、轻证据预算及无重载荷检查不变，不补造普通receipt，不改原科学终态或manifest。
 

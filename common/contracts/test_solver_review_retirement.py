@@ -4,6 +4,8 @@ import hashlib
 import io
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -12,7 +14,8 @@ from pathlib import Path
 from unittest import mock
 
 from common.contracts.capacity_protection import create_capacity_protection_lease
-from common.contracts.capacity_ledger import initialize_capacity_ledger
+from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+from common.contracts.run_capacity_lifecycle import register_writing, seal_checkpoint
 from common.contracts.solver_review_retirement import (
     LEGACY_INITIALIZATION_SUMMARY,
     RetirementError,
@@ -26,6 +29,102 @@ from common.contracts.solver_review_retirement import (
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+
+
+class RetirementWrapperTest(unittest.TestCase):
+    def test_apply_finalizes_opted_in_terminal_under_same_lease(self) -> None:
+        self._check_wrapper("apply", enabled=True, expected=["enter", "retire", "finalize", "exit"])
+
+    def test_nonapply_and_legacy_do_not_finalize(self) -> None:
+        for mode, enabled, expected in (
+            ("plan", True, ["retire"]), ("whatif", True, []),
+            ("apply", False, ["enter", "retire", "exit"]),
+            ("apply", None, ["enter", "retire", "exit"]),
+            ("checkpoint", True, ["enter", "retire", "exit"]),
+        ):
+            with self.subTest(mode=mode, enabled=enabled):
+                self._check_wrapper(mode, enabled=enabled, expected=expected)
+
+    def test_failure_exits_without_retry_and_releases_lease(self) -> None:
+        self._check_wrapper("retire_fail", enabled=True,
+                            expected=["enter", "retire", "exit"], error="retirement failed with exit code 7")
+        self._check_wrapper("finalize_fail", enabled=True,
+                            expected=["enter", "retire", "finalize", "exit"], error="do not repeat deletion")
+
+    def test_whatif_under_non_utf8_parent_console(self) -> None:
+        self._check_wrapper("whatif", enabled=True, expected=[], legacy_console=True)
+
+    def _check_wrapper(self, mode: str, *, enabled: bool | None, expected: list[str], error: str = "",
+                       legacy_console: bool = False) -> None:
+        """Execute the real wrapper, mocking only Python and host lease command boundaries."""
+        pwsh = shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("PowerShell 7 is required for the wrapper behavior regression")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            contracts = root / "contracts"
+            contracts.mkdir()
+            wrapper = contracts / "invoke_solver_review_retirement.ps1"
+            wrapper.write_bytes(Path(__file__).with_name(wrapper.name).read_bytes())
+            (root / "host_execution_lease.ps1").write_text("""
+function Enter-HostExecutionLease { $global:calls.Add('enter'); return @{id='fixture'} }
+function Exit-HostExecutionLease { param($Lease); $global:calls.Add('exit') }
+""", encoding="utf-8")
+            config = {} if enabled is None else {"capacity_ledger_lifecycle": {"enabled": enabled}}
+            (root / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+            harness = root / "check.ps1"
+            harness.write_text("""
+param($Root, $Mode)
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Console]::OutputEncoding
+Write-Host 'UTF8:编码边界'
+$global:calls = [Collections.Generic.List[string]]::new()
+function python {
+  if ($args -contains 'common.contracts.run_capacity_lifecycle') {
+    $global:calls.Add('finalize'); '{"status":"ready"}'
+    $global:LASTEXITCODE = $(if ($Mode -eq 'finalize_fail') {9} else {0})
+  } else {
+    $global:calls.Add('retire'); '{"lifecycle_status":"completed_experiment_payload_retired"}'
+    $global:LASTEXITCODE = $(if ($Mode -eq 'retire_fail') {7} else {0})
+  }
+}
+$params = @{ArtifactRoot=$Root; RepositoryRoot=$Root; TargetRun=$Root;
+  Owner='p'; OwnerAbandonmentReason='isolated wrapper test'}
+if ($Mode -ne 'plan') { $params.Apply = $true }
+if ($Mode -eq 'whatif') { $params.WhatIf = $true }
+if ($Mode -eq 'checkpoint') { $params.RuntimeCheckpoint='frozen.json'; $params.ConfirmWritingStopped=$true }
+$failed = $false; $message = ''; $output = @()
+try { $output = @(& (Join-Path $Root 'contracts/invoke_solver_review_retirement.ps1') @params) }
+catch { $failed=$true; $message=$_.Exception.Message }
+'RESULT:' + (@{calls=@($global:calls.ToArray()); output=@($output); error=$message} | ConvertTo-Json -Compress)
+if ($failed) { exit 1 }
+""", encoding="utf-8")
+            command = [pwsh, "-NoLogo", "-NoProfile", "-File", str(harness), str(root), mode]
+            if legacy_console:
+                parent = root / "cp936_parent.ps1"
+                parent.write_text("""
+param($Pwsh, $Harness, $Root, $Mode)
+[Console]::OutputEncoding = [Text.Encoding]::GetEncoding(936)
+$OutputEncoding = [Console]::OutputEncoding
+'PARENT_CODEPAGE:' + [Console]::OutputEncoding.CodePage
+& $Pwsh -NoLogo -NoProfile -File $Harness $Root $Mode
+exit $LASTEXITCODE
+""", encoding="utf-8")
+                command = [pwsh, "-NoLogo", "-NoProfile", "-File", str(parent), pwsh, str(harness), str(root), mode]
+            result = subprocess.run(command,
+                                    cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+            self.assertEqual(result.returncode, 1 if error else 0, result.stdout + result.stderr)
+            self.assertIn("UTF8:编码边界", result.stdout)
+            if legacy_console:
+                self.assertIn("PARENT_CODEPAGE:936", result.stdout)
+            report = json.loads(next(line[7:] for line in result.stdout.splitlines() if line.startswith("RESULT:")))
+            self.assertEqual(report["calls"], expected)
+            if error:
+                self.assertIn(error, report["error"])
+            elif mode != "whatif":
+                self.assertEqual(len(report["output"]), 1)
+                self.assertEqual(json.loads(report["output"][0])["lifecycle_status"],
+                                 "completed_experiment_payload_retired")
 
 
 class SolverReviewRetirementTest(unittest.TestCase):
@@ -46,6 +145,53 @@ class SolverReviewRetirementTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp.cleanup()
+
+    def test_wrapper_real_retirement_updates_opted_in_ledger(self) -> None:
+        """Real Python deletion and finalization; only the lease boundary is isolated."""
+        pwsh = shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("PowerShell 7 is required for the wrapper integration regression")
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["capacity_ledger_lifecycle"] = {
+            "schema_version": 1, "enabled": True, "artifact_root": str(self.artifacts),
+            "light_evidence_budget_bytes": 26_214_400,
+        }
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["run_config"].update(bytes=config_path.stat().st_size, sha256=_sha(config_path))
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        register_writing(self.artifacts, config_path)
+        seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True,
+                        retain_payload=True, retention_reason="tiny completed experiment")
+        contracts = self.root / "contracts"
+        contracts.mkdir()
+        wrapper = contracts / "invoke_solver_review_retirement.ps1"
+        wrapper.write_bytes(Path(__file__).with_name(wrapper.name).read_bytes())
+        (self.root / "host_execution_lease.ps1").write_text("""
+function Enter-HostExecutionLease {
+  $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID = [string]$PID
+  return @{id='isolated fixture lease'}
+}
+function Exit-HostExecutionLease { param($Lease) }
+""", encoding="utf-8")
+        repository = Path(__file__).resolve().parents[2]
+        result = subprocess.run([
+            pwsh, "-NoLogo", "-NoProfile", "-File", str(wrapper),
+            "-ArtifactRoot", str(self.artifacts), "-RepositoryRoot", str(repository),
+            "-TargetRun", str(self.target), "-Owner", "p",
+            "-OwnerAbandonmentReason", "completed tiny experiment without consumers", "-Apply",
+        ], cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        receipt = json.loads(result.stdout)  # Reject a second finalize-ready JSON document.
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        self.assertGreater(receipt["removed_bytes"], 0)
+        self.assertFalse((self.target / "simion/analyzer.pa0").exists())
+        ledger = load_capacity_ledger(self.artifacts)
+        entry = next(item for item in ledger["objects"] if item["path"].endswith(self.target.name))
+        self.assertEqual((entry["status"], entry["class"], entry["pin"]), ("ready", "light_evidence", False))
+        self.assertEqual(entry["bytes"], sum(path.stat().st_size for path in self.target.rglob("*") if path.is_file()))
 
     def test_structured_references_resolves_target_once_for_nested_strings(self) -> None:
         resolved = self.target.resolve()
