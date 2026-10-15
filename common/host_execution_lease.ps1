@@ -188,19 +188,25 @@ namespace MassSpectrometry {
     $unknownProcessIds = [Collections.Generic.List[int]]::new()
     $definitelyExitedProcessIds = [Collections.Generic.List[int]]::new()
     $processes = @(foreach ($process in [Diagnostics.Process]::GetProcesses()) {
+      # Read the protected image independently of creation-time access. An
+      # unreadable image remains ordinary work rather than a name-based exemption.
+      $imagePath = $null
+      try { $imagePath = $process.MainModule.FileName }
+      catch { Write-Verbose "Process image unavailable for PID $($process.Id): $($_.Exception.Message)" }
+      $isSystemConsoleHost = Test-HostResourceConsoleProcess -ImagePath $imagePath
       try {
         $started = $process.StartTime.ToUniversalTime().Ticks.ToString('D19')
         $parent=[MassSpectrometry.NativeMemoryStatus]::ParentProcessId([int]$process.Id)
         if($parent-lt0){$parent=0}
         @{ pid=[int]$process.Id; parent_pid=$parent; started=$started
-           memory_bytes=[int64]$process.WorkingSet64; is_system_console_host=$false }
+           memory_bytes=[int64]$process.WorkingSet64; is_system_console_host=$isSystemConsoleHost }
       } catch {
         $started=Get-HostResourceNativeProcessCreationTicks -ProcessId ([int]$process.Id)
         if($null-ne$started){
           $parent=[MassSpectrometry.NativeMemoryStatus]::ParentProcessId([int]$process.Id)
           if($parent-lt0){$parent=0}
           @{ pid=[int]$process.Id; parent_pid=$parent; started=$started
-             memory_bytes=[int64]$process.WorkingSet64; is_system_console_host=$false }
+             memory_bytes=[int64]$process.WorkingSet64; is_system_console_host=$isSystemConsoleHost }
           continue
         }
         # An exited process is neither a live descendant nor an unavailable

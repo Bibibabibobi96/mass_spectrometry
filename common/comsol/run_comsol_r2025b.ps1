@@ -178,7 +178,6 @@ try {
                     $reportTimeoutWarned = $true
                 }
             }
-            Receive-HostResourceStage -Lease $resourceLease | Out-Null
             Start-Sleep -Milliseconds 500
             $launcherProcess.Refresh()
         }
@@ -195,7 +194,6 @@ try {
                 "$StartupReportTimeoutSeconds seconds (attempt $attempt/$StartupAttempts).")
         } else {
             while (-not $launcherProcess.HasExited) {
-                Receive-HostResourceStage -Lease $resourceLease | Out-Null
                 [void]$launcherProcess.WaitForExit(500)
             }
             $launcherExit = $launcherProcess.ExitCode

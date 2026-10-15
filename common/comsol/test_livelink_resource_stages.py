@@ -35,7 +35,11 @@ function Register-HostResourceProcess {
     if ($env:STAGE_SCENARIO -eq 'registration_failure') { throw 'registration failed' }
 }
 function Exit-HostResourceStage { param($Lease) Write-Event 'exit' }
-function Receive-HostResourceStage { param($Lease) }
+function Receive-HostResourceStage {
+    param($Lease)
+    if (-not $global:FakeLauncherProcess.HasExited) { throw 'scheduler polled while launcher is running' }
+    Write-Event 'receive'
+}
 '''
 
 LAUNCHER = r'''
@@ -94,6 +98,7 @@ function Start-ComsolLauncherProcess {
         }
         return $true
     }
+    $global:FakeLauncherProcess=$process
     return $process
 }
 function Stop-ComsolAttemptServers {
@@ -185,7 +190,7 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
         self.assertEqual(code, 0, output)
         self.assertEqual(events, ["enter:prepare:unknown=True", "solver_locks:comsol-server-session",
                                   "update:solver:unknown=True", "servers_snapshot", "launch",
-                                  "register:999999", "server_cleanup:task completion",
+                                  "register:999999", "receive", "server_cleanup:task completion",
                                   "update:postprocess:unknown=True", "exit"])
 
     def test_explicit_solver_budget_is_forwarded(self) -> None:
@@ -232,6 +237,21 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
         self.assertIn("wait", events)
         self.assertEqual(events.count("launch"), 1)
         self.assertIn("server_cleanup:task completion", events)
+
+    def test_wait_loops_poll_only_process_then_refresh_terminal_lease(self) -> None:
+        for scenario, wait_event in (
+            ("running_then_pass", "wait"), ("timeout_warn_pass", "refresh_live"),
+        ):
+            with self.subTest(scenario=scenario):
+                code, events, output = self.run_scenario(scenario)
+                self.assertEqual(code, 0, output)
+                self.assertIn(wait_event, events)
+                self.assertEqual(events.count("receive"), 1)
+                self.assertLess(events.index("register:999999"), events.index(wait_event))
+                self.assertLess(max(i for i, event in enumerate(events) if event == wait_event),
+                                events.index("receive"))
+                self.assertLess(events.index("receive"), events.index("server_cleanup:task completion"))
+                self.assertEqual(events[-2:], ["update:postprocess:unknown=True", "exit"])
 
     def test_process_exit_with_running_report_fails_closed(self) -> None:
         code, events, _ = self.run_scenario("running_without_terminal")

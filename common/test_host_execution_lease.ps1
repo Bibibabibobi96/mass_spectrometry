@@ -148,7 +148,8 @@ try {
   Assert-True (@((Get-HostResourceStatus -StatePath $statePath).records).Count -eq 0) 'Postprocess capacity chain leaked a grant.'
 
   # A hidden Windows console owns a real conhost child for its entire life.
-  # Process identities and image paths are real; only host pressure is fixed.
+  # Process identities and image paths are real; CIM is forced unavailable and
+  # only host pressure is fixed to exercise the native snapshot release path.
   $quotedSource = $leaseSource.Replace("'", "''")
   $quotedState = (Join-Path $testRoot 'hidden.sqlite3').Replace("'", "''")
   $hiddenError = Join-Path $testRoot 'hidden-error.txt'
@@ -159,23 +160,25 @@ trap { [IO.File]::WriteAllText('$quotedHiddenError', `$_.Exception.ToString()); 
 `$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = '$quotedState'
 Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue
 `$real = `${function:Get-HostResourceSnapshot}
+function Get-CimInstance { throw 'Forced CIM unavailability for native console snapshot regression.' }
 function Get-HostResourceSnapshot {
   `$s = & `$real
   `$s.cpu_percent=0; `$s.available_memory_bytes=32GB; `$s.total_memory_bytes=64GB; `$s.logical_processors=4; `$s.io_pressure=`$false
+  `$script:hiddenSnapshot = `$s
   return `$s
 }
-`$console = @(Get-CimInstance Win32_Process | Where-Object { `$_.ParentProcessId -eq `$PID -and `$_.Name -eq 'conhost.exe' })
-if (`$console.Count -eq 0) { throw 'Hidden-console fixture did not create a conhost child.' }
 `$budget = Get-HostResourceBudget -Profile measured-small-check
 `$hiddenLease = Enter-HostResourceStage -Role GATE -Stage prepare -Budget `$budget
 try {
+  `$console = @(`$script:hiddenSnapshot.processes | Where-Object { `$_.parent_pid -eq `$PID -and `$_.is_system_console_host })
+  if (`$console.Count -eq 0) { throw 'Hidden-console fixture did not create a conhost child.' }
   `$hiddenLease = Update-HostResourceStage -Lease `$hiddenLease -Stage analyze -Budget `$budget -RetainedMemoryBytes 0
   if (`$hiddenLease.stage -ne 'analyze') { throw 'Hidden process did not transition.' }
 } finally { Exit-HostResourceStage -Lease `$hiddenLease }
 if (@((Get-HostResourceStatus -StatePath '$quotedState').records).Count -ne 0) {
   throw 'Console-only task kept its budget after explicit release while the owner remained alive.'
 }
-if (@(Get-CimInstance Win32_Process | Where-Object { `$_.ParentProcessId -eq `$PID -and `$_.Name -eq 'conhost.exe' }).Count -eq 0) {
+if (@(`$script:hiddenSnapshot.processes | Where-Object { `$_.parent_pid -eq `$PID -and `$_.is_system_console_host }).Count -eq 0) {
   throw 'The console fixture exited before the release assertion.'
 }
 `$nextLease = Enter-HostResourceStage -Role GATE -Stage next-request -Budget (Get-HostResourceBudget -Profile unknown) -NoWait -NoEnvironment
