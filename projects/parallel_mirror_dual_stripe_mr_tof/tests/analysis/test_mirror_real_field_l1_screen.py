@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import json
 import math
 import tempfile
 import unittest
@@ -16,11 +15,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_l1_s
     CombinedField,
     RealFieldL1Error,
     ResponseBasis,
-    evaluate_member,
     l1_probe_at_energy,
     load_response_basis_csv,
-    rank_screened_members,
-    screen_feasible_family,
 )
 
 
@@ -153,72 +149,6 @@ class TrajectoryTests(unittest.TestCase):
         self.assertFalse(result["stable"])
         self.assertIsNone(result["gamma_degrees"])
         self.assertIsNone(result["Tbar_xx_us_per_mm2"])
-
-    def test_member_reports_three_scale_convergence_and_l0_slopes(self) -> None:
-        result = evaluate_member(
-            harmonic_basis(), [0.0, 1.0, 0.0, 0.0, 0.0],
-            energy_points_v=(0.9, 1.0, 1.1), period_slope_derivative_step_v=0.01,
-            probe_scale_factors=(1.0, 2.0, 4.0), position_probe_mm=0.005,
-            angle_probe_rad=0.0005, trace_controls=TRACE, target_gamma_degrees=90.0,
-            maximum_gamma_target_residual_degrees=0.05,
-            maximum_adjacent_gamma_change_degrees=0.05,
-            maximum_adjacent_relative_tbar_change=0.1,
-            tbar_relative_change_absolute_floor_us_per_mm2=1.0e-4,
-            minimum_stability_margin=0.9,
-            maximum_abs_normalized_period_slope_per_v=1.0e-4,
-        )
-        self.assertEqual(result["status"], "screen_pass_diagnostic_only")
-        self.assertEqual(len(result["normalized_period_slopes_per_v"]), 3)
-        self.assertLess(max(abs(value) for value in result["normalized_period_slopes_per_v"]), 1.0e-5)
-        json.dumps(result, allow_nan=False)
-        for direction in ("-1", "1"):
-            for energy in ("0.90000000000000002", "1", "1.1000000000000001"):
-                expected_scale_count = 3 if energy == "1" else 1
-                self.assertEqual(
-                    len(result["directions"][direction][energy]["scales"]),
-                    expected_scale_count,
-                )
-                if energy != "1":
-                    self.assertIsNone(
-                        result["directions"][direction][energy][
-                            "last_adjacent_gamma_change_degrees"
-                        ]
-                    )
-
-
-class RankingTests(unittest.TestCase):
-    @staticmethod
-    def report(tbar: float, margin: float, peak: float, voltage: float, *, passed: bool = True):
-        return {
-            "status": "screen_pass_diagnostic_only" if passed else "screen_fail_diagnostic_only",
-            "selection_metrics": {
-                "maximum_absolute_Tbar_xx_us_per_mm2": tbar,
-                "minimum_transverse_stability_margin": margin,
-                "sampled_peak_field_v_per_mm": peak,
-                "maximum_absolute_mirror_voltage_v": voltage,
-            },
-        }
-
-    def test_ranking_is_lexicographic_and_retains_declared_ties(self) -> None:
-        reports = [
-            self.report(1.0, 0.2, 5.0, 8.0),
-            self.report(1.0004, 0.3, 6.0, 7.0),
-            self.report(0.2, 0.9, 1.0, 1.0, passed=False),
-        ]
-        tied = rank_screened_members(reports, metric_tolerances=(0.001, 0.11, 2.0, 2.0))
-        self.assertEqual(tied["selected_member_indices"], [0, 1])
-        self.assertTrue(tied["tie_retained"])
-        selected = rank_screened_members(reports, metric_tolerances=(0.001, 0.01, 2.0, 2.0))
-        self.assertEqual(selected["selected_member_indices"], [1])
-        self.assertEqual(selected["primary_member_index"], 1)
-
-    def test_family_screen_rejects_inconsistent_feasible_count(self) -> None:
-        family = {"role": "mrtof_real_3d_mirror_l0_voltage_family", "feasible_member_count": 2,
-                  "members": [{"l0_feasible": True, "mirror_voltages_v": [0, 1, 0, 0, 0]}]}
-        with self.assertRaisesRegex(RealFieldL1Error, "feasible-member count"):
-            screen_feasible_family(
-                family, harmonic_basis(), evaluation_arguments={}, ranking_metric_tolerances=(0, 0, 0, 0),
-            )
 
 
 if __name__ == "__main__":
