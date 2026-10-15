@@ -122,11 +122,15 @@ COMSOL标量电势→规则PA→SIMION求导／插值／窗口选择→原飞行
 网格、求解停止、导出表示、窗口交接、积分及事件分别控制；不追求远离束路的尖角场处处相等。
 两种场源共用trial、批次调度、事件诊断和发布；差别在场provider及binding，不另建COMSOL闭合器。
 本轮135800消费四窗单工作点场，响应项为0，未验证当前COMSOL响应组合；新场空间闭合也尚未执行。
+当前固定场导出／飞行已实跑；通用COMSOL改压provider仍使用旧sol1/std1及单窗来源合同，
+不能宣称已适配当前mesh3/4多窗来源。相关活动源码尚有未发布依赖，干净检出复现资格未关闭。
+外部场回调的普通GUI场查询不等价（`gui_field_queries_equivalent=false`）；保留IOB不代表云图显示实际消费场。
 
 | 有效COMSOL对象 | 当前结果与用途 |
 |---|---|
 | [匹配mesh2][matched-mesh2] | 21076275四面体，Q2、CG＋AMG、rhob40000；32次CG、runAll819.263 s，总940.530 s |
 | [mesh3重求][stopping-control] | 24023776四面体，匹配控制；38次CG、runAll880.423 s；同控制40点重求已可重复 |
+| [mesh4局部最长边细分][mesh4-longest] | 30697694四面体，保持控制；44次CG，runAll1564.073 s；完整运行1880.077 s，峰值约41.83 GiB |
 | [匹配mesh2四窗导出][matched-export] | success/full20、公共ready；总1608.874 s，查询合计1546.783 s；无新求场 |
 | [匹配mesh2 N13][matched-n13] | success/full24；原调度器1 worker、飞行波次480.594 s；原源／电压／4 ns/Q8 |
 | [配对分析][matched-pair] | 纯分析0.445 s，无新增商业计算；FEM间15项、细档native对照9项登记控制全部相等 |
@@ -189,6 +193,18 @@ Ey分量对应12.445／12.354／0.344 V/m，C3与旧同场查询逐值一致。
 旧混控158 V/m结果不再代表当前比较；不强制对称、改压或以命中更多制造收敛。
 COMSOL不升级；[厂商小材料][vendor]保留未发送，不另建整套追迹链。
 
+mesh3→4仅对相同正镜槽壁—间隙—束路选择框进行一次最长边细分，新增单元27.78%，未改物理输入。
+同40点最大场向量差由mesh2→3的26.489缩至6.655 V/m；Ey最大分量差由12.445缩至5.681 V/m，
+本档最大电势差0.063412 V。最大场差点的实际h从0.19991降至0.14574 mm，支持该局部细化有效，
+但细化策略不同且覆盖有限，不外推收敛阶或总误差界。最差单元质量下降至0.00004833，求解仍完成；
+求解前后实际控制一致，已保存6.543 GB MPH，未冷重开、未导出、未飞行，不能据此授予轨迹／性能资格。
+
+[当前native细档固定40点][native-fixed40]补查已完成，48.094 s，无新求场／导出／飞行；A=B查询实际复用PA，回归差为零。
+N为035610的真实消费者而非COMSOL原生FEM：N−F3最大场向量差19.542 V/m，N−C3为15.946 V/m，
+N−F3最大电势差0.44617 V。两种场源仍有可观测差别，且mesh4未一致向N靠拢；不能按接近历史命中选真值。
+20个z=97 mm点虽对本次FEM局部细分不敏感，其N−F3仍可达19.542 V/m；这些位置未新增细化，
+不能把相邻FEM档接近冒称该段已收敛。旧217点跨场源对照使用163135工作档与mesh1，不继承为当前证据。
+
 ## 剩余时间响应与设计线索
 
 倾斜候选的局部Ey敏感性已明显下降，但尚未得到独立大样本下完整宽平台／十万资格。
@@ -212,13 +228,23 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 当前共享数学、活动配置及两条链的资产重建能力继续保留；已封存输入和小证据不随入口退役删除。
 补充退役无活动引用的`tests/simion/test_accelerator_native_geometry.lua`及旧schema3的
 `config/candidate_bunch_source_n1000.json`；现提供者与母样本生成不变，
-相关5项回归通过。净减1脚本、1配置、83 code；全量HEAD→WORKTREE的CLOC因另一项目profile缺steps失败，
-尚不能报告全量通过。另一项目此前的subprocess提交阻塞已由其所有者修正，未绕过或夹带其文件。
+相关5项回归通过；与下述结构诊断退役合并提交445116e8，未改变活动源或母样本。
+另退役旧独立Stripe结构诊断发布器（2脚本）及其2项专属测试，活动入口／role引用为零；
+共享曲线识别、制造宽度及理论种子保留，相关22项回归通过。历史冻结源码与结构诊断结果仍可查，
+不再维护仅发布“电压待求”receipt的独立入口；不影响当前求场或自动闭合。
+CLOC曾错误假定所有项目execution profile都有steps；已修复对合法项目专用格式的处理并推送c71dc95e，
+官方统计已可运行，混合工作区增长不能归于本次整理。其他任务的CRLF与Refine合同问题已由其提交修复，
+本次未夹带其文件。最新L1其余路由阶段通过，公共合同阶段曾因CP936/UTF-8测试输出失败；
+编码回归已修复，该阶段独立重跑607项通过、1项跳过，原整轮失败记录保留，不概括为全量通过。
 
-1. 结束状态重放与本轮40点分层查询。依据已定位的转折带FEM差，规划有资源预算的局部细化，
-   保持物理输入及消费层不变，先用原40点检验趋势再决定导出／飞行；不自动全域加密或启动高斯N100。
+1. mesh4局部细化及固定40点检查已完成，出现局部场差收缩；初次启动仅容量准入失败，无科学求解。
+   当前native细档与匹配FEM同坐标补查也已结束。174000正采用相同四窗定义导出mesh4，无新求场；成功封存后接同源受控轨迹，
+   检验局部场差收缩是否传递为相对TOF／返回状态稳定；不混用旧场窗口，不调压，不自动加密或启动高斯N100。
 
-公共机制已完成两份历史场载荷退役；其小证据、重建输入及当前两条链依赖保留。
+本轮另沿公共机制退役083000旧导出、20261006_180500旧网格及094800已替代场的重载荷，
+释放10594173854字节；小证据与重建输入保留，124839/150021当前模型及两条链、GUI、CAD依赖未删除。
+公共退役wrapper自动容量收尾修复已提交a16dd4e0，通过真实小载荷删除／账本收尾、失败分支及编码回归；
+checkpoint保留专用收尾，不把已删除但未完成账本收尾的资产视为可用空间。
 具体范围见[本阶段快照](history/20261015__fixed-field-reproduction-and-solve-state.md)，不把已退役历史tip当作可直接恢复点。
 
 当前STEP交付见[163154出版恢复][cad-delivery]：40个独立命名电极STEP、6个C0参考面及装配概览；
@@ -243,6 +269,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [cad-delivery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/summary.json
 
 [matched-mesh2]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_150021__analysis__comsol__mesh2-from-stable-source/run_config.json
+[mesh4-longest]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_164500__analysis__comsol__positive-turn-mesh4-longest__r02/summary.json
+[native-fixed40]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_173341__analysis__simion__fine-native-fixed40-field-layers/summary.json
 [matched-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_152030__analysis__comsol__matched-mesh2-beam-tube-export/summary.json
 
 [matched-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_154824__sim__simion__matched-mesh2-fixed-u-controlled-n13/summary.json
