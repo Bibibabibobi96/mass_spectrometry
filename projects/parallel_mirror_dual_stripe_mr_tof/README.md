@@ -56,3 +56,4 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 - [会聚镜场复现与高斯源性能里程碑](docs/history/20261015__converging-field-and-performance-milestone.md)：保存收缩前混合WORKTREE文档及证据检索映射。
 - [历史生产器退役里程碑](docs/history/20261015__producer-retirement-milestone.md)
 - [CAD交换与倾镜STEP交付里程碑](docs/history/20261015__cad-exchange-delivery-milestone.md)
+- [固定场复现与求解状态里程碑](docs/history/20261015__fixed-field-reproduction-and-solve-state.md)：冻结已提交阶段、失败和数值混杂边界，调查仍继续。
