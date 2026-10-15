@@ -13,7 +13,9 @@
 原生细档高斯σEy=0.15／0.2 eV的N100分别为R≈101399／80929、98%／95%，均为有限工程结果。
 COMSOL各次完整受控N13均0/13检测器命中，尚未获得收敛或性能复现资格。
 匹配控制及局部细化后，相对计时差缩小，空间返回仍敏感；跨来源慢向场差部分已存在于原始场及继承边界。
-薄体积donor在已测点的慢向表示误差较小，下一决策是边界单因素对照，而非继续盲目加密或投入高斯N100。
+五面边界单因素对照已显著缩小已测单镜的慢向位置／速度差，时间及横向差未同步缩小。
+父场25点复核已见慢向差在父层存在、中央层继续改变；下一决策是受控区分继承边界与内部离散，
+不继续盲目加密或投入高斯N100。
 
 ## 输入权威与物理定义
 
@@ -176,7 +178,38 @@ native−消费仍约7.58514 V/m；主要跨源慢向差已存在于原始场，
 25点及其插值支撑全有效，x=2面最大电势表示差0.000988 V；四中心慢向差商最大差0.04253 V/m，
 明显小于原跨源差，但一处z差商仍差9.897 V/m。它只支持下一项边界敏感性诊断，不证明全边界或轨迹准确。
 载入8.406 s、查询207.236 s、写盘0.415 s；总862.880 s含约594 s共享排队，未重新求场或飞行。
-下一项优先固定原正镜细域、几何、电压、积分和入口，仅替换五面输入；不先继续内域盲目加密。
+
+[边界单因素飞行][boundary-flight]保持原正镜完整求解域、0.04/0.20/0.02 mm网格、几何、电压、
+fractional、1e−5 V、五颗入口六维状态及时钟不变，只将五面边界改为该FEM donor；x=0仍为对称面，
+物理电极不覆盖，保留完整PA而不裁剪。三组均5/5到达相同单镜出口，无碰撞或缺失。
+
+| 相对mesh4的单镜出口最大绝对差 | 原native | FEM边界native |
+|---|---:|---:|
+| y/mm | 0.071484884 | 0.002356229 |
+| vy/(mm/μs) | 0.009194909 | 0.000770351 |
+| x/mm | 0.007175347 | 0.009011076 |
+| vz/(mm/μs) | 0.000288182 | 0.000469998 |
+| 相对中心TOF/ns | 0.037722466 | 0.038962600 |
+
+公共中心TOF差另由+0.299243降至+0.007180 ns，不算作峰宽。仅换边界便使y／vy差约缩小30／12倍，
+支持继承边界是此段慢向空间差的重要来源；横向和相对计时未同步改善，不能扩大为全部误差已解释或整程收敛。
+总流程1207.641 s，GEM编译（gem2pa）94.229 s，边界／Refine脚本978.855 s，其中原生Refine909.16 s、
+1030次迭代、Delta9.3e−6 V；实际五颗短段Fly1.74 s，不外推为整机束团耗时。
+停止Delta不是误差界；没有计算五颗的FWHM／R，没有重求COMSOL或修改原生产binding祖先。
+
+[父场25点复核][parent-boundary]只加载当前0.5/1/1 mm父PA一次，复用上述中央／FEM原值；
+25点均有限、邻近支撑无物理节点。四中心相同电势差商结果如下，单位V/m，不等同于实际消费受力：
+
+| 慢向电势差商比较 | 四中心范围 |
+|---|---:|
+| 父场−FEM | 1.407–6.020 |
+| 中央场−FEM | 2.623–7.294 |
+| 中央场−父场 | 1.216–1.274 |
+
+x=2面20点电势均差分别为+1.334991、−0.488858、−1.823849 V；不是同一常数偏移的逐级传递。
+父层已有慢向跨源差、中央层又改变约1.2–1.27 V/m，但不能按这组点唯一判父场错误或认定中央误差来源。
+纯查询改用公共SIMION/postprocess轻阶段后总13.785 s，无求场、飞行或大PA复制；
+此前错标flight的等待已人为取消并封存interrupted，新旧身份分开，未更改冻结物理输入。
 
 ## 剩余时间响应与设计线索
 
@@ -197,9 +230,10 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 
 ## 开放动作与关闭条件
 
-1. 边界donor导出及25点检查已完成。下一项只回答边界传递是否显著改变同入口出口y、vy和相对TOF；
-   保持原正镜完整求解域及0.04/0.20/0.02 mm网格，不改压。执行前须完成合法边界来源／诊断消费接线和容量准入，
-   不将FEM donor伪装成原生祖先，不以单镜改善替代整程资格。
+1. 边界单因素飞行及父／中央／FEM同坐标比较已完成。下一项先核父场组合／求解祖先及已有直接对照，
+   再设计一次区分父边界与内部离散的有限对照；不自动追加孤立点查询或新场。余下横向／计时差仍需解释。
+   不将FEM donor伪装成原生祖先，不以单镜改善替代整程或束团资格，不逐场调压冒充数值收敛。
+   前一202936在商业计算前因48 GiB警告值误作硬预约失败；使用公共原生heavy预算后新身份运行成功，物理输入不变。
 2. 冻结场消费的源码／配置按最小依赖闭包纳管；其余自动闭合工作区改动仍须独立验收发布。
    通用COMSOL改压provider已有多窗编译与发布校验，但求解readback仍绑定sol1/std1，
    不授当前mesh4的sol4重建或改压资格；普通冻结场重放不执行该求场作者。
@@ -209,6 +243,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 两条链的当前场、响应库、GUI和CAD继续保护；已结束无人消费的载荷只沿公共owner退役。
 旧mesh1／mesh2／mesh3四窗PA已退役，001600／150021／124839原MPH和全部小证据保留；
 本次mesh1精确八张PA释放5198465376字节，26份小证据及新donor依赖helper均保留，公共账本已同步退役。
+为本次对照准入，旧平行镜K25.5的181800物化场另沿公共owner退役八张PA／surface，释放17492195912字节；
+43份小证据及重建计划、原响应来源保留，历史重放须重新物化；当前会聚场和GUI／CAD未受影响。
 相关历史IOB需重新导出和重装配。退役代码、运行恢复及处置细节见[本里程碑](history/20261015__boundary-input-isolation.md)，
 不靠运行终态自动判删除，也不将清理或门禁通过当物理资格。
 
@@ -234,7 +270,9 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [mesh4-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_182403__analysis__python__mesh4-controlled-n13-pairing/summary.json
 [mesh4-consumer]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_185431__analysis__simion__mesh4-fixed40-consumer-field-layers/summary.json
 [boundary-donor]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_194413__analysis__cross__fem4-boundary-donor-representation/summary.json
+[boundary-flight]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_203103__sim__simion__fem4-boundary-only-positive-mirror/summary.json
 [boundary-input]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_191649__analysis__cross__native-mirror-boundary-input-check/summary.json
+[parent-boundary]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_211107__analysis__simion__parent-boundary-fixed25-query/summary.json
 [static-recovery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_193228__analysis__python__native-static-batch-continuation-acceptance/summary.json
 [segment3]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_161302__sim__simion__matched-mesh3-same-entry-mirror/summary.json
 [segment4]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_183100__sim__simion__mesh4-same-entry-positive-mirror/summary.json
