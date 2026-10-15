@@ -195,6 +195,11 @@ x=2面20点电势均差分别为+1.334991、−0.488858、−1.823849 V；不是
 y／z差商附加差分别不超过2.2737e−9／2.2737e−8 V/m，不能解释上述跨源差；不授网格或停止精度资格。
 原生Refine843.10 s、4150次、Delta1e−5 V，总886.708 s；无局域重建、飞行、FWHM或R。
 
+[同父场停止复核][parent-stopping]仅将独立副本由1e−5收紧至1e−6 V，几何、电压、网格和fractional不变。
+25点最大电势增量8.4153e−11 V，四中心慢向差商增量不超过2.2737e−9 V/m，远不足解释1.407–6.020 V/m跨源差。
+原生6080次、Delta1e−6 V、1397.75 s（比原843.10 s增加约65.8%），含复制／查询总1426.782 s；
+这只支持所查点不再优先收紧停止条件，不授完整场、实际受力或轨迹收敛资格，也不证明续算能提速。
+
 ## 剩余时间响应与设计线索
 
 倾斜候选的局部Ey敏感性已明显下降，但尚未得到独立大样本下完整宽平台／十万资格。
@@ -214,8 +219,9 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 
 ## 开放动作与关闭条件
 
-1. 边界单因素、父／中央／FEM比较及当前父场直接／组合一致性已完成。下一项先核现有当前模型的停止对照，
-   比较一次更严格停止复核与父场单轴细化的判别价值和成本；不自动追加矩阵。余下横向／计时差仍需解释。
+1. 边界单因素、父／中央／FEM、父场直接／组合及停止增量对照已完成。下一项限定父场z由1.00改为0.50 mm，
+   固定x/y、完整物理输入和原1e−5停止控制，先比较同25点，不联动重建中央／镜场或自动追加矩阵。
+   若变化很小，转查中央／边界传递；若显著，仍需检验其轨迹影响，不按更接近FEM选择真值。余下横向／计时差仍待解释。
    不将FEM donor伪装成原生祖先，不以单镜改善替代整程或束团资格，不逐场调压冒充数值收敛。
 2. 冻结场消费的源码／配置按最小依赖闭包纳管；其余自动闭合工作区改动仍须独立验收发布。
    通用COMSOL改压provider已有多窗编译与发布校验，但求解readback仍绑定sol1/std1，
@@ -255,6 +261,7 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [boundary-input]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_191649__analysis__cross__native-mirror-boundary-input-check/summary.json
 [parent-boundary]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_211107__analysis__simion__parent-boundary-fixed25-query/summary.json
 [direct-parent]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_212434__build__simion__direct-parent-fixed-grid/summary.json
+[parent-stopping]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_215310__build__simion__parent-stopping-increment/summary.json
 [static-recovery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_193228__analysis__python__native-static-batch-continuation-acceptance/summary.json
 [segment3]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_161302__sim__simion__matched-mesh3-same-entry-mirror/summary.json
 [segment4]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_183100__sim__simion__mesh4-same-entry-positive-mirror/summary.json
