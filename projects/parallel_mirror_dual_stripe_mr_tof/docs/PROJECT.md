@@ -14,7 +14,7 @@
 COMSOL各次完整受控N13均0/13检测器命中，尚未获得收敛或性能复现资格。
 本轮[固定场与求解状态里程碑](history/20261015__fixed-field-reproduction-and-solve-state.md)保存已完成比较、失败及恢复证据；
 旧producer专项见[退役里程碑](history/20261015__producer-retirement-milestone.md)，两条链必要资产继续保留。
-当前只推进一次已有mesh3同控制冷加载清解重求的可重复性检查，不新建网格、不导出或飞行。
+同控制mesh3冷加载清解重求已完成，40点结果可重复；该证据不等于停止误差或FEM收敛已关闭。
 
 ## 输入权威与物理定义
 
@@ -118,6 +118,8 @@ P位置0.1 mm、能量0.0523430183 V/q、S两位置各0.1 mm；S1/P1/P2约束联
 COMSOL采用完整C0装配独立求场，不再沿用旧SIMION donor；实际消费仍为
 COMSOL标量电势→规则PA→SIMION求导／插值／窗口选择→原飞行入口，不是直接FEM原生插值。
 网格、求解停止、导出表示、窗口交接、积分及事件分别控制；不追求远离束路的尖角场处处相等。
+两种场源共用trial、批次调度、事件诊断和发布；差别在场provider及binding，不另建COMSOL闭合器。
+本轮135800消费四窗单工作点场，响应项为0，未验证当前COMSOL响应组合；新场空间闭合也尚未执行。
 
 | COMSOL对象 | 有效结果与适用边界 |
 |---|---|
@@ -148,8 +150,13 @@ Nonsymmetric变为Symmetric。因此旧差异不能全部归因网格，也不�
 最新mesh3重求N13按原调度器并发2、飞行波次305.011 s；target49的Ey斜率+17.44775 ns/eV、
 x±0.1／±0.5 mm偶响应+0.079818／+2.559779 ns。返回P2与检测器所需三点缺失，不补造末端响应。
 [三来源配对][mesh3-pair]显示mesh2→mesh3在首次P2后相对中心时间最大变化0.003411 ns，
-至target49增至2.055357 ns、y差3.928290 mm；native参考→mesh3在target49为7.536126 ns、14.842685 mm。
-native参考为13/13命中，但来自y350／镜z0.04 mm参考，并非当前高斯细档；不以命中或更高R选择真值。
+至target49增至2.055357 ns、y差3.928290 mm。原134830旧native参考保留在该配对，不再代替当前细档。
+[细档原生配对][fine-native-pair]已零飞行复用035610受控N13：实际镜网格0.04/0.20/0.02 mm，
+物理y上界360 mm、有效上界359.75 mm；其13/13命中，电压、源及碰撞定义与COMSOL相同。
+细档native→mesh3首次P2后相对计时最大差0.147297 ns、y差0.030966 mm，target49增至7.515972 ns／14.844245 mm。
+该比较9项登记控制全部相等，共4457个事件、102个原生独有及14个COMSOL额外慢转折；未到达的返回／检测器事件不补造。
+target49的原生／COMSOL Ey斜率为2.46446／17.44775 ns/eV，全幅x偶响应2.324758／2.559779 ns；不是检测器性能。
+更新细档参考后未改变主要差异判断；不以命中或更高R选择真值。
 这些是配置响应差，不是峰宽误差或总误差界，包含FEM、求解状态及消费链影响。
 
 [第12次正镜新轨迹分层查询][fast12-layers]已完成success/full13及公共ready，总162.178 s，
@@ -164,9 +171,11 @@ native参考为13/13命中，但来自y350／镜z0.04 mm参考，并非当前高
 已修复的S缺省输入及[真实省略S的N1][stripe-authority-n1]证明冻结场电压可自动消费，
 不是空间闭合或性能提升；详细试验、几何剖面及发布恢复仅在[阶段里程碑](history/20261015__fixed-field-reproduction-and-solve-state.md)追溯。
 
-COMSOL不升级；[厂商小文件材料][vendor]保留，未发送。已有原生CPT短段不重复，
-不另建整套COMSOL追迹链。下一项是当前mesh3同控制冷加载清解重求的一次可重复性检查，
-仅复查上述40点；尚未启动，不排列组合参数、不因失败重复，结果再决定FEM研究或消费链工作。
+COMSOL不升级；[厂商小文件材料][vendor]保留，未发送。已有原生CPT短段不重复，不另建整套追迹链。
+[143250同控制复现][same-control-repeat]已完成success/full18：mesh3、rhob40000及完整控制JSON均不变，
+同为38次CG及对称矩阵；runAll1025.681 s、子运行总1126.690 s，原生稳态865 s、峰值物理内存34.51 GB。
+40点重求前后最大ΔV=3.456×10⁻¹¹ V、向量ΔE=1.749×10⁻⁷ V/m，h及quality不变；未保存新MPH、导出或Fly。
+当前设置在本次试验中可重复，约158 V/m两档差异不是本次随机重求波动；仍不能据此证明停止误差、FEM或全程轨迹收敛。
 
 ## 剩余时间响应与设计线索
 
@@ -190,9 +199,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 已关闭的旧生产器、专属测试与入口清单归入[退役里程碑](history/20261015__producer-retirement-milestone.md)。
 当前共享数学、活动配置及两条链的资产重建能力继续保留；已封存输入和小证据不随入口退役删除。
 
-1. 完成当前mesh3、rhob40000、同网格／物理／其余有效控制的冷加载清解重求可重复性检查。
-   仅比较冻结40点，不新建网格、导出或Fly；尚未启动。用于隔离求解状态，失败不重复。
-   结果经复核后再决定FEM或消费链方向，暂不启动高斯N100，不默认无限加密。
+1. 同控制mesh3复现已完成；下一项先依据已保存控制、原生场及束路差异，选择一次隔离停止误差或FEM影响的有限对照。
+   不重复同控制试验，不排列组合求解参数；暂不启动高斯N100，不默认新建网格或无限加密。
 2. 根据mesh1/mesh2配对区分共同TOF、粒子相对时间、空间返回与终止身份；只针对改变设计决策的束路补充精度检查。
    不等待所有旧失闭合轨迹一致，也不因中心命中选“真值”；若结果仍改变性能判断，报告有限可信范围。
 3. 原生工作流保留可重放能力；必要响应兼容成员完成后自动有界P/S恢复，冻结候选再检查代表离散稳健性。
@@ -237,3 +245,5 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [cad-delivery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/summary.json
 
 [fast12-layers]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_142316__analysis__cross__fast12-mesh2-mesh3-field-layers/summary.json
+[same-control-repeat]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_143250__analysis__comsol__mesh3-same-control-repeat/summary.json
+[fine-native-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_144459__analysis__python__fine-native-mesh3-controlled-n13-pairing/summary.json
