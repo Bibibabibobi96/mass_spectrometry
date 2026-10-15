@@ -600,6 +600,57 @@ function Exit-HostExecutionLease { param($Lease) }
             apply_retirement(resumed)
         self.assertEqual(verify_retirement(self.target)["status"], "PASS")
 
+    def _bind_external_input_manifest(self) -> Path:
+        outside = self.replacement / "run_manifest.json"
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["inputs"]["upstream_manifest"] = str(outside)
+        config_path.write_text(json.dumps(config))
+        parent_path = self.target / "run_manifest.json"
+        parent = json.loads(parent_path.read_text())
+        parent["run_config"].update(bytes=config_path.stat().st_size, sha256=_sha(config_path))
+        parent["inputs"]["upstream_manifest"] = {
+            "path": str(outside), "exists": True,
+            "bytes": outside.stat().st_size, "sha256": _sha(outside),
+        }
+        parent_path.write_text(json.dumps(parent))
+        return outside
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_external_input_manifest_preserved_without_payload_inheritance(self, _scan: mock.Mock) -> None:
+        outside = self._bind_external_input_manifest()
+        before = {str(p.relative_to(self.replacement)): p.read_bytes()
+                  for p in self.replacement.rglob("*") if p.is_file()}
+        plan = self._owner_plan()
+        self.assertTrue(all((self.target / item["path"]).resolve().is_relative_to(self.target)
+                            for item in plan["removed_files"]))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertTrue(outside.is_file())
+        self.assertEqual(before, {str(p.relative_to(self.replacement)): p.read_bytes()
+                                  for p in self.replacement.rglob("*") if p.is_file()})
+        retained = json.loads((self.target / "run_manifest.json").read_text())
+        self.assertEqual(retained["inputs"]["upstream_manifest"]["sha256"], _sha(outside))
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_external_input_manifest_identity_drift_rejected(self, _scan: mock.Mock) -> None:
+        outside = self._bind_external_input_manifest()
+        outside.write_text(outside.read_text() + " ")
+        with self.assertRaises(RetirementError):
+            self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_external_manifest_input_cannot_authorize_output(self, _scan: mock.Mock) -> None:
+        outside = self._bind_external_input_manifest()
+        parent_path = self.target / "run_manifest.json"
+        parent = json.loads(parent_path.read_text())
+        parent["outputs"].append(dict(parent["inputs"]["upstream_manifest"]))
+        parent_path.write_text(json.dumps(parent))
+        with self.assertRaisesRegex(RetirementError, "strict local descendant"):
+            self._owner_plan()
+        self.assertTrue(outside.is_file())
+
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_owner_external_child_manifest_rejected(self, _scan: mock.Mock) -> None:
         parent_path = self.target / "run_manifest.json"

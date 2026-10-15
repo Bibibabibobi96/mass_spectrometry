@@ -16,12 +16,15 @@
       },
       "retention_class": "solver_review",
       "retention_reason": "Retain native electrode field and workbench for GUI review of the functional model",
-      "committed_new_bytes": 8589934592,
+      "retain_batch_trajectories": false,
+      "native_field_query_memory_bytes": 4294967296,
+      "native_field_query_memory_basis": "r17 results/potential_audit_resource_usage.json measured 3154186240 bytes peak; 4GiB declaration provides margin for this same 24.3M-node native query, without qualifying historical physics. Worker concurrency remains public live planning.",
+      "committed_new_bytes": 4294967296,
       "limits": {
-        "transient_run_directory_bytes": 8589934592,
+        "transient_run_directory_bytes": 4294967296,
         "transient_run_directory_sample_interval_seconds": 30
       },
-      "capacity_estimate_basis": "Forecast: 24.4M-node 18-file native family about 3.3GB, N100 trajectories about 4.2GB extrapolated from r04, diagnostics and remaining margin within 8GiB; actual usage monitored."
+      "capacity_estimate_basis": "Forecast: 24.4M-node 18-file private native family about 3.3GB; CLI workers suppress optional dense TRJ files while preserving unchanged event and scheduled state CSVs (about 0.2GB including merge copies), plots and margin within 4GiB. Full-cohort GUI master retains trajectories when the user flies it. Actual usage monitored."
     }
   ]
 }

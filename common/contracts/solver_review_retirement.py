@@ -375,6 +375,11 @@ def _manifest_records(
         for path in tuple(result):
             if path.name != "run_manifest.json":
                 continue
+            if (not path.parent.is_relative_to(run["dir"])
+                    and result[path]["manifest_role"].startswith("input:")):
+                # An external input was fully verified above. It is provenance,
+                # not a local child whose payload this owner may inherit/retire.
+                continue
             if not path.parent.is_relative_to(run["dir"]) or path.parent == run["dir"]:
                 raise RetirementError(f"child manifest is not a strict local descendant: {path}")
             child = _load_run(path.parent, expected_run_id=run["config"]["run_id"])

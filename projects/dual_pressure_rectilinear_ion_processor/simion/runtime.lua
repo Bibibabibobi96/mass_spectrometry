@@ -31,6 +31,19 @@ local function world_state(state)
  return {t=state.t,x=x,y=y,z=z,vx=vx,vy=vy,vz=vz}
 end
 local source=assert(loadfile(directory..'source_states.lua'))()
+assert(n.collision_rng_policy=='per_global_particle_seed_v1','unsupported collision RNG policy')
+local batch=c.execution_batch
+local id_offset=batch and batch.particle_id_offset or 0
+assert(type(id_offset)=='number' and id_offset>=0 and id_offset==math.floor(id_offset),'invalid particle ID offset')
+assert(id_offset+#source<=c.source.particle_count,'batch exceeds canonical population')
+if batch then
+ assert(type(batch.retain_trajectories)=='boolean','batch trajectory output policy required')
+ assert(batch.particle_id_min==id_offset+1 and batch.particle_id_max==id_offset+#source,
+  'batch interval differs from its local source')
+else assert(#source==c.source.particle_count,'master source must contain the full cohort') end
+-- Conservative project integer contract, not a claimed vendor RNG limit.
+assert(type(n.seed)=='number' and n.seed==math.floor(n.seed) and n.seed>=1 and
+ n.seed+c.source.particle_count-1<=2147483646,'invalid per-particle seed range')
 local drive=assert(loadfile(directory..'native_drive.lua'))()
 local rf=assert(loadfile(directory..'simion_rf_drive.lua'))().new{
  waveform='cosine',frequency_hz=b.electric.rf_frequency_hz,
@@ -40,16 +53,7 @@ local rf=assert(loadfile(directory..'simion_rf_drive.lua'))().new{
  electrodes={{electrode_id=1,electrode_group=1,polarity=1,common_mode_v=0}}
 }
 local hs=simion.import(directory..'collision_hs1.lua')
--- Official module exposes adjustables in the workbench program environment.
-_gas_mass_amu=b.gas.mass_amu
-_temperature_k=b.gas.temperature_k
-_pressure_pa=0
-_sigma_m2=b.gas.cross_section_m2
-_mean_free_path_mm=b.gas.mean_free_path_mm
-_steps_per_MFP=n.hs1_steps_per_mfp
-_random_seed=n.seed+1
-_mark_collisions=0
-_trace_level=0
+-- Assign imported HS1 adjustables explicitly inside each run reset.
 local function local_pressure()
  local x,y,z=local_position(ion_px_mm,ion_py_mm,ion_pz_mm)
  if math.abs(y)>=g.r0_mm or math.abs(z)>=g.r0_mm then return 0 end
@@ -58,25 +62,59 @@ local function local_pressure()
  return 0
 end
 hs.pressure=local_pressure
-local function reset_collision_module()
+local function reset_collision_module(audit_run)
  -- SIMION forbids importing a workbench program inside a Fly callback.
  -- The frozen run copy adds only this explicit reset hook; all collision
  -- equations and sampling logic remain byte-identical to the official file.
  assert(hs.reset_run_state,'frozen HS1 reset adapter is required')
  hs.reset_run_state()
- _gas_mass_amu=b.gas.mass_amu;_temperature_k=b.gas.temperature_k
- _pressure_pa=0;_sigma_m2=b.gas.cross_section_m2
- _mean_free_path_mm=b.gas.mean_free_path_mm;_steps_per_MFP=n.hs1_steps_per_mfp
- _random_seed=n.seed+1;_mark_collisions=0;_trace_level=0
+ adjustable _gas_mass_amu=b.gas.mass_amu
+ adjustable _temperature_k=b.gas.temperature_k
+ adjustable _pressure_pa=0
+ adjustable _sigma_m2=b.gas.cross_section_m2
+ adjustable _mean_free_path_mm=b.gas.mean_free_path_mm
+ adjustable _steps_per_MFP=n.hs1_steps_per_mfp
+ adjustable _random_seed=n.seed+1
+ adjustable _mark_collisions=0
+ adjustable _trace_level=0
  hs.pressure=local_pressure
+ local expected={gas_mass_amu=b.gas.mass_amu,temperature_k=b.gas.temperature_k,
+  pressure_pa=0,sigma_m2=b.gas.cross_section_m2,mean_free_path_mm=b.gas.mean_free_path_mm,
+  steps_per_mfp=n.hs1_steps_per_mfp,random_seed=n.seed+1,mark_collisions=0,trace_level=0}
+ local keys={'gas_mass_amu','temperature_k','pressure_pa','sigma_m2','mean_free_path_mm',
+  'steps_per_mfp','random_seed','mark_collisions','trace_level'}
+ local function read_bound(phase)
+  local actual=assert(hs.bound_parameters,'HS1 bound-parameter adapter required')()
+  if audit_run then
+   local audit=assert(io.open(directory..'hs1_bound_parameters.csv',phase=='before_init' and 'w' or 'a'))
+   if phase=='before_init' then audit:write('phase,'..table.concat(keys,',')..'\n') end
+   local values={phase}
+   for _,key in ipairs(keys) do values[#values+1]=tostring(actual[key]) end
+   audit:write(table.concat(values,',')..'\n');audit:close()
+  end
+  for _,key in ipairs(keys) do
+   assert(actual[key]==expected[key],string.format('HS1 binding mismatch: %s actual=%s expected=%s',
+    key,tostring(actual[key]),tostring(expected[key])))
+  end
+ end
+ read_bound('before_init')
  hs.segment.initialize()
+ read_bound('after_init')
+ if audit_run then print('HS1_BOUND_PARAMETERS=PASS mass_amu='..b.gas.mass_amu..' temperature_k='..b.gas.temperature_k) end
 end
-local events,trace
+local events,trace,rng_audit
+local active_particle
 local seen,done,previous,next_sample,extraction_trace={},{},{},{},{}
 local checkpoints={{b.schedule.capture_end_us,'capture'},
  {b.schedule.transfer_end_us,'transfer'}, {b.schedule.extraction_start_us,'pre_extraction'}}
 local hp_end=g.guide_length_mm+g.hp_length_mm
 local lp_end=hp_end+g.lp_length_mm
+-- Observe downstream escape inside the PA, after the physical end-lens bore.
+-- Once an ion leaves every PA, SIMION may no longer call this program's
+-- terminate callback. This numerical plane adds no metal or electric field.
+local downstream_exit=assert(c.numerical_boundaries,'numerical boundaries required').downstream_exit_x_mm
+assert(downstream_exit>lp_end and downstream_exit<c.native_projection.maximum_mm[1],
+ 'downstream observation must remain after the lens and inside the PA')
 local function draw_numerical_exit_outline()
  -- Visual guide only: this adds no metal, detector interaction, or field.
  local plot=simion.experimental and simion.experimental.plot_line_segment
@@ -124,23 +162,48 @@ end
 function segment.initialize_run()
  if events then events:close() end
  if trace then trace:close() end
+ if rng_audit then rng_audit:close() end
  seen,done,previous,next_sample,extraction_trace={},{},{},{},{}
- reset_collision_module()
+ active_particle=nil
+ reset_collision_module(true)
  seed(n.seed)
  sim_grouped=0
  sim_rerun_flym=0
- sim_trajectory_image_control=0
+ -- Official child_particles/child80.lua: 0=YES,YES; 3=NO,NO.
+ -- CLI workers keep all scheduled CSV states/events without dense TRJ output.
+ -- The full-cohort master keeps GUI trajectory drawing and retention enabled.
+ sim_trajectory_image_control=(batch and not batch.retain_trajectories) and 3 or 0
  draw_numerical_exit_outline()
  assert(#simion.wb.instances==1 and #source==sim_ions_count,'source/volume mismatch')
  events=assert(io.open(directory..'events.csv','w'))
  events:write('event,particle_id,reason,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n')
  trace=assert(io.open(directory..'samples.csv','w'))
  trace:write('particle_id,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n')
+ rng_audit=assert(io.open(directory..'collision_rng_seeds.csv','w'))
+ rng_audit:write('particle_id,global_particle_id,seed\n')
  sim_trajectory_quality=n.trajectory_quality
  print('ION_PROCESSOR_BEGIN N='..#source..' field=native_electrodes collision=official_HS1')
 end
 function segment.initialize()
- hs.segment.initialize()
+ -- Particle creation precedes integration of ALL sequential particles (official
+ -- SIMION trajectory flow diagram). It cannot own the active collision PRNG.
+ assert(ion_number>=1 and ion_number<=#source,'particle outside batch')
+end
+local function activate_collision_particle()
+ if active_particle==ion_number then return end
+ assert(sim_grouped==0,'per-particle collision streams require sequential flight')
+ assert(not active_particle or done[active_particle],
+  'unfinished particle interleaving cannot preserve independent collision state')
+ assert(ion_number>=1 and ion_number<=#source,'particle outside batch')
+ assert(not done[ion_number],'terminated particle cannot reactivate collision stream')
+ -- First integration callback: source creation and all initialize callbacks
+ -- have finished. Reset HS1 private state, then seed AFTER its own init seeding.
+ reset_collision_module(false)
+ local global_id=id_offset+ion_number
+ local particle_seed=n.seed+global_id-1
+ seed(particle_seed)
+ rng_audit:write(string.format('%d,%d,%d\n',ion_number,global_id,particle_seed))
+ active_particle=ion_number
 end
 function segment.fast_adjust()
  local voltages=drive.voltages(c,ion_time_of_flight,
@@ -148,8 +211,14 @@ function segment.fast_adjust()
  for id,v in ipairs(voltages) do adj_elect[id]=v end
 end
 function segment.tstep_adjust()
+ activate_collision_particle()
  hs.segment.tstep_adjust()
  ion_time_step=math.min(ion_time_step,n.dt_us,rf.timestep_cap_us)
+ local x=local_position(ion_px_mm,ion_py_mm,ion_pz_mm)
+ local vx=local_vector(ion_vx_mm,ion_vy_mm,ion_vz_mm)
+ if x>lp_end and x<downstream_exit and vx>0 then
+  ion_time_step=math.min(ion_time_step,(downstream_exit-x)/vx)
+ end
  local t=ion_time_of_flight
  for _,point in ipairs(checkpoints) do
   if point[1]>t then ion_time_step=math.min(ion_time_step,point[1]-t) end
@@ -166,6 +235,7 @@ function segment.other_actions()
   emit('source',assert(source[id]));previous[id]=now();next_sample[id]=0
  end
  if done[id] then return end
+ activate_collision_particle()
  hs.segment.other_actions()
  local s=now()
  if s.t>=b.schedule.extraction_start_us and not extraction_trace[id] then
@@ -191,6 +261,8 @@ function segment.other_actions()
   finish('acceptance_surface',exit)
  elseif not extraction and (math.abs(s.y)>g.boundary_radius_mm or math.abs(s.z)>g.boundary_radius_mm) then
   finish('radial_escape',s)
+ elseif s.x>=downstream_exit and previous[id].x<downstream_exit then
+  finish('downstream_domain_exit',crossing(previous[id],s,'x',downstream_exit))
  end
  if s.x<0 then finish('backward_escape',s) end
  -- The LP end is an open lens aperture, not an absorbing metal plane.
@@ -207,5 +279,7 @@ end
 function segment.terminate_run()
  if events then events:close();events=nil end
  if trace then trace:close();trace=nil end
+ if rng_audit then rng_audit:close();rng_audit=nil end
+ for id=1,#source do assert(done[id],'native flight lacks recorded terminal for particle '..id) end
  print('ION_PROCESSOR_END')
 end

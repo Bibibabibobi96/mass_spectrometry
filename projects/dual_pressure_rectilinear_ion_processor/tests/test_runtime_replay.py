@@ -1,7 +1,8 @@
 """Exercise repeat-Fly callback state with standalone Lua and a nonphysical HS1 stub.
 
 No SIMION API, electric field, collision physics, or physical trajectory is run.
-The stub models HS1's private initialization/timestep lifetime and shared PRNG
+SIMION adjustable declarations are removed only for this nonphysical fixture;
+this test cannot prove vendor lexical binding. The stub models HS1's private initialization/timestep lifetime and shared PRNG
 usage solely to reveal stale run state in the production callback wrapper.
 """
 
@@ -25,6 +26,7 @@ REPOSITORY = PROJECT.parents[1]
 LUA_HARNESS = r'''
 local random_state, seeds, imports, reset_calls = 0, {}, 0, 0
 local plot_calls={}
+local expected_image_control=arg[2]=='csv-batch' and 3 or 0
 local open_lens_checks,return_to_lp_checks=0,0
 function seed(value) random_state=value;seeds[#seeds+1]=value end
 function rand()
@@ -34,7 +36,7 @@ end
 segment={}
 simion={wb={instances={{}}},workbench_program=function() end}
 simion.experimental={plot_line_segment=function(...)
-  assert(sim_trajectory_image_control==0,'outline drawing must follow trajectory retention setup')
+  assert(sim_trajectory_image_control==expected_image_control,'outline follows frozen output policy')
   plot_calls[#plot_calls+1]={...}
 end}
 if arg[2]=='missing-api' then simion.experimental=nil end
@@ -43,6 +45,12 @@ simion.import=function(path)
   imports=imports+1
   local initialized,max_timestep=false,nil
   local hs={segment={}}
+  hs.bound_parameters=function()
+    return {gas_mass_amu=arg[2]=='bound-mismatch' and 4 or _gas_mass_amu,
+      temperature_k=_temperature_k,pressure_pa=_pressure_pa,sigma_m2=_sigma_m2,
+      mean_free_path_mm=_mean_free_path_mm,steps_per_mfp=_steps_per_MFP,
+      random_seed=_random_seed,mark_collisions=_mark_collisions,trace_level=_trace_level}
+  end
   test_hs=hs
   hs.reset_run_state=function()
     initialized=false;max_timestep=nil
@@ -91,6 +99,15 @@ local function put_local(x,y,z,vx,vy,vz)
   if config.coordinate_transform then ion_vx_mm,ion_vy_mm,ion_vz_mm=-vz,vx,-vy
   else ion_vx_mm,ion_vy_mm,ion_vz_mm=vx,vy,vz end
 end
+if arg[2]=='bound-mismatch' then
+  local ok,message=pcall(segment.initialize_run)
+  assert(not ok and tostring(message):match('HS1 binding mismatch: gas_mass_amu'),
+    'module readback mismatch must stop before particle integration')
+  local receipt=assert(io.open(directory..'hs1_bound_parameters.csv'))
+  local text=receipt:read('*a');receipt:close()
+  assert(text:match('before_init,4,'),'retain observed binding before failing closed')
+  print('RUNTIME_HS1_MISMATCH_REFUSED_PASS');return
+end
 if arg[2]=='missing-api' then
   local ok,message=pcall(segment.initialize_run)
   assert(not ok and tostring(message):match('numerical exit outline requires simion.experimental.plot_line_segment'),
@@ -102,7 +119,7 @@ local function contents(path)
   local handle=assert(io.open(path,'r'))
   local value=handle:read('*a');handle:close();return value
 end
-local function fly_again()
+local function fly_again(preinitialize)
   -- Emulate changing GUI defaults before each click; reproducibility must be
   -- imposed at the run boundary rather than relying on previous GUI state.
   sim_grouped=1;sim_trajectory_image_control=3;sim_rerun_flym=1
@@ -113,16 +130,30 @@ local function fly_again()
     _sigma_m2==config.baseline.gas.cross_section_m2 and
     _random_seed==config.numerics.seed+1,'replay must restore frozen collision inputs')
   assert(sim_grouped==0,'initialize_run must enforce sequential particle order')
-  assert(sim_trajectory_image_control==0,'initialize_run must view and retain trajectories')
+  assert(sim_trajectory_image_control==expected_image_control,'initialize_run must restore frozen output policy')
   assert(sim_rerun_flym==0,'initialize_run must disable automatic reruns')
   local first_timestep
+  if preinitialize then
+    -- Official SIMION lifecycle: create all particles and call initialize for
+    -- each, before any sequential particle enters trajectory integration.
+    local before_resets,before_seeds=reset_calls,#seeds
+    for id=1,sim_ions_count do
+      ion_number=id;segment.initialize()
+    end
+    assert(reset_calls==before_resets and #seeds==before_seeds,
+      'creation callbacks must not own the active collision RNG or HS1 reset')
+    rand() -- Model unrelated source-creation RNG use, not a physical collision.
+  end
   for id=1,sim_ions_count do
     local source=sources[id]
     ion_number=id;ion_splat=0;ion_time_of_flight=0
     put_local(source.x,source.y,source.z,source.vx,source.vy,source.vz)
-    segment.initialize()
+    if not preinitialize then segment.initialize();rand() end
     ion_time_step=1
     segment.tstep_adjust()
+    local offset=config.execution_batch and config.execution_batch.particle_id_offset or 0
+    assert(random_state==config.numerics.seed+offset+id-1,
+      'actual integration activation must own the canonical particle seed')
     if id==1 then first_timestep=ion_time_step end
     segment.other_actions()
     -- Prescribed callback positions deliberately cross the open end-lens bore
@@ -157,14 +188,14 @@ local function fly_again()
   segment.terminate_run()
   return contents(directory..'events.csv'),contents(directory..'samples.csv'),first_timestep
 end
-local events1,samples1,dt1=fly_again()
+local events1,samples1,dt1=fly_again(true)
 ion_run=1
 -- Simulate stale GUI-adjustable state; initialize_run must restore the same
 -- scientific inputs before the second seeded collision module initialization.
 _gas_mass_amu=999;_temperature_k=999;_sigma_m2=1;_random_seed=1
-local events2,samples2,dt2=fly_again()
+local events2,samples2,dt2=fly_again(false)
 assert(imports==1,'HS1 workbench module must be imported exactly once outside Fly')
-assert(reset_calls==2,'each Fly must explicitly reset private HS1 lifecycle state')
+assert(reset_calls==2*(1+sim_ions_count),'each Fly must explicitly reset private HS1 lifecycle state')
 assert(open_lens_checks==2*sim_ions_count and return_to_lp_checks==2*sim_ions_count,
   'both repeated runs must preserve the open-lens excursion and return for every particle')
 assert(#plot_calls==8,'each Fly must draw exactly four numerical exit edges')
@@ -187,8 +218,14 @@ end
 assert(events1==events2,'repeat Fly must reset seen/done/previous and collision PRNG')
 assert(samples1==samples2,'repeat Fly must reset sample timeline')
 assert(dt1==dt2,'repeat Fly must reset HS1 private max_timestep')
+local receipt=contents(directory..'collision_rng_seeds.csv')
+local offset=config.execution_batch and config.execution_batch.particle_id_offset or 0
+assert(receipt:match(string.format('1,%d,%d',offset+1,config.numerics.seed+offset)),
+ 'seed audit must preserve the canonical global ID')
+assert(receipt:match(string.format('2,%d,%d',offset+2,config.numerics.seed+offset+1)),
+ 'each particle must have its own audited seed')
 assert(#seeds>=2 and seeds[1]==config.numerics.seed and
-  seeds[#seeds]==config.numerics.seed,'each run must initialize the declared PRNG seed')
+  seeds[#seeds]==config.numerics.seed+sim_ions_count-1+(config.execution_batch and config.execution_batch.particle_id_offset or 0),'each canonical particle must initialize its own declared seed')
 local _,source_count=events2:gsub('source,','')
 local _,terminal_count=events2:gsub('terminal,','')
 assert(source_count==sim_ions_count and terminal_count==sim_ions_count,
@@ -200,8 +237,41 @@ put_local(120,2.1,0,1,0,0)
 assert(test_hs.pressure()==0,'outside local bore has no gas')
 segment.other_actions()
 assert(ion_splat==1,'local radial escape must terminate after project rotation')
-segment.terminate_run()
+local census_ok,census_message=pcall(segment.terminate_run)
+assert(not census_ok and tostring(census_message):match('lacks recorded terminal for particle 2'),
+ 'missing native terminal callbacks must fail closed, not fabricate a state')
 assert(contents(directory..'events.csv'):match('radial_escape'),'local boundary reason must survive rotation')
+segment.initialize_run()
+for id=1,sim_ions_count do
+ ion_number=id;ion_time_of_flight=0;ion_splat=0
+ local s=sources[id];put_local(s.x,s.y,s.z,s.vx,s.vy,s.vz)
+ segment.initialize();segment.other_actions()
+ local plane=config.numerical_boundaries.downstream_exit_x_mm
+ ion_time_of_flight=4100;put_local(plane-0.001,0,0,1,0,0)
+ segment.other_actions()
+ ion_time_step=1;segment.tstep_adjust()
+ assert(ion_time_step<=0.001000001,'near-boundary step must resolve the numerical exit')
+ ion_time_of_flight=4100.02;put_local(plane+0.01,0,0,1,0,0)
+ segment.other_actions();segment.terminate()
+ assert(ion_splat==1,'downstream numerical escape must be recorded before leaving the PA')
+end
+segment.terminate_run()
+assert(contents(directory..'events.csv'):match('downstream_domain_exit'),'domain escape is not a metal collision')
+local domain_terminal_count=0
+for line in contents(directory..'events.csv'):gmatch('[^\n]+') do
+ if line:match('^terminal,%d+,downstream_domain_exit,') then
+  local fields={};for value in line:gmatch('[^,]+') do fields[#fields+1]=value end
+  local axis=config.coordinate_transform and 6 or 5
+  assert(math.abs(tonumber(fields[axis])-config.numerical_boundaries.downstream_exit_x_mm)<1e-10,
+   'interpolated numerical exit must lie on its frozen plane')
+  local t=tonumber(fields[4])
+  assert(math.abs(t-(4100+0.02/11))<1e-9,'domain crossing time must use the recorded integration bracket')
+  domain_terminal_count=domain_terminal_count+1
+ end
+end
+assert(domain_terminal_count==sim_ions_count,'record each domain terminal exactly once')
+print('RUNTIME_PREINITIALIZED_PARTICLES_PASS')
+print('RUNTIME_TERMINAL_CENSUS_PASS')
 print('RUNTIME_REPLAY_PASS imports='..imports..' seeds='..#seeds)
 '''
 
@@ -222,11 +292,25 @@ class RuntimeReplayTests(unittest.TestCase):
                   for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point")}
         if mode == "transformed":
             config["coordinate_transform"] = json.loads((PROJECT / "config/coordinate_transform.json").read_text(encoding="utf-8"))
+        config["source"]["particle_count"] = 2
+        if mode in {"offset", "csv-batch"}:
+            config["source"]["particle_count"] = 100
+            config["execution_batch"] = {"particle_id_offset": 50, "particle_id_min": 51, "particle_id_max": 52, "retain_trajectories": mode != "csv-batch"}
         config["native_projection"] = native_projection(config["baseline"], config["numerics"])
+        geom=config["baseline"]["geometry"]
+        lens_end=geom["guide_length_mm"]+geom["hp_length_mm"]+geom["lp_length_mm"]+config["baseline"]["native_geometry"]["lens_thickness_mm"]
+        config["numerical_boundaries"]={"downstream_exit_x_mm":(lens_end+config["native_projection"]["maximum_mm"][0])/2,
+                                        "classification":"numerical_observation_not_metal"}
         with tempfile.TemporaryDirectory(prefix="ion_processor_replay_test_") as temporary:
             folder = Path(temporary)
             for name in ("runtime.lua", "native_drive.lua"):
-                shutil.copyfile(PROJECT / "simion" / name, folder / name)
+                if name == "runtime.lua":
+                    # Syntax adapter for standalone Lua only; real SIMION evidence
+                    # is required to prove adjustable binding.
+                    text = (PROJECT / "simion" / name).read_text(encoding="utf-8")
+                    (folder / name).write_text(text.replace("adjustable ", ""), encoding="utf-8")
+                else:
+                    shutil.copyfile(PROJECT / "simion" / name, folder / name)
             shutil.copyfile(REPOSITORY / "common/multipole/simion_rf_drive.lua",
                             folder / "simion_rf_drive.lua")
             (folder / "frozen_config.lua").write_text("return " + lua_literal(config), encoding="utf-8")
@@ -245,8 +329,20 @@ class RuntimeReplayTests(unittest.TestCase):
     def test_repeated_initialize_run_resets_state_and_draws_numerical_outline(self) -> None:
         self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("replay"))
 
+    def test_all_creation_callbacks_precede_sequential_flight_without_rng_leak(self) -> None:
+        self.assertIn("RUNTIME_PREINITIALIZED_PARTICLES_PASS", self.run_runtime_fixture("preinitialize"))
+
     def test_project_rotation_preserves_local_regions_boundaries_and_replay(self) -> None:
         self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("transformed"))
+
+    def test_nonzero_batch_offset_sets_canonical_particle_seeds(self) -> None:
+        self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("offset"))
+
+    def test_csv_batch_suppresses_only_vendor_dense_trajectory_output(self) -> None:
+        self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("csv-batch"))
+
+    def test_actual_hs1_readback_mismatch_refuses_integration(self) -> None:
+        self.assertIn("RUNTIME_HS1_MISMATCH_REFUSED_PASS", self.run_runtime_fixture("bound-mismatch"))
 
     def test_missing_outline_api_fails_with_clear_capability_error(self) -> None:
         self.assertIn("RUNTIME_OUTLINE_API_REQUIRED_PASS", self.run_runtime_fixture("missing-api"))

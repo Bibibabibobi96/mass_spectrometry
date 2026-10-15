@@ -10,5 +10,6 @@
   "hs1_steps_per_mfp": 20,
   "native_grid_mm": 0.1,
   "refine_convergence_v": 0.001,
-  "native_aux_segments": 60
+  "native_aux_segments": 60,
+  "collision_rng_policy": "per_global_particle_seed_v1"
 }

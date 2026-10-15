@@ -30,7 +30,7 @@ $capacity=$null;$lease=$null;$published=$false;$accepted=$false
 $savedPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$repoRoot
 Push-Location $repoRoot
 try {
- $protectedPaths=@($baseline)+@($plan.native_pa_records|ForEach-Object{if([IO.Path]::IsPathRooted($_.path)){$_.path}else{Join-Path $baseline $_.path}})
+ $protectedPaths=@($baseline)
  $committed=$profiles[0].committed_new_bytes
  $guiBudget=Join-Path $run 'inputs/gui_execution_budget.json'
  if(Test-Path -LiteralPath $guiBudget){$committed=(Get-Content $guiBudget -Raw|ConvertFrom-Json).committed_new_bytes}
@@ -51,7 +51,7 @@ try {
   throw 'Replay comparison or measured physical summary role is invalid'
  }
  if([bool]$comparison.gui_visual_review-ne[bool]$ManualGuiConfirmed){throw 'Manual GUI evidence flag differs from explicit confirmation'}
- $accepted=$analysisExit-eq0-and[bool]$comparison.numerical_equivalence-and$summary.status-in@('functional_pass','exploration_pass')
+ $accepted=$analysisExit-eq0-and$summary.status-eq'success'-and$summary.functional_status-in@('functional_pass','exploration_pass')
  $null=Apply-RunArtifactRetention -Python $PythonExe -RepoRoot $repoRoot -RunConfig $configPath
  $outputs=@(Get-ChildItem -LiteralPath $run -Recurse -File|Where-Object{$_.Name-notin@('run_manifest.json','run_config.json')-and-not$_.Name.StartsWith('.')}|ForEach-Object{$_.FullName})
  $status=$(if($accepted){'success'}else{'failed'})

@@ -249,6 +249,62 @@ def finalize_ready(artifact_root: Path, run_config: Path) -> dict[str, Any]:
     }
 
 
+def _verify_retired_payload_remainder(
+    run_dir: Path, config: dict[str, Any], owner: str,
+    entry: dict[str, Any], records: list[dict[str, Any]],
+) -> None:
+    """Explain a sealed range's size change solely by its completed retirement.
+
+    The new receipt itself occupies bytes. Retain the original owner decision
+    and compare complete before/after inventories, rather than subtracting the
+    deleted payload size alone or accepting an unexplained current size.
+    """
+    if config.get("artifact_retention", {}).get("class") != "solver_review" or entry.get("pin") is not True:
+        raise ValueError("retirement remainder requires a pinned solver_review owner range")
+    receipt_path = run_dir / RECEIPT_NAME
+    receipt = _load_json(receipt_path, "retirement receipt")
+    if (receipt.get("retirement_mode") != "completed_experiment"
+            or receipt.get("owner") != owner
+            or Path(str(receipt.get("target_run_path", ""))).resolve() != run_dir
+            or receipt.get("stopped_checkpoint_runtime") is not None):
+        raise ValueError("retirement remainder requires this owner's completed terminal experiment")
+
+    def inventory(value: object) -> dict[str, tuple[int, str]]:
+        if not isinstance(value, list):
+            raise ValueError("retirement remainder inventory is invalid")
+        result: dict[str, tuple[int, str]] = {}
+        for item in value:
+            if not isinstance(item, dict):
+                raise ValueError("retirement remainder inventory is invalid")
+            relative = item.get("path")
+            size, digest = item.get("bytes"), item.get("sha256")
+            if (not isinstance(relative, str) or not relative
+                    or Path(relative).is_absolute() or Path(relative).as_posix() != relative
+                    or ".." in Path(relative).parts or relative == RECEIPT_NAME
+                    or relative in result or isinstance(size, bool) or not isinstance(size, int) or size < 0
+                    or not isinstance(digest, str) or len(digest) != 64
+                    or any(character not in "0123456789abcdefABCDEF" for character in digest)):
+                raise ValueError("retirement remainder inventory is invalid")
+            (run_dir / relative).resolve().relative_to(run_dir)
+            result[relative] = (size, digest.upper())
+        return result
+
+    original = inventory(receipt.get("original_file_inventory"))
+    removed = inventory(receipt.get("removed_files"))
+    preserved = inventory(receipt.get("preserved_files"))
+    verify_retirement(run_dir)
+    removed_bytes = sum(size for size, _ in removed.values())
+    if (not removed or removed.keys() & preserved.keys()
+            or original != {**removed, **preserved}
+            or receipt.get("removed_bytes") != removed_bytes
+            or int(entry["bytes"]) != sum(size for size, _ in original.values())):
+        raise ValueError("sealed stopped payload size change is not exactly covered by retirement")
+    expected = {path: size for path, (size, _) in preserved.items()}
+    expected[RECEIPT_NAME] = receipt_path.stat().st_size
+    if {item["path"]: item["bytes"] for item in records} != expected:
+        raise ValueError("retirement remainder differs from the preserved inventory and receipt")
+
+
 def seal_checkpoint(
     artifact_root: Path, run_config: Path, *, owner: str,
     writing_stopped: bool = False,
@@ -318,19 +374,23 @@ def seal_checkpoint(
             raise ValueError("checkpoint sealing requires a checkpoint manifest")
         total, records = _inventory(run_dir)
         if retain_payload and entry["status"] == "ready" and total != int(entry["bytes"]):
-            raise ValueError("sealed stopped payload resident bytes changed; owner must investigate")
+            if not (run_dir / RECEIPT_NAME).is_file():
+                raise ValueError("sealed stopped payload resident bytes changed; owner must investigate")
+            _verify_retired_payload_remainder(run_dir, config, owner, entry, records)
         if not retain_payload and (total > budget or any(
             classify_file(run_dir / item["path"], bytes_count=item["bytes"]) in HEAVY_RETENTION_ROLES
             for item in records
         )):
             raise ValueError("checkpoint is not light evidence; preserve it for its payload owner")
+        preserve_payload_duties = retain_payload and entry["status"] == "ready"
         ledger["resident_bytes"] += total - int(entry["bytes"])
         entry.update(
             {"class": "rebuildable_payload" if retain_payload else "light_evidence", "bytes": total, "status": "ready"},
         )
-        entry.update(_run_lifecycle_duties(
-            run_dir, review_days=READY_REVIEW_DAYS, reason=reason,
-        ))
+        if not preserve_payload_duties:
+            entry.update(_run_lifecycle_duties(
+                run_dir, review_days=READY_REVIEW_DAYS, reason=reason,
+            ))
         if retain_payload:
             entry.update(pin=True, pin_reason=entry.get("pin_reason", retention_reason.strip()))
         elif retired_runtime:

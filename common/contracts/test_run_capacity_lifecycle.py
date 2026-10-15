@@ -100,24 +100,30 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(ledger["objects"][0]["status"], "ready")
             self.assertEqual(ledger["objects"][0]["bytes"], ready["bytes"])
 
-    def retired_failed_fixture(self, root: Path) -> tuple[Path, Path]:
+    def retired_failed_fixture(self, root: Path, *, retained_evidence: bool = False) -> tuple[Path, Path]:
         run, config = self.fixture(root, "20260101_000000__build__simion__failed")
         document = json.loads(config.read_text())
         document.update(schema_version=2, run_id=run.name, project="p", mode="static_pilot",
                         inputs={}, formal_gate_passed=False,
                         artifact_retention={"policy_version": 1, "class": "solver_review", "reason": "review"})
+        if retained_evidence:
+            document["capacity_ledger_lifecycle"]["light_evidence_budget_bytes"] = 1024
         config.write_text(json.dumps(document))
         summary = run / "summary.json"
         summary.write_text(json.dumps({"run_id": run.name, "status": "failed"}))
         payload = run / "field.pa"
-        payload.write_bytes(b"unrefined copy")
+        payload.write_bytes(b"unrefined copy" * (4096 if retained_evidence else 1))
+        evidence = run / "samples.csv"
+        if retained_evidence:
+            evidence.write_bytes(b"retained observations\n" * 256)
         def record(path: Path) -> dict[str, object]:
             return {"path": str(path), "exists": True, "bytes": path.stat().st_size,
                     "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper()}
         (run / "run_manifest.json").write_text(json.dumps({
             "schema_version": 2, "run_id": run.name, "project": "p", "mode": "static_pilot",
             "status": "failed", "formal_eligible": False, "recorded_at_utc": "2026-01-01T00:00:00Z",
-            "run_config": record(config), "inputs": {}, "outputs": [record(summary), record(payload)],
+            "run_config": record(config), "inputs": {},
+            "outputs": [record(summary), record(payload)] + ([record(evidence)] if retained_evidence else []),
             "artifact_retention": document["artifact_retention"],
         }))
         register_writing(root, config)
@@ -143,6 +149,91 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual((entry["class"], entry["pin"]), ("light_evidence", False))
             self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()})
             self.assertFalse((run / "retention_actions.json").exists())
+
+    def test_retired_payload_remainder_stays_pinned_above_light_budget_and_counts_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.retired_failed_fixture(root, retained_evidence=True)
+            before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
+            ledger_before = load_capacity_ledger(root)
+            old_entry = ledger_before["objects"][0]
+            with self.assertRaisesRegex(ValueError, "cannot become light_evidence"):
+                finalize_ready(root, config)
+            kwargs = dict(owner="p", writing_stopped=True, retain_payload=True,
+                          retention_reason="retain failed preparation evidence")
+            command = [sys.executable, "-m", "common.contracts.run_capacity_lifecycle",
+                       "--action", "seal-stopped-payload", "--artifact-root", str(root),
+                       "--run-config", str(config), "--owner", "p", "--confirm-writing-stopped",
+                       "--retention-reason", kwargs["retention_reason"]]
+            completed = subprocess.run(command, capture_output=True, text=True, check=True,
+                                       cwd=Path(__file__).resolve().parents[2], timeout=30)
+            result = json.loads(completed.stdout)
+            ledger = load_capacity_ledger(root)
+            expected_bytes = sum(map(len, before.values()))
+            self.assertEqual(result["bytes"], expected_bytes)
+            self.assertEqual(ledger["resident_bytes"], expected_bytes)
+            self.assertEqual(ledger["objects"][0], {**old_entry, "bytes": expected_bytes})
+            self.assertEqual(result["run_status"], "failed")
+            self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()})
+            self.assertEqual(seal_checkpoint(root, config, **kwargs), result)
+            self.assertEqual(load_capacity_ledger(root), ledger)
+            with self.assertRaisesRegex(ValueError, "cannot become light_evidence"):
+                finalize_ready(root, config)
+
+    def test_retired_payload_remainder_rejects_unexplained_or_unverified_changes(self) -> None:
+        cases = ("missing_receipt", "pending_receipt", "owner", "manifest", "preserved_content",
+                 "extra_file", "missing_evidence", "original_inventory", "removed_bytes", "ledger_bytes",
+                 "unconfirmed", "lease")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                initialize_capacity_ledger(root, objects=[])
+                run, config = self.retired_failed_fixture(root, retained_evidence=True)
+                receipt_path = run / RECEIPT_NAME
+                receipt = json.loads(receipt_path.read_text())
+                kwargs = dict(owner="p", writing_stopped=True, retain_payload=True,
+                              retention_reason="retain failed preparation evidence")
+                if case == "missing_receipt":
+                    receipt_path.unlink()
+                elif case == "pending_receipt":
+                    receipt["lifecycle_status"] = "retirement_pending"
+                elif case == "owner":
+                    receipt["owner"] = "other"
+                elif case == "manifest":
+                    path = run / "run_manifest.json"
+                    path.write_text(path.read_text() + " ")
+                elif case == "preserved_content":
+                    path = run / "samples.csv"
+                    path.write_bytes(b"x" * path.stat().st_size)
+                elif case == "extra_file":
+                    (run / "unrecorded.txt").write_text("not covered by retirement")
+                elif case == "missing_evidence":
+                    (run / "samples.csv").unlink()
+                elif case == "original_inventory":
+                    receipt["original_file_inventory"] = receipt["original_file_inventory"][:-1]
+                elif case == "removed_bytes":
+                    receipt["removed_bytes"] += 1
+                elif case == "ledger_bytes":
+                    ledger = load_capacity_ledger(root)
+                    ledger["objects"][0]["bytes"] += 1
+                    ledger["resident_bytes"] += 1
+                    capacity_ledger.resolve_ledger_path(root).write_text(json.dumps(ledger))
+                elif case == "unconfirmed":
+                    kwargs["writing_stopped"] = False
+                elif case == "lease":
+                    capacity_protection.create_capacity_protection_lease(
+                        root, lease_id="active", owner="p", ttl_seconds=60,
+                        protected_paths=[run / "samples.csv"], committed_new_bytes=0,
+                    )
+                if case in {"pending_receipt", "owner", "original_inventory", "removed_bytes"}:
+                    receipt_path.write_text(json.dumps(receipt))
+                ledger_before = load_capacity_ledger(root)
+                files_before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
+                with self.assertRaises((ValueError, OSError)):
+                    seal_checkpoint(root, config, **kwargs)
+                self.assertEqual(load_capacity_ledger(root), ledger_before)
+                self.assertEqual(files_before, {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()})
 
     def retired_checkpoint_runtime_fixture(self, root: Path) -> tuple[Path, Path]:
         """Use the real owner chain on a tiny sealed private runtime family."""

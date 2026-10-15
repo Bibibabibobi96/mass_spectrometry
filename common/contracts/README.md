@@ -103,6 +103,11 @@ owner 必须先确认本次写入进程及子进程已结束，并承诺续算�
 非空 consumers、活动租约、未确认 writer/子进程停止或不同 owner 均拒绝。`ready` 仅固定已保留占用，
 不代表科学成功，也不授权删除；后续消费可沿既有保护机制登记，原 run 不得重新 register-writing。
 相同 owner 决定可幂等重放；已有 ready 范围的 resident 大小变化必须由 owner 排查，不静默重计。
+若同一 owner 的完整 `solver_review` 退役收据已通过原验证器，且原库存恰好分成已删除与保留两组，
+原 ready 字节数等于退役前完整库存、现库存恰为保留文件加退役收据自身，则可沿同一
+`seal-stopped-payload` 动作重新登记剩余占用。它保留原 `ready/pinned`、owner、保留理由和复核期限；
+按实际剩余总量计入收据新增字节，重复调用不再次扣减。不受 light-evidence 预算约束，也不将剩余 CSV
+改称轻量证据。未完成、身份不符或不能精确解释差额的收据仍拒绝；不重做删除、不改原科学三件套。
 
 maintenance 以固定顺序调用 owner continuation；某一历史 owner 的 JSON 或处置失败只记录该 action 的
 错误，仍继续其他彼此独立的 run、PA、scratch 与别名续做。终态历史 run 若已经逐项登记、总量在轻量
@@ -219,7 +224,8 @@ manifest/summary一致的`failed`或`interrupted` compact run。apply必须持�
 保留全部小证据，不将实验退出冒称为被新run取代。待删除的本地重型文件继承manifest已封存身份，
 核对路径、类型和大小而不重复全文哈希；小证据仍校验内容。
 同run的局域子manifest仅在父manifest已封存该严格本地后代时继承；子终态、owner和小证据仍须一致，
-不从目录搜寻未封存manifest，子PA同样不重复全文哈希。
+不从目录搜寻未封存manifest，子PA同样不重复全文哈希。已完整核验的外部input manifest仅作为来源记录保留，
+不继承其重载荷；外部output manifest仍拒绝，不能冒充本run的局域子运行。
 完成receipt标为`completed_experiment_payload_retired`，保留实际`target_terminal_status`，不将失败改为成功；由原`--verify`入口验证，原superseded模式及旧receipt语义不变。
 
 已停止的compact checkpoint私有原生PA族仅可在同一owner入口显式提供

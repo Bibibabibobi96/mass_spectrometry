@@ -10,6 +10,7 @@ import argparse
 import csv
 import json
 import math
+import re
 import shutil
 import statistics
 import sys
@@ -20,7 +21,7 @@ from typing import Any
 from common.contracts.file_identity import file_sha256
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.verify_run_manifest import record_path
-from common.contracts.particle_count_policy import validate_positive_particle_count, validate_standard_particle_count
+from common.contracts.particle_count_policy import POLICY_PATH, validate_positive_particle_count, validate_standard_particle_count
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS, ENUMS, validate_particle_state
 from common.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
@@ -60,15 +61,24 @@ def lua_literal(value: Any) -> str:
 
 
 def adapt_hs1_for_repeat_fly(original: str) -> str:
-    """Add an explicit lifetime reset, leaving official collision code intact.
+    """Add reset and read-only lexical parameter audit; preserve collision code.
 
     SIMION 2020 rejects simion.workbench_program during callback-time imports.
     The installed official source is never edited. This run-local adapter resets
-    private state only, and refuses an unknown source shape.
+    private state and exposes the module-bound adjustables without mutating them.
+    Unknown source declarations are rejected before creating the adapted copy.
     """
     for declaration in ("local max_timestep", "local is_initialized", "local ke_averages", "local last_collision_times", "local trace_count"):
         if declaration not in original:
             raise ValueError(f"official HS1 reset contract missing: {declaration}")
+    bound_names = ("_gas_mass_amu", "_temperature_k", "_pressure_pa", "_sigma_m2",
+                   "_mean_free_path_mm", "_steps_per_MFP", "_random_seed",
+                   "_mark_collisions", "_trace_level")
+    for name in bound_names:
+        if not re.search(rf"(?m)^adjustable\s+{re.escape(name)}\s*=", original):
+            raise ValueError(f"official HS1 bound parameter declaration missing: {name}")
+    if "function HS1.bound_parameters" in original or "function HS1.reset_run_state" in original:
+        raise ValueError("official HS1 source already contains project adapter hooks")
     if original.count("return HS1")!=1:
         raise ValueError("unsupported official HS1 return structure")
     hook="""-- Project lifecycle adapter: no change to collision equations or sampling.
@@ -78,6 +88,22 @@ function HS1.reset_run_state()
     ke_averages = {}
     last_collision_times = {}
     trace_count = 0
+end
+
+-- Read the actual adjustable bindings in the imported HS1 module's scope.
+-- This allocates an audit table only; no parameter, PRNG or collision state changes.
+function HS1.bound_parameters()
+    return {
+        gas_mass_amu = _gas_mass_amu,
+        temperature_k = _temperature_k,
+        pressure_pa = _pressure_pa,
+        sigma_m2 = _sigma_m2,
+        mean_free_path_mm = _mean_free_path_mm,
+        steps_per_mfp = _steps_per_MFP,
+        random_seed = _random_seed,
+        mark_collisions = _mark_collisions,
+        trace_level = _trace_level,
+    }
 end
 
 """
@@ -118,10 +144,14 @@ def validate_configs(config: dict[str, Any]) -> None:
                 raise ValueError(f"invalid finite number {section}.{key}")
             elif key not in {"epoch_us", "rf_phase_rad", "mean_free_path_mm"} and value <= 0:
                 raise ValueError(f"nonpositive physical input {section}.{key}")
-    nkeys = "schema_version dt_us trajectory_quality sample_interval_us extraction_sample_interval_us seed rf_steps_per_period solver_timeout_s hs1_steps_per_mfp native_grid_mm refine_convergence_v native_aux_segments".split()
+    nkeys = "schema_version dt_us trajectory_quality sample_interval_us extraction_sample_interval_us seed rf_steps_per_period solver_timeout_s hs1_steps_per_mfp native_grid_mm refine_convergence_v native_aux_segments collision_rng_policy".split()
     if set(numerics) != set(nkeys) or numerics["schema_version"] != 1:
         raise ValueError("unsupported numerics schema/fields")
+    if numerics["collision_rng_policy"] != "per_global_particle_seed_v1":
+        raise ValueError("unsupported collision RNG policy")
     for key, value in numerics.items():
+        if key == "collision_rng_policy":
+            continue
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
             raise ValueError(f"invalid numerics.{key}")
     for key in ("dt_us", "sample_interval_us", "extraction_sample_interval_us", "rf_steps_per_period", "solver_timeout_s", "hs1_steps_per_mfp"):
@@ -144,6 +174,8 @@ def validate_configs(config: dict[str, Any]) -> None:
     transform_from_config(config)
     validate_release_spec(source)
     validate_source_profile(config)
+    if not 1 <= numerics["seed"] <= 2**31-2 or numerics["seed"]+source["particle_count"]-1 > 2**31-2:
+        raise ValueError("per-particle seed exceeds project conservative integer envelope")
     if source["frame_id"] != baseline["clock"]["frame_id"] or source["common_time_of_birth_s"] != 0:
         raise ValueError("source frame/clock mismatch")
     if source["species"]["charge_state"] <= 0:
@@ -166,6 +198,25 @@ def validate_configs(config: dict[str, Any]) -> None:
         raise ValueError("unsupported native operating point")
     if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) for v in point.values()):
         raise ValueError("native voltages must be finite")
+
+
+def derive_numerical_boundaries(projection: dict[str, Any]) -> dict[str, Any]:
+    """Place a diagnostic exit inside the native domain after the last lens.
+
+    This midpoint is an observation/termination surface, not metal. It leaves
+    the native geometry and GEM unchanged and uses only the frozen projection.
+    """
+    ends = [solid["max_mm"][0] for electrode in projection["electrodes"]
+            if electrode["name"] == "exit_lens" for solid in electrode["solids"]
+            if solid["shape"] == "box"]
+    if not ends:
+        raise ValueError("exit lens solid is required for numerical boundary")
+    last_lens = max(ends)
+    domain_end = projection["maximum_mm"][0]
+    boundary = (last_lens + domain_end) / 2
+    if not all(math.isfinite(value) for value in (last_lens, domain_end, boundary)) or not last_lens < boundary < domain_end:
+        raise ValueError("numerical downstream exit must lie after lens and inside PA domain")
+    return {"downstream_exit_x_mm": boundary, "classification": "numerical_observation_not_metal"}
 
 
 def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path | None = None,
@@ -208,7 +259,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     shutil.copyfile(simion_dir / "examples/collision_hs1/collision_hs1.lua", inputs / "collision_hs1_original.lua")
     original=(inputs/"collision_hs1_original.lua").read_text(encoding="utf-8")
     (solver/"collision_hs1.lua").write_text(adapt_hs1_for_repeat_fly(original),encoding="utf-8")
-    write_json(inputs/"collision_adapter.json",dict(schema_version=1,role="hs1_repeat_fly_lifecycle_adapter",original_sha256=file_sha256(inputs/"collision_hs1_original.lua"),adapted_sha256=file_sha256(solver/"collision_hs1.lua"),algorithm_changed=False,reason="SIMION 2020 forbids callback-time workbench imports; official HS1 has no reset API"))
+    write_json(inputs/"collision_adapter.json",dict(schema_version=1,role="hs1_repeat_fly_lifecycle_adapter",original_sha256=file_sha256(inputs/"collision_hs1_original.lua"),adapted_sha256=file_sha256(solver/"collision_hs1.lua"),algorithm_changed=False,adapter_hooks=["reset_run_state","bound_parameters"],bound_parameters_read_only=True,reason="Run-local lifecycle reset plus read-only audit of module-bound adjustables; SIMION 2020 forbids callback-time workbench imports"))
     shutil.copyfile(repo / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob", solver / "1_instance_seed.iob")
     materialize_release_from_file(inputs / "source.json", inputs / "release.csv", inputs / "release_receipt.json")
     states = generate_release_states(config["source"])
@@ -223,6 +274,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     (solver / "processor.fly2").write_text(render_standard_beams(beams), encoding="utf-8")
     (solver / "source_states.lua").write_text(render_source_states(companions), encoding="utf-8")
     config["native_projection"] = native_projection(config["baseline"],config["numerics"])
+    config["numerical_boundaries"] = derive_numerical_boundaries(config["native_projection"])
     (solver / "processor.gem").write_text(render_gem(config["baseline"],config["numerics"]),encoding="utf-8")
     config["workbench_seed_path"]=str(repo/"common/simion/assets/iob_instance_seeds/1_instance_seed.iob")
     config["native_field"]={"directory":str(solver),"source_manifest":None}
@@ -258,6 +310,8 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     write_json(epoch_path, {"instrument_time_us": config["baseline"]["clock"]["epoch_us"]})
     write_json(inputs / "clock_authority.json", dict(schema_version=1, role="canonical_clock_authority", clock_epoch_id="ion_processor_epoch_zero_v1", instrument_time_unit="us", canonical_time_basis="instrument_epoch_absolute_time", authority=dict(path="inputs/instrument_epoch.json", sha256=file_sha256(epoch_path), field="instrument_time_us"), solver_local_time_basis="elapsed_time_from_zero_us", adapter_materialization="instrument_time_us_equals_authority_epoch_plus_solver_elapsed_once", handoff_policy="preserve_instrument_time_us_and_clock_epoch_id", legacy_new_campaign_allowed=False))
     write_json(inputs / "clock_validation.json",validate_clock_authority(inputs/"clock_authority.json",run))
+    from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
+    assert batching.resource_profile.PROFILE_ROLE == "simion_resource_profile"
     # Freeze the loaded repository source closure after shared source generation.
     # Solver inputs remain independent of an editable working tree.
     for module in tuple(sys.modules.values()):
@@ -273,6 +327,15 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         target=inputs/"code"/relative
         target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(path,target)
+    # The imported policy module reads its adjacent JSON at runtime. Freeze the
+    # resource as well as Python sources so an isolated closure is executable.
+    policy_relative = POLICY_PATH.relative_to(Path(__file__).resolve().parents[3])
+    policy_target = inputs / "code" / policy_relative
+    policy_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(repo / policy_relative, policy_target)
+    host_policy = inputs / "code/common/host_resource_policy.json"
+    host_policy.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(repo / "common/host_resource_policy.json", host_policy)
     run_config = read_json(run / "run_config.json")
     run_config["inputs"] = {str(p.relative_to(run)).replace("/", "_"): str(p) for folder in (inputs, solver) for p in folder.rglob("*") if p.is_file()}
     run_config["inputs"].update(external_inputs)
@@ -305,6 +368,16 @@ def analyze(run: Path) -> dict[str, Any]:
         previous_time[particle]=t
         if event["event"] in stage_times and abs(t-stage_times[event["event"]])>1e-6:
             raise ValueError("scientific event does not match its frozen stage clock")
+        if event["reason"] == "downstream_domain_exit":
+            if event["event"] != "terminal":
+                raise ValueError("downstream domain exit must be a terminal event")
+            boundaries = c.get("numerical_boundaries")
+            if boundaries is None or boundaries != derive_numerical_boundaries(c["native_projection"]):
+                raise ValueError("downstream domain exit lacks its derived numerical boundary")
+            position = to_local_position(c, [float(event[k]) for k in ("x_mm", "y_mm", "z_mm")])
+            velocity = to_local_vector(c, [float(event[k]) for k in ("vx_mm_us", "vy_mm_us", "vz_mm_us")])
+            if abs(position[0] - boundaries["downstream_exit_x_mm"]) > 1e-9 or velocity[0] <= 0:
+                raise ValueError("downstream domain exit is outside its plane/direction")
         if event["event"]=="extraction_exit":
             local_position = to_local_position(c, [float(event[k]) for k in ("x_mm", "y_mm", "z_mm")])
             local_velocity = to_local_vector(c, [float(event[k]) for k in ("vx_mm_us", "vy_mm_us", "vz_mm_us")])
@@ -338,7 +411,7 @@ def analyze(run: Path) -> dict[str, Any]:
             ("time_us", "elapsed_time_us", "axial_z_mm", "transverse_x_mm", "transverse_y_mm",
              "velocity_axial_m_s", "velocity_x_m_s", "velocity_y_m_s", "kinetic_energy_eV"),
             (0, 0, *position, *velocity, kinetic_energy_ev(mass, vx, vy, vz))))
-    validation = validate_particle_state(output,expected,b["electric"]["rf_frequency_hz"],b["clock"]["rf_phase_rad"],enums={**ENUMS,"event":EVENTS})
+    validation = validate_particle_state(output,expected,b["electric"]["rf_frequency_hz"],b["clock"]["rf_phase_rad"],enums={**ENUMS,"event":EVENTS,"terminal_reason":[*ENUMS["terminal_reason"],"downstream_domain_exit"]})
     grouped={event:[r for r in rows if r["event"]==event] for event in EVENTS}
     metrics = {}
     for event, group in grouped.items():
@@ -354,7 +427,7 @@ def analyze(run: Path) -> dict[str, Any]:
     n=len(sources); m=metrics
     checks = dict(capture_fraction=len(hp)/n >= acceptance["minimum_capture_fraction"], extraction_fraction=len(grouped["extraction_exit"])/n >= acceptance["minimum_extraction_fraction"], hp_cooling=bool(hp) and statistics.fmean(r["kinetic_energy_eV"] for r in hp) <= acceptance["max_hp_mean_kinetic_energy_ev"], lp_compression=bool(grouped["pre_extraction"]) and m["pre_extraction"]["axial_sigma_mm"] <= acceptance["max_pre_extraction_axial_sigma_mm"], extraction_energy=bool(grouped["extraction_exit"]) and acceptance["minimum_extraction_mean_energy_ev"] <= m["extraction_exit"]["mean_kinetic_energy_ev"] <= acceptance["maximum_extraction_mean_energy_ev"])
     checks["lp_occupation"]=bool(lp) and len(lp)==len(grouped["pre_extraction"])
-    summary=dict(schema_version=1,role="ion_processor_functional_summary",status="functional_pass" if all(checks.values()) else "functional_incomplete",qualification="unqualified_simplified_native_electrodes",actual_particle_count=n,capture_fraction=len(hp)/n,extraction_fraction=len(grouped["extraction_exit"])/n,checks=checks,metrics=metrics,identity_validation=validation,terminal_reasons={reason:sum(r["terminal_reason"]==reason for r in grouped["terminal"]) for reason in sorted({r["terminal_reason"] for r in grouped["terminal"]})})
+    summary=dict(schema_version=1,role="ion_processor_functional_summary",status="success" if all(checks.values()) else "failed",qualification="unqualified_simplified_native_electrodes",actual_particle_count=n,capture_fraction=len(hp)/n,extraction_fraction=len(grouped["extraction_exit"])/n,checks=checks,metrics=metrics,identity_validation=validation,terminal_reasons={reason:sum(r["terminal_reason"]==reason for r in grouped["terminal"]) for reason in sorted({r["terminal_reason"] for r in grouped["terminal"]})})
     if transformed:
         summary["frame_id"] = transform.to_frame_id
         summary["compression_axis"] = "native guide axis = project y"
@@ -371,7 +444,8 @@ def analyze(run: Path) -> dict[str, Any]:
             "extraction_plane_local_y_mm": b["geometry"]["extraction_end_y_mm"],
         }
     summary["source_profile"] = profile
-    summary["status"] = profile + ("_pass" if all(checks.values()) else "_incomplete")
+    summary["status"] = "success" if all(checks.values()) else "failed"
+    summary["functional_status"] = profile + ("_pass" if all(checks.values()) else "_incomplete")
     summary["functional_baseline_eligible"] = profile == "functional"
     write_json(run / "summary.json",summary)
     # Legacy terminal runs remain immutable and have no new diagnostic contract.
@@ -389,21 +463,35 @@ def analyze(run: Path) -> dict[str, Any]:
 def main() -> None:
     """Single workflow boundary for preparation and solver-output analysis."""
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action",choices=("prepare","analyze","prepare-replay","finalize-replay"))
+    parser.add_argument("action",choices=("prepare","analyze","prepare-replay","finalize-replay","prepare-dispatch","materialize-batches","merge-batches","publish-manifest"))
     parser.add_argument("--run",required=True,type=Path)
     parser.add_argument("--simion-dir",type=Path)
     parser.add_argument("--baseline-run",type=Path)
     parser.add_argument("--manual-gui-confirmed",action="store_true")
     parser.add_argument("--repeat-fly-count",type=int,choices=(1,2),default=1)
     parser.add_argument("--native-field-run",type=Path)
+    parser.add_argument("--batch-plan",type=Path)
+    parser.add_argument("--status",choices=("success","failed"))
     parser.add_argument("--source-profile",choices=("functional","exploration"),default="functional")
     args=parser.parse_args()
     if args.action=="prepare":
         if args.simion_dir is None: parser.error("prepare requires --simion-dir")
         prepare(args.run,Path(__file__).resolve().parent.parent,args.simion_dir,args.native_field_run,args.source_profile)
+    elif args.action in {"prepare-dispatch", "materialize-batches", "merge-batches", "publish-manifest"}:
+        from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
+        if args.action == "publish-manifest":
+            if args.status is None: parser.error("publish-manifest requires --status")
+            batching.publish_manifest(args.run,args.status)
+            print("RUN_MANIFEST=PASS")
+        elif args.action == "prepare-dispatch":
+            print(json.dumps(batching.prepare_request(args.run)))
+        else:
+            if args.batch_plan is None: parser.error("batch action requires --batch-plan")
+            action = batching.materialize_batches if args.action == "materialize-batches" else batching.merge_batches
+            print(json.dumps(action(args.run,args.batch_plan)))
     elif args.action=="analyze":
         result=analyze(args.run); print(json.dumps(result));
-        if result["status"] not in {"functional_pass","exploration_pass"}: raise SystemExit(2)
+        if result["status"] != "success": raise SystemExit(2)
     elif args.action=="prepare-replay":
         from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import prepare_replay
         if args.baseline_run is None: parser.error("prepare-replay requires --baseline-run")
@@ -415,7 +503,7 @@ def main() -> None:
         config["parameters"]["manual_gui_confirmed"]=args.manual_gui_confirmed
         write_json(args.run/"run_config.json",config)
         print(json.dumps(result))
-        if not result["numerical_equivalence"] or result["measured_functional_status"] not in {"functional_pass","exploration_pass"}:
+        if result["measured_functional_status"] not in {"functional_pass","exploration_pass"}:
             raise SystemExit(2)
 
 

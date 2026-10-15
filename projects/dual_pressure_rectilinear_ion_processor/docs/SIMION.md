@@ -53,10 +53,21 @@ HS1示例的2.27e-18 m²用于He与约200 amu离子示例，不是N2与524 amu�
 项目专用[执行合同](../config/execution_profiles.json)的`native_functional`绑定
 `native_electrode_functional`、唯一runner及五份相对输入路径，不复制物理标量。该合同使用项目专用role，
 由项目编译器校验；不冒充公共通用execution profile格式。
-本轮选择`solver_review`，理由为保留原生电极场与工作台供GUI审查。r05仍冻结旧1 GiB预算；
-后续profile将新增容量及瞬时目录warning预算提高为6 GiB，采样间隔30 s。
-依据是r04中止时原生保留轨迹临时文件已达411,840,000 bytes，N=100保留轨迹的峰值不能按轻量CSV估算。
-6 GiB是保守容量预留，不是已测完整N=100占用；该选择不代表GUI验收完成。
+本轮选择`solver_review`，理由为保留原生电极场与工作台供GUI审查。
+当前执行profile预留4 GiB：新建私有18文件场族约3.3 GB，CLI保留完整事件与既定采样CSV及合并副本，
+但不再保留供应商稠密TRJ临时文件；不改变积分、采样间隔或粒子母群。实际目录占用仍每30 s监测。
+`retain_batch_trajectories`冻结进各worker配置并进入资源身份；master完整100粒子工作台不带该batch开关，
+用户Fly时仍显示并保留原生轨迹。官方依据（2026-10-16核查，SIMION 2020）：
+`examples/child_particles/child80.lua`明确image control 0为YES/YES、3为NO/NO，
+`examples/multiprocess_zmq/tune_series.lua`展示关闭磁盘轨迹；本项目CSV记录独立于此开关。
+该预留是运行前估计，不代表GUI验收或实际峰值。
+原生场查询的主机内存声明单独消费同一profile的`native_field_query_memory_bytes`：
+历史同尺寸查询实测峰值3,154,186,240 bytes，因此本轮声明4 GiB；历史资源观测不授予其物理结果资格。
+它不改变主机中央准入策略或飞行worker并发，后者继续按首正式批实测重规划。
+
+新运行不再消费已封存的旧raw PA族：从冻结GEM在本次私有run执行gem2pa和Refine，保留fractional `.pa-surf`。
+所有IOB保存结束后，保护完整原生族，worker只作内存Fast Adjust；飞行后逐成员核对身份并保存回执。
+此路线不把已发布缓存复制改名为新构建，不使用surface=none导出来丢弃fractional几何。
 运行器必须复用公共`New-RunPackage`、capacity session、host lease和`Invoke-ResourceBudgetedProcess`。
 不增加项目私有memory硬限，内存准入仍由公共主机policy负责。
 
@@ -75,26 +86,30 @@ HP入口按论文2 mm钢孔解释为圆孔直径；LP outer以中心4 mm、端�
 最终GUI重开及场对等必须单独验收，单位响应计算完成也不能自动授予GUI交付资格。
 
 
-## GUI重放与批处理区别
+## GUI准备与批处理区别
 
-`simion/prepare_gui_replay.ps1`从明确、已验证的baseline创建独立`solver_review`准备run，
-通过`analysis/gui_replay.py`复制冻结的source、HS1、RF、drive和config，完整clone基准18文件PA族（PA#、PA0..15及pa-surf）至新run，记录源与副本身份；不共享可写PA。
-默认`processor.lua`精确复制基准run已冻结的runtime字节，不消费当前工作树runtime；
-默认一次Fly的runtime SHA相同，只有显式RepeatFlyCount=2才追加验证编排并记录差异。GUI事件和采样只写新run。
-新wrapper每次Fly清理状态并复位HS1随机源、锁定grouped=0和image control=0。
-GUI builder把新run的simion绝对目录直接嵌入脚本；全部load_particles和IOB保存路径均由该绝对目录构成，
-不依赖CLI相对脚本名或wb:load公共seed后改变的进程CWD。
-原批处理wrapper和冻结配置保持原身份；旧配置缺新采样字段时仍可原样重放，不强行升级wrapper。
+唯一入口仍为`simion/prepare_gui_replay.ps1`，从明确、完整核验的baseline创建独立`solver_review`准备run。
+`analysis/gui_replay.py`精确复制baseline冻结的GEM、source、HS1、RF、drive、builder和runtime；
+不复制、哈希或向供应商重新打开baseline原生PA族。具名轻量消费投影仅核验实际所需的配置JSON、GEM、
+冻结程序/源、summary、events、samples及canonical状态；原manifest中的PA记录仅作历史来源，不声称重新核验。
+如baseline已由公共owner-retirement退役，先调用公共`verify_retirement`核验完整收尾及保留库存，再核验所需记录，
+并绑定receipt身份。未退役来源也只消费该明确子集；新族成员由冻结projection电极ID派生，不要求旧PA仍在位。
+新summary区分canonical `status=success/failed`与物理`functional_status`；历史格式只按其原资格解释。
 
-builder不再调用Fast Adjust；wb:save可能改写被引用PA，因此工作台仅引用独立完整clone。
-构建前后复核源PA族全部SHA，任何变动均使一致性证据无效。实际Fly由同一动态Fast Adjust回调控制。准备阶段不执行商业求解，创建checkpoint也不表示GUI完成。
-当前真实IOB构建已完成；留下独立GUI准备run供用户打开与Fly。用户要求GUI由用户确认，本轮不自行运行GUI或追加repeat。
-用户手动Fly并确认后才可发布GUI视觉验收；只有真实手动确认才记录`gui_visual_review=true`。
-headless比较完整raw事件、canonical状态及全部已记录采样；它不覆盖每个积分步，也不冒充手动视觉验收。
-准备入口可选`-RepeatFlyCount 2`，仅用于同一会话连续两次`run()`的状态生命周期验证，
-逐次保存事件和采样，再分别与冻结基准比较；默认1次保持用户每次Fly仅运行一轮。
-新几何数值配置以普通1 μs、引出区0.005 μs记录实际积分状态，仅增加记录密度，不用采样窗口裁剪积分步。
-真正脉冲边界仍按RF淬灭后半周期调度并显式落点。旧r05/r06继续使用各自冻结采样，不补造旧轨迹。
+该入口通过公共容量和SIMION租约串行执行GEM→Refine→官方IOB builder→只读原生场查询，
+保留`.pa-surf`及完整新私有族、Refine日志、实际vendor姿态检查和IOB身份，最后发布checkpoint。
+不调用Fly，不操作GUI；Load/Fly及视觉确认由用户进行。它不使用仅支持surface=none的standalone导出，
+也不把旧raw family复制改名冒充新构建。新私有PA0允许用户工作台保存，编号响应与fractional surface身份单独记录。
+
+默认runtime逐字节来自baseline，不消费工作树runtime；只有显式RepeatFlyCount=2才追加可追溯编排，
+准备动作本身始终不执行Fly。配置仅重定位私有场和seed路径，物理参数、源6D与绝对RF时钟保持冻结。
+工作台使用新run的绝对路径保存IOB与载入FLY2，避免`wb:load`改变CWD后误写来源目录。
+builder不做Fast Adjust；运行时由冻结动态回调驱动电压。
+
+4 GiB承诺仅覆盖私有求场、日志和IOB准备，不包含用户Fly后可能增长数GiB的TRJ轨迹。
+checkpoint只表示准备完成，不表示GUI视觉通过、轨迹等价或功能验收。重新Refine和随机碰撞条件下不预设逐轨迹相同；
+后续比较只能报告实测差异。只有用户真实手动确认，才可记录`gui_visual_review=true`。
+
 当前wrapper还在每次Fly开始用官方`simion.experimental.plot_line_segment`画出出口线框
 （由局部HP末端至LP末端、测量面及PA横向范围派生，再转换世界坐标，颜色12）。这是数值面的GUI图形标记，
 不是金属电极或模拟轨迹；不改变场、粒子或随机状态。本机依据为`simion.chm`的
@@ -148,22 +163,68 @@ FLY2与工作台姿态使用同一合同；runtime将SIMION世界状态逆转到
 输出事件和samples再转世界。canonical快轴z，半径及散角按世界z计算；原生接受参数另行注明，压缩使用慢轴y。
 旧无合同冻结运行保留原坐标解释，不通过重命名旧CSV伪造新证据。
 
-r10已通过实际vendor姿态检查：ex→(0,1,0)、ey→(0,0,−1)、ez→(−1,0,0)，
-PA原点→(4,−1,13.8) mm，单GU=0.1 mm。r10已完成新世界坐标真实native Fly，N=10为`exploration_pass`：
-捕获10/10、引出9/10、捕获均能0.03840967267 eV，引出前9粒子均在LP，慢轴σy=0.331102781675 mm，
-平均出口3927.990922904 eV；不授予N=100正式baseline或Candidate资格。
-ID1在t=4178.520896 μs、world=(1.3965569,169.0133388,9.8188436) mm终止为`solver_stop`，
-具体电极unknown。
-r07真实N=10为捕获10/10、引出8/10、平均引出能量3927.873 eV、全体慢轴σ=15.234 mm，未达聚集目标。
-旧r07 GUI重复Fly污染源PA0，旧一致性结论无效；从SHA验证PA#重Refine后PA0恢复精确SHA：
-`8E68A310E56AEB5603E72973526E8DC9B3F8E40CCF5CFFAAB31DD1BC19ED5A99`。
-恢复场身份与姿态通过均不能替代新Fly结果。
+历史r07/r10运行、源身份与旧碰撞绑定边界见[历史记录](history/20261016__native-flight-and-source-identity.md)。旧N=10结果不作为当前N=100已验证N2结果。当前真实统计与功能判据统一见[项目状态](PROJECT.md#当前n100运行)。
 
 原生场另输出`native_field_samples_project.csv`，保存转换后的项目位置/电场向量；
 原生局部场CSV保留，电势为旋转不变量。六个全过程图角色和元数据区分全母群、条件LP子群及unknown，
 全母群展宽不能以LP局部展宽替代。
 
-当前GUI准备checkpoint：`20261015_181000__test__simion__ion-processor-gui-ready__r10`。
-18文件原生PA族完整clone，source/runtime精确复制r10，真实IOB姿态构建已通过；尚未Fly。
-GUI操作与确认由用户完成，当前仅准备文件，不自动追加GUI或重复Fly测试；旧r07无效repeat结论不复用。
-坐标方向兼容MRTOF仍不表示其全局port已装配注册。
+当前用户工作台为 `20261016_015429__test__simion__ion-processor-n100-user-workbench`，从同一冻结GEM独立Refine并保留完整18文件场族。57,106个对应采样点的电势和三分量电场值与CLI相同；未执行GUI Fly。GUI操作和Programs状态确认由用户完成；旧clone包不作为当前入口。
+
+## 冻结代码资源与下游数值离域记录
+
+准备阶段除Python源码外，同时冻结公共`particle_count_policy.py`通过`POLICY_PATH`读取的相邻JSON至
+`inputs/code/common/contracts/particle_count_policy.json`，并绑定为run输入。回归测试使用独立Python进程在run目录、
+仅以冻结closure为PYTHONPATH校验N=100，避免当前进程的import缓存掩盖缺资源问题。
+
+下游数值观察面由冻结native projection派生：末端透镜最后实体x上界与PA最大x的中点。
+当前local x=(210.5+212)/2=211.25 mm（world y=211.25 mm），位于透镜后且PA域内；
+它分类为`numerical_observation_not_metal`，不增加电极、不修改GEM或既有场身份。
+新`downstream_domain_exit`仅为本项目终态原因；分析要求终态恰在该派生面且局部vx>0，不能称金属撞击。
+历史运行缺失的terminal不由分析补造；新guard须经后续真实运行产生记录，r11原99终态仍保留其不完整性。
+
+
+## HS1参数绑定与原生内部值审计
+
+SIMION的`adjustable`具有独立作用域；不能用普通Lua全局赋值推断导入HS1内部参数已经改变。
+安装2020版HS1 README的Gas Mixtures示例在回调内显式使用`adjustable`赋值；
+[官方作用域说明](https://simion.com/info/lua_scope.html)给出其局部作用域语义。
+原生零步探针`20261015_203456__test__simion__hs1-adjustable-scope-zero-step`直接从HS1词法域读取：
+普通赋值后为mass=4、T=273，显式声明后为mass=28、T=300；这证明赋值机制，不能直接给历史run的内部值定值。
+探针两个微Fly均完成，但包装器误判CSV重复顶层行数，终态仍保持failed；
+纯分析证据`20261015_205106__analysis__python__hs1-scope-native-readback`完整核验源记录并发布success。
+
+正式runtime在每次reset后显式赋值9个HS1 adjustables；适配副本增加只读`bound_parameters()`，
+不改安装源、碰撞公式或采样。初始化前后均从HS1自身作用域读取并对冻结输入逐键断言，
+写`simion/hs1_bound_parameters.csv`；不一致时在积分前停止。主程序的`seed(n.seed)`随后独立执行。
+纯Lua stub只测试生命周期、审计和失败关闭，删除`adjustable`关键字的语法适配不能证明供应商绑定语义。
+旧普通赋值历史run没有该内部值证据，其气体模型不能视为已验证N2；当前数值结果和资格见项目状态。
+
+## 自动分批与单工作台重放
+
+外层主机`flight`租约只管理整项重任务的准入；粒子worker并发由公共
+`common.simion.resource_scheduler`、`common.simion.particle_batching`及
+`Invoke-ResourceBudgetedProcesses`决定。未知资源身份先保留首正式批，观测峰值后重规划；
+不在项目固定并发路数或以PA磁盘大小代替进程峰值。
+worker控制文件和输出各自隔离，根`simion`目录始终保留完整母群的master工作台，供后续GUI准备复制。
+
+SIMION官方程序流程图规定先创建全部离子并调用各自`initialize`，随后才逐离子积分。
+不能仅凭`initialize`的赋种记录推断每粒子实际积分随机流；后续创建与求解器调用可能影响消费顺序。
+依据：[官方程序流程图](https://simion.com/docs/fig-prg-flow.pdf)。
+`numerics.collision_rng_policy=per_global_particle_seed_v1`明确规定在每粒子首次实际积分回调中重置HS1私有状态与步长，
+重赋/读取参数并初始化，最后调用`seed(base_seed+global_particle_id-1)`。
+worker全局ID为公共batch offset加本地ion_number；赋种参数由global ID派生，不依赖批数和启动顺序。此映射不单独证明SIMION实际碰撞随机流相同。
+种子范围1…2147483646是项目保守整数合同，不宣称厂商RNG极限；不同整数种子也不等于已证明统计独立子流。
+每Fly保存`collision_rng_seeds.csv`，合并后必须覆盖完整母群并符合种子公式。
+新政策与旧串行跨粒子共享随机流属于不同数值身份，不能逐ID要求新结果匹配r17。
+
+批次CSV由公共merger恢复global ID；events表先透明重排列使particle_id为首列，公共合并后恢复event首列。
+这只改变列序，不改行内科学状态。真正的分区等价需用原生SIMION同一小母群、不同batch划分、非零offset
+比较完整events、samples及种子记录；纯Lua stub不能替代该验证。手动GUI验收仍由用户完成。
+
+多worker产生的大量输出通过公共Python清单API直接传Path列表，避免重复绝对
+路径参数超过Windows命令行长度；文件选择和公共身份/保留检查保持一致。
+
+随机碰撞允许不同随机实现产生不同单离子轨迹。原生分区对照未通过仅表示精确重放未验证，
+不自动判定碰撞物理或公共并发失败，也不阻塞完整N100统计评价。GUI手动Fly比较捕获/引出率、
+损失位置和空间/能量分布；单次N100不能证明统计等价，不承诺逐离子重合。

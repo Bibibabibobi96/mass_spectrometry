@@ -38,7 +38,8 @@ class SimionRefinePolicyTests(unittest.TestCase):
                     # Project-owned stopping input; permit only this exact frozen-input call.
                     if (
                         path.relative_to(REPOSITORY_ROOT).as_posix()
-                        == "projects/dual_pressure_rectilinear_ion_processor/simion/run_functional.ps1"
+                        in {"projects/dual_pressure_rectilinear_ion_processor/simion/run_functional.ps1",
+                            "projects/dual_pressure_rectilinear_ion_processor/simion/prepare_gui_replay.ps1"}
                         and line.strip() == "@{name='refine';stage='pa_refine';arguments=@('--nogui','--noprompt','refine',\"--convergence=$($numerics.refine_convergence_v)\",'processor.pa#')},"
                     ):
                         continue
