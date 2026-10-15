@@ -19,7 +19,6 @@ local paths = { input(2, 'global PA'), input(3, 'corridor family PA0'),
 local output, program, fly2 = input(6, 'output IOB'), input(7, 'program'), input(8, 'Fly2')
 local operating_path, voltage_map_path, priority_path = input(9, 'operating point'), input(10, 'voltage map'), input(11, 'priority contract')
 assert(seed:match('4_instance_seed%.iob$'), 'four-instance seed is required')
-assert(paths[2]:match('%.pa0$'), 'corridor must be a native .pa0 family controller')
 assert(output:match('%.iob$') and program:match('%.lua$') and fly2:match('%.fly2$'), 'invalid output companion suffix')
 local origins = {}
 for index = 1, 4 do
@@ -55,6 +54,12 @@ for local_id, physical_ids in ipairs(groups) do
   end
 end
 local operating = assert(loadfile(operating_path), 'operating point sidecar missing')()
+if operating.static_field then
+  assert(paths[2]:match('%.pa$') or paths[2]:match('%.pa0$'),
+    'static corridor must be an ordinary .pa occupancy or legacy .pa0 collision controller')
+else
+  assert(paths[2]:match('%.pa0$'), 'corridor must be a native .pa0 family controller')
+end
 local voltage_map = assert(loadfile(voltage_map_path), 'voltage map sidecar missing')()
 local voltages = voltage_map(operating.mirror_voltages_v, operating.stripe_biases_v,
   operating.prism_voltages_v, operating.accelerator_voltages_v,
@@ -170,4 +175,10 @@ copy(operating_path, output:gsub('%.iob$', '.operating_point.lua'))
 copy(voltage_map_path, output:gsub('%.iob$', '.voltage_map.lua'))
 copy(program:gsub('%.lua$', '.mirror_cycle_counter.lua'),
   output:gsub('%.iob$', '.mirror_cycle_counter.lua'))
+local scalar_module = program:gsub('%.lua$', '.scalar_field_adapter.lua')
+local scalar_file = io.open(scalar_module, 'rb')
+if scalar_file then
+  scalar_file:close()
+  copy(scalar_module, output:gsub('%.iob$', '.scalar_field_adapter.lua'))
+end
 print('MRTOF_NATIVE_CORRIDOR_IOB_BUILD=PASS instances=4 corridor_voltage_table_ids=1..8 fast_adjust=flight pa_save=false refine=false priority=probe_verified')

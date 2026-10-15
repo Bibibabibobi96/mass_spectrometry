@@ -48,6 +48,14 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry
     resolve_accelerator_iob_origin,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
+    CONVERGING_PRISM_ENERGY_RESIDUAL, converging_design_potential_delta_v,
+    resolve_converging_prism_target,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import (
+    load_binding, validate_voltages, _lua_vector, _scalar_field_lua_fields,
+    _scalar_refinement_windows_lua,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
     derive_mirror_voltage_bounds,
@@ -101,8 +109,8 @@ def _apply_trajectory_step_scale(
     trajectory_profile: dict[str, Any], trajectory_step_scale: float,
 ) -> dict[str, Any]:
     scale = _finite(trajectory_step_scale, "trajectory step scale")
-    if not 0 < scale <= 1:
-        raise CandidateContractError("trajectory step scale must be in (0, 1]")
+    if scale <= 0:
+        raise CandidateContractError("trajectory step scale must be positive")
     if scale == 1:
         return trajectory_profile
     profile = dict(trajectory_profile)
@@ -110,14 +118,17 @@ def _apply_trajectory_step_scale(
     base_maximum_step_us = _finite(
         profile["maximum_step_us"], "base maximum trajectory step",
     )
+    maximum_step_us = _finite(base_maximum_step_us * scale, "scaled maximum trajectory step")
+    if maximum_step_us <= 0:
+        raise CandidateContractError("scaled maximum trajectory step must be positive")
     profile.update({
         "profile_id": f"{base_profile_id}__step_scale_{scale:.12g}",
         "base_profile_id": base_profile_id,
         "base_maximum_step_us": base_maximum_step_us,
         "step_scale": scale,
-        "maximum_step_us": base_maximum_step_us * scale,
+        "maximum_step_us": maximum_step_us,
         "purpose": (
-            f"{profile['purpose']}; run-local numerical refinement "
+            f"{profile['purpose']}; run-local numerical step scaling "
             "of one frozen source interval"
         ),
     })
@@ -227,6 +238,22 @@ def _provider_exit_energy_contract(projection: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _validate_center_view_source(bunch_source: dict[str, Any] | None,
+                                bunch_selection: dict[str, Any] | None) -> None:
+    """Require every actual initial state on the invariant x symmetry plane."""
+    if bunch_selection is not None:
+        states = [(float(s["position_workbench_mm"][0]), float(s["direction_workbench"][0]))
+                  for s in bunch_selection["states"]]
+    elif bunch_source is not None:
+        with Path(bunch_source["state_table"]["path"]).open(encoding="utf-8", newline="") as stream:
+            states = [(float(s["x_mm"]), float(s["direction_x"])) for s in csv.DictReader(stream)]
+    else:
+        # The existing analytic centre source emits position x=0, direction x=0.
+        states = [(0.0, 0.0)]
+    if not states or any(x != 0 or dx != 0 for x, dx in states):
+        raise CandidateContractError("x_symmetry_plane consumer view requires every source x=0 and vx=0")
+
+
 def _source_transverse_reference(
     *, bunch_source: dict[str, Any] | None, bunch_selection: dict[str, Any] | None,
     mass_th: float, charge_state: int, slow_energy_per_charge_v: float,
@@ -287,9 +314,11 @@ def _accelerator_geometric_exit_reference(
     bunch_selection: dict[str, Any] | None, mass_th: float, charge_state: int,
     slow_energy_per_charge_v: float, focus_y_mm: float, release_z_mm: float,
     source_y_offset_mm: float,
+    validated_provider_origin: tuple[float, float, float] | None = None,
 ) -> dict[str, Any]:
     """Project the OA provider's per-particle geometric-exit targets into MR coordinates."""
-    provider_origin = resolve_accelerator_iob_origin(contract, provider_plan)
+    provider_origin = (resolve_accelerator_iob_origin(contract, provider_plan)
+                       if validated_provider_origin is None else validated_provider_origin)
     domain = provider_plan["numerical_domain"]
     placement = provider_plan["requirements"]["placement"]
     local_exit_z_mm = _finite(domain.get("local_exit_z_mm"), "provider local exit z")
@@ -551,6 +580,7 @@ def _resolve_trial_geometry(
     reviewed_geometry_contract: dict[str, Any],
     current_topology_contract: dict[str, Any],
     accelerator_placement_contract: dict[str, Any],
+    *, accelerator_assembly: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve reviewed conductors with the two consumed accelerator overrides."""
     resolved_contract = copy.deepcopy(reviewed_geometry_contract)
@@ -568,6 +598,7 @@ def _resolve_trial_geometry(
     return resolve_geometry(
         resolved_contract,
         inherited_dual_stripe_topology_contract=current_topology_contract,
+        accelerator_assembly=accelerator_assembly,
     )
 
 
@@ -947,10 +978,21 @@ def _single_center_source_state(trial: dict[str, Any]) -> tuple[ProjectPhaseSpac
     if not math.isclose(derived_energy_ev, energy_ev, rel_tol=1e-12, abs_tol=1e-12):
         raise CandidateContractError("derived source velocity does not preserve source kinetic energy")
     state = ProjectPhaseSpaceState(tuple(position), velocity)
-    return state, {
+    return state, _source_release_record(
+        state, mass, charge,
+        _finite(trial.get("source_time_of_birth_us"), "source time of birth"),
+    )
+
+
+def _source_release_record(
+    state: ProjectPhaseSpaceState, mass: float, charge: int, time_us: float,
+) -> dict[str, Any]:
+    """Serialize one authoritative release state in the existing canonical units."""
+    derived_energy_ev = kinetic_energy_ev(mass, *(value * 1000.0 for value in state.velocity_mm_per_us))
+    return {
         "position_mm": list(state.position_mm),
         "velocity_mm_per_us": list(state.velocity_mm_per_us),
-        "time_us": _finite(trial.get("source_time_of_birth_us"), "source time of birth"),
+        "time_us": time_us,
         "particle_mass_th": mass,
         "charge_state": charge,
         "kinetic_energy_ev": derived_energy_ev,
@@ -959,13 +1001,11 @@ def _single_center_source_state(trial: dict[str, Any]) -> tuple[ProjectPhaseSpac
     }
 
 
-def _bunch_center_workpoint_validation(
-    events: list[dict[str, Any]], trial: dict[str, Any],
-) -> dict[str, Any]:
-    """Measure the four existing workpoint residuals on frozen particle 1."""
+def _bunch_center_source_state(trial: dict[str, Any]) -> ProjectPhaseSpaceState | None:
+    """Read the existing frozen particle-1 source in mm and mm/us."""
     frozen = trial.get("source_center_state")
     if frozen is None:
-        return {"status": "not_available__legacy_source_receipt"}
+        return None
     if not isinstance(frozen, dict) or frozen.get("particle_id") != 1:
         raise CandidateContractError("bunch centre state must be frozen particle 1")
     position = _vector(frozen.get("position_workbench_mm"), 3, "bunch centre position")
@@ -981,9 +1021,122 @@ def _bunch_center_workpoint_validation(
         raise CandidateContractError("bunch centre state is not physical")
     direction = [value / direction_norm for value in direction]
     speed_m_s = math.sqrt(2.0 * energy * ELEMENTARY_CHARGE_C / (mass * AMU_KG))
-    source = ProjectPhaseSpaceState(
+    return ProjectPhaseSpaceState(
         tuple(position), tuple(value * speed_m_s / 1000.0 for value in direction),
     )
+
+
+def _prism_handoff_event_prefix(events: list[dict[str, Any]], *, clean_phase: bool = False) -> list[dict[str, Any]]:
+    """Keep the completed particle-1 injection segment, not downstream losses."""
+    turns = [
+        index for index, event in enumerate(events)
+        if event.get("kind") == "pre_origin_positive_mirror_turn" and event.get("ion") == 1
+    ]
+    if len(turns) != 1:
+        raise CandidateContractError("P1/P2 hand-off requires one first positive-mirror turn")
+    if clean_phase:
+        planes = [index for index, event in enumerate(events)
+                  if event.get("ion") == 1 and event.get("kind") == "central_plane_directional"
+                  and event.get("n") == 1 and event.get("direction_z") == -1]
+        if len(planes) != 1 or planes[0] <= turns[0] or float(events[planes[0]]["t_us"]) <= float(events[turns[0]]["t_us"]):
+            raise CandidateContractError("clean P handoff requires one ordered first central n1 -z event")
+        return events[:planes[0]+1]
+    return events[:turns[0] + 1]
+
+
+def _static_consumed_analyzer_voltages(binding: dict[str, Any], requested: list[float],
+                                      accelerator: list[float], *, pulse_requested: bool) -> list[float]:
+    """Bind the record to the field actually consumed after the existing check."""
+    validate_voltages(binding, requested, accelerator, pulse_requested=pulse_requested)
+    return list(binding['authority']['analyzer_electrode_voltages_v'])
+
+
+def _converging_prism_energy_observation(events: list[dict[str, Any]], trial: dict[str, Any]) -> dict[str, Any]:
+    """Measure reference slow energy at the first clean z=0 plane, not at a mirror turn."""
+    target = trial.get("prism_handoff_target")
+    if target is None:
+        return {}
+    prefix = _prism_handoff_event_prefix(events, clean_phase=True)
+    event = prefix[-1]
+    state = {"position_mm": [_finite(event.get(key), "clean position") for key in ("x_mm", "y_mm", "z_mm")],
+             "velocity_mm_per_us": [_finite(event.get(key), "clean velocity") for key in ("vx_mm_us", "vy_mm_us", "vz_mm_us")],
+             "t_us": _finite(event.get("t_us"), "clean time"), "event": "central_plane_directional__n1__minus_z"}
+    y = state["position_mm"][1]
+    vy, vz = state["velocity_mm_per_us"][1:]
+    lo, hi = target["clean_y_interval_mm"]
+    # The canonical central root assigns z_mm=0; this checks event identity,
+    # not a new trajectory-integration tolerance.
+    if not lo < y < hi or vy <= 0 or vz >= 0 or state["position_mm"][0] != 0 or state["position_mm"][2] != 0:
+        raise CandidateContractError("first clean central phase is outside its vacuum/reference domain")
+    mass, charge = _finite(trial.get("particle_mass_th"), "particle mass"), _finite(trial.get("charge_state"), "particle charge")
+    source = trial.get("source_center_state")
+    if (mass <= 0 or charge <= 0 or trial["stripe_biases_v"][1] != 0 or not isinstance(source, dict)
+            or source.get("mass_th") != mass or source.get("charge_e") != charge):
+        raise CandidateContractError("clean-phase energy requires valid mass/charge and grounded S2")
+    if any(e.get("kind") in {"terminal", "splat"} and e.get("splat", e.get("code")) == -1 for e in prefix):
+        raise CandidateContractError("clean phase follows an electrode collision")
+    ky = 0.5*mass*AMU_KG*(vy*1000)**2/(ELEMENTARY_CHARGE_C*abs(charge))
+    phi = converging_design_potential_delta_v(target, trial["stripe_biases_v"][0], y)
+    return {"first_clean_phase_state": state, "clean_phase_slow_energy_per_charge_v": ky,
+            "design_potential_delta_v": phi,
+            CONVERGING_PRISM_ENERGY_RESIDUAL: ky+phi-target["slow_energy_reference_per_charge_v"]}
+
+
+def _bunch_center_prism_handoff_validation(
+    events: list[dict[str, Any]], trial: dict[str, Any],
+) -> dict[str, Any]:
+    """Publish the forward P segment without qualifying the full flight."""
+    source = _bunch_center_source_state(trial)
+    if source is None:
+        return {"status": "not_available__legacy_source_receipt"}
+    try:
+        observation = observation_from_simion_events(
+            _prism_handoff_event_prefix(events, clean_phase=trial.get("prism_handoff_target") is not None), source, ion_number=1,
+        )
+        residuals = dict(prism_handoff_residuals(
+            observation,
+            target_positive_mirror_turn_y_mm=float(trial["target_positive_mirror_turn_y_mm"]),
+            target_tangent_ratio_vy_over_vz=float(
+                trial["target_low_field_tangent_ratio_vy_over_vz"]
+            ),
+        ))
+        energy_observation = _converging_prism_energy_observation(events, trial)
+        if energy_observation:
+            residuals[CONVERGING_PRISM_ENERGY_RESIDUAL] = energy_observation[CONVERGING_PRISM_ENERGY_RESIDUAL]
+    except CandidateContractError as error:
+        return {"status": "incomplete", "particle_id": 1, "reason": str(error)}
+    reference = observation.p2_shield_low_field_reference
+    actual_ratio = reference.velocity_mm_per_us[1] / reference.velocity_mm_per_us[2]
+    target_ratio = float(trial["target_low_field_tangent_ratio_vy_over_vz"])
+    return {
+        "status": "observed", "particle_id": 1,
+        "p2_low_field_reference_state": {
+            "position_mm": reference.position_mm,
+            "velocity_mm_per_us": reference.velocity_mm_per_us,
+        },
+        "positive_mirror_turn_state": {
+            "position_mm": observation.positive_mirror_turn.position_mm,
+            "velocity_mm_per_us": observation.positive_mirror_turn.velocity_mm_per_us,
+        },
+        "residuals": residuals,
+        **energy_observation,
+        "physical_acceptance_residuals": {
+            **({CONVERGING_PRISM_ENERGY_RESIDUAL: residuals[CONVERGING_PRISM_ENERGY_RESIDUAL]} if energy_observation else {}),
+            "P1_P2_positive_mirror_turn_y_mm": residuals["P1_P2_positive_mirror_turn_y_mm"],
+            "P1_P2_P2_shield_low_field_angle_degrees": math.degrees(
+                math.atan(actual_ratio) - math.atan(target_ratio)
+            ),
+        },
+    }
+
+
+def _bunch_center_workpoint_validation(
+    events: list[dict[str, Any]], trial: dict[str, Any],
+) -> dict[str, Any]:
+    """Measure the four existing workpoint residuals on frozen particle 1."""
+    source = _bunch_center_source_state(trial)
+    if source is None:
+        return {"status": "not_available__legacy_source_receipt"}
     try:
         observation = observation_from_simion_events(events, source, ion_number=1)
         residuals = dict(prism_handoff_residuals(
@@ -993,6 +1146,9 @@ def _bunch_center_workpoint_validation(
                 trial["target_low_field_tangent_ratio_vy_over_vz"]
             ),
         ))
+        energy_observation = _converging_prism_energy_observation(events, trial)
+        if energy_observation:
+            residuals[CONVERGING_PRISM_ENERGY_RESIDUAL] = energy_observation[CONVERGING_PRISM_ENERGY_RESIDUAL]
         target_ratio = _finite(
             trial["target_low_field_tangent_ratio_vy_over_vz"],
             "target low-field tangent ratio",
@@ -1043,7 +1199,9 @@ def _bunch_center_workpoint_validation(
         "status": "observed",
         "particle_id": 1,
         "residuals": residuals,
+        **energy_observation,
         "physical_acceptance_residuals": {
+            **({CONVERGING_PRISM_ENERGY_RESIDUAL: residuals[CONVERGING_PRISM_ENERGY_RESIDUAL]} if energy_observation else {}),
             "P1_P2_positive_mirror_turn_y_mm": residuals[
                 "P1_P2_positive_mirror_turn_y_mm"
             ],
@@ -1058,6 +1216,85 @@ def _bunch_center_workpoint_validation(
             ],
         },
     }
+
+
+def _first_slow_turn_signature(
+    events: list[dict[str, Any]], slow: dict[str, Any],
+) -> dict[str, Any]:
+    """Locate a measured local zero within its observed fast half-cycle."""
+    time = _finite(slow.get("t_us"), "first slow-turn time")
+    turns = [event for event in events if event.get("ion") == slow.get("ion")
+             and event.get("kind") == "fast_turn"]
+    before = [event for event in turns if _finite(event.get("t_us"), "fast-turn time") < time]
+    after = [event for event in turns if _finite(event.get("t_us"), "fast-turn time") > time]
+    if not before or not after:
+        return {"status": "unknown", "reason": "first slow turn lacks adjacent fast-turn states"}
+    left, right = before[-1], after[0]
+    numbers = [_finite(event.get("n"), "fast-turn number") for event in (left, right)]
+    central = [event for event in events if event.get("ion") == slow.get("ion")
+               and event.get("kind") == "central_plane_directional"
+               and left["t_us"] < _finite(event.get("t_us"), "central-plane time") < right["t_us"]]
+    if numbers[1] != numbers[0] + 1 or len(central) != 1:
+        return {"status": "unknown", "reason": "first slow-turn half-cycle is not uniquely observed"}
+    direction = _finite(central[0].get("direction_z"), "central-plane direction")
+    velocities = [_finite(event.get("vy_mm_us"), "adjacent fast-turn vy") for event in (left, right)]
+    if direction not in (-1, 1) or any(value == 0 for value in velocities):
+        return {"status": "unknown", "reason": "first slow-turn adjacent direction is unavailable"}
+    return {
+        "status": "observed",
+        "phase_key": {"fast_turn_numbers": numbers, "direction_z": direction,
+                      "sampled_vy_signs": [1 if value > 0 else -1 for value in velocities]},
+        "first_slow_turn": dict(slow),
+        "adjacent_fast_turns": [dict(left), dict(right)],
+        "central_plane": dict(central[0]),
+    }
+
+
+def _bunch_center_stripe_stage_validation(
+    events: list[dict[str, Any]], trial: dict[str, Any],
+) -> dict[str, Any]:
+    """Measure completed origin/slow-turn/target-K events before downstream loss."""
+    if _bunch_center_source_state(trial) is None:
+        return {"status": "not_available__legacy_source_receipt"}
+    try:
+        centre = [event for event in events if event.get("ion") == 1]
+        target_k = _finite(trial.get("target_drift_period_ratio"), "target K")
+        targets = [event for event in centre if event.get("kind") == "target_k_phase_sample"]
+        if len(targets) != 1 or _finite(targets[0].get("k"), "stage target K") != target_k:
+            raise CandidateContractError("S stage requires one exact target-K sample")
+        target = targets[0]
+        target_time = _finite(target.get("t_us"), "stage target time")
+        cutoff = events.index(target)
+        prefix = events[:cutoff + 1]
+        before = [event for event in centre
+                  if _finite(event.get("t_us"), "stage event time") <= target_time]
+        forbidden = {"terminal", "splat", "nonmirror_reversal", "post_return_mirror_turn",
+                     "return_origin_mirror_turn", "return_p2_entry", "return_p2_pass",
+                     "return_positive_mirror_turn", "return_p1_entry", "return_p1_pass",
+                     "detector"}
+        if any(event.get("kind") in forbidden for event in before):
+            raise CandidateContractError("S stage terminated or entered an invalid branch before target-K")
+        origins = [event for event in centre if event.get("kind") == "drift_phase_origin"]
+        first_slow = [event for event in before
+                      if event.get("kind") == "slow_turn" and event.get("n") == 1]
+        if len(origins) != 1 or len(first_slow) != 1:
+            raise CandidateContractError("S stage requires one phase origin and first slow turn")
+        origin, slow = origins[0], first_slow[0]
+        slow_turns = [event for event in before if event.get("kind") == "slow_turn"
+                      and _finite(event.get("t_us"), "stage slow-turn time")
+                      > _finite(origin.get("t_us"), "stage origin time")]
+        if not slow_turns or slow_turns[0] is not slow:
+            raise CandidateContractError("S stage first slow-turn identity is inconsistent")
+        if not (_finite(origin.get("t_us"), "stage origin time")
+                < _finite(slow.get("t_us"), "stage slow-turn time") < target_time
+                and events.index(origin) < events.index(slow) < cutoff):
+            raise CandidateContractError("S stage origin/first slow turn/target-K are out of order")
+        measured = _bunch_center_workpoint_validation(prefix, trial)
+        return dict(measured, stage_only=True, full_workpoint_qualified=False,
+                    first_slow_turn_signature=_first_slow_turn_signature(prefix, slow))
+    except CandidateContractError as error:
+        return {"status": "incomplete", "particle_id": 1, "reason": str(error),
+                "stage_only": True, "full_workpoint_qualified": False}
 
 
 def _accelerator_safe_exit_observation(
@@ -1213,10 +1450,6 @@ def _accelerator_safe_exit_observation(
     }
 
 
-def _lua_vector(values: list[float]) -> str:
-    return "{ " + ", ".join(f"{value:.17g}" for value in values) + " }"
-
-
 _STATIC_RETURN_KINDS = (
     "drift_phase_return",
     "return_p2_entry",
@@ -1353,6 +1586,50 @@ def _mirror_regions(resolved: dict[str, Any]) -> dict[str, list[float]]:
     }
 
 
+
+
+def _seed_theory_provenance(
+    seed_mirror_voltages_v: tuple[float, ...], seed_stripe_biases_v: tuple[float, ...],
+    mirror_voltages_v: list[float], stripe_biases_v: list[float],
+) -> dict[str, Any]:
+    """Separate initializer lineage from the actual trial's theory qualification."""
+    mirror_changed = tuple(mirror_voltages_v) != seed_mirror_voltages_v
+    stripe_changed = tuple(stripe_biases_v) != seed_stripe_biases_v
+    return {
+        "seed_authority_scope": "historical_mirror_stripe_initializer_only",
+        "seed_mirror_voltages_v": list(seed_mirror_voltages_v),
+        "seed_stripe_biases_v": list(seed_stripe_biases_v),
+        "mirror_changed_from_seed": mirror_changed,
+        "stripe_changed_from_seed": stripe_changed,
+        "actual_theory_qualification": (
+            "not_rederived_after_mirror_or_stripe_change"
+            if mirror_changed or stripe_changed else
+            "seed_initializer_theory_only__finite_3d_and_numerical_qualification_pending"
+        ),
+    }
+
+
+def _static_field_receipt(binding: dict[str, Any], path: Path) -> dict[str, Any]:
+    """Record the resolved field representation and assets without relabeling its solver."""
+    result = {
+        "path": str(path.resolve()),
+        "mode": binding.get("mode", "comsol_static_scalar_v"),
+        "sources": binding["sources"], "records": binding["records"],
+        "grid": binding["grid"],
+        "refinement_windows": binding.get("refinement_windows", []),
+        "gui_field_queries_equivalent": False,
+        "representation": binding.get("representation", "single_scalar_v"),
+        "response_terms": binding.get("response_terms", []),
+        "event_ion_volts_meaning": "collision_array_label_or_interpolation__not_electric_potential",
+    }
+    if binding.get("mode") == "native_static_pa":
+        result["manifest"] = binding["manifest"]
+        result["native_solver_numerics"] = copy.deepcopy(binding["native_solver_numerics"])
+    if "response_terms" in binding:
+        result["response_weight_l1_norm"] = binding["response_weight_l1_norm"]
+    return result
+
+
 def materialize_trial(
     *,
     contract_path: Path,
@@ -1383,6 +1660,7 @@ def materialize_trial(
     source_y_offset_mm: float = 0.0,
     accelerator_provider_plan_path: Path | None = None,
     accelerator_resolved_campaign_path: Path | None = None,
+    field_binding_path: Path | None = None,
 ) -> dict[str, Any]:
     if accelerator_instance != 3:
         raise CandidateContractError("workbench accelerator instance must be 3")
@@ -1449,6 +1727,7 @@ def materialize_trial(
             selected_mirror.get("mirror_voltages_v"), 5, "mirror voltages",
         )
         authority_target_k = None
+    seed_mirror_voltages = tuple(mirror_voltages)
     mirror_voltages, mirror_variation = _apply_terminal_mirror_variation(
         variation=(
             _load(mirror_voltage_variation_path)
@@ -1472,8 +1751,16 @@ def materialize_trial(
         raise CandidateContractError(
             "provider target slow energy and trial release slow energy differ"
         )
+    field_binding = load_binding(field_binding_path) if field_binding_path is not None else None
     stripe_biases = _vector(seed.get("stripe_biases_v"), 2, "Stripe biases")
-    if stripe_biases_override_v is not None:
+    seed_stripe_biases = tuple(stripe_biases)
+    if stripe_biases_override_v is None and field_binding is not None:
+        # A solved field owns its operating voltages; the historical seed only
+        # initializes adjustable flights, not static-field clean-phase checks.
+        scale = _finite(contract["simion"]["nonaccelerator_scale"], "nonaccelerator scale")
+        values = field_binding["authority"]["analyzer_electrode_voltages_v"]
+        stripe_biases = [float(values[10]) / scale, float(values[12]) / scale]
+    elif stripe_biases_override_v is not None:
         stripe_biases = [
             _finite(stripe_biases_override_v[0], "Stripe 1 override"),
             _finite(stripe_biases_override_v[1], "Stripe 2 override"),
@@ -1622,8 +1909,27 @@ def materialize_trial(
         # the reviewed contract as the sole physical geometry source.
         trajectory_contract,
         accelerator_geometry_contract,
+        accelerator_assembly=(field_binding["authority"].get("assembly") if field_binding is not None else None),
     )
+    actual_oa_origin = None
+    provider_plan = _load(accelerator_provider_plan_path) if accelerator_provider_plan_path is not None else None
+    if field_binding is not None:
+        if field_binding.get("consumer_view"):
+            _validate_center_view_source(bunch_source, bunch_selection)
+        if accelerator_provider_plan_path is None:
+            raise CandidateContractError("static field binding requires the frozen OA provider pose")
+        # Physical geometry belongs to the solved field; trajectory observations
+        # keep their existing current-contract definitions.
+        resolved.update(copy.deepcopy(field_binding["geometry"]))
+        actual_oa_origin = resolve_accelerator_iob_origin(
+            contract, provider_plan, resolved_geometry=resolved,
+        )
+        if list(actual_oa_origin) != field_binding["instances"][2]["origin_mm"]:
+            raise CandidateContractError("requested OA placement differs from the static field")
     detector = resolved["detector"]
+    prism_target = resolve_converging_prism_target(trajectory_contract, resolved)
+    if prism_target is not None and (field_binding is None or stripe_biases[1] != 0.0):
+        raise CandidateContractError("clean-phase Prism target requires a frozen static field and grounded S2")
     low_field_reference = resolved["two_prism_low_field_reference_section"]
     if low_field_reference.get("qualification") != "candidate_reference_section__not_a_zero_field_claim":
         raise CandidateContractError("resolved P2 reference plane has an invalid qualification")
@@ -1686,7 +1992,7 @@ def materialize_trial(
             )
         accelerator_geometric_exit_reference = _accelerator_geometric_exit_reference(
             contract=contract,
-            provider_plan=_load(accelerator_provider_plan_path),
+            provider_plan=provider_plan,
             resolved_campaign=_load(accelerator_resolved_campaign_path),
             bunch_source=bunch_source,
             bunch_selection=exit_source_selection,
@@ -1696,12 +2002,36 @@ def materialize_trial(
             focus_y_mm=placement.focus_y_mm,
             release_z_mm=release_z,
             source_y_offset_mm=source_y_offset,
+            validated_provider_origin=actual_oa_origin,
         )
     exit_plane_lua = (
         "accelerator_exit_plane_project_z_mm = "
         f"{accelerator_geometric_exit_reference['exit_plane_project_z_mm']:.17g}, "
         if accelerator_geometric_exit_reference is not None else ""
     )
+    analyzer_values = mirror_voltages + mirror_voltages + [
+        stripe_biases[0], stripe_biases[0], stripe_biases[1], stripe_biases[1],
+        0.0, p1, p2, 0.0, 0.0, 0.0,
+    ]
+    field_lua = ""
+    if field_binding is not None:
+        scale = _finite(simion['nonaccelerator_scale'], 'nonaccelerator scale')
+        actual_analyzer = _static_consumed_analyzer_voltages(
+            field_binding, [v * scale for v in analyzer_values],
+            [0.0, *endpoint_voltages, *ring_voltages], pulse_requested=accelerator_pulse_requested)
+        # Record the voltages actually consumed, after the existing compatibility
+        # check; CLI float formatting must not create a different sealed anchor.
+        stripe_biases = [actual_analyzer[10] / scale, actual_analyzer[12] / scale]
+        p1, p2 = actual_analyzer[15] / scale, actual_analyzer[16] / scale
+        field_lua = (
+            "static_field = { "
+            f"{_scalar_field_lua_fields(field_binding)}, "
+            f"collision_pa_path = {json.dumps(field_binding['instances'][1]['pa_path'], ensure_ascii=False)}, "
+            f"refinement_windows = {_scalar_refinement_windows_lua(field_binding.get('refinement_windows', []))}, "
+            f"accelerator_front_z_mm = {field_binding['accelerator_front_z_mm']:.17g}, "
+            f"analyzer_voltages_v = {_lua_vector(field_binding['authority']['analyzer_electrode_voltages_v'])}, "
+            f"accelerator_voltages_v = {_lua_vector([0.0, *endpoint_voltages, *ring_voltages])} }}, "
+        )
     sidecar = (
         "-- Generated run-local finite-3D P1/P2 voltage trial; do not edit.\n"
         f"return {{ qualification = 'p1_p2_finite_3d_voltage_trial_only', mirror_voltages_v = {_lua_vector(mirror_voltages)}, "
@@ -1722,6 +2052,7 @@ def materialize_trial(
         f"runtime_accelerator_field_gate_enable = {'true' if accelerator_pulse_requested else 'false'}, "
         f"accelerator_pulse_mode = '{accelerator_pulse_mode}', "
         f"{accelerator_pulse_time_lua}"
+        f"{field_lua}"
         "flight_scope = 'complete_three_dimensional_static_return' }\n"
     )
     fly2_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1733,6 +2064,8 @@ def materialize_trial(
         + mirror_voltages
         + [stripe_biases[0], stripe_biases[0], stripe_biases[1], stripe_biases[1], 0.0, p1, p2, 0.0, 0.0, 0.0]
     )
+    if field_binding is not None:
+        analyzer_values = list(field_binding['authority']['analyzer_electrode_voltages_v'])
     source_transverse_reference = _source_transverse_reference(
         bunch_source=bunch_source,
         bunch_selection=bunch_selection,
@@ -1799,6 +2132,9 @@ def materialize_trial(
         "mirror_voltages_v": mirror_voltages,
         "terminal_time_mirror_variation": mirror_variation,
         "stripe_biases_v": stripe_biases,
+        "seed_theory_provenance": _seed_theory_provenance(
+            seed_mirror_voltages, seed_stripe_biases, mirror_voltages, stripe_biases,
+        ),
         "prism_voltages_v": [p1, p2],
         "detector_box_mm": [float(v) for v in detector["box"]],
         "accelerator_endpoint_voltages_v": endpoint_voltages,
@@ -1815,7 +2151,9 @@ def materialize_trial(
         "accelerator_exit_energy_contract": provider_exit_energy_contract,
         "accelerator_geometric_exit_reference": accelerator_geometric_exit_reference,
         "analyzer_electrode_voltages_v": analyzer_values,
+        "field_binding": None if field_binding is None else _static_field_receipt(field_binding, field_binding_path),
         "target_positive_mirror_turn_y_mm": target_turn_y,
+        "prism_handoff_target": prism_target,
         "target_nominal_injection_angle_degrees": target_angle_degrees,
         "target_low_field_tangent_ratio_vy_over_vz": target_tangent_ratio,
         "p2_low_field_reference_section": low_field_reference,
@@ -1918,6 +2256,36 @@ def materialize_trial(
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return receipt
+
+
+def _project_selected_center_observation(result: dict[str, Any], trial: dict[str, Any],
+                                         events: list[dict[str, Any]]) -> None:
+    """Expose existing center residuals only for a declared frozen diagnostic center."""
+    selection = trial.get("source_selection") or {}
+    center = trial.get("source_center_state") or {}
+    if (trial.get("source_cohort_role") != "controlled_diagnostic"
+            or selection.get("role") != "contiguous_frozen_source_diagnostic_selection"
+            or trial.get("source_expected_particle_ids") != [1]
+            or center.get("particle_id") != 1):
+        return
+    validation = result["center_particle_workpoint_validation"]
+    static_return = _static_return_diagnostic(
+        events, _finite(trial.get("target_drift_period_ratio"), "target K")
+    )
+    result["static_return_diagnostic"] = static_return
+    result["extraction_diagnostic"] = static_return
+    result["termination_diagnostic"] = _termination_diagnostic(events)
+    result["qualification"] = "candidate_frozen_center_diagnostic__not_formal"
+    if validation.get("status") == "observed":
+        result["residuals"] = dict(validation["residuals"])
+    if (validation.get("status") == "observed"
+            and result["cohort_analysis"]["event_integrity_passed"]
+            and static_return["event_contract_ok"]):
+        result["status"] = "full_drift_observed"
+        result["return_topology"] = "exact_target_k_phase_return"
+        result["fractional_k"] = static_return.get("fractional_k")
+    else:
+        result["status"] = "selected_center_observation_incomplete"
 
 
 def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path) -> dict[str, Any]:
@@ -2171,9 +2539,21 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
             ),
             "cohort_analysis": cohort,
             "accelerator_geometric_exit_validation": geometric_exit_validation,
-            "source_release_state": None,
+            "source_release_state": (
+                _source_release_record(
+                    center_source, trial["source_center_state"]["mass_th"],
+                    trial["source_center_state"]["charge_e"],
+                    _finite(trial["source_center_state"].get("tob_us"), "bunch centre time of birth"),
+                ) if (center_source := _bunch_center_source_state(trial)) is not None else None
+            ),
             "center_particle_workpoint_validation": (
                 _bunch_center_workpoint_validation(events, trial)
+            ),
+            "center_particle_prism_handoff_validation": (
+                _bunch_center_prism_handoff_validation(events, trial)
+            ),
+            "center_particle_stripe_stage_validation": (
+                _bunch_center_stripe_stage_validation(events, trial)
             ),
             "accelerator_safe_exit_observation": {
                 "status": "complete_cohort_observed" if safe_exit_ids == expected_ids else "incomplete_cohort",
@@ -2187,6 +2567,8 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
                 "all_losses_retained": cohort["all_losses_retained"],
             },
         })
+        if not short_exit_scope:
+            _project_selected_center_observation(result, trial, events)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
         return result
@@ -2203,18 +2585,7 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
     # to the only active extraction contract: an unchanged-voltage return.
     result["extraction_diagnostic"] = static_return
     try:
-        handoff_events = events
-        turn_indices = [
-            index for index, event in enumerate(events)
-            if event["kind"] == "pre_origin_positive_mirror_turn"
-        ]
-        if len(turn_indices) == 1:
-            # Downstream loss does not erase an already observed injection
-            # hand-off.  Validate the prefix independently while retaining
-            # the complete unfiltered log for all full-flight diagnostics.
-            handoff_events = events[: turn_indices[0] + 1] + [
-                {"kind": "terminal", "ion": 1, "splat": 5}
-            ]
+        handoff_events = _prism_handoff_event_prefix(events)
         observation = observation_from_simion_events(handoff_events, source)
         residuals = prism_handoff_residuals(
             observation,
@@ -2427,6 +2798,7 @@ def main() -> int:
     materialize.add_argument("--fly2", required=True, type=Path)
     materialize.add_argument("--sidecar", required=True, type=Path)
     materialize.add_argument("--receipt", required=True, type=Path)
+    materialize.add_argument("--field-binding", type=Path)
     analyze = sub.add_parser("analyze")
     analyze.add_argument("--log", required=True, type=Path)
     analyze.add_argument("--trial-receipt", required=True, type=Path)
@@ -2467,6 +2839,7 @@ def main() -> int:
             fly2_path=args.fly2,
             sidecar_path=args.sidecar,
             receipt_path=args.receipt,
+            field_binding_path=args.field_binding,
         )
         print(f"MRTOF_TWO_PRISM_TRIAL_MATERIALIZE=PASS P1={result['prism_voltages_v'][0]:.12g} P2={result['prism_voltages_v'][1]:.12g}")
     elif args.command == "analyze":

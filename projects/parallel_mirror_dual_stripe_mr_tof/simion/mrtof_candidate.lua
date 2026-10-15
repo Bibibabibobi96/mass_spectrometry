@@ -6,6 +6,11 @@ sim_segment_global = 1
 local program_path = debug.getinfo(1, 'S').source:sub(2)
 local operating_point_path = assert(program_path:gsub('%.lua$', '.operating_point.lua'))
 local operating_point = assert(loadfile(operating_point_path), 'missing run-local operating-point sidecar: '..operating_point_path)()
+local static_field = operating_point.static_field
+local static_field_adjust
+if static_field then
+  static_field_adjust = assert(loadfile(program_path:gsub('%.lua$', '.scalar_field_adapter.lua')))()(static_field)
+end
 local priority_path = program_path:gsub('%.lua$', '.priority.lua')
 local native_corridor_roles = assert(loadfile(priority_path), 'missing native-corridor priority sidecar: '..priority_path)()
 assert(type(native_corridor_roles) == 'table'
@@ -79,10 +84,6 @@ assert(target_half_oscillation_count % 2 == 1,
 -- The detector faces +z.  The valid return therefore first encounters its +z
 -- face while remaining at z>0 and travelling toward -z.
 local detector_z = detector_box[6]
-local detector_surface_tolerance_mm = math.max(1e-9,
-  1e-9*math.max(math.abs(detector_box[1]),math.abs(detector_box[2]),
-    math.abs(detector_box[3]),math.abs(detector_box[4]),
-    math.abs(detector_box[5]),math.abs(detector_box[6])))
 
 adjustable V_stripe_1 = stripe_biases[1]
 adjustable V_stripe_2 = stripe_biases[2]
@@ -169,6 +170,7 @@ local accelerator_pulse_complete = {}
 local accelerator_safe_exit_observed = {}
 local accelerator_geometric_exit_observed = {}
 local p2_low_field_reference_emitted = {}
+local detector_native_contacts = {}
 
 local function role_instance(role)
   return assert(native_corridor_instances[role],
@@ -181,6 +183,31 @@ end
 
 local function detector_instance_number()
   return role_instance('detector')
+end
+
+local function detector_contact_sample(before, after, native_splat, instance, stage)
+  if native_splat ~= -1 or instance ~= detector_instance_number()
+    or stage ~= 'awaiting_static_detector' or before.z_mm <= detector_z
+    or after.z_mm < detector_z or before.vz_mm_us >= 0 or after.vz_mm_us >= 0 then
+    return nil
+  end
+  -- SIMION may end an electrode collision just outside the surface. Use the
+  -- installed test_plane time_to_plane formula, not a fixed distance tolerance.
+  -- This bounded contact projection is NOT a measured crossing bracket.
+  -- https://simion.com/info/trajectory_programming.html (electrode-hit recording)
+  -- https://simion.com/info/test_plane.html; SIMION-2020/examples/test_plane
+  local dt = (detector_z-after.z_mm)/after.vz_mm_us
+  local span = after.t_us-before.t_us
+  if not (dt >= 0 and dt <= span and span > 0) then return nil end
+  if not (after.x_mm > detector_box[1] and after.x_mm < detector_box[4]
+    and after.y_mm > detector_box[2] and after.y_mm < detector_box[5]) then return nil end
+  local x, y = after.x_mm+dt*after.vx_mm_us, after.y_mm+dt*after.vy_mm_us
+  -- Both samples remain outside the front; the segment to this strict interior
+  -- face point cannot first intersect a side/back face of the detector solid.
+  if not (x > detector_box[1] and x < detector_box[4]
+    and y > detector_box[2] and y < detector_box[5]) then return nil end
+  return {t_us=after.t_us+dt, x_mm=x, y_mm=y, z_mm=detector_z,
+    vx_mm_us=after.vx_mm_us, vy_mm_us=after.vy_mm_us, vz_mm_us=after.vz_mm_us}
 end
 
 local function maximum_instance_number()
@@ -335,8 +362,8 @@ local function emit_cycle_events(events)
       local n = crossings[ion_number]
       print(string.format('MRTOF_EVENT central_plane ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g',
         ion_number, n, event.t_us, event.x_mm, event.y_mm))
-      print(string.format('MRTOF_EVENT central_plane_directional ion=%d n=%d direction_z=%d t_us=%.12g x_mm=%.12g y_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        ion_number, n, event.direction, event.t_us, event.x_mm, event.y_mm,
+      print(string.format('MRTOF_EVENT central_plane_directional ion=%d n=%d direction_z=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        ion_number, n, event.direction, event.t_us, event.x_mm, event.y_mm, event.z_mm,
         event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
     end
   end
@@ -348,6 +375,7 @@ local function emit_cycle_events(events)
 end
 
 function segment.initialize_run()
+  detector_native_contacts = {}
   applied_native_corridor_values, applied_accelerator_values = nil, nil
   sim_trajectory_quality = trajectory_quality
   previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
@@ -377,13 +405,29 @@ function segment.initialize_run()
   -- loaded without adj_elect globals.  Apply both consumed voltage tables once
   -- here, immediately before the run, without saving either PA.
   segment.fast_adjust()
-  print('MRTOF_CANDIDATE: status=prototype geometry=native_corridor_4_instance corridor_fast_adjust=8_channel accelerator_fast_adjust=profile_sized')
+  if static_field then
+    print('MRTOF_CANDIDATE: status=prototype geometry=four_collision_instances field='..(static_field.mode or 'comsol_static_scalar_v')..' fast_adjust=false gui_field_queries_equivalent=false')
+  else
+    print('MRTOF_CANDIDATE: status=prototype geometry=native_corridor_4_instance corridor_fast_adjust=8_channel accelerator_fast_adjust=profile_sized')
+  end
 end
 
 function segment.fast_adjust()
   local current_mirror_voltages = {0,V_mirror_B,V_mirror_C,V_mirror_D,V_mirror_E}
   local values=voltage_map(current_mirror_voltages,{V_stripe_1,V_stripe_2},{V_prism_1,V_prism_2},
     {V_repeller,V_grid1,V_grid2},accelerator_ring_voltages,V_nonaccelerator_scale)
+  if static_field then
+    assert(accelerator_pulse_mode == 'static', 'static field forbids OA pulse')
+    for i=1,20 do
+      assert(math.abs((values.analyser[i] or 0)-static_field.analyzer_voltages_v[i]) <= 1e-9,
+        'static field does not match analyzer voltage '..i)
+    end
+    for i=1,#values.accelerator do
+      assert(math.abs(values.accelerator[i]-static_field.accelerator_voltages_v[i]) <= 1e-9,
+        'static field does not match OA voltage '..i)
+    end
+    return -- Collision arrays are never Fast Adjusted or written.
+  end
   local requested = native_corridor_values(values.analyser)
   local corridor_changed = applied_native_corridor_values == nil
   for local_id = 1,8 do
@@ -411,6 +455,10 @@ function segment.fast_adjust()
 end
 
 function segment.efield_adjust()
+  if static_field_adjust then
+    if ion_instance >= 1 and ion_instance <= maximum_instance_number() then static_field_adjust() end
+    return
+  end
   if not accelerator_field_gate_requested then return end
   local accelerator_instance = accelerator_instance_number()
   if ion_instance ~= accelerator_instance then return end
@@ -424,6 +472,13 @@ function segment.efield_adjust()
     -- The instance remains present as the exact electrode/collision geometry;
     -- only its solved operating field is suppressed after the pulse boundary.
     ion_dvoltsx_gu, ion_dvoltsy_gu, ion_dvoltsz_gu = 0, 0, 0
+  end
+end
+
+function segment.instance_adjust()
+  if static_field and ion_instance == accelerator_instance_number()
+      and ion_pz_mm < static_field.accelerator_front_z_mm then
+    ion_instance = 0 -- Leave only the frozen OA numerical front padding.
   end
 end
 
@@ -605,11 +660,13 @@ function segment.other_actions()
           and reference.y_mm <= p2_low_field_reference.y_max_mm
       local direction_ok = reference.vy_mm_us > 0 and reference.vz_mm_us > 0
       p2_low_field_reference_emitted[ion_number] = true
-      print(string.format('MRTOF_EVENT p2_low_field_crossing ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g inside_aperture=%d direction_ok=%d',
+      print(string.format('MRTOF_EVENT p2_low_field_crossing ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g inside_aperture=%d direction_ok=%d fraction=%.17g before_t_us=%.17g before_z_mm=%.17g before_vy_mm_us=%.17g before_vz_mm_us=%.17g after_t_us=%.17g after_z_mm=%.17g after_vy_mm_us=%.17g after_vz_mm_us=%.17g',
         ion_number, reference.t_us, reference.x_mm, reference.y_mm,
         reference.z_mm, reference.vx_mm_us, reference.vy_mm_us,
         reference.vz_mm_us, inside_aperture and 1 or 0,
-        direction_ok and 1 or 0))
+        direction_ok and 1 or 0, (p2_low_field_reference.z_mm-pz)/dz,
+        before.t_us, before.z_mm, before.vy_mm_us, before.vz_mm_us,
+        after.t_us, after.z_mm, after.vy_mm_us, after.vz_mm_us))
       if inside_aperture and direction_ok then
         print(string.format('MRTOF_EVENT p2_low_field_reference ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
           ion_number, reference.t_us, reference.x_mm, reference.y_mm,
@@ -663,19 +720,8 @@ function segment.other_actions()
         ion_number, slow_turns[ion_number], pt + fraction*(ion_time_of_flight-pt),
         px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), pz + fraction*(ion_pz_mm-pz)))
     end
-    local detector_contact_direction = 0
-    if ion_splat ~= 0 and ion_vz_mm < 0
-      and math.abs(ion_pz_mm-detector_box[6]) <= detector_surface_tolerance_mm then
-      detector_contact_direction = -1
-    elseif ion_splat ~= 0 and ion_vz_mm > 0
-      and math.abs(ion_pz_mm-detector_box[3]) <= detector_surface_tolerance_mm then
-      detector_contact_direction = 1
-    end
-    local detector_contact = detector_contact_direction ~= 0
-      and ion_px_mm >= detector_box[1]-detector_surface_tolerance_mm
-      and ion_px_mm <= detector_box[4]+detector_surface_tolerance_mm
-      and ion_py_mm >= detector_box[2]-detector_surface_tolerance_mm
-      and ion_py_mm <= detector_box[5]+detector_surface_tolerance_mm
+    local detector_contact = detector_contact_sample(before, after, ion_splat,
+      ion_instance, prism_stage[ion_number])
     local detector_plane_crossing = (dz < 0 and pz > detector_z and ion_pz_mm <= detector_z)
       or (dz > 0 and pz < detector_z and ion_pz_mm >= detector_z)
     if detector_plane_crossing or detector_contact then
@@ -686,11 +732,23 @@ function segment.other_actions()
         local vx = pvx + fraction * (ion_vx_mm - pvx)
         local vy = pvy + fraction * (ion_vy_mm - pvy)
         local vz = pvz + fraction * (ion_vz_mm - pvz)
-        local detector_direction = detector_contact and detector_contact_direction or (dz < 0 and -1 or 1)
-        local detector_plane_z = detector_contact and ion_pz_mm or detector_z
-        print(string.format('MRTOF_EVENT detector_plane ion=%d direction_z=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, detector_direction, pt + fraction * (ion_time_of_flight - pt), x, y,
-          detector_plane_z, vx, vy, vz))
+        local detector_direction = detector_contact and -1 or (dz < 0 and -1 or 1)
+        local detector_time = pt + fraction * (ion_time_of_flight - pt)
+        local localization = 'linear_bracket'
+        local contact_evidence = ''
+        if detector_contact then
+          x,y,vx,vy,vz = detector_contact.x_mm,detector_contact.y_mm,
+            detector_contact.vx_mm_us,detector_contact.vy_mm_us,detector_contact.vz_mm_us
+          detector_time = detector_contact.t_us
+          localization = 'detector_contact_projection'
+          detector_native_contacts[ion_number] = true
+          contact_evidence = string.format(' native_splat=-1 raw_t_us=%.17g raw_x_mm=%.17g raw_y_mm=%.17g raw_z_mm=%.17g projection_dt_us=%.17g step_span_us=%.17g',
+            ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,
+            detector_time-ion_time_of_flight,ion_time_of_flight-pt)
+        end
+        print(string.format('MRTOF_EVENT detector_plane ion=%d direction_z=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g localization=%s%s',
+          ion_number, detector_direction, detector_time, x, y,
+          detector_z, vx, vy, vz,localization,contact_evidence))
         if detector_direction == -1
           and prism_stage[ion_number] == 'awaiting_static_detector'
           and not detected[ion_number]
@@ -698,13 +756,13 @@ function segment.other_actions()
           and y >= detector_box[2] and y <= detector_box[5] then
           detected[ion_number] = true
           prism_stage[ion_number] = 'static_detector_complete'
-          print(string.format('MRTOF_EVENT detector ion=%d direction_z=-1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-            ion_number, pt + fraction * (ion_time_of_flight - pt), x, y, detector_z))
+          print(string.format('MRTOF_EVENT detector ion=%d direction_z=-1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g localization=%s%s',
+            ion_number, detector_time, x, y, detector_z,localization,contact_evidence))
           splat_codes[ion_number] = 1
           splat_event_emitted[ion_number] = true
-          print(string.format('MRTOF_EVENT splat ion=%d code=1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
-            ion_number, pt + fraction * (ion_time_of_flight - pt), x, y, detector_z,
-            turns[ion_number] or 0, crossings[ion_number] or 0))
+          print(string.format('MRTOF_EVENT splat ion=%d code=1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d localization=%s%s',
+            ion_number, detector_time, x, y, detector_z,
+            turns[ion_number] or 0, crossings[ion_number] or 0,localization,contact_evidence))
           ion_splat = 1
         end
       end
@@ -722,10 +780,12 @@ function segment.other_actions()
 end
 
 function segment.terminate()
-  print(string.format('MRTOF_EVENT terminal ion=%d splat=%d instance=%d volts=%.12g t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g turns=%d central_crossings=%d',
+  local contact_evidence = detector_native_contacts[ion_number]
+    and ' native_splat=-1 localization=detector_contact_projection' or ''
+  print(string.format('MRTOF_EVENT terminal ion=%d splat=%d instance=%d volts=%.12g t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g turns=%d central_crossings=%d%s',
     ion_number, splat_codes[ion_number] or 0,
     ion_instance, ion_volts,
     ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
     ion_vx_mm, ion_vy_mm, ion_vz_mm,
-    turns[ion_number] or 0, crossings[ion_number] or 0))
+    turns[ion_number] or 0, crossings[ion_number] or 0,contact_evidence))
 end

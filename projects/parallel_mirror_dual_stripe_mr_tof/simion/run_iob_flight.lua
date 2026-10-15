@@ -20,5 +20,16 @@ end
 -- compact retention would immediately remove.  The IOB and Fly2 remain fully
 -- usable for a later interactive GUI flight.
 local particle_option = particles and (' --particles="'..particles..'"') or ''
-simion.command('fly --retain-trajectories=0'..particle_option..' "'..iob..'"')
+local operating = assert(loadfile(operating_point), 'invalid operating point')()
+local collision = operating.static_field and operating.static_field.collision_pa_path
+local preload_option = ''
+if collision and collision:lower():match('%.pa$') then
+  -- Official SIMION field_array examples use refinable=false to prevent IOB
+  -- load auto-Refine. This PA supplies collisions only; the callback owns E.
+  local pa = assert(simion.pas:open(collision), 'collision PA preload failed')
+  pa.refinable = false
+  -- Keep the RAM-only flag on IOB load; never save or claim this PA was solved.
+  preload_option = ' --remove-pas=0'
+end
+simion.command('fly --retain-trajectories=0'..preload_option..particle_option..' "'..iob..'"')
 print('IOB_FLIGHT: PASS iob='..iob)

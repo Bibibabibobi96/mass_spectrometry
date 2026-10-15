@@ -130,6 +130,62 @@ assert(#events('target_k_phase_sample')==1 and #events('target_k')==1)
 assert(#events('central_plane')>0)
 assert(flush_count>0,'turn events must become visible before flight completion')
 
+-- Real 4 ns detector collisions stopped just before the z=97 face. Execute
+-- the actual callbacks; only mock the already completed return-stage state.
+point.detector_box_mm={-25,-87,95,25,-37,97}
+assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+local function set_return_stage(stage)
+  for index=1,100 do
+    local name,upvalue=debug.getupvalue(segment.other_actions,index)
+    if name=='prism_stage' then upvalue[1]=stage; return end
+    if name==nil then break end
+  end
+  error('actual callback return-stage upvalue missing')
+end
+local function contact_case(offset,y,instance,vz,stage,x,previous_z,span,code)
+  begin(previous_z or 97.04,-40,x or 0,y or -48,0)
+  set_return_stage(stage or 'awaiting_static_detector')
+  state(97+offset,vz or -40,span or .001,x or 0,y or -48,-3)
+  ion_instance,ion_splat,ion_volts=instance or 4,code or -1,0
+  segment.other_actions(); segment.terminate()
+  return events('detector'),events('terminal')
+end
+for _,case in ipairs({{1.063e-7,-47.7260387338},
+    {1.103e-7,-48.8314196835},{1.417e-7,-48.3985661607}}) do
+  local hits,terminals=contact_case(case[1],case[2])
+  assert(#hits==1 and #terminals==1,table.concat(records,'\n'))
+  assert(hits[1]:match('localization=detector_contact_projection')
+    and hits[1]:find('native_splat=-1',1,true))
+  assert(value(hits[1],'z_mm')==97)
+  assert(math.abs(value(hits[1],'t_us')-(.001+case[1]/40))<1e-14)
+  assert(value(hits[1],'raw_z_mm')==97+case[1])
+  assert(value(terminals[1],'z_mm')>97 and value(terminals[1],'t_us')==.001)
+  assert(terminals[1]:find('native_splat=-1',1,true) and ion_splat==1)
+end
+local rejected={
+  {1e-7,-48,2}, -- another collision instance
+  {1e-7,-48,4,40}, -- wrong direction
+  {1e-7,-48,4,-40,'inside_return_p2'}, -- incomplete return
+  {1e-7,-37}, -- edge/side, not strict aperture
+  {1e-7,-90}, -- outside aperture
+  {1e-7,-48,4,-40,nil,25}, -- x side
+  {-2,-48,4,-40,nil,0,96}, -- back face without front crossing
+  {1e-7,-48,4,-40,nil,0,96}, -- approached from behind front
+  {.1,-48}, -- beyond actual step span
+  {1e-7,-48,4,-40,nil,0,97.04,.001,4}, -- programmatic stop
+}
+for _,case in ipairs(rejected) do
+  local hits=contact_case(unpack(case,1,9))
+  assert(#hits==0 and ion_splat==(case[9] or -1),
+    table.concat(records,'\n'))
+end
+-- Ordinary crossing retains its measured [0,1] interpolation, without contact.
+begin(97.04,-40,0,-48,0); set_return_stage('awaiting_static_detector')
+step(96.96,-40,.002,0,-48,-3)
+local crossing=events('detector')[1]
+assert(crossing and value(crossing,'t_us')==.001 and value(crossing,'z_mm')==97)
+assert(crossing:match('localization=linear_bracket') and not crossing:match('native_splat'))
+
 -- Dynamic prism switching is outside the active static Candidate.
 local switched_ok=pcall(function()
   point.prism_switch={enabled=true}

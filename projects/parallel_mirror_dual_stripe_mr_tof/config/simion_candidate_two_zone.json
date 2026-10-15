@@ -81,6 +81,10 @@
   },
   "downstream_fixed_grid_workpoint_profile": {
     "schema_version": 1,
+    "active_stripe_axes": [
+      "stripe_1_voltage_v",
+      "stripe_2_voltage_v"
+    ],
     "voltage_bounds_rule": "stripe_seed_energy_envelope_with_baseline_sign__prism_initial_search_window",
     "parameter_scale_rule": "absolute_baseline_voltage",
     "position_residual_scale_mm": 0.01,
@@ -2318,7 +2322,7 @@
     "trajectory_profiles": {
       "center_screening": {
         "trajectory_quality": 8,
-        "maximum_step_us": 0.002,
+        "maximum_step_us": 0.004,
         "purpose": "single-center topology and voltage screening; not a timing-convergence result"
       },
       "center_refined": {
@@ -2336,6 +2340,23 @@
     "full_path_timeout_semantics": "derived as this factor times target_K times the 4*terminal-plane axial round-trip path divided by the frozen nominal 4-keV ion speed; it is an explicit loss/diagnostic bound, never a performance threshold",
     "nonaccelerator_scale": 1,
     "numerical_profiles": {
+      "grid_generation": {
+        "spacing_quantum_mm": 0.01
+      },
+      "native_static_field": {
+        "target_layout": {
+          "parent": {"pitch_mm": [0.5, 1, 1]},
+          "windows": [
+            {"pitch_mm": [0.04, 0.20, 0.04], "stored_xmax_mm": 1.28},
+            {"pitch_mm": [0.04, 0.20, 0.04], "stored_xmax_mm": 1.28},
+            {"pitch_mm": [0.25, 0.25, 0.10]}
+          ]
+        },
+        "refine": {
+          "convergence_v": 1e-5
+        },
+        "purpose": "explicit working stopping objective for fixed-input field and trajectory verification; not a field-error bound or completed numerical qualification"
+      },
       "geometry_review_isotropic": {
         "mm_per_gu": [
           2,

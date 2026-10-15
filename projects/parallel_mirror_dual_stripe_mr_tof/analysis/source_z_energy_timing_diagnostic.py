@@ -56,7 +56,7 @@ _CHAIN = (
 _SELECTED_EVENT_KINDS = {
     "accelerator_safe_exit", "terminal", "detector_plane",
     "central_plane_directional", "prism_entry", "prism_pass",
-    "p2_low_field_crossing",
+    "p2_low_field_crossing", "fast_turn",
     *(kind for _, kind in _CHAIN),
 }
 _FIRST_BATCH_ABERRATION_STAGES = (
@@ -381,6 +381,50 @@ def materialize_scaled_te1_variation(
         json.dumps(result, indent=2) + "\n", encoding="utf-8", newline="\n"
     )
     return result
+
+
+def materialize_te1_fine_probe(
+    *, reference_path: Path, baseline_coordinate: float, output_path: Path,
+    mirror_period_path: Path, mirror_correction_path: Path,
+    contract_path: Path,
+) -> dict[str, Any]:
+    """Step negatively along TE1 by the contract fine fraction of actual voltages.
+
+    Coordinates are absolute: U(c)=U_base+c*dU/dc. The step is relative to
+    U(baseline), not the reference zero point, including after P/S reclosure.
+    Invalid active voltages or an unrepresentable step fail before materializing.
+    """
+    baseline_coordinate = float(baseline_coordinate)
+    if not math.isfinite(baseline_coordinate):
+        raise CandidateContractError("TE1 baseline coordinate must be finite")
+    _, reference_coordinate, base, reference_delta = _te1_reference(reference_path)
+    contract = _load_object(contract_path, "MR-TOF contract")
+    try:
+        fraction = float(contract["downstream_fixed_grid_workpoint_profile"]
+                         ["jacobian_relative_step_tiers"]["fine"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise CandidateContractError("fine relative voltage step is invalid") from error
+    if not math.isfinite(fraction) or not 0.0 < fraction < 1.0:
+        raise CandidateContractError("fine relative voltage step must be between zero and one")
+    ratios = []
+    for voltage, delta in zip(base[1:], reference_delta, strict=True):
+        direction = delta / reference_coordinate
+        if direction == 0.0:
+            continue
+        current_voltage = voltage + baseline_coordinate * direction
+        if not math.isfinite(current_voltage) or current_voltage == 0.0:
+            raise CandidateContractError("TE1 fine probe requires finite nonzero active voltages")
+        ratios.append(abs(direction / current_voltage))
+    if not ratios or not math.isfinite(max(ratios)) or max(ratios) == 0.0:
+        raise CandidateContractError("TE1 reference direction has no finite voltage response")
+    coordinate = baseline_coordinate - fraction / max(ratios)
+    if not math.isfinite(coordinate) or coordinate >= baseline_coordinate:
+        raise CandidateContractError("TE1 fine probe coordinate step is not representable")
+    return materialize_scaled_te1_variation(
+        reference_path=reference_path, coordinate=coordinate, output_path=output_path,
+        mirror_period_path=mirror_period_path,
+        mirror_correction_path=mirror_correction_path, contract_path=contract_path,
+    )
 
 
 def materialize_te1_variation_from_diagnostics(
@@ -732,6 +776,18 @@ def _load_source_rows(
         source_manifest_path = record_path(inputs["bunch_source_run_manifest"], base_dir=run_dir)
     except (AssertionError, KeyError, TypeError) as error:
         raise CandidateContractError("flight manifest lacks frozen bunch-source inputs") from error
+    return _load_source_rows_from_paths(
+        receipt_path=receipt_path, source_manifest_path=source_manifest_path,
+        run_config_path=record_path(manifest["run_config"], base_dir=run_dir),
+        expected_count=expected_count,
+    )
+
+
+def _load_source_rows_from_paths(
+    *, receipt_path: Path, source_manifest_path: Path,
+    run_config_path: Path, expected_count: int,
+) -> tuple:
+    """Verify successful source-owner evidence and the actual flight selection."""
     receipt = _load_object(receipt_path, "bunch-source receipt")
     expected_ids = list(range(1, expected_count + 1))
     expected_ids_sha256 = hashlib.sha256(
@@ -767,7 +823,7 @@ def _load_source_rows(
     with state_path.open("r", encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
     ids = [int(row["particle_id"]) for row in rows]
-    run_config_path = record_path(manifest["run_config"], base_dir=run_dir)
+
     run_config = _load_object(run_config_path, "flight run config")
     parameters = run_config.get("parameters")
     selection = parameters.get("source_selection") if isinstance(parameters, dict) else None
@@ -825,8 +881,7 @@ def _load_source_rows(
         if not all(math.isfinite(value) for value in values.values()) or values["mass_th"] <= 0.0:
             raise CandidateContractError(f"source state for ion {ion} is nonphysical")
         parsed[ion] = values
-    def selected_pair(name: str) -> dict[str, Any] | None:
-        pair = receipt.get(name)
+    def selected_pair(pair: dict[str, Any] | None) -> dict[str, Any] | None:
         if not isinstance(pair, dict):
             return pair
         try:
@@ -862,12 +917,24 @@ def _load_source_rows(
             active["positive_particle_id"] = positive - selected_parent_min + 1
             selected_position_pairs.append(active)
 
+    energy_pairs = receipt.get("controlled_slow_energy_pairs", [])
+    if not isinstance(energy_pairs, list) or any(not isinstance(pair, dict) for pair in energy_pairs):
+        raise CandidateContractError("controlled slow-energy pairs must be a list of objects")
+    selected_energy_pairs = []
+    if selected_parent_min == 1:
+        # Every energy triplet uses the original centre ID 1. A shifted source
+        # interval must not reinterpret its local ID 1 as that centre.
+        for pair in energy_pairs:
+            active = selected_pair(pair)
+            if active is not None:
+                selected_energy_pairs.append(active)
+
     return parsed, {
         "source_run_manifest": {"path": str(source_manifest_path), "sha256": _sha256(source_manifest_path)},
         "source_state_table": receipt["state_table"],
-    }, selected_pair("controlled_focus_pair"), selected_pair(
-        "controlled_slow_energy_pair"
-    ), selected_pair("controlled_transverse_x_pair"), selected_position_pairs
+    }, selected_pair(receipt.get("controlled_focus_pair")), selected_pair(
+        receipt.get("controlled_slow_energy_pair")
+    ), selected_pair(receipt.get("controlled_transverse_x_pair")), selected_position_pairs, selected_energy_pairs
 
 
 def _manifest_output_matches(manifest: dict[str, Any], path: Path, sha256: str, label: str) -> None:
@@ -892,39 +959,49 @@ def _event_batches(
             ) from error
         receipt_path = record_path(inputs["batch_log_merge_receipt"], base_dir=run_dir)
         receipt = _load_object(receipt_path, "batch-log merge receipt")
-        if (
-            receipt.get("role") != "mrtof_rebased_batch_log_merge"
-            or receipt.get("status") != "success"
-            or receipt.get("particle_count") != particle_count
-            or receipt.get("global_particle_ids") != [1, particle_count]
-            or receipt.get("all_batch_losses_retained") is not True
-        ):
-            raise CandidateContractError("batch-log merge receipt does not cover the complete cohort")
-        batches = receipt.get("batches")
-        if not isinstance(batches, list) or not batches:
-            raise CandidateContractError("batch-log merge receipt has no batches")
-        result: list[tuple[Path, int, int]] = []
-        covered: list[int] = []
-        for index, batch in enumerate(batches, start=1):
-            if not isinstance(batch, dict):
-                raise CandidateContractError("batch-log merge receipt has an invalid batch")
-            try:
-                path = Path(str(batch["path"])).resolve()
-                offset, count = int(batch["offset"]), int(batch["count"])
-                sha256 = str(batch["sha256"])
-            except (KeyError, TypeError, ValueError) as error:
-                raise CandidateContractError("batch-log merge receipt has an incomplete batch") from error
-            if offset < 0 or count < 1:
-                raise CandidateContractError("batch-log offset/count is invalid")
-            _manifest_output_matches(manifest, path, sha256, f"native batch log {index}")
-            covered.extend(range(offset + 1, offset + count + 1))
-            result.append((path, offset, count))
-        if covered != list(range(1, particle_count + 1)):
-            raise CandidateContractError("batch logs do not cover the cohort exactly once")
-        return result
+        return _batches_from_receipt(receipt, particle_count, manifest)
     path = run_dir / "logs" / "native_two_prism_flight.log"
     _unique_output(manifest, path, "merged native flight log")
     return [(path, 0, particle_count)]
+
+
+
+def _batches_from_receipt(
+    receipt: dict[str, Any], particle_count: int, manifest: dict[str, Any] | None = None,
+) -> list[tuple[Path, int, int]]:
+    if (
+        receipt.get("role") != "mrtof_rebased_batch_log_merge"
+        or receipt.get("status") != "success"
+        or receipt.get("particle_count") != particle_count
+        or receipt.get("global_particle_ids") != [1, particle_count]
+        or receipt.get("all_batch_losses_retained") is not True
+    ):
+        raise CandidateContractError("batch-log merge receipt does not cover the complete cohort")
+    batches = receipt.get("batches")
+    if not isinstance(batches, list) or not batches:
+        raise CandidateContractError("batch-log merge receipt has no batches")
+    result: list[tuple[Path, int, int]] = []
+    covered: list[int] = []
+    for index, batch in enumerate(batches, start=1):
+        if not isinstance(batch, dict):
+            raise CandidateContractError("batch-log merge receipt has an invalid batch")
+        try:
+            path = Path(str(batch["path"])).resolve()
+            offset, count = int(batch["offset"]), int(batch["count"])
+            sha256 = str(batch["sha256"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise CandidateContractError("batch-log merge receipt has an incomplete batch") from error
+        if offset < 0 or count < 1:
+            raise CandidateContractError("batch-log offset/count is invalid")
+        if manifest is not None:
+            _manifest_output_matches(manifest, path, sha256, f"native batch log {index}")
+        elif _sha256(path).lower() != sha256.lower():
+            raise CandidateContractError(f"native batch log {index} differs from merge receipt")
+        covered.extend(range(offset + 1, offset + count + 1))
+        result.append((path, offset, count))
+    if covered != list(range(1, particle_count + 1)):
+        raise CandidateContractError("batch logs do not cover the cohort exactly once")
+    return result
 
 
 def _load_selected_events(
@@ -1724,6 +1801,144 @@ def _controlled_position_stage_responses(
     return responses
 
 
+def _joint_initial_state_timing(
+    source_rows: dict[int, dict[str, float]],
+    events: dict[tuple[str, int], list[dict[str, Any]]], hit_ids: list[int],
+    *, include_z_polynomial: bool = False,
+) -> dict[str, Any]:
+    """Descriptive partial associations; not causal or additive peak widths."""
+    names = ("initial_y_mm", "initial_z_mm", "release_slow_energy_ev", "initial_x_squared_mm2")
+    units = ("us/mm", "us/mm", "us/eV", "us/mm2")
+    z_origin = None
+    if include_z_polynomial:
+        # Use every frozen source state, including losses; this is a coordinate
+        # origin, not a fitted focus or a survivor-selected reference position.
+        z_origin = statistics.mean(state["z_mm"] for state in source_rows.values()) if source_rows else None
+        names = ("initial_y_mm", "initial_z_offset_mm", "release_slow_energy_ev",
+                 "initial_x_squared_mm2", "initial_z_offset_squared_mm2", "initial_z_offset_cubed_mm3")
+        units += ("us/mm2", "us/mm3")
+    rows, times = [], []
+    for ion in hit_ids:
+        state = source_rows[ion]
+        direction_squared = sum(state[f"direction_{axis}"] ** 2 for axis in "xyz")
+        if not math.isfinite(direction_squared) or direction_squared <= 0.0:
+            raise CandidateContractError("joint timing regression has an invalid source direction")
+        energy = state["kinetic_energy_ev"] * state["direction_y"] ** 2 / direction_squared
+        z = state["z_mm"] if z_origin is None else state["z_mm"] - z_origin
+        row = [state["y_mm"], z, energy, state["x_mm"] ** 2]
+        rows.append(row + [z ** 2, z ** 3] if include_z_polynomial else row)
+        times.append(float(_one(events, "detector", ion)["t_us"]) - state["tob_us"])
+    result = {
+        "sample_count": len(hit_ids), "particle_ids": hit_ids, "predictors": list(names),
+        "response": "detector_time_minus_source_birth_time_us",
+        "scope": "all_detector_hits_with_complete_event_chain__survivor_conditioned",
+        "qualification": "descriptive_joint_association_only__not_causal__not_additive_fwhm",
+    }
+    if include_z_polynomial:
+        result["z_expansion_origin"] = {
+            "z_mm": z_origin, "basis": "arithmetic_mean_of_all_frozen_source_states",
+            "source_particle_count": len(source_rows), "offset_definition": "initial_z_mm_minus_z_origin_mm",
+            "interpretation": "Sample reference, not nominal center. Linear/quadratic coefficients depend on origin; predictions and cubic coefficient are translation invariant.",
+        }
+    if len(hit_ids) <= len(names) + 1:
+        return {**result, "status": "unavailable", "reason": "insufficient_residual_degrees_of_freedom"}
+    matrix, response = np.asarray(rows, dtype=float), np.asarray(times, dtype=float)
+    if not np.isfinite(matrix).all() or not np.isfinite(response).all():
+        raise CandidateContractError("joint timing regression contains non-finite data")
+    means = matrix.mean(axis=0)
+    centered = matrix - means
+    scales = np.sqrt(np.mean(centered ** 2, axis=0))
+    if np.any(scales == 0.0):
+        return {**result, "status": "unavailable", "reason": "invariant_predictor"}
+    design = np.column_stack((np.ones(len(hit_ids)), centered / scales))
+    fit, _, rank, singular = np.linalg.lstsq(design, response - response.mean(), rcond=None)
+    result["design_rank"] = int(rank)
+    if rank != len(names) + 1:
+        return {**result, "status": "unavailable", "reason": "rank_deficient_predictors"}
+    residual = response - response.mean() - design @ fit
+    total_squared = float(np.sum((response - response.mean()) ** 2))
+    return {
+        **result, "status": "observed", "method": "centered_scaled_ordinary_least_squares",
+        "predictor_means": dict(zip(names, means.tolist(), strict=True)),
+        "response_mean_us": float(response.mean()),
+        "coefficients": {name: {"value": float(value), "unit": unit}
+                         for name, value, unit in zip(names, fit[1:] / scales, units, strict=True)},
+        "scaled_design_condition": float(singular[0] / singular[-1]),
+        "r_squared": None if total_squared == 0.0 else 1.0 - float(residual @ residual) / total_squared,
+        "residual_standard_deviation_us": float(np.std(residual, ddof=len(names) + 1)),
+        "residual_degrees_of_freedom": len(hit_ids) - len(names) - 1,
+        "interpretation": "Survivor-conditioned partial associations; omitted variables remain. No FWHM components are inferred or summed.",
+    }
+
+
+def _controlled_fast_turn_history(
+    events: dict[tuple[str, int], list[dict[str, Any]]],
+    slow_response: dict[str, Any] | None, x_response: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Reuse validated controlled triplets at matching real turn identities."""
+    result = {}
+    for name, control in (("release_slow_energy", slow_response), ("initial_x", x_response)):
+        if control is None:
+            result[name] = {"status": "unavailable", "reason": "controlled_triplet_not_present"}
+            continue
+        ids = control["particle_ids"]
+        indexed = []
+        for ion in ids:
+            by_turn = {}
+            for event in events.get(("fast_turn", ion), []):
+                if "n" not in event or "z_mm" not in event:
+                    raise CandidateContractError("fast-turn response lacks n or z_mm")
+                z = float(event["z_mm"])
+                if not math.isfinite(z) or z == 0.0:
+                    raise CandidateContractError("fast-turn response has an invalid mirror side")
+                key = (int(event["n"]), 1 if z > 0.0 else -1)
+                by_turn.setdefault(key, []).append(event)
+            indexed.append(by_turn)
+        keys = sorted(set().union(*(set(values) for values in indexed)))
+        samples, previous = [], None
+        for n, direction in keys:
+            matches = [values.get((n, direction), []) for values in indexed]
+            counts = [len(values) for values in matches]
+            sample = {"n": n, "turn_side_z": direction}
+            if counts != [1, 1, 1]:
+                samples.append({**sample, "status": "unavailable", "event_counts": counts})
+                previous = None
+                continue
+            times = [float(values[0]["t_us"]) for values in matches]
+            if not all(math.isfinite(value) for value in times):
+                raise CandidateContractError("fast-turn response contains non-finite time")
+            even = (times[2] + times[0]) / 2.0 - times[1]
+            if name == "release_slow_energy":
+                value = (times[2] - times[0]) / control["release_slow_energy_span_ev"]
+                field, unit = "dt_d_release_slow_energy_us_per_ev", "us/eV"
+            else:
+                positions = control["initial_x_mm"]
+                squared_span = (positions[2] ** 2 + positions[0] ** 2) / 2.0 - positions[1] ** 2
+                value = even / squared_span
+                field, unit = "even_dt_per_initial_x_squared_us_per_mm2", "us/mm2"
+            sample.update({"status": "observed", field: value, "response_unit": unit,
+                           "even_center_deviation_us": even})
+            center = matches[1][0]
+            sample["center_t_us"] = float(center["t_us"])
+            sample["center_position_mm"] = {
+                axis: float(center[f"{axis}_mm"]) for axis in "xyz"
+                if f"{axis}_mm" in center
+            }
+            sample["increment_from_previous_turn"] = (
+                {"status": "unavailable", "reason": "no_adjacent_complete_previous_turn"}
+                if previous is None or n != previous[0] + 1 else
+                {"status": "observed", "response_delta": value - previous[1],
+                 "even_center_deviation_delta_us": even - previous[2]}
+            )
+            samples.append(sample)
+            previous = (n, value, even)
+        result[name] = {"status": "observed" if keys else "unavailable",
+                        "reason": None if keys else "fast_turn_events_not_logged",
+                        "particle_ids": ids, "samples": samples}
+    return {"qualification": "controlled_triplet_timing_diagnostic_only__not_additive_fwhm",
+            "event_identity": "fast_turn_n_and_sign_of_logged_z_mm__not_velocity_direction", **result}
+
+
 def analyze_controlled_aberration_first_batch(
     *, first_batch_log: Path, source_receipt_path: Path,
 ) -> dict[str, Any]:
@@ -1843,6 +2058,9 @@ def analyze_controlled_aberration_first_batch(
         "controlled_slow_energy_response": controlled_slow_energy,
         "controlled_transverse_x_response": controlled_x,
         "controlled_stage_responses": controlled_stage_responses,
+        "controlled_fast_turn_history": _controlled_fast_turn_history(
+            events, controlled_slow_energy, controlled_x,
+        ),
         "controlled_position_responses": controlled_position_responses,
         "evidence": {
             "first_batch_log": str(first_batch_log.resolve()),
@@ -1868,11 +2086,6 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
     cohort = observation.get("cohort_analysis")
     if not isinstance(cohort, dict) or cohort.get("event_integrity_passed") is not True:
         raise CandidateContractError("flight observation did not pass event integrity")
-    peak_context = {
-        "mass_th": cohort.get("particle_mass_th"),
-        "analysis_contract": cohort.get("peak_analysis_contract"),
-        "cohort_role": cohort.get("cohort_role"),
-    }
     try:
         particle_count = int(cohort["expected_particle_count"])
     except (KeyError, TypeError, ValueError) as error:
@@ -1887,6 +2100,7 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
         controlled_slow_energy_pair,
         controlled_transverse_x_pair,
         controlled_position_pairs,
+        controlled_slow_energy_pairs,
     ) = (
         _load_source_rows(
         run_dir=run_dir, manifest=manifest, expected_count=particle_count,
@@ -1894,6 +2108,48 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
     )
     batches = _event_batches(run_dir=run_dir, manifest=manifest, particle_count=particle_count)
     events, log_evidence = _load_selected_events(batches)
+
+    return analyze_source_z_energy_timing_events(
+        source_rows=source_rows, events=events, cohort=cohort,
+        source_evidence=source_evidence, log_evidence=log_evidence,
+        controlled_pair=controlled_pair,
+        controlled_slow_energy_pair=controlled_slow_energy_pair,
+        controlled_transverse_x_pair=controlled_transverse_x_pair,
+        controlled_position_pairs=controlled_position_pairs,
+        controlled_slow_energy_pairs=controlled_slow_energy_pairs,
+        collision_loss_diagnostic=_collision_loss_diagnostic(run_dir, observation, events),
+        completion_evidence={
+            "flight_run_manifest": {"path": str(manifest_path), "sha256": _sha256(manifest_path)},
+            "flight_observation": {"path": str(observation_path), "sha256": _sha256(observation_path)},
+        },
+    )
+
+
+def analyze_source_z_energy_timing_events(
+    *, source_rows: dict[int, dict[str, float]],
+    events: dict[tuple[str, int], list[dict[str, Any]]],
+    cohort: dict[str, Any], source_evidence: dict[str, Any],
+    log_evidence: list[dict[str, Any]], completion_evidence: dict[str, Any],
+    collision_loss_diagnostic: dict[str, Any],
+    controlled_pair: dict[str, Any] | None = None,
+    controlled_slow_energy_pair: dict[str, Any] | None = None,
+    controlled_transverse_x_pair: dict[str, Any] | None = None,
+    controlled_position_pairs: list[dict[str, Any]] | None = None,
+    controlled_slow_energy_pairs: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Analyze completed canonical data; loaders own sealing/source verification."""
+    particle_count = int(cohort["expected_particle_count"])
+    expected_ids = list(range(1, particle_count + 1))
+    if (particle_count <= 1 or cohort.get("event_integrity_passed") is not True
+            or cohort.get("observed_particle_ids") != expected_ids
+            or sorted(source_rows) != expected_ids):
+        raise CandidateContractError("diagnostic requires complete ordered source/event evidence")
+    peak_context = {
+        "mass_th": cohort.get("particle_mass_th"),
+        "analysis_contract": cohort.get("peak_analysis_contract"),
+        "cohort_role": cohort.get("cohort_role"),
+    }
+    controlled_position_pairs = controlled_position_pairs or []
 
     terminal_codes: dict[int, int] = {}
     for ion in expected_ids:
@@ -1923,6 +2179,17 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
         events=events,
         terminal_codes=terminal_codes,
     )
+    if controlled_slow_energy_pairs is not None and (
+        not isinstance(controlled_slow_energy_pairs, list)
+        or any(not isinstance(pair, dict) for pair in controlled_slow_energy_pairs)
+    ):
+        raise CandidateContractError("controlled slow-energy pairs must be a list of objects")
+    controlled_slow_energy_responses = [
+        _controlled_slow_energy_response(
+            pair=pair, source_rows=source_rows, events=events, terminal_codes=terminal_codes,
+        )
+        for pair in controlled_slow_energy_pairs or []
+    ]
     controlled_transverse_x_response = _controlled_transverse_x_response(
         pair=controlled_transverse_x_pair,
         source_rows=source_rows,
@@ -2044,7 +2311,7 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
         hit_source_z=hit_source_z,
         peak_context=peak_context,
     )
-    collision_loss_diagnostic = _collision_loss_diagnostic(run_dir, observation, events)
+
     return {
         "schema_version": 1,
         "role": "mrtof_source_z_energy_timing_diagnostic",
@@ -2081,9 +2348,18 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
         "collision_loss_diagnostic": collision_loss_diagnostic,
         "controlled_detector_focus": controlled_detector_focus,
         "controlled_slow_energy_response": controlled_slow_energy_response,
+        **({"controlled_slow_energy_responses": controlled_slow_energy_responses}
+           if controlled_slow_energy_responses else {}),
         "controlled_transverse_x_response": controlled_transverse_x_response,
         "controlled_position_responses": controlled_position_responses,
         "central_plane_focus_history": central_plane_focus_history,
+        "joint_initial_state_timing": _joint_initial_state_timing(source_rows, events, hit_ids),
+        "joint_initial_state_timing_z_polynomial": _joint_initial_state_timing(
+            source_rows, events, hit_ids, include_z_polynomial=True,
+        ),
+        "controlled_fast_turn_history": _controlled_fast_turn_history(
+            events, controlled_slow_energy_response, controlled_transverse_x_response,
+        ),
         "state_dispersion": ({
             "return_p2_pass_y": _distribution(
                 hit_source_z, p2_y, value_unit="mm", slope_unit="mm/mm",
@@ -2102,8 +2378,8 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
         }),
         "event_coverage": event_coverage,
         "evidence": {
-            "flight_run_manifest": {"path": str(manifest_path), "sha256": _sha256(manifest_path)},
-            "flight_observation": {"path": str(observation_path), "sha256": _sha256(observation_path)},
+            **completion_evidence,
+
             "native_logs": log_evidence,
             **source_evidence,
         },
@@ -2116,9 +2392,52 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
     }
 
 
+def analyze_completed_source_z_energy_timing(
+    *, run_config_path: Path, observation_path: Path, batch_merge_receipt_path: Path,
+) -> dict[str, Any]:
+    """Preseal adapter for completed evidence, never a synthetic success manifest."""
+    config = _load_object(run_config_path, "completed flight run config")
+    observation = _load_object(observation_path, "completed flight observation")
+    cohort = observation.get("cohort_analysis")
+    if not isinstance(cohort, dict) or cohort.get("event_integrity_passed") is not True:
+        raise CandidateContractError("completed observation did not pass event integrity")
+    particle_count = int(cohort["expected_particle_count"])
+    inputs = config.get("inputs")
+    if not isinstance(inputs, dict):
+        raise CandidateContractError("completed run config lacks source inputs")
+    try:
+        receipt_path = Path(inputs["bunch_source_receipt"])
+        source_manifest_path = Path(inputs["bunch_source_run_manifest"])
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError("completed run config lacks source-owner paths") from error
+    source_rows, source_evidence, z_pair, energy_pair, x_pair, position_pairs, energy_pairs = _load_source_rows_from_paths(
+        receipt_path=receipt_path, source_manifest_path=source_manifest_path,
+        run_config_path=run_config_path, expected_count=particle_count,
+    )
+    merge = _load_object(batch_merge_receipt_path, "completed batch-log merge receipt")
+    events, log_evidence = _load_selected_events(_batches_from_receipt(merge, particle_count))
+    return analyze_source_z_energy_timing_events(
+        source_rows=source_rows, events=events, cohort=cohort,
+        source_evidence=source_evidence, log_evidence=log_evidence,
+        controlled_pair=z_pair, controlled_slow_energy_pair=energy_pair,
+        controlled_transverse_x_pair=x_pair, controlled_position_pairs=position_pairs,
+        controlled_slow_energy_pairs=energy_pairs,
+        collision_loss_diagnostic=_collision_loss_diagnostic(run_config_path.parent, observation, events),
+        completion_evidence={
+            "publication_stage": "completed_unsealed__not_a_success_manifest",
+            "flight_run_config": {"path": str(run_config_path), "sha256": _sha256(run_config_path)},
+            "flight_observation": {"path": str(observation_path), "sha256": _sha256(observation_path)},
+            "batch_merge_receipt": {"path": str(batch_merge_receipt_path), "sha256": _sha256(batch_merge_receipt_path)},
+        },
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path)
+    parser.add_argument("--completed-run-config", type=Path)
+    parser.add_argument("--observation", type=Path)
+    parser.add_argument("--batch-merge-receipt", type=Path)
     parser.add_argument("--first-batch-log", type=Path)
     parser.add_argument("--source-receipt", type=Path)
     parser.add_argument("--te1-reference", type=Path)
@@ -2143,6 +2462,20 @@ def main() -> int:
     parser.add_argument("--root-coordinate", type=float)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    completed = (args.completed_run_config, args.observation, args.batch_merge_receipt)
+    if any(value is not None for value in completed):
+        if not all(value is not None for value in completed) or any(
+            value is not None and value is not False for name, value in vars(args).items()
+            if name not in {"completed_run_config", "observation", "batch_merge_receipt", "output"}
+        ):
+            parser.error("completed-run config, observation, and merge receipt require their own complete mode")
+        result = analyze_completed_source_z_energy_timing(
+            run_config_path=args.completed_run_config, observation_path=args.observation,
+            batch_merge_receipt_path=args.batch_merge_receipt,
+        )
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8", newline="\n")
+        return 0
     first_batch_arguments = (args.first_batch_log, args.source_receipt)
     if any(value is not None for value in first_batch_arguments) and not all(
         value is not None for value in first_batch_arguments
@@ -2233,6 +2566,8 @@ def main() -> int:
             json.dumps(result, indent=2) + "\n", encoding="utf-8", newline="\n"
         )
     elif all(value is not None for value in root_arguments) and args.te1_coordinate is None:
+        if args.baseline_coordinate is not None:
+            parser.error("baseline coordinate is valid only for a fine probe or comparison")
         if any(value is not None for value in focus_comparison_arguments):
             parser.error("focus diagnostic overrides are valid only for TE1 comparison")
         materialize_te1_variation_from_diagnostics(
@@ -2248,7 +2583,23 @@ def main() -> int:
         )
     elif (
         args.te1_reference is not None
+        and args.baseline_coordinate is not None
+        and args.te1_coordinate is None
+        and all(value is not None for value in gate_paths)
+        and all(value is None for value in root_arguments[1:])
+        and all(value is None for value in comparison_arguments)
+        and all(value is None for value in focus_comparison_arguments)
+    ):
+        materialize_te1_fine_probe(
+            reference_path=args.te1_reference,
+            baseline_coordinate=args.baseline_coordinate, output_path=args.output,
+            mirror_period_path=args.mirror_period,
+            mirror_correction_path=args.mirror_correction, contract_path=args.contract,
+        )
+    elif (
+        args.te1_reference is not None
         and args.te1_coordinate is not None
+        and args.baseline_coordinate is None
         and all(value is None for value in root_arguments[1:])
         and all(value is None for value in comparison_arguments)
         and all(value is None for value in focus_comparison_arguments)

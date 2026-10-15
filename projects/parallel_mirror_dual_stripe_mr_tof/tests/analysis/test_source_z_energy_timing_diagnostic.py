@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
@@ -15,12 +16,19 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_sched
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic import (
     _association,
+    _controlled_fast_turn_history,
+    _joint_initial_state_timing,
+    _load_source_rows_from_paths,
+    analyze_completed_source_z_energy_timing,
     analyze_controlled_aberration_first_batch,
     analyze_source_z_energy_timing,
+    analyze_source_z_energy_timing_events,
     build_te1_reference_from_mirror_jacobian,
     compare_te1_diagnostics,
     materialize_scaled_te1_variation,
+    materialize_te1_fine_probe,
     materialize_te1_variation_from_diagnostics,
+    main,
 )
 
 
@@ -350,7 +358,9 @@ def _fixture(
         }
     _write_json(
         run_config,
-        {"schema_version": 1, "role": "test_flight_config", "parameters": parameters},
+        {"schema_version": 1, "role": "test_flight_config", "parameters": parameters,
+         "inputs": {"bunch_source_receipt": str(receipt_copy),
+                    "bunch_source_run_manifest": str(source_manifest)}},
     )
     manifest = run / "run_manifest.json"
     _write_json(manifest, {
@@ -470,6 +480,88 @@ def _first_batch_fixture(root: Path) -> tuple[Path, Path]:
 
 
 class SourceZEnergyTimingDiagnosticTests(unittest.TestCase):
+    def test_multiple_slow_energy_responses_reuse_triplets_without_legacy_changes(self) -> None:
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
+
+        with tempfile.TemporaryDirectory() as directory:
+            run = _fixture(Path(directory), detector_hit_ids={1, 2, 3, 4})
+            base_events = [e for e in parse_events((run / "logs/native_two_prism_flight__batch01.log").read_text())
+                           if e["ion"] == 1]
+            observation = json.loads((run / "results/two_prism_trial_observation.json").read_text())
+            cohort = observation["cohort_analysis"]
+            cohort.update(expected_particle_count=7, observed_particle_ids=list(range(1, 8)),
+                          detector_hit_count=7, electrode_collision_count=0)
+            rows, events, pairs = {}, {}, []
+            offsets = [0, -.1, .1, -.2, .2, -.3, .3]
+            for ion, offset in enumerate(offsets, 1):
+                rows[ion] = dict(tob_us=0., mass_th=524., charge_e=1., x_mm=0., y_mm=-55.,
+                                 z_mm=32., direction_x=0., direction_y=1., direction_z=0.,
+                                 kinetic_energy_ev=5. + offset)
+                for event in base_events:
+                    active = dict(event, ion=ion, t_us=event["t_us"] + offset * .1)
+                    events.setdefault((event["kind"], ion), []).append(active)
+            for index, span in enumerate([.1, .2, .3]):
+                pairs.append(dict(coordinate="release_slow_y_kinetic_energy_ev",
+                                  negative_particle_id=2 + 2 * index, positive_particle_id=3 + 2 * index,
+                                  half_span_ev_per_charge=span, coordinate_span_ev=2 * span,
+                                  fixed_variables="position__direction__mass__charge__birth_time"))
+            kwargs = dict(source_rows=rows, events=events, cohort=cohort, source_evidence={},
+                          log_evidence=[], completion_evidence={}, collision_loss_diagnostic={})
+            baseline = analyze_source_z_energy_timing_events(**kwargs)
+            result = analyze_source_z_energy_timing_events(**kwargs, controlled_slow_energy_pairs=pairs)
+            responses = result.pop("controlled_slow_energy_responses")
+            self.assertEqual(result, baseline)
+            self.assertEqual([r["particle_ids"] for r in responses], [[2, 1, 3], [4, 1, 5], [6, 1, 7]])
+            self.assertTrue(all(r["status"] == "observed" for r in responses))
+            for response in responses:
+                self.assertAlmostEqual(response["stage_time_response"]["detector"]
+                                       ["dt_d_release_slow_energy_us_per_ev"], .1)
+            damaged = [dict(pairs[0], coordinate_span_ev=.3)]
+            with self.assertRaises(CandidateContractError):
+                analyze_source_z_energy_timing_events(**kwargs, controlled_slow_energy_pairs=damaged)
+            loss_events = {key: [dict(event) for event in values] for key, values in events.items()}
+            loss_events.pop(("detector", 7))
+            loss_events[("terminal", 7)][0]["splat"] = -1
+            loss_cohort = dict(cohort, detector_hit_count=6, electrode_collision_count=1)
+            lost = analyze_source_z_energy_timing_events(
+                **dict(kwargs, events=loss_events, cohort=loss_cohort), controlled_slow_energy_pairs=pairs,
+            )["controlled_slow_energy_responses"][2]
+            self.assertEqual(lost["terminal_codes"], [1, 1, -1])
+            self.assertEqual(lost["stage_time_response"]["detector"]["status"], "unavailable")
+            self.assertEqual(lost["stage_time_response"]["detector"]["event_counts"], [1, 1, 0])
+
+    def test_multi_energy_selection_keeps_only_complete_original_center_triplets(self) -> None:
+        for interval, expected in [((1, 4), [2]), ((14, 17), [])]:
+            with self.subTest(interval=interval), tempfile.TemporaryDirectory() as directory:
+                run = _fixture(Path(directory), selected_parent_interval=interval)
+                cfg_path = run / "run_config.json"
+                cfg = json.loads(cfg_path.read_text())
+                receipt_path = Path(cfg["inputs"]["bunch_source_receipt"])
+                receipt = json.loads(receipt_path.read_text())
+                receipt["controlled_slow_energy_pairs"] = [
+                    dict(coordinate="release_slow_y_kinetic_energy_ev", negative_particle_id=n,
+                         positive_particle_id=p, half_span_ev_per_charge=h, coordinate_span_ev=2*h,
+                         fixed_variables="position__direction__mass__charge__birth_time")
+                    for n, p, h in [(2, 3, .1), (4, 5, .2), (14, 15, .3)]
+                ]
+                _write_json(receipt_path, receipt)
+                source_manifest_path = Path(cfg["inputs"]["bunch_source_run_manifest"])
+                manifest = json.loads(source_manifest_path.read_text())
+                for record in manifest["outputs"]:
+                    if Path(record["path"]).name == "bunch_source_receipt.json":
+                        original = Path(record["path"])
+                        _write_json(original, receipt)
+                        record.update(_record(original))
+                _write_json(source_manifest_path, manifest)
+                selected = resolve_bunch_source_interval(receipt_path=receipt_path,
+                                                        particle_id_min=interval[0], particle_id_max=interval[1])
+                cfg["parameters"]["source_selection"] = selected["source_cohort"]["selection"]
+                cfg["parameters"]["source_cohort"] = selected["source_cohort"]
+                _write_json(cfg_path, cfg)
+                loaded = _load_source_rows_from_paths(receipt_path=receipt_path,
+                    source_manifest_path=source_manifest_path, run_config_path=cfg_path, expected_count=4)
+                self.assertEqual([p["negative_particle_id"] for p in loaded[-1]], expected)
+
     def test_comparison_consumes_mean_based_metric_and_rejects_mixed_settings(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -617,6 +709,80 @@ class SourceZEnergyTimingDiagnosticTests(unittest.TestCase):
         self.assertEqual(
             result["target_mirror_voltages_v"], [0.0, -10.25, -19.5, 29.25, 39.0]
         )
+
+    def test_fine_probe_is_relative_to_actual_nonzero_anchor_voltages(self) -> None:
+        base = [0.0, -5920.61, -2612.98, 4190.46, 6029.16]
+        direction = [0.26534181722826355, -1.3064907730209914,
+                     0.8123479538407015, 0.7579824137295434]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reference = _te1_reference(root / "reference.json")
+            reference_data = json.loads(reference.read_text())
+            reference_data.update(base_mirror_voltages_v=base,
+                                  voltage_delta_v=direction,
+                                  target_mirror_voltages_v=[0.0, *(v + d for v, d in
+                                      zip(base[1:], direction, strict=True))])
+            _write_json(reference, reference_data)
+            period, correction, contract = _te1_gate_inputs(root)
+            for anchor in (0.0, -22.894154431673797, -25.0):
+                with self.subTest(anchor=anchor):
+                    result = materialize_te1_fine_probe(
+                        reference_path=reference, baseline_coordinate=anchor,
+                        output_path=root / "probe.json", mirror_period_path=period,
+                        mirror_correction_path=correction, contract_path=contract,
+                    )
+                    current = [v + anchor * d for v, d in
+                               zip(base[1:], direction, strict=True)]
+                    expected_delta = -0.0005 / max(abs(d / v) for d, v in
+                                                   zip(direction, current, strict=True))
+                    self.assertAlmostEqual(result["coordinate"], anchor + expected_delta)
+                    self.assertLess(result["coordinate"], anchor)
+                    relative = [abs((target - start) / start) for target, start in
+                                zip(result["target_mirror_voltages_v"][1:], current, strict=True)]
+                    self.assertAlmostEqual(max(relative), 0.0005, places=14)
+                    self.assertEqual(result["base_mirror_voltages_v"], base)
+
+    def test_fine_probe_rejects_invalid_anchor_fraction_and_active_zero_voltage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reference = _te1_reference(root / "reference.json")
+            period, correction, contract = _te1_gate_inputs(root)
+            for anchor in (float("nan"), float("inf"), 10.0):
+                with self.subTest(anchor=anchor), self.assertRaises(CandidateContractError):
+                    materialize_te1_fine_probe(
+                        reference_path=reference, baseline_coordinate=anchor,
+                        output_path=root / "probe.json", mirror_period_path=period,
+                        mirror_correction_path=correction, contract_path=contract,
+                    )
+            document = json.loads(contract.read_text())
+            for fraction in (0.0, 1.0, float("nan")):
+                document["downstream_fixed_grid_workpoint_profile"]["jacobian_relative_step_tiers"]["fine"] = fraction
+                _write_json(contract, document)
+                with self.subTest(fraction=fraction), self.assertRaises(CandidateContractError):
+                    materialize_te1_fine_probe(
+                        reference_path=reference, baseline_coordinate=0.0,
+                        output_path=root / "probe.json", mirror_period_path=period,
+                        mirror_correction_path=correction, contract_path=contract,
+                    )
+
+    def test_existing_cli_derives_fine_probe_or_keeps_explicit_absolute_coordinate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reference = _te1_reference(root / "reference.json")
+            period, correction, contract = _te1_gate_inputs(root)
+            output = root / "probe.json"
+            arguments = ["diagnostic", "--te1-reference", str(reference),
+                         "--mirror-period", str(period), "--mirror-correction", str(correction),
+                         "--contract", str(contract), "--output", str(output)]
+            with patch("sys.argv", [*arguments, "--baseline-coordinate", "-2"]):
+                self.assertEqual(main(), 0)
+            self.assertAlmostEqual(json.loads(output.read_text())["coordinate"], -2.004)
+            with patch("sys.argv", [*arguments, "--te1-coordinate", "-2"]):
+                self.assertEqual(main(), 0)
+            self.assertEqual(json.loads(output.read_text())["coordinate"], -2.0)
+            with patch("sys.argv", [*arguments, "--te1-coordinate", "-2",
+                                    "--baseline-coordinate", "-2"]), self.assertRaises(SystemExit):
+                main()
 
     def test_bare_mirror_prediction_is_advisory_for_terminal_te1(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1141,6 +1307,158 @@ class DescriptiveAssociationTests(unittest.TestCase):
             with self.subTest(xs=xs, ys=ys):
                 with self.assertRaises(CandidateContractError):
                     _association(xs, ys, "us/mm")
+
+
+class AutomaticAberrationOutputTests(unittest.TestCase):
+    def test_z_polynomial_fit_recovers_curvature_and_uses_all_source_states(self) -> None:
+        states, events = {}, {}
+        for ion in range(1, 121):
+            y, z, energy, x = ion % 3, 32 + (ion % 7 - 3) / 10, 5 + ion % 11 / 10, ion % 5 / 10
+            dz = z - 32
+            states[ion] = {"y_mm": y, "z_mm": z, "x_mm": x,
+                           "kinetic_energy_ev": energy, "tob_us": ion / 10,
+                           "direction_x": 0, "direction_y": 1, "direction_z": 0}
+            events[("detector", ion)] = [{"t_us": ion / 10 + 100 + 2*y - 3*dz + 4*energy + 5*x*x - 6*dz**2 + 7*dz**3}]
+        hit_ids = list(states)[:-1]
+        baseline = _joint_initial_state_timing(states, events, hit_ids)
+        fitted = _joint_initial_state_timing(states, events, hit_ids, include_z_polynomial=True)
+        origin = sum(state["z_mm"] for state in states.values()) / len(states)
+        shift = origin - 32
+        self.assertAlmostEqual(fitted["z_expansion_origin"]["z_mm"], origin)
+        self.assertEqual(fitted["z_expansion_origin"]["source_particle_count"], 120)
+        expected = (2, -3 - 12*shift + 21*shift**2, 4, 5, -6 + 21*shift, 7)
+        for name, value in zip(fitted["predictors"], expected, strict=True):
+            self.assertAlmostEqual(fitted["coefficients"][name]["value"], value, places=8)
+        self.assertEqual(fitted["design_rank"], 7)
+        self.assertAlmostEqual(fitted["r_squared"], 1)
+        self.assertEqual(fitted["residual_degrees_of_freedom"], 112)
+        self.assertNotIn("z_expansion_origin", baseline)
+        self.assertEqual(baseline, _joint_initial_state_timing(states, events, hit_ids))
+
+    def test_z_polynomial_missing_samples_and_invariants_are_unavailable(self) -> None:
+        states = {ion: {"y_mm": 0, "z_mm": ion, "x_mm": 0,
+                       "kinetic_energy_ev": 5, "tob_us": 0,
+                       "direction_x": 0, "direction_y": 1, "direction_z": 0}
+                  for ion in range(1, 9)}
+        events = {("detector", ion): [{"t_us": ion}] for ion in states}
+        for ids in ([], [1, 2], list(states)[:7]):
+            result = _joint_initial_state_timing(states, events, ids, include_z_polynomial=True)
+            self.assertEqual(result["reason"], "insufficient_residual_degrees_of_freedom")
+        result = _joint_initial_state_timing(states, events, list(states), include_z_polynomial=True)
+        self.assertEqual(result["reason"], "invariant_predictor")
+        self.assertEqual(_joint_initial_state_timing({}, {}, [], include_z_polynomial=True)["status"], "unavailable")
+
+    def test_joint_fit_recovers_partial_coefficients_and_birth_clock(self) -> None:
+        states, events = {}, {}
+        for ion in range(1, 25):
+            y, z, energy, x = ion % 3, ion % 5, 5 + ion % 7 / 10, ion % 4 / 10
+            states[ion] = {"y_mm": y, "z_mm": z, "x_mm": x,
+                           "kinetic_energy_ev": energy, "tob_us": ion / 10,
+                           "direction_x": 0, "direction_y": 2, "direction_z": 0}
+            events[("detector", ion)] = [{"t_us": ion / 10 + 100 + 2*y - 3*z + 4*energy + 5*x*x}]
+        fitted = _joint_initial_state_timing(states, events, list(states))
+        self.assertEqual(fitted["status"], "observed")
+        self.assertEqual(fitted["design_rank"], 5)
+        for name, expected in zip(fitted["predictors"], (2, -3, 4, 5), strict=True):
+            self.assertAlmostEqual(fitted["coefficients"][name]["value"], expected)
+        self.assertAlmostEqual(fitted["r_squared"], 1)
+        self.assertNotIn("fwhm", fitted)
+
+    def test_joint_invariant_and_small_cohort_are_unavailable(self) -> None:
+        states = {ion: {"y_mm": 0, "z_mm": ion, "x_mm": 0,
+                       "kinetic_energy_ev": 5, "tob_us": 0,
+                       "direction_x": 0, "direction_y": 1, "direction_z": 0}
+                  for ion in range(1, 8)}
+        events = {("detector", ion): [{"t_us": ion}] for ion in states}
+        self.assertEqual(_joint_initial_state_timing(states, events, [1, 2])["status"], "unavailable")
+        self.assertEqual(_joint_initial_state_timing(states, events, list(states))["reason"], "invariant_predictor")
+        states[1]["direction_y"] = float("nan")
+        with self.assertRaises(CandidateContractError):
+            _joint_initial_state_timing(states, events, list(states))
+
+    def test_fast_turn_controlled_slopes_and_even_increments(self) -> None:
+        events = {}
+        for ion, offset in ((2, -0.05), (1, 0), (3, 0.05)):
+            events[("fast_turn", ion)] = [
+                {"n": n, "z_mm": (-1)**n * 280, "t_us": n*10 + n*offset}
+                for n in (1, 2)]
+        for ion, x in ((4, -0.1), (1, 0), (5, 0.1)):
+            if ion == 1:
+                continue
+            events[("fast_turn", ion)] = [
+                {"n": n, "z_mm": (-1)**n * 280, "t_us": n*10 + 2*n*x*x}
+                for n in (1, 2)]
+        history = _controlled_fast_turn_history(
+            events, {"particle_ids": [2, 1, 3], "release_slow_energy_span_ev": .1},
+            {"particle_ids": [4, 1, 5], "initial_x_mm": [-.1, 0, .1]})
+        slow = history["release_slow_energy"]["samples"]
+        transverse = history["initial_x"]["samples"]
+        self.assertAlmostEqual(slow[1]["dt_d_release_slow_energy_us_per_ev"], 2)
+        self.assertAlmostEqual(slow[1]["increment_from_previous_turn"]["response_delta"], 1)
+        self.assertAlmostEqual(transverse[1]["even_dt_per_initial_x_squared_us_per_mm2"], 4)
+        self.assertAlmostEqual(transverse[1]["increment_from_previous_turn"]["even_center_deviation_delta_us"], .02)
+
+    def test_fast_turn_missing_duplicate_and_wrong_side_do_not_pair(self) -> None:
+        control = {"particle_ids": [2, 1, 3], "release_slow_energy_span_ev": .1}
+        events = {("fast_turn", ion): [{"n": 1, "z_mm": -280, "t_us": 10}]
+                  for ion in (1, 2, 3)}
+        events[("fast_turn", 3)][0]["z_mm"] = 280
+        history = _controlled_fast_turn_history(events, control, None)
+        self.assertTrue(all(row["status"] == "unavailable" for row in history["release_slow_energy"]["samples"]))
+        events[("fast_turn", 3)][0]["z_mm"] = -280
+        events[("fast_turn", 2)] *= 2
+        self.assertEqual(_controlled_fast_turn_history(events, control, None)["release_slow_energy"]["samples"][0]["event_counts"], [2, 1, 1])
+
+    def test_fast_history_without_control_is_explicitly_unavailable(self) -> None:
+        result = _controlled_fast_turn_history({}, None, None)
+        self.assertEqual(result["release_slow_energy"]["reason"], "controlled_triplet_not_present")
+        self.assertEqual(result["initial_x"]["status"], "unavailable")
+
+    def test_complete_analyzer_preserves_hit_scope_and_existing_stage_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = analyze_source_z_energy_timing(_fixture(Path(tmp)))
+        self.assertEqual(result["joint_initial_state_timing"]["particle_ids"], [1, 2, 3])
+        self.assertEqual(result["joint_initial_state_timing"]["status"], "unavailable")
+        self.assertIn("initial_z_association", result["stages"]["detector"]["absolute_time"])
+        self.assertEqual(result["controlled_fast_turn_history"]["initial_x"]["status"], "unavailable")
+
+    def test_preseal_same_core_matches_sealed_and_rejects_incomplete_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _fixture(Path(tmp))
+            sealed = analyze_source_z_energy_timing(run)
+            arguments = {"run_config_path": run / "run_config.json",
+                         "observation_path": run / "results/two_prism_trial_observation.json",
+                         "batch_merge_receipt_path": run / "results/batch_log_merge_receipt.json"}
+            completed = analyze_completed_source_z_energy_timing(**arguments)
+            self.assertEqual({k: v for k, v in sealed.items() if k != "evidence"},
+                             {k: v for k, v in completed.items() if k != "evidence"})
+            self.assertNotIn("flight_run_manifest", completed["evidence"])
+            receipt = json.loads(arguments["batch_merge_receipt_path"].read_text())
+            receipt["all_batch_losses_retained"] = False
+            _write_json(arguments["batch_merge_receipt_path"], receipt)
+            with self.assertRaises(CandidateContractError):
+                analyze_completed_source_z_energy_timing(**arguments)
+
+    def test_preseal_rejects_modified_source_and_batch_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _fixture(Path(tmp))
+            arguments = {"run_config_path": run / "run_config.json",
+                         "observation_path": run / "results/two_prism_trial_observation.json",
+                         "batch_merge_receipt_path": run / "results/batch_log_merge_receipt.json"}
+            batch = json.loads(arguments["batch_merge_receipt_path"].read_text())["batches"][0]
+            Path(batch["path"]).write_text("changed log", encoding="utf-8")
+            with self.assertRaises(CandidateContractError):
+                analyze_completed_source_z_energy_timing(**arguments)
+            config = json.loads(arguments["run_config_path"].read_text())
+            Path(config["inputs"]["bunch_source_receipt"]).write_text("{}", encoding="utf-8")
+            with self.assertRaises(CandidateContractError):
+                analyze_completed_source_z_energy_timing(**arguments)
+
+
+class DiagnosticRunnerResourcePolicyTests(unittest.TestCase):
+    def test_capacity_threshold_has_no_warning_override(self) -> None:
+        runner = Path(__file__).resolve().parents[2] / "analysis/run_source_z_energy_timing_diagnostic.ps1"
+        self.assertNotIn("CapacityThresholdAction", runner.read_text(encoding="utf-8-sig"))
 
 
 if __name__ == "__main__":

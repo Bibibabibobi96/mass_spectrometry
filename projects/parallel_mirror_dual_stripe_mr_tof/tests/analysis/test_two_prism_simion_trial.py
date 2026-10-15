@@ -4,7 +4,9 @@ import hashlib
 import json
 import copy
 import math
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -23,10 +25,14 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial
     _apply_trajectory_step_scale,
     _accelerator_safe_exit_observation,
     _bunch_center_workpoint_validation,
+    _bunch_center_stripe_stage_validation,
+    _first_slow_turn_signature,
+    _bunch_center_prism_handoff_validation,
     _load_frozen_accelerator_pulse_schedule,
     _mirror_regions,
     _resolve_trial_geometry,
     _fixed_mirror_stripe_source_state,
+    _seed_theory_provenance,
     _schema5_native_source_state,
     _source_transverse_reference,
     _single_center_source_state,
@@ -51,6 +57,257 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as caught:
                 two_prism_simion_trial.main()
         self.assertEqual(caught.exception.code, 2)
+
+    def _materialize_static_stripe_fixture(self, root, *, mode="comsol_static_scalar_v",
+                                          override=None, scale=1., mismatch=None):
+        """Exercise the real materializer with small inputs, without solver assets."""
+        project = Path(__file__).resolve().parents[2]
+        contract = json.loads((project / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
+        contract["simion"]["nonaccelerator_scale"] = scale
+        mirrors, endpoints = [0., -5900., -2500., 4100., 6000.], [100., 80., 0.]
+        values = [v * scale for v in mirrors * 2 + [-27., -27., 0., 0., 0., 190., -186., 0., 0., 0.]]
+        oa = {"grounded_enclosure": {"component_electrode_id": 1, "local_pa_electrode_id": 1},
+              "repeller": {"component_electrode_id": 2, "local_pa_electrode_id": 2},
+              "grid_supports": [{"component_electrode_id": i, "local_pa_electrode_id": i} for i in (3, 4)],
+              "rings": []}
+        binding = dict(mode=mode, authority=dict(analyzer_electrode_voltages_v=values,
+                       assembly={"accelerator_resolved_electrodes": oa},
+                       component_voltages_v=[dict(component_namespace="accelerator", component_electrode_id=i,
+                                                  voltage_v=v) for i, v in enumerate([0., *endpoints], 1)]),
+                       sources={}, records={}, grid={}, geometry={}, instances=[{}, {"pa_path": "collision.pa"},
+                       {"origin_mm": [0., 0., 0.]}], refinement_windows=[], accelerator_front_z_mm=0.,
+                       manifest="native_manifest.json", native_solver_numerics={})
+        p1 = 190.
+        if mismatch == "prism": p1 += 1.
+        elif mismatch == "mirror": values[1] += 1.
+        elif mismatch == "oa": endpoints[0] += 1.
+        paths = {}
+        for name, data in {"contract": contract, "mirror": {}, "stripe": {}, "fixed": {},
+                           "accelerator": {"endpoint_voltages_v": endpoints}, "provider": {}, "campaign": {}}.items():
+            paths[name] = root / f"{name}.json"
+            paths[name].write_text(json.dumps(data), encoding="utf-8")
+        resolved = dict(detector={"box": [-1., -60., -40., 1., -50., -30.]},
+                        two_prism_low_field_reference_section={
+                            "qualification": "candidate_reference_section__not_a_zero_field_claim",
+                            "reference_plane_project_z_mm": 33.,
+                            "transit_aperture_project_mm": {"x_mm": [-1., 1.], "y_mm": [-10., 10.]}})
+        seed = {"stripe_biases_v": [-20., 50.]}
+        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial"
+        with patch(module + ".load_contract", side_effect=lambda *a, **k: copy.deepcopy(contract)), \
+             patch(module + "._fixed_mirror_stripe_source_state", return_value=(seed, 5., 4372., mirrors, None)), \
+             patch(module + "._p2_handoff_targets", return_value=(0., .1, .001)), \
+             patch(module + "._accelerator_energy_binding", return_value=dict(applied_net_gain_parameter_v=4372.,
+                   target_axial_energy_per_charge_v=4372., finite_3d_gain_correction_v=0.)), \
+             patch(module + "._accelerator_ring_voltages", return_value=[]), \
+             patch(module + ".load_binding", return_value=binding) as loader, \
+             patch(module + "._resolve_trial_geometry", return_value=resolved), \
+             patch(module + ".resolve_accelerator_iob_origin", return_value=[0., 0., 0.]), \
+             patch(module + ".resolve_converging_prism_target", return_value={} if mode else None), \
+             patch(module + "._mirror_regions", return_value={"negative": [-300., -100.], "positive": [100., 300.]}), \
+             patch(module + "._accelerator_geometric_exit_reference", return_value=None), \
+             patch(module + "._scalar_field_lua_fields", return_value=""), \
+             patch(module + "._collision_geometry_projection", return_value={}):
+            result = two_prism_simion_trial.materialize_trial(
+                contract_path=paths["contract"], accelerator_geometry_contract_path=paths["contract"],
+                trajectory_contract_path=paths["contract"], reviewed_contract_path=paths["contract"],
+                mirror_summary_path=paths["mirror"], stripe_summary_path=paths["stripe"],
+                fixed_mirror_stripe_authority_path=paths["fixed"], accelerator_receipt_path=paths["accelerator"],
+                prism_1_v=p1, prism_2_v=-186., stripe_biases_override_v=override,
+                runtime_fast_adjust_enable=False, pulse_accelerator_until_initial_exit=False,
+                accelerator_safe_exit_only=False, accelerator_pulse_schedule_path=None, trajectory_profile_id=None,
+                fly2_path=root / "source.fly2", sidecar_path=root / "operating.lua", receipt_path=root / "trial.json",
+                accelerator_provider_plan_path=paths["provider"], accelerator_resolved_campaign_path=paths["campaign"],
+                field_binding_path=root / "binding.json" if mode else None)
+            self.assertEqual(loader.call_count, 1 if mode else 0)
+        return result, (root / "operating.lua").read_text(encoding="utf-8")
+
+    def test_static_stripe_default_and_explicit_match_use_field_before_clean_phase(self):
+        for mode in ("comsol_static_scalar_v", "native_static_pa"):
+            for scale in (1., 2.):
+                for override in (None, (-27., 0.)):
+                    with self.subTest(mode=mode, scale=scale, override=override), tempfile.TemporaryDirectory() as directory:
+                        result, lua = self._materialize_static_stripe_fixture(Path(directory), mode=mode,
+                                                                             override=override, scale=scale)
+                        self.assertEqual(result["stripe_biases_v"], [-27., 0.])
+                        self.assertEqual(result["analyzer_electrode_voltages_v"][10:14], [-27. * scale] * 2 + [0.] * 2)
+                        self.assertIn("stripe_biases_v = { -27, 0 }", lua)
+                        self.assertEqual(result["seed_theory_provenance"]["seed_stripe_biases_v"], [-20., 50.])
+
+    def test_static_stripe_explicit_mismatch_and_other_voltage_mismatches_still_fail(self):
+        for mode in ("comsol_static_scalar_v", "native_static_pa"):
+            for mismatch, override in ((None, (-26., 0.)), ("prism", None), ("mirror", None), ("oa", None)):
+                with self.subTest(mode=mode, mismatch=mismatch), tempfile.TemporaryDirectory() as directory:
+                    with self.assertRaisesRegex(ValueError, "voltages differ"):
+                        self._materialize_static_stripe_fixture(Path(directory), mode=mode,
+                                                               override=override, mismatch=mismatch)
+
+    def test_adjustable_flight_without_field_binding_keeps_seed_stripes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, lua = self._materialize_static_stripe_fixture(Path(directory), mode=None)
+            self.assertEqual(result["stripe_biases_v"], [-20., 50.])
+            self.assertIn("stripe_biases_v = { -20, 50 }", lua)
+
+    def test_converging_clean_phase_energy_uses_actual_state_and_source_authority(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_dual_stripe_l0_math import converging_prism_fixture
+        _, _, target = converging_prism_fixture()
+        trial = {"prism_handoff_target": target, "stripe_biases_v": [-27.36410265968425, 0.],
+                 "particle_mass_th": 524., "charge_state": 1,
+                 "source_center_state": {"mass_th": 524., "charge_e": 1}}
+        events = [{"kind": "pre_origin_positive_mirror_turn", "ion": 1, "t_us": 1.},
+                  {"kind": "central_plane_directional", "ion": 1, "n": 1, "direction_z": -1,
+                   "t_us": 2., "x_mm": 0., "y_mm": 9.29765627041, "z_mm": 0.,
+                   "vx_mm_us": 0., "vy_mm_us": 1.32963441921, "vz_mm_us": -40.1278924103}]
+        observe = two_prism_simion_trial._converging_prism_energy_observation
+        result = observe(events, trial)
+        self.assertAlmostEqual(result[two_prism_simion_trial.CONVERGING_PRISM_ENERGY_RESIDUAL], -.36835835613722345)
+        self.assertEqual(result["first_clean_phase_state"]["position_mm"], [0., 9.29765627041, 0.])
+        changed = copy.deepcopy(trial)
+        changed["stripe_biases_v"][0] -= 1.
+        self.assertNotEqual(observe(events, changed)["design_potential_delta_v"], result["design_potential_delta_v"])
+        for kind in ("missing_plane", "missing_z", "wrong_z", "duplicate", "order", "dirty", "charge", "mass", "s2"):
+            bad_events, bad_trial = copy.deepcopy(events), copy.deepcopy(trial)
+            if kind == "missing_plane": bad_events.pop()
+            elif kind == "missing_z": bad_events[-1].pop("z_mm")
+            elif kind == "wrong_z": bad_events[-1]["z_mm"] = 10.
+            elif kind == "duplicate": bad_events.append(copy.deepcopy(bad_events[-1]))
+            elif kind == "order": bad_events[-1]["t_us"] = .5
+            elif kind == "dirty": bad_events[-1]["y_mm"] = 0.
+            elif kind == "charge": bad_trial["charge_state"] = -1
+            elif kind == "mass": bad_trial["source_center_state"]["mass_th"] = 523.
+            else: bad_trial["stripe_biases_v"][1] = 1.
+            with self.subTest(kind=kind), self.assertRaises(CandidateContractError):
+                observe(bad_events, bad_trial)
+
+    def test_launcher_preloads_only_static_ordinary_collision_without_saving(self) -> None:
+        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        if not lua.is_file():
+            self.skipTest("standalone vendor Lua unavailable; no commercial execution")
+        launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
+        fixture = '''
+local launcher, iob, expected = arg[1], arg[2], arg[3]
+local calls = 0
+local pa = {refinable=true, refined=false}
+simion = {pas={open=function(_,path)
+  assert(path=='frozen collision.pa'); calls=calls+1; return pa
+end},command=function(command)
+  assert(command:match('--retain%-trajectories=0'))
+  assert((command:match('--remove%-pas=0')~=nil)==(expected=='ordinary'))
+end}
+arg={iob}
+assert(loadfile(launcher))()
+assert(calls==(expected=='ordinary' and 1 or 0))
+assert(pa.refined==false)
+assert(pa.refinable==(expected~='ordinary'))
+print('COLLISION_PRELOAD_PASS')
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            harness = root / "fixture.lua"
+            harness.write_text(fixture, encoding="utf-8")
+            iob = root / "trial.iob"
+            for extension in ("lua", "fly2"):
+                iob.with_suffix("." + extension).write_text("", encoding="utf-8")
+            for name, operating in (
+                ("ordinary", "return {static_field={collision_pa_path='frozen collision.pa'}}"),
+                ("legacy", "return {static_field={collision_pa_path='frozen collision.pa0'}}"),
+                ("native", "return {}"),
+            ):
+                with self.subTest(name=name):
+                    iob.with_suffix(".operating_point.lua").write_text(operating, encoding="utf-8")
+                    result = subprocess.run([str(lua), str(harness), str(launcher), str(iob), name],
+                                            cwd=Path(__file__).resolve().parents[4],
+                                            capture_output=True, text=True, timeout=10, check=True)
+                    self.assertIn("COLLISION_PRELOAD_PASS", result.stdout)
+
+    def test_center_view_validates_actual_source_not_particle_count(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _validate_center_view_source
+        _validate_center_view_source(None, None)
+        def state(x, dx):
+            return dict(position_workbench_mm=[x, 1., 2.], direction_workbench=[dx, 1., 0.])
+        _validate_center_view_source(None, {'states': [state(0., 0.), state(0., 0.)]})
+        for states in ([state(.01, 0.)], [state(0., .01)], []):
+            with self.assertRaisesRegex(ValueError, 'x=0 and vx=0'):
+                _validate_center_view_source(None, {'states': states})
+
+    def test_static_voltage_record_canonicalizes_consumed_authority_after_validation(self):
+        actual = [0.] * 20
+        actual[15] = 189.86254642087434
+        binding = {"authority": {"analyzer_electrode_voltages_v": actual,
+                   "assembly": {"accelerator_resolved_electrodes": {
+                       "grounded_enclosure": {"component_electrode_id": 1, "local_pa_electrode_id": 1},
+                       "repeller": {"component_electrode_id": 2, "local_pa_electrode_id": 2},
+                       "grid_supports": [], "rings": []}},
+                   "component_voltages_v": [
+                       {"component_namespace": "accelerator", "component_electrode_id": 1, "voltage_v": 0.},
+                       {"component_namespace": "accelerator", "component_electrode_id": 2, "voltage_v": 100.}]}}
+        requested = list(actual)
+        requested[15] = 189.862546420874
+        consume = two_prism_simion_trial._static_consumed_analyzer_voltages
+        result = consume(binding, requested, [0., 100.], pulse_requested=False)
+        self.assertEqual(result, actual)
+        self.assertIsNot(result, actual)
+        self.assertNotEqual(requested[15], result[15])
+        requested[15] += 2e-9
+        with self.assertRaisesRegex(ValueError, "voltages differ"):
+            consume(binding, requested, [0., 100.], pulse_requested=False)
+
+    def test_static_field_receipt_and_lua_preserve_native_grid_and_solver(self) -> None:
+        binding = {
+            "mode": "native_static_pa", "manifest": "native/manifest.json",
+            "sources": {"scalar_pa": "native/static.pa", "surface": "native/static.pa-surf"},
+            "records": {"scalar_pa": {"bytes": 100}, "surface": {"bytes": 20}},
+            "grid": {"origin_mm": [0, -100, -325], "pitch_mm": [.25, .2, .2],
+                     "dimensions": [91, 2451, 3251]},
+            "refinement_windows": [],
+            "native_solver_numerics": {"solver": "SIMION2020", "refine_stopping": "contract_convergence",
+                                       "convergence_v": 1e-5, "surface": "fractional",
+                                       "boundary_mode": "grounded_enclosure"},
+        }
+        before = copy.deepcopy(binding)
+        receipt = two_prism_simion_trial._static_field_receipt(binding, Path("binding.json"))
+        self.assertEqual(receipt["mode"], "native_static_pa")
+        self.assertEqual(receipt["grid"], binding["grid"])
+        self.assertEqual(receipt["manifest"], binding["manifest"])
+        self.assertEqual(receipt["native_solver_numerics"], binding["native_solver_numerics"])
+        self.assertIsNot(receipt["native_solver_numerics"], binding["native_solver_numerics"])
+        self.assertEqual(json.loads(json.dumps(receipt))["native_solver_numerics"]["convergence_v"], 1e-5)
+        self.assertNotIn("export_manifest", receipt)
+        lua = two_prism_simion_trial._scalar_field_lua_fields(binding)
+        self.assertIn("mode = 'native_static_pa'", lua)
+        self.assertIn("dimensions = { 91, 2451, 3251 }", lua)
+        self.assertNotIn("valid_pa", lua)
+        self.assertEqual(binding, before)
+        ordinary = {**binding, "mode": "comsol_static_scalar_v"}
+        ordinary.pop("manifest")
+        self.assertEqual(two_prism_simion_trial._static_field_receipt(ordinary, Path("ordinary.json"))["mode"],
+                         "comsol_static_scalar_v")
+        self.assertNotIn("native_solver_numerics",
+                         two_prism_simion_trial._static_field_receipt(ordinary, Path("ordinary.json")))
+
+    def test_seed_theory_qualification_tracks_actual_mirror_and_stripe_values(self) -> None:
+        seed_mirror = (0.0, -5900.0, -2600.0, 4200.0, 6000.0)
+        seed_stripe = (-27.0, 54.0)
+        for actual_mirror, actual_stripe, changed in (
+            (list(seed_mirror), list(seed_stripe), (False, False)),
+            ([0.0, -5901.0, -2600.0, 4200.0, 6000.0], list(seed_stripe), (True, False)),
+            (list(seed_mirror), [-27.1, 54.2], (False, True)),
+        ):
+            with self.subTest(changed=changed):
+                before = (actual_mirror.copy(), actual_stripe.copy())
+                provenance = _seed_theory_provenance(
+                    seed_mirror, seed_stripe, actual_mirror, actual_stripe,
+                )
+                self.assertEqual(provenance["seed_authority_scope"],
+                                 "historical_mirror_stripe_initializer_only")
+                self.assertEqual(provenance["seed_mirror_voltages_v"], list(seed_mirror))
+                self.assertEqual(provenance["seed_stripe_biases_v"], list(seed_stripe))
+                self.assertEqual((provenance["mirror_changed_from_seed"],
+                                  provenance["stripe_changed_from_seed"]), changed)
+                self.assertEqual(provenance["actual_theory_qualification"],
+                    "not_rederived_after_mirror_or_stripe_change" if any(changed) else
+                    "seed_initializer_theory_only__finite_3d_and_numerical_qualification_pending")
+                self.assertEqual((actual_mirror, actual_stripe), before)
+                self.assertNotIn("predicted_period_ratio", provenance)
 
     def test_formal_volume_transverse_reference_does_not_invent_a_center(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -219,6 +476,26 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             row["expected_exit_component_energy_per_charge_v"]["Ez"], 0.0,
         )
 
+        # Static-field placement already passed the same provider/contract resolver.
+        with patch.object(two_prism_simion_trial, "resolve_accelerator_iob_origin",
+                          side_effect=AssertionError("duplicate OA pose resolution")):
+            reused = _accelerator_geometric_exit_reference(
+                contract={}, provider_plan=provider_plan, resolved_campaign=campaign,
+                bunch_source=None, bunch_selection=selection, mass_th=524.0,
+                charge_state=1, slow_energy_per_charge_v=5.3,
+                focus_y_mm=-55.0, release_z_mm=32.0, source_y_offset_mm=0.0,
+                validated_provider_origin=(0.0, -72.25, -6.0),
+            )
+            self.assertEqual(reused, result)
+            with self.assertRaisesRegex(CandidateContractError, "exit-plane mapping differs"):
+                _accelerator_geometric_exit_reference(
+                    contract={}, provider_plan=provider_plan, resolved_campaign=campaign,
+                    bunch_source=None, bunch_selection=selection, mass_th=524.0,
+                    charge_state=1, slow_energy_per_charge_v=5.3,
+                    focus_y_mm=-55.0, release_z_mm=32.0, source_y_offset_mm=0.0,
+                    validated_provider_origin=(0.0, -72.25, -5.0),
+                )
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             states = [
@@ -373,6 +650,35 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         self.assertIn("for local_id = 1,#values.accelerator do", source)
         self.assertNotIn("for local_id = 1,9 do", source)
 
+    def test_first_slow_signature_uses_observed_half_cycle_not_later_zero_count(self):
+        def event(kind, time, **values):
+            return dict(kind=kind, ion=1, t_us=time, **values)
+        events = [
+            event("fast_turn", 376.788833721, n=24, vy_mm_us=.0913865473007),
+            event("slow_turn", 382.323150744, n=1, y_mm=364.434982803, z_mm=73.1161034471),
+            event("central_plane_directional", 384.150780616, n=25, direction_z=-1),
+            event("fast_turn", 391.512619791, n=25, vy_mm_us=.00467067481175),
+            event("slow_turn", 396.913639187, n=1, y_mm=365.225620767, z_mm=-78.5060071164),
+            event("central_plane_directional", 398.874459585, n=26, direction_z=1),
+            event("fast_turn", 406.236412222, n=26, vy_mm_us=-.0807654235719),
+        ]
+        old = _first_slow_turn_signature(events, events[1])
+        new_events = [
+            event("fast_turn", 391.514142497, n=25, vy_mm_us=.0190441613963),
+            events[4],
+            event("central_plane_directional", 398.87600478, n=26, direction_z=1),
+            event("fast_turn", 406.238005895, n=26, vy_mm_us=-.0616823620562),
+        ]
+        new = _first_slow_turn_signature(new_events, events[4])
+        self.assertEqual(old["phase_key"], {"fast_turn_numbers": [24, 25],
+                         "direction_z": -1, "sampled_vy_signs": [1, 1]})
+        self.assertEqual(new["phase_key"], {"fast_turn_numbers": [25, 26],
+                         "direction_z": 1, "sampled_vy_signs": [1, -1]})
+        self.assertEqual(old["first_slow_turn"], events[1])
+        extra = events + [event("slow_turn", 410., n=8)]
+        self.assertEqual(_first_slow_turn_signature(extra, events[1]), old)
+        self.assertEqual(_first_slow_turn_signature(events[:2], events[1])["status"], "unknown")
+
     def test_bunch_center_particle_reuses_the_four_workpoint_residuals(self) -> None:
         def state(kind: str, time: float, y: float, z: float, vy: float, vz: float, **extra):
             return {
@@ -417,6 +723,89 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             ],
             0.0,
         )
+        stage = _bunch_center_prism_handoff_validation(events, trial)
+        self.assertEqual(stage["status"], "observed")
+        self.assertEqual(stage["particle_id"], 1)
+        self.assertEqual(stage["p2_low_field_reference_state"]["position_mm"], (0.0, -1.0, 33.0))
+        self.assertEqual(stage["positive_mirror_turn_state"]["velocity_mm_per_us"], (0.0, 1.0, 0.0))
+        self.assertEqual(stage["residuals"], {
+            name: value for name, value in result["residuals"].items() if name.startswith("P1_P2_")
+        })
+
+        collision = {"kind": "terminal", "ion": 1, "t_us": 21.0, "code": -1}
+        downstream_loss = events + [dict(collision, kind="splat"), collision]
+        self.assertEqual(_bunch_center_prism_handoff_validation(downstream_loss, trial), stage)
+        self.assertEqual(_bunch_center_workpoint_validation(downstream_loss, trial)["status"], "incomplete")
+        stripe_stage = _bunch_center_stripe_stage_validation(downstream_loss, trial)
+        self.assertEqual(stripe_stage["status"], "observed")
+        self.assertEqual(stripe_stage["residuals"], result["residuals"])
+        self.assertFalse(stripe_stage["full_workpoint_qualified"])
+        coordinate_marker = state("drift_coordinate_return", 19., 0., -200., -1., -2.,
+                                  k_before=25., fractional_k=25.4)
+        marked = events[:-1] + [coordinate_marker] + events[-1:]
+        measured = _bunch_center_stripe_stage_validation(marked, trial)
+        self.assertEqual(measured["status"], "observed")
+        self.assertEqual(measured["residuals"], result["residuals"])
+        self.assertFalse(measured["full_workpoint_qualified"])
+        variants = [
+            events[:-1], events + [dict(events[-1], t_us=22.)],
+            events[:6] + [dict(collision, t_us=9.)] + events[6:],
+            events[:6] + [dict(events[6], t_us=21.)] + events[7:],
+            events[:6] + [dict(events[6], n=2)] + events[7:],
+            events[:6] + [dict(collision, kind="nonmirror_reversal", t_us=9.)] + events[6:],
+            events[:-1] + [state("return_p2_entry", 19., 0., 101., -1., -2.)] + events[-1:],
+        ]
+        for invalid in variants:
+            with self.subTest(invalid_stage=invalid):
+                self.assertEqual(_bunch_center_stripe_stage_validation(invalid, trial)["status"], "incomplete")
+        downstream_duplicate_turn = downstream_loss + [dict(events[4], t_us=22.0)]
+        self.assertEqual(
+            _bunch_center_prism_handoff_validation(downstream_duplicate_turn, trial)["status"],
+            "incomplete",
+        )
+        before_turn_loss = events[:4] + [dict(collision, t_us=3.4)] + events[4:]
+        self.assertEqual(
+            _bunch_center_prism_handoff_validation(before_turn_loss, trial)["status"], "incomplete",
+        )
+        for index in range(5):
+            with self.subTest(missing_event=index):
+                missing = events[:index] + events[index + 1:]
+                self.assertEqual(_bunch_center_prism_handoff_validation(missing, trial)["status"], "incomplete")
+            with self.subTest(duplicate_event=index):
+                duplicate = events[:index] + [events[index]] + events[index:]
+                self.assertEqual(_bunch_center_prism_handoff_validation(duplicate, trial)["status"], "incomplete")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trial.update({
+                "prism_switch": None, "prism_voltages_v": [177.0, -179.0],
+                "source_particle_count": 1, "source_cohort": {"role": "controlled_diagnostic"},
+                "source_cohort_role": "controlled_diagnostic", "source_expected_particle_ids": [1],
+                "source_selection": {"role": "contiguous_frozen_source_diagnostic_selection"},
+                "selected_axial_energy_per_charge_v": 4000.0,
+                "particle_mass_th": 524.0, "charge_state": 1,
+                "accelerator_pulse": {"mode": "static"},
+            })
+            receipt = root / "trial.json"
+            receipt.write_text(json.dumps(trial), encoding="utf-8")
+            log = root / "flight.log"
+            log.write_text("status,Fly completed. 1 splats\n", encoding="utf-8")
+            cohort = {
+                "event_integrity_passed": True, "particle_terminal_count": 1,
+                "splat_code_histogram": {"-1": 1}, "all_losses_retained": True,
+                "detection_rate": 0.0, "peak_analysis": {"status": "unavailable"},
+            }
+            with (
+                patch.object(two_prism_simion_trial, "parse_events", return_value=downstream_loss),
+                patch.object(two_prism_simion_trial, "summarize_events", return_value=cohort),
+            ):
+                published = analyze_trial(
+                    log_path=log, trial_receipt_path=receipt, output_path=root / "observation.json",
+                )
+            self.assertEqual(published["center_particle_prism_handoff_validation"], stage)
+            self.assertEqual(published["status"], "selected_center_observation_incomplete")
+            self.assertTrue(published["termination_diagnostic"]["physical_collision"])
+            self.assertFalse(published["static_return_diagnostic"]["event_contract_ok"])
 
     def test_mirror_regions_projects_the_single_resolved_geometry(self) -> None:
         resolved = {
@@ -482,6 +871,22 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                 axial_energy_v=4372.010347796,
             )
 
+    def test_active_screening_default_is_four_ns_and_scales_from_its_contract(self) -> None:
+        contract_path = Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"
+        numerics = json.loads(contract_path.read_text(encoding="utf-8"))["simion"]
+        self.assertEqual(numerics["default_trajectory_profile_id"], "center_screening")
+        base = dict(numerics["trajectory_profiles"]["center_screening"], profile_id="center_screening")
+        self.assertEqual(base["maximum_step_us"], 0.004)
+        self.assertEqual(base["trajectory_quality"], 8)
+        self.assertIs(_apply_trajectory_step_scale(base, 1.0), base)
+        for scale, maximum in ((0.5, 0.002), (2.0, 0.008)):
+            scaled = _apply_trajectory_step_scale(base, scale)
+            self.assertEqual(scaled["maximum_step_us"], maximum)
+            self.assertEqual(scaled["base_maximum_step_us"], 0.004)
+            self.assertEqual(scaled["step_scale"], scale)
+        self.assertEqual(numerics["trajectory_profiles"]["center_refined"]["maximum_step_us"], 0.0002)
+        self.assertEqual(numerics["trajectory_profiles"]["center_precision"]["maximum_step_us"], 0.00002)
+
     def test_trajectory_step_scale_derives_0p001_from_screening_profile(self) -> None:
         base = {
             "profile_id": "center_screening", "trajectory_quality": 8,
@@ -491,8 +896,19 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         self.assertEqual(scaled["maximum_step_us"], 0.001)
         self.assertEqual(scaled["base_profile_id"], "center_screening")
         self.assertEqual(base["maximum_step_us"], 0.002)
-        with self.assertRaisesRegex(CandidateContractError, r"\(0, 1\]"):
-            _apply_trajectory_step_scale(base, 1.1)
+        self.assertIs(_apply_trajectory_step_scale(base, 1.0), base)
+        for scale in (2.0, 4.0):
+            coarse = _apply_trajectory_step_scale(base, scale)
+            self.assertEqual(coarse["maximum_step_us"], 0.002 * scale)
+            self.assertEqual(coarse["base_maximum_step_us"], 0.002)
+            self.assertEqual(coarse["step_scale"], scale)
+            self.assertEqual(coarse["trajectory_quality"], 8)
+            self.assertIn("numerical step scaling", coarse["purpose"])
+        for invalid in (0.0, -1.0, float("nan"), float("inf")):
+            with self.assertRaises(CandidateContractError):
+                _apply_trajectory_step_scale(base, invalid)
+        with self.assertRaises(CandidateContractError):
+            _apply_trajectory_step_scale({**base, "maximum_step_us": 1e308}, 2.0)
 
     def test_accelerator_energy_binding_distinguishes_command_from_target(self) -> None:
         target = 4198.824969860909
@@ -562,8 +978,34 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         self.assertNotIn("component_source_cylinder", reviewed["accelerator"])
         self.assertEqual(
             resolver.call_args.kwargs,
-            {"inherited_dual_stripe_topology_contract": current},
+            {"inherited_dual_stripe_topology_contract": current, "accelerator_assembly": None},
         )
+
+    def test_trial_geometry_forwards_frozen_oa_assembly_to_real_p1_extension(self) -> None:
+        path = Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"
+        contract = json.loads(path.read_text(encoding="utf-8"))
+        contract["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"] = {"clearance_mm": 1.0}
+        original = copy.deepcopy(contract)
+        assembly = {
+            "accelerator_resolved_electrodes": {
+                "acceleration_direction": "-z", "local_to_pa_translation_mm": [0., 0., 0.],
+                "grid_supports": [{"component_electrode_id": 4, "frame_outer_box_mm": {"z_min_mm": 0.}}],
+            },
+            "accelerator_iob_origin_mm": [0., 0., 0.],
+        }
+        with self.assertRaisesRegex(CandidateContractError, "frozen accelerator assembly"):
+            _resolve_trial_geometry(contract, contract, contract)
+        result = _resolve_trial_geometry(contract, contract, contract, accelerator_assembly=assembly)
+        shield = result["prism_ground_shields"][0]
+        extension = shield["extension_to_accelerator_exit"]
+        self.assertEqual(extension["resolved_end_z_mm"], -1.0)
+        self.assertEqual(extension["exit_support_downstream_z_mm"], 0.0)
+        self.assertEqual(extension["added_length_mm"], 29.0)
+        self.assertEqual(contract, original)
+        invalid = copy.deepcopy(assembly)
+        invalid["accelerator_resolved_electrodes"]["acceleration_direction"] = "+z"
+        with self.assertRaisesRegex(CandidateContractError, "resolved OA exit support/assembly"):
+            _resolve_trial_geometry(contract, contract, contract, accelerator_assembly=invalid)
 
     @staticmethod
     def _analyze_with_handoff_events(
@@ -916,6 +1358,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             path.write_text(json.dumps(schedule), encoding="utf-8")
             with self.assertRaisesRegex(CandidateContractError, "bunch pulse schedule"):
                 _load_frozen_accelerator_pulse_schedule(path)
+
 
     def test_static_return_requires_unique_ordered_negative_z_detector_hit(self) -> None:
         kinds = (
@@ -1300,6 +1743,45 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             self.assertIsNone(result["source_release_state"])
             summarize.assert_called_once()
             self.assertEqual(summarize.call_args.kwargs["expected_particle_ids"], (1,))
+
+    def test_controlled_cohort_publishes_canonical_release_without_assuming_id1_center(self) -> None:
+        center = {
+            "particle_id": 1, "position_workbench_mm": [0.0, -56.0, 32.0],
+            "direction_workbench": [0.0, 1.0, 0.0], "kinetic_energy_ev": 5.374,
+            "mass_th": 524.0, "charge_e": 1, "tob_us": 0.125,
+        }
+        for frozen_center in (center, None):
+            with self.subTest(controlled=frozen_center is not None), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                trial = {
+                    "prism_voltages_v": [177.0, -179.0], "source_particle_count": 1,
+                    "source_cohort": {"role": "controlled_diagnostic" if frozen_center else "formal_volume"},
+                    "source_expected_particle_ids": [1], "source_center_state": frozen_center,
+                    "selected_axial_energy_per_charge_v": 4000.0, "particle_mass_th": 524.0,
+                    "target_drift_period_ratio": 24.5, "accelerator_pulse": {"mode": "static"},
+                    "execution_scope": "accelerator_safe_exit_envelope_only",
+                }
+                receipt = root / "trial.json"
+                receipt.write_text(json.dumps(trial), encoding="utf-8")
+                log = root / "flight.log"
+                log.write_text("status,Fly completed. 1 splats\n", encoding="utf-8")
+                with patch.object(two_prism_simion_trial, "parse_events", return_value=[]), \
+                        patch.object(two_prism_simion_trial, "summarize_events", return_value={
+                            "event_integrity_passed": True, "particle_terminal_count": 1,
+                            "splat_code_histogram": {"1": 1}, "all_losses_retained": True,
+                        }):
+                    result = analyze_trial(log_path=log, trial_receipt_path=receipt, output_path=root / "observation.json")
+                source = result["source_release_state"]
+                if frozen_center is None:
+                    self.assertIsNone(source)
+                else:
+                    self.assertEqual(source["position_mm"], center["position_workbench_mm"])
+                    self.assertEqual(source["direction_project"], [0.0, 1.0, 0.0])
+                    self.assertEqual(source["particle_mass_th"], 524.0)
+                    self.assertEqual(source["charge_state"], 1)
+                    self.assertEqual(source["time_us"], 0.125)
+                    self.assertAlmostEqual(source["kinetic_energy_ev"], 5.374)
+                    self.assertGreater(source["velocity_mm_per_us"][1], 0.0)
 
     def test_complete_trial_reports_L_and_fractional_K_residuals(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

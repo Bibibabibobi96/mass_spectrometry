@@ -7,6 +7,7 @@ import unittest
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import (
     derive_native_corridor_plan,
+    validate_generation_grid_pitch,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_response_bank import (
     NATIVE_RESPONSE_NAMES,
@@ -28,6 +29,32 @@ CONTRACT = PROJECT / 'config' / 'simion_candidate_two_zone.json'
 
 
 class NativeCorridorPlanTest(unittest.TestCase):
+    def test_generation_quantum_checks_new_grids_without_restricting_old_consumers(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import _validate_pitch_mm
+        contract = json.loads(CONTRACT.read_text(encoding='utf-8-sig'))
+        for pitch in ([.01, .02, .03], [.05, .1, .25]):
+            before = pitch.copy()
+            self.assertEqual(validate_generation_grid_pitch(contract, pitch), .01)
+            self.assertEqual(pitch, before)
+        legacy = [.125, .03125, .0625]
+        self.assertEqual(_validate_pitch_mm({'pitch_mm': legacy}), legacy)
+        for invalid in (.005, .0125, .03125, .0625, .125, 0, -1, True, float('nan'), float('inf')):
+            with self.subTest(invalid=invalid), self.assertRaises(CandidateContractError):
+                validate_generation_grid_pitch(contract, [invalid, .1, .2])
+        del contract['simion']['numerical_profiles']['grid_generation']
+        with self.assertRaisesRegex(CandidateContractError, 'spacing_quantum_mm contract'):
+            validate_generation_grid_pitch(contract, [.1] * 3)
+
+    def test_new_corridor_rejects_nonquantized_mesh_and_unaligned_extent(self):
+        for mesh, message in (([.125, .2, .2], 'spacing_quantum_mm'), ([.03, .2, .2], 'extent')):
+            with self.subTest(mesh=mesh), tempfile.TemporaryDirectory() as directory:
+                contract = json.loads(CONTRACT.read_text(encoding='utf-8-sig'))
+                contract['simion']['native_corridor']['mesh_mm_per_gu'] = mesh
+                path = Path(directory) / 'contract.json'
+                path.write_text(json.dumps(contract))
+                with self.assertRaisesRegex(CandidateContractError, message):
+                    derive_native_corridor_plan(path)
+
     def test_native_corridor_is_derived_directly_from_resolved_geometry(self) -> None:
         plan = derive_native_corridor_plan(CONTRACT)
         self.assertEqual(plan['box_project_mm'], [0.0, -147.0, -330.0, 20.0, 463.0, 330.0])

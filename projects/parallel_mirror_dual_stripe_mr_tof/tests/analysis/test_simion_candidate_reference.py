@@ -1047,6 +1047,9 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         bunch = (PROJECT / "simion" / "mrtof_candidate.fly2").read_text(encoding="utf-8")
         launcher = (PROJECT / "simion" / "run_iob_flight.lua").read_text(encoding="utf-8")
         self.assertIn("MRTOF_EVENT detector", program)
+        central_output = program[program.index("MRTOF_EVENT central_plane_directional"):]
+        self.assertIn("z_mm=%.12g", central_output.split("elseif", 1)[0])
+        self.assertIn("event.z_mm", central_output.split("elseif", 1)[0])
         self.assertNotIn("initial-exit-triggered accelerator pulse requires local-refinement", program)
         self.assertIn("local accelerator_instance = accelerator_instance_number()", program)
         self.assertIn("local maximum_instance = maximum_instance_number()", program)

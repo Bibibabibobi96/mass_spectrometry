@@ -1,4 +1,4 @@
-"""Native-only contract tests for the MR-TOF flight runner."""
+"""Native and static-field contract tests for the MR-TOF flight runner."""
 from pathlib import Path
 import json
 import shutil
@@ -83,13 +83,144 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
                         else:
                             self.assertEqual(run_config.read_bytes() if run_config.exists() else None, before)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_static_pose_reuses_validated_origins_without_geometry_resolution(self):
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        start = source.index("  $posePath=Join-Path $resultDir 'resolved_iob_pose.json'")
+        block = source[start:source.index("  # The native-system bundle", start)]
+        origins = {"analyzer": [0, -242, -425], "accelerator": [0, -72.25, -6],
+                   "detector": [-10, -20, -30]}
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            contract, plan = root/'contract.json', root/'plan.json'
+            contract.write_text(json.dumps({"simion": {"component_mesh_mm_per_gu": {
+                "analyzer": 1, "detector": .5}}}), encoding="utf-8")
+            plan.write_text(json.dumps({"numerical_domain": {"mesh_mm_per_gu": .25}}), encoding="utf-8")
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            for static, mode in ((True, 'native_static_pa'), (True, 'comsol_static_scalar_v'),
+                                 (False, 'native_static_pa')):
+                with self.subTest(static=static, mode=mode):
+                    binding = {"instances": [{"origin_mm": origins['analyzer']}, {},
+                        {"origin_mm": origins['accelerator']}, {"origin_mm": origins['detector']}]}
+                    expected = {"origins_mm": origins, "mesh_mm_per_gu": {
+                        "analyzer": 1, "accelerator": .25, "detector": .5},
+                        "analyzer_geometry_authority": mode+'_frozen_resolved_geometry' if static else 'reviewed_analyzer_contract',
+                        "accelerator_geometry_authority": 'oa_provider_plan__mr_configurable_clearance_gated_y_pose',
+                        "detector_return_policy_authority": 'current_trajectory_contract'}
+                    script = (
+                        "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
+                        f"$staticFieldRequested=${str(static).lower()};$staticFieldMode={quote(mode)};"
+                        f"$resultDir={quote(root)};$trajectoryContract={quote(contract)};"
+                        f"$acceleratorProviderPlanLocal={quote(plan)};$reviewed='unused';$acceleratorLocal='unused';"
+                        f"$staticFieldBinding={quote(json.dumps(binding))}|ConvertFrom-Json -Depth 100;"
+                        f"$expected={quote(json.dumps(expected))}|ConvertFrom-Json -Depth 100;$script:calls=0;"
+                        "function Write-RunJson {param($Path,$Depth,$Value) $Value|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $Path};"
+                        "function Invoke-ProjectPython {param($Arguments) $script:calls++;"
+                        "Write-RunJson -Path $posePath -Depth 100 -Value $expected};\n"
+                        + block + "\n@{calls=$script:calls;pose=$pose}|ConvertTo-Json -Depth 100 -Compress"
+                    )
+                    completed = subprocess.run(["pwsh", "-NoProfile", "-Command", script],
+                        cwd=RUNNER.parents[3], capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+                    actual = json.loads(completed.stdout.splitlines()[-1])
+                    self.assertEqual(actual['pose'], expected)
+                    self.assertEqual(actual['calls'], 0 if static else 1)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_final_config_preserves_native_nested_geometry_and_stopping_identity(self):
+        numerics = {"solver": "SIMION2020", "refine_stopping": "contract_convergence",
+                    "convergence_v": 1e-5, "surface": "fractional", "boundary_mode": "grounded_enclosure"}
+        window = {"native_solver_numerics": {**numerics, "boundary_mode": "x_mirror_five_faces"},
+                  "authority": {"assembly": {"accelerator_resolved_electrodes": {
+                      "grid_supports": [{"aperture_box_mm": {"x_min_mm": -21, "x_max_mm": 21},
+                                         "ideal_sheet_mm": {"z_mm": 30}}]}}},
+                  "geometry": {"prism_electrodes": [{"parts": [{
+                      "polygon_yz_mm": [[0, 1], [2, 3]], "x": [0, 1]}]}]}}
+        value = {"inputs": {"static_field_dependencies": {
+                    "native_solver_numerics": numerics, "refinement_windows": [window]}},
+                 "provenance": {"upstream_manifest_verification": {"static_field": {"windows": [window]}}}}
+        publication = next(line.strip() for line in RUNNER.read_text(encoding="utf-8-sig").splitlines()
+                           if line.strip().startswith("Write-RunJson -Path $runConfig -Value $config"))
+        writer = RUNNER.parents[3] / "common/contracts/run_artifact_support.ps1"
+        with TemporaryDirectory() as directory:
+            source, target = Path(directory) / "input.json", Path(directory) / "run_config.json"
+            source.write_text(json.dumps(value), encoding="utf-8")
+            quote = lambda path: "'" + str(path).replace("'", "''") + "'"
+            command = (f". {quote(writer)}\n"
+                       f"$config=Get-Content -Raw -LiteralPath {quote(source)}|ConvertFrom-Json -Depth 100\n"
+                       f"$runConfig={quote(target)}\n{publication}")
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=RUNNER.parent,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8-sig")), value)
+            self.assertNotIn("truncated", result.stdout.lower())
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_standard_source_diagnostic_is_one_postprocess_output(self):
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        start = source.index("  $sourceTimingDiagnostic=$null;")
+        end = source.index("  $retention=Apply-RunArtifactRetention", start)
+        block = source[start:end]
+        self.assertGreater(start, source.rindex("Write-RunJson -Path $runConfig -Value $config", 0, start))
+        self.assertLess(end, source.rindex("Write-VerifiedRunManifest"))
+        publication = next(line for line in source.splitlines()
+                           if line.strip().startswith("if($null-ne$sourceTimingDiagnostic){$manifestOutputs"))
+        with TemporaryDirectory() as directory:
+            for bunch, count, safe_exit, subset, minimum_id, expected in (
+                (True, 13, False, False, 1, 1), (False, 1, False, False, 1, 0),
+                (True, 13, True, False, 1, 0), (True, 12, False, True, 2, 0),
+                (True, 100, False, True, 1, 1), (True, 1, False, True, 1, 0),
+            ):
+                with self.subTest(bunch=bunch, count=count, safe_exit=safe_exit, subset=subset, minimum_id=minimum_id):
+                    quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+                    script = (
+                        "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
+                        + f"$resultDir={quote(directory)};$logDir=$resultDir;"
+                        + f"$isBunchFlight=${str(bunch).lower()};$isSafeExitOnly=${str(safe_exit).lower()};"
+                        + f"$bunchSelectionRequested=${str(subset).lower()};"
+                        + f"$BunchParticleIdMin={minimum_id};$trial=@{{source_particle_count={count}}};"
+                        + "$runConfig='final-config.json';$observation='observation.json';"
+                        + "$batchMergeReceipt='merge.json';$global:calls=0;$global:received=@();"
+                        + "function Invoke-ProjectPython {param($Arguments) $global:calls++;"
+                        + "$global:received=$Arguments}\n"
+                        + block + "\n$manifestOutputs=@('observation.json');" + publication
+                        + "\n@{calls=$global:calls;args=$global:received;outputs=$manifestOutputs;"
+                        + "log_exists=($null-ne$sourceTimingDiagnosticLog-and(Test-Path -LiteralPath $sourceTimingDiagnosticLog));"
+                        + "log_text=$(if($null-ne$sourceTimingDiagnosticLog-and(Test-Path -LiteralPath $sourceTimingDiagnosticLog)){"
+                        + "Get-Content -LiteralPath $sourceTimingDiagnosticLog -Raw}else{''})}|ConvertTo-Json -Compress"
+                    )
+                    completed = subprocess.run(
+                        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                        cwd=RUNNER.parents[3], capture_output=True, text=True,
+                        encoding="utf-8", timeout=30,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    result = json.loads(completed.stdout.splitlines()[-1])
+                    self.assertEqual(result["calls"], expected)
+                    self.assertEqual(len(result["outputs"]), 3 if expected else 1)
+                    self.assertEqual(result["log_exists"], bool(expected))
+                    if expected:
+                        self.assertIn("SOURCE_Z_ENERGY_TIMING_DIAGNOSTIC=PASS", result["log_text"])
+                        self.assertIn("--completed-run-config", result["args"])
+                        self.assertIn("final-config.json", result["args"])
+                        self.assertIn("--batch-merge-receipt", result["args"])
+                        self.assertNotIn("--run-dir", result["args"])
+
     @classmethod
     def setUpClass(cls):
         cls.source = RUNNER.read_text(encoding="utf-8")
 
     def test_requires_native_bank_and_system_bundle(self):
-        self.assertIn("NativeCorridorBankRunPath is required for the native-only flight runner.", self.source)
-        self.assertIn("NativeCorridorBankRunPath requires NativeSystemRuntimeBundlePath.", self.source)
+        selection = self.source.split("if($staticFieldRequested){", 1)[1].split(
+            "$nativeCorridorRun=", 1,
+        )[0]
+        static, native = selection.split("}else{", 1)
+        self.assertIn("analysis.static_field_binding", static)
+        self.assertIn("Static field binding cannot consume a native adjustable runtime.", static)
+        self.assertNotIn("IsNullOrWhiteSpace($NativeCorridorBankRunPath)", static)
+        self.assertIn("IsNullOrWhiteSpace($NativeCorridorBankRunPath)", native)
+        self.assertIn("NativeCorridorBankRunPath is required for a native flight.", native)
+        self.assertIn("NativeCorridorBankRunPath requires NativeSystemRuntimeBundlePath.", native)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_summary_preserves_nested_phase_space_acceptance_objects(self):
@@ -140,6 +271,28 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
             self.assertNotIn(name, self.source)
         self.assertNotIn("basisLinkDir", self.source)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_trial_step_scale_boundaries_allow_coarser_finite_positive_values(self):
+        project = RUNNER.parents[1]
+        for path, variable, guard in (
+            (RUNNER, "TrajectoryStepScale", "if([double]::IsNaN($TrajectoryStepScale)"),
+        ):
+            source = path.read_text(encoding="utf-8-sig")
+            start = source.index(guard)
+            # The validator is either a one-line guard or the existing three-line guard.
+            end = source.index("}", start) + 1
+            validator = source[start:end]
+            for expression, valid in (("1", True), ("2", True), ("4", True),
+                                      ("0", False), ("-1", False),
+                                      ("[double]::NaN", False), ("[double]::PositiveInfinity", False)):
+                script = ("$ErrorActionPreference='Stop';$" + variable + "=" + expression + ";"
+                          + validator + ";'accepted'")
+                completed = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                    cwd=project.parents[1], capture_output=True, text=True, encoding="utf-8", timeout=30,
+                )
+                self.assertEqual(completed.returncode == 0, valid, completed.stdout + completed.stderr)
+
     def test_native_runtime_preserves_four_instance_and_bundle_identity(self):
         for token in ("build_native_corridor_iob.lua", "4_instance_seed.iob",
                       "native_system_runtime", "NativeCorridorRuntimeSession",
@@ -179,7 +332,7 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
         for token in (
             "[switch]$RetainGuiWorkbench",
             "-RetentionContractEnabled -RetentionClass compact",
-            "$retainGuiWorkbenchFiles=$null-ne$NativeCorridorRuntimeSession",
+            "$retainGuiWorkbenchFiles=($null-ne$NativeCorridorRuntimeSession)-or($staticFieldRequested-and$RetainGuiWorkbench)",
             "Join-Path $artifactSolverDir 'gui_workbench'",
             "Retained GUI workbench native checkpoint controller is missing.",
             "PA payloads have already been bound through the runtime and published",
@@ -194,7 +347,7 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
         self.assertNotIn("iobInputCopyDir", self.source)
         self.assertIn("$privateIobSeed,", self.source)
         self.assertIn(
-            "if($RetainGuiWorkbench-and$null-eq$NativeCorridorRuntimeSession)",
+            "if(-not$staticFieldRequested-and$RetainGuiWorkbench-and$null-eq$NativeCorridorRuntimeSession)",
             self.source,
         )
         self.assertIn(
@@ -232,6 +385,26 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
             "Get-ChildItem -LiteralPath $temporarySolverDir -Recurse -File", self.source
         )
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_gui_retention_condition_covers_native_and_static_modes(self):
+        assignment = next(
+            line for line in self.source.splitlines()
+            if line.startswith("$retainGuiWorkbenchFiles=")
+        )
+        command = (
+            "foreach($native in @($false,$true)){foreach($staticFieldRequested in @($false,$true)){"
+            "foreach($RetainGuiWorkbench in @($false,$true)){"
+            "$NativeCorridorRuntimeSession=if($native){[pscustomobject]@{}}else{$null};"
+            + assignment
+            + ";[int]$retainGuiWorkbenchFiles}}}"
+        )
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", command],
+            cwd=RUNNER.parents[3], capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual([int(value) for value in result.stdout.split()], [0, 0, 0, 1, 1, 1, 1, 1])
+
     def test_bunch_batches_use_official_shared_iob_particle_override(self):
         self.assertIn("official_shared_iob__per_process_particles_override", self.source)
         self.assertIn("$batchIob=$temporaryIob", self.source)
@@ -244,7 +417,10 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
         self.assertNotIn("build_three_component_iob.lua", self.source)
 
     def test_dispatch_identity_reuses_verified_component_and_bank_receipts(self):
-        self.assertIn("frontend_pa0_sha256=[string]$nativeBankCache.generation_sha256", self.source)
+        self.assertIn(
+            "frontend_pa0_sha256=$(if($staticFieldRequested){[string]$staticFieldBinding.records.scalar_pa.sha256}else{[string]$nativeBankCache.generation_sha256})",
+            self.source,
+        )
         self.assertIn("accelerator_overlay_generation_sha256=[string]$providerAccelerator.pa_family.generation_sha256", self.source)
         self.assertIn("reflectron_pa0_sha256=[string]$nativeSystemRuntimeRecords['detector'].sha256", self.source)
         self.assertNotIn("Get-FileHash -LiteralPath $sourceAccelerator", self.source)
@@ -262,9 +438,127 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
         self.assertNotIn("function Copy-IobPaInput", self.source)
         self.assertNotIn("New-ShortPaCopy -Source $sourceDetector", self.source)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_static_capacity_protects_response_layers_and_keeps_plain_default(self):
+        start = self.source.index("  $protectedPaths=@($package.artifact_run_dir,$nativeCorridorRun,$nativeBankGeneration)")
+        end = self.source.index("  $capacitySession=$sessionUpdate.session", start)
+        block = self.source[start:end]
+        base = {"export_manifest": "base/manifest.json", "collision_geometry": "collision/geometry.json",
+                "sources": {"scalar_pa": "base/v.pa", "valid_pa": "base/mask.pa"},
+                "instances": [{"pa_path": "collision/collision.pa", "manifest": "collision/manifest.json"}],
+                "refinement_windows": [{"export_manifest": "base/window/manifest.json",
+                                        "sources": {"scalar_pa": "base/window/v.pa", "valid_pa": "base/window/mask.pa"}}]}
+        ordinary = {"run", "binding.json", "collision/geometry.json", "collision/collision.pa",
+                    "collision/manifest.json", "base/manifest.json", "base/v.pa", "base/mask.pa",
+                    "base/window/manifest.json", "base/window/v.pa", "base/window/mask.pa"}
+        with TemporaryDirectory() as directory:
+            for combined in (False, True, "native", "native_no_surface"):
+                with self.subTest(combined=combined):
+                    binding = json.loads(json.dumps(base))
+                    expected = set(ordinary)
+                    mode = "comsol_static_scalar_v"
+                    if combined in ("native", "native_no_surface"):
+                        mode = "native_static_pa"
+                        binding = {"mode": mode, "manifest": "base/manifest.json",
+                                   "sources": {"scalar_pa": "base/v.pa", "surface": "base/v.pa-surf"},
+                                   "instances": base["instances"],
+                                   "refinement_windows": [{"manifest": "base/window/manifest.json",
+                                       "sources": {"scalar_pa": "base/window/v.pa",
+                                                   "surface": "base/window/v.pa-surf"}}]}
+                        expected = {"run", "binding.json", "collision/collision.pa", "collision/manifest.json",
+                                    "base/manifest.json", "base/v.pa", "base/v.pa-surf",
+                                    "base/window/manifest.json", "base/window/v.pa", "base/window/v.pa-surf"}
+                        if combined == "native_no_surface":
+                            binding["sources"]["surface"] = None
+                            binding["refinement_windows"][0]["sources"]["surface"] = None
+                            expected -= {"base/v.pa-surf", "base/window/v.pa-surf"}
+                    if combined is True:
+                        binding["response_terms"] = []
+                        for name in ("baseline", "s1", "s2"):
+                            component = {"export_manifest": f"{name}/manifest.json",
+                                         "sources": {"scalar_pa": f"{name}/v.pa", "valid_pa": f"{name}/mask.pa"},
+                                         "refinement_windows": [{"export_manifest": f"{name}/local/manifest.json",
+                                                                 "sources": {"scalar_pa": f"{name}/local/v.pa", "valid_pa": f"{name}/local/mask.pa"}}]}
+                            binding["response_terms"].append({"coefficient": 0. if name == "s2" else 1.,
+                                                              "binding_path": f"{name}/binding.json", "binding": component})
+                            expected.update({f"{name}/binding.json", component["export_manifest"],
+                                             *component["sources"].values(),
+                                             component["refinement_windows"][0]["export_manifest"],
+                                             *component["refinement_windows"][0]["sources"].values()})
+                    path = Path(directory) / "binding.json"
+                    path.write_text(json.dumps(binding), encoding="utf-8")
+                    quoted = "'" + str(path).replace("'", "''") + "'"
+                    command = (
+                        "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n"
+                        f"$staticFieldMode='{mode}';$staticFieldRequested=$true;$package=@{{artifact_run_dir='run'}};"
+                        "$FieldBindingPath='binding.json';$nativeCorridorRun=$null;$nativeBankGeneration=$null;"
+                        "$nativeBankKey=$null;$requiredBytes=0;$ownsCapacitySession=$false;"
+                        "$capacitySession=[pscustomobject]@{committed_new_bytes=0};$python='mock';$repoRoot='repo'\n"
+                        f"$staticFieldBinding=Get-Content -LiteralPath {quoted} -Raw|ConvertFrom-Json -Depth 100\n"
+                        "function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$ProtectedCacheKeys,$RemainingCommittedNewBytes)"
+                        " [Console]::WriteLine((@{paths=@($ProtectedPaths);keys=@($ProtectedCacheKeys)}|ConvertTo-Json -Compress));"
+                        " return @{session=$Session}}\n" + block
+                    )
+                    result = subprocess.run(["pwsh", "-NoProfile", "-Command", command],
+                                            cwd=RUNNER.parent, capture_output=True, text=True,
+                                            encoding="utf-8", errors="replace", timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    actual = json.loads(result.stdout)
+                    self.assertEqual(set(actual["paths"]), expected)
+                    self.assertEqual(actual["keys"], [])
+
     def test_first_batch_observation_keeps_repository_scheduler_contract(self):
         self.assertIn("Start-ObservedFormalProcess -DispatchPlanPath", self.source)
         self.assertNotIn("WaitForNaturalCompletionAfterObservation", self.source)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_native_static_guards_gui_and_provenance_need_no_comsol_export(self):
+        guard_start = self.source.index("    $guardPaths=@($staticFieldBinding.instances")
+        guard = self.source[guard_start:self.source.index("    foreach($path in", guard_start)]
+        gui_start = self.source.index("      $guiPaDependencies=@($staticFieldBinding.instances")
+        gui = self.source[gui_start:self.source.index("      $guiWorkbenchOutputs+=", gui_start)]
+        provenance_start = self.source.index("  if($staticFieldRequested){\n    if($staticFieldMode-eq'native_static_pa')")
+        provenance = self.source[provenance_start:self.source.index("  $config.parameters.prism_1_voltage_v=", provenance_start)]
+        binding = {"manifest": "native/manifest.json", "sources": {
+            "scalar_pa": "native/v.pa", "surface": "native/v.pa-surf", "geometry_authority": "native/geometry.json"},
+            "records": {"scalar_pa": {"path": "native/v.pa"}, "surface": {"path": "native/v.pa-surf"}},
+            "instances": [{"pa_path": f"collision/{i}.pa", "manifest": f"collision/{i}/manifest.json"} for i in range(4)],
+            "refinement_windows": [{"manifest": "local/manifest.json", "sources": {
+                "scalar_pa": "local/v.pa", "surface": "local/v.pa-surf"},
+                "records": {"scalar_pa": {"path": "local/v.pa"}, "surface": {"path": "local/v.pa-surf"}}}]}
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "binding.json"
+            path.write_text(json.dumps(binding), encoding="utf-8")
+            quote = "'" + str(path).replace("'", "''") + "'"
+            command = ("$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
+                       "$staticFieldRequested=$true;$staticFieldMode='native_static_pa';"
+                       "$config=@{provenance=@{upstream_manifest_verification=@{native_system_runtime='old'}}};"
+                       f"$staticFieldBinding=Get-Content -Raw -LiteralPath {quote}|ConvertFrom-Json -Depth 100\n"
+                       + guard + gui + provenance +
+                       "@{guard=@($guardPaths);gui=@($guiPaDependencies);provenance=$config.provenance}|ConvertTo-Json -Depth 30 -Compress")
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=RUNNER.parent,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            value = json.loads(result.stdout)
+            self.assertEqual(set(value["guard"]), {*(f"collision/{i}.pa" for i in range(4)),
+                "native/v.pa", "native/v.pa-surf", "local/v.pa", "local/v.pa-surf"})
+            self.assertEqual(len(value["gui"]), 8)
+            upstream = value["provenance"]["upstream_manifest_verification"]
+            self.assertNotIn("native_system_runtime", upstream)
+            self.assertEqual(upstream["static_field"]["manifest"], "native/manifest.json")
+            self.assertNotIn("export_manifest", upstream["static_field"])
+            self.assertEqual(upstream["geometry"]["instances"], binding["instances"])
+            binding["refinement_windows"][0]["sources"]["surface"] = None
+            binding["refinement_windows"][0]["records"]["surface"] = None
+            path.write_text(json.dumps(binding), encoding="utf-8")
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=RUNNER.parent,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            value = json.loads(result.stdout)
+            self.assertNotIn(None, value["guard"])
+            self.assertNotIn("local/v.pa-surf", value["guard"])
+            self.assertIn("native/v.pa-surf", value["guard"])
+            self.assertEqual(len(value["gui"]), 7)
 
     def test_first_completed_batch_publishes_existing_controlled_aberration_report(self):
         self.assertIn("function Publish-MrtofFirstBatchAberration", self.source)

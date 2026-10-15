@@ -11,6 +11,7 @@ param(
   [Nullable[double]]$Stripe2VoltageV=$null,
   [string]$NativeCorridorBankRunPath='',
   [string]$NativeSystemRuntimeBundlePath='',
+  [string]$FieldBindingPath='',
   [switch]$PulseAcceleratorUntilInitialExit,
   [switch]$AcceleratorSafeExitOnly,
   [string]$AcceleratorPulseSchedulePath='',
@@ -165,7 +166,7 @@ $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:Pr
 if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable is missing: $python"}
 if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){throw "SIMION executable is missing: $simion"}
 foreach($value in @($Prism1VoltageV,$Prism2VoltageV)){if([double]::IsNaN($value)-or[double]::IsInfinity($value)){throw 'Prism voltages must be finite'}}
-if([double]::IsNaN($TrajectoryStepScale)-or[double]::IsInfinity($TrajectoryStepScale)-or$TrajectoryStepScale-le0-or$TrajectoryStepScale-gt1){throw 'TrajectoryStepScale must be in (0,1].'}
+if([double]::IsNaN($TrajectoryStepScale)-or[double]::IsInfinity($TrajectoryStepScale)-or$TrajectoryStepScale-le0){throw 'TrajectoryStepScale must be finite and positive.'}
 if(-not[double]::IsFinite($AcceleratorSourceYOffsetMm)){throw 'AcceleratorSourceYOffsetMm must be finite.'}
 if($PulseAcceleratorUntilInitialExit-and-not[string]::IsNullOrWhiteSpace($AcceleratorPulseSchedulePath)){throw 'PulseAcceleratorUntilInitialExit and AcceleratorPulseSchedulePath are mutually exclusive.'}
 $acceleratorPulseRequested=[bool]$PulseAcceleratorUntilInitialExit-or-not[string]::IsNullOrWhiteSpace($AcceleratorPulseSchedulePath)
@@ -230,9 +231,22 @@ if($null-ne$bunchSourceReceipt){
     }
   }
 }
-if([string]::IsNullOrWhiteSpace($NativeCorridorBankRunPath)){throw 'NativeCorridorBankRunPath is required for the native-only flight runner.'}
-if([string]::IsNullOrWhiteSpace($NativeSystemRuntimeBundlePath)){throw 'NativeCorridorBankRunPath requires NativeSystemRuntimeBundlePath.'}
-$nativeCorridorRun=(Resolve-Path -LiteralPath $NativeCorridorBankRunPath).Path
+$staticFieldBinding=$null
+$staticFieldMode='comsol_static_scalar_v'
+$staticFieldRequested=-not[string]::IsNullOrWhiteSpace($FieldBindingPath)
+if($staticFieldRequested){
+  if($acceleratorPulseRequested){throw 'Static field binding forbids an OA pulse schedule.'}
+  if($null-ne$NativeCorridorRuntimeSession-or-not[string]::IsNullOrWhiteSpace($NativeRuntimeCheckpoint)){
+    throw 'Static field binding cannot consume a native adjustable runtime.'
+  }
+  $FieldBindingPath=(Resolve-Path -LiteralPath $FieldBindingPath).Path
+  $staticFieldBinding=((@(Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding','--binding',$FieldBindingPath))-join"`n")|ConvertFrom-Json -Depth 100)
+  if($staticFieldBinding.PSObject.Properties['mode']){$staticFieldMode=[string]$staticFieldBinding.mode}
+}else{
+  if([string]::IsNullOrWhiteSpace($NativeCorridorBankRunPath)){throw 'NativeCorridorBankRunPath is required for a native flight.'}
+  if([string]::IsNullOrWhiteSpace($NativeSystemRuntimeBundlePath)){throw 'NativeCorridorBankRunPath requires NativeSystemRuntimeBundlePath.'}
+}
+$nativeCorridorRun=if($staticFieldRequested){$null}else{(Resolve-Path -LiteralPath $NativeCorridorBankRunPath).Path}
 if($null-ne$NativeCorridorRuntimeSession-and-not[string]::IsNullOrWhiteSpace($NativeRuntimeCheckpoint)){
   throw 'Supply NativeCorridorRuntimeSession or NativeRuntimeCheckpoint, not both.'
 }
@@ -242,10 +256,10 @@ if($null-ne$NativeCorridorRuntimeSession-and($null-eq$CapacityWorkflowSession-or
    [string]$NativeCorridorRuntimeSession.lease_id-ne[string]$CapacityWorkflowSession.lease_id)){
   throw 'Native runtime reuse requires the matching inherited capacity workflow session and native bank.'
 }
-if($null-ne$bunchSourceContract-and$null-eq$NativeCorridorRuntimeSession){
+if(-not$staticFieldRequested-and$null-ne$bunchSourceContract-and$null-eq$NativeCorridorRuntimeSession){
   throw 'Native N>1 batch dispatch requires a matching shared native runtime session.'
 }
-if($RetainGuiWorkbench-and$null-eq$NativeCorridorRuntimeSession){
+if(-not$staticFieldRequested-and$RetainGuiWorkbench-and$null-eq$NativeCorridorRuntimeSession){
   throw 'Retained GUI workbench requires the workflow shared native runtime checkpoint; standalone retention would duplicate the complete PA family.'
 }
 $acceleratorSimion=Join-Path $acceleratorRun 'simion'
@@ -277,6 +291,7 @@ foreach($record in @($providerAccelerator.provider_plan,$providerAccelerator.res
 }
 $nativeBankManifest=$null;$nativeBankPublicationPath=$null;$nativeBankGeneration=$null;$nativeBankCacheManifest=$null;$nativeBankKey=$null
 $nativeSystemRuntimeBundle=$null;$nativeSystemRuntimePaths=$null;$nativeSystemRuntimeRecords=@{}
+if(-not$staticFieldRequested){
 $nativeBankManifest=Join-Path $nativeCorridorRun 'run_manifest.json'
   $nativeBankPublicationPath=Join-Path $nativeCorridorRun 'results\pa_family_cache_publication.json'
   # The native consumer needs the sealed publication and its small cache
@@ -317,6 +332,14 @@ $nativeBankManifest=Join-Path $nativeCorridorRun 'run_manifest.json'
     $nativeSystemRuntimeRecords[$role]=$component
   }
 if($nativeSystemRuntimeRecords.Count-ne3){throw 'Native system runtime bundle lacks a required component identity.'}
+}else{
+  $nativeSystemRuntimePaths=[pscustomobject]@{
+    global_fallback=$staticFieldBinding.instances[0].pa_path
+    accelerator=$staticFieldBinding.instances[2].pa_path
+    detector=$staticFieldBinding.instances[3].pa_path
+  }
+  foreach($item in $staticFieldBinding.instances){$nativeSystemRuntimeRecords[[string]$item.role]=$item.record}
+}
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__two-prism-trial-n1'}
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
@@ -347,7 +370,8 @@ $fixedMirrorStripeAuthority=$null;$fixedMirrorStripeAuthorityLocal=$null
 $stripeOperatingProvenance=$null
 $nativeRuntimeReceiptPath=$null;$nativeBankFrozenInputs=@();$nativeRuntime=$null
 $guiWorkbenchDirectory=$null
-$retainGuiWorkbenchFiles=$null-ne$NativeCorridorRuntimeSession
+$staticPaGuards=[Collections.Generic.List[IO.FileStream]]::new()
+$retainGuiWorkbenchFiles=($null-ne$NativeCorridorRuntimeSession)-or($staticFieldRequested-and$RetainGuiWorkbench)
 try{
   if($ownsCapacitySession){
     $failureStage='capacity_startup'
@@ -373,6 +397,7 @@ try{
   $globalFallbackRecord=$nativeSystemRuntimeRecords['global_fallback']
   $detectorRecord=$nativeSystemRuntimeRecords['detector']
   $stripeOperatingProvenance='native_corridor_frozen_response_bank'
+  if($staticFieldRequested){$stripeOperatingProvenance=$staticFieldMode+'_frozen_voltage_authority'}
   $globalFallbackAnalyzer=$sourceAnalyzer
   $reviewedContract=$geometryReviewedContract
   $trajectoryContractSource=$trajectoryContractInput
@@ -423,15 +448,40 @@ try{
   if($null-ne$fixedMirrorStripeAuthority){$requiredBytes+=[int64](Get-Item -LiteralPath $fixedMirrorStripeAuthority).Length}
   if($null-ne$mirrorVoltageVariation){$requiredBytes+=[int64](Get-Item -LiteralPath $mirrorVoltageVariation).Length}
   if($null-ne$bunchSourceReceipt){$requiredBytes+=[int64](Get-Item -LiteralPath $bunchSourceReceipt).Length}
+  [int64]$nativeFamilyPeakBytes=0
+  if(-not$staticFieldRequested){
   $nativeRawRecord=@($nativeBankCache.files|Where-Object{$_.name-eq'mrtof_analyzer_corridor.pa#'})
   if($nativeRawRecord.Count-ne1){throw 'Native corridor bank lacks its unique raw geometry record.'}
   [int64]$nativeFamilyPeakBytes=10*[int64]$nativeRawRecord[0].bytes
   if($null-ne$NativeCorridorRuntimeSession-and $null-ne$NativeCorridorRuntimeSession.PSObject.Properties['resident_bytes'] -and [int64]$NativeCorridorRuntimeSession.resident_bytes-gt0){$nativeFamilyPeakBytes=0}
+  }
   # All static components stay in their already verified read-only assets.
   # Only a missing native corridor family consumes new run capacity.
   $requiredBytes+=$nativeFamilyPeakBytes
   $protectedPaths=@($package.artifact_run_dir,$nativeCorridorRun,$nativeBankGeneration)
   $startupProtectedCacheKeys=@($nativeBankKey)
+  if($staticFieldRequested){
+    $protectedPaths=@($package.artifact_run_dir,$FieldBindingPath)+@($staticFieldBinding.sources.PSObject.Properties|Where-Object{-not($staticFieldMode-eq'native_static_pa'-and$_.Name-eq'surface'-and$null-eq$_.Value)}|ForEach-Object{$_.Value})+@($staticFieldBinding.instances|ForEach-Object{$_.pa_path;$_.manifest})
+    if($staticFieldMode-eq'native_static_pa'){$protectedPaths+=@($staticFieldBinding.manifest)}else{$protectedPaths+=@($staticFieldBinding.export_manifest,$staticFieldBinding.collision_geometry)}
+    if($staticFieldBinding.PSObject.Properties['refinement_windows']){
+      foreach($window in $staticFieldBinding.refinement_windows){
+        $protectedPaths+=@($window.sources.PSObject.Properties|Where-Object{-not($staticFieldMode-eq'native_static_pa'-and$_.Name-eq'surface'-and$null-eq$_.Value)}|ForEach-Object{$_.Value})
+        if($staticFieldMode-eq'native_static_pa'){$protectedPaths+=@($window.manifest)}else{$protectedPaths+=@($window.export_manifest)}
+      }
+    }
+    if($staticFieldBinding.PSObject.Properties['response_terms']){
+      foreach($term in $staticFieldBinding.response_terms){
+        $component=$term.binding
+        $protectedPaths+=@($term.binding_path,$component.export_manifest)+@($component.sources.PSObject.Properties.Value)
+        if($component.PSObject.Properties['refinement_windows']){
+          foreach($window in $component.refinement_windows){
+            $protectedPaths+=@($window.export_manifest)+@($window.sources.PSObject.Properties.Value)
+          }
+        }
+      }
+    }
+    $startupProtectedCacheKeys=@()
+  }
   [int64]$committedNewBytes=[math]::Max($requiredBytes,26214400)
   $failureStage=$(if($ownsCapacitySession){'capacity_scope_update'}else{'capacity_scope_inheritance'})
   [int64]$remainingCommitment=[math]::Max([int64]$capacitySession.committed_new_bytes,$committedNewBytes)
@@ -461,11 +511,21 @@ try{
   $acceleratorProviderPlanLocal=Copy-RequiredInput $acceleratorProviderPlan (Join-Path $solverDir 'accelerator_provider_plan.json') 'accelerator provider plan'
   $acceleratorResolvedCampaignLocal=Copy-RequiredInput $acceleratorResolvedCampaign (Join-Path $solverDir 'accelerator_resolved_campaign.json') 'accelerator resolved campaign'
   $bunchSourceLocal=if($null-eq$bunchSourceReceipt){$null}else{Copy-RequiredInput $bunchSourceReceipt (Join-Path $solverDir 'bunch_source_receipt.json') 'bunch source receipt'}
-  foreach($pair in @(@($nativeBankManifest,'native_corridor_bank_run_manifest.json'),@($nativeBankPublicationPath,'native_corridor_bank_publication.json'),@($nativeBankCacheManifest,'native_corridor_bank_cache_manifest.json'))){$nativeBankFrozenInputs+=Copy-RequiredInput -Source $pair[0] -Destination (Join-Path $solverDir $pair[1]) -Label $pair[1]}
-  foreach($name in @('build_native_corridor_iob.lua','native_corridor_priority_contract.lua','native_corridor_runtime_support.ps1')){Copy-RequiredInput -Source (Join-Path $PSScriptRoot $name) -Destination (Join-Path $solverDir $name) -Label $name|Out-Null}
-  foreach($name in @('native_fast_adjust_runtime_support.ps1','assemble_native_fast_adjust_family.lua')){Copy-RequiredInput -Source (Join-Path $repoRoot 'common\simion' $name) -Destination (Join-Path $solverDir $name) -Label $name|Out-Null}
+  if(-not$staticFieldRequested){foreach($pair in @(@($nativeBankManifest,'native_corridor_bank_run_manifest.json'),@($nativeBankPublicationPath,'native_corridor_bank_publication.json'),@($nativeBankCacheManifest,'native_corridor_bank_cache_manifest.json'))){$nativeBankFrozenInputs+=Copy-RequiredInput -Source $pair[0] -Destination (Join-Path $solverDir $pair[1]) -Label $pair[1]}}
+  $staticFieldLocal=$null
+  if($staticFieldRequested){
+    $staticFieldLocal=Copy-RequiredInput $FieldBindingPath (Join-Path $solverDir 'static_field_binding.json') 'static COMSOL binding'
+    Copy-RequiredInput (Join-Path $PSScriptRoot 'scalar_field_adapter.lua') (Join-Path $solverDir 'mrtof_three_component_candidate.scalar_field_adapter.lua') 'scalar field adapter'|Out-Null
+    Copy-RequiredInput (Join-Path (Split-Path $trialTool) 'static_field_binding.py') (Join-Path $solverDir 'static_field_binding.py') 'static binding validator'|Out-Null
+  }
+  foreach($name in @('build_native_corridor_iob.lua','native_corridor_priority_contract.lua')){Copy-RequiredInput -Source (Join-Path $PSScriptRoot $name) -Destination (Join-Path $solverDir $name) -Label $name|Out-Null}
+  if(-not$staticFieldRequested){
+    Copy-RequiredInput -Source (Join-Path $PSScriptRoot 'native_corridor_runtime_support.ps1') -Destination (Join-Path $solverDir 'native_corridor_runtime_support.ps1') -Label 'native_corridor_runtime_support.ps1'|Out-Null
+    foreach($name in @('native_fast_adjust_runtime_support.ps1','assemble_native_fast_adjust_family.lua')){Copy-RequiredInput -Source (Join-Path $repoRoot 'common\simion' $name) -Destination (Join-Path $solverDir $name) -Label $name|Out-Null}
+  }
   Copy-RequiredInput -Source (Join-Path $repoRoot 'common\simion\assets\iob_instance_seeds\4_instance_seed.iob') -Destination (Join-Path $solverDir '4_instance_seed.iob') -Label 'native four-instance seed'|Out-Null
   foreach($pair in @(@($programSource,'mrtof_three_component_candidate.lua'),@($counterSource,'mrtof_three_component_candidate.mirror_cycle_counter.lua'),@($mapSource,'mrtof_three_component_candidate.voltage_map.lua'),@($launcherSource,'run_iob_flight.lua'),@($trialTool,'two_prism_simion_trial.py'),@($batchTool,'mrtof_batch_flight.py'))){Copy-RequiredInput $pair[0] (Join-Path $solverDir $pair[1]) $pair[1]|Out-Null}
+  Copy-RequiredInput (Join-Path (Split-Path $trialTool) 'source_z_energy_timing_diagnostic.py') (Join-Path $solverDir 'source_z_energy_timing_diagnostic.py') 'source timing diagnostic'|Out-Null
   $fly2Input=Join-Path $solverDir 'downstream_trial_source.input.fly2'
   $sidecar=Join-Path $solverDir 'mrtof_three_component_candidate.operating_point.lua'
   $trialReceipt=Join-Path $resultDir 'two_prism_trial_materialization.json'
@@ -495,6 +555,7 @@ try{
   if($AcceleratorSafeExitOnly){$materializeArguments+='--accelerator-safe-exit-only'}
   if($null-ne$acceleratorPulseScheduleLocal){$materializeArguments+=@('--accelerator-pulse-schedule',$acceleratorPulseScheduleLocal)}
   if(-not[string]::IsNullOrWhiteSpace($TrajectoryProfileId)){$materializeArguments+=@('--trajectory-profile-id',$TrajectoryProfileId)}
+  if($staticFieldRequested){$materializeArguments+=@('--field-binding',$staticFieldLocal)}
   Invoke-ProjectPython -Arguments $materializeArguments
   $trial=Get-Content -LiteralPath $trialReceipt -Raw -Encoding UTF8|ConvertFrom-Json
   $isBunchFlight=$null-ne$bunchSourceContract
@@ -540,9 +601,22 @@ try{
   $temporaryAnalyzer=$globalFallbackAnalyzer
   $temporaryIob=Join-Path $temporarySolverDir 'mrtof_three_component_candidate.iob'
   $posePath=Join-Path $resultDir 'resolved_iob_pose.json'
+  if($staticFieldRequested){
+    $activePoseContract=Get-Content -LiteralPath $trajectoryContract -Raw -Encoding UTF8|ConvertFrom-Json -Depth 100
+    $poseProviderPlan=Get-Content -LiteralPath $acceleratorProviderPlanLocal -Raw -Encoding UTF8|ConvertFrom-Json -Depth 100
+    $pose=[pscustomobject]@{
+      origins_mm=[pscustomobject]@{analyzer=@($staticFieldBinding.instances[0].origin_mm);accelerator=@($staticFieldBinding.instances[2].origin_mm);detector=@($staticFieldBinding.instances[3].origin_mm)}
+      mesh_mm_per_gu=[pscustomobject]@{analyzer=$activePoseContract.simion.component_mesh_mm_per_gu.analyzer;accelerator=$poseProviderPlan.numerical_domain.mesh_mm_per_gu;detector=$activePoseContract.simion.component_mesh_mm_per_gu.detector}
+      analyzer_geometry_authority=$staticFieldMode+'_frozen_resolved_geometry'
+      accelerator_geometry_authority='oa_provider_plan__mr_configurable_clearance_gated_y_pose'
+      detector_return_policy_authority='current_trajectory_contract'
+    }
+    Write-RunJson -Path $posePath -Depth 20 -Value $pose
+  }else{
   $poseCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract,mirror_power_supply_limits; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import resolve_accelerator_iob_origin,resolve_static_iob_origins; reviewed=Path(sys.argv[1]); receipt=json.loads(Path(sys.argv[2]).read_text(encoding='utf-8')); active=load_contract(Path(sys.argv[3])); policy=active['accelerator']['detector_return_path']; limits=mirror_power_supply_limits(active); static=resolve_static_iob_origins(reviewed,inherited_detector_return_path=policy,inherited_dual_stripe_topology_contract=active,inherited_mirror_power_supply_limits_v=limits); plan=json.loads(Path(sys.argv[5]).read_text(encoding='utf-8')); domain=plan['numerical_domain']; origin=resolve_accelerator_iob_origin(active,plan); Path(sys.argv[4]).write_text(json.dumps({'origins_mm':{'analyzer':static['analyzer'],'accelerator':origin,'detector':static['detector']},'mesh_mm_per_gu':{'analyzer':active['simion']['component_mesh_mm_per_gu']['analyzer'],'accelerator':domain['mesh_mm_per_gu'],'detector':active['simion']['component_mesh_mm_per_gu']['detector']},'analyzer_geometry_authority':'reviewed_analyzer_contract','accelerator_geometry_authority':'oa_provider_plan__mr_configurable_clearance_gated_y_pose','detector_return_policy_authority':'current_trajectory_contract'},indent=2)+'\n',encoding='utf-8')"
   Invoke-ProjectPython -Arguments @('-c',$poseCode,$reviewed,$acceleratorLocal,$trajectoryContract,$posePath,$acceleratorProviderPlanLocal)
   $pose=Get-Content -LiteralPath $posePath -Raw -Encoding UTF8|ConvertFrom-Json
+  }
   # The native-system bundle already seals this source identity.  The guarded
   # first-use check below verifies it once for the enclosing workflow process;
   # do not reread the multi-GB PA merely to write this receipt.
@@ -554,21 +628,42 @@ try{
   $temporaryAnalyzerHash=$voltageSourceHash
   $voltageReceipt=Join-Path $resultDir 'native_corridor_voltage_binding_receipt.json'
   Write-RunJson -Path $voltageReceipt -Depth 14 -Value ([ordered]@{schema_version=1;role='mrtof_native_corridor_voltage_binding';status='success';method='native_corridor_private_fast_adjust_family';source_pa=$globalFallbackAnalyzer;source_sha256=$voltageSourceHash;temporary_output_sha256=$temporaryAnalyzerHash;electrode_voltages_v=@($trial.analyzer_electrode_voltages_v);refine_performed=$false;temporary_output_retained=$false})
+  if($staticFieldRequested){
+    Write-RunJson -Path $voltageReceipt -Depth 30 -Value ([ordered]@{schema_version=1;role=$(if($staticFieldMode-eq'native_static_pa'){'mrtof_native_static_voltage_binding'}else{'mrtof_static_comsol_voltage_binding'});status='success';method='frozen_scalar_v__no_fast_adjust';binding=$trial.field_binding;electrode_voltages_v=@($trial.analyzer_electrode_voltages_v);refine_performed=$false})
+  }
   $failureStage='renew_native_corridor_protection'
+  if(-not$staticFieldRequested){
   $cacheScopeUpdate=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -ProtectedCacheKeys @($nativeBankKey) -ProtectedPaths @($nativeBankGeneration)
   $capacitySession=$cacheScopeUpdate.session
   $capacityProtectionRenewalPath=Join-Path $resultDir 'native_corridor_protection_renewal.json'
   Write-RunJson -Path $capacityProtectionRenewalPath -Depth 20 -Value ([ordered]@{schema_version=1;role='mrtof_native_corridor_protection_renewal';status='success';lease_id=$capacitySession.lease_id;lease_owner=$capacitySession.owner;lease_ttl_seconds=$capacitySession.lease_ttl_seconds;cache_key=$nativeBankKey;cache_keys=@($nativeBankKey);generation_directory=$nativeBankGeneration;renewal=$cacheScopeUpdate.renewal})
+  }
   # This builder saves the Workbench before Fast Adjust, and the flight entry
   # never saves it.  The static fallback and detector therefore remain clean
   # inputs.  Verify and hold each source once per enclosing workflow process;
   # nested N=1/TE1 trials reuse the same no-write/no-delete guards without
   # copying or rehashing either payload.
   $failureStage='protect_static_iob_pa_inputs'
+  if(-not$staticFieldRequested){
   $null=Protect-ImmutablePaSource -Source $globalFallbackAnalyzer `
     -ExpectedBytes ([int64]$globalFallbackRecord.bytes) -ExpectedSha256 ([string]$globalFallbackRecord.sha256)
   $null=Protect-ImmutablePaSource -Source $sourceDetector `
     -ExpectedBytes ([int64]$detectorRecord.bytes) -ExpectedSha256 ([string]$detectorRecord.sha256)
+  }else{
+    # Inherit existing sealed identities; guard actual consumed payloads against
+    # writes/deletion for all workers, without hashing or making private copies.
+    $guardPaths=@($staticFieldBinding.instances|ForEach-Object{$_.pa_path})+@($staticFieldBinding.sources.scalar_pa)
+    if($staticFieldMode-eq'native_static_pa'){if($null-ne$staticFieldBinding.sources.surface){$guardPaths+=@($staticFieldBinding.sources.surface)}}else{$guardPaths+=@($staticFieldBinding.sources.valid_pa)}
+    if($staticFieldBinding.PSObject.Properties['refinement_windows']){
+      foreach($window in $staticFieldBinding.refinement_windows){
+        $guardPaths+=@($window.sources.scalar_pa)
+        if($staticFieldMode-eq'native_static_pa'){if($null-ne$window.sources.surface){$guardPaths+=@($window.sources.surface)}}else{$guardPaths+=@($window.sources.valid_pa)}
+      }
+    }
+    foreach($path in @($guardPaths|Select-Object -Unique)){
+      $staticPaGuards.Add([IO.File]::Open([string]$path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+    }
+  }
   $iobAnalyzerInput=$globalFallbackAnalyzer
   # Flight initialization receives the private native Fast Adjust family below.
   # Its short execution alias is process-local; retained GUI workbenches bind
@@ -579,6 +674,7 @@ try{
   $iobProgramPath=Join-Path $solverDir 'mrtof_three_component_candidate.lua'
   $iobFly2Path=$fly2Input
   $failureStage='prepare_native_corridor_runtime_family'
+  if(-not$staticFieldRequested){
     if($null-ne$NativeCorridorRuntimeSession){
       $nativeRuntime=Get-NativeCorridorRuntimeFamily -Session $NativeCorridorRuntimeSession `
         -CapacityWorkflowSession $capacitySession -BankGenerationDirectory $nativeBankGeneration `
@@ -610,6 +706,13 @@ try{
     $persistentAcceleratorController=if($null-ne$acceleratorRuntime.PSObject.Properties['persistent_controller_path']){[string]$acceleratorRuntime.persistent_controller_path}else{$sourceAccelerator}
     $iobAcceleratorInput=$sourceAccelerator
     $nativeOrigins=@(@($pose.origins_mm.analyzer),@($nativeBankCache.identity.grid_phase.origin_mm),@($pose.origins_mm.accelerator),@($pose.origins_mm.detector))
+  }else{
+    $nativeControllerForIob=[string]$staticFieldBinding.instances[1].pa_path
+    $sourceAccelerator=[string]$staticFieldBinding.instances[2].pa_path
+    $persistentAcceleratorController=$sourceAccelerator
+    $iobAcceleratorInput=$sourceAccelerator
+    $nativeOrigins=@($staticFieldBinding.instances|ForEach-Object{,@($_.origin_mm)})
+  }
     $nativeOriginArguments=@();foreach($origin in $nativeOrigins){foreach($value in $origin){$nativeOriginArguments+=Format-InvariantNumber ([double]$value)}}
     $buildArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'build_native_corridor_iob.lua'),'--',
       $privateIobSeed,$iobAnalyzerInput,$nativeControllerForIob,$iobAcceleratorInput,$iobDetectorInput,
@@ -642,7 +745,7 @@ try{
     Invoke-ProjectPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $artifactRoot "projects\$projectId\runs"),'--output',$resourceProfilesPath)
     Write-RunJson -Path $dispatchRequestPath -Depth 10 -Value ([ordered]@{
       solver='SIMION';field_kind='electrostatic';particle_count=[int]$trial.source_particle_count;independent_particles=$true
-      frontend_grid_profile_id=('mrtof_native_corridor_four_instance__bank_'+[string]$nativeBankCache.generation_sha256)
+      frontend_grid_profile_id=$(if($staticFieldRequested){if($staticFieldMode-eq'native_static_pa'){'mrtof_native_static_pa_four_collision_instances'}else{'mrtof_static_comsol_four_collision_instances'}}else{'mrtof_native_corridor_four_instance__bank_'+[string]$nativeBankCache.generation_sha256})
       oatof_numerical_profile_id=$null
       trajectory_quality_profile_id=[string]$trial.trajectory_profile.profile_id
       time_integration_profile_id='mrtof_candidate_adaptive_time_step'
@@ -650,12 +753,12 @@ try{
       accelerator_overlay_cell_mm_xyz=$null;reflectron_cell_mm=$null
       trajectory_quality=[double]$trial.trajectory_profile.trajectory_quality;rf_steps_per_period=$null
       accelerator_field_profile_id='mrtof_two_zone_standalone_operating_pa'
-      frontend_pa0_sha256=[string]$nativeBankCache.generation_sha256
+      frontend_pa0_sha256=$(if($staticFieldRequested){[string]$staticFieldBinding.records.scalar_pa.sha256}else{[string]$nativeBankCache.generation_sha256})
       accelerator_overlay_generation_sha256=[string]$providerAccelerator.pa_family.generation_sha256
       reflectron_pa0_sha256=[string]$nativeSystemRuntimeRecords['detector'].sha256
       case_input_sha256=[string]$trial.operating_point_lua_sha256
       workload_topology_id='mrtof_native_corridor_four_instance_two_prism_full_flight'
-      field_loading_policy_id='shared_native_corridor_runtime__four_instances__no_refine'
+      field_loading_policy_id=$(if($staticFieldRequested){if($staticFieldMode-eq'native_static_pa'){'native_static_pa__four_read_only_collision_instances'}else{'comsol_scalar_v__four_read_only_collision_instances'}}else{'shared_native_corridor_runtime__four_instances__no_refine'})
     })
     Invoke-ProjectPython -Arguments @('-m','common.simion.resource_scheduler','--request',$dispatchRequestPath,'--profiles',$resourceProfilesPath,'--output',$runtimeDispatchPlanPath)
     Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,'--output',$batchPlanPath)
@@ -681,6 +784,12 @@ try{
       native_system_runtime_bundle=$nativeSystemRuntimeBundle
     }
     $checkpointConfig.inputs=$checkpointInputs
+    if($staticFieldRequested){
+      $checkpointConfig.inputs.Remove('native_corridor_bank_cache_manifest')
+      $checkpointConfig.inputs.Remove('native_system_runtime_bundle')
+      $checkpointConfig.inputs.static_field_binding=$staticFieldLocal
+      $checkpointConfig.inputs.scalar_field_adapter=Join-Path $solverDir 'mrtof_three_component_candidate.scalar_field_adapter.lua'
+    }
     $checkpointConfig.parameters.execution_mode='mrtof_native_corridor_bunch'
     $checkpointConfig.parameters.particle_count=[int]$trial.source_particle_count
     $checkpointConfig.parameters.launched_particle_count=[int]$trial.source_particle_count
@@ -919,8 +1028,10 @@ try{
     }
   }
   $summaryQualification=if($null-ne$bunchSourceContract){'candidate_native_corridor_bunch__not_formal'}else{'single_center_native_corridor_trial__not_formal'}
+  if($staticFieldRequested){$summaryQualification=if($staticFieldMode-eq'native_static_pa'){if($isBunchFlight){'candidate_native_static_bunch__not_formal'}else{'single_center_native_static_trial__not_formal'}}else{if($isBunchFlight){'candidate_static_comsol_bunch__not_formal'}else{'single_center_static_comsol_trial__not_formal'}}}
   if($isSafeExitOnly){$summaryQualification='accelerator_exit_envelope_diagnostic__no_detector_performance_qualification'}
   $summaryValue=[ordered]@{schema_version=1;role='mrtof_finite_3d_two_prism_voltage_trial';status='success';qualification=$summaryQualification;source_particle_count=[int]$trial.source_particle_count;source_cohort=$trial.source_cohort;source_y_offset_from_accelerator_axis_mm=$trial.source_y_offset_from_accelerator_axis_mm;dispatch=$dispatchSummary;stripe_biases_v=@($trial.stripe_biases_v);prism_voltages_v=@($Prism1VoltageV,$Prism2VoltageV);stripe_operating_provenance=$stripeOperatingProvenance;response_regions=@();accelerator_pulse=$trial.accelerator_pulse;accelerator_pulse_diagnostic=$observed.accelerator_pulse_diagnostic;transport_status=$observed.status;cohort_analysis=$cohortAnalysis;collection_gate=$collectionGate;extraction_diagnostic=$observedExtraction;residuals=$observedResiduals;reason=$summaryReason}
+  if($staticFieldRequested){$summaryValue.field_binding=$trial.field_binding}
   Write-RunJson -Path $summary -Depth 100 -Value $summaryValue
   $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   if($retainGuiWorkbenchFiles){
@@ -929,7 +1040,7 @@ try{
     foreach($trajectoryCache in @(Get-ChildItem -LiteralPath $temporarySolverDir -File -Filter 'trj*.tmp')){
       [IO.File]::Delete($trajectoryCache.FullName)
     }
-    $guiNativeController=[string]$nativeRuntime.controller_path
+    $guiNativeController=if($staticFieldRequested){$nativeControllerForIob}else{[string]$nativeRuntime.controller_path}
     if($null-ne$NativeCorridorRuntimeSession){
       # Flights use the short execution alias, but that alias is removed when
       # the workflow closes. The retained GUI package instead binds the same
@@ -972,17 +1083,30 @@ try{
       $guiWorkbenchIob.Replace('.iob','.source_states.lua')
     )|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -Unique
     $guiFiles=@($guiWorkbenchOutputs|ForEach-Object{$item=Get-Item -LiteralPath $_;[ordered]@{name=$item.Name;path=$item.FullName;bytes=[int64]$item.Length;sha256=(Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash}})
-    $guiPaDependencies=@(
+    if(-not$staticFieldRequested){$guiPaDependencies=@(
       [ordered]@{role='global_fallback';path=$iobAnalyzerInput;bytes=[int64](Get-Item -LiteralPath $iobAnalyzerInput).Length;source=$globalFallbackRecord},
       [ordered]@{role='accelerator';path=$iobAcceleratorInput;bytes=[int64](Get-Item -LiteralPath $iobAcceleratorInput).Length;source=$nativeSystemRuntimeRecords['accelerator']},
       [ordered]@{role='detector';path=$iobDetectorInput;bytes=[int64](Get-Item -LiteralPath $iobDetectorInput).Length;source=$detectorRecord},
       [ordered]@{role='native_corridor';directory=(Split-Path -Parent ([string]$nativeRuntime.controller_path));source_raw=$nativeRuntime.receipt.source_raw;source_responses=$nativeRuntime.receipt.source_responses}
     )
+    }else{
+      $guiPaDependencies=@($staticFieldBinding.instances)+@($staticFieldBinding.records.scalar_pa)
+      if($staticFieldMode-eq'native_static_pa'){if($null-ne$staticFieldBinding.records.surface){$guiPaDependencies+=@($staticFieldBinding.records.surface)}}else{$guiPaDependencies+=@($staticFieldBinding.records.valid_pa)}
+      if($staticFieldBinding.PSObject.Properties['refinement_windows']){
+        foreach($window in $staticFieldBinding.refinement_windows){
+          $guiPaDependencies+=@($window.records.scalar_pa)
+          if($staticFieldMode-eq'native_static_pa'){if($null-ne$window.records.surface){$guiPaDependencies+=@($window.records.surface)}}else{$guiPaDependencies+=@($window.records.valid_pa)}
+        }
+      }
+      $guiWorkbenchOutputs+=@($guiWorkbenchIob.Replace('.iob','.scalar_field_adapter.lua'))
+    }
     Write-RunJson -Path $guiWorkbenchReceipt -Depth 14 -Value ([ordered]@{
       schema_version=1;role='simion_gui_review_workbench';status='success';qualification=$summaryQualification;
       directory=$guiWorkbenchDirectory;iob_path=$guiWorkbenchIob;iob_sha256=(Get-FileHash -LiteralPath $guiWorkbenchIob -Algorithm SHA256).Hash;
       global_operating_pa_path=$temporaryAnalyzer;global_operating_pa_sha256=$temporaryAnalyzerHash;
        source_accelerator_pa=$persistentAcceleratorController;accelerator_binding='manifest_bound_standalone_responses__shared_private_native_fast_adjust_family';source_detector_pa=$sourceDetector;files=$guiFiles;pa_dependencies=$guiPaDependencies
+       external_field_queries_equivalent=(-not$staticFieldRequested)
+       external_field_limitation=$(if($staticFieldRequested){'Fly callbacks consume '+$staticFieldMode+'; ordinary PA cloud/Workbench field query shows collision arrays, not the callback field.'}else{$null})
     })
     # The IOB stores the absolute paths passed to SIMION. Keeping this exact
     # directory in place is therefore part of the review artifact contract.
@@ -1017,6 +1141,7 @@ try{
     simion_repository_dispatch_plan=$runtimeDispatchPlanPath
     simion_execution_batch_plan=$batchPlanPath
     batch_log_merge_receipt=$batchMergeReceipt
+    source_z_energy_timing_diagnostic=Join-Path $artifactSolverDir 'source_z_energy_timing_diagnostic.py'
     trajectory_numerics_contract=Join-Path $artifactSolverDir 'trajectory_numerics_contract.json'
     iob_builder=Join-Path $artifactSolverDir 'build_native_corridor_iob.lua'
     iob_seed=Join-Path $artifactSolverDir '4_instance_seed.iob'
@@ -1046,6 +1171,13 @@ try{
     gui_workbench_receipt=$guiWorkbenchReceipt
     native_corridor_protection_renewal=$capacityProtectionRenewalPath
   }
+  if($staticFieldRequested){
+    foreach($name in @('geometry_run_manifest','native_corridor_bank_run_manifest','native_corridor_bank_publication','native_corridor_bank_cache_manifest','native_corridor_runtime_support','native_corridor_assembler','native_corridor_runtime_receipt','native_system_runtime_bundle','native_system_runtime_components','native_corridor_protection_renewal')){$config.inputs.Remove($name)}
+    $config.inputs.static_field_binding=Join-Path $artifactSolverDir 'static_field_binding.json'
+    $config.inputs.scalar_field_adapter=Join-Path $artifactSolverDir 'mrtof_three_component_candidate.scalar_field_adapter.lua'
+    $config.inputs.static_field_binding_validator=Join-Path $artifactSolverDir 'static_field_binding.py'
+    $config.inputs.static_field_dependencies=$trial.field_binding
+  }
   if(-not$config.Contains('provenance')){$config['provenance']=[ordered]@{}}
   $config['provenance']['upstream_manifest_verification']=[ordered]@{
     geometry=[ordered]@{
@@ -1061,12 +1193,38 @@ try{
     }
     all_other_upstream_manifests='full'
   }
+  if($staticFieldRequested){
+    if($staticFieldMode-eq'native_static_pa'){
+      $config['provenance']['upstream_manifest_verification']['geometry']=[ordered]@{scope='sealed_native_resolved_and_four_collision_instances';manifest=$staticFieldBinding.manifest;consumed_contract=$staticFieldBinding.sources.geometry_authority;instances=$staticFieldBinding.instances}
+      $config['provenance']['upstream_manifest_verification']['static_field']=[ordered]@{mode=$staticFieldMode;manifest=$staticFieldBinding.manifest;windows=$staticFieldBinding.refinement_windows;payload_validation='sealed_identity__existence_and_bytes__read_only_guard__no_payload_hash'}
+    }else{
+      $config['provenance']['upstream_manifest_verification']['geometry']=[ordered]@{scope='sealed_comsol_resolved_and_collision_geometry';manifest=$staticFieldBinding.collision_manifest;consumed_contract=$staticFieldBinding.sources.geometry_authority}
+      $config['provenance']['upstream_manifest_verification']['static_field']=[ordered]@{export_manifest=$staticFieldBinding.export_manifest;assembly_manifest=$staticFieldBinding.assembly_manifest;payload_validation='sealed_identity__existence_and_bytes__read_only_guard__no_payload_hash'}
+    }
+    $config['provenance']['upstream_manifest_verification'].Remove('native_system_runtime')
+  }
   $config.parameters.prism_1_voltage_v=$Prism1VoltageV;$config.parameters.prism_2_voltage_v=$Prism2VoltageV;$config.parameters.stripe_biases_v=@($trial.stripe_biases_v);$config.parameters.stripe_operating_provenance=$stripeOperatingProvenance;$config.parameters.source_particle_count=[int]$trial.source_particle_count;$config.parameters.source_cohort=$trial.source_cohort;$config.parameters.source_selection=$trial.source_selection;$config.parameters.source_y_offset_from_accelerator_axis_mm=$trial.source_y_offset_from_accelerator_axis_mm;$config.parameters.accelerator_y_anchor_mm=if($null-eq$AcceleratorYAnchorMm){$null}else{[double]$AcceleratorYAnchorMm};$config.parameters.simion_dispatch=$dispatchSummary;$config.parameters.flight_scope=if($isSafeExitOnly){'accelerator_safe_exit_envelope_only'}else{'complete_three_dimensional_static_return'};$config.parameters.execution_scope=[string]$trial.execution_scope;$config.parameters.accelerator_pulse=$trial.accelerator_pulse;$config.parameters.accelerator_field_mode=if($acceleratorPulseRequested){'manifest_bound_standalone_operating_pa__efield_gate_to_zero'}else{'manifest_bound_standalone_operating_pa__static'};$config.parameters.pa_binding_mode=if($null-ne$bunchSourceContract){'native_corridor_private_fast_adjust_family__four_instances__complete_bunch__no_refine'}else{'native_corridor_private_fast_adjust_family__four_instances__n1'};$config.parameters.trajectory_profile=$trial.trajectory_profile;$config.parameters.gui_workbench_retained=[bool]$retainGuiWorkbenchFiles
+  if($staticFieldRequested){$config.parameters.pa_binding_mode=$staticFieldMode+'__four_read_only_collision_instances';$config.parameters.accelerator_field_mode=$staticFieldMode;$config.parameters.gui_field_queries_equivalent=$false}
   if($isBunchFlight){$config.parameters.execution_mode='mrtof_native_corridor_bunch';$config.parameters.particle_count=[int]$trial.source_particle_count;$config.parameters.launched_particle_count=[int]$trial.source_particle_count}
-  Write-RunJson -Path $runConfig -Value $config
+  Write-RunJson -Path $runConfig -Value $config -Depth 100
+  $sourceTimingDiagnostic=$null;$sourceTimingDiagnosticLog=$null
+  if($isBunchFlight-and[int]$trial.source_particle_count-gt1-and-not$isSafeExitOnly-and
+    (-not$bunchSelectionRequested-or$BunchParticleIdMin-eq1)){
+    $failureStage='source_z_energy_timing_diagnostic'
+    $sourceTimingDiagnostic=Join-Path $resultDir 'source_z_energy_timing_diagnostic.json'
+    $sourceTimingDiagnosticLog=Join-Path $logDir 'source_z_energy_timing_diagnostic.log'
+    & {
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic',
+        '--completed-run-config',$runConfig,'--observation',$observation,
+        '--batch-merge-receipt',$batchMergeReceipt,'--output',$sourceTimingDiagnostic)
+      # The analyzer writes JSON without stdout; materialize its required log.
+      Write-Output "SOURCE_Z_ENERGY_TIMING_DIAGNOSTIC=PASS OUTPUT=$sourceTimingDiagnostic"
+    } *>&1|Tee-Object -FilePath $sourceTimingDiagnosticLog|Out-Host
+  }
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal'
   $protectedCacheKeys=@($nativeBankKey)
+  if($staticFieldRequested){$protectedCacheKeys=@()}
   $terminalCommitment=if($ownsCapacitySession){[int64]0}else{[int64]$capacitySession.committed_new_bytes}
   $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
     -Session $capacitySession -ProtectedCacheKeys $protectedCacheKeys `
@@ -1074,6 +1232,7 @@ try{
   $capacitySession=$terminal.session
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   $manifestOutputs=@($summary,$observation,$trialReceipt,$voltageReceipt,$posePath,$startupPath,$terminalPath,$retention)
+  if($null-ne$sourceTimingDiagnostic){$manifestOutputs+=@($sourceTimingDiagnostic,$sourceTimingDiagnosticLog)}
   if($null-ne$collectionGatePath){$manifestOutputs+=$collectionGatePath}
   if($null-ne$earlyAberrationReport-and(Test-Path -LiteralPath $earlyAberrationReport -PathType Leaf)){$manifestOutputs+=$earlyAberrationReport}
   if($null-ne$nativeRuntimeReceiptPath){$manifestOutputs+=$nativeRuntimeReceiptPath}
@@ -1108,6 +1267,7 @@ try{
   }
   throw
 }finally{
+  foreach($guard in $staticPaGuards){$guard.Dispose()}
   if(-not$terminalized-and(Test-Path -LiteralPath $runConfig -PathType Leaf)){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary -SummaryRole 'mrtof_finite_3d_two_prism_voltage_trial' -Reason 'Runner stopped before terminal evidence publication.' -Software @('SIMION 2020','Python 3.11') -Status interrupted -FailureStage $failureStage;$hostOutcome='interrupted'}
   if($null-ne$temporaryAcceleratorRuntimeSession){Suspend-NativeCorridorRuntimeSession -Session $temporaryAcceleratorRuntimeSession}
   if($ownsHostResourceLease-and$null-ne$resourceLease){
