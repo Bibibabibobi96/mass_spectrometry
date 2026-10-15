@@ -100,9 +100,6 @@ def resolve(two_mirror: dict[str, Any], single_mirror: dict[str, Any], ion_foil:
         "assembly_path": two_mirror["assembly_path"],
         "mirror_component_poses": mirror_poses,
         "ion_foil_component_poses": foil_poses,
-        # This is directly consumable by resolve_cad_geometry.py because each
-        # component transform has already been composed into the top-level CAD
-        # frame used by cad_to_theory_frame.json.
         "components": foil_poses,
         "derived_evidence": {
             "inner_A_cover_centre_y_m": [pose["translation_m"][1] for pose in a_covers],

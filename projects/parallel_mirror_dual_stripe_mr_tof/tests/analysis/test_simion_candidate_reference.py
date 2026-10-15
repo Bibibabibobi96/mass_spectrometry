@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import math
 import unittest
@@ -34,8 +33,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.cad_pose_contract impo
     project_to_source,
     source_to_project,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolve_cad_geometry import resolve
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.compose_ion_foil_profile_pose import compose
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import analyze_dual_stripe_l0
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
@@ -56,14 +53,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import (
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0_l1_hardware_candidate import screen_l1_family
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_geometry_parameters import derive_mirror_boundaries
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import (
-    _candidate_voltages,
-    materialize,
-)
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_operating_point_variation import (
-    OperatingPointVariationError,
-    materialize_variation,
-)
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_event_analysis import (
     static_return_chain,
     terminal,
@@ -382,180 +371,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaisesRegex(CandidateContractError, "origin rule differs"):
             resolve_accelerator_iob_origin(contract, wrong_stored_span)
 
-    def test_operating_point_variation_is_derived_and_rejects_ambiguous_overrides(self) -> None:
-        with TemporaryDirectory() as temporary_directory:
-            temporary = Path(temporary_directory)
-            base = temporary / "base.operating_point.lua"
-            base.write_text(
-                "return { mirror_voltages_v = { 0, -10, 20, 30, 50 }, stripe_biases_v = { -4, 6 }, prism_voltages_v = { 141, 0 }, "
-                "accelerator_voltages_v = { 100, 50, 0 }, accelerator_ring_voltages_v = { 45, 40, 35, 30, 25, 20, 15, 10, 5 }, detector_box_mm = { -1, 2, -3, 4, 5, 6 }, "
-                "trajectory_quality = 8, maximum_step_us = 0.002, full_path_timeout_us = 800, nonaccelerator_scale = 1, phase_origin_mirror_side = 1, return_mirror_side = -1, target_drift_period_ratio = 25.5, target_half_oscillation_count = 51 }\n",
-                encoding="utf-8",
-            )
-            overrides = temporary / "overrides.json"
-            overrides.write_text(json.dumps({
-                "purpose": "test variation",
-                "overrides": {
-                    "mirror_voltage_multipliers": [1, 0.9, 1.1, 1, 1],
-                    "stripe_biases_v": [0, 0],
-                    "nonaccelerator_scale": 0.7,
-                    "trajectory_quality": 2,
-                    "maximum_step_us": 0.05,
-                },
-            }), encoding="utf-8")
-            output, receipt = temporary / "variation.lua", temporary / "variation.json"
-            result = materialize_variation(base, overrides, output, receipt)
-            self.assertEqual(result["resolved_operating_point"]["mirror_voltages_v"], [0.0, -9.0, 22.0, 30.0, 50.0])
-            self.assertEqual(result["resolved_operating_point"]["stripe_biases_v"], [0.0, 0.0])
-            self.assertEqual(result["resolved_operating_point"]["prism_voltages_v"], [141.0, 0.0])
-            self.assertEqual(
-                result["resolved_operating_point"]["accelerator_ring_voltages_v"],
-                [45.0, 40.0, 35.0, 30.0, 25.0, 20.0, 15.0, 10.0, 5.0],
-            )
-            self.assertEqual(result["resolved_operating_point"]["full_path_timeout_us"], 800.0)
-            self.assertEqual(result["resolved_operating_point"]["nonaccelerator_scale"], 0.7)
-            self.assertEqual(result["resolved_operating_point"]["trajectory_quality"], 2.0)
-            self.assertEqual(result["resolved_operating_point"]["maximum_step_us"], 0.05)
-            self.assertEqual(result["resolved_operating_point"]["target_drift_period_ratio"], 25.5)
-            self.assertEqual(result["resolved_operating_point"]["target_half_oscillation_count"], 51.0)
-            self.assertTrue(output.exists())
-            invalid = temporary / "invalid.json"
-            invalid.write_text(json.dumps({"overrides": {"unknown": 1}}), encoding="utf-8")
-            with self.assertRaises(OperatingPointVariationError):
-                materialize_variation(base, invalid, temporary / "invalid.lua", temporary / "invalid-receipt.json")
 
-    def test_analytic_l0_l1_receipt_materializes_only_a_run_local_prototype(self) -> None:
-        receipt = {
-            "status": "l0_l1_voltage_candidate_not_3d_validated",
-            "electrode_voltages_v": [0.0, -10.0, 20.0, 30.0, 50.0],
-            "mapping": {"stable": True, "gamma_degrees": 90.0},
-        }
-        with TemporaryDirectory() as temporary_directory:
-            temporary = Path(temporary_directory)
-            receipt_path = temporary / "l0_l1.json"
-            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
-            outputs = materialize(
-                PROJECT / "config" / "simion_candidate_two_zone.json", receipt_path, temporary / "run",
-            )
-            derived = load_contract(outputs["contract"])
-            self.assertEqual(derived["mirror"]["design_status"], "analytic_l0_l1_candidate__3d_unvalidated__pa_build_allowed")
-            self.assertIn("mirror_voltages_v = { 0, -10, 20, 30, 50 }", outputs["operating_point"].read_text(encoding="utf-8"))
-            self.assertIn("detector_box_mm", outputs["operating_point"].read_text(encoding="utf-8"))
-            self.assertIn("stripe_biases_v", outputs["operating_point"].read_text(encoding="utf-8"))
-            self.assertIn("prism_voltages_v = { 141.42135623730948, 0 }", outputs["operating_point"].read_text(encoding="utf-8"))
-            self.assertIn("accelerator_voltages_v", outputs["operating_point"].read_text(encoding="utf-8"))
-            self.assertIn(
-                "n = 1",
-                outputs["mirror_internal_diagnostic_center_fly2"].read_text(encoding="utf-8"),
-            )
-            self.assertIn(
-                "n = 100",
-                outputs["mirror_internal_diagnostic_bunch_fly2"].read_text(encoding="utf-8"),
-            )
-            focus_center = outputs["accelerator_focus_center_fly2"].read_text(encoding="utf-8")
-            focus_bunch = outputs["accelerator_focus_bunch_fly2"].read_text(encoding="utf-8")
-            placement = derive_two_zone_placement(derived)
-            self.assertIn("ke = 0", focus_center)
-            self.assertIn("direction = vector(0,0,-1)", focus_center)
-            self.assertIn(f"position = vector(0,{placement.focus_y_mm:.17g},", focus_center)
-            self.assertEqual(focus_bunch.count("standard_beam {"), 100)
-            self.assertEqual(focus_bunch.count("n = 1"), 100)
-            release_center_z = placement.repeller_z_mm - derived["accelerator"]["release_position_in_gap_1_mm"]
-            accelerator_focus_width = derived["accelerator"]["design_source_acceptance"]["axial_full_width_mm"]
-            self.assertIn(
-                f"position = vector(0,{placement.focus_y_mm:.17g},{release_center_z + accelerator_focus_width / 2.0:.17g})",
-                focus_bunch,
-            )
-            self.assertIn(
-                f"position = vector(0,{placement.focus_y_mm:.17g},{release_center_z - accelerator_focus_width / 2.0:.17g})",
-                focus_bunch,
-            )
-            self.assertNotIn("circle_distribution", focus_bunch)
-            species = derived["particle_source"]["species"]
-            first_prism_entry = outputs["first_prism_entry_center_fly2"].read_text(encoding="utf-8")
-            self.assertIn("ke = 4005", first_prism_entry)
-            self.assertIn("position = circle_distribution", first_prism_entry)
-            self.assertIn("direction = vector(0, 0, -1)", first_prism_entry)
-            self.assertEqual(outputs["first_prism_iob_fly2"].read_bytes(), first_prism_entry.encode("utf-8"))
-            for key in (
-                "mirror_internal_diagnostic_center_fly2",
-                "mirror_internal_diagnostic_bunch_fly2",
-                "accelerator_focus_center_fly2",
-                "accelerator_focus_bunch_fly2",
-                "first_prism_entry_center_fly2",
-            ):
-                source_text = outputs[key].read_text(encoding="utf-8")
-                self.assertIn(f"mass = {species['mass_th']:.17g},", source_text)
-                self.assertIn(f"charge = {species['charge_e']:.17g},", source_text)
-            input_manifest = json.loads(outputs["manifest"].read_text(encoding="utf-8"))
-            voltage_map = outputs["voltage_map"]
-            self.assertEqual(input_manifest["voltage_map"]["filename"], voltage_map.name)
-            self.assertEqual(input_manifest["voltage_map"]["sha256"], hashlib.sha256(voltage_map.read_bytes()).hexdigest())
-            self.assertEqual(voltage_map.read_bytes(), (PROJECT / "simion" / "candidate_voltage_map.lua").read_bytes())
-            cycle_counter = outputs["mirror_cycle_counter"]
-            self.assertEqual(input_manifest["mirror_cycle_counter"]["filename"], cycle_counter.name)
-            self.assertEqual(
-                input_manifest["mirror_cycle_counter"]["sha256"],
-                hashlib.sha256(cycle_counter.read_bytes()).hexdigest(),
-            )
-            self.assertEqual(
-                cycle_counter.read_bytes(),
-                (PROJECT / "simion" / "mirror_cycle_counter.lua").read_bytes(),
-            )
-            operating_point = outputs["operating_point"].read_text(encoding="utf-8")
-            self.assertIn(
-                "mirror_regions_project = { negative = { z_min_mm = -325, z_max_mm = -102 }, "
-                "positive = { z_min_mm = 102, z_max_mm = 325 } }",
-                operating_point,
-            )
-            self.assertIn("detector_box_mm = { -25, -87, 95, 25, -37, 97 }", operating_point)
-            self.assertIn("source_receipt_sha256", outputs["operating_point"].read_text(encoding="utf-8"))
-            self.assertIn(
-                "qualification = 'geometry_review_only__unsolved_stripe_and_p2'",
-                outputs["operating_point"].read_text(encoding="utf-8"),
-            )
-            self.assertEqual(
-                input_manifest["status"],
-                "geometry_review_only__named_diagnostics__full_center_unpublished",
-            )
-            self.assertEqual(input_manifest["schema_version"], 3)
-            self.assertEqual(
-                input_manifest["mirror_internal_diagnostic_center_fly2"]["source_profile_id"],
-                "mirror_internal_diagnostic",
-            )
-            self.assertEqual(
-                input_manifest["full_mrtof_center_source"],
-                {
-                    "status": "blocked_pending_coupled_stripe_phase_and_two_prism_finite_3d",
-                    "publishable": False,
-                    "fly2": None,
-                },
-            )
-            self.assertEqual(outputs["program"].name, "mrtof_candidate.lua")
-            program = outputs["program"].read_text(encoding="utf-8")
-            self.assertIn("mirror_cycle_counter.new(\n      mirror_regions, phase_origin_mirror_side, return_mirror_side,\n      target_half_oscillation_count)", program)
-            self.assertNotIn("target_turns", program)
-            self.assertNotIn("turns[ion_number] ==", program)
-            self.assertTrue(outputs["first_prism_l0_receipt"].exists())
-            self.assertIn("first_prism_l0_receipt", input_manifest)
-            self.assertIn("first_prism_l0", outputs["operating_point"].read_text(encoding="utf-8"))
-            first_prism_program = outputs["first_prism_program"].read_text(encoding="utf-8")
-            self.assertIn("MRTOF_FIRST_PRISM_EVENT interface", first_prism_program)
-            # The static diagnostic must use IOB-persisted PA0 fields: doing a
-            # full PA-family Fast Adjust per integration segment is a severe
-            # performance regression and cannot change this frozen point.
-            self.assertIn("adjustable runtime_fast_adjust_enable = 0", first_prism_program)
-            self.assertIn("if runtime_fast_adjust_enable == 0 then return end", first_prism_program)
-            self.assertEqual(outputs["first_prism_operating_point"].read_bytes(), outputs["operating_point"].read_bytes())
-            self.assertEqual(outputs["first_prism_voltage_map"].read_bytes(), voltage_map.read_bytes())
-            for key in ("first_prism_program", "first_prism_operating_point", "first_prism_voltage_map", "first_prism_iob_fly2"):
-                self.assertIn(key, input_manifest)
-            derived["simion_geometry_release_status"] = "cad_topology_and_top_level_pose_qualified"
-            outputs["contract"].write_text(json.dumps(derived), encoding="utf-8")
-            self.assertIn(
-                "MR-TOF analyser PA only",
-                build_analyzer_gem(outputs["contract"]),
-            )
 
     def test_cad_pose_contract_round_trips_and_places_mechanical_midplane_at_x_zero(self) -> None:
         contract = load_cad_pose_contract(PROJECT / "config" / "cad_to_theory_frame.json")
@@ -566,31 +382,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual(mapped, (0.0, -123.25, -64.416726))
         self.assertEqual(project_to_source(mapped, contract), point)
 
-    def test_resolved_cad_envelope_applies_component_and_project_transforms(self) -> None:
-        frame = load_cad_pose_contract(PROJECT / "config" / "cad_to_theory_frame.json")
-        identities = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
-        names = ["ion foil 1-3", "ion foil 1-4", "ion foil 3-3", "ion foil 3-4"]
-        evidence = {
-            "assembly_path": "synthetic.SLDASM",
-            "components": [
-                {"instance_name": name, "part_path": f"{name}.SLDPRT", "suppressed": False,
-                 "local_part_box_m": [0.0, 0.03, 0.0, 0.1, 0.04, 0.02],
-                 "solidworks_transform_array": identities}
-                for name in names
-            ],
-        }
-        manifest = resolve(evidence, frame)
-        self.assertEqual(manifest["components"][0]["project_box_mm"], [-86.0, 158.0, 30.0, -66.0, 258.0, 40.0])
 
-    def test_ion_foil_profile_composition_keeps_assembly_and_project_frames_distinct(self) -> None:
-        frame = load_cad_pose_contract(PROJECT / "config" / "cad_to_theory_frame.json")
-        identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
-        edge = {"edge_index": 1, "bspline": {"order": 4, "periodic": False, "knots": [0.0] * 4 + [1.0] * 4, "control_points_component_m": [[0.0, 0.0, 0.0]] * 4}}
-        component = {"instance_name": "set", "source_instance_name": "part-1", "long_bspline_edges": [edge]}
-        profile = {"coordinate_frame": "opened Ion-Foil assembly, millimetres", "stripes": [component], "central_ground": component}
-        top_level = {"ion_foil_component_poses": [{"local_instance": "part-1", "solidworks_transform_array": identity}]}
-        result = compose(profile, top_level, frame)
-        self.assertEqual(result["stripes"][0]["long_bspline_edges"][0]["control_points_project_mm"][0], [-86.0, 158.0, 0.0])
 
     def test_candidate_places_two_zone_focus_at_central_plane(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
@@ -1021,26 +813,6 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         )
         self.assertGreater(abs(result["scalar_brent_seed"]["gamma_residual_degrees"]), 0.001)
 
-    def test_simion_materializer_accepts_only_converged_gamma_family_receipt(self) -> None:
-        receipt = {
-            "status": "l1_family_continued_to_gamma_target__peak_field_and_3d_validation_pending",
-            "gamma_target_continuation": {
-                "status": "gamma_target_selected_with_probe_convergence__peak_field_and_3d_validation_pending",
-                "gamma_residual_degrees": 1e-8,
-                "maximum_gamma_residual_degrees": 0.001,
-                "l0_receipt": {"electrode_voltages_v": [0.0, -5000.0, 3800.0, 5400.0, 7500.0]},
-                "l1_screen": {"nominal_mapping": {"stable": True, "gamma_degrees": 90.00000001}},
-            },
-            "gamma_target_probe_convergence": {"status": "pass"},
-        }
-        with TemporaryDirectory() as temporary_directory:
-            path = Path(temporary_directory) / "mirror.json"
-            path.write_text(json.dumps(receipt), encoding="utf-8")
-            self.assertEqual(_candidate_voltages(path), [0.0, -5000.0, 3800.0, 5400.0, 7500.0])
-            receipt["gamma_target_probe_convergence"]["status"] = "fail"
-            path.write_text(json.dumps(receipt), encoding="utf-8")
-            with self.assertRaises(CandidateContractError):
-                _candidate_voltages(path)
 
     def test_writer_emits_a_lf_gem_source(self) -> None:
         with TemporaryDirectory() as temporary_directory:

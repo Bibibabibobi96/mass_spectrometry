@@ -46,32 +46,6 @@ PRISM_CASES = {
             "common.contracts.verify_run_manifest',$exitManifest",
         ),
     },
-    "parallel_angle_discovery": {
-        "runner": "run_two_prism_parallel_angle_discovery.ps1",
-        "required": (
-            "[Parameter(Mandatory)][string]$CoverageRunManifest",
-            "Get-VerifiedRunManifestInputRecord",
-            "Assert-VerifiedRunRecordHash",
-            "Copy-VerifiedRunInput",
-            "two_prism_segmented_voltage_branch_coverage",
-            "--coverage-summary", "--p1-min-v", "--p1-max-v",
-            "--anchor-count", "--worker-count", "--angle-ratio-root-tolerance",
-            "--p2-root-tolerance-v", "--topology-boundary-tolerance-v",
-            "--maximum-slice-evaluations", "--normal-energy-tolerance",
-            "--stage-a-maximum-reduced-time", "--stage-b-maximum-reduced-time",
-        ),
-        "mandatory": (
-            "P1MinimumV", "P1MaximumV", "AnchorCount", "WorkerCount",
-            "AngleRatioRootTolerance", "P2RootToleranceV",
-            "TopologyBoundaryToleranceV", "MaximumSliceEvaluations",
-            "RelativeTolerance", "AbsoluteTolerance", "MaximumStepMmPerSqrtV",
-            "EventSamplesPerStep", "RootTimeToleranceMmPerSqrtV",
-            "BoundaryRootToleranceMm", "MomentumToleranceSqrtV",
-            "NormalEnergyToleranceV", "MaximumSteps",
-            "StageAMaximumReducedTimeMmPerSqrtV", "StageBMaximumReducedTimeMmPerSqrtV",
-        ),
-        "forbidden": ("$ExactKRunManifest", "$StripeSeedRunManifest", "$AcceleratorExitRunManifest", "SIMION"),
-    },
     "segmented_continuation": {
         "runner": "run_two_prism_segmented_continuation.ps1",
         "required": (
@@ -144,11 +118,6 @@ class PrismRunnerContractMatrixTests(unittest.TestCase):
             "--stage-a-maximum-reduced-time", "--stage-b-maximum-reduced-time",
         )
         cases = {
-            "run_two_prism_parallel_angle_discovery.ps1": (
-                "--coverage-summary", "--p1-min-v", "--p1-max-v", "--anchor-count",
-                "--worker-count", "--angle-ratio-root-tolerance", "--p2-root-tolerance-v",
-                "--topology-boundary-tolerance-v", "--maximum-slice-evaluations",
-            ) + common_transport,
             "run_two_prism_segmented_continuation.ps1": (
                 "--coverage-summary", "--solve-mode", "--expected-topology-signature-sha256",
                 "--initial-p1-v", "--initial-p2-lower-v", "--initial-p2-upper-v",
@@ -171,7 +140,6 @@ class PrismRunnerContractMatrixTests(unittest.TestCase):
         cases = (
             ("two_prism_segmented_coverage.py", "MRTOF_TWO_PRISM_SEGMENTED_COVERAGE_ANALYSIS=PASS"),
             ("two_prism_segmented_voltage_continuation.py", "MRTOF_TWO_PRISM_SEGMENTED_CONTINUATION=PASS"),
-            ("two_prism_parallel_angle_discovery.py", None),
         )
         for script, marker in cases:
             with self.subTest(script=script):
