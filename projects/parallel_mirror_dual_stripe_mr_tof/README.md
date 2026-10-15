@@ -54,3 +54,4 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 - [mesh6 响应范围与场诊断里程碑](docs/history/20261010__mesh6-response-range-and-field-diagnostics.md)
 - [原生场工程基线里程碑](docs/history/20261010__native-field-engineering-baseline.md)
 - [会聚镜场复现与高斯源性能里程碑](docs/history/20261015__converging-field-and-performance-milestone.md)：保存收缩前混合WORKTREE文档及证据检索映射。
+- [历史生产器退役里程碑](docs/history/20261015__producer-retirement-milestone.md)
