@@ -126,7 +126,7 @@ COMSOL标量电势→规则PA→SIMION求导／插值／窗口选择→原飞行
 | [mesh1][mesh1]／[mesh2][mesh2] | Q2、CG＋AMG；约1607／2108万四面体、2266／2965万DOF；已导出并完成同源N13 |
 | [mesh3局部细分][mesh3] | 约2402万四面体、3361万DOF；已保存，原始求解runAll约996 s |
 | [mesh3同网格重求][stopping-control] | 活动CG的rhob 400→40000并清解，38次CG、runAll880.423 s；保存／冷读总1005.940 s |
-| mesh2匹配重求 | 131251在组装34%触发xmodel_assem.cpp:1896断言；未进入CG、未产生新场，不作为有效收敛档 |
+| mesh2匹配重求 | 原131251组装断言无解；[150021][matched-mesh2]从成功来源重绑已有mesh2求成，32次CG、runAll819.263 s，保存一份MPH |
 | [重求场四窗导出][mesh3-export] | 同一124839解，总1805.227 s、约5.20 GB；未重新求场 |
 
 完整几何、电压及Q2相同；活动求解器是CG＋AMG，不因树中存在MUMPS就称使用MUMPS。
@@ -177,6 +177,12 @@ COMSOL不升级；[厂商小文件材料][vendor]保留，未发送。已有原�
 40点重求前后最大ΔV=3.456×10⁻¹¹ V、向量ΔE=1.749×10⁻⁷ V/m，h及quality不变；未保存新MPH、导出或Fly。
 当前设置在本次试验中可重复，约158 V/m两档差异不是本次随机重求波动；仍不能据此证明停止误差、FEM或全程轨迹收敛。
 
+[150021匹配mesh2][matched-mesh2]已得到新场：成功模型内已有21076275四面体mesh2，完整控制树仅Study网格重绑，
+Q2、CG＋AMG及rhob40000不变；32次CG、原生稳态703 s、runAll819.263 s，总940.530 s，峰值物理内存32.39 GB。
+同40点中新mesh2相对旧mesh2最大变化0.186198 V／139.507 V/m；新mesh2相对当前mesh3为0.086220 V／26.489 V/m，
+正镜12进入／离开z=97 mm截面差约10⁻⁹ V/m。此前约158 V/m不能全部归因FEM网格；同网格重求／控制变化贡献显著。
+success／full22／公共ready已完成；剩余点差不是误差上界或TOF资格，尚未导出、飞行或冷重读，保存成功不等于场／轨迹收敛。
+
 ## 剩余时间响应与设计线索
 
 倾斜候选的局部Ey敏感性已明显下降，但尚未得到独立大样本下完整宽平台／十万资格。
@@ -199,8 +205,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 已关闭的旧生产器、专属测试与入口清单归入[退役里程碑](history/20261015__producer-retirement-milestone.md)。
 当前共享数学、活动配置及两条链的资产重建能力继续保留；已封存输入和小证据不随入口退役删除。
 
-1. 同控制mesh3复现已完成；下一项先依据已保存控制、原生场及束路差异，选择一次隔离停止误差或FEM影响的有限对照。
-   不重复同控制试验，不排列组合求解参数；暂不启动高斯N100，不默认新建网格或无限加密。
+1. 复用[150021匹配mesh2][matched-mesh2]保存场，准备同四窗导出及同源受控N13，与当前mesh3比较相对时间及返回状态。
+   不重新求场、不改窗口／电压／插值，不把26.489 V/m点差当时间误差；完成匹配控制的轨迹比较前暂不启动高斯N100。
 2. 根据mesh1/mesh2配对区分共同TOF、粒子相对时间、空间返回与终止身份；只针对改变设计决策的束路补充精度检查。
    不等待所有旧失闭合轨迹一致，也不因中心命中选“真值”；若结果仍改变性能判断，报告有限可信范围。
 3. 原生工作流保留可重放能力；必要响应兼容成员完成后自动有界P/S恢复，冻结候选再检查代表离散稳健性。
@@ -247,3 +253,4 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [fast12-layers]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_142316__analysis__cross__fast12-mesh2-mesh3-field-layers/summary.json
 [same-control-repeat]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_143250__analysis__comsol__mesh3-same-control-repeat/summary.json
 [fine-native-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_144459__analysis__python__fine-native-mesh3-controlled-n13-pairing/summary.json
+[matched-mesh2]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_150021__analysis__comsol__mesh2-from-stable-source/run_config.json
