@@ -211,8 +211,6 @@ class NativeCorridorPlanTest(unittest.TestCase):
         self.assertIn("'--physical-to-local-map',$mapping", source)
         self.assertNotIn('remap_pa_electrode_ids.lua', source)
         self.assertNotIn('[Parameter(Mandatory)][string]$RawGeometryPath', source)
-        fixture = (PROJECT / 'tests' / 'simion' / 'test_native_corridor_stream_fixture.lua').read_text(encoding='utf-8-sig')
-        self.assertIn('full_corridor_workers=0', fixture)
         self.assertNotIn('[string[]]$ResponsePaths', source)
 
 

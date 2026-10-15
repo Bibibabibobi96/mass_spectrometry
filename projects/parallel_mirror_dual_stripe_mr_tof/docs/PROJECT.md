@@ -14,6 +14,7 @@
 这是有限工程结果，不是正式十万资格：前者名义峰宽距目标仅约0.053 ns，尚无独立大样本统计资格。
 COMSOL mesh2已成功求场、导出及同源受控N13；两档均无检测器命中。固定输入配对已显示目标49处
 相对中心时间最大变化约1.950 ns、y位置约3.717 mm，尚不支持性能复现或场已收敛。
+mesh3的有限局部细分已求成并封存，但固定束路点差异未整体缩小；未导出或飞行，无新的束团性能。
 
 当前按用户优先级先整理整个项目代码、脚本和配置，确认依赖后退役无消费者旧能力，实际减少代码量和入口数；
 范围不限于当前模拟链。暂停新增求场与飞行，保留两条模拟链、响应库、GUI、CAD及冻结参考所需资产。
@@ -127,6 +128,7 @@ COMSOL标量电势→规则PA→SIMION求导／插值／窗口选择→原飞行
 |---|---|
 | mesh1：[001600／恢复004119][mesh1] | Q2，CG＋AMG；16071408四面体、22659432 DOF，24次CG；原生求场约382 s |
 | mesh2：[074200状态隔离][mesh2] | 复制后局部Longest-edge Refine；21076275四面体、29650232 DOF；27次CG、约525 s；求场成功 |
+| mesh3：[局部regular及发布恢复][mesh3] | mesh2复制后正镜D/E槽壁—间隙—束路局部细分一次；24023776四面体、33611669 DOF；33次CG，原生稳态831 s、runAll 996.360 s；未导出／飞行 |
 | 同输入固定217点 | mesh2−mesh1最大ΔV≈0.042604 V、向量ΔE≈10.6858 V/m；主要在快速镜转折，其他所查分组接近 |
 | 当前导出：[083000][mesh2-export] | 四窗计算完成，success/full20、公共ready及实际binding通过；查询1070.913/107.410/108.066/145.079 s；无重新求场 |
 
@@ -175,9 +177,15 @@ S缺省输入的检查时序已在工作区修正：先读取冻结场电压，�
 近槽壁x=14.5 mm约5.000–6.063。D/E间隙轴线约1.334–1.783 mm，外隙所查点约4.086–5.289 mm。
 这些是点所在单元，不是整个区域上界；所查quality最低约0.250，不能据此证明坏单元是根因。
 剖面支持下一档同时考虑真实壁／间隙至束路的体网格和过渡，而非只追热点轴线；粗h尚不构成因果证明。
-候选局部范围为正镜未倾斜坐标x=0..18、y=215..250、z=274..296 mm，经冻结Rx转换后选真空域；
-一次regular细分作为有限对照，非全域加密或既定收敛方案。建网前冻结范围与成本，实际规模／质量不符合目的时重新判断，
-不自动追加更细档；成功求解后先查固定120点，再决定相干全窗导出与同源受控飞行。
+mesh3已按正镜未倾斜坐标x=0..18、y=215..250、z=274..296 mm及冻结Rx变换完成一次regular细分，
+四面体增加13.99%；固定120个束路点的最大电场向量差317.067 V/m出现在负镜第45次转折，
+该点所在单元h仍为0.399816 mm；第12次正镜组最大差158.735 V/m，未比前档139.804 V/m缩小。
+中央面及第11、13、49组所查点变化很小，不能因此授予整程资格，也不能将较大点差直接换算为峰宽。
+近壁78点剖面的最大差发生在x=14.5 mm，须与实际束轴点分开；不据此盲目继续加密。
+科学计算、保存和冷读已完成，总1141.382 s；198点冷读与保存前V/E差均为0，仅证明可重读。
+原运行在成功计算后因一次性包装脚本读取未定义LASTEXITCODE而发布失败；[零计算恢复][mesh3]
+保持原失败证据不变并引用同一MPH，未复制、重复哈希或重算。下一步物理路线待整理完成后决定，
+不自动追加更细档、全窗导出或飞行。
 方法选择参考[官方局部Refine](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_mesh.24.80.html)
 与[网格质量定义](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_mesh.24.24.html)：
 一次longest只二分最长边，regular多轴细分成本更高；不将更小h或更平滑场图等同于可靠结果。
@@ -221,9 +229,11 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 当前staged闭合、分段Prism覆盖、精确曲线CAD交付和真实源链保留；历史源码可从Git恢复，
 已封存输入和小证据不因入口退役而删除。本批同时退役旧prototype物化及首Prism专用诊断，
 保留当前trial实际使用的timeout与源身份helper；确认依赖、回归及主题提交后才算退役闭环。
+无活动驱动的旧Prism编译探针、standalone迁移和corridor stream两份fixture亦退役；
+保留活动family fixture、生产streaming合同检查及全部历史输入，不再用fixture自报字符串冒充执行验收。
 
-1. 根据已定位的第12次正镜热点，先核对实际束路包络、电极面／缝隙及现有网格质量，比较局部细分方法并冻结方案。
-   规划完成前不新建网格；先查新档实际h/quality及固定120点，再决定完整相干导出／飞行，不在零命中场上直接投入高斯N100。
+1. mesh3有限局部细分与固定点对照已完成，未形成收敛证据。整理完成后根据原生场变化及连续束路证据
+   决定下一项有判别目的的数值试验，不自动新增网格或在零命中场上直接投入高斯N100。
 2. 根据mesh1/mesh2配对区分共同TOF、粒子相对时间、空间返回与终止身份；只针对改变设计决策的束路补充精度检查。
    不等待所有旧失闭合轨迹一致，也不因中心命中选“真值”；若结果仍改变性能判断，报告有限可信范围。
 3. 原生工作流保留可重放能力；必要响应兼容成员完成后自动有界P/S恢复，冻结候选再检查代表离散稳健性。
@@ -257,6 +267,7 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [fine-field]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_032031__build__simion__converging-y360-mirror-z002-field/results/field_binding.json
 [mesh1]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_004119__analysis__comsol__converging-field-publication-recovery/inputs/model_reference.json
 [mesh2]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_074200__analysis__comsol__converging-mesh2-state-isolation/summary.json
+[mesh3]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_103700__analysis__python__mesh3-publication-recovery/summary.json
 [mesh2-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_083000__analysis__comsol__converging-mesh2-beam-tube-export/run_config.json
 [mesh1-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_010000__analysis__comsol__converging-beam-tube-export/run_config.json
 [comsol-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_013155__sim__simion__converging-comsol-fixed-u-controlled-n13/summary.json
