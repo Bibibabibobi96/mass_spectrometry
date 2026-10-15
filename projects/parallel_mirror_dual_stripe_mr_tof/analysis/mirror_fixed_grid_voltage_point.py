@@ -139,19 +139,6 @@ def build_fixed_grid_point_receipt(
     return receipt
 
 
-def build_secant_point_receipt(
-    *, correction_path: Path, family_path: Path, contract_path: Path, output_path: Path,
-) -> dict[str, Any]:
-    """Backward-compatible Python API for the first diagnostic secant point."""
-
-    return build_fixed_grid_point_receipt(
-        correction_path=correction_path,
-        family_path=family_path,
-        contract_path=contract_path,
-        output_path=output_path,
-    )
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--correction", type=Path, required=True)

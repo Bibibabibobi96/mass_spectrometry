@@ -8,7 +8,6 @@ from pathlib import Path
 from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_fixed_grid_voltage_point import (
     build_fixed_grid_point_receipt,
-    build_secant_point_receipt,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
@@ -50,7 +49,7 @@ class FixedGridVoltagePointTests(unittest.TestCase):
                     "coarse_normalized_period_slopes_per_v": [0, 0, 0],
                 },
             }))
-            result = build_secant_point_receipt(
+            result = build_fixed_grid_point_receipt(
                 correction_path=correction, family_path=family,
                 contract_path=contract, output_path=output,
             )
@@ -87,7 +86,7 @@ class FixedGridVoltagePointTests(unittest.TestCase):
                 },
             }))
             with self.assertRaisesRegex(CandidateContractError, "out of bounds"):
-                build_secant_point_receipt(
+                build_fixed_grid_point_receipt(
                     correction_path=correction, family_path=family,
                     contract_path=contract, output_path=root / "point.json",
                 )
