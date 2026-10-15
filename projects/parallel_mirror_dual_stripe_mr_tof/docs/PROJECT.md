@@ -2,7 +2,7 @@
 
 返回[项目导航](../README.md)。推导见[理论索引](theory/index.md)，机械交付见[CAD](CAD.md)。
 本页只维护当前决策、有效证据和未完成动作；具名运行的冻结输入才是参数权威。
-原有5225行混合工作区时间线完整保存在[本次只读里程碑](history/20261015__converging-field-and-performance-milestone.md)，不冒称已提交版本。
+已完成矩阵、恢复与退役记录归[边界输入隔离里程碑](history/20261015__boundary-input-isolation.md)；更早过程由项目README导航。
 
 ## 当前决策与完成边界
 
@@ -12,11 +12,8 @@
 
 原生细档高斯σEy=0.15／0.2 eV的N100分别为R≈101399／80929、98%／95%，均为有限工程结果。
 COMSOL各次完整受控N13均0/13检测器命中，尚未获得收敛或性能复现资格。
-本轮[固定场与求解状态里程碑](history/20261015__fixed-field-reproduction-and-solve-state.md)保存已完成比较、失败及恢复证据；
-旧producer专项见[退役里程碑](history/20261015__producer-retirement-milestone.md)，两条链必要资产继续保留。
-匹配求解控制后的两档FEM整程相对时间差已缩小，但仍改变空间返回；最新阶段见[匹配求场与轨迹对照](history/20261015__matched-solve-and-trajectory-comparison.md)。
-同入口单镜对照已完成：出口相对中心时间两档最大差0.05853 ns，但慢向速度仍差0.003768 mm/μs，
-说明本段计时接近不等于后续慢向返回稳定；尚不投入高斯N100。
+匹配控制及局部细化后，相对计时差缩小，空间返回仍敏感；跨来源慢向场差部分已存在于原始场及继承边界。
+薄体积donor在已测点的慢向表示误差较小，下一决策是边界单因素对照，而非继续盲目加密或投入高斯N100。
 
 ## 输入权威与物理定义
 
@@ -119,133 +116,62 @@ P位置0.1 mm、能量0.0523430183 V/q、S两位置各0.1 mm；S1/P1/P2约束联
 
 ## 电场表示与数值资格
 
-原生细档检测器峰宽及身份已经稳定到上述已测量级，但受控N13慢转折最大差仍约1.203 ns，
-慢返回y=0约1.083 ns并有额外穿面记录。应按相同事件、方向和分支配对，不能宣布全轨迹数值收敛。
-约0.2 ns是十万目标的总体初始工程预算，不是每环节独立预算，也不是探索性调焦统一硬门槛。
-中心共同TOF平移、端点响应、两档差值均不能直接当FWHM或总误差上界。
+原生细档的已测高斯峰宽及损失身份接近，但N13慢转折最大差仍约1.203 ns、慢返回y=0约1.083 ns，
+不能宣布全轨迹收敛。约0.2 ns是十万目标的总体初始工程预算，不是探索硬门槛、单环节预算或严格误差界。
+共同TOF平移、端点响应和相邻档差均不能直接当作FWHM；事件必须按身份、方向和返回分支配对。
 
-COMSOL采用完整C0装配独立求场，不再沿用旧SIMION donor；实际消费仍为
-COMSOL标量电势→规则PA→SIMION求导／插值／窗口选择→原飞行入口，不是直接FEM原生插值。
-网格、求解停止、导出表示、窗口交接、积分及事件分别控制；不追求远离束路的尖角场处处相等。
-两种场源共用trial、批次调度、事件诊断和发布；差别在场provider及binding，不另建COMSOL闭合器。
-本轮135800消费四窗单工作点场，响应项为0，未验证当前COMSOL响应组合；新场空间闭合也尚未执行。
-当前固定场导出／飞行已实跑；通用COMSOL改压provider仍使用旧sol1/std1及单窗来源合同，
-不能宣称已适配当前mesh3/4多窗来源。相关活动源码尚有未发布依赖，干净检出复现资格未关闭。
-外部场回调的普通GUI场查询不等价（`gui_field_queries_equivalent=false`）；保留IOB不代表云图显示实际消费场。
+COMSOL现在是完整C0装配独立求场，不再继承SIMION donor；实际消费为标量电势→规则PA→
+SIMION求导、插值和窗口选择→原trial。两来源复用调度、碰撞和诊断，不另建追迹／闭合系统。
+普通GUI场查询不等于外场回调，保留IOB不授云图对等资格。网格、求解停止、导出、积分及事件误差分别管理。
 
-| 有效COMSOL对象 | 当前结果与用途 |
-|---|---|
-| [匹配mesh2][matched-mesh2] | 21076275四面体，Q2、CG＋AMG、rhob40000；32次CG、runAll819.263 s，总940.530 s |
-| [mesh3重求][stopping-control] | 24023776四面体，匹配控制；38次CG、runAll880.423 s；同控制40点重求已可重复 |
-| [mesh4局部最长边细分][mesh4-longest] | 30697694四面体，保持控制；44次CG，runAll1564.073 s；完整运行1880.077 s，峰值约41.83 GiB |
-| [mesh4四窗导出][mesh4-export] | success/full20、公共ready；1971.287 s、5.199 GB，四窗同sol4，无新求场 |
-| [mesh4 N13][mesh4-n13] | success/full24；13颗全部target49、0颗检测器命中，波次459.334 s；原电压、源、4 ns/Q8 |
-| [匹配mesh2四窗导出][matched-export] | 构建时success/full20、1608.874 s；八PA已退役，源MPH和小证据保留，历史IOB须重新导出／装配 |
-| [匹配mesh2 N13][matched-n13] | success/full24；原调度器1 worker、飞行波次480.594 s；原源／电压／4 ns/Q8 |
-| [配对分析][matched-pair] | 纯分析0.445 s，无新增商业计算；FEM间15项、细档native对照9项登记控制全部相等 |
+### 有效场与固定输入对照
 
-实际导出沿[冻结四窗定义][mesh1-export]：base 0.25/0.25/0.10 mm，正负镜0.04/0.20/0.04 mm，
-慢返回0.10 mm三轴；优先级正镜→负镜→慢返回→base。保留原生碰撞实例、单位、坐标及有效掩模。
-基础窗5664个未知节点保持无效、另三窗全有效；须以实际轨迹支撑判断影响，不能补零或计作物理损失。
-规则PA更细不自动等于FEM更准确；两来源共用追迹并不消除场表示差异。
+当前[mesh4][mesh4-longest]为30697694四面体、Q2、CG＋AMG、rhob40000、sol4/dset1；
+runAll约1564 s、完整运行1880 s、峰值约41.83 GiB。参数不是误差界；mesh3同控制冷重求的40点可重复，
+不等于停止误差关闭。旧混控制或组装失败档不能串成收敛序列，完整过程归[里程碑](history/20261015__boundary-input-isolation.md)。
+COMSOL不升级；厂商材料保留未发送，不继续无新假设的大模型重试。
 
-此前mesh3同网格重求改变317.067 V/m且日志由Nonsymmetric变为Symmetric；
-旧两档比较混有rhob及重求状态，不能全部归因网格。活动误差因子是i1.rhob，增大才更严格，
-stol=1e−9或rhob40000均不是物理误差界。原mesh2的131251重求组装断言，无新场；
-[150021][matched-mesh2]从成功模型重绑已有mesh2才求成，不是原失败输入重放。
-新mesh2相对旧mesh2所查最大场差139.507 V/m，相对匹配mesh3为26.489 V/m；点差不是TOF。
-mesh3同控制冷加载清解重求40点最大场差约1.75×10⁻⁷ V/m，支持该次可重复，不等于停止／FEM收敛。
-完整失败、重求和分层查询过程见[本阶段冻结原文](history/20261015__matched-solve-and-trajectory-comparison.md)及其引用，不重复参数排列组合。
+[mesh4四窗导出][mesh4-export]约1971 s／5.199 GB：
+base间距0.25/0.25/0.10 mm，正负镜0.04/0.20/0.04 mm，慢返回三轴0.10 mm；
+优先级正镜→负镜→慢返回→base。基础窗5664未知节点保留无效，另三窗全有效；
+必须按真实轨迹支撑检查，不能补零或将未知查询计作物理碰撞。
 
-当前匹配FEM对照使用同一几何、电压、源、四窗及积分设置；两档均0/13检测器命中，
-均10个物理碰撞＋3个拓扑拒绝、全部出现target49，但六颗粒子的碰撞部件改变；
-相同计数不能称轨迹稳定。细档native参考为13/13命中，不能以命中更多选择真值。
-无命中的FEM队列没有检测器FWHM／R，target49诊断不能冒充性能。
+同源[mesh4 N13][mesh4-n13]全部出现target49，0/13检测器命中，10碰撞＋3拓扑拒绝；
+中心target49 y残差+10.694 mm。没有检测器峰宽／R，不运行高斯N100来补造性能。
+[配对][mesh4-pair]的FEM间15项、跨源9项控制一致，当前结果为：
+单镜原始出口见[mesh3][segment3]、[mesh4][segment4]及[native][segment-native]，不与整程终点混用。
 
-| 同target49受控响应 | Ey斜率（ns/eV） | x±0.1 mm偶响应（ns） | x±0.5 mm偶响应（ns） |
-|---|---:|---:|---:|
-| 匹配mesh2 | +16.44406 | −0.180612 | +1.958104 |
-| mesh3重求 | +17.44775 | +0.079818 | +2.559779 |
-| mesh4局部细化 | +17.69162 | +0.271613 | +2.556643 |
-| 原生细档（同事件） | +2.46446 | +0.164977 | +2.324758 |
+| 固定输入比较 | 最大相对中心ΔTOF/ns | 最大Δy/mm | 解释 |
+|---|---:|---:|---|
+| mesh2→3，target49 | 0.601675 | 1.878743 | 匹配求场控制，尚改变返回 |
+| mesh3→4，target49 | 0.211393 | 1.006036 | 差异缩小，ID9碰撞部件改变 |
+| native细档→mesh4，target49 | 7.342627 | 15.095070 | 跨来源未一致，不按命中多选真值 |
+| mesh3→4，同入口单正镜五颗 | 0.028632 | 0.013904 | 同出口，最大Δvy=0.0018746 mm/μs |
+| mesh4→native，同入口单正镜五颗 | 0.037722 | 0.071485 | 同出口，最大Δvy=0.0091949 mm/μs |
 
-| 配对对象／事件 | 最大相对中心TOF变化（ns） | 最大y变化（mm） |
-|---|---:|---:|
-| 匹配mesh2→mesh3，首次P2后 | 0 | 约2×10⁻¹⁰ |
-| 匹配mesh2→mesh3，target49 | 0.601675 | 1.878743 |
-| mesh3→mesh4，target49 | 0.211393 | 1.006036 |
-| 细档native→匹配mesh2，target49 | 7.687358 | 14.634182 |
-| 细档native→mesh4，target49 | 7.342627 | 15.095070 |
+单镜入口六维状态与原时钟完全继承，五颗覆盖中心、Ey及全幅x对。小单段计时差伴随慢向状态差，
+不能乘49或授整程资格；[同场放大试验][amplification3]已见入口y差0.027424扩大至0.622397 mm。
+target49的Ey斜率在mesh3／mesh4／native为17.44775／17.69162／2.46446 ns/eV；
+全幅Cx为2.559779／2.556643／2.324758 ns，均不是检测器性能。
 
-旧混控mesh2→mesh3在target49为2.055357 ns／3.928290 mm；匹配控制后差异缩小，
-但仍不足以支持完整空间及时间资格。细档native为035610、镜网格0.04/0.20/0.02 mm、
-物理y上界360 mm，不再使用旧y350参考代替；实际电压、源与碰撞定义一致。
-表中是已观测配置响应，不是总误差界、额外峰宽或分辨率；源与返回状态差的放大尚须分段隔离。
+### 当前已隔离的差异与下一决策
 
-单镜重放复用匹配mesh2第12次正向中央穿面的五颗实际入口、完整六维状态与原时钟，
-覆盖中心、Ey对及全幅x对；各来源均实际正镜转折后于首次负向z=0停止，未强制修正轨迹。
-[mesh2][segment2]、[mesh3][segment3]、[mesh4][segment4]、[原生细档][segment-native]全部五颗到达同一出口，
-无新求场／PA物化，总时分别27.721／30.840／24.683／83.047 s（包含装载）。
+[40点消费分层][mesh4-consumer]显示，所查正镜转折点的消费场−原始FEM慢向分量最大差0.08308 V/m，
+native−消费仍约7.58514 V/m；主要跨源慢向差已存在于原始场，不支持盲细导出。
+但z=97 mm所查点的桥接向量差仍约13.883 V/m，不能授整条桥接资格。
+局部镜坐标Ry=Ey−tanθ·Ez仅用于诊断，不是纯Stripe场，也不能扣除后修轨迹。
 
-| 同入口单正镜比较 | 最大相对中心ΔTOF/ns | 最大Δy/mm | 最大Δvy/(mm/μs) |
-|---|---:|---:|---:|
-| mesh2→3 | 0.058529 | 0.027424 | 0.0037683 |
-| mesh3→4 | 0.028632 | 0.013904 | 0.0018746 |
-| mesh4→native细档 | 0.037722 | 0.071485 | 0.0091949 |
+冻结几何与完整电压逐字段一致，未发现漏OA、C0不同或二次旋转；原生细镜五面却继承中央及父场，
+而FEM求整个C0。当前倾镜／电压没有独立父边界资格，旧平行镜证据不能继承。
+[25点边界输入][boundary-input]中x=2 mm面原生−FEM电势均值−0.488858 V、变化范围0.017444 V，
+沿y差商对应2.623–7.294 V/m；这不是纯常数偏置，也尚未证明它解释了束内差异。
 
-本段FEM变化出现收缩，跨来源的小相对时间差仍伴随慢向状态差；不是仅由上游入口不同造成。
-mesh4→native中心共同时间差+0.299243 ns，单列而不算峰宽；表中差值不是总误差上界，也不能乘49。
-此前同mesh3场传播两套出口的[受控放大对照][amplification3]已见y差0.027424→0.622397 mm，
-相对时间却仅0.068332 ns；140个非x0事件配对，x0微穿越数不同。小单段计时差不能授予空间返回资格。
-
-补齐[匹配消费层40点查询][matched-layers]，总21.499 s，仅读现有PA与原生FEM小表，无COMSOL、飞行或新PA。
-原生F3−F2最大场向量差26.489 V/m，实际C3−C2为26.511 V/m，deltaBridge最大1.445 V/m；
-Ey分量对应12.445／12.354／0.344 V/m，C3与旧同场查询逐值一致。
-已测正镜转折及邻域差异明显，入／出z=97 mm所查点的两档差小于10⁻⁸ V/m；不能外推成整个前段已收敛。
-本批两档差主要已存在于FEM，不是导出新造；但共同绝对bridge仍达13.883 V/m，不能授予桥接整体资格。
-40点含15旧mesh2事件点、15mesh3事件点及10邻域，不覆盖新mesh2全部路径，也不是连续力积分。
-旧混控158 V/m结果不再代表当前比较；不强制对称、改压或以命中更多制造收敛。
-COMSOL不升级；[厂商小材料][vendor]保留未发送，不另建整套追迹链。
-
-mesh3→4仅对相同正镜槽壁—间隙—束路选择框进行一次最长边细分，新增单元27.78%，未改物理输入。
-同40点最大场向量差由mesh2→3的26.489缩至6.655 V/m；Ey最大分量差由12.445缩至5.681 V/m，
-本档最大电势差0.063412 V。最大场差点的实际h从0.19991降至0.14574 mm，支持该局部细化有效，
-但细化策略不同且覆盖有限，不外推收敛阶或总误差界。最差单元质量下降至0.00004833，求解仍完成；
-求解前后实际控制一致，已保存6.543 GB MPH；随后四窗导出及N13已完成，仍不授予整程收敛／性能资格。
-
-[最新配对][mesh4-pair]保留全部13颗、共同事件六维状态和缺失事件；FEM间15项、native间9项控制均一致。
-mesh3→4的target49相对计时差缩小，但y差仍约1 mm，ID9的碰撞部件改变；其余终止码相同不代表同一碰撞面。
-三档均0/13命中、10物理碰撞及3拓扑拒绝；mesh4中心target49 y残差+10.694 mm，不以该负结果证明场准确。
-相邻档Ey斜率仅变+0.244 ns/eV、全幅Cx仅变−0.003136 ns，局部Cx仍变+0.191795 ns。
-native与mesh4的最大target49相对计时差来自宽幅z粒子；Ey亦有明显跨来源差，不能只关注横向或中心绝对TOF。
-尚无共同检测器终点，以上不是峰宽／分辨率，不启动高斯N100。首次配对发布超25 MiB，去排版空白后零飞行重发；
-除运行计时外全部事件数值相同，失败包保留并沿公共owner封存，未改账本或放宽容量准入。
-
-[当前native细档固定40点][native-fixed40]补查已完成，48.094 s，无新求场／导出／飞行；A=B查询实际复用PA，回归差为零。
-N为035610的真实消费者而非COMSOL原生FEM：N−F3最大场向量差19.542 V/m，N−C3为15.946 V/m，
-N−F3最大电势差0.44617 V。两种场源仍有可观测差别，且mesh4未一致向N靠拢；不能按接近历史命中选真值。
-20个z=97 mm点虽对本次FEM局部细分不敏感，其N−F3仍可达19.542 V/m；这些位置未新增细化，
-不能把相邻FEM档接近冒称该段已收敛。旧217点跨场源对照使用163135工作档与mesh1，不继承为当前证据。
-既有40点的局部镜坐标诊断：理想y均匀正倾镜有Ey=tanθ·Ez。10个真实转折点native−F4的
-最大|ΔEy|=7.6033 V/m，但|tanθ·ΔEz|仅0.00779 V/m；差异主要在Ry=Ey−tanθ·Ez中。
-这排除了“只是主轴场幅值经倾角投影”的解释，不证明Ry为纯Stripe场或任一路线为真，也不允许扣场修轨迹。
-
-[mesh4实际消费层查询][mesh4-consumer]复用同40坐标及181000的冻结adapter，19.048 s完成，无新求场、导出或飞行。
-10个正镜转折点的最大|Ey消费−原始FEM|为0.08308 V/m，native−消费仍为7.58514 V/m；
-10个邻域点分别为0.10320／7.58648 V/m。这组点的主要慢向跨源差已存在于原始场，不支持继续盲细导出。
-20个z=97 mm点的桥接Ey差仍达1.41860 V/m、向量差13.88301 V/m，不能据此授予整条桥接资格。
-A=B的V及三场分量逐值零差；点值分层不能替代连续冲量或完整轨迹归因，当前仍不进入高斯N100。
-下一项应针对原始场／几何表示的慢向差及其沿程作用选择有限对照，不重新展开全域加密。
-跨源冻结几何及完整电压逐字段一致；未发现漏OA、C0定义不同或镜二次旋转。
-原生细镜实际五面继承中央场0.25/0.25/0.10 mm，中央再继承0.5/1/1 mm父场；FEM为整个C0连续解。
-当前倾镜／电压尚无独立父边界敏感性资格；旧平行镜证据不继承。
-[五面输入检查][boundary-input]已完成25点、119.795 s，全部原生来源与FEM真空查询有效，无求场、导出或飞行。
-正镜完整求解域x=2 mm面20点的原生继承值减FEM4平均为−0.488858 V，变化范围0.017444 V；
-沿y节点差商对应2.623–7.294 V/m，说明差别不是单纯常数偏置，量级与束内慢向场差相当。
-y两端所查点平均差分别为−0.670888／−0.270028 V，z=90 mm单点约+6.87×10⁻⁶ V；
-这些是有限坐标的输入差及切向差商，不是原始FEM梯度、连续力积分或全部边界资格。
-边界电势差与此前束内偏置的符号不同，不能据此宣称边界已解释内部差异或哪张场正确。
-下一有限对照优先评估固定细域、仅替换边界输入的可行性，分离边界传递与内部离散；不先重建粗父场或盲细导出。
+[边界donor表示][boundary-donor]已从同一mesh4导出0.25/0.25/0.10 mm薄体积V／valid，
+覆盖[0,−65,90]至[2,360,324] mm，35838369节点、未知节点0、两PA共573414016字节。
+25点及其插值支撑全有效，x=2面最大电势表示差0.000988 V；四中心慢向差商最大差0.04253 V/m，
+明显小于原跨源差，但一处z差商仍差9.897 V/m。它只支持下一项边界敏感性诊断，不证明全边界或轨迹准确。
+载入8.406 s、查询207.236 s、写盘0.415 s；总862.880 s含约594 s共享排队，未重新求场或飞行。
+下一项优先固定原正镜细域、几何、电压、积分和入口，仅替换五面输入；不先继续内域盲目加密。
 
 ## 剩余时间响应与设计线索
 
@@ -266,48 +192,24 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 
 ## 开放动作与关闭条件
 
-已关闭的旧生产器、专属测试与入口清单归入[退役里程碑](history/20261015__producer-retirement-milestone.md)。
-当前共享数学、活动配置及两条链的资产重建能力继续保留；已封存输入和小证据不随入口退役删除。
-另退役无人消费的旧`simion/mrtof_candidate_center.fly2`静态模板；当前N1仍由原trial从实际源参数生成，
-批次由源receipt物化，四个历史run-local副本不动。三项源／单粒子回归通过，净减一个19行Lua脚本。
-另删除无人消费的`build_secant_point_receipt`纯转发兼容函数，诊断CLI、receipt和正式构造函数不变；
-有效点、越界失败及多割线提议的3项断言回归保留并通过。理论索引的活动硬件描述同步当前会聚候选。
-补充退役无活动引用的`tests/simion/test_accelerator_native_geometry.lua`及旧schema3的
-`config/candidate_bunch_source_n1000.json`；现提供者与母样本生成不变，
-相关5项回归通过；与下述结构诊断退役合并提交445116e8，未改变活动源或母样本。
-固定场重放前置的24项几何／理论目标纯回归已通过，112.744 s、无跳过；仅证明当前工作区所选行为，
-倾镜几何、GEM发射、碰撞归因和理论目标按同一前置主题纳管；完整固定场消费发布闭包尚待完成，
-不等于场、碰撞网格或完整自动链已取得资格。测试fixture不依赖本次未提交的数值配置及OA投影扩展。
-另退役旧独立Stripe结构诊断发布器（2脚本）及其2项专属测试，活动入口／role引用为零；
-共享曲线识别、制造宽度及理论种子保留，相关22项回归通过。历史冻结源码与结构诊断结果仍可查，
-不再维护仅发布“电压待求”receipt的独立入口；不影响当前求场或自动闭合。
-CLOC曾错误假定所有项目execution profile都有steps；已修复对合法项目专用格式的处理并推送c71dc95e，
-官方统计已可运行，混合工作区增长不能归于本次整理。其他任务的CRLF与Refine合同问题已由其提交修复，
-本次未夹带其文件。最新L1其余路由阶段通过，公共合同阶段曾因CP936/UTF-8测试输出失败；
-编码回归已修复，该阶段独立重跑607项通过、1项跳过，原整轮失败记录保留，不概括为全量通过。
+1. 边界donor导出及25点检查已完成。下一项只回答边界传递是否显著改变同入口出口y、vy和相对TOF；
+   保持原正镜完整求解域及0.04/0.20/0.02 mm网格，不改压。执行前须完成合法边界来源／诊断消费接线和容量准入，
+   不将FEM donor伪装成原生祖先，不以单镜改善替代整程资格。
+2. 冻结场消费的最小源码／配置发布闭包仍待关闭；本机真实N100／N13可运行，不等于干净Git检出完整可重放。
+   通用COMSOL改压provider仍有旧sol1及单窗假设，不授当前mesh4重建、响应组合或改压资格。
+3. 代表射线支持后才做冻结高斯N100复现，统一KDE、全部损失、峰形及不确定性；
+   数值比较固定电压，调焦后的性能比较另做。未支持时交付已量化差异与下一设计决策，不宣称十万达标。
 
-1. mesh4局部细化及固定40点检查已完成，出现局部场差收缩；初次启动仅容量准入失败，无科学求解。
-   当前native细档补查、174000四窗导出及181000同源N13均已完成。相对计时差缩小而空间返回尚敏感，
-   新mesh4／native同入口单镜对照也已完成，仍有慢向速度差。下一项须针对其工程影响明确选择，
-   不再自动追加孤立查询、调压、加密或高斯N100；原物理输入继续冻结。
+两条链的当前场、响应库、GUI和CAD继续保护；已结束无人消费的载荷只沿公共owner退役。
+旧mesh1／mesh2／mesh3四窗PA已退役，001600／150021／124839原MPH和全部小证据保留；
+本次mesh1精确八张PA释放5198465376字节，26份小证据及新donor依赖helper均保留，公共账本已同步退役。
+相关历史IOB需重新导出和重装配。退役代码、运行恢复及处置细节见[本里程碑](history/20261015__boundary-input-isolation.md)，
+不靠运行终态自动判删除，也不将清理或门禁通过当物理资格。
 
-本轮另沿公共机制退役083000旧导出、20261006_180500旧网格及094800已替代场的重载荷，
-释放10594173854字节；小证据与重建输入保留，124839/150021当前模型及两条链、GUI、CAD依赖未删除。
-公共退役wrapper自动容量收尾修复已提交a16dd4e0，通过真实小载荷删除／账本收尾、失败分支及编码回归；
-checkpoint保留专用收尾，不把已删除但未完成账本收尾的资产视为可用空间。
-174000导出、180000配对和184000单镜作者已依公共精确清单清理，冻结输入与全部场／轨迹证据保留。
-152030旧mesh2导出的八PA已沿公共owner-completion退役，释放5198465376字节；自动收尾后为ready/light_evidence，
-剩358016字节、未pin。150021源MPH不动；历史154824／160855的IOB须重新导出F2场并重装配。
-132400的F3旧四窗八张V／valid PA亦经公共owner完成退役，释放5198465376逻辑字节；
-终态ready/light_evidence、365790字节、未pin，124839原MPH及全部小证据保留。
-依赖这些旧PA的历史135800／161302等IOB须重新导出F3并重装配，当前F4、原生链及CAD资产不变。
-具体范围见[本阶段快照](history/20261015__fixed-field-reproduction-and-solve-state.md)，不把已退役历史tip当作可直接恢复点。
-
-当前STEP交付见[163154出版恢复][cad-delivery]：40个独立命名电极STEP、6个C0参考面及装配概览；
-倾镜、精确曲线和去全部安装孔保持，真实连接同电位组件才合并，几何不连续者及正负镜不因同电压合并。
-5 μm为交换验收精度，不是场／制造精度；未完成对方软件消费验收。新的英文Word尚待渲染和封存，
-旧平行镜53件说明不能冒称与此包配套。CAD唯一活动入口为[run_resolved_cad_export](../analysis/run_resolved_cad_export.ps1)，
-旧CAD入口退役范围见[退役里程碑](history/20261015__producer-retirement-milestone.md)，不改变当前交付链。
+当前[STEP交付][cad-delivery]为40个独立电极STEP、6个C0参考面及装配概览；保留倾镜、精确曲线、去全部安装孔。
+仅真实连接同电位组件合并。5 μm为交换精度，不是场／制造精度；尚未完成对方软件消费验收。
+新英文Word仍待渲染封存，旧平行镜53件说明不能冒称与此包配套；唯一活动CAD入口为
+[run_resolved_cad_export](../analysis/run_resolved_cad_export.ps1)。
 
 以下链接指向具名小证据，不复制全部manifest；资产保留期限以公共pin/lease与实际消费者为准。
 
@@ -319,28 +221,16 @@ checkpoint保留专用收尾，不把已删除但未完成账本收尾的资产�
 [parallel-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_011744__analysis__python__parallel-tilted-gaussian-paired-reference/summary.json
 [native-field]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163135__build__simion__converging-mirror-y360-field/results/field_binding.json
 [fine-field]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_032031__build__simion__converging-y360-mirror-z002-field/results/field_binding.json
-[stopping-control]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_124839__analysis__comsol__mesh3-rhob-stopping-control/summary.json
-[mesh1-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_010000__analysis__comsol__converging-beam-tube-export/run_config.json
-[vendor]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_075800__analysis__repo__comsol-vendor-evidence/results/vendor_report.json
 [cad-delivery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/summary.json
-
-[matched-mesh2]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_150021__analysis__comsol__mesh2-from-stable-source/run_config.json
 [mesh4-longest]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_164500__analysis__comsol__positive-turn-mesh4-longest__r02/summary.json
 [mesh4-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_174000__analysis__comsol__mesh4-coherent-beam-tube-export/summary.json
 [mesh4-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_181000__sim__simion__mesh4-fixed-u-controlled-n13/summary.json
 [mesh4-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_182403__analysis__python__mesh4-controlled-n13-pairing/summary.json
-[native-fixed40]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_173341__analysis__simion__fine-native-fixed40-field-layers/summary.json
 [mesh4-consumer]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_185431__analysis__simion__mesh4-fixed40-consumer-field-layers/summary.json
+[boundary-donor]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_194413__analysis__cross__fem4-boundary-donor-representation/summary.json
 [boundary-input]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_191649__analysis__cross__native-mirror-boundary-input-check/summary.json
 [static-recovery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_193228__analysis__python__native-static-batch-continuation-acceptance/summary.json
-[matched-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_152030__analysis__comsol__matched-mesh2-beam-tube-export/summary.json
-
-[matched-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_154824__sim__simion__matched-mesh2-fixed-u-controlled-n13/summary.json
-[matched-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_155820__analysis__python__matched-fem-controlled-n13-pairing/summary.json
-[segment2]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_160855__sim__simion__matched-mesh2-same-entry-mirror/summary.json
 [segment3]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_161302__sim__simion__matched-mesh3-same-entry-mirror/summary.json
 [segment4]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_183100__sim__simion__mesh4-same-entry-positive-mirror/summary.json
 [segment-native]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_183200__sim__simion__fine-native-same-entry-positive-mirror/summary.json
-[amplification2]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_162016__sim__simion__mesh2-entry-in-mesh3-return/summary.json
 [amplification3]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_162423__sim__simion__mesh3-entry-in-mesh3-return/summary.json
-[matched-layers]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_163502__analysis__cross__matched-consumer-field-layers/summary.json

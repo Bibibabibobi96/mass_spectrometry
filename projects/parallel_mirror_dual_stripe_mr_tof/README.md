@@ -58,3 +58,4 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 - [CAD交换与倾镜STEP交付里程碑](docs/history/20261015__cad-exchange-delivery-milestone.md)
 - [固定场复现与求解状态里程碑](docs/history/20261015__fixed-field-reproduction-and-solve-state.md)：冻结已提交阶段、失败和数值混杂边界，调查仍继续。
 - [匹配求场与轨迹对照里程碑](docs/history/20261015__matched-solve-and-trajectory-comparison.md)
+- [边界输入隔离里程碑](docs/history/20261015__boundary-input-isolation.md)：冻结匹配场、消费分层和恢复／退役记录，边界因果验证仍开放。
