@@ -211,11 +211,6 @@ def two_prism_topology_signature(
     )
 
 
-def _topology_signature(diagnostic: TwoPrismSegmentedVoltagePairDiagnostic) -> tuple[Any, ...]:
-    """Compatibility alias for callers predating the public topology API."""
-    return two_prism_topology_signature(diagnostic)
-
-
 def solve_two_prism_segmented_voltage_seed(
     contract: dict[str, Any],
     *,
