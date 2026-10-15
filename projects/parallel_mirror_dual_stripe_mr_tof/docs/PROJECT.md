@@ -179,42 +179,19 @@ native−消费仍约7.58514 V/m；主要跨源慢向差已存在于原始场，
 相对中心TOF差却由0.037722变为0.038963 ns，横向亦未同步改善；这证明边界影响此段慢向空间状态，非整程收敛。
 donor的25点表示及原始完整矩阵、耗时／故障与处置记录已归[本里程碑](history/20261015__boundary-and-parent-consistency-isolation.md)。
 
-[父场25点复核][parent-boundary]只加载当前0.5/1/1 mm父PA一次，复用上述中央／FEM原值；
-25点均有限、邻近支撑无物理节点。四中心相同电势差商结果如下，单位V/m，不等同于实际消费受力：
+父层固定25点矩阵已结束，完整结果与耗时归[父场隔离里程碑](history/20261015__parent-axis-field-isolation.md)。
+当前0.50/1.00/1.00 mm父层已含慢向跨源差；中央层又改变该差，不能解释为同一常数电势偏移。
+同U直接父场与组合场最大电势差1.70e−11 V；1e−5→1e−6停止增量也仅8.42e−11 V，
+均不足解释所查跨源慢向差，不因此授整个场或其他响应库资格。
 
-| 慢向电势差商比较 | 四中心范围 |
+| 四中心实际API慢向电场增量 | 范围，V/m |
 |---|---:|
-| 父场−FEM | 1.407–6.020 |
-| 中央场−FEM | 2.623–7.294 |
-| 中央场−父场 | 1.216–1.274 |
+| 父层仅z：1.00→0.50 mm | +3.485–3.517 |
+| 父层仅y：1.00→0.50 mm | +0.0341–0.0467 |
 
-x=2面20点电势均差分别为+1.334991、−0.488858、−1.823849 V；不是同一常数偏移的逐级传递。
-父层已有慢向跨源差、中央层又改变约1.2–1.27 V/m，但不能按这组点唯一判父场错误或认定中央误差来源。
-父场由同几何、同网格、同1e−5 V基场与四列10000 V归一化响应组成，G=1.002032603，不是误差界。
-[同U直接父场][direct-parent]重编当前完整电压，只求原0.5/1/1 mm父场，25点最大直接−组合电势差1.6982e−11 V，
-y／z差商附加差分别不超过2.2737e−9／2.2737e−8 V/m，不能解释上述跨源差；不授网格或停止精度资格。
-原生Refine843.10 s、4150次、Delta1e−5 V，总886.708 s；无局域重建、飞行、FWHM或R。
-
-[同父场停止复核][parent-stopping]仅将独立副本由1e−5收紧至1e−6 V，几何、电压、网格和fractional不变。
-25点最大电势增量8.4153e−11 V，四中心慢向差商增量不超过2.2737e−9 V/m，远不足解释1.407–6.020 V/m跨源差。
-原生6080次、Delta1e−6 V、1397.75 s（比原843.10 s增加约65.8%），含复制／查询总1426.782 s；
-这只支持所查点不再优先收紧停止条件，不授完整场、实际受力或轨迹收敛资格，也不证明续算能提速。
-该停止试验复核结束后，两份无人消费的PA／surface已公共退役，释放1,802,340,060 B；全部小证据和14份冻结输入保留，
-可由212434基线重建，原完整manifest不再可作载荷消费资格；处置以来源run的`solver_review_retirement_receipt.json`为准。
-
-[父场z单轴对照][parent-z]固定x=0.50、y=1.00 mm，仅z由1.00改为0.50 mm，保持完整物理输入与1e−5 V。
-四中心慢向差商增量为+3.487–3.519 V/m，跨FEM差由1.407–6.020增至4.926–9.507 V/m；
-x=2面平均电势差却由+1.334991变为−0.128621 V，故电势接近不等于慢向梯度改善，不能选新档作真值。
-原生4520次、Delta1e−5 V、1835.04 s，总1892.045 s；25点均有限且支撑无物理节点。
-这证明父层z离散敏感，不是实际受力、轨迹或峰宽误差；没有联动局域重建或飞行。
-
-[父场y单轴对照][parent-y]仅y由1.00改为0.50 mm，x=0.50、z=1.00 mm及其他输入不变。
-25点最大电势增量0.00272442 V，四中心慢向差商增量仅+0.03366–0.04721 V/m，跨FEM差仍为1.441–6.067 V/m。
-原生5530次、Delta1e−5 V、2331.42 s，总2389.23 s；至此父场拆轴矩阵结束，不自动补yz或更细档。
-[实际电场API复核][parent-api]复用三张已保存父PA，经正常adapter的raw_sample串行查询同25点，耗时24.00 s，无Refine或飞行。
-四中心实际ΔEy：z细化+3.485–3.517、y细化+0.0341–0.0467 V/m，与对应差商最大相差0.00399／0.00209 V/m；
-已测慢向z敏感性并非仅差商模板造成。但z细化的ΔEz两种模板仍差2.09–3.80 V/m，不能概括成全梯度一致。
-此查询为无局窗的父层诊断投影，不代表整机实际路由或轨迹；不按更接近FEM选真值。
+已测z敏感性不是仅由电势差商定义造成；但z向梯度的两种查询模板仍有2.09–3.80 V/m差别。
+平均电势更接近FEM不代表梯度更准确；没有一种场被指定为真值。
+API为25点无局窗父层诊断投影，没有联动局域重建或飞行，不能推导峰宽、R或全轨迹收敛。
 
 ## 剩余时间响应与设计线索
 
@@ -278,12 +255,6 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [boundary-donor]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_194413__analysis__cross__fem4-boundary-donor-representation/summary.json
 [boundary-flight]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_203103__sim__simion__fem4-boundary-only-positive-mirror/summary.json
 [boundary-input]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_191649__analysis__cross__native-mirror-boundary-input-check/summary.json
-[parent-boundary]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_211107__analysis__simion__parent-boundary-fixed25-query/summary.json
-[direct-parent]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_212434__build__simion__direct-parent-fixed-grid/summary.json
-[parent-stopping]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_215310__build__simion__parent-stopping-increment/summary.json
-[parent-z]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_222113__build__simion__parent-z050-fixed-u/summary.json
-[parent-y]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_225850__build__simion__parent-y050-fixed-u/summary.json
-[parent-api]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_234023__analysis__simion__parent-api-field-comparison/summary.json
 [static-recovery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_193228__analysis__python__native-static-batch-continuation-acceptance/summary.json
 [segment3]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_161302__sim__simion__matched-mesh3-same-entry-mirror/summary.json
 [segment4]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_183100__sim__simion__mesh4-same-entry-positive-mirror/summary.json

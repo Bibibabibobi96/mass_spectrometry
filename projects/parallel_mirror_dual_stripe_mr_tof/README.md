@@ -60,3 +60,4 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 - [匹配求场与轨迹对照里程碑](docs/history/20261015__matched-solve-and-trajectory-comparison.md)
 - [边界输入隔离里程碑](docs/history/20261015__boundary-input-isolation.md)：冻结匹配场、消费分层和恢复／退役记录，边界因果验证仍开放。
 - [边界敏感性与父场组合一致性](docs/history/20261015__boundary-and-parent-consistency-isolation.md)
+- [父场组合、停止与单轴离散隔离](docs/history/20261015__parent-axis-field-isolation.md)
