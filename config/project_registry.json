@@ -11,6 +11,10 @@
       "sha256": "B9F52F6C658B01DF6226F608278FBCA67042D541BC67EB99011BF33DA6FF3256"
     },
     {
+      "descriptor": "projects/dual_pressure_rectilinear_ion_processor/config/project.json",
+      "sha256": "DB6CDC538EA99F82294BF13BD2B4E93863E16F96DA2CA22EDDA01D289906A6F2"
+    },
+    {
       "descriptor": "projects/orthogonal_accelerator/config/project.json",
       "sha256": "A2F1620FBDAE8949A70AB75F89AF73DC76F18569DE98047275651ED471573637"
     },
@@ -175,6 +179,57 @@
         "The registered COMSOL-to-SIMION handoff and uniform-400 Pa control produce only unqualified qualitative Prototype evidence",
         "The current ion source, 570 kHz and 300 V peak-to-ground RF point, and official SIMION SDS collision closure are explicit but not experimentally qualified",
         "CAD, pump type and geometry, intermediate pressure measurements, Candidate evidence and Formal evidence are unavailable"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "project_id": "dual_pressure_rectilinear_ion_processor",
+      "family_id": "rf_ion_accumulation_and_pulsed_extraction",
+      "display_name": "双压力区矩形射频离子处理器",
+      "purpose": "由简化实体电极与原生SIMION求场复现多极杆输运、捕获、碰撞冷却、聚集、整体抬升和正交引出",
+      "lifecycle_status": "prototype",
+      "toolchains": [
+        "python",
+        "simion"
+      ],
+      "contracts": {
+        "baseline": "config/baseline.json",
+        "solver_numerics": "config/numerics.json",
+        "resolved": null,
+        "analysis": "config/acceptance.json",
+        "interface": null,
+        "execution": null,
+        "design_variables": null,
+        "optimization_envelope": null
+      },
+      "capabilities": [
+        {
+          "capability_id": "native_electrode_functional_transport",
+          "function": "ion_capture_cooling_and_extraction",
+          "status": "prototype",
+          "modes": [],
+          "metrics": [
+            "capture_fraction",
+            "extraction_fraction",
+            "hp_mean_kinetic_energy_ev",
+            "pre_extraction_slow_sigma_y_mm",
+            "extraction_mean_energy_ev"
+          ],
+          "design_variables": []
+        }
+      ],
+      "formal_assets": {
+        "status": "none",
+        "types": [],
+        "identity_contract": null
+      },
+      "known_gaps": [
+        "Simplified solid-electrode geometry is a functional abstraction, not a complete manufacturer mechanical reconstruction",
+        "Native fields and N10 trajectories have exploratory solver evidence only; numerical convergence, N100 functional baseline and GUI confirmation remain unqualified",
+        "Ion-neutral collision cross section is an uncalibrated placeholder, not a measured N2/524amu value",
+        "No fragmentation, space charge, gas-flow solution, CAD or GUI-equivalent delivery qualification",
+        "COMSOL projection and real upstream multipole handoff remain future work",
+        "Analytical prescribed-field code is an unrun reference control, not the production field workflow"
       ]
     },
     {

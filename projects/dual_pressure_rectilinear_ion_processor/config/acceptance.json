@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "minimum_capture_fraction": 0.9,
+  "minimum_extraction_fraction": 0.9,
+  "max_hp_mean_kinetic_energy_ev": 1,
+  "max_pre_extraction_axial_sigma_mm": 2,
+  "minimum_extraction_mean_energy_ev": 3500,
+  "maximum_extraction_mean_energy_ev": 4500
+}

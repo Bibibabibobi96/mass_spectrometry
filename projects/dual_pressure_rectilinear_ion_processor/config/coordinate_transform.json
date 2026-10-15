@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "role": "rigid_transform",
+  "from_frame_id": "dual_pressure_ion_processor_local_v1",
+  "to_frame_id": "ion_processor.xyz.reflection_z.drift_y.transverse_x.local.v2",
+  "rotation": [[0, 0, -1], [1, 0, 0], [0, -1, 0]],
+  "translation_mm": [0, 0, 9.8]
+}

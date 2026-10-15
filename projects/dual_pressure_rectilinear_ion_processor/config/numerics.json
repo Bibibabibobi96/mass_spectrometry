@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "dt_us": 0.01,
+  "trajectory_quality": 0,
+  "sample_interval_us": 1,
+  "extraction_sample_interval_us": 0.005,
+  "seed": 42,
+  "rf_steps_per_period": 27,
+  "solver_timeout_s": 1800,
+  "hs1_steps_per_mfp": 20,
+  "native_grid_mm": 0.1,
+  "refine_convergence_v": 0.001,
+  "native_aux_segments": 60
+}

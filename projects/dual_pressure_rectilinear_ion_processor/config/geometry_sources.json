@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "role": "ion_processor_geometry_source_mapping",
+  "project_id": "dual_pressure_rectilinear_ion_processor",
+  "purpose": "evidence classification only; solver values remain owned by baseline/native operating point/numerics",
+  "sources": {
+    "stewart_2023": {
+      "doi": "10.1021/jasms.3c00311",
+      "url": "https://pubs.acs.org/doi/10.1021/jasms.3c00311",
+      "figures": [
+        "Figure 2",
+        "Figure 3"
+      ],
+      "title": "A Conjoined Rectilinear Collision Cell and Pulsed Extraction Ion Trap with Auxiliary DC Electrodes"
+    }
+  },
+  "classifications": {
+    "reported": "dimension explicitly reported in the cited paper",
+    "interpretation": "declared projection or geometric interpretation of reported wording/dimensions",
+    "assumption": "project completion, coordinate placement, numerical discretization or operating seed; not a reported manufacturer dimension"
+  },
+  "entries": [
+    {
+      "authority_paths": [
+        "baseline.json#/geometry/hp_length_mm",
+        "baseline.json#/geometry/lp_length_mm",
+        "baseline.json#/geometry/r0_mm"
+      ],
+      "classification": "reported",
+      "source_id": "stewart_2023",
+      "location": "Figure 2 and apparatus description",
+      "explanation": "Published HP/LP segment lengths and inscribed radius are retained as dimension seeds; this does not supply all mechanical dimensions."
+    },
+    {
+      "authority_paths": [
+        "baseline.json#/geometry/extraction_slit_length_mm",
+        "baseline.json#/geometry/extraction_slit_width_mm"
+      ],
+      "classification": "reported",
+      "source_id": "stewart_2023",
+      "location": "Figure 2 and extraction-region description",
+      "explanation": "The reported extraction slit is 8 mm by 0.8 mm; cuts through finite model plates and shield are project projections."
+    },
+    {
+      "authority_paths": [
+        "baseline.json#/native_geometry/hp_aux_inner_radius_start_mm",
+        "baseline.json#/native_geometry/hp_aux_inner_radius_end_mm"
+      ],
+      "classification": "reported",
+      "source_id": "stewart_2023",
+      "location": "Figures 2\u20133 and auxiliary-electrode description",
+      "explanation": "Reported HP auxiliary inner-distance endpoints are used; conversion to four corner coordinates and finite stair surfaces is an implementation interpretation."
+    },
+    {
+      "authority_paths": [
+        "baseline.json#/native_geometry/lp_outer_inner_surface_center_z_mm",
+        "baseline.json#/native_geometry/lp_outer_inner_surface_end_z_mm"
+      ],
+      "classification": "interpretation",
+      "source_id": "stewart_2023",
+      "location": "Figure 3 and LP auxiliary-electrode description",
+      "explanation": "Reported opposed gaps 4 mm at the center and 3.7 mm at the ends are interpreted as INNER SURFACE gaps; model half-gaps are 2 and 1.85 mm. Sheet thickness grows away from the ion volume, not into the reported gap."
+    },
+    {
+      "authority_paths": [
+        "baseline.json#/native_geometry/lp_inner_half_length_x_mm"
+      ],
+      "classification": "interpretation",
+      "source_id": "stewart_2023",
+      "location": "Figure 3 and LP inner auxiliary-electrode description",
+      "explanation": "Reported 2.5 mm local axial length is projected as a half-length of 1.25 mm; unreported transverse placement and thickness remain assumptions."
+    },
+    {
+      "authority_paths": [
+        "baseline.json#/native_geometry/entrance_aperture_diameter_mm"
+      ],
+      "classification": "interpretation",
+      "source_id": "stewart_2023",
+      "location": "Figure 2 and steel entrance-aperture description",
+      "explanation": "The paper wording 2 mm steel aperture is interpreted as circular DIAMETER, not radius or r0; model bore radius is 1 mm. Plate thickness and exact manufacturing shape are not verified."
+    },
+    {
+      "authority_paths": [
+        "numerics.json#/native_grid_mm",
+        "numerics.json#/native_aux_segments"
+      ],
+      "classification": "assumption",
+      "source_id": null,
+      "location": "project discretization",
+      "explanation": "0.1 mm PA grid and 60 midpoint stair segments per auxiliary structure are numerical choices approximating the reported continuous geometry, not physical segmented electrodes reported by the paper."
+    },
+    {
+      "authority_paths": [
+        "baseline.json#/native_geometry/shield_inner_halfwidth_mm",
+        "baseline.json#/native_geometry/shield_outer_halfwidth_mm"
+      ],
+      "classification": "assumption",
+      "source_id": null,
+      "location": "project floating shields",
+      "explanation": "Halfwidths 3/3.5 mm are project boundary/shield choices. Their HP/LP common-mode tracking is modeled; dimensions are not attributed to manufacturer CAD."
+    },
+    {
+      "authority_paths": [
+        "baseline.json#/native_geometry/rf_plate_thickness_mm",
+        "baseline.json#/native_geometry/rf_plate_halfwidth_mm",
+        "baseline.json#/native_geometry/hp_aux_thickness_mm",
+        "baseline.json#/native_geometry/lp_outer_thickness_z_mm",
+        "baseline.json#/native_geometry/lp_inner_thickness_z_mm",
+        "baseline.json#/native_geometry/lp_aux_halfwidth_y_mm",
+        "baseline.json#/native_geometry/lp_inner_center_z_mm",
+        "baseline.json#/native_geometry/lp_side_split_half_gap_y_mm"
+      ],
+      "classification": "assumption",
+      "source_id": null,
+      "location": "project finite-electrode completion",
+      "explanation": "Plate widths/thicknesses and unreported auxiliary transverse dimensions complete a solvable solid geometry; no manufacturer dimensions are claimed."
+    },
+    {
+      "authority_paths": [
+        "baseline.json#/geometry/lp_center_mm",
+        "baseline.json#/geometry/hp_center_mm",
+        "baseline.json#/geometry/guide_length_mm",
+        "baseline.json#/geometry/guide_r0_mm",
+        "baseline.json#/native_geometry/guide_rod_radius_mm",
+        "baseline.json#/native_geometry/guide_rod_end_gap_mm"
+      ],
+      "classification": "assumption",
+      "source_id": null,
+      "location": "project apparatus placement and upstream abstraction",
+      "explanation": "LP center 170 mm, HP center and upstream 30 mm guide/rod dimensions are coordinate and functional-model choices; the guide is not a reconstruction of the full instrument frontend."
+    },
+    {
+      "authority_paths": [
+        "baseline.json#/native_geometry/lens_thickness_mm",
+        "baseline.json#/native_geometry/lens_outer_halfwidth_mm",
+        "baseline.json#/native_geometry/exit_lens_half_aperture_mm",
+        "baseline.json#/native_geometry/segment_end_gap_mm",
+        "baseline.json#/native_geometry/hp_aux_axial_inset_mm",
+        "baseline.json#/native_geometry/lp_aux_axial_inset_mm",
+        "baseline.json#/native_geometry/domain_start_x_mm",
+        "baseline.json#/native_geometry/domain_end_x_margin_mm",
+        "baseline.json#/native_geometry/domain_min_y_mm",
+        "baseline.json#/native_geometry/domain_max_y_mm",
+        "baseline.json#/native_geometry/domain_halfwidth_z_mm",
+        "baseline.json#/geometry/extraction_end_y_mm"
+      ],
+      "classification": "assumption",
+      "source_id": null,
+      "location": "project lens and numerical-domain completion",
+      "explanation": "Finite lens dimensions, clearances, numerical Dirichlet boundary and diagnostic measurement plane are project definitions, not reported instrument CAD."
+    },
+    {
+      "authority_paths": [
+        "native_operating_point.json#/end_lens_relative_v"
+      ],
+      "classification": "assumption",
+      "source_id": null,
+      "location": "project operating seed",
+      "explanation": "The 50 V end-lens setting is a functional-model operating seed, not a reported commercial-device voltage."
+    }
+  ],
+  "limitations": [
+    "Figure references identify the apparatus/auxiliary-electrode source; this mapping is not a manufacturing drawing.",
+    "Reported geometry must not be extended to unreported thickness, shield, placement or voltage dimensions.",
+    "Any model using changed geometry requires a new field identity and Refine; legacy exploration does not validate it."
+  ]
+}

@@ -730,6 +730,41 @@
       }
     },
     {
+      "stage": "dual_pressure_rectilinear_ion_processor_static",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "project_id": "dual_pressure_rectilinear_ion_processor",
+      "matches": [
+        {
+          "prefix": "projects/dual_pressure_rectilinear_ion_processor/",
+          "reason": "ion_processor_changed"
+        },
+        {
+          "exact": "common/ion_release/release.py",
+          "reason": "shared_release_changed"
+        },
+        {
+          "exact": "common/ion_release/cylinder.py",
+          "reason": "shared_cylinder_release_changed"
+        },
+        {
+          "exact": "common/simion/particle_source.py",
+          "reason": "shared_simion_source_changed"
+        },
+        {
+          "exact": "common/multipole/simion_rf_drive.lua",
+          "reason": "shared_rf_drive_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/dual_pressure_rectilinear_ion_processor/verify_project.ps1",
+        "parameters": {
+          "PythonExe": "{python}"
+        }
+      }
+    },
+    {
       "stage": "dual_cone_tandem_quadrupole_ion_interface_static",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",

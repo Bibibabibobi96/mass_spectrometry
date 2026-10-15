@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "role": "ion_processor_diagnostics",
+  "max_ordinary_bracket_us": 1.05,
+  "max_extraction_bracket_us": 0.025,
+  "evolution_interval_us": 50,
+  "png_dpi": 190,
+  "snapshots": [
+    {
+      "label": "source",
+      "anchor": "epoch_us",
+      "offset_us": 0
+    },
+    {
+      "label": "capture_mid",
+      "anchor": "capture_end_us",
+      "offset_us": -1000
+    },
+    {
+      "label": "capture",
+      "anchor": "capture_end_us",
+      "offset_us": 0
+    },
+    {
+      "label": "transfer_mid",
+      "anchor": "capture_end_us",
+      "offset_us": 1000
+    },
+    {
+      "label": "transfer",
+      "anchor": "transfer_end_us",
+      "offset_us": 0
+    },
+    {
+      "label": "lift_mid",
+      "anchor": "transfer_end_us",
+      "offset_us": 750
+    },
+    {
+      "label": "pre_extraction",
+      "anchor": "extraction_start_us",
+      "offset_us": 0
+    },
+    {
+      "label": "extraction_010",
+      "anchor": "extraction_start_us",
+      "offset_us": 0.1
+    },
+    {
+      "label": "extraction_030",
+      "anchor": "extraction_start_us",
+      "offset_us": 0.3
+    },
+    {
+      "label": "extraction_060",
+      "anchor": "extraction_start_us",
+      "offset_us": 0.6
+    },
+    {
+      "label": "extraction_100",
+      "anchor": "extraction_start_us",
+      "offset_us": 1
+    }
+  ],
+  "stage_labels": [
+    "capture",
+    "transfer",
+    "pre_extraction"
+  ]
+}

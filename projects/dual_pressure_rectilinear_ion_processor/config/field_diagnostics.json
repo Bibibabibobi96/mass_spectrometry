@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "epsilon_us": 0.001,
+  "stages": [
+    {"stage_id": "capture_dc", "time_ref": "capture_mid", "component": "dc"},
+    {"stage_id": "capture_rf_only_peak", "time_ref": "capture_mid", "component": "rf_only_peak"},
+    {"stage_id": "transfer_dc", "time_ref": "transfer_mid", "component": "dc"},
+    {"stage_id": "preextract_dc", "time_ref": "pre_extraction", "component": "dc"},
+    {"stage_id": "preextract_rf_peak", "time_ref": "pre_extraction", "component": "rf_only_peak"},
+    {"stage_id": "quench_total", "time_ref": "quench_mid", "component": "total"},
+    {"stage_id": "pulse_total", "time_ref": "pulse_after", "component": "total"}
+  ],
+  "sections": [
+    {"section_id": "hp_upstream", "position_ref": "hp_fraction", "fraction": 0.12},
+    {"section_id": "hp_downstream", "position_ref": "hp_fraction", "fraction": 0.92},
+    {"section_id": "lp_center", "position_ref": "lp_center"}
+  ],
+  "section_radius_scale": 1.25,
+  "fit_radius_scale": 0.25,
+  "section_grid_multiple": 1,
+  "axial_grid_multiple": 10,
+  "orthogonal_grid_multiple": 1,
+  "quiver_stride": 4,
+  "maximum_samples": 120000,
+  "figure_width_mm": 183,
+  "figure_height_mm": 100,
+  "dpi": 200
+}

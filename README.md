@@ -29,6 +29,7 @@
 | RF四极杆离子光学 | [四极杆](projects/rf_quadrupole_ion_optics/README.md) |
 | RF六极杆离子光学 | [六极杆](projects/rf_hexapole_ion_optics/README.md) |
 | RF八极杆离子光学 | [八极杆](projects/rf_octupole_ion_optics/README.md) |
+| 双压力区矩形射频离子处理器 | [Ion Processor](projects/dual_pressure_rectilinear_ion_processor/README.md) |
 | 双锥串联四极杆离子传输接口 | [双锥接口](projects/dual_cone_tandem_quadrupole_ion_interface/README.md) |
 | 开孔长管电子轰击离子源 | [EI离子源](projects/apertured_tube_electron_impact_ion_source/README.md) |
 | 横置螺旋灯丝Wehnelt电子枪 | [电子枪](projects/transverse_helical_filament_wehnelt_electron_gun/README.md) |

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "role": "ion_processor_execution_profiles",
+  "project_id": "dual_pressure_rectilinear_ion_processor",
+  "profiles": [
+    {
+      "profile_id": "native_functional",
+      "workflow": "native_electrode_functional",
+      "entrypoint": "simion/run_functional.ps1",
+      "inputs": {
+        "baseline": "config/baseline.json",
+        "numerics": "config/numerics.json",
+        "source": "config/source.json",
+        "acceptance": "config/acceptance.json",
+        "native_operating_point": "config/native_operating_point.json"
+      },
+      "retention_class": "solver_review",
+      "retention_reason": "Retain native electrode field and workbench for GUI review of the functional model",
+      "committed_new_bytes": 8589934592,
+      "limits": {
+        "transient_run_directory_bytes": 8589934592,
+        "transient_run_directory_sample_interval_seconds": 30
+      },
+      "capacity_estimate_basis": "Forecast: 24.4M-node 18-file native family about 3.3GB, N100 trajectories about 4.2GB extrapolated from r04, diagnostics and remaining margin within 8GiB; actual usage monitored."
+    }
+  ]
+}
