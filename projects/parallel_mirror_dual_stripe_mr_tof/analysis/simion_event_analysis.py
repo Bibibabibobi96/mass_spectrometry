@@ -1093,10 +1093,12 @@ def collision_diagnostics(
                        "box_holes": [] if holes is None else holes})
 
     def add_polygon(component: str, electrode_id: int, x_range: list[float], polygon: list[list[float]],
-                    box_holes: list[list[float]] | None = None, polygon_holes: list[list[list[float]]] | None = None) -> None:
+                    box_holes: list[list[float]] | None = None, polygon_holes: list[list[list[float]]] | None = None,
+                    extruded_holes: list[dict[str, Any]] | None = None) -> None:
         solids.append({"component": component, "electrode_id": electrode_id, "x": x_range,
                        "polygon": polygon, "box_holes": [] if box_holes is None else box_holes,
-                       "polygon_holes": [] if polygon_holes is None else polygon_holes})
+                       "polygon_holes": [] if polygon_holes is None else polygon_holes,
+                       "extruded_holes": [] if extruded_holes is None else extruded_holes})
 
     for shield in collision_geometry.get("prism_ground_shields", []):
         component = ("p2_central_prism_ground_shield" if int(shield["id"]) == 20
@@ -1113,11 +1115,23 @@ def collision_diagnostics(
         for key in ("polygon_yz_mm", "terminal_polygon_yz_mm"):
             add_polygon(component, electrode_id, stripe["x"], stripe[key], [collision_geometry["stripe_slot"]])
     for shield in collision_geometry.get("mirror_ground_shields", []):
-        add_box("mirror_inner_ground_shields", 15, shield["box"], [collision_geometry["mirror_inner_shield_slot"]])
+        if "polygon_yz_mm" in shield:
+            add_polygon("mirror_inner_ground_shields", 15, shield["x"], shield["polygon_yz_mm"],
+                        extruded_holes=shield["holes"])
+        else:
+            add_box("mirror_inner_ground_shields", 15, shield["box"], [collision_geometry["mirror_inner_shield_slot"]])
     for mirror in collision_geometry.get("mirror_electrodes", []):
-        add_box("mirror_electrodes", int(mirror["id"]), mirror["box"], [collision_geometry["mirror_slot"]])
+        if "polygon_yz_mm" in mirror:
+            add_polygon("mirror_electrodes", int(mirror["id"]), mirror["x"], mirror["polygon_yz_mm"],
+                        extruded_holes=mirror["holes"])
+        else:
+            add_box("mirror_electrodes", int(mirror["id"]), mirror["box"], [collision_geometry["mirror_slot"]])
     for closure in collision_geometry.get("mirror_e_closures", []):
-        add_box("mirror_outer_e_closures", int(closure["id"]), closure["box"])
+        if "polygon_yz_mm" in closure:
+            add_polygon("mirror_outer_e_closures", int(closure["id"]), closure["x"], closure["polygon_yz_mm"],
+                        extruded_holes=closure["holes"])
+        else:
+            add_box("mirror_outer_e_closures", int(closure["id"]), closure["box"])
     for prism in collision_geometry.get("prism_electrodes", []):
         for part in prism["parts"]:
             add_polygon(f"p{int(prism['id']) - 15}_prism_electrode", int(prism["id"]),
@@ -1141,6 +1155,10 @@ def collision_diagnostics(
                 float(solid["x"][0]) + tolerance < point[0] < float(solid["x"][1]) - tolerance
                 and _strict_polygon_hole((point[1], point[2]), hole, tolerance)
                    for hole in solid.get("polygon_holes", [])):
+                continue
+            if any(hole["x"][0] + tolerance < point[0] < hole["x"][1] - tolerance
+                   and _strict_polygon_hole((point[1], point[2]), hole["polygon_yz_mm"], tolerance)
+                   for hole in solid.get("extruded_holes", [])):
                 continue
             matches.append(solid)
         identities = sorted({(item["component"], int(item["electrode_id"])) for item in matches})

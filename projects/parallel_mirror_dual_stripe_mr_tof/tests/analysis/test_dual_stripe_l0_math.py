@@ -15,6 +15,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
     audit_theory_function_origin_registration,
     derive_native_stripe_branch_validation_sample_count,
     derive_manufactured_basis_voltage_seed,
+    derive_converging_mirror_single_stripe_seed,
+    converging_design_potential_delta_v,
+    resolve_converging_prism_target,
     endpoint_regularized_kappa,
     endpoint_regularized_kappa_at_turn,
     endpoint_regularized_tau_g,
@@ -74,7 +77,101 @@ PROJECT = Path(__file__).resolve().parents[2]
 CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 
 
+def converging_prism_fixture():
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    contract["mirror"]["convergence_transform"] = {"angle_deg": .025688744787259285, "pivot_y_mm": 0.}
+    contract["downstream_fixed_grid_workpoint_profile"]["active_stripe_axes"] = ["stripe_1_voltage_v"]
+    contract["prism_transport"]["handoff_target"] = {
+        "mode": "converging_clean_phase_energy", "axial_energy_per_charge_v": 4371.97610111757,
+        "mirror_axial_width_w_mm": 590.519039985, "slow_energy_reference_per_charge_v": 5.374387143093758,
+        "total_energy_reference_per_charge_v": 4377.32967207278,
+        "clean_reference_slow_energy_per_charge_v": 5.169057530804604,
+    }
+    contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]["acceptance_tolerances"]["P1_P2_P2_shield_low_field_angle_degrees"] = .01
+    resolved = {"mirror_convergence_transform": {"angle_deg": .025688744787259285},
+                "metadata": {"ion_foil_slot_bridge_from_min_y_mm": 2., "ion_foil_slot_bridge_from_max_y_mm": 5.}}
+    return contract, resolved, resolve_converging_prism_target(contract, resolved)
+
+
 class DualStripeL0MathTest(unittest.TestCase):
+    def test_converging_prism_energy_reference_and_current_stripe_response(self):
+        contract, resolved, target = converging_prism_fixture()
+        self.assertAlmostEqual(target["energy_tolerance_per_charge_v"], .05234301827329357)
+        self.assertAlmostEqual(converging_design_potential_delta_v(target, -27.36410265968425, 9.29765627041), .2053296122891533)
+        self.assertEqual(converging_design_potential_delta_v(target, -27.36410265968425, 0.), 0.)
+        self.assertNotEqual(converging_design_potential_delta_v(target, -27., 47.),
+                            converging_design_potential_delta_v(target, -28., 47.))
+        self.assertEqual(target["slow_energy_reference_per_charge_v"], 5.374387143093758)
+        del contract["prism_transport"]["handoff_target"]
+        self.assertIsNone(resolve_converging_prism_target(contract, resolved))
+
+    def test_converging_prism_target_rejects_incomplete_and_incompatible_authority(self):
+        for kind in ("missing", "duplicate_angle", "zero_tilt", "dual", "invalid_energy"):
+            contract, resolved, _ = converging_prism_fixture()
+            if kind == "missing":
+                del contract["prism_transport"]["handoff_target"]["slow_energy_reference_per_charge_v"]
+            elif kind == "duplicate_angle":
+                contract["prism_transport"]["handoff_target"]["angle_tolerance_degrees"] = .01
+            elif kind == "zero_tilt":
+                resolved["mirror_convergence_transform"]["angle_deg"] = 0.
+            elif kind == "dual":
+                contract["downstream_fixed_grid_workpoint_profile"]["active_stripe_axes"].append("stripe_2_voltage_v")
+            else:
+                contract["prism_transport"]["handoff_target"]["total_energy_reference_per_charge_v"] = 1.
+            with self.subTest(kind=kind), self.assertRaises(CandidateContractError):
+                resolve_converging_prism_target(contract, resolved)
+
+    def test_prism_scientific_target_does_not_change_resolved_geometry(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry, geometry_fingerprint
+        contract, _, _ = converging_prism_fixture()
+        first = resolve_geometry(contract)
+        del contract["prism_transport"]["handoff_target"]
+        second = resolve_geometry(contract)
+        self.assertEqual(first, second)
+        self.assertEqual(geometry_fingerprint(first), geometry_fingerprint(second))
+    def test_converging_single_stripe_seed_preserves_fixed_source_and_reference(self) -> None:
+        result = derive_converging_mirror_single_stripe_seed(
+            axial_energy_per_charge_v=4000.0, mirror_axial_width_w_mm=600.0,
+            drift_length_l_mm=300.0, source_slow_energy_per_charge_v=4.0,
+            mirror_linear_coefficient=0.8, high_order_response_scale_mm=-120.0,
+            function_y_zero_project_y_mm=12.0,
+        )
+        # Independent algebra: U=Ez-(sqrt(Ez)-wy*W/(2*b*sqrt(Ez)))**2.
+        expected_voltage = -20.0 - 20.0**2 / (4.0 * 4000.0)
+        self.assertAlmostEqual(result["stripe_biases_v"][0], expected_voltage, places=10)
+        self.assertEqual(result["stripe_biases_v"][1], 0.0)
+        self.assertEqual(result["source_slow_energy_per_charge_v"], 4.0)
+        self.assertEqual(result["function_y_zero_project_y_mm"], 12.0)
+        self.assertAlmostEqual(result["axial_width_gradient_mm_per_mm"], -0.0008, places=14)
+        self.assertAlmostEqual(result["axial_width_change_at_drift_length_mm"], -0.24, places=12)
+        positive = result["positive_mirror_rotation_about_x_degrees"]
+        negative = result["negative_mirror_rotation_about_x_degrees"]
+        self.assertEqual(positive, -negative)
+        self.assertAlmostEqual(2 * math.tan(math.radians(negative)), 0.0008, places=14)
+        self.assertEqual(result["qualification"], "hard_boundary_initial_values_only__finite_3d_pending")
+
+    def test_converging_single_stripe_seed_rejects_invalid_domain(self) -> None:
+        values = dict(axial_energy_per_charge_v=4000.0, mirror_axial_width_w_mm=600.0,
+                      drift_length_l_mm=300.0, source_slow_energy_per_charge_v=4.0,
+                      mirror_linear_coefficient=0.8, high_order_response_scale_mm=-120.0,
+                      function_y_zero_project_y_mm=0.0)
+        for name in values:
+            for invalid in (float("nan"), float("inf")):
+                with self.subTest(name=name, invalid=invalid), self.assertRaises(CandidateContractError):
+                    derive_converging_mirror_single_stripe_seed(**(values | {name: invalid}))
+        for name in values.keys() - {"function_y_zero_project_y_mm"}:
+            with self.subTest(name=name), self.assertRaises(CandidateContractError):
+                derive_converging_mirror_single_stripe_seed(**(values | {name: 0.0}))
+        for name in values.keys() - {"function_y_zero_project_y_mm", "high_order_response_scale_mm"}:
+            with self.subTest(name=name), self.assertRaises(CandidateContractError):
+                derive_converging_mirror_single_stripe_seed(**(values | {name: -1.0}))
+        with self.assertRaises(CandidateContractError):
+            derive_converging_mirror_single_stripe_seed(**(values | {"high_order_response_scale_mm": 120.0}))
+        with self.assertRaises(CandidateContractError):
+            derive_converging_mirror_single_stripe_seed(**(values | {"source_slow_energy_per_charge_v": 10000.0}))
+        with self.assertRaises(TypeError):
+            derive_converging_mirror_single_stripe_seed(axial_energy_per_charge_v=4000.0)
+
     def test_exact_k_selects_slow_energy_without_changing_fixed_mirror(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         shape = build_native_stripe_shape_selection(contract).shape_root

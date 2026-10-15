@@ -9,6 +9,7 @@ nominal-point response factors from the dual-Stripe theory.
 from __future__ import annotations
 
 import math
+import copy
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -23,6 +24,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract i
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     compile_dual_stripe_width_evaluator,
     dual_stripe_total_path_scale,
+    dual_stripe_width_at_y_mm,
     resolve_geometry,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
@@ -253,6 +255,125 @@ def _invert_pseudopotential_path_coefficient_v(
     if voltage == 0.0 or voltage >= energy:
         raise CandidateContractError("finite-bias inverse produced an invalid Stripe bias")
     return voltage
+
+
+CONVERGING_PRISM_ENERGY_RESIDUAL = "P1_P2_clean_phase_effective_slow_energy_error_per_charge_v"
+
+
+def converging_design_potential_delta_v(target: dict[str, Any], stripe_1_voltage_v: float, y_mm: float) -> float:
+    """Hard-boundary Phi(y)-Phi(y0), volts/q; original action theory sections 7/8.
+
+    Current S1 enters the finite-bias coefficient; geometric tilt and reference
+    E/W remain frozen. Grounded S2 is retained in 3D but has no bias term here.
+    """
+    energy, width = target["axial_energy_per_charge_v"], target["mirror_axial_width_w_mm"]
+    y0 = target["function_y_zero_project_y_mm"]
+    curve = target["width_contract"]
+    ds = 2*(dual_stripe_width_at_y_mm(curve, "set_1", y_mm)
+            - dual_stripe_width_at_y_mm(curve, "set_1", y0))
+    a = _pseudopotential_path_coefficient_v_per_mm(energy, stripe_1_voltage_v, width/math.sqrt(energy))
+    return a*ds + 4*energy*math.tan(math.radians(target["single_mirror_angle_degrees"]))/width*(y_mm-y0)
+
+
+def resolve_converging_prism_target(contract: dict[str, Any], resolved: dict[str, Any]) -> dict[str, Any] | None:
+    """Compile an explicit clean-phase P target; old parallel targets are unchanged."""
+    authored = contract.get("prism_transport", {}).get("handoff_target")
+    if authored is None:
+        return None
+    keys = {"mode", "axial_energy_per_charge_v", "mirror_axial_width_w_mm",
+            "slow_energy_reference_per_charge_v", "total_energy_reference_per_charge_v",
+            "clean_reference_slow_energy_per_charge_v"}
+    if not isinstance(authored, dict) or set(authored) != keys or authored["mode"] != "converging_clean_phase_energy":
+        raise CandidateContractError("unsupported explicit Prism handoff target")
+    target = dict(authored)
+    for key in keys-{"mode"}:
+        value = authored[key]
+        if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or value <= 0:
+            raise CandidateContractError(f"Prism handoff {key} must be positive finite")
+    tilt = resolved.get("mirror_convergence_transform")
+    axes = contract.get("downstream_fixed_grid_workpoint_profile", {}).get("active_stripe_axes")
+    if not isinstance(tilt, dict) or tilt.get("angle_deg", 0) <= 0 or axes != ["stripe_1_voltage_v"]:
+        raise CandidateContractError("clean-phase target requires converging mirrors and only active S1")
+    if contract["mirror"].get("convergence_transform", {}).get("angle_deg") != tilt["angle_deg"]:
+        raise CandidateContractError("Prism target and flown mirror convergence differ")
+    angle_tolerance = contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]["acceptance_tolerances"]["P1_P2_P2_shield_low_field_angle_degrees"]
+    if isinstance(angle_tolerance, bool) or not isinstance(angle_tolerance, (int, float)) or not math.isfinite(angle_tolerance) or angle_tolerance <= 0:
+        raise CandidateContractError("Prism angular acceptance tolerance must be positive finite")
+    target["angle_tolerance_degrees"] = angle_tolerance
+    target.update(single_mirror_angle_degrees=tilt["angle_deg"],
+                  function_y_zero_project_y_mm=contract["dual_stripe_l0"]["theory_function_coordinate_registration"]["function_y_zero_project_y_mm"],
+                  width_contract={"dual_stripe": {"theory_profile": copy.deepcopy(contract["dual_stripe"]["theory_profile"])}})
+    h, w = target["total_energy_reference_per_charge_v"], target["clean_reference_slow_energy_per_charge_v"]
+    if not 0 < w < h:
+        raise CandidateContractError("Prism energy reference requires 0 < slow energy < total energy")
+    theta, delta = math.asin(math.sqrt(w/h)), math.radians(target["angle_tolerance_degrees"])
+    if not 0 < theta-delta < theta+delta < math.pi/2:
+        raise CandidateContractError("Prism reference angular tolerance leaves the physical quadrant")
+    target["energy_tolerance_per_charge_v"] = min(w-h*math.sin(theta-delta)**2, h*math.sin(theta+delta)**2-w)
+    metadata = resolved["metadata"]
+    span = contract["dual_stripe"]["theory_profile"]["active_y_span_mm"]
+    target["clean_y_interval_mm"] = [span[0]+metadata["ion_foil_slot_bridge_from_min_y_mm"],
+                                      span[1]-metadata["ion_foil_slot_bridge_from_max_y_mm"]]
+    target["qualification"] = "hard_boundary_clean_phase_engineering_target__not_3d_energy_or_field_qualification"
+    return target
+
+
+def derive_converging_mirror_single_stripe_seed(
+    *,
+    axial_energy_per_charge_v: float,
+    mirror_axial_width_w_mm: float,
+    drift_length_l_mm: float,
+    source_slow_energy_per_charge_v: float,
+    mirror_linear_coefficient: float,
+    high_order_response_scale_mm: float,
+    function_y_zero_project_y_mm: float,
+) -> dict[str, Any]:
+    """Derive a converging-mirror/shaped-Stripe hard-boundary initial value.
+
+    Original action theory sections 8 and 14 give
+    ``-dW/dy=c0*W*wy/(2*L*Ez)``. W is the effective inter-mirror
+    distance, so each symmetric mirror contributes half the gap slope.
+    The signed total biased-path scale is negative for the current quintic
+    geometry. Inputs use volts per charge and mm; angles are degrees.
+    The explicit y reference preserves W there. Invalid/nonfinite inputs
+    raise CandidateContractError. No source adjustment, I/O or 3-D qualification.
+    """
+    energy = _finite(axial_energy_per_charge_v, "axial energy per charge")
+    width = _finite(mirror_axial_width_w_mm, "mirror axial width W")
+    length = _finite(drift_length_l_mm, "drift length L")
+    slow = _finite(source_slow_energy_per_charge_v, "fixed source slow energy")
+    coefficient = _finite(mirror_linear_coefficient, "mirror linear coefficient")
+    scale = _finite(high_order_response_scale_mm, "quintic total path scale")
+    reference = _finite(function_y_zero_project_y_mm, "function y reference")
+    if min(energy, width, length, slow, coefficient) <= 0.0 or scale >= 0.0:
+        raise CandidateContractError("converging seed requires positive physical inputs and negative quintic path scale")
+    gap_slope = coefficient * width * slow / (2.0 * length * energy)
+    if not math.isfinite(gap_slope) or gap_slope * length >= width:
+        raise CandidateContractError("converging seed closes the nominal mirror gap before the drift turn")
+    voltage = _finite(_invert_pseudopotential_path_coefficient_v(
+        energy, slow / scale, width / math.sqrt(energy),
+    ), "single Stripe seed voltage")
+    single_angle = math.degrees(math.atan(gap_slope / 2.0))
+    return {
+        "schema_version": 1,
+        "role": "converging_mirror_single_stripe_analytic_seed",
+        "qualification": "hard_boundary_initial_values_only__finite_3d_pending",
+        "axial_energy_per_charge_v": energy,
+        "mirror_axial_width_w_mm": width,
+        "drift_length_l_mm": length,
+        "source_slow_energy_per_charge_v": slow,
+        "mirror_linear_coefficient": coefficient,
+        "high_order_response_scale_mm": scale,
+        "function_y_zero_project_y_mm": reference,
+        "nominal_injection_angle_degrees": math.degrees(math.atan(math.sqrt(slow / energy))),
+        "axial_width_gradient_mm_per_mm": -gap_slope,
+        "axial_width_change_at_drift_length_mm": -gap_slope * length,
+        "effective_convergence_angle_degrees": math.degrees(math.atan(gap_slope)),
+        "positive_mirror_rotation_about_x_degrees": -single_angle,
+        "negative_mirror_rotation_about_x_degrees": single_angle,
+        "stripe_biases_v": [voltage, 0.0],
+        "grounded_linear_stripe_semantics": "retain conductor geometry; zero bias is not removal",
+    }
 
 
 def _width_bounds(record: dict[str, Any]) -> tuple[float, float]:

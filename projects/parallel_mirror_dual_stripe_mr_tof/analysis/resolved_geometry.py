@@ -43,6 +43,61 @@ class Box:
         return [self.x0, self.y0, self.z0, self.x1, self.y1, self.z1]
 
 
+def _converging_mirror_solid(box: list[float], angle: float, pivot_y: float,
+                             pivot_z: float, *, negative: bool = False) -> dict[str, Any]:
+    """Rotate one positive-side YZ rectangle; reflect the result for the negative mirror.
+
+    ``angle`` is positive convergence in radians, lengths are mm. Rotating the
+    entire slotted assembly preserves its internal gaps and x aperture widths.
+    The returned box is only a world AABB, never the physical tilted solid.
+    """
+    cosine, sine = math.cos(angle), math.sin(angle)
+    polygon = []
+    for y, z in ((box[1], box[2]), (box[4], box[2]), (box[4], box[5]), (box[1], box[5])):
+        dy, dz = y - pivot_y, z - pivot_z
+        world_y = pivot_y + cosine * dy + sine * dz
+        world_z = pivot_z - sine * dy + cosine * dz
+        polygon.append([world_y, -world_z if negative else world_z])
+    return {"x": [box[0], box[3]], "polygon_yz_mm": polygon,
+            "box": [box[0], min(p[0] for p in polygon), min(p[1] for p in polygon),
+                    box[3], max(p[0] for p in polygon), max(p[1] for p in polygon)]}
+
+
+def _apply_mirror_convergence(mirror: dict[str, Any], groups: list[list[dict[str, Any]]],
+                              shield_slot: list[float]) -> dict[str, Any] | None:
+    """Project an explicitly authored convergence transform onto all mirror solids."""
+    authored = mirror.get("convergence_transform")
+    if authored is None:
+        return None
+    if not isinstance(authored, dict) or set(authored) != {"angle_deg", "pivot_y_mm"}:
+        raise CandidateContractError("mirror convergence_transform requires angle_deg and pivot_y_mm")
+    if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in authored.values()):
+        raise CandidateContractError("mirror convergence_transform values must be numeric scalars")
+    angle_deg = _number(authored["angle_deg"], "mirror convergence angle_deg")
+    pivot_y = _number(authored["pivot_y_mm"], "mirror convergence pivot_y_mm")
+    if not 0.0 <= angle_deg < 90.0:
+        raise CandidateContractError("mirror convergence angle_deg must be in [0,90)")
+    pivot_z = _number(mirror["inner_face_z_mm"], "mirror.inner_face_z_mm")
+    if angle_deg == 0.0:
+        return None
+    angle = math.radians(angle_deg)
+    for group in groups:
+        positive = [item for item in group if item["box"][2] > 0.0]
+        negative = [item for item in group if item["box"][5] < 0.0]
+        for right, left in zip(positive, negative, strict=True):
+            local_box = right["box"]
+            hole = right.get("beam_slot")
+            if right.get("role") == "inner_stripe_facing_4mm_slot":
+                hole = [shield_slot[0], shield_slot[1], local_box[2] - 1.0,
+                        shield_slot[3], shield_slot[4], local_box[5] + 1.0]
+            for item, reflected in ((right, False), (left, True)):
+                item.update(_converging_mirror_solid(local_box, angle, pivot_y, pivot_z, negative=reflected))
+                item["holes"] = ([] if hole is None else [
+                    _converging_mirror_solid(hole, angle, pivot_y, pivot_z, negative=reflected)])
+    return {"angle_deg": angle_deg, "pivot_positive_project_mm": [0.0, pivot_y, pivot_z],
+            "negative_side": "exact_z_reflection", "solid_representation": "extruded_yz_polygon"}
+
+
 @dataclass(frozen=True)
 class DualStripePhysicalInstance:
     """One physical member of a shared-bias theoretical Stripe response."""
@@ -799,10 +854,56 @@ def _inherit_dual_stripe_topology(
     return result
 
 
+def _extend_prism_shield_to_accelerator_exit(
+    shield: dict[str, Any], extension: dict[str, Any], assembly: dict[str, Any] | None,
+) -> None:
+    """Extend the validated P1 section towards the frozen OA support, in mm."""
+    if shield["station"] != "accelerator_exit" or set(extension) != {"clearance_mm"}:
+        raise CandidateContractError("OA exit extension belongs only to P1 and requires clearance_mm")
+    clearance = _number(extension["clearance_mm"], "P1 extension clearance_mm")
+    if clearance <= 0.0 or not isinstance(assembly, dict):
+        raise CandidateContractError("P1 extension requires positive clearance and frozen accelerator assembly")
+    try:
+        oa = assembly["accelerator_resolved_electrodes"]
+        if oa["acceleration_direction"] != "-z":
+            raise CandidateContractError("P1 extension requires the frozen -z OA exit")
+        translation = oa["local_to_pa_translation_mm"]
+        origin = assembly["accelerator_iob_origin_mm"]
+        if len(translation) != 3 or len(origin) != 3:
+            raise CandidateContractError("P1 extension requires three-dimensional OA translations")
+        z_offset = _number(translation[2], "OA local-to-PA z") + _number(origin[2], "OA IOB z")
+        # Consume actual support solids, not the PA safe-exit or ideal-sheet plane.
+        support = min(oa["grid_supports"], key=lambda item: item["frame_outer_box_mm"]["z_min_mm"])
+        exit_face = _number(support["frame_outer_box_mm"]["z_min_mm"], "OA exit support z_min_mm") + z_offset
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CandidateContractError("P1 extension lacks resolved OA exit support/assembly fields") from exc
+    old_end = max(point[1] for point in shield["outer_polygon_yz_mm"])
+    new_end = exit_face - clearance
+    if new_end <= old_end:
+        raise CandidateContractError("P1 OA exit extension must increase the original shield length")
+    for point in shield["outer_polygon_yz_mm"]:
+        if point[1] == old_end:
+            point[1] = new_end
+    for section in shield["body_sections"]:
+        for point in section["polygon_yz_mm"]:
+            if point[1] == old_end:
+                point[1] = new_end
+    for slot in shield["rectangular_slots_mm"]:
+        if slot[5] == old_end:
+            slot[5] = new_end
+    shield["extension_to_accelerator_exit"] = {
+        "clearance_mm": clearance, "exit_support_component_electrode_id": support["component_electrode_id"],
+        "exit_support_downstream_z_mm": exit_face, "original_end_z_mm": old_end,
+        "resolved_end_z_mm": new_end, "added_length_mm": new_end - old_end,
+        "cad_body_topology_identity_scope": "unextended_baseline_source",
+    }
+
+
 def resolve_geometry(
     contract: dict[str, Any],
     *,
     inherited_dual_stripe_topology_contract: dict[str, Any] | None = None,
+    accelerator_assembly: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return validated physical primitives for all electrodes.
 
@@ -1183,6 +1284,12 @@ def resolve_geometry(
         observed = min(point[1] for point in shield["outer_polygon_yz_mm"]) - cad_face
         if cad_gap != 2.0 or abs(observed - cad_gap) > 1e-9:
             raise CandidateContractError("accelerator-exit prism shield must retain the CAD 2-mm gap to the negative inner mirror face")
+    for item, shield in zip(prism_contract["ground_shields"], prism_ground_shields, strict=True):
+        if "extension_to_accelerator_exit" in item:
+            extension = item["extension_to_accelerator_exit"]
+            if not isinstance(extension, dict):
+                raise CandidateContractError("P1 extension must be an explicit clearance contract")
+            _extend_prism_shield_to_accelerator_exit(shield, extension, accelerator_assembly)
     detector_contract = contract.get("detector")
     if not isinstance(detector_contract, dict) or int(detector_contract.get("id", 0)) != 25:
         raise CandidateContractError("numerical detector requires stable ID 25")
@@ -1248,6 +1355,38 @@ def resolve_geometry(
             raise CandidateContractError("detector must retain its declared y clearance from the central-prism grounded shield")
     validate_detector_return_path(contract)
 
+    convergence = _apply_mirror_convergence(
+        mirror, [mirror_boxes, mirror_ground_shields, mirror_e_closures], shield_slot.as_list(),
+    )
+    detector_mirror_clearance = positive_inner_faces[0] - detector_z1
+    if convergence is not None:
+        angle = math.radians(convergence["angle_deg"])
+        pivot_y = convergence["pivot_positive_project_mm"][1]
+        # The rotated inner plane is z = inner - tan(alpha)*(y-pivot_y).
+        # Its signed normal distance is exact for every piecewise-linear Stripe vertex.
+        mirror_stripe_clearance = min(
+            (inner - math.tan(angle) * (p[0] - pivot_y) - p[1]) * math.cos(angle)
+            for record in stripe_records if record["id"] in (11, 13)
+            for key in ("polygon_yz_mm", "terminal_polygon_yz_mm") for p in record[key]
+        )
+        if mirror_stripe_clearance <= 0.0:
+            raise CandidateContractError("converging mirror touches or overlaps a Stripe conductor")
+        aperture_y = low_field_reference_section["transit_aperture_project_mm"]["y_mm"]
+        minimum_face_z = min(inner - math.tan(angle) * (y - pivot_y) for y in aperture_y)
+        low_field_reference_section = _candidate_low_field_reference_section(
+            contract, prism_electrodes, prism_ground_shields, stripe_records, [minimum_face_z],
+        )
+        low_field_reference_section["derivation"]["mirror_inner_face"] = {
+            "geometry": "inclined_plane_over_transit_aperture",
+            "z_at_pivot_mm": inner, "pivot_y_mm": pivot_y, "dz_dy": -math.tan(angle),
+        }
+        detector_mirror_clearance = min(
+            (inner - math.tan(angle) * (y - pivot_y) - detector_z1) * math.cos(angle)
+            for y in (detector_box[1], detector_box[4])
+        )
+        if detector_mirror_clearance < clearance_z - 1e-9:
+            raise CandidateContractError("converging mirror lacks its declared detector clearance")
+
     return {
         "schema_version": 1,
         "project_id": "parallel_mirror_dual_stripe_mr_tof",
@@ -1258,6 +1397,7 @@ def resolve_geometry(
         "mirror_inner_shield_slot": shield_slot.as_list(),
         "mirror_ground_shields": mirror_ground_shields,
         "mirror_e_closures": mirror_e_closures,
+        **({"mirror_convergence_transform": convergence} if convergence is not None else {}),
         "stripe_electrodes": stripe_records,
         "stripe_slot": stripe_slot.as_list(),
         "central_ground_electrodes": central_ground_electrodes,
@@ -1277,7 +1417,7 @@ def resolve_geometry(
             "mirror_inner_ground_shield_thickness_mm": inner_shield_thickness,
             "mirror_outer_e_closure_thickness_mm": outer_closure_thickness,
             "mirror_inner_clearance_to_stripe_mm": inner_clearance,
-            "resolved_minimum_stripe_to_inner_shield_clearance_mm": inner - max_abs_stripe_z,
+            "resolved_minimum_stripe_to_inner_shield_clearance_mm": mirror_stripe_clearance,
             "mirror_stripe_clearance_pass": mirror_stripe_clearance >= inner_clearance - 1e-9,
             "ion_foil_slot_width_mm": 4.0,
             "ion_foil_slot_bridge_from_min_y_mm": bridge_from_min,
@@ -1290,7 +1430,7 @@ def resolve_geometry(
             "raw_positive_profile_heights_mm": raw_heights,
             "stripe_curve_pose_model": "theory_bspline_parameterization__native_knot_control_contract",
             "central_ground_outline_status": central_ground_status,
-            "detector_to_positive_grounded_mirror_clearance_mm": positive_inner_faces[0] - detector_z1,
+            "detector_to_positive_grounded_mirror_clearance_mm": detector_mirror_clearance,
             "detector_to_central_prism_ground_shield_clearance_y_mm": min(point[0] for shield in central_shields for point in shield["outer_polygon_yz_mm"]) - detector_box[4],
             "accelerator_guard_to_central_prism_ground_shield_clearance_y_mm": accelerator_shield_clearance,
             "required_accelerator_guard_to_central_prism_ground_shield_clearance_y_mm": required_accelerator_shield_clearance,

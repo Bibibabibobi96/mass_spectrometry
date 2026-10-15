@@ -51,6 +51,9 @@ def _mirror_lines(resolved: dict[str, object]) -> list[str]:
         "  ; The aperture terminates before both y ends and does not pass through end plates in z.",
     ]
     for electrode in resolved["mirror_electrodes"]:
+        if "polygon_yz_mm" in electrode:
+            lines.extend(_mirror_polygon_lines(electrode, electrode["id"]))
+            continue
         lines.extend((
             f"  e({electrode['id']}) {{",
             f"    {_box(electrode['box'])}",
@@ -60,8 +63,29 @@ def _mirror_lines(resolved: dict[str, object]) -> list[str]:
     return lines
 
 
+def _mirror_polygon_lines(solid: dict, electrode_id: int) -> list[str]:
+    """Emit the tilted solid and independently x-bounded holes via official GEM primitives.
+
+    Uses the existing extrude_yz/polyline path, supported by SIMION 2020
+    examples/geometry/disc_segmented.gem; no AABB is emitted as a tilted solid.
+    """
+    lines = [f"  e({electrode_id}) {{",
+             *(f"    {term}" for term in _extrude_polygon_bands(solid["x"], solid["polygon_yz_mm"]))]
+    for hole in solid["holes"]:
+        lines.extend(f"    notin_inside {{ {term} }}" for term in
+                     _extrude_polygon_bands(hole["x"], hole["polygon_yz_mm"]))
+    return [*lines, "  }"]
+
+
 def _mirror_ground_shield_lines(resolved: dict[str, object]) -> list[str]:
     """Emit the CAD-derived inner grounded mirror end plates as shared 0-V ID 15."""
+    if resolved.get("mirror_convergence_transform") is not None:
+        lines = []
+        for shield in resolved["mirror_ground_shields"]:
+            lines.extend(_mirror_polygon_lines(shield, 15))
+        for closure in resolved["mirror_e_closures"]:
+            lines.extend(_mirror_polygon_lines(closure, closure["id"]))
+        return lines
     inner_slot = _box(resolved["mirror_inner_shield_slot"])
     lines = [
         "  ; CAD inner end plates: Stripe-facing 5-mm shields have 4-mm slots.",

@@ -6,6 +6,7 @@ import math
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError, build_simion_gem, derive_mirror_voltage_bounds,
@@ -355,6 +356,42 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         )
         self.assertLess(accelerator_y_max, prism2_y_min)
         self.assertLess(accelerator_y_max, stripe_y_min)
+
+        extended = copy.deepcopy(contract)
+        extended["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"] = {
+            "clearance_mm": 1.0,
+        }
+        assembly = {
+            "accelerator_resolved_electrodes": {
+                "acceleration_direction": "-z",
+                "local_to_pa_translation_mm": [0.0, 0.0, 0.0],
+                "grid_supports": [{
+                    "component_electrode_id": 4,
+                    "frame_outer_box_mm": {"z_min_mm": 0.0},
+                }],
+            },
+            "accelerator_iob_origin_mm": [0.0, 0.0, 0.0],
+        }
+        frozen = resolve_geometry(extended, accelerator_assembly=assembly)
+        with self.assertRaisesRegex(CandidateContractError, "frozen accelerator assembly"):
+            resolve_accelerator_iob_origin(extended, plan)
+        with patch(
+            "projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry.resolve_geometry",
+            side_effect=AssertionError("the frozen geometry must not be re-resolved"),
+        ):
+            self.assertEqual(
+                resolve_accelerator_iob_origin(extended, plan, resolved_geometry=frozen), origin,
+            )
+            invalid = copy.deepcopy(frozen)
+            invalid["metadata"]["accelerator_component_geometry_profile_id"] = "wrong"
+            with self.assertRaisesRegex(CandidateContractError, "profile differs"):
+                resolve_accelerator_iob_origin(extended, plan, resolved_geometry=invalid)
+            invalid = copy.deepcopy(frozen)
+            shield = next(item for item in invalid["prism_ground_shields"]
+                          if item["station"] == "central_ground_left")
+            shield["outer_polygon_yz_mm"] = [[accelerator_y_max, 0.0]]
+            with self.assertRaisesRegex(CandidateContractError, "Prism2 shield too closely"):
+                resolve_accelerator_iob_origin(extended, plan, resolved_geometry=invalid)
 
         wrong_profile = copy.deepcopy(plan)
         wrong_profile["layout"]["geometry_profile_id"] = "wrong"
