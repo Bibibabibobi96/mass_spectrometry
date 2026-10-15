@@ -829,9 +829,11 @@ try{
       }
     }
     $finalBatchPlan=Get-Content -Raw -LiteralPath $batchPlanPath|ConvertFrom-Json
-    $checkpointConfig=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-    $checkpointConfig.inputs.simion_execution_batch_plan=$batchPlanPath
-    Write-RunJson -Path $runConfig -Value $checkpointConfig
+    if($null-ne$formalBatchIndex){
+      $checkpointConfig=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+      $checkpointConfig.inputs.simion_execution_batch_plan=$batchPlanPath
+      Write-RunJson -Path $runConfig -Value $checkpointConfig
+    }
     $checkpointAction={
       param($completedRecord)
       foreach($path in @([string]$completedRecord.specification.stdout,[string]$completedRecord.specification.stderr)){
@@ -845,9 +847,11 @@ try{
         -Manifest (Join-Path $runDir 'run_manifest.json') -Status checkpoint `
         -Software @('SIMION 2020','Python 3.11') -Outputs @($checkpointOutputs)|Out-Null
     }
-    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
-      -Manifest (Join-Path $runDir 'run_manifest.json') -Status checkpoint `
-      -Software @('SIMION 2020','Python 3.11') -Outputs @($checkpointOutputs)|Out-Null
+    if($null-ne$formalBatchIndex){
+      Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig `
+        -Manifest (Join-Path $runDir 'run_manifest.json') -Status checkpoint `
+        -Software @('SIMION 2020','Python 3.11') -Outputs @($checkpointOutputs)|Out-Null
+    }
     $pendingSpecs=@($finalBatchPlan.batches|Where-Object{
       $index=[int]$_.index
       $replayBatchIndexes-contains$index-and($null-eq$formalBatchIndex-or$index-ne$formalBatchIndex)

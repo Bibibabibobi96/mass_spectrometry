@@ -223,6 +223,8 @@ receipt、状态表和 Fly2 必须是同一成功源 run 的唯一输出。
 只生成一个全局 Fly-completion。各批共用冻结场及 IOB，不逐批构建或 Refine。
 `-BunchParticleIdMin/-BunchParticleIdMax` 只选冻结源连续区间，结果属于源选择诊断。
 
+启动前先发布checkpoint；只有实际执行formal-first观察、可能重分批后才更新飞行前checkpoint，
+已有资源profile且计划未变时不重复读写配置或写验。自然完成批次和最终发布仍完整验证；尚无端到端提速测量。
 每个自然完成 batch 发布 manifest-bound checkpoint。新 run 使用
 `-BatchContinuationRunPath` 导入连续完整批次前缀；未完成批次整批重放，
 不更改原 run 身份、物理输入或调度规则。screening 的 pilot/cohort 分别传其恢复入口。

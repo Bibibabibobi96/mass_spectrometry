@@ -9,6 +9,80 @@ import unittest
 RUNNER = Path(__file__).resolve().parents[2] / "simion" / "run_two_prism_trial.ps1"
 
 class TwoPrismTrialRunnerTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_preflight_checkpoint_refresh_only_after_formal_observation(self):
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        start = source.index("    $finalBatchPlan=Get-Content")
+        block = source[start:source.index(
+            "    if($pendingSpecs.Count-eq0-and$existingRecords.Count-eq0){", start)]
+        initial = {"inputs": {"simion_execution_batch_plan": "frozen-plan.json"},
+                   "parameters": {"unchanged": "frozen source and field"}}
+        cases = (
+            ("exact", None, [1, 2], [1, 2], initial, False, [1, 2], 0),
+            ("formal_index_zero", 0, [0, 1, 2], [0, 1, 2], initial, False, [1, 2], 1),
+            ("continuation_replay", None, [1, 2], [2], initial, False, [2], 0),
+            ("empty", None, [], [], None, False, [], 0),
+            ("missing_inputs", 0, [0, 1], [0, 1], {}, False, None, 0),
+            ("write_failure", 0, [0, 1], [0, 1], initial, True, None, 1),
+        )
+        quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for label, formal, indices, replay, config, write_failure, pending, writes in cases:
+                with self.subTest(case=label):
+                    run_config, batch_plan = root / "run_config.json", root / "batch_plan.json"
+                    if run_config.exists():
+                        run_config.unlink()
+                    if config is not None:
+                        run_config.write_text(json.dumps(config), encoding="utf-8")
+                    before = run_config.read_bytes() if run_config.exists() else None
+                    batch_plan.write_text(json.dumps({"batches": [{"index": i} for i in indices]}),
+                                          encoding="utf-8")
+                    formal_value = "$null" if formal is None else str(formal)
+                    script = (
+                        "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
+                        f"$runConfig={quote(run_config)};$batchPlanPath={quote(batch_plan)};"
+                        f"$runDir={quote(root)};$formalBatchIndex={formal_value};"
+                        f"$replayBatchIndexes=@({','.join(map(str, replay))});"
+                        "$batchRecords=@{};"
+                        f"foreach($index in @({','.join(map(str, indices))}))"
+                        "{$batchRecords[[int]$index]=@{index=[int]$index}};"
+                        "$checkpointOutputs=@('initial-output.json');$python='unused';$repoRoot='unused';"
+                        "$script:writes=0;$script:manifests=0;"
+                        "function Write-RunJson {param($Path,$Value) $script:writes++;"
+                        + ("throw 'WRITE_FAILURE';" if write_failure else
+                           "$Value|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $Path;")
+                        + "};function Write-VerifiedRunManifest {param($Python,$RepoRoot,$RunConfig,"
+                        "$Manifest,$Status,$Software,$Outputs) $script:manifests++;"
+                        "if($Status-ne'checkpoint'-or$Outputs[0]-ne'initial-output.json'){throw 'identity changed'}};"
+                        "function Get-MrtofBatchProcessSpecification {param($Record) $Record.index};"
+                        "try {\n" + block + "\n} catch {"
+                        "@{error=$_.Exception.Message;writes=$script:writes;manifests=$script:manifests}"
+                        "|ConvertTo-Json -Compress;exit 1};"
+                        "@{writes=$script:writes;manifests=$script:manifests;pending=@($pendingSpecs)}"
+                        "|ConvertTo-Json -Compress"
+                    )
+                    result = subprocess.run(
+                        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                        cwd=RUNNER.parents[3], capture_output=True, text=True, encoding="utf-8", timeout=30,
+                    )
+                    actual = json.loads(result.stdout.splitlines()[-1])
+                    self.assertEqual(actual["writes"], writes)
+                    if pending is None:
+                        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertEqual(actual["manifests"], 0)
+                        if write_failure:
+                            self.assertEqual(actual["error"], "WRITE_FAILURE")
+                    else:
+                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertEqual(actual["manifests"], writes)
+                        self.assertEqual(actual["pending"], pending)
+                        if formal is not None:
+                            expected = {**initial, "inputs": {"simion_execution_batch_plan": str(batch_plan)}}
+                            self.assertEqual(json.loads(run_config.read_text(encoding="utf-8-sig")), expected)
+                        else:
+                            self.assertEqual(run_config.read_bytes() if run_config.exists() else None, before)
+
     @classmethod
     def setUpClass(cls):
         cls.source = RUNNER.read_text(encoding="utf-8")
