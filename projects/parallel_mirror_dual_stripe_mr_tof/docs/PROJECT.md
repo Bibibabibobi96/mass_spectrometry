@@ -138,6 +138,12 @@ COMSOL标量电势→规则PA→SIMION求导／插值／窗口选择→原飞行
 活动CG／loweramg的stol=1e−9、误差检查与手动缩放同冻结控制；不是有MUMPS节点就称使用MUMPS，
 也不能将该停止设置解释成电场已达1e−9物理误差。
 本次有值的对照可以诊断当前离散影响，但有限停止误差仍在；217点差值不能预测束团FWHM或完整路径误差。
+只读复核确认三档冻结输入／resolved几何相同，完整求解配置仅标签不同，冷读绑定各自mesh／solution，未发现旧解误消费。
+当前误差因子400实际为`i1.rhob`；增大才更严格，不能以400→40收紧。`s1.control='stat'`，下一项仅拟在固定mesh3上
+收紧控制Study的有效停止判据，须核对活动线性迭代实际生效，再查原120点；尚未运行，不先新增网格／导出／飞行。
+依据为COMSOL 6.4官方[误差估计](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_solver.36.185.html)、
+[Stationary控制](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.47.html)及
+[Study容差](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.79.html)，2026-10-15核对；设置标签和残差不作为物理误差界。
 
 导出严格沿[010000][mesh1-export]网格：base 0.25/0.25/0.10 mm、正负镜0.04/0.20/0.04、慢返回0.10 mm三轴；
 优先级正镜→负镜→慢返回→base。保持原单位、坐标、有效掩模及原生碰撞实例；未知查询不得补零或当真实损失。
