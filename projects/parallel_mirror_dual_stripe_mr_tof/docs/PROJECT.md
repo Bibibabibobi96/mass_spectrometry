@@ -298,6 +298,9 @@ checkpoint保留专用收尾，不把已删除但未完成账本收尾的资产�
 174000导出、180000配对和184000单镜作者已依公共精确清单清理，冻结输入与全部场／轨迹证据保留。
 152030旧mesh2导出的八PA已沿公共owner-completion退役，释放5198465376字节；自动收尾后为ready/light_evidence，
 剩358016字节、未pin。150021源MPH不动；历史154824／160855的IOB须重新导出F2场并重装配。
+132400的F3旧四窗八张V／valid PA亦经公共owner完成退役，释放5198465376逻辑字节；
+终态ready/light_evidence、365790字节、未pin，124839原MPH及全部小证据保留。
+依赖这些旧PA的历史135800／161302等IOB须重新导出F3并重装配，当前F4、原生链及CAD资产不变。
 具体范围见[本阶段快照](history/20261015__fixed-field-reproduction-and-solve-state.md)，不把已退役历史tip当作可直接恢复点。
 
 当前STEP交付见[163154出版恢复][cad-delivery]：40个独立命名电极STEP、6个C0参考面及装配概览；
