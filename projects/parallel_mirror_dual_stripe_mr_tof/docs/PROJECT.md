@@ -257,6 +257,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 
 已关闭的旧生产器、专属测试与入口清单归入[退役里程碑](history/20261015__producer-retirement-milestone.md)。
 当前共享数学、活动配置及两条链的资产重建能力继续保留；已封存输入和小证据不随入口退役删除。
+另退役无人消费的旧`simion/mrtof_candidate_center.fly2`静态模板；当前N1仍由原trial从实际源参数生成，
+批次由源receipt物化，四个历史run-local副本不动。三项源／单粒子回归通过，净减一个19行Lua脚本。
 补充退役无活动引用的`tests/simion/test_accelerator_native_geometry.lua`及旧schema3的
 `config/candidate_bunch_source_n1000.json`；现提供者与母样本生成不变，
 相关5项回归通过；与下述结构诊断退役合并提交445116e8，未改变活动源或母样本。
