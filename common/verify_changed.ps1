@@ -85,6 +85,12 @@ function Test-AnyPath {
     return @($script:changedPaths | Where-Object $Predicate).Count -gt 0
 }
 
+function Test-DocumentationPath {
+    param([Parameter(Mandatory)][string]$Path)
+    return [IO.Path]::GetExtension($Path).Equals('.md', [StringComparison]::OrdinalIgnoreCase) -or
+        $Path -match '^(?:(?:projects|integrations)/[^/]+/)?docs/history/[^/]+/[^/]+\.txt$'
+}
+
 function Get-ChangedRouteReason {
     param([Parameter(Mandatory)]$Route)
     foreach ($match in @($Route.matches)) {
@@ -148,10 +154,10 @@ $existingPythonFiles = @(
         Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
 )
 $hasDocumentationChange = $FullScope -or (Test-AnyPath {
-    [IO.Path]::GetExtension($_).ToLowerInvariant() -eq '.md'
+    Test-DocumentationPath $_
 })
 $isDocumentationOnly = -not $FullScope -and $changedPaths.Count -gt 0 -and -not (Test-AnyPath {
-    [IO.Path]::GetExtension($_).ToLowerInvariant() -ne '.md'
+    -not (Test-DocumentationPath $_)
 })
 $integrationTestModulePattern = (
     '^integrations/rf_multipole_ion_optics_to_single_reflection_' +

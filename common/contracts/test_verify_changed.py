@@ -361,34 +361,45 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
             "locked",
         )
 
-    def test_plan_mode_reports_documentation_fast_path_effective_stages(self) -> None:
+    def test_history_text_snapshots_use_only_the_documentation_fast_path(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
-        completed = subprocess.run(
-            [
-                pwsh,
-                "-NoProfile",
-                "-File",
-                str(CHANGED_GATE),
-                "-PythonExe",
-                sys.executable,
-                "-ChangedPath",
-                "common/contracts/README.md",
-                "-PlanOnly",
-            ],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True, encoding="utf-8",
-            timeout=30,
-            check=False,
+        project = "projects/parallel_mirror_dual_stripe_mr_tof/"
+        snapshot = project + "docs/history/20261015__cad-exchange/CAD.before.txt"
+        cases = (
+            (("common/contracts/README.md",), False, True),
+            ((project + "docs/CAD.md", snapshot), False, True),
+            ((snapshot,), False, True),
+            (("docs/history/20261015__milestone/PROJECT.before.txt",), False, True),
+            (("integrations/example/docs/history/20261015__milestone/PROJECT.before.txt",), False, True),
+            ((project + "docs/CAD.before.txt",), False, False),
+            ((project + "config/project.json",), False, False),
+            ((project + "docs/history/x/snapshot_manifest.json",), False, False),
+            ((project + "docs/history/x/old.py",), False, False),
+            ((project + "docs/history/x/nested/CAD.before.txt",), False, False),
+            ((project + "docs/history/CAD.before.txt",), False, False),
+            ((snapshot, project + "analysis/simion_event_analysis.py"), False, False),
+            ((), True, False),
         )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("EXECUTION_MODE=DOCUMENTATION_ONLY", completed.stdout)
-        self.assertIn(
-            "EFFECTIVE_STAGES=repository_hygiene,repository_text_bytes,documentation",
-            completed.stdout,
-        )
+        for paths, full_scope, documentation_only in cases:
+            with self.subTest(paths=paths, full_scope=full_scope):
+                quote = lambda value: "'" + value.replace("'", "''") + "'"
+                command = f"& {quote(str(CHANGED_GATE))} -PythonExe {quote(sys.executable)} -PlanOnly"
+                command += " -FullScope" if full_scope else " -ChangedPath @(" + ",".join(map(quote, paths)) + ")"
+                completed = subprocess.run(
+                    [pwsh, "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                    capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                mode = "DOCUMENTATION_ONLY" if documentation_only else "FULL_CHANGED_SCOPE"
+                self.assertIn(f"EXECUTION_MODE={mode}", completed.stdout)
+                if documentation_only:
+                    self.assertIn(
+                        "EFFECTIVE_STAGES=repository_hygiene,repository_text_bytes,documentation",
+                        completed.stdout,
+                    )
+                    self.assertRegex(completed.stdout, r"SELECTED_STAGES=[^\r\n]*\bdocumentation\b")
 
     def test_ci_fallback_uses_full_scope_without_a_second_path_table(self) -> None:
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")

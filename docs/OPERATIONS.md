@@ -33,8 +33,9 @@ PowerShell时必须使用`pwsh`；PowerShell脚本内部继承当前宿主，不
 | L2 仓库集成 | `common/verify_repository_integration.ps1` | 门禁、注册表、机器语义、共享运行或跨项目接口改变 |
 | L3 项目证据 | 项目 `verify_project.ps1` 的 Candidate/Formal 级别 | 资格、promotion或真实物理资产变化 |
 
-L1 始终先查仓库卫生与受管文本字节。纯 Markdown 改动运行文档检查后走
-`DOCUMENTATION_ONLY` 快速路径；其余只运行活动项目、直接公共依赖和必要静态合同，报告 RUN/SKIP 原因。
+L1 始终先查仓库卫生与受管文本字节。纯 Markdown 及根、项目或integration的
+`docs/history/<同名载荷目录>/*.txt`单层只读快照改动，运行文档检查后走`DOCUMENTATION_ONLY`快速路径；
+快照清单、字节和SHA检查仍执行。活动配置、源码及其他文本不获该豁免；其余只运行活动项目、直接公共依赖和必要静态合同，报告 RUN/SKIP 原因。
 四极杆或其直接公共依赖变化时先查生成物 Freshness，再复用前置结果执行无求解器 Core 合同。
 
 L2 在长测试前检查四极杆 Freshness，然后覆盖全部活动项目、integration 和公共静态回归；四极杆
