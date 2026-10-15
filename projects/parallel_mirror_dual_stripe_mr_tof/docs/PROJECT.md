@@ -15,12 +15,13 @@
 COMSOL mesh2已成功求场、导出及同源受控N13；两档均无检测器命中。固定输入配对已显示目标49处
 相对中心时间最大变化约1.950 ns、y位置约3.717 mm，尚不支持性能复现或场已收敛。
 mesh3有限局部细分及同网格重求已完成；重求移除了原负镜第45次的大异常，说明原差异不能全归因网格。
-尚未导出或飞行，无新的束团性能，也未取得收敛资格。
+重求场四窗导出及同源N13已完成，仍无检测器命中；无新的高斯束团性能，也未取得收敛资格。
 
 本轮无消费者旧生产器专项已收束，范围及恢复边界见[退役里程碑](history/20261015__producer-retirement-milestone.md)。
 两条模拟链、响应库、GUI、CAD及冻结参考所需资产保留；不为降低行数删除活动能力。
 固定mesh3重求已封存；已有mesh2的同控制重求131251在组装阶段断言失败，没有产生新场。
-本轮不新增网格、导出或飞行；先避免把求解／重求状态差异当作纯FEM网格误差。
+不新增网格或重复组装试探；132400已复用既有四窗导出作者消费124839成功解，135800同源N13已完成。
+这次导出不重新求场、调压或修改源，不把求解／重求状态差异当作纯FEM网格误差。
 项目整理继续针对实际重复和流程负担，不新建第二套完整追迹或闭合框架。
 
 ## 输入权威与物理定义
@@ -130,9 +131,10 @@ COMSOL标量电势→规则PA→SIMION求导／插值／窗口选择→原飞行
 |---|---|
 | mesh1：[001600／恢复004119][mesh1] | Q2，CG＋AMG；16071408四面体、22659432 DOF，24次CG；原生求场约382 s |
 | mesh2：[074200状态隔离][mesh2] | 复制后局部Longest-edge Refine；21076275四面体、29650232 DOF；27次CG、约525 s；求场成功 |
-| mesh3：[局部regular及发布恢复][mesh3] | mesh2复制后正镜D/E槽壁—间隙—束路局部细分一次；24023776四面体、33611669 DOF；33次CG，原生稳态831 s、runAll 996.360 s；未导出／飞行 |
+| mesh3：[局部regular及发布恢复][mesh3] | mesh2复制后正镜D/E槽壁—间隙—束路局部细分一次；24023776四面体、33611669 DOF；原33次CG，原生稳态831 s、runAll 996.360 s；后续重求及消费见下 |
 | 同输入固定217点 | mesh2−mesh1最大ΔV≈0.042604 V、向量ΔE≈10.6858 V/m；主要在快速镜转折，其他所查分组接近 |
 | 当前导出：[083000][mesh2-export] | 四窗计算完成，success/full20、公共ready及实际binding通过；查询1070.913/107.410/108.066/145.079 s；无重新求场 |
+| 重求场导出：[132400][mesh3-export] | 四窗来自同一124839解，success/full20及公共ready；总1805.227 s、载荷约5.20 GB；无重新求场 |
 
 两档完整几何、电压、Q2、活动CG/AMG及数值控制保持，mesh2求解前仅在内存移除旧dataset/solution/study，
 不更改源MPH。旧保存求解状态下Compile3%访问异常，本次越过并成功，支持状态依赖的软件线索，
@@ -173,6 +175,11 @@ mesh1同电压受控[013155 N13][comsol-n13]为0/13检测器命中：10个物理
 接地线性Stripe13/14七颗、中央接地体15四颗。与mesh1的10个物理碰撞、3个拓扑拒绝不同，不能因两档均无命中宣布稳定。
 准备时两项运输漏项已更正：使用同字节OA原权威收据，显式传入原S1/S2值；093500仅preFly失败，无新轨迹。
 旧失败证据保留，不把接续成功描述成性能复现；不因新场失焦而调压掩盖本轮固定输入比较。
+重求场[135800 N13][mesh3-n13]已完成success/full26：原调度器实测并发2、飞行波次305.011 s，13颗均出现target49，
+检测器0/13；10个物理碰撞（中央接地体15九颗、接地Stripe14一颗）、3个程序拓扑拒绝。无检测器FWHM/R。
+标准诊断自动输出target49的Ey斜率+17.44775 ns/eV、局部x偶响应+0.079818 ns；不等于检测器性能或宽平台资格。
+全幅x±0.5 mm偶响应为+2.559779 ns；所需三点在target49齐全，但返回P2及检测器三点均缺失，不补造末端响应。
+基础窗5664个未知节点保持无效，另三窗全部有效；尚须以实际轨迹覆盖判断影响，不能补零或误计为物理损失。
 S缺省输入的检查时序已在工作区修正：先读取冻结场电压，再检查接地线性Stripe；显式不匹配仍拒绝。
 [省略S的真实N1][stripe-authority-n1]已完成success/full19，Fly49.479 s；自动S、完整电压及初态与r02一致，
 中心终态事件逐字相同（753.597076425 μs后撞S1）。这是输入／发布链修复，不是空间闭合或新性能提升。
@@ -220,9 +227,28 @@ mesh3已按正镜未倾斜坐标x=0..18、y=215..250、z=274..296 mm及冻结Rx�
 | 历史native134830，y350／镜z0.04 mm | +2.47926 | +0.161704 | +2.316725 |
 | COMSOL mesh1 | +16.72313 | −0.171590 | +1.994519 |
 | COMSOL mesh2 | −2.65054 | +0.825610 | +3.201490 |
+| COMSOL mesh3重求 | +17.44775 | +0.079818 | +2.559779 |
 
 历史native来源为014440配对冻结记录，不是y360／z0.02高斯细档；跨来源比较也包含场表示差异。
 mesh2的Ey两端均晚于中心，三点偶项约0.541435 ns；局部斜率变小不能单独称为宽平台改善。
+新[三来源配对][mesh3-pair]保留13颗及缺失／追加事件，纯分析约0.386 s，无新商业计算。
+mesh2→mesh3的15项控制相等：首次P2后相对中心时间最大变化0.0034114 ns、y位置0.0091777 mm，
+到target49增至2.055357 ns／3.928290 mm；4459个共同事件，另有4个旧独有、12个新独有。
+native134830→mesh3的适用控制相等：首次P2后0.147666 ns／0.030957 mm，target49为7.536126 ns／14.842685 mm；
+4457个共同事件，另有102个旧独有、14个新独有。native为13/13命中，与两档COMSOL的0/13不同。
+这不是检测器峰宽误差，也不证明任一场是真值；标量两档比较仍混有rhob及重求路径变化，native对照还包含整个场消费链。
+慢转折分支已用冻结日志核对：ID1、4、13的首转折及额外微转折都位于快速转折24→25之间，
+属于同一次宏观慢返回，不是跨周期事件错号。ID4首转折从385.884443 μs、z≈−73.072 mm移至
+390.040598 μs、z≈−265.701 mm；同一P1截面的vy由负变正，支持慢转折相位确有变化。
+mesh3中心及mesh2的ID13分别有额外微回摆，y回升仅0.178 μm及6.808 nm；真实受力与数值纹波尚未区分。
+因此首慢转折可作相位敏感性诊断，但不是固定空间截面的TOF；额外第2/3次零点不能直接跨粒子按序号配对。
+微秒级配对值不能当作束团FWHM或总误差上界；继续以同编号中央面、快速转折及宏观包络定位增长段。
+当前证据不足以启动高斯N100复现：先利用共同束路确定下一项有限数值试验，不通过调压掩盖本轮差异。
+ID1、4、5、10、11的共同快速转折显示：第11→12→13次的最大相对中心计时变化为
+0.0349→0.3033→0.5222 ns，最大y差为0.2208→0.2599→0.3014 mm；空间差此前已持续累积。
+第12次正镜前后同编号中央面的最大相对计时变化由0.0443增至0.5184 ns，支持优先检查该段，
+不支持把所有差异都归于单一镜。下一项只在该段新轨迹固定坐标比较保存FEM与实际消费V/E，
+不重新求场、导出或飞行；旧热点坐标证据不能代替新轨迹覆盖，分层查询也不能单独隔离FEM与重求状态。
 下一档须先结合连续束路证据、电极几何及网格方法规划，不能只围绕最大差点盲目加密。
 
 COMSOL不升级；[小文件厂商材料][vendor]已准备，含原始控制/崩溃/成功证据，不含大MPH，也未联系或上传厂商。
@@ -250,7 +276,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 已关闭的旧生产器、专属测试与入口清单归入[退役里程碑](history/20261015__producer-retirement-milestone.md)。
 当前共享数学、活动配置及两条链的资产重建能力继续保留；已封存输入和小证据不随入口退役删除。
 
-1. 131251匹配重求已失败；保留mesh2原成功场与124839的mesh3重求场，下一步根据现有证据决定一次完整导出和同源N13。
+1. 131251匹配重求已失败；132400四窗导出、135800同源N13和140747三来源配对已完成，暂不启动高斯N100。
+   慢返回分支及连续增长定位已完成；下一项为第12次正镜前后新轨迹固定坐标的原生FEM／实际消费分层查询。
    两者重求控制未配齐，比较须保留求解状态混杂限制；不重复同类组装试探，不自动新增网格或投入高斯N100。
 2. 根据mesh1/mesh2配对区分共同TOF、粒子相对时间、空间返回与终止身份；只针对改变设计决策的束路补充精度检查。
    不等待所有旧失闭合轨迹一致，也不因中心命中选“真值”；若结果仍改变性能判断，报告有限可信范围。
@@ -289,6 +316,9 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [stopping-preflight]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_124650__analysis__comsol__mesh3-effective-stopping-control/results/effective_tolerance_gate.json
 [stopping-control]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_124839__analysis__comsol__mesh3-rhob-stopping-control/summary.json
 [mesh2-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_083000__analysis__comsol__converging-mesh2-beam-tube-export/run_config.json
+[mesh3-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_132400__analysis__comsol__mesh3-rhob-beam-tube-export/summary.json
+[mesh3-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_135800__sim__simion__converging-mesh3-rhob-fixed-u-controlled-n13/summary.json
+[mesh3-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_140747__analysis__python__converging-mesh3-controlled-n13-pairing/summary.json
 [mesh1-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_010000__analysis__comsol__converging-beam-tube-export/run_config.json
 [comsol-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_013155__sim__simion__converging-comsol-fixed-u-controlled-n13/summary.json
 [mesh2-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_093500__sim__simion__converging-mesh2-fixed-u-controlled-n13__r02/summary.json
