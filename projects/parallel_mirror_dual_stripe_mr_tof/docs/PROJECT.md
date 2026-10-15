@@ -14,11 +14,13 @@
 这是有限工程结果，不是正式十万资格：前者名义峰宽距目标仅约0.053 ns，尚无独立大样本统计资格。
 COMSOL mesh2已成功求场、导出及同源受控N13；两档均无检测器命中。固定输入配对已显示目标49处
 相对中心时间最大变化约1.950 ns、y位置约3.717 mm，尚不支持性能复现或场已收敛。
-mesh3的有限局部细分已求成并封存，但固定束路点差异未整体缩小；未导出或飞行，无新的束团性能。
+mesh3有限局部细分及同网格重求已完成；重求移除了原负镜第45次的大异常，说明原差异不能全归因网格。
+尚未导出或飞行，无新的束团性能，也未取得收敛资格。
 
 本轮无消费者旧生产器专项已收束，范围及恢复边界见[退役里程碑](history/20261015__producer-retirement-milestone.md)。
 两条模拟链、响应库、GUI、CAD及冻结参考所需资产保留；不为降低行数删除活动能力。
-下一项仅准备固定mesh3的有效停止判据对照，静态审查及公共容量准入后才求解；暂不新增网格、导出或飞行。
+固定mesh3重求已封存；已有mesh2的同控制重求131251在组装阶段断言失败，没有产生新场。
+本轮不新增网格、导出或飞行；先避免把求解／重求状态差异当作纯FEM网格误差。
 项目整理继续针对实际重复和流程负担，不新建第二套完整追迹或闭合框架。
 
 ## 输入权威与物理定义
@@ -135,12 +137,26 @@ COMSOL标量电势→规则PA→SIMION求导／插值／窗口选择→原飞行
 两档完整几何、电压、Q2、活动CG/AMG及数值控制保持，mesh2求解前仅在内存移除旧dataset/solution/study，
 不更改源MPH。旧保存求解状态下Compile3%访问异常，本次越过并成功，支持状态依赖的软件线索，
 不证明所有组装故障已关闭或“坏网格／内存不足”是根因。cold回读217点与保存前一致。
-活动CG／loweramg的stol=1e−9、误差检查与手动缩放同冻结控制；不是有MUMPS节点就称使用MUMPS，
+Study的stol=1e−9、活动CG／loweramg的误差检查与手动缩放同冻结控制；不是有MUMPS节点就称使用MUMPS，
 也不能将该停止设置解释成电场已达1e−9物理误差。
 本次有值的对照可以诊断当前离散影响，但有限停止误差仍在；217点差值不能预测束团FWHM或完整路径误差。
 只读复核确认三档冻结输入／resolved几何相同，完整求解配置仅标签不同，冷读绑定各自mesh／solution，未发现旧解误消费。
-当前误差因子400实际为`i1.rhob`；增大才更严格，不能以400→40收紧。`s1.control='stat'`，下一项仅拟在固定mesh3上
-收紧控制Study的有效停止判据，须核对活动线性迭代实际生效，再查原120点；尚未运行，不先新增网格／导出／飞行。
+当前误差因子400实际为`i1.rhob`；增大才更严格，不能以400→40收紧。[124650预检][stopping-preflight]确认本机版本
+不支持从Stationary节点读取`itol`，已在求解前停止，solve_count=0、无新场；失败证据完成full10及公共ready封存。
+不以Study或手动stol标签宣称实际线性精度。[124839同mesh3重求][stopping-control]保持物理输入、网格和其余有效控制，
+将活动CG的`rhob`从400增至40000，并clearSolutionData后runAll；38次CG，原生稳态749 s、runAll880.423 s，
+含保存和冷读总1005.940 s，120点冷读零差；success/full18后由公共seal恢复ready，未重求或改写原模型。
+最初包装末尾误走light finalize而被拒，科学输出已完成；封存接线故障不当作求场失败或自动链全通过。
+
+同mesh3重求相对原解：正镜第12次最大电场向量差仅0.0000342 V/m，负镜第45次却达317.067 V/m、1.781508 V；
+该组新解与旧mesh2仅差约0.0000147 V/m，中央所查点≤1.72e−9 V/m。局部h/quality和坐标未变。
+原生日志同时由“Nonsymmetric”变为“Symmetric”；故当前证明求解／重求状态敏感，不能把变化唯一归因停止阈值，
+也不能将40000定为已经收敛的永久设置。新mesh3与旧mesh2正镜第12次仍差158.735 V/m，但控制及重求路径未配齐。
+131251在已有mesh2上采用同样rhob40000及清解重求，但在矩阵组装34%触发`xmodel_assem.cpp:1896`断言，
+未进入CG迭代、未产生新场；失败记录完成full12及公共ready封存，不作为第三档数值结果，不原样重试。
+两次mesh3日志的对称性提示都位于主稳态组装后、多重网格层创建前；Advanced的`symmetric=auto`、
+`nullfun=auto`、`cachepattern=off`、`keep=off`及相关复用设置相同，未发现强制对称或缓存设置切换。
+尚未提取矩阵，不能据日志确定唯一根因，更不能通过强制对称制造一致性。
 依据为COMSOL 6.4官方[误差估计](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_solver.36.185.html)、
 [Stationary控制](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.47.html)及
 [Study容差](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.79.html)，2026-10-15核对；设置标签和残差不作为物理误差界。
@@ -185,12 +201,13 @@ S缺省输入的检查时序已在工作区修正：先读取冻结场电压，�
 剖面支持下一档同时考虑真实壁／间隙至束路的体网格和过渡，而非只追热点轴线；粗h尚不构成因果证明。
 mesh3已按正镜未倾斜坐标x=0..18、y=215..250、z=274..296 mm及冻结Rx变换完成一次regular细分，
 四面体增加13.99%；固定120个束路点的最大电场向量差317.067 V/m出现在负镜第45次转折，
-该点所在单元h仍为0.399816 mm；第12次正镜组最大差158.735 V/m，未比前档139.804 V/m缩小。
+该点所在单元h仍为0.399816 mm；但该317.067 V/m差在后续同网格重求中消失，不再作为纯局部细化影响。
+第12次正镜组原最大差158.735 V/m，未比前档139.804 V/m缩小；须待匹配求解路径后再解释网格趋势。
 中央面及第11、13、49组所查点变化很小，不能因此授予整程资格，也不能将较大点差直接换算为峰宽。
 近壁78点剖面的最大差发生在x=14.5 mm，须与实际束轴点分开；不据此盲目继续加密。
 科学计算、保存和冷读已完成，总1141.382 s；198点冷读与保存前V/E差均为0，仅证明可重读。
 原运行在成功计算后因一次性包装脚本读取未定义LASTEXITCODE而发布失败；[零计算恢复][mesh3]
-保持原失败证据不变并引用同一MPH，未复制、重复哈希或重算。下一项为同网格有效停止判据对照，
+保持原失败证据不变并引用同一MPH，未复制、重复哈希或重算。后续同网格重求见上，
 不自动追加更细档、全窗导出或飞行。
 方法选择参考[官方局部Refine](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_mesh.24.80.html)
 与[网格质量定义](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_mesh.24.24.html)：
@@ -233,8 +250,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 已关闭的旧生产器、专属测试与入口清单归入[退役里程碑](history/20261015__producer-retirement-milestone.md)。
 当前共享数学、活动配置及两条链的资产重建能力继续保留；已封存输入和小证据不随入口退役删除。
 
-1. mesh3有限局部细分与固定点对照已完成，未形成收敛证据。先在相同保存网格上验证并收紧有效求解停止判据，
-   比较原120个束路点；若无法确认活动判据生效则停止于求解前，不自动新增网格或投入高斯N100。
+1. 131251匹配重求已失败；保留mesh2原成功场与124839的mesh3重求场，下一步根据现有证据决定一次完整导出和同源N13。
+   两者重求控制未配齐，比较须保留求解状态混杂限制；不重复同类组装试探，不自动新增网格或投入高斯N100。
 2. 根据mesh1/mesh2配对区分共同TOF、粒子相对时间、空间返回与终止身份；只针对改变设计决策的束路补充精度检查。
    不等待所有旧失闭合轨迹一致，也不因中心命中选“真值”；若结果仍改变性能判断，报告有限可信范围。
 3. 原生工作流保留可重放能力；必要响应兼容成员完成后自动有界P/S恢复，冻结候选再检查代表离散稳健性。
@@ -269,6 +286,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [mesh1]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_004119__analysis__comsol__converging-field-publication-recovery/inputs/model_reference.json
 [mesh2]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_074200__analysis__comsol__converging-mesh2-state-isolation/summary.json
 [mesh3]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_103700__analysis__python__mesh3-publication-recovery/summary.json
+[stopping-preflight]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_124650__analysis__comsol__mesh3-effective-stopping-control/results/effective_tolerance_gate.json
+[stopping-control]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_124839__analysis__comsol__mesh3-rhob-stopping-control/summary.json
 [mesh2-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_083000__analysis__comsol__converging-mesh2-beam-tube-export/run_config.json
 [mesh1-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_010000__analysis__comsol__converging-beam-tube-export/run_config.json
 [comsol-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_013155__sim__simion__converging-comsol-fixed-u-controlled-n13/summary.json
