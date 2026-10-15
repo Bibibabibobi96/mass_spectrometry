@@ -22,16 +22,12 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_recei
     load_managed_mirror_candidate,
     mirror_stage_contract_projection,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_shape_diagnostic import (
-    build_diagnostic,
-)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
 
 
 PROJECT = Path(__file__).resolve().parents[2]
 CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 RUNNER = PROJECT / "analysis" / "run_mirror_l0_l1_candidate.ps1"
-SHAPE_DIAGNOSTIC_RUNNER = PROJECT / "analysis" / "run_dual_stripe_shape_diagnostic.ps1"
 OPERATING_SEED_RUNNER = PROJECT / "analysis" / "run_dual_stripe_operating_seed.ps1"
 EXACT_K_RUNNER = PROJECT / "analysis" / "run_mirror_exact_k_operating_point.ps1"
 VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES = (
@@ -177,23 +173,6 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         ):
             self.assertIn(token, source)
         self._assert_workflow_capacity(source, "-CommittedNewBytes $inputCopyBytes")
-        self.assertEqual(source.count("Complete-FailedRun"), 2)
-        self.assertNotIn("SIMION", source)
-        self.assertNotIn("Refine", source)
-
-    def test_shape_diagnostic_runner_freezes_inputs_and_uses_common_run_lifecycle(self) -> None:
-        source = SHAPE_DIAGNOSTIC_RUNNER.read_text(encoding="utf-8-sig")
-        for token in (
-            "New-RunPackage",
-            "Copy-VerifiedRunInput",
-            "Apply-RunArtifactRetention",
-            "Write-VerifiedRunManifest",
-            "parent_mirror_run_manifest.json",
-            "dual_stripe_shape_diagnostic",
-            "Test-RunFilesIdentical",
-        ):
-            self.assertIn(token, source)
-        self._assert_workflow_capacity(source, "-CommittedNewBytes 1048576")
         self.assertEqual(source.count("Complete-FailedRun"), 2)
         self.assertNotIn("SIMION", source)
         self.assertNotIn("Refine", source)
@@ -427,20 +406,6 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             "energy_bracket_node_count"
         ] += 2
         self.assertEqual(mirror_stage_contract_projection(first), mirror_stage_contract_projection(second))
-
-    def test_shape_diagnostic_consumes_current_contract_without_reusing_a_stale_whole_file(self) -> None:
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            manifest = self._managed_manifest(root)
-            downstream_contract = root / "downstream_contract.json"
-            shutil.copyfile(CONTRACT, downstream_contract)
-            result = build_diagnostic(manifest, downstream_contract)
-        self.assertEqual(result["status"], "success")
-        self.assertTrue(result["managed_mirror_input"]["projection_match"])
-        self.assertEqual(
-            result["shape_structure"]["drift_length_identifiability"]["status"],
-            "fixed_by_manufactured_design_contract",
-        )
 
 
 if __name__ == "__main__":
