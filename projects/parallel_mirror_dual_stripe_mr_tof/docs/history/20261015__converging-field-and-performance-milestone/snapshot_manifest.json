@@ -1,0 +1,25 @@
+{
+  "doc_status": "ARCHIVED_READ_ONLY",
+  "snapshot_kind": "WORKTREE",
+  "captured_at": "2026-10-15T08:44:59.7708412+08:00",
+  "baseline_git_head": "5a70d94b99a50b13c3ba8b6970594efb189183e2",
+  "baseline_is_not_snapshot_commit": true,
+  "author": "Agent36",
+  "scope": "Byte-exact copies of two pre-existing mixed-dirty project documents; no solver payload, code, runtime or scientific result was modified.",
+  "files": [
+    {
+      "source": "docs/PROJECT.md",
+      "snapshot": "PROJECT.before.txt",
+      "bytes": 559487,
+      "lines": 5225,
+      "sha256": "e22b88f40d0d4200017fb8ac578f8e72739390134f6f3ce0ae40fa8df5d49057"
+    },
+    {
+      "source": "README.md",
+      "snapshot": "README.before.txt",
+      "bytes": 3926,
+      "lines": 55,
+      "sha256": "e935aff1b65cb366e78e4c15f1a126be4119e0578026ea5bdf5646a021ec5cc8"
+    }
+  ]
+}

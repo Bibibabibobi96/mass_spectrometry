@@ -1,7 +1,8 @@
 # 开放路径平行镜双条带 MR-TOF
 
-本项目研究名义平行的伸长等时镜与两套独立偏压、独立形状的漂移条带。两套条带属于同一分析器，
-共同控制空间返回和时间响应；本项目是与单反射 oa-TOF 平级的独立硬件设计线。
+本项目研究伸长等时镜与形状化漂移条带的空间返回和时间响应。当前工程候选为关于z=0对称会聚的双镜、
+五次项偏置Stripe及保留实体的接地线性Stripe；此前平行镜双偏压方案保留为对照。
+本项目是与单反射 oa-TOF 平级的独立硬件设计线。候选实施与资格状态见PROJECT。
 
 返回[仓库导航](../../README.md)。
 
@@ -27,7 +28,8 @@ COMSOL 或其他求解器是否已有可执行入口，以 PROJECT 的当前说�
 各轴可采用不同间距。已有冻结资产及正在执行的旧网格试验保持原输入作为历史证据，
 不得静默取整、改写旧结果或因此删除仍有消费者的PA；后续新网格方案按此规则重新规划。
 
-原 Astral 的“收敛镜 + 单 Stripe/Ion Foil”仅作为理论对照和解析回归，不是另一条活动硬件线。
+原 Astral 的“收敛镜 + 单 Stripe/Ion Foil”为当前会聚候选提供理论依据；
+现候选保留额外接地线性Stripe实体，不能视为原论文几何或已复现论文性能。
 二区／三区正交加速器的局部理论、几何与复用实现由独立
 [正交加速器项目](../orthogonal_accelerator/README.md)拥有。MR 通过
 [provider adapter](simion/run_accelerator_component_provider.ps1)提交组件请求和 repository-common
@@ -50,3 +52,5 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 - [Native runtime 与容量代码度量快照](docs/history/20260921_native_runtime_capacity_cloc.md)
 - [场响应工程探索与文档收缩里程碑](docs/history/20261008__field-response-engineering-milestone.md)
 - [mesh6 响应范围与场诊断里程碑](docs/history/20261010__mesh6-response-range-and-field-diagnostics.md)
+- [原生场工程基线里程碑](docs/history/20261010__native-field-engineering-baseline.md)
+- [会聚镜场复现与高斯源性能里程碑](docs/history/20261015__converging-field-and-performance-milestone.md)：保存收缩前混合WORKTREE文档及证据检索映射。
