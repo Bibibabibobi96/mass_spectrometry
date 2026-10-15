@@ -81,9 +81,10 @@ def build_continuation_plan(
     particle_ids = list(range(1, particle_count + 1))
     if particle_count < 2:
         raise ContractError("MR-TOF batch continuation requires an N>1 cohort")
-    cohort_paths = {
-        role: _configured_path(current, role) for role in REQUIRED_INPUT_ROLES
-    }
+    roles = REQUIRED_INPUT_ROLES
+    if (trial.get("field_binding") or {}).get("mode") in {"comsol_static_scalar_v", "native_static_pa"}:
+        roles = REQUIRED_INPUT_ROLES[:-2] + ("static_field_binding", "scalar_field_adapter")
+    cohort_paths = {role: _configured_path(current, role) for role in roles}
     return build_batch_continuation_plan(
         predecessor_run_dir=predecessor_run_dir,
         particle_ids=particle_ids,

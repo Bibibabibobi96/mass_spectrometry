@@ -112,6 +112,11 @@ P位置0.1 mm、能量0.0523430183 V/q、S两位置各0.1 mm；S1/P1/P2约束联
 可信预测可取100%预测步；实测不符才有界回退，缺事件不造Jacobian，有明确有限停止条件。
 当前中心四项通过，但P位置约+0.099999 mm贴近容差边缘，不等于稳健孔径裕量或跨网格闭合资格。
 
+批次恢复按实际场模式绑定小输入：静态native／COMSOL使用场binding及adapter，不再要求无关的Fast Adjust bank／bundle。
+[真实中断资产计划验收][static-recovery]已复用完整首批2颗、识别剩余11颗需重放，14项冻结输入匹配，
+没有加载PA或重新飞行。两种静态模式的正常复用与binding变更拒绝回归已覆盖；
+该证据只关闭恢复规划缺口，不代表11颗续飞、GUI重装配或完整自动链已经验收。
+
 ## 电场表示与数值资格
 
 原生细档检测器峰宽及身份已经稳定到上述已测量级，但受控N13慢转折最大差仍约1.203 ns，
@@ -324,6 +329,7 @@ checkpoint保留专用收尾，不把已删除但未完成账本收尾的资产�
 [native-fixed40]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_173341__analysis__simion__fine-native-fixed40-field-layers/summary.json
 [mesh4-consumer]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_185431__analysis__simion__mesh4-fixed40-consumer-field-layers/summary.json
 [boundary-input]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_191649__analysis__cross__native-mirror-boundary-input-check/summary.json
+[static-recovery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_193228__analysis__python__native-static-batch-continuation-acceptance/summary.json
 [matched-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_152030__analysis__comsol__matched-mesh2-beam-tube-export/summary.json
 
 [matched-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_154824__sim__simion__matched-mesh2-fixed-u-controlled-n13/summary.json

@@ -14,7 +14,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuati
 
 
 class MrtofBatchContinuationTests(unittest.TestCase):
-    def _fixture(self, root: Path) -> tuple[Path, Path]:
+    def _fixture(self, root: Path, *, static_mode: str | None = None) -> tuple[Path, Path]:
         parent = root / "parent"
         current = root / "current"
         for run in (parent, current):
@@ -23,7 +23,10 @@ class MrtofBatchContinuationTests(unittest.TestCase):
 
         def materialize(run: Path) -> dict[str, str]:
             inputs: dict[str, str] = {}
-            for role in REQUIRED_INPUT_ROLES:
+            roles = REQUIRED_INPUT_ROLES
+            if static_mode is not None:
+                roles = roles[:-2] + ("static_field_binding", "scalar_field_adapter")
+            for role in roles:
                 path = run / "inputs" / f"{role}.json"
                 value = {"role": role}
                 path.write_text(json.dumps(value) + "\n", encoding="utf-8")
@@ -31,7 +34,8 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             trial = run / "inputs" / "trial_materialization.json"
             trial.write_text(
                 json.dumps(
-                    {"role": "trial_materialization", "source_particle_count": 3}
+                    {"role": "trial_materialization", "source_particle_count": 3,
+                     **({"field_binding": {"mode": static_mode}} if static_mode is not None else {})}
                 )
                 + "\n",
                 encoding="utf-8",
@@ -134,6 +138,28 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                     current_run_config=current,
                     output_dir=root / "recovery",
                 )
+
+    def test_static_reuses_complete_batches_without_native_assets(self) -> None:
+        for mode in ("comsol_static_scalar_v", "native_static_pa"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                parent, current = self._fixture(root, static_mode=mode)
+                plan = build_continuation_plan(predecessor_run_dir=parent,
+                    current_run_config=current, output_dir=root / "recovery")
+                self.assertEqual(plan["completed_particle_count"], 1)
+                self.assertEqual(plan["replay_particle_count"], 2)
+
+    def test_static_binding_change_rejects_old_traces(self) -> None:
+        for mode in ("comsol_static_scalar_v", "native_static_pa"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                parent, current = self._fixture(root, static_mode=mode)
+                config = json.loads(current.read_text(encoding="utf-8"))
+                Path(config["inputs"]["static_field_binding"]).write_text(
+                    '{"role":"static_field_binding","changed_voltage_identity":true}\n')
+                with self.assertRaisesRegex(ContractError, "frozen cohort identity"):
+                    build_continuation_plan(predecessor_run_dir=parent,
+                        current_run_config=current, output_dir=root / "recovery")
 
 
 if __name__ == "__main__":
