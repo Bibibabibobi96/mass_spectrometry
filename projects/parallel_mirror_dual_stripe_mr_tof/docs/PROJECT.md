@@ -226,15 +226,17 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 5. [重放命名更正][replay]保留窄源及高斯参考入口；实际run_config、source receipt和field binding共同冻结。
    GUI重开能力不代表回调场云图对等；已退役GUI注明需重装配，不能把小IOB称作可直接消费完整场。
 
-本轮沿公共owner机制退役旧110621__r04-stage-001-field的8份PA／surface，共16.3447 GiB，
-保留44份小证据及重建输入；[退役收据][stage001-retirement]已验证。旧r04／stage001历史tip需重建，
+本轮沿公共owner机制退役旧110621__r04-stage-001-field和124957__r03-stage-009-field各8份PA／surface，
+合计32.6894 GiB；各自小证据及重建输入保留，[stage001收据][stage001-retirement]与[stage009收据][stage009-retirement]已验证。
+旧r04／stage001及r03／stage009历史tip需重建，
 不再作为当前可直接恢复点；当前134039-stage013、工作／细档场、响应库、OA、COMSOL与GUI/CAD依赖保留。
 
 当前STEP交付见[163154出版恢复][cad-delivery]：40个独立命名电极STEP、6个C0参考面及装配概览；
 倾镜、精确曲线和去全部安装孔保持，真实连接同电位组件才合并，几何不连续者及正负镜不因同电压合并。
 5 μm为交换验收精度，不是场／制造精度；未完成对方软件消费验收。新的英文Word尚待渲染和封存，
 旧平行镜53件说明不能冒称与此包配套。CAD唯一活动入口为[run_resolved_cad_export](../analysis/run_resolved_cad_export.ps1)，
-旧无入链机械审计CLI退役可从Git恢复，原CAD及历史JSON/STL证据未删除。
+已退役7个无活动消费者的历史CAD审计CLI，其中3个旧Ion-Foil草图、子装配及长边曲线读取脚本不再作为活动入口；
+源码可从Git恢复，原CAD、已提取曲线／变换及历史JSON/STL证据未删除，当前CAD交付链保持。
 
 以下链接指向具名小证据，不复制全部manifest；资产保留期限以公共pin/lease与实际消费者为准。
 
@@ -257,6 +259,7 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [mesh-profile]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_093300__analysis__comsol__converging-positive-mirror-mesh-profile/summary.json
 [stripe-authority-n1]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_092318__sim__simion__converging-mesh2-stripe-authority-n1/summary.json
 [stage001-retirement]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_110621__sim__simion__mrtof-te1-reclose-01__r04-stage-001-field/solver_review_retirement_receipt.json
+[stage009-retirement]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_124957__sim__simion__converging-te1-reclose-01-resume__r03-stage-009-field/solver_review_retirement_receipt.json
 [comsol-native-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_014440__analysis__python__comsol-native-controlled-n13-pairing/summary.json
 [vendor]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_075800__analysis__repo__comsol-vendor-evidence/results/vendor_report.json
 [replay]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_234530__analysis__python__converging-reference-replay-naming-correction/results/REPLAY_CORRECTION.md
