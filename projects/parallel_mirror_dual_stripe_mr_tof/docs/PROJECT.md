@@ -225,6 +225,13 @@ N−F3最大电势差0.44617 V。两种场源仍有可观测差别，且mesh4未
 最大|ΔEy|=7.6033 V/m，但|tanθ·ΔEz|仅0.00779 V/m；差异主要在Ry=Ey−tanθ·Ez中。
 这排除了“只是主轴场幅值经倾角投影”的解释，不证明Ry为纯Stripe场或任一路线为真，也不允许扣场修轨迹。
 
+[mesh4实际消费层查询][mesh4-consumer]复用同40坐标及181000的冻结adapter，19.048 s完成，无新求场、导出或飞行。
+10个正镜转折点的最大|Ey消费−原始FEM|为0.08308 V/m，native−消费仍为7.58514 V/m；
+10个邻域点分别为0.10320／7.58648 V/m。这组点的主要慢向跨源差已存在于原始场，不支持继续盲细导出。
+20个z=97 mm点的桥接Ey差仍达1.41860 V/m、向量差13.88301 V/m，不能据此授予整条桥接资格。
+A=B的V及三场分量逐值零差；点值分层不能替代连续冲量或完整轨迹归因，当前仍不进入高斯N100。
+下一项应针对原始场／几何表示的慢向差及其沿程作用选择有限对照，不重新展开全域加密。
+
 ## 剩余时间响应与设计线索
 
 倾斜候选的局部Ey敏感性已明显下降，但尚未得到独立大样本下完整宽平台／十万资格。
@@ -249,6 +256,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 补充退役无活动引用的`tests/simion/test_accelerator_native_geometry.lua`及旧schema3的
 `config/candidate_bunch_source_n1000.json`；现提供者与母样本生成不变，
 相关5项回归通过；与下述结构诊断退役合并提交445116e8，未改变活动源或母样本。
+固定场重放前置的24项几何／理论目标纯回归已通过，112.744 s、无跳过；仅证明当前工作区所选行为，
+选择性发布闭包尚待完成，不等于场、碰撞网格或完整自动链已取得资格。
 另退役旧独立Stripe结构诊断发布器（2脚本）及其2项专属测试，活动入口／role引用为零；
 共享曲线识别、制造宽度及理论种子保留，相关22项回归通过。历史冻结源码与结构诊断结果仍可查，
 不再维护仅发布“电压待求”receipt的独立入口；不影响当前求场或自动闭合。
@@ -298,6 +307,7 @@ checkpoint保留专用收尾，不把已删除但未完成账本收尾的资产�
 [mesh4-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_181000__sim__simion__mesh4-fixed-u-controlled-n13/summary.json
 [mesh4-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_182403__analysis__python__mesh4-controlled-n13-pairing/summary.json
 [native-fixed40]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_173341__analysis__simion__fine-native-fixed40-field-layers/summary.json
+[mesh4-consumer]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_185431__analysis__simion__mesh4-fixed40-consumer-field-layers/summary.json
 [matched-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_152030__analysis__comsol__matched-mesh2-beam-tube-export/summary.json
 
 [matched-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_154824__sim__simion__matched-mesh2-fixed-u-controlled-n13/summary.json
