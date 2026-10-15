@@ -233,8 +233,14 @@ A=B的V及三场分量逐值零差；点值分层不能替代连续冲量或完�
 下一项应针对原始场／几何表示的慢向差及其沿程作用选择有限对照，不重新展开全域加密。
 跨源冻结几何及完整电压逐字段一致；未发现漏OA、C0定义不同或镜二次旋转。
 原生细镜实际五面继承中央场0.25/0.25/0.10 mm，中央再继承0.5/1/1 mm父场；FEM为整个C0连续解。
-当前倾镜／电压尚无独立父边界敏感性资格；旧平行镜证据不继承。下一有限检查优先比较正镜完整求解域
-x=2 mm边界转折邻域的实际继承电势与FEM同坐标值，再决定是否值得固定细域更换边界，不先重建粗父场。
+当前倾镜／电压尚无独立父边界敏感性资格；旧平行镜证据不继承。
+[五面输入检查][boundary-input]已完成25点、119.795 s，全部原生来源与FEM真空查询有效，无求场、导出或飞行。
+正镜完整求解域x=2 mm面20点的原生继承值减FEM4平均为−0.488858 V，变化范围0.017444 V；
+沿y节点差商对应2.623–7.294 V/m，说明差别不是单纯常数偏置，量级与束内慢向场差相当。
+y两端所查点平均差分别为−0.670888／−0.270028 V，z=90 mm单点约+6.87×10⁻⁶ V；
+这些是有限坐标的输入差及切向差商，不是原始FEM梯度、连续力积分或全部边界资格。
+边界电势差与此前束内偏置的符号不同，不能据此宣称边界已解释内部差异或哪张场正确。
+下一有限对照优先评估固定细域、仅替换边界输入的可行性，分离边界传递与内部离散；不先重建粗父场或盲细导出。
 
 ## 剩余时间响应与设计线索
 
@@ -315,6 +321,7 @@ checkpoint保留专用收尾，不把已删除但未完成账本收尾的资产�
 [mesh4-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_182403__analysis__python__mesh4-controlled-n13-pairing/summary.json
 [native-fixed40]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_173341__analysis__simion__fine-native-fixed40-field-layers/summary.json
 [mesh4-consumer]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_185431__analysis__simion__mesh4-fixed40-consumer-field-layers/summary.json
+[boundary-input]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_191649__analysis__cross__native-mirror-boundary-input-check/summary.json
 [matched-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_152030__analysis__comsol__matched-mesh2-beam-tube-export/summary.json
 
 [matched-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_154824__sim__simion__matched-mesh2-fixed-u-controlled-n13/summary.json
