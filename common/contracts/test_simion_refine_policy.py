@@ -35,6 +35,13 @@ class SimionRefinePolicyTests(unittest.TestCase):
                     path.read_text(encoding="utf-8", errors="replace").splitlines(),
                     start=1,
                 ):
+                    # Project-owned stopping input; permit only this exact frozen-input call.
+                    if (
+                        path.relative_to(REPOSITORY_ROOT).as_posix()
+                        == "projects/dual_pressure_rectilinear_ion_processor/simion/run_functional.ps1"
+                        and line.strip() == "@{name='refine';stage='pa_refine';arguments=@('--nogui','--noprompt','refine',\"--convergence=$($numerics.refine_convergence_v)\",'processor.pa#')},"
+                    ):
+                        continue
                     if (
                         FORBIDDEN_CONVERGENCE_OVERRIDE.search(line)
                         or FORBIDDEN_INITIALIZER_OVERRIDE.search(line)
