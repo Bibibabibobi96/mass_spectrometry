@@ -208,6 +208,14 @@ x=2面平均电势差却由+1.334991变为−0.128621 V，故电势接近不等�
 原生4520次、Delta1e−5 V、1835.04 s，总1892.045 s；25点均有限且支撑无物理节点。
 这证明父层z离散敏感，不是实际受力、轨迹或峰宽误差；没有联动局域重建或飞行。
 
+[父场y单轴对照][parent-y]仅y由1.00改为0.50 mm，x=0.50、z=1.00 mm及其他输入不变。
+25点最大电势增量0.00272442 V，四中心慢向差商增量仅+0.03366–0.04721 V/m，跨FEM差仍为1.441–6.067 V/m。
+原生5530次、Delta1e−5 V、2331.42 s，总2389.23 s；至此父场拆轴矩阵结束，不自动补yz或更细档。
+[实际电场API复核][parent-api]复用三张已保存父PA，经正常adapter的raw_sample串行查询同25点，耗时24.00 s，无Refine或飞行。
+四中心实际ΔEy：z细化+3.485–3.517、y细化+0.0341–0.0467 V/m，与对应差商最大相差0.00399／0.00209 V/m；
+已测慢向z敏感性并非仅差商模板造成。但z细化的ΔEz两种模板仍差2.09–3.80 V/m，不能概括成全梯度一致。
+此查询为无局窗的父层诊断投影，不代表整机实际路由或轨迹；不按更接近FEM选真值。
+
 ## 剩余时间响应与设计线索
 
 倾斜候选的局部Ey敏感性已明显下降，但尚未得到独立大样本下完整宽平台／十万资格。
@@ -227,9 +235,9 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 
 ## 开放动作与关闭条件
 
-1. 边界单因素、父／中央／FEM、父场组合／停止及z单轴对照已完成。下一项仅补父场y由1.00改为0.50 mm，
-   固定x=0.50、z=1.00 mm及原完整物理输入／1e−5停止控制，比较同25点后结束拆轴矩阵，不自动补yz组合。
-   依结果选择父层离散或中央传递的下一决策，不绕过中央层冒充原传递链；仍需检验实际轨迹影响，
+1. 边界单因素、父场组合／停止、y／z拆轴及实际API查询已完成；所查父层慢向变化主要对z敏感。
+   下一项先确定最小的父层→中央→正镜传递对照预算，继承现有输入与五颗同入口，避免再次重复父场拆轴。
+   不绕过中央层冒充原传递链；仍需检验实际轨迹影响，
    不按更接近FEM选择真值。余下横向／计时差仍待解释。
    不将FEM donor伪装成原生祖先，不以单镜改善替代整程或束团资格，不逐场调压冒充数值收敛。
 2. 冻结场消费的源码／配置按最小依赖闭包纳管；其余自动闭合工作区改动仍须独立验收发布。
@@ -243,6 +251,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 历史IOB需重新物化／重装配，当前会聚场、GUI／CAD不受影响。处置字节与收据见[处置记录](history/20261015__boundary-and-parent-consistency-isolation.md#保留与清理)，
 更早退役代码和运行恢复见[原里程碑](history/20261015__boundary-input-isolation.md)，
 不靠运行终态自动判删除，也不将清理或门禁通过当物理资格。
+203103边界因果试验的完整镜PA／surface也已公共退役，释放10,151,390,124 B；27份冻结输入、五射线结果及donor保留。
+其收尾CLI退出码−1073741819，但账本已提交ready/light_evidence且两文件已删除；不重复删除或为取PASS重跑发布，保留该退出异常边界。
 
 当前[STEP交付][cad-delivery]为40个独立电极STEP、6个C0参考面及装配概览；保留倾镜、精确曲线、去全部安装孔。
 仅真实连接同电位组件合并。5 μm为交换精度，不是场／制造精度；尚未完成对方软件消费验收。
@@ -272,6 +282,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [direct-parent]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_212434__build__simion__direct-parent-fixed-grid/summary.json
 [parent-stopping]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_215310__build__simion__parent-stopping-increment/summary.json
 [parent-z]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_222113__build__simion__parent-z050-fixed-u/summary.json
+[parent-y]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_225850__build__simion__parent-y050-fixed-u/summary.json
+[parent-api]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_234023__analysis__simion__parent-api-field-comparison/summary.json
 [static-recovery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_193228__analysis__python__native-static-batch-continuation-acceptance/summary.json
 [segment3]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_161302__sim__simion__matched-mesh3-same-entry-mirror/summary.json
 [segment4]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_183100__sim__simion__mesh4-same-entry-positive-mirror/summary.json
