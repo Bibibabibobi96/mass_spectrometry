@@ -148,12 +148,44 @@ mesh1同电压受控[013155 N13][comsol-n13]为0/13检测器命中：10个物理
 接地线性Stripe13/14七颗、中央接地体15四颗。与mesh1的10个物理碰撞、3个拓扑拒绝不同，不能因两档均无命中宣布稳定。
 准备时两项运输漏项已更正：使用同字节OA原权威收据，显式传入原S1/S2值；093500仅preFly失败，无新轨迹。
 旧失败证据保留，不把接续成功描述成性能复现；不因新场失焦而调压掩盖本轮固定输入比较。
+S缺省输入的检查时序已在工作区修正：先读取冻结场电压，再检查接地线性Stripe；显式不匹配仍拒绝。
+[省略S的真实N1][stripe-authority-n1]已完成success/full19，Fly49.479 s；自动S、完整电压及初态与r02一致，
+中心终态事件逐字相同（753.597076425 μs后撞S1）。这是输入／发布链修复，不是空间闭合或新性能提升。
 
 [两档FEM沿程配对][fem-pair]的15项冻结控制相等，保留13颗、4460个共同事件及12个旧独有／3个新独有事件。
 首次P2后相对中心时间最大变化0.003659 ns、y位置0.009166 mm；target49扩大至1.950478 ns／3.717233 mm。
 快速转折最大y变化4.563822 mm。变化主要在进入长程分析器后累积，不能据此唯一归因于Stripe或某镜。
 慢转折／慢返回的缺失和追加穿面仍需分支核对；不同碰撞终点的时间差不当作同截面TOF误差，
 日志中的detector_plane诊断穿面也不等于实际检测器命中。该分析约0.305 s，无新增商业运行。
+
+[120点场分层查询][field-layers]沿中心、Ey对和x全幅对的两档真实坐标取并集，覆盖第10–13、45、49次
+快速转折及同编号中央面；两保存解原生V/E与两套实际消费者使用相同坐标。无Compute/Fly/新PA，
+串行加载模型，总时118.676 s。所查快转折原生电场向量最大差分别为2.635、1.902、139.804、2.322、1.904、2.171 V/m；
+第12次正镜热点在y≈232–234、z≈282.28–282.292 mm，消费场同点差约138.285 V/m。
+各自桥接差最大3.417／2.929 V/m，桥接的两档变化最大2.592 V/m；中央面固定点约10⁻⁹ V/m。
+因此这些热点差异主要已存在于原生FEM中，不能主要归咎于PA重采样；仍不能将点差直接换算成TOF或FWHM误差。
+热点在原Refine范围内，实际h从约0.457降至0.400 mm、qual从0.600变为0.198；不是覆盖遗漏，也不是细化必然改善质量。
+逆冻结镜变换后，热点位于D电极的贯通真空槽，距真实D槽壁约15 mm、E边约17.29 mm；
+不是贴壁尖角。D/E的5 mm轴向间隙与x≈15 mm槽壁在细轴管外，实际网格尚缺读取证据，
+不能用ordinaryCore的hmax=5 mm标签代替实际尺寸。这里无y≈233 mm几何接缝，且在消费窗口内部。
+先读取现mesh2的78点真空剖面（轴线→过渡→槽壁→D/E间隙），确认尺寸及形状质量后才确定细化范围。
+该只读商业查询的坐标／导体归属与静态检查已完成，但执行审批拒绝启动，尚无新run或实际查询结果；
+需用户直接授权此次打开保存模型的只读操作，不绕过审批或重新求场。
+方法选择参考[官方局部Refine](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_mesh.24.80.html)
+与[网格质量定义](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_mesh.24.24.html)：
+一次longest只二分最长边，regular多轴细分成本更高；不将更小h或更平滑场图等同于可靠结果。
+
+同target49的受控响应如下，Ey为(t5−t4)/0.1 eV，Cx为x两端平均时间减ID1；均非检测器性能：
+
+| 场来源 | dt/dEy（ns/eV） | Cx±0.1 mm（ns） | Cx±0.5 mm（ns） |
+|---|---:|---:|---:|
+| 历史native134830，y350／镜z0.04 mm | +2.47926 | +0.161704 | +2.316725 |
+| COMSOL mesh1 | +16.72313 | −0.171590 | +1.994519 |
+| COMSOL mesh2 | −2.65054 | +0.825610 | +3.201490 |
+
+历史native来源为014440配对冻结记录，不是y360／z0.02高斯细档；跨来源比较也包含场表示差异。
+mesh2的Ey两端均晚于中心，三点偶项约0.541435 ns；局部斜率变小不能单独称为宽平台改善。
+下一档须先结合连续束路证据、电极几何及网格方法规划，不能只围绕最大差点盲目加密。
 
 COMSOL不升级；[小文件厂商材料][vendor]已准备，含原始控制/崩溃/成功证据，不含大MPH，也未联系或上传厂商。
 同场原生CPT短段历史对照不重复；目前没有依据另建COMSOL整机追迹主线。
@@ -177,8 +209,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 
 ## 开放动作与关闭条件
 
-1. 完成两档配对的慢转折／返回分支核对，依据逐周期增长确定下一项有限场表示或离散对照。
-   不重复已完成飞行；无新假设不重复大模型求解，不在零命中场上直接投入高斯N100。
+1. 根据已定位的第12次正镜热点，先核对实际束路包络、电极面／缝隙及现有网格质量，比较局部细分方法并冻结方案。
+   规划完成前不新建网格；先查新档实际h/quality及固定120点，再决定完整相干导出／飞行，不在零命中场上直接投入高斯N100。
 2. 根据mesh1/mesh2配对区分共同TOF、粒子相对时间、空间返回与终止身份；只针对改变设计决策的束路补充精度检查。
    不等待所有旧失闭合轨迹一致，也不因中心命中选“真值”；若结果仍改变性能判断，报告有限可信范围。
 3. 原生工作流保留可重放能力；必要响应兼容成员完成后自动有界P/S恢复，冻结候选再检查代表离散稳健性。
@@ -187,6 +219,10 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
    CPU／内存／时间为warning，必要人工中断由实际进展决定。不手工减账、不反复哈希或物化大场拖慢接续。
 5. [重放命名更正][replay]保留窄源及高斯参考入口；实际run_config、source receipt和field binding共同冻结。
    GUI重开能力不代表回调场云图对等；已退役GUI注明需重装配，不能把小IOB称作可直接消费完整场。
+
+本轮沿公共owner机制退役旧110621__r04-stage-001-field的8份PA／surface，共16.3447 GiB，
+保留44份小证据及重建输入；[退役收据][stage001-retirement]已验证。旧r04／stage001历史tip需重建，
+不再作为当前可直接恢复点；当前134039-stage013、工作／细档场、响应库、OA、COMSOL与GUI/CAD依赖保留。
 
 当前STEP交付见[163154出版恢复][cad-delivery]：40个独立命名电极STEP、6个C0参考面及装配概览；
 倾镜、精确曲线和去全部安装孔保持，真实连接同电位组件才合并，几何不连续者及正负镜不因同电压合并。
@@ -211,6 +247,9 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [comsol-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_013155__sim__simion__converging-comsol-fixed-u-controlled-n13/summary.json
 [mesh2-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_093500__sim__simion__converging-mesh2-fixed-u-controlled-n13__r02/summary.json
 [fem-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_090634__analysis__python__converging-fem-mesh1-mesh2-n13-pairing/summary.json
+[field-layers]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_091300__analysis__cross__converging-turn-field-layers/summary.json
+[stripe-authority-n1]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_092318__sim__simion__converging-mesh2-stripe-authority-n1/summary.json
+[stage001-retirement]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_110621__sim__simion__mrtof-te1-reclose-01__r04-stage-001-field/solver_review_retirement_receipt.json
 [comsol-native-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_014440__analysis__python__comsol-native-controlled-n13-pairing/summary.json
 [vendor]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_075800__analysis__repo__comsol-vendor-evidence/results/vendor_report.json
 [replay]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_234530__analysis__python__converging-reference-replay-naming-correction/results/REPLAY_CORRECTION.md
