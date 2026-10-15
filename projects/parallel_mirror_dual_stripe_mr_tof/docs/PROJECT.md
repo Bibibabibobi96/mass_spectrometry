@@ -168,9 +168,14 @@ S缺省输入的检查时序已在工作区修正：先读取冻结场电压，�
 逆冻结镜变换后，热点位于D电极的贯通真空槽，距真实D槽壁约15 mm、E边约17.29 mm；
 不是贴壁尖角。D/E的5 mm轴向间隙与x≈15 mm槽壁在细轴管外，实际网格尚缺读取证据，
 不能用ordinaryCore的hmax=5 mm标签代替实际尺寸。这里无y≈233 mm几何接缝，且在消费窗口内部。
-先读取现mesh2的78点真空剖面（轴线→过渡→槽壁→D/E间隙），确认尺寸及形状质量后才确定细化范围。
-该只读商业查询的坐标／导体归属与静态检查已完成，但执行审批拒绝启动，尚无新run或实际查询结果；
-需用户直接授权此次打开保存模型的只读操作，不绕过审批或重新求场。
+[78点真空剖面][mesh-profile]已获用户直接授权并完成，只读mesh2，总时87.752 s，无建网或求场。
+实际D段束轴h约0.266–0.400 mm；x=5 mm过渡约1.245–1.598、x=10 mm约2.706–3.970，
+近槽壁x=14.5 mm约5.000–6.063。D/E间隙轴线约1.334–1.783 mm，外隙所查点约4.086–5.289 mm。
+这些是点所在单元，不是整个区域上界；所查quality最低约0.250，不能据此证明坏单元是根因。
+剖面支持下一档同时考虑真实壁／间隙至束路的体网格和过渡，而非只追热点轴线；粗h尚不构成因果证明。
+候选局部范围为正镜未倾斜坐标x=0..18、y=215..250、z=274..296 mm，经冻结Rx转换后选真空域；
+一次regular细分作为有限对照，非全域加密或既定收敛方案。建网前冻结范围与成本，实际规模／质量不符合目的时重新判断，
+不自动追加更细档；成功求解后先查固定120点，再决定相干全窗导出与同源受控飞行。
 方法选择参考[官方局部Refine](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_mesh.24.80.html)
 与[网格质量定义](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_mesh.24.24.html)：
 一次longest只二分最长边，regular多轴细分成本更高；不将更小h或更平滑场图等同于可靠结果。
@@ -248,6 +253,7 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [mesh2-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_093500__sim__simion__converging-mesh2-fixed-u-controlled-n13__r02/summary.json
 [fem-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_090634__analysis__python__converging-fem-mesh1-mesh2-n13-pairing/summary.json
 [field-layers]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_091300__analysis__cross__converging-turn-field-layers/summary.json
+[mesh-profile]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_093300__analysis__comsol__converging-positive-mirror-mesh-profile/summary.json
 [stripe-authority-n1]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_092318__sim__simion__converging-mesh2-stripe-authority-n1/summary.json
 [stage001-retirement]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_110621__sim__simion__mrtof-te1-reclose-01__r04-stage-001-field/solver_review_retirement_receipt.json
 [comsol-native-pair]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_014440__analysis__python__comsol-native-controlled-n13-pairing/summary.json

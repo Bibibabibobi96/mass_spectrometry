@@ -43,6 +43,11 @@ Stripe、中央接地件和棱镜屏蔽由完整实体扣除有限槽，保留�
 `mrtof_runtime_receipt.json`。出口、grid1、repeller 沿更大的 `+z` 排列，出射沿项目 `-z`。
 OA PA 以 `x=0` 为镜像面，只存半域；实例原点必须保留镜像面，重载检查 `3dplanar[x]`。
 
+`-AcceleratorProviderReceiptPath`传OA发布run的`results/mrtof_runtime_receipt.json`，
+不是某次MR飞行`simion/`中的冻结副本：入口由收据位置定位原owner的manifest、plan及resolved campaign。
+两份收据即使字节相同，也不能把MR副本的目录身份当成OA owner；子运行自行冻结消费副本。
+`-BunchSourceReceiptPath`同样传原源发布run的receipt，绑定其CSV/Fly2；不传其他飞行中的收据副本。
+
 加速器全局 y 由 `accelerator.focus_y_anchor.project_y_mm` 决定。装配读取 provider 的
 实际 PA 原点及实体包络，并与 resolved Prism2 屏蔽件、Stripe 检查净间隙；
 数值 PA 包络可为优先级而重叠，导体实体不得相交。位姿不属于独立 PA 的生成输入时，
@@ -57,11 +62,17 @@ OA PA 以 `x=0` 为镜像面，只存半域；实例原点必须保留镜像面�
 | 消费方式 | 场的来源 | 输入与限制 |
 |---|---|---|
 | native Fast Adjust | 已发布全走廊 response-bank，加独立 OA/detector PA | `-NativeCorridorBankRunPath` 与 `-NativeSystemRuntimeBundlePath` 配套；电压表按实际 bank 通道映射 |
+| native 静态父／局域 PA | 固定工作电压的原生 Refine 场，通过有序局窗消费 | `-FieldBindingPath`；完整数值身份与独立碰撞角色绑定，不能对已裁剪 PA 重求原问题 |
 | COMSOL 标量场 | 已封存标量 V、valid mask 及有序局窗，通过原生 `field_array` 消费 | `-FieldBindingPath`；完整电压、几何、网格及装配身份必须相符，不可只改 Fast Adjust 代替更新外场 |
 
 native 路径中 corridor 承担可调分析器场，global fallback 提供低优先级完整几何。
 COMSOL 路径使用独立碰撞 PA；其电极标签、Workbench 场查询和事件 `ion_volts`
 不代表实际 COMSOL 电势。外场、碰撞几何和 detector 命中必须分别验证。
+
+原生静态 provider 请求通过 `numerical_contract_path` 引用实际数值合同；停止值唯一来自
+`simion.numerical_profiles.native_static_field.refine.convergence_v`，父场与局域场各执行一次 Refine。
+加载、封存投影及同电压复用同时核对该数值身份；改变停止配置不能继续静默复用旧默认 PA。
+当前接线与数值资格分别见 PROJECT，配置可执行不代表其精度已经验证。
 
 探测器 GEM 使用 ID25 建立物质掩码；[build_component_pa.lua](build_component_pa.lua)
 在 `INITIALIZE=0` 时置零电势并保留电极标志，不把 ID25 当成 25 V。
@@ -69,13 +80,26 @@ COMSOL 路径使用独立碰撞 PA；其电极标签、Workbench 场查询和事
 
 ### COMSOL 标量、响应组合与固定点物化
 
-本节 COMSOL 功能属于 mesh3 工程候选，配套源码仍待整链验收；本次文档收缩不发布这些代码变更。
-复用以下命令前，须确认对应候选版本的模块与 runner 参数齐备。
+本机当前会聚镜的普通冻结标量消费已通过真实N13与省略S参数的N1；这只证明该输入／消费链可运行，
+不代表空间闭合、FEM收敛或束团性能。对应证据见[受控N13][scalar-n13]、[冻结场自动S的N1][scalar-n1]；
+旧mesh3的响应/provider试验不能代替当前会聚mesh1/mesh2资格。
+以下模块与部分runner接线仍含未发布WORKTREE实现，干净Git检出不保证具备整套能力；
+复用命令前按冻结候选确认本机模块和实际参数，不从文档命令存在推定代码已发布。
 `analysis/static_field_binding.py`解析已封存场，`simion/scalar_field_adapter.lua`只在有效支撑内查询。
 局窗按有序列表、包含边界、首个匹配窗口接管；必须保留梯度支撑 halo。
 窗内未知值不回退基场、不补零；覆盖越界、未知 mask 或非有限值是数值失败。
 
-S1/S2 仿射组合在既有 binding 内声明同锚基场、两单因素场及目标电压；
+普通`-FieldBindingPath`消费以冻结场的完整电压为权威；省略`-Stripe1VoltageV/-Stripe2VoltageV`时，
+当前工作区入口先取该场的S值，再检查接地线性Stripe条件，不提前采用旧Stripe种子的偏压。
+显式S参数须成对提供且与场权威相符；这一缺省行为不放开改压，也不修改其他电压、源或观察定义。
+
+| 能力 | 与普通固定场消费的区别／资格 |
+|---|---|
+| 冻结标量场消费 | 读取既有V/mask及局窗，使用原trial真实飞行；成功终态不代表轨迹闭合 |
+| 变压provider与响应组合 | 分别生产新电压场、或组合已验证增量；须有对应几何、离散和实际电压范围的独立证据 |
+| 固定点物化 | 将选定组合表示保存为新标量PA；计划生成不等于物化已执行，物化成功也不授FEM／性能资格 |
+
+电极仿射组合在既有binding内声明基场、单因素增量及目标电压；
 系数由实际电压差派生，逐项保持网格、mask、sheet、窗口和固定物理身份。
 场线性不代表轨迹线性；新电压必须通过同一完整飞行入口检验。
 固定点物化复用公共 standalone composer，输出新标量 PA，保留原 mask 和所有局窗。
@@ -257,7 +281,8 @@ FWHM、分辨率和统计资格使用[统一验证口径](../../../docs/OPERATIO
 
 积分设置由 `trajectory_profiles` 派生；`-TrajectoryProfileId` 选择具名 profile，
 `-TrajectoryStepScale` 或 screening 的 `-TrajectoryStepScaleOverride`
-只能缩小最大步长作数值敏感性比较，不改变源、场或调度。
+以有限正比例调整最大步长，不改变源、场或调度；实际步长为冻结profile的base乘scale。
+较大步长需有对应路径的敏感性证据，不因参数可接受就取得精度资格；当前默认及已测范围见PROJECT。
 底层 `static`、仅 N=1 的 `initial_exit_triggered_single_center`、
 `fixed_global_time` 三种模式互斥；静态场消费不能接受 OA pulse。
 
@@ -275,3 +300,6 @@ schedule 冻结要求全部粒子唯一负 z 安全出口，按 `max(exit)+guard
 其他历史入口由[项目导航](../README.md#历史补充索引)集中索引。
 官方 API 与已验证公共边界见[SIMION 参考](../../../docs/SIMION_REFERENCE.md)；
 本次结果只从实际冻结 manifest 和原始日志读取。
+
+[scalar-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_093500__sim__simion__converging-mesh2-fixed-u-controlled-n13__r02/summary.json
+[scalar-n1]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_092318__sim__simion__converging-mesh2-stripe-authority-n1/summary.json
