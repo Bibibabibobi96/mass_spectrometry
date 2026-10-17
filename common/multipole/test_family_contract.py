@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-import json
 import copy
+import json
+import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,13 +22,33 @@ from common.multipole.design_profile import resolve_design_profile
 from common.multipole.mass_response import aggregate_response, evaluate_functional_contrast, load_terminal_statuses
 from common.multipole.ideal_transport import source_particles
 from common.multipole.paired_mass_scan import build_paired_ion_rows
-from common.multipole.verify_family_foundation import (
-    validate_family_foundation,
-    validate_high_order_launcher_chain,
-)
+from common.multipole.verify_family_foundation import validate_family_foundation
+from common.multipole.runtime_profile import resolve_runtime_profile
 
 
 REPO_ROOT = Path(__file__).parents[2]
+SUPPORT_PATH = (
+    REPO_ROOT / "common/multipole/project_transport_launcher_support.ps1"
+)
+SIMION_RUNNER = REPO_ROOT / "common/multipole/run_simion_finite_3d_transport.ps1"
+SIMION_PROGRAM = REPO_ROOT / "common/multipole/simion_transport.lua"
+PROJECTS = (
+    (
+        "rf_quadrupole_ion_optics",
+        "workflows/no_collision_transport",
+        "no_acceleration_full_length",
+    ),
+    (
+        "rf_hexapole_ion_optics",
+        "analysis",
+        "segmented_rod_axial_acceleration",
+    ),
+    (
+        "rf_octupole_ion_optics",
+        "analysis",
+        "no_acceleration_full_length",
+    ),
+)
 
 
 def load_json(path: Path) -> dict:
@@ -56,36 +79,151 @@ class MultipoleFamilyContractTests(unittest.TestCase):
     def test_frozen_family_foundation_gate(self) -> None:
         validate_family_foundation()
 
-    def test_high_order_launcher_chain_rejects_bypass_and_second_resolution(self) -> None:
-        project_id = "rf_hexapole_ion_optics"
-        root = REPO_ROOT / "projects" / project_id / "analysis"
-        comsol = (root / "run_finite_3d_transport.ps1").read_text(encoding="utf-8")
-        simion = (root / "run_simion_finite_3d_transport.ps1").read_text(
-            encoding="utf-8"
+    def test_all_three_projects_close_over_one_frozen_rf_drive_kernel(self) -> None:
+        support = SUPPORT_PATH.read_text(encoding="utf-8-sig")
+        runner = SIMION_RUNNER.read_text(encoding="utf-8-sig")
+        program = SIMION_PROGRAM.read_text(encoding="utf-8")
+
+        self.assertEqual(
+            support.count("common\\multipole\\run_simion_finite_3d_transport.ps1"),
+            1,
         )
-        support = (
-            REPO_ROOT
-            / "common/multipole/project_transport_launcher_support.ps1"
-        ).read_text(encoding="utf-8")
-        validate_high_order_launcher_chain(project_id, comsol, simion, support)
-        bypass = comsol.replace(
-            "common\\multipole\\project_transport_launcher_support.ps1",
-            "common\\multipole\\run_finite_3d_transport.ps1",
+        self.assertIn("common\\multipole\\simion_rf_drive.lua", runner)
+        self.assertIn("Copy-VerifiedRunInput", runner)
+        self.assertIn("multipole_rf_drive_kernel.lua", runner)
+        self.assertIn("simion_rf_drive_kernel=$rfDriveKernelLua", runner)
+        self.assertIn(
+            "$env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua",
+            runner,
         )
-        with self.assertRaisesRegex(ValueError, "unique launcher support"):
-            validate_high_order_launcher_chain(
-                project_id,
-                bypass,
-                simion,
-                support,
+        self.assertIn(
+            "os.getenv('MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA')",
+            program,
+        )
+        self.assertNotIn("common/multipole/simion_rf_drive.lua", program)
+
+        for project_id, entry_directory, _ in PROJECTS:
+            entry_root = REPO_ROOT / "projects" / project_id / entry_directory
+            launcher_name = (
+                "run_simion.ps1"
+                if project_id == "rf_quadrupole_ion_optics"
+                else "run_simion_finite_3d_transport.ps1"
             )
-        with self.assertRaisesRegex(ValueError, "exactly once"):
-            validate_high_order_launcher_chain(
-                project_id,
-                comsol,
-                simion,
-                support + "\n-m common.multipole.runtime_profile\n",
+            launcher = (entry_root / launcher_name).read_text(encoding="utf-8-sig")
+            self.assertIn("project_transport_launcher_support.ps1", launcher)
+            self.assertNotIn("simion_rf_drive.lua", launcher)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_real_wrappers_resolve_once_and_delegate_governed_arguments(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            support = root / SUPPORT_PATH.relative_to(REPO_ROOT)
+            support.parent.mkdir(parents=True)
+            shutil.copyfile(SUPPORT_PATH, support)
+            profile_path, calls_path, runner_path = (
+                root / name for name in ("profile.json", "calls.jsonl", "runner.json")
             )
+            python = root / "resolver.ps1"
+            python.write_text(
+                "ConvertTo-Json -Compress -InputObject @($args) | Add-Content $env:TEST_CALLS\n"
+                "Copy-Item $env:TEST_PROFILE $args[([array]::IndexOf($args,'--output')+1)]\n"
+                "$global:LASTEXITCODE=0\n", encoding="utf-8",
+            )
+            for solver in ("comsol", "simion"):
+                entry = support.parent / (
+                    "run_finite_3d_transport.ps1" if solver == "comsol"
+                    else "run_simion_finite_3d_transport.ps1"
+                )
+                entry.write_text(
+                    "$bound=@{}; for($i=0;$i-lt$args.Count;$i+=2){"
+                    "$bound[$args[$i].TrimStart('-').TrimEnd(':')]=$args[$i+1]}\n"
+                    "$bound.solver=$MyInvocation.MyCommand.Name\n"
+                    "$bound | ConvertTo-Json -Compress -Depth 20 | Add-Content $env:TEST_RUNNER\n"
+                    "$global:LASTEXITCODE=0\n", encoding="utf-8",
+                )
+            environment = dict(os.environ, TEST_PROFILE=str(profile_path),
+                               TEST_CALLS=str(calls_path), TEST_RUNNER=str(runner_path))
+            for project_id, entry_directory, default_profile_id in PROJECTS:
+                profile = resolve_runtime_profile(REPO_ROOT, project_id, default_profile_id)
+                profile["solver_numerics"]["simion"]["values"]["cell_mm_xyz"] = {
+                    "x": 0.31, "y": 0.42, "z": 0.53,
+                }
+                for solver in ("comsol", "simion"):
+                    with self.subTest(project=project_id, solver=solver):
+                        name = (f"run_{solver}.ps1" if project_id == PROJECTS[0][0] else
+                                f"run_{'simion_' if solver == 'simion' else ''}finite_3d_transport.ps1")
+                        relative = Path("projects") / project_id / entry_directory / name
+                        wrapper = root / relative
+                        wrapper.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(REPO_ROOT / relative, wrapper)
+                        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+                        calls_path.unlink(missing_ok=True)
+                        runner_path.unlink(missing_ok=True)
+                        command = r"""
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$p=$env:TEST_WRAPPER
+$ast=[System.Management.Automation.Language.Parser]::ParseFile($p,[ref]$null,[ref]$null)
+$default=($ast.ParamBlock.Parameters | Where-Object {$_.Name.VariablePath.UserPath-eq'RuntimeProfileId'}).DefaultValue.SafeGetValue()
+& $p -RuntimeProfileId $default -PythonExe $env:TEST_PYTHON
+if($LASTEXITCODE-ne 0){exit $LASTEXITCODE}
+@{default=$default; parameters=@((Get-Command $p).Parameters.Keys)} | ConvertTo-Json -Compress
+"""
+                        environment.update(TEST_WRAPPER=str(wrapper), TEST_PYTHON=str(python))
+                        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                                                cwd=root, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        public = json.loads(result.stdout)
+                        self.assertEqual(public["default"], default_profile_id)
+                        self.assertTrue({"DesignProfileId", "ParticleSourcePath", "EngineeringBudgetPath",
+                                         "MeshAutoLevel", "CellMm", "CellMmX", "CellMmY", "CellMmZ", "Adapter"}.isdisjoint(public["parameters"]))
+                        calls = [json.loads(line) for line in calls_path.read_text().splitlines()]
+                        self.assertEqual(len(calls), 1)
+                        self.assertEqual(calls[0][:2], ["-m", "common.multipole.runtime_profile"])
+                        for flag, expected in (("--project-id", project_id), ("--runtime-profile-id", default_profile_id)):
+                            self.assertEqual(calls[0][calls[0].index(flag) + 1], expected)
+                        delegations = runner_path.read_text(encoding="utf-8-sig").splitlines()
+                        self.assertEqual(len(delegations), 1)
+                        bound = json.loads(delegations[0])
+                        self.assertEqual(bound["solver"], f"run_{'simion_' if solver == 'simion' else ''}finite_3d_transport.ps1")
+                        self.assertEqual(bound["ProjectId"], project_id)
+                        self.assertEqual(bound["RuntimeProfileId"], default_profile_id)
+                        self.assertEqual(bound["DesignProfileId"], profile["design_profile_id"])
+                        self.assertEqual(bound["ParticleSourcePath"], profile["particle_source"]["path"])
+                        self.assertEqual(bound["EngineeringBudgetPath"], profile["engineering_budget"]["path"])
+                        numerics = profile["solver_numerics"][solver]["values"]
+                        self.assertEqual(bound["RfStepsPerPeriod"], numerics["trajectory"]["rf_steps_per_period"])
+                        self.assertEqual(bound["MaximumTimeUs"], numerics["trajectory"]["maximum_global_time_us"])
+                        if solver == "comsol":
+                            self.assertEqual(bound["StopStage"], profile["stop_stage"])
+                            self.assertEqual(bound["MeshAutoLevel"], numerics["mesh"]["global_auto_level"])
+                        else:
+                            self.assertEqual([bound[f"CellMm{axis.upper()}"] for axis in "xyz"],
+                                             [numerics["cell_mm_xyz"][axis] for axis in "xyz"])
+                            self.assertFalse(Path(bound["ResolvedRuntimeProfilePath"]).exists())
+            for mutation, error in (("stage", "does not support stop stage"), ("numerics", "System.Double")):
+                invalid = copy.deepcopy(profile)
+                if mutation == "stage":
+                    invalid["stop_stage"] = "mesh_build"
+                else:
+                    invalid["solver_numerics"]["simion"]["values"]["cell_mm_xyz"]["x"] = "invalid"
+                profile_path.write_text(json.dumps(invalid), encoding="utf-8")
+                runner_path.unlink(missing_ok=True)
+                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                                        cwd=root, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(error, result.stderr)
+                self.assertFalse(runner_path.exists())
+                failed_call = json.loads(calls_path.read_text().splitlines()[-1])
+                self.assertFalse(Path(failed_call[failed_call.index("--output") + 1]).exists())
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command",
+                 "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); "
+                 f". '{support}'; Invoke-MultipoleProjectFinite3dTransport -Solver invalid "
+                 f"-ProjectId test -RuntimeProfileId test -RepoRoot '{root}'"],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("ValidateSet", result.stderr)
 
     def test_high_order_n100_source_is_n1000_prefix(self) -> None:
         resolved = resolve_design_profile(

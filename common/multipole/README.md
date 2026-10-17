@@ -99,6 +99,9 @@ RF 家族母样本的随机圆盘位置、filled-cone 方向和 RF 相位出生�
 普通 profile 在一次解析中只读一次 runtime 注册表。连续体积源的文件字节身份复用
 `common/contracts/file_identity.py`，不另维护哈希算法。
 
+家族测试通过真实 PowerShell wrapper 调用与受控 resolver/runner 边界验证默认身份、单次解析、数值传递和非法输入拒绝；
+基础合同门禁保留机器数据验证，不再读取 wrapper/support 源码计数或限定等价的调用拼写。
+
 公开生产wrapper只接受`RuntimeProfileId`。runtime profile一次绑定design、particle source、
 solver numerics、资源预算和保留类；CLI不得覆盖几何、RF/DC、源能量或网格物理语义。
 
