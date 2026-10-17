@@ -2,10 +2,23 @@ from __future__ import annotations
 
 import unittest
 
-from common.simion.particle_source import render_standard_beams
+from common.simion.particle_source import render_source_states, render_standard_beams
 
 
 class StandardBeamTests(unittest.TestCase):
+    def test_source_state_precision_default_is_legacy_and_17_roundtrips(self) -> None:
+        value = 1.2345678901234567
+        state = dict(particle_id=7, t=value, x=value, y=value, z=value, vx=value, vy=value, vz=value, ke=value)
+        legacy = render_source_states([state])
+        self.assertEqual(legacy, "return {\n  [7]={t=1.23456789012346,x=1.23456789012346,y=1.23456789012346,z=1.23456789012346,vx=1.23456789012346,vy=1.23456789012346,vz=1.23456789012346,ke=1.23456789012346},\n}\n")
+        precise = render_source_states([state], significant_digits=17)
+        self.assertIn(f"x={value!r}", precise)
+
+    def test_source_state_precision_rejects_unsupported_values(self) -> None:
+        for value in (True, 16, 0, "17", 17.0):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "15 or 17"):
+                render_source_states([], significant_digits=value)
+
     def test_legacy_angles_remain_byte_stable(self) -> None:
         source = render_standard_beams(
             [{

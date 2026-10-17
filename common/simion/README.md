@@ -3,6 +3,7 @@
 本目录保存不含器件身份、专用坐标系或运行模式假设的SIMION公共实现。`particle_source.py`接收已经由
 上游适配器转换到工作台语义的 beam 或逐粒子状态并生成 FLY2/Lua 文本；多极杆的 ION11 和 canonical 字段映射
 仍由 `common/multipole/simion_particle_source.py` 负责。
+`render_source_states(..., significant_digits=17)`用于binary64往返精确投影；默认15位保持既有源文本不变。
 
 ## 按任务导航
 
@@ -158,6 +159,9 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 [`build_dirichlet_patch_basis.lua`](build_dirichlet_patch_basis.lua)从一个或多个已解父basis复制六面边界响应。
 父basis参数既可写成单一路径，也可写成 `PATH,COEFFICIENT|...` 的线性组合；系数由调用方已经冻结的
 工作电压提供，构建器只做同一点电势叠加，不推导电压或增加响应身份。
+构建器第五参数选择边界模式，第六参数可传有限正数的 Refine convergence（V）；省略时仍使用
+安装版本默认值。调用方负责从唯一数值配置派生、冻结并记录该值；公共实现不选择项目精度。
+写入五面／六面后只调用一次官方 Refine，不改变电极电压、镜像面或源 PA。
 局部活动实体必须与父basis使用同一激励归一化；构建器从父PA的非零实体节点读取并交叉核对该值，不假定
 `1 V`或`10000 V`。[`measure_pa_basis_voltage.lua`](measure_pa_basis_voltage.lua)则用raw PA的电极ID把真实
 几何实体与同样标为physical的Dirichlet边界节点区分开，供运行证据记录归一化。
@@ -360,25 +364,17 @@ parity损坏、pointer并发漂移或新generation任一验证失败均保持旧
 整个窗口的进程树峰值；CPU 使用最后最多10秒的中位持续占用，并另记窗口峰值，避免 PA 加载或
 Fast Adjust 的短时多核峰值把随后长时间单核飞行误判为单路。若批次在观察窗口内自然完成，则 CPU 仍保守使用峰值。实测后按CPU
 `floor((95%-后台占用)/max(10%,单进程实测))`和内存
-`floor((当前可用内存-1 GiB)/单进程安全预算)`的较小值确定最终并发。Windows 设置页虽显示为
-“GB”，但本公共合同按其二进制容量语义明确记为`GiB = 1024³ bytes`，避免歧义。首次正式观测与精确历史画像
-都记录并使用`max(working set, private committed memory)`的峰值，再以其1.10倍作为单进程预算；旧的
-`observed_peak_process_tree_working_set_bytes`仅为调用者兼容而保留，其数值同样已升级为该保守managed峰值。
-每次错峰启动前还以仍在运行任务的新峰值重新计算一个进程的准入
-余量，故后续内存增长会立即暂停扩容。观测时的可用内存已排除仍在运行的首批，因而内存计算的是可新增
-内存槽位，调度器会再加上该首批；CPU容量已按整机计算，不能再增加一个槽位。首批仍运行时占用一个槽位，剩余
-粒子只分给其余槽位；首批结束后，该通道只补齐到与其余通道相同的总工作量。首批已完成时全部槽位
-分配剩余粒子，绝不重跑首批。各进程相隔5秒启动；CPU高只暂停
-新启动，不终止进程。即使可用内存不少于1 GiB，若仍不足`1 GiB + 下一worker的保守预算`，也只记录
-`available_memory_below_dynamic_admission`并暂缓启动。低于0.5 GiB持续15秒才按“最晚启动优先”终止一个worker、
-重新排队并降低并发；被终止批次置于队首，不能被平衡补偿批次插队。每次此类危险处置后，必须连续45秒满足
-动态准入才恢复一个并发槽并重启队首工作；至多执行两次“终止—稳定观察—恢复”。若第二次恢复后再次发生持续
-危险，调度器终止其余受管worker并以`memory_danger_recovery_attempts_exhausted`失败关闭，绝不无限回退或混同为
-普通逐次降并发。
-
-已知资源画像暂时无法装入当前空闲内存时，计划保留完整待运行批次，`admission`报告`wait_for_memory`与
-当前新增容量0；执行器继续按实时余量等待，不强行启动，也不丢弃粒子。单worker同样保留1.10倍安全预算。
-只有单worker安全预算超过总物理内存扣除系统保留量的包络时，规划直接报告无法满足。
+`floor(当前可用内存/单进程实测峰值)`的较小值确定最终并发，最低一个槽位。Windows 设置页虽显示为
+48 GB，实际可用物理总量仍按系统 API 的字节值记录。已知画像和首批观测均使用
+`max(working set, private committed memory)`的峰值，系数固定为1，不另加百分比或1 GiB启动余量。
+原历史画像无需改写，按其实际峰值重新编译当前公开策略。
+观测时的可用内存已排除仍在运行的首批，因此内存计算的是可新增槽位，再计入活动首批；CPU容量按整机计算。
+SIMION公开策略由`limits.memory_policy=warn_single_worker`标明：预计内存不足时输出
+`MEMORY_PRESSURE_WARNING`与`admission.status=memory_warning`，若当前无活动worker仍允许启动一路。
+已有worker时，加一路仍须当前空闲内存容纳其最新实测峰值，并继续遵守CPU准入、槽位上限和启动间隔，
+避免同时启动多个大场消费者。低于0.5 GiB只在进入该状态时记录警告，不因内存预测或门限终止进程；
+Windows分配失败、真实进程非零退出仍保留失败证据并失败闭合。usage receipt记录实际策略和警告事件。
+无此SIMION策略标记的既有公共调用仍采用原保留量、critical终止与恢复行为；其他求解器不变。
 
 ### 中断续算
 
@@ -406,9 +402,9 @@ run相对的终态产物清单。两者都不解析项目物理或替代结果�
 ### 调度的官方依据
 
 Windows能力依据（2026-08-26查阅）：Microsoft `MEMORYSTATUSEX/GlobalMemoryStatusEx`文档说明
-`ullAvailPhys`表示可立即复用的物理内存，用于1 GiB/0.5 GiB门限；.NET `System.Diagnostics.Process`文档支持读取
+`ullAvailPhys`表示可立即复用的物理内存，用于实测并发容量和0.5 GiB警告；.NET `System.Diagnostics.Process`文档支持读取
 `WorkingSet64`和`TotalProcessorTime`；Microsoft `taskkill /T`文档支持只终止选中PID及其子进程。采用这些接口
-是为了测量真实SIMION进程族，并在持续内存危险时只回收最新批次。
+是为了测量真实SIMION进程族，并记录真实内存压力及进程失败。
 
 - [MEMORYSTATUSEX](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex)
 - [.NET Process](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process?view=net-10.0)

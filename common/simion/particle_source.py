@@ -35,14 +35,17 @@ def render_standard_beams(beams: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_source_states(states: list[dict[str, Any]]) -> str:
-    """Render source states after a device adapter has supplied workbench coordinates."""
+def render_source_states(states: list[dict[str, Any]], *, significant_digits: int = 15) -> str:
+    """Render workbench states; 17 digits preserve binary64, default 15 is legacy."""
+    if isinstance(significant_digits, bool) or not isinstance(significant_digits, int) or significant_digits not in (15, 17):
+        raise ValueError("source-state significant_digits must be 15 or 17")
+    precision = f".{significant_digits}g"
     lines = ["return {"]
     for state in states:
         lines.append(
-            f"  [{int(state['particle_id'])}]={{t={state['t']:.15g},x={state['x']:.15g},"
-            f"y={state['y']:.15g},z={state['z']:.15g},vx={state['vx']:.15g},"
-            f"vy={state['vy']:.15g},vz={state['vz']:.15g},ke={state['ke']:.15g}}},"
+            f"  [{int(state['particle_id'])}]={{t={state['t']:{precision}},x={state['x']:{precision}},"
+            f"y={state['y']:{precision}},z={state['z']:{precision}},vx={state['vx']:{precision}},"
+            f"vy={state['vy']:{precision}},vz={state['vz']:{precision}},ke={state['ke']:{precision}}" + "},"
         )
     lines.append("}")
     return "\n".join(lines) + "\n"

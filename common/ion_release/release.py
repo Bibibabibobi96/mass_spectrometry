@@ -17,6 +17,7 @@ from common.contracts.file_identity import file_sha256
 from common.ion_release.cylinder import (
     GAUSSIAN_STRATEGY,
     HALTON_STRATEGY,
+    THERMAL_TRANSVERSE_STRATEGY,
     ROLE,
     generate_cylinder_release_states,
     materialize_cylinder_release,
@@ -68,6 +69,10 @@ def _materialize_cylinder(spec: Mapping[str, Any], state_table: Path, receipt: P
 # executable just by appearing on sys.path or in a project configuration.
 RELEASE_HANDLER_REGISTRY: dict[tuple[str, str], ReleaseHandler] = {
     ("cylinder", HALTON_STRATEGY): ReleaseHandler(
+        validate_cylinder_release_spec, generate_cylinder_release_states,
+        _materialize_cylinder, validate_materialized_cylinder_release,
+    ),
+    ("cylinder", THERMAL_TRANSVERSE_STRATEGY): ReleaseHandler(
         validate_cylinder_release_spec, generate_cylinder_release_states,
         _materialize_cylinder, validate_materialized_cylinder_release,
     ),

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import json
+import copy
+import math
 import tempfile
 import unittest
 from statistics import NormalDist
 from pathlib import Path
 
+from common.contracts.particle_physics import AMU_KG, BOLTZMANN_CONSTANT_J_K, kinetic_energy_ev
+
 from common.ion_release.cylinder import (
     apply_controlled_slow_energy_pair,
     GAUSSIAN_STRATEGY,
     HALTON_STRATEGY,
+    THERMAL_TRANSVERSE_STRATEGY,
     ROLE,
     generate_center_axis_pair_halton_cylinder_phase_space,
     generate_center_first_halton_cylinder_phase_space,
@@ -55,7 +60,168 @@ def gaussian_spec() -> dict[str, object]:
     return spec
 
 
+def thermal_spec(count: int = 100) -> dict:
+    spec = halton_spec(count)
+    spec["sampling"] = {"strategy": THERMAL_TRANSVERSE_STRATEGY,
+        "axial_kinetic_energy": {"distribution": "positive_truncated_gaussian", "mean_ev": 5.0, "sigma_ev": 1.0},
+        "transverse_temperature_k": 300.0}
+    return spec
+
+
+class ThermalTransverseCylinderTests(unittest.TestCase):
+    def test_axial_energy_position_and_ids_are_preserved_without_total_energy_rescaling(self) -> None:
+        spec = thermal_spec()
+        reference = halton_spec(100)
+        reference["sampling"].update(kinetic_energy=spec["sampling"]["axial_kinetic_energy"],
+                                      nominal_direction=[0., 0., 1.], angular_full_width_deg=0.)
+        for index, (state, axial) in enumerate(zip(generate_release_states(spec), generate_release_states(reference))):
+            for key in ("particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm", "mass_amu", "charge_state", "vz_m_s"):
+                self.assertEqual(state[key], axial[key])
+            e_axial = kinetic_energy_ev(524., 0., 0., state["vz_m_s"])
+            e_transverse = kinetic_energy_ev(524., state["vx_m_s"], state["vy_m_s"], 0.)
+            e_total = kinetic_energy_ev(524., state["vx_m_s"], state["vy_m_s"], state["vz_m_s"])
+            self.assertAlmostEqual(e_total, e_axial+e_transverse, places=13)
+            self.assertGreater(e_axial, 0.)
+            if index:
+                self.assertGreater(e_transverse, 0.)
+                self.assertGreater(e_total, e_axial)
+            else:
+                self.assertEqual((state["vx_m_s"], state["vy_m_s"]), (0., 0.))
+
+    def test_thermal_components_follow_distinct_halton_normal_quantiles(self) -> None:
+        states = generate_release_states(thermal_spec())
+        sigma = math.sqrt(BOLTZMANN_CONSTANT_J_K*300/(524*AMU_KG))
+        expected = {1:(1/11,1/13), 2:(2/11,2/13), 10:(10/11,10/13),
+                    11:(1/121,11/13), 13:(23/121,1/169), 99:(9/121,111/169)}
+        for offset, quantiles in expected.items():
+            for key, quantile in zip(("vx_m_s", "vy_m_s"), quantiles):
+                self.assertAlmostEqual(NormalDist().cdf(states[offset][key]/sigma), quantile, places=14)
+
+    def test_thermal_velocity_temperature_and_mass_scaling_uses_si_units(self) -> None:
+        spec = thermal_spec()
+        original = generate_release_states(spec)
+        spec["sampling"]["transverse_temperature_k"] = 1200.
+        hotter = generate_release_states(spec)
+        spec["sampling"]["transverse_temperature_k"] = 300.
+        spec["species"]["mass_amu"] *= 4
+        heavier = generate_release_states(spec)
+        for first, hot, heavy in zip(original, hotter, heavier):
+            for key in ("vx_m_s", "vy_m_s"):
+                self.assertEqual(hot[key], 2*first[key])
+                self.assertEqual(heavy[key], first[key]/2)
+            self.assertEqual(hot["vz_m_s"], first["vz_m_s"])
+            self.assertEqual(heavy["vz_m_s"], first["vz_m_s"]/2)
+
+    def test_axis_rotation_keeps_axial_and_cartesian_transverse_quantile_order(self) -> None:
+        reference = generate_release_states(thermal_spec())
+        for axis in "xyz":
+            spec = thermal_spec()
+            spec["geometry"]["axis"] = axis
+            actual = generate_release_states(spec)
+            transverse = [name for name in "xyz" if name != axis]
+            for state, original in zip(actual, reference):
+                self.assertEqual(state[f"v{axis}_m_s"], original["vz_m_s"])
+                for direction, initial in zip(transverse, "xy"):
+                    self.assertEqual(state[f"v{direction}_m_s"], original[f"v{initial}_m_s"])
+
+    def test_closed_schema_rejects_nonpositive_temperature_and_ambiguous_energy(self) -> None:
+        for temperature in (0., -1., True, float("nan"), float("inf")):
+            spec = thermal_spec()
+            spec["sampling"]["transverse_temperature_k"] = temperature
+            with self.subTest(temperature=temperature), self.assertRaises(ValueError):
+                validate_release_spec(spec)
+        spec = thermal_spec()
+        for change in ({"nominal_direction":[0.,0.,1.]}, {"angular_full_width_deg":1.},
+                       {"axial_kinetic_energy":{"center_ev":5.,"full_width_ev":1.}},
+                       {"axial_kinetic_energy":{"distribution":"gaussian","mean_ev":5.,"sigma_ev":1.}}):
+            candidate=copy.deepcopy(spec)
+            candidate["sampling"].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_release_spec(candidate)
+
+    def test_prefix_materialization_and_receipt_bind_temperature(self) -> None:
+        spec = thermal_spec()
+        states = generate_release_states(spec)
+        spec["particle_count"] = 10
+        self.assertEqual(generate_release_states(spec), states[:10])
+        spec["particle_count"] = 1000
+        self.assertEqual(generate_release_states(spec)[:100], states)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = root/"source.json"
+            request.write_text(json.dumps(spec), encoding="utf-8")
+            receipt = materialize_release_from_file(request, root/"source.csv", root/"receipt.json")
+            self.assertEqual(validate_materialized_release(root/"receipt.json"), receipt)
+            spec["sampling"]["transverse_temperature_k"] = 301.
+            request.write_text(json.dumps(spec), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source specification identity changed"):
+                validate_materialized_release(root/"receipt.json")
+
+
 class CylinderReleaseTests(unittest.TestCase):
+    def test_canonical_positive_gaussian_energy_keeps_mother_prefix_and_position(self) -> None:
+        spec = halton_spec(100)
+        spec["sampling"]["kinetic_energy"] = {
+            "distribution": "positive_truncated_gaussian", "mean_ev": 5.0, "sigma_ev": 1.0,
+        }
+        spec["sampling"]["angular_full_width_deg"] = 0.0
+        states = generate_release_states(spec)
+        spec["particle_count"] = 10
+        self.assertEqual(generate_release_states(spec), states[:10])
+        spec["particle_count"] = spec["mother_particle_count"] = 1000
+        self.assertEqual(generate_release_states(spec)[:100], states)
+        uniform = halton_spec(100)
+        uniform["sampling"]["angular_full_width_deg"] = 0.0
+        unchanged = generate_release_states(uniform)
+        energies = []
+        for state, reference in zip(states, unchanged):
+            for key in ("particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm", "mass_amu", "charge_state"):
+                self.assertEqual(state[key], reference[key])
+            self.assertEqual(state["vx_m_s"], 0.0)
+            self.assertEqual(state["vz_m_s"], 0.0)
+            self.assertGreater(state["vy_m_s"], 0.0)
+            energies.append(kinetic_energy_ev(524.0, state["vx_m_s"], state["vy_m_s"], state["vz_m_s"]))
+        self.assertAlmostEqual(energies[0], 5.0)
+        self.assertGreater(max(energies) - min(energies), 4.0)
+
+    def test_positive_gaussian_is_conditioned_not_clipped_or_rejected(self) -> None:
+        spec = halton_spec(100)
+        spec["sampling"]["kinetic_energy"] = {
+            "distribution": "positive_truncated_gaussian", "mean_ev": 0.01, "sigma_ev": 1.0,
+        }
+        states = generate_release_states(spec)
+        # The second centre-first particle has base-7 latent quantile 1/7.
+        normal = NormalDist()
+        lower = normal.cdf(-0.01)
+        expected = 0.01 + normal.inv_cdf(lower + (1.0 - lower) / 7.0)
+        actual = kinetic_energy_ev(524.0, states[1]["vx_m_s"], states[1]["vy_m_s"], states[1]["vz_m_s"])
+        self.assertAlmostEqual(actual, expected)
+        self.assertTrue(all(kinetic_energy_ev(524.0, s["vx_m_s"], s["vy_m_s"], s["vz_m_s"]) > 0 for s in states))
+        self.assertGreater(len({s["vy_m_s"] for s in states}), 90)
+
+    def test_positive_gaussian_schema_fails_closed_and_receipt_binds_parameters(self) -> None:
+        spec = halton_spec(100)
+        energy = {"distribution": "positive_truncated_gaussian", "mean_ev": 5.0, "sigma_ev": 1.0}
+        for invalid in (
+            {**energy, "sigma_ev": 0.0}, {**energy, "sigma_ev": -1.0},
+            {**energy, "sigma_ev": float("nan")}, {**energy, "mean_ev": False},
+            {**energy, "full_width_ev": 1.0}, {"distribution": "gaussian", "mean_ev": 5.0, "sigma_ev": 1.0},
+        ):
+            spec["sampling"]["kinetic_energy"] = invalid
+            with self.subTest(energy=invalid), self.assertRaises(ValueError):
+                validate_cylinder_release_spec(spec)
+        spec["sampling"]["kinetic_energy"] = energy
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = root / "source.json"
+            request.write_text(json.dumps(spec), encoding="utf-8")
+            receipt = materialize_release_from_file(request, root / "source.csv", root / "receipt.json")
+            self.assertEqual(validate_materialized_release(root / "receipt.json"), receipt)
+            spec["sampling"]["kinetic_energy"]["sigma_ev"] = 2.0
+            request.write_text(json.dumps(spec), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source specification identity changed"):
+                validate_materialized_release(root / "receipt.json")
+
     def test_gaussian_energy_preserves_latent_pairing_and_prefix(self) -> None:
         args = dict(center_mm=[0., 0., 0.], transverse_axes=(0, 2), axis=1,
                     radius_mm=0.5, height_mm=1., kinetic_energy_center_ev=5.,

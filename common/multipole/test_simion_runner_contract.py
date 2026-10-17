@@ -331,20 +331,44 @@ $script:existingFormalProcessRecords=@(@{name='primary-first'})
 function Assert-HostResourceHeavyStage {}
 function Invoke-SimionStep {throw 'single-dispatch-bypassed-wave'}
 function Get-SystemCpuPercent {return [double]0}
+# This contract tests dispatch/admission, not OS process discovery or startup.
+# Keep the real executor, with deterministic host observations and completion.
+$script:now=[datetimeoffset]'2026-10-16T00:00:00Z'
+function Get-RepositoryUtcNow {return $script:now}
+function Start-Sleep {
+ param([int]$Seconds=0,[int]$Milliseconds=0)
+ $script:now=$script:now.AddSeconds($Seconds+$Milliseconds/1000.0)
+}
+function Start-Process {throw 'dispatch-contract-fixture-must-not-spawn'}
 $script:memorySamples=0
+$script:workerLaunchCount=0;$script:processSamples=0
+$script:waitCalls=0;$script:disposeCalls=0
 function Get-RepositoryAvailableMemoryBytes {
  $script:memorySamples++
  if($script:memorySamples-le2){return [int64](1GB)}
  return [int64](4GB)
 }
-$script:startWorker=${function:Start-RepositoryScheduledProcess}
 function Start-RepositoryScheduledProcess {
  param($Specification)
  if($script:memorySamples-lt3){throw 'worker-started-before-memory-recovery'}
- $Specification.argument_list=@('-NoProfile','-Command','Start-Sleep -Milliseconds 200')
- & $script:startWorker -Specification $Specification
+ $script:workerLaunchCount++
+ $script:launchedOnMemorySample=$script:memorySamples
+ $process=[pscustomobject]@{ExitCode=0}
+ $process|Add-Member ScriptMethod WaitForExit {$script:waitCalls++}
+ $process|Add-Member ScriptMethod Dispose {$script:disposeCalls++}
+ [pscustomobject]@{name=$Specification.name;specification=$Specification;process=$process;
+  root_process_id=101;started_at=(Get-RepositoryUtcNow);tracked_process_ids=@(101);
+  active=$true;completed=$false;exit_code=$null;peak_working_set_bytes=[int64]0;
+  peak_managed_memory_bytes=[int64]0;pressure_terminated=$false}
 }
-$simion=(Get-Process -Id $PID).Path;$name='primary';$rfDriveKernelLua='unused'
+function Get-ManagedSolverProcessSample {
+ param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds)
+ $script:processSamples++
+ if($RootProcessIds.Count-ne1-or$RootProcessIds[0]-ne101){throw 'wrong-worker-sampled'}
+ [pscustomobject]@{tracked_process_ids=@(101);active_process_ids=@();
+  working_set_bytes=[int64](16MB);managed_memory_bytes=[int64](16MB)}
+}
+$simion='fixture-launcher.exe';$name='primary';$rfDriveKernelLua='unused'
 $flyArguments=@('a','b','c','d','e','f','g')
 $batchRuns=@(@{batch=@{index=1;particle_id_min=1;particle_id_max=1};lua_config='unused';fly2='unused'})
 $script:existingFormalProcessRecords=@()
@@ -352,6 +376,8 @@ $script:existingFormalProcessRecords=@()
 $receipt=Get-Content -Raw $resourceUsage|ConvertFrom-Json
 $pauses=@($receipt.scheduler_receipt.launch_pause_events|Where-Object {$_.reason-eq'available_memory_below_dynamic_admission'})
 if($pauses.Count-lt1-or$wave.processes.Count-ne1-or$wave.processes[0].exit_code-ne0){throw 'missing-wait-or-completion'}
+if($script:workerLaunchCount-ne1-or$script:launchedOnMemorySample-ne3-or$script:processSamples-ne1-or
+   $script:waitCalls-ne1-or$script:disposeCalls-ne1){throw 'dispatch-or-completion-contract-changed'}
 """
             )
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],

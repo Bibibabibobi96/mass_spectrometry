@@ -35,6 +35,78 @@ def dispatch_limits(**overrides: int | float) -> dict[str, int | float]:
 
 
 class ResourceBudgetTests(unittest.TestCase):
+    def test_simion_formal_observation_warns_past_critical_duration(self) -> None:
+        """A real child completes naturally even beyond the old kill duration."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch = root / "dispatch.json"
+            dispatch.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan",
+                "estimation": {"kind": "formal_first_batch_observation"},
+                "limits": {"formal_observation_seconds": 10,
+                           "memory_policy": "warn_single_worker",
+                           "memory_critical_reserve_bytes": 512 * 1024**2,
+                           "memory_critical_seconds": 1},
+            }), encoding="utf-8")
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](100MB)};"
+                "function Get-SystemCpuPercent {0.0};"
+                "function Stop-ManagedSolverProcesses {throw 'Warning killed observation'};"
+                "$spec=[pscustomobject]@{name='formal';file_path=(Get-Process -Id $PID).Path;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 3;exit 7');"
+                f"stdout='{root / 'out'}';stderr='{root / 'err'}';environment=@{{}};working_directory='{root}'}};"
+                f"$r=Start-ObservedFormalProcess -DispatchPlanPath '{dispatch}' -ProcessSpecification $spec;"
+                "if(-not$r.completed_naturally-or$r.resource_budget_exceeded-or$r.exit_code-ne7){throw 'Lost real process result'};"
+                "if(@($r.process_record.memory_warning_events).Count-ne1){throw 'Warning spam/missing warning'}"
+            )
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_simion_warning_policy_runs_serially_under_memory_pressure(self) -> None:
+        """Shortage permits one worker, never two, and preserves CPU admission."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            dispatch.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan",
+                "estimation": {"kind": "exact_resource_profile",
+                               "per_process_memory_budget_bytes": 40 * 1024**3,
+                               "memory_safety_factor": 1.0},
+                "limits": {**dispatch_limits(), "memory_policy": "warn_single_worker",
+                           "memory_admission_reserve_bytes": 0},
+            }), encoding="utf-8")
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "$script:cpuSamples=0;function Get-SystemCpuPercent {"
+                "$script:cpuSamples++;if($script:cpuSamples-eq1){96.0}else{0.0}};"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](100MB)};"
+                "function Stop-ManagedSolverProcesses {throw 'Memory warning killed a worker'};"
+                "$exe=(Get-Process -Id $PID).Path;"
+                "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path=$exe;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Milliseconds 200');"
+                f"stdout='{root}\\$_.out';stderr='{root}\\$_.err';environment=@{{}};working_directory='{root}'}}}});"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
+                "if($r.resource_budget_exceeded-or$r.processes.Count-ne2){throw 'Incomplete wave'};"
+                f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
+                "if($receipt.execution_wave.peak_concurrency-ne1){throw 'Over-admitted siblings'};"
+                "if($receipt.scheduler_receipt.memory_policy-ne'warn_single_worker'){throw 'Missing policy'};"
+                "if(@($receipt.scheduler_receipt.memory_warning_events).Count-ne1){throw 'Warning spam/missing warning'};"
+                "if(@($receipt.scheduler_receipt.launch_pause_events|Where-Object {$_.reason-eq'cpu_admission_exceeded'}).Count-lt1){throw 'CPU bypassed'};"
+                "if(@($r.processes|Where-Object {$_.exit_code-ne0}).Count){throw 'Process failed'}"
+            )
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=25,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_dispatch_limits_reject_invalid_values_before_launch(self) -> None:
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
         script = f". '{support}';" + r"""
@@ -169,13 +241,16 @@ if($scenario-eq'inherited_light'){
                 self.assertEqual(completed.returncode, 0, repr(completed.stdout) + repr(completed.stderr))
 
     def test_internal_dispatch_checks_host_permit_before_work(self) -> None:
-        """Both internal dispatch entries must reject before touching inputs."""
+        """Pending and active workers require permission before touching inputs."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
         for invocation in (
             "Start-ObservedFormalProcess -DispatchPlanPath missing.json "
             "-ProcessSpecification ([pscustomobject]@{})",
             "Invoke-ResourceBudgetedProcesses -DispatchPlanPath missing.json "
-            "-RunDir . -UsagePath missing-usage.json",
+            "-RunDir . -UsagePath missing-usage.json -ProcessSpecifications @([pscustomobject]@{})",
+            "Invoke-ResourceBudgetedProcesses -DispatchPlanPath missing.json "
+            "-RunDir . -UsagePath missing-usage.json "
+            "-ExistingProcessRecords @([pscustomobject]@{completed=$false})",
         ):
             with self.subTest(invocation=invocation):
                 command = (
@@ -608,7 +683,7 @@ if($scenario-eq'inherited_light'){
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_completed_first_formal_observation_still_writes_admission_receipt(self) -> None:
-        """A naturally completed N=1 observation skips the dispatch loop safely."""
+        """A terminal first batch publishes evidence without a renewed heavy permit."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dispatch, usage = root / "dispatch.json", root / "usage.json"
@@ -626,7 +701,8 @@ if($scenario-eq'inherited_light'){
             }), encoding="utf-8")
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
-                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                f". '{support}';"
+                "function Assert-HostResourceHeavyStage {throw 'fixture-permit-expired'};"
                 "$script:callbackCount=0;"
                 "$callback={param($completedRecord);$script:callbackCount+=1;"
                 "Add-Content -LiteralPath $completedRecord.specification.trace "

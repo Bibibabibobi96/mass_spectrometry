@@ -67,7 +67,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             format_dispatch_decision_event(plan),
             "SIMION_RESOURCE_EVENT=DISPATCH_DECISION MEASUREMENT=FIRST_FORMAL_BATCH "
             "PARTICLES=5000 BATCHES=1 MAX_CONCURRENCY=1 CPU_CAPACITY=1 "
-            "MEMORY_CAPACITY=1 AVAILABLE_MEMORY=0.00GiB MEMORY_RESERVE=1.00GiB "
+            "MEMORY_CAPACITY=1 AVAILABLE_MEMORY=0.00GiB MEMORY_RESERVE=0.00GiB "
             "OBSERVATION_SECONDS=45",
         )
 
@@ -127,7 +127,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         )
         final = plan_adaptive_followup(
             initial, GIB, observed_cpu_percent=8, background_cpu_percent=5,
-            available_memory_bytes=int(5.5 * GIB), total_physical_memory_bytes=10 * GIB,
+            available_memory_bytes=int(4.5 * GIB), total_physical_memory_bytes=10 * GIB,
             first_batch_completed=False,
         )
         self.assertEqual(final["limits"]["maximum_concurrency"], 5)
@@ -136,7 +136,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(final["waves"][0]["batch_count"], 6)
         self.assertEqual(sum(counts), 5_000)
         self.assertEqual(counts[0] + counts[-1], counts[1])
-        self.assertEqual(final["estimation"]["memory_safety_factor"], 1.05)
+        self.assertEqual(final["estimation"]["memory_safety_factor"], 1.0)
         self.assertTrue(final["estimation"]["retained_first_batch_counts_toward_concurrency"])
 
     def test_running_first_batch_credits_head_start_when_work_is_indivisible(self) -> None:
@@ -146,7 +146,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         )
         final = plan_adaptive_followup(
             initial, GIB, observed_cpu_percent=10,
-            available_memory_bytes=int(6.5 * GIB), total_physical_memory_bytes=10 * GIB,
+            available_memory_bytes=int(5.5 * GIB), total_physical_memory_bytes=10 * GIB,
             first_batch_completed=False,
         )
         self.assertEqual(final["limits"]["maximum_concurrency"], 6)
@@ -171,10 +171,10 @@ class ResourceSchedulerTests(unittest.TestCase):
     def test_temporary_memory_pressure_keeps_work_until_live_admission(self) -> None:
         plan = plan_simion_dispatch(
             self.request(), [self.profile(peak=GIB)],
-            available_memory_bytes=GIB, total_physical_memory_bytes=8 * GIB,
+            available_memory_bytes=GIB // 2, total_physical_memory_bytes=8 * GIB,
         )
         self.assertEqual(plan["limits"]["maximum_concurrency"], 1)
-        self.assertEqual(plan["admission"]["status"], "wait_for_memory")
+        self.assertEqual(plan["admission"]["status"], "memory_warning")
         self.assertEqual(plan["admission"]["current_capacity"], 0)
         self.assertEqual(sum(b["count"] for b in plan["waves"][0]["batches"]), 5000)
         recovered = plan_runtime_dispatch(
@@ -183,12 +183,18 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(recovered["admission"]["status"], "ready")
         self.assertGreater(recovered["admission"]["current_capacity"], 0)
 
-    def test_known_peak_that_cannot_fit_total_memory_fails_explicitly(self) -> None:
-        with self.assertRaisesRegex(ValueError, "total physical memory"):
-            plan_simion_dispatch(
-                self.request(), [self.profile(peak=8 * GIB)],
-                available_memory_bytes=8 * GIB, total_physical_memory_bytes=8 * GIB,
-            )
+    def test_known_peak_exceeding_total_memory_warns_without_veto(self) -> None:
+        plan = plan_simion_dispatch(
+            self.request(), [self.profile(peak=40 * GIB)],
+            available_memory_bytes=27 * GIB, total_physical_memory_bytes=32 * GIB,
+        )
+        self.assertEqual(plan["limits"]["maximum_concurrency"], 1)
+        self.assertEqual(plan["limits"]["memory_policy"], "warn_single_worker")
+        self.assertEqual(plan["limits"]["memory_admission_reserve_bytes"], 0)
+        self.assertEqual(plan["admission"]["status"], "memory_warning")
+        self.assertTrue(plan["admission"]["single_worker_start_allowed"])
+        self.assertEqual(plan["estimation"]["per_process_memory_budget_bytes"], 40 * GIB)
+        self.assertEqual(sum(b["count"] for b in plan["waves"][0]["batches"]), 5000)
 
     def test_live_first_lane_is_retained_while_no_sibling_fits(self) -> None:
         initial = plan_simion_dispatch(
@@ -196,22 +202,22 @@ class ResourceSchedulerTests(unittest.TestCase):
             total_physical_memory_bytes=8 * GIB,
         )
         plan = plan_adaptive_followup(
-            initial, GIB, available_memory_bytes=GIB,
+            initial, GIB, available_memory_bytes=GIB // 2,
             total_physical_memory_bytes=8 * GIB, first_batch_completed=False,
         )
         self.assertEqual(plan["limits"]["maximum_concurrency"], 1)
         self.assertEqual(plan["admission"]["current_capacity"], 0)
-        self.assertEqual(plan["admission"]["status"], "wait_for_memory")
+        self.assertEqual(plan["admission"]["status"], "memory_warning")
         self.assertEqual(sum(b["count"] for b in plan["waves"][0]["batches"]), 5000)
 
     def test_case_memory_pressure_preserves_pending_case(self) -> None:
         plan = plan_simion_case_dispatch(
             [{"case_id": "pending", "resource_identity": {}}],
             self.request(particle_count=1), [self.profile(peak=GIB)],
-            available_memory_bytes=GIB, total_physical_memory_bytes=8 * GIB,
+            available_memory_bytes=GIB // 2, total_physical_memory_bytes=8 * GIB,
         )
         self.assertEqual(plan["admission"]["current_capacity"], 0)
-        self.assertEqual(plan["admission"]["status"], "wait_for_memory")
+        self.assertEqual(plan["admission"]["status"], "memory_warning")
         self.assertEqual(plan["waves"][0]["cases"][0]["case_id"], "pending")
 
     def test_live_formal_cpu_capacity_includes_existing_worker(self) -> None:
@@ -244,7 +250,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         )
         final = plan_adaptive_followup(
             initial, GIB, observed_cpu_percent=8, background_cpu_percent=5,
-            available_memory_bytes=int(5.5 * GIB), total_physical_memory_bytes=10 * GIB,
+            available_memory_bytes=int(4.5 * GIB), total_physical_memory_bytes=10 * GIB,
             first_batch_completed=True,
         )
         self.assertEqual(final["limits"]["maximum_concurrency"], 4)
@@ -270,7 +276,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             total_physical_memory_bytes=int(47.924 * 1024**3),
             first_batch_completed=False,
         )
-        # Three further 1.05x peak budgets fit after the 1 GiB reserve.  The
+        # Three further uninflated peak budgets fit in current free RAM. The
         # formal first batch already consumes the fourth, retained lane.
         self.assertEqual(final["limits"]["memory_capacity"], 4)
         self.assertEqual(final["limits"]["maximum_concurrency"], 4)
@@ -303,7 +309,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         )
         final = plan_adaptive_followup(
             initial, GIB, observed_cpu_percent=10, background_cpu_percent=0,
-            available_memory_bytes=int(2.2 * GIB), total_physical_memory_bytes=10 * GIB,
+            available_memory_bytes=int(1.2 * GIB), total_physical_memory_bytes=10 * GIB,
         )
         self.assertEqual(final["limits"]["maximum_concurrency"], 2)
         self.assertEqual(
@@ -313,7 +319,7 @@ class ResourceSchedulerTests(unittest.TestCase):
 
     def test_known_profile_uses_one_even_batch_per_allowed_lane(self) -> None:
         plan = plan_simion_dispatch(
-            self.request(), [self.profile(peak=GIB)], available_memory_bytes=6 * GIB,
+            self.request(), [self.profile(peak=GIB)], available_memory_bytes=4 * GIB,
             total_physical_memory_bytes=10 * GIB, background_cpu_percent=5,
         )
         self.assertEqual(plan["estimation"]["kind"], "exact_resource_profile")
@@ -324,7 +330,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         event = format_dispatch_decision_event(plan)
         self.assertIn("MEASUREMENT=EXACT_HISTORICAL_PROFILE", event)
         self.assertIn("BATCHES=4", event)
-        self.assertIn("PROCESS_MEMORY_BUDGET=1.05GiB", event)
+        self.assertIn("PROCESS_MEMORY_BUDGET=1.00GiB", event)
 
     def test_smaller_observed_batch_profile_cannot_schedule_larger_batches(self) -> None:
         plan = plan_simion_dispatch(
@@ -441,7 +447,7 @@ class ResourceSchedulerTests(unittest.TestCase):
                 [
                     sys.executable, "-m", "common.simion.resource_scheduler",
                     "--request", str(request_path), "--output", str(output_path),
-                    "--available-memory-bytes", str(int(5.5 * GIB)),
+                    "--available-memory-bytes", str(int(4.5 * GIB)),
                     "--total-physical-memory-bytes", str(10 * GIB),
                     "--observed-formal-peak-bytes", str(GIB),
                     "--observed-formal-cpu-percent", "8",

@@ -9,11 +9,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from common.contracts.file_identity import file_sha256
-    from common.contracts.write_run_manifest import require_completed_terminal_publication
+    from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 except ModuleNotFoundError:
-    from file_identity import file_sha256
-    from write_run_manifest import require_completed_terminal_publication
+    from write_run_manifest import file_record, require_completed_terminal_publication
 
 
 def retention_api() -> tuple[Any, Any, Any, Any]:
@@ -58,7 +56,10 @@ def verify_record(
         raise AssertionError(f"manifest {name} is missing: {path}")
     if path.stat().st_size != record.get("bytes"):
         raise AssertionError(f"manifest {name} byte count changed: {path}")
-    if file_sha256(path) != str(record.get("sha256", "")).upper():
+    actual = file_record(path, record.get("retention_role"))
+    if actual["bytes"] != record.get("bytes"):
+        raise AssertionError(f"manifest {name} byte count changed: {path}")
+    if actual["sha256"] != str(record.get("sha256", "")).upper():
         raise AssertionError(f"manifest {name} SHA-256 changed: {path}")
 
 

@@ -23,6 +23,9 @@ param(
     [ValidateSet('auto', 'scalable', 'native')]
     [string]$Allocator = 'auto',
 
+    [ValidateSet('auto', 'off', 'matrix', 'vector', 'on')]
+    [string]$AssemblyScalabilityMode = 'auto',
+
     [hashtable]$ResourceBudgets = @{},
 
     [string]$RunId = ''
@@ -140,6 +143,9 @@ try {
         }
         if ($Allocator -ne 'auto') {
             $launcherArguments += @('-alloc', $Allocator)
+        }
+        if ($AssemblyScalabilityMode -ne 'auto') {
+            $launcherArguments += @('-memoptassem', $AssemblyScalabilityMode)
         }
         $launcherArguments += @(
             '-login', 'auto', 'matlab',

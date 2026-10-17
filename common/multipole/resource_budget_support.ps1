@@ -632,6 +632,8 @@ function Start-ObservedFormalProcess {
   $seconds=[int]$plan.limits.formal_observation_seconds
   Assert-RepositoryDispatchLimits -Limits $plan.limits -PositiveIntegers @(
     'formal_observation_seconds','memory_critical_reserve_bytes','memory_critical_seconds')
+  $memoryWarningOnly=($plan.limits.PSObject.Properties.Name-contains'memory_policy'-and
+    [string]$plan.limits.memory_policy-eq'warn_single_worker')
   $criticalBytes=[int64]$plan.limits.memory_critical_reserve_bytes
   $criticalSeconds=[int]$plan.limits.memory_critical_seconds
   $logicalProcessors=[int][Environment]::ProcessorCount
@@ -647,6 +649,7 @@ function Start-ObservedFormalProcess {
   $peakCpu=[double]0;$peakBackground=[double]0;$systemCpu=[double]0;$lastSystemAt=$null
   $cpuSamples=[Collections.Generic.List[object]]::new()
   $criticalSince=$null;$resourceBudgetExceeded=$false
+  $observationMemoryWarnings=[Collections.ArrayList]::new()
   $observationComplete=$false;$completedDuringObservation=$false
   # The formal first batch remains alive after the frozen observation window.  Its
   # measured peak determines the initial lane count; subsequent live admission
@@ -683,7 +686,15 @@ function Start-ObservedFormalProcess {
     $record.peak_managed_memory_bytes=[math]::Max(
       [int64]$record.peak_managed_memory_bytes,[int64]$sample.managed_memory_bytes)
     $available=Get-RepositoryAvailableMemoryBytes
-    if($available-lt$criticalBytes){
+    if($memoryWarningOnly-and$available-lt$criticalBytes-and$null-eq$criticalSince){
+      $null=$observationMemoryWarnings.Add([ordered]@{
+        at_utc=$now.ToString('o');available_memory_bytes=$available
+        action='warn_continue_observation';memory_policy='warn_single_worker'
+      })
+      Write-RepositorySchedulerEvent -Event 'MEMORY_PRESSURE_WARNING' -Record $record `
+        -ActiveCount 1 -Details @{AVAILABLE_MEMORY_BYTES=$available;MEMORY_POLICY='warn_single_worker';ACTION='CONTINUE'}
+      $criticalSince=$now
+    }elseif(-not$memoryWarningOnly-and$available-lt$criticalBytes){
       if($null-eq$criticalSince){$criticalSince=$now}
       elseif(($now-$criticalSince).TotalSeconds-ge$criticalSeconds){
         Stop-ManagedSolverProcesses -ProcessIds @($record.tracked_process_ids)
@@ -691,7 +702,7 @@ function Start-ObservedFormalProcess {
         Write-RepositorySchedulerEvent -Event 'MEMORY_DANGER_TERMINATION' -Record $record `
           -ActiveCount 1 -Details @{AVAILABLE_MEMORY_BYTES=$available;CRITICAL_SECONDS=$criticalSeconds;CRITICAL_THRESHOLD_BYTES=$criticalBytes;ACTION='STOP_ONLY_FORMAL_BATCH'}
       }
-    }else{$criticalSince=$null}
+    }elseif($available-ge$criticalBytes){$criticalSince=$null}
     $elapsed=($now-$previousAt).TotalSeconds
     if($elapsed-gt 0){
       $cpuDeltaTicks=[int64]0
@@ -777,6 +788,8 @@ function Start-ObservedFormalProcess {
   }
   $record|Add-Member -NotePropertyName completed_during_observation `
     -NotePropertyValue ([bool]$completedDuringObservation) -Force
+  $record|Add-Member -NotePropertyName memory_warning_events `
+    -NotePropertyValue @($observationMemoryWarnings) -Force
   $record|Add-Member -NotePropertyName observed_process_cpu_percent `
     -NotePropertyValue ([math]::Round($sustainedCpu,3)) -Force
   $record|Add-Member -NotePropertyName observed_process_cpu_peak_percent `
@@ -817,17 +830,23 @@ function Invoke-ResourceBudgetedProcesses {
     # callback must fail closed if its immutable receipt cannot be published.
     [scriptblock]$OnProcessCompleted=$null
   )
-  Assert-HostResourceHeavyStage
+  # A completed first batch needs only receipt publication; pending or live
+  # workers still require the original heavy permission before dispatch.
+  if($ProcessSpecifications.Count-gt0-or@($ExistingProcessRecords|Where-Object{-not$_.completed}).Count-gt0){
+    Assert-HostResourceHeavyStage
+  }
   $plan=Get-Content -LiteralPath $DispatchPlanPath -Raw -Encoding UTF8|ConvertFrom-Json
   if([string]$plan.role-ne'simion_repository_dispatch_plan'){
     throw 'Parallel execution requires a repository SIMION dispatch plan.'
   }
   $limits=$plan.limits;$maximumConcurrency=[int]$limits.maximum_concurrency
+  $memoryWarningOnly=($limits.PSObject.Properties.Name-contains'memory_policy'-and
+    [string]$limits.memory_policy-eq'warn_single_worker')
   if($maximumConcurrency-lt 1){throw 'Repository maximum concurrency must be positive.'}
   Assert-RepositoryDispatchLimits -Limits $limits -PositiveIntegers @(
     'maximum_concurrency','launch_stagger_seconds','memory_critical_seconds',
     'memory_recovery_stable_seconds','maximum_memory_recovery_attempts',
-    'maximum_memory_danger_termination_attempts','memory_admission_reserve_bytes',
+    'maximum_memory_danger_termination_attempts',
     'memory_critical_reserve_bytes')
   if([int]$limits.maximum_memory_recovery_attempts-lt[int]$limits.maximum_memory_danger_termination_attempts){
     throw 'Every permitted memory-danger interruption requires a recovery attempt.'
@@ -861,7 +880,12 @@ function Invoke-ResourceBudgetedProcesses {
   $recoveryStableSeconds=[int]$limits.memory_recovery_stable_seconds
   $maximumRecoveryAttempts=[int]$limits.maximum_memory_recovery_attempts
   $maximumDangerTerminations=[int]$limits.maximum_memory_danger_termination_attempts
-  if($warningBytes-le$criticalBytes){
+  if($memoryWarningOnly){
+    if($warningBytes-ne0){throw 'SIMION warning memory policy requires zero admission reserve.'}
+  }else{
+    Assert-RepositoryDispatchLimits -Limits $limits -PositiveIntegers memory_admission_reserve_bytes
+  }
+  if(-not$memoryWarningOnly-and$warningBytes-le$criticalBytes){
     throw 'Repository admission memory reserve must exceed the critical reserve.'
   }
   $estimation=$plan.estimation
@@ -889,6 +913,12 @@ function Invoke-ResourceBudgetedProcesses {
   # stale profile and immediately over-admit the requeued work.
   $observedPerProcessManagedPeak=[int64]0
   $minimumAvailable=$null;$peakConcurrency=$running.Count
+  $memoryWarningEvents=[Collections.ArrayList]::new();$memoryWarningActive=$false
+  foreach($record in $ExistingProcessRecords){
+    if($record.PSObject.Properties.Name-contains'memory_warning_events'){
+      foreach($warningEvent in $record.memory_warning_events){$null=$memoryWarningEvents.Add($warningEvent)}
+    }
+  }
   $pauseEvents=[Collections.ArrayList]::new();$terminationEvents=[Collections.ArrayList]::new()
   $recoveryEvents=[Collections.ArrayList]::new();$requeueCounts=@{};$recoveryAttempts=0
   $batchFailureEvents=[Collections.ArrayList]::new();$batchFailureDetected=$false
@@ -1006,10 +1036,23 @@ function Invoke-ResourceBudgetedProcesses {
     $dynamicAdmissionBytes=[int64][math]::Max(
       $plannedMemoryBudget,[math]::Ceiling(
         [math]::Max($livePeak,$observedPerProcessManagedPeak)*$memorySafetyFactor))
-    # A single lane still needs the same measured safety margin as a wave.
+    # Predicted memory shortage warns at zero active workers; sibling starts
+    # still require their measured footprint to avoid oversubscribing RAM.
     $launchAdmissionBytes=$dynamicAdmissionBytes
+    $memoryShortage=$available-lt$dynamicAdmissionBytes-or$available-lt$criticalBytes
+    if($memoryWarningOnly-and$memoryShortage-and-not$memoryWarningActive){
+      $null=$memoryWarningEvents.Add([ordered]@{
+        at_utc=$now.ToString('o');available_memory_bytes=$available
+        expected_process_memory_bytes=$dynamicAdmissionBytes;active_count=$running.Count
+        action='warn_continue_single_worker';memory_policy='warn_single_worker'
+      })
+      Write-RepositorySchedulerEvent -Event 'MEMORY_PRESSURE_WARNING' `
+        -ActiveCount $running.Count -PendingCount $pending.Count `
+        -Details @{AVAILABLE_MEMORY_BYTES=$available;EXPECTED_PROCESS_MEMORY_BYTES=$dynamicAdmissionBytes;MEMORY_POLICY='warn_single_worker';ACTION='CONTINUE_SINGLE_WORKER'}
+      $memoryWarningActive=$true
+    }elseif(-not$memoryShortage){$memoryWarningActive=$false}
     if($available-lt$criticalBytes){if($null-eq$criticalSince){$criticalSince=$now}}else{$criticalSince=$null}
-    if($null-ne$criticalSince-and($now-$criticalSince).TotalSeconds-ge[int]$limits.memory_critical_seconds-and$running.Count-gt 0){
+    if(-not$memoryWarningOnly-and$null-ne$criticalSince-and($now-$criticalSince).TotalSeconds-ge[int]$limits.memory_critical_seconds-and$running.Count-gt 0){
       if($dangerTerminationAttempts-ge$maximumDangerTerminations){
         # The permitted newest-worker interventions are exhausted.
         # Another critical window means the run cannot be made safe
@@ -1075,8 +1118,10 @@ function Invoke-ResourceBudgetedProcesses {
         }
       }else{$recoverySafeSince=$null}
     }else{$recoverySafeSince=$null}
+    $memoryLaunchAllowed=$available-ge($warningBytes+$launchAdmissionBytes)-or
+      ($memoryWarningOnly-and$running.Count-eq0)
     $canLaunch=$pending.Count-gt 0-and$running.Count-lt$maximumConcurrency-and
-      -not$dangerRecoveryPending-and$now-ge$nextLaunch-and$available-ge($warningBytes+$launchAdmissionBytes)-and
+      -not$dangerRecoveryPending-and$now-ge$nextLaunch-and$memoryLaunchAllowed-and
       ($systemCpu+$estimatedProcessCpu-lt[double]$limits.cpu_admission_percent)
     $exclusiveResourceBlocked=$false;$nextSpecification=$null
     if($canLaunch){
@@ -1116,7 +1161,7 @@ function Invoke-ResourceBudgetedProcesses {
     }elseif($pending.Count-gt 0-and$running.Count-lt$maximumConcurrency){
       if($pauseEvents.Count-eq 0-or($now-[datetimeoffset]$pauseEvents[$pauseEvents.Count-1].at_utc).TotalSeconds-ge 5){
         $reason=$(if($exclusiveResourceBlocked){'exclusive_resource_in_use'}elseif($dangerRecoveryPending){'post_danger_recovery_observation'}elseif(
-          $available-lt($warningBytes+$launchAdmissionBytes)){'available_memory_below_dynamic_admission'}elseif(
+          -not$memoryLaunchAllowed){'available_memory_below_dynamic_admission'}elseif(
           ($systemCpu+$estimatedProcessCpu)-ge[double]$limits.cpu_admission_percent){'cpu_admission_exceeded'}else{'launch_stagger_pending'})
         $null=$pauseEvents.Add([ordered]@{
           at_utc=$now.ToString('o');reason=$reason;available_memory_bytes=$available
@@ -1166,6 +1211,8 @@ function Invoke-ResourceBudgetedProcesses {
     execution_wave=[ordered]@{dispatch='repository_adaptive_staggered';process_count=$completed.Count;peak_concurrency=$peakConcurrency}
     scheduler_receipt=[ordered]@{
       resource_identity_source=[string]$plan.estimation.kind
+      memory_policy=$(if($memoryWarningOnly){'warn_single_worker'}else{'reserve_and_terminate'})
+      memory_warning_events=@($memoryWarningEvents)
       planned_maximum_concurrency=[int]$plan.limits.maximum_concurrency
       final_maximum_concurrency=$maximumConcurrency;peak_concurrency=$peakConcurrency
       minimum_available_memory_bytes=$minimumAvailable

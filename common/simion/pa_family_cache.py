@@ -3997,11 +3997,17 @@ def audit_pa_transaction_maintenance(cache_root: str | Path) -> dict[str, int]:
         # A former aggregate transaction range may predate per-transaction
         # closure.  Once all constituent records are valid and closed, retain
         # the small evidence container as ready without opening PA members.
-        capacity_ledger.record_capacity_object(
-            artifact_root, path=directory, object_class="light_evidence",
-            bytes_count=_key_root_bytes(directory), status="ready",
-            owner=capacity_ledger.PA_CACHE_MANAGER,
+        ledger = capacity_ledger.load_capacity_ledger(artifact_root)
+        _, relative = capacity_ledger.capacity_object_path(artifact_root, directory)
+        aggregate = next(
+            (item for item in ledger["objects"] if item["path"] == relative), None
         )
+        if aggregate is not None and aggregate["status"] != "retired":
+            capacity_ledger.record_capacity_object(
+                artifact_root, path=directory, object_class="light_evidence",
+                bytes_count=_key_root_bytes(directory), status="ready",
+                owner=capacity_ledger.PA_CACHE_MANAGER,
+            )
     return result
 
 

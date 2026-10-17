@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+from datetime import datetime
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from uuid import uuid4
 from unittest.mock import patch
 
 from common.contracts.machine_contracts import ContractError, validate_schema
@@ -2401,12 +2403,18 @@ Write-Output 'RECOVERY_CHAIN=PASS'
             artifact_workspace.mkdir(parents=True, exist_ok=True)
             output_workspace = artifact_workspace / "projects" / INTEGRATION_ID
             output_workspace.mkdir(parents=True, exist_ok=True)
-            fixture_directory = tempfile.TemporaryDirectory(dir=artifact_workspace)
+            task_root = output_workspace / "scratch" / (
+                datetime.now().strftime("%Y%m%d_%H%M%S")
+                + "__python__exploration-fixture-" + uuid4().hex
+            )
+            task_root.mkdir(parents=True)
+            self.addCleanup(shutil.rmtree, task_root)
+            fixture_directory = tempfile.TemporaryDirectory(dir=task_root)
             self.addCleanup(fixture_directory.cleanup)
             materialize_exploration_source_fixture(campaign, Path(fixture_directory.name))
             row = expand_flat_experiment_authoring(campaign)["experiments"][0]
             write_json(campaign_path, campaign)
-            with tempfile.TemporaryDirectory(dir=output_workspace) as output_directory:
+            with tempfile.TemporaryDirectory(dir=task_root) as output_directory:
                 output = Path(output_directory)
                 resolved, plan = prepare_family_source_closure(
                     repo_root=REPO_ROOT,
@@ -2588,7 +2596,13 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
             campaign_path = Path(directory) / "exploration_campaign.json"
             artifact_workspace = REPO_ROOT.parent / "artifacts"
             artifact_workspace.mkdir(parents=True, exist_ok=True)
-            fixture_directory = tempfile.TemporaryDirectory(dir=artifact_workspace)
+            task_root = artifact_workspace / "projects" / INTEGRATION_ID / "scratch" / (
+                datetime.now().strftime("%Y%m%d_%H%M%S")
+                + "__python__exploration-fixture-" + uuid4().hex
+            )
+            task_root.mkdir(parents=True)
+            self.addCleanup(shutil.rmtree, task_root)
+            fixture_directory = tempfile.TemporaryDirectory(dir=task_root)
             self.addCleanup(fixture_directory.cleanup)
             materialize_exploration_source_fixture(campaign, Path(fixture_directory.name))
             write_json(campaign_path, campaign)

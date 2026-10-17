@@ -7,6 +7,7 @@ import math
 
 AMU_KG = 1.66053906660e-27
 ELEMENTARY_CHARGE_C = 1.602176634e-19
+BOLTZMANN_CONSTANT_J_K = 1.380649e-23  # Exact SI definition, J/K.
 # Frozen oa-TOF references predate the repository-wide mass authority and bind
 # this value into their published numerical fixtures.  New calculations must
 # use ``AMU_KG``; this named compatibility constant exists only so those

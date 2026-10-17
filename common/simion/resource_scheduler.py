@@ -29,31 +29,27 @@ _HOST_RESOURCE_POLICY = json.loads(
     Path(__file__).resolve().parents[1].joinpath("host_resource_policy.json").read_text("utf-8")
 )
 CPU_ADMISSION_PERCENT = float(_HOST_RESOURCE_POLICY["cpu_admission_percent"])
-# These are repository-wide Windows safety reserves, deliberately expressed in
-# binary bytes rather than as fractions of installed RAM.  A percentage made the same
-# safe free-memory level vary with host capacity and caused an unnecessarily
-# large reservation on the 48 GiB research workstation.
-MEMORY_ADMISSION_RESERVE_BYTES = int(_HOST_RESOURCE_POLICY["memory_admission_reserve_bytes"])
+# SIMION memory is an observed concurrency constraint, not a single-worker veto.
+MEMORY_ADMISSION_RESERVE_BYTES = 0
+MEMORY_POLICY = "warn_single_worker"
 MEMORY_CRITICAL_RESERVE_BYTES = 512 * 1024**2
 MEMORY_CRITICAL_SECONDS = 15
 LAUNCH_STAGGER_SECONDS = 5
-# After a memory-danger recovery, the scheduler must observe a full mature
+# Legacy reserve-and-terminate plans require a full mature recovery
 # window before restoring one lane.  This prevents a delayed SIMION working-set
 # expansion from turning a brief initial underestimate into repeated churn.
 MEMORY_RECOVERY_STABLE_SECONDS = 45
 MAXIMUM_MEMORY_RECOVERY_ATTEMPTS = 2
-# A danger response is deliberately gradual: remove the newest worker, observe
+# Legacy plans respond gradually: remove the newest worker, observe
 # again, and permit at most one further newest-worker removal.  If memory still
 # remains critically low after those two measured attempts, the executor must
 # fail closed rather than repeatedly churn workers until Windows becomes
 # unresponsive.
 MAXIMUM_MEMORY_DANGER_TERMINATION_ATTEMPTS = 2
-KNOWN_MEMORY_SAFETY_FACTOR = 1.05
-# The first formal batch's observed peak receives the same headroom as an
-# exact historical profile. It can remain active after the observation window;
-# the executor retains it and guards sibling admission with the system reserve
-# and live peak checks, including growth beyond the initial observed peak.
-OBSERVED_MEMORY_SAFETY_FACTOR = 1.05
+KNOWN_MEMORY_SAFETY_FACTOR = 1.0
+# Known and observed peaks carry no additional safety multiplier. Live peaks
+# still guard sibling admission, including growth after initial observation.
+OBSERVED_MEMORY_SAFETY_FACTOR = 1.0
 RESOURCE_IDENTITY_KEYS = (
     "solver", "field_kind", "frontend_grid_profile_id",
     "oatof_numerical_profile_id", "trajectory_quality_profile_id",
@@ -192,19 +188,17 @@ def _memory_admission(
     available_memory_bytes: int | None, total_physical_memory_bytes: int | None,
     memory_budget: int,
 ) -> dict[str, Any]:
-    """Report present launch capacity separately from the complete work layout.
+    """Report free-memory capacity; an idle executor may start one warned worker.
 
-    A temporarily busy host remains a waiting execution, not a failed science
-    run. Only an impossible whole-host envelope fails planning. Executors must
-    resample free RAM and retain this safety budget at every actual launch.
+    Windows allocation/process failures remain failures. Estimates do not prove
+    that a process cannot run with paging, even when its peak exceeds free RAM.
     """
-    if (total_physical_memory_bytes is not None
-            and memory_budget > total_physical_memory_bytes - MEMORY_ADMISSION_RESERVE_BYTES):
-        raise ValueError("SIMION safety memory budget exceeds total physical memory after system reserve")
     capacity = (0 if available_memory_bytes is None else
                 max(0, (available_memory_bytes - MEMORY_ADMISSION_RESERVE_BYTES) // memory_budget))
     return {
-        "status": "ready" if capacity else "wait_for_memory",
+        "status": "ready" if capacity else "memory_warning",
+        "memory_policy": MEMORY_POLICY,
+        "single_worker_start_allowed": True,
         "current_capacity": capacity,
         "capacity_scope": "additional_workers_by_current_free_memory",
         "required_available_memory_bytes": memory_budget + MEMORY_ADMISSION_RESERVE_BYTES,
@@ -238,6 +232,7 @@ def _public_limits(maximum_concurrency: int, cpu_capacity: int, memory_capacity:
         "maximum_concurrency": maximum_concurrency,
         "cpu_capacity": cpu_capacity,
         "memory_capacity": memory_capacity,
+        "memory_policy": MEMORY_POLICY,
         "formal_observation_seconds": FORMAL_OBSERVATION_SECONDS,
         "minimum_process_cpu_percent": MINIMUM_PROCESS_CPU_PERCENT,
         "cpu_admission_percent": CPU_ADMISSION_PERCENT,
@@ -539,7 +534,7 @@ def plan_adaptive_followup(
         # floor as an *additional* lane would turn a one-process host into a
         # false two-lane plan and leave the executor waiting forever.  Count
         # the already-running formal lane once, then add only whole extra
-        # process budgets that genuinely fit after the fixed Windows reserve.
+        # process budgets that genuinely fit in current free memory.
         if available_memory_bytes is None:
             additional_memory_capacity = 0
         else:

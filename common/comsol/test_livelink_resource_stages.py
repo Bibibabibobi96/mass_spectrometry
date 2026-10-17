@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -48,6 +49,9 @@ function Start-ComsolLauncherProcess {
     $global:FakeLaunchCount++
     $global:FakeServerLive=$true
     Write-Event 'launch'
+    if ($env:STAGE_SCENARIO -eq 'assembly_arguments') {
+        Write-Event ('launcher_arguments:' + (ConvertTo-Json -InputObject @($Arguments) -Compress))
+    }
     $reportText = "STATUS=PASS`n"
     if ($env:STAGE_SCENARIO -eq 'task_failure') {
         $reportText = "STATUS=FAIL`nERROR=Study Compute failed`n"
@@ -116,7 +120,9 @@ class LiveLinkResourceStageTests(unittest.TestCase):
 
     creation_flags = 0
 
-    def run_scenario(self, scenario: str, *, supplied_budget: int = 0) -> tuple[int, list[str], str]:
+    def run_scenario(
+        self, scenario: str, *, supplied_budget: int = 0, assembly_mode: str | None = None,
+    ) -> tuple[int, list[str], str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             comsol = root / "common" / "comsol"
@@ -163,6 +169,11 @@ $global:FakeServerLive=$false
 $arguments=@{TaskScript=(Join-Path $PSScriptRoot 'task.m');ReportPath=(Join-Path $PSScriptRoot 'report.txt');StartupRetryDelaySeconds=1;RunId='test-resource-stages'}
 if ($env:STAGE_SCENARIO -like 'timeout_warn_*') { $arguments.StartupReportTimeoutAction='warn' }
 if ($env:STAGE_SCENARIO -eq 'timeout_stop') { $arguments.StartupAttempts=1 }
+if ($env:STAGE_ASSEMBLY_MODE -ne '') { $arguments.AssemblyScalabilityMode=$env:STAGE_ASSEMBLY_MODE }
+if ($env:STAGE_ASSEMBLY_MODE -eq 'matrix') {
+    $arguments.ProcessorCount=8
+    $arguments.Allocator='native'
+}
 if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
     $resources=if ($env:STAGE_SUPPLIED_BUDGET -eq '2') { @('project-extra') } else { @() }
     $arguments.ResourceBudgets=@{solver=@{schema_version=1;unknown_peak=$false;cpu_cores=[int]$env:STAGE_SUPPLIED_BUDGET;memory_bytes=1024;io_slots=0;exclusive_resources=@($resources)}}
@@ -171,7 +182,8 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
 ''', encoding="utf-8")
             environment = dict(os.environ, STAGE_SCENARIO=scenario, STAGE_EVENTS=str(events),
                                FAKE_LAUNCHER=str(root / "launcher.exe"), MATLAB_R2025B_ROOT=str(root),
-                               STAGE_SUPPLIED_BUDGET=str(int(supplied_budget)))
+                               STAGE_SUPPLIED_BUDGET=str(int(supplied_budget)),
+                               STAGE_ASSEMBLY_MODE=assembly_mode or '')
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-File", str(wrapper)], cwd=root, env=environment,
                 capture_output=True, creationflags=self.creation_flags, timeout=30,
@@ -184,6 +196,36 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
             self.assertIn(probe, completed.stderr, output)
             entries = events.read_text(encoding="utf-8-sig").splitlines() if events.exists() else []
             return completed.returncode, entries, output
+
+    def test_default_assembly_mode_does_not_override_comsol(self) -> None:
+        for mode in (None, 'auto'):
+            with self.subTest(mode=mode):
+                code, events, output = self.run_scenario('assembly_arguments', assembly_mode=mode)
+                self.assertEqual(code, 0, output)
+                arguments = json.loads(next(e.split(':', 1)[1] for e in events
+                                            if e.startswith('launcher_arguments:')))
+                self.assertNotIn('-memoptassem', arguments)
+                self.assertEqual(arguments[0:3], ['-login', 'auto', 'matlab'])
+
+    def test_explicit_assembly_modes_are_forwarded_before_target(self) -> None:
+        for mode in ('off', 'matrix', 'vector', 'on'):
+            with self.subTest(mode=mode):
+                code, events, output = self.run_scenario('assembly_arguments', assembly_mode=mode)
+                self.assertEqual(code, 0, output)
+                arguments = json.loads(next(e.split(':', 1)[1] for e in events
+                                            if e.startswith('launcher_arguments:')))
+                expected = ['-memoptassem', mode, '-login', 'auto', 'matlab']
+                if mode == 'matrix':
+                    expected = ['-np', '8', '-alloc', 'native'] + expected
+                self.assertEqual(arguments[:len(expected)], expected)
+                self.assertEqual(arguments.count('-memoptassem'), 1)
+                self.assertEqual(events[-1], 'exit')
+
+    def test_invalid_assembly_mode_fails_before_resource_admission(self) -> None:
+        code, events, output = self.run_scenario('assembly_arguments', assembly_mode='invalid')
+        self.assertNotEqual(code, 0, output)
+        self.assertEqual(events, [])
+        self.assertIn('AssemblyScalabilityMode', output)
 
     def test_success_registers_before_postprocess_and_releases(self) -> None:
         code, events, output = self.run_scenario("success")

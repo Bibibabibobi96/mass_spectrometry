@@ -7,6 +7,9 @@ recording fails closed when that calibrated baseline is absent or invalid.
 
 from __future__ import annotations
 
+import base64
+import copy
+import hashlib
 import json
 import math
 import os
@@ -169,6 +172,160 @@ def load_capacity_ledger(root: Path, path: Path | None = None) -> dict[str, Any]
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     return document if _is_valid_capacity_ledger(root, document) else None
+
+
+def restore_retired_disposition_paths(
+    root: Path, *, receipt_path: Path, expected_ledger_sha256: str,
+    expected_receipt_sha256: str, apply: bool = False,
+) -> dict[str, Any]:
+    """Restore one damaged retired inventory path from its completed owner receipt.
+
+    No payload discovery or capacity recalibration is permitted.  Surrogateescape
+    preserves malformed input bytes only for comparison; the candidate must encode
+    as strict UTF-8 and pass the complete existing ledger validator.
+    """
+    from common.contracts.file_identity import file_sha256
+
+    root = root.resolve(strict=False)
+    expected = expected_ledger_sha256.upper()
+    source_sha = expected_receipt_sha256.upper()
+    if SHA256.fullmatch(expected) is None or SHA256.fullmatch(source_sha) is None:
+        raise ValueError("recovery requires explicit ledger and receipt SHA-256")
+    receipt_path = receipt_path.resolve(strict=True)
+    directory = root / "common" / "capacity_disposal_receipts"
+    if receipt_path.parent != directory.resolve(strict=False):
+        raise ValueError("recovery requires a public completed disposal receipt")
+    destination = resolve_ledger_path(root)
+    recovery_path = directory / f"ledger_path_recovery_{expected}.json"
+    raw_path = directory / f"ledger_path_recovery_{expected}_raw.json"
+    with protection.capacity_decision_lock(root):
+        source_raw = receipt_path.read_bytes()
+        if hashlib.sha256(source_raw).hexdigest().upper() != source_sha:
+            raise ValueError("completed disposal receipt SHA changed")
+        source = json.loads(source_raw.decode("utf-8-sig"))
+        prior = None
+        if recovery_path.exists():
+            prior = json.loads(recovery_path.read_text(encoding="utf-8"))
+            if (prior.get("role") != "capacity_ledger_retired_path_recovery"
+                    or prior.get("original_sha256") != expected
+                    or prior.get("source_receipt_sha256") != source_sha
+                    or prior.get("source_receipt_path") != str(receipt_path)
+                    or prior.get("status") not in {"pending", "complete"}):
+                raise ValueError("recovery publication receipt conflicts")
+        backup_raw = None
+        if raw_path.exists():
+            backup = json.loads(raw_path.read_text(encoding="utf-8"))
+            if (set(backup) != {"schema_version", "role", "bytes", "sha256", "base64"}
+                    or backup.get("schema_version") != 1
+                    or backup.get("role") != "capacity_ledger_damaged_raw_backup"
+                    or backup.get("sha256") != expected):
+                raise ValueError("recovery raw backup conflicts")
+            backup_raw = base64.b64decode(backup["base64"], validate=True)
+            if (len(backup_raw) != backup.get("bytes")
+                    or hashlib.sha256(backup_raw).hexdigest().upper() != expected):
+                raise ValueError("recovery raw backup failed verification")
+        current_raw = destination.read_bytes()
+        current_sha = hashlib.sha256(current_raw).hexdigest().upper()
+        if current_sha != expected:
+            if (prior is not None and current_sha == prior.get("candidate_sha256")
+                    and backup_raw is not None
+                    and load_capacity_ledger(root) is not None):
+                if apply and prior["status"] == "pending":
+                    prior["status"] = "complete"
+                    write_json_atomic(recovery_path, prior)
+                return dict(prior, replayed=True)
+            raise ValueError("capacity ledger SHA changed before recovery")
+        # Decode without replacing any byte, then require the repaired whole
+        # document to encode strictly.  No other damaged field can be hidden.
+        document = json.loads(current_raw.decode("utf-8-sig", errors="surrogateescape"))
+        try:
+            current_raw.decode("utf-8-sig")
+            valid = _is_valid_capacity_ledger(root, document)
+        except (UnicodeDecodeError, ValueError, OSError):
+            valid = False
+        if valid:
+            raise ValueError("valid capacity ledger cannot be overwritten by recovery")
+        if (source.get("schema_version") != 1
+                or source.get("role") != "artifact_capacity_disposal_receipt"
+                or source.get("status") != "complete"
+                or source.get("reason") != "manager_approved_disposition"
+                or source.get("deleting_path") is not None):
+            raise ValueError("recovery source is not a completed approved disposition")
+        target, relative = capacity_object_path(root, source["target_path"])
+        if str(target) != source["target_path"] or target.exists():
+            raise ValueError("completed disposition target differs or reappeared")
+        matches = [item for item in document["objects"] if item.get("path") == relative]
+        if len(matches) != 1:
+            raise ValueError("completed disposition has no unique ledger target")
+        entry = matches[0]
+        disposition = entry.get("disposition", {})
+        sealed = source.get("disposition", {})
+        authorization = source.get("owner_disposition_authorization", {})
+        if (entry.get("status") != "retired" or entry.get("class") != "rebuildable_payload"
+                or entry.get("pin") is not False or entry.get("consumers")
+                or not isinstance(entry.get("owner"), str) or not entry["owner"].strip()
+                or authorization.get("owner") != entry.get("owner")
+                or authorization.get("target_path") != relative
+                or authorization.get("authority_evidence", {}).get("path") != sealed.get("manifest_path")
+                or not _valid_disposition(sealed, expected_bytes=entry["bytes"])
+                or source.get("removed_bytes") != entry["bytes"]
+                or source.get("removed") != sorted(item["path"] for item in sealed["files"])
+                or receipt_path.name != f"ledger_disposition_{sealed.get('id')}.json"
+                or {key: value for key, value in disposition.items() if key != "files"}
+                   != {key: value for key, value in sealed.items() if key != "files"}):
+            raise ValueError("retired target owner, identity, or completed inventory differs")
+        original_files = disposition.get("files", [])
+        if len(original_files) != len(sealed["files"]):
+            raise ValueError("retired inventory file count differs")
+        changes = []
+        for index, (old, new) in enumerate(zip(original_files, sealed["files"], strict=True)):
+            if {key: value for key, value in old.items() if key != "path"} != {
+                    key: value for key, value in new.items() if key != "path"}:
+                raise ValueError("retired inventory non-path evidence differs")
+            if old.get("path") == new["path"]:
+                continue
+            value = old.get("path")
+            try:
+                value.encode("utf-8", errors="strict")
+                malformed = _ledger_relative_path(value) is None or any(ord(c) < 32 for c in value)
+            except (AttributeError, UnicodeEncodeError):
+                malformed = True
+            if not malformed:
+                raise ValueError("recovery cannot replace a valid retired inventory path")
+            changes.append(index)
+        if len(changes) != 1:
+            raise ValueError("recovery requires exactly one damaged retired inventory path")
+        candidate = copy.deepcopy(document)
+        candidate["objects"][document["objects"].index(entry)]["disposition"]["files"] = copy.deepcopy(sealed["files"])
+        candidate_raw = (json.dumps(candidate, indent=2, ensure_ascii=False) + "\n").encode("utf-8", errors="strict")
+        if not _is_valid_capacity_ledger(root, candidate):
+            raise ValueError("restored capacity ledger remains invalid")
+        result = dict(schema_version=1, role="capacity_ledger_retired_path_recovery", status="pending",
+                      original_sha256=expected, original_bytes=len(current_raw),
+                      source_receipt_path=str(receipt_path), source_receipt_sha256=source_sha,
+                      candidate_sha256=hashlib.sha256(candidate_raw).hexdigest().upper(),
+                      raw_backup_path=str(raw_path), target_path=relative, changed_file_indices=changes,
+                      resident_bytes=document["resident_bytes"])
+        if prior is not None and {**prior, "status": "pending"} != result:
+            raise ValueError("recovery publication plan changed")
+        if not apply:
+            return dict(result, dry_run=True)
+        if backup_raw is None:
+            write_json_atomic(raw_path, dict(schema_version=1, role="capacity_ledger_damaged_raw_backup",
+                bytes=len(current_raw), sha256=expected, base64=base64.b64encode(current_raw).decode("ascii")))
+        saved_backup = json.loads(raw_path.read_text(encoding="utf-8"))
+        saved_raw = base64.b64decode(saved_backup["base64"], validate=True)
+        if saved_raw != current_raw or saved_backup["sha256"] != expected or saved_backup["bytes"] != len(current_raw):
+            raise ValueError("recovery raw backup failed verification")
+        write_json_atomic(recovery_path, result)
+        if file_sha256(destination) != expected or file_sha256(receipt_path) != source_sha:
+            raise ValueError("recovery source changed before atomic publication")
+        write_json_atomic(destination, candidate)
+        if file_sha256(destination) != result["candidate_sha256"] or load_capacity_ledger(root) != candidate:
+            raise ValueError("restored capacity ledger publication failed verification")
+        result["status"] = "complete"
+        write_json_atomic(recovery_path, result)
+        return result
 
 
 def migrate_v2_ledger_document(
@@ -759,6 +916,7 @@ def approve_published_cache_retirement(
     disposition_id: str, manifest_sha256: str,
     files: Iterable[dict[str, Any]], ledger_path: Path | None = None,
     commit_owner_retirement: Callable[[dict[str, Any]], None] | None = None,
+    expected_project_owner: str | None = None,
 ) -> dict[str, Any]:
     """Authorize one exact PA generation for manager-owned retirement.
 
@@ -782,6 +940,12 @@ def approve_published_cache_retirement(
         raise ValueError("cache retirement sealed file inventory is invalid")
     root = root.resolve(strict=False)
     target, relative = capacity_object_path(root, path)
+    if expected_project_owner is not None:
+        from common.contracts.verify_artifact_layout import INTEGRATION_CACHE_ROLES
+        parts = Path(relative).parts
+        if (len(parts) != 5 or parts[:3] != ("projects", expected_project_owner, "cache")
+                or parts[3] not in INTEGRATION_CACHE_ROLES or SHA256.fullmatch(parts[4]) is None):
+            raise ValueError("project cache retirement requires its registered exact owner namespace")
     destination = resolve_ledger_path(root, ledger_path)
     with protection.capacity_decision_lock(root):
         ledger = load_capacity_ledger(root, destination)
@@ -794,6 +958,19 @@ def approve_published_cache_retirement(
             "status": "ready", "pin": False, "disposition": disposition,
             "owner": owner,
         }
+        if expected_project_owner is not None:
+            if owner != expected_project_owner or entry.get("manager") is not None:
+                raise ValueError("project cache retirement owner or manager differs")
+            _assert_unleased(root, target)
+            if entry.get("consumers"):
+                raise ValueError("project cache retirement has resident consumers")
+            for other in ledger["objects"]:
+                if other.get("status") == "retired":
+                    continue
+                for consumer in other.get("consumers", []):
+                    consumer_path, _ = capacity_object_path(root, consumer)
+                    if protection.path_is_protected(target, {consumer_path}):
+                        raise ValueError("project cache retirement is referenced by another owner")
         if entry == approved:
             if commit_owner_retirement is not None:
                 commit_owner_retirement(disposition)
@@ -803,7 +980,8 @@ def approve_published_cache_retirement(
             or entry.get("status") != "ready" or entry.get("identity", "").upper() != expected_identity.upper()
             or entry.get("bytes") != expected_bytes or entry.get("pin") is not False
             or "pin_reason" in entry
-            or entry.get("manager") != PA_CACHE_MANAGER
+            or (entry.get("manager") != PA_CACHE_MANAGER if expected_project_owner is None
+                else entry.get("manager") is not None)
         ):
             raise ValueError("published cache retirement declaration conflicts with ledger")
         _assert_unleased(root, target)

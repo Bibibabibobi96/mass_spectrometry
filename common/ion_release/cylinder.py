@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
+from common.contracts.particle_physics import AMU_KG, BOLTZMANN_CONSTANT_J_K, speed_m_s_from_kinetic_energy_ev
 
 
 ROLE = "repository_ion_release"
@@ -28,6 +28,7 @@ CANONICAL_COLUMNS = (
     "vy_m_s", "vz_m_s", "mass_amu", "charge_state",
 )
 HALTON_STRATEGY = "center_first_halton_cylinder_v1"
+THERMAL_TRANSVERSE_STRATEGY = "center_first_halton_cylinder_thermal_transverse_v1"
 GAUSSIAN_STRATEGY = "seeded_independent_gaussian_cylinder_v1"
 
 
@@ -100,6 +101,24 @@ def _mapping(value: Any, label: str, keys: set[str]) -> Mapping[str, Any]:
     return value
 
 
+def _halton_energy_parameters(value: Any) -> dict[str, Any]:
+    """Compile the closed uniform or positive-truncated energy request."""
+    if isinstance(value, dict) and value.get("distribution") == "positive_truncated_gaussian":
+        energy = _mapping(value, "sampling.kinetic_energy", {"distribution", "mean_ev", "sigma_ev"})
+        return {
+            "kinetic_energy_distribution": "positive_truncated_gaussian",
+            "kinetic_energy_center_ev": _number(energy["mean_ev"], "sampling.kinetic_energy.mean_ev", positive=True),
+            "kinetic_energy_full_width_ev": 0.0,
+            "kinetic_energy_sigma_ev": _number(energy["sigma_ev"], "sampling.kinetic_energy.sigma_ev", positive=True),
+        }
+    energy = _mapping(value, "sampling.kinetic_energy", {"center_ev", "full_width_ev"})
+    center = _number(energy["center_ev"], "sampling.kinetic_energy.center_ev", positive=True)
+    width = _number(energy["full_width_ev"], "sampling.kinetic_energy.full_width_ev")
+    if width < 0.0 or center <= width / 2.0:
+        raise ValueError("Halton kinetic-energy interval is not physical")
+    return {"kinetic_energy_center_ev": center, "kinetic_energy_full_width_ev": width}
+
+
 def validate_cylinder_release_spec(spec: Mapping[str, Any]) -> None:
     """Fail closed unless *spec* is a complete versioned release request."""
     required = {
@@ -140,15 +159,20 @@ def validate_cylinder_release_spec(spec: Mapping[str, Any]) -> None:
         required_sampling = {"strategy", "kinetic_energy", "nominal_direction", "angular_full_width_deg"}
         if set(sampling) != required_sampling:
             raise ValueError("Halton sampling fields are invalid")
-        energy = _mapping(sampling["kinetic_energy"], "sampling.kinetic_energy", {"center_ev", "full_width_ev"})
-        center = _number(energy["center_ev"], "sampling.kinetic_energy.center_ev", positive=True)
-        width = _number(energy["full_width_ev"], "sampling.kinetic_energy.full_width_ev")
-        if width < 0.0 or center <= width / 2.0:
-            raise ValueError("Halton kinetic-energy interval is not physical")
+        _halton_energy_parameters(sampling["kinetic_energy"])
         _unit(_vector3(sampling["nominal_direction"], "sampling.nominal_direction"), "sampling.nominal_direction")
         angle = _number(sampling["angular_full_width_deg"], "sampling.angular_full_width_deg")
         if angle < 0.0 or angle >= 180.0:
             raise ValueError("Halton angular_full_width_deg must be in [0, 180)")
+    elif strategy == THERMAL_TRANSVERSE_STRATEGY:
+        if set(sampling) != {"strategy", "axial_kinetic_energy", "transverse_temperature_k"}:
+            raise ValueError("thermal transverse sampling fields are invalid")
+        energy = _mapping(sampling["axial_kinetic_energy"], "sampling.axial_kinetic_energy",
+                          {"distribution", "mean_ev", "sigma_ev"})
+        if energy["distribution"] != "positive_truncated_gaussian":
+            raise ValueError("axial_kinetic_energy requires positive_truncated_gaussian")
+        _halton_energy_parameters(energy)
+        _number(sampling["transverse_temperature_k"], "sampling.transverse_temperature_k", positive=True)
     elif strategy == GAUSSIAN_STRATEGY:
         required_sampling = {"strategy", "seed", "velocity_distribution"}
         if set(sampling) != required_sampling:
@@ -214,6 +238,9 @@ def generate_center_first_halton_cylinder_phase_space(
     makes the cylinder orientation explicit without encoding project geometry.
     Gaussian kinetic energy uses sigma in eV and the same base-7 latent
     quantiles; nonpositive samples fail rather than being clipped or redrawn.
+    ``positive_truncated_gaussian`` instead uses the inverse conditional CDF
+    for E>0. Mean and sigma describe the underlying normal, before truncation;
+    the diagnostic centre particle retains the requested mean energy.
     """
     if isinstance(particle_count, bool) or not isinstance(particle_count, int) or particle_count < 1:
         raise ValueError("particle_count must be a positive integer")
@@ -231,13 +258,14 @@ def generate_center_first_halton_cylinder_phase_space(
     height = _number(height_mm, "height_mm", positive=True)
     energy_center = _number(kinetic_energy_center_ev, "kinetic_energy_center_ev", positive=True)
     energy_width = _number(kinetic_energy_full_width_ev, "kinetic_energy_full_width_ev")
-    if kinetic_energy_distribution not in {"uniform", "gaussian"}:
+    if kinetic_energy_distribution not in {"uniform", "gaussian", "positive_truncated_gaussian"}:
         raise ValueError("unsupported kinetic_energy_distribution")
-    if kinetic_energy_distribution == "gaussian":
+    if kinetic_energy_distribution in {"gaussian", "positive_truncated_gaussian"}:
         sigma = _number(kinetic_energy_sigma_ev, "kinetic_energy_sigma_ev", positive=True)
         normal = NormalDist()
         if energy_width != 0.0:
             raise ValueError("Gaussian energy uses sigma, not a full width")
+        lower_probability = normal.cdf(-energy_center / sigma)
     elif kinetic_energy_sigma_ev is not None:
         raise ValueError("uniform energy does not accept sigma")
     if energy_width < 0.0 or energy_center <= energy_width / 2.0:
@@ -259,6 +287,11 @@ def generate_center_first_halton_cylinder_phase_space(
             energy_delta = energy_width * (_radical_inverse(offset, 7) - 0.5)
             if kinetic_energy_distribution == "gaussian":
                 energy_delta = sigma * normal.inv_cdf(_radical_inverse(offset, 7))
+            elif kinetic_energy_distribution == "positive_truncated_gaussian":
+                # F(E | E>0)=(F(E)-F(0))/(1-F(0)); transform each latent
+                # quantile independently so all cohort prefixes remain exact.
+                quantile = lower_probability + (1.0 - lower_probability) * _radical_inverse(offset, 7)
+                energy_delta = sigma * normal.inv_cdf(quantile)
             tilt_1 = half_angle * (2.0 * _radical_inverse(offset, 11) - 1.0)
             tilt_2 = half_angle * (2.0 * _radical_inverse(offset, 13) - 1.0)
         position = list(center)
@@ -485,8 +518,17 @@ def generate_cylinder_release_states(spec: Mapping[str, Any]) -> list[dict[str, 
     birth = _number(spec["common_time_of_birth_s"], "common_time_of_birth_s")
     count = int(spec["particle_count"])
     states: list[dict[str, Any]] = []
-    if sampling["strategy"] == HALTON_STRATEGY:
-        energy = sampling["kinetic_energy"]
+    if sampling["strategy"] in (HALTON_STRATEGY, THERMAL_TRANSVERSE_STRATEGY):
+        thermal = sampling["strategy"] == THERMAL_TRANSVERSE_STRATEGY
+        energy = sampling["axial_kinetic_energy"] if thermal else sampling["kinetic_energy"]
+        direction = [float(index == axis) for index in range(3)] if thermal else _vector3(sampling["nominal_direction"], "sampling.nominal_direction")
+        angle = 0.0 if thermal else _number(sampling["angular_full_width_deg"], "sampling.angular_full_width_deg")
+        if thermal:
+            thermal_sigma = math.sqrt(BOLTZMANN_CONSTANT_J_K * sampling["transverse_temperature_k"] / (mass * AMU_KG))
+            if not math.isfinite(thermal_sigma) or thermal_sigma <= 0:
+                raise ValueError("thermal transverse velocity scale must be finite and positive")
+            transverse = [index for index in range(3) if index != axis]
+            normal = NormalDist()
         samples = generate_center_first_halton_cylinder_phase_space(
             particle_count=count,
             center_mm=center,
@@ -494,15 +536,21 @@ def generate_cylinder_release_states(spec: Mapping[str, Any]) -> list[dict[str, 
             axis=axis,
             radius_mm=radius,
             height_mm=height,
-            kinetic_energy_center_ev=_number(energy["center_ev"], "sampling.kinetic_energy.center_ev", positive=True),
-            kinetic_energy_full_width_ev=_number(energy["full_width_ev"], "sampling.kinetic_energy.full_width_ev"),
-            nominal_direction=_vector3(sampling["nominal_direction"], "sampling.nominal_direction"),
-            angular_full_width_deg=_number(sampling["angular_full_width_deg"], "sampling.angular_full_width_deg"),
+            **_halton_energy_parameters(energy),
+            nominal_direction=direction,
+            angular_full_width_deg=angle,
         )
         for sample in samples:
             speed = speed_m_s_from_kinetic_energy_ev(mass, float(sample["kinetic_energy_ev"]))
             direction = sample["direction"]
             velocity = tuple(speed * float(item) for item in direction)
+            if thermal:
+                components = list(velocity)
+                offset = int(sample["particle_id"]) - 1
+                for transverse_axis, base in zip(transverse, (11, 13)):
+                    components[transverse_axis] = (thermal_sigma * normal.inv_cdf(_radical_inverse(offset, base))
+                                                   if offset else 0.0)
+                velocity = tuple(components)
             states.append(_state(
                 int(sample["particle_id"]), birth, sample["position_mm"], velocity, mass, charge,
             ))

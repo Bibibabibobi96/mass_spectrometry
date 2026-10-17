@@ -33,24 +33,134 @@ try {
   $env:SIMULATION_PYTHON_EXE=$python
   . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
   & {
+    # Exercise native Python streams/exit status, with capacity mutation stubbed.
+    function Invoke-RunToolRootContext { param($RepoRoot,$Operation) & $Operation }
+    function Invoke-ArtifactCapacityGate { return [pscustomobject]@{satisfied_after_apply=$true} }
+    $leaseFixturePythonExe=$python
+    $script:leaseFixtureCode='import json;print(json.dumps({"lease_id":"fixture"}))'
+    function Invoke-LeaseFixturePython {
+      param([Parameter(ValueFromRemainingArguments)]$NativeArguments)
+      if('--delete-protection-lease'-in$NativeArguments){$global:LASTEXITCODE=0;return}
+      if('--output-list-json'-in$NativeArguments){
+        $script:writerListPath=$NativeArguments[([array]::IndexOf($NativeArguments,'--output-list-json')+1)]
+        if(-not(Test-Path -LiteralPath $script:writerListPath)){throw 'Writer list missing before launch.'}
+        $script:writerList=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($script:writerListPath)) -NoEnumerate
+      }
+      & $leaseFixturePythonExe -c $script:leaseFixtureCode
+      $global:LASTEXITCODE=$LASTEXITCODE
+    }
+    $session=Enter-ArtifactWorkflowCapacitySession -Python Invoke-LeaseFixturePython -RepoRoot $repoRoot `
+      -ArtifactRoot $testRoot -RunDirectory $testRoot -CommittedNewBytes 0
+    Assert-Equal $session.lease.lease_id 'fixture' 'Successful lease JSON protocol must remain separate from diagnostics.'
+    $script:leaseFixtureCode='import sys;print("diagnostic stdout");print("specific native stderr",file=sys.stderr);sys.exit(23)'
+    $message=$null
+    try{Enter-ArtifactWorkflowCapacitySession -Python Invoke-LeaseFixturePython -RepoRoot $repoRoot `
+      -ArtifactRoot $testRoot -RunDirectory $testRoot -CommittedNewBytes 0|Out-Null}catch{$message=$_.Exception.Message}
+    foreach($part in @('exit_code=23','stdout=diagnostic stdout','stderr=specific native stderr')){
+      if(-not$message.Contains($part)){throw "Native lease failure lost its actual diagnostic: $part; got=$message"}
+    }
+    $script:leaseFixtureCode='import sys;print("x"*10000);print("y"*10000,file=sys.stderr);sys.exit(24)'
+    try{Enter-ArtifactWorkflowCapacitySession -Python Invoke-LeaseFixturePython -RepoRoot $repoRoot `
+      -ArtifactRoot $testRoot -RunDirectory $testRoot -CommittedNewBytes 0|Out-Null}catch{$message=$_.Exception.Message}
+    if(-not$message.Contains('exit_code=24')-or-not$message.Contains('[truncated tail]')-or$message.Length-gt8400){
+      throw 'Native lease failure must retain its exit status with bounded stream diagnostics.'
+    }
+    $script:leaseFixtureCode='print("RUN_MANIFEST=PASS PATH=fixture.json")'
+    $writerResult=@(Write-RunManifest -Python Invoke-LeaseFixturePython -RepoRoot $repoRoot -RunConfig unused.json -Status checkpoint -PassThru)
+    Assert-Equal $writerResult.Count 1 'Successful manifest writer stdout shape changed.'
+    Assert-Equal $writerResult[0] 'RUN_MANIFEST=PASS PATH=fixture.json' 'Successful manifest writer protocol changed.'
+    Assert-Equal $script:writerList.Count 0 'Empty outputs must be a JSON array.'
+    Assert-Equal (Test-Path -LiteralPath $script:writerListPath) $false 'Successful writer must remove its temporary list.'
+    $script:leaseFixtureCode='import sys;print("writer diagnostic stdout");print("specific writer stderr",file=sys.stderr);sys.exit(31)'
+    try{Write-RunManifest -Python Invoke-LeaseFixturePython -RepoRoot $repoRoot -RunConfig unused.json -Status checkpoint|Out-Null}catch{$message=$_.Exception.Message}
+    foreach($part in @('status checkpoint','exit_code=31','stdout=writer diagnostic stdout','stderr=specific writer stderr')){
+      if(-not$message.Contains($part)){throw "Manifest failure lost its native diagnostic: $part; got=$message"}
+    }
+    Assert-Equal (Test-Path -LiteralPath $script:writerListPath) $false 'Failed writer must remove its temporary list.'
+    $script:leaseFixtureCode='import sys;print("x"*10000);print("y"*10000,file=sys.stderr);sys.exit(32)'
+    try{Write-RunManifest -Python Invoke-LeaseFixturePython -RepoRoot $repoRoot -RunConfig unused.json -Status checkpoint|Out-Null}catch{$message=$_.Exception.Message}
+    if(-not$message.Contains('exit_code=32')-or-not$message.Contains('[truncated tail]')-or$message.Length-gt8400){
+      throw 'Manifest writer failure must retain exit status and bounded native diagnostics.'
+    }
+  }
+  & {
     # Exercise the real wrapper under StrictMode without any capacity mutation.
     function Enter-HostExecutionLease { return [pscustomobject]@{} }
     function Exit-HostExecutionLease { param($Lease) }
+    $maintenanceSatisfied=$false
     function Invoke-RunToolRootContext {
-      return '{"satisfied_after_apply":false,"execution_mode":"maintenance","measured_after_bytes":700,"free_bytes_after":200,"required_free_bytes":295,"target_bytes":600,"removed_bytes":28}'
+      return (@{satisfied_after_apply=$maintenanceSatisfied;execution_mode='maintenance';
+        resident_bytes=700;free_bytes=200;capacity_gap_bytes=100;target_bytes=600;
+        removed=@{object_count=1;bytes=28}}|ConvertTo-Json)
     }
     $message=$null
     try {
       Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot -ExecutionMode maintenance
     } catch { $message=$_.Exception.Message }
-    Assert-Equal $message 'Artifact capacity gate blocked maintenance: CAPACITY_TARGET_NOT_MET; measured_after_bytes=700; free_bytes_after=200; required_free_bytes=295; target_bytes=600; removed_bytes=28' `
-      'Maintenance must fail with its receipt measurements, not a missing startup property.'
-    $warnMessage=$null
-    try { Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
-      -ExecutionMode maintenance -CapacityThresholdAction warn } catch {$warnMessage=$_.Exception.Message}
-    Assert-Equal $warnMessage $message 'Warning must not change maintenance decisions.'
+    Assert-Equal $message 'Artifact capacity gate blocked maintenance: CAPACITY_TARGET_NOT_MET; resident_bytes=700; free_bytes=200; capacity_gap_bytes=100; target_bytes=600; removed_bytes=28' `
+      'Maintenance must consume its compact CLI receipt, not missing detailed/startup fields.'
+    $maintenanceSatisfied=$true
+    $maintenanceReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
+      -ArtifactRoot $testRoot -ExecutionMode maintenance
+    Assert-Equal $maintenanceReceipt.satisfied_after_apply $true 'Satisfied compact maintenance receipt must pass.'
+    Assert-Equal $maintenanceReceipt.removed.bytes 28 'Maintenance must retain the aggregate removal count.'
   }
   $originalLocation=(Get-Location).Path
+  & {
+    # Real renewal/gate functions with only external I/O stubbed; no live lease mutation.
+    function Enter-HostExecutionLease { return [pscustomobject]@{} }
+    function Exit-HostExecutionLease { param($Lease) }
+    $satisfied=$true
+    function Invoke-RunToolRootContext {
+      $script:renewalFixtureCalls++
+      return (@{satisfied_after_apply=$satisfied;blocking_reason='TARGET_CAPACITY_EXCEEDED';
+        resident_bytes=700;total_active_lease_committed_new_bytes=11;projected_bytes=711;
+        target_bytes=600;required_free_bytes=300;free_bytes_before=200}|ConvertTo-Json)
+    }
+    $cases=@(@{keys=@();paths=@()},@{keys=@(('a'*64));paths=@('one')},
+      @{keys=@(('a'*64),('b'*64));paths=@('one','two')})
+    foreach($case in $cases){
+      $session=[pscustomobject]@{status='active';artifact_root=$testRoot;lease_id='fixture';owner='fixture';
+        lease_ttl_seconds=60;committed_new_bytes=10;protected_paths=@($case.paths);protected_cache_keys=@($case.keys)}
+      $script:renewalFixtureCalls=0
+      $first=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $session `
+        -ProtectedPaths $case.paths -ProtectedCacheKeys $case.keys
+      $second=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $first.session
+      $raised=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $second.session `
+        -RemainingCommittedNewBytes 11
+      foreach($name in @('protected_paths','protected_cache_keys')){
+        Assert-Equal ($raised.session.$name-is[Array]) $true 'Renewal must preserve an array, including empty/singleton.'
+      }
+      Assert-Equal $raised.session.protected_cache_keys.Count $case.keys.Count 'Renewal must not manufacture null keys or retain duplicates.'
+      Assert-Equal $raised.session.protected_paths.Count $case.paths.Count 'Renewal must not manufacture null paths or retain duplicates.'
+      Assert-Equal ($raised.session.protected_cache_keys-join',') ($case.keys-join',') 'Renewal cache identities changed.'
+      Assert-Equal $raised.session.committed_new_bytes 11 'Raised reservation was not retained.'
+      Assert-Equal $script:renewalFixtureCalls 4 'Two renewals and raised commitment must call the real re-admission gate.'
+      Assert-Equal $raised.admission_gate.satisfied_after_apply $true 'Raised commitment did not reach admission.'
+    }
+    $satisfied=$false
+    $session=[pscustomobject]@{status='active';artifact_root=$testRoot;lease_id='fixture';owner='fixture';
+      lease_ttl_seconds=60;committed_new_bytes=10;protected_paths=@();protected_cache_keys=@();capacity_threshold_action='warn'}
+    $message=$null
+    try{Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $session `
+      -RemainingCommittedNewBytes 11|Out-Null}catch{$message=$_.Exception.Message}
+    if($message-notlike 'Artifact capacity gate blocked startup: TARGET_CAPACITY_EXCEEDED;*'){
+      throw 'An old warning session must not bypass hard re-admission.'
+    }
+    Assert-Equal $session.committed_new_bytes 11 'Failed re-admission must retain the increased reservation.'
+    $session.PSObject.Properties.Remove('capacity_threshold_action')
+    $message=$null
+    try{Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $session `
+      -RemainingCommittedNewBytes 12|Out-Null}catch{$message=$_.Exception.Message}
+    if($message-notlike 'Artifact capacity gate blocked startup: TARGET_CAPACITY_EXCEEDED;*'){
+      throw 'Capacity re-admission must reject the unsatisfied receipt.'
+    }
+    $session.protected_cache_keys=@('not-a-sha256-key')
+    $message=$null
+    try{Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $session `
+      -RemainingCommittedNewBytes 13|Out-Null}catch{$message=$_.Exception.Message}
+    Assert-Equal $message 'Protected cache key must be one SHA-256 key.' 'Array preservation must not accept malformed cache keys.'
+  }
   & {
     # Exercise only wrapper decisions: no reconciler, disk mutation or host admission.
     function Enter-HostExecutionLease { return [pscustomobject]@{} }
@@ -64,48 +174,53 @@ try {
       $message=$null
       try { Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
         -CapacityProtectionLeaseId fixture|Out-Null } catch {$message=$_.Exception.Message}
-      if($message-notlike "Artifact capacity gate blocked startup: $reason;*"){throw 'Default stop must reject capacity threshold.'}
-      $warnings=@()
-      $receipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
-        -CapacityProtectionLeaseId fixture -CapacityThresholdAction warn -WarningVariable warnings
-      Assert-Equal $receipt.satisfied_after_apply $false 'Warning must not forge a satisfied receipt.'
-      Assert-Equal $receipt.blocking_reason $reason 'Warning must retain the actual reason.'
-      Assert-Equal $warnings.Count 1 'Threshold warning must be visible exactly once.'
+      if($message-notlike "Artifact capacity gate blocked startup: $reason;*"){throw 'Capacity thresholds must block startup.'}
+      $rejected=$false
+      try{Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
+        -CapacityProtectionLeaseId fixture -CapacityThresholdAction warn|Out-Null}catch{$rejected=$true}
+      Assert-Equal $rejected $true 'Removed warning override must be rejected, not reopen unsafe admission.'
     }
     foreach($reason in @('CAPACITY_LEDGER_REQUIRED','CURRENT_LEASE_REQUIRED','ACTIVE_LEASE_COMMITMENT_UNKNOWN',
       'WRITING_RECOVERY_REVIEW_OVERDUE','CURRENT_LEASE_SCOPE_INCOMPLETE','SAFETY_DECISION_UNAVAILABLE','UNSPECIFIED')){
       $fakeReceipt.blocking_reason=$reason
       $message=$null
       try { Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
-        -CapacityProtectionLeaseId fixture -CapacityThresholdAction warn|Out-Null } catch {$message=$_.Exception.Message}
-      if($message-notlike "Artifact capacity gate blocked startup: $reason;*"){throw 'Warning must reject non-resource reasons.'}
+        -CapacityProtectionLeaseId fixture|Out-Null } catch {$message=$_.Exception.Message}
+      if($message-notlike "Artifact capacity gate blocked startup: $reason;*"){throw 'Capacity gate must reject invalid safety decisions.'}
     }
     $fakeReceipt.blocking_reason='MINIMUM_FREE_CAPACITY_UNAVAILABLE'
     function Invoke-RunToolRootContext {
-      $script:capacityWarningTestCalls++
-      if($script:capacityWarningTestCalls-eq1){return '{"lease_id":"fixture"}'}
-      if($script:capacityWarningTestCalls-eq2){return ($fakeReceipt|ConvertTo-Json)}
+      $script:capacityStartupTestCalls++
+      if($script:capacityStartupTestCalls-eq1){return '{"lease_id":"fixture"}'}
+      if($script:capacityStartupTestCalls-eq2){return ($fakeReceipt|ConvertTo-Json)}
       return '{"deleted":true}'
     }
-    $script:capacityWarningTestCalls=0
+    $script:capacityStartupTestCalls=0
+    $message=$null
+    try{Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
+      -RunDirectory $testRoot -CommittedNewBytes 4|Out-Null}catch{$message=$_.Exception.Message}
+    if($message-notlike 'Artifact capacity gate blocked startup: MINIMUM_FREE_CAPACITY_UNAVAILABLE;*'){
+      throw 'Unsatisfied startup must not publish an active workflow session.'
+    }
+    Assert-Equal $script:capacityStartupTestCalls 3 'Rejected startup must release its provisional capacity lease.'
+    $fakeReceipt.satisfied_after_apply=$true
+    $script:capacityStartupTestCalls=0
     $session=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
-      -RunDirectory $testRoot -CommittedNewBytes 4 -CapacityThresholdAction warn
-    Assert-Equal $session.status 'active' 'Warning startup must retain the actual active protection lease.'
-    Assert-Equal $session.startup_gate.satisfied_after_apply $false 'Session must retain actual unsatisfied gate.'
-    Assert-Equal $script:capacityWarningTestCalls 2 'Warning must not delete the protection lease early.'
+      -RunDirectory $testRoot -CommittedNewBytes 4
+    Assert-Equal $session.startup_gate.satisfied_after_apply $true 'Satisfied startup must publish its actual successful gate.'
+    Assert-Equal ($null-eq$session.PSObject.Properties['capacity_threshold_action']) $true 'New session must not record a retired warning policy.'
     $released=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $session
-    Assert-Equal $released.deleted $true 'Warning session must use normal lease release.'
-    Assert-Equal $script:capacityWarningTestCalls 3 'Normal session release must reach lease deletion.'
+    Assert-Equal $released.deleted $true 'Satisfied session must use normal lease release.'
     function Invoke-RunToolRootContext { throw 'fixture Python failure' }
     $message=$null
     try { Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
-      -CapacityProtectionLeaseId fixture -CapacityThresholdAction warn|Out-Null } catch {$message=$_.Exception.Message}
-    Assert-Equal $message 'fixture Python failure' 'Warning must not swallow command failure.'
+      -CapacityProtectionLeaseId fixture|Out-Null } catch {$message=$_.Exception.Message}
+    Assert-Equal $message 'fixture Python failure' 'Capacity gate must not swallow command failure.'
     function Invoke-RunToolRootContext { return 'invalid JSON' }
     $failed=$false
     try { Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
-      -CapacityProtectionLeaseId fixture -CapacityThresholdAction warn|Out-Null } catch {$failed=$true}
-    Assert-Equal $failed $true 'Warning must reject damaged receipt.'
+      -CapacityProtectionLeaseId fixture|Out-Null } catch {$failed=$true}
+    Assert-Equal $failed $true 'Capacity gate must reject damaged receipt.'
   }
   [Environment]::SetEnvironmentVariable('PYTHONPATH','run-artifact-test-pythonpath')
   [Environment]::SetEnvironmentVariable('PYTHONNOUSERSITE','run-artifact-test-nousersite')
@@ -127,6 +242,21 @@ try {
 
   $governedRoot=Join-Path $testRoot 'artifacts'
   $governedProjectRoot=Join-Path $governedRoot 'projects\fixture_project'
+  foreach($badArtifactRoot in @((Join-Path $governedProjectRoot 'runs'),(Join-Path $governedRoot 'projects\wrong_project'),$governedRoot)){
+    $badRunId='20260723_165956__test__cross__wrong-artifact-root__n1'
+    $message=$null
+    try{
+      New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $badArtifactRoot `
+        -RunId $badRunId -Project fixture_project -Mode contract_test -Software @('contract test') `
+        -RetentionContractEnabled -CapacityLedgerLifecycleEnabled|Out-Null
+    }catch{$message=$_.Exception.Message}
+    if(-not$message-or-not$message.Contains('ArtifactRoot must be the canonical artifacts/projects/<Project>')){
+      throw "Wrong ArtifactRoot was not rejected before creation: $badArtifactRoot; $message"
+    }
+    if(Test-Path -LiteralPath (Join-Path $badArtifactRoot ('runs/'+$badRunId))){
+      throw 'Rejected ArtifactRoot created an ungoverned nested run.'
+    }
+  }
   $prewriteRun=Join-Path $governedProjectRoot 'runs\20260723_165959__test__cross__prewrite-rejected__n1'
   try {
     New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $governedProjectRoot `
@@ -180,8 +310,17 @@ try {
       --lease-owner run-artifact-support --lease-ttl-seconds 3600 --protect-path projects
     if($LASTEXITCODE-ne 0){throw 'Capacity protection lease fixture creation failed.'}
   } | Out-Null
-  $capacityReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId test-capacity -CapacityThresholdAction warn
+  # Read the actual CLI decision even when this host has less free space than
+  # policy requires, then prove the production wrapper enforces that decision.
+  $capacityTestLease=Enter-HostExecutionLease -Role GATE
+  try{
+    $capacityOutput=@(Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+      & $python -m common.contracts.reconcile_artifact_capacity --artifact-root $capacityRoot `
+        --execution-mode startup --capacity-protection-lease-id test-capacity --apply
+      if($LASTEXITCODE-ne0){throw 'Capacity CLI fixture failed.'}
+    })
+  }finally{Exit-HostExecutionLease -Lease $capacityTestLease}
+  $capacityReceipt=($capacityOutput-join"`n")|ConvertFrom-Json
   Assert-Equal $capacityReceipt.role 'artifact_capacity_gate' 'Capacity gate role changed.'
   # Temporary empty ledger does not imply the real volume has enough free space.
   $expectedSatisfied=($capacityReceipt.free_bytes_before-ge$capacityReceipt.required_free_bytes-and
@@ -190,16 +329,19 @@ try {
     'Capacity gate must report the actual volume decision, not assume fixture free space.'
   $policy=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'artifact_capacity_policy.json') -Raw |
     ConvertFrom-Json
-  $defaultTargetReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId test-capacity -CapacityThresholdAction warn
-  Assert-Equal $defaultTargetReceipt.target_bytes ([int64]$policy.target_gib * 1GB) `
+  Assert-Equal $capacityReceipt.target_bytes ([int64]$policy.target_gib * 1GB) `
     'Omitted target must use the shared capacity policy.'
-  Assert-Equal $defaultTargetReceipt.minimum_free_bytes ([int64]$policy.minimum_free_gib * 1GB) `
+  Assert-Equal $capacityReceipt.minimum_free_bytes ([int64]$policy.minimum_free_gib * 1GB) `
     'Minimum-free watermark must come from the shared capacity policy.'
-  $capacityFastReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId test-capacity -CapacityThresholdAction warn
-  Assert-Equal $capacityFastReceipt.measurement_mode 'STARTUP_LEDGER' `
+  Assert-Equal $capacityReceipt.measurement_mode 'STARTUP_LEDGER' `
     'Capacity gate startup did not use the ledger path.'
+  $capacityRejected=$false
+  try{Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId test-capacity|Out-Null}catch{
+    if($_.Exception.Message-notlike 'Artifact capacity gate blocked startup:*'){throw}
+    $capacityRejected=$true
+  }
+  Assert-Equal $capacityRejected (-not$expectedSatisfied) 'Wrapper must block the real unsatisfied CLI capacity decision.'
 
   $interruptedDir = Join-Path $testRoot '20260723_170001__test__cross__lifecycle-interrupted__n100'
   New-Item -ItemType Directory -Path $interruptedDir -Force | Out-Null

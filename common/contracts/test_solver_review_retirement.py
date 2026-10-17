@@ -19,6 +19,7 @@ from common.contracts.run_capacity_lifecycle import register_writing, seal_check
 from common.contracts.solver_review_retirement import (
     LEGACY_INITIALIZATION_SUMMARY,
     RetirementError,
+    _downstream_references,
     apply_retirement,
     main,
     plan_retirement,
@@ -41,6 +42,7 @@ class RetirementWrapperTest(unittest.TestCase):
             ("apply", False, ["enter", "retire", "exit"]),
             ("apply", None, ["enter", "retire", "exit"]),
             ("checkpoint", True, ["enter", "retire", "exit"]),
+            ("subset", True, ["enter", "retire", "exit"]),
         ):
             with self.subTest(mode=mode, enabled=enabled):
                 self._check_wrapper(mode, enabled=enabled, expected=expected)
@@ -84,6 +86,7 @@ function python {
     $global:calls.Add('finalize'); '{"status":"ready"}'
     $global:LASTEXITCODE = $(if ($Mode -eq 'finalize_fail') {9} else {0})
   } else {
+    if($Mode -eq 'subset' -and ($args -notcontains '--selected-heavy-path' -or $args -notcontains 'simion/analyzer.pa0')) {throw 'subset selection was not forwarded'}
     $global:calls.Add('retire'); '{"lifecycle_status":"completed_experiment_payload_retired"}'
     $global:LASTEXITCODE = $(if ($Mode -eq 'retire_fail') {7} else {0})
   }
@@ -93,6 +96,7 @@ $params = @{ArtifactRoot=$Root; RepositoryRoot=$Root; TargetRun=$Root;
 if ($Mode -ne 'plan') { $params.Apply = $true }
 if ($Mode -eq 'whatif') { $params.WhatIf = $true }
 if ($Mode -eq 'checkpoint') { $params.RuntimeCheckpoint='frozen.json'; $params.ConfirmWritingStopped=$true }
+if ($Mode -eq 'subset') { $params.SelectedHeavyPaths=@('simion/analyzer.pa0') }
 $failed = $false; $message = ''; $output = @()
 try { $output = @(& (Join-Path $Root 'contracts/invoke_solver_review_retirement.ps1') @params) }
 catch { $failed=$true; $message=$_.Exception.Message }
@@ -204,6 +208,40 @@ function Exit-HostExecutionLease { param($Lease) }
         self.assertEqual(actual, {"", "simion/analyzer.pa0"})
         resolve.assert_called_once_with(self.target)
 
+    def test_structured_references_preserves_path_matching_boundaries(self) -> None:
+        cases = (
+            (str(self.target / "simion/analyzer.pa0"), {"simion/analyzer.pa0"}),
+            (str(self.target / "simion/analyzer.pa0").upper(), {"simion/analyzer.pa0"}),
+            (f"../projects/p/runs/{self.target.name}/summary.json", {"summary.json"}),
+            (self.target.name, {""}),
+            (str(self.target) + "-other/simion/analyzer.pa0", set()),
+            (f"../runs/{self.target.name}-other/summary.json", set()),
+            (f"../runs/{self.target.name}/../../foreign.pa0", set()),
+        )
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(structured_target_references(value, self.target, self.target.name), expected)
+
+    def test_downstream_scan_resolves_target_once_and_rereads_documents(self) -> None:
+        original_resolve = Path.resolve
+        resolved_calls = []
+        def track(path, *args, **kwargs):
+            resolved_calls.append(path)
+            return original_resolve(path, *args, **kwargs)
+        with mock.patch.object(Path, "resolve", autospec=True, side_effect=track):
+            first = _downstream_references(self.artifacts, self.target, self.target.name)
+        self.assertEqual(resolved_calls.count(self.target), 2)  # target normalization and its directory entry
+        self.assertEqual(first["active"], [])
+        manifest_path = self.replacement / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["status"] = "running"
+        manifest["inputs"]["late_dependency"] = {"path": str(self.target / "simion/analyzer.pa0")}
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        second = _downstream_references(
+            self.artifacts, self.target, self.target.name, removable_paths=["simion/analyzer.pa0"],
+        )
+        self.assertEqual([item["path"] for item in second["active"]], ["simion/analyzer.pa0"])
+
     def test_host_lease_wrapper_forwards_role_mappings(self) -> None:
         wrapper = Path(__file__).with_name("invoke_solver_review_retirement.ps1")
         source = wrapper.read_text(encoding="utf-8-sig")
@@ -254,6 +292,206 @@ function Exit-HostExecutionLease { param($Lease) }
             owner_abandonment_reason="completed pilot comparison; no further payload consumer",
             **kwargs,
         )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_selected_heavy_scope_preserves_other_native_assets_and_verifies(self, _scan):
+        plan=self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"])
+        self.assertEqual([r["path"] for r in plan["removed_files"]],["simion/analyzer.pa0"])
+        self.assertIn("simion/detector.pa#",[r["path"] for r in plan["preserved_files"]])
+        with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            apply_retirement(plan)
+        self.assertTrue((self.target/"simion/accelerator.pa0").is_file())
+        self.assertTrue((self.target/"simion/detector.pa#").is_file())
+        self.assertEqual(verify_retirement(self.target)["status"],"PASS")
+        receipt=self.target/"solver_review_retirement_receipt.json"
+        changed=json.loads(receipt.read_text())
+        from common.contracts.run_capacity_lifecycle import _verify_retired_payload_remainder
+
+        records = [{"path": p.relative_to(self.target).as_posix(), "bytes": p.stat().st_size}
+                   for p in self.target.rglob("*") if p.is_file()]
+        _verify_retired_payload_remainder(
+            self.target, {"artifact_retention": {"class": "solver_review"}}, "p",
+            {"pin": True, "bytes": sum(r["bytes"] for r in changed["original_file_inventory"])},
+            records,
+        )
+        changed["selected_heavy_paths"]=["simion/detector.pa#"]
+        receipt.write_text(json.dumps(changed))
+        with self.assertRaises(RetirementError):
+            verify_retirement(self.target)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_selected_heavy_scope_rejects_invalid_selection_and_manual_plan_changes(self, _scan):
+        for selected in ([],["../outside.pa"],["simion/analyzer.pa0"]*2,["candidate.json"],["missing.pa"]):
+            with self.subTest(selected=selected),self.assertRaises(RetirementError):
+                self._owner_plan(selected_heavy_paths=selected)
+        with self.assertRaisesRegex(RetirementError,"owner completion"):
+            plan_retirement(self.artifacts,self.repo,self.target,self.replacement,"same",self.compatibility_roles,
+                selected_heavy_paths=["simion/analyzer.pa0"])
+        plan=self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"])
+        plan["removed_files"].append(next(r for r in plan["preserved_files"] if r["path"]=="simion/accelerator.pa0"))
+        with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            with self.assertRaisesRegex(RetirementError,"scope differs"):
+                apply_retirement(plan)
+        self.assertTrue((self.target/"simion/analyzer.pa0").is_file())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_selected_heavy_pending_resume_keeps_exact_scope(self, _scan):
+        selected=["simion/analyzer.pa0"]
+        plan=self._owner_plan(selected_heavy_paths=selected)
+        (self.target/selected[0]).unlink()
+        (self.target/"solver_review_retirement_receipt.json").write_text(json.dumps({**plan,
+            "role":"solver_review_retirement_receipt","lifecycle_status":"retirement_pending"}))
+        with self.assertRaisesRegex(RetirementError,"scope changed"):
+            self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
+        resumed=self._owner_plan(selected_heavy_paths=selected)
+        with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"],"PASS")
+
+    def _prepared_gui(self, run: Path, **summary_changes: object) -> None:
+        config = json.loads((run / "run_config.json").read_text())
+        config["inputs"] = {key: value for key, value in config["inputs"].items()
+                            if not Path(value).suffix.startswith(".pa")}
+        for path in (run / "simion").glob("*.pa*"):
+            path.unlink()
+        for suffix in (".gem", ".iob", ".pa#", ".pa0", ".pa1", ".pa2"):
+            path = run / "simion" / ("processor" + suffix)
+            path.write_bytes(("frozen " + suffix).encode())
+            config["inputs"]["native" + suffix] = str(path)
+        baseline = run / "baseline_manifest.json"
+        baseline.write_text(json.dumps({"project": "p", "run_id": "scientific-source", "status": "failed"}))
+        config["inputs"]["frozen_source"] = str(baseline)
+        config["parameters"] = {"workflow": "native_gui_replay", "manual_gui_confirmed": False,
+            "native_field_construction": "private_refine_and_native_IOB_prepared_not_flown",
+            "baseline_run": str(self.runs / "scientific-source"), "baseline_manifest_sha256": _sha(baseline)}
+        summary = {"status": "gui_replay_prepared", "gui_fly_completed": False,
+            "trajectory_equivalence_verified": False, "field_construction": "new_private_refine_from_frozen_GEM",
+            **summary_changes}
+        (run / "run_config.json").write_text(json.dumps(config))
+        (run / "summary.json").write_text(json.dumps(summary))
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": _sha(path)}
+        manifest = json.loads((run / "run_manifest.json").read_text())
+        manifest.update(status="checkpoint", run_config=record(run / "run_config.json"),
+                        inputs={key: record(Path(value)) for key, value in config["inputs"].items()},
+                        outputs=[record(run / "summary.json")])
+        (run / "run_manifest.json").write_text(json.dumps(manifest))
+
+    def _gui_plan(self, **kwargs: object) -> dict[str, object]:
+        return plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
+            "newer prepared GUI replaces the obsolete source", ["candidate_contract"],
+            prepared_gui_checkpoint=True, writing_stopped=True, **kwargs)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_supersession_preserves_light_and_replacement(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        self._prepared_gui(self.replacement)
+        originals = {name: (self.target / name).read_bytes()
+                     for name in ("summary.json", "run_manifest.json", "run_config.json")}
+        plan = self._gui_plan()
+        self.assertEqual(len(plan["removed_files"]), 4)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertTrue((self.replacement / "simion/processor.pa0").exists())
+        self.assertTrue((self.target / "simion/processor.iob").exists())
+        self.assertEqual(originals, {name: (self.target / name).read_bytes() for name in originals})
+
+    def test_prepared_gui_requires_stopped_confirmation_and_explicit_mode(self) -> None:
+        self._prepared_gui(self.target)
+        self._prepared_gui(self.replacement)
+        for options in ({}, {"prepared_gui_checkpoint": True}, {"writing_stopped": True}):
+            with self.subTest(options=options), self.assertRaises(RetirementError):
+                plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
+                    "newer GUI", ["candidate_contract"], **options)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_rejects_flown_or_mismatched_summary(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.replacement)
+        for changes in ({"gui_fly_completed": True}, {"status": "prepared"},
+                        {"trajectory_equivalence_verified": True}):
+            self._prepared_gui(self.target, **changes)
+            with self.subTest(changes=changes), self.assertRaises(RetirementError):
+                self._gui_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_rechecks_replacement_field_and_target_protection(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        self._prepared_gui(self.replacement)
+        plan = self._gui_plan()
+        create_capacity_protection_lease(self.artifacts, lease_id="old-gui-protected", owner="test",
+                                        ttl_seconds=3600, protected_paths=[self.target])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "protection lease"):
+                apply_retirement(plan)
+        (self.replacement / "simion/processor.pa0").write_bytes(b"changed")
+        with self.assertRaises(RetirementError):
+            self._gui_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_partial_retirement_replays_same_scope(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        self._prepared_gui(self.replacement)
+        plan = self._gui_plan()
+        (self.target / plan["removed_files"][0]["path"]).unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps({
+            **plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending"}))
+        resumed = self._gui_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_owner_abandonment_without_replacement_preserves_evidence(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        originals = {path: path.read_bytes() for path in self.target.rglob("*")
+                     if path.is_file() and not path.suffix.startswith(".pa")}
+        plan = self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True)
+        self.assertEqual(plan["retirement_mode"], "completed_experiment")
+        self.assertIsNone(plan["replacement_run_path"])
+        self.assertIsNone(plan["compatibility_checks"])
+        self.assertEqual(len(plan["removed_files"]), 4)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            receipt = apply_retirement(plan)
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "checkpoint")
+        self.assertEqual(originals, {path: path.read_bytes() for path in originals})
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_owner_exit_requires_reason_scope_stopped_and_exact_owner(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        for options in ({"prepared_gui_checkpoint": True}, {"writing_stopped": True}, {}):
+            with self.subTest(options=options), self.assertRaises(RetirementError):
+                self._owner_plan(**options)
+        for owner, reason in (("other", "abandoned"), ("p", ""), ("", "abandoned")):
+            with self.subTest(owner=owner, reason=reason), self.assertRaises(RetirementError):
+                plan_retirement(self.artifacts, self.repo, self.target, owner=owner,
+                    owner_abandonment_reason=reason, prepared_gui_checkpoint=True, writing_stopped=True)
+        with self.assertRaisesRegex(RetirementError, "mutually exclusive"):
+            plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
+                owner="p", owner_abandonment_reason="abandoned", prepared_gui_checkpoint=True, writing_stopped=True)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_owner_exit_rechecks_active_native_consumer_before_apply(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        plan = self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True)
+        consumer = self.runs/"new_consumer"
+        consumer.mkdir()
+        (consumer/"run_config.json").write_text(json.dumps({"field": str(self.target/"simion/processor.pa0")}))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        self.assertTrue((self.target/"simion/processor.pa0").exists())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_active_native_consumer_blocks(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        self._prepared_gui(self.replacement)
+        consumer = self.runs / "waiting_consumer"
+        consumer.mkdir()
+        (consumer / "run_config.json").write_text(json.dumps({"field": str(self.target / "simion/processor.pa0")}))
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._gui_plan()
 
     def _checkpoint_runtime(self) -> Path:
         """Model sealed small inventory with unlisted private PA members."""

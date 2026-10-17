@@ -135,13 +135,14 @@ try {
   } | Out-Null
   $lease = Enter-HostExecutionLease -Role SIMION -Stage mrtof_postprocess
   try {
-    $capacity = Invoke-ArtifactCapacityGate -Python $PythonExe -RepoRoot (Split-Path -Parent $PSScriptRoot) `
-      -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId host-lease-capacity -CapacityThresholdAction warn
-    # The isolated empty ledger does not determine the real volume's free space.
-    $expectedSatisfied=($capacity.free_bytes_before-ge$capacity.required_free_bytes-and
-      $capacity.projected_bytes-le$capacity.target_bytes)
-    Assert-True ($capacity.satisfied_after_apply-eq$expectedSatisfied) `
-      'Nested capacity gate did not preserve the actual volume decision.'
+    try {
+      $capacity = Invoke-ArtifactCapacityGate -Python $PythonExe -RepoRoot (Split-Path -Parent $PSScriptRoot) `
+        -ArtifactRoot $capacityRoot -CapacityProtectionLeaseId host-lease-capacity
+      Assert-True ($capacity.satisfied_after_apply-eq$true) 'Capacity wrapper returned an unsatisfied decision.'
+    } catch {
+      # The isolated empty ledger still shares the host volume's free space.
+      if($_.Exception.Message-notlike 'Artifact capacity gate blocked startup: MINIMUM_FREE_CAPACITY_UNAVAILABLE;*'){throw}
+    }
     $records = @((Get-HostResourceStatus -StatePath $statePath).records)
     Assert-True ($records.Count -eq 1 -and $records[0].token -eq $lease.token) 'Capacity child changed its parent grant.'
   } finally { Exit-HostExecutionLease -Lease $lease; $lease = $null }
@@ -154,27 +155,53 @@ try {
   $quotedState = (Join-Path $testRoot 'hidden.sqlite3').Replace("'", "''")
   $hiddenError = Join-Path $testRoot 'hidden-error.txt'
   $quotedHiddenError = $hiddenError.Replace("'", "''")
+  $hiddenProgress = Join-Path $testRoot 'hidden-progress.txt'
+  $quotedHiddenProgress = $hiddenProgress.Replace("'", "''")
   $hiddenCode = @"
 trap { [IO.File]::WriteAllText('$quotedHiddenError', `$_.Exception.ToString()); exit 1 }
 . '$quotedSource'
 `$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = '$quotedState'
 Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue
 `$real = `${function:Get-HostResourceSnapshot}
+`$script:hiddenFixtureSnapshot = `$null
 function Get-CimInstance { throw 'Forced CIM unavailability for native console snapshot regression.' }
 function Get-HostResourceSnapshot {
-  `$s = & `$real
+  if (`$null -eq `$script:hiddenFixtureSnapshot) {
+    [IO.File]::AppendAllText('$quotedHiddenProgress', "native-snapshot-start`n")
+    `$s = & `$real
+    `$owners = @(`$s.processes | Where-Object pid -eq `$PID)
+    `$consoles = @(`$s.processes | Where-Object { `$_.parent_pid -eq `$PID -and `$_.is_system_console_host })
+    if (`$owners.Count -ne 1 -or `$consoles.Count -eq 0) { throw 'Native fallback did not discover the hidden owner and system conhost.' }
+    # Keep the real native-discovered fixture tree. Repeated whole-host process
+    # and performance-counter enumeration is outside this console-release test.
+    `$s.processes = @(`$owners) + @(`$consoles)
+    `$s.unknown_process_ids = @(); `$s.definitely_exited_process_ids = @()
+    `$script:hiddenFixtureSnapshot = `$s
+    [IO.File]::AppendAllText('$quotedHiddenProgress', "native-snapshot-complete`n")
+  }
+  `$s = `$script:hiddenFixtureSnapshot.Clone()
+  foreach (`$row in `$s.processes) {
+    if ((Get-HostResourceNativeProcessCreationTicks -ProcessId `$row.pid) -ne `$row.started) {
+      throw 'The native-discovered hidden fixture process changed identity or exited.'
+    }
+    `$live = [Diagnostics.Process]::GetProcessById(`$row.pid)
+    try { if (`$live.HasExited) { throw 'The hidden fixture process is no longer alive.' } }
+    finally { `$live.Dispose() }
+  }
   `$s.cpu_percent=0; `$s.available_memory_bytes=32GB; `$s.total_memory_bytes=64GB; `$s.logical_processors=4; `$s.io_pressure=`$false
   `$script:hiddenSnapshot = `$s
   return `$s
 }
 `$budget = Get-HostResourceBudget -Profile measured-small-check
 `$hiddenLease = Enter-HostResourceStage -Role GATE -Stage prepare -Budget `$budget
+[IO.File]::AppendAllText('$quotedHiddenProgress', "acquired`n")
 try {
   `$console = @(`$script:hiddenSnapshot.processes | Where-Object { `$_.parent_pid -eq `$PID -and `$_.is_system_console_host })
   if (`$console.Count -eq 0) { throw 'Hidden-console fixture did not create a conhost child.' }
   `$hiddenLease = Update-HostResourceStage -Lease `$hiddenLease -Stage analyze -Budget `$budget -RetainedMemoryBytes 0
   if (`$hiddenLease.stage -ne 'analyze') { throw 'Hidden process did not transition.' }
 } finally { Exit-HostResourceStage -Lease `$hiddenLease }
+[IO.File]::AppendAllText('$quotedHiddenProgress', "released`n")
 if (@((Get-HostResourceStatus -StatePath '$quotedState').records).Count -ne 0) {
   throw 'Console-only task kept its budget after explicit release while the owner remained alive.'
 }
@@ -185,13 +212,23 @@ if (@(`$script:hiddenSnapshot.processes | Where-Object { `$_.parent_pid -eq `$PI
 try {
   if (`$nextLease.status -ne 'acquired') { throw 'A new request remained blocked after console-only release.' }
 } finally { Exit-HostResourceStage -Lease `$nextLease }
+[IO.File]::AppendAllText('$quotedHiddenProgress', "next-request-released`n")
 "@
   $hiddenEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($hiddenCode))
   $hidden = Start-Process -FilePath (Get-Command pwsh).Source -WindowStyle Hidden -PassThru `
-    -ArgumentList @('-NoProfile','-EncodedCommand',$hiddenEncoded)
-  Assert-True ($hidden.WaitForExit(45000)) 'Hidden stage fixture did not finish.'
-  $hiddenFailure = if (Test-Path -LiteralPath $hiddenError) { Get-Content -LiteralPath $hiddenError -Raw } else { '' }
-  Assert-True ($hidden.ExitCode -eq 0) "Hidden stage could not transition with its own conhost child: $hiddenFailure"
+    -WorkingDirectory $testRoot -ArgumentList @('-NoProfile','-EncodedCommand',$hiddenEncoded)
+  try {
+    $hiddenFinished = $hidden.WaitForExit(45000)
+    $hiddenFailure = if (Test-Path -LiteralPath $hiddenError) { Get-Content -LiteralPath $hiddenError -Raw } else { '' }
+    $hiddenStages = if (Test-Path -LiteralPath $hiddenProgress) { Get-Content -LiteralPath $hiddenProgress -Raw } else { 'not-started' }
+    Write-Output "HIDDEN_FIXTURE_STAGES=$hiddenStages"
+    Assert-True $hiddenFinished "Hidden stage fixture did not finish. Stages: $hiddenStages Error: $hiddenFailure"
+    Assert-True ($hidden.ExitCode -eq 0) "Hidden stage could not transition with its own conhost child: $hiddenFailure Stages: $hiddenStages"
+  } finally {
+    # Reap only this fixture's process tree before deleting its private ledger.
+    if (-not $hidden.HasExited) { $hidden.Kill($true); $hidden.WaitForExit() }
+    $hidden.Dispose()
+  }
 
   # Independent contender, not a child claiming the same budget.
   $lease = Enter-HostExecutionLease -Role COMSOL -Stage solver -RunId 'test-listed-heavy'

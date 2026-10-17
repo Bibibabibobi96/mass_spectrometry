@@ -7,6 +7,12 @@
 `seeded_independent_gaussian_cylinder_v1` 的速度分布；调用方负责声明该动能对应哪个物理方向。
 默认 uniform 分支保持原序列不变，正式体积队列与受控参考队列继续分开。
 
+canonical `center_first_halton_cylinder_v1` 请求也接受
+`kinetic_energy={"distribution":"positive_truncated_gaussian","mean_ev":5,"sigma_ev":1}`。
+这两个参数是截断前正态分布的均值和标准差；通过条件逆CDF限制 `E>0`，不裁成零、不重抽，
+不强制有限样本的均值或方差恰好等于参数。首个中心诊断粒子保留请求均值，其余使用原母集Halton分位。
+位置、方向和ID不随能量分布改变，较小粒子表仍是相同母集的精确前缀。
+
 此目录拥有与项目、几何和求解器无关的离子释放采样、canonical CSV 和 receipt 身份。`release.py` 是 canonical
 状态物化的唯一公共入口，使用闭合的 `(geometry.shape, sampling.strategy)` 注册表分派；连续轴向体积源保留其
 既有的闭合 `(source_region_model, method)` key。未知几何、策略或连续源 key 均失败关闭，不使用插件发现或项目回调。需要保留既有求解器表序列的 sampler 在本目录显式具名，返回 solver-neutral 的
@@ -22,12 +28,19 @@ latent 或 phase-space 值，不绕过 canonical materialization 合同。
 `generate_center_axis_pair_halton_cylinder_phase_space`。它仅将粒子 2、3 固定为中心状态在指定轴的负、正边界，
 其余粒子继续使用相同 Halton 包络；因此受控坐标对可作诊断，最终统计仍使用完整束团。
 
-`cylinder` 由 [`cylinder.py`](cylinder.py) 实现两种完整圆柱体积策略：
+`cylinder` 由 [`cylinder.py`](cylinder.py) 实现三种完整圆柱体积策略：
 
 - `center_first_halton_cylinder_v1`：首粒子精确位于中心，后续粒子覆盖完整圆柱、能量和角度区间。只改变
   `particle_count` 时，较小表是同一母队列的精确前缀，适合 N=100/N=1000。
 - `seeded_independent_gaussian_cylinder_v1`：均匀空间圆柱与独立 Gaussian 三维速度；沿请求轴应用正速度截断。
   它表达某一时刻的源体积快照，不宣称已经经过下游场。
+- `center_first_halton_cylinder_thermal_transverse_v1`：沿 `geometry.axis` 正方向保留同一 base-7 正能量 Gaussian，
+  另两 Cartesian 速度分量分别为 `N(0,kBT/m)`，使用 base-11/base-13 正态分位，按横向坐标索引升序对应。
+  sampling 严格包含 `strategy`、`axial_kinetic_energy={distribution:positive_truncated_gaussian,mean_ev,sigma_ev}`
+  和正值 `transverse_temperature_k`；不接受方向、角宽或总动能参数。位置与旧 centre-first Halton 核一致，
+  首个中心诊断粒子横向速度为零，轴向能量为请求均值。增加横向热运动后总动能等于轴向能量加横向能量，
+  不重新归一总能量；有限低差异样本不强制均值零或方差恰好等于 `kBT/m`。N=10 是同一母群 N=100 的精确前缀。
+  质量和 Boltzmann 常数来自公共 particle physics 权威，温度只作为调用方冻结输入，本层不选择实际装置温度。
 
 [`mt19937_disk_cone_rf_phase.py`](mt19937_disk_cone_rf_phase.py) 注册 `disk` 的
 `mt19937_uniform_disk_filled_cone_rf_phase_v1` 策略。它保留 RF 多极杆家族源的五次 MT19937 抽样顺序和 CSV

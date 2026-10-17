@@ -1,14 +1,17 @@
-"""Incrementally register opted-in run directories in the capacity ledger.
+"""Register opted-in runs and execute explicitly approved lifecycle recovery.
 
-This adapter is deliberately small: it neither discovers historical runs nor
-deletes files.  The PowerShell run lifecycle calls it after package creation
-and after retention has completed for a terminal run.
+Normal registration never discovers or deletes historical runs. The separate
+misplaced-light recovery requires a complete sealed backup and exact owner
+approval; it does not enable automatic cleanup of retained light evidence.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -17,6 +20,9 @@ from common.contracts import capacity_ledger
 from common.contracts import capacity_protection
 from common.contracts.artifact_retention import classify_file
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
+from common.contracts.file_identity import canonical_json_sha256
+from common.contracts.verify_run_manifest import verify_record
+from common.contracts.write_run_manifest import file_record
 from common.contracts.solver_review_retirement import (
     RECEIPT_NAME, _assert_runtime_retirement_unprotected, verify_retirement,
 )
@@ -263,11 +269,18 @@ def _verify_retired_payload_remainder(
         raise ValueError("retirement remainder requires a pinned solver_review owner range")
     receipt_path = run_dir / RECEIPT_NAME
     receipt = _load_json(receipt_path, "retirement receipt")
-    if (receipt.get("retirement_mode") != "completed_experiment"
-            or receipt.get("owner") != owner
+    owner_completion = (receipt.get("retirement_mode") == "completed_experiment"
+                        and receipt.get("owner") == owner)
+    prepared_gui_supersession = (
+        receipt.get("prepared_gui_checkpoint") == {"writing_stopped": True}
+        and receipt.get("retirement_mode") is None
+        and receipt.get("target_terminal_status") == "checkpoint"
+        and config.get("project") == owner
+    )
+    if (not (owner_completion or prepared_gui_supersession)
             or Path(str(receipt.get("target_run_path", ""))).resolve() != run_dir
             or receipt.get("stopped_checkpoint_runtime") is not None):
-        raise ValueError("retirement remainder requires this owner's completed terminal experiment")
+        raise ValueError("retirement remainder requires this owner's completed terminal experiment or prepared GUI supersession")
 
     def inventory(value: object) -> dict[str, tuple[int, str]]:
         if not isinstance(value, list):
@@ -833,16 +846,180 @@ def resume_partial_retirements(artifact_root: Path) -> dict[str, int]:
     return {"completed_count": completed, "removed_bytes": removed_bytes, "blocked_count": blocked}
 
 
+def retire_misplaced_light_run(artifact_root: Path, run_config: Path, *,
+                               backup_manifest: Path, owner: str, apply: bool = False) -> dict[str, Any]:
+    """Retire only a duplicated-runs light package after a complete canonical backup.
+
+    This explicit owner operation preserves the erroneous ledger owner and class.
+    It neither relocates identities nor enables general light-evidence cleanup.
+    A durable exact-file journal makes interruption replay use the same approval.
+    """
+    root = artifact_root.resolve(strict=True)
+    config_path = run_config.absolute()
+    source, relative = capacity_ledger.capacity_object_path(root, config_path.parent)
+    parts = Path(relative).parts
+    if (config_path.name != "run_config.json" or len(parts) != 5
+            or parts[:1] != ("projects",) or parts[2:4] != ("runs", "runs")
+            or owner != parts[1]):
+        raise ValueError("misplaced recovery requires exact projects/<owner>/runs/runs/<run-id>")
+    backup_manifest = backup_manifest.resolve(strict=True)
+    backup_run, backup_relative = capacity_ledger.capacity_object_path(root, backup_manifest.parent)
+    if (backup_manifest.name != "run_manifest.json"
+            or Path(backup_relative).parts[:3] != ("projects", owner, "runs")
+            or len(Path(backup_relative).parts) != 4):
+        raise ValueError("misplaced backup must be a canonical same-project run")
+    repo = Path(__file__).resolve().parents[2]
+    # The public full verifier binds every backup input/output, not just a
+    # hand-authored inventory. No consumer projection is used for this proof.
+    subprocess.run([sys.executable, "-m", "common.contracts.verify_run_manifest", str(backup_manifest),
+                    "--require-project", owner, "--require-mode", "misplaced_light_run_backup",
+                    "--require-local-run-config"], cwd=repo, check=True, capture_output=True,
+                   text=True, encoding="utf-8", timeout=60)
+    backup_document = _load_json(backup_manifest, "backup manifest")
+    bound_records = [backup_document["run_config"], *backup_document.get("inputs", {}).values(),
+                     *backup_document.get("outputs", [])]
+    proof_path = backup_run / "results/misplaced_run_backup_receipt.json"
+    proof_record = next((r for r in bound_records if Path(r["path"]).resolve() == proof_path), None)
+    if proof_record is None:
+        raise ValueError("backup manifest does not bind its misplaced-run receipt")
+    proof = _load_json(proof_path, "misplaced backup receipt")
+    if (proof.get("schema_version") != 1 or proof.get("role") != "misplaced_light_run_backup"
+            or Path(proof["source_run"]).resolve() != source
+            or Path(proof["source_manifest"]["path"]).resolve() != source / "run_manifest.json"):
+        raise ValueError("misplaced backup source identity differs")
+    records = []
+    snapshots = {}
+    for item in proof["inventory"]:
+        name = item["path"]
+        if capacity_ledger._ledger_relative_path(name) != name or name in snapshots:
+            raise ValueError("misplaced backup inventory repeats or escapes its source")
+        copy_path = backup_run / "inputs/misplaced_run_snapshot" / name
+        record = item["backup_record"]
+        if (copy_path.resolve() != copy_path.absolute()
+                or Path(record["path"]).resolve() != copy_path.resolve()
+                or not any(r == record for r in bound_records)
+                or record["bytes"] != item["bytes"] or record["sha256"] != item["sha256"]):
+            raise ValueError("misplaced backup copy is not exactly manifest bound")
+        verify_record("misplaced backup file", record)
+        snapshots[name] = copy_path
+        records.append(dict(path=name, bytes=item["bytes"], sha256=item["sha256"]))
+    records.sort(key=lambda r: r["path"])
+    if not {"run_manifest.json", "run_config.json", "summary.json"}.issubset(snapshots):
+        raise ValueError("misplaced backup lacks the original run records")
+    archived_config = _load_json(snapshots["run_config.json"], "archived run config")
+    archived_manifest = _load_json(snapshots["run_manifest.json"], "archived run manifest")
+    original_manifest = next(r for r in records if r["path"] == "run_manifest.json")
+    if (any(archived_config.get(k) != archived_manifest.get(k) for k in ("project", "run_id", "mode"))
+            or archived_config.get("project") != owner or archived_config.get("run_id") != source.name
+            or archived_manifest.get("status") not in TERMINAL_STATUSES
+            or archived_config.get("artifact_retention", {}).get("class") != "compact"
+            or any(proof["source_manifest"].get(k) != original_manifest[k] for k in ("bytes", "sha256"))):
+        raise ValueError("misplaced source scientific owner, terminal state or manifest differs")
+    total = sum(r["bytes"] for r in records)
+    budget = archived_config.get("capacity_ledger_lifecycle", {}).get("light_evidence_budget_bytes", 0)
+    if total > budget or any(classify_file(source / r["path"], bytes_count=r["bytes"]) in HEAVY_RETENTION_ROLES for r in records):
+        raise ValueError("misplaced source is not a complete light-evidence package")
+    identity = canonical_json_sha256(dict(source=relative, backup=file_record(backup_manifest), files=records))
+    journal_path = root / "common/capacity_disposal_receipts" / f"misplaced_light_run_{identity}.json"
+    with capacity_protection.capacity_decision_lock(root):
+        ledger = capacity_ledger.load_capacity_ledger(root)
+        if ledger is None:
+            raise ValueError("misplaced recovery requires a valid capacity ledger")
+        entry = next((e for e in ledger["objects"] if e["path"] == relative), None)
+        journal = _load_json(journal_path, "misplaced recovery journal") if journal_path.exists() else None
+        if journal is not None and journal.get("status") not in {"pending", "complete"}:
+            raise ValueError("misplaced recovery journal has an invalid state")
+        if (entry is None or entry["class"] != "light_evidence" or entry.get("owner") != "runs"
+                or entry.get("pin") is not False or entry.get("consumers") or entry["bytes"] != total
+                or entry["status"] not in ({"ready"} if journal is None else {"ready", "retirement_pending", "retired"})):
+            raise ValueError("misplaced ledger identity, original owner or state differs")
+        if any(e.get("path") != relative and any(c == relative or c.startswith(relative + "/")
+               for c in e.get("consumers", [])) for e in ledger["objects"]):
+            raise ValueError("misplaced source has a registered consumer")
+        capacity_ledger._assert_unleased(root, source)
+        approval = dict(schema_version=1, role="misplaced_light_run_retirement", disposition_id=identity,
+                        source_path=relative, scientific_owner=owner, original_ledger_owner="runs",
+                        source_manifest=proof["source_manifest"], backup_manifest=file_record(backup_manifest),
+                        backup_receipt=file_record(proof_path), files=records, bytes=total)
+        if journal is not None and any(journal.get(k) != v for k, v in approval.items()):
+            raise ValueError("misplaced recovery approval differs from its pending journal")
+        if journal is None:
+            if source.is_symlink() or not source.is_dir():
+                raise ValueError("misplaced source is not a regular existing run")
+            subprocess.run([sys.executable, "-m", "common.contracts.verify_run_manifest", str(source / "run_manifest.json"),
+                            "--require-status", archived_manifest["status"], "--require-project", owner,
+                            "--require-run-id", source.name, "--require-local-run-config"], cwd=repo,
+                           check=True, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            size, inventory = _inventory(source)
+            if size != total or {r["path"]: r["bytes"] for r in inventory} != {r["path"]: r["bytes"] for r in records}:
+                raise ValueError("misplaced original content is omitted or changed")
+        existing = [r for r in records if (source / r["path"]).exists()]
+        if source.exists() and {r["path"] for r in _inventory(source)[1]} != {r["path"] for r in existing}:
+            raise ValueError("misplaced source gained unapproved content")
+        for record in existing:
+            if (source / record["path"]).resolve() != (source / record["path"]).absolute():
+                raise ValueError("misplaced original file traverses a link")
+            verify_record("misplaced original file", {**record, "path": str(source / record["path"])})
+        if not apply:
+            return dict(approval, status="planned", dry_run=True, journal_path=str(journal_path))
+        if journal is None:
+            journal = dict(approval, status="pending")
+            write_json_atomic(journal_path, journal)
+        if entry["status"] == "retired":
+            if existing or source.exists():
+                raise ValueError("retired misplaced package reappeared")
+            if journal["status"] != "complete":
+                journal["status"] = "complete"
+                write_json_atomic(journal_path, journal)
+            return dict(journal, replayed=True)
+        if entry["status"] == "ready":
+            entry["status"] = "retirement_pending"
+            write_json_atomic(capacity_ledger.resolve_ledger_path(root), ledger)
+        for _ in remove_recorded_files(source, records, missing_ok=True):
+            pass
+        if source.exists():
+            for directory in sorted((p for p in source.rglob("*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+                directory.rmdir()
+            source.rmdir()
+        if source.parent.exists() and not any(source.parent.iterdir()):
+            # Only the proven duplicated ``runs/runs`` container, never the
+            # canonical runs directory or a nonempty sibling collection.
+            source.parent.rmdir()
+        entry["status"] = "retired"
+        entry["retired_at_utc"] = datetime.now(timezone.utc).isoformat()
+        ledger["resident_bytes"] -= total
+        if not capacity_ledger._is_valid_capacity_ledger(root, ledger):
+            raise ValueError("misplaced retirement would invalidate ledger")
+        write_json_atomic(capacity_ledger.resolve_ledger_path(root), ledger)
+        journal["status"] = "complete"
+        write_json_atomic(journal_path, journal)
+        return journal
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--action", choices=("register-writing-range", "register-writing", "assert-retention", "finalize-ready", "seal-checkpoint", "seal-stopped-payload"), required=True)
+    parser.add_argument("--action", choices=("register-writing-range", "register-writing", "assert-retention", "finalize-ready", "seal-checkpoint", "seal-stopped-payload", "retire-misplaced-light-run"), required=True)
     parser.add_argument("--artifact-root", type=Path, required=True)
     parser.add_argument("--run-config", type=Path)
     parser.add_argument("--run-directory", type=Path)
     parser.add_argument("--owner")
     parser.add_argument("--confirm-writing-stopped", action="store_true")
     parser.add_argument("--retention-reason")
+    parser.add_argument("--backup-manifest", type=Path)
+    parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
+    if args.action == "retire-misplaced-light-run":
+        if args.run_config is None or args.backup_manifest is None or not args.owner or args.run_directory is not None:
+            parser.error("misplaced recovery requires run-config, backup-manifest and scientific owner")
+        if args.confirm_writing_stopped or args.retention_reason:
+            parser.error("misplaced recovery cannot change retention or checkpoint state")
+        if args.apply and not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
+            parser.error("--apply requires the shared HostExecutionLease")
+        print(json.dumps(retire_misplaced_light_run(args.artifact_root, args.run_config,
+            backup_manifest=args.backup_manifest, owner=args.owner, apply=args.apply), indent=2))
+        return 0
+    if args.apply or args.backup_manifest is not None:
+        parser.error("apply and backup-manifest require explicit misplaced-light recovery")
     action = {
         "register-writing-range": register_writing_range,
         "register-writing": register_writing,

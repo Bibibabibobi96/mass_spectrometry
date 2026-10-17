@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ from common.contracts.run_capacity_lifecycle import (
     resume_partial_retirements,
     resume_terminal_runs,
     seal_checkpoint,
+    retire_misplaced_light_run,
 )
 from common.contracts.solver_review_retirement import (
     RECEIPT_NAME, apply_retirement, plan_retirement,
@@ -160,6 +162,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             old_entry = ledger_before["objects"][0]
             with self.assertRaisesRegex(ValueError, "cannot become light_evidence"):
                 finalize_ready(root, config)
+
             kwargs = dict(owner="p", writing_stopped=True, retain_payload=True,
                           retention_reason="retain failed preparation evidence")
             command = [sys.executable, "-m", "common.contracts.run_capacity_lifecycle",
@@ -181,6 +184,57 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "cannot become light_evidence"):
                 finalize_ready(root, config)
 
+    def test_prepared_gui_retirement_remainder_preserves_checkpoint_and_owner_duties(self) -> None:
+        self._check_prepared_gui_retirement_remainder(owner_exit=False)
+
+    def test_abandoned_prepared_gui_remainder_preserves_checkpoint_and_owner_duties(self) -> None:
+        self._check_prepared_gui_retirement_remainder(owner_exit=True)
+
+    def _check_prepared_gui_retirement_remainder(self, *, owner_exit: bool) -> None:
+        # Reuse the real prepared/unflown family fixture and actual retirement,
+        # rather than fabricating a successful receipt or mocking its verifier.
+        from common.contracts.test_solver_review_retirement import SolverReviewRetirementTest
+        fixture = SolverReviewRetirementTest()
+        fixture.setUp()
+        self.addCleanup(fixture.tearDown)
+        for run in (fixture.target, fixture.replacement):
+            fixture._prepared_gui(run)
+        root, run = fixture.artifacts, fixture.target
+        config = run / "run_config.json"
+        document = json.loads(config.read_text())
+        document["capacity_ledger_lifecycle"] = {
+            "schema_version": 1, "enabled": True, "artifact_root": str(root),
+            "light_evidence_budget_bytes": 1,
+        }
+        config.write_text(json.dumps(document))
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["run_config"].update(bytes=config.stat().st_size,
+            sha256=hashlib.sha256(config.read_bytes()).hexdigest().upper())
+        manifest_path.write_text(json.dumps(manifest))
+        register_writing(root, config)
+        kwargs = dict(owner="p", writing_stopped=True, retain_payload=True,
+                      retention_reason="retain user workbench")
+        seal_checkpoint(root, config, **kwargs)
+        original_entry = dict(load_capacity_ledger(root)["objects"][0])
+        with patch("common.contracts.solver_review_retirement._git_document_references", return_value=[]):
+            plan = (fixture._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True)
+                    if owner_exit else fixture._gui_plan())
+            with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                apply_retirement(plan)
+        before = {str(path.relative_to(run)): path.read_bytes() for path in run.rglob("*") if path.is_file()}
+        with self.assertRaisesRegex(ValueError, "not writing or already sealed"):
+            seal_checkpoint(root, config, **{**kwargs, "retention_reason": "different decision"})
+        result = seal_checkpoint(root, config, **kwargs)
+        expected = sum(map(len, before.values()))
+        self.assertEqual(result["bytes"], expected)
+        self.assertEqual(result["run_status"], "checkpoint")
+        ledger = load_capacity_ledger(root)
+        self.assertEqual(ledger["resident_bytes"], expected)
+        self.assertEqual(ledger["objects"][0], {**original_entry, "bytes": expected})
+        self.assertEqual(seal_checkpoint(root, config, **kwargs), result)
+        self.assertEqual(load_capacity_ledger(root), ledger)
+        self.assertEqual(before, {str(path.relative_to(run)): path.read_bytes() for path in run.rglob("*") if path.is_file()})
     def test_retired_payload_remainder_rejects_unexplained_or_unverified_changes(self) -> None:
         cases = ("missing_receipt", "pending_receipt", "owner", "manifest", "preserved_content",
                  "extra_file", "missing_evidence", "original_inventory", "removed_bytes", "ledger_bytes",
@@ -912,6 +966,160 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(resume_partial_retirements(root), {
                 "completed_count": 0, "removed_bytes": 0, "blocked_count": 0,
             })
+
+
+class MisplacedLightRunRecoveryTests(unittest.TestCase):
+    def fixture(self, root: Path) -> tuple[Path, Path, Path]:
+        from common.contracts.write_run_manifest import build_run_manifest, file_record
+        source = root / "projects/p/runs/runs/20261017_000000__analysis__python__misplaced"
+        source.mkdir(parents=True)
+        config = dict(schema_version=2, project="p", run_id=source.name, mode="target_authoring", inputs={},
+                      artifact_retention=dict(policy_version=1, **{"class": "compact"}, reason=None),
+                      capacity_ledger_lifecycle=dict(schema_version=1, enabled=True, artifact_root=str(root),
+                                                     light_evidence_budget_bytes=26214400))
+        (source / "run_config.json").write_text(json.dumps(config))
+        (source / "summary.json").write_text('{"status":"success"}')
+        (source / "result.json").write_text('{"target":340}')
+        (source / "retention_actions.json").write_text(json.dumps(dict(schema_version=1,
+            role="artifact_retention_actions", status="complete", retention_class="compact")))
+        manifest = build_run_manifest(source / "run_config.json", "success",
+                                      output_paths=[source / n for n in ("summary.json", "result.json", "retention_actions.json")])
+        (source / "run_manifest.json").write_text(json.dumps(manifest))
+        backup = root / "projects/p/runs/20261017_000001__analysis__python__backup"
+        snapshot = backup / "inputs/misplaced_run_snapshot"
+        shutil.copytree(source, snapshot)
+        (backup / "results").mkdir()
+        inventory = [dict(path=p.name, bytes=p.stat().st_size, sha256=file_record(p)["sha256"],
+                          backup_record=file_record(snapshot / p.name)) for p in sorted(source.iterdir())]
+        (backup / "results/misplaced_run_backup_receipt.json").write_text(json.dumps(dict(schema_version=1,
+            role="misplaced_light_run_backup", source_run=str(source), source_manifest=file_record(source / "run_manifest.json"),
+            inventory=inventory)))
+        backup_config = dict(schema_version=1, project="p", run_id=backup.name, mode="misplaced_light_run_backup",
+                             inputs={p.name: str(p) for p in snapshot.iterdir()})
+        (backup / "run_config.json").write_text(json.dumps(backup_config))
+        self.seal_backup(backup)
+        total = sum(p.stat().st_size for p in source.iterdir())
+        initialize_capacity_ledger(root, objects=[dict(path=source.relative_to(root).as_posix(),
+            **{"class": "light_evidence"}, bytes=total, status="ready", pin=False, owner="runs")])
+        return source, backup, backup / "run_manifest.json"
+
+    @staticmethod
+    def seal_backup(backup: Path) -> None:
+        from common.contracts.write_run_manifest import build_run_manifest
+        manifest = build_run_manifest(backup / "run_config.json", "success",
+                                      output_paths=[backup / "results/misplaced_run_backup_receipt.json"])
+        (backup / "run_manifest.json").write_text(json.dumps(manifest))
+
+    def test_exact_backup_dry_run_apply_and_replay_preserve_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            source, backup, manifest = self.fixture(root)
+            original = {p.name: p.read_bytes() for p in source.iterdir()}
+            before = load_capacity_ledger(root)
+            result = retire_misplaced_light_run(root, source / "run_config.json", backup_manifest=manifest, owner="p")
+            self.assertTrue(result["dry_run"])
+            self.assertFalse(Path(result["journal_path"]).exists())
+            self.assertEqual(load_capacity_ledger(root), before)
+            self.assertEqual({p.name: p.read_bytes() for p in source.iterdir()}, original)
+            result = retire_misplaced_light_run(root, source / "run_config.json", backup_manifest=manifest, owner="p", apply=True)
+            self.assertEqual(result["status"], "complete")
+            self.assertFalse(source.exists())
+            self.assertFalse(source.parent.exists())
+            ledger = load_capacity_ledger(root)
+            self.assertEqual(ledger["resident_bytes"], 0)
+            self.assertEqual(ledger["objects"][0]["owner"], "runs")
+            self.assertEqual(ledger["objects"][0]["class"], "light_evidence")
+            self.assertEqual({p.name: p.read_bytes() for p in (backup / "inputs/misplaced_run_snapshot").iterdir()}, original)
+            replay = retire_misplaced_light_run(root, source / "run_config.json", backup_manifest=manifest, owner="p", apply=True)
+            self.assertTrue(replay["replayed"])
+            self.assertEqual(load_capacity_ledger(root), ledger)
+
+    def test_rejects_ordinary_scope_owner_changed_content_incomplete_backup_and_protection(self):
+        for scenario in ("ordinary", "owner", "ledger_owner", "changed", "omitted", "backup_changed", "pinned", "consumer", "lease"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                source, backup, manifest = self.fixture(root)
+                owner, config_path = "p", source / "run_config.json"
+                if scenario == "ordinary":
+                    config_path = source.parent.parent / source.name / "run_config.json"
+                elif scenario == "owner":
+                    owner = "other"
+                elif scenario in ("ledger_owner", "pinned"):
+                    ledger = load_capacity_ledger(root)
+                    if scenario == "ledger_owner":
+                        ledger["objects"][0]["owner"] = "p"
+                    else:
+                        ledger["objects"][0].update(pin=True, pin_reason="keep")
+                    from common.contracts.recorded_file_removal import write_json_atomic
+                    write_json_atomic(capacity_ledger.resolve_ledger_path(root), ledger)
+                elif scenario == "changed":
+                    (source / "result.json").write_text('{"target":360}')
+                elif scenario == "omitted":
+                    proof_path = backup / "results/misplaced_run_backup_receipt.json"
+                    proof = json.loads(proof_path.read_text())
+                    proof["inventory"] = [r for r in proof["inventory"] if r["path"] != "result.json"]
+                    proof_path.write_text(json.dumps(proof))
+                    self.seal_backup(backup)
+                elif scenario == "backup_changed":
+                    (backup / "inputs/misplaced_run_snapshot/result.json").write_text("changed")
+                elif scenario == "consumer":
+                    capacity_ledger.record_capacity_object(root, path="projects/p/runs/consumer", object_class="light_evidence",
+                        bytes_count=0, status="writing", owner="p", recovery_reason="active", review_deadline="2099-01-01",
+                        consumers=[source])
+                else:
+                    capacity_protection.create_capacity_protection_lease(root, lease_id="protected", owner="test", ttl_seconds=600,
+                        committed_new_bytes=0, protected_paths=[source])
+                before = capacity_ledger.resolve_ledger_path(root).read_bytes()
+                with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                    retire_misplaced_light_run(root, config_path, backup_manifest=manifest, owner=owner, apply=True)
+                self.assertTrue(source.exists())
+                self.assertEqual(capacity_ledger.resolve_ledger_path(root).read_bytes(), before)
+
+    def test_partial_deletion_and_publication_interruptions_resume_without_resetting_bytes(self):
+        from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic
+        for scenario in ("remove", "ledger_pending", "ledger_final", "journal_complete"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                source, _, manifest = self.fixture(root)
+                initial_bytes = load_capacity_ledger(root)["resident_bytes"]
+                def interrupted_remove(directory, records, **kwargs):
+                    next(remove_recorded_files(directory, records, **kwargs))
+                    raise OSError("injected removal interruption")
+                    yield  # Iterator protocol matches the public executor.
+                def interrupted_write(path, document):
+                    if ((scenario == "ledger_pending" and path == capacity_ledger.resolve_ledger_path(root)
+                         and document["objects"][0]["status"] == "retirement_pending")
+                        or (scenario == "ledger_final" and path == capacity_ledger.resolve_ledger_path(root)
+                            and document["objects"][0]["status"] == "retired")
+                        or (scenario == "journal_complete" and document.get("role") == "misplaced_light_run_retirement"
+                            and document.get("status") == "complete")):
+                        raise OSError("injected publication interruption")
+                    write_json_atomic(path, document)
+                with patch("common.contracts.run_capacity_lifecycle.write_json_atomic", side_effect=interrupted_write), \
+                     patch("common.contracts.run_capacity_lifecycle.remove_recorded_files",
+                           side_effect=interrupted_remove if scenario == "remove" else remove_recorded_files):
+                    with self.assertRaises(OSError):
+                        retire_misplaced_light_run(root, source / "run_config.json", backup_manifest=manifest, owner="p", apply=True)
+                self.assertIn(load_capacity_ledger(root)["resident_bytes"], (initial_bytes, 0))
+                result = retire_misplaced_light_run(root, source / "run_config.json", backup_manifest=manifest, owner="p", apply=True)
+                self.assertEqual(result["status"], "complete")
+                self.assertEqual(load_capacity_ledger(root)["resident_bytes"], 0)
+                self.assertFalse(source.exists())
+
+    def test_public_cli_requires_explicit_action_and_host_lease_for_apply(self):
+        from common.contracts.run_capacity_lifecycle import main
+        arguments = ["lifecycle", "--action", "retire-misplaced-light-run", "--artifact-root", "unused",
+                     "--run-config", "config.json", "--backup-manifest", "backup.json", "--owner", "p"]
+        with patch.object(sys, "argv", arguments), patch(
+                "common.contracts.run_capacity_lifecycle.retire_misplaced_light_run", return_value={}) as retire:
+            self.assertEqual(main(), 0)
+            self.assertFalse(retire.call_args.kwargs["apply"])
+        with patch.object(sys, "argv", arguments + ["--apply"]), patch.dict(os.environ, {
+                "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": ""}), patch(
+                "common.contracts.run_capacity_lifecycle.retire_misplaced_light_run") as retire:
+            with self.assertRaises(SystemExit):
+                main()
+            retire.assert_not_called()
 
 
 if __name__ == "__main__":

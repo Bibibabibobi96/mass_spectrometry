@@ -303,7 +303,7 @@ def _ledger_candidates(
             "disposition_id": None if disposition is None else disposition["id"],
             "manager": item.get("manager"),
             "generation": item.get("identity"),
-            "cache_key": target.name.lower() if object_class == "published_cache" else None,
+            "cache_key": target.name.upper() if object_class == "published_cache" else None,
             "class": item["class"], "bytes": int(item["bytes"]),
             "timestamp": float(item.get("last_used_epoch", 0) or 0),
             "eviction_order": -1 if disposition else eviction_order[item["class"]],
@@ -1467,6 +1467,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-root", required=True, type=Path)
     actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--restore-retired-disposition-receipt", type=Path)
+    parser.add_argument("--expected-ledger-sha256")
+    parser.add_argument("--expected-receipt-sha256")
     actions.add_argument("--create-protection-lease")
     actions.add_argument("--renew-protection-lease")
     actions.add_argument("--delete-protection-lease")
@@ -1504,6 +1507,18 @@ def main() -> None:
         target_gib = args.maintenance_target_gib
     if args.apply and not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
         parser.error("--apply requires the shared HostExecutionLease")
+    if args.restore_retired_disposition_receipt is not None:
+        if (not args.expected_ledger_sha256 or not args.expected_receipt_sha256
+                or args.capacity_ledger is not None or args.maintenance_target_gib is not None):
+            parser.error("retired disposition recovery requires explicit SHA identities and canonical ledger")
+        result = capacity_ledger.restore_retired_disposition_paths(
+            args.artifact_root, receipt_path=args.restore_retired_disposition_receipt,
+            expected_ledger_sha256=args.expected_ledger_sha256,
+            expected_receipt_sha256=args.expected_receipt_sha256, apply=args.apply)
+        print(json.dumps(result, indent=2))
+        return
+    if args.expected_ledger_sha256 or args.expected_receipt_sha256:
+        parser.error("expected SHA identities require retired disposition recovery")
     try:
         lease = _lease_action(args, parser)
         if lease is not None:

@@ -62,6 +62,7 @@ def _load_run(
     allow_legacy_initialization_summary: bool = False,
     expected_run_id: str | None = None,
     stopped_checkpoint_runtime: bool = False,
+    prepared_gui_checkpoint: bool = False,
 ) -> dict[str, Any]:
     required = {name: _json(run / name) for name in ("run_config.json", "summary.json", "run_manifest.json")}
     config, summary, manifest = required.values()
@@ -78,8 +79,9 @@ def _load_run(
         and manifest_status == "success"
         and summary == LEGACY_INITIALIZATION_SUMMARY
     )
+    prepared_gui_summary = prepared_gui_checkpoint and manifest_status == "checkpoint" and summary_status == "gui_replay_prepared"
     if manifest_status not in allowed or (
-        summary_status != manifest_status and not legacy_initialization_summary
+        summary_status != manifest_status and not legacy_initialization_summary and not prepared_gui_summary
     ):
         expected = "/".join(sorted(allowed))
         raise RetirementError(
@@ -100,6 +102,15 @@ def _load_run(
         raise RetirementError(f"run is not solver_review: {run_id}")
     if manifest_retention.class_id != required_class:
         raise RetirementError(f"manifest retention differs: {run_id}")
+    if prepared_gui_checkpoint:
+        parameters = config.get("parameters", {})
+        if (not prepared_gui_summary or parameters.get("workflow") != "native_gui_replay"
+                or parameters.get("manual_gui_confirmed") is not False
+                or parameters.get("native_field_construction") != "private_refine_and_native_IOB_prepared_not_flown"
+                or summary.get("gui_fly_completed") is not False
+                or summary.get("trajectory_equivalence_verified") is not False
+                or summary.get("field_construction") != "new_private_refine_from_frozen_GEM"):
+            raise RetirementError("prepared GUI retirement requires explicit unflown native preparation evidence")
     return {
         "dir": run,
         "config": config,
@@ -118,6 +129,45 @@ def _recorded_at(run: dict[str, Any]) -> datetime:
     if value.tzinfo is None:
         raise RetirementError("manifest recorded_at_utc must be timezone-aware")
     return value.astimezone(timezone.utc)
+
+
+def _prepared_gui_inventory(run: dict[str, Any], records: dict[Path, dict[str, Any]]) -> None:
+    """Require a sealed local GEM/IOB and numbered native family; no Fly outputs."""
+    local = {path: item for path, item in records.items() if path.is_relative_to(run["dir"])}
+    controllers = [path for path in local if path.suffix.lower() == ".pa#"]
+    if not controllers:
+        raise RetirementError("prepared GUI lacks a sealed native field family")
+    for controller in controllers:
+        stem = controller.with_suffix("")
+        if not all(stem.with_suffix(suffix) in local for suffix in (".gem", ".iob", ".pa0", ".pa1")):
+            raise RetirementError("prepared GUI native family lacks sealed GEM/IOB/controller/responses")
+        indices = sorted(int(path.suffix[3:]) for path in local
+                         if path.parent == controller.parent and path.stem == controller.stem
+                         and path.suffix.startswith(".pa") and path.suffix[3:].isdigit())
+        if indices != list(range(len(indices))):
+            raise RetirementError("prepared GUI native response inventory is not contiguous")
+    if any(classify_file(path, bytes_count=item["bytes"]) == "dense_trajectory"
+           and "inputs" not in path.relative_to(run["dir"]).parts for path, item in local.items()):
+        raise RetirementError("prepared GUI contains trajectory outputs; unflown state is uncertain")
+    parameters = run["config"]["parameters"]
+    baseline = [path for path in local if path.name == "baseline_manifest.json"]
+    if len(baseline) != 1:
+        raise RetirementError("prepared GUI lacks its unique frozen scientific source manifest")
+    source = _json(baseline[0])
+    if (file_sha256(baseline[0]) != str(parameters.get("baseline_manifest_sha256", "")).upper()
+            or source.get("run_id") != Path(str(parameters.get("baseline_run", ""))).name
+            or source.get("project") != run["config"].get("project")
+            or source.get("status") not in {"success", "failed"}):
+        raise RetirementError("prepared GUI frozen scientific source identity differs")
+
+
+def _prepared_gui_scope(document: dict[str, Any]) -> bool:
+    value = document.get("prepared_gui_checkpoint")
+    if value is None:
+        return False
+    if value != {"writing_stopped": True} or document.get("retirement_mode") not in {None, "completed_experiment"}:
+        raise RetirementError("invalid prepared GUI checkpoint retirement scope")
+    return True
 
 
 def _git_document_references(repository: Path, run_id: str) -> list[str]:
@@ -144,6 +194,13 @@ def structured_target_references(value: Any, target: Path, run_id: str) -> set[s
     normalized_run_id = run_id.casefold()
     target_path = target.resolve().as_posix().rstrip("/").casefold()
     prefixes = (f"{target_path}/", f"/runs/{normalized_run_id}/")
+    return _structured_target_references(value, normalized_run_id, target_path, prefixes)
+
+
+def _structured_target_references(
+    value: Any, normalized_run_id: str, target_path: str, prefixes: tuple[str, str],
+) -> set[str]:
+    """Match one document against a target already resolved by this scan."""
 
     def references(member: Any) -> set[str]:
         if isinstance(member, dict):
@@ -191,8 +248,15 @@ def _downstream_references(
     removable = {posixpath.normpath(item).casefold() for item in removable_paths}
     preserved = {posixpath.normpath(item).casefold() for item in preserved_paths}
     stopped = {Path(item["run_path"]).resolve() for item in approved_stopped_consumers}
+    resolved_target = target.resolve()
+    target_path = resolved_target.as_posix().rstrip("/").casefold()
+    normalized_run_id = run_id.casefold()
+    prefixes = (f"{target_path}/", f"/runs/{normalized_run_id}/")
     for run_dir in artifact_root.glob("projects/*/runs/*"):
-        if not run_dir.is_dir() or run_dir.resolve() == target.resolve():
+        if not run_dir.is_dir():
+            continue
+        resolved_run = run_dir.resolve()
+        if resolved_run == resolved_target:
             continue
         path = run_dir / "run_config.json"
         manifest_path = run_dir / "run_manifest.json"
@@ -207,7 +271,7 @@ def _downstream_references(
         category = (
             "historical" if manifest_status in TERMINAL_STATUSES else "active"
         )
-        explicitly_stopped = run_dir.resolve() in stopped
+        explicitly_stopped = resolved_run in stopped
         if explicitly_stopped:
             category = "historical"
         config: dict[str, Any] | None = None
@@ -253,9 +317,9 @@ def _downstream_references(
                     )
         configured = set()
         if config is not None:
-            configured.update(structured_target_references(config, target, run_id))
+            configured.update(_structured_target_references(config, normalized_run_id, target_path, prefixes))
         if manifest is not None:
-            configured.update(structured_target_references(manifest, target, run_id))
+            configured.update(_structured_target_references(manifest, normalized_run_id, target_path, prefixes))
         for relative in sorted(configured):
             item = {
                 "run_config_path": str(path),
@@ -598,6 +662,7 @@ def _topology_compatible(
     replacement: dict[str, Any],
     required_input_roles: Iterable[str],
     input_role_mappings: Iterable[tuple[str, str]],
+    *, prepared_gui_checkpoint: bool = False,
 ) -> dict[str, Any]:
     for field in ("project", "mode"):
         if target["config"].get(field) != replacement["config"].get(field):
@@ -662,11 +727,40 @@ def _topology_compatible(
         "replacement_role_superset": required_roles.issubset(replacement_roles),
         "verified_input_role_mappings": verified_mappings,
         "semantics": (
+            "same project/mode and caller-declared preparation roles; independently validated newer "
+            "unflown GUI replaces the obsolete preparation; scientific inputs and geometry may differ"
+            if prepared_gui_checkpoint else
             "same project/mode, caller-declared compatibility input roles, and "
             "identity-equal explicitly mapped legacy roles; "
             "domain-specific topology semantics remain outside the common retirement layer"
         ),
     }
+
+
+def _selected_heavy_paths(value: Iterable[str] | None) -> list[str] | None:
+    """Validate an explicit owner selection without inferring scientific roles."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        raise RetirementError("selected heavy paths must be a collection")
+    paths = list(value)
+    if (not paths or any(not isinstance(p, str) or not p or "\\" in p
+            or Path(p).is_absolute() or ":" in p or p != posixpath.normpath(p)
+            or any(part in {"", ".", ".."} for part in p.split("/")) for p in paths)
+            or len({p.casefold() for p in paths}) != len(paths)):
+        raise RetirementError("selected heavy paths must be nonempty unique canonical run-relative paths")
+    return sorted(paths)
+
+
+def _selected_heavy_records(inventory: list[dict[str, Any]], selected: list[str] | None) -> list[dict[str, Any]]:
+    heavy = [item for item in inventory if item["retention_role"] in HEAVY_ROLES]
+    if selected is None:
+        return heavy
+    chosen = [item for item in heavy if item["path"] in selected]
+    if ({item["path"] for item in chosen} != set(selected)
+            or any(not item.get("manifest_sha256") or not item.get("manifest_role") for item in chosen)):
+        raise RetirementError("selected paths must identify sealed governed heavy payload only")
+    return chosen
 
 
 def plan_retirement(
@@ -676,14 +770,22 @@ def plan_retirement(
     *, owner: str = "", owner_abandonment_reason: str = "",
     runtime_checkpoint_path: Path | None = None, writing_stopped: bool = False,
     approved_stopped_consumers: Iterable[Path] = (),
+    prepared_gui_checkpoint: bool = False,
+    selected_heavy_paths: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     """Plan supersession or owner-approved completion; retain all small evidence."""
     owner_mode = bool(owner or owner_abandonment_reason)
     runtime_mode = runtime_checkpoint_path is not None
+    gui_mode = prepared_gui_checkpoint
+    selected = _selected_heavy_paths(selected_heavy_paths)
+    if selected is not None and (not owner_mode or runtime_mode or gui_mode):
+        raise RetirementError("selected heavy scope requires ordinary owner completion")
+    if gui_mode and (runtime_mode or not writing_stopped):
+        raise RetirementError("prepared GUI retirement requires explicit scope and confirmed stopped writing")
     approved_stopped_consumers = tuple(approved_stopped_consumers)
     if approved_stopped_consumers and not (owner_mode and runtime_mode and writing_stopped):
         raise RetirementError("stopped consumer approval requires the confirmed owner runtime scope")
-    if (runtime_mode and (not owner_mode or not writing_stopped)) or (writing_stopped and not runtime_mode):
+    if (runtime_mode and (not owner_mode or not writing_stopped)) or (writing_stopped and not (runtime_mode or gui_mode)):
         raise RetirementError("runtime retirement requires explicit owner completion and confirmed stopped writing")
     compatibility_input_roles = tuple(compatibility_input_roles)
     compatibility_input_role_mappings = tuple(compatibility_input_role_mappings)
@@ -718,21 +820,30 @@ def plan_retirement(
         requested_runtime = _under(runtime_checkpoint_path, target_run) if runtime_mode else None
         if prior_runtime != requested_runtime:
             raise RetirementError("pending retirement runtime scope changed")
+        if _prepared_gui_scope(prior) != gui_mode:
+            raise RetirementError("pending retirement prepared GUI scope changed")
+        if prior.get("selected_heavy_paths") != selected:
+            raise RetirementError("pending retirement selected heavy scope changed")
         if prior.get("approved_stopped_consumers", []) != approved_consumers:
             raise RetirementError("pending retirement stopped consumer list or identity changed")
     target = _load_run(
         target_run,
-        allowed_statuses=("checkpoint",) if runtime_mode else (
+        allowed_statuses=("checkpoint",) if runtime_mode or gui_mode else (
             ("success", "failed", "interrupted") if owner_mode else ("success", "failed")),
         label="target",
         allow_legacy_initialization_summary=not owner_mode,
         stopped_checkpoint_runtime=runtime_mode,
+        prepared_gui_checkpoint=gui_mode,
     )
     if owner_mode and target["config"].get("project") != owner.strip():
         raise RetirementError("completed experiment owner differs from target project")
-    replacement = _load_run(replacement_run, label="replacement") if replacement_run else None
+    replacement = _load_run(replacement_run, label="replacement",
+                            allowed_statuses=("checkpoint",) if gui_mode else ("success",),
+                            prepared_gui_checkpoint=gui_mode) if replacement_run else None
     if replacement:
-        _manifest_records(replacement)
+        replacement_records = _manifest_records(replacement)
+        if gui_mode:
+            _prepared_gui_inventory(replacement, replacement_records)
     if prior_pending_sha and (
         prior["target_manifest"]["sha256"] != file_sha256(target_run / "run_manifest.json")
         or prior.get("owner", "") != owner.strip()
@@ -752,19 +863,27 @@ def plan_retirement(
     leases = protection.load_capacity_protection_leases(artifact_root)
     if protection.path_is_protected(target_run, leases["protected_paths"]):
         raise RetirementError("target is covered by an active capacity protection lease")
-    if runtime_mode:
+    if runtime_mode or gui_mode:
         _assert_runtime_retirement_unprotected(artifact_root, target_run)
+    if runtime_mode:
         runtime_checkpoint_path = _under(runtime_checkpoint_path, target_run)
     topology = _topology_compatible(
         target, replacement, compatibility_input_roles,
         compatibility_input_role_mappings,
+        prepared_gui_checkpoint=gui_mode,
     ) if replacement else None
     inventory = _file_inventory(
         target, retired_paths=[_under(target_run / item["path"], target_run) for item in prior_removed_missing],
-        inherit_heavy_identity=owner_mode,
+        inherit_heavy_identity=owner_mode or gui_mode,
         runtime_checkpoint_path=runtime_checkpoint_path,
     )
-    removed_current = [item for item in inventory if item["retention_role"] in HEAVY_ROLES]
+    if gui_mode:
+        _prepared_gui_inventory(target, _manifest_records(target,
+            retired_paths=[_under(target_run / item["path"], target_run) for item in prior_removed_missing],
+            inherit_heavy_identity=True))
+    _selected_heavy_records(prior_removed_missing + inventory, selected)
+    removed_current = [item for item in inventory if item["retention_role"] in HEAVY_ROLES
+                       and (selected is None or item["path"] in selected)]
     if runtime_mode and any(item["manifest_role"] != "runtime_checkpoint_member" for item in removed_current):
         raise RetirementError("stopped checkpoint retirement is limited to its sealed runtime members")
     removed = prior_removed_missing + removed_current
@@ -791,6 +910,8 @@ def plan_retirement(
         "status": "eligible",
         "target_run_id": target_run.name,
         "target_run_path": str(target_run),
+        **({"selected_heavy_paths": selected} if selected is not None else {}),
+        **({"prepared_gui_checkpoint": {"writing_stopped": True}} if gui_mode else {}),
         **({"retirement_mode": "completed_experiment", "owner": owner.strip(),
             "owner_abandonment_reason": owner_abandonment_reason.strip()} if owner_mode else {}),
         **({"stopped_checkpoint_runtime": {
@@ -839,8 +960,12 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
     receipt_path = target / RECEIPT_NAME
     with protection.capacity_decision_lock(artifact_root):
         runtime_checkpoint_path = _runtime_scope_path(plan, target)
+        gui_mode = _prepared_gui_scope(plan)
+        if (_selected_heavy_paths(plan.get("selected_heavy_paths")) is not None
+                and (plan.get("retirement_mode") != "completed_experiment" or runtime_checkpoint_path is not None or gui_mode)):
+            raise RetirementError("selected heavy scope requires ordinary owner completion")
         approved_consumers = _verify_stopped_consumers(plan, target)
-        if runtime_checkpoint_path is not None:
+        if runtime_checkpoint_path is not None or gui_mode:
             _assert_runtime_retirement_unprotected(artifact_root, target)
         leases = protection.load_capacity_protection_leases(artifact_root)
         if protection.path_is_protected(target, leases["protected_paths"]):
@@ -867,6 +992,7 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
                 marker.get("lifecycle_status") == "retirement_pending"
                 and marker.get("target_manifest") == plan.get("target_manifest")
                 and marker.get("replacement_manifest") == plan.get("replacement_manifest")
+                and marker.get("selected_heavy_paths") == plan.get("selected_heavy_paths")
             ):
                 raise RetirementError("target already has another retirement marker")
         else:
@@ -899,22 +1025,28 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
     manifest_paths = [("target", target)]
     runtime_checkpoint_path = _runtime_scope_path(plan, target)
     runtime_mode = runtime_checkpoint_path is not None
+    gui_mode = _prepared_gui_scope(plan)
     approved_consumers = _verify_stopped_consumers(plan, target)
     if replacement:
         manifest_paths.append(("replacement", replacement))
     for label, path in manifest_paths:
         if file_sha256(path / "run_manifest.json") != plan[f"{label}_manifest"]["sha256"]:
             raise RetirementError(f"{label} run manifest changed before apply")
-    replacement_state = _load_run(replacement, label="replacement") if replacement else None
+    replacement_state = _load_run(replacement, label="replacement",
+                                  allowed_statuses=("checkpoint",) if gui_mode else ("success",),
+                                  prepared_gui_checkpoint=gui_mode) if replacement else None
     if replacement_state:
-        _manifest_records(replacement_state)
+        replacement_records = _manifest_records(replacement_state)
+        if gui_mode:
+            _prepared_gui_inventory(replacement_state, replacement_records)
     target_state = _load_run(
         target,
-        allowed_statuses=("checkpoint",) if runtime_mode else (
+        allowed_statuses=("checkpoint",) if runtime_mode or gui_mode else (
             ("success", "failed", "interrupted") if owner_mode else ("success", "failed")),
         label="target",
         allow_legacy_initialization_summary=not owner_mode,
         stopped_checkpoint_runtime=runtime_mode,
+        prepared_gui_checkpoint=gui_mode,
     )
     if plan.get("target_terminal_status") != target_state["manifest"]["status"]:
         raise RetirementError("target terminal status changed before apply")
@@ -946,6 +1078,7 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
                 (str(item.get("target_role", "")), str(item.get("replacement_role", "")))
                 for item in mapped
             ],
+            prepared_gui_checkpoint=gui_mode,
         )
         if refreshed_topology != checks:
             raise RetirementError("retirement compatibility changed before apply")
@@ -969,17 +1102,17 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         raise RetirementError(
             "target gained an active capacity protection lease before apply"
         )
-    if runtime_mode:
+    if runtime_mode or gui_mode:
         _assert_runtime_retirement_unprotected(artifact_root, target)
     inventory = _file_inventory(
         target_state, retired_paths=[
             _under(target / item["path"], target)
             for item in plan["removed_files"] if item.get("already_removed_before_resume")
         ],
-        inherit_heavy_identity=owner_mode,
+        inherit_heavy_identity=owner_mode or gui_mode,
         runtime_checkpoint_path=runtime_checkpoint_path,
     )
-    if owner_mode:
+    if owner_mode or gui_mode:
         planned_inventory = [
             item for item in plan["original_file_inventory"]
             if not any(item["path"] == removed["path"] and removed.get("already_removed_before_resume")
@@ -987,10 +1120,16 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         ]
         if inventory != planned_inventory:
             raise RetirementError("completed experiment inventory changed before apply")
-        expected_removed = [item for item in inventory if item["retention_role"] in HEAVY_ROLES]
+        selected = _selected_heavy_paths(plan.get("selected_heavy_paths"))
+        if selected is not None and (not owner_mode or runtime_mode or gui_mode):
+            raise RetirementError("selected heavy scope requires ordinary owner completion")
+        old_missing = [item for item in plan["removed_files"] if item.get("already_removed_before_resume")]
+        _selected_heavy_records(old_missing + inventory, selected)
+        expected_removed = [item for item in inventory if item["retention_role"] in HEAVY_ROLES
+                            and (selected is None or item["path"] in selected)]
         actual_removed = [item for item in plan["removed_files"] if not item.get("already_removed_before_resume")]
         if actual_removed != expected_removed or plan["preserved_files"] != [
-            item for item in inventory if item["retention_role"] not in HEAVY_ROLES
+            item for item in inventory if item not in expected_removed
         ]:
             raise RetirementError("completed experiment removal scope differs from inventory")
     receipt_path = target / RECEIPT_NAME
@@ -1062,7 +1201,11 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
     target_status = receipt.get("target_terminal_status", "success")
     runtime_checkpoint_path = _runtime_scope_path(receipt, run_dir)
     runtime_mode = runtime_checkpoint_path is not None
-    allowed_statuses = {"checkpoint"} if runtime_mode else (
+    gui_mode = _prepared_gui_scope(receipt)
+    selected = _selected_heavy_paths(receipt.get("selected_heavy_paths"))
+    if selected is not None and (not owner_mode or runtime_mode or gui_mode):
+        raise RetirementError("selected heavy scope requires ordinary owner completion")
+    allowed_statuses = {"checkpoint"} if runtime_mode or gui_mode else (
         {"success", "failed", "interrupted"} if owner_mode else {"success", "failed"})
     if target_status not in allowed_statuses:
         raise RetirementError("retirement target terminal status is invalid")
@@ -1080,6 +1223,7 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
             and target_status == "success"
             and summary == LEGACY_INITIALIZATION_SUMMARY
         )
+        and not (gui_mode and summary.get("status") == "gui_replay_prepared")
     ):
         raise RetirementError("retirement target terminal status differs")
     if owner_mode:
@@ -1092,10 +1236,20 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
             raise RetirementError("completed experiment owner decision is invalid")
     else:
         replacement = Path(receipt["replacement_run_path"])
-        _manifest_records(_load_run(replacement, label="replacement"))
+        replacement_state = _load_run(replacement, label="replacement",
+            allowed_statuses=("checkpoint",) if gui_mode else ("success",), prepared_gui_checkpoint=gui_mode)
+        replacement_records = _manifest_records(replacement_state)
+        if gui_mode:
+            _prepared_gui_inventory(replacement_state, replacement_records)
         if file_sha256(replacement / "run_manifest.json") != receipt["replacement_manifest"]["sha256"]:
             raise RetirementError("replacement run manifest changed")
     _verify_stopped_consumers(receipt, run_dir)
+    if gui_mode:
+        state = _load_run(run_dir, allowed_statuses=("checkpoint",), prepared_gui_checkpoint=True)
+        records = _manifest_records(state,
+            retired_paths={_under(run_dir / item["path"], run_dir) for item in receipt["removed_files"]},
+            inherit_heavy_identity=True)
+        _prepared_gui_inventory(state, records)
     if runtime_mode:
         state = _load_run(run_dir, allowed_statuses=("checkpoint",), stopped_checkpoint_runtime=True)
         retired_paths = {_under(run_dir / item["path"], run_dir) for item in receipt["removed_files"]}
@@ -1108,6 +1262,17 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
             for item in receipt["removed_files"]
         ):
             raise RetirementError("retired runtime scope differs from its sealed checkpoint inventory")
+    if selected is not None:
+        _selected_heavy_records(receipt["removed_files"], selected)
+        if sorted(item["path"] for item in receipt["removed_files"]) != selected:
+            raise RetirementError("retired payload differs from selected heavy scope")
+        state = _load_run(run_dir, allowed_statuses=allowed_statuses)
+        retired_paths = {_under(run_dir / path, run_dir) for path in selected}
+        records = _manifest_records(state, retired_paths=retired_paths, inherit_heavy_identity=True)
+        for item in receipt["removed_files"]:
+            record = records.get(_under(run_dir / item["path"], run_dir))
+            if not record or item["bytes"] != record["bytes"] or item["sha256"].upper() != record["sha256"].upper():
+                raise RetirementError("selected retired payload differs from sealed manifest")
     for item in receipt["removed_files"]:
         if (run_dir / item["path"]).exists():
             raise RetirementError(f"retired heavy payload reappeared: {item['path']}")
@@ -1136,6 +1301,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--owner", default="")
     parser.add_argument("--owner-abandonment-reason", default="")
     parser.add_argument("--runtime-checkpoint", type=Path)
+    parser.add_argument("--prepared-gui-checkpoint", action="store_true")
+    parser.add_argument("--selected-heavy-path", action="append", default=None)
     parser.add_argument("--confirm-writing-stopped", action="store_true")
     parser.add_argument("--approved-stopped-consumer", action="append", type=Path, default=[])
     parser.add_argument("--compatibility-input-role", action="append", default=[])
@@ -1183,6 +1350,8 @@ def main(argv: Iterable[str] | None = None) -> int:
                 owner=args.owner, owner_abandonment_reason=args.owner_abandonment_reason,
                 runtime_checkpoint_path=args.runtime_checkpoint, writing_stopped=args.confirm_writing_stopped,
                 approved_stopped_consumers=args.approved_stopped_consumer,
+                prepared_gui_checkpoint=args.prepared_gui_checkpoint,
+                selected_heavy_paths=args.selected_heavy_path,
             )
             if args.apply:
                 result = apply_retirement(result)

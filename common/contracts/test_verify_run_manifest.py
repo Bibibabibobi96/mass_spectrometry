@@ -1,15 +1,101 @@
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
+from common.contracts import verify_run_manifest, write_run_manifest
 
 
 VERIFIER = Path(__file__).with_name("verify_run_manifest.py")
 REPO_ROOT = Path(__file__).parents[2]
+
+
+class ManifestOutputListTests(unittest.TestCase):
+    def config(self, root):
+        path = root / "run_config.json"
+        path.write_text(json.dumps(dict(
+            schema_version=1, run_id="20261016_210000__analysis__python__manifest-output-list",
+            project="fixture", mode="fixture", inputs={},
+        )), encoding="utf-8")
+        return path
+
+    def test_cli_keeps_output_compatibility_and_appends_utf8_json_list(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self.config(root)
+            files = [root / "first.txt", root / "空间 output.txt"]
+            for path in files:
+                path.write_text("fixture", encoding="utf-8")
+            listing = root / "outputs.json"
+            listing.write_text(json.dumps([str(files[1])], ensure_ascii=False), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(Path(write_run_manifest.__file__)), "--run-config", str(config),
+                 "--status", "success", "--output", str(files[0]), "--output-list-json", str(listing)],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            manifest = json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual([row["path"] for row in manifest["outputs"]], [str(p.resolve()) for p in files])
+
+    def test_output_list_rejects_non_list_non_strings_and_accepts_empty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self.config(root)
+            listing = root / "outputs.json"
+            for value in ({}, None, "file.txt", [None], [True], [123], [["file.txt"]], []):
+                with self.subTest(value=value):
+                    listing.write_text(json.dumps(value), encoding="utf-8")
+                    arguments = ["writer", "--run-config", str(config), "--status", "checkpoint",
+                                 "--output-list-json", str(listing)]
+                    with patch.object(sys, "argv", arguments):
+                        if value == []:
+                            write_run_manifest.main()
+                            self.assertEqual(json.loads((root / "run_manifest.json").read_text())["outputs"], [])
+                        else:
+                            with self.assertRaisesRegex(SystemExit, r"JSON list\[str\]"):
+                                write_run_manifest.main()
+
+    @unittest.skipUnless(sys.platform == "win32" and shutil.which("pwsh"), "Windows PowerShell 7 required")
+    def test_real_powershell_writer_over_40k_argument_equivalent_and_full_verifier(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self.config(root)
+            files = [root / (f"output_{i:03}_" + "a" * 145 + "_空间.txt") for i in range(240)]
+            for path in files:
+                path.write_text("small fixture", encoding="utf-8")
+            command_length = len(subprocess.list2cmdline([
+                sys.executable, str(Path(write_run_manifest.__file__)), "--run-config", str(config),
+                "--status", "success", *[arg for path in files for arg in ("--output", str(path))],
+            ]))
+            self.assertGreater(command_length, 40_000)
+            listing = root / "fixture-list.json"
+            listing.write_text(json.dumps([str(p) for p in files], ensure_ascii=False), encoding="utf-8")
+            script = root / "fixture.ps1"
+            script.write_text('''param($Repo,$Python,$Config,$List)
+$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+$outputs=@(Get-Content -LiteralPath $List -Raw -Encoding UTF8|ConvertFrom-Json)
+Write-RunManifest -Python $Python -RepoRoot $Repo -RunConfig $Config -Status success -Outputs $outputs -PassThru
+''', encoding="utf-8")
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(script), str(REPO_ROOT), sys.executable, str(config), str(listing)],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=40,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("RUN_MANIFEST=PASS", result.stdout)
+            manifest = root / "run_manifest.json"
+            self.assertEqual(len(json.loads(manifest.read_text(encoding="utf-8"))["outputs"]), 240)
+            verified = subprocess.run(
+                [sys.executable, str(VERIFIER), str(manifest), "--require-status", "success"],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20,
+            )
+            self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
 
 
 def record(path: Path) -> dict:
@@ -19,6 +105,87 @@ def record(path: Path) -> dict:
         "bytes": path.stat().st_size,
         "sha256": file_sha256(path),
     }
+
+
+class ManifestPayloadReadTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.payload = Path(self.directory.name) / "field.pa"
+        self.payload.write_bytes(b"fixture!")
+
+    def test_writer_and_verifier_share_one_unbuffered_selection(self) -> None:
+        with (
+            patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
+            patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
+            patch.object(write_run_manifest, "file_sha256", return_value="B" * 64) as buffered,
+            patch.object(write_run_manifest, "file_sha256_unbuffered", return_value="A" * 64) as direct,
+        ):
+            item = write_run_manifest.file_record(self.payload, "solver_native_binary")
+            verify_run_manifest.verify_record("output", item)
+            self.assertEqual(item["sha256"], "A" * 64)
+            self.assertEqual(direct.call_count, 2)
+            for call in direct.call_args_list:
+                self.assertEqual(call.args, (self.payload,))
+            buffered.assert_not_called()
+
+    def test_small_ordinary_and_non_windows_records_keep_buffered_reads(self) -> None:
+        cases = (
+            ("nt", "solver_native_binary", 9),
+            ("nt", None, 8),
+            ("nt", "diagnostic_data", 8),
+            ("posix", "solver_native_binary", 8),
+        )
+        for platform_name, role, threshold in cases:
+            with (
+                self.subTest(platform=platform_name, role=role, threshold=threshold),
+                patch.object(write_run_manifest, "os", SimpleNamespace(name=platform_name)),
+                patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", threshold),
+                patch.object(write_run_manifest, "file_sha256", return_value="A" * 64) as buffered,
+                patch.object(write_run_manifest, "file_sha256_unbuffered") as direct,
+            ):
+                item = write_run_manifest.file_record(self.payload, role)
+                verify_run_manifest.verify_record("output", item)
+                self.assertEqual(buffered.call_count, 2)
+                direct.assert_not_called()
+
+    def test_unbuffered_failure_propagates_without_retry_or_fallback(self) -> None:
+        item = dict(path=str(self.payload), bytes=8, sha256="A" * 64,
+                    retention_role="solver_native_binary")
+        with (
+            patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
+            patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
+            patch.object(write_run_manifest, "file_sha256") as buffered,
+            patch.object(write_run_manifest, "file_sha256_unbuffered", side_effect=OSError("read failed")) as direct,
+        ):
+            with self.assertRaisesRegex(OSError, "read failed"):
+                write_run_manifest.file_record(self.payload, "solver_native_binary")
+            direct.assert_called_once_with(self.payload)
+            direct.reset_mock()
+            with self.assertRaisesRegex(OSError, "read failed"):
+                verify_run_manifest.verify_record("output", item)
+            direct.assert_called_once_with(self.payload)
+            buffered.assert_not_called()
+
+    def test_mismatching_unbuffered_bytes_fail_existing_identity(self) -> None:
+        item = dict(path=str(self.payload), bytes=8, sha256="A" * 64,
+                    retention_role="solver_native_binary")
+        with (
+            patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
+            patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
+            patch.object(write_run_manifest, "file_sha256") as buffered,
+            patch.object(write_run_manifest, "file_sha256_unbuffered", return_value="B" * 64) as direct,
+        ):
+            with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
+                verify_run_manifest.verify_record("output", item)
+            direct.assert_called_once_with(self.payload)
+            buffered.assert_not_called()
+
+    def test_size_mismatch_rejects_before_reading_payload(self) -> None:
+        with patch.object(verify_run_manifest, "file_record") as reader:
+            with self.assertRaisesRegex(AssertionError, "byte count changed"):
+                verify_run_manifest.verify_record("output", dict(path=str(self.payload), bytes=9))
+            reader.assert_not_called()
 
 
 class VerifyRunManifestIntegrationTests(unittest.TestCase):

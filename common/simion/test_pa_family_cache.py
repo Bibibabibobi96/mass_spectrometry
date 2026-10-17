@@ -1632,6 +1632,31 @@ class PAFamilyCacheTest(unittest.TestCase):
             CacheDisposition.MISS,
         )
 
+    def test_capacity_plan_retires_published_family_through_real_owner(self) -> None:
+        artifacts, cache = self._artifact_cache()
+        published = self._publish_governed_transaction(cache)
+        expected_bytes = self._ledger_entry(artifacts, published.cache_key)["bytes"]
+        planned = reconcile_artifact_capacity.plan(
+            artifacts, target_bytes=0, minimum_free_bytes=0,
+            execution_mode="maintenance",
+        )
+        candidate = next(
+            item for item in planned["planned"]
+            if item["operation"] == "request_retirement"
+        )
+        self.assertEqual(candidate["cache_key"], published.cache_key)
+        self.assertEqual(candidate["cache_key"], candidate["cache_key"].upper())
+        # Exercise the production owner interface, not a permissive approval mock.
+        applied = reconcile_artifact_capacity.apply(planned)
+        self.assertEqual(applied["failed"], [])
+        self.assertEqual(applied["removed_bytes"], expected_bytes)
+        self.assertFalse((cache / published.cache_key).exists())
+        self.assertEqual(self._ledger_entry(artifacts, published.cache_key)["status"], "retired")
+        transaction = json.loads(
+            (published.transaction_directory / "transaction.json").read_text()
+        )
+        self.assertEqual(transaction["status"], "retired")
+
     def test_artifact_transaction_pin_blocks_manager_retirement(self) -> None:
         _, cache = self._artifact_cache()
         reason = "fixture native family; rebuild only on frozen identity change"
@@ -1717,6 +1742,29 @@ class PAFamilyCacheTest(unittest.TestCase):
         _, relative = capacity_ledger.capacity_object_path(artifacts, container)
         entry = next(item for item in capacity_ledger.load_capacity_ledger(artifacts)["objects"] if item["path"] == relative)
         self.assertEqual((entry["class"], entry["status"]), ("light_evidence", "ready"))
+
+    def test_pa_audit_preserves_retired_parent_and_ready_transaction_children(self) -> None:
+        artifacts, cache = self._artifact_cache()
+        published = self._publish_governed_transaction(cache)
+        approve_pa_family_cache_retirement(cache, published.cache_key, published.generation_sha256)
+        container = cache / ".transactions"
+        capacity_ledger.record_capacity_object(
+            artifacts, path=container, object_class="rebuildable_payload",
+            bytes_count=self._tree_bytes(container), status="ready",
+            owner=self.artifact_owner,
+        )
+        capacity_ledger.retire_capacity_object(artifacts, path=container)
+        capacity_ledger.record_capacity_object(
+            artifacts, path=published.transaction_directory, object_class="light_evidence",
+            bytes_count=self._tree_bytes(published.transaction_directory), status="ready",
+            owner=self.artifact_owner,
+        )
+        before = capacity_ledger.load_capacity_ledger(artifacts)
+        audit = pa_family_cache.audit_pa_transaction_maintenance(cache)
+        self.assertEqual(audit["invalid_count"], 0)
+        self.assertEqual(audit["checked_count"], 1)
+        self.assertEqual(capacity_ledger.load_capacity_ledger(artifacts), before)
+        self.assertTrue((published.transaction_directory / "transaction.json").is_file())
 
     def test_owner_pin_release_rejects_missing_or_mismatched_replacement_evidence(self) -> None:
         _, cache = self._artifact_cache()

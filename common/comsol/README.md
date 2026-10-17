@@ -47,6 +47,13 @@
 COMSOL自带`tbbmalloc.dll`，可用`-Allocator native`绕过TBB scalable allocator；必须记录该运行
 环境差异，并用同一物理输入核对结果，不得把分配器变化解释成物理或数值参数变化。
 
+`-AssemblyScalabilityMode`可选`auto/off/matrix/vector/on`；默认`auto`不传开关，保持原有COMSOL设置，
+并非供应商枚举值。显式模式传递官方`-memoptassem <mode>`，分别控制关闭、仅矩阵装配、仅向量装配和
+全部装配的内存可扩展性优化。调用方须冻结该执行选项；它不改变入口的资源准入、精度、重试或退出判据。
+依据：[COMSOL 6.4 Commands on Windows](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)，
+COMSOL官方，查阅日期2026-10-07。采用受支持的命令行接口，仅完成替身参数传递回归，尚未真实商业验证；
+不能据此声称修复矩阵装配断言、提高性能或获得数值收敛资格。
+
 ### 主机资源阶段
 
 入口通过公共主机调度器依次申请 `prepare`、`solver`、`postprocess` 预算；COMSOL求解属于重许可阶段，

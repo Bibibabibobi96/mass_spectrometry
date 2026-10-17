@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,11 +13,11 @@ from typing import Any
 
 try:
     from common.contracts.artifact_naming import validate_run_id
-    from common.contracts.file_identity import file_sha256
+    from common.contracts.file_identity import file_sha256, file_sha256_unbuffered
     from common.contracts.recorded_file_removal import write_json_atomic
 except ModuleNotFoundError:
     from artifact_naming import validate_run_id
-    from file_identity import file_sha256
+    from file_identity import file_sha256, file_sha256_unbuffered
     from recorded_file_removal import write_json_atomic
 
 
@@ -54,6 +55,9 @@ def resolve_path(value: str, base: Path, project_root: Path | None) -> Path:
 
 
 TERMINAL_JOURNAL_NAME = ".run_terminal_publication.json"
+# Reuse the validated Windows PA inventory's 8 MiB large-payload read tier.
+# This I/O threshold is not a scientific parameter or a retry policy.
+_UNBUFFERED_SOLVER_PAYLOAD_BYTES = 8 * 1024 * 1024
 
 
 def _json_bytes(value: dict[str, Any]) -> bytes:
@@ -67,13 +71,24 @@ def file_record(
     recorded_path: Path | None = None,
     document: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Record exact bytes with the shared read policy for closed payloads.
+
+    Large Windows solver-native outputs use the existing unbuffered reader;
+    producers must already have stopped writing. Read failures never retry or
+    fall back to another view. Virtual documents retain their exact JSON hash.
+    """
     payload = _json_bytes(document) if document is not None else None
     exists = payload is not None or path.is_file()
     record: dict[str, Any] = {"path": str(recorded_path or path), "exists": exists}
     if payload is not None:
         record.update(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest().upper())
     elif path.is_file():
-        record.update(bytes=path.stat().st_size, sha256=file_sha256(path))
+        size = path.stat().st_size
+        hash_file = file_sha256_unbuffered if (
+            os.name == "nt" and retention_role == "solver_native_binary"
+            and size >= _UNBUFFERED_SOLVER_PAYLOAD_BYTES
+        ) else file_sha256
+        record.update(bytes=size, sha256=hash_file(path))
     if retention_role is not None:
         record["retention_role"] = retention_role
     return record
@@ -272,18 +287,26 @@ def main() -> None:
     )
     parser.add_argument("--software", action="append", default=[])
     parser.add_argument("--output", action="append", default=[])
+    parser.add_argument("--output-list-json", type=Path,
+                        help="UTF-8 JSON list[str] of outputs, appended after --output entries")
     args = parser.parse_args()
 
     run_config_path = args.run_config.resolve()
-    output_paths = [Path(value) for value in args.output]
     try:
+        output_values = list(args.output)
+        if args.output_list_json is not None:
+            entries = json.loads(args.output_list_json.read_text(encoding="utf-8-sig"))
+            if not isinstance(entries, list) or any(not isinstance(value, str) for value in entries):
+                raise ValueError("--output-list-json requires a JSON list[str]")
+            output_values.extend(entries)
+        output_paths = [Path(value) for value in output_values]
         manifest = build_run_manifest(
             run_config_path,
             args.status,
             software=args.software,
             output_paths=output_paths,
         )
-    except ValueError as error:
+    except (ValueError, OSError) as error:
         raise SystemExit(str(error)) from error
     destination = args.manifest or run_config_path.with_name("run_manifest.json")
     write_json_atomic(destination, manifest)

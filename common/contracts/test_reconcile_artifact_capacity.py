@@ -769,7 +769,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
     def test_maintenance_delegates_published_cache_then_executes_disposition(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            cache_key = "a" * 64
+            cache_key = "A" * 64
             generation = "b" * 64
             target = root / "common" / "simion" / "pa_family_cache" / cache_key
             target.mkdir(parents=True)
@@ -2841,6 +2841,19 @@ class FiniteCapacityProtectionLeaseTest(unittest.TestCase):
             )
             self.assertEqual(outcome["pruned"], [])
             self.assertTrue((root / "common" / "capacity_protection_leases" / "active.json").exists())
+
+
+class RetiredDispositionRecoveryCliTests(unittest.TestCase):
+    def test_public_cli_defaults_to_dryrun_and_keeps_existing_apply_lease_gate(self):
+        args=["capacity", "--artifact-root", "unused", "--restore-retired-disposition-receipt", "receipt.json",
+              "--expected-ledger-sha256", "A"*64, "--expected-receipt-sha256", "B"*64]
+        with patch.object(sys,"argv",args), patch.object(capacity_ledger,"restore_retired_disposition_paths",return_value={}) as recover:
+            with redirect_stdout(io.StringIO()):
+                normal_capacity.main()
+            self.assertFalse(recover.call_args.kwargs["apply"])
+        with patch.object(sys,"argv",args+["--apply"]), patch.dict(os.environ,{},clear=True):
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                normal_capacity.main()
 
 
 if __name__ == "__main__":

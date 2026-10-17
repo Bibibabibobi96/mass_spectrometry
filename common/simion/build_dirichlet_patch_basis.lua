@@ -7,6 +7,7 @@
 -- simion --nogui lua build_dirichlet_patch_basis.lua PREBIASED_PA
 --   SOURCE_PA_PATHS_OR_PATH_COEFFICIENTS_PIPE_SEPARATED SOURCE_PROJECT_ORIGIN_X,Y,Z
 --   PATCH_PROJECT_ORIGIN_X,Y,Z
+--   [BOUNDARY_MODE [REFINE_CONVERGENCE_V]]
 
 local output_path=assert(arg[1], 'pre-biased local PA required')
 local source_text=assert(arg[2], 'coarse response PA path list required')
@@ -14,7 +15,13 @@ local source_origin_text=assert(arg[3], 'coarse project origin required')
 local patch_origin_text=assert(arg[4], 'patch project origin required')
 local boundary_mode=arg[5] or 'six_faces'
 assert(boundary_mode=='six_faces' or boundary_mode=='x_mirror_five_faces', 'invalid boundary mode')
-assert(arg[6]==nil, 'unexpected extra argument')
+local convergence
+if arg[6]~=nil then
+  convergence=assert(tonumber(arg[6]), 'Refine convergence must be a number')
+  assert(convergence==convergence and convergence>0 and convergence<math.huge,
+    'Refine convergence must be finite and positive')
+end
+assert(arg[7]==nil, 'unexpected extra argument')
 
 local function split(text, separator_pattern)
   local values={}
@@ -89,8 +96,8 @@ for y=1,target.ny-2 do for x=open_x_start,target.nx-2 do
 end end
 target:save(output_path)
 for _,source in ipairs(sources) do source.pa:close() end
-target:refine()
+if convergence then target:refine{convergence=convergence} else target:refine() end
 target:save(output_path)
 target:close()
-print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_boundary_points=%d boundary_mode=%s native_basis_voltage=10000 output=%s',
-  boundary_count,physical_count,boundary_mode,output_path))
+print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_boundary_points=%d boundary_mode=%s native_basis_voltage=10000 refine_convergence=%s output=%s',
+  boundary_count,physical_count,boundary_mode,convergence and tostring(convergence) or 'installed_default',output_path))

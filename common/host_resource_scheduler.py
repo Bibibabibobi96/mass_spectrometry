@@ -57,6 +57,23 @@ def _identity(process: dict[str, Any]) -> tuple[int, str]:
     return int(process["pid"]), str(process["started"])
 
 
+def _same_creation_time(left: str, right: str) -> bool:
+    """Match CIM microseconds to native 100-ns .NET ticks, never a reused PID."""
+    if left == right:
+        return True
+    # Win32_Process.CreationDate loses the final .NET tick digit. Only one
+    # microsecond-quantized observation may match a native sub-microsecond one,
+    # as in the adapter's Wait-HostResourceProcessCompletion identity check.
+    return (left.isdecimal() and right.isdecimal()
+            and (int(left) % 10 == 0 or int(right) % 10 == 0)
+            and abs(int(left) - int(right)) < 10)
+
+
+def _same_process(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    return int(left["pid"]) == int(right["pid"]) and _same_creation_time(
+        str(left["started"]), str(right["started"]))
+
+
 def _definitely_exited_process_ids(snapshot: dict[str, Any], processes: dict[int, dict[str, Any]]) -> set[int]:
     """Return identities the adapter proved absent after its failed metadata read."""
     values = snapshot.get("definitely_exited_process_ids", [])
@@ -89,7 +106,7 @@ def _completed_work_identities(
     if record is None or record["status"] != "acquired":
         raise ValueError("completion evidence requires an acquired reservation")
     owner = request.get("owner")
-    if owner != record["owner"] or _identity(owner) != _identity(processes.get(int(owner["pid"]), {"pid": 0, "started": ""})):
+    if not _same_process(owner, record["owner"]) or not _same_process(owner, processes.get(int(owner["pid"]), {"pid": 0, "started": ""})):
         raise ValueError("completion evidence requires the live reservation owner")
     registered = {_identity(process) for process in record["work_roots"]}
     completed: set[tuple[int, str]] = set()
@@ -126,7 +143,7 @@ def _processes(snapshot: dict[str, Any]) -> dict[int, dict[str, Any]]:
 def _refresh(record: dict[str, Any], processes: dict[int, dict[str, Any]]) -> bool:
     """Retain observed descendants, including descendants of an exited owner."""
     roots = {_identity(p) for p in record["processes"]}
-    live = {pid for pid, started in roots if pid in processes and str(processes[pid]["started"]) == started}
+    live = {pid for pid, started in roots if pid in processes and _same_creation_time(str(processes[pid]["started"]), started)}
     # Windows keeps ParentProcessId after parent exit. Creation ordering avoids
     # claiming an older process when a PID has been recycled.
     parent_birth = {pid: started for pid, started in roots}
@@ -139,7 +156,7 @@ def _refresh(record: dict[str, Any], processes: dict[int, dict[str, Any]]) -> bo
                 continue
             if str(process["started"]) < parent_birth[parent]:
                 continue
-            if parent in processes and str(processes[parent]["started"]) != parent_birth[parent]:
+            if parent in processes and not _same_creation_time(str(processes[parent]["started"]), parent_birth[parent]):
                 # A child born BEFORE a reused PID's new creation time belongs
                 # to the old parent; never discard that still-live orphan.
                 if str(process["started"]) >= str(processes[parent]["started"]):
@@ -162,7 +179,7 @@ def _refresh(record: dict[str, Any], processes: dict[int, dict[str, Any]]) -> bo
     # creates, may hold a stage boundary open.
     work_roots = {_identity(p) for p in record.setdefault("work_roots", [])}
     work_live = {pid for pid, started in work_roots
-                 if pid in processes and str(processes[pid]["started"]) == started}
+                 if pid in processes and _same_creation_time(str(processes[pid]["started"]), started)}
     work_parent_birth = {pid: started for pid, started in work_roots}
     changed = True
     while changed:
@@ -173,13 +190,18 @@ def _refresh(record: dict[str, Any], processes: dict[int, dict[str, Any]]) -> bo
                 continue
             if str(process["started"]) < work_parent_birth[parent]:
                 continue
-            if parent in processes and str(processes[parent]["started"]) != work_parent_birth[parent]:
+            if parent in processes and not _same_creation_time(str(processes[parent]["started"]), work_parent_birth[parent]):
                 if str(process["started"]) >= str(processes[parent]["started"]):
                     continue
             work_live.add(pid)
             work_parent_birth[pid] = str(process["started"])
             changed = True
     record["live_work_process_ids"] = sorted(work_live)
+    if record.get("reason") == "owner_released_descendants_still_live":
+        # A completed release may initially lack the console's image identity.
+        # Once a fresh snapshot proves only system consoles remain, no work
+        # owns the former stage peak; their RAM remains in OS telemetry.
+        return bool(live.difference(record["console_host_process_ids"]))
     return bool(live)
 
 
@@ -293,14 +315,19 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
         if record is requested_record:
             unavailable_record_pids.difference_update(pid for pid, _ in completed)
         if unavailable_record_pids:
-            raise ValueError("a reserved process creation identity is unavailable; reservations are unchanged")
+            raise ValueError(
+                "a reserved process creation identity is unavailable; reservations are unchanged; "
+                f"unavailable_pids={sorted(unavailable_record_pids)} "
+                f"reservation_token={record['token']} owner_pid={record['owner']['pid']} "
+                f"role={record['role']} stage={record['stage']}"
+            )
     records[:] = [r for r in records if _refresh(r, processes)]
     operation = request["operation"]
     record = next((r for r in records if r["token"] == token), None)
     owner = request.get("owner")
     if operation == "request":
         if record is None:
-            if _identity(owner) != _identity(processes.get(int(owner["pid"]), {"pid": 0, "started": ""})):
+            if not _same_process(owner, processes.get(int(owner["pid"]), {"pid": 0, "started": ""})):
                 raise ValueError("request owner creation identity is not live")
             budget = _validate_capacity(request["budget"], snapshot, policy)
             state["sequence"] += 1
@@ -317,8 +344,8 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
         if operation == "release":
             return {"status": "released", "token": token}
         raise ValueError("resource token is absent or owner and descendants have exited")
-    if operation not in {"request", "status"} and owner != record["owner"]:
-        if operation not in {"inherit", "register"} or int(owner["pid"]) not in record["live_process_ids"] or _identity(owner) != _identity(processes[int(owner["pid"])]):
+    if operation not in {"request", "status"} and not _same_process(owner, record["owner"]):
+        if operation not in {"inherit", "register"} or int(owner["pid"]) not in record["live_process_ids"] or not _same_process(owner, processes[int(owner["pid"])]):
             raise ValueError("only the owner or a live descendant may use this reservation")
     if operation == "transition":
         if record["status"] != "acquired":
@@ -341,7 +368,7 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
             raise ValueError("registered process must be a live descendant of the owner")
         record["processes"].append({"pid": process["pid"], "started": process["started"]})
         work_identity = {"pid": process["pid"], "started": process["started"]}
-        if _identity(work_identity) not in {_identity(p) for p in record["work_roots"]}:
+        if not any(_same_process(work_identity, p) for p in record["work_roots"]):
             record["work_roots"].append(work_identity)
     elif operation == "inherit":
         if record["status"] != "acquired":
@@ -362,7 +389,7 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
                 raise ValueError("child requirements exceed the inherited stage budget: " + "; ".join(exceeded))
     elif operation == "release":
         # An explicit boundary release cannot discard an orphaned solver.
-        children = [p for p in record["processes"] if _identity(p) != _identity(record["owner"]) and int(p["pid"]) in record["live_process_ids"]]
+        children = [p for p in record["processes"] if not _same_process(p, record["owner"]) and int(p["pid"]) in record["live_process_ids"]]
         # The console can outlive an interactive caller's completed task. Its
         # ordinary RAM remains in host telemetry, but owns no future task peak.
         work_children = [p for p in children if int(p["pid"]) not in record["console_host_process_ids"]]

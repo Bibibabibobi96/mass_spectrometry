@@ -66,7 +66,6 @@ function Invoke-ArtifactCapacityGate {
     [string[]]$ProtectedPaths=@(),
     [string[]]$ProtectedCacheKeys=@(),
     [string]$CapacityProtectionLeaseId='',
-    [ValidateSet('stop','warn')][string]$CapacityThresholdAction='stop',
     [ValidateSet('startup','maintenance')][string]$ExecutionMode='startup',
     [Nullable[double]]$MaintenanceTargetGiB=$null
   )
@@ -108,16 +107,12 @@ function Invoke-ArtifactCapacityGate {
   $receipt=((@($output)-join "`n")|ConvertFrom-Json)
   if($receipt.satisfied_after_apply -ne $true){
     if($ExecutionMode-eq'maintenance'){
-      throw ("Artifact capacity gate blocked maintenance: CAPACITY_TARGET_NOT_MET; measured_after_bytes={0}; free_bytes_after={1}; required_free_bytes={2}; target_bytes={3}; removed_bytes={4}" -f $receipt.measured_after_bytes,$receipt.free_bytes_after,$receipt.required_free_bytes,$receipt.target_bytes,$receipt.removed_bytes)
+      # The CLI's ordinary maintenance output is aggregate-only; exact disposal
+      # records remain in their owner receipts, not on the launcher hot path.
+      throw ("Artifact capacity gate blocked maintenance: CAPACITY_TARGET_NOT_MET; resident_bytes={0}; free_bytes={1}; capacity_gap_bytes={2}; target_bytes={3}; removed_bytes={4}" -f $receipt.resident_bytes,$receipt.free_bytes,$receipt.capacity_gap_bytes,$receipt.target_bytes,$receipt.removed.bytes)
     }
     $reason=[string]$receipt.blocking_reason
     if([string]::IsNullOrWhiteSpace($reason)){$reason='UNSPECIFIED'}
-    if($CapacityThresholdAction-eq'warn'-and
-       $reason-in@('TARGET_CAPACITY_EXCEEDED','MINIMUM_FREE_CAPACITY_UNAVAILABLE')){
-      Write-Warning ("Artifact capacity threshold warning: {0}; resident_bytes={1}; active_commitment_bytes={2}; projected_bytes={3}; target_bytes={4}; required_free_bytes={5}; free_bytes_before={6}; continuing with actual unsatisfied receipt." -f $reason,$receipt.resident_bytes,$receipt.total_active_lease_committed_new_bytes,$receipt.projected_bytes,$receipt.target_bytes,$receipt.required_free_bytes,$receipt.free_bytes_before)
-      Write-Output $receipt
-      return
-    }
     throw ("Artifact capacity gate blocked startup: {0}; resident_bytes={1}; active_commitment_bytes={2}; projected_bytes={3}; target_bytes={4}" -f $reason,$receipt.resident_bytes,$receipt.total_active_lease_committed_new_bytes,$receipt.projected_bytes,$receipt.target_bytes)
   }
   # The JSON root is one object; NoEnumerate wraps it and changes nested-array access.
@@ -163,8 +158,7 @@ function Enter-ArtifactWorkflowCapacitySession {
     [Parameter(Mandatory)][string]$ArtifactRoot,[Parameter(Mandatory)][string]$RunDirectory,
     [Parameter(Mandatory)][long]$CommittedNewBytes,[string]$Owner='',
     [int]$LeaseTtlSeconds=21600,[string[]]$ProtectedPaths=@(),
-    [string[]]$ProtectedCacheKeys=@(),
-    [ValidateSet('stop','warn')][string]$CapacityThresholdAction='stop'
+    [string[]]$ProtectedCacheKeys=@()
   )
   if($CommittedNewBytes-lt0-or$LeaseTtlSeconds-le0){throw 'Workflow capacity session requires nonnegative bytes and a positive TTL.'}
   $leaseId='workflow-'+[guid]::NewGuid().ToString('N')
@@ -177,15 +171,30 @@ function Enter-ArtifactWorkflowCapacitySession {
   foreach($key in $ProtectedCacheKeys){$arguments+=@('--protect-cache-key',$key)}
   try{
     $leaseOutput=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-      & $Python @arguments;if($LASTEXITCODE-ne0){throw 'Workflow capacity lease creation failed.'}
+      $PSNativeCommandUseErrorActionPreference=$false
+      $captured=@(& $Python @arguments 2>&1)
+      $exitCode=$LASTEXITCODE
+      $stdout=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
+      $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})
+      if($exitCode-ne0){
+        # Bound the exception payload, not the native command's successful JSON.
+        # Keep stream labels and the real exit code so a CLI failure is actionable.
+        $details=@{stdout=($stdout-join"`n");stderr=($stderr-join"`n")}
+        foreach($stream in @('stdout','stderr')){
+          if($details[$stream].Length-gt4096){$details[$stream]='[truncated tail] '+$details[$stream].Substring($details[$stream].Length-4096)}
+        }
+        throw "Workflow capacity lease creation failed; exit_code=$exitCode; stdout=$($details.stdout); stderr=$($details.stderr)"
+      }
+      foreach($errorLine in $stderr){Write-Error -Message ([string]$errorLine) -ErrorAction Continue}
+      $stdout
     })
     # The active lease is the single reservation source.
     $gateParameters=@{Python=$Python;RepoRoot=$RepoRoot;ArtifactRoot=$ArtifactRoot;
       ProtectedPaths=$paths;ProtectedCacheKeys=$ProtectedCacheKeys;
-      CapacityProtectionLeaseId=$leaseId;ExecutionMode='startup';CapacityThresholdAction=$CapacityThresholdAction}
+      CapacityProtectionLeaseId=$leaseId;ExecutionMode='startup'}
     $gate=Invoke-ArtifactCapacityGate @gateParameters
     return [pscustomobject]@{schema_version=1;role='artifact_workflow_capacity_session';
-      status='active';capacity_threshold_action=$CapacityThresholdAction;
+      status='active';
       artifact_root=[IO.Path]::GetFullPath($ArtifactRoot);lease_id=$leaseId;
       owner=$Owner;lease_ttl_seconds=$LeaseTtlSeconds;committed_new_bytes=$CommittedNewBytes;
       protected_paths=@($paths);protected_cache_keys=@($ProtectedCacheKeys|Select-Object -Unique);
@@ -223,8 +232,8 @@ function Update-ArtifactWorkflowCapacitySession {
     & $Python @arguments;if($LASTEXITCODE-ne0){throw 'Workflow capacity lease renewal failed.'}
   })
   if($null-ne$RemainingCommittedNewBytes){$Session.committed_new_bytes=[int64]$RemainingCommittedNewBytes}
-  $Session.protected_paths=@($Session.protected_paths)+@($ProtectedPaths)|Select-Object -Unique
-  $Session.protected_cache_keys=@($Session.protected_cache_keys)+@($ProtectedCacheKeys)|Select-Object -Unique
+  $Session.protected_paths=@(@($Session.protected_paths)+@($ProtectedPaths)|Select-Object -Unique)
+  $Session.protected_cache_keys=@(@($Session.protected_cache_keys)+@($ProtectedCacheKeys)|Select-Object -Unique)
   $gate=$null
   if($null-ne$RemainingCommittedNewBytes-and[int64]$RemainingCommittedNewBytes-gt$priorCommitment){
     # The larger commitment is already durable.  Re-admission may fail, but
@@ -277,10 +286,31 @@ function Write-RunManifest {
     $arguments=@((Join-Path $RepoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$RunConfig,'--status',$Status)
     if(-not[string]::IsNullOrWhiteSpace($Manifest)){$arguments+=@('--manifest',$Manifest)}
     foreach($item in $Software){$arguments+=@('--software',$item)}
-    foreach($item in $Outputs){$arguments+=@('--output',$item)}
-    $writerOutput=& $Python @arguments
-    if($LASTEXITCODE-ne 0){throw "Run manifest failed for status $Status."}
-    if($PassThru){$writerOutput}
+    # CreateProcessW limits the command line to 32,767 UTF-16 characters.
+    # https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+    # Keep the list outside the run so retention scans never treat it as an output.
+    $outputListPath=[IO.Path]::GetTempFileName()
+    try{
+      [IO.File]::WriteAllText($outputListPath,(ConvertTo-Json -InputObject @($Outputs) -Compress),[Text.UTF8Encoding]::new($false))
+      $arguments+=@('--output-list-json',$outputListPath)
+      $PSNativeCommandUseErrorActionPreference=$false
+      $captured=@(& $Python @arguments 2>&1)
+      $exitCode=$LASTEXITCODE
+      $writerOutput=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
+      $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})
+      if($exitCode-ne0){
+        # Same bounded native-stream diagnostic contract as capacity admission.
+        $details=@{stdout=($writerOutput-join"`n");stderr=($stderr-join"`n")}
+        foreach($stream in @('stdout','stderr')){
+          if($details[$stream].Length-gt4096){$details[$stream]='[truncated tail] '+$details[$stream].Substring($details[$stream].Length-4096)}
+        }
+        throw "Run manifest failed for status $Status; exit_code=$exitCode; stdout=$($details.stdout); stderr=$($details.stderr)"
+      }
+      foreach($errorLine in $stderr){Write-Error -Message ([string]$errorLine) -ErrorAction Continue}
+      if($PassThru){$writerOutput}
+    }finally{
+      Remove-Item -LiteralPath $outputListPath -Force -ErrorAction Stop
+    }
   }
 }
 
@@ -590,6 +620,13 @@ function New-RunPackage {
   }
   if($null-ne$governedArtifactsRoot-and(-not$RetentionContractEnabled-or-not$CapacityLedgerLifecycleEnabled)){
     throw 'Runs beneath artifacts require retention and capacity-ledger lifecycle before package creation.'
+  }
+  if($null-ne$governedArtifactsRoot){
+    $expectedProjectRoot=Join-Path $governedArtifactsRoot.FullName ('projects/'+$Project)
+    if(-not([IO.Path]::GetFullPath($ArtifactRoot).TrimEnd('\','/').Equals(
+        [IO.Path]::GetFullPath($expectedProjectRoot).TrimEnd('\','/'),[StringComparison]::OrdinalIgnoreCase))){
+      throw 'ArtifactRoot must be the canonical artifacts/projects/<Project> directory, not its runs directory.'
+    }
   }
   if($CapacityLedgerLifecycleEnabled){
     if([string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){

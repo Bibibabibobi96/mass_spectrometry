@@ -4,6 +4,39 @@ $ErrorActionPreference = 'Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 
+function Request-RfFineCacheRetirement {
+  <# Owner admission only. Default is read-only; public maintenance owns deletion. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$ArtifactRoot,
+    [Parameter(Mandatory)][string]$CachePath,
+    [Parameter(Mandatory)][hashtable]$BuilderSources,
+    [Parameter(Mandatory)][string]$CoarseCachePath,
+    [string]$EvidenceDirectory,
+    [switch]$Approve
+  )
+  if($Approve -and [string]::IsNullOrWhiteSpace($EvidenceDirectory)){throw 'Approval requires a new retained reconstruction evidence directory.'}
+  $code=@'
+import json,sys
+from pathlib import Path
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.cache_retirement import plan_cache_retirement,approve_cache_retirement
+sources={k:Path(v) for k,v in json.loads(sys.argv[3]).items()}
+receipt=Path(sys.argv[6])/'owner_retirement_approval.json'
+if sys.argv[5]=='approve' and receipt.exists():
+    p=json.loads(receipt.read_text(encoding='utf-8'))['plan']
+    assert Path(p['artifact_root'])==Path(sys.argv[1]).resolve() and Path(p['cache_path'])==Path(sys.argv[2]).resolve() and Path(p['coarse_cache_path'])==Path(sys.argv[4]).resolve(),'Approval replay scope differs'
+    assert {k:Path(v['path']) for k,v in p['builder_sources'].items() if k!='coarse_manifest'}=={k:v.resolve() for k,v in sources.items()},'Approval replay producers differ'
+else:
+    p=plan_cache_retirement(Path(sys.argv[1]),Path(sys.argv[2]),sources,Path(sys.argv[4]))
+print(json.dumps(approve_cache_retirement(p,Path(sys.argv[6])) if sys.argv[5]=='approve' else p))
+'@
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $Python -B -c $code $ArtifactRoot $CachePath ($BuilderSources|ConvertTo-Json -Compress) $CoarseCachePath $(if($Approve){'approve'}else{'plan'}) $EvidenceDirectory
+    if($LASTEXITCODE-ne0){throw 'Fine-cache owner admission failed; cache has not been deleted.'}
+  }
+}
+
 function Resolve-RfDirectChildDirectory {
   [CmdletBinding()]
   param(

@@ -1428,5 +1428,102 @@ class PrePulseSelectionReplayTests(unittest.TestCase):
                 )
 
 
+class FineCacheOwnerRetirementTest(unittest.TestCase):
+    def fixture(self, root):
+        from common.simion.cache_generation import inventory_direct_files,payload_sha256,generation_input,generation_sha256
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime import cache_retirement as owner
+        base=root/"projects"/owner.OWNER/"cache"
+        def publish(role, inputs, gem_name):
+            identity=dict(role=role+"_pa_cache",inputs=inputs)
+            text=json.dumps(identity,separators=(",",":"))
+            key=hashlib.sha256(text.encode()).hexdigest()
+            staging=root/(role+"_staging");staging.mkdir()
+            (staging/gem_name).write_bytes(b"gem")
+            (staging/"field.pa0").write_bytes(b"fixture PA")
+            (staging/"field.pa_").write_bytes(b"fixture working array")
+            (staging/"field.pa+").write_bytes(b"required mode map")
+            records=inventory_direct_files(staging)
+            payload=payload_sha256(records); raw=generation_input(key,payload,"fixture")
+            generation=generation_sha256(raw)
+            directory=base/role/key/"generations"/generation
+            directory.parent.mkdir(parents=True)
+            staging.rename(directory)
+            manifest=dict(schema_version=3,role=role+"_pa_cache",cache_key=key,provider_run_id="fixture",
+                cache_key_input=text,identity=identity,payload_sha256=payload,generation_sha256=generation,generation_input=raw,files=records)
+            (directory/"cache_manifest.json").write_text(json.dumps(manifest))
+            (directory.parent.parent/"current_generation.json").write_text(json.dumps(dict(schema_version=1,
+                role=manifest["role"],cache_key=key,payload_sha256=payload,generation_sha256=generation,
+                generation_relative_path="generations/"+generation)))
+            return directory.parent.parent,generation
+        coarse,_=publish("simion_single_flight_frontend",{},"frontend.gem")
+        builder=root/"builder.lua";builder.write_bytes(b"exact producer")
+        inputs=dict(fine_gem_sha256=hashlib.sha256(b"gem").hexdigest(),
+            coarse_frontend_cache_key=coarse.name,basis_builder_sha256=file_sha256(builder))
+        target,generation=publish("simion_single_flight_accelerator_main",inputs,"accelerator_main.gem")
+        from common.contracts import capacity_ledger
+        capacity_ledger.initialize_capacity_ledger(root,objects=[dict(path=target.relative_to(root).as_posix(),
+            **{"class":"published_cache"},bytes=sum(p.stat().st_size for p in target.rglob("*") if p.is_file()),
+            status="ready",pin=False,identity=generation,owner=owner.OWNER)])
+        return owner,target,coarse,{"basis_builder_sha256":builder}
+
+    def test_dry_run_approval_archive_retry_and_public_plan_no_delete(self):
+        from common.contracts import reconcile_artifact_capacity
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); owner,target,coarse,builders=self.fixture(root)
+            plan=owner.plan_cache_retirement(root,target,builders,coarse)
+            evidence=root/"retained_evidence"
+            self.assertFalse(evidence.exists())
+            approved=owner.approve_cache_retirement(plan,evidence)
+            self.assertEqual(approved,owner.approve_cache_retirement(plan,evidence))
+            self.assertTrue((evidence/"owner_retirement_approval.json").is_file())
+            archived=json.loads((evidence/"owner_retirement_approval.json").read_text())["reconstruction_inputs"]
+            self.assertTrue(any(r["path"].endswith("field.pa+") for r in archived))
+            self.assertFalse(any(r["path"].endswith("field.pa_") for r in archived))
+            self.assertTrue(target.is_dir())
+            self.assertTrue(coarse.is_dir())
+            public=reconcile_artifact_capacity.plan(root,target_bytes=0,minimum_free_bytes=0,execution_mode="maintenance")
+            self.assertEqual(public["planned"][0]["operation"],"retire_approved_disposition")
+
+    def test_changed_producer_inventory_and_late_consumer_fail_closed(self):
+        from common.contracts import capacity_protection
+        for scenario in ("producer","extra","late_consumer","frontend"):
+            with self.subTest(scenario=scenario),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary);owner,target,coarse,builders=self.fixture(root)
+                plan=owner.plan_cache_retirement(root,target,builders,coarse)
+                if scenario=="producer":
+                    next(iter(builders.values())).write_bytes(b"changed")
+                elif scenario=="extra":
+                    (target/"unexpected.txt").write_text("unexpected")
+                elif scenario=="late_consumer":
+                    capacity_protection.create_capacity_protection_lease(root,lease_id="late",owner="consumer",
+                        ttl_seconds=60,protected_paths=[target.parent])
+                else:
+                    with self.assertRaises(ValueError):
+                        owner.plan_cache_retirement(root,coarse,builders,coarse)
+                    continue
+                with self.assertRaises(ValueError):
+                    owner.approve_cache_retirement(plan,root/"evidence")
+                self.assertTrue(target.is_dir())
+
+    def test_existing_powershell_owner_entry_defaults_to_plan_and_replays_approval(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);_,target,coarse,builders=self.fixture(root)
+            script=root/"invoke_owner.ps1"
+            owner_path=REPO_ROOT/"integrations"/INTEGRATION_ID/"runtime/run_artifacts.ps1"
+            builder=next(iter(builders.values()))
+            script.write_text(f""". '{owner_path}'
+$args=@{{Python='{sys.executable}';ArtifactRoot='{root}';CachePath='{target}';CoarseCachePath='{coarse}';BuilderSources=@{{basis_builder_sha256='{builder}'}}}}
+$plan=Request-RfFineCacheRetirement @args
+if(Test-Path '{root / 'evidence'}'){{throw 'Dry-run wrote evidence'}}
+$null=Request-RfFineCacheRetirement @args -Approve -EvidenceDirectory '{root / 'evidence'}'
+Request-RfFineCacheRetirement @args -Approve -EvidenceDirectory '{root / 'evidence'}'
+""",encoding="utf-8")
+            result=subprocess.run(["pwsh","-NoProfile","-File",str(script)],cwd=REPO_ROOT,
+                capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertEqual(json.loads(result.stdout)["class"],"rebuildable_payload")
+            self.assertTrue(target.is_dir())
+
+
 if __name__ == "__main__":
     unittest.main()

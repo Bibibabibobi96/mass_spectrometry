@@ -12,6 +12,7 @@ param(
   [string[]]$ApprovedStoppedConsumers=@(),
   [string[]]$CompatibilityInputRoles=@(),
   [string[]]$CompatibilityInputRoleMaps=@(),
+  [string[]]$SelectedHeavyPaths=@(),
   [switch]$Apply
 )
 Set-StrictMode -Version Latest
@@ -40,6 +41,7 @@ if ($Owner -or $OwnerAbandonmentReason) {
 }
 foreach ($role in $CompatibilityInputRoles) { $arguments += @('--compatibility-input-role',$role) }
 foreach ($mapping in $CompatibilityInputRoleMaps) { $arguments += @('--compatibility-input-role-map',$mapping) }
+foreach ($path in $SelectedHeavyPaths) { $arguments += @('--selected-heavy-path',$path) }
 if ($RuntimeCheckpoint -or $ConfirmWritingStopped) {
   if (-not $Owner.Trim() -or -not $OwnerAbandonmentReason.Trim() -or -not $RuntimeCheckpoint -or -not $ConfirmWritingStopped) {
     throw 'Stopped runtime retirement requires owner, abandonment reason, checkpoint and stopped-writing confirmation.'
@@ -59,6 +61,9 @@ try {
   & $python @arguments --apply
   if ($LASTEXITCODE -ne 0) { throw "solver_review retirement failed with exit code $LASTEXITCODE" }
   try {
+    if ($SelectedHeavyPaths.Count -gt 0) {
+      Write-Warning 'Partial payload retirement complete; public capacity reseal pending. Use seal-stopped-payload with the original owner and retention reason.'
+    } else {
     $runConfig = Join-Path $TargetRun 'run_config.json'
     $config = Get-Content -LiteralPath $runConfig -Raw | ConvertFrom-Json -AsHashtable
     if ($config.ContainsKey('capacity_ledger_lifecycle') -and
@@ -66,6 +71,7 @@ try {
       # Keep the retirement receipt as the wrapper's sole JSON stdout document.
       $null = & $python -m common.contracts.run_capacity_lifecycle --action finalize-ready --artifact-root $ArtifactRoot --run-config $runConfig
       if ($LASTEXITCODE -ne 0) { throw "finalize-ready failed with exit code $LASTEXITCODE" }
+    }
     }
   } catch {
     throw "Payload retirement completed, but capacity ledger finalization is pending; recover with run_capacity_lifecycle, do not repeat deletion. $($_.Exception.Message)"

@@ -198,6 +198,14 @@ pre-pulse、post-pulse与连续全程分别匹配实际IOB和数值身份，不�
 
 ## 发布结果
 
+缓存owner可点入既有`runtime/run_artifacts.ps1`调用`Request-RfFineCacheRetirement`，默认只读计划；
+范围仅accelerator_main/upstream_bridge完整generation，frontend必须保留。传入`BuilderSources`须逐项匹配
+manifest中的basis/initializer/refiner SHA；旧source run缺失不能免除此检查。`-Approve -EvidenceDirectory`
+在公共容量锁内重新核对消费者、完整库存并封存GEM、manifest、identity及实际构建源码；它只批准，
+不删除。随后仍由公共`reconcile_artifact_capacity --execution-mode maintenance --apply`消费准确disposition，
+按原公共pending/progress收据续做。执行者须持有正常主机/容量许可并保护frontend、当前run/GUI私有资产；
+dry-run或源码测试不构成真实退休已完成。原`require_existing`运行遇MISS仍失败，不伪造HIT。
+
 [预脉冲孔径比较](../analysis/publish_pre_pulse_aperture_comparison.py)只给出detector-blind源诊断。
 [全程孔径比较](../analysis/publish_full_flight_aperture_comparison.py)要求八臂同一完整母群，禁止共同命中筛选。
 [handoff对照](../analysis/compare_handoff_replay.py)核对冻结状态和检测/损失身份；共有粒子只用于误差诊断。

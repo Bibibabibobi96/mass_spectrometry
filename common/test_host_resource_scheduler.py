@@ -14,7 +14,7 @@ import tempfile
 import time
 import unittest
 
-from common.host_resource_scheduler import StaleSnapshotError, load_policy, transact, validate_budget
+from common.host_resource_scheduler import StaleSnapshotError, _same_creation_time, load_policy, transact, validate_budget
 
 GIB = 1024**3
 ROOT = Path(__file__).resolve().parents[1]
@@ -114,14 +114,29 @@ function Get-HostResourceSnapshot {{
   return $snapshot
 }}
 $lease=Enter-HostResourceStage -Role GATE -Stage concurrent-fixture -Budget (Get-HostResourceBudget -Profile measured-small-check)
-try {{ Start-Sleep -Milliseconds 200 }} finally {{ Exit-HostResourceStage -Lease $lease }}
+try {{ Start-Sleep -Milliseconds 200 }} finally {{
+  Exit-HostResourceStage -Lease $lease
+  $status=Get-HostResourceStatus -StatePath {_ps_quote(state)}
+  $remaining=@($status.records | Where-Object token -eq $lease.token)
+  if ($remaining.Count -eq 1 -and $remaining[0].reason -eq 'owner_released_descendants_still_live') {{
+    Write-Host 'RELEASE_RETAINED_REASON=owner_released_descendants_still_live'
+  }}
+}}
 """
             processes = [self.launch(script) for _ in range(16)]
             try:
                 ready.write_text("start", encoding="utf-8")
                 outputs = [self.finish(process) for process in processes]
                 self.assertTrue(all("HOST_RESOURCE=ACQUIRED" in output for output in outputs))
-                self.assertTrue(all("STATUS=released" in output for output in outputs))
+                self.assertTrue(all("STATUS=released" in output or
+                                    "RELEASE_RETAINED_REASON=owner_released_descendants_still_live" in output
+                                    for output in outputs), outputs)
+                check = self.prelude(state) + f"""
+$status=Get-HostResourceStatus -StatePath {_ps_quote(state)}
+if (@($status.records).Count -ne 0) {{ throw 'exited clients left live reservations' }}
+Write-Host 'EXITED_CLIENT_RESERVATIONS=0'
+"""
+                self.assertIn("EXITED_CLIENT_RESERVATIONS=0", self.finish(self.launch(check)))
             finally:
                 for process in processes:
                     if process.poll() is None:
@@ -310,6 +325,52 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.snapshot["processes"][0]["started"] = "0000000000000000003"
         self.assertEqual(self.acquire(2)["status"], "acquired")
 
+    def test_cim_native_precision_preserves_owner_registration_and_release(self) -> None:
+        cim = "0639590650123456700"
+        native = "0639590650123456703"
+        self.snapshot["processes"][0]["started"] = cim
+        request = dict(operation="request", token="precision", role="SIMION", stage="test",
+                       owner=dict(pid=1, started=cim), budget=budget(cpu=4))
+        self.snapshot["observed_at_ticks"] = time.time_ns()
+        transact(self.path, request, self.snapshot, self.policy)
+        self.snapshot["processes"][0]["started"] = native
+        self.snapshot["processes"].append(
+            dict(pid=99, parent_pid=1, started="0639590650123456807", memory_bytes=GIB))
+        request.update(operation="register", owner=dict(pid=1, started=native), process_id=99)
+        self.snapshot["observed_at_ticks"] = time.time_ns()
+        result = transact(self.path, request, self.snapshot, self.policy)
+        self.assertEqual(result["live_process_ids"], [1, 99])
+        self.assertEqual(result["work_roots"], [dict(pid=99, started="0639590650123456807")])
+        self.snapshot["processes"][-1]["started"] = "0639590650123456800"
+        self.snapshot["observed_at_ticks"] = time.time_ns()
+        result = transact(self.path, dict(operation="poll", token="precision",
+                                        owner=dict(pid=1, started=cim)), self.snapshot, self.policy)
+        self.assertEqual(result["live_work_process_ids"], [99])
+        self.snapshot["processes"] = [p for p in self.snapshot["processes"] if p["pid"] != 99]
+        self.snapshot["observed_at_ticks"] = time.time_ns()
+        result = transact(self.path, dict(operation="release", token="precision",
+                                        owner=dict(pid=1, started=native),
+                                        completed_work_processes=[dict(pid=99, started="0639590650123456807")]),
+                          self.snapshot, self.policy)
+        self.assertEqual(result["status"], "released")
+
+    def test_creation_precision_does_not_match_different_process_birth(self) -> None:
+        cim = "0639590650123456700"
+        for other in ("0639590650123456710", "0639590650123456690", "wrong"):
+            self.assertFalse(_same_creation_time(cim, other))
+        # Two native observations are not rounded; any difference remains real.
+        self.assertFalse(_same_creation_time("0639590650123456703", "0639590650123456704"))
+        self.snapshot["processes"][0]["started"] = cim
+        request = dict(operation="request", token="reused", role="GATE", stage="test",
+                       owner=dict(pid=1, started=cim), budget=budget(cpu=4))
+        self.snapshot["observed_at_ticks"] = time.time_ns()
+        transact(self.path, request, self.snapshot, self.policy)
+        self.snapshot["processes"][0]["started"] = "0639590650123456710"
+        with self.assertRaisesRegex(ValueError, "token is absent"):
+            self.snapshot["observed_at_ticks"] = time.time_ns()
+            transact(self.path, dict(operation="inherit", token="reused", owner=dict(pid=1, started=cim)),
+                     self.snapshot, self.policy)
+
     def test_explicit_release_retains_active_descendant(self) -> None:
         self.acquire(1, budget(cpu=4))
         self.snapshot["processes"].append(dict(pid=99, parent_pid=1, started="0000000000000000002", memory_bytes=2*GIB))
@@ -390,11 +451,17 @@ class HostResourceSchedulerTests(unittest.TestCase):
                 validate_budget(resources)
 
     def test_missing_creation_identity_is_not_process_death(self) -> None:
-        self.acquire(1)
+        reservation = self.acquire(1)
+        before = self.path.read_bytes()
         self.snapshot["processes"] = [p for p in self.snapshot["processes"] if p["pid"] != 1]
         self.snapshot["unknown_process_ids"] = [1]
-        with self.assertRaisesRegex(ValueError, "identity is unavailable"):
+        with self.assertRaisesRegex(ValueError, "identity is unavailable") as raised:
             self.acquire(2)
+        self.assertEqual(before, self.path.read_bytes())
+        message = str(raised.exception)
+        for detail in ("unavailable_pids=[1]", "reservation_token=1", "owner_pid=1",
+                       f"role={reservation['role']}", f"stage={reservation['stage']}"):
+            self.assertIn(detail, message)
         self.snapshot["unknown_process_ids"] = [999]
         self.assertEqual(self.acquire(2)["status"], "acquired")
 
@@ -542,6 +609,30 @@ class HostResourceSchedulerTests(unittest.TestCase):
         ])
         self.assertEqual(self.call("release", token="1")["status"], "acquired")
         self.assertEqual(self.acquire(2, self.policy["profiles"]["heavy-compute"])["reason"], "heavy_stage_active")
+
+    def test_released_console_recovers_when_image_identity_becomes_available(self) -> None:
+        self.acquire(1, budget(unknown=True))
+        console = dict(pid=99, parent_pid=1, started="0000000000000000002",
+                       memory_bytes=GIB, is_system_console_host=False)
+        self.snapshot["processes"].append(console)
+        self.assertEqual(self.call("release", token="1")["reason"],
+                         "owner_released_descendants_still_live")
+        self.assertEqual(self.acquire(2, budget(cpu=4))["status"], "waiting")
+        console["is_system_console_host"] = True
+        self.assertEqual(self.call("poll", 2, token="2")["status"], "acquired")
+        self.assertEqual([r["token"] for r in self.call("status")["records"]], ["2"])
+
+    def test_released_console_recovery_does_not_drop_a_live_solver(self) -> None:
+        self.acquire(1, self.policy["profiles"]["heavy-compute"])
+        console = dict(pid=99, parent_pid=1, started="0000000000000000002",
+                       memory_bytes=GIB, is_system_console_host=False)
+        self.snapshot["processes"].extend([
+            console, dict(pid=100, parent_pid=99, started="0000000000000000003", memory_bytes=GIB),
+        ])
+        self.call("release", token="1")
+        console["is_system_console_host"] = True
+        self.assertEqual(self.acquire(2, self.policy["profiles"]["heavy-compute"])["reason"],
+                         "heavy_stage_active")
 
 
 if __name__ == "__main__":

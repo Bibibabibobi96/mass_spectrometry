@@ -863,9 +863,11 @@ $hostExecutionOutcome='success'
                     "RF_TEST_LAYOUT_RESOLUTION": str(layout_resolution),
                 }
             )
-            artifact_root = root / "artifacts"
-            artifact_root.mkdir()
-            initialize_capacity_ledger(artifact_root, objects=[])
+            # Exercise the governed project layout in an isolated artifact tree.
+            artifact_workspace = root / "artifacts"
+            artifact_root = artifact_workspace / "projects" / "rf_quadrupole_ion_optics"
+            artifact_root.mkdir(parents=True)
+            initialize_capacity_ledger(artifact_workspace, objects=[])
             run_id = "20260725_120000__test__simion__source-preflight"
             result = subprocess.run(
                 [
