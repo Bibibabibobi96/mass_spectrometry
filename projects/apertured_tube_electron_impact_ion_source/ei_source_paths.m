@@ -6,13 +6,9 @@ function paths = ei_source_paths()
     workspaceRoot = fileparts(repoRoot);
     paths = struct();
     paths.projectRoot = componentRoot;
-    paths.componentRoot = componentRoot;
     paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', ...
         'apertured_tube_electron_impact_ion_source');
-    paths.formalRoot = fullfile(paths.artifactRoot, 'formal');
     paths.runsRoot = fullfile(paths.artifactRoot, 'runs');
-    paths.archiveRoot = fullfile(paths.artifactRoot, 'archive');
-    paths.scratchRoot = fullfile(paths.artifactRoot, 'scratch');
     paths.runId = getenv('EI_SOURCE_RUN_ID');
     assert(~isempty(paths.runId), 'EI_SOURCE_RUN_ID is required for a traceable run.');
     paths.runDir = fullfile(paths.runsRoot, paths.runId);

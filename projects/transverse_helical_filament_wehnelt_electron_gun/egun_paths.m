@@ -6,8 +6,6 @@ function paths = egun_paths()
     workspaceRoot = fileparts(repoRoot);
     paths = struct();
     paths.projectRoot = componentRoot;
-    paths.componentRoot = componentRoot;
-    paths.repoRoot = repoRoot;
     configuredArtifactRoot = getenv('WEHNELT_ARTIFACT_ROOT');
     if isempty(configuredArtifactRoot)
         paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', ...
@@ -15,10 +13,7 @@ function paths = egun_paths()
     else
         paths.artifactRoot = configuredArtifactRoot;
     end
-    paths.formalRoot = fullfile(paths.artifactRoot, 'formal');
     paths.runsRoot = fullfile(paths.artifactRoot, 'runs');
-    paths.archiveRoot = fullfile(paths.artifactRoot, 'archive');
-    paths.scratchRoot = fullfile(paths.artifactRoot, 'scratch');
     paths.runId = getenv('WEHNELT_RUN_ID');
     assert(~isempty(paths.runId), 'WEHNELT_RUN_ID is required for a traceable run.');
     paths.runDir = fullfile(paths.runsRoot, paths.runId);
