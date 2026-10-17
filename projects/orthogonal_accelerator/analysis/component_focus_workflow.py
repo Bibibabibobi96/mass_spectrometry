@@ -7,13 +7,14 @@ never starts SIMION, reads a PA cache, or materializes particles.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 from pathlib import Path
+
 import tempfile
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
 from common.ion_release.release import validate_release_spec
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import _load_campaign
@@ -30,10 +31,6 @@ _REQUEST_KEYS = {
     "schema_version", "role", "consumer_project_id", "geometry_profile_id",
     "time_focus", "numerics", "acceptance", "simion_projection",
 }
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _load_request(path: Path) -> dict[str, Any]:
@@ -203,8 +200,8 @@ def compile_workflow(request_path: Path, release_path: Path) -> dict[str, Any]:
         "status": "derived",
         "consumer_project_id": request["consumer_project_id"],
         "qualification": "provider_owned_native_pa_and_n100_component_flight_pending",
-        "request_sha256": _sha256(request_path),
-        "release_spec_sha256": _sha256(release_path),
+        "request_sha256": file_sha256(request_path).lower(),
+        "release_spec_sha256": file_sha256(release_path).lower(),
         "release_cache_effect": "run_only_unless_the_provider_plan_changes_from_the_release_cylinder_envelope_or_first_gap_placement",
         "campaign": campaign,
         "pa_plan": plan,

@@ -5,12 +5,12 @@ private-runtime checkpoint.  It never opens a PA payload.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
 from common.simion.pa_family_cache import PAFamilyCacheError, validate_pa_family_cache_generation
 from common.simion.standalone_pa_response_set import (
     StandalonePaResponseSetError,
@@ -24,16 +24,13 @@ class MrRuntimeReceiptError(ValueError):
 
 _RAW_NAME = "orthogonal_accelerator_focus.pa#"
 _RECEIPT_NAME = "orthogonal_accelerator_focus.standalone_responses.json"
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
 
 def _record(path: Path) -> dict[str, Any]:
     """Record a lightweight JSON/provider input after reading it."""
     resolved = path.resolve()
     if not resolved.is_file():
         raise MrRuntimeReceiptError(f"required provider file is missing: {resolved}")
-    return {"path": str(resolved), "bytes": resolved.stat().st_size, "sha256": _sha256(resolved)}
+    return {"path": str(resolved), "bytes": resolved.stat().st_size, "sha256": file_sha256(resolved).lower()}
 
 
 def _load_json(path: Path, label: str) -> dict[str, Any]:
@@ -55,8 +52,7 @@ def _record_matches(path: Path, record: dict[str, Any]) -> bool:
     """Compare one manifest record without imposing hash-letter case."""
     actual = _record(path)
     return (
-        actual["path"] == str(path.resolve())
-        and actual["bytes"] == record.get("bytes")
+        actual["bytes"] == record.get("bytes")
         and actual["sha256"] == str(record.get("sha256", "")).lower()
     )
 
@@ -205,8 +201,7 @@ def project(*, workflow_receipt_path: Path, pa_result_path: Path,
         raise MrRuntimeReceiptError("provider workflow lacks its selected flight analysis")
     analysis_path = _record_path(analysis_record, workflow_receipt_path.parent)
     actual_analysis = _record(analysis_path)
-    if (actual_analysis["path"] != str(analysis_path)
-            or actual_analysis["bytes"] != analysis_record.get("bytes")
+    if (actual_analysis["bytes"] != analysis_record.get("bytes")
             or actual_analysis["sha256"] != str(analysis_record.get("sha256", "")).lower()):
         raise MrRuntimeReceiptError("selected provider flight analysis differs from the workflow receipt")
     _verify_flight_child_source(flight_child, analysis_path, analysis_record)

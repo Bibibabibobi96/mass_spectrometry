@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import math
 from pathlib import Path
 from statistics import fmean
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.ion_release.release import validate_materialized_release, validate_release_spec
 from projects.orthogonal_accelerator.simion.two_zone_candidate import _load_geometry_profile
@@ -29,10 +29,6 @@ _REQUIRED = {
 
 class ComponentFocusError(ValueError):
     """Raised when component focus evidence is incomplete or inconsistent."""
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _finite(value: Any, label: str) -> float:
@@ -403,7 +399,7 @@ def analyze(event_csv_path: Path, release_receipt_path: Path, campaign_path: Pat
         "ideal_field_contrast": _ideal_two_zone_contrast(sources, campaign, peak_to_peak_time_ns),
         "warnings": warnings, "hard_gate": {"complete_transport_passed": transport_ok, "exit_slow_energy_passed": slow_energy_ok, "exit_axial_energy_passed": axial_energy_ok, "exit_transverse_energy_passed": transverse_energy_ok, "exit_transverse_velocity_bias_passed": transverse_velocity_bias_ok},
         "time_focus_assessment": {"passed": focus_ok, "threshold_ns": _finite(acceptance["maximum_focus_peak_to_peak_time_ns"], "maximum focus time spread"), "exceedance_policy": acceptance["time_spread_exceedance"]},
-        "identity": {"campaign_sha256": _sha256(campaign_path), "release_receipt_sha256": _sha256(release_receipt_path), "release_state_table_sha256": release["state_table"]["sha256"], "event_csv_sha256": _sha256(event_csv_path)},
+        "identity": {"campaign_sha256": file_sha256(campaign_path).lower(), "release_receipt_sha256": file_sha256(release_receipt_path).lower(), "release_state_table_sha256": release["state_table"]["sha256"], "event_csv_sha256": file_sha256(event_csv_path).lower()},
         "simion_projection": campaign["simion_projection"],
         "limitations": ["Component-only result; it does not qualify system transport, detector arrival, or mass resolution."],
     }

@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
 from projects.orthogonal_accelerator.analysis.component_focus_analysis import _load_campaign
 from projects.orthogonal_accelerator.simion.two_zone_candidate import _load_geometry_profile
 
@@ -23,10 +23,6 @@ _STATE_KEYS = {
     "best_record_index",
 }
 _TIERS = ((2.0, 0.0005), (10.0, 0.0025), (math.inf, 0.01))
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _number(value: object, label: str) -> float:
@@ -133,7 +129,7 @@ def _load_analysis(path: Path) -> dict[str, Any]:
         )
     )
     return {
-        "analysis_sha256": _sha256(path), "residuals": [axial],
+        "analysis_sha256": file_sha256(path).lower(), "residuals": [axial],
         "maximum_normalized_residual": abs(axial) / axial_tolerance,
         "score": max(cohort_slow / slow_tolerance, cohort_axial / axial_tolerance,
                      cohort_transverse / transverse_tolerance),
@@ -190,7 +186,7 @@ def initialize(campaign_path: Path, maximum_trials: int) -> dict[str, Any]:
         raise ComponentFocusFastAdjustError("maximum trials must be between 4 and 20")
     return {
         "schema_version": 1, "role": _ROLE, "status": "running",
-        "campaign_sha256": _sha256(campaign_path), "maximum_trials": maximum_trials,
+        "campaign_sha256": file_sha256(campaign_path).lower(), "maximum_trials": maximum_trials,
         "records": [], "next_parameters": _parameters(campaign), "phase": "base",
         "base_record_index": None, "probe_relative_step": None, "best_record_index": None,
     }
@@ -249,7 +245,7 @@ def main() -> int:
         campaign = _load_campaign(args.campaign)
         if args.state.exists():
             state = json.loads(args.state.read_text(encoding="utf-8"))
-            if state.get("campaign_sha256") != _sha256(args.campaign):
+            if state.get("campaign_sha256") != file_sha256(args.campaign).lower():
                 raise ComponentFocusFastAdjustError("controller state belongs to a different campaign")
         else:
             if args.maximum_trials is None:
