@@ -49,14 +49,15 @@ def record_path(record: dict, *, base_dir: Path | None = None) -> Path:
 
 
 def verify_record(
-    name: str, record: dict, *, base_dir: Path | None = None
+    name: str, record: dict, *, base_dir: Path | None = None,
+    _identity_cache: dict[tuple[Any, ...], tuple[int, str]] | None = None,
 ) -> None:
     path = record_path(record, base_dir=base_dir)
     if not path.is_file():
         raise AssertionError(f"manifest {name} is missing: {path}")
     if path.stat().st_size != record.get("bytes"):
         raise AssertionError(f"manifest {name} byte count changed: {path}")
-    actual = file_record(path, record.get("retention_role"))
+    actual = file_record(path, record.get("retention_role"), _identity_cache=_identity_cache)
     if actual["bytes"] != record.get("bytes"):
         raise AssertionError(f"manifest {name} byte count changed: {path}")
     if actual["sha256"] != str(record.get("sha256", "")).upper():
@@ -149,7 +150,8 @@ def main() -> None:
         raise AssertionError(
             f"manifest status is {manifest.get('status')!r}, expected {args.require_status!r}"
         )
-    verify_record("run_config", manifest["run_config"], base_dir=manifest_dir)
+    identity_cache: dict[tuple[Any, ...], tuple[int, str]] = {}
+    verify_record("run_config", manifest["run_config"], base_dir=manifest_dir, _identity_cache=identity_cache)
     run_config_path = record_path(manifest["run_config"], base_dir=manifest_dir)
     if args.require_local_run_config and run_config_path.parent != manifest_dir:
         raise AssertionError(
@@ -229,12 +231,12 @@ def main() -> None:
                     f"consumer projection input {name} path is {actual_path}, "
                     f"expected {expected_path}"
                 )
-            verify_record(f"consumed input {name}", record, base_dir=manifest_dir)
+            verify_record(f"consumed input {name}", record, base_dir=manifest_dir, _identity_cache=identity_cache)
         for expected_path in output_paths:
             index, record = _select_consumed_output(
                 manifest_outputs, expected_path, base_dir=manifest_dir
             )
-            verify_record(f"consumed output {index}", record, base_dir=manifest_dir)
+            verify_record(f"consumed output {index}", record, base_dir=manifest_dir, _identity_cache=identity_cache)
             if retention is not None:
                 expected_role = classify_file(
                     record_path(record, base_dir=manifest_dir),
@@ -247,9 +249,9 @@ def main() -> None:
                     )
     else:
         for name, record in manifest_inputs.items():
-            verify_record(f"input {name}", record, base_dir=manifest_dir)
+            verify_record(f"input {name}", record, base_dir=manifest_dir, _identity_cache=identity_cache)
         for index, record in enumerate(manifest_outputs, start=1):
-            verify_record(f"output {index}", record, base_dir=manifest_dir)
+            verify_record(f"output {index}", record, base_dir=manifest_dir, _identity_cache=identity_cache)
             if retention is not None:
                 expected_role = classify_file(
                     record_path(record, base_dir=manifest_dir),

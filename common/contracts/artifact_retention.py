@@ -10,10 +10,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 if __package__:
-    from .file_identity import file_sha256
     from .recorded_file_removal import remove_recorded_files, write_json_atomic
 else:
-    from file_identity import file_sha256
     from recorded_file_removal import remove_recorded_files, write_json_atomic
 
 POLICY_PATH = Path(__file__).with_name("artifact_retention.json")
@@ -259,7 +257,7 @@ def _execute_removals(
     run_dir: Path, retention: Retention, removed: list[dict[str, Any]],
     preserved: list[dict[str, Any]],
 ) -> Path:
-    """Persist deletion identities before touching a preflighted file list."""
+    """Publish the exact discard list without reading disposable payload bytes."""
     action_path = run_dir / "retention_actions.json"
     existing = None
     if action_path.exists():
@@ -280,7 +278,6 @@ def _execute_removals(
         path.resolve().relative_to(run_dir.resolve())
         if path.is_symlink() or path.stat().st_size != item["bytes"]:
             raise ValueError(f"retention file identity changed: {path}")
-        item["sha256"] = file_sha256(path)
     action = {
         "schema_version": 1, "role": "artifact_retention_actions",
         "retention_class": retention.class_id, "status": "pending",

@@ -70,12 +70,15 @@ def file_record(
     *,
     recorded_path: Path | None = None,
     document: dict[str, Any] | None = None,
+    _identity_cache: dict[tuple[Any, ...], tuple[int, str]] | None = None,
 ) -> dict[str, Any]:
     """Record exact bytes with the shared read policy for closed payloads.
 
     Large Windows solver-native outputs use the existing unbuffered reader;
     producers must already have stopped writing. Read failures never retry or
     fall back to another view. Virtual documents retain their exact JSON hash.
+    The optional private cache belongs to one closed-payload build/verify call;
+    default calls always read fresh bytes and never retain record metadata.
     """
     payload = _json_bytes(document) if document is not None else None
     exists = payload is not None or path.is_file()
@@ -83,12 +86,19 @@ def file_record(
     if payload is not None:
         record.update(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest().upper())
     elif path.is_file():
-        size = path.stat().st_size
+        metadata = path.stat()
+        size = metadata.st_size
         hash_file = file_sha256_unbuffered if (
             os.name == "nt" and retention_role == "solver_native_binary"
             and size >= _UNBUFFERED_SOLVER_PAYLOAD_BYTES
         ) else file_sha256
-        record.update(bytes=size, sha256=hash_file(path))
+        key = (path.resolve(), hash_file, size, metadata.st_mtime_ns) if _identity_cache is not None else None
+        identity = _identity_cache.get(key) if _identity_cache is not None else None
+        if identity is None:
+            identity = (size, hash_file(path))
+            if _identity_cache is not None:
+                _identity_cache[key] = identity
+        record.update(bytes=identity[0], sha256=identity[1])
     if retention_role is not None:
         record["retention_role"] = retention_role
     return record
@@ -145,12 +155,13 @@ def build_run_manifest(
         ) = retention_api()
         retention = validate_retention(run_config.get("artifact_retention"))
 
+    identity_cache: dict[tuple[Any, ...], tuple[int, str]] = {}
     inputs: dict[str, dict[str, Any]] = {}
     for name, value in run_config.get("inputs", {}).items():
         if isinstance(value, str):
             declared = resolve_path(value, base, project_root)
             actual, recorded = actual_and_recorded(declared)
-            inputs[name] = file_record(actual, recorded_path=recorded)
+            inputs[name] = file_record(actual, recorded_path=recorded, _identity_cache=identity_cache)
     resolved_outputs = [
         resolve_path(str(path), base, project_root) for path in (output_paths or [])
     ]
@@ -182,6 +193,7 @@ def build_run_manifest(
                 role,
                 recorded_path=recorded,
                 document=document,
+                _identity_cache=identity_cache,
             )
         )
     missing_inputs = [name for name, record in inputs.items() if not record["exists"]]
@@ -202,6 +214,7 @@ def build_run_manifest(
         "run_config": file_record(
             run_config_path,
             recorded_path=recorded_root / "run_config.json",
+            _identity_cache=identity_cache,
         ),
         "inputs": inputs,
         "outputs": outputs,

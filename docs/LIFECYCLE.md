@@ -150,8 +150,9 @@ schema v2冻结保留类别；默认类别是`compact`。保留类别在`run_con
 canonical粒子状态、事件、metrics和summary属于必需证据，不因超过大文件阈值改变保留角色。
 `finite_3d_transport.mph`、`.pa#/.paN/.pa_/.pa-surf`、完整`trajectory_samples*`（含压缩文件）以及达到策略阈值的其他可选大文件
 属于可选重型或可重建临时输出，不是每个成功run的必需证据。`compact`运行可在求解期间生成它们，但须在
-终态manifest前由公共retention执行器移除，并用`retention_actions.json`记录相对路径、字节数、原SHA-256
-和处置原因；执行器只接受无manifest或checkpoint的本次`runs/<run_id>`，先写pending收据再删除，完成后标记complete；
+终态manifest前由公共retention执行器移除，并用`retention_actions.json`记录精确相对路径、类型角色、字节数
+和处置原因；删除时复核路径范围、常规文件类型和大小，不为待丢弃的未封存临时载荷新增全文哈希。
+既有封存输入／结果的内容身份仍由来源manifest保留。执行器只接受无manifest或checkpoint的本次`runs/<run_id>`，先写pending收据再删除，完成后标记complete；
 既有收据不得覆盖，部分失败不能当成完成。最终interrupted须走专用reconcile，只处理未被manifest记录的可弃载荷并复核容量保护。
 writer和verifier会扫描未列出的
 重型文件并失败关闭，因此不能靠遗漏`--output`绕过。资格或GUI复核若确实需要重型文件，必须显式选择

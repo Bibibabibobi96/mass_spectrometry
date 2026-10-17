@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -113,6 +114,125 @@ class ManifestPayloadReadTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.payload = Path(self.directory.name) / "field.pa"
         self.payload.write_bytes(b"fixture!")
+
+    def repeated_manifest(self, *, cached=True, **kwargs):
+        root = self.payload.parent
+        config = root / "run_config.json"
+        config.write_text(json.dumps(dict(
+            schema_version=2, run_id="20261017_120000__test__python__manifest-read-reuse",
+            project="fixture", mode="fixture", inputs={"first": "field.pa", "alias": "./field.pa"},
+            artifact_retention={"policy_version": 1, "class": "solver_review", "reason": "identity fixture"},
+        )), encoding="utf-8")
+        reader = write_run_manifest.file_record
+
+        def uncached(*args, **options):
+            options.pop("_identity_cache", None)
+            return reader(*args, **options)
+
+        with patch.object(write_run_manifest, "file_record", reader if cached else uncached):
+            return write_run_manifest.build_run_manifest(
+                config, "success", output_paths=[self.payload, self.payload], **kwargs)
+
+    def test_build_reuses_identity_without_changing_record_shapes_or_staging_paths(self) -> None:
+        calls = []
+
+        def read(path):
+            calls.append(path.resolve())
+            return file_sha256(path)
+
+        destination = self.payload.parent / "published"
+        with patch.object(write_run_manifest, "file_sha256", side_effect=read):
+            original = self.repeated_manifest(cached=False, recorded_root=destination)
+            self.assertEqual(calls.count(self.payload.resolve()), 4)
+            calls.clear()
+            reused = self.repeated_manifest(recorded_root=destination)
+            self.assertEqual(calls.count(self.payload.resolve()), 1)
+        for document in (original, reused):
+            document.pop("recorded_at_utc")
+        self.assertEqual(reused, original)
+        self.assertEqual(reused["inputs"]["first"]["path"], str(destination / "field.pa"))
+        self.assertNotIn("retention_role", reused["inputs"]["first"])
+        self.assertEqual(reused["outputs"][0]["retention_role"], "solver_native_binary")
+
+    def test_build_and_verify_each_read_fresh_and_reject_conflicting_declarations(self) -> None:
+        calls = []
+
+        def read(path):
+            calls.append(path.resolve())
+            return file_sha256(path)
+
+        manifest_path = self.payload.parent / "run_manifest.json"
+        with patch.object(write_run_manifest, "file_sha256", side_effect=read):
+            manifest = self.repeated_manifest()
+            self.repeated_manifest()
+            self.assertEqual(calls.count(self.payload.resolve()), 2)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with patch.object(sys, "argv", ["verify", str(manifest_path)]):
+                verify_run_manifest.main()
+                verify_run_manifest.main()
+            self.assertEqual(calls.count(self.payload.resolve()), 4)
+            for field, value, error in (("sha256", "A" * 64, "SHA-256 changed"),
+                                         ("bytes", 9, "byte count changed")):
+                changed = json.loads(json.dumps(manifest))
+                changed["outputs"][0][field] = value
+                manifest_path.write_text(json.dumps(changed), encoding="utf-8")
+                with patch.object(sys, "argv", ["verify", str(manifest_path)]), self.assertRaisesRegex(AssertionError, error):
+                    verify_run_manifest.main()
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.payload.write_bytes(b"changed!")
+            with patch.object(sys, "argv", ["verify", str(manifest_path)]), self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
+                verify_run_manifest.main()
+
+    def test_same_call_metadata_changes_invalidate_identity_and_missing_files_fail(self) -> None:
+        cache = {}
+        with patch.object(write_run_manifest, "file_sha256", wraps=file_sha256) as reader:
+            original = write_run_manifest.file_record(self.payload, _identity_cache=cache)
+            metadata = self.payload.stat()
+            self.payload.write_bytes(b"changed!")
+            os.utime(self.payload, ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 2_000_000_000))
+            changed = write_run_manifest.file_record(self.payload, _identity_cache=cache)
+            self.assertNotEqual(changed["sha256"], original["sha256"])
+            self.assertEqual(reader.call_count, 2)
+            with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
+                verify_run_manifest.verify_record("old declaration", original, _identity_cache=cache)
+            self.assertEqual(reader.call_count, 2)
+            self.payload.unlink()
+            with self.assertRaisesRegex(AssertionError, "is missing"):
+                verify_run_manifest.verify_record("old declaration", original, _identity_cache=cache)
+
+    def test_same_call_keeps_buffered_unbuffered_and_virtual_identities_separate(self) -> None:
+        cache = {}
+        with (
+            patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
+            patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
+            patch.object(write_run_manifest, "file_sha256", return_value="B" * 64) as buffered,
+            patch.object(write_run_manifest, "file_sha256_unbuffered", return_value="A" * 64) as direct,
+        ):
+            for _ in range(2):
+                ordinary = write_run_manifest.file_record(self.payload, _identity_cache=cache)
+                native = write_run_manifest.file_record(self.payload, "solver_native_binary", _identity_cache=cache)
+            self.assertEqual((ordinary["sha256"], native["sha256"]), ("B" * 64, "A" * 64))
+            buffered.assert_called_once_with(self.payload)
+            direct.assert_called_once_with(self.payload)
+            first = write_run_manifest.file_record(self.payload, document={"future": 1}, _identity_cache=cache)
+            second = write_run_manifest.file_record(self.payload, document={"future": 2}, _identity_cache=cache)
+            self.assertNotEqual(first["sha256"], second["sha256"])
+            self.assertEqual(len(cache), 2)
+            self.assertEqual(buffered.call_count, 1)
+            self.assertEqual(direct.call_count, 1)
+
+    def test_virtual_build_bytes_and_recorded_paths_match_fresh_records(self) -> None:
+        document = {"status": "future"}
+        options = dict(recorded_root=self.payload.parent / "published",
+                       virtual_documents={self.payload: document})
+        original = self.repeated_manifest(cached=False, **options)
+        reused = self.repeated_manifest(**options)
+        for manifest in (original, reused):
+            manifest.pop("recorded_at_utc")
+        self.assertEqual(reused, original)
+        expected = write_run_manifest.file_record(self.payload, document=document)
+        self.assertEqual(reused["outputs"][0]["sha256"], expected["sha256"])
+        self.assertNotEqual(reused["inputs"]["first"]["sha256"], expected["sha256"])
 
     def test_writer_and_verifier_share_one_unbuffered_selection(self) -> None:
         with (

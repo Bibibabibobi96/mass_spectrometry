@@ -30,6 +30,11 @@ artifact路径，因此run ID、输入/输出身份、SHA和历史引用不变�
 manifest、正式资产和外部artifact；`repository_text_sha256`只用于Git治理的文本依赖，先把行尾规范为
 LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍负责路径范围、字节数和证据资格。
 
+manifest writer 与 verifier 分别只在本次调用内复用重复文件的 `(bytes, SHA)`；复用键绑定解析后的实际路径、
+真实读取函数、大小与修改时间，普通读取和大 PA 无缓冲读取不能混用。每条声明仍独立检查路径、字节数、
+SHA 和保留角色；虚拟终态文档不进入磁盘身份复用。`file_record`／`verify_record` 默认仍逐次读取，
+发布、复核和下游消费之间不保留此临时字典；大小与修改时间仅判断本次已读身份是否可复用。
+
 大PA的owner可显式调用`file_sha256_unbuffered`，默认`file_sha256`不变。该入口仅支持Windows 8+，
 以只读且仅share-read的`CreateFileW`句柄、`FILE_FLAG_NO_BUFFERING`、实际存储扇区信息和对齐的
 `VirtualAlloc`缓冲区顺序读取一次；尾块请求按扇区向上取整，只哈希`ReadFile`实际返回的文件字节。
@@ -80,7 +85,8 @@ producer须在发布前关闭写入和映射，不通过这项读取选择刷新
 `artifact_retention.json`和`artifact_retention.py`实现[生命周期](../../docs/LIFECYCLE.md)的run产物保留合同。迁移到manifest v2的
 入口必须显式启用公共生命周期retention，启用后的默认类是`compact`；`qualification/solver_review`
 必须在运行前给出理由。终态前`apply`只清除本次未闭合run中策略禁止的可重建文件并写
-`retention_actions.json`，不会处理既有最终run。manifest schema v2记录保留类和每项输出角色；
+`retention_actions.json`，只复核精确路径、常规文件类型和字节数，不读取待丢弃内容；不会处理既有最终run。
+manifest schema v2记录保留类和每项输出角色；
 writer/verifier同时扫描未列出的重型文件，防止通过漏报output绕过。schema v1只承担历史兼容，不因
 新增合同而失效；未迁移入口由测试中的具名棘轮清单约束，新建或实质修改时必须退出该清单。
 

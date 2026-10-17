@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from common.contracts import artifact_retention as retention
-from common.contracts.file_identity import file_sha256
 
 
 class RetentionSafetyTests(unittest.TestCase):
@@ -48,18 +47,37 @@ class RetentionSafetyTests(unittest.TestCase):
         self.assertEqual(action["status"], "complete")
         self.assertFalse(payload.exists())
 
-    def test_unlink_failure_leaves_pending_identity_receipt(self) -> None:
+    def test_unlink_failure_leaves_pending_disposal_receipt(self) -> None:
         payload = self.run / "field.pa0"
         payload.write_bytes(b"transient")
-        original_sha = file_sha256(payload)
         with patch.object(retention, "remove_recorded_files", side_effect=OSError("busy")):
             with self.assertRaisesRegex(OSError, "busy"):
                 retention.apply_retention(self.config)
         action = json.loads((self.run / "retention_actions.json").read_text())
         self.assertEqual(action["status"], "pending")
-        self.assertEqual(action["removed"][0]["sha256"], original_sha)
+        self.assertEqual(action["removed"], [{
+            "path": "field.pa0", "bytes": len(b"transient"),
+            "retention_role": "solver_native_binary",
+            "action": "removed_before_terminal_manifest",
+        }])
         self.assertEqual(action["removed_file_count"], 0)
         self.assertTrue(payload.exists())
+
+    def test_disposable_payload_is_removed_without_opening_its_content(self) -> None:
+        payload = self.run / "field.pa0"
+        payload.write_bytes(b"transient")
+        original_open = Path.open
+
+        def open_evidence(path, *args, **kwargs):
+            if path == payload:
+                raise AssertionError("disposal must not read payload content")
+            return original_open(path, *args, **kwargs)
+
+        with patch.object(Path, "open", open_evidence):
+            receipt = retention.apply_retention(self.config)
+        self.assertFalse(payload.exists())
+        action = json.loads(receipt.read_text())
+        self.assertEqual((action["status"], action["removed_bytes"]), ("complete", len(b"transient")))
 
     def test_prior_receipt_cannot_be_overwritten(self) -> None:
         retention.apply_retention(self.config)
