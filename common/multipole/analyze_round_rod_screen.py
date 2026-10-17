@@ -11,14 +11,6 @@ from pathlib import Path
 from typing import Any
 
 
-def harmonic_amplitude(values: list[float], angles: list[float], order: int) -> float:
-    """Return the cosine/sine Fourier amplitude for one positive angular order."""
-    scale = 2.0 / len(values)
-    cosine = scale * sum(value * math.cos(order * angle) for value, angle in zip(values, angles))
-    sine = scale * sum(value * math.sin(order * angle) for value, angle in zip(values, angles))
-    return math.hypot(cosine, sine)
-
-
 def harmonic_components(values: list[float], angles: list[float], order: int) -> tuple[float, float]:
     """Return signed cosine and sine Fourier coefficients."""
     scale = 2.0 / len(values)

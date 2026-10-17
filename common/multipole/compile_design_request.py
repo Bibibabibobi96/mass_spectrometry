@@ -954,39 +954,6 @@ def validate_resolved_design(
     return document
 
 
-def validate_resolved_design_file(
-    path: Path,
-    *,
-    request_path: Path,
-    source_root: Path,
-    expected_identity: Mapping[str, Any],
-    repository_text_sources: bool | None = None,
-) -> dict[str, Any]:
-    """Load a resolved design and compare it with deterministic recompilation."""
-    document = json.loads(Path(path).read_text(encoding="utf-8-sig"))
-    return validate_resolved_design(
-        document,
-        request_path=request_path,
-        source_root=source_root,
-        expected_identity=expected_identity,
-        repository_text_sources=repository_text_sources,
-    )
-
-
-def _parse_source_bindings(values: list[str]) -> dict[str, Path]:
-    bindings: dict[str, Path] = {}
-    for value in values:
-        label, separator, path = value.partition("=")
-        if not separator or not label or not path:
-            raise MultipoleDesignCompileError(
-                "each --source binding must have the form label=path"
-            )
-        if label in bindings:
-            raise MultipoleDesignCompileError(f"duplicate source label: {label}")
-        bindings[label] = Path(path)
-    return bindings
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", required=True, type=Path)
@@ -999,13 +966,6 @@ def main() -> int:
     parser.add_argument("--electrode-count", required=True, type=int)
     parser.add_argument("--operating-mode-registry", type=Path)
     parser.add_argument("--mode-id")
-    parser.add_argument(
-        "--source",
-        action="append",
-        default=[],
-        metavar="LABEL=PATH",
-        help="Additional source file to freeze; may be repeated.",
-    )
     args = parser.parse_args()
     expected_identity = {
         "project_id": args.project_id,
@@ -1013,10 +973,6 @@ def main() -> int:
         "radial_order_n": args.radial_order_n,
         "electrode_count": args.electrode_count,
     }
-    if args.source:
-        raise MultipoleDesignCompileError(
-            "--source is unavailable on the governed production compiler"
-        )
     resolved = compile_governed_design_request_file(
         args.request,
         args.design_variables,

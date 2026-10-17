@@ -116,6 +116,10 @@ solver numerics、资源预算和保留类；CLI不得覆盖几何、RF/DC、源
 它串行调用现有单工况runner，不复制求解器逻辑。analysis request只能引用
 [`analysis_capabilities.json`](analysis_capabilities.json)中的具名能力，不能嵌入任意模块或路径。
 
+分析修复后使用现有 campaign 分析入口和冻结源输入生成新结果；不再保留无人调用的独立 recovery
+发布器。设计校验直接消费已读取的 resolved 对象；编译 CLI 只接受现有治理合同，不暴露始终拒绝的
+`--source` 参数。
+
 ## 证据和资格
 
 [`functional_transport_acceptance.json`](functional_transport_acceptance.json)只评价共享功能传输。

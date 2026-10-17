@@ -124,18 +124,6 @@ def stable_inventory_direct_files(
     raise ValueError("cache inventory did not stabilize within the retry window")
 
 
-def inventory_declared_files(
-    directory: str | Path, records: Iterable[Mapping[str, Any]]
-) -> list[dict[str, Any]]:
-    """Verify and return one caller-declared direct-file inventory."""
-
-    root = Path(directory)
-    expected = validate_direct_inventory(records)
-    if not root.is_dir():
-        raise ValueError(f"cache directory is missing: {root}")
-    return inventory_named_files(root, [record["name"] for record in expected])
-
-
 def inventory_named_files(
     directory: str | Path, filenames: Iterable[str], *, unbuffered_large_files: bool = False,
 ) -> list[dict[str, Any]]:
