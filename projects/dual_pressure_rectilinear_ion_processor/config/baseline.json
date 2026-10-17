@@ -9,8 +9,6 @@
     "guide_order": 4,
     "hp_center_mm": 120,
     "lp_center_mm": 170,
-    "interface_halfwidth_mm": 5,
-    "guide_blend_halfwidth_mm": 2,
     "extraction_slit_length_mm": 8,
     "extraction_slit_width_mm": 0.8,
     "extraction_end_y_mm": 9.8,
@@ -22,14 +20,7 @@
     "guide_rf_peak_to_peak_v": 1000,
     "rf_quench_delay_cycles": 0.5,
     "rf_quench_alignment": "requested_time",
-    "hp_axial_curvature_v_per_mm2": 0.01,
-    "lp_axial_curvature_v_per_mm2": 0.1,
-    "lp_capture_offset_v": 20,
-    "hp_transfer_offset_v": 80,
-    "lift_v": 4000,
-    "extraction_gradient_v_per_mm": 500,
-    "hp_transfer_gradient_v_per_mm": 0.2,
-    "lp_transfer_axial_curvature_v_per_mm2": 0.005
+    "lift_v": 4000
   },
   "gas": {
     "temperature_k": 300,

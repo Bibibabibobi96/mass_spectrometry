@@ -9,8 +9,8 @@
 来自同一baseline。原生电压只消费`config/native_operating_point.json`，RF/时序沿既有baseline冻结。
 动态场复用官方Fast Adjust及单位响应线性叠加支持机制，不用理想解析梯度覆盖生产电极场。
 
-前一解析场workflow尚未运行。`efield_adjust`中的解析规定场和旧curvature/offset仅供受控参考；
-不得将其输出或普通GUI静态电势显示混为原生动态场证据。旧0.2 mm场族的15组原生响应Refine完成（15.47 s），当前0.1 mm场族已求解；旧场不自动继承资格，当前恢复与结果边界见PROJECT。
+前一解析场workflow未形成运行证据，已删除无生产消费者的解析场及其专用测试；旧curvature/offset仅在历史解释中保留。
+不得将历史解析场输出或普通GUI静态电势显示混为原生动态场证据。旧0.2 mm场族的15组原生响应Refine完成（15.47 s），当前0.1 mm场族已求解；旧场不自动继承资格，当前恢复与结果边界见PROJECT。
 RF波形复用`common/multipole/simion_rf_drive.lua`，所有阶段使用唯一绝对instrument time。
 LP浮动屏蔽件电极14平时与LP common-mode同步，引出脉冲时消费原生电压配置中的相对偏置；
 当前跟随Pull的−900 V修正及条件对照见PROJECT。HP屏蔽件电极15与HP common-mode同步；

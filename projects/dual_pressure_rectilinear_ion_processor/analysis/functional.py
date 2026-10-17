@@ -171,8 +171,8 @@ def validate_configs(config: dict[str, Any]) -> None:
     """Reject malformed scientific inputs before solver startup."""
     baseline, numerics, source, acceptance = (config[k] for k in ("baseline", "numerics", "source", "acceptance"))
     expected = {
-        "geometry": "guide_length_mm hp_length_mm lp_length_mm r0_mm guide_r0_mm guide_order hp_center_mm lp_center_mm interface_halfwidth_mm guide_blend_halfwidth_mm extraction_slit_length_mm extraction_slit_width_mm extraction_end_y_mm boundary_radius_mm",
-        "electric": "rf_frequency_hz rf_peak_to_peak_v guide_rf_peak_to_peak_v rf_quench_delay_cycles rf_quench_alignment hp_axial_curvature_v_per_mm2 lp_axial_curvature_v_per_mm2 lp_capture_offset_v hp_transfer_offset_v lift_v extraction_gradient_v_per_mm hp_transfer_gradient_v_per_mm lp_transfer_axial_curvature_v_per_mm2",
+        "geometry": "guide_length_mm hp_length_mm lp_length_mm r0_mm guide_r0_mm guide_order hp_center_mm lp_center_mm extraction_slit_length_mm extraction_slit_width_mm extraction_end_y_mm boundary_radius_mm",
+        "electric": "rf_frequency_hz rf_peak_to_peak_v guide_rf_peak_to_peak_v rf_quench_delay_cycles rf_quench_alignment lift_v",
         "gas": "temperature_k mass_amu hp_pressure_pa lp_pressure_pa cross_section_m2 mean_free_path_mm",
         "schedule": "capture_end_us transfer_end_us lift_end_us extraction_start_us terminal_us",
         "clock": "epoch_us frame_id rf_phase_rad",

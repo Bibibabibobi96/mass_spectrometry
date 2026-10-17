@@ -17,7 +17,11 @@
 [原生电压](../config/native_operating_point.json)拥有电极电压；
 [释放](../config/source.json)、[数值](../config/numerics.json)与[验收](../config/acceptance.json)分别拥有其语义。
 尺寸来源见[geometry_sources](../config/geometry_sources.json)，热源依据见[source_parameter_sources](../config/source_parameter_sources.json)。
-来源文件不是第二份可调物理真值。旧解析规定场不是生产场。
+来源文件不是第二份可调物理真值。旧解析规定场不是生产场；2026-10-17审查确认其唯一消费者为自身回归，
+已删除解析场模块、Python/Lua专用测试及9个无数值消费者的曲率／混合／规定场参数与必填检查；
+活动生产链仍只消费原生电极场及native_operating_point电压。历史冻结源码和运行输入不变。
+截面图导出不再逐次执行随机几何自测或物化无人消费的section_validation.json；切孔与截面减法由确定性回归覆盖。
+同次三图共用一次计算的冻结源／snapshot／producer身份，移除绘图前后重复全文哈希；输入只读、图像和来源身份仍发布。
 
 | 项目 | 封存参考 |
 |---|---|

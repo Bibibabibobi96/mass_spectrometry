@@ -158,6 +158,32 @@ class AssemblyTests(unittest.TestCase):
         self.assertIn("namespace=ion_processor id=12", text)
         self.assertIn("notin_inside", text)
 
+    def test_historical_source_authors_current_native_seed_without_retired_analytic_fields(self):
+        expected = copy.deepcopy(self.source["baseline"])
+        expected["geometry"]["lp_length_mm"] = 61.5
+        expected["electric"]["lift_v"] = 4480.043790844389
+        for section, names in {
+            "geometry": ("interface_halfwidth_mm", "guide_blend_halfwidth_mm"),
+            "electric": ("hp_axial_curvature_v_per_mm2", "lp_axial_curvature_v_per_mm2",
+                         "lp_capture_offset_v", "hp_transfer_offset_v", "extraction_gradient_v_per_mm",
+                         "hp_transfer_gradient_v_per_mm", "lp_transfer_axial_curvature_v_per_mm2"),
+        }.items():
+            self.source["baseline"][section].update(dict.fromkeys(names, 123.0))
+        original = copy.deepcopy(self.source)
+        report = self.prepare()
+        config = {name: json.loads(Path(path).read_text())
+                  for name, path in report["source_config_paths"].items()}
+        self.assertEqual(config["baseline"], expected)
+        self.assertEqual(config["native_operating_point"]["hp_transfer_offset_v"],
+                         original["native_operating_point"]["hp_transfer_offset_v"])
+        self.assertEqual(json.loads((self.root / "source.json").read_text()), original)
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import (
+            derive_native_timing, validate_configs,
+        )
+        config["source_profile"] = "functional"
+        config["native_timing"] = derive_native_timing(config["baseline"])
+        validate_configs(config)
+
     def test_box_and_circular_hole_pose(self):
         r = [[0, 0, -1], [1, 0, 0], [0, -1, 0]]
         t = [0, -225, 9.8]

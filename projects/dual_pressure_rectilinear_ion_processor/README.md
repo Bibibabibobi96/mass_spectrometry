@@ -20,7 +20,7 @@ GUI 包也应从同一冻结几何独立求场，保留完整母群，由用户�
 ## 所有权
 
 `config/`拥有科学与数值权威，`analysis/`拥有准备及分析，`simion/`拥有求解器投影，`tests/`拥有静态回归。
-旧解析规定场只作参考。COMSOL 后续消费同一科学配置；上游真实多极杆和 MRTOF 装配应由对应器件及独立 integration 维护。
+旧解析规定场已退出活动源码，历史只读记录保留其解释。COMSOL 后续消费同一科学配置；上游真实多极杆和 MRTOF 装配应由对应器件及独立 integration 维护。
 本器件的抽象引导段不表示已消费真实上游端口。
 
 运行产物进入仓库同级 `artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/`；当前状态统一见 PROJECT。

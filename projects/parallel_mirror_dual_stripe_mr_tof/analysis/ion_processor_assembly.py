@@ -249,6 +249,15 @@ def prepare_ion_processor_assembly(
     ):
         raise ValueError("MR assembly reference frame differs")
     baseline, numerics = copy.deepcopy(source["baseline"]), copy.deepcopy(source["numerics"])
+    # Historical source evidence stays immutable; author only the current native seed.
+    for section, names in {
+        "geometry": ("interface_halfwidth_mm", "guide_blend_halfwidth_mm"),
+        "electric": ("hp_axial_curvature_v_per_mm2", "lp_axial_curvature_v_per_mm2",
+                     "lp_capture_offset_v", "hp_transfer_offset_v", "extraction_gradient_v_per_mm",
+                     "hp_transfer_gradient_v_per_mm", "lp_transfer_axial_curvature_v_per_mm2"),
+    }.items():
+        for name in names:
+            baseline[section].pop(name, None)
     point = copy.deepcopy(source["native_operating_point"])
     old_lift = _finite(point["lift_v"])
     if baseline["electric"]["lift_v"] != old_lift:

@@ -128,8 +128,7 @@ class SectionDiagnostics:
                 raise FileExistsError(path)
             fig.savefig(path, dpi=210, facecolor='white')
             outputs.append(dict(path=str(path), sha256=sha(path)))
-        paths = [self.RUN / p for p in ('inputs/resolved_model.json', 'inputs/diagnostics.json', 'simion/events.csv', 'simion/samples.csv', 'results/particle_state.csv')]
-        metadata = dict(role='read_only_section_diagnostic', source_run=str(self.RUN), source_particle_count=len({r['particle_id'] for r in self.SNAPSHOTS}), sources=[dict(path=str(p), sha256=sha(p)) for p in paths], recorded_state_table=dict(path=str(self.SNAPSHOT_PATH), sha256=sha(self.SNAPSHOT_PATH)), producer=dict(path=str(Path(__file__)), sha256=sha(Path(__file__))), outputs=outputs, geometry='Frozen CSG plane intersections, with electrode-specific cutouts subtracted; not a PA-grid image. Solid gray section; amber E9 isolated footprints are projected, not a central section.', particle_display='All source IDs retained in the snapshot table; all transverse x positions projected onto y-z. Gray geometry slice is x=0 mm; amber E9 is its explicit longitudinal projection; particles need not lie on this slice. This overlay cannot establish electrode impact.', coordinate_frame=self.C['coordinate_transform']['to_frame_id'], new_simulation=False, **extra)
+        metadata = dict(role='read_only_section_diagnostic', source_run=str(self.RUN), source_particle_count=len({r['particle_id'] for r in self.SNAPSHOTS}), sources=self.SOURCE_RECORDS, recorded_state_table=self.SNAPSHOT_RECORD, producer=self.PRODUCER_RECORD, outputs=outputs, geometry='Frozen CSG plane intersections, with electrode-specific cutouts subtracted; not a PA-grid image. Solid gray section; amber E9 isolated footprints are projected, not a central section.', particle_display='All source IDs retained in the snapshot table; all transverse x positions projected onto y-z. Gray geometry slice is x=0 mm; amber E9 is its explicit longitudinal projection; particles need not lie on this slice. This overlay cannot establish electrode impact.', coordinate_frame=self.C['coordinate_transform']['to_frame_id'], new_simulation=False, **extra)
         (self.OUT / f'{name}.metadata.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         plt.close(fig)
 
@@ -243,31 +242,6 @@ class SectionDiagnostics:
         fig.text(0.06, 0.085, f'All ion x positions projected onto y-z; gray geometry is the x=0 section. Outside ions remain in the full view.\nAcceleration pulse begins {pulse_offset:.5f} us after RF quench. Last positions are not live ions; axes are not to scale.', fontsize=10, color='#444')
         self.save(fig, 'extraction_clouds_sections', dict(snapshot_labels=labels, view_bounds_mm=dict(y=[160, 180], z=[-0.5, 13.7])))
 
-    def verify_sections(self):
-        """Pointwise cross-check section subtraction against original 3D CSG."""
-        import random
-        rng = random.Random(42)
-        checked = 0
-
-        def inside(s, p):
-            if s['shape'] == 'box':
-                return all((a <= v <= b for a, b, v in zip(s['min_mm'], s['max_mm'], p)))
-            return s['x_min_mm'] <= p[0] <= s['x_max_mm'] and (p[1] - s['center_y_mm']) ** 2 + (p[2] - s['center_z_mm']) ** 2 <= s['radius_mm'] ** 2
-        for view, value in [('long', 0), ('top', self.origin_z_mm), ('cross', self.G['guide_length_mm'] / 2), ('cross', self.G['guide_length_mm'] + self.G['hp_length_mm'] / 2), ('cross', self.G['lp_center_mm'])]:
-            for e in self.ELECTRODES:
-                shapes = parts(e, view, value, self.origin_z_mm)
-                for _ in range(1500):
-                    h = rng.uniform(-5, 215) if view in {'long', 'top'} else rng.uniform(-4, 4)
-                    z = rng.uniform(-4, 4) if view == 'top' else rng.uniform(self.origin_z_mm-4, self.origin_z_mm+4)
-                    world = (z, h, value) if view == 'top' else ((value, h, z) if view == 'long' else (h, value, z))
-                    local = (world[1], self.origin_z_mm - world[2], -world[0])
-                    expected = any((inside(s, local) for s in e['solids'])) and (not any((inside(s, local) for s in e['cutouts'])))
-                    observed = any((p[0] <= h <= p[2] and p[1] <= z <= p[3] if k == 'rect' else (h - p[0]) ** 2 + (z - p[1]) ** 2 <= p[2] ** 2 for k, p in shapes))
-                    assert expected == observed, (view, value, e['electrode_id'], world)
-                    checked += 1
-        (self.OUT / 'section_validation.json').write_text(json.dumps(dict(status='pass', point_membership_comparisons=checked, method='Frozen 3D CSG Boolean membership versus drawn 2D plane intersections; random points avoid boundary ambiguities', geometry_sha256=sha(self.MODEL)), indent=2) + '\n', encoding='utf-8')
-        print('Section membership PASS', checked, flush=True)
-
     @plt.rc_context({'font.family': 'DejaVu Sans', 'font.size': 10, 'svg.fonttype': 'none'})
     def export(self, run, output_directory, snapshot_table=None):
         self.RUN = Path(run).resolve()
@@ -278,20 +252,20 @@ class SectionDiagnostics:
         self.G = self.C['baseline']['geometry']
         self.origin_z_mm = self.C['coordinate_transform']['translation_mm'][2]
         source_paths = [self.RUN / p for p in ('inputs/resolved_model.json', 'inputs/diagnostics.json', 'simion/events.csv', 'simion/samples.csv', 'results/particle_state.csv')]
-        before = {str(p): sha(p) for p in source_paths}
+        self.SOURCE_RECORDS = [dict(path=str(p), sha256=sha(p)) for p in source_paths]
+        self.PRODUCER_RECORD = dict(path=str(Path(__file__)), sha256=sha(Path(__file__)))
         with (self.RUN / 'simion/events.csv').open(newline='', encoding='utf-8-sig') as stream:
             self.RETAINED_IDS = {r['particle_id'] for r in csv.DictReader(stream) if r['event'] == 'terminal' and r['reason'] != 'acceptance_surface'}
         self.SNAPSHOT_PATH = Path(snapshot_table).resolve() if snapshot_table else self.OUT / 'diagnostic_snapshots.csv'
+        self.SNAPSHOT_RECORD = dict(path=str(self.SNAPSHOT_PATH), sha256=sha(self.SNAPSHOT_PATH))
         with self.SNAPSHOT_PATH.open(newline='', encoding='utf-8-sig') as stream:
             self.SNAPSHOTS = list(csv.DictReader(stream))
         self.LABELS = list(dict.fromkeys((row['snapshot'] for row in self.SNAPSHOTS)))
         self.OUT.mkdir(parents=True, exist_ok=True)
-        self.verify_sections()
         self.atlas()
         self.clouds()
         self.extraction()
-        assert all((sha(p) == before[str(p)] for p in source_paths))
-        print('PASS: 3 figures exported; original recorded evidence hashes unchanged.', flush=True)
+        print('PASS: 3 figures exported from recorded evidence.', flush=True)
 
 def export_sections(run: Path, output_directory: Path, snapshot_table: Path | None=None) -> None:
     """Export English frozen-CSG sections and recorded clouds to fresh output files.
