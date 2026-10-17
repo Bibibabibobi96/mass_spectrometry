@@ -280,6 +280,15 @@ class ResolveConnectionTests(unittest.TestCase):
             },
         )
 
+    def test_both_public_registry_boundaries_reject_malformed_nested_profile(self) -> None:
+        registry = load_connection_profile_registry(self.registry_path)
+        del registry["profiles"][0]["connector"]["length_mm"]
+        self._write_json(self.registry_path, registry)
+        with self.assertRaises(ContractError):
+            load_connection_profile_registry(self.registry_path)
+        with self.assertRaises(ContractError):
+            resolve_connection_profile(registry, "grounded_tube", repo_root=self.repo_root)
+
     def _resolve(self) -> dict:
         registry = load_connection_profile_registry(self.registry_path)
         return resolve_connection_profile(

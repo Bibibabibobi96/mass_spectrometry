@@ -209,7 +209,6 @@ def load_connection_profile_registry(path: str | Path) -> dict[str, Any]:
     integration_id = registry["integration_id"]
     seen: set[str] = set()
     for profile in registry["profiles"]:
-        validate_schema(profile, "connection_profile.schema.json")
         if profile["integration_id"] != integration_id:
             raise ContractError(
                 f"profile {profile['connection_profile_id']}: integration_id differs from registry"
@@ -287,7 +286,6 @@ def _resolve_profile(
     downstream_path: Path,
     repo_root: Path,
 ) -> dict[str, Any]:
-    validate_schema(profile, "connection_profile.schema.json")
     validate_schema(upstream_port, "component_port.schema.json")
     validate_schema(downstream_port, "component_port.schema.json")
     upstream_authority_hash, upstream_authority_path = _validate_port_authority(
@@ -525,7 +523,6 @@ def resolve_connection_profile(
             f"connection_profile_id must resolve exactly once: {profile_id}"
         )
     profile = matches[0]
-    validate_schema(profile, "connection_profile.schema.json")
     if profile["integration_id"] != registry["integration_id"]:
         raise ContractError("connection profile integration_id differs from registry")
     if "port_contract" not in profile["upstream"]:

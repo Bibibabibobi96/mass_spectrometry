@@ -15,6 +15,9 @@
 - `write_resolved_and_plan(...)`：写出包含源SHA-256的resolved connection及引用其SHA-256的plan；
 - `verify_composition_plan(...)`：执行前重新计算resolved SHA并核对五元组与耦合模式。
 
+两个公开注册表入口各自递归校验完整 profile schema；同次解析不再逐 profile 重复校验。
+port 来源身份和物理兼容性仍在解析边界检查。
+
 ## 执行边界
 
 [`execute_connection.ps1`](execute_connection.ps1) 的 `-ValidateOnly` 执行公共校验；`-PrepareOnly -AdapterEntrypoint <path>`可在
