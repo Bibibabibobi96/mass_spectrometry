@@ -227,7 +227,6 @@ try {
     def test_long_gap_builds_governed_split_pa_and_iob_path(self) -> None:
         self.assertIn("mode='domain_split'; reason='connector_fits_disjoint_fine_domains'", self.source)
         self.assertIn("field_superposition_prohibited=$true", self.source)
-        self.assertIn("domain_split_runtime_contract.json", self.source)
         self.assertIn("--upstream-bridge-contract", self.source)
         self.assertIn("--accelerator-main-contract", self.source)
         self.assertIn("build_single_flight_full_iob.lua", self.source)
@@ -366,10 +365,6 @@ try {
 
     def test_local_axis_field_skips_upstream_but_keeps_the_coarse_dirichlet_source(self) -> None:
         self.assertIn("if (-not $postPulseHandoffMinimal -and -not $domainSplitLocalAxisField)", self.source)
-        self.assertIn(
-            "'full_coarse_bridge','accelerator_main','accelerator_entrance_local'",
-            self.source,
-        )
         self.assertIn("$paCacheDispositions.fine_upstream", self.source)
         local_axis = self.source[
             self.source.index("} elseif ($domainSplitLocalAxisField) {"):

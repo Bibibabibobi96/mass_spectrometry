@@ -187,7 +187,6 @@ def _restart_case(root: Path, name: str) -> tuple[str, Path]:
     _write_json(run / "inputs" / "resolved_connection.json", {
         "spatial_registration": {"expected_gap_mm": 102.4}, "connector": {"length_mm": 102.4},
     })
-    _write_json(run / "inputs" / "resolved_single_flight_population.json", {})
     _write_json(run / "inputs" / "resolved_population_contract.json", {
         "source_release_mode": "pre_pulse_restart",
         "source_authority": {"particle_count": 3, "table": {"path": handoff.relative_to(WORKSPACE_ROOT).as_posix(), "sha256": _record(handoff)["sha256"]}},

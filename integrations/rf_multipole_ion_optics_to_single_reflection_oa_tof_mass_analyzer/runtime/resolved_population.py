@@ -308,13 +308,9 @@ def compile_resolved_population_contract(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contract", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     contract = json.loads(args.contract.read_text(encoding="utf-8-sig"))
-    args.output.write_text(
-        json.dumps(resolve_runtime_population(contract), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    print(json.dumps(resolve_runtime_population(contract), sort_keys=True))
 
 
 if __name__ == "__main__":

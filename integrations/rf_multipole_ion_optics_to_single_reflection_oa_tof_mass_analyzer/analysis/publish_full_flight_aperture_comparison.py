@@ -70,7 +70,6 @@ POST_PULSE_RESTART_SOURCE_FILES = (
     "inputs/mother_particle_source.csv",
     "inputs/resolved_connection.json",
     "inputs/resolved_population_contract.json",
-    "inputs/resolved_single_flight_population.json",
     "inputs/single_flight_initial_global_state.csv",
     "inputs/single_flight_particle_row_map.csv",
     "results/single_flight_particle_checkpoints.csv",

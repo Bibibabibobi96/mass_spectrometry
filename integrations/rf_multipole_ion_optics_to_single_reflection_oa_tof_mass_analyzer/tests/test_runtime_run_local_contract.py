@@ -1763,7 +1763,6 @@ foreach ($entry in $commands) {{
         )
         self.assertNotIn("source_release_mode=$sourceReleaseMode", runner)
         self.assertNotIn("source_release_mode=$SourceReleaseMode", runner)
-        self.assertIn("resolved_single_flight_population.json", runner)
         self.assertIn("$populationBasis = [string]", runner)
         self.assertNotIn("$SamplingMode", runner)
         self.assertNotIn("steady_candidate_pool", runner)

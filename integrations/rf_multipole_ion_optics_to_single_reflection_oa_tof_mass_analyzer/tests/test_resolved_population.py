@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import unittest
+import contextlib
+import io
+import json
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_population import (
     RESOLVED_POPULATION_SCHEMA_PATH,
+    main,
     compile_resolved_population_contract,
     resolve_runtime_population,
     resolve_single_flight_execution,
@@ -169,6 +176,25 @@ class ResolvedPopulationTests(unittest.TestCase):
                 self.assertEqual(
                     execution["is_pre_pulse_restart"], mode == "pre_pulse_restart"
                 )
+
+    def test_cli_streams_projection_without_a_derived_file_and_rejects_invalid_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            contract_path = Path(directory) / "population.json"
+            contract = self.compile("pre_pulse_restart")
+            contract_path.write_text(json.dumps(contract), encoding="utf-8")
+            output = io.StringIO()
+            with patch("sys.argv", ["resolved_population", "--contract", str(contract_path)]):
+                with contextlib.redirect_stdout(output):
+                    main()
+            self.assertEqual(json.loads(output.getvalue()), resolve_runtime_population(contract))
+            self.assertEqual(list(Path(directory).iterdir()), [contract_path])
+            contract["single_flight_execution"]["is_pre_pulse_restart"] = False
+            contract_path.write_text(json.dumps(contract), encoding="utf-8")
+            output = io.StringIO()
+            with patch("sys.argv", ["resolved_population", "--contract", str(contract_path)]):
+                with contextlib.redirect_stdout(output), self.assertRaisesRegex(ValueError, "execution semantics differ"):
+                    main()
+            self.assertEqual(output.getvalue(), "")
 
     def test_runtime_population_projection_preserves_runner_semantics(self):
         contract = self.compile("pulse_eligible_conditional")

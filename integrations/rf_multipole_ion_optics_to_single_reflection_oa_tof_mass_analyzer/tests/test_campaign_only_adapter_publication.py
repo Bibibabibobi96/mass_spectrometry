@@ -11,9 +11,7 @@ import stat
 import subprocess
 import sys
 import tempfile
-from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError
@@ -333,19 +331,22 @@ def make_single_flight_publication_fixture(workspace: Path) -> dict[str, object]
 
 class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
     def _publish_single_flight_fixture(self, fixture: dict[str, object]) -> None:
-        with patch(
-            "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run.subprocess.run",
-            return_value=SimpleNamespace(returncode=0, stdout="", stderr=""),
-        ):
-            publish_family_source_closure_run(
-                repo_root=fixture["repo"],
-                workspace_root=fixture["repo"].parent,
-                integration_run_dir=fixture["run_dir"],
-                receipt_path=fixture["receipt"],
-                resolved_path=fixture["resolved"],
-                plan_path=fixture["plan"],
-                budget_path=fixture["budget"],
-            )
+        publish_family_source_closure_run(
+            repo_root=fixture["repo"],
+            workspace_root=fixture["repo"].parent,
+            integration_run_dir=fixture["run_dir"],
+            receipt_path=fixture["receipt"],
+            resolved_path=fixture["resolved"],
+            plan_path=fixture["plan"],
+            budget_path=fixture["budget"],
+        )
+
+        manifest = json.loads((fixture["run_dir"] / "run_manifest.json").read_text())
+        self.assertEqual(manifest["status"], "success")
+        self.assertEqual(manifest["run_id"], fixture["run_dir"].name)
+        self.assertFalse(manifest["formal_eligible"])
+        self.assertTrue(any(Path(record["path"]).name == "summary.json"
+                            for record in manifest["outputs"]))
 
     def test_parent_publication_rejects_changed_or_unbound_prepared_inputs(self) -> None:
         for name, field in (("plan", "composition_plan"), ("resolved", "resolved_connection"),
@@ -1313,19 +1314,15 @@ Write-Output 'WRITER_GUARDS=PASS'
                 if phase == "analyzer_transport":
                     write_json(stage / "summary.json", {"census": {}})
 
-            with patch(
-                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run.subprocess.run",
-                return_value=SimpleNamespace(returncode=0, stdout="", stderr=""),
-            ):
-                publish_family_source_closure_run(
-                    repo_root=fixture_repo,
-                    workspace_root=workspace,
-                    integration_run_dir=run_dir,
-                    receipt_path=receipt,
-                    resolved_path=resolved,
-                    plan_path=plan,
-                    budget_path=budget,
-                )
+            publish_family_source_closure_run(
+                repo_root=fixture_repo,
+                workspace_root=workspace,
+                integration_run_dir=run_dir,
+                receipt_path=receipt,
+                resolved_path=resolved,
+                plan_path=plan,
+                budget_path=budget,
+            )
 
             parent_config = json.loads(
                 (run_dir / "run_config.json").read_text(encoding="utf-8")
@@ -1333,6 +1330,10 @@ Write-Output 'WRITER_GUARDS=PASS'
             parent_summary = json.loads(
                 (run_dir / "summary.json").read_text(encoding="utf-8")
             )
+            manifest = json.loads((run_dir / "run_manifest.json").read_text())
+            self.assertEqual(manifest["status"], "success")
+            self.assertEqual(manifest["role"], "simulation_run_manifest")
+            self.assertFalse(manifest["formal_eligible"])
             self.assertEqual(parent_config["mode"], "multipole_family_source_closure")
             self.assertEqual(parent_config["launched_particle_count"], 1000)
             self.assertEqual(parent_config["particle_count"], 41)
@@ -1387,20 +1388,16 @@ Write-Output 'WRITER_GUARDS=PASS'
                     "retention_class": "compact",
                 },
             )
-            with patch(
-                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run.subprocess.run",
-                return_value=SimpleNamespace(returncode=0, stdout="", stderr=""),
-            ):
-                publish_family_source_closure_failure(
-                    repo_root=fixture_repo,
-                    workspace_root=workspace,
-                    integration_run_dir=run_dir,
-                    resolved_path=resolved,
-                    plan_path=plan,
-                    budget_path=budget,
-                    terminal_status="failed",
-                    reason="governed child failed",
-                )
+            publish_family_source_closure_failure(
+                repo_root=fixture_repo,
+                workspace_root=workspace,
+                integration_run_dir=run_dir,
+                resolved_path=resolved,
+                plan_path=plan,
+                budget_path=budget,
+                terminal_status="failed",
+                reason="governed child failed",
+            )
             config = json.loads(
                 (run_dir / "run_config.json").read_text(encoding="utf-8")
             )
@@ -1411,6 +1408,10 @@ Write-Output 'WRITER_GUARDS=PASS'
                 f"artifacts/projects/{INTEGRATION_ID}/runs/{run_id}/"
                 "composition_plan.json"
             ))
+            manifest = json.loads((run_dir / "run_manifest.json").read_text())
+            self.assertEqual(manifest["status"], "failed")
+            self.assertFalse(manifest["formal_eligible"])
+            self.assertEqual(len(manifest["outputs"]), 1)
             self.assertEqual(summary["status"], "failed")
             self.assertFalse(summary["threshold_result_eligible"])
             self.assertEqual(summary["reason"], "governed child failed")

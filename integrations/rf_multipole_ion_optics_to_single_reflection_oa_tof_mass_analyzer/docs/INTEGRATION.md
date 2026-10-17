@@ -59,6 +59,10 @@ launched-source CSV 计数仍保留。adapter 的源合同/上游设计路径与
 不再另写 `resolved_resource_budget__<stage>.json` 或为该派生副本计算、登记 SHA。原始 run-local budget、
 其 source identity 与 PA cache policy 继续冻结，实际进程限额由各次 usage 的完整 limits 记录。
 
+分域选择直接消费冻结 connection/provider 的间隙、端区跨度与终端厚度，不再另写无人读取的
+`domain_split_runtime_contract.json` 或维护只为该副本设置的 `required_pa_roles`。实际分域模式、
+IOB角色与优先级仍由现有构建、Program receipt及其行为回归核验。
+
 ## 当前资格与有效证据
 
 | 范围 | 当前判定 | 证据与限制 |
@@ -75,6 +79,10 @@ launched-source CSV 计数仍保留。adapter 的源合同/上游设计路径与
 [失效对照与文档快照](history/20260911__single-flight-documentation-and-invalidated-comparisons.md)。本页依据已有源码及记录收窄冲突声明，
 没有重新核验全部外部manifest。运行前核对所用修订、冻结输入和对应验证收据；文档中的实现描述、
 工作区文件存在或代码已提交均不能单独证明该入口已通过真实运行或取得物理资格。
+
+单飞运行从冻结的 `resolved_population_contract.json` 经既有 Python 校验后直接接收 stdout 投影，
+不再另存 `resolved_single_flight_population.json` 或把其作为下游存在标记。family parent 的成功/失败
+manifest 直接调用现有公共 writer，保留原有输入、输出和状态语义，省去 Python 子进程运输。
 
 ## 限制与判定边界
 

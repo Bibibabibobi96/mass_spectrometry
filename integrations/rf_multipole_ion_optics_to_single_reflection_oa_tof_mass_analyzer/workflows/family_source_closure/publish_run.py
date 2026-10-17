@@ -9,7 +9,6 @@ import json
 import math
 import re
 import shutil
-import subprocess
 import sys
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -18,6 +17,8 @@ from typing import Any
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
+from common.contracts.recorded_file_removal import write_json_atomic
+from common.contracts.write_run_manifest import build_run_manifest
 from common.contracts.verify_run_manifest import record_path, verify_record
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
     portable_path as _portable,
@@ -1624,54 +1625,21 @@ def publish_family_source_closure_run(
         encoding="utf-8",
     )
     manifest_path = run_dir / "run_manifest.json"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "common.contracts.write_run_manifest",
-            "--run-config",
-            str(run_config_path),
-            "--manifest",
-            str(manifest_path),
-            "--status",
-            "success",
-            "--software",
-            f"Python {sys.version_info.major}.{sys.version_info.minor}",
-            "--output",
-            str(summary_path),
-            *(
-                ["--output", str(verified_pulse_path)]
-                if verified_pulse_path is not None
-                else []
-            ),
-            *(
-                [
-                    "--output",
-                    str(pulse_candidate_table_path),
-                    "--output",
-                    str(pulse_candidate_receipt_path),
-                ]
-                if pulse_candidate_table_path is not None
-                else []
-            ),
-            *(
-                ["--output", str(pulse_transition_path)]
-                if pulse_transition_path is not None
-                else []
-            ),
-        ],
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=60,
-    )
-    if completed.returncode != 0:
-        raise ContractError(
-            "family parent manifest publication failed: " + (completed.stdout + completed.stderr).strip()
-        )
+    outputs = [summary_path]
+    if verified_pulse_path is not None:
+        outputs.append(verified_pulse_path)
+    if pulse_candidate_table_path is not None:
+        outputs.extend([pulse_candidate_table_path, pulse_candidate_receipt_path])
+    if pulse_transition_path is not None:
+        outputs.append(pulse_transition_path)
+    try:
+        write_json_atomic(manifest_path, build_run_manifest(
+            run_config_path, "success",
+            software=[f"Python {sys.version_info.major}.{sys.version_info.minor}"],
+            output_paths=outputs,
+        ))
+    except (ValueError, OSError) as error:
+        raise ContractError("family parent manifest publication failed: " + str(error)) from error
     return manifest_path
 
 
@@ -1758,34 +1726,14 @@ def publish_family_source_closure_failure(
     run_config_path.write_text(json.dumps(run_config, indent=2) + "\n", encoding="utf-8")
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     manifest_path = run_dir / "run_manifest.json"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "common.contracts.write_run_manifest",
-            "--run-config",
-            str(run_config_path),
-            "--manifest",
-            str(manifest_path),
-            "--status",
-            terminal_status,
-            "--software",
-            f"Python {sys.version_info.major}.{sys.version_info.minor}",
-            "--output",
-            str(summary_path),
-        ],
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=60,
-    )
-    if completed.returncode != 0:
-        raise ContractError(
-            "failed family parent manifest publication failed: " + (completed.stdout + completed.stderr).strip()
-        )
+    try:
+        write_json_atomic(manifest_path, build_run_manifest(
+            run_config_path, terminal_status,
+            software=[f"Python {sys.version_info.major}.{sys.version_info.minor}"],
+            output_paths=[summary_path],
+        ))
+    except (ValueError, OSError) as error:
+        raise ContractError("failed family parent manifest publication failed: " + str(error)) from error
     return manifest_path
 
 
