@@ -36,52 +36,6 @@ foreach ($entry in $bootstrapFiles.GetEnumerator()) {
   }
 }
 
-function Assert-BuildOnlyModeDescriptor {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$ResolvedPath,
-    [Parameter(Mandatory = $true)][string]$ExecutionProfilesPath
-  )
-  $mode = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 |
-    ConvertFrom-Json -AsHashtable
-  $expectedKeys = @(
-    'schema_version','mode','status','numerical_contract','claim_limit'
-  )
-  $keyDifferences = @(Compare-Object `
-    -ReferenceObject @($expectedKeys | Sort-Object) `
-    -DifferenceObject @($mode.Keys | Sort-Object))
-  if ($keyDifferences.Count -ne 0) {
-    throw "Build-only mode descriptor has unexpected fields: $Path"
-  }
-  if ($mode.schema_version -ne 1 -or
-      $mode.mode -cne 'build_only_smoke' -or
-      $mode.status -cne 'prototype' -or
-      $mode.numerical_contract -cne '../numerical_modes.json#/modes/build_only_smoke' -or
-      $mode.claim_limit -cne 'Build and GUI-binding smoke only; no solver, Candidate, Formal, or collection-efficiency evidence.') {
-    throw "Build-only mode descriptor differs from the governed smoke contract: $Path"
-  }
-  $resolved = Get-Content -LiteralPath $ResolvedPath -Raw -Encoding UTF8 |
-    ConvertFrom-Json -AsHashtable
-  if ($resolved.selected_mode_id -cne $mode.mode -or
-      $resolved.numerical.execution_mode -cne 'build_only') {
-    throw 'Build-only mode descriptor differs from the frozen resolved contract.'
-  }
-  $profiles = Get-Content -LiteralPath $ExecutionProfilesPath -Raw -Encoding UTF8 |
-    ConvertFrom-Json -AsHashtable
-  $matchingProfiles = @($profiles.profiles | Where-Object { $_.mode -ceq $mode.mode })
-  $evidenceLevels = @($matchingProfiles | ForEach-Object { $_.evidence_levels })
-  $runnerSteps = @($matchingProfiles | ForEach-Object { $_.steps } | Where-Object {
-      $_.entrypoint -ceq 'run_build_only_smoke.ps1'
-    })
-  if ($matchingProfiles.Count -ne 1 -or
-      $evidenceLevels.Count -ne 1 -or
-      $evidenceLevels[0] -cne 'plan' -or
-      $runnerSteps.Count -ne 1) {
-    throw 'Build-only mode descriptor does not have one matching governed execution profile.'
-  }
-}
-
 function Read-BuildOnlyReport {
   [CmdletBinding()]
   param(
@@ -384,9 +338,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
       throw "Bootstrap dependency changed before it was frozen: $($entry.Key)"
     }
   }
-  Assert-BuildOnlyModeDescriptor -Path $frozenInputs.mode `
-    -ResolvedPath $frozenInputs.resolved_contract `
-    -ExecutionProfilesPath $frozenInputs.execution_profiles
+
 
   $runConfig.inputs = $frozenInputs
   $runConfig.parameters.lifecycle_stage = 'inputs_frozen'

@@ -50,6 +50,12 @@ build-only 入口同时冻结公共主机调度适配器、核心和策略，并
 已删除这些多余字段；解析器继续提供实际构建所用项目、run和输出路径。合同验证、resolved物化与
 冻结输入身份由MATLAB读取和build-only证据消费，保留其单向输入链；本次未运行商业软件。
 
+build-only运行器不再逐字段阻断检查`config/modes/build_only_smoke.json`描述文件；
+该文件仍满足公共注册表mode发现合同并进入冻结输入。
+其固定英文声明、键集合和profile名称比对不控制模型构建或求解。实际边界继续由冻结的numerical mode→resolved
+校验、MATLAB三阶段的build-only提前返回、任务报告与候选资格字段共同约束；build-only允许网格和物理树构建，
+禁止静电与粒子求解。现有隔离冻结Static行为回归和模式解析回归覆盖该边界，未运行商业软件。
+
 ## 开放任务
 
 1. 为`functional_reference`建立受治理的N=100运行器，冻结可复现母样本、seed、逐粒子身份、终态和

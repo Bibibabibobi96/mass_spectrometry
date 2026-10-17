@@ -118,6 +118,8 @@ class ResolveContractTests(unittest.TestCase):
             1,
         )
         self.assertEqual(resolved["selected_mode_id"], "build_only_smoke")
+        self.assertEqual(resolved["numerical"]["execution_mode"], "build_only")
+        self.assertFalse(resolved["numerical"]["candidate_evidence_allowed"])
         self.assertFalse(resolved["evidence"]["candidate_evidence_allowed"])
         self.assertEqual(
             resolved["source_identity"]["baseline_sha256"],
