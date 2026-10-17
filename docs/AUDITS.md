@@ -4,6 +4,8 @@
 
 ## 公共机制与执行资源
 
+- [2026-10-17 全仓精简第二轮：重复验证、哈希与物化收口](history/20261017__repository-simplification-wave-two.md)
+
 - [2026-10-17 全仓精简第一轮：失活入口与重复工作](history/20261017__repository-simplification-wave-one.md)
 
 - [2026-09-16 公共执行机制与代码整治验收](history/20260916__code-consolidation.md)
