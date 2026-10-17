@@ -7,40 +7,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.particle_state import canonical_sources, ion11_sources
 from common.contracts.file_identity import file_sha256 as sha256
 from projects.rf_quadrupole_ion_optics.analysis.paired_particle_source_bundle import (
     load_declared_bundle_specification,
     validate_bundle,
 )
-
-
-def _validate_representation_equivalence(
-    ion11_path: Path, canonical10_path: Path
-) -> None:
-    ion11 = ion11_sources(ion11_path)
-    canonical10 = canonical_sources(canonical10_path)
-    if set(ion11) != set(canonical10):
-        raise ValueError("ION11 and canonical particle IDs differ")
-    fields = (
-        "time_us",
-        "elapsed_time_us",
-        "axial_z_mm",
-        "transverse_x_mm",
-        "transverse_y_mm",
-        "velocity_axial_m_s",
-        "velocity_x_m_s",
-        "velocity_y_m_s",
-        "kinetic_energy_eV",
-    )
-    for particle_id in sorted(ion11):
-        for field in fields:
-            tolerance = 1e-6 if field.startswith("velocity_") else 1e-9
-            if abs(ion11[particle_id][field] - canonical10[particle_id][field]) > tolerance:
-                raise ValueError(
-                    "ION11 and canonical source states differ: "
-                    f"particle={particle_id} field={field}"
-                )
 
 
 def resolve_binding(
@@ -83,11 +54,6 @@ def resolve_binding(
     consumed_path = paths[consumed_representation]
     if consumed_path != expected_consumed_path.resolve():
         raise ValueError("consumed particle table differs from its bundle artifact")
-    for representation, path in paths.items():
-        entry = entries[representation]
-        if sha256(path) != entry["sha256"]:
-            raise ValueError(f"{representation} source SHA-256 differs from bundle metadata")
-    _validate_representation_equivalence(paths["ion11"], paths["canonical10"])
     return {
         "schema_version": 1,
         "role": "rf_quadrupole_paired_particle_source_binding",

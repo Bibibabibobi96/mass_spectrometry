@@ -26,7 +26,6 @@ baseline或资格证据。Program不得以未记录的默认值或命令行覆�
 | 接口就绪输运 | `../workflows/interface_readiness/run_simion.ps1` |
 | 无碰撞部件回归 | `../workflows/no_collision_transport/run_simion.ps1` |
 | RF+DC质量过滤 | `../workflows/mass_filter_reference/run_simion.ps1` |
-| PA场分辨率诊断 | `../tests/simion/test_pa_field_convergence.ps1` |
 | IOB结构检查 | `../simion/workbench/inspect_builtin_quad_reference.lua` |
 
 接口入口只接受配对bundle中的canonical表示；质量过滤入口只接受显式基础ION11并生成逐质量配对表。

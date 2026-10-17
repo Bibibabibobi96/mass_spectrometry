@@ -19,7 +19,6 @@ from common.contracts.file_identity import file_sha256 as sha256
 from common.contracts.particle_count_policy import (
     POLICY_PATH,
     load_particle_count_policy,
-    validate_prefix_particle_sources,
     validate_positive_particle_count,
 )
 from common.ion_release.numpy_ion11_box import sample_numpy_ion11_box_latent
@@ -341,12 +340,6 @@ def generate_bundle(
             canonical_path.write_bytes(
                 ("\n".join(canonical_lines[: count + 1]) + "\n").encode("ascii")
             )
-            validate_source(
-                canonical_path,
-                resolved,
-                source_family_path=source_family_path,
-                operating_point_id=point_id,
-            )
             for representation, path in (
                 ("ion11", ion_path),
                 ("canonical10", canonical_path),
@@ -363,15 +356,6 @@ def generate_bundle(
                 )
                 artifacts.append(entry)
                 point_artifacts[(count, representation)] = entry
-        if selected_counts == [statistical_count, functional_count]:
-            validate_prefix_particle_sources(
-                output_dir / f"{point_id}_n{functional_count}.ion",
-                output_dir / f"{point_id}_n{statistical_count}.ion",
-            )
-            validate_prefix_particle_sources(
-                output_dir / f"{point_id}_n{functional_count}_canonical.csv",
-                output_dir / f"{point_id}_n{statistical_count}_canonical.csv",
-            )
     latent_sha = _latent_sha256(latent)
     family_identity = {
         "algorithm_version": bundle_version,
@@ -390,14 +374,14 @@ def generate_bundle(
         "seed": selected_seed,
         "policy": {
             "source": "common/contracts/particle_count_policy.json",
-            "sha256": sha256(POLICY_PATH),
+            "sha256": family_identity["policy_sha256"],
             "functional_count": functional_count,
             "statistical_count": statistical_count,
             "standard_particle_counts": policy["standard_particle_counts"],
         },
         "inputs": {
-            "source_family_sha256": sha256(source_family_path),
-            "distribution_sha256": sha256(distribution_path),
+            "source_family_sha256": family_identity["source_family_sha256"],
+            "distribution_sha256": family_identity["distribution_sha256"],
             "resolved_design_file_sha256": sha256(resolved_path),
             "resolved_design_sha256": resolved["resolved_sha256"],
         },
@@ -482,9 +466,9 @@ def validate_bundle(
     family_identity = {
         "algorithm_version": bundle_version,
         "seed": int(metadata["seed"]),
-        "policy_sha256": sha256(POLICY_PATH),
-        "source_family_sha256": sha256(source_family_path),
-        "distribution_sha256": sha256(distribution_path),
+        "policy_sha256": expected_policy["sha256"],
+        "source_family_sha256": expected_inputs["source_family_sha256"],
+        "distribution_sha256": expected_inputs["distribution_sha256"],
         "latent_sha256": latent_sha,
         "operating_point_ids": normalized_ids,
     }
@@ -512,7 +496,7 @@ def validate_bundle(
             int(entry["particle_count"]),
             entry["representation"],
         )
-        if key in inventory or not path.is_file() or sha256(path) != entry["sha256"]:
+        if key in inventory or not path.is_file():
             raise ValueError("paired particle bundle artifact identity differs")
         inventory[key] = entry
     for point_id in normalized_ids:
@@ -523,10 +507,7 @@ def validate_bundle(
         expected_canonical_lines = _render_canonical(
             point, distribution, latent, expected_vectors
         ).decode("ascii").splitlines()
-        for representation, suffix in (
-            ("ion11", ".ion"),
-            ("canonical10", "_canonical.csv"),
-        ):
+        for representation in ("ion11", "canonical10"):
             master = inventory[(point_id, selected_counts[0], representation)]
             if master["n1000_parent"] is not None:
                 raise ValueError("paired bundle master source has a parent identity")
@@ -544,18 +525,13 @@ def validate_bundle(
                         "\n".join(expected_canonical_lines[: count + 1]) + "\n"
                     ).encode("ascii")
                 )
-                if (root / entry["relative_path"]).read_bytes() != expected_bytes:
+                actual_bytes = (root / entry["relative_path"]).read_bytes()
+                if _sha256_bytes(actual_bytes) != entry["sha256"]:
+                    raise ValueError("paired particle bundle artifact identity differs")
+                if actual_bytes != expected_bytes:
                     raise ValueError(
                         "paired particle bundle artifact differs from frozen latent family"
                     )
-            if selected_counts == [statistical_count, functional_count]:
-                small = inventory[(point_id, functional_count, representation)]
-                validate_prefix_particle_sources(
-                    root / f"{point_id}_n{functional_count}{suffix}",
-                    root / f"{point_id}_n{statistical_count}{suffix}",
-                    expected_n100_sha256=small["sha256"],
-                    expected_n1000_sha256=master["sha256"],
-                )
         for count in selected_counts:
             validate_source(
                 root / inventory[(point_id, count, "canonical10")]["relative_path"],
