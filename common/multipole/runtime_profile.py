@@ -245,12 +245,13 @@ def _resolve_particle_source(
     source_path = (repo_root / selected["path"]).resolve()
     if not source_path.is_relative_to(repo_root.resolve()):
         raise ValueError("particle-source profile escapes the repository")
-    if _sha256(source_path) != str(selected["sha256"]).upper():
+    source_sha256 = _sha256(source_path)
+    if source_sha256 != str(selected["sha256"]).upper():
         raise ValueError("particle-source SHA-256 differs from its profile")
     result: dict[str, Any] = {
         "profile_id": source_id,
         "path": str(source_path),
-        "sha256": _sha256(source_path),
+        "sha256": source_sha256,
         "registry_path": str(registry_path.resolve()),
         "registry_sha256": _sha256(registry_path),
     }
@@ -799,6 +800,7 @@ def resolve_campaign_experiment(
         "comsol",
         experiment["comsol_solver_numerics_profile_id"],
     )
+    campaign_sha256 = _sha256(path)
     simion_binding = experiment["simion_solver_numerics"]
     if simion_binding["kind"] == "profile":
         simion = _resolve_solver_profile(
@@ -812,7 +814,7 @@ def resolve_campaign_experiment(
         simion = {
             "profile_id": simion_binding["numerics_id"],
             "values": normalize_simion_solver_numerics(simion_binding["values"]),
-            "registry_sha256": _sha256(path),
+            "registry_sha256": campaign_sha256,
         }
         simion_authority_path = path
 
@@ -853,7 +855,7 @@ def resolve_campaign_experiment(
         "project_id": project_id,
         "runtime_profile_id": experiment_id,
         "runtime_profile_registry_path": str(path),
-        "runtime_profile_registry_sha256": _sha256(path),
+        "runtime_profile_registry_sha256": campaign_sha256,
         "stop_stage": experiment["stop_stage"],
         "case_set": experiment.get("case_set"),
         "design_profile_id": experiment["design_profile_id"],
@@ -866,7 +868,7 @@ def resolve_campaign_experiment(
         },
         "engineering_budget": {
             "path": str(path),
-            "sha256": _sha256(path),
+            "sha256": campaign_sha256,
             "inline_contract": budget,
         },
         "campaign": {
@@ -874,7 +876,7 @@ def resolve_campaign_experiment(
             "experiment_id": experiment_id,
             "experiment_row_sha256": canonical_sha256(experiment),
             "path": str(path),
-            "sha256": _sha256(path),
+            "sha256": campaign_sha256,
             "runtime_profile_registry_path": str(runtime_registry_path.resolve()),
             "runtime_profile_registry_sha256": _sha256(runtime_registry_path),
         },

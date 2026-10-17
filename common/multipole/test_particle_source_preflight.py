@@ -8,6 +8,7 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from collections.abc import Callable
 
 from common.contracts.particle_physics import (
@@ -17,6 +18,7 @@ from common.contracts.particle_physics import (
 from common.multipole.compile_design_request import compile_design_request
 from common.multipole.particle_source_preflight import (
     COLUMNS,
+    load_validated_source,
     validate_source,
 )
 from common.multipole.simion_particle_source import render_canonical_source
@@ -73,6 +75,31 @@ class ParticleSourcePreflightTest(unittest.TestCase):
         self.assertEqual(result["mass_amu"], self.mass)
         self.assertEqual(result["parent_resolved_design_sha256"], self.resolved["resolved_sha256"])
 
+    def test_projection_reuses_the_exact_validated_csv_read(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = self.write_source(directory)
+            source.write_bytes(b"\xef\xbb\xbf" + source.read_bytes())
+            resolved_path = Path(directory) / "resolved.json"
+            resolved_path.write_text(json.dumps(self.resolved), encoding="utf-8")
+            original_open = Path.open
+            reads = []
+
+            def opened(path, *args, **options):
+                if path == source:
+                    reads.append(path)
+                return original_open(path, *args, **options)
+
+            with patch.object(Path, "open", opened):
+                fly, states, count = render_canonical_source(source, resolved_path)
+            self.assertEqual(reads, [source])
+            self.assertEqual(count, 100)
+            metadata, rows = load_validated_source(source, self.resolved)
+            self.assertEqual(metadata, validate_source(source, self.resolved))
+            self.assertEqual(metadata["source_sha256"], hashlib.sha256(source.read_bytes()).hexdigest().upper())
+            self.assertEqual(len(rows), count)
+            self.assertEqual(fly.count("standard_beam {"), count)
+            self.assertIn("[100]", states)
+
     def test_source_attacks_fail_closed(self) -> None:
         attacks = {
             "duplicate": lambda rows: rows[1].update(particle_id=1),
@@ -88,6 +115,12 @@ class ParticleSourcePreflightTest(unittest.TestCase):
                     validate_source(
                         self.write_source(directory, mutate=mutation),
                         copy.deepcopy(self.resolved),
+                    )
+                resolved = Path(directory) / "resolved.json"
+                resolved.write_text(json.dumps(self.resolved), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    render_canonical_source(
+                        self.write_source(directory, mutate=mutation), resolved,
                     )
 
     def test_nonstandard_positive_count_remains_a_valid_canonical_source(self) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import json
 import math
 from pathlib import Path
@@ -112,7 +113,7 @@ def _validate_energy(
 
 
 def _load_volume_snapshot_receipt(
-    path: Path | None, source_path: Path
+    path: Path | None, source_sha256: str
 ) -> dict[str, Any] | None:
     """Validate the immutable authority for a non-planar ion-source snapshot.
 
@@ -143,7 +144,7 @@ def _load_volume_snapshot_receipt(
     if not all(isinstance(value, dict) for value in (source, geometry, energy, velocity)):
         raise ValueError("volume-source receipt is incomplete")
     if (
-        source.get("sha256") != hashlib.sha256(source_path.read_bytes()).hexdigest().upper()
+        source.get("sha256") != source_sha256
         or source.get("particle_count") != receipt.get("particle_count")
         or receipt.get("primary_table_time_semantics") != "all_rows_are_states_at_snapshot_time_s"
         or velocity.get("components") != "independent_gaussian_with_positive_vz_truncation"
@@ -165,7 +166,7 @@ def _load_volume_snapshot_receipt(
     return receipt
 
 
-def validate_source(
+def load_validated_source(
     path: Path,
     resolved: dict[str, Any],
     *,
@@ -174,11 +175,13 @@ def validate_source(
     expected_source_family_sha256: str | None = None,
     expected_kinetic_energy_ev: float | None = None,
     volume_snapshot_receipt_path: Path | None = None,
-) -> dict[str, Any]:
-    """Return frozen metadata after binding every source row to the resolved design."""
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    """Read one canonical source and return its validated metadata and CSV rows."""
     if resolved.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("particle source requires a multipole resolved design")
-    volume_receipt = _load_volume_snapshot_receipt(volume_snapshot_receipt_path, path)
+    source_bytes = path.read_bytes()
+    source_sha256 = hashlib.sha256(source_bytes).hexdigest().upper()
+    volume_receipt = _load_volume_snapshot_receipt(volume_snapshot_receipt_path, source_sha256)
     if volume_receipt is not None and (
         source_family_path is not None or expected_kinetic_energy_ev is not None
     ):
@@ -215,7 +218,7 @@ def validate_source(
     )
     if operating_point is not None and int(operating_point["charge_state"]) != expected_charge:
         raise ValueError("source-family operating-point charge differs from resolved design")
-    with path.open(encoding="utf-8-sig", newline="") as stream:
+    with io.StringIO(source_bytes.decode("utf-8-sig"), newline="") as stream:
         reader = csv.DictReader(stream)
         if reader.fieldnames != COLUMNS:
             raise ValueError(f"canonical particle source columns differ: {reader.fieldnames}")
@@ -289,7 +292,7 @@ def validate_source(
     return {
         "schema_version": 1,
         "role": "multipole_canonical_particle_source_metadata",
-        "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper(),
+        "source_sha256": source_sha256,
         "parent_resolved_design_sha256": resolved["resolved_sha256"],
         "particle_count": len(rows),
         "mass_amu": masses.pop(),
@@ -318,7 +321,16 @@ def validate_source(
             "mean": sum(energies) / len(energies),
         },
         "energy_validation_tolerance_eV": ENERGY_BOUND_TOLERANCE_EV,
-    }
+    }, rows
+
+
+def validate_source(
+    path: Path,
+    resolved: dict[str, Any],
+    **options: Any,
+) -> dict[str, Any]:
+    """Return source metadata; validation options match load_validated_source."""
+    return load_validated_source(path, resolved, **options)[0]
 
 
 def main() -> int:

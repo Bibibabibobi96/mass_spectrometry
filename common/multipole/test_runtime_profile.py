@@ -588,6 +588,17 @@ class RuntimeProfileTests(unittest.TestCase):
                         resolve_runtime_profile(REPO_ROOT, project, "no_acceleration_full_length")
                 self.assertEqual(len(calls), 1)
 
+    def test_particle_source_hash_is_read_once_and_stale_identity_is_rejected(self) -> None:
+        source = REPO_ROOT / "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv"
+        original = runtime_profile._sha256
+        with patch.object(runtime_profile, "_sha256", wraps=original) as hashed:
+            resolved = resolve_runtime_profile(REPO_ROOT, "rf_hexapole_ion_optics", "no_acceleration_full_length")
+        self.assertEqual(sum(call.args[0] == source for call in hashed.call_args_list), 1)
+        self.assertEqual(resolved["particle_source"]["sha256"], original(source))
+        with patch.object(runtime_profile, "_sha256", side_effect=lambda path: "0" * 64 if path == source else original(path)):
+            with self.assertRaisesRegex(ValueError, "particle-source SHA-256 differs"):
+                resolve_runtime_profile(REPO_ROOT, "rf_hexapole_ion_optics", "no_acceleration_full_length")
+
     def test_unknown_runtime_profile_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "unknown runtime profile"):
             resolve_runtime_profile(

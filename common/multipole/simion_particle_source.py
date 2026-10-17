@@ -13,7 +13,7 @@ from common.contracts.particle_physics import (
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,
 )
-from common.multipole.particle_source_preflight import validate_source
+from common.multipole.particle_source_preflight import load_validated_source
 from common.simion.particle_source import render_source_states, render_standard_beams
 
 
@@ -104,7 +104,7 @@ def render_canonical_source(
 ) -> tuple[str, str, int]:
     """Project canonical particles into the SIMION workbench frame."""
     resolved = json.loads(resolved_design.read_text(encoding="utf-8-sig"))
-    metadata = validate_source(
+    metadata, rows = load_validated_source(
         particles,
         resolved,
         source_family_path=source_family_path,
@@ -121,10 +121,6 @@ def render_canonical_source(
     origin = 0.0 if rectangular else float(enclosure["shield_outer_radius_mm"])
     z_shift = 0.0 if rectangular else -float(enclosure["vacuum_z_min_mm"])
     charge = int(resolved["particle_source"]["charge_state"])
-    source_z = float(resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"])
-    is_volume_snapshot = bool(metadata.get("source_volume_snapshot"))
-    with particles.open(encoding="utf-8-sig", newline="") as stream:
-        rows = list(csv.DictReader(stream))
     if particle_id_min is not None or particle_id_max is not None:
         if particle_id_min is None or particle_id_max is None or particle_id_min < 1 or particle_id_max < particle_id_min:
             raise ValueError("particle ID batch interval is invalid")
@@ -134,8 +130,6 @@ def render_canonical_source(
     fly = ["particles {", "  coordinates = 0,"]
     states = ["return {"]
     for row in rows:
-        if not is_volume_snapshot and abs(float(row["z_mm"]) - source_z) > 1e-12:
-            raise ValueError("canonical particle source plane differs from resolved design")
         vx, vy, vz = (float(row[key]) for key in ("vx_m_s", "vy_m_s", "vz_m_s"))
         ke = kinetic_energy_ev(mass_amu, vx, vy, vz)
         pa_x = origin + float(row["x_mm"])

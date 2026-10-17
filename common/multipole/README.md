@@ -90,6 +90,11 @@ RF 家族母样本的随机圆盘位置、filled-cone 方向和 RF 相位出生�
 哈希互相绑定的连续轴向体积快照：它表示离子源内部的一个同一时刻圆柱体状态，位置与三向速度独立采样，
 不预设`z-vz`相关；它不能被解释为已经通过多极杆后的出口束流。
 
+`load_validated_source` 对同一份 CSV 字节完成哈希、解析和完整物理校验，并把 metadata 与已验证 rows
+交给 SIMION 投影；metadata-only 消费者继续调用 `validate_source`。投影不再次读表或重验释放面。
+每个独立入口仍验证其实际输入，非法列、ID、能量、释放面和批区间继续拒绝；没有跨调用缓存。
+同一次 runtime 解析复用已算出的源与 campaign 哈希，保留配置绑定和陈旧身份拒绝。
+
 普通 runtime profile 与 campaign 共用 `runtime_profile.py` 的源身份、数值注册表和设计序列化实现；
 普通 profile 在一次解析中只读一次 runtime 注册表。连续体积源的文件字节身份复用
 `common/contracts/file_identity.py`，不另维护哈希算法。
