@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import resolve_bunch_source_interval
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import (
     materialize_batch_fly2,
     merge_rebased_event_logs,
-    resolve_bunch_source_interval,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
 from common.simion.resource_scheduler import plan_adaptive_followup, plan_simion_dispatch

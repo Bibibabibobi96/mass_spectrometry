@@ -4,6 +4,13 @@
 本页只维护当前决策、有效证据和未完成动作；具名运行的冻结输入才是参数权威。
 已完成矩阵、恢复与退役记录归[边界输入隔离里程碑](history/20261015__boundary-input-isolation.md)；更早过程由项目README导航。
 
+分析模块统一使用公共分块文件身份函数，保留各自既有摘要大小写。
+单中心步长比较复用同次已验证 manifest 输出记录，不再为 summary、trial、observation 和原始飞行日志
+各重复全文哈希；batch/trial 的源区间解析直接调用源合同模块，删除兼容转发函数。
+IP 替换装配从历史冻结源派生当前 seed 时，只剔除九个退役解析场字段；保留原生电压/几何参数，
+不反写来源证据。coarse-raw producer 仍用于 native response bank 的粗父几何重建；PA family 的
+独立私有运行表示用于防止发布资产被 SIMION 回写。
+
 ## 当前决策与完成边界
 
 加速器接口可选`orthogonal_accelerator`或`dual_pressure_rectilinear_ion_processor`，默认OA保留；入口见[操作说明](../simion/README.md#加速器选择与接口准备)。

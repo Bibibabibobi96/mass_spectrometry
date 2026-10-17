@@ -20,6 +20,7 @@ from typing import Any, Iterable
 
 import numpy as np
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
@@ -83,10 +84,6 @@ def _finite_vector(value: Any, length: int, label: str) -> list[float]:
     if not all(math.isfinite(item) for item in result):
         raise CandidateContractError(f"{label} must be finite")
     return result
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
 
 def _load_object(path: Path, label: str) -> dict[str, Any]:
     try:
@@ -809,7 +806,7 @@ def _load_source_rows_from_paths(
     receipt_matches = [
         record for record in source_manifest.get("outputs", [])
         if isinstance(record, dict)
-        and str(record.get("sha256", "")).lower() == _sha256(receipt_path).lower()
+        and str(record.get("sha256", "")).lower() == file_sha256(receipt_path).lower()
         and Path(str(record.get("path", ""))).name == "bunch_source_receipt.json"
     ]
     if len(receipt_matches) != 1:
@@ -930,7 +927,7 @@ def _load_source_rows_from_paths(
                 selected_energy_pairs.append(active)
 
     return parsed, {
-        "source_run_manifest": {"path": str(source_manifest_path), "sha256": _sha256(source_manifest_path)},
+        "source_run_manifest": {"path": str(source_manifest_path), "sha256": file_sha256(source_manifest_path).lower()},
         "source_state_table": receipt["state_table"],
     }, selected_pair(receipt.get("controlled_focus_pair")), selected_pair(
         receipt.get("controlled_slow_energy_pair")
@@ -995,7 +992,7 @@ def _batches_from_receipt(
             raise CandidateContractError("batch-log offset/count is invalid")
         if manifest is not None:
             _manifest_output_matches(manifest, path, sha256, f"native batch log {index}")
-        elif _sha256(path).lower() != sha256.lower():
+        elif file_sha256(path).lower() != sha256.lower():
             raise CandidateContractError(f"native batch log {index} differs from merge receipt")
         covered.extend(range(offset + 1, offset + count + 1))
         result.append((path, offset, count))
@@ -1023,7 +1020,7 @@ def _load_selected_events(
             event = dict(event)
             event["ion"] = local_id + offset
             selected.setdefault((event["kind"], int(event["ion"])), []).append(event)
-        evidence.append({"path": str(path), "sha256": _sha256(path), "offset": offset, "count": count})
+        evidence.append({"path": str(path), "sha256": file_sha256(path).lower(), "offset": offset, "count": count})
     return selected, evidence
 
 
@@ -2119,8 +2116,8 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
         controlled_slow_energy_pairs=controlled_slow_energy_pairs,
         collision_loss_diagnostic=_collision_loss_diagnostic(run_dir, observation, events),
         completion_evidence={
-            "flight_run_manifest": {"path": str(manifest_path), "sha256": _sha256(manifest_path)},
-            "flight_observation": {"path": str(observation_path), "sha256": _sha256(observation_path)},
+            "flight_run_manifest": {"path": str(manifest_path), "sha256": file_sha256(manifest_path).lower()},
+            "flight_observation": {"path": str(observation_path), "sha256": file_sha256(observation_path).lower()},
         },
     )
 
@@ -2425,9 +2422,9 @@ def analyze_completed_source_z_energy_timing(
         collision_loss_diagnostic=_collision_loss_diagnostic(run_config_path.parent, observation, events),
         completion_evidence={
             "publication_stage": "completed_unsealed__not_a_success_manifest",
-            "flight_run_config": {"path": str(run_config_path), "sha256": _sha256(run_config_path)},
-            "flight_observation": {"path": str(observation_path), "sha256": _sha256(observation_path)},
-            "batch_merge_receipt": {"path": str(batch_merge_receipt_path), "sha256": _sha256(batch_merge_receipt_path)},
+            "flight_run_config": {"path": str(run_config_path), "sha256": file_sha256(run_config_path).lower()},
+            "flight_observation": {"path": str(observation_path), "sha256": file_sha256(observation_path).lower()},
+            "batch_merge_receipt": {"path": str(batch_merge_receipt_path), "sha256": file_sha256(batch_merge_receipt_path).lower()},
         },
     )
 

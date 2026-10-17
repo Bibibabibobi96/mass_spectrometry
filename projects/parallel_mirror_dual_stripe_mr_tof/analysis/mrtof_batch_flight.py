@@ -2,17 +2,17 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
-    resolve_bunch_source_interval as _resolve_bunch_source_interval,
+    resolve_bunch_source_interval,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
     FLY_COMPLETED,
@@ -20,21 +20,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
 )
 
 _ION_FIELD = re.compile(r"(?<![A-Za-z_])(ion=)(\d+)(?=\s|$)")
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def resolve_bunch_source_interval(
-    *, receipt_path: Path, particle_id_min: int, particle_id_max: int,
-) -> dict[str, Any]:
-    """Compatibility entrypoint for the shared immutable interval resolver."""
-    return _resolve_bunch_source_interval(
-        receipt_path=receipt_path,
-        particle_id_min=particle_id_min,
-        particle_id_max=particle_id_max,
-    )
 
 
 def materialize_batch_fly2(
@@ -52,7 +37,7 @@ def materialize_batch_fly2(
         "particle_id_max": particle_id_max,
         "count": len(selection["states"]),
         "simion_particle_id_offset": particle_id_min - 1,
-        "fly2_sha256": _sha256(output_path),
+        "fly2_sha256": file_sha256(output_path).lower(),
     }
 
 
@@ -86,7 +71,7 @@ def merge_rebased_event_logs(
         covered.extend(range(offset + 1, offset + count + 1))
         total_splats += count
         records.append({
-            "path": str(path.resolve()), "sha256": _sha256(path),
+            "path": str(path.resolve()), "sha256": file_sha256(path).lower(),
             "offset": offset, "count": count,
         })
     expected_ids = list(range(particle_id_min, particle_id_min + particle_count))
@@ -103,7 +88,7 @@ def merge_rebased_event_logs(
         "global_particle_ids": [expected_ids[0], expected_ids[-1]],
         "all_batch_losses_retained": True,
         "batches": records,
-        "merged_log": {"path": str(output_path.resolve()), "sha256": _sha256(output_path)},
+        "merged_log": {"path": str(output_path.resolve()), "sha256": file_sha256(output_path).lower()},
     }
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")

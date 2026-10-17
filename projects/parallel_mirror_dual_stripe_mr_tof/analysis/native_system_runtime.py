@@ -8,13 +8,13 @@ payload for hashing, copying, refinement, or SIMION execution.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import sys
 from pathlib import Path
 from typing import Any, Mapping
 
+from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import (
     native_bank_identity,
 )
@@ -37,10 +37,6 @@ def _load_json(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise CandidateContractError(f"{label} must be an object: {path}")
     return value
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _component_record(
@@ -75,7 +71,7 @@ def _component_record(
         "bytes": expected_bytes,
         "sha256": expected_sha.upper(),
         "source_manifest_path": str(manifest_path),
-        "source_manifest_sha256": _sha256(manifest_path),
+        "source_manifest_sha256": file_sha256(manifest_path),
     }
 
 
@@ -95,7 +91,7 @@ def _provider_accelerator_record(provider_receipt_path: Path) -> dict[str, Any]:
             or not isinstance(response_bank.get("receipt_name"), str)):
         raise CandidateContractError("accelerator provider response-bank identity is unavailable")
     return {"role": "accelerator", "source_kind": "orthogonal_accelerator_provider_receipt",
-            "provider_receipt_path": str(receipt_path), "provider_receipt_sha256": _sha256(receipt_path),
+            "provider_receipt_path": str(receipt_path), "provider_receipt_sha256": file_sha256(receipt_path),
             "provider_pa_family": receipt.get("pa_family"),
             "standalone_response_bank": dict(response_bank)}
 
@@ -166,7 +162,7 @@ def resolve_native_system_runtime_bundle(
             resolved["accelerator"] = Path(refreshed["provider_receipt_path"])
             continue
         manifest_path = Path(str(component.get("source_manifest_path", ""))).resolve()
-        if _sha256(manifest_path) != component.get("source_manifest_sha256"):
+        if file_sha256(manifest_path) != component.get("source_manifest_sha256"):
             raise CandidateContractError("native system runtime source manifest identity changed")
         pa_path = Path(str(component.get("pa_path", ""))).resolve()
         expected_bytes = component.get("bytes")
@@ -203,7 +199,7 @@ def rebind_accelerator_provider(*, base_bundle_path: Path, native_corridor_runti
         component = retained[role]
         manifest_path = Path(str(component.get("source_manifest_path", ""))).resolve()
         pa_path = Path(str(component.get("pa_path", ""))).resolve()
-        if (_sha256(manifest_path) != component.get("source_manifest_sha256")
+        if (file_sha256(manifest_path) != component.get("source_manifest_sha256")
                 or pa_path.suffix.lower() != ".pa"
                 or not isinstance(component.get("bytes"), int)
                 or not pa_path.is_file() or pa_path.stat().st_size != component.get("bytes")):

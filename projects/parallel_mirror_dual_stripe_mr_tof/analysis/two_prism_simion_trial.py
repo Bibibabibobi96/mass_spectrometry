@@ -105,11 +105,12 @@ def extract_trajectory_samples(*, log_path: Path, output_path: Path, receipt_pat
               "sample_count": sum(counts.values()), "samples_per_particle": counts,
               "terminal_clock_backsteps": terminal_clock_backsteps,
               "record_order": "solver_callback_order__raw_terminal_clock_retained",
-              "source_log": str(log_path.resolve()), "source_log_sha256": _sha256(log_path),
-              "trajectory_csv": str(output_path.resolve()), "trajectory_csv_sha256": _sha256(output_path)}
+              "source_log": str(log_path.resolve()), "source_log_sha256": file_sha256(log_path).lower(),
+              "trajectory_csv": str(output_path.resolve()), "trajectory_csv_sha256": file_sha256(output_path).lower()}
     receipt_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C,
@@ -131,7 +132,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_sched
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import (
     _full_path_timeout_us,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import (
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
     resolve_bunch_source_interval,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
@@ -174,10 +175,6 @@ def _load(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise CandidateContractError(f"expected an object in {path}")
     return value
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 _GLOBAL_PULSE_TIME_BASIS = "ion_time_of_flight_us_from_common_tob_zero_release"
@@ -1450,10 +1447,10 @@ def _accelerator_safe_exit_observation(
     exits = [event for event in events if event["kind"] == "accelerator_safe_exit"]
     base: dict[str, Any] = {
         "event_count": len(exits),
-        "input_log": {"path": str(log_path.resolve()), "sha256": _sha256(log_path)},
+        "input_log": {"path": str(log_path.resolve()), "sha256": file_sha256(log_path).lower()},
         "trial_identity": {
             "path": str(trial_receipt_path.resolve()),
-            "sha256": _sha256(trial_receipt_path),
+            "sha256": file_sha256(trial_receipt_path).lower(),
         },
     }
     if not exits:
@@ -2039,7 +2036,7 @@ def materialize_trial(
             raise CandidateContractError(
                 "accelerator pulse schedule was derived from a different particle source"
             )
-        if _sha256(accelerator_receipt_path).lower() != source_identity[
+        if file_sha256(accelerator_receipt_path).lower() != source_identity[
             "accelerator_receipt_sha256"
         ].lower():
             raise CandidateContractError(
@@ -2357,31 +2354,31 @@ def materialize_trial(
         ),
         "collision_geometry": _collision_geometry_projection(resolved),
         "inputs": {
-            "contract_sha256": _sha256(contract_path),
-            "accelerator_geometry_contract_sha256": _sha256(
+            "contract_sha256": file_sha256(contract_path).lower(),
+            "accelerator_geometry_contract_sha256": file_sha256(
                 accelerator_geometry_contract_path
-            ),
-            "trajectory_contract_sha256": _sha256(trajectory_contract_path),
-            "reviewed_contract_sha256": _sha256(reviewed_contract_path),
-            "mirror_summary_sha256": _sha256(mirror_summary_path),
-            "stripe_summary_sha256": _sha256(stripe_summary_path),
+            ).lower(),
+            "trajectory_contract_sha256": file_sha256(trajectory_contract_path).lower(),
+            "reviewed_contract_sha256": file_sha256(reviewed_contract_path).lower(),
+            "mirror_summary_sha256": file_sha256(mirror_summary_path).lower(),
+            "stripe_summary_sha256": file_sha256(stripe_summary_path).lower(),
             **({
-                "fixed_mirror_stripe_authority_sha256": _sha256(
+                "fixed_mirror_stripe_authority_sha256": file_sha256(
                     fixed_mirror_stripe_authority_path
-                ),
+                ).lower(),
             } if fixed_mirror_stripe_authority_path is not None else {}),
-            "accelerator_receipt_sha256": _sha256(accelerator_receipt_path),
+            "accelerator_receipt_sha256": file_sha256(accelerator_receipt_path).lower(),
             **({
-                "accelerator_pulse_schedule_sha256": _sha256(
+                "accelerator_pulse_schedule_sha256": file_sha256(
                     accelerator_pulse_schedule_path
-                ),
+                ).lower(),
             } if accelerator_pulse_schedule_path is not None else {}),
             **({
-                "bunch_source_receipt_sha256": _sha256(bunch_source_receipt_path),
+                "bunch_source_receipt_sha256": file_sha256(bunch_source_receipt_path).lower(),
             } if bunch_source_receipt_path is not None else {}),
         },
-        "fly2_sha256": _sha256(fly2_path),
-        "operating_point_lua_sha256": _sha256(sidecar_path),
+        "fly2_sha256": file_sha256(fly2_path).lower(),
+        "operating_point_lua_sha256": file_sha256(sidecar_path).lower(),
     }
     if pulse_schedule is not None and pulse_schedule["schema_version"] == 2:
         if bunch_source is None:
@@ -2521,8 +2518,8 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
         ),
         "prism_voltages_v": trial["prism_voltages_v"],
         "event_counts": kinds,
-        "log_sha256": _sha256(log_path),
-        "trial_receipt_sha256": _sha256(trial_receipt_path),
+        "log_sha256": file_sha256(log_path).lower(),
+        "trial_receipt_sha256": file_sha256(trial_receipt_path).lower(),
         "accelerator_pulse_diagnostic": {
             "mode": pulse_mode,
             "pulse_off_event_count": len(pulse_events),

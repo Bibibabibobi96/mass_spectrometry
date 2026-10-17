@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
@@ -52,10 +53,6 @@ def _load_object(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def _canonical_sha256(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
@@ -85,7 +82,7 @@ def _manifest_record(manifest: dict[str, Any], path: Path, label: str) -> dict[s
     if (
         not path.is_file()
         or path.stat().st_size != int(record.get("bytes", -1))
-        or _sha256(path).lower() != str(record.get("sha256", "")).lower()
+        or file_sha256(path).lower() != str(record.get("sha256", "")).lower()
     ):
         raise CandidateContractError(f"{label} differs from its run-manifest record")
     return record
@@ -140,11 +137,13 @@ def _read_run(run_dir: Path) -> dict[str, Any]:
     summary = _load_object(summary_path, "run summary")
     trial = _load_object(trial_path, "trial materialization")
     observation = _load_object(observation_path, "trial observation")
-    for path, label in (
-        (summary_path, "run summary"), (trial_path, "trial materialization"),
-        (observation_path, "trial observation"), (log_path, "native flight log"),
-    ):
-        _manifest_record(manifest, path, label)
+    verified_outputs = {
+        path: _manifest_record(manifest, path, label)["sha256"].lower()
+        for path, label in (
+            (summary_path, "run summary"), (trial_path, "trial materialization"),
+            (observation_path, "trial observation"), (log_path, "native flight log"),
+        )
+    }
     if (
         summary.get("status") != "success"
         or trial.get("status") != "materialized"
@@ -212,11 +211,11 @@ def _read_run(run_dir: Path) -> dict[str, Any]:
         },
         "event_provenance": {"detector_velocity_source": "terminal_matched_to_detector"},
         "evidence": {
-            "manifest_sha256": _sha256(manifest_path),
-            "summary_sha256": _sha256(summary_path),
-            "native_log_sha256": _sha256(log_path),
-            "trial_receipt_sha256": _sha256(trial_path),
-            "observation_sha256": _sha256(observation_path),
+            "manifest_sha256": file_sha256(manifest_path).lower(),
+            "summary_sha256": verified_outputs[summary_path],
+            "native_log_sha256": verified_outputs[log_path],
+            "trial_receipt_sha256": verified_outputs[trial_path],
+            "observation_sha256": verified_outputs[observation_path],
         },
     }
 

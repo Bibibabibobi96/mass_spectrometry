@@ -11,14 +11,11 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_geometry_parameters import derive_mirror_boundaries
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _finite_number(value: object, label: str) -> float:
@@ -38,7 +35,7 @@ def _particle_source_record(
         raise CandidateContractError("particle source count must be a positive integer")
     particle_ids = list(range(1, count + 1))
     identity = json.dumps(particle_ids, separators=(",", ":")).encode("utf-8")
-    return {"filename": path.name, "sha256": _sha256(path),
+    return {"filename": path.name, "sha256": file_sha256(path).lower(),
             "particle_count_contract_key": count_key, "particle_count": count,
             "source_profile_id": source_profile_id,
             "expected_particle_ids": particle_ids,
