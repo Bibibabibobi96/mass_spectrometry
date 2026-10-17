@@ -259,7 +259,6 @@ a new run. It never edits or finalizes a previous run, including crash leftovers
     plan = build_case_plan(config, seed)
     run_dir, identity = _prepare_run(config_path, seed=seed, run_id=run_id,
                                     resume_from=resume_from, artifact_root=artifact_root)
-    _write_json(run_dir / "results/resolved_plan.json", plan)
     started = time.perf_counter()
     records: list[dict[str, Any]] = []
     stages: list[dict[str, Any]] = []

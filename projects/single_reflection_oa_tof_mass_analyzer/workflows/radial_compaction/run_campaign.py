@@ -154,19 +154,17 @@ def _prepare_case(
     contracts = case_root / "contracts"
     baseline_path = contracts / "candidate_baseline.json"
     resolved_path = contracts / "candidate_resolved_geometry.json"
-    diff_path = contracts / "candidate_diff.json"
     numerics_path = contracts / "candidate_solver_numerics.json"
-    if baseline_path.is_file() and resolved_path.is_file() and diff_path.is_file():
+    if baseline_path.is_file() and resolved_path.is_file():
         return {
             **case,
             "case_root": case_root,
             "baseline_path": baseline_path,
             "resolved_path": resolved_path,
-            "diff_path": diff_path,
             "text_dir": case_root / "prepared" / "simion",
             "simion_dir": case_root / "simion",
         }
-    candidate, diff = compile_design_overrides(baseline, _overrides(case))
+    candidate, _ = compile_design_overrides(baseline, _overrides(case))
     _assert_only_allowed_changes(
         baseline, candidate, allow_ring_counts="stage1_count" in case,
         allowed_geometry_keys={
@@ -192,7 +190,6 @@ def _prepare_case(
         baseline_path=baseline_path, mode_path=MODE_PATH, numerics_path=numerics_path
     )
     resolved_path.write_text(serialized(resolved), encoding="utf-8")
-    _write_json(diff_path, diff)
     prepared = case_root / "prepared"
     prepare(resolved_path, prepared, particle_source_seed=seed)
     return {
@@ -200,7 +197,6 @@ def _prepare_case(
         "case_root": case_root,
         "baseline_path": baseline_path,
         "resolved_path": resolved_path,
-        "diff_path": diff_path,
         "text_dir": prepared / "simion",
         "simion_dir": case_root / "simion",
     }

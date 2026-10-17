@@ -16,6 +16,8 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
   复用公共 [`host_resource_python`](../../../common/host_resource_python.py) 外层重许可桥接；`--plan` 保持纯规划。
   调度依赖记录为独立的 `execution_source_sha256`，不纳入 `numerical_identity`，也不改变原恢复判据；
   入口源码原有身份检查仍有效，不能据此恢复任意旧版本。
+  残差／束宽比较的case计划直接在内存消费，不再另写无人读取的`results/resolved_plan.json`；
+  三臂实际电压／解的`working_points.json`、逐case记录以及配置／seed／源码冻结继续保留。
   [`radial_compaction`](../workflows/radial_compaction/run_campaign.py) 和
   [`reflectron_voltage_compensation`](../workflows/reflectron_voltage_compensation/run_compensation.py) 按完整飞行池函数
   申请一次 `flight` 重许可，函数退出后释放；普通准备和最终汇总不占重许可，也不声称有独立轻预算记录。
@@ -24,6 +26,9 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
   不构成真实OA飞行验收或完整动态调度资格。内部JSON结果只在系统TEMP的
   `host-resource-python-call-`临时目录传递，正常或异常返回均清理，不作为run证据。
   分类与继承见[主机资源调度](../../../docs/OPERATIONS.md#主机资源调度)。
+  径向紧凑化不再物化无内容消费者的`contracts/candidate_diff.json`，恢复也不再将其存在性作为marker；
+  baseline、resolved及数值合同继续供准备与SIMION builder消费。通用结构Candidate／Formal的同名diff仍参与
+  runtime覆盖及零物理变化发布判定，继续保留；本次不改变共享编译器或既有冻结run。
 
 - 分析入口的原始文件身份统一复用 `common/contracts/file_identity.py`，仍按原始字节输出大写 SHA-256，
   不规范化 run 输入的换行；已有不同 JSON 序列化合同保持原身份。理论 CLI 的递归预期值比较复用

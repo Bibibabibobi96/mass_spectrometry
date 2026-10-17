@@ -144,6 +144,9 @@ class IdealExperimentTests(unittest.TestCase):
             self.assertEqual(summary["reused_cases"], 1)
             self.assertEqual(len(summary["stages"]), 2)
             self.assertEqual(load_json(resumed / "run_manifest.json")["schema_version"], 2)
+            self.assertFalse((resumed / "results/resolved_plan.json").exists())
+            self.assertEqual(load_json(resumed / "results/working_points.json"),
+                             {name: point.to_dict() for name, point in runner._working_points(config).items()})
             with self.assertRaisesRegex(ValueError, "differs"):
                 runner.execute(config_path, seed=10, run_id="20260827_010002__test__python__ideal-source-mismatch", resume_from=failed, artifact_root=root)
             checkpoint = failed / "results/residual_scan__0001.json"

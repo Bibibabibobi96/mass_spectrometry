@@ -80,6 +80,34 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             )
             self.assertEqual(candidate["geometry_mm"]["flight_tube_wall"], 10.0)
 
+    def test_case_preparation_and_resume_use_solver_contracts_without_diff_marker(self) -> None:
+        case = self.config["radius_screen"][0]
+        mesh = self.config["fixed_contract"]["default_reflectron_mesh_mm"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(radial, "prepare") as prepare:
+                prepared = radial._prepare_case(case, root, self.baseline, 17, mesh)
+            prepare.assert_called_once_with(
+                prepared["resolved_path"], prepared["case_root"] / "prepared",
+                particle_source_seed=17,
+            )
+            contracts = prepared["baseline_path"].parent
+            self.assertEqual({path.name for path in contracts.iterdir()}, {
+                "candidate_baseline.json", "candidate_resolved_geometry.json",
+                "candidate_solver_numerics.json",
+            })
+            self.assertNotIn("diff_path", prepared)
+            baseline_bytes = prepared["baseline_path"].read_bytes()
+            resolved_bytes = prepared["resolved_path"].read_bytes()
+            with patch.object(radial, "compile_design_overrides") as compiler, \
+                    patch.object(radial, "prepare") as prepare:
+                resumed = radial._prepare_case(case, root, self.baseline, 17, mesh)
+            compiler.assert_not_called()
+            prepare.assert_not_called()
+            self.assertEqual(resumed, prepared)
+            self.assertEqual(resumed["baseline_path"].read_bytes(), baseline_bytes)
+            self.assertEqual(resumed["resolved_path"].read_bytes(), resolved_bytes)
+
     def test_runtime_requires_authorized_campaign(self) -> None:
         self.assertEqual(self.config["status"], "authorized")
         source = (
