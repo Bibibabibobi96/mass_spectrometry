@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any
+
+from common.contracts.file_identity import file_sha256
 
 
 PROJECT_ID = "dual_cone_tandem_quadrupole_ion_interface"
@@ -24,14 +25,6 @@ def _load_json(path: Path, role: str) -> dict[str, Any]:
     if value.get("project_id") != PROJECT_ID:
         raise ValueError(f"{path} has the wrong project identity")
     return value
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def _finite_float(row: dict[str, str], field: str, fluid: bool) -> float:
@@ -65,13 +58,13 @@ def validate_gas_field(
         raise ValueError("gas-flow model identities disagree")
     if metadata.get("claim_scope") != science["claim_scope"]:
         raise ValueError("gas-field claim scope disagrees with science contract")
-    if metadata.get("field_csv_sha256") != _sha256(csv_path):
+    if metadata.get("field_csv_sha256") != file_sha256(csv_path).lower():
         raise ValueError("gas-field CSV SHA-256 does not match metadata")
     source_hashes = metadata.get("source_contract_sha256", {})
     expected_source_hashes = {
-        "gas_flow_science": _sha256(science_path),
-        "comsol_solver_numerics": _sha256(numerics_path),
-        "resolved_geometry": _sha256(geometry_path),
+        "gas_flow_science": file_sha256(science_path).lower(),
+        "comsol_solver_numerics": file_sha256(numerics_path).lower(),
+        "resolved_geometry": file_sha256(geometry_path).lower(),
     }
     for source_name, expected_hash in expected_source_hashes.items():
         if source_hashes.get(source_name) != expected_hash:

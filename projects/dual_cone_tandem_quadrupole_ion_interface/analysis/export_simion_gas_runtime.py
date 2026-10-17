@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any
+
+from common.contracts.file_identity import file_sha256
 
 from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.validate_gas_field import (
     validate_gas_field,
@@ -23,14 +24,6 @@ def _load(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"JSON root must be an object: {path}")
     return value
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def _lua_number(value: str) -> str:
@@ -64,14 +57,12 @@ def export_runtime(
     interface_path: Path,
 ) -> dict[str, Any]:
     """Validate the COMSOL result, then emit bilinear axisymmetric lookup code."""
-    validation = validate_gas_field(
+    validate_gas_field(
         csv_path, metadata_path, science_path, numerics_path, geometry_path
     )
     metadata = _load(metadata_path)
     interface = _load(interface_path)
     contract = interface["runtime_artifact_contract"]
-    if validation["status"] != "PASS":
-        raise ValueError("COMSOL gas field did not pass validation")
 
     with csv_path.open("r", encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
@@ -155,7 +146,7 @@ return field
             },
             "metadata": {
                 "path": str(metadata_path.resolve()),
-                "sha256": _sha256(metadata_path),
+                "sha256": file_sha256(metadata_path).lower(),
             },
             "source_contract_sha256": metadata["source_contract_sha256"],
         },
@@ -164,7 +155,7 @@ return field
         "interpolation_policy": contract["interpolation_policy"],
         "runtime_lua": {
             "path": str(output_lua.resolve()),
-            "sha256": _sha256(output_lua),
+            "sha256": file_sha256(output_lua).lower(),
         },
     }
     output_manifest.parent.mkdir(parents=True, exist_ok=True)

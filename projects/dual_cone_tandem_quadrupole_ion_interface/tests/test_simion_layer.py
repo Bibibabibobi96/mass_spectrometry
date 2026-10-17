@@ -313,7 +313,7 @@ if($null-ne$parent){Exit-HostExecutionLease -Lease $parent}
     def test_field_specific_wrappers_delegate_to_one_simion_runner(self) -> None:
         uniform = UNIFORM_RUNNER.read_text(encoding="utf-8")
         comsol = COMSOL_FIELD_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("build_uniform_rear_gas_runtime.ps1", uniform)
+        self.assertIn("analysis.export_uniform_rear_gas_runtime", uniform)
         self.assertIn("run_gas_field_prototype.ps1", uniform)
         self.assertNotIn("--nogui --noprompt fly", uniform)
         self.assertIn("build_gas_runtime.ps1", comsol)

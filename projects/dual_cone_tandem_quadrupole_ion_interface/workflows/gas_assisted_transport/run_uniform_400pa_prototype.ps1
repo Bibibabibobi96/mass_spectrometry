@@ -13,7 +13,13 @@ $repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 $gasOutput=Join-Path ([IO.Path]::GetTempPath()) ("dual-cone-uniform-"+[guid]::NewGuid().ToString('N'))
 try{
-  & (Join-Path $PSScriptRoot 'build_uniform_rear_gas_runtime.ps1') -OutputDir $gasOutput -PythonExe $python
+  Push-Location $repoRoot
+  try{
+    & $python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.export_uniform_rear_gas_runtime `
+      --output-lua (Join-Path $gasOutput 'gas_field_runtime.lua') `
+      --output-manifest (Join-Path $gasOutput 'gas_field_manifest.json')
+    if($LASTEXITCODE-ne 0){throw 'Uniform rear-gas runtime compilation failed.'}
+  }finally{Pop-Location}
   & (Join-Path $PSScriptRoot 'run_gas_field_prototype.ps1') -RunId $RunId `
     -GasFieldManifest (Join-Path $gasOutput 'gas_field_manifest.json') -SimionExe $SimionExe `
     -PythonExe $python -PaCacheRoot $PaCacheRoot
