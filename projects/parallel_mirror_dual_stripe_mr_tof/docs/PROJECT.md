@@ -316,3 +316,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [segment4]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_183100__sim__simion__mesh4-same-entry-positive-mirror/summary.json
 [segment-native]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_183200__sim__simion__fine-native-same-entry-positive-mirror/summary.json
 [amplification3]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_162423__sim__simion__mesh3-entry-in-mesh3-return/summary.json
+
+固定镜到 Stripe 的 `load_fixed_grid_mirror_point` 只核验实际消费的 run_config 与四份镜电压、
+周期及原生 L1/probe 证据，保留其角色、互相身份绑定和全部物理门槛。下游合同身份不同时，仍核验
+原 run 邻接冻结 source contract 的 SHA 及允许的物理差异；同身份分支不新增历史文件要求。
+无关轴场比较、日志、资源／容量收据的缺失或损坏不阻止这项消费，不代表原完整 run 通过重新验收。

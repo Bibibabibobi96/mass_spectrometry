@@ -76,6 +76,61 @@ class FixedGridMirrorStripeHandoffTests(unittest.TestCase):
         local_manifest.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         return local_manifest
 
+    def test_only_consumed_evidence_requires_integrity(self) -> None:
+        from unittest import mock
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import fixed_grid_mirror_stripe_handoff as module
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = json.loads(R130_MANIFEST.read_text(encoding="utf-8-sig"))
+            consumed = {"fixed_grid_voltage_point.json", "mirror_real_field_period_comparison.json",
+                        "native_transverse_l1.json", "native_transverse_l1_probe_contract.json"}
+            for record in manifest["outputs"]:
+                if Path(record["path"]).name not in consumed:
+                    record["sha256"] = "0" * 64
+            local = Path(directory) / "run_manifest.json"
+            local.write_text(json.dumps(manifest), encoding="utf-8")
+            with mock.patch.object(module, "verify_record", wraps=module.verify_record) as verify:
+                point = load_fixed_grid_mirror_point(local, DOWNSTREAM_CONTRACT)
+                self.assertEqual(verify.call_count, 5)
+            self.assertEqual(point, load_fixed_grid_mirror_point(R130_MANIFEST, DOWNSTREAM_CONTRACT))
+
+    def test_each_consumed_record_rejects_missing_tampered_or_replaced_file(self) -> None:
+        consumed = {"fixed_grid_voltage_point.json", "mirror_real_field_period_comparison.json",
+                    "native_transverse_l1.json", "native_transverse_l1_probe_contract.json"}
+        for name in ("run_config.json", *sorted(consumed)):
+            for change in ("missing", "tampered", "replacement"):
+                with self.subTest(name=name, change=change), tempfile.TemporaryDirectory() as directory:
+                    manifest = json.loads(R130_MANIFEST.read_text(encoding="utf-8-sig"))
+                    record = manifest["run_config"] if name == "run_config.json" else next(
+                        r for r in manifest["outputs"] if Path(r["path"]).name == name)
+                    target = Path(directory) / name
+                    if change != "missing":
+                        payload = Path(record["path"]).read_bytes()
+                        target.write_bytes(payload + b" " if change == "tampered" else b"{}")
+                    record["path"] = str(target)
+                    local = Path(directory) / "run_manifest.json"
+                    local.write_text(json.dumps(manifest), encoding="utf-8")
+                    with self.assertRaisesRegex(CandidateContractError, "integrity failed"):
+                        load_fixed_grid_mirror_point(local, DOWNSTREAM_CONTRACT)
+
+    def test_changed_downstream_contract_requires_intact_frozen_source(self) -> None:
+        for change in ("missing", "tampered"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                manifest = json.loads(R130_MANIFEST.read_text(encoding="utf-8-sig"))
+                config = root / "run_config.json"
+                payload = Path(manifest["run_config"]["path"]).read_bytes()
+                config.write_bytes(payload)
+                manifest["run_config"].update(path=str(config), bytes=len(payload),
+                    sha256=hashlib.sha256(payload).hexdigest().upper())
+                if change == "tampered":
+                    source = root / "inputs" / "simion_candidate_two_zone.json"
+                    source.parent.mkdir()
+                    source.write_bytes(b"{}")
+                local = root / "run_manifest.json"
+                local.write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaisesRegex(CandidateContractError, "changes more than"):
+                    load_fixed_grid_mirror_point(local, CURRENT_CONTRACT)
+
     def test_r130_style_evidence_yields_native_real_field_period(self) -> None:
         point = load_fixed_grid_mirror_point(R130_MANIFEST, DOWNSTREAM_CONTRACT)
         self.assertEqual(len(point.energy_points_v), 3)

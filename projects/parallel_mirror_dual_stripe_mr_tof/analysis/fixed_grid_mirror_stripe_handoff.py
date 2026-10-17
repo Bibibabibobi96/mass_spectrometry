@@ -76,8 +76,8 @@ def _same_mirror_physics(
         _remove_path(contract, "simion", "native_corridor")
         # These settings belong to the assembled-field/statistics consumer,
         # not to the immutable bare-mirror evidence being used as an initializer.
-        # Its original mesh, stopping and integration records remain manifest
-        # verified below; this does not qualify the downstream numerical model.
+        # The consumed fixed-grid evidence remains verified below; this does
+        # not qualify the downstream numerical model or the entire source run.
         _remove_path(contract, "simion", "trajectory_profiles", "center_screening", "maximum_step_us")
         _remove_path(contract, "simion", "numerical_profiles", "grid_generation")
         _remove_path(contract, "simion", "numerical_profiles", "native_static_field")
@@ -102,15 +102,15 @@ def load_fixed_grid_mirror_point(manifest_path: Path, downstream_contract: Path)
     manifest_path = manifest_path.resolve(); manifest = _obj(manifest_path, "fixed-grid manifest")
     if manifest.get("schema_version") != 2 or manifest.get("project") != _PROJECT or manifest.get("mode") != _MODE or manifest.get("status") != "success":
         raise CandidateContractError("fixed-grid manifest has wrong schema, project, mode, or status")
+    point_rec = _record(manifest.get("outputs"), "fixed_grid_voltage_point.json")
+    period_rec = _record(manifest.get("outputs"), "mirror_real_field_period_comparison.json")
+    native_rec = _record(manifest.get("outputs"), "native_transverse_l1.json")
+    probe_rec = _record(manifest.get("outputs"), "native_transverse_l1_probe_contract.json")
     try:
         verify_record("run_config", manifest["run_config"], base_dir=manifest_path.parent)
-        for name, value in manifest.get("inputs", {}).items(): verify_record(name, value, base_dir=manifest_path.parent)
-        for value in manifest.get("outputs", []): verify_record("output", value, base_dir=manifest_path.parent)
+        for value in (point_rec, period_rec, native_rec, probe_rec):
+            verify_record("consumed mirror evidence", value, base_dir=manifest_path.parent)
     except (AssertionError, KeyError, TypeError, ValueError) as exc: raise CandidateContractError("fixed-grid manifest integrity failed") from exc
-    point_rec = _record(manifest["outputs"], "fixed_grid_voltage_point.json")
-    period_rec = _record(manifest["outputs"], "mirror_real_field_period_comparison.json")
-    native_rec = _record(manifest["outputs"], "native_transverse_l1.json")
-    probe_rec = _record(manifest["outputs"], "native_transverse_l1_probe_contract.json")
     contract = load_contract(downstream_contract)
     point, period, native, probe = (_obj(record_path(r, base_dir=manifest_path.parent), label) for r, label in ((point_rec,"point"),(period_rec,"period"),(native_rec,"native L1"),(probe_rec,"native probe")))
     source_contract_sha = str(point.get("source_contract_sha256", "")).upper()
