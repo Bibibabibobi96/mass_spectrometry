@@ -306,11 +306,15 @@ def prepare_candidate_run(
         frozen["candidate_simion_template_registration_manifest"] = manifest_target
 
     prepared_dir = inputs_dir / "prepared_consumers"
-    consumption = prepare_consumers(frozen["candidate_resolved_geometry.json"], prepared_dir, run_root, particle_source_seed)
+    generated = prepare_consumers(
+        frozen["candidate_resolved_geometry.json"], prepared_dir,
+        particle_source_seed=particle_source_seed,
+    )
+    frozen.update({f"candidate_simion_{key}": path for key, path in generated.items()})
     resolved_contract = load_json(frozen["candidate_resolved_geometry.json"])
     source = resolved_contract["particle_source"]
     target = resolved_contract["validation_target"]
-    comsol_model = Path(consumption["consumers"]["comsol"]["arguments"]["OutputModelPath"])
+    comsol_model = run_root / "comsol" / "single_reflection_oa_tof_mass_analyzer__candidate.mph"
     candidate_ion = inputs_dir / "oatof_candidate_N100.ion"
     report_dir = run_root / "logs"
     workflow_plan = {
@@ -333,7 +337,7 @@ def prepare_candidate_run(
             {
                 "stage_id": "static_inputs",
                 "status": "prepared_except_particle_table",
-                "prepared_outputs": [str(prepared_dir / "candidate_consumption_plan.json")],
+                "prepared_outputs": [str(path) for path in generated.values()],
                 "pending_output": str(candidate_ion),
                 "entrypoint": frozen_source_path(
                     source_closure,

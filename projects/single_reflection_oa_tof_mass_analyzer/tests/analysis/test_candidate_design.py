@@ -21,6 +21,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_c
     PYTHON_BOUND_SOURCES,
     RELATIVE_PATHS,
     freeze_candidate_source_closure,
+    frozen_source_path,
     verify_candidate_source_closure,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import EnvelopeReviewRequired, compile_proposal, write_candidate
@@ -47,6 +48,24 @@ from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.
 
 
 class CandidateDesignTests(unittest.TestCase):
+    def test_frozen_path_resolution_does_not_rehash_or_scan(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as module
+        closure = {"schema_version": 2, "role": module.ROLE,
+                   "code_root": str(PROJECT_ROOT), "sources": [{"source_id": "analysis/reference_analysis.py"}]}
+        with mock.patch.object(module, "sha256") as digest, mock.patch.object(Path, "rglob") as scan:
+            self.assertEqual(frozen_source_path(closure, "analysis/reference_analysis.py"),
+                             str((PROJECT_ROOT / "analysis/reference_analysis.py").resolve()))
+            digest.assert_not_called()
+            scan.assert_not_called()
+        with self.assertRaisesRegex(ValueError, "undeclared"):
+            frozen_source_path(closure, "missing.py")
+        closure["sources"] *= 2
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            frozen_source_path(closure, "analysis/reference_analysis.py")
+        closure["sources"] = [{"source_id": "../escape.py"}]
+        with self.assertRaisesRegex(ValueError, "invalid candidate source path"):
+            frozen_source_path(closure, "../escape.py")
+
     def test_candidate_freeze_rejects_provider_api_version_before_copy(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as closure
         with tempfile.TemporaryDirectory() as directory:
@@ -338,7 +357,7 @@ class CandidateDesignTests(unittest.TestCase):
     def test_candidate_generates_nonformal_simion_text_from_frozen_contract(self):
         with tempfile.TemporaryDirectory() as root:
             output = Path(root) / "prepared"
-            plan = prepare(
+            generated = prepare(
                 PROJECT_ROOT / "config" / "resolved_geometry.json",
                 output,
                 particle_source_seed=20260713,
@@ -353,12 +372,8 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertIn(frozen["inputs"]["solver_numerics_sha256"], resolved)
             self.assertIn("seed(20260713)", fly2)
             self.assertFalse((output / "simion" / "oatof_ideal_grounded.iob").exists())
-            self.assertEqual(plan["status"], "STATIC_INPUTS_READY")
-            self.assertEqual(plan["consumers"]["comsol"]["runtime_status"], "not_run")
-            self.assertEqual(
-                plan["consumers"]["cad"]["arguments"]["modelPath"],
-                plan["consumers"]["comsol"]["arguments"]["OutputModelPath"],
-            )
+            self.assertEqual(set(generated), {"resolved_lua", "program", "fly2"})
+            self.assertFalse((output / "candidate_consumption_plan.json").exists())
 
     def test_nonzero_candidate_routes_one_contract_to_all_consumers(self):
         with tempfile.TemporaryDirectory() as root:
@@ -367,17 +382,13 @@ class CandidateDesignTests(unittest.TestCase):
             candidate["geometry_mm"]["accelerator_ring_width"] = 6.0
             contract_path = root_path / "candidate_resolved_geometry.json"
             contract_path.write_text(json.dumps(candidate), encoding="utf-8")
-            plan = prepare(
+            generated = prepare(
                 contract_path,
                 root_path / "prepared",
                 particle_source_seed=20260713,
             )
-            program = Path(plan["consumers"]["simion"]["generated"]["program"]["path"])
+            program = generated["program"]
             self.assertIn("adjustable accelerator_ring_width_mm=6.0", program.read_text(encoding="utf-8"))
-            self.assertEqual(plan["candidate_contract"]["path"], str(contract_path.resolve()))
-            self.assertEqual(
-                plan["consumers"]["comsol"]["arguments"]["ContractPath"], str(contract_path.resolve())
-            )
 
     def test_comsol_contract_is_the_only_reflectron_voltage_source(self):
         source = (PROJECT_ROOT / "comsol" / "oatof_build_model_core.m").read_text(
@@ -605,7 +616,8 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertEqual(
                 set(plan["candidate_inputs"]),
                 {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json", "candidate_diff.json",
-                 "candidate_proposal.json", "design_request.json"},
+                 "candidate_proposal.json", "design_request.json",
+                 "candidate_simion_resolved_lua", "candidate_simion_program", "candidate_simion_fly2"},
             )
             self.assertTrue((planning_root / "run_config.template.json").is_file())
             self.assertTrue((planning_root / "candidate_workflow_plan.json").is_file())
@@ -1046,7 +1058,8 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertEqual(
                 set(manifest["inputs"]),
                 {"candidate_baseline.json", "candidate_resolved_geometry.json", "candidate_solver_numerics.json", "candidate_diff.json",
-                 "candidate_proposal.json", "design_request.json"},
+                 "candidate_proposal.json", "design_request.json",
+                 "candidate_simion_resolved_lua", "candidate_simion_program", "candidate_simion_fly2"},
             )
             self.assertEqual(verify_project(artifact_root), (1, 0))
 
@@ -1126,22 +1139,23 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertFalse(Path(plan["run_root"]).exists())
 
     def test_prepared_solver_text_cannot_change_before_atomic_run_start(self):
-        with tempfile.TemporaryDirectory() as root:
-            root_path = Path(root)
-            artifact_root = root_path / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
-            source = root_path / "source"
-            source.mkdir()
-            inputs = self.candidate_run_inputs(source)
-            plan = prepare_candidate_run(
-                *inputs, "20260720_130004__build__cross__design-candidate__text-tamper",
-                artifact_root, particle_source_seed=20260713,
-            )
-            planning_root = Path(plan["planning_root"])
-            program = planning_root / "inputs" / "prepared_consumers" / "simion" / "oatof_ideal_grounded.lua"
-            program.write_text(program.read_text(encoding="utf-8") + "-- changed\n", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "SIMION candidate text changed"):
-                start_candidate_run(planning_root / "candidate_workflow_plan.json")
-            self.assertFalse(Path(plan["run_root"]).exists())
+        for index, name in enumerate(("oatof_resolved.lua", "oatof_ideal_grounded.lua", "oatof_ideal_grounded.fly2")):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as root:
+                root_path = Path(root)
+                artifact_root = root_path / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
+                source = root_path / "source"
+                source.mkdir()
+                inputs = self.candidate_run_inputs(source)
+                plan = prepare_candidate_run(
+                    *inputs, f"20260720_13000{index + 4}__build__cross__design-candidate__text-tamper",
+                    artifact_root, particle_source_seed=20260713,
+                )
+                planning_root = Path(plan["planning_root"])
+                program = planning_root / "inputs" / "prepared_consumers" / "simion" / name
+                program.write_text(program.read_text(encoding="utf-8") + "-- changed\n", encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "changed before run start"):
+                    start_candidate_run(planning_root / "candidate_workflow_plan.json")
+                self.assertFalse(Path(plan["run_root"]).exists())
 
     def test_frozen_candidate_source_tamper_blocks_start_and_extra_files(self):
         cases = ("modified", "extra")

@@ -237,10 +237,18 @@ def verify_candidate_source_closure(closure: dict[str, Any]) -> None:
 
 
 def frozen_source_path(closure: dict[str, Any], source_id: str) -> str:
-    """Resolve one declared frozen source after verifying the whole closure."""
-    verify_candidate_source_closure(closure)
+    """Resolve a declared path; execution and publication verify the full closure."""
+    if closure.get("schema_version") != 2 or closure.get("role") != ROLE:
+        raise ValueError("invalid candidate source closure")
     normalized = source_id.replace("\\", "/")
-    declared = {item["source_id"] for item in closure["sources"]}
+    declared = [item["source_id"] for item in closure["sources"]]
+    if len(declared) != len(set(declared)):
+        raise ValueError("duplicate frozen candidate source id")
     if normalized not in declared:
         raise ValueError(f"undeclared candidate source id: {normalized}")
-    return str(Path(closure["code_root"]) / normalized)
+    root = Path(closure["code_root"]).resolve()
+    relative = Path(normalized)
+    path = (root / relative).resolve()
+    if relative.is_absolute() or ".." in relative.parts or root not in path.parents:
+        raise ValueError(f"invalid candidate source path: {normalized}")
+    return str(path)

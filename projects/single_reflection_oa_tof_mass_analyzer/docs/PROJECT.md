@@ -7,6 +7,12 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
 
 ## 当前状态
 
+- Candidate 准备直接把三份 SIMION 文本登记到现有 run_config 输入身份，不再生成或重写第二份
+  `candidate_consumption_plan.json`。原子启动继续逐份拒绝文本篡改；COMSOL/CAD 模型路径由现有
+  workflow plan 声明，builder、GUI 和径向 campaign 的文本路径不变。
+  冻结源码路径解析只检查登记和路径边界；完整源码／Python 身份及目录扫描留在冻结完成、
+  启动／物化、每个执行 stage 入口和成功发布前，不因同一 stage 多次取路径重复执行。
+
 - 静态门禁覆盖隐藏 Windows 宿主的非法参数拒绝；分析测试失败时立即拒绝，不发布项目 PASS。
 - 项目门禁与输入准备使用轻许可；独立入口在调用商业子流程前交还自己的轻许可，由子流程管理实际阶段。
   几何builder只在refine（含内部执行refine的Lua调用）阶段占重许可，飞行占重许可，结束后回到轻后处理。

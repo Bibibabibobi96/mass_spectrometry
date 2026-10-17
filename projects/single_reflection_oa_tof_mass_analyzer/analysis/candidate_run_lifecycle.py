@@ -173,19 +173,6 @@ def start_candidate_run(plan_path: Path, *, provisional_manifest: bool = True) -
         expected = config_template.get("input_sha256", {}).get(key, "")
         if not expected or sha256(Path(value)).lower() != expected.lower():
             raise ValueError(f"planned candidate input changed before run start: {key}")
-    consumption = load_json(planning_root / "inputs" / "prepared_consumers" / "candidate_consumption_plan.json")
-    contract_record = consumption.get("candidate_contract", {})
-    consumer_contract_path = Path(contract_record.get("path", ""))
-    if (
-        not consumer_contract_path.is_file()
-        or sha256(consumer_contract_path).lower() != contract_record.get("sha256", "").lower()
-    ):
-        raise ValueError("prepared candidate consumer contract changed before run start")
-    for key, record in consumption.get("consumers", {}).get("simion", {}).get("generated", {}).items():
-        generated_path = Path(record.get("path", ""))
-        if not generated_path.is_file() or sha256(generated_path).lower() != record.get("sha256", "").lower():
-            raise ValueError(f"prepared SIMION candidate text changed before run start: {key}")
-
     staging = planning_root / "materialized_run"
     if staging.exists():
         raise FileExistsError(f"candidate materialization staging already exists: {staging}")
@@ -203,13 +190,6 @@ def start_candidate_run(plan_path: Path, *, provisional_manifest: bool = True) -
     run_config["execution_source_closure"] = runtime_plan["execution_source_closure"]
     run_config["started_at_utc"] = runtime_plan["started_at_utc"]
     write_json_atomic(staging / "run_config.json", run_config)
-
-    consumption_path = staging / "inputs" / "prepared_consumers" / "candidate_consumption_plan.json"
-    if consumption_path.is_file():
-        write_json_atomic(
-            consumption_path,
-            _rewrite_paths(load_json(consumption_path), planning_root, run_root),
-        )
 
     provisional = _summary(
         "interrupted",

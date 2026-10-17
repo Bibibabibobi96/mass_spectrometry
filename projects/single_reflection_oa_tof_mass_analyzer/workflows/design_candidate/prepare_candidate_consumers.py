@@ -6,7 +6,6 @@ import argparse
 import json
 from pathlib import Path
 
-from common.contracts.file_identity import file_sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import (
     load_contract,
     render_fly2,
@@ -35,9 +34,8 @@ def verify_routing_coverage(consumer_contract: dict, variable_catalog: dict) -> 
 def prepare(
     contract_path: Path,
     output_dir: Path,
-    runtime_root: Path | None = None,
     particle_source_seed: int | None = None,
-) -> dict:
+) -> dict[str, Path]:
     if not isinstance(particle_source_seed, int):
         raise ValueError("candidate consumer preparation requires an explicit particle source seed")
     contract_path = contract_path.resolve()
@@ -63,45 +61,7 @@ def prepare(
     for key, path in generated.items():
         path.write_text(contents[key], encoding="utf-8", newline="\n")
 
-    runtime_root = runtime_root or output_dir
-    candidate_mph = (
-        runtime_root
-        / "comsol"
-        / "single_reflection_oa_tof_mass_analyzer__candidate.mph"
-    ).resolve()
-    cad_dir = (runtime_root / "cad").resolve()
-    plan = {
-        "schema_version": 1,
-        "role": "oa_tof_candidate_consumption_plan",
-        "status": "STATIC_INPUTS_READY",
-        "candidate_contract": {"path": str(contract_path), "sha256": file_sha256(contract_path).lower()},
-        "consumers": {
-            "comsol": {
-                "entrypoint": "comsol/run_oatof_model.m",
-                "arguments": {"ContractPath": str(contract_path), "OutputModelPath": str(candidate_mph)},
-                "runtime_status": "not_run",
-            },
-            "simion": {
-                "entrypoint": "workflows/design_candidate/prepare_candidate_consumers.py",
-                "generated": {
-                    key: {"path": str(path.resolve()), "sha256": file_sha256(path).lower()}
-                    for key, path in generated.items()
-                },
-                "runtime_status": "text_generated_pa_iob_not_built",
-            },
-            "cad": {
-                "entrypoint": "cad/ms_export_oatof_to_solidworks.m",
-                "arguments": {"modelPath": str(candidate_mph), "outputDir": str(cad_dir)},
-                "runtime_status": "blocked_until_candidate_mph_exists",
-            },
-        },
-        "coverage_semantics": consumer_contract["coverage_semantics"],
-        "limitations": consumer_contract["limitations"],
-    }
-    output_dir.mkdir(parents=True, exist_ok=True)
-    plan_path = output_dir / "candidate_consumption_plan.json"
-    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return plan
+    return generated
 
 
 def main() -> None:
@@ -110,12 +70,12 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--particle-source-seed", required=True, type=int)
     args = parser.parse_args()
-    plan = prepare(
+    prepare(
         args.contract,
         args.output_dir.resolve(),
         particle_source_seed=args.particle_source_seed,
     )
-    print(f"CANDIDATE_CONSUMER_PREPARE={plan['status']}")
+    print("CANDIDATE_CONSUMER_PREPARE=STATIC_INPUTS_READY")
 
 
 if __name__ == "__main__":
