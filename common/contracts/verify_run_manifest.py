@@ -9,34 +9,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
+    from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication, retention_api
 except ModuleNotFoundError:
-    from write_run_manifest import file_record, require_completed_terminal_publication
-
-
-def retention_api() -> tuple[Any, Any, Any, Any]:
-    """Import the v2-only retention API without breaking frozen v1 verifiers."""
-
-    try:
-        from common.contracts.artifact_retention import (
-            classify_file,
-            load_failed_recovery_exemptions,
-            validate_retained_files,
-            validate_retention,
-        )
-    except ModuleNotFoundError:
-        from artifact_retention import (
-            classify_file,
-            load_failed_recovery_exemptions,
-            validate_retained_files,
-            validate_retention,
-        )
-    return (
-        classify_file,
-        load_failed_recovery_exemptions,
-        validate_retained_files,
-        validate_retention,
-    )
+    from write_run_manifest import file_record, require_completed_terminal_publication, retention_api
 
 
 def record_path(record: dict, *, base_dir: Path | None = None) -> Path:

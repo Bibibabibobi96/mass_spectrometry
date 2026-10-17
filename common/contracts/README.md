@@ -22,9 +22,12 @@
 `Remove-RunPackageExecutionAlias`清理它。实际文件从未搬离最终run，Python manifest解析 junction 后记录真实
 artifact路径，因此run ID、输入/输出身份、SHA和历史引用不变。不能以复制后回迁或只缩短某个求解器子目录
 替代该合同。该 junction 仅指向本次可写 run；SIMION 外部只读 PA 输入另用[已验证普通副本机制](../../docs/SIMION_REFERENCE.md#长pa输入路径)，不得用此别名暴露不可变 PA 源。
-`Write-RunManifest`通过临时UTF-8 JSON列表向`write_run_manifest.py --output-list-json`传递输出路径，
-避免大量文件路径超过Windows进程命令行长度；列表严格为字符串数组，发布后清理临时文件。
+`Write-RunManifest`通过UTF-8标准输入向`write_run_manifest.py --output-list-json -`传递输出路径，
+避免大量文件路径超过Windows进程命令行长度；列表严格为字符串数组，不再落盘临时运输文件。
 原Python入口的重复`--output`仍可使用，两种输入共同进入同一manifest校验和身份计算。
+
+运行初始化统一使用`New-RunPackage`；原仅由测试调用的初始化包装和无调用的依赖复制包装已移除。
+writer与verifier共用保留策略入口，独立消费时仍重新验证完整内容，不维护两份同义导入逻辑。
 
 `file_identity.py`是SHA-256身份的唯一共享实现，固定返回大写十六进制。`file_sha256`按原始字节标识
 manifest、正式资产和外部artifact；`repository_text_sha256`只用于Git治理的文本依赖，先把行尾规范为
@@ -57,7 +60,11 @@ producer须在发布前关闭写入和映射，不通过这项读取选择刷新
 [ReadFile](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile)定义同步读和跨EOF尾读。
 这是基于官方API的项目SHA-256实现，用于显式核对异常的大文件缓存视图；不支持这些接口的存储失败关闭。
 
-`verify_run_manifest.py`默认且在发布时始终复核run config、全部输入、全部输出和适用的保留合同。已经冻结的
+producer关闭载荷后，writer CLI计算全部身份并检查保留合同，拒绝缺失输出和未完成的终态journal；
+原子写入后读回小型manifest与内存记录完整比对，公共发布器不再另起verifier重复全文读取同批载荷。
+这是同次发布的工作复用，不是跨消费边界缓存。`build_run_manifest`纯构建API仍可记录缺失输出，
+供虚拟文档/失败证据构建；它本身不提供CLI的完整发布保证。
+`verify_run_manifest.py`作为独立消费入口仍默认复核run config、全部输入、全部输出和适用的保留合同。已经冻结的
 历史run若有不再被下游读取的大型记录丢失或损坏，下游可用具名`--consumer-projection-id`，并逐项提供
 `--consumed-input NAME PATH`／`--consumed-output PATH`；入口仍复核manifest状态、run config、项目／模式等
 约束，并把每个实际消费路径唯一绑定到manifest记录后核对字节数和SHA-256。投影不得用于发布或宣称整个

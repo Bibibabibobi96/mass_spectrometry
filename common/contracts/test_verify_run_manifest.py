@@ -35,14 +35,17 @@ class ManifestOutputListTests(unittest.TestCase):
                 path.write_text("fixture", encoding="utf-8")
             listing = root / "outputs.json"
             listing.write_text(json.dumps([str(files[1])], ensure_ascii=False), encoding="utf-8")
-            result = subprocess.run(
-                [sys.executable, str(Path(write_run_manifest.__file__)), "--run-config", str(config),
-                 "--status", "success", "--output", str(files[0]), "--output-list-json", str(listing)],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            manifest = json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))
-            self.assertEqual([row["path"] for row in manifest["outputs"]], [str(p.resolve()) for p in files])
+            for source in (str(listing), "-"):
+                with self.subTest(source=source):
+                    result = subprocess.run(
+                        [sys.executable, str(Path(write_run_manifest.__file__)), "--run-config", str(config),
+                         "--status", "success", "--output", str(files[0]), "--output-list-json", source],
+                        input=listing.read_text(encoding="utf-8") if source == "-" else None,
+                        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    manifest = json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))
+                    self.assertEqual([row["path"] for row in manifest["outputs"]], [str(p.resolve()) for p in files])
 
     def test_output_list_rejects_non_list_non_strings_and_accepts_empty(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -62,8 +65,50 @@ class ManifestOutputListTests(unittest.TestCase):
                             with self.assertRaisesRegex(SystemExit, r"JSON list\[str\]"):
                                 write_run_manifest.main()
 
+    def test_cli_refuses_missing_outputs_and_pending_publication_before_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self.config(root)
+            manifest = root / "run_manifest.json"
+            manifest.write_bytes(b"previous publication")
+            for status in ("success", "failed", "checkpoint", "interrupted", "superseded"):
+                with self.subTest(status=status), patch.object(sys, "argv", [
+                    "writer", "--run-config", str(config), "--status", status,
+                    "--output", str(root / "missing.txt"),
+                ]):
+                    with self.assertRaisesRegex(SystemExit, "missing run outputs"):
+                        write_run_manifest.main()
+                    self.assertEqual(manifest.read_bytes(), b"previous publication")
+            (root / write_run_manifest.TERMINAL_JOURNAL_NAME).write_text("{}")
+            with patch.object(sys, "argv", ["writer", "--run-config", str(config), "--status", "success"]):
+                with self.assertRaisesRegex(SystemExit, "publication is incomplete"):
+                    write_run_manifest.main()
+            self.assertEqual(manifest.read_bytes(), b"previous publication")
+
+    def test_cli_rejects_corrupt_persisted_manifest_without_rereading_payloads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self.config(root)
+            output = root / "result.txt"
+            output.write_bytes(b"result")
+            arguments = ["writer", "--run-config", str(config), "--status", "success", "--output", str(output)]
+            persist = write_run_manifest.write_json_atomic
+            for replacement in (b"{", b'{"schema_version":true}', b'{"schema_version":1,"schema_version":1}'):
+                def corrupt(path, document):
+                    persist(path, document)
+                    payload = write_run_manifest._json_bytes(document)
+                    path.write_bytes(payload.replace(b'"schema_version": 1', replacement[1:-1])
+                                     if replacement != b"{" else replacement)
+
+                with self.subTest(replacement=replacement), patch.object(sys, "argv", arguments), \
+                        patch.object(write_run_manifest, "write_json_atomic", side_effect=corrupt), \
+                        patch.object(write_run_manifest, "file_sha256", wraps=file_sha256) as reader:
+                    with self.assertRaisesRegex(SystemExit, "published manifest differs"):
+                        write_run_manifest.main()
+                    self.assertEqual(sum(Path(call.args[0]) == output for call in reader.call_args_list), 1)
+
     @unittest.skipUnless(sys.platform == "win32" and shutil.which("pwsh"), "Windows PowerShell 7 required")
-    def test_real_powershell_writer_over_40k_argument_equivalent_and_full_verifier(self):
+    def test_real_powershell_publication_over_40k_argument_equivalent_and_full_verifier(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = self.config(root)
@@ -82,7 +127,7 @@ class ManifestOutputListTests(unittest.TestCase):
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 $outputs=@(Get-Content -LiteralPath $List -Raw -Encoding UTF8|ConvertFrom-Json)
-Write-RunManifest -Python $Python -RepoRoot $Repo -RunConfig $Config -Status success -Outputs $outputs -PassThru
+Write-VerifiedRunManifest -Python $Python -RepoRoot $Repo -RunConfig $Config -Status success -Outputs $outputs
 ''', encoding="utf-8")
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-File", str(script), str(REPO_ROOT), sys.executable, str(config), str(listing)],

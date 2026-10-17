@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import platform
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -301,14 +302,18 @@ def main() -> None:
     parser.add_argument("--software", action="append", default=[])
     parser.add_argument("--output", action="append", default=[])
     parser.add_argument("--output-list-json", type=Path,
-                        help="UTF-8 JSON list[str] of outputs, appended after --output entries")
+                        help="UTF-8 JSON list[str] file, or '-' for stdin; appended after --output")
     args = parser.parse_args()
 
     run_config_path = args.run_config.resolve()
+    destination = args.manifest or run_config_path.with_name("run_manifest.json")
     try:
+        require_completed_terminal_publication(destination)
         output_values = list(args.output)
         if args.output_list_json is not None:
-            entries = json.loads(args.output_list_json.read_text(encoding="utf-8-sig"))
+            payload = (sys.stdin.buffer.read().decode("utf-8-sig") if str(args.output_list_json) == "-"
+                       else args.output_list_json.read_text(encoding="utf-8-sig"))
+            entries = json.loads(payload)
             if not isinstance(entries, list) or any(not isinstance(value, str) for value in entries):
                 raise ValueError("--output-list-json requires a JSON list[str]")
             output_values.extend(entries)
@@ -319,10 +324,14 @@ def main() -> None:
             software=args.software,
             output_paths=output_paths,
         )
+        missing = [record["path"] for record in manifest["outputs"] if not record["exists"]]
+        if missing:
+            raise ValueError(f"missing run outputs: {missing}")
+        write_json_atomic(destination, manifest)
+        if destination.read_bytes() != _json_bytes(manifest):
+            raise ValueError("published manifest differs from the computed records")
     except (ValueError, OSError) as error:
         raise SystemExit(str(error)) from error
-    destination = args.manifest or run_config_path.with_name("run_manifest.json")
-    write_json_atomic(destination, manifest)
     print(f"RUN_MANIFEST=PASS PATH={destination}")
 
 

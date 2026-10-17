@@ -39,12 +39,12 @@ try {
     $leaseFixturePythonExe=$python
     $script:leaseFixtureCode='import json;print(json.dumps({"lease_id":"fixture"}))'
     function Invoke-LeaseFixturePython {
-      param([Parameter(ValueFromRemainingArguments)]$NativeArguments)
+      [CmdletBinding(PositionalBinding=$false)]
+      param([Parameter(ValueFromRemainingArguments)]$NativeArguments,
+            [Parameter(ValueFromPipeline)][string]$InputObject)
       if('--delete-protection-lease'-in$NativeArguments){$global:LASTEXITCODE=0;return}
       if('--output-list-json'-in$NativeArguments){
-        $script:writerListPath=$NativeArguments[([array]::IndexOf($NativeArguments,'--output-list-json')+1)]
-        if(-not(Test-Path -LiteralPath $script:writerListPath)){throw 'Writer list missing before launch.'}
-        $script:writerList=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($script:writerListPath)) -NoEnumerate
+        $script:writerList=ConvertFrom-Json -InputObject $InputObject -NoEnumerate
       }
       & $leaseFixturePythonExe -c $script:leaseFixtureCode
       $global:LASTEXITCODE=$LASTEXITCODE
@@ -70,13 +70,11 @@ try {
     Assert-Equal $writerResult.Count 1 'Successful manifest writer stdout shape changed.'
     Assert-Equal $writerResult[0] 'RUN_MANIFEST=PASS PATH=fixture.json' 'Successful manifest writer protocol changed.'
     Assert-Equal $script:writerList.Count 0 'Empty outputs must be a JSON array.'
-    Assert-Equal (Test-Path -LiteralPath $script:writerListPath) $false 'Successful writer must remove its temporary list.'
     $script:leaseFixtureCode='import sys;print("writer diagnostic stdout");print("specific writer stderr",file=sys.stderr);sys.exit(31)'
     try{Write-RunManifest -Python Invoke-LeaseFixturePython -RepoRoot $repoRoot -RunConfig unused.json -Status checkpoint|Out-Null}catch{$message=$_.Exception.Message}
     foreach($part in @('status checkpoint','exit_code=31','stdout=writer diagnostic stdout','stderr=specific writer stderr')){
       if(-not$message.Contains($part)){throw "Manifest failure lost its native diagnostic: $part; got=$message"}
     }
-    Assert-Equal (Test-Path -LiteralPath $script:writerListPath) $false 'Failed writer must remove its temporary list.'
     $script:leaseFixtureCode='import sys;print("x"*10000);print("y"*10000,file=sys.stderr);sys.exit(32)'
     try{Write-RunManifest -Python Invoke-LeaseFixturePython -RepoRoot $repoRoot -RunConfig unused.json -Status checkpoint|Out-Null}catch{$message=$_.Exception.Message}
     if(-not$message.Contains('exit_code=32')-or-not$message.Contains('[truncated tail]')-or$message.Length-gt8400){
@@ -281,20 +279,6 @@ try {
   Assert-Equal $governedEntry.Count 1 'Governed package must retain exactly one registered run range.'
   Assert-Equal $governedEntry[0].status 'writing' 'Governed package range must remain writing after initialization.'
   Assert-Equal $governedEntry[0].recovery_reason 'run_manifest_not_terminal' 'Initialization must replace the pre-write recovery reason.'
-  $legacyGovernedDir=Join-Path $governedProjectRoot 'runs\20260723_165957__test__cross__legacy-initialize-rejected__n1'
-  New-Item -ItemType Directory -Path $legacyGovernedDir -Force|Out-Null
-  try {
-    Initialize-RunRecord -RunDir $legacyGovernedDir `
-      -RunId (Split-Path -Leaf $legacyGovernedDir) -Project fixture_project -Mode contract_test `
-      -ProjectRoot $projectRoot -RepoRoot $repoRoot -Python $python `
-      -ProvisionalSummaryRole 'fixture_provisional_summary' -TerminalSummaryRole 'fixture_terminal_summary'
-    throw 'Expected direct governed Initialize-RunRecord rejection did not occur.'
-  } catch {
-    if ($_.Exception.Message -notmatch 'cannot create a run beneath artifacts') { throw }
-  }
-  if(Test-Path -LiteralPath (Join-Path $legacyGovernedDir 'run_config.json')){
-    throw 'Rejected governed Initialize-RunRecord wrote a config before lifecycle registration.'
-  }
 
   $capacityRoot=Join-Path $testRoot 'capacity_artifacts'
   New-Item -ItemType Directory -Path $capacityRoot -Force|Out-Null
@@ -343,13 +327,10 @@ try {
   }
   Assert-Equal $capacityRejected (-not$expectedSatisfied) 'Wrapper must block the real unsatisfied CLI capacity decision.'
 
-  $interruptedDir = Join-Path $testRoot '20260723_170001__test__cross__lifecycle-interrupted__n100'
-  New-Item -ItemType Directory -Path $interruptedDir -Force | Out-Null
-  Initialize-RunRecord -RunDir $interruptedDir `
-    -RunId (Split-Path -Leaf $interruptedDir) -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'contract_test' `
-    -ProjectRoot $projectRoot -RepoRoot $repoRoot -Python $python `
-    -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
-    -TerminalSummaryRole 'oa_tof_terminal_run_summary'
+  $interruptedPackage=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
+    -RunId '20260723_170001__test__cross__lifecycle-interrupted__n100' `
+    -Project single_reflection_oa_tof_mass_analyzer -Mode contract_test -Software @('contract test')
+  $interruptedDir=$interruptedPackage.run_dir
 
   $config = Get-Content -LiteralPath (Join-Path $interruptedDir 'run_config.json') `
     -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -357,8 +338,8 @@ try {
     -Raw -Encoding UTF8 | ConvertFrom-Json
   $manifest = Get-Content -LiteralPath (Join-Path $interruptedDir 'run_manifest.json') `
     -Raw -Encoding UTF8 | ConvertFrom-Json
-  Assert-Equal $config.project_root $projectRoot 'Initialize-RunRecord changed project_root.'
-  Assert-Equal $summary.role 'oa_tof_provisional_run_summary' 'Initialization summary role changed.'
+  Assert-Equal $config.project_root $repoRoot 'New-RunPackage changed project_root.'
+  Assert-Equal $summary.role 'run_package_initialization_summary' 'Initialization summary role changed.'
   Assert-Equal $summary.status 'checkpoint' 'Initialization summary status changed.'
   Assert-Equal $summary.reason 'Run package initialized; task-specific inputs are not frozen yet.' 'Initialization reason changed.'
   Assert-Equal $manifest.status 'checkpoint' 'Initialization manifest status changed.'
@@ -624,6 +605,18 @@ try {
   if ($writeError -notlike 'Could not publish verified failed run manifest:*') {
     throw "Manifest write failure message changed. Actual='$writeError'"
   }
+
+  $publishedManifest=Join-Path (Split-Path -Parent $successConfig) 'run_manifest.json'
+  $publishedBefore=[IO.File]::ReadAllText($publishedManifest)
+  $missingOutput=Join-Path (Split-Path -Parent $successConfig) 'missing-output.txt'
+  $writeError=''
+  try{
+    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $successConfig `
+      -Status success -Outputs @($missingOutput)
+  }catch{$writeError=$_.Exception.Message}
+  if($writeError-notlike '*missing run outputs*'){throw "Missing output did not block publication: $writeError"}
+  Assert-Equal ([IO.File]::ReadAllText($publishedManifest)) $publishedBefore `
+    'Failed candidate publication replaced the previously published manifest.'
 
   $timeoutRejected = $false
   try {

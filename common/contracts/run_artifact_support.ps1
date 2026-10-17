@@ -288,29 +288,24 @@ function Write-RunManifest {
     foreach($item in $Software){$arguments+=@('--software',$item)}
     # CreateProcessW limits the command line to 32,767 UTF-16 characters.
     # https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
-    # Keep the list outside the run so retention scans never treat it as an output.
-    $outputListPath=[IO.Path]::GetTempFileName()
-    try{
-      [IO.File]::WriteAllText($outputListPath,(ConvertTo-Json -InputObject @($Outputs) -Compress),[Text.UTF8Encoding]::new($false))
-      $arguments+=@('--output-list-json',$outputListPath)
-      $PSNativeCommandUseErrorActionPreference=$false
-      $captured=@(& $Python @arguments 2>&1)
-      $exitCode=$LASTEXITCODE
-      $writerOutput=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
-      $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})
-      if($exitCode-ne0){
-        # Same bounded native-stream diagnostic contract as capacity admission.
-        $details=@{stdout=($writerOutput-join"`n");stderr=($stderr-join"`n")}
-        foreach($stream in @('stdout','stderr')){
-          if($details[$stream].Length-gt4096){$details[$stream]='[truncated tail] '+$details[$stream].Substring($details[$stream].Length-4096)}
-        }
-        throw "Run manifest failed for status $Status; exit_code=$exitCode; stdout=$($details.stdout); stderr=$($details.stderr)"
+    # Stream UTF-8 directly; no output-list file needs publishing or cleanup.
+    $OutputEncoding=[Text.UTF8Encoding]::new($false)
+    $arguments+=@('--output-list-json','-')
+    $PSNativeCommandUseErrorActionPreference=$false
+    $captured=@((ConvertTo-Json -InputObject @($Outputs) -Compress) | & $Python @arguments 2>&1)
+    $exitCode=$LASTEXITCODE
+    $writerOutput=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
+    $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})
+    if($exitCode-ne0){
+      # Same bounded native-stream diagnostic contract as capacity admission.
+      $details=@{stdout=($writerOutput-join"`n");stderr=($stderr-join"`n")}
+      foreach($stream in @('stdout','stderr')){
+        if($details[$stream].Length-gt4096){$details[$stream]='[truncated tail] '+$details[$stream].Substring($details[$stream].Length-4096)}
       }
-      foreach($errorLine in $stderr){Write-Error -Message ([string]$errorLine) -ErrorAction Continue}
-      if($PassThru){$writerOutput}
-    }finally{
-      Remove-Item -LiteralPath $outputListPath -Force -ErrorAction Stop
+      throw "Run manifest failed for status $Status; exit_code=$exitCode; stdout=$($details.stdout); stderr=$($details.stderr)"
     }
+    foreach($errorLine in $stderr){Write-Error -Message ([string]$errorLine) -ErrorAction Continue}
+    if($PassThru){$writerOutput}
   }
 }
 
@@ -349,9 +344,6 @@ function Write-VerifiedRunManifest {
   try{
     Write-RunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
       -Status $Status -Software $Software -Manifest $candidateManifest -Outputs $Outputs -PassThru
-    & $Python (Join-Path $RepoRoot 'common\contracts\verify_run_manifest.py') `
-      $candidateManifest --require-status $Status
-    if($LASTEXITCODE-ne 0){throw "Could not verify $Status run manifest."}
     Move-Item -LiteralPath $candidateManifest -Destination $Manifest -Force
     $manifestPublished=$true
     if($null-ne$capacityLifecycle){
@@ -394,46 +386,6 @@ function Write-TerminalRunRecord {
   Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $config `
     -Manifest (Join-Path $RunDir 'run_manifest.json') -Status $Status `
     -Software $Software -Outputs @($summary)
-}
-
-function Initialize-RunRecord {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$RunDir,
-    [Parameter(Mandatory)][string]$RunId,
-    [Parameter(Mandatory)][string]$Project,
-    [Parameter(Mandatory)][string]$Mode,
-    [Parameter(Mandatory)][string]$ProjectRoot,
-    [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string]$Python,
-    [Parameter(Mandatory)][string]$ProvisionalSummaryRole,
-    [Parameter(Mandatory)][string]$TerminalSummaryRole,
-    [string[]]$Software=@()
-  )
-  # New governed runs must reserve their complete range before any checkpoint
-  # file is written.  This legacy helper remains for non-governed fixtures and
-  # historical readers, but cannot create a new run below the artifacts root.
-  $runParent=[IO.DirectoryInfo][IO.Path]::GetFullPath($RunDir)
-  while($null-ne$runParent){
-    if($runParent.Name-eq'artifacts'){
-      throw 'Initialize-RunRecord cannot create a run beneath artifacts; use New-RunPackage with retention and capacity-ledger lifecycle.'
-    }
-    $runParent=$runParent.Parent
-  }
-  $config=Join-Path $RunDir 'run_config.json'
-  $summary=Join-Path $RunDir 'summary.json'
-  Write-RunJson -Path $config -Depth 5 -Value ([ordered]@{
-    schema_version=1;run_id=$RunId;project=$Project;mode=$Mode
-    project_root=$ProjectRoot;formal_gate_passed=$false;inputs=[ordered]@{}
-  })
-  Write-RunJson -Path $summary -Depth 4 -Value ([ordered]@{
-    schema_version=1;role=$ProvisionalSummaryRole;status='checkpoint'
-    reason='Run package initialized; task-specific inputs are not frozen yet.'
-  })
-  # Initialization is an incomplete, resumable checkpoint, not a solver
-  # interruption.  Reserve `interrupted` for a run that actually stopped.
-  Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $config `
-    -Status checkpoint -Software $Software -Outputs @($summary)
 }
 
 function Get-RunPackagePathCapacity {
@@ -762,26 +714,6 @@ function Restore-RunEnvironment {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string[]]$Names,[Parameter(Mandatory)][hashtable]$Snapshot)
   foreach($name in $Names){[Environment]::SetEnvironmentVariable($name,$Snapshot[$name])}
-}
-
-function Copy-FrozenDependency {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$RepoRoot,[Parameter(Mandatory)][string]$InputDir,
-    [Parameter(Mandatory)][pscustomobject]$Dependency
-  )
-  $providerRoot=[IO.Path]::GetFullPath((Join-Path $RepoRoot (Join-Path 'projects' ([string]$Dependency.provider_project))))
-  $source=[IO.Path]::GetFullPath((Join-Path $RepoRoot ([string]$Dependency.source_repo_path)))
-  if(-not $source.StartsWith($providerRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
-    throw "Dependency $($Dependency.id) escapes provider project $($Dependency.provider_project)."
-  }
-  if(-not(Test-Path -LiteralPath $source -PathType Leaf)){throw "Dependency $($Dependency.id) is missing: $source"}
-  $destination=Join-Path $InputDir ([string]$Dependency.frozen_filename);Copy-Item -LiteralPath $source -Destination $destination
-  $hash=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-  if($hash-ne(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash){throw "Dependency changed while frozen: $source"}
-  return [pscustomobject]@{id=[string]$Dependency.id;provider_project=[string]$Dependency.provider_project;
-    source_repo_path=[string]$Dependency.source_repo_path;frozen_input_name=[string]$Dependency.run_input_name;
-    frozen_path=$destination;sha256=$hash}
 }
 
 function Copy-VerifiedRunInput {

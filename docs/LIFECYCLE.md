@@ -123,8 +123,9 @@ SIMION IOB 可能嵌入 PA 的绝对路径，移动工作区后必须重新打�
 |`run_manifest.json`|所有输出落盘后|冻结run config、输入和输出的存在性、字节数、SHA-256、运行状态及正式资格|
 
 原始报告、CSV、模型、图像和崩溃日志是manifest列出的输出，不替代summary。运行器用
-`common/contracts/write_run_manifest.py`写manifest，再用`verify_run_manifest.py`重新计算全部记录；
-没有通过manifest复核的目录只能留在scratch，不能被正式文档引用。
+`common/contracts/write_run_manifest.py`在producer停写后计算全部输入/输出身份、拒绝缺失文件并检查保留合同，
+原子写入后读回小型manifest并与计算结果完整比对；公共发布器随后发布候选，不在同一闭合边界再次全文读取载荷。
+后续独立消费通过`verify_run_manifest.py`按实际字节重新验证；未完成适用发布/消费核验的目录不能被正式文档引用。
 这里的“全部记录”是run发布门禁，不能用消费投影代替。下游只读取历史run的严格子集时，可按
 [公共合同](../common/contracts/README.md#运行身份与生命周期)使用具名、路径绑定的消费投影；该投影只证明
 被读取记录及上游身份，不恢复或宣称未消费记录有效，并须由下游run config冻结其范围。
