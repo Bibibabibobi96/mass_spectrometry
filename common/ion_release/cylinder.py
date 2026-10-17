@@ -693,10 +693,10 @@ def validate_materialized_cylinder_release(receipt_path: Path) -> dict[str, Any]
         if tuple(reader.fieldnames or ()) != CANONICAL_COLUMNS:
             raise ValueError("release state-table columns changed")
         rows = list(reader)
-    expected = _serialized_rows(generate_cylinder_release_states(spec))
+    states = generate_cylinder_release_states(spec)
+    expected = _serialized_rows(states)
     if rows != expected:
         raise ValueError("release state-table differs from deterministic specification")
-    states = generate_cylinder_release_states(spec)
     if receipt.get("state_identity") != _state_identity(states):
         raise ValueError("release state identity changed")
     return receipt

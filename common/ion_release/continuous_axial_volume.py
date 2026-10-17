@@ -162,8 +162,11 @@ def _state_identity(states: list[dict[str, Any]]) -> dict[str, str]:
     }
 
 
-def rows(spec: Mapping[str, Any]) -> tuple[list[dict[str, str]], dict[str, Any]]:
-    """Return canonical CSV rows and the historical receipt payload."""
+def materialize_continuous_axial_volume_release(
+    spec: Mapping[str, Any], state_table_path: Path, receipt_path: Path,
+    spec_record: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Generate states once and write their canonical table and identity receipt."""
     states = generate_continuous_axial_volume_states(spec)
     materialized = _serialized_rows(states)
     energies = [
@@ -191,15 +194,6 @@ def rows(spec: Mapping[str, Any]) -> tuple[list[dict[str, str]], dict[str, Any]]
         },
         "integration_precondition": "ion_source_volume_model; downstream_fields_have_not_yet_acted",
     }
-    return materialized, receipt
-
-
-def materialize_continuous_axial_volume_release(
-    spec: Mapping[str, Any], state_table_path: Path, receipt_path: Path,
-    spec_record: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Write the canonical table and receipt for a registered release."""
-    materialized, receipt = rows(spec)
     state_table_path.parent.mkdir(parents=True, exist_ok=True)
     with state_table_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=COLUMNS, lineterminator="\n")
@@ -207,9 +201,7 @@ def materialize_continuous_axial_volume_release(
         writer.writerows(materialized)
     receipt["release_spec"] = dict(spec)
     receipt["release_spec_sha256"] = _sha256_text(_canonical_json(spec))
-    receipt["state_identity"] = _state_identity(
-        generate_continuous_axial_volume_states(spec)
-    )
+    receipt["state_identity"] = _state_identity(states)
     receipt["status"] = "materialized"
     receipt["source_spec"] = dict(spec_record) if spec_record is not None else None
     receipt["particle_source"] = {
@@ -283,7 +275,7 @@ __all__ = [
     "COLUMNS", "CONTINUOUS_AXIAL_VOLUME_RELEASE_KEY", "METHOD", "ROLE",
     "generate_continuous_axial_volume_states",
     "materialize_continuous_axial_volume_release",
-    "materialize_continuous_axial_volume_release_from_file", "rows",
+    "materialize_continuous_axial_volume_release_from_file",
     "validate_continuous_axial_volume_spec",
     "validate_materialized_continuous_axial_volume_release",
 ]

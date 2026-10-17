@@ -73,5 +73,8 @@ receipt 绑定完整版本化请求、canonical 状态、顺序粒子 ID、CSV �
 重新生成表并拒绝任一身份或内容差异。该层不运行求解器，也不构造 FLY2；SIMION 使用者可在通过验证后调用
 [`common/simion/particle_source.py`](../simion/particle_source.py) 的纯渲染器。
 
+圆柱 receipt 校验和连续轴向体积源物化均只生成一次完整状态，并复用该状态计算表与身份，避免为同一
+请求再次采样；CSV 与 receipt 的字段、数值和身份语义保持不变。
+
 新增 plane、sphere 或其他 shape 时，必须新增自己的完整 schema/几何边界验证与确定性 sampler，再在
 `release.py` 注册明确的 `(shape, strategy)`；不得通过宽松的可选字段把不同几何混入 cylinder 合同。
