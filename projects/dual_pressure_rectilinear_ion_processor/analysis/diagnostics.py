@@ -527,13 +527,12 @@ def export_diagnostics(run: Path, output_directory: Path | None = None) -> dict:
     # Mandatory default panels consume the just-written common snapshot table
     # and this run's actual events/samples. No task wrapper or fixed timestamp.
     export_sections(run, results)
-    export_post_extraction(run, results)
+    packet_statistics = export_post_extraction(run, results)
     for role in ("structure_sections", "timed_clouds_sections", "extraction_clouds_sections", "post_extraction_packet"):
         for extension in ("png", "svg", "metadata.json"):
             if not (results / f"{role}.{extension}").is_file():
                 raise ValueError(f"mandatory default diagnostic output missing: {role}.{extension}")
         output_roles.append(role)
-    packet_statistics = _json(results / "post_extraction_statistics.json")
     packet_status = packet_statistics.get("packet_status", packet_statistics.get("status"))
     if not isinstance(packet_status, str) or not packet_status:
         raise ValueError("post-extraction diagnostics must declare meaningful availability status")

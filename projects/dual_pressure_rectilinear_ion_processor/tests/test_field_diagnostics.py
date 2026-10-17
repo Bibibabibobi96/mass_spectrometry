@@ -233,7 +233,7 @@ assert(loadfile(arg[1]))()
             self.assertTrue(all(config["native_timing"]["primary_quench_us"] < time < config["native_timing"]["pulse_start_us"]
                                 for time in middle))
 
-    def test_export_metadata_binds_raw_native_config_and_figure_hashes(self) -> None:
+    def test_export_binds_actual_csv_config_and_figures_without_native_pa(self) -> None:
         c={name:json.loads((PROJECT/"config"/f"{name}.json").read_text(encoding="utf-8"))
            for name in ("baseline","numerics")}
         d=config_fixture()
@@ -253,7 +253,6 @@ assert(loadfile(arg[1]))()
             run=Path(temporary)
             (run/"inputs").mkdir();(run/"simion").mkdir()
             c["native_field"]={"directory":str(run/"simion"),"role":"inert_synthetic_fixture_not_native_solver_output"}
-            (run/"simion/processor.pa0").write_text("INERT TEST HASH TARGET; NOT A REAL PA\n",encoding="utf-8")
             (run/"inputs/resolved_model.json").write_text(json.dumps(c),encoding="utf-8")
             (run/"inputs/source_context.json").write_text(json.dumps({"git_sha":"b"*40,"worktree_dirty":False}),encoding="utf-8")
             with (run/"simion/native_field_samples.csv").open("w",encoding="utf-8",newline="") as handle:
@@ -264,7 +263,7 @@ assert(loadfile(arg[1]))()
             self.assertEqual(len(metadata["fits"]),6)
             self.assertEqual(len(metadata["outputs"]),8)
             self.assertEqual(metadata["units"]["electric_field"],"V/mm")
-            self.assertEqual(len(metadata["native_pa0_sha256"]),64)
+            self.assertFalse((run/"simion/processor.pa0").exists())
             self.assertEqual(len(metadata["raw_samples_sha256"]),64)
             self.assertEqual(metadata["git_sha"],"b"*40)
             self.assertEqual(metadata["producer"]["actual_source_sha256"],diagnostics.PRODUCER_SOURCE_SHA256)
@@ -278,7 +277,7 @@ assert(loadfile(arg[1]))()
             transformed={**c, **self.transformed_config()}
             transformed["native_field"]={"directory":str(project_run/"simion")}
             (project_run/"inputs/resolved_model.json").write_text(json.dumps(transformed),encoding="utf-8")
-            for relative in ("inputs/source_context.json","simion/processor.pa0","simion/native_field_samples.csv"):
+            for relative in ("inputs/source_context.json","simion/native_field_samples.csv"):
                 shutil.copyfile(run/relative,project_run/relative)
             original=(project_run/"simion/native_field_samples.csv").read_bytes()
             project_metadata=diagnostics.export_field_diagnostics(project_run)

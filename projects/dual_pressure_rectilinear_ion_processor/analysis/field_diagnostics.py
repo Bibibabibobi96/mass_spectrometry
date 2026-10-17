@@ -383,7 +383,6 @@ def export_field_diagnostics(run: Path, output_directory: Path | None = None) ->
                 fits.append({"stage_id": stage_id, "section_id": section["section_id"],
                              **fit_transverse_quadratic(subset, config["fit_radius_scale"]*c["baseline"]["geometry"]["r0_mm"])})
     context = source_context(run)
-    native = Path(c["native_field"]["directory"])/"processor.pa0"
     face_y = c["baseline"]["geometry"]["extraction_end_y_mm"]
     face_samples = [{key: row[key] for key in ("t_us","x_mm","y_mm","z_mm","potential_v","ey_v_per_mm","electrode")}
                     for row in rows if row["stage_id"] == "pulse_total" and row["sample_kind"] == "orthogonal"
@@ -409,7 +408,7 @@ def export_field_diagnostics(run: Path, output_directory: Path | None = None) ->
                                           "coefficient_names_use_local_axes": True},
                 "units": {"position": "mm", "time": "us", "potential": "V", "electric_field": "V/mm"},
                 "sample_count": len(rows), "electrode_samples_masked": sum(r["electrode"] for r in rows),
-                "raw_samples_sha256": file_sha256(source), "native_pa0_sha256": file_sha256(native),
+                "raw_samples_sha256": file_sha256(source),
                 "resolved_config_sha256": file_sha256(run/"inputs/resolved_model.json"),
                 "native_field_identity": c["native_field"], "sampling_and_plot_config": config,
                 "native_timing": c.get("native_timing", {"policy":"legacy_requested_quench", "scope":"historical frozen native query; no zero alignment retroactively applied"}),

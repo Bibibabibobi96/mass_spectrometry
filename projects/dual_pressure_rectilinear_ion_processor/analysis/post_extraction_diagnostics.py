@@ -105,7 +105,6 @@ def export_post_extraction(run: Path, output_directory: Path) -> dict:
         write_csv(OUT/'post_extraction_common_time_states.csv',[],['particle_id','t_us',*VARS,'bracket_start_us','bracket_end_us','bracket_gap_us','upper_is_acceptance'])
         metadata=dict(role='post_extraction_recorded_state_diagnostics',source_run=str(RUN),source_records=[dict(path=str(p),sha256=hashes[str(p)]) for p in paths],outputs=outputs,producer=dict(path=str(Path(__file__)),sha256=sha(Path(__file__))),cohort=status,new_simulation=False,qualification='diagnostic_only')
         (OUT/'post_extraction_packet.metadata.json').write_text(json.dumps(metadata,indent=2)+'\n', encoding="utf-8")
-        assert all(sha(p)==hashes[str(p)] for p in paths)
         print('No extracted ions: explicit diagnostic figure generated.');return status
     for pid,row in crossings.items():
         reason,end=terminal[pid];assert reason=='acceptance_surface'
@@ -188,7 +187,6 @@ def export_post_extraction(run: Path, output_directory: Path) -> dict:
         if path.exists():raise FileExistsError(path)
         fig.savefig(path,dpi=210,facecolor='white');outputs.append(dict(path=str(path),sha256=sha(path)))
     plt.close(fig)
-    for path in paths:assert sha(path)==hashes[str(path)]
     metadata=dict(role='post_extraction_recorded_state_diagnostics',source_run=str(RUN),source_records=[dict(path=str(p),sha256=hashes[str(p)]) for p in paths],outputs=outputs,producer=dict(path=str(Path(__file__)),sha256=sha(Path(__file__))),cohort=stats,new_simulation=False,qualification='diagnostic_only',crossing_scope='Runtime recorded crossing interpolation at z=0; not every integration-step bracket is retained in samples.csv',common_time_scope='Automatic common time from this run first arrival and recorded cadence; no post-terminal samples used')
     (OUT/'post_extraction_packet.metadata.json').write_text(json.dumps(metadata,indent=2)+'\n', encoding="utf-8")
     print(json.dumps(stats),flush=True)

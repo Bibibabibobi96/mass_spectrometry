@@ -84,7 +84,10 @@ def _load_source(run: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, A
     lifecycle = verify_retirement(run) if retirement.exists() else {
         "status": "PASS", "role": "consumed_manifest_projection", "native_fields_consumed": False,
     }
-    inputs = {name: file_record(run / name) for name in consumed}
+    # The same immutable-source projection was just verified; retain its identity
+    # with an absolute path for downstream receipt consumers.
+    inputs = {name: dict(path=str(run / name), exists=True, bytes=records[name]["bytes"],
+                         sha256=str(records[name]["sha256"]).upper()) for name in consumed}
     inputs["run_manifest.json"] = file_record(run / "run_manifest.json")
     if retirement.exists():
         inputs[retirement.name] = file_record(retirement)
@@ -180,7 +183,9 @@ def export_component_exit(source_run: Path, output_directory: Path) -> dict[str,
         record = release_receipt[key]
         if record_path(record, base_dir=run) != run / "inputs" / name:
             raise ValueError("release receipt path identity differs")
-        verify_record(name, record, base_dir=run)
+        verified = inputs["inputs/" + name]
+        if record.get("bytes") != verified["bytes"] or str(record.get("sha256", "")).upper() != verified["sha256"]:
+            raise ValueError("release receipt content identity differs")
     clock = _json(run / "inputs/clock_authority.json")
     validate_clock_authority(run / "inputs/clock_authority.json", run)
     epoch = _finite(_json(run / "inputs/instrument_epoch.json")["instrument_time_us"])

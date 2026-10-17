@@ -201,6 +201,7 @@ class DiagnosticsTests(unittest.TestCase):
             (out/"post_extraction_statistics.json").write_text('{"packet_status":"synthetic"}',encoding="utf-8")
             for name in ("plane","common_time"):
                 (out/f"post_extraction_{name}_states.csv").write_text("particle_id\n",encoding="utf-8")
+            return {"packet_status":"synthetic"}
         module="projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics"
         with patch(module+".export_sections",side_effect=sections),patch(module+".export_post_extraction",side_effect=packet):
             result=export_diagnostics(self.run)

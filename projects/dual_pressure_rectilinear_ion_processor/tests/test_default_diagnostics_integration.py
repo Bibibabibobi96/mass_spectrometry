@@ -20,6 +20,7 @@ class DefaultDiagnosticsIntegrationTests(unittest.TestCase):
         for ext in ('png','svg','metadata.json'):(out/f'post_extraction_packet.{ext}').write_text('{}',encoding='utf-8')
         (out/'post_extraction_statistics.json').write_text(json.dumps({'status':'diagnostic_only','packet_status':'no_extracted_ions'}),encoding='utf-8')
         for name in ('plane','common_time'):(out/f'post_extraction_{name}_states.csv').write_text('particle_id\n',encoding='utf-8')
+        return {'status':'diagnostic_only','packet_status':'no_extracted_ions'}
     def test_one_entry_and_physical_status(self):
         measured=self.run/'results/summary.json';measured.write_text('{"functional_status":"functional_incomplete"}',encoding='utf-8');before=measured.read_bytes()
         with patch.object(d,'build_figures',return_value={}) as build,patch.object(d,'export_sections',side_effect=self.sections) as sections,patch.object(d,'export_post_extraction',side_effect=self.packet) as packet:

@@ -33,25 +33,34 @@ class AutomaticTimeTests(unittest.TestCase):
     def test_wide_gap_refuses_fabricated_packet(self):
         result=m.common_packet(*self.fixture(spacing=.5),.02)
         self.assertFalse(result[0]);self.assertNotEqual(result[2],'available')
-    def test_no_extraction_generates_complete_diagnostics(self):
-        with tempfile.TemporaryDirectory(prefix='packet_empty_',) as temporary:
-            run=Path(temporary)/'run';out=Path(temporary)/'out'
-            for name in ('inputs','simion','results'):(run/name).mkdir(parents=True)
-            (run/'inputs/resolved_model.json').write_text(json.dumps({'source':{'species':{'mass_amu':524}}}))
-            (run/'inputs/diagnostics.json').write_text('{}')
-            fields=['event','particle_id','reason','t_us',*m.VARS]
-            with (run/'simion/events.csv').open('w',newline='') as stream:
-                w=csv.DictWriter(stream,fieldnames=fields);w.writeheader()
-                for event,reason,t in [('source','none',0),('terminal','timeout',20)]:
-                    w.writerow(dict(event=event,reason=reason,particle_id=1,t_us=t,**{k:0 for k in m.VARS}))
-            (run/'simion/samples.csv').write_text('particle_id,t_us\n')
-            (run/'results/particle_state.csv').write_text('particle_id,event,status\n')
-            result=m.export_post_extraction(run,out)
-            self.assertEqual(result['packet_status'],'no_extracted_ions')
-            self.assertEqual(len(list(out.iterdir())),6)
-            for name in ('post_extraction_common_time_states.csv','post_extraction_plane_states.csv'):
-                self.assertEqual(len((out/name).read_text().splitlines()),1)
-            self.assertEqual(json.loads((out/'post_extraction_packet.metadata.json').read_text())['cohort']['extracted_count'],0)
-            with self.assertRaises(FileExistsError):m.export_post_extraction(run,out)
+    def test_exports_preserve_sources_and_return_written_statistics(self):
+        for extracted in (False, True):
+            with self.subTest(extracted=extracted):
+                with tempfile.TemporaryDirectory(prefix='packet_empty_',) as temporary:
+                    run=Path(temporary)/'run';out=Path(temporary)/'out'
+                    for name in ('inputs','simion','results'):(run/name).mkdir(parents=True)
+                    (run/'inputs/resolved_model.json').write_text(json.dumps({'source':{'species':{'mass_amu':524}},'native_timing':{'pulse_start_us':0},'baseline':{'geometry':{'lp_center_mm':170}}}))
+                    (run/'inputs/diagnostics.json').write_text('{"max_extraction_bracket_us":0.02}')
+                    fields=['event','particle_id','reason','t_us',*m.VARS]
+                    with (run/'simion/events.csv').open('w',newline='') as stream:
+                        w=csv.DictWriter(stream,fieldnames=fields);w.writeheader()
+                        events=[('source','none',0),('terminal','timeout',20)]
+                        if extracted:events=[('source','none',0),('extraction_exit','acceptance_surface',1),('terminal','acceptance_surface',1)]
+                        for event,reason,t in events:
+                            w.writerow(dict(event=event,reason=reason,**row(1,t)))
+                    with (run/'simion/samples.csv').open('w',newline='') as stream:
+                        w=csv.DictWriter(stream,fieldnames=['particle_id','t_us',*m.VARS]);w.writeheader()
+                        w.writerows([row(1,.99),row(1,.995)])
+                    (run/'results/particle_state.csv').write_text('particle_id,event,status\n')
+                    sources={p:p.read_bytes() for p in run.rglob("*") if p.is_file()}
+                    result=m.export_post_extraction(run,out)
+                    self.assertEqual(sources,{p:p.read_bytes() for p in run.rglob("*") if p.is_file()})
+                    self.assertEqual(result,json.loads((out/"post_extraction_statistics.json").read_text()))
+                    self.assertEqual(result['packet_status'],'available' if extracted else 'no_extracted_ions')
+                    self.assertEqual(len(list(out.iterdir())),6)
+                    for name in ('post_extraction_common_time_states.csv','post_extraction_plane_states.csv'):
+                        self.assertEqual(len((out/name).read_text().splitlines()),2 if extracted else 1)
+                    self.assertEqual(json.loads((out/'post_extraction_packet.metadata.json').read_text())['cohort']['extracted_count'],int(extracted))
+                    with self.assertRaises(FileExistsError):m.export_post_extraction(run,out)
 
 if __name__=='__main__':unittest.main(verbosity=2)

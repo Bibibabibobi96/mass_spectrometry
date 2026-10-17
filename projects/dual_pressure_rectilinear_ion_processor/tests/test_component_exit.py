@@ -113,6 +113,39 @@ class ComponentExitTests(unittest.TestCase):
         self.assertEqual([row["particle_id"] for row in census], ["2", "9", "20"])
         self.assertEqual(census[1]["terminal_reason"], "solver_stop")
 
+    def test_reuses_verified_identities_with_absolute_receipt_paths(self) -> None:
+        manifest = json.loads((self.run / "run_manifest.json").read_text())
+        for record in [manifest["run_config"], *manifest["inputs"].values(), *manifest["outputs"]]:
+            record["path"] = Path(record["path"]).relative_to(self.run).as_posix()
+        self._write_json("run_manifest.json", manifest)
+        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.component_exit.file_record", wraps=file_record) as recorder:
+            receipt = export_component_exit(self.run, self.output)
+        source_reads = [Path(call.args[0]) for call in recorder.call_args_list if self.run in Path(call.args[0]).parents]
+        self.assertEqual(source_reads, [self.run / "run_manifest.json"])
+        for name, record in receipt["inputs"].items():
+            self.assertEqual(record, file_record(self.run / name))
+
+    def test_receipt_wrong_path_or_identity_is_rejected_even_when_resealed(self) -> None:
+        original = json.loads((self.run / "inputs/release_receipt.json").read_text())
+        for role in ("state_table", "source_spec"):
+            for change in ({"path": str(self.run / "summary.json")}, {"bytes": 0}, {"sha256": "0" * 64}):
+                with self.subTest(role=role, change=change):
+                    document = {**original, role: {**original[role], **change}}
+                    self._write_json("inputs/release_receipt.json", document)
+                    self._seal()
+                    with self.assertRaisesRegex(ValueError, "release receipt .*identity differs"):
+                        export_component_exit(self.run, self.output)
+                    self.assertFalse(self.output.exists())
+
+    def test_conflicting_manifest_roles_are_rejected(self) -> None:
+        manifest = json.loads((self.run / "run_manifest.json").read_text())
+        source = manifest["inputs"]["source.json"]
+        manifest["outputs"].append({**source, "sha256": "0" * 64})
+        self._write_json("run_manifest.json", manifest)
+        with self.assertRaisesRegex(ValueError, "conflicting manifest identity"):
+            export_component_exit(self.run, self.output)
+        self.assertFalse(self.output.exists())
+
     def test_overwrite_is_refused_without_source_changes(self) -> None:
         source_identity = file_record(self.run / "simion/events.csv")
         export_component_exit(self.run, self.output)
