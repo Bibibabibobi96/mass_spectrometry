@@ -243,14 +243,6 @@ function Set-RfMaterializedCacheFileWritable {
   $item.IsReadOnly = $false
 }
 
-function Clear-RfCacheEntryReadOnly {
-  [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$CacheEntry)
-  foreach ($item in Get-ChildItem -LiteralPath $CacheEntry -File -Force) {
-    $item.IsReadOnly = $false
-  }
-}
-
 function Test-RfReusableCacheGeneration {
   [CmdletBinding()]
   param(

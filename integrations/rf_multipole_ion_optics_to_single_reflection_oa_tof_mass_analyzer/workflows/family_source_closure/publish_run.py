@@ -119,20 +119,6 @@ def _file_binding(path: Path, workspace_root: Path) -> dict[str, Any]:
     }
 
 
-def _verified_manifest_record(
-    manifest: dict[str, Any], collection: str, name: str, run_dir: Path
-) -> tuple[dict[str, Any], Path]:
-    records = manifest.get(collection)
-    if not isinstance(records, dict) or name not in records:
-        raise ContractError(f"N=1 child manifest {collection}.{name} is missing")
-    record = records[name]
-    try:
-        verify_record(f"N=1 child {collection}.{name}", record, base_dir=run_dir)
-    except (AssertionError, KeyError, TypeError) as exc:
-        raise ContractError(f"N=1 child manifest {collection}.{name} identity differs") from exc
-    return record, record_path(record, base_dir=run_dir)
-
-
 def _verified_stage_record(
     manifest: dict[str, Any],
     *,

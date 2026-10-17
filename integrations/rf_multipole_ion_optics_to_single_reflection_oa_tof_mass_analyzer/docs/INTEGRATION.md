@@ -38,6 +38,17 @@
 `single_flight_transport`会把加速器理论源码及其实际导入的`common/contracts/particle_physics.py`一并冻结到
 run-local快照，并以脱离仓库的导入回归检查依赖闭包；这只证明执行源码闭包完整，不构成求解器或物理资格证据。
 
+## 活动代码精简边界
+
+活动入口审查已移除四个无注册、无调用、无当前文档或测试消费者的独立 CLI：固定 2.2 mm/100 Da/10 eV
+有限区间源生成、固定 winner 图、独立 time-series restart campaign 作者及独立恢复 pulse-selection 发布。
+当前时序后继仍由 `run_time_series_successor` 调用既有 restart 物化与 prepare；当前 pre/post-pulse 派生、
+恢复和分析发布继续使用 RUNNING 中的具名入口。既有 run、冻结快照和历史证据未改写，旧源码可由 Git 追溯。
+同时移除未调用的通用验证器、旧全量 states CSV writer 与旧 N=1 manifest reader；保留 callback-neutral
+Lua 校验和当前 streaming CSV writer；原先仅由测试调用的全量内存 parser 及 StateRow 已删除，
+其时钟 ULP、非法采样时刻和终态分类测试改为验证实际 streaming 输出。冻结输入、完整母群、cache generation 及终态 manifest 的身份校验
+均有实际消费者，本次保留；未执行商业求解，不新增物理或资格结论。
+
 ## 当前资格与有效证据
 
 | 范围 | 当前判定 | 证据与限制 |

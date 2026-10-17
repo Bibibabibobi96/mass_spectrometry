@@ -12,7 +12,6 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_pre_pulse_time_series import (
     _cache_keys,
-    _parse_logs,
     _receipt_sample_census,
     _stream_logs_to_states_csv,
     materialize,
@@ -717,16 +716,21 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            rows, alive, count, _ = _parse_logs(
+            states = Path(directory) / "states.csv.gz"
+            count, _, _, _ = _stream_logs_to_states_csv(
                 [trace],
                 frozen_particle_ids=[1],
                 sample_times_us=[],
                 natural_archive_grid=(0.0, 0.5),
+                states_path=states,
             )
             self.assertEqual(count, 1)
-            self.assertEqual(alive, [[], [1]])
+            with gzip.open(states, "rt", encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual([int(row["particle_id"]) for row in rows], [1])
+            self.assertEqual([int(row["sample_index"]) for row in rows], [2])
             self.assertAlmostEqual(
-                rows[1][0].actual_instrument_time_us, 0.5000000002
+                float(rows[0]["actual_instrument_time_us"]), 0.5000000002
             )
 
             trace.write_text(
@@ -736,12 +740,13 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ContractError, "identity/time landing"):
-                _parse_logs(
+            with self.assertRaisesRegex(ContractError, "does not land on the native grid"):
+                _stream_logs_to_states_csv(
                     [trace],
                     frozen_particle_ids=[1],
                     sample_times_us=[],
                     natural_archive_grid=(0.0, 0.5),
+                    states_path=Path(directory) / "invalid.csv.gz",
                 )
 
     def test_natural_archive_promotes_source_release_to_its_zero_time_sample(self) -> None:
@@ -904,18 +909,13 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
                 _trace(ion=1, particle_id=1, sample_index=1, time_us=0.0),
                 _terminal(ion=1, particle_id=1, reason="outside_pa_termination"),
             )) + "\n", encoding="utf-8")
-            _, _, _, parsed = _parse_logs(
-                [trace], frozen_particle_ids=[1], sample_times_us=[],
-                natural_archive_grid=(0.0, 1.0),
-            )
             _, streamed, _, _ = _stream_logs_to_states_csv(
                 [trace], frozen_particle_ids=[1], sample_times_us=[],
                 natural_archive_grid=(0.0, 1.0), states_path=root / "states.csv.gz",
             )
-            for census in (parsed, streamed):
-                self.assertEqual(census["outside_pa_termination"], [1])
-                self.assertEqual(census["geometry_collision"], [])
-                self.assertEqual(census["splat"], [])
+            self.assertEqual(streamed["outside_pa_termination"], [1])
+            self.assertEqual(streamed["geometry_collision"], [])
+            self.assertEqual(streamed["splat"], [])
 
     def test_natural_archive_keeps_collision_terminal_with_alive_final_states(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
