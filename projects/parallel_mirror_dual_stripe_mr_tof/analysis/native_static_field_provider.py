@@ -5,6 +5,7 @@ and sealing; this module validates requests and emits GEM/binding metadata.
 Lengths are mm and electrode potentials are V. Published PA identities are
 inherited by sealed record/size, never copied or rehashed on reuse.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -15,22 +16,61 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.verify_run_manifest import verify_record
+from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import HEADER, PaHeader
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import (
-    PS_GROUPS, candidate_authority, derive_candidate_authority,
+    PS_GROUPS,
+    candidate_authority,
+    derive_candidate_authority,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
-    _analyzer_geometry_lines, build_static_c0_gem,
+    _analyzer_geometry_lines,
+    build_static_c0_gem,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import (
-    _grid_shape, validate_generation_grid_pitch,
+    _grid_shape,
+    validate_generation_grid_pitch,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import (
-    _native_active_box, _record, load_binding, load_native_response_basis, native_response_operator,
-    native_numerics_match, resolve_native_refine_numerics, validate_native_consumer_view,
+    _native_active_box,
+    _record,
+    _load_operator_ancestry,
+    load_binding,
+    load_native_response_basis,
+    native_response_operator,
+    native_numerics_match,
+    resolve_native_refine_numerics,
+    validate_native_consumer_view,
+    validate_ip_fine_response_reuse,
 )
+
+
+def _operator_ancestry_inputs(inputs: dict[str, str], bindings: list[dict]) -> list[dict]:
+    """Freeze verified historical dependencies without treating them as field inputs."""
+    projections = {}
+    for binding in bindings:
+        for projection in binding.get("operator_ancestry_projections", []):
+            key = projection["target_manifest"]["path"]
+            if key in projections and projections[key] != projection:
+                # Separate recursive loads may consume different small records.
+                previous = projections[key]
+                if any(previous[k] != projection[k] for k in projection if k != "consumed_records"):
+                    raise ValueError("operator ancestry retirement identity changed during compilation")
+                if any(path in previous["consumed_records"] and previous["consumed_records"][path] != record
+                       for path, record in projection["consumed_records"].items()):
+                    raise ValueError("operator ancestry consumed record changed during compilation")
+                previous["consumed_records"].update(projection["consumed_records"])
+            else:
+                projections[key] = copy.deepcopy(projection)
+    for index, projection in enumerate(projections.values()):
+        records = [projection["target_manifest"], projection["retirement_receipt"],
+                   *projection["consumed_records"].values()]
+        for record_index, record in enumerate(records):
+            verify_record("operator_ancestry_input", record)
+            inputs[f"operator_ancestry_{index}_{record_index}"] = record["path"]
+    return list(projections.values())
 
 ROLE = "mrtof_native_static_field_provider_request"
 PROJECT = "parallel_mirror_dual_stripe_mr_tof"
@@ -44,25 +84,59 @@ def read(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+IP_PROVIDER = "dual_pressure_rectilinear_ion_processor"
+
+
+def _ip_metadata(source: dict[str, Any]) -> dict[str, Any]:
+    """Preserve explicit component identity through response and composition."""
+    return ({key: copy.deepcopy(source[key]) for key in
+             ("accelerator_provider", "assembly_scope", "replacement_assembly")}
+            if source.get("accelerator_provider") == IP_PROVIDER else {})
+
+
+def _ip_source_layout(source: dict[str, Any]) -> dict[str, Any]:
+    """Use sealed actual IP operator pitches, never the older nominal OA layout."""
+    levels = [source, *source["refinement_windows"]]
+    targets = [{"pitch_mm": copy.deepcopy(level["grid"]["pitch_mm"])} for level in levels]
+    return dict(parent=targets[0], windows=targets[1:])
+
+
+def _static_gem(geometry: dict, authority: dict, grid: dict, *, boundary_mode: str):
+    if authority.get("assembly", {}).get("accelerator_provider") != IP_PROVIDER:
+        return build_static_c0_gem(geometry, authority, grid, boundary_mode=boundary_mode)
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import _gem
+    rows = authority["component_voltages_v"]
+    ip = [row["voltage_v"] for row in rows if row["component_namespace"] == "ion_processor"]
+    detector = [row["voltage_v"] for row in rows if row["component_namespace"] == "detector"]
+    if len(ip) != 15 or len(detector) != 1:
+        raise ValueError("IP static emission requires all provider15 and detector voltages")
+    return (_gem(geometry, geometry["ion_processor_electrodes"], ip,
+                 authority["analyzer_electrode_voltages_v"], detector[0], dict(grid, boundary_mode=boundary_mode)),
+            dict(accelerator_provider=IP_PROVIDER, boundary_mode=boundary_mode))
+
+
 def _pure_axis_authority(source: dict[str, Any], axis: str) -> dict[str, Any]:
     """Keep frozen bodies/assembly while prescribing one normalized excitation."""
     result = copy.deepcopy(source)
-    result["analyzer_electrode_voltages_v"] = [0.0]*20
+    result["analyzer_electrode_voltages_v"] = [0.0] * 20
     for component in result["component_voltages_v"]:
         component["voltage_v"] = 0.0
     for physical_id in PS_GROUPS[axis]:
-        result["analyzer_electrode_voltages_v"][physical_id-1] = RESPONSE_NORMALIZATION_V
+        result["analyzer_electrode_voltages_v"][physical_id - 1] = RESPONSE_NORMALIZATION_V
     return result
 
 
 def _te1_excitation(basis: dict[str, Any]) -> list[float]:
     """Return the five physical mirror voltages of one normalized TE1 direction."""
     direction = basis.get("direction_v_per_coordinate")
-    if (basis.get("axis") != TE1_AXIS or basis.get("normalization_v") != RESPONSE_NORMALIZATION_V
-            or not isinstance(direction, list) or len(direction) != 4
-            or any(isinstance(v, bool) or not isinstance(v, (int, float))
-                   or not math.isfinite(v) for v in direction)
-            or max(abs(v) for v in direction) == 0):
+    if (
+        basis.get("axis") != TE1_AXIS
+        or basis.get("normalization_v") != RESPONSE_NORMALIZATION_V
+        or not isinstance(direction, list)
+        or len(direction) != 4
+        or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in direction)
+        or max(abs(v) for v in direction) == 0
+    ):
         raise ValueError("TE1 response requires a finite nonzero direction and 10000 V normalization")
     magnitude = max(abs(v) for v in direction)
     return [0.0, *[RESPONSE_NORMALIZATION_V * (v / magnitude) for v in direction]]
@@ -71,13 +145,19 @@ def _te1_excitation(basis: dict[str, Any]) -> list[float]:
 def _te1_basis_metadata(reference_path: Path) -> dict[str, Any]:
     """Freeze the existing TE1 reference direction; this is not a working voltage."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic import _te1_reference
+
     _, coordinate, _, delta = _te1_reference(reference_path)
-    basis = {"axis": TE1_AXIS, "normalization_v": RESPONSE_NORMALIZATION_V,
-             "direction_v_per_coordinate": [v / coordinate for v in delta]}
+    basis = {
+        "axis": TE1_AXIS,
+        "normalization_v": RESPONSE_NORMALIZATION_V,
+        "direction_v_per_coordinate": [v / coordinate for v in delta],
+    }
     excitation = _te1_excitation(basis)
-    basis.update(physical_electrode_ids=[i + 1 for i, v in enumerate(excitation * 2) if v != 0],
-                 excitation_semantics="pure normalized TE1 direction; all other analyzer/component potentials zero",
-                 combination_semantics="base PA plus physical mirror increment / normalized direction times this PA")
+    basis.update(
+        physical_electrode_ids=[i + 1 for i, v in enumerate(excitation * 2) if v != 0],
+        excitation_semantics="pure normalized TE1 direction; all other analyzer/component potentials zero",
+        combination_semantics="base PA plus physical mirror increment / normalized direction times this PA",
+    )
     return basis
 
 
@@ -95,23 +175,31 @@ def _response_authority(source: dict[str, Any], basis: dict[str, Any]) -> dict[s
     return result
 
 
-def compile_response_coefficients(base_authority: dict[str, Any], target_voltages_v: dict[str, float],
-                                  available_axes: list[str], *,
-                                  mirror_voltages_v: list[float] | None = None,
-                                  te1_basis: dict[str, Any] | None = None) -> dict[str, Any]:
+def compile_response_coefficients(
+    base_authority: dict[str, Any],
+    target_voltages_v: dict[str, float],
+    available_axes: list[str],
+    *,
+    mirror_voltages_v: list[float] | None = None,
+    te1_basis: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Plan pure-basis increments; no field I/O, solve, or trajectory prediction."""
-    if (set(target_voltages_v) != set(PS_GROUPS)
-            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
-                   for v in target_voltages_v.values())
-            or len(available_axes) != len(set(available_axes))
-            or not set(available_axes) <= set(PS_GROUPS) | {TE1_AXIS}
-            or (TE1_AXIS in available_axes) != (te1_basis is not None)):
+    if (
+        set(target_voltages_v) != set(PS_GROUPS)
+        or any(
+            isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+            for v in target_voltages_v.values()
+        )
+        or len(available_axes) != len(set(available_axes))
+        or not set(available_axes) <= set(PS_GROUPS) | {TE1_AXIS}
+        or (TE1_AXIS in available_axes) != (te1_basis is not None)
+    ):
         raise ValueError("response coefficients require finite complete P/S targets and unique available axes")
     values = base_authority["analyzer_electrode_voltages_v"]
     coefficients = {}
     for axis, ids in PS_GROUPS.items():
-        anchor = values[ids[0]-1]
-        if any(values[i-1] != anchor for i in ids):
+        anchor = values[ids[0] - 1]
+        if any(values[i - 1] != anchor for i in ids):
             raise ValueError("baseline P/S group does not have one voltage")
         delta = target_voltages_v[axis] - anchor
         if axis not in available_axes and delta != 0:
@@ -131,93 +219,155 @@ def compile_response_coefficients(base_authority: dict[str, Any], target_voltage
         coefficient = delta[index] / excitation[index]
         # Same absolute voltage reconstruction tolerance as mirror authority;
         # compare actual vectors, never apply an absolute coordinate to an offset.
-        if (not math.isfinite(coefficient) or any(not math.isclose(change, coefficient * voltage,
-                rel_tol=0.0, abs_tol=1e-9) for change, voltage in zip(delta, excitation, strict=True))):
+        if not math.isfinite(coefficient) or any(
+            not math.isclose(change, coefficient * voltage, rel_tol=0.0, abs_tol=1e-9)
+            for change, voltage in zip(delta, excitation, strict=True)
+        ):
             raise ValueError("target mirror increment is incompatible with the frozen TE1 direction")
         coefficients[TE1_AXIS] = coefficient
-    return {"target_authority": target,
-            "coefficients": coefficients, "normalization_v": RESPONSE_NORMALIZATION_V}
+    return {"target_authority": target, "coefficients": coefficients, "normalization_v": RESPONSE_NORMALIZATION_V}
 
 
-def _compile_composition(request: dict[str, Any], source: dict[str, Any], authority: dict[str, Any],
-                         contract_path: Path, numerics: dict[str, Any]) -> dict[str, Any] | None:
+def _compile_composition(
+    request: dict[str, Any],
+    source: dict[str, Any],
+    authority: dict[str, Any],
+    contract_path: Path,
+    numerics: dict[str, Any],
+) -> dict[str, Any] | None:
     """Compose from one sealed anchor; undeclared mirror directions need Refine."""
     paths = request["response_basis_paths"]
-    if (not isinstance(paths, dict) or not paths or not set(paths) <= set(PS_GROUPS) | {TE1_AXIS}
-            or any(not isinstance(value, str) or not value for value in paths.values())):
+    if (
+        not isinstance(paths, dict)
+        or not paths
+        or not set(paths) <= set(PS_GROUPS) | {TE1_AXIS}
+        or any(not isinstance(value, str) or not value for value in paths.values())
+    ):
         raise ValueError("response_basis_paths requires named pure axis descriptors")
     if not native_numerics_match(source, contract_path):
         raise ValueError("composition stopping differs from its current source operator")
     for path in paths.values():
         load_native_response_basis(Path(path), source)
-    base_path = (source["materialization"]["base_binding"] if "materialization" in source
-                 else request["source_binding_path"])
+    base_path = (
+        source["materialization"]["base_binding"] if "materialization" in source else request["source_binding_path"]
+    )
     base = load_binding(Path(base_path))
-    view = validate_native_consumer_view(read(contract_path)["simion"]["numerical_profiles"]["native_static_field"].get("consumer_view"))
+    view = validate_native_consumer_view(
+        read(contract_path)["simion"]["numerical_profiles"]["native_static_field"].get("consumer_view")
+    )
     if view != base.get("consumer_view") or view != source.get("consumer_view"):
         raise ValueError("composition consumer view differs from frozen source")
-    layout = read(contract_path)["simion"]["numerical_profiles"]["native_static_field"].get("target_layout")
-    if (not isinstance(layout, dict) or not isinstance(layout.get("windows"), list)
-            or len(layout["windows"]) != len(base["refinement_windows"])):
+    layout = (_ip_source_layout(base) if _ip_metadata(base) else
+              read(contract_path)["simion"]["numerical_profiles"]["native_static_field"].get("target_layout"))
+    if (
+        not isinstance(layout, dict)
+        or not isinstance(layout.get("windows"), list)
+        or len(layout["windows"]) != len(base["refinement_windows"])
+    ):
         raise ValueError("composition requires its bank-compatible target layout")
-    for level, target in zip([base, *base["refinement_windows"]], [layout.get("parent"), *layout["windows"]], strict=True):
+    for level, target in zip(
+        [base, *base["refinement_windows"]], [layout.get("parent"), *layout["windows"]], strict=True
+    ):
         original = read(Path(level["numerical_plan_path"]))
-        if (not isinstance(target, dict) or target.get("pitch_mm") != level["grid"]["pitch_mm"]
-                or not view and (("stored_xmax_mm" in target) != (original.get("crop") is not None)
-                or "stored_xmax_mm" in target and target["stored_xmax_mm"] != original["box_mm"][3])):
+        if (
+            not isinstance(target, dict)
+            or target.get("pitch_mm") != level["grid"]["pitch_mm"]
+            or not view
+            and (
+                ("stored_xmax_mm" in target) != (original.get("crop") is not None)
+                or "stored_xmax_mm" in target
+                and target["stored_xmax_mm"] != original["box_mm"][3]
+            )
+        ):
             raise ValueError("composition target layout differs from its immutable bank operator")
     if native_response_operator(source, base["authority"]) != native_response_operator(base, base["authority"]):
         raise ValueError("bank anchor differs from current native operator")
     bases = {axis: load_native_response_basis(Path(path), base) for axis, path in paths.items()}
     if any(value["response_basis"]["axis"] != axis for axis, value in bases.items()):
         raise ValueError("response axis differs from response_basis_paths key")
-    coefficients = compile_response_coefficients(base["authority"], request["candidate_voltages_v"], list(bases),
+    coefficients = compile_response_coefficients(
+        base["authority"],
+        request["candidate_voltages_v"],
+        list(bases),
         mirror_voltages_v=(authority["analyzer_electrode_voltages_v"][:5] if TE1_AXIS in bases else None),
-        te1_basis=(bases[TE1_AXIS]["response_basis"] if TE1_AXIS in bases else None))
+        te1_basis=(bases[TE1_AXIS]["response_basis"] if TE1_AXIS in bases else None),
+    )
     if coefficients["target_authority"] != authority:
-        mirror_target = candidate_authority(coefficients["target_authority"], request["candidate_voltages_v"],
-                                            mirror_voltages_v=authority["analyzer_electrode_voltages_v"][:5])
+        mirror_target = candidate_authority(
+            coefficients["target_authority"],
+            request["candidate_voltages_v"],
+            mirror_voltages_v=authority["analyzer_electrode_voltages_v"][:5],
+        )
         if mirror_target != authority:
             raise ValueError("composition cannot change fixed components/assembly")
         # Keep the declared bank: the normal direct path builds only the new
         # fixed-mirror offset. Subsequent P/S targets compose from that offset.
         return None
-    labels = ["window"] if len(base["refinement_windows"]) == 1 else [f"window_{i}" for i in range(len(base["refinement_windows"]))]
+    labels = (
+        ["window"]
+        if len(base["refinement_windows"]) == 1
+        else [f"window_{i}" for i in range(len(base["refinement_windows"]))]
+    )
     sources = dict(zip(["parent", *labels], [base, *base["refinement_windows"]]))
-    identities = {(Path(x["manifest"]).resolve(), Path(x["sources"]["scalar_pa"]).resolve()): label for label, x in sources.items()}
+    identities = {
+        (Path(x["manifest"]).resolve(), Path(x["sources"]["scalar_pa"]).resolve()): label
+        for label, x in sources.items()
+    }
     levels, protected = {}, [base_path]
-    inputs = {"source_binding": request["source_binding_path"], "combination_base_binding": base_path,
-              "numerical_contract": str(contract_path)}
+    inputs = {
+        "source_binding": request["source_binding_path"],
+        "combination_base_binding": base_path,
+        "numerical_contract": str(contract_path),
+    }
     for axis, path in paths.items():
-        inputs["response_"+axis] = path
+        inputs["response_" + axis] = path
+    ancestry = _operator_ancestry_inputs(inputs, [source, base, *bases.values()])
     for label, level in sources.items():
         original = read(Path(level["numerical_plan_path"]))
-        parent = None if label == "parent" else identities[(Path(original["parent_manifest"]).resolve(), Path(original["parent_pa"]).resolve())]
+        parent = (
+            None
+            if label == "parent"
+            else identities[(Path(original["parent_manifest"]).resolve(), Path(original["parent_pa"]).resolve())]
+        )
         spec = copy.deepcopy(original)
-        for key in ("crop", "full_solve_plan_path", "consumer_grid", "gem", "response_basis",
-                    "consumer_view_source", "consumer_view_receipt_path"):
+        for key in (
+            "crop",
+            "full_solve_plan_path",
+            "consumer_grid",
+            "gem",
+            "response_basis",
+            "consumer_view_source",
+            "consumer_view_receipt_path",
+        ):
             spec.pop(key, None)
         grid = level["grid"]
-        pa_bytes = math.prod(grid["dimensions"])*8+56
+        pa_bytes = math.prod(grid["dimensions"]) * 8 + 56
         if level["sources"]["surface"] is None:
             raise ValueError("native composition currently requires explicit fractional sidecar provenance")
         surface_bytes = level["records"]["surface"]["bytes"]
-        commitment = math.ceil(pa_bytes*1.05 + surface_bytes*1.1)+16*1024**2
+        commitment = math.ceil(pa_bytes * 1.05 + surface_bytes * 1.1) + 16 * 1024**2
         responses = []
         index = (["parent", *labels]).index(label)
         for axis, basis in bases.items():
             response = [basis, *basis["refinement_windows"]][index]
-            responses.append(dict(axis=axis, path=response["sources"]["scalar_pa"], coefficient=coefficients["coefficients"][axis]))
-        spec.update(parent_label=parent, **numerics, numerical_contract_path=str(contract_path),
-                    refine_performed=False, committed_new_bytes=commitment,
-                    final_retained_estimate_bytes=commitment,
-                    source_solve_plan_path=level["numerical_plan_path"],
-                    source_solve_manifest=level["manifest"],
-                    composition=dict(base_pa=level["sources"]["scalar_pa"], responses=responses))
+            responses.append(
+                dict(axis=axis, path=response["sources"]["scalar_pa"], coefficient=coefficients["coefficients"][axis])
+            )
+        spec.update(
+            parent_label=parent,
+            **numerics,
+            numerical_contract_path=str(contract_path),
+            refine_performed=False,
+            committed_new_bytes=commitment,
+            final_retained_estimate_bytes=commitment,
+            source_solve_plan_path=level["numerical_plan_path"],
+            source_solve_manifest=level["manifest"],
+            composition=dict(base_pa=level["sources"]["scalar_pa"], responses=responses),
+        )
         if label != "parent":
             spec.update(name=level["name"], active_box_mm=level["active_box_mm"])
         levels[label] = spec
-        inputs[label+"_source_plan"] = level["numerical_plan_path"]
+        inputs[label + "_source_plan"] = level["numerical_plan_path"]
         protected.extend([level["manifest"], *[p for p in level["sources"].values() if p]])
     for basis in bases.values():
         protected.append(basis["descriptor_path"])
@@ -231,25 +381,53 @@ def _compile_composition(request: dict[str, Any], source: dict[str, Any], author
         if not ready:
             raise ValueError("composition parent chain contains a cycle")
         order.extend(ready)
-    return dict(schema_version=1, role="mrtof_native_static_field_provider_plan", operation="compose",
-                run_id=request.get("run_id"), project=PROJECT, inputs=inputs, protected_paths=sorted(set(protected)),
-                candidate_authority=authority, source_authority=base["authority"], resolved_geometry=base["geometry"],
-                levels=levels, execution_order=order, window_labels=labels,
-                response_basis=None, fly_authorized=False, refine_performed=False,
-                response_basis_paths=paths, coefficients=coefficients["coefficients"],
-                **({"consumer_view": view} if view else {}),
-                combination_base_binding=base_path, target_voltages_v=request["candidate_voltages_v"],
-                **({"target_mirror_voltages_v": authority["analyzer_electrode_voltages_v"][:5]} if TE1_AXIS in bases else {}),
-                collision_instances=[{k: i[k] for k in ("role", "manifest", "pa_path", "origin_mm")} for i in base["instances"]],
-                committed_new_bytes=sum(x["committed_new_bytes"] for x in levels.values()),
-                final_retained_estimate_bytes=sum(x["committed_new_bytes"] for x in levels.values()),
-                **numerics, automatic_retry_count=0, qualification_passed=False)
+    return dict(
+        schema_version=1,
+        role="mrtof_native_static_field_provider_plan",
+        operation="compose",
+        **_ip_metadata(base),
+        run_id=request.get("run_id"),
+        project=PROJECT,
+        inputs=inputs,
+        operator_ancestry_projections=ancestry,
+        protected_paths=sorted(set(protected)),
+        candidate_authority=authority,
+        source_authority=base["authority"],
+        resolved_geometry=base["geometry"],
+        levels=levels,
+        execution_order=order,
+        window_labels=labels,
+        response_basis=None,
+        fly_authorized=False,
+        refine_performed=False,
+        response_basis_paths=paths,
+        coefficients=coefficients["coefficients"],
+        **({"consumer_view": view} if view else {}),
+        combination_base_binding=base_path,
+        target_voltages_v=request["candidate_voltages_v"],
+        **({"target_mirror_voltages_v": authority["analyzer_electrode_voltages_v"][:5]} if TE1_AXIS in bases else {}),
+        collision_instances=[
+            {k: i[k] for k in ("role", "manifest", "pa_path", "origin_mm")} for i in base["instances"]
+        ],
+        committed_new_bytes=sum(x["committed_new_bytes"] for x in levels.values()),
+        final_retained_estimate_bytes=sum(x["committed_new_bytes"] for x in levels.values()),
+        **numerics,
+        automatic_retry_count=0,
+        qualification_passed=False,
+    )
 
 
 def _compile_consumer_view(request: dict[str, Any]) -> dict[str, Any]:
     """Plan a storage-only official crop of a sealed field or pure response."""
-    allowed = {"schema_version", "role", "run_id", "source_binding_path", "source_field_manifest",
-               "numerical_contract_path", "consumer_view_source_path"}
+    allowed = {
+        "schema_version",
+        "role",
+        "run_id",
+        "source_binding_path",
+        "source_field_manifest",
+        "numerical_contract_path",
+        "consumer_view_source_path",
+    }
     if set(request) - allowed:
         raise ValueError("consumer view creation cannot change voltages or solve inputs")
     contract_path = Path(request["numerical_contract_path"]).resolve()
@@ -260,8 +438,11 @@ def _compile_consumer_view(request: dict[str, Any]) -> dict[str, Any]:
     baseline = load_binding(Path(request["source_binding_path"]))
     source_path = Path(request["consumer_view_source_path"]).resolve()
     descriptor = read(source_path)
-    source = (load_native_response_basis(source_path, baseline)
-              if descriptor.get("role") == "mrtof_native_static_field_response_basis" else load_binding(source_path))
+    source = (
+        load_native_response_basis(source_path, baseline)
+        if descriptor.get("role") == "mrtof_native_static_field_response_basis"
+        else load_binding(source_path)
+    )
     if source.get("consumer_view") or source["mode"] != "native_static_pa":
         raise ValueError("consumer view requires an original three-dimensional native field")
     if Path(request["source_field_manifest"]).resolve() != Path(source["manifest"]).resolve():
@@ -269,10 +450,16 @@ def _compile_consumer_view(request: dict[str, Any]) -> dict[str, Any]:
     numerics = resolve_native_refine_numerics(read(contract_path))
     if not native_numerics_match(source, contract_path):
         raise ValueError("consumer view cannot change Refine precision")
-    labels = ["window"] if len(source["refinement_windows"]) == 1 else [f"window_{i}" for i in range(len(source["refinement_windows"]))]
+    labels = (
+        ["window"]
+        if len(source["refinement_windows"]) == 1
+        else [f"window_{i}" for i in range(len(source["refinement_windows"]))]
+    )
     ordered = [source, *source["refinement_windows"]]
-    identities = {(Path(x["manifest"]).resolve(), Path(x["sources"]["scalar_pa"]).resolve()): label
-                  for label, x in zip(["parent", *labels], ordered, strict=True)}
+    identities = {
+        (Path(x["manifest"]).resolve(), Path(x["sources"]["scalar_pa"]).resolve()): label
+        for label, x in zip(["parent", *labels], ordered, strict=True)
+    }
     levels, protected = {}, [str(source_path), request["source_binding_path"]]
     specs = [descriptor["parent"], *descriptor["refinement_windows"]]
     for label, level, source_spec in zip(["parent", *labels], ordered, specs, strict=True):
@@ -283,37 +470,74 @@ def _compile_consumer_view(request: dict[str, Any]) -> dict[str, Any]:
         value = copy.deepcopy(original)
         for key in ("crop", "consumer_grid", "full_solve_plan_path", "gem", "materialization_receipt_path"):
             value.pop(key, None)
-        value.update(consumer_view=view, consumer_view_source=copy.deepcopy(source_spec),
-                     source_solve_plan_path=level["numerical_plan_path"], source_solve_manifest=level["manifest"],
-                     refine_performed=False, parent_label=None, **numerics)
+        value.update(
+            consumer_view=view,
+            consumer_view_source=copy.deepcopy(source_spec),
+            source_solve_plan_path=level["numerical_plan_path"],
+            source_solve_manifest=level["manifest"],
+            refine_performed=False,
+            parent_label=None,
+            **numerics,
+        )
         value["dimensions"] = [view["stored_x_nodes"], *grid["dimensions"][1:]]
-        value["box_mm"] = [*grid["origin_mm"], *[grid["origin_mm"][a] + (value["dimensions"][a]-1)*grid["pitch_mm"][a] for a in range(3)]]
+        value["box_mm"] = [
+            *grid["origin_mm"],
+            *[grid["origin_mm"][a] + (value["dimensions"][a] - 1) * grid["pitch_mm"][a] for a in range(3)],
+        ]
         value["pitch_mm"] = grid["pitch_mm"]
         value["boundary_mode"] = "grounded_enclosure" if label == "parent" else "x_mirror_five_faces"
         if label != "parent":
-            value["parent_label"] = identities[(Path(original["parent_manifest"]).resolve(), Path(original["parent_pa"]).resolve())]
-            value.update(name=level["name"], active_box_mm=[[-2*grid["pitch_mm"][0], 2*grid["pitch_mm"][0]], *level["active_box_mm"][1:]])
-        size = math.prod(value["dimensions"])*8+56
+            value["parent_label"] = identities[
+                (Path(original["parent_manifest"]).resolve(), Path(original["parent_pa"]).resolve())
+            ]
+            value.update(
+                name=level["name"],
+                active_box_mm=[[-2 * grid["pitch_mm"][0], 2 * grid["pitch_mm"][0]], *level["active_box_mm"][1:]],
+            )
+        size = math.prod(value["dimensions"]) * 8 + 56
         surface_size = level["records"]["surface"]["bytes"] if level["records"]["surface"] else 0
-        value.update(committed_new_bytes=math.ceil(size*1.05+surface_size*1.1)+16*1024**2,
-                     final_retained_estimate_bytes=math.ceil(size*1.05+surface_size*1.1)+16*1024**2)
+        value.update(
+            committed_new_bytes=math.ceil(size * 1.05 + surface_size * 1.1) + 16 * 1024**2,
+            final_retained_estimate_bytes=math.ceil(size * 1.05 + surface_size * 1.1) + 16 * 1024**2,
+        )
         levels[label] = value
         protected.extend([level["manifest"], *[p for p in level["sources"].values() if p]])
-    inputs = {"source_binding": request["source_binding_path"], "view_source_binding": str(source_path),
-              "numerical_contract": str(contract_path)}
+    inputs = {
+        "source_binding": request["source_binding_path"],
+        "view_source_binding": str(source_path),
+        "numerical_contract": str(contract_path),
+    }
     if source.get("response_basis", {}).get("axis") == TE1_AXIS:
         inputs["te1_reference"] = descriptor["direction_reference_path"]
     for item in source["instances"]:
         protected.extend([item["manifest"], item["pa_path"]])
-    return dict(schema_version=1, role="mrtof_native_static_field_provider_plan", operation="crop_view",
-                run_id=request.get("run_id"), project=PROJECT, inputs=inputs, protected_paths=sorted(set(protected)),
-                consumer_view=view, candidate_authority=source["authority"], source_authority=baseline["authority"],
-                resolved_geometry=source["geometry"], levels=levels, execution_order=["parent", *labels],
-                window_labels=labels, response_basis=source.get("response_basis"), fly_authorized=False,
-                collision_instances=[{k: i[k] for k in ("role", "manifest", "pa_path", "origin_mm")} for i in source["instances"]],
-                committed_new_bytes=sum(v["committed_new_bytes"] for v in levels.values()),
-                final_retained_estimate_bytes=sum(v["final_retained_estimate_bytes"] for v in levels.values()),
-                refine_performed=False, automatic_retry_count=0, qualification_passed=False, **numerics)
+    return dict(
+        schema_version=1,
+        role="mrtof_native_static_field_provider_plan",
+        operation="crop_view",
+        run_id=request.get("run_id"),
+        project=PROJECT,
+        inputs=inputs,
+        protected_paths=sorted(set(protected)),
+        consumer_view=view,
+        candidate_authority=source["authority"],
+        source_authority=baseline["authority"],
+        resolved_geometry=source["geometry"],
+        levels=levels,
+        execution_order=["parent", *labels],
+        window_labels=labels,
+        response_basis=source.get("response_basis"),
+        fly_authorized=False,
+        collision_instances=[
+            {k: i[k] for k in ("role", "manifest", "pa_path", "origin_mm")} for i in source["instances"]
+        ],
+        committed_new_bytes=sum(v["committed_new_bytes"] for v in levels.values()),
+        final_retained_estimate_bytes=sum(v["final_retained_estimate_bytes"] for v in levels.values()),
+        refine_performed=False,
+        automatic_retry_count=0,
+        qualification_passed=False,
+        **numerics,
+    )
 
 
 def _resolve_new_geometry(path: Path, source: dict[str, Any], numerical_contract: dict[str, Any]) -> dict[str, Any]:
@@ -323,8 +547,13 @@ def _resolve_new_geometry(path: Path, source: dict[str, Any], numerical_contract
         if contract.get(key) != numerical_contract.get(key):
             raise ValueError(f"geometry contract changes {key}; component/frame changes require a new assembly")
     geometry = resolve_geometry(contract, accelerator_assembly=source["authority"]["assembly"])
-    mutable = {"mirror_electrodes", "mirror_ground_shields", "mirror_e_closures",
-               "mirror_convergence_transform", "metadata"}
+    mutable = {
+        "mirror_electrodes",
+        "mirror_ground_shields",
+        "mirror_e_closures",
+        "mirror_convergence_transform",
+        "metadata",
+    }
     # The upper vacuum interval is mirror-derived; the chosen observation plane
     # and prism-side bound remain fixed, rather than silently moving a target.
     reference_key = "two_prism_low_field_reference_section"
@@ -352,9 +581,12 @@ def _check_mirror_parent_bounds(geometry: dict[str, Any], bounds: list[float]) -
     for key in ("mirror_electrodes", "mirror_ground_shields", "mirror_e_closures"):
         for solid in geometry[key]:
             box = solid["box"]
-            if (len(box) != 6 or not all(math.isfinite(v) for v in box)
-                    or max(abs(box[0]), abs(box[3])) > bounds[3]
-                    or any(box[a] < bounds[a] or box[a + 3] > bounds[a + 3] for a in (1, 2))):
+            if (
+                len(box) != 6
+                or not all(math.isfinite(v) for v in box)
+                or max(abs(box[0]), abs(box[3])) > bounds[3]
+                or any(box[a] < bounds[a] or box[a + 3] > bounds[a + 3] for a in (1, 2))
+            ):
                 raise ValueError("new mirror conductor lies outside the grounded parent grid")
 
 
@@ -369,42 +601,215 @@ def _new_collision_plan(source: dict[str, Any], geometry: dict[str, Any]) -> dic
     header = PaHeader(*HEADER.unpack(raw))
     # A sealed .pa0 has family flags/footer which the ordinary composer rightly
     # rejects. Only its spatial header is reused; gem2pa writes a new plain PA.
-    if (header.mode != -2 or header.symmetry != 1 or header.raw_mirror & 7 != 1
-            or header.raw_mirror & 8 or min(header.nx, header.ny, header.nz) < 2
-            or any(not math.isfinite(v) or v <= 0 for v in (header.dx_mm, header.dy_mm, header.dz_mm))
-            or path.stat().st_size < header.file_bytes):
+    if (
+        header.mode != -2
+        or header.symmetry != 1
+        or header.raw_mirror & 7 != 1
+        or header.raw_mirror & 8
+        or min(header.nx, header.ny, header.nz) < 2
+        or any(not math.isfinite(v) or v <= 0 for v in (header.dx_mm, header.dy_mm, header.dz_mm))
+        or path.stat().st_size < header.file_bytes
+    ):
         raise ValueError("collision source must retain the x-mirrored planar grid")
     origin = instance["origin_mm"]
     pitch = [header.dx_mm, header.dy_mm, header.dz_mm]
     dimensions = [header.nx, header.ny, header.nz]
-    gem = ("; Collision occupancy only; no Refine or Fast Adjust.\npa_define(" +
-           ",".join(map(str, dimensions)) + ",planar,x,electrostatic,," +
-           ",".join(format(v, ".17g") for v in pitch) + ",surface=fractional)\nlocate(" +
-           ",".join(format(-v, ".17g") for v in origin) + ") {\n" +
-           "\n".join(_analyzer_geometry_lines(geometry)) + "\n}\n")
+    gem = (
+        "; Collision occupancy only; no Refine or Fast Adjust.\npa_define("
+        + ",".join(map(str, dimensions))
+        + ",planar,x,electrostatic,,"
+        + ",".join(format(v, ".17g") for v in pitch)
+        + ",surface=fractional)\nlocate("
+        + ",".join(format(-v, ".17g") for v in origin)
+        + ") {\n"
+        + "\n".join(_analyzer_geometry_lines(geometry))
+        + "\n}\n"
+    )
     surface = Path(str(path) + "-surf")
     allowance = math.ceil(surface.stat().st_size * 1.1) if surface.is_file() else 0
-    return dict(source_instance=copy.deepcopy(instance), origin_mm=origin, pitch_mm=pitch,
-                source_header=header.__dict__, source_footer_bytes=path.stat().st_size-header.file_bytes,
-                dimensions=dimensions, symmetry="x", header_bytes=len(header.pack()), pa_bytes=header.file_bytes,
-                committed_new_bytes=header.file_bytes + allowance + 16 * 1024**2,
-                surface_allowance_bytes=allowance, gem=gem, refine_performed=False,
-                fast_adjust_performed=False, occupancy_geometry="same frozen resolved_geometry.json")
+    return dict(
+        source_instance=copy.deepcopy(instance),
+        origin_mm=origin,
+        pitch_mm=pitch,
+        source_header=header.__dict__,
+        source_footer_bytes=path.stat().st_size - header.file_bytes,
+        dimensions=dimensions,
+        symmetry="x",
+        header_bytes=len(header.pack()),
+        pa_bytes=header.file_bytes,
+        committed_new_bytes=header.file_bytes + allowance + 16 * 1024**2,
+        surface_allowance_bytes=allowance,
+        gem=gem,
+        refine_performed=False,
+        fast_adjust_performed=False,
+        occupancy_geometry="same frozen resolved_geometry.json",
+    )
+
+
+def _compile_ip_fine_extension(request: dict[str, Any]) -> dict[str, Any]:
+    """Reuse one ordinary operator, rebuilding only its extended IP fine domain."""
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import (
+        _gem, extend_fine_z_domain, ordinary_pa_file_bytes,
+    )
+    required = {"schema_version", "role", "source_binding_path", "source_field_manifest",
+                "numerical_contract_path", "reuse_source_levels", "ion_processor_local_domain_update"}
+    if (set(request) - {"run_id"} != required or request["schema_version"] != 1
+            or request["role"] != ROLE
+            or request["reuse_source_levels"] != ["parent", "window_1", "window_2", "window_3"]):
+        raise ValueError("IP fine extension requires its closed ordinary-only request and four exact reused levels")
+    source_path = Path(request["source_binding_path"]).resolve()
+    descriptor = read(source_path)
+    source = load_binding(source_path)
+    if (not _ip_metadata(source) or source.get("consumer_view") or descriptor.get("local_domain_update")
+            or descriptor.get("role") != "mrtof_native_static_field_binding"
+            or [w["name"] for w in source["refinement_windows"]]
+            != ["ion_processor_local", "positive_integer_grid_a", "negative_integer_grid_a", "covered_local"]):
+        raise ValueError("IP fine extension requires an ordinary complete IP source with unchanged route order")
+    source_owner = Path(source["manifest"])
+    verify_record("IP extension source binding", _record(source_owner, source_path), base_dir=source_owner.parent)
+    contract_path = Path(request["numerical_contract_path"]).resolve()
+    if not native_numerics_match(source, contract_path):
+        raise ValueError("IP fine extension cannot change actual Refine stopping")
+    if Path(request["source_field_manifest"]).resolve() != source_owner.resolve():
+        raise ValueError("IP fine extension source manifest differs")
+    fine_source = source["refinement_windows"][0]
+    fine_grid, active = extend_fine_z_domain(fine_source["grid"], fine_source["active_box_mm"],
+        request["ion_processor_local_domain_update"], source["grid"])
+    # Compile through the ordinary public provider; no response bank or solver.
+    ordinary = {k: request[k] for k in required - {"reuse_source_levels", "ion_processor_local_domain_update"}}
+    if "run_id" in request:
+        ordinary["run_id"] = request["run_id"]
+    ordinary["candidate_voltages_v"] = {name: source["authority"]["analyzer_electrode_voltages_v"][ids[0]-1]
+                                       for name, ids in PS_GROUPS.items()}
+    plan = compile_request(ordinary)
+    if plan["candidate_authority"] != source["authority"] or plan["resolved_geometry"] != source["geometry"]:
+        raise ValueError("IP fine extension must preserve all voltages and geometry")
+    labels = ["parent", *plan["window_labels"]]
+    for label, original in zip(labels, [descriptor["parent"], *descriptor["refinement_windows"]], strict=True):
+        if label == "window_0":
+            continue
+        plan["levels"][label]["reuse_source"] = copy.deepcopy(original)
+        plan["levels"][label]["committed_new_bytes"] = 0
+        plan["levels"][label]["final_retained_estimate_bytes"] = 0
+        plan["levels"][label].pop("gem", None)
+    fine = plan["levels"]["window_0"]
+    if fine["parent_label"] != "parent":
+        raise ValueError("IP fine extension must retain its direct global parent dependency")
+    fine.update(box_mm=fine_grid["origin_mm"] + [fine_grid["origin_mm"][a]
+        + (fine_grid["dimensions"][a]-1)*fine_grid["pitch_mm"][a] for a in range(3)],
+        dimensions=fine_grid["dimensions"], active_box_mm=active)
+    _native_active_box(active, fine_grid)
+    fine["gem"], fine["geometry_report"] = _static_gem(plan["resolved_geometry"], plan["candidate_authority"],
+        fine, boundary_mode="x_mirror_five_faces")
+    pa_bytes = ordinary_pa_file_bytes(fine["dimensions"], fine["pitch_mm"])
+    surface_allowance = math.ceil(Path(fine_source["sources"]["surface"]).stat().st_size
+                                  * fine_grid["dimensions"][2] / fine_source["grid"]["dimensions"][2])
+    committed = math.ceil(pa_bytes*1.05 + surface_allowance*1.1) + 16*1024**2
+    fine.update(committed_new_bytes=committed, final_retained_estimate_bytes=committed,
+        capacity_basis=dict(pa_node_bytes=pa_bytes, source_surface_bytes=surface_allowance,
+            allowance="5% PA + 10% z-extent-scaled source surface + 16MiB evidence; no reused PA copies"))
+    plan["ip_collision_build"] = dict(origin_mm=fine_grid["origin_mm"], pitch_mm=fine_grid["pitch_mm"],
+        dimensions=fine_grid["dimensions"], symmetry="x", pa_bytes=pa_bytes,
+        committed_new_bytes=committed, surface_allowance_bytes=surface_allowance,
+        refine_performed=False, fast_adjust_performed=False)
+    rows = source["authority"]["component_voltages_v"]
+    plan["ip_collision_build"]["gem"] = _gem(source["geometry"], source["geometry"]["ion_processor_electrodes"],
+        [r["voltage_v"] for r in rows if r["component_namespace"] == "ion_processor"],
+        source["authority"]["analyzer_electrode_voltages_v"], 0, fine, occupancy=True)
+    plan["local_domain_update"] = dict(schema_version=1, role="mrtof_ip_fine_domain_update",
+        update=copy.deepcopy(request["ion_processor_local_domain_update"]),
+        reused_levels=copy.deepcopy(request["reuse_source_levels"]),
+        source_manifest=dict(path=str(source_owner.resolve()), bytes=source_owner.stat().st_size,
+                             sha256=file_sha256(source_owner)))
+    plan["committed_new_bytes"] = plan["final_retained_estimate_bytes"] = 2*committed
+    plan["protected_paths"] = sorted(set(plan["protected_paths"] + [str(source_owner.parent)]
+        + [str(Path(i["manifest"]).parent) for i in source["instances"]]
+        + [i["pa_path"] for i in source["instances"]]))
+    return plan
+
+
+def _compile_ip_fine_response_reuse(request: dict[str, Any]) -> dict[str, Any]:
+    """Rebuild the extended fine response with four sealed same-axis pure fields."""
+    required = {"schema_version", "role", "source_binding_path", "source_field_manifest",
+                "numerical_contract_path", "response_axis", "reuse_response_basis_path", "reuse_source_levels"}
+    if (set(request) - {"run_id"} != required or request["schema_version"] != 1 or request["role"] != ROLE
+            or request["response_axis"] not in {"p1", "p2"}
+            or request["reuse_source_levels"] != ["parent", "window_1", "window_2", "window_3"]):
+        raise ValueError("IP fine response reuse requires its closed pure P1/P2 request")
+    source = load_binding(Path(request["source_binding_path"]))
+    old_path = Path(request["reuse_response_basis_path"]).resolve()
+    old_descriptor = read(old_path)
+    if old_descriptor.get("response_level_reuse"):
+        raise ValueError("IP fine response reuse requires an original complete pure response")
+    old_source = _load_operator_ancestry(Path(old_descriptor["source_binding_path"]),
+        copy_owner=Path(old_descriptor["refinement_windows"][0]["manifest"]))
+    old = load_native_response_basis(old_path, old_source)
+    validate_ip_fine_response_reuse(old, source, request["response_axis"])
+    ordinary_request = {k: v for k, v in request.items() if k not in {"reuse_response_basis_path", "reuse_source_levels"}}
+    plan = compile_request(ordinary_request)
+    if plan["candidate_authority"] != old["authority"]:
+        raise ValueError("IP fine response reuse differs from exact pure voltage authority")
+    for label, original in zip(["parent", *plan["window_labels"]],
+            [old_descriptor["parent"], *old_descriptor["refinement_windows"]], strict=True):
+        if label == "window_0":
+            continue
+        spec = plan["levels"][label]
+        spec.update(reuse_source=copy.deepcopy(original), committed_new_bytes=0, final_retained_estimate_bytes=0)
+        spec.pop("gem", None)
+    if plan["levels"]["window_0"]["parent_label"] != "parent":
+        raise ValueError("IP fine response requires its direct reused pure parent")
+    old_owner = Path(old["refinement_windows"][0]["manifest"])
+    plan["response_level_reuse"] = dict(schema_version=1, role="mrtof_ip_fine_response_reuse",
+        axis=request["response_axis"], reused_levels=copy.deepcopy(request["reuse_source_levels"]),
+        source_basis=dict(path=str(old_path), bytes=old_path.stat().st_size, sha256=file_sha256(old_path)),
+        source_basis_manifest=dict(path=str(old_owner.resolve()), bytes=old_owner.stat().st_size,
+                                   sha256=file_sha256(old_owner)))
+    plan["inputs"]["reused_response_basis"] = str(old_path)
+    plan["protected_paths"] = sorted(set(plan["protected_paths"] + [str(old_owner.parent), str(old_path)]
+        + [str(Path(i["manifest"]).parent) for i in source["instances"]]
+        + [i["pa_path"] for i in source["instances"]]))
+    fine = plan["levels"]["window_0"]
+    plan["committed_new_bytes"] = fine["committed_new_bytes"]
+    plan["final_retained_estimate_bytes"] = fine["final_retained_estimate_bytes"]
+    return plan
 
 
 def compile_request(request: dict[str, Any]) -> dict[str, Any]:
     """Validate a native source and derive one four-coordinate candidate."""
-    allowed = {"schema_version", "role", "source_binding_path", "source_field_manifest",
-               "candidate_voltages_v", "mirror_voltage_variation_path",
-               "mirror_reference_trial_manifest", "mirror_contract_path", "run_id", "numerical_contract_path",
-               "response_axis", "response_basis_paths", "te1_reference_path", "consumer_view_source_path",
-               "geometry_contract_path", "reuse_source_levels"}
-    if (request.get("schema_version") != 1 or request.get("role") != ROLE
-            or set(request) - allowed):
+    if "reuse_response_basis_path" in request:
+        return _compile_ip_fine_response_reuse(request)
+    if "ion_processor_local_domain_update" in request:
+        return _compile_ip_fine_extension(request)
+    if "replacement_assembly_path" in request:
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import (
+            compile_materializable_fields,
+        )
+
+        return compile_materializable_fields(request)
+    allowed = {
+        "schema_version",
+        "role",
+        "source_binding_path",
+        "source_field_manifest",
+        "candidate_voltages_v",
+        "mirror_voltage_variation_path",
+        "mirror_reference_trial_manifest",
+        "mirror_contract_path",
+        "run_id",
+        "numerical_contract_path",
+        "response_axis",
+        "response_basis_paths",
+        "te1_reference_path",
+        "consumer_view_source_path",
+        "geometry_contract_path",
+        "reuse_source_levels",
+    }
+    if request.get("schema_version") != 1 or request.get("role") != ROLE or set(request) - allowed:
         raise ValueError("unsupported native static provider request")
     run_id = request.get("run_id")
-    if run_id is not None and (not isinstance(run_id, str) or not run_id
-                               or run_id in {".", ".."} or any(c in run_id for c in "/\\")):
+    if run_id is not None and (
+        not isinstance(run_id, str) or not run_id or run_id in {".", ".."} or any(c in run_id for c in "/\\")
+    ):
         raise ValueError("invalid provider run_id")
     geometry_path = request.get("geometry_contract_path")
     if "geometry_contract_path" in request:
@@ -417,18 +822,33 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
         return _compile_consumer_view(request)
     response_axis = request.get("response_axis")
     if "response_axis" in request:
-        if (not isinstance(response_axis, str) or response_axis not in set(PS_GROUPS) | {TE1_AXIS}
-                or "response_basis_paths" in request
-                or any(key in request for key in ("candidate_voltages_v", "mirror_voltage_variation_path",
-                    "mirror_reference_trial_manifest", "mirror_contract_path"))):
+        if (
+            not isinstance(response_axis, str)
+            or response_axis not in set(PS_GROUPS) | {TE1_AXIS}
+            or "response_basis_paths" in request
+            or any(
+                key in request
+                for key in (
+                    "candidate_voltages_v",
+                    "mirror_voltage_variation_path",
+                    "mirror_reference_trial_manifest",
+                    "mirror_contract_path",
+                )
+            )
+        ):
             raise ValueError("response_axis requires one pure axis and no candidate or mirror update")
     if (response_axis == TE1_AXIS) != ("te1_reference_path" in request):
         raise ValueError("te1_reference_path is required only for the pure TE1 response_axis")
     if response_axis is None:
         candidate = request.get("candidate_voltages_v")
-        if (not isinstance(candidate, dict) or set(candidate) != set(PS_GROUPS)
-                or any(isinstance(v, bool) or not isinstance(v, (int, float))
-                       or not math.isfinite(v) for v in candidate.values())):
+        if (
+            not isinstance(candidate, dict)
+            or set(candidate) != set(PS_GROUPS)
+            or any(
+                isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+                for v in candidate.values()
+            )
+        ):
             raise ValueError("candidate requires exactly four finite P/S voltages")
     contract_path = request.get("numerical_contract_path")
     if not isinstance(contract_path, str) or not contract_path:
@@ -436,12 +856,19 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
     contract_path = Path(contract_path).resolve()
     numerical_contract = read(contract_path)
     numerics = resolve_native_refine_numerics(numerical_contract)
-    requested_layout = numerical_contract["simion"]["numerical_profiles"]["native_static_field"].get("target_layout", {})
-    if (any(isinstance(item, dict) and "box_mm" in item for item in
-            [requested_layout.get("parent"), *requested_layout.get("windows", [])])
-            and (request.get("reuse_source_levels") != ["parent", "window_2"]
-                 or any(key in request for key in ("response_basis_paths", "consumer_view_source_path", "geometry_contract_path"))
-                 or response_axis not in (None, "s1"))):
+    requested_layout = numerical_contract["simion"]["numerical_profiles"]["native_static_field"].get(
+        "target_layout", {}
+    )
+    if any(
+        isinstance(item, dict) and "box_mm" in item
+        for item in [requested_layout.get("parent"), *requested_layout.get("windows", [])]
+    ) and (
+        request.get("reuse_source_levels") != ["parent", "window_2"]
+        or any(
+            key in request for key in ("response_basis_paths", "consumer_view_source_path", "geometry_contract_path")
+        )
+        or response_axis not in (None, "s1")
+    ):
         raise ValueError("box override requires ordinary mirror-only level reuse")
     reused = request.get("reuse_source_levels", [])
     reused_basis = None
@@ -458,22 +885,30 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
     else:
         source = load_binding(Path(request["source_binding_path"]))
     if "reuse_source_levels" in request and (
-            reused != ["parent", "window_2"] or len(source["refinement_windows"]) != 3
-            or any(key in request for key in ("response_basis_paths", "geometry_contract_path"))):
+        reused != ["parent", "window_2"]
+        or len(source["refinement_windows"]) != 3
+        or any(key in request for key in ("response_basis_paths", "geometry_contract_path"))
+    ):
         raise ValueError("level reuse requires ordinary same-geometry parent/window_2 and two new mirror solves")
-    if source["mode"] != "native_static_pa" or len(source["refinement_windows"]) not in {1, 3}:
+    if source["mode"] != "native_static_pa" or len(source["refinement_windows"]) not in ({4} if _ip_metadata(source) else {1, 3}):
         raise ValueError("native static provider requires native parent and local windows")
-    if Path(request["source_field_manifest"]).resolve() != Path(source["manifest"]).resolve():
+    if Path(request["source_field_manifest"]).resolve() != Path(source.get("descriptor_owner", source["manifest"])).resolve():
         raise ValueError("source field manifest differs from native parent")
     if response_axis is not None and not native_numerics_match(source, contract_path):
         raise ValueError("response stopping contract must match its actual baseline")
     response_basis = None
     if response_axis is not None:
-        response_basis = (_te1_basis_metadata(Path(request["te1_reference_path"]).resolve()) if response_axis == TE1_AXIS else
-                         {"axis": response_axis, "normalization_v": RESPONSE_NORMALIZATION_V,
-                          "physical_electrode_ids": list(PS_GROUPS[response_axis]),
-                          "excitation_semantics": "pure axis response; all other analyzer/component potentials zero",
-                          "combination_semantics": "base PA plus (target axis minus base axis)/normalization_v times this PA"})
+        response_basis = (
+            _te1_basis_metadata(Path(request["te1_reference_path"]).resolve())
+            if response_axis == TE1_AXIS
+            else {
+                "axis": response_axis,
+                "normalization_v": RESPONSE_NORMALIZATION_V,
+                "physical_electrode_ids": list(PS_GROUPS[response_axis]),
+                "excitation_semantics": "pure axis response; all other analyzer/component potentials zero",
+                "combination_semantics": "base PA plus (target axis minus base axis)/normalization_v times this PA",
+            }
+        )
         authority = _response_authority(source["authority"], response_basis)
         mirror_paths = {}
         if reused_basis is not None and response_basis != reused_basis["response_basis"]:
@@ -490,24 +925,40 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
             source = load_binding(Path(source["materialization"]["base_binding"]))
     if source.get("consumer_view"):
         raise ValueError("a consumer view cannot be Refined or supply a new solve boundary")
-    geometry = (source["geometry"] if geometry_path is None else
-                _resolve_new_geometry(geometry_path, source, numerical_contract))
-    layout = numerical_contract["simion"]["numerical_profiles"]["native_static_field"].get("target_layout")
-    if (not isinstance(layout, dict) or set(layout) != {"parent", "windows"}
-            or not isinstance(layout["windows"], list)
-            or len(layout["windows"]) != len(source["refinement_windows"])):
+    if _ip_metadata(source) and (geometry_path is not None or reused or response_axis == TE1_AXIS):
+        raise ValueError("IP P/S operator cannot change geometry, reuse levels or vary mirrors")
+    geometry = (
+        source["geometry"]
+        if geometry_path is None
+        else _resolve_new_geometry(geometry_path, source, numerical_contract)
+    )
+    layout = (_ip_source_layout(source) if _ip_metadata(source) else
+              numerical_contract["simion"]["numerical_profiles"]["native_static_field"].get("target_layout"))
+    if (
+        not isinstance(layout, dict)
+        or set(layout) != {"parent", "windows"}
+        or not isinstance(layout["windows"], list)
+        or len(layout["windows"]) != len(source["refinement_windows"])
+    ):
         raise ValueError("explicit target_layout must match source window priority length")
-    labels = (["window"] if len(layout["windows"]) == 1 else
-              [f"window_{i}" for i in range(len(layout["windows"]))])
+    labels = ["window"] if len(layout["windows"]) == 1 else [f"window_{i}" for i in range(len(layout["windows"]))]
     sources = dict(zip(["parent", *labels], [source, *source["refinement_windows"]]))
-    identities = {(Path(level["manifest"]).resolve(), Path(level["sources"]["scalar_pa"]).resolve()): label
-                  for label, level in sources.items()}
+    identities = {
+        (Path(level["manifest"]).resolve(), Path(level["sources"]["scalar_pa"]).resolve()): label
+        for label, level in sources.items()
+    }
     if len(identities) != len(sources):
         raise ValueError("source levels require distinct sealed PA identities")
     levels = {}
-    inputs = {"source_binding": str(Path(request["source_binding_path"]).resolve()),
-              "numerical_contract": str(contract_path),
-              "grid_validator": str(Path(__file__).with_name("native_corridor_plan.py").resolve())}
+    inputs = {
+        "source_binding": str(Path(request["source_binding_path"]).resolve()),
+        "numerical_contract": str(contract_path),
+        "grid_validator": str(Path(__file__).with_name("native_corridor_plan.py").resolve()),
+    }
+    ancestry_bindings = [source]
+    if _ip_metadata(source):
+        inputs["ion_processor_emitter"] = str(Path(__file__).with_name("ion_processor_assembly.py").resolve())
+        inputs["gem_primitives"] = str(Path(__file__).resolve().parents[3] / "common/simion/gem_primitives.py")
     if reused_basis is not None:
         inputs["source_response_basis"] = inputs["source_binding"]
         inputs["source_binding"] = reused_basis["source_binding_path"]
@@ -534,8 +985,18 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("source numerical solve ancestry contains a cycle")
             verify_record("source_solve_plan", _record(solve_manifest, ancestor), base_dir=solve_manifest.parent)
             inherited = read(ancestor)
-            if any(inherited.get(key) != original.get(key) for key in
-                   ("box_mm", "pitch_mm", "dimensions", "mirror_axes", "surface", "boundary_mode", "ordinary_static_pa")):
+            if any(
+                inherited.get(key) != original.get(key)
+                for key in (
+                    "box_mm",
+                    "pitch_mm",
+                    "dimensions",
+                    "mirror_axes",
+                    "surface",
+                    "boundary_mode",
+                    "ordinary_static_pa",
+                )
+            ):
                 raise ValueError("composition consumer grid differs from its sealed source solve")
             inputs[label + "_solve_ancestor_" + str(len(seen))] = str(ancestor)
             inputs[label + "_solve_manifest_" + str(len(seen))] = str(solve_manifest)
@@ -549,45 +1010,68 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
             path = Path(full_path).resolve()
             verify_record("full_solve_plan", _record(solve_manifest, path), base_dir=solve_manifest.parent)
             original = read(path)
-            if (path == Path(level["sources"]["numerical_plan"]).resolve()
-                    or original.get("full_solve_plan_path") is not None
-                    or any(original.get(k) != consumer_plan.get(k) for k in
-                           ("pitch_mm", "mirror_axes", "surface", "parent_pa", "parent_manifest",
-                            "frozen_input", "resolved_geometry", "boundary_mode", "ordinary_static_pa"))
-                    or original["box_mm"][:3] != consumer_plan["box_mm"][:3]
-                    or original["box_mm"][4:] != consumer_plan["box_mm"][4:]
-                    or original["box_mm"][3] <= consumer_plan["box_mm"][3]
-                    or original.get("crop", {}).get("consumer_dimensions") != consumer_plan["dimensions"]
-                    or original.get("crop", {}).get("consumer_box_mm") != consumer_plan["box_mm"]):
+            if (
+                path == Path(level["sources"]["numerical_plan"]).resolve()
+                or original.get("full_solve_plan_path") is not None
+                or any(
+                    original.get(k) != consumer_plan.get(k)
+                    for k in (
+                        "pitch_mm",
+                        "mirror_axes",
+                        "surface",
+                        "parent_pa",
+                        "parent_manifest",
+                        "frozen_input",
+                        "resolved_geometry",
+                        "boundary_mode",
+                        "ordinary_static_pa",
+                    )
+                )
+                or original["box_mm"][:3] != consumer_plan["box_mm"][:3]
+                or original["box_mm"][4:] != consumer_plan["box_mm"][4:]
+                or original["box_mm"][3] <= consumer_plan["box_mm"][3]
+                or original.get("crop", {}).get("consumer_dimensions") != consumer_plan["dimensions"]
+                or original.get("crop", {}).get("consumer_box_mm") != consumer_plan["box_mm"]
+            ):
                 raise ValueError("full solve source differs from its cropped physical grid")
-        grid = {k: copy.deepcopy(original[k]) for k in
-                ("box_mm", "pitch_mm", "dimensions", "mirror_axes", "surface")}
+        grid = {k: copy.deepcopy(original[k]) for k in ("box_mm", "pitch_mm", "dimensions", "mirror_axes", "surface")}
         target = targets[label]
-        if (not isinstance(target, dict) or not {"pitch_mm"} <= set(target)
-                or set(target) - {"pitch_mm", "stored_xmax_mm", "box_mm"}
-                or label == "parent" and "stored_xmax_mm" in target):
+        if (
+            not isinstance(target, dict)
+            or not {"pitch_mm"} <= set(target)
+            or set(target) - {"pitch_mm", "stored_xmax_mm", "box_mm"}
+            or label == "parent"
+            and "stored_xmax_mm" in target
+        ):
             raise ValueError("invalid target layout level")
         grid["pitch_mm"] = copy.deepcopy(target["pitch_mm"])
         active = copy.deepcopy(level.get("active_box_mm"))
         if "box_mm" in target:
             box = target["box_mm"]
-            if (not reused or label not in {"window_0", "window_1"}
-                    or not isinstance(box, list) or len(box) != 6
-                    or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in box)
-                    or any(box[a] != original["box_mm"][a] for a in (0, 1, 2, 3, 5))
-                    or box[4] < original["box_mm"][4]
-                    or grid["pitch_mm"] != original["pitch_mm"]):
+            if (
+                not reused
+                or label not in {"window_0", "window_1"}
+                or not isinstance(box, list)
+                or len(box) != 6
+                or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in box)
+                or any(box[a] != original["box_mm"][a] for a in (0, 1, 2, 3, 5))
+                or box[4] < original["box_mm"][4]
+                or grid["pitch_mm"] != original["pitch_mm"]
+            ):
                 raise ValueError("mirror box override may only extend y maximum at unchanged pitch")
             grid["box_mm"] = copy.deepcopy(box)
             active[1][1] += box[4] - original["box_mm"][4]
         if response_basis is not None and (
-                grid["pitch_mm"] != source_plan["pitch_mm"]
-                or ("stored_xmax_mm" in target) != (consumer_plan.get("crop") is not None)
-                or "stored_xmax_mm" in target and target["stored_xmax_mm"] != source_plan["box_mm"][3]):
+            grid["pitch_mm"] != source_plan["pitch_mm"]
+            or ("stored_xmax_mm" in target) != (consumer_plan.get("crop") is not None)
+            or "stored_xmax_mm" in target
+            and target["stored_xmax_mm"] != source_plan["box_mm"][3]
+        ):
             raise ValueError("response target layout must match the actual baseline grid and crop")
         quantum = validate_generation_grid_pitch(numerical_contract, grid["pitch_mm"])
-        if "box_mm" in target and not math.isclose(grid["box_mm"][4] / quantum,
-                                                   round(grid["box_mm"][4] / quantum), abs_tol=1e-8, rel_tol=0):
+        if "box_mm" in target and not math.isclose(
+            grid["box_mm"][4] / quantum, round(grid["box_mm"][4] / quantum), abs_tol=1e-8, rel_tol=0
+        ):
             raise ValueError("mirror y maximum must align with grid generation quantum")
         grid["dimensions"] = _grid_shape(grid["box_mm"], grid["pitch_mm"])
         if geometry_path is not None and label == "parent":
@@ -599,29 +1083,42 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
             if parent_label is None or parent_label == label:
                 raise ValueError("source window boundary parent is not a declared distinct level")
         mode = "grounded_enclosure" if label == "parent" else "x_mirror_five_faces"
-        gem, report = build_static_c0_gem(geometry, authority, grid, boundary_mode=mode)
+        gem, report = _static_gem(geometry, authority, grid, boundary_mode=mode)
         if original.get("resource_limits", {}).get("automatic_retry_count") != 0:
             raise ValueError("native provider requires no automatic retry")
         pa_bytes = math.prod(grid["dimensions"]) * 8 + 56
         surface_bytes = Path(level["sources"]["surface"]).stat().st_size
         committed_bytes = math.ceil(pa_bytes * 1.05 + surface_bytes * 1.1) + 16 * 1024**2
-        levels[label] = dict(grid, boundary_mode=mode, ordinary_static_pa=True,
-                            parent_label=parent_label,
-                            **numerics, numerical_contract_path=str(contract_path),
-                            resource_budget=copy.deepcopy(original["resource_budget"]),
-                            resource_limits=copy.deepcopy(original["resource_limits"]),
-                            committed_new_bytes=committed_bytes,
-                            capacity_basis={"pa_node_bytes": pa_bytes, "source_surface_bytes": surface_bytes,
-                                            "allowance": "5% PA + 10% surface + 16MiB small evidence per level; no PA copies"},
-                            geometry_report=report, gem=gem)
+        levels[label] = dict(
+            grid,
+            boundary_mode=mode,
+            ordinary_static_pa=True,
+            parent_label=parent_label,
+            **numerics,
+            numerical_contract_path=str(contract_path),
+            resource_budget=copy.deepcopy(original["resource_budget"]),
+            resource_limits=copy.deepcopy(original["resource_limits"]),
+            committed_new_bytes=committed_bytes,
+            capacity_basis={
+                "pa_node_bytes": pa_bytes,
+                "source_surface_bytes": surface_bytes,
+                "allowance": "5% PA + 10% surface + 16MiB small evidence per level; no PA copies",
+            },
+            geometry_report=report,
+            gem=gem,
+        )
         if response_basis is not None:
             levels[label]["response_basis"] = copy.deepcopy(response_basis)
         if label != "parent":
             levels[label].update(name=level["name"], active_box_mm=active)
         if "stored_xmax_mm" in target:
             xmax = target["stored_xmax_mm"]
-            if (isinstance(xmax, bool) or not isinstance(xmax, (int, float))
-                    or not math.isfinite(xmax) or not grid["box_mm"][0] < xmax < grid["box_mm"][3]):
+            if (
+                isinstance(xmax, bool)
+                or not isinstance(xmax, (int, float))
+                or not math.isfinite(xmax)
+                or not grid["box_mm"][0] < xmax < grid["box_mm"][3]
+            ):
                 raise ValueError("stored_xmax_mm must lie inside full solved x domain")
             consumer = copy.deepcopy(grid)
             consumer["box_mm"][3] = xmax
@@ -630,43 +1127,63 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("crop consumer lacks active x gradient halo")
             levels[label]["consumer_grid"] = consumer
             levels[label]["crop"] = {
-                "method": "pa:crop", "start_grid": [0, 0, 0],
-                "width_grid": [n-1 for n in consumer["dimensions"]], "persist": False,
-                "overwrite_private_working_pa": True, "refine_after_crop": False,
-                "consumer_box_mm": consumer["box_mm"], "consumer_dimensions": consumer["dimensions"],
-                "expected_consumer_pa_bytes": math.prod(consumer["dimensions"])*8+56,
+                "method": "pa:crop",
+                "start_grid": [0, 0, 0],
+                "width_grid": [n - 1 for n in consumer["dimensions"]],
+                "persist": False,
+                "overwrite_private_working_pa": True,
+                "refine_after_crop": False,
+                "consumer_box_mm": consumer["box_mm"],
+                "consumer_dimensions": consumer["dimensions"],
+                "expected_consumer_pa_bytes": math.prod(consumer["dimensions"]) * 8 + 56,
             }
         stored = levels[label].get("consumer_grid", grid)
         if label != "parent":
-            _native_active_box(active, {
-                "origin_mm": stored["box_mm"][:3], "pitch_mm": stored["pitch_mm"],
-                "dimensions": stored["dimensions"], "symmetry": "x"})
-        retained_bytes = math.prod(stored["dimensions"])*8+56
-        levels[label]["capacity_basis"].update(final_pa_bytes=retained_bytes,
-            crop_storage="same private PA path; no permanent full-plus-crop pair")
-        levels[label]["final_retained_estimate_bytes"] = math.ceil(
-            retained_bytes * 1.05 + surface_bytes * 1.1) + 16*1024**2
+            _native_active_box(
+                active,
+                {
+                    "origin_mm": stored["box_mm"][:3],
+                    "pitch_mm": stored["pitch_mm"],
+                    "dimensions": stored["dimensions"],
+                    "symmetry": "x",
+                },
+            )
+        retained_bytes = math.prod(stored["dimensions"]) * 8 + 56
+        levels[label]["capacity_basis"].update(
+            final_pa_bytes=retained_bytes, crop_storage="same private PA path; no permanent full-plus-crop pair"
+        )
+        levels[label]["final_retained_estimate_bytes"] = (
+            math.ceil(retained_bytes * 1.05 + surface_bytes * 1.1) + 16 * 1024**2
+        )
         if reused:
-            if (("box_mm" not in target and grid["box_mm"] != original["box_mm"])
-                    or grid["pitch_mm"][:2] != original["pitch_mm"][:2]):
+            if ("box_mm" not in target and grid["box_mm"] != original["box_mm"]) or grid["pitch_mm"][:2] != original[
+                "pitch_mm"
+            ][:2]:
                 raise ValueError("mirror-only refinement must retain full boxes and x/y pitches")
             if label in reused:
-                if (grid["pitch_mm"] != source_plan["pitch_mm"]
-                        or stored["box_mm"] != source_plan["box_mm"]
-                        or stored["dimensions"] != source_plan["dimensions"]):
+                if (
+                    grid["pitch_mm"] != source_plan["pitch_mm"]
+                    or stored["box_mm"] != source_plan["box_mm"]
+                    or stored["dimensions"] != source_plan["dimensions"]
+                ):
                     raise ValueError("reused level target grid or crop differs from its sealed source")
                 for role in ("numerical_plan", "geometry_authority", "voltage_authority"):
                     verify_record(role, _record(manifest, Path(level["sources"][role])), base_dir=manifest.parent)
                 descriptor = {
-                    "manifest": level["manifest"], "pa_path": level["sources"]["scalar_pa"],
+                    "manifest": level["manifest"],
+                    "pa_path": level["sources"]["scalar_pa"],
                     "surface_path": level["sources"]["surface"],
                     "numerical_plan_path": level["sources"]["numerical_plan"],
                     "geometry_authority_path": level["sources"]["geometry_authority"],
                     "voltage_authority_path": level["sources"]["voltage_authority"],
-                    "grid": copy.deepcopy(level["grid"])}
+                    "grid": copy.deepcopy(level["grid"]),
+                }
                 if label != "parent":
-                    descriptor.update(name=level["name"], active_box_mm=copy.deepcopy(level["active_box_mm"]),
-                                      parent_manifest=source_plan["parent_manifest"])
+                    descriptor.update(
+                        name=level["name"],
+                        active_box_mm=copy.deepcopy(level["active_box_mm"]),
+                        parent_manifest=source_plan["parent_manifest"],
+                    )
                 levels[label]["reuse_source"] = descriptor
                 levels[label]["committed_new_bytes"] = 0
                 levels[label]["final_retained_estimate_bytes"] = 0
@@ -679,16 +1196,21 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
         inputs["mirror_" + Path(name).stem] = path
     execution_order = ["parent"]
     while len(execution_order) < len(levels):
-        ready = [label for label in labels if label not in execution_order
-                 and levels[label]["parent_label"] in execution_order]
+        ready = [
+            label
+            for label in labels
+            if label not in execution_order and levels[label]["parent_label"] in execution_order
+        ]
         if not ready:
             raise ValueError("native source boundary dependency contains a cycle")
         execution_order.extend(ready)
     for label in labels:
         child, parent = levels[label], levels[levels[label]["parent_label"]]
         parent_grid = parent.get("consumer_grid", parent)
-        if any(child["box_mm"][a] < parent_grid["box_mm"][a]
-               or child["box_mm"][a+3] > parent_grid["box_mm"][a+3] for a in range(3)):
+        if any(
+            child["box_mm"][a] < parent_grid["box_mm"][a] or child["box_mm"][a + 3] > parent_grid["box_mm"][a + 3]
+            for a in range(3)
+        ):
             raise ValueError("target full solve lies outside its actual parent")
     for instance in source["instances"][1:]:
         protected.extend([instance["manifest"], instance["pa_path"]])
@@ -696,10 +1218,12 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
         # A fixed-offset solve still freezes/protects the declared reusable bank.
         for axis, path in request["response_basis_paths"].items():
             basis = load_native_response_basis(Path(path), source)
-            inputs["response_"+axis] = path
+            ancestry_bindings.append(basis)
+            inputs["response_" + axis] = path
             protected.append(path)
             for level in [basis, *basis["refinement_windows"]]:
                 protected.extend([level["manifest"], *[p for p in level["sources"].values() if p]])
+    ancestry = _operator_ancestry_inputs(inputs, ancestry_bindings)
     retained, peak = 0, 0
     for label in execution_order:
         peak = max(peak, retained + levels[label]["committed_new_bytes"])
@@ -709,30 +1233,53 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
         collision = _new_collision_plan(source, geometry)
         peak += collision["committed_new_bytes"]
         retained += collision["committed_new_bytes"]
-    return {"schema_version": 1, "role": "mrtof_native_static_field_provider_plan", "operation": "refine", "run_id": run_id,
-            "project": PROJECT, "inputs": inputs, "protected_paths": sorted(set(protected)),
-            "candidate_authority": authority, "source_authority": (
-                reused_basis["source_authority"] if reused_basis is not None else source["authority"]),
-            "resolved_geometry": geometry, "levels": levels,
-            "window_labels": labels, "execution_order": execution_order,
-            "target_layout": copy.deepcopy(layout),
-            "response_basis": response_basis, "fly_authorized": False,
-            "collision_instances": [{k: item[k] for k in ("role", "manifest", "pa_path", "origin_mm")}
-                                    for item in source["instances"]],
-            **({"collision_build": collision} if collision is not None else {}),
-            "committed_new_bytes": peak,
-            "final_retained_estimate_bytes": retained,
-            **numerics, "refine_options": {"convergence": numerics["convergence_v"]},
-            "grid_generation": {"spacing_quantum_mm": quantum},
-            "automatic_retry_count": 0,
-            "qualification_passed": False,
-            "official_sources": [
-                {"url": "https://simion.com/info/gem_geometry_file.html",
-                 "title": "SIMION GEM Geometry File", "consulted": "2026-10-10", "installed_version": "SIMION 2020",
-                 "method": "ordinary fractional x-mirrored GEM; supported since 8.1/8.2"},
-                {"url": "https://simion.com/info/refine.html",
-                 "title": "SIMION Refine", "consulted": "2026-10-10", "installed_version": "SIMION 2020",
-                 "method": "ordinary Refine with contract-owned convergence; all other options installed defaults"}]}
+    return {
+        "schema_version": 1,
+        "role": "mrtof_native_static_field_provider_plan",
+        "operation": "refine",
+        **_ip_metadata(source),
+        "run_id": run_id,
+        "project": PROJECT,
+        "inputs": inputs,
+        "operator_ancestry_projections": ancestry,
+        "protected_paths": sorted(set(protected)),
+        "candidate_authority": authority,
+        "source_authority": (reused_basis["source_authority"] if reused_basis is not None else source["authority"]),
+        "resolved_geometry": geometry,
+        "levels": levels,
+        "window_labels": labels,
+        "execution_order": execution_order,
+        "target_layout": copy.deepcopy(layout),
+        "response_basis": response_basis,
+        "fly_authorized": False,
+        "collision_instances": [
+            {k: item[k] for k in ("role", "manifest", "pa_path", "origin_mm")} for item in source["instances"]
+        ],
+        **({"collision_build": collision} if collision is not None else {}),
+        "committed_new_bytes": peak,
+        "final_retained_estimate_bytes": retained,
+        **numerics,
+        "refine_options": {"convergence": numerics["convergence_v"]},
+        "grid_generation": {"spacing_quantum_mm": quantum},
+        "automatic_retry_count": 0,
+        "qualification_passed": False,
+        "official_sources": [
+            {
+                "url": "https://simion.com/info/gem_geometry_file.html",
+                "title": "SIMION GEM Geometry File",
+                "consulted": "2026-10-10",
+                "installed_version": "SIMION 2020",
+                "method": "ordinary fractional x-mirrored GEM; supported since 8.1/8.2",
+            },
+            {
+                "url": "https://simion.com/info/refine.html",
+                "title": "SIMION Refine",
+                "consulted": "2026-10-10",
+                "installed_version": "SIMION 2020",
+                "method": "ordinary Refine with contract-owned convergence; all other options installed defaults",
+            },
+        ],
+    }
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -742,6 +1289,18 @@ def write_json(path: Path, value: Any) -> None:
 def prepare_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
     """Emit full-solve GEMs and consumer plans, without PA I/O or solver calls."""
     inputs = run_directory / "inputs"
+    if plan.get("operator_ancestry_projections"):
+        projection_path = inputs / "operator_ancestry_projection.json"
+        write_json(projection_path, {
+            "schema_version": 1, "role": "mrtof_native_operator_ancestry_consumption",
+            "projections": plan["operator_ancestry_projections"],
+            "claim": "Historical operator metadata only; current field payloads remain required.",
+        })
+        for level in plan["levels"].values():
+            if "reuse_source" not in level:
+                level["operator_ancestry_projection_path"] = str(projection_path.resolve())
+    if plan.get("accelerator_provider") == IP_PROVIDER and "replacement_assembly" in plan["inputs"]:
+        return _prepare_replacement_run(plan, run_directory)
     if plan.get("operation") == "crop_view":
         profile = read(inputs / "numerical_contract.json")["simion"]["numerical_profiles"]["native_static_field"]
         if validate_native_consumer_view(profile.get("consumer_view")) != plan["consumer_view"]:
@@ -752,24 +1311,39 @@ def prepare_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
         manifest = str((run_directory / "run_manifest.json").resolve())
         for label, value in plan["levels"].items():
             (run_directory / "simion" / label).mkdir(parents=True, exist_ok=True)
-            value.update(numerical_contract_path=str((inputs / "numerical_contract.json").resolve()),
-                         frozen_input=str((inputs / "frozen_input.json").resolve()),
-                         resolved_geometry=str((inputs / "resolved_geometry.json").resolve()),
-                         consumer_view_receipt_path=str((run_directory / "results" / (label+"_crop_receipt.json")).resolve()))
+            value.update(
+                numerical_contract_path=str((inputs / "numerical_contract.json").resolve()),
+                frozen_input=str((inputs / "frozen_input.json").resolve()),
+                resolved_geometry=str((inputs / "resolved_geometry.json").resolve()),
+                consumer_view_receipt_path=str((run_directory / "results" / (label + "_crop_receipt.json")).resolve()),
+            )
             if label != "parent":
                 parent = value["parent_label"]
-                value.update(parent_manifest=manifest, parent_pa=str((run_directory / "simion" / parent /
-                             ("c0_static.pa" if parent == "parent" else "c0_local.pa")).resolve()))
-            write_json(inputs / (label+"_plan.json"), value)
+                value.update(
+                    parent_manifest=manifest,
+                    parent_pa=str(
+                        (
+                            run_directory
+                            / "simion"
+                            / parent
+                            / ("c0_static.pa" if parent == "parent" else "c0_local.pa")
+                        ).resolve()
+                    ),
+                )
+            write_json(inputs / (label + "_plan.json"), value)
         write_json(inputs / "plan.json", plan)
         return plan
     basis = plan.get("response_basis")
     if basis is not None:
-        if (basis.get("axis") not in set(PS_GROUPS) | {TE1_AXIS} or basis.get("normalization_v") != RESPONSE_NORMALIZATION_V
-                or basis.get("axis") != TE1_AXIS and basis.get("physical_electrode_ids") != list(PS_GROUPS[basis["axis"]])
-                or plan.get("fly_authorized") is not False
-                or plan["candidate_authority"] != _response_authority(plan["source_authority"], basis)
-                or any(level.get("response_basis") != basis for level in plan["levels"].values())):
+        if (
+            basis.get("axis") not in set(PS_GROUPS) | {TE1_AXIS}
+            or basis.get("normalization_v") != RESPONSE_NORMALIZATION_V
+            or basis.get("axis") != TE1_AXIS
+            and basis.get("physical_electrode_ids") != list(PS_GROUPS[basis["axis"]])
+            or plan.get("fly_authorized") is not False
+            or plan["candidate_authority"] != _response_authority(plan["source_authority"], basis)
+            or any(level.get("response_basis") != basis for level in plan["levels"].values())
+        ):
             raise ValueError("pure response excitation or no-Fly identity differs")
         if basis["axis"] == TE1_AXIS and basis != _te1_basis_metadata(inputs / "te1_reference.json"):
             raise ValueError("pure TE1 response differs from its frozen reference direction")
@@ -778,7 +1352,8 @@ def prepare_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
         frozen_geometry = _resolve_new_geometry(
             inputs / "geometry_contract.json",
             {"authority": plan["source_authority"], "geometry": plan["resolved_geometry"]},
-            numerical_contract)
+            numerical_contract,
+        )
         if frozen_geometry != plan["resolved_geometry"]:
             raise ValueError("compiled geometry differs from frozen geometry contract")
     numerics = resolve_native_refine_numerics(numerical_contract)
@@ -786,31 +1361,62 @@ def prepare_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
         if any(plan.get(key) != value for key, value in numerics.items()):
             raise ValueError("composition stopping differs from frozen operator")
         return _prepare_composition(plan, run_directory)
-    layout = numerical_contract["simion"]["numerical_profiles"]["native_static_field"].get("target_layout")
-    if (layout != plan.get("target_layout")
-            or not isinstance(layout, dict) or set(layout) != {"parent", "windows"}
-            or not isinstance(layout["windows"], list)
-            or len(layout["windows"]) != len(plan["window_labels"])):
+    layout = (_ip_source_layout(load_binding(inputs / "source_binding.json")) if _ip_metadata(plan) else
+              numerical_contract["simion"]["numerical_profiles"]["native_static_field"].get("target_layout"))
+    if (
+        layout != plan.get("target_layout")
+        or not isinstance(layout, dict)
+        or set(layout) != {"parent", "windows"}
+        or not isinstance(layout["windows"], list)
+        or len(layout["windows"]) != len(plan["window_labels"])
+    ):
         raise ValueError("compiled target layout differs from its frozen numerical contract")
     targets = dict(zip(["parent", *plan["window_labels"]], [layout["parent"], *layout["windows"]]))
     for label, level in plan["levels"].items():
         target = targets[label]
-        if (level["pitch_mm"] != target.get("pitch_mm")
-                or "box_mm" in target and level["box_mm"] != target["box_mm"]
-                or level["dimensions"] != _grid_shape(level["box_mm"], level["pitch_mm"])
-                or ("crop" in level) != ("stored_xmax_mm" in target)
-                or "crop" in level and level["consumer_grid"]["box_mm"][3] != target["stored_xmax_mm"]):
+        if (
+            level["pitch_mm"] != target.get("pitch_mm")
+            or "box_mm" in target
+            and level["box_mm"] != target["box_mm"]
+            or level["dimensions"] != _grid_shape(level["box_mm"], level["pitch_mm"])
+            or ("crop" in level) != ("stored_xmax_mm" in target)
+            or "crop" in level
+            and level["consumer_grid"]["box_mm"][3] != target["stored_xmax_mm"]
+        ):
             raise ValueError("compiled target layout differs from its frozen numerical contract")
         quantum = validate_generation_grid_pitch(numerical_contract, level["pitch_mm"])
         if plan.get("grid_generation") != {"spacing_quantum_mm": quantum}:
             raise ValueError("compiled native grid policy differs from its frozen numerical contract")
-    if (any(plan.get(key) != value for key, value in numerics.items())
-            or plan.get("refine_options") != {"convergence": numerics["convergence_v"]}
-            or any(any(level.get(key) != value for key, value in numerics.items())
-                   for level in plan["levels"].values())):
+    if (
+        any(plan.get(key) != value for key, value in numerics.items())
+        or plan.get("refine_options") != {"convergence": numerics["convergence_v"]}
+        or any(any(level.get(key) != value for key, value in numerics.items()) for level in plan["levels"].values())
+    ):
         raise ValueError("compiled native stopping differs from its frozen numerical contract")
     write_json(inputs / "frozen_input.json", plan["candidate_authority"])
     write_json(inputs / "resolved_geometry.json", plan["resolved_geometry"])
+    if plan.get("response_level_reuse"):
+        write_json(inputs / "ip_fine_response_reuse.json", plan["response_level_reuse"])
+    if plan.get("local_domain_update"):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import extend_fine_z_domain
+        frozen_source = inputs / "source_binding.json"
+        source = load_binding(frozen_source)
+        fine_grid, active = extend_fine_z_domain(source["refinement_windows"][0]["grid"],
+            source["refinement_windows"][0]["active_box_mm"], plan["local_domain_update"]["update"], source["grid"])
+        fine = plan["levels"]["window_0"]
+        if (fine["dimensions"] != fine_grid["dimensions"] or fine["box_mm"][:3] != fine_grid["origin_mm"]
+                or fine["active_box_mm"] != active or plan["candidate_authority"] != source["authority"]):
+            raise ValueError("IP fine extension differs from its frozen source and declared domain update")
+        lineage = copy.deepcopy(plan["local_domain_update"])
+        lineage["source_binding"] = dict(path=str(frozen_source.resolve()), bytes=frozen_source.stat().st_size,
+                                         sha256=file_sha256(frozen_source))
+        write_json(inputs / "ip_fine_domain_update.json", lineage)
+        occupancy = copy.deepcopy(plan["ip_collision_build"])
+        directory = run_directory / "simion/ip_collision"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "ip_collision.gem").write_text(occupancy.pop("gem"), encoding="utf-8")
+        occupancy["resolved_geometry"] = str((inputs / "resolved_geometry.json").resolve())
+        write_json(inputs / "ip_collision_plan.json", occupancy)
     if "collision_build" in plan:
         collision = copy.deepcopy(plan["collision_build"])
         directory = run_directory / "simion/collision"
@@ -828,25 +1434,89 @@ def prepare_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
         target.mkdir(parents=True, exist_ok=True)
         level = copy.deepcopy(plan["levels"][label])
         level["numerical_contract_path"] = str((inputs / "numerical_contract.json").resolve())
+        if _ip_metadata(plan):
+            level["ip_source_binding_path"] = str((inputs / "source_binding.json").resolve())
+        if plan.get("local_domain_update"):
+            level["local_domain_update_path"] = str((inputs / "ip_fine_domain_update.json").resolve())
+        if plan.get("response_level_reuse"):
+            level["response_level_reuse_path"] = str((inputs / "ip_fine_response_reuse.json").resolve())
         gem = level.pop("gem")
-        level.update(frozen_input=str((inputs / "frozen_input.json").resolve()),
-                     resolved_geometry=str((inputs / "resolved_geometry.json").resolve()))
+        level.update(
+            frozen_input=str((inputs / "frozen_input.json").resolve()),
+            resolved_geometry=str((inputs / "resolved_geometry.json").resolve()),
+        )
         if label != "parent":
             parent_label = level["parent_label"]
             parent_name = "c0_static.pa" if parent_label == "parent" else "c0_local.pa"
             parent_source = plan["levels"][parent_label].get("reuse_source")
-            level.update(parent_manifest=parent_source["manifest"] if parent_source else manifest,
-                         parent_pa=parent_source["pa_path"] if parent_source else
-                         str((run_directory / "simion" / parent_label / parent_name).resolve()))
+            level.update(
+                parent_manifest=parent_source["manifest"] if parent_source else manifest,
+                parent_pa=parent_source["pa_path"]
+                if parent_source
+                else str((run_directory / "simion" / parent_label / parent_name).resolve()),
+            )
         write_json(inputs / (label + "_plan.json"), level)
         if "crop" in level:
             consumer = copy.deepcopy(level)
             consumer.update(consumer.pop("consumer_grid"))
             consumer["full_solve_plan_path"] = str((inputs / (label + "_plan.json")).resolve())
-            consumer["crop"]["receipt_path"] = str((run_directory / "results" / (label + "_crop_receipt.json")).resolve())
+            consumer["crop"]["receipt_path"] = str(
+                (run_directory / "results" / (label + "_crop_receipt.json")).resolve()
+            )
             write_json(inputs / (label + "_consumer_plan.json"), consumer)
-        (target / ("c0_static.gem" if label == "parent" else "c0_local.gem")).write_text(
-            gem, encoding="utf-8")
+        (target / ("c0_static.gem" if label == "parent" else "c0_local.gem")).write_text(gem, encoding="utf-8")
+    return plan
+
+
+def _prepare_replacement_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
+    """Freeze one new full-IP assembly through the same field-provider owner."""
+    inputs = run_directory / "inputs"
+    if (
+        read(inputs / "replacement_geometry.json") != plan["resolved_geometry"]
+        or read(inputs / "replacement_assembly.json")["old_oa_removed"] is not True
+        or plan.get("fly_authorized") is not False
+        or plan.get("qualification_passed") is not False
+    ):
+        raise ValueError("replacement frozen geometry or preparation scope differs")
+    numerics = resolve_native_refine_numerics(read(inputs / "numerical_contract.json"))
+    if any(plan.get(key) != value for key, value in numerics.items()):
+        raise ValueError("replacement Refine stopping differs from frozen numerical contract")
+    write_json(inputs / "frozen_input.json", plan["candidate_authority"])
+    write_json(inputs / "resolved_geometry.json", plan["resolved_geometry"])
+    manifest = str((run_directory / "run_manifest.json").resolve())
+    for label in plan["execution_order"]:
+        level = copy.deepcopy(plan["levels"][label])
+        if level["dimensions"] != _grid_shape(level["box_mm"], level["pitch_mm"]) or any(
+            level.get(key) != value for key, value in numerics.items()
+        ):
+            raise ValueError("replacement level grid or stopping differs")
+        validate_generation_grid_pitch(read(inputs / "numerical_contract.json"), level["pitch_mm"])
+        level.update(
+            numerical_contract_path=str((inputs / "numerical_contract.json").resolve()),
+            **({"ip_source_binding_path": str((inputs / "source_binding.json").resolve())} if _ip_metadata(plan) else {}),
+            frozen_input=str((inputs / "frozen_input.json").resolve()),
+            resolved_geometry=str((inputs / "resolved_geometry.json").resolve()),
+        )
+        if label != "parent":
+            parent = level["parent_label"]
+            basename = "c0_static.pa" if parent == "parent" else "c0_local.pa"
+            level.update(
+                parent_manifest=manifest, parent_pa=str((run_directory / "simion" / parent / basename).resolve())
+            )
+        directory = run_directory / "simion" / label
+        directory.mkdir(parents=True, exist_ok=True)
+        gem = level.pop("gem")
+        (directory / ("c0_static.gem" if label == "parent" else "c0_local.gem")).write_text(
+            gem, encoding="utf-8", newline="\n"
+        )
+        write_json(inputs / (label + "_plan.json"), level)
+    for name in ("collision", "ip_collision", "detector"):
+        value = copy.deepcopy(plan[name + "_build"])
+        directory = run_directory / "simion" / name
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / (name + ".gem")).write_text(value.pop("gem"), encoding="utf-8", newline="\n")
+        value["resolved_geometry"] = str((inputs / "resolved_geometry.json").resolve())
+        write_json(inputs / (name + "_plan.json"), value)
     return plan
 
 
@@ -856,8 +1526,13 @@ def _prepare_composition(plan: dict[str, Any], run_directory: Path) -> dict[str,
     write_json(inputs / "frozen_input.json", plan["candidate_authority"])
     write_json(inputs / "resolved_geometry.json", plan["resolved_geometry"])
     write_json(inputs / "source_authority.json", plan["source_authority"])
-    metadata = dict(base_binding=plan["combination_base_binding"], response_basis_paths=plan["response_basis_paths"],
-                    target_voltages_v=plan["target_voltages_v"], plan_path=str((inputs / "plan.json").resolve()), receipts={})
+    metadata = dict(
+        base_binding=plan["combination_base_binding"],
+        response_basis_paths=plan["response_basis_paths"],
+        target_voltages_v=plan["target_voltages_v"],
+        plan_path=str((inputs / "plan.json").resolve()),
+        receipts={},
+    )
     if TE1_AXIS in plan["response_basis_paths"]:
         metadata["target_mirror_voltages_v"] = plan["target_mirror_voltages_v"]
     manifest = str((run_directory / "run_manifest.json").resolve())
@@ -865,17 +1540,26 @@ def _prepare_composition(plan: dict[str, Any], run_directory: Path) -> dict[str,
         directory = run_directory / "simion" / label
         directory.mkdir(parents=True, exist_ok=True)
         value = copy.deepcopy(plan["levels"][label])
-        value.update(numerical_contract_path=str((inputs / "numerical_contract.json").resolve()),
-                     frozen_input=str((inputs / "frozen_input.json").resolve()),
-                     resolved_geometry=str((inputs / "resolved_geometry.json").resolve()))
+        value.update(
+            numerical_contract_path=str((inputs / "numerical_contract.json").resolve()),
+            **({"ip_source_binding_path": str((inputs / "source_binding.json").resolve())} if _ip_metadata(plan) else {}),
+            frozen_input=str((inputs / "frozen_input.json").resolve()),
+            resolved_geometry=str((inputs / "resolved_geometry.json").resolve()),
+        )
         if label != "parent":
             parent = value["parent_label"]
-            value.update(parent_manifest=manifest, parent_pa=str((run_directory / "simion" / parent /
-                ("c0_static.pa" if parent == "parent" else "c0_local.pa")).resolve()))
-        receipt = str((run_directory / "results" / (label+"_composition_receipt.json")).resolve())
+            value.update(
+                parent_manifest=manifest,
+                parent_pa=str(
+                    (
+                        run_directory / "simion" / parent / ("c0_static.pa" if parent == "parent" else "c0_local.pa")
+                    ).resolve()
+                ),
+            )
+        receipt = str((run_directory / "results" / (label + "_composition_receipt.json")).resolve())
         value["materialization_receipt_path"] = receipt
         metadata["receipts"][label] = receipt
-        write_json(inputs / (label+"_plan.json"), value)
+        write_json(inputs / (label + "_plan.json"), value)
     plan["materialization"] = metadata
     write_json(inputs / "plan.json", plan)
     return plan
@@ -884,59 +1568,137 @@ def _prepare_composition(plan: dict[str, Any], run_directory: Path) -> dict[str,
 def compose_run(plan: dict[str, Any], run_directory: Path) -> None:
     """Write one candidate set in bounded blocks; the caller owns leases/sealing."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import compose_standalone_pa
+
     if plan.get("operation") != "compose" or plan.get("refine_performed") is not False:
         raise ValueError("compose requires a prepared no-Refine composition plan")
     for label in plan["execution_order"]:
         level = plan["levels"][label]
         output = run_directory / "simion" / label / ("c0_static.pa" if label == "parent" else "c0_local.pa")
-        receipt = compose_standalone_pa(Path(level["composition"]["base_pa"]), output,
-            [(Path(r["path"]), r["coefficient"]) for r in level["composition"]["responses"]])
+        receipt = compose_standalone_pa(
+            Path(level["composition"]["base_pa"]),
+            output,
+            [(Path(r["path"]), r["coefficient"]) for r in level["composition"]["responses"]],
+        )
         write_json(Path(plan["materialization"]["receipts"][label]), receipt)
 
 
 def binding_spec(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
     """Describe new fields; a geometry rebuild also replaces analyzer collision occupancy."""
     manifest = str((run_directory / "run_manifest.json").resolve())
+
     def level(label: str) -> dict[str, Any]:
         spec = plan["levels"][label]
         if "reuse_source" in spec:
             return copy.deepcopy(spec["reuse_source"])
         grid = spec.get("consumer_grid", spec)
-        path = run_directory / "simion" / label / (
-            "c0_static.pa" if label == "parent" else "c0_local.pa")
-        return {"manifest": manifest, "pa_path": str(path.resolve()),
-                "surface_path": str(path.resolve()) + "-surf",
-                "voltage_authority_path": str((run_directory / "inputs/frozen_input.json").resolve()),
-                "geometry_authority_path": str((run_directory / "inputs/resolved_geometry.json").resolve()),
-                "numerical_plan_path": str((run_directory / "inputs" / (
-                    label + ("_consumer_plan.json" if "crop" in spec else "_plan.json"))).resolve()),
-                "grid": {"origin_mm": grid["box_mm"][:3], "pitch_mm": grid["pitch_mm"],
-                         "dimensions": grid["dimensions"], "symmetry": "x"}}
+        path = run_directory / "simion" / label / ("c0_static.pa" if label == "parent" else "c0_local.pa")
+        return {
+            "manifest": manifest,
+            "pa_path": str(path.resolve()),
+            "surface_path": str(path.resolve()) + "-surf",
+            "voltage_authority_path": str((run_directory / "inputs/frozen_input.json").resolve()),
+            "geometry_authority_path": str((run_directory / "inputs/resolved_geometry.json").resolve()),
+            "numerical_plan_path": str(
+                (
+                    run_directory / "inputs" / (label + ("_consumer_plan.json" if "crop" in spec else "_plan.json"))
+                ).resolve()
+            ),
+            "grid": {
+                "origin_mm": grid["box_mm"][:3],
+                "pitch_mm": grid["pitch_mm"],
+                "dimensions": grid["dimensions"],
+                "symmetry": "x",
+            },
+        }
+
     parent = level("parent")
     windows = []
     for label in plan["window_labels"]:
         spec = plan["levels"][label]
         window = level(label)
         parent_source = plan["levels"][spec["parent_label"]].get("reuse_source")
-        window.update(name=spec["name"], active_box_mm=spec["active_box_mm"],
-                      parent_manifest=parent_source["manifest"] if parent_source else manifest)
+        window.update(
+            name=spec["name"],
+            active_box_mm=spec["active_box_mm"],
+            parent_manifest=parent_source["manifest"] if parent_source else manifest,
+        )
         windows.append(window)
+    if plan.get("accelerator_provider") == IP_PROVIDER and "collision_build" in plan:
+        instances = [
+            {
+                "role": "global_fallback",
+                "manifest": manifest,
+                "pa_path": parent["pa_path"],
+                "origin_mm": parent["grid"]["origin_mm"],
+            }
+        ]
+        for role, name in (
+            ("native_corridor", "collision"),
+            ("ion_processor_collision", "ip_collision"),
+            ("detector", "detector"),
+        ):
+            instances.append(
+                {
+                    "role": role,
+                    "manifest": manifest,
+                    "pa_path": str((run_directory / "simion" / name / (name + ".pa")).resolve()),
+                    "origin_mm": plan[name + "_build"]["origin_mm"],
+                }
+            )
+        return {
+            "schema_version": 1,
+            "role": "mrtof_native_static_field_binding",
+            "accelerator_provider": plan["accelerator_provider"],
+            "assembly_scope": plan["assembly_scope"],
+            "replacement_assembly": plan["replacement_assembly"],
+            "parent": parent,
+            "refinement_windows": windows,
+            "instances": instances,
+        }
     instances = copy.deepcopy(plan["collision_instances"])
     if not plan.get("consumer_view"):
-        instances[0] = {"role": "global_fallback", "manifest": parent["manifest"],
-                        "pa_path": parent["pa_path"], "origin_mm": parent["grid"]["origin_mm"]}
+        instances[0] = {
+            "role": "global_fallback",
+            "manifest": parent["manifest"],
+            "pa_path": parent["pa_path"],
+            "origin_mm": parent["grid"]["origin_mm"],
+        }
     if "collision_build" in plan:
-        instances[1] = {"role": "native_corridor", "manifest": manifest,
-                        "pa_path": str((run_directory / "simion/collision/collision.pa").resolve()),
-                        "origin_mm": plan["collision_build"]["origin_mm"]}
-    result = {"schema_version": 1, "role": "mrtof_native_static_field_binding",
-              "parent": parent, "refinement_windows": windows, "instances": instances}
+        instances[1] = {
+            "role": "native_corridor",
+            "manifest": manifest,
+            "pa_path": str((run_directory / "simion/collision/collision.pa").resolve()),
+            "origin_mm": plan["collision_build"]["origin_mm"],
+        }
+    if plan.get("local_domain_update"):
+        instances[2] = dict(role="ion_processor_collision", manifest=manifest,
+            pa_path=str((run_directory / "simion/ip_collision/ip_collision.pa").resolve()),
+            origin_mm=plan["ip_collision_build"]["origin_mm"])
+    result = {
+        "schema_version": 1,
+        "role": "mrtof_native_static_field_binding",
+        **_ip_metadata(plan),
+        "parent": parent,
+        "refinement_windows": windows,
+        "instances": instances,
+    }
     if plan.get("consumer_view"):
         result["consumer_view"] = plan["consumer_view"]
+    if plan.get("local_domain_update"):
+        lineage = run_directory / "inputs/ip_fine_domain_update.json"
+        result["local_domain_update"] = dict(path=str(lineage.resolve()), bytes=lineage.stat().st_size,
+                                             sha256=file_sha256(lineage))
+    if plan.get("response_level_reuse"):
+        lineage = run_directory / "inputs/ip_fine_response_reuse.json"
+        result["response_level_reuse"] = dict(path=str(lineage.resolve()), bytes=lineage.stat().st_size,
+                                               sha256=file_sha256(lineage))
     if plan.get("response_basis") is not None:
-        result.update(role="mrtof_native_static_field_response_basis", fly_authorized=False,
-                      response_basis=copy.deepcopy(plan["response_basis"]),
-                      source_authority_path=str((run_directory / "inputs/source_authority.json").resolve()))
+        result.update(
+            role="mrtof_native_static_field_response_basis",
+            fly_authorized=False,
+            response_basis=copy.deepcopy(plan["response_basis"]),
+            source_authority_path=str((run_directory / "inputs/source_authority.json").resolve()),
+        )
         result["source_binding_path"] = str((run_directory / "inputs/source_binding.json").resolve())
         if plan["response_basis"]["axis"] == TE1_AXIS:
             result["direction_reference_path"] = str((run_directory / "inputs/te1_reference.json").resolve())
@@ -965,8 +1727,11 @@ def main() -> None:
         elif args.compose:
             compose_run(plan, args.run_directory)
         else:
-            path = args.run_directory / "results" / (
-                "response_basis.json" if plan.get("response_basis") is not None else "field_binding.json")
+            path = (
+                args.run_directory
+                / "results"
+                / ("response_basis.json" if plan.get("response_basis") is not None else "field_binding.json")
+            )
             write_json(path, binding_spec(plan, args.run_directory))
             print(str(path.resolve()))
 

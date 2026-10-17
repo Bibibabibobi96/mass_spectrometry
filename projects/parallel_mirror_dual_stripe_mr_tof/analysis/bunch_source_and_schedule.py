@@ -16,7 +16,10 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from common.contracts.file_identity import file_sha256
-from common.contracts.particle_count_policy import validate_standard_particle_count
+from common.contracts.particle_count_policy import (
+    validate_positive_particle_count,
+    validate_standard_particle_count,
+)
 from common.ion_release.cylinder import (
     apply_controlled_position_pair,
     apply_controlled_slow_energy_pair,
@@ -37,6 +40,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
 _CLOCK_BASIS = "ion_time_of_flight_us_from_common_tob_zero_release"
 _SAMPLING_METHOD = "center_z_pair_then_halton_position_energy_angle_v1"
 _SLOW_ENERGY_SAMPLING_METHOD = "center_slow_energy_pair_then_halton_position_energy_angle_v1"
+_SLOW_ENERGY_PAIRS_SAMPLING_METHOD = "center_slow_energy_pairs_then_halton_position_energy_angle_v1"
 _ABERRATION_SENTINEL_SAMPLING_METHOD = (
     "center_z_slow_energy_x_pairs_then_halton_position_energy_angle_v1"
 )
@@ -105,6 +109,7 @@ def deterministic_ideal_bunch_states(
     acceleration_axis_full_width_mm: float,
     controlled_focus_half_span_mm: float | None = None,
     controlled_slow_energy_half_span_ev_per_charge: float | None = None,
+    controlled_slow_energy_half_spans_ev_per_charge: Sequence[float] | None = None,
     controlled_envelope_half_span_fraction: float | None = None,
     kinetic_energy_center_ev: float,
     kinetic_energy_full_width_ev: float,
@@ -124,7 +129,10 @@ def deterministic_ideal_bunch_states(
     their centre and controlled pairs; no solver RNG participates.
     """
     try:
-        validate_standard_particle_count(particle_count)
+        if controlled_slow_energy_half_spans_ev_per_charge is not None:
+            validate_positive_particle_count(particle_count)
+        else:
+            validate_standard_particle_count(particle_count)
         validate_standard_particle_count(mother_particle_count)
     except ValueError as error:
         raise CandidateContractError(str(error)) from error
@@ -149,6 +157,7 @@ def deterministic_ideal_bunch_states(
     if cohort_role == _FORMAL_VOLUME_COHORT_ROLE and any(value is not None for value in (
         controlled_focus_half_span_mm,
         controlled_slow_energy_half_span_ev_per_charge,
+        controlled_slow_energy_half_spans_ev_per_charge,
         controlled_envelope_half_span_fraction,
     )):
         raise CandidateContractError("formal volume cohort cannot contain controlled sentinels")
@@ -196,6 +205,26 @@ def deterministic_ideal_bunch_states(
         "position_workbench_mm": sample["position_mm"],
         "direction_workbench": sample["direction"],
     } for sample in samples]
+    if controlled_slow_energy_half_spans_ev_per_charge is not None:
+        spans = controlled_slow_energy_half_spans_ev_per_charge
+        if (not isinstance(spans, (list, tuple)) or not spans
+                or controlled_slow_energy_half_span_ev_per_charge is not None
+                or controlled_focus_half_span_mm is not None
+                or controlled_envelope_half_span_fraction is not None):
+            raise CandidateContractError("slow-energy span list cannot mix controlled heads")
+        spans = [_finite(value, "controlled slow-energy half span") for value in spans]
+        if any(value <= 0 for value in spans) or spans != sorted(set(spans)):
+            raise CandidateContractError("slow-energy half spans must be positive and increasing")
+        if len(states) != 1 + 2 * len(spans):
+            raise CandidateContractError("slow-energy pair-list source must contain only its controlled head")
+        for index, span in enumerate(spans):
+            try:
+                states = apply_controlled_slow_energy_pair(
+                    states, charge_state=charge_e, half_span_ev_per_charge=span,
+                    negative_particle_id=2 + 2 * index, positive_particle_id=3 + 2 * index,
+                )
+            except ValueError as error:
+                raise CandidateContractError(str(error)) from error
     if controlled_slow_energy_half_span_ev_per_charge is not None:
         try:
             combined = controlled_focus_half_span_mm is not None
@@ -449,6 +478,12 @@ def materialize_bunch_source_from_definition(
     controlled_slow_energy_half_span = definition.get(
         "controlled_slow_energy_half_span_ev_per_charge"
     )
+    controlled_slow_energy_half_spans = definition.get(
+        "controlled_slow_energy_half_spans_ev_per_charge"
+    )
+    if (controlled_slow_energy_half_spans is not None
+            and definition.get("controlled_envelope_half_span_fraction") is not None):
+        raise CandidateContractError("slow-energy span list cannot mix controlled heads")
     if controlled_slow_energy_half_span is not None:
         controlled_slow_energy_half_span = _finite(
             controlled_slow_energy_half_span,
@@ -488,6 +523,7 @@ def materialize_bunch_source_from_definition(
         acceleration_axis_full_width_mm=definition["acceleration_axis_full_width_mm"],
         controlled_focus_half_span_mm=controlled_focus_half_span_mm,
         controlled_slow_energy_half_span_ev_per_charge=controlled_slow_energy_half_span,
+        controlled_slow_energy_half_spans_ev_per_charge=controlled_slow_energy_half_spans,
         controlled_envelope_half_span_fraction=controlled_envelope_fraction,
         kinetic_energy_center_ev=definition["kinetic_energy_center_ev"],
         kinetic_energy_full_width_ev=definition["kinetic_energy_full_width_ev"],
@@ -521,6 +557,7 @@ def materialize_bunch_source_from_definition(
         controlled_focus_pair=(
             None
             if cohort_role == _FORMAL_VOLUME_COHORT_ROLE
+            or controlled_slow_energy_half_spans is not None
             or (controlled_slow_energy_half_span is not None
             and controlled_focus_half_span_mm is None)
             else {
@@ -551,6 +588,15 @@ def materialize_bunch_source_from_definition(
                 "fixed_variables": "position__direction__mass__charge__birth_time",
             }
             if controlled_slow_energy_half_span is not None else None
+        ),
+        controlled_slow_energy_pairs=(
+            [{"coordinate": "release_slow_y_kinetic_energy_ev",
+              "negative_particle_id": 2 + 2 * index, "positive_particle_id": 3 + 2 * index,
+              "half_span_ev_per_charge": float(span),
+              "coordinate_span_ev": 2 * float(span) * abs(definition["charge_e"]),
+              "fixed_variables": "position__direction__mass__charge__birth_time"}
+             for index, span in enumerate(controlled_slow_energy_half_spans)]
+            if controlled_slow_energy_half_spans is not None else None
         ),
         controlled_transverse_x_pair=(
             {
@@ -732,6 +778,7 @@ def materialize_bunch_source(
     receipt_path: Path,
     controlled_focus_pair: Mapping[str, Any] | None = None,
     controlled_slow_energy_pair: Mapping[str, Any] | None = None,
+    controlled_slow_energy_pairs: Sequence[Mapping[str, Any]] | None = None,
     controlled_transverse_x_pair: Mapping[str, Any] | None = None,
     controlled_position_pairs: Sequence[Mapping[str, Any]] | None = None,
     controlled_head_particle_count: int | None = None,
@@ -757,10 +804,18 @@ def materialize_bunch_source(
     if cohort_role == _FORMAL_VOLUME_COHORT_ROLE:
         if any(value is not None for value in (
             controlled_focus_pair, controlled_slow_energy_pair,
+            controlled_slow_energy_pairs,
             controlled_transverse_x_pair, controlled_position_pairs,
         )):
             raise CandidateContractError("formal volume cohort cannot contain controlled sentinels")
         identity["sampling_method"] = _FORMAL_VOLUME_SAMPLING_METHOD
+    elif controlled_slow_energy_pairs is not None:
+        if any(value is not None for value in (
+            controlled_focus_pair, controlled_slow_energy_pair,
+            controlled_transverse_x_pair, controlled_position_pairs,
+        )) or not controlled_slow_energy_pairs:
+            raise CandidateContractError("slow-energy pair list cannot mix controlled heads")
+        identity["sampling_method"] = _SLOW_ENERGY_PAIRS_SAMPLING_METHOD
     elif controlled_position_pairs is not None:
         if controlled_transverse_x_pair is None:
             raise CandidateContractError("extended sentinels require the local x sentinel")
@@ -823,6 +878,11 @@ def materialize_bunch_source(
         receipt["controlled_focus_pair"] = dict(controlled_focus_pair)
     if controlled_slow_energy_pair is not None:
         receipt["controlled_slow_energy_pair"] = dict(controlled_slow_energy_pair)
+    if controlled_slow_energy_pairs is not None:
+        receipt["controlled_slow_energy_pairs"] = [dict(pair) for pair in controlled_slow_energy_pairs]
+        receipt["controlled_head_particle_count"] = 1 + 2 * len(controlled_slow_energy_pairs)
+        if receipt["controlled_head_particle_count"] != len(states):
+            raise CandidateContractError("slow-energy pair-list source must contain only its controlled head")
     if controlled_transverse_x_pair is not None:
         receipt["controlled_transverse_x_pair"] = dict(controlled_transverse_x_pair)
     if controlled_position_pairs is not None:
@@ -853,6 +913,7 @@ def load_verified_bunch_source_receipt(receipt_path: Path) -> dict[str, Any]:
         or receipt.get("status") != "materialized"
         or receipt.get("sampling_method") not in {
             _SAMPLING_METHOD, _SLOW_ENERGY_SAMPLING_METHOD,
+            _SLOW_ENERGY_PAIRS_SAMPLING_METHOD,
             _ABERRATION_SENTINEL_SAMPLING_METHOD,
             _EXTENDED_ABERRATION_SENTINEL_SAMPLING_METHOD,
             _LEGACY_SAMPLING_METHOD, _FORMAL_VOLUME_SAMPLING_METHOD, _GAUSSIAN_VOLUME_SAMPLING_METHOD,
@@ -880,7 +941,10 @@ def load_verified_bunch_source_receipt(receipt_path: Path) -> dict[str, Any]:
     if type(receipt.get("particle_count")) is not int or type(receipt.get("mother_particle_count")) is not int:
         raise CandidateContractError("bunch source receipt has a nonstandard particle count")
     try:
-        validate_standard_particle_count(receipt["particle_count"])
+        if receipt.get("sampling_method") == _SLOW_ENERGY_PAIRS_SAMPLING_METHOD:
+            validate_positive_particle_count(receipt["particle_count"])
+        else:
+            validate_standard_particle_count(receipt["particle_count"])
         validate_standard_particle_count(receipt["mother_particle_count"])
     except (TypeError, ValueError) as error:
         raise CandidateContractError("bunch source receipt has a nonstandard particle count") from error
@@ -987,6 +1051,38 @@ def load_verified_bunch_source_receipt(receipt_path: Path) -> dict[str, Any]:
             )
         ):
             raise CandidateContractError("bunch controlled focus pair differs from its state table")
+    if receipt.get("sampling_method") == _SLOW_ENERGY_PAIRS_SAMPLING_METHOD:
+        pairs = receipt.get("controlled_slow_energy_pairs")
+        if (not isinstance(pairs, list) or not pairs
+                or receipt.get("controlled_head_particle_count") != 1 + 2 * len(pairs)
+                or receipt["particle_count"] != 1 + 2 * len(pairs)
+                or "volume_particle_id_min" in receipt
+                or any(receipt.get(key) is not None for key in (
+                    "controlled_focus_pair", "controlled_slow_energy_pair",
+                    "controlled_transverse_x_pair", "controlled_position_pairs"))):
+            raise CandidateContractError("bunch controlled slow-energy pairs are invalid")
+        previous = 0.0
+        for index, pair in enumerate(pairs):
+            if not isinstance(pair, dict):
+                raise CandidateContractError("bunch controlled slow-energy pair must be an object")
+            half = _finite(pair.get("half_span_ev_per_charge"), "slow-energy half span")
+            span = 2 * half * abs(species["charge_e"])
+            if (half <= previous or pair.get("coordinate") != "release_slow_y_kinetic_energy_ev"
+                    or pair.get("negative_particle_id") != 2 + 2 * index
+                    or pair.get("positive_particle_id") != 3 + 2 * index
+                    or pair.get("coordinate_span_ev") != span
+                    or pair.get("fixed_variables") != "position__direction__mass__charge__birth_time"
+                    or len(rows) < 3 + 2 * index):
+                raise CandidateContractError("bunch controlled slow-energy pairs differ")
+            previous = half
+            for row, sign in ((rows[1 + 2 * index], -1), (rows[2 + 2 * index], 1)):
+                if (any(row[k] != rows[0][k] for k in (
+                        "tob_us", "mass_th", "charge_e", "x_mm", "y_mm", "z_mm",
+                        "direction_x", "direction_y", "direction_z"))
+                        or not math.isclose(float(row["kinetic_energy_ev"]),
+                            float(rows[0]["kinetic_energy_ev"]) + sign * span / 2,
+                            rel_tol=0, abs_tol=1e-12)):
+                    raise CandidateContractError("bunch controlled slow-energy pairs differ from states")
     slow_pair = receipt.get("controlled_slow_energy_pair")
     if receipt.get("sampling_method") in {
         _SLOW_ENERGY_SAMPLING_METHOD, _ABERRATION_SENTINEL_SAMPLING_METHOD,

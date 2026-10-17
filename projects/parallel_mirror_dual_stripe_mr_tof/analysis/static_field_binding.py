@@ -15,6 +15,8 @@ from common.contracts.verify_run_manifest import verify_record
 
 
 _record_indexes: ContextVar[dict | None] = ContextVar("static_field_record_indexes", default=None)
+_retired_operator_records: ContextVar[dict | None] = ContextVar("retired_operator_records", default=None)
+_operator_projections: ContextVar[dict | None] = ContextVar("operator_projections", default=None)
 
 
 def _within_record_lookup(function):
@@ -24,9 +26,14 @@ def _within_record_lookup(function):
         if _record_indexes.get() is not None:
             return function(*args, **kwargs)
         token = _record_indexes.set({})
+        projection_token = _operator_projections.set({})
         try:
-            return function(*args, **kwargs)
+            result = function(*args, **kwargs)
+            if isinstance(result, dict) and _operator_projections.get():
+                result["operator_ancestry_projections"] = copy.deepcopy(list(_operator_projections.get().values()))
+            return result
         finally:
+            _operator_projections.reset(projection_token)
             _record_indexes.reset(token)
     return load
 
@@ -35,7 +42,8 @@ def _read(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-def _record(manifest_path: Path, path: Path) -> dict[str, Any]:
+def _sealed_record(manifest_path: Path, path: Path) -> dict[str, Any]:
+    """Read a unique successful seal; this alone does not authorize asset use."""
     indexes = _record_indexes.get()
     key = manifest_path.resolve()
     index = indexes.get(key) if indexes is not None else None
@@ -55,9 +63,144 @@ def _record(manifest_path: Path, path: Path) -> dict[str, Any]:
     if not matches or len(identities) != 1:
         raise ValueError(f"static asset lacks a unique sealed record: {path}")
     record = matches[0]
+    return copy.deepcopy(record)
+
+
+def _record(manifest_path: Path, path: Path) -> dict[str, Any]:
+    record = _sealed_record(manifest_path, path)
     if not path.is_file() or path.stat().st_size != int(record["bytes"]):
         raise ValueError(f"static asset is missing or changed size: {path}")
-    return copy.deepcopy(record)
+    projections = _operator_projections.get()
+    if (projections is not None and str(manifest_path.resolve()) in projections
+            and path.suffix.lower() in {".json", ".gem", ".lua", ".log", ".txt"}):
+        verify_record("operator_ancestry_consumed_record", record, base_dir=manifest_path.parent)
+        projections[str(manifest_path.resolve())]["consumed_records"][str(path.resolve())] = record
+    return record
+
+
+def _native_payload_record(manifest: Path, path: Path) -> dict[str, Any]:
+    """Use retired identities only inside the named non-live ancestry loader."""
+    allowed = _retired_operator_records.get() or {}
+    identity = (manifest.resolve(), path.resolve())
+    if identity not in allowed:
+        return _record(manifest, path)
+    record = _sealed_record(manifest, path)
+    if record != allowed[identity]:
+        raise ValueError("retired operator payload differs from its approved original seal")
+    return record
+
+
+def _validate_operator_consumption(plan: dict, owner: Path) -> None:
+    """Bind a new consumer's historical projection to its own immutable seal."""
+    value = plan.get("operator_ancestry_projection_path")
+    if value is None:
+        return
+    path = Path(value)
+    verify_record("operator_ancestry_projection", _record(owner, path), base_dir=owner.parent)
+    document = _read(path)
+    if (set(document) != {"schema_version", "role", "projections", "claim"}
+            or document["schema_version"] != 1
+            or document["role"] != "mrtof_native_operator_ancestry_consumption"
+            or not isinstance(document["projections"], list) or not document["projections"]):
+        raise ValueError("unsupported frozen operator ancestry consumption")
+    for index, projection in enumerate(document["projections"]):
+        if (set(projection) != {"schema_version", "role", "consumer_projection_id", "usable_as_field_source",
+                               "target_manifest", "retirement_receipt", "consumed_records"}
+                or projection["schema_version"] != 1
+                or projection["role"] != "mrtof_native_operator_ancestry_projection"
+                or projection["consumer_projection_id"] != "ip-retired-scalar-operator-ancestry"
+                or projection["usable_as_field_source"] is not False):
+            raise ValueError("invalid frozen non-live operator ancestry projection")
+        records = [projection["target_manifest"], projection["retirement_receipt"],
+                   *projection["consumed_records"].values()]
+        for record_index, record in enumerate(records):
+            source = Path(record["path"])
+            frozen = owner.parent / "inputs" / (f"operator_ancestry_{index}_{record_index}" + source.suffix)
+            sealed = _record(owner, frozen)
+            if any(record.get(k) != sealed.get(k) for k in ("bytes", "sha256")):
+                raise ValueError("operator ancestry input differs from its consumer seal")
+            verify_record("frozen_operator_ancestry_copy", sealed)
+            verify_record("frozen_operator_ancestry_input", record)
+
+
+@_within_record_lookup
+def _load_operator_ancestry(path: Path, *, copy_owner: Path | None = None,
+                            frozen_copy: Path | None = None) -> dict[str, Any]:
+    """Validate historical operator metadata, never a usable scalar-field source.
+
+    Only a completed public retirement of all five IP scalar/surface pairs
+    permits absent payloads. All current loads retain the ordinary strict path.
+    """
+    from common.contracts.solver_review_retirement import RECEIPT_NAME, verify_retirement
+    from common.contracts.file_identity import file_sha256
+
+    descriptor = _read(path)
+    owner = Path(descriptor["parent"]["manifest"]).resolve()
+    receipt_path = owner.parent / RECEIPT_NAME
+    if not receipt_path.is_file():
+        return load_binding(path)
+    if (descriptor.get("role") != "mrtof_native_static_field_binding"
+            or descriptor.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor"
+            or any(key in descriptor for key in ("materialization", "local_domain_update", "response_level_reuse", "consumer_view"))
+            or len(descriptor.get("refinement_windows", [])) != 4):
+        raise ValueError("retired operator ancestry requires the original full five-level ordinary IP binding")
+    expected = {}
+    for level in (descriptor["parent"], *descriptor["refinement_windows"]):
+        if Path(level["manifest"]).resolve() != owner or not level.get("surface_path"):
+            raise ValueError("retired operator requires five same-owner scalar/surface pairs")
+        pa, surface = Path(level["pa_path"]).resolve(), Path(level["surface_path"]).resolve()
+        if surface != Path(str(pa) + "-surf"):
+            raise ValueError("retired operator fractional surface is not paired with its PA")
+        for payload in (pa, surface):
+            expected[payload] = _sealed_record(owner, payload)
+    if len(expected) != 10:
+        raise ValueError("retired operator requires ten distinct scalar/surface records")
+    receipt = _read(receipt_path)
+    target_record = dict(path=str(owner), bytes=owner.stat().st_size, sha256=file_sha256(owner))
+    if any(receipt.get("target_manifest", {}).get(k) != target_record[k] for k in ("bytes", "sha256")):
+        raise ValueError("retired operator target manifest differs from its public receipt")
+    removed = receipt.get("removed_files", [])
+    actual = {owner.parent / row["path"]: row for row in removed}
+    if (len(actual) != 10 or len(removed) != 10 or set(actual) != set(expected)
+            or receipt.get("selected_heavy_paths") != sorted(p.relative_to(owner.parent).as_posix() for p in expected)
+            or any(any(actual[p].get(k) != r.get(k) for k in ("bytes", "sha256")) for p, r in expected.items())):
+        raise ValueError("retired operator receipt must remove exactly the original five scalar/surface pairs")
+    projections = _operator_projections.get()
+    key = str(owner)
+    receipt_record = dict(path=str(receipt_path), bytes=receipt_path.stat().st_size, sha256=file_sha256(receipt_path))
+    if key not in projections:
+        verify_retirement(owner.parent)
+        projections[key] = dict(schema_version=1, role="mrtof_native_operator_ancestry_projection",
+            consumer_projection_id="ip-retired-scalar-operator-ancestry", usable_as_field_source=False,
+            target_manifest=target_record,
+            retirement_receipt=receipt_record, consumed_records={})
+    elif (projections[key]["retirement_receipt"] != receipt_record
+          or projections[key]["target_manifest"] != target_record):
+        raise ValueError("operator retirement receipt changed during recursive load")
+    canonical = owner.parent / "results/field_binding.json"
+    sealed = _record(owner, canonical)
+    verify_record("operator_ancestry_binding", sealed)
+    if descriptor != _read(canonical):
+        raise ValueError("operator ancestry descriptor differs from the complete original declaration")
+    if copy_owner is not None:
+        copy_path = frozen_copy if frozen_copy is not None else path
+        copy_record = _record(copy_owner, copy_path)
+        verify_record("operator_ancestry_binding_copy", copy_record, base_dir=copy_owner.parent)
+        if _read(copy_path) != descriptor:
+            raise ValueError("operator ancestry locator differs from its consumer-owned frozen declaration")
+        projections[key]["consumed_records"].update({str(copy_path.resolve()): copy_record,
+            str(copy_owner.resolve()): dict(path=str(copy_owner.resolve()), bytes=copy_owner.stat().st_size,
+                                           sha256=file_sha256(copy_owner))})
+    elif path.resolve() != canonical.resolve() or frozen_copy is not None:
+        raise ValueError("operator ancestry copy requires its explicit sealed consumer owner")
+    token = _retired_operator_records.set({**(_retired_operator_records.get() or {}),
+        **{(owner, p): r for p, r in expected.items()}})
+    try:
+        result = load_binding(path)
+    finally:
+        _retired_operator_records.reset(token)
+    result["usable_as_field_source"] = False
+    return result
 
 
 def resolve_native_refine_numerics(contract: Mapping[str, Any]) -> dict[str, Any]:
@@ -309,15 +452,17 @@ def _load_native_level(spec: dict[str, Any]) -> dict[str, Any]:
         ("voltage_authority", "voltage_authority_path"),
         ("geometry_authority", "geometry_authority_path"),
         ("numerical_plan", "numerical_plan_path"))}
-    records = {name: _record(manifest, path) for name, path in paths.items()}
+    records = {name: (_native_payload_record(manifest, path) if name == "scalar_pa" else _record(manifest, path))
+               for name, path in paths.items()}
     if spec["surface_path"] is None:
         _validate_native_surface_absence(manifest, paths["scalar_pa"])
     else:
         paths["surface"] = Path(spec["surface_path"])
-        records["surface"] = _record(manifest, paths["surface"])
+        records["surface"] = _native_payload_record(manifest, paths["surface"])
         if str(paths["surface"].resolve()) != str(paths["scalar_pa"].resolve()) + "-surf":
             raise ValueError("native PA requires its same-basename fractional surface")
     plan = _read(paths["numerical_plan"])
+    _validate_operator_consumption(plan, manifest)
     if spec["surface_path"] is None and plan.get("crop") is not None:
         for name, key in (("voltage_authority", "frozen_input"), ("geometry_authority", "resolved_geometry")):
             original_path = Path(plan[key])
@@ -376,10 +521,15 @@ def validate_native_consumer_view(value: Any) -> dict[str, Any] | None:
     return dict(value)
 
 
-def _load_native_binding(binding: dict[str, Any]) -> dict[str, Any]:
+def _load_native_binding(binding: dict[str, Any], *, pure_response: bool = False) -> dict[str, Any]:
     """Consume sealed native static fields, with independent explicit collision assets."""
-    if (binding.get("schema_version") != 1 or set(binding) - {"consumer_view"} != {
-            "schema_version", "role", "parent", "refinement_windows", "instances"}):
+    provider = binding.get("accelerator_provider")
+    ip_replacement = provider == "dual_pressure_rectilinear_ion_processor"
+    required = {"schema_version", "role", "parent", "refinement_windows", "instances"}
+    if ip_replacement:
+        required |= {"accelerator_provider", "assembly_scope", "replacement_assembly"}
+    optional = {"consumer_view", "local_domain_update", "response_level_reuse"} if ip_replacement else {"consumer_view"}
+    if (binding.get("schema_version") != 1 or set(binding) - optional != required):
         raise ValueError("unsupported native static binding declaration")
     base = _load_native_level(binding["parent"])
     view = validate_native_consumer_view(binding.get("consumer_view"))
@@ -472,7 +622,8 @@ def _load_native_binding(binding: dict[str, Any]) -> dict[str, Any]:
             visited.add(index)
             index = parents[index]
     instances = binding["instances"]
-    roles = ["global_fallback", "native_corridor", "accelerator", "detector"]
+    roles = ["global_fallback", "native_corridor",
+             "ion_processor_collision" if ip_replacement else "accelerator", "detector"]
     if not isinstance(instances, list) or [i.get("role") for i in instances] != roles:
         raise ValueError("native binding requires four ordered independent collision instances")
     resolved = []
@@ -483,8 +634,14 @@ def _load_native_binding(binding: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("collision instance requires finite origin_mm")
         path, manifest = Path(instance["pa_path"]), Path(instance["manifest"])
         resolved.append(dict(instance, pa_path=str(path.resolve()), manifest=str(manifest.resolve()),
-                             record=_record(manifest, path)))
+                             record=_native_payload_record(manifest, path)))
     assembly = authority["assembly"]
+    if ip_replacement:
+        _validate_ip_replacement(binding, base, windows, resolved, pure_response=pure_response)
+        return dict(binding, **base, instances=resolved, refinement_windows=windows,
+                    accelerator_front_z_mm=None)
+    if assembly.get("accelerator_provider") == "dual_pressure_rectilinear_ion_processor":
+        raise ValueError("IP assembly requires its explicit replacement binding identity")
     if (resolved[2]["origin_mm"] != assembly["accelerator_iob_origin_mm"]
             or geometry["detector"]["box"] != assembly["detector"]["box"]):
         raise ValueError("native collision assembly poses or detector geometry differ")
@@ -493,6 +650,248 @@ def _load_native_binding(binding: dict[str, Any]) -> dict[str, Any]:
               *[e["frame_outer_box_mm"] for e in oa["grid_supports"]], *[e["outer_box_mm"] for e in oa["rings"]]]
     front = min(b["z_min_mm"] for b in solids) + oa["local_to_pa_translation_mm"][2] + resolved[2]["origin_mm"][2]
     return dict(binding, **base, instances=resolved, refinement_windows=windows, accelerator_front_z_mm=front)
+
+
+def _validate_ip_fine_extension(binding: dict, base: dict, windows: list, instances: list) -> None:
+    """Verify the one declared mixed-owner exception without weakening ordinary fields."""
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import (
+        extend_fine_z_domain, ordinary_pa_file_bytes,
+    )
+    if [w["name"] for w in windows] != ["ion_processor_local", "positive_integer_grid_a",
+                                          "negative_integer_grid_a", "covered_local"]:
+        raise ValueError("IP fine extension must retain all four ordered windows")
+    fine = windows[0]
+    owner = Path(fine["manifest"])
+    record = binding["local_domain_update"]
+    path = Path(record["path"])
+    sealed = _record(owner, path)
+    if any(record.get(k) != sealed.get(k) for k in ("path", "bytes", "sha256")):
+        raise ValueError("IP fine extension provenance differs from its new owner")
+    verify_record("IP fine extension provenance", sealed, base_dir=owner.parent)
+    lineage = _read(path)
+    if (set(lineage) != {"schema_version", "role", "update", "reused_levels", "source_manifest", "source_binding"}
+            or lineage["schema_version"] != 1 or lineage["role"] != "mrtof_ip_fine_domain_update"
+            or lineage["reused_levels"] != ["parent", "window_1", "window_2", "window_3"]
+            or binding.get("consumer_view") or owner.resolve() == Path(base["manifest"]).resolve()):
+        raise ValueError("IP fine extension requires its closed ordinary mixed-owner provenance")
+    source_record = lineage["source_binding"]
+    source_path = Path(source_record["path"])
+    expected_record = _record(owner, source_path)
+    if any(source_record.get(k) != expected_record.get(k) for k in ("path", "bytes", "sha256")):
+        raise ValueError("IP fine extension source binding differs from its new owner")
+    verify_record("IP fine extension source", source_record, base_dir=owner.parent)
+    source_descriptor = _read(source_path)
+    if source_descriptor.get("local_domain_update") or source_descriptor.get("consumer_view"):
+        raise ValueError("IP fine extension source must be an ordinary unextended field")
+    source = load_binding(source_path)
+    verify_record("IP fine extension source manifest", lineage["source_manifest"])
+    if (Path(lineage["source_manifest"]["path"]).resolve() != Path(source["manifest"]).resolve()
+            or source["accelerator_provider"] != binding["accelerator_provider"]
+            or source["authority"] != base["authority"] or source["geometry"] != base["geometry"]
+            or binding["parent"] != source_descriptor["parent"]
+            or binding["refinement_windows"][1:] != source_descriptor["refinement_windows"][1:]
+            or any(binding["instances"][i] != source_descriptor["instances"][i] for i in (0, 1, 3))):
+        raise ValueError("IP fine extension changes reused fields, voltages, geometry or collision ancestry")
+    old = source["refinement_windows"][0]
+    expected_grid, active = extend_fine_z_domain(old["grid"], old["active_box_mm"], lineage["update"], source["grid"])
+    fine_plan = _read(Path(fine["numerical_plan_path"]))
+    if (fine["grid"] != expected_grid or fine["active_box_mm"] != active or fine["name"] != old["name"]
+            or fine["native_solver_numerics"] != old["native_solver_numerics"]
+            or Path(fine_plan["local_domain_update_path"]).resolve() != path.resolve()
+            or Path(fine_plan["parent_manifest"]).resolve() != Path(source["manifest"]).resolve()
+            or Path(fine_plan["parent_pa"]).resolve() != Path(source["sources"]["scalar_pa"]).resolve()
+            or instances[2]["manifest"] != str(owner.resolve())
+            or instances[2]["origin_mm"] != expected_grid["origin_mm"]
+            or Path(instances[2]["pa_path"]).resolve() != (owner.parent / "simion/ip_collision/ip_collision.pa").resolve()
+            or len({i["pa_path"] for i in instances}) != 4
+            or instances[2]["pa_path"] == fine["sources"]["scalar_pa"]):
+        raise ValueError("IP fine extension changes its declared grid, route, stopping, parent or occupancy owner")
+    occupancy_path = owner.parent / "inputs/ip_collision_plan.json"
+    verify_record("IP fine occupancy plan", _record(owner, occupancy_path), base_dir=owner.parent)
+    occupancy = _read(occupancy_path)
+    geometry_path = Path(occupancy["resolved_geometry"])
+    verify_record("IP fine occupancy geometry", _record(owner, geometry_path), base_dir=owner.parent)
+    if (any(occupancy[k] != expected_grid[k] for k in ("dimensions", "pitch_mm", "symmetry"))
+            or occupancy["origin_mm"] != expected_grid["origin_mm"]
+            or occupancy.get("refine_performed") is not False or occupancy.get("fast_adjust_performed") is not False
+            or _read(geometry_path) != source["geometry"]
+            or instances[2]["record"]["bytes"] != ordinary_pa_file_bytes(expected_grid["dimensions"], expected_grid["pitch_mm"])):
+        raise ValueError("IP fine occupancy differs from its new full-domain geometry and grid")
+
+
+def validate_ip_fine_response_reuse(old: dict, source: dict, axis: str) -> None:
+    """Accept only the existing pure P1/P2 operator outside its extended fine domain."""
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import _response_authority
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import extend_fine_z_domain
+    if (axis not in {"p1", "p2"} or old["response_basis"]["axis"] != axis
+            or source.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor"
+            or not source.get("local_domain_update") or source.get("consumer_view")
+            or _response_authority(source["authority"], old["response_basis"]) != old["authority"]):
+        raise ValueError("IP fine response reuse requires same-axis pure35 and an extended ordinary source")
+    before = native_response_operator(old, source["authority"])
+    after = native_response_operator(source, source["authority"])
+    if (before["geometry"] != after["geometry"]
+            or before["boundary_parent_indices"] != after["boundary_parent_indices"]
+            or len(before["full_solve_grids"]) != 5 or len(after["full_solve_grids"]) != 5
+            or any(before["full_solve_grids"][i] != after["full_solve_grids"][i] for i in (0, 2, 3, 4))):
+        raise ValueError("IP fine response reuse changes geometry, full solve grids or parent dependencies")
+    old_levels, new_levels = [old, *old["refinement_windows"]], [source, *source["refinement_windows"]]
+    for i, (left, right) in enumerate(zip(old_levels, new_levels, strict=True)):
+        keys = ("native_solver_numerics",) if i == 1 else ("grid", "active_box_mm", "name", "native_solver_numerics")
+        if any(left.get(k) != right.get(k) for k in keys):
+            raise ValueError("IP fine response reuse changes route, pitch or actual stopping")
+    update = _read(Path(source["local_domain_update"]["path"]))["update"]
+    grid, active = extend_fine_z_domain(old_levels[1]["grid"], old_levels[1]["active_box_mm"], update, source["grid"])
+    if grid != new_levels[1]["grid"] or active != new_levels[1]["active_box_mm"]:
+        raise ValueError("IP fine response reuse is not the same declared lower-z extension")
+    for i in (1, 3):
+        if old["instances"][i] != source["instances"][i]:
+            raise ValueError("IP fine response reuse changes retained collision assets")
+
+
+def _validate_ip_response_level_reuse(binding: dict, base: dict, windows: list, instances: list) -> None:
+    """Verify a sealed new fine response and four original pure-response owners."""
+    owner = Path(windows[0]["manifest"])
+    record = binding["response_level_reuse"]
+    sealed = _record(owner, Path(record["path"]))
+    if any(record.get(k) != sealed.get(k) for k in ("path", "bytes", "sha256")):
+        raise ValueError("IP response reuse provenance differs from its new fine owner")
+    verify_record("IP response reuse provenance", sealed, base_dir=owner.parent)
+    lineage = _read(Path(record["path"]))
+    if (set(lineage) != {"schema_version", "role", "axis", "reused_levels", "source_basis", "source_basis_manifest"}
+            or lineage["schema_version"] != 1 or lineage["role"] != "mrtof_ip_fine_response_reuse"
+            or lineage["reused_levels"] != ["parent", "window_1", "window_2", "window_3"]):
+        raise ValueError("unsupported IP response reuse provenance")
+    for name in ("source_basis", "source_basis_manifest"):
+        verify_record("IP reused " + name, lineage[name])
+    old_path = Path(lineage["source_basis"]["path"])
+    old_descriptor = _read(old_path)
+    if old_descriptor.get("response_level_reuse"):
+        raise ValueError("IP response reuse requires the original complete pure response")
+    old_source = _load_operator_ancestry(Path(old_descriptor["source_binding_path"]),
+        copy_owner=Path(old_descriptor["refinement_windows"][0]["manifest"]))
+    old = load_native_response_basis(old_path, old_source)
+    if Path(lineage["source_basis_manifest"]["path"]).resolve() != Path(old["refinement_windows"][0]["manifest"]).resolve():
+        raise ValueError("IP reused response manifest differs")
+    fine = windows[0]
+    fine_plan = _read(Path(fine["numerical_plan_path"]))
+    source_path = Path(fine_plan["ip_source_binding_path"])
+    verify_record("IP response ordinary source", _record(owner, source_path), base_dir=owner.parent)
+    source = load_binding(source_path)
+    validate_ip_fine_response_reuse(old, source, lineage["axis"])
+    if (binding["parent"] != old_descriptor["parent"]
+            or binding["refinement_windows"][1:] != old_descriptor["refinement_windows"][1:]
+            or fine["grid"] != source["refinement_windows"][0]["grid"]
+            or fine["active_box_mm"] != source["refinement_windows"][0]["active_box_mm"]
+            or fine["name"] != "ion_processor_local" or base["authority"] != old["authority"]
+            or Path(fine_plan["response_level_reuse_path"]).resolve() != Path(record["path"]).resolve()
+            or owner.resolve() == Path(base["manifest"]).resolve()
+            or Path(fine_plan["parent_pa"]).resolve() != Path(old["sources"]["scalar_pa"]).resolve()
+            or Path(fine_plan["parent_manifest"]).resolve() != Path(old["manifest"]).resolve()
+            or instances[0]["pa_path"] != base["sources"]["scalar_pa"]
+            or instances[1:] != source["instances"][1:]):
+        raise ValueError("IP response reuse changes fields, pure excitation, parent, route or collision ancestry")
+
+
+def _validate_ip_replacement(binding: dict[str, Any], base: dict[str, Any],
+                             windows: list[dict[str, Any]], instances: list[dict[str, Any]], *, pure_response: bool = False) -> None:
+    """Bind fresh full-C0 IP fields and thin-metal occupancy to their sealed design.
+
+    Only small authority documents are hashed here. PA records retain the common
+    immutable-source/consumer verification boundary used by native field flights.
+    """
+    provider = "dual_pressure_rectilinear_ion_processor"
+    scope = "full_c0_ion_processor_replacement"
+    assembly, geometry = base["authority"]["assembly"], base["geometry"]
+    if (binding.get("assembly_scope") != scope or assembly.get("assembly_scope") != scope
+            or assembly.get("accelerator_provider") != provider
+            or assembly.get("post_extraction_state") != "pulse_held_rf_zero"
+            or "accelerator_resolved_electrodes" in assembly or "accelerator_component_layout" in geometry):
+        raise ValueError("IP binding requires fresh complete replacement without old OA assets")
+    owner = Path(base["manifest"])
+    for level in (base, *windows):
+        for name in ("voltage_authority", "geometry_authority", "numerical_plan"):
+            verify_record("IP frozen " + name, level["records"][name], base_dir=Path(level["manifest"]).parent)
+    design_manifest = assembly["replacement_assembly_manifest"]
+    verify_record("IP design owner manifest", design_manifest)
+    design_owner = Path(design_manifest["path"])
+    replacement = assembly["replacement_assembly"]
+    if binding["replacement_assembly"] != replacement:
+        raise ValueError("IP replacement receipt identity differs from voltage authority")
+    path = Path(replacement["path"])
+    sealed = _record(design_owner, path)
+    if any(replacement.get(key) != sealed.get(key) for key in ("path", "bytes", "sha256")):
+        raise ValueError("IP replacement receipt differs from its owning manifest")
+    verify_record("IP replacement receipt", sealed, base_dir=design_owner.parent)
+    receipt = _read(path)
+    geometry_path = Path(receipt["assembly_geometry_path"])
+    verify_record("IP replacement geometry", _record(design_owner, geometry_path), base_dir=design_owner.parent)
+    point_path = Path(receipt["source_config_paths"]["native_operating_point"])
+    verify_record("IP replacement operating point", _record(design_owner, point_path), base_dir=design_owner.parent)
+    registration = assembly["ion_processor_registration"]
+    if (receipt.get("old_oa_removed") is not True or receipt.get("old_oa_field_reuse_allowed") is not False
+            or _read(geometry_path) != geometry or assembly["detector"] != geometry["detector"]
+            or assembly["ion_processor_electrodes"] != geometry["ion_processor_electrodes"]
+            or registration != receipt["assembly_coordinate_transform"]
+            or registration.get("to_frame_id") != geometry.get("frame_id")
+            or assembly["native_operating_point"] != _read(point_path)):
+        raise ValueError("IP replacement geometry, frame or operating point differs from frozen design")
+    matching_path = Path(receipt["input_identities"][-1]["path"])
+    verify_record("IP frozen voltage projection", receipt["input_identities"][-1])
+    expected_values = _read(matching_path)["field_assembly_reference"]["provider_voltage_projection"]["values_v15"]
+    if pure_response:
+        expected_values = [0.0] * 15
+    rows = base["authority"].get("component_voltages_v", [])
+    if (len(rows) != 16 or [(row.get("component_namespace"), row.get("component_electrode_id"))
+                           for row in rows] != [("ion_processor", i) for i in range(1, 16)] + [("detector", 25)]
+            or any(isinstance(row.get("voltage_v"), bool) or not isinstance(row.get("voltage_v"), (int, float))
+                   or not math.isfinite(row["voltage_v"]) for row in rows) or rows[-1]["voltage_v"] != 0
+            or [row["voltage_v"] for row in rows[:-1]] != expected_values):
+        raise ValueError("IP replacement requires complete finite provider15 and grounded detector voltages")
+    if "response_level_reuse" in binding:
+        if not pure_response:
+            raise ValueError("IP response reuse cannot authorize an ordinary Fly field")
+        _validate_ip_response_level_reuse(binding, base, windows, instances)
+        return
+    if "local_domain_update" in binding:
+        if pure_response:
+            raise ValueError("IP fine extension does not authorize response reuse")
+        _validate_ip_fine_extension(binding, base, windows, instances)
+        return
+    parent_plan = _read(Path(base["numerical_plan_path"]))
+    source_path = parent_plan.get("ip_source_binding_path")
+    source = None
+    if source_path is not None:
+        source_path = Path(source_path)
+        verify_record("IP unchanged source binding", _record(owner, source_path), base_dir=owner.parent)
+        source_descriptor = _read(source_path)
+        if Path(source_descriptor["parent"]["manifest"]).resolve() == owner.resolve():
+            raise ValueError("IP response source must belong to a distinct sealed owner")
+        source = _load_operator_ancestry(source_path, copy_owner=owner)
+        if (source.get("accelerator_provider") != provider or source["geometry"] != geometry
+                or source["authority"]["assembly"] != assembly
+                or [{k: item[k] for k in ("role", "manifest", "pa_path", "origin_mm")} for item in instances[1:]]
+                != [{k: item[k] for k in ("role", "manifest", "pa_path", "origin_mm")} for item in source["instances"][1:]]):
+            raise ValueError("IP response/compose changes sealed geometry or collision ancestry")
+        if (len(windows) != len(source["refinement_windows"])
+                or base["grid"] != source["grid"]
+                or any(any(current.get(key) != original.get(key) for key in ("name", "grid", "active_box_mm"))
+                       for current, original in zip(windows, source["refinement_windows"], strict=True))):
+            raise ValueError("IP P/S fields must preserve all actual source grids and active routes")
+    if (not windows or windows[0].get("name") != "ion_processor_local"
+            or any(Path(level["manifest"]).resolve() != owner.resolve() for level in windows)
+            or source is None and any(Path(item["manifest"]).resolve() != owner.resolve() for item in instances)):
+        raise ValueError("IP fine-first priority and all assets require this fresh field owner")
+    fine = windows[0]
+    fine_plan = _read(Path(fine["numerical_plan_path"]))
+    if (Path(fine_plan["parent_pa"]).resolve() != Path(base["sources"]["scalar_pa"]).resolve()
+            or instances[0]["pa_path"] != base["sources"]["scalar_pa"]
+            or instances[0]["origin_mm"] != base["grid"]["origin_mm"]
+            or instances[1]["origin_mm"] != base["grid"]["origin_mm"]
+            or instances[2]["origin_mm"] != fine["grid"]["origin_mm"]
+            or instances[3]["origin_mm"] != receipt["runtime_geometry"]["detector"]["origin_mm"]
+            or len({item["pa_path"] for item in instances}) != 4):
+        raise ValueError("IP collision occupancy or fine-field source identity/pose differs")
 
 
 def native_response_operator(binding: dict[str, Any], authority: dict[str, Any]) -> dict[str, Any]:
@@ -541,8 +940,12 @@ def load_native_response_basis(path: Path, baseline: dict[str, Any]) -> dict[str
     descriptor = _read(path)
     required = {"schema_version", "role", "parent", "refinement_windows", "instances",
                 "fly_authorized", "response_basis", "source_authority_path", "source_binding_path"}
+    if descriptor.get("accelerator_provider") == "dual_pressure_rectilinear_ion_processor":
+        required |= {"accelerator_provider", "assembly_scope", "replacement_assembly"}
     if "consumer_view" in descriptor:
         required.add("consumer_view")
+    if "response_level_reuse" in descriptor:
+        required.add("response_level_reuse")
     if descriptor.get("response_basis", {}).get("axis") == TE1_AXIS:
         required.add("direction_reference_path")
     if (set(descriptor) != required
@@ -585,7 +988,12 @@ def load_native_response_basis(path: Path, baseline: dict[str, Any]) -> dict[str
     ordinary["role"] = "mrtof_native_static_field_binding"
     if "consumer_view" in descriptor:
         ordinary["consumer_view"] = descriptor["consumer_view"]
-    result = _load_native_binding(ordinary)
+    if descriptor.get("accelerator_provider") == "dual_pressure_rectilinear_ion_processor":
+        ordinary.update({key: descriptor[key] for key in
+                         ("accelerator_provider", "assembly_scope", "replacement_assembly")})
+    if "response_level_reuse" in descriptor:
+        ordinary["response_level_reuse"] = descriptor["response_level_reuse"]
+    result = _load_native_binding(ordinary, pure_response=True)
     if (result["authority"] != _response_authority(source_authority, meta)
             or native_response_operator(result, baseline["authority"]) != native_response_operator(baseline, baseline["authority"])):
         raise ValueError("response pure excitation or geometry/grid/route/operator differs")
@@ -616,7 +1024,8 @@ def _load_native_materialized(descriptor: dict[str, Any], path: Path) -> dict[st
         raise ValueError("native materialization must declare composition, not a new Refine")
     if metadata != plan.get("materialization"):
         raise ValueError("native materialization lineage differs from its frozen plan")
-    base = load_binding(Path(metadata["base_binding"]))
+    base = _load_operator_ancestry(Path(metadata["base_binding"]), copy_owner=owner,
+        frozen_copy=owner.parent / "inputs/combination_base_binding.json")
     bases = {axis: load_native_response_basis(Path(value), base) for axis, value in metadata["response_basis_paths"].items()}
     if any(value["response_basis"]["axis"] != axis for axis, value in bases.items()):
         raise ValueError("materialization response axis differs from its map")
@@ -673,7 +1082,13 @@ def load_binding(path: Path, *, _allow_responses: bool = True) -> dict[str, Any]
     if binding.get("role") == "mrtof_native_static_field_binding":
         if "materialization" in binding:
             return _load_native_materialized(binding, path)
-        return _load_native_binding(binding)
+        resolved = _load_native_binding(binding)
+        if "local_domain_update" in binding:
+            # The parent PA keeps its old owner. The new descriptor is published
+            # by its independently validated fine-field owner.
+            resolved.update(descriptor_owner=resolved["refinement_windows"][0]["manifest"],
+                            descriptor_path=str(path.resolve()))
+        return resolved
     if not _allow_responses and ("voltage_responses" in binding or "materialization_manifest" in binding):
         raise ValueError("nested voltage response bindings are forbidden")
     if (binding.get("schema_version") not in (1, 2)
@@ -986,6 +1401,15 @@ def validate_voltages(binding: dict[str, Any], analyzer: list[float], accelerato
     if len(analyzer) != 20 or len(expected) != 20 or any(
             not math.isclose(float(a), float(b), rel_tol=0, abs_tol=1e-9) for a, b in zip(analyzer, expected)):
         raise ValueError("analyzer voltages differ from frozen COMSOL authority")
+    if binding.get("accelerator_provider") == "dual_pressure_rectilinear_ion_processor":
+        rows = binding["authority"]["component_voltages_v"]
+        expected_ip = [row["voltage_v"] for row in rows if row["component_namespace"] == "ion_processor"]
+        if (len(accelerator) != 15 or len(expected_ip) != 15
+                or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+                       for v in accelerator)
+                or any(not math.isclose(a, b, rel_tol=0, abs_tol=1e-9) for a, b in zip(accelerator, expected_ip))):
+            raise ValueError("IP voltages differ from frozen provider authority")
+        return
     oa = binding["authority"]["assembly"]["accelerator_resolved_electrodes"]
     electrodes = [oa["grounded_enclosure"], oa["repeller"], *oa["grid_supports"], *oa["rings"]]
     ids = {int(e["component_electrode_id"]): int(e["local_pa_electrode_id"]) for e in electrodes}

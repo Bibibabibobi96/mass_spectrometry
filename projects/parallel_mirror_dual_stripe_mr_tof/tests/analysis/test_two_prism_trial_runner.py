@@ -272,10 +272,14 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
         self.assertNotIn("basisLinkDir", self.source)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
-    def test_trial_step_scale_boundaries_allow_coarser_finite_positive_values(self):
+    def test_all_step_scale_boundaries_allow_coarser_finite_positive_values(self):
         project = RUNNER.parents[1]
         for path, variable, guard in (
             (RUNNER, "TrajectoryStepScale", "if([double]::IsNaN($TrajectoryStepScale)"),
+            (project / "analysis/run_native_candidate_chain.ps1", "TrajectoryStepScaleOverride",
+             "if($null-ne$TrajectoryStepScaleOverride-and("),
+            (project / "analysis/run_native_corridor_bunch_screening.ps1", "trajectoryStepScale",
+             "if($null-ne$trajectoryStepScale-and("),
         ):
             source = path.read_text(encoding="utf-8-sig")
             start = source.index(guard)
@@ -331,7 +335,7 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
     def test_shared_runtime_retains_small_gui_workbench_under_compact_policy(self):
         for token in (
             "[switch]$RetainGuiWorkbench",
-            "-RetentionContractEnabled -RetentionClass compact",
+            "$trajectoryRetentionClass=if($null-eq$trajectoryRecording){'compact'}",
             "$retainGuiWorkbenchFiles=($null-ne$NativeCorridorRuntimeSession)-or($staticFieldRequested-and$RetainGuiWorkbench)",
             "Join-Path $artifactSolverDir 'gui_workbench'",
             "Retained GUI workbench native checkpoint controller is missing.",
@@ -340,7 +344,15 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
             "Get-ChildItem -LiteralPath $temporarySolverDir -File -Filter 'trj*.tmp'",
         ):
             self.assertIn(token, self.source)
-        self.assertNotIn("-RetentionClass solver_review", self.source)
+        # Prepared replay retains explicit trajectory observations; ordinary
+        # OA GUI retention must continue to use the compact default instead.
+        oa_execution = self.source.split("\nforeach($value in @($Prism1VoltageV,$Prism2VoltageV))", 1)[1]
+        self.assertNotIn("-RetentionClass solver_review", oa_execution)
+        self.assertIn("-RetentionClass $trajectoryRetentionClass -RetentionReason $trajectoryRetentionReason", oa_execution)
+        prepared = self.source.split("function Invoke-PreparedJointTrial {", 1)[1].split(
+            "\nif($PSCmdlet.ParameterSetName-eq'PreparedJoint'){", 1)[0]
+        self.assertIn("if($null-eq$recording){throw 'Prepared joint flight requires retained trajectory observations.'}", prepared)
+        self.assertIn("-RetentionClass solver_review -RetentionReason $recording.reason", prepared)
         self.assertIn("if($retainGuiWorkbenchFiles){", self.source)
         self.assertNotIn("Join-Path $temporarySolverDir 'pa_inputs'", self.source)
         self.assertNotIn("simion_pa_links_", self.source)
@@ -492,7 +504,7 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
                         "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n"
                         f"$staticFieldMode='{mode}';$staticFieldRequested=$true;$package=@{{artifact_run_dir='run'}};"
                         "$FieldBindingPath='binding.json';$nativeCorridorRun=$null;$nativeBankGeneration=$null;"
-                        "$nativeBankKey=$null;$requiredBytes=0;$ownsCapacitySession=$false;"
+                        "$nativeBankKey=$null;$requiredBytes=0;$ownsCapacitySession=$false;$trajectoryRecording=$null;"
                         "$capacitySession=[pscustomobject]@{committed_new_bytes=0};$python='mock';$repoRoot='repo'\n"
                         f"$staticFieldBinding=Get-Content -LiteralPath {quoted} -Raw|ConvertFrom-Json -Depth 100\n"
                         "function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$ProtectedCacheKeys,$RemainingCommittedNewBytes)"

@@ -54,6 +54,40 @@ class TwoZoneGeometryTest(unittest.TestCase):
         self.assertIn("e(3)", result.gem)
         self.assertIn("e(4)", result.gem)
 
+    def test_resolved_electrodes_match_closed_gem_and_local_frame(self) -> None:
+        compiled = compile_closed_two_zone_accelerator(self.requirements())
+        geometry = compiled.resolved_electrodes.to_dict()
+        self.assertEqual(geometry["coordinate_frame"], "accelerator_centered_transverse_local_z_mm")
+        self.assertEqual(geometry["local_to_pa_translation_mm"], [0.0, 32.0, 0.0])
+        grounded = geometry["grounded_enclosure"]
+        self.assertEqual(grounded["component_electrode_id"], 15)
+        self.assertEqual(grounded["local_pa_electrode_id"], 1)
+        self.assertEqual(grounded["outer_box_mm"], {
+            "x_min_mm": -22.0, "x_max_mm": 22.0, "y_min_mm": -17.0,
+            "y_max_mm": 17.0, "z_min_mm": 6.0, "z_max_mm": 44.0,
+        })
+        self.assertEqual(grounded["cavity_box_mm"]["z_max_mm"], 43.0)
+        self.assertEqual(grounded["exit_opening_box_mm"]["x_max_mm"], 12.5)
+        self.assertEqual(geometry["repeller"]["solid_box_mm"]["z_min_mm"], 40.0)
+        self.assertEqual(geometry["repeller"]["solid_box_mm"]["z_max_mm"], 42.0)
+        supports = geometry["grid_supports"]
+        self.assertEqual([(item["component_electrode_id"], item["local_pa_electrode_id"])
+                          for item in supports], [(23, 3), (24, 4)])
+        self.assertEqual([item["ideal_sheet_mm"]["z_mm"] for item in supports], [36.0, 6.0])
+        self.assertTrue(all(item["transmission"] == "ideal_transparent" for item in supports))
+        self.assertIn("e(3) { box3D(-12.5,-13,36,12.5,13,36) }", compiled.gem)
+        self.assertIn("e(4) { box3D(-12.5,-13,6,12.5,13,6) }", compiled.gem)
+        rings = geometry["rings"]
+        self.assertEqual(len(rings), 15)
+        self.assertEqual([(item["component_electrode_id"], item["local_pa_electrode_id"])
+                          for item in rings], [(26 + i, 5 + i) for i in range(15)])
+        self.assertEqual(rings[0]["outer_box_mm"]["z_min_mm"], 33.625)
+        self.assertEqual(rings[-1]["outer_box_mm"]["z_max_mm"], 8.375)
+        for ring in rings:
+            self.assertEqual(ring["aperture_box_mm"]["x_max_mm"], 12.5)
+            self.assertEqual(ring["aperture_box_mm"]["y_max_mm"], 13.0)
+            self.assertIn(f"e({ring['local_pa_electrode_id']})", compiled.gem)
+
     def test_provider_rejects_consumer_topology_override_and_geometry_override(self) -> None:
         request = self.requirements()
         request["end_topology"] = "grid"

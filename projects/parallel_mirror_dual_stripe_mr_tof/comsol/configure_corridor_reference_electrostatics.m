@@ -1,5 +1,9 @@
-function out = configure_corridor_reference_electrostatics(model, comp, geom, geometryOut, analyzerElectrodeVoltagesV, boundaryGridDir)
-% Fixed-workpoint reference: vacuum ES and original PA boundary data.
+function out = configure_corridor_reference_electrostatics(model, comp, geom, geometryOut, ...
+    analyzerElectrodeVoltagesV, boundaryContract, componentVoltagesV)
+% Configure fixed-workpoint vacuum ES for an explicit donor or enclosure.
+% Schema 1 boundary: donor + grid_dir, or grounded_enclosure + box_mm
+% [xmin ymin zmin xmax ymax zmax] + voltage_v=0. Component voltage rows:
+% component_namespace/component_electrode_id/voltage_v, independent of MR IDs.
 % Two-sided x domains use even extension of the positive-half five faces.
 % Consumes finalized geometry and physical-ID-indexed voltages; no mesh,
 % study, solver or save. This adapter does not confer numerical qualification.
@@ -7,11 +11,25 @@ function out = configure_corridor_reference_electrostatics(model, comp, geom, ge
 % https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.34.html
 % https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.56.html
 % https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_fileformats.53.05.html
+% Internal ElectricPotential and Ground: COMSOL 6.4 checked 2026-10-05.
+% https://doc.comsol.com/6.4/doc/com.comsol.help.acdc/acdc_ug_electric_fields.07.003.html
+% https://doc.comsol.com/6.4/doc/com.comsol.help.mems/mems_ug_acdc.06.041.html
+arguments
+    model
+    comp
+    geom
+    geometryOut (1,1) struct
+    analyzerElectrodeVoltagesV {mustBeNumeric, mustBeReal, mustBeFinite}
+    boundaryContract (1,1) struct
+    componentVoltagesV struct
+end
 validateattributes(analyzerElectrodeVoltagesV, {'numeric'}, {'real','finite','vector'});
 electrodes = geometryOut.electrodes;
 assert(numel(analyzerElectrodeVoltagesV) >= max([electrodes.id]), ...
     'MRTOF:MissingElectrodeVoltage', 'Voltage vector must use physical electrode IDs.');
-box = geometryOut.corridor_box_mm;
+box = reshape(geometryOut.corridor_box_mm, 1, []);
+validate_boundary_contract(boundaryContract, box);
+donorBoundary = strcmp(boundaryContract.mode, 'donor');
 halfDomain = box(1) == 0;
 assert(halfDomain || box(1) == -box(4), ...
     'MRTOF:SymmetryPlane', 'Reference requires half or symmetric full x domain.');
@@ -49,6 +67,77 @@ for k = 1:numel(electrodes)
     electrodeInfo(k) = struct('id', entry.id, 'selection_tag', selectionTag, ...
         'boundary_ids', ids, 'voltage_v', voltage);
 end
+% A component ID is not an analyzer physical ID. A support frame and its
+% internal ideal grid share one potential without becoming a solid plate.
+componentSolids = geometryOut.component_electrodes;
+componentSheets = geometryOut.component_sheets;
+componentInfo = struct('component_namespace', {}, 'component_electrode_id', {}, ...
+    'selection_tag', {}, 'boundary_ids', {}, 'sheet_boundary_ids', {}, 'voltage_v', {});
+usedSolids = false(1, numel(componentSolids));
+usedSheets = false(1, numel(componentSheets));
+if ~isempty(componentSheets)
+    allContacts = comp.selection.create('mrc_vacuum_contacts', 'Adjacent');
+    allContacts.set('entitydim', 3);
+    allContacts.set('outputdim', 2);
+    allContacts.set('input', {geometryOut.vacuum_domain_selection});
+    allContacts.set('exterior', 'on');
+    allContacts.set('interior', 'on');
+    contacts = mphgetselection(allContacts);
+    vacuumContactIds = reshape(contacts.entities, 1, []);
+end
+for k = 1:numel(componentVoltagesV)
+    entry = componentVoltagesV(k);
+    namespace = char(entry.component_namespace);
+    componentId = entry.component_electrode_id;
+    validateattributes(componentId, {'numeric'}, {'scalar','integer','positive'});
+    validateattributes(entry.voltage_v, {'numeric'}, {'real','finite','scalar'});
+    assert(isvarname(namespace), 'MRTOF:ComponentNamespace', ...
+        'Component namespace must be a valid selection-name segment.');
+    assert(~any(strcmp({componentInfo.component_namespace}, namespace) & ...
+        [componentInfo.component_electrode_id] == componentId), ...
+        'MRTOF:DuplicateComponentVoltage', 'Duplicate voltage for %s/%d.', namespace, componentId);
+    ids = [];
+    sheetIds = [];
+    for j = 1:numel(componentSolids)
+        solid = componentSolids(j);
+        if strcmp(solid.component_namespace, namespace) && solid.component_electrode_id == componentId
+            source = mphgetselection(comp.selection(solid.boundary_selection));
+            contactIds = intersect(vacuumIds, reshape(source.entities, 1, []));
+            assert(~isempty(contactIds), 'MRTOF:EmptyComponentContact', ...
+                'Component %s/%d has no vacuum contact.', namespace, componentId);
+            ids = union(ids, contactIds);
+            usedSolids(j) = true;
+        end
+    end
+    for j = 1:numel(componentSheets)
+        sheet = componentSheets(j);
+        if strcmp(sheet.component_namespace, namespace) && sheet.component_electrode_id == componentId
+            source = mphgetselection(comp.selection(sheet.boundary_selection));
+            selectedIds = reshape(source.entities, 1, []);
+            assert(~isempty(selectedIds) && isempty(setdiff(selectedIds, vacuumContactIds)) && ...
+                isempty(intersect(selectedIds, vacuumIds)), 'MRTOF:InvalidInternalSheet', ...
+                'Sheet %s/%d must be an internal vacuum boundary.', namespace, componentId);
+            sheetIds = union(sheetIds, selectedIds);
+            usedSheets(j) = true;
+        end
+    end
+    ids = union(ids, sheetIds);
+    assert(~isempty(ids), 'MRTOF:UnusedComponentVoltage', ...
+        'Voltage %s/%d has no component geometry.', namespace, componentId);
+    assert(isempty(intersect(ids, electrodeBoundaries)), 'MRTOF:ComponentContactOverlap', ...
+        'Component %s/%d shares an assigned electrode face.', namespace, componentId);
+    selectionTag = sprintf('mrc_%s_e%d_contact', namespace, componentId);
+    make_explicit(selectionTag, ids);
+    potential = es.create(sprintf('mrc_%s_e%d_potential', namespace, componentId), 'ElectricPotential', 2);
+    potential.selection.named(selectionTag);
+    potential.set('V0', sprintf('%.17g[V]', entry.voltage_v));
+    electrodeBoundaries = union(electrodeBoundaries, ids);
+    componentInfo(k) = struct('component_namespace', namespace, 'component_electrode_id', componentId, ...
+        'selection_tag', selectionTag, 'boundary_ids', ids, ...
+        'sheet_boundary_ids', sheetIds, 'voltage_v', entry.voltage_v);
+end
+assert(all(usedSolids) && all(usedSheets), 'MRTOF:MissingComponentVoltage', ...
+    'Every component solid and sheet requires a namespace-matched voltage.');
 exteriorIds = setdiff(vacuumIds, electrodeBoundaries);
 % Plane identification only: 64 machine spacings at the coordinate scale.
 % This tolerance does not move geometry or change physical aperture sizes.
@@ -92,10 +181,10 @@ for k = 1:numel(names)
     functionTag = '';
     functionName = '';
     file = '';
-    if k <= 5
+    if donorBoundary && k <= 5
         functionTag = ['mrc_boundary_', name];
         functionName = ['V_mrc_', name];
-        file = fullfile(boundaryGridDir, [name, '.txt']);
+        file = fullfile(boundaryContract.grid_dir, [name, '.txt']);
         f = model.func.create(functionTag, 'Interpolation');
         f.set('source', 'file');
         f.set('struct', 'grid');
@@ -108,13 +197,16 @@ for k = 1:numel(names)
         % dimensional argument conversion after snapping can cross an endpoint.
         f.set('argunit', {'1','1'});
         f.set('fununit', {'V'});
-    elseif ~halfDomain
+    elseif donorBoundary && ~halfDomain
         % The negative x endpoint consumes the same original xmax function.
         functionTag = faces(1).function_tag;
         functionName = faces(1).function_name;
         file = faces(1).file;
     end
-    if k <= 5 || ~halfDomain
+    if ~donorBoundary && (k <= 5 || ~halfDomain)
+        ground = es.create(['mrc_outer_ground_', name], 'Ground', 2);
+        ground.selection.named(selectionTag);
+    elseif donorBoundary && (k <= 5 || ~halfDomain)
         potential = es.create(['mrc_outer_potential_', name], 'ElectricPotential', 2);
         potential.selection.named(selectionTag);
         coordinateArguments = strsplit(faceArguments{k}, ',');
@@ -141,7 +233,8 @@ if halfDomain
     faces = faces(1:5);
 end
 out = struct('physics_tag', 'es', 'material_tag', 'mrc_vacuum', ...
-    'electrodes', electrodeInfo, 'faces', faces, ...
+    'boundary_contract', boundaryContract, 'electrodes', electrodeInfo, ...
+    'component_electrodes', componentInfo, 'faces', faces, ...
     'symmetry', symmetry, 'plane_tolerance_mm', planeToleranceMm);
 
     function make_explicit(tag, ids)
@@ -149,6 +242,29 @@ out = struct('physics_tag', 'es', 'material_tag', 'mrc_vacuum', ...
         selection.geom(geomTag, 2);
         selection.set(ids);
     end
+end
+
+function validate_boundary_contract(contract, box)
+assert(isfield(contract, 'schema_version') && isequal(contract.schema_version, 1) && ...
+    isfield(contract, 'mode'), 'MRTOF:BoundaryContract', 'Explicit boundary schema 1 is required.');
+switch char(contract.mode)
+    case 'donor'
+        expected = {'schema_version'; 'mode'; 'grid_dir'};
+        assert(isfield(contract, 'grid_dir') && isscalar(string(contract.grid_dir)) && ...
+            strlength(string(contract.grid_dir)) > 0, ...
+            'MRTOF:BoundaryContract', 'Donor boundary requires grid_dir.');
+    case 'grounded_enclosure'
+        expected = {'schema_version'; 'mode'; 'box_mm'; 'voltage_v'};
+        assert(isfield(contract, 'box_mm') && ...
+            isequal(reshape(contract.box_mm, 1, []), box), ...
+            'MRTOF:EnclosureBox', 'Enclosure inner box must match the finalized geometry domain.');
+        assert(isfield(contract, 'voltage_v') && isequal(contract.voltage_v, 0), ...
+            'MRTOF:EnclosureGround', 'A grounded enclosure requires explicit voltage_v=0.');
+    otherwise
+        error('MRTOF:BoundaryMode', 'Unknown boundary mode: %s.', string(contract.mode));
+end
+assert(isequal(sort(fieldnames(contract)), sort(expected)), 'MRTOF:BoundaryContract', ...
+    'Boundary contract contains missing or unknown fields.');
 end
 
 function expression = snap_endpoint_expression(value, low, high)

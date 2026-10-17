@@ -178,26 +178,68 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             with self.subTest(kind=kind), self.assertRaises(CandidateContractError):
                 observe(bad_events, bad_trial)
 
+    def test_shared_clean_action_keeps_nonzero_x_and_is_not_physical_potential(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_dual_stripe_l0_math import converging_prism_fixture
+        _,_,target=converging_prism_fixture()
+        state=dict(position_mm=[.03,9.29765627041,0.],velocity_mm_per_us=[.019,1.32963441921,-40.1278924103])
+        original=copy.deepcopy(state)
+        result=two_prism_simion_trial.clean_phase_effective_slow_action(state=state,mass_amu=524,charge_state=1,
+            target=target,stripe_1_voltage_v=-27.36410265968425)
+        self.assertEqual(state,original)
+        self.assertNotIn("physical_potential_v",result)
+        self.assertIn("design_effective_potential_delta_v",result)
+        self.assertAlmostEqual(result[two_prism_simion_trial.CONVERGING_PRISM_ENERGY_RESIDUAL],-.36835835613722345)
+
     def test_launcher_preloads_only_static_ordinary_collision_without_saving(self) -> None:
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
         launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
-        fixture = '''
+        fixture = r'''
 local launcher, iob, expected = arg[1], arg[2], arg[3]
-local calls = 0
-local pa = {refinable=true, refined=false}
-simion = {pas={open=function(_,path)
-  assert(path=='frozen collision.pa'); calls=calls+1; return pa
-end},command=function(command)
+local calls,commands = 0,0
+local collision='C:/frozen/collision.pa'
+-- SIMION2020 Help: filename is basename; path is the full normalized path.
+local pa = {filename='collision.pa',path=collision,refinable=true,refined=false}
+local inventory={}
+local other={filename='collision.pa',path='C:/different/collision.pa',refinable=true,refined=false}
+if expected=='warm' then
+ pa.path='c:\\FROZEN\\collision.pa';inventory[1]=pa
+elseif expected=='same_basename' then inventory[1]=other
+elseif expected=='ambiguous' then
+ inventory[1]=pa;inventory[2]={filename='collision.pa',path='c:/FROZEN/collision.pa',refinable=true}
+end
+inventory.open=function(self,path)
+  assert(path==collision);calls=calls+1;self[#self+1]=pa;return pa
+end
+inventory.close=function() error('Must not discard warmed PA inventory') end
+simion = {pas=inventory,command=function(command)
+  commands=commands+1
   assert(command:match('--retain%-trajectories=0'))
-  assert((command:match('--remove%-pas=0')~=nil)==(expected=='ordinary'))
+  local ordinary=expected=='ordinary' or expected=='warm' or expected=='same_basename'
+  assert((command:match('--remove%-pas=0')~=nil)==ordinary)
+  if ordinary then
+   local matching=0
+   for i=1,#inventory do
+    if inventory[i].path:gsub('\\','/'):lower()==collision:lower() then matching=matching+1 end
+   end
+   assert(matching==1,'Multiple matching filenames in PA list')
+  end
 end}
 arg={iob}
-assert(loadfile(launcher))()
-assert(calls==(expected=='ordinary' and 1 or 0))
+local ok,err=pcall(assert(loadfile(launcher)))
+if expected=='ambiguous' then
+ assert(not ok and err:match('ambiguous collision PA inventory'))
+ assert(calls==0 and commands==0,'Ambiguity must fail before opening or Fly')
+ print('COLLISION_PRELOAD_PASS');return
+end
+assert(ok,err)
+assert(calls==((expected=='ordinary' or expected=='same_basename') and 1 or 0))
+assert(commands==1)
 assert(pa.refined==false)
-assert(pa.refinable==(expected~='ordinary'))
+local active=expected=='ordinary' or expected=='warm' or expected=='same_basename'
+assert(pa.refinable==not active)
+assert(other.refinable==true,'Same basename in another directory was modified')
 print('COLLISION_PRELOAD_PASS')
 '''
         with tempfile.TemporaryDirectory() as directory:
@@ -208,16 +250,27 @@ print('COLLISION_PRELOAD_PASS')
             for extension in ("lua", "fly2"):
                 iob.with_suffix("." + extension).write_text("", encoding="utf-8")
             for name, operating in (
-                ("ordinary", "return {static_field={collision_pa_path='frozen collision.pa'}}"),
+                ("ordinary", "return {static_field={collision_pa_path='C:/frozen/collision.pa'}}"),
+                ("warm", "return {static_field={collision_pa_path='C:/frozen/collision.pa'}}"),
+                ("same_basename", "return {static_field={collision_pa_path='C:/frozen/collision.pa'}}"),
+                ("ambiguous", "return {static_field={collision_pa_path='C:/frozen/collision.pa'}}"),
                 ("legacy", "return {static_field={collision_pa_path='frozen collision.pa0'}}"),
                 ("native", "return {}"),
             ):
                 with self.subTest(name=name):
                     iob.with_suffix(".operating_point.lua").write_text(operating, encoding="utf-8")
                     result = subprocess.run([str(lua), str(harness), str(launcher), str(iob), name],
-                                            cwd=Path(__file__).resolve().parents[4],
+                                            cwd=root,
                                             capture_output=True, text=True, timeout=10, check=True)
                     self.assertIn("COLLISION_PRELOAD_PASS", result.stdout)
+                    if name in {"warm", "same_basename", "ambiguous"}:
+                        self.assertIn("filename=collision.pa path=", result.stdout)
+                    if name == "warm":
+                        self.assertIn("exact_match=true", result.stdout)
+                        self.assertIn("existing_pa_reused=true", result.stdout)
+                    elif name == "same_basename":
+                        self.assertIn("path=C:/different/collision.pa exact_match=false", result.stdout)
+                        self.assertIn("existing_pa_reused=false", result.stdout)
 
     def test_center_view_validates_actual_source_not_particle_count(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _validate_center_view_source
@@ -747,6 +800,21 @@ print('COLLISION_PRELOAD_PASS')
         self.assertEqual(measured["status"], "observed")
         self.assertEqual(measured["residuals"], result["residuals"])
         self.assertFalse(measured["full_workpoint_qualified"])
+        # A measured IP probe can reverse its small slow velocity before P1.
+        # Preserve the old OA n=1 gate while measuring the first post-origin
+        # root in the explicit 3D measured-source path.
+        probe_events=[dict(events[6],t_us=.5,n=1,y_mm=-55.)]+copy.deepcopy(events)
+        probe_events[7]["n"]=2
+        for event in probe_events:
+            event["x_mm"]=.031
+            event["vx_mm_us"]=.019
+        probe_trial=dict(trial,source_projection="measured_exit_centroid")
+        probe_source=two_prism_simion_trial.ProjectPhaseSpaceState((.031,-55.,0.),(.019,.013,-40.))
+        self.assertEqual(_bunch_center_stripe_stage_validation(probe_events,trial)["status"],"incomplete")
+        probe_stage=_bunch_center_stripe_stage_validation(probe_events,probe_trial,source_state=probe_source)
+        self.assertEqual(probe_stage["status"],"observed")
+        self.assertAlmostEqual(probe_stage["residuals"]["Stripe_slow_turn_y_minus_L_mm"],.03)
+        self.assertEqual(probe_events[0]["y_mm"],-55.)
         variants = [
             events[:-1], events + [dict(events[-1], t_us=22.)],
             events[:6] + [dict(collision, t_us=9.)] + events[6:],

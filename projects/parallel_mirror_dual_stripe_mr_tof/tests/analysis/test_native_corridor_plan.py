@@ -132,10 +132,12 @@ class NativeCorridorPlanTest(unittest.TestCase):
             self.assertIn(f'e({identifier})', text)
         self.assertNotIn('e(20)', text)
 
-    def test_iob_builder_declares_four_roles_and_full_table(self) -> None:
+    def test_iob_builder_declares_provider_specific_four_roles_with_full_oa_table(self) -> None:
         source = (PROJECT / 'simion' / 'build_native_corridor_iob.lua').read_text(encoding='utf-8-sig')
         self.assertIn('4_instance_seed%.iob', source)
-        self.assertIn("local expected_roles = {'global_fallback', 'native_corridor', 'accelerator', 'detector'}", source)
+        self.assertIn("local expected_roles = measured_mode and {'global_fallback', 'native_corridor', 'ion_processor_collision', 'detector'}", source)
+        self.assertIn("or {'global_fallback', 'native_corridor', 'accelerator', 'detector'}", source)
+        self.assertIn("4_instance_seed%.iob", source)
         self.assertIn('local role_instances = {}', source)
         self.assertIn('priority.corridor_voltage_groups', source)
         self.assertIn('assert_complete_local_voltage_table(corridor_values)', source)

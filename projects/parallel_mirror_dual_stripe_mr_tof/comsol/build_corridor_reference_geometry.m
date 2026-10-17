@@ -1,10 +1,12 @@
-function out = build_corridor_reference_geometry(geom, resolved, corridorBoxMm)
+function out = build_corridor_reference_geometry(geom, resolved, corridorBoxMm, assembly)
 % REPOSITORY_CONTRACT: MATLAB_BUILD_ONLY
 % Maintained project geometry adapter; not yet model/geometry qualified.
 % Input: resolve_geometry output and [xmin ymin zmin xmax ymax zmax], mm.
 % A symmetric two-sided box mirrors the positive-half definition, matching
 % native SIMION x symmetry even if resolved negative-side polygons differ.
 % Caller owns geom creation/finalization and all non-geometric setup.
+% Optional assembly embeds the frozen OA and detector solids in the same
+% vacuum. Its local OA coordinates are translated to PA, then IOB, mm.
 % Preserve original polygons. Closed CAD boundaries do not reproduce
 % SIMION's inside/on voxel collision classifications.
 % Official COMSOL 6.4 API checked 2026-10-02:
@@ -14,9 +16,14 @@ function out = build_corridor_reference_geometry(geom, resolved, corridorBoxMm)
 % https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.070.html
 validateattributes(corridorBoxMm, {'numeric'}, {'real','finite','numel',6});
 corridorBoxMm = reshape(corridorBoxMm, 1, 6);
+if nargin < 4
+    assembly = [];
+end
 assert(all(corridorBoxMm(4:6) > corridorBoxMm(1:3)), ...
     'MRTOF:InvalidCorridor', 'Corridor must have positive axis extents.');
 if corridorBoxMm(1) < 0
+    assert(isempty(assembly), 'MRTOF:UnsupportedAssemblyDomain', ...
+        'The optional component assembly currently supports the x>=0 half-domain only.');
     assert(corridorBoxMm(1) == -corridorBoxMm(4), ...
         'MRTOF:InvalidCorridor', 'Two-sided reference requires symmetric x extents.');
     halfBox = corridorBoxMm;
@@ -60,23 +67,43 @@ end
 geom.lengthUnit('mm');
 serial = 0;
 bodies = struct('id', {}, 'tag', {}, 'box_mm', {});
+componentElectrodes = struct('component_namespace', {}, 'component_electrode_id', {}, ...
+    'local_pa_electrode_id', {}, 'object_tag', {}, 'domain_selection', {}, ...
+    'boundary_selection', {});
+componentSheets = struct('component_namespace', {}, 'component_electrode_id', {}, ...
+    'local_pa_electrode_id', {}, 'object_tag', {}, 'boundary_selection', {}, 'box_mm', {});
+componentTags = {};
+sheetTags = {};
 % Match native_system_geometry._analyzer_geometry_lines emission order.
 for k = 1:numel(resolved.mirror_electrodes)
     item = at(resolved.mirror_electrodes, k);
-    tag = subtract(block(item.box), {block(item.beam_slot)}, false);
+    if isfield(resolved, 'mirror_convergence_transform')
+        tag = tilted_mirror(item);
+    else
+        tag = subtract(block(item.box), {block(item.beam_slot)}, false);
+    end
     append(item.id, tag, item.box);
 end
 for k = 1:numel(resolved.mirror_ground_shields)
     item = at(resolved.mirror_ground_shields, k);
-    tag = block(item.box);
-    if strcmp(item.role, 'inner_stripe_facing_4mm_slot')
-        tag = subtract(tag, {block(resolved.mirror_inner_shield_slot)}, false);
+    if isfield(resolved, 'mirror_convergence_transform')
+        tag = tilted_mirror(item);
+    else
+        tag = block(item.box);
+        if strcmp(item.role, 'inner_stripe_facing_4mm_slot')
+            tag = subtract(tag, {block(resolved.mirror_inner_shield_slot)}, false);
+        end
     end
     append(15, tag, item.box);
 end
 for k = 1:numel(resolved.mirror_e_closures)
     item = at(resolved.mirror_e_closures, k);
-    append(item.id, block(item.box), item.box);
+    if isfield(resolved, 'mirror_convergence_transform')
+        tag = tilted_mirror(item);
+    else
+        tag = block(item.box);
+    end
+    append(item.id, tag, item.box);
 end
 for k = 1:numel(resolved.stripe_electrodes)
     item = at(resolved.stripe_electrodes, k);
@@ -129,12 +156,66 @@ for k = 1:numel(ids)
         'domain_selection', selection_name(tags{k}, 'dom'), ...
         'boundary_selection', selection_name(tags{k}, 'bnd'));
 end
-vacuum = subtract(block(corridorBoxMm), tags, true);
+if ~isempty(assembly)
+    assert(corridorBoxMm(1) == 0, 'MRTOF:UnsupportedAssemblyDomain', ...
+        'The optional component assembly currently requires the x=0 mirror half-domain.');
+    oa = assembly.accelerator_resolved_electrodes;
+    assert(oa.schema_version == 1 && ...
+        strcmp(oa.coordinate_frame, 'accelerator_centered_transverse_local_z_mm') && ...
+        strcmp(oa.acceleration_direction, '-z'), ...
+        'MRTOF:InvalidAssembly', 'Unexpected OA resolved-electrode coordinate contract.');
+    validateattributes(oa.local_to_pa_translation_mm, {'numeric'}, ...
+        {'real','finite','numel',3});
+    validateattributes(assembly.accelerator_iob_origin_mm, {'numeric'}, ...
+        {'real','finite','numel',3});
+    oaOffset = reshape(oa.local_to_pa_translation_mm, 1, 3) + ...
+        reshape(assembly.accelerator_iob_origin_mm, 1, 3);
+    enclosure = oa.grounded_enclosure;
+    enclosureTag = subtract(block(project_box(enclosure.outer_box_mm, oaOffset)), ...
+        {block(project_box(enclosure.cavity_box_mm, oaOffset)), ...
+         block(project_box(enclosure.exit_opening_box_mm, oaOffset))}, false);
+    append_component('accelerator', enclosure, enclosureTag);
+    repeller = oa.repeller;
+    append_component('accelerator', repeller, ...
+        block(project_box(repeller.solid_box_mm, oaOffset)));
+    for k = 1:numel(oa.grid_supports)
+        support = at(oa.grid_supports, k);
+        frameTag = subtract(block(project_box(support.frame_outer_box_mm, oaOffset)), ...
+            {block(project_box(support.aperture_box_mm, oaOffset))}, false);
+        append_component('accelerator', support, frameTag);
+        assert(strcmp(support.transmission, 'ideal_transparent'), ...
+            'MRTOF:InvalidAssembly', 'OA grid sheet must remain ideal transparent.');
+        append_sheet('accelerator', support, project_sheet(support.ideal_sheet_mm, oaOffset));
+    end
+    for k = 1:numel(oa.rings)
+        ring = at(oa.rings, k);
+        ringTag = subtract(block(project_box(ring.outer_box_mm, oaOffset)), ...
+            {block(project_box(ring.aperture_box_mm, oaOffset))}, false);
+        append_component('accelerator', ring, ringTag);
+    end
+    detector = assembly.detector;
+    assert(detector.separate_pa == true, 'MRTOF:InvalidAssembly', ...
+        'Detector must retain its independently resolved component identity.');
+    detectorTag = block(reshape(detector.box, 1, 6));
+    detectorItem = struct('component_electrode_id', detector.id, ...
+        'local_pa_electrode_id', detector.id);
+    append_component('detector', detectorItem, detectorTag);
+end
+vacuum = subtract(block(corridorBoxMm), [tags, componentTags], true);
+if ~isempty(sheetTags)
+    sheetUnion = next_tag();
+    feature = geom.create(sheetUnion, 'Union');
+    feature.selection('input').set([{vacuum}, sheetTags]);
+    feature.set('intbnd', 'on');
+    vacuum = sheetUnion;
+end
 mark_selection(vacuum);
 out = struct('electrodes', electrodes, 'vacuum_tag', vacuum, ...
     'vacuum_domain_selection', selection_name(vacuum, 'dom'), ...
     'vacuum_boundary_selection', selection_name(vacuum, 'bnd'), ...
-    'corridor_box_mm', corridorBoxMm);
+    'corridor_box_mm', corridorBoxMm, ...
+    'component_electrodes', componentElectrodes, ...
+    'component_sheets', componentSheets);
 
     function tag = next_tag()
         serial = serial + 1;
@@ -188,6 +269,21 @@ out = struct('electrodes', electrodes, 'vacuum_tag', vacuum, ...
         end
         tag = unite(inputs);
     end
+    function tag = tilted_mirror(item)
+        % Resolved world polygons already contain the authored transform.
+        assert(isfield(item, 'x') && isfield(item, 'polygon_yz_mm') && ...
+            isfield(item, 'holes'), 'MRTOF:MissingMirrorPolygon', ...
+            'Transformed mirror solids require resolved x, polygon and holes.');
+        tag = extrude(item.x, item.polygon_yz_mm);
+        holes = cell(1, numel(item.holes));
+        for n = 1:numel(item.holes)
+            hole = at(item.holes, n);
+            assert(isfield(hole, 'x') && isfield(hole, 'polygon_yz_mm'), ...
+                'MRTOF:MissingMirrorPolygon', 'Transformed mirror hole requires its resolved polygon.');
+            holes{n} = extrude(hole.x, hole.polygon_yz_mm);
+        end
+        tag = subtract(tag, holes, false);
+    end
     function tag = unite(inputs)
         inputs = inputs(~cellfun(@isempty, inputs));
         if isempty(inputs)
@@ -221,6 +317,43 @@ out = struct('electrodes', electrodes, 'vacuum_tag', vacuum, ...
             bodies(end+1) = struct('id', id, 'tag', tag, 'box_mm', clip_box(box));
         end
     end
+    function append_component(componentNamespace, item, tag)
+        assert(~isempty(tag), 'MRTOF:InvalidAssembly', ...
+            'A resolved component electrode lies outside the half-domain.');
+        mark_selection(tag);
+        componentTags{end+1} = tag;
+        componentElectrodes(end+1) = struct( ...
+            'component_namespace', componentNamespace, ...
+            'component_electrode_id', item.component_electrode_id, ...
+            'local_pa_electrode_id', item.local_pa_electrode_id, ...
+            'object_tag', tag, ...
+            'domain_selection', selection_name(tag, 'dom'), ...
+            'boundary_selection', selection_name(tag, 'bnd'));
+    end
+    function append_sheet(componentNamespace, item, box)
+        box(1:2) = max(box(1:2), corridorBoxMm(1:2));
+        box(4:5) = min(box(4:5), corridorBoxMm(4:5));
+        assert(all(box(4:5) > box(1:2)) && ...
+            box(3) > corridorBoxMm(3) && box(3) < corridorBoxMm(6), ...
+            'MRTOF:InvalidAssembly', 'A resolved grid sheet misses the vacuum interior.');
+        tag = next_tag();
+        wp = geom.create(tag, 'WorkPlane');
+        wp.set('planetype', 'quick');
+        wp.set('quickplane', 'xy');
+        wp.set('quickz', box(3));
+        rect = wp.geom.create('sheet', 'Rectangle');
+        rect.set('base', 'corner');
+        rect.set('pos', box(1:2));
+        rect.set('size', box(4:5) - box(1:2));
+        mark_selection(tag);
+        sheetTags{end+1} = tag;
+        componentSheets(end+1) = struct( ...
+            'component_namespace', componentNamespace, ...
+            'component_electrode_id', item.component_electrode_id, ...
+            'local_pa_electrode_id', item.local_pa_electrode_id, ...
+            'object_tag', tag, 'boundary_selection', selection_name(tag, 'bnd'), ...
+            'box_mm', box);
+    end
     function box = clip_box(box)
         box = [max(box(1:3), corridorBoxMm(1:3)), min(box(4:6), corridorBoxMm(4:6))];
     end
@@ -231,6 +364,16 @@ out = struct('electrodes', electrodes, 'vacuum_tag', vacuum, ...
     function name = selection_name(tag, entity)
         name = [char(geom.tag()), '_', tag, '_', entity];
     end
+end
+function box = project_box(localBox, offset)
+box = [localBox.x_min_mm, localBox.y_min_mm, localBox.z_min_mm, ...
+    localBox.x_max_mm, localBox.y_max_mm, localBox.z_max_mm];
+box = box + [offset, offset];
+end
+function box = project_sheet(localSheet, offset)
+box = [localSheet.x_min_mm, localSheet.y_min_mm, localSheet.z_mm, ...
+    localSheet.x_max_mm, localSheet.y_max_mm, localSheet.z_mm];
+box = box + [offset, offset];
 end
 function item = at(items, index)
 % jsondecode uses cells for records with unequal field sets.

@@ -14,6 +14,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stri
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
+    resolve_drift_phase_contract,
+)
 
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -92,11 +95,14 @@ class FixedGridMirrorStripeHandoffTests(unittest.TestCase):
     def test_target_k_is_a_downstream_stripe_condition(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             altered = json.loads(DOWNSTREAM_CONTRACT.read_text(encoding="utf-8-sig"))
-            altered["nominal"]["target_drift_period_ratio"] = 23.5
+            altered["nominal"]["target_drift_period_ratio"] = 25.5
             contract = Path(temporary) / "contract.json"
             contract.write_text(json.dumps(altered, indent=2) + "\n", encoding="utf-8")
             point = load_fixed_grid_mirror_point(R130_MANIFEST, contract)
-            self.assertEqual(point.contract["nominal"]["target_drift_period_ratio"], 23.5)
+            self.assertEqual(point.contract["nominal"]["target_drift_period_ratio"], 25.5)
+            phase = resolve_drift_phase_contract(point.contract)
+            self.assertEqual(phase.target_half_oscillation_count, 51)
+            self.assertEqual(phase.return_mirror_side, -1)
 
     def test_prism_shield_design_is_checked_by_assembled_transport_not_mirror_seed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -146,9 +152,42 @@ class FixedGridMirrorStripeHandoffTests(unittest.TestCase):
             with self.assertRaisesRegex(CandidateContractError, "gamma physical gate fails"):
                 load_fixed_grid_mirror_point(manifest, DOWNSTREAM_CONTRACT)
 
-    def test_current_assembled_contract_does_not_masquerade_as_policy_only(self) -> None:
-        with self.assertRaisesRegex(CandidateContractError, "changes more than"):
-            load_fixed_grid_mirror_point(R130_MANIFEST, CURRENT_CONTRACT)
+    def test_current_consumer_numerics_preserve_frozen_mirror_initializer(self) -> None:
+        original = load_fixed_grid_mirror_point(R130_MANIFEST, DOWNSTREAM_CONTRACT)
+        current = load_fixed_grid_mirror_point(R130_MANIFEST, CURRENT_CONTRACT)
+        self.assertEqual(current.design, original.design)
+        self.assertEqual(current.energy_points_v, original.energy_points_v)
+        self.assertEqual(current.nominal_reduced_period_mm_per_sqrt_v,
+                         original.nominal_reduced_period_mm_per_sqrt_v)
+
+    def test_each_downstream_numeric_update_preserves_mirror_period(self) -> None:
+        original = load_fixed_grid_mirror_point(R130_MANIFEST, DOWNSTREAM_CONTRACT)
+        current = json.loads(CURRENT_CONTRACT.read_text(encoding="utf-8-sig"))
+        for name in ("step", "quantum", "assembled_field", "statistics"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                altered = json.loads(DOWNSTREAM_CONTRACT.read_text(encoding="utf-8-sig"))
+                if name == "step":
+                    altered["simion"]["trajectory_profiles"]["center_screening"]["maximum_step_us"] = 0.004
+                elif name == "statistics":
+                    altered["peak_analysis"] = current["peak_analysis"]
+                else:
+                    key = "grid_generation" if name == "quantum" else "native_static_field"
+                    altered["simion"]["numerical_profiles"][key] = current["simion"]["numerical_profiles"][key]
+                contract = Path(temporary) / "contract.json"
+                contract.write_text(json.dumps(altered, indent=2) + "\n", encoding="utf-8")
+                point = load_fixed_grid_mirror_point(R130_MANIFEST, contract)
+                self.assertEqual(point.design, original.design)
+                self.assertEqual(point.nominal_reduced_period_mm_per_sqrt_v,
+                                 original.nominal_reduced_period_mm_per_sqrt_v)
+
+    def test_current_consumer_changes_do_not_allow_mirror_geometry_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            altered = json.loads(CURRENT_CONTRACT.read_text(encoding="utf-8-sig"))
+            altered["mirror"]["theory_requirements"]["berdnikov_transverse_half_gap_mm"] += 0.01
+            contract = Path(temporary) / "contract.json"
+            contract.write_text(json.dumps(altered, indent=2) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "changes more than"):
+                load_fixed_grid_mirror_point(R130_MANIFEST, contract)
 
 
 if __name__ == "__main__":

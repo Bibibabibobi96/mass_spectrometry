@@ -21,7 +21,8 @@
   体积偏差单列。原native/Parasolid严格验收口径未因此改变。
 
 第三方BEM消费尚未验收；mixed-dimensional的网格sheet与实体框需由消费端正确支持。
-当前倾镜版英文Word仍待渲染和封存，不能把旧平行镜说明作为配套文档。
+当前倾镜版[英文模拟交接包][pulsar-handoff]已精简为2页并完成渲染检查，包含逐积分步真实轨迹与40电极STEP边线叠图、完整电压及离子初态；
+STEP复用163154封存字节，未新增商业CAD冷读或第三方消费资格。邮件草稿未发送；旧平行镜说明不作为配套文档。
 交付不包括自行补造的MCP内部、绝缘件、紧固件、材料、公差或加工图，不授予制造或数值Formal资格。
 
 ## 资产与坐标权威
@@ -115,3 +116,4 @@ STEP-only不传Word参数，不启动SolidWorks，
 文档结构检查仅证明链接与归档结构，不代替CAD冷读、第三方消费或制造资格。
 
 [delivery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/delivery_publication.json
+[pulsar-handoff]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_140921__build__python__pulsar-trajectory-handoff/summary.json

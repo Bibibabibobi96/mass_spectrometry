@@ -52,6 +52,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     finite_difference_joint_jacobian_rows,
     fit_dimensionless_psi_g_profiles,
     spatial_return_kappa_derivative_residual,
+    stripes_from_contract,
     time_platform_derivative_residuals,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import (
@@ -1554,10 +1555,7 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
         )
 
         def trial_from_biases(biases: tuple[float, ...]) -> JointL0Trial:
-            trial_stripes = tuple(
-                StripeHardBoundary(bias, width)
-                for bias, width in zip(biases, native_widths)
-            )
+            trial_stripes = stripes_from_contract(contract, biases)
             trial_turn = derive_turning_y_from_entry_direction(
                 mirror_reduced_period_mm_per_sqrt_v=mirror.nominal_reduced_period_mm_per_sqrt_v,
                 energy_per_charge_v=energy,
@@ -1880,10 +1878,6 @@ def _evaluate_exact_k_seed_consistency(
     energy_points = derive_operating_energy_envelope(
         contract, selected_center_v=energy,
     ).mirror_energy_nodes_v
-    widths = tuple(
-        compile_dual_stripe_path_length_evaluator(contract, name)
-        for name in ("set_1", "set_2")
-    )
     entry = project_y_from_theory_drift_mm(contract, 0.0)
     search_end, _sample_count = _stripe_search_domain(contract, profile)
     drift_sign = 1.0 if search_end > entry else -1.0
@@ -1906,10 +1900,7 @@ def _evaluate_exact_k_seed_consistency(
         return JointL0Trial(
             mirror_design=exact_k.design,
             energy_points_v=energy_points,
-            stripes=tuple(
-                StripeHardBoundary(value, width)
-                for value, width in zip(values, widths, strict=True)
-            ),
+            stripes=stripes_from_contract(contract, values),
             stripe_entry_y_mm=entry,
             nominal_turning_y_mm=turning,
             target_oscillation_count=resolve_drift_phase_contract(contract).target_period_ratio,

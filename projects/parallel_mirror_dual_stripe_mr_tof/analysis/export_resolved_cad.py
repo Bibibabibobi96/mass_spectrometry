@@ -14,6 +14,7 @@ import json
 import hashlib
 import math
 import re
+import shutil
 import struct
 import xml.etree.ElementTree as ET
 import zipfile
@@ -24,6 +25,16 @@ def rectangle(box: list[float]) -> dict:
     """Represent a project box as an x-directed extrusion."""
     return dict(x=[box[0],box[3]],polygon_yz_mm=[
         [box[1],box[2]],[box[4],box[2]],[box[4],box[5]],[box[1],box[5]]])
+
+
+def _mirror_operations(item: dict, legacy_cuts: tuple = ()) -> tuple[list[dict], list[dict]]:
+    """Consume resolved mirror solids and slots, not their rotated AABBs."""
+    if 'polygon_yz_mm' in item:
+        solids = [dict(x=item['x'], polygon_yz_mm=item['polygon_yz_mm'])]
+        cuts = [dict(x=hole['x'], polygon_yz_mm=hole['polygon_yz_mm'])
+                for hole in item['holes']]
+        return solids, cuts
+    return [rectangle(item['box'])], [rectangle(box) for box in legacy_cuts]
 
 
 def original_stripe_instances(parts: list[dict],geometry: dict,curve_contract: dict,
@@ -107,12 +118,15 @@ def compile_parts(geometry: dict, authority: dict) -> list[dict]:
 
     for e in geometry['mirror_electrodes']:
         side='positive' if e['box'][2]>0 else 'negative'
-        add(f"mirror_{side}_e{e['id']:02}",'mirror',e['id'],[rectangle(e['box'])],[rectangle(e['beam_slot'])])
+        solids,cuts=_mirror_operations(e,(e['beam_slot'],))
+        add(f"mirror_{side}_e{e['id']:02}",'mirror',e['id'],solids,cuts)
     for i,e in enumerate(geometry['mirror_ground_shields'],1):
-        cuts=[rectangle(geometry['mirror_inner_shield_slot'])] if e['role']=='inner_stripe_facing_4mm_slot' else []
-        add(f'mirror_ground_shield_{i}','ground_shield',15,[rectangle(e['box'])],cuts)
+        legacy_cuts=(geometry['mirror_inner_shield_slot'],) if e['role']=='inner_stripe_facing_4mm_slot' else ()
+        solids,cuts=_mirror_operations(e,legacy_cuts)
+        add(f'mirror_ground_shield_{i}','ground_shield',15,solids,cuts)
     for i,e in enumerate(geometry['mirror_e_closures'],1):
-        add(f'mirror_outer_closure_{i}','mirror',e['id'],[rectangle(e['box'])])
+        solids,cuts=_mirror_operations(e)
+        add(f'mirror_outer_closure_{i}','mirror',e['id'],solids,cuts)
     for e in geometry['stripe_electrodes']:
         add(f"s{1 if e['id'] in (11,12) else 2}_electrode_{e['id']}",'stripe',e['id'],
             [dict(x=e['x'],polygon_yz_mm=e[k]) for k in ('polygon_yz_mm','terminal_polygon_yz_mm')],
@@ -436,7 +450,7 @@ def gui_resource_counts(sw) -> dict:
     except Exception as exc:return dict(unavailable=str(exc))
 
 
-def save_assembly(sw,rows: list[dict],output: Path,stem: str,api_state: dict,state_path: Path,exchange_format: str='step',*,electrical_step: bool=False,reuse_native_samples: bool=False) -> dict:
+def save_assembly(sw,rows: list[dict],output: Path,stem: str,api_state: dict,state_path: Path,exchange_format: str='step',*,electrical_step: bool=False,reuse_native_samples: bool=False,check_electrical_contacts: bool=False) -> dict:
     """One official flat assembly save/reopen path, reused for named groups."""
     import pythoncom
     import win32com.client
@@ -465,7 +479,7 @@ def save_assembly(sw,rows: list[dict],output: Path,stem: str,api_state: dict,sta
                 row['mass_property_volume_levels_mm3']=mass_property_volume_levels(part)
                 row['volume_mm3']=row['mass_property_volume_levels_mm3']['2']
                 row['bspline_edges']=inspect_bspline_edges(part)
-                if not reuse_native_samples:
+                if not reuse_native_samples or row.get('regenerate_trimmed_curve_samples'):
                     row['trimmed_curve_sample_files']=save_trimmed_curve_samples(part,row.get('project_transform',PROJECT_TRANSFORM),
                         output.parent/'results'/'curves'/stem/'native'/row['name'],sample_count=2001)
             comp=assembly.AddComponent5(row['native'],0,'',False,'',0,0,0)
@@ -483,13 +497,21 @@ def save_assembly(sw,rows: list[dict],output: Path,stem: str,api_state: dict,sta
         ns=save_native_document(assembly,native_path);ss=save_exchange_document(sw,assembly,step_path)
         if ns[0] or ss[0]:raise RuntimeError('Assembly save failed')
         manager=member(assembly.InterferenceDetectionManager)
-        manager.TreatCoincidenceAsInterference=False
+        manager.TreatCoincidenceAsInterference=check_electrical_contacts
         manager.IncludeMultibodyPartInterferences=True;manager.IgnoreHiddenBodies=False
         interferences=[]
         for item in (member(manager.GetInterferences) or []):
             interferences.append(dict(volume_mm3=float(member(item.Volume))*1e9,
                 components=[str(member(c.Name2)) for c in member(item.Components)]))
         _=member(manager.Done)
+        if check_electrical_contacts:
+            for interference in interferences:
+                component_names = {name.rsplit('/',1)[-1].rsplit('-',1)[0] for name in interference['components']}
+                potentials = {row['voltage_v'] for row in rows if row['name'] in component_names}
+                if len(potentials) > 1:
+                    raise RuntimeError('Different-potential conductors contact: ' + str(interference))
+                if len(component_names) > 1:
+                    raise RuntimeError('Unresolved cross-file conductor contact: ' + str(interference))
         if any(x['volume_mm3']>1e-5 for x in interferences):
             raise RuntimeError('Assembly contains overlapping physical conductors: '+str(interferences))
     finally:
@@ -800,30 +822,123 @@ def machining_feature_inventory(document,transform: list[float]) -> dict:
                 approximate_face_boxes_are_diagnostic_only=True,source_saved=False,geometry_modified=False)
 
 
-def electrical_step_groups(source: Path, frozen_inputs: dict[str,Path]) -> list[dict]:
+def frozen_mirror_pose_transforms(source_geometry: dict, target_geometry: dict,
+                                 source_authority: dict, target_authority: dict) -> dict[str,list[float]]:
+    """Validate the declared rigid mirror change and return world row-vector poses.
+
+    The sealed parallel bodies remain the shape authority. Only the fourteen
+    mirror bodies may move; non-mirror geometry and component voltages remain
+    unchanged. Analyzer potentials come from the new complete authority.
+    """
+    if source_geometry.get('mirror_convergence_transform'):
+        raise ValueError('Frozen mirror pose source must be parallel')
+    tilt=target_geometry.get('mirror_convergence_transform') or {}
+    if (set(tilt)!={'angle_deg','pivot_positive_project_mm','negative_side','solid_representation'}
+        or tilt['negative_side']!='exact_z_reflection' or tilt['solid_representation']!='extruded_yz_polygon'):
+        raise ValueError('Explicit frozen mirror convergence transform required')
+    angle=float(tilt['angle_deg']);pivot=list(map(float,tilt['pivot_positive_project_mm']))
+    if not math.isfinite(angle) or not 0<angle<90 or len(pivot)!=3 or pivot[0]!=0 or not all(map(math.isfinite,pivot)):
+        raise ValueError('Invalid frozen mirror pivot or angle')
+    changed={'mirror_electrodes','mirror_ground_shields','mirror_e_closures',
+             'mirror_convergence_transform','two_prism_low_field_reference_section','metadata'}
+    if {k:v for k,v in source_geometry.items() if k not in changed}!={k:v for k,v in target_geometry.items() if k not in changed}:
+        raise ValueError('Non-mirror frozen geometry differs')
+    if {k:v for k,v in source_authority.items() if k!='analyzer_electrode_voltages_v'}!={k:v for k,v in target_authority.items() if k!='analyzer_electrode_voltages_v'}:
+        raise ValueError('Non-analyzer frozen authority differs')
+    old={p['name']:p for p in compile_parts(source_geometry,source_authority)}
+    new={p['name']:p for p in compile_parts(target_geometry,target_authority)}
+    if set(old)!=set(new):raise ValueError('Frozen physical component names differ')
+    cosine,sine=math.cos(math.radians(angle)),math.sin(math.radians(angle));poses={}
+    for name,part in new.items():
+        reference=old[name]
+        if not name.startswith('mirror_'):
+            if part['solids']!=reference['solids'] or part['cuts']!=reference['cuts']:
+                raise ValueError('Non-mirror solid or aperture differs: '+name)
+            continue
+        negative=reference['solids'][0]['polygon_yz_mm'][0][1]<0
+        signed_sine=-sine if negative else sine
+        world_pivot=[pivot[0],pivot[1],-pivot[2] if negative else pivot[2]]
+        rotation=[[1,0,0],[0,cosine,-signed_sine],[0,signed_sine,cosine]]
+        translation=[(world_pivot[j]-sum(world_pivot[i]*rotation[i][j] for i in range(3)))/1000 for j in range(3)]
+        pose=sum(rotation,[])+translation+[1,0,0,0]
+        for role in ('solids','cuts'):
+            if len(part[role])!=len(reference[role]):raise ValueError('Mirror body/aperture count differs: '+name)
+            for current,prior in zip(part[role],reference[role],strict=True):
+                if role=='cuts':
+                    # The parallel shield cutter crosses both mirrors; the
+                    # tilted compiler uses one oversized cutter per side.
+                    # Compare the actual removed rectangle inside this solid,
+                    # not irrelevant cutter extent outside the metal.
+                    local=[[sum((([0,y,z][i]-translation[i]*1000)*rotation[j][i]) for i in range(3))
+                            for j in (1,2)] for y,z in current['polygon_yz_mm']]
+                    limits=lambda points: [min(p[0] for p in points),min(p[1] for p in points),max(p[0] for p in points),max(p[1] for p in points)]
+                    actual_box=limits(local);prior_box=limits(prior['polygon_yz_mm'])
+                    solid_box=limits(reference['solids'][0]['polygon_yz_mm'])
+                    corners=sorted([[actual_box[0],actual_box[1]],[actual_box[2],actual_box[1]],[actual_box[2],actual_box[3]],[actual_box[0],actual_box[3]]])
+                    distance=lambda p,q:max(abs(a-b) for a,b in zip(p,q,strict=True))
+                    rectangle_delta=max(max(min(distance(p,q) for q in corners) for p in local),
+                                        max(min(distance(p,q) for p in local) for q in corners))
+                    if len(local)!=4 or rectangle_delta>1e-8:
+                        raise ValueError('Mirror aperture is not a rigid rectangle: '+name)
+                    clipped=lambda box: [max(box[i],solid_box[i]) for i in range(2)]+[min(box[i],solid_box[i]) for i in (2,3)]
+                    if current['x']!=prior['x'] or max(abs(a-b) for a,b in zip(clipped(actual_box),clipped(prior_box),strict=True))>1e-8:
+                        raise ValueError('Mirror aperture differs inside the conductor: '+name)
+                    continue
+                points=[[sum([0,y,z][i]*rotation[i][j] for i in range(3))+translation[j]*1000 for j in (1,2)]
+                        for y,z in prior['polygon_yz_mm']]
+                actual=sorted(current['polygon_yz_mm']);expected=sorted(points)
+                if current['x']!=prior['x'] or len(actual)!=len(expected) or max(abs(a-b) for p,q in zip(actual,expected,strict=True) for a,b in zip(p,q,strict=True))>1e-8:
+                    raise ValueError('Mirror shape is not the declared rigid pose: '+name)
+        poses[name]=pose
+    if len(poses)!=14:raise ValueError('Frozen mirror pose requires all fourteen mirror components')
+    return poses
+
+
+def electrical_step_groups(source: Path, frozen_inputs: dict[str,Path], *, frozen_mirror_pose: bool=False) -> list[dict]:
     """Reuse sealed native bodies/poses; separate C0 from actual conductors."""
     manifest=json.loads((source/'run_manifest.json').read_text(encoding='utf-8-sig'))
     if manifest['status']!='success' or manifest['project']!='parallel_mirror_dual_stripe_mr_tof':
         raise ValueError('Electrical STEP requires a successful project CAD source')
     records={Path(r['path']).resolve():r for r in manifest['outputs']}
+    records.update({Path(r['path']).resolve():r for r in manifest.get('inputs',{}).values() if isinstance(r,dict) and r.get('path')})
     def sealed(path):
         row=records.get(path.resolve())
         if row is None or path.stat().st_size!=row['bytes'] or hashlib.sha256(path.read_bytes()).hexdigest().lower()!=row['sha256'].lower():
             raise ValueError('Sealed electrical CAD source differs: '+str(path))
+    source_inputs={}
     for key,path in frozen_inputs.items():
         prior=source/'inputs'/({'geometry':'resolved_geometry.json','authority':'frozen_input.json',
             'materialization':'assembly_materialization.json'}[key])
-        if path.read_bytes()!=prior.read_bytes():raise ValueError('Electrical CAD frozen input differs: '+key)
+        if frozen_mirror_pose:sealed(prior)
+        elif path.read_bytes()!=prior.read_bytes():raise ValueError('Electrical CAD frozen input differs: '+key)
+        source_inputs[key]=prior
+    poses={};target_parts={}
+    if frozen_mirror_pose:
+        source_g=json.loads(source_inputs['geometry'].read_text());target_g=json.loads(frozen_inputs['geometry'].read_text())
+        source_a=json.loads(source_inputs['authority'].read_text());target_a=json.loads(frozen_inputs['authority'].read_text())
+        poses=frozen_mirror_pose_transforms(source_g,target_g,source_a,target_a)
+        target_parts={p['name']:p for p in compile_parts(target_g,target_a)}
     for name in ('cad_validation.json','cad_parts_plan.json'):sealed(source/name)
     validation=json.loads((source/'cad_validation.json').read_text())
     specs=json.loads((source/'cad_parts_plan.json').read_text())
     if validation['status']!='PASS' or not validation.get('mounting_holes_omitted'):
         raise ValueError('Electrical STEP requires the accepted no-hole CAD variant')
     by_name={row['name']:row for row in validation['parts']};groups={}
-    for spec in specs:
+    for original_spec in specs:
+        spec=copy.deepcopy(original_spec)
         row=copy.deepcopy(by_name[spec['name']]);native=Path(row['native']).resolve()
         if not native.is_relative_to(source.resolve()):raise ValueError('Native CAD is outside its sealed source')
         sealed(native)
+        if frozen_mirror_pose:
+            spec['voltage_v']=target_parts[spec['name']]['voltage_v']
+            if spec['name'] in poses:
+                from .compose_top_level_cad_pose import compose
+                row['source_project_transform']=row['project_transform']
+                world=compose(row['project_transform'],poses[spec['name']])
+                row['project_transform']=sum(world['rotation'],[])+world['translation_m']+[1,0,0,0]
+                row['project_box_mm']=expected_bounds_mm(target_parts[spec['name']])
+                row['regenerate_trimmed_curve_samples']=True
+                row['frozen_mirror_world_transform']=poses[spec['name']]
         c0=spec['electrode_namespace']=='boundary'
         key=('c0',0) if c0 else ('voltage',float(spec['voltage_v']))
         if key not in groups:
@@ -839,6 +954,16 @@ def individual_step_groups(groups: list[dict],prior: Path) -> list[dict]:
     manifest=json.loads((prior/'run_manifest.json').read_text())
     if manifest['status']!='success':raise ValueError('Individual STEP requires a successful electrical source')
     records={Path(row['path']).resolve():row for row in manifest['outputs']}
+    inherited = manifest.get('inputs',{}).get('individual_step_source_manifest')
+    if inherited:
+        source_manifest = Path(inherited['path'])
+        if source_manifest.stat().st_size != inherited['bytes'] or hashlib.sha256(source_manifest.read_bytes()).hexdigest().lower() != inherited['sha256'].lower():
+            raise ValueError('Inherited native curve evidence manifest differs')
+        source_records = json.loads(source_manifest.read_text())
+        if source_records['status'] != 'success':
+            raise ValueError('Inherited native curve evidence is not successful')
+        for row in source_records['outputs']:
+            records.setdefault(Path(row['path']).resolve(),row)
     checked=set()
     def sealed(path):
         path=path.resolve()
@@ -849,17 +974,19 @@ def individual_step_groups(groups: list[dict],prior: Path) -> list[dict]:
         checked.add(path)
     state=prior/'cad_api_state.json';sealed(state)
     previous=json.loads(state.read_text())['electrical_step_reopen']
+    expected={row['name']:row for bundle in previous.values() for row in bundle['expected']}
     output=[];view_rows=[];view_parts=[]
     suffix={'x_0':'x_negative','x_1':'x_positive','y_0':'y_lower','y_1':'y_upper','z_0':'z_negative','z_1':'z_positive'}
     for group in groups:
-        expected={row['name']:row for row in previous[group['name']]['expected']}
         for row,part in zip(group['rows'],group['parts'],strict=True):
             if row['solid_count']+row['sheet_count']!=1:raise ValueError('Disconnected bodies require explicit further splitting: '+row['name'])
             old=expected[row['name']]
-            if old['project_transform']!=row['project_transform'] or old['project_box_mm']!=row['project_box_mm']:
+            pose_changed=bool(row.get('regenerate_trimmed_curve_samples'))
+            if old['project_transform']!=row.get('source_project_transform',row['project_transform']) or (not pose_changed and old['project_box_mm']!=row['project_box_mm']):
                 raise ValueError('Prior native sample world pose differs')
-            row['trimmed_curve_sample_files']=old['trimmed_curve_sample_files']
-            for path in row['trimmed_curve_sample_files']:sealed(Path(path))
+            if not pose_changed:
+                row['trimmed_curve_sample_files']=old['trimmed_curve_sample_files']
+                for path in row['trimmed_curve_sample_files']:sealed(Path(path))
             name=row['name']
             if group['optional_boundary_reference']:name='c0_reference_'+suffix[name.removeprefix('c0_reference_')]
             output.append(dict(name=name,voltage_v=part['voltage_v'],optional_boundary_reference=group['optional_boundary_reference'],parts=[part],rows=[row]))
@@ -867,6 +994,174 @@ def individual_step_groups(groups: list[dict],prior: Path) -> list[dict]:
     output.append(dict(name='mrtof_electrode_assembly',voltage_v=None,optional_boundary_reference=False,
         overview_only=True,parts=view_parts,rows=view_rows))
     return output
+
+
+def connected_step_groups(groups: list[dict], prior: Path) -> list[dict]:
+    """Resolve the reported same-potential contact components, not voltage groups.
+
+    Only the explicitly named connected mirror/OA pieces are combined. The
+    official solid-body union must subsequently prove connectivity. Ideal OA
+    sheets stay zero-thickness; no geometry clearance is invented here.
+    """
+    connections = {
+        'mirror_positive_a_ground_shield': ('mirror_positive_e01', 'mirror_ground_shield_1'),
+        'mirror_negative_a_ground_shield': ('mirror_negative_e06', 'mirror_ground_shield_2'),
+        'mirror_positive_e_outer_closure': ('mirror_positive_e05', 'mirror_outer_closure_1'),
+        'mirror_negative_e_outer_closure': ('mirror_negative_e10', 'mirror_outer_closure_2'),
+        'oa_grounded_enclosure_exit_grid': ('oa_enclosure', 'oa_grid_frame_2', 'oa_ideal_grid_sheet_2'),
+        'oa_first_grid_electrode': ('oa_grid_frame_1', 'oa_ideal_grid_sheet_1'),
+    }
+    individual = {group['name']: group for group in groups if not group.get('overview_only')}
+    missing = set(sum(connections.values(), ())) - set(individual)
+    if missing:
+        raise ValueError('Connected STEP source components missing: ' + ', '.join(sorted(missing)))
+    manifest = json.loads((prior/'run_manifest.json').read_text())
+    if manifest['status'] != 'success':
+        raise ValueError('Connected STEP requires the successful individual source')
+    records = {Path(row['path']).resolve(): row for row in manifest['outputs']}
+    validation_path = prior/'cad_validation.json'
+    sealed = records.get(validation_path.resolve())
+    if sealed is None or sealed['sha256'].lower() != hashlib.sha256(validation_path.read_bytes()).hexdigest():
+        raise ValueError('Individual STEP validation identity differs')
+    previous = {row['name']: row for row in json.loads(validation_path.read_text())['electrical_groups']}
+    output = []
+    consumed = set()
+    for name, members in connections.items():
+        selected = [individual[member] for member in members]
+        voltages = {group['voltage_v'] for group in selected}
+        if len(voltages) != 1 or any(group['optional_boundary_reference'] for group in selected):
+            raise ValueError('Different-potential or C0 components cannot be united: ' + name)
+        output.append(dict(name=name, voltage_v=selected[0]['voltage_v'], optional_boundary_reference=False,
+            connected_contact_repair=True, parts=[part for group in selected for part in group['parts']],
+            rows=[row for group in selected for row in group['rows']]))
+        consumed.update(members)
+    for name, group in individual.items():
+        if name in consumed:
+            continue
+        if any(row.get('regenerate_trimmed_curve_samples') for row in group['rows']):
+            output.append(copy.deepcopy(group))
+            continue
+        old = previous[name]
+        exchange = Path(old['assembly_exchange']).resolve()
+        record = records.get(exchange)
+        if record is None or exchange.stat().st_size != record['bytes'] or hashlib.sha256(exchange.read_bytes()).hexdigest().lower() != record['sha256'].lower():
+            raise ValueError('Unchanged STEP exchange identity differs: ' + name)
+        output.append(copy.deepcopy(group) | dict(reuse_sealed_exchange=copy.deepcopy(old)))
+    output.append(dict(name='mrtof_electrode_assembly', voltage_v=None, optional_boundary_reference=False,
+        overview_only=True, connected_overview=True, parts=[part for group in output if not group['optional_boundary_reference'] for part in group['parts']],
+        rows=[]))
+    return output
+
+
+def _body_operation(target, tool, operation: int) -> tuple[list, int]:
+    """Use official temporary-body Boolean operations without consuming sources."""
+    import win32com.client
+    # Installed SW2022 sldworks.tlb marks ErrorCode as [out] long*, not
+    # [in,out]. The typed pywin32 wrapper returns (bodies, error); passing a
+    # VARIANT as its input placeholder incorrectly attempts int(VARIANT).
+    result, error = target.Copy().Operations2(operation, tool.Copy())
+    # VARIANT SAFEARRAY entries are raw PyIDispatch, unlike scalar object
+    # returns. Wrap them before using the official IBody2 members.
+    return [win32com.client.Dispatch(body) for body in result or []], int(error)
+
+
+def build_connected_step_part(sw, group: dict, output: Path) -> tuple[dict, dict]:
+    """Unite contacting solids at unchanged world pose; retain ideal sheets.
+
+    Installed SW2022 IBody2.Operations2 uses SWBODYADD=15903 and
+    SWBODYINTERSECT=15901. It invalidates its two temporary inputs, hence
+    _body_operation always copies. Solid/sheet union is not supported; a grid
+    sheet remains a separate zero-thickness body of the same electrode part.
+    """
+    import pythoncom
+    import win32com.client
+    from common.solidworks.import_step_to_solidworks import CLEAN_PART_TEMPLATE, create_transform, document_title, save_native_document
+    bodies = []; opened = []
+    identity = [1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0]
+    try:
+        for row in group['rows']:
+            error = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+            warning = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+            doc = open_reference_document(sw, row['native'], 1, error, warning)
+            if doc is None or error.value:
+                raise RuntimeError('Connected source reopen failed: ' + row['name'])
+            opened.append(document_title(doc))
+            transform = create_transform(sw.GetMathUtility, row.get('project_transform', PROJECT_TRANSFORM))
+            for kind in (0,1):
+                for source in doc.GetBodies2(kind, False) or []:
+                    body = source.Copy()
+                    if not body.ApplyTransform(transform):
+                        raise RuntimeError('Connected source world transform failed: ' + row['name'])
+                    faults=member(body.Check3)
+                    if faults is not None and int(member(faults.Count)):
+                        raise RuntimeError('Connected source contains invalid native topology: ' + row['name'])
+                    bodies.append((row['name'], kind, body))
+        intersections = []
+        for index, (name, kind, body) in enumerate(bodies):
+            for other_name, other_kind, other in bodies[index+1:]:
+                # The official API requires the sheet to be the target for
+                # sheet/solid intersection. Never infer overlap from boxes.
+                target, tool = (body, other) if kind == 1 or other_kind == 0 else (other, body)
+                overlap, code = _body_operation(target, tool, 15901)
+                if code not in (0,5,6,1040,1067):
+                    raise RuntimeError(f'Connected intersection failed: {name}/{other_name}, code={code}')
+                volume = sum(float(item.GetMassProperties(1.0)[3])*1e9 for item in overlap if member(item.GetType)==0)
+                intersections.append(dict(components=[name,other_name],operation_error=code,volume_mm3=volume))
+                if volume > 1e-5:
+                    raise RuntimeError('Connected source has true volume overlap: ' + str(intersections[-1]))
+        solids = [body for _,kind,body in bodies if kind == 0]
+        sheets = [body for _,kind,body in bodies if kind == 1]
+        if not solids:
+            raise RuntimeError('Connected repair requires its physical frame/solid')
+        united = solids[0]
+        for body in solids[1:]:
+            result, code = _body_operation(united, body, 15903)
+            if code or len(result) != 1 or member(result[0].GetType) != 0:
+                raise RuntimeError(f'Same-potential solids are not a valid connected union: {group["name"]}, code={code}, bodies={len(result)}')
+            united = result[0]
+        source_face_count=sum(len(body.GetFaces() or []) for _,kind,body in bodies if kind==0)
+        united_face_count=len(united.GetFaces() or [])
+        sheet_contacts=[]
+        for sheet in sheets:
+            edges=united.Copy().GetIntersectionEdges2(sheet.Copy(),False) or []
+            if not edges:
+                raise RuntimeError('Ideal sheet does not contact its same-potential support')
+            sheet_contacts.append(dict(native_intersection_edge_count=len(edges),zero_thickness_retained=True))
+        doc = sw.NewDocument(str(CLEAN_PART_TEMPLATE), 1, 0, 0)
+        if doc is None:
+            raise RuntimeError('Connected part template failed')
+        try:
+            for body in [united] + sheets:
+                feature = doc.CreateFeatureFromBody3(body, member(body.GetType)==1, 1)
+                if feature is None:
+                    raise RuntimeError('Connected imported body feature failed')
+            expected_volume = sum(row['volume_mm3'] for row in group['rows'])
+            actual_volume = volume_mm3(doc)
+            if abs(actual_volume-expected_volume) > max(1e-5,expected_volume*1e-9):
+                raise RuntimeError('Connected union changed physical volume')
+            old_bounds = [row['project_box_mm'] for row in group['rows']]
+            expected_bounds = [min(box[i] for box in old_bounds) for i in range(3)] + [max(box[i+3] for box in old_bounds) for i in range(3)]
+            actual_bounds = body_bounds_mm(doc, identity)
+            if max(abs(a-b) for a,b in zip(actual_bounds,expected_bounds,strict=True)) > 1e-5:
+                raise RuntimeError('Connected union changed world extrema')
+            native = output/(group['name']+'.SLDPRT')
+            save_native_document(doc,native)
+            samples = save_trimmed_curve_samples(doc,identity,output.parent/'results'/'curves'/'connected'/group['name'],sample_count=2001)
+            row = dict(name=group['name'],native=str(native),project_transform=identity,
+                project_box_mm=actual_bounds,volume_mm3=actual_volume,solid_count=1,sheet_count=len(sheets),
+                trimmed_curve_sample_files=samples)
+        finally:
+            sw.CloseDoc(document_title(doc))
+        return row, dict(source_intersections=intersections,source_components=[name for name,_,_ in bodies],
+            solid_count_before=len(solids),solid_count_after=1,ideal_sheet_count=len(sheets),
+            source_solid_face_count=source_face_count,united_solid_face_count=united_face_count,
+            sheet_support_contacts=sheet_contacts,
+            source_volume_mm3=expected_volume,united_volume_mm3=actual_volume,
+            external_geometry_operation='official_exact_body_union__no_offset_or_clearance',
+            grid_definition='zero_thickness_transparent_sheet__not_solid_or_collision_wall')
+    finally:
+        for title in dict.fromkeys(opened):
+            sw.CloseDoc(title)
 
 
 def export_parts(parts: list[dict], output: Path, *, smoke: bool=False,reuse: bool=False,exchange_format: str='step',
@@ -909,11 +1204,44 @@ def export_parts(parts: list[dict], output: Path, *, smoke: bool=False,reuse: bo
         sw.SetUserPreferenceToggle(111,True);sw.SetUserPreferenceToggle(691,False)
         sw.Visible=True;output.mkdir(parents=True,exist_ok=True)
         if electrical_groups is not None:
-            exported=[]
+            if any(group.get('connected_contact_repair') for group in electrical_groups):
+                api_state['methods'] += ['IBody2.Copy','IBody2.ApplyTransform','IBody2.Check3',
+                    'IBody2.Operations2','IBody2.GetIntersectionEdges2','IPartDoc.CreateFeatureFromBody3']
+                api_state['connected_contact_official_support']=dict(vendor='SOLIDWORKS',version='2022',reviewed_date='2026-10-14',
+                    installed_api=str(install_root/'api/redist/SolidWorks.Interop.sldworks.dll'),
+                    installed_constants=str(install_root/'api/redist/SolidWorks.Interop.swconst.dll'),
+                    documentation='https://help.solidworks.com/2022/English/api/sldworksapi/SolidWorks.Interop.sldworks~SolidWorks.Interop.sldworks.IBody2.html',
+                    coincidence_documentation='https://help.solidworks.com/2022/english/api/sldworksapi/SolidWorks.Interop.sldworks~SolidWorks.Interop.sldworks.IInterferenceDetectionMgr_members.html',
+                    original_sources_read_only=True,solid_sheet_boolean_not_supported=True)
+                state_path.write_text(json.dumps(api_state,indent=2)+'\n',encoding='utf-8')
+            exported=[]; overview_rows=[]
             for group in electrical_groups:
                 print('ELECTRICAL_STEP_GROUP='+group['name'],flush=True)
-                result=save_assembly(sw,group['rows'],output,group['name'],api_state,state_path,'step',electrical_step=True,reuse_native_samples=reuse_native_samples)
-                exported.append({k:v for k,v in group.items() if k!='rows'}|result)
+                contact = None
+                if group.get('connected_contact_repair'):
+                    row, contact = build_connected_step_part(sw,group,output)
+                    group['rows'] = [row]
+                if group.get('overview_only') and group.get('connected_overview'):
+                    group['rows'] = copy.deepcopy(overview_rows)
+                for row in group['rows']:
+                    if not group.get('overview_only'):
+                        row['voltage_v'] = group['voltage_v']
+                if group.get('reuse_sealed_exchange'):
+                    result = copy.deepcopy(group['reuse_sealed_exchange'])
+                    destination = output/(group['name']+'.step')
+                    shutil.copy2(result['assembly_exchange'],destination)
+                    result['assembly_exchange'] = str(destination)
+                    result['unchanged_exchange_reused'] = True
+                else:
+                    result=save_assembly(sw,group['rows'],output,group['name'],api_state,state_path,'step',electrical_step=True,reuse_native_samples=reuse_native_samples,
+                        check_electrical_contacts=bool(group.get('connected_overview')))
+                if contact is not None:
+                    result['connected_contact_repair_details'] = contact
+                # Reused geometry records do not own the new electrical
+                # metadata. The frozen target voltage always wins.
+                exported.append(result|{k:v for k,v in group.items() if k not in ('rows','reuse_sealed_exchange')})
+                if not group.get('overview_only') and not group['optional_boundary_reference']:
+                    overview_rows.extend(copy.deepcopy(group['rows']))
             return dict(status='PASS',solidworks_revision=revision,electrical_groups=exported,
                 component_count=sum(len(g['parts']) for g in electrical_groups),
                 coordinate_frame='global_project_xyz_mm__all_files_same_origin',
@@ -1105,6 +1433,89 @@ def docx_document_text(path: Path) -> str:
     return text
 
 
+def publish_validated_step_delivery(source_run: Path, output: Path,
+    physical_inputs: dict[str,Path], *, check_only: bool=False) -> dict:
+    """Republish already cold-read electrical STEP bytes, without invoking CAD."""
+    source_run=source_run.resolve()
+    manifest=json.loads((source_run/'run_manifest.json').read_text(encoding='utf-8-sig'))
+    if manifest.get('status')!='success' or manifest.get('project')!='parallel_mirror_dual_stripe_mr_tof':
+        raise ValueError('STEP publication requires the verified completed CAD manifest')
+    records={Path(r['path']).resolve():r for r in [manifest['run_config'],*manifest['inputs'].values(),*manifest['outputs']]
+             if isinstance(r,dict) and r.get('path')}
+    def sealed_bytes(path):
+        payload=path.read_bytes();record=records.get(path.resolve())
+        if not record or len(payload)!=record['bytes'] or hashlib.sha256(payload).hexdigest().upper()!=record['sha256'].upper():
+            raise ValueError('Published STEP source identity differs: '+str(path))
+        return payload
+    validation=json.loads(sealed_bytes(source_run/'cad_validation.json'))
+    api=json.loads(sealed_bytes(source_run/'cad_api_state.json'))
+    summary=json.loads((source_run/'summary.json').read_text(encoding='utf-8-sig'))
+    publication_failure=(summary.get('status')=='failed' and summary.get('role')=='mrtof_cad_export_summary'
+        and str(summary.get('reason','')).startswith('Verified success run manifest was published, but capacity ledger finalization failed;'))
+    if summary.get('status')!='success' and not publication_failure:
+        raise ValueError('STEP source has a genuine CAD failure, not capacity publication failure')
+    if not all(api.get(k) is True for k in ('preferences_restored','restored_preferences_equal_original','owned_process_exited')) or api.get('remaining_documents_retained')!=[]:
+        raise ValueError('STEP source CAD shutdown/settings restoration is incomplete')
+    groups=validation.get('electrical_groups',[])
+    physical=[g for g in groups if not g.get('overview_only') and not g.get('optional_boundary_reference')]
+    references=[g for g in groups if g.get('optional_boundary_reference')]
+    overviews=[g for g in groups if g.get('overview_only')]
+    if (validation.get('status')!='PASS' or validation.get('exchange_format')!='step'
+        or not validation.get('mounting_holes_omitted') or len(physical)!=40 or len(references)!=6 or len(overviews)!=1):
+        raise ValueError('STEP publication requires complete 40-electrode, six-reference and overview validation')
+    for group in groups:
+        if not group.get('native_cold_reopen') or group.get('interferences')!=[]:
+            raise ValueError('STEP cold read or electrical contact validation failed')
+        if not group.get('overview_only') and any(p['voltage_v']!=group['voltage_v'] for p in group['parts']):
+            raise ValueError('STEP group contains different electrode voltages')
+        for leaf in group['exchange_reopen']['leaves']:
+            if leaf['trimmed_edge_validation']['status']!='PASS':raise ValueError('STEP trimmed edge validation failed')
+    for name in ('oa_first_grid_electrode','oa_grounded_enclosure_exit_grid'):
+        selected=[g for g in physical if g['name']==name]
+        if len(selected)!=1 or sum(p['sheet_count'] for p in selected[0]['exchange_reopen']['leaves'])!=1:
+            raise ValueError('STEP ideal OA sheet boundary changed')
+    for key,path in physical_inputs.items():
+        if hashlib.sha256(path.read_bytes()).hexdigest().upper()!=manifest['inputs'][key]['sha256'].upper():
+            raise ValueError('Publication frozen physical inputs differ: '+key)
+    authority=json.loads(physical_inputs['authority'].read_text(encoding='utf-8-sig'))
+    geometry=json.loads(physical_inputs['geometry'].read_text(encoding='utf-8-sig'))
+    if validation.get('analyzer_electrode_voltages_v')!=authority['analyzer_electrode_voltages_v']:
+        raise ValueError('STEP validation electrode voltages differ from frozen authority')
+    if validation.get('mirror_convergence_transform')!=geometry.get('mirror_convergence_transform'):
+        raise ValueError('STEP validation mirror pose differs from frozen geometry')
+    if len({g['name'] for g in groups})!=len(groups):raise ValueError('STEP group names are duplicated')
+    expected={}
+    for group in groups:
+        folder='assembly' if group.get('overview_only') else ('reference' if group['optional_boundary_reference'] else 'electrodes')
+        expected[folder+'/'+group['name']+'.step']=Path(group['assembly_exchange'])
+    for name in ('README.md','electrode_groups.csv','step_geometry_validation.csv','component_step_mapping.csv'):
+        expected[name]=source_run/name
+    source_zip=source_run/'mrtof_step_delivery.zip';zip_payload=sealed_bytes(source_zip)
+    with zipfile.ZipFile(source_zip) as archive:
+        names=archive.namelist()
+        if len(names)!=len(set(names)) or set(names)!=set(expected) or archive.testzip() is not None:
+            raise ValueError('STEP ZIP whitelist or integrity differs')
+        for name,path in expected.items():
+            if not name.isascii() or archive.read(name)!=sealed_bytes(path):raise ValueError('STEP ZIP member identity differs: '+name)
+    receipt=dict(status='PASS',source_run_id=manifest['run_id'],source_run=str(source_run),
+        source_manifest_status=manifest['status'],source_summary_status=summary['status'],
+        source_publication_failure=publication_failure,commercial_cad_performed=False,
+        validation_scope='byte-identical_republication_of_completed_STEP__not_new_commercial_cold_read',
+        part_count=40,assembly_count=1,reference_count=6,zip_member_count=len(expected),
+        qualification=validation['qualification'],zip_bytes=len(zip_payload),
+        source_zip_sha256=hashlib.sha256(zip_payload).hexdigest().upper())
+    if check_only:return receipt
+    output.mkdir(parents=True,exist_ok=True)
+    target=output/'mrtof_step_delivery.zip'
+    if target.exists():raise FileExistsError('Publication output already exists')
+    target.write_bytes(zip_payload)
+    for name in ('README.md','electrode_groups.csv','step_geometry_validation.csv','component_step_mapping.csv'):
+        (output/name).write_bytes(sealed_bytes(source_run/name))
+    receipt['zip_path']=str(target)
+    (output/'delivery_publication.json').write_text(json.dumps(receipt,indent=2)+'\n',encoding='utf-8')
+    return receipt
+
+
 def publish_validated_delivery(source_run: Path,overview: Path,output: Path,
     physical_inputs: dict[str,Path],overview_manifest: Path,*,check_only: bool=False) -> dict:
     """Publish an English guide plus immutable validated ZIP bytes; never call CAD."""
@@ -1202,7 +1613,13 @@ def main() -> int:
     parser.add_argument('--machining-hole-audit-run',type=Path)
     parser.add_argument('--electrical-step-cad-run',type=Path,help='Export sealed native CAD by voltage in the global frame')
     parser.add_argument('--individual-step-delivery-run',type=Path,help='Split all physical bodies and add a 47-product overview; reuse sealed native sample evidence')
+    parser.add_argument('--connected-step-contacts',action='store_true',help='Unite only the reported contacting same-potential mirror/OA parts; retain ideal sheets')
+    parser.add_argument('--frozen-mirror-pose',action='store_true',help='Apply the frozen convergence pose to sealed parallel mirror bodies; retain other exact geometry')
     args=parser.parse_args();g=json.loads(args.geometry.read_text(encoding='utf-8-sig'))
+    if args.connected_step_contacts and not args.electrical_step_cad_run:
+        raise ValueError('Connected STEP contact repair is an electrical STEP export option')
+    if args.frozen_mirror_pose and (not args.electrical_step_cad_run or not args.individual_step_delivery_run or not args.connected_step_contacts):
+        raise ValueError('Frozen mirror pose requires sealed individual CAD and connected contact scope')
     a=json.loads(args.authority.read_text(encoding='utf-8-sig'));m=json.loads(args.materialization.read_text(encoding='utf-8-sig'))
     if m['analyzer_electrode_voltages_v']!=a['analyzer_electrode_voltages_v']:raise ValueError('Actual full20 authority differs')
     if m['detector_box_mm']!=g['detector']['box']:raise ValueError('Actual detector pose differs')
@@ -1213,18 +1630,32 @@ def main() -> int:
     if args.electrical_step_cad_run:
         if args.publish_cad_run or args.reuse_saved_parts or args.original_stripe_run or args.omit_mounting_holes:
             raise ValueError('Electrical STEP consumes sealed CAD without rebuilding parts')
-        groups=electrical_step_groups(args.electrical_step_cad_run,
-            dict(geometry=args.geometry,authority=args.authority,materialization=args.materialization))
+        frozen=dict(geometry=args.geometry,authority=args.authority,materialization=args.materialization)
+        groups=(electrical_step_groups(args.electrical_step_cad_run,frozen,frozen_mirror_pose=True)
+                if args.frozen_mirror_pose else electrical_step_groups(args.electrical_step_cad_run,frozen))
         if args.individual_step_delivery_run:groups=individual_step_groups(groups,args.individual_step_delivery_run)
+        if args.connected_step_contacts:
+            if not args.individual_step_delivery_run:
+                raise ValueError('Connected contact repair requires the sealed individual STEP source')
+            if not args.frozen_mirror_pose and any('polygon_yz_mm' in item for item in g['mirror_electrodes']):
+                raise ValueError('This contact repair must retain the supplied parallel-mirror geometry')
+            groups=connected_step_groups(groups,args.individual_step_delivery_run)
         if args.smoke:
             groups=[group for group in groups if group['name']==args.smoke_part]
             if len(groups)!=1:raise ValueError('Electrical STEP smoke requires one declared group name')
         if args.check_only:
-            print(json.dumps(dict(status='PASS',groups=[{k:v for k,v in x.items() if k!='rows'} for x in groups])));return 0
+            plan=dict(status='PASS',groups=[{k:v for k,v in x.items() if k not in ('rows','reuse_sealed_exchange')} for x in groups])
+            if args.connected_step_contacts:plan['mirror_geometry']='frozen_converging_rigid_mirror_pose' if args.frozen_mirror_pose else 'frozen_parallel_axis_aligned__zero_tilt'
+            if args.frozen_mirror_pose:plan['mirror_convergence_transform']=g['mirror_convergence_transform']
+            print(json.dumps(plan));return 0
         result=export_parts([],args.output,electrical_groups=groups,reuse_native_samples=args.individual_step_delivery_run is not None)
         if args.individual_step_delivery_run:
             result['component_count']=sum(len(group['parts']) for group in groups if not group.get('overview_only'))
-            result['overview_component_count']=47
+            result['overview_component_count']=sum(1 for group in groups if not group.get('overview_only') and not group['optional_boundary_reference'])
+        if args.connected_step_contacts:result['mirror_geometry']='frozen_converging_rigid_mirror_pose' if args.frozen_mirror_pose else 'frozen_parallel_axis_aligned__zero_tilt'
+        if args.frozen_mirror_pose:
+            result['mirror_convergence_transform']=g['mirror_convergence_transform']
+            result['analyzer_electrode_voltages_v']=a['analyzer_electrode_voltages_v']
         (args.output.parent/'cad_validation.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
         (args.output.parent/'electrode_groups.json').write_text(json.dumps(result['electrical_groups'],indent=2)+'\n',encoding='utf-8')
         with (args.output.parent/'electrode_groups.csv').open('w',newline='',encoding='utf-8') as file:
@@ -1252,6 +1683,21 @@ def main() -> int:
             if args.individual_step_delivery_run:
                 description += ('\n## Individual parts and assembly overview\n\nEach of the 47 physical components has its own STEP file, including separately named grounded shields, mirror partners and closure plates. The six optional C0 reference faces are also separate files. All files share the same global origin, so simultaneous import retains alignment without assembly mates.\n\nOpen assembly/mrtof_electrode_assembly.step to view all 47 physical components at once, without C0 obscuring the apparatus. This overview contains different voltages: use the individual files and CSV for solver potential assignments. STEP products are not a SolidWorks parametric mating model; an importer may choose an assembly or a multi-body representation.\n')
                 description=description.replace('reference/c0_boundary_reference.step contains six','six optional reference/c0_reference_*.step files contain six').replace('grounded_conductors.step','the separately named grounded electrode files')
+            if args.connected_step_contacts:
+                description=description.replace('Each of the 47 physical components has its own STEP file, including separately named grounded shields, mirror partners and closure plates.',
+                    'The 47 physical components are mapped to 40 connected-electrode STEP files. Only six contacting, same-potential local mirror/OA groups are combined; spatially disconnected conductors and positive/negative mirrors remain separate.')
+                description=description.replace('view all 47 physical components at once','view all 40 connected electrode components at once')
+                description += ('\n## Same-potential contact repair\n\nParallel-mirror geometry is unchanged; the mirrors are not tilted. The original separate closed solids duplicated their common internal contact faces. The corrected mirror/OA groups use exact native solid unions with unchanged external geometry, coordinates and voltages; no artificial clearance or metal displacement was introduced. See component_step_mapping.csv for every old component name and its new electrode file.\n\nThe OA grid membranes remain zero-thickness transparent sheets attached at the aperture edges of their own same-potential support. These mixed-dimensional electrodes contain a solid support and an ideal sheet, not a filled solid aperture. Your BEM importer must support this ideal-sheet boundary and stitch its matching edge to the support; if it does not, please discuss the grid modelling convention rather than silently thickening or deleting the sheet.\n')
+            if args.frozen_mirror_pose:
+                description=description.replace('Geometry and voltages are unchanged from the previously supplied CAD package and English overview; this package only changes the exchange format.',
+                    'This package uses the current frozen converging-mirror geometry and actual electrode voltages. The old parallel-mirror overview and voltage table are not its authority; use this package index and the accompanying updated overview.')
+                description=description.replace('The previously supplied English overview remains applicable: two linear acceleration regions, exit focus at z=0, source settings, K, mirror symmetry and nominal incidence are unchanged.',
+                    'Two linear acceleration regions and the source geometry are retained; mirror placement and analyzer voltages are updated.')
+                description=description.replace('Parallel-mirror geometry is unchanged; the mirrors are not tilted.',
+                    'Both mirrors converge symmetrically about z=0. All mirror electrodes, inner shields and outer closure plates receive the same rigid placement on their own side.')
+                description=description.replace('unchanged external geometry, coordinates and voltages','preserved local solid shapes, frozen current world coordinates and current voltages')
+                tilt=g['mirror_convergence_transform']
+                description+=f"\nSingle-mirror convergence angle: {tilt['angle_deg']:.17g} degrees; included pair angle: {2*tilt['angle_deg']:.17g} degrees. Positive pivot: {tilt['pivot_positive_project_mm']} mm; the negative side is its exact z reflection. Linear-width Stripe electrodes remain present at 0 V. The quintic Stripe pair uses the voltage in electrode_groups.csv.\n"
             root=args.output.parent;(root/'README.md').write_text(description,encoding='utf-8')
             with (root/'step_geometry_validation.csv').open('w',newline='',encoding='utf-8') as file:
                 writer=csv.writer(file);writer.writerow(['step_file','physical_component','solid_count','sheet_count','max_extrema_delta_mm','max_sampled_edge_delta_mm','volume_delta_mm3','volume_delta_relative'])
@@ -1264,12 +1710,28 @@ def main() -> int:
                     folder='assembly' if group.get('overview_only') else ('reference' if group['optional_boundary_reference'] else 'electrodes')
                     archive.write(group['assembly_exchange'],folder+'/'+group['name']+'.step')
                 for name in ('README.md','electrode_groups.csv','step_geometry_validation.csv'):archive.write(root/name,name)
+                if args.connected_step_contacts:
+                    mapping=root/'component_step_mapping.csv'
+                    with mapping.open('w',newline='',encoding='utf-8') as file:
+                        writer=csv.writer(file);writer.writerow(['old_step_file','new_step_file','voltage_v','component','reason'])
+                        for group in result['electrical_groups']:
+                            if group.get('overview_only'):continue
+                            for part in group['parts']:
+                                reason='contacting_same_potential_union__ideal_sheets_retained' if group.get('connected_contact_repair') else 'unchanged_independent_component'
+                                writer.writerow([part['name']+'.step',group['name']+'.step',group['voltage_v'],part['name'],reason])
+                    archive.write(mapping,mapping.name)
             with zipfile.ZipFile(root/'mrtof_step_delivery.zip') as archive:
                 if archive.testzip() is not None:raise RuntimeError('STEP delivery ZIP integrity failed')
         print(json.dumps({k:v for k,v in result.items() if k!='electrical_groups'}));return 0
-    if bool(args.publish_cad_run)!=bool(args.english_overview) or bool(args.publish_cad_run)!=bool(args.overview_manifest):
+    step_publication=bool(args.publish_cad_run and (args.publish_cad_run/'mrtof_step_delivery.zip').is_file())
+    if not step_publication and (bool(args.publish_cad_run)!=bool(args.english_overview) or bool(args.publish_cad_run)!=bool(args.overview_manifest)):
         raise ValueError('Publication source, Word overview and document manifest must be supplied together')
     if args.publish_cad_run:
+        if step_publication:
+            if args.english_overview or args.overview_manifest:raise ValueError('STEP-only publication does not consume a Word overview')
+            result=publish_validated_step_delivery(args.publish_cad_run,args.output.parent,
+                dict(geometry=args.geometry,authority=args.authority,materialization=args.materialization),check_only=args.check_only)
+            print(json.dumps(result));return 0
         if args.smoke or args.reuse_saved_parts or args.original_stripe_run or args.stripe_pose_run:
             raise ValueError('Publication cannot create or revalidate CAD')
         result=publish_validated_delivery(args.publish_cad_run,args.english_overview,args.output.parent,

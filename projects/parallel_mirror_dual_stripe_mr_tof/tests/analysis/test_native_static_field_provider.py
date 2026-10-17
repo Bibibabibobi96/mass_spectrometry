@@ -897,5 +897,397 @@ class NativeStaticProviderTest(unittest.TestCase):
             p.compile_request(dict(request, response_axis="s1", response_basis_paths={"s1": "x"}))
 
 
+
+class IonProcessorResponseProviderTest(unittest.TestCase):
+    """Five tiny sealed fields exercise real provider, composer and IP loader."""
+
+    def test_ip_gem_preserves_fifteen_holey_bodies_with_pure_prism_excitation(self):
+        geometry = {"detector": {"box": [-1,-1,4,1,1,5]},
+                    "ion_processor_electrodes": [dict(electrode_id=i, solids=[
+                        dict(shape="box", min_mm=[0,-1,-1], max_mm=[1,1,1])], cutouts=[
+                        dict(shape="box", min_mm=[.2,-.5,-2], max_mm=[.8,.5,2])]) for i in range(1,16)]}
+        source = dict(assembly={"accelerator_provider": p.IP_PROVIDER},
+                      analyzer_electrode_voltages_v=[0.]*20,
+                      component_voltages_v=[dict(component_namespace="ion_processor", component_electrode_id=i,
+                                                voltage_v=4000.) for i in range(1,16)] + [
+                          dict(component_namespace="detector", component_electrode_id=25, voltage_v=0.)])
+        grid = dict(box_mm=[0,-2,-2,2,2,6], pitch_mm=[1,1,1], dimensions=[3,5,9])
+        for axis, physical_id in (("p1",16),("p2",17)):
+            with self.subTest(axis=axis), patch(
+                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly._analyzer_geometry_lines",
+                return_value=[f"e({i}) {{ box3d(0,0,0,1,1,1) }}" for i in (16,17)]):
+                gem, _ = p._static_gem(geometry, p._pure_axis_authority(source, axis), grid,
+                                       boundary_mode="x_mirror_five_faces")
+                self.assertEqual(gem.count("namespace=ion_processor id="),15)
+                self.assertEqual(gem.count("notin_inside"),15)
+                self.assertEqual(gem.count("e(10000)"),1)
+                self.assertEqual(p._pure_axis_authority(source, axis)["analyzer_electrode_voltages_v"][physical_id-1],10000.)
+                self.assertNotIn("4000",gem)
+
+    def fixture(self, root):
+        import shutil
+        import struct
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
+        geometry_lines = patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly._analyzer_geometry_lines",
+                               return_value=["e(16) { box3d(0,0,0,1,1,1) }", "e(17) { box3d(1,1,1,2,2,2) }"])
+        geometry_lines.start()
+        self.addCleanup(geometry_lines.stop)
+        helper = IonProcessorNativeBindingTest()
+        descriptor, path, owner = helper.fixture(root, detector_box=[-1, -1, -1, 1, 1, 1])
+        contract = root / "contract.json"
+        # Deliberately unrelated nominal OA grid: actual sealed source wins.
+        p.write_json(contract, {"simion": {"numerical_profiles": {
+            "native_static_field": {"refine": {"convergence_v": 1e-5},
+                                    "target_layout": {"parent": {"pitch_mm": [1,1,1]}, "windows": []}},
+            "grid_generation": {"spacing_quantum_mm": .01}}}})
+        template = descriptor["refinement_windows"][0]
+        for name in ("positive_integer_grid_a", "negative_integer_grid_a", "covered_local"):
+            directory = root / name
+            shutil.copytree(root / "local", directory)
+            level = copy.deepcopy(template)
+            for key in ("pa_path", "surface_path", "voltage_authority_path", "geometry_authority_path", "numerical_plan_path"):
+                level[key] = str(directory / Path(level[key]).name)
+            level["name"] = name
+            descriptor["refinement_windows"].append(level)
+        for level in (descriptor["parent"], *descriptor["refinement_windows"]):
+            plan_path = Path(level["numerical_plan_path"])
+            plan = p.read(plan_path)
+            plan.update(numerical_contract_path=str(contract), **p.resolve_native_refine_numerics(p.read(contract)),
+                        resource_budget={"cpu_cores": 1, "memory_bytes": 1024**3, "io_slots": 1},
+                        resource_limits={"automatic_retry_count": 0})
+            p.write_json(plan_path, plan)
+            header = PaHeader(-2, 1, 100000, *plan["dimensions"], 1, *plan["pitch_mm"])
+            # One conductor marker plus ordinary vacuum; fractional bytes remain identical.
+            values = [200001.0] + [2.0] * (header.node_count - 1)
+            Path(level["pa_path"]).write_bytes(header.pack() + struct.pack('<'+'d'*len(values), *values))
+        # A nested local parent chain is distinct from field priority.
+        covered = descriptor["refinement_windows"][-1]
+        for level in descriptor["refinement_windows"][1:3]:
+            plan_path = Path(level["numerical_plan_path"])
+            plan = p.read(plan_path)
+            plan.update(parent_pa=covered["pa_path"], parent_manifest=str(owner))
+            p.write_json(plan_path, plan)
+        path.write_text(json.dumps(descriptor), encoding="utf-8")
+        helper.seal(root, owner)
+        request = dict(schema_version=1, role=p.ROLE, run_id="test_ip_response",
+                       source_binding_path=str(path), source_field_manifest=str(owner),
+                       numerical_contract_path=str(contract))
+        return helper, descriptor, path, owner, request
+
+    def freeze(self, root, plan):
+        import shutil
+        (root / "inputs").mkdir(parents=True)
+        (root / "results").mkdir()
+        for key, source in plan["inputs"].items():
+            shutil.copyfile(source, root / "inputs" / (key + Path(source).suffix))
+        return p.prepare_run(plan, root)
+
+    def publish(self, helper, root, plan):
+        descriptor = p.binding_spec(plan, root)
+        path = root / "results" / ("response_basis.json" if plan.get("response_basis") else "field_binding.json")
+        p.write_json(path, descriptor)
+        helper.seal(root, root / "run_manifest.json")
+        return path
+
+    def test_ip_axes_compose_preserves_full_operator_and_collision_geometry(self):
+        import shutil
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"; source.mkdir()
+            helper, descriptor, path, _, request = self.fixture(source)
+            baseline = load_binding(path)
+            responses = {}
+            for axis in p.PS_GROUPS:
+                with self.subTest(axis=axis):
+                    plan = p.compile_request(dict(request, response_axis=axis))
+                    self.assertFalse(plan["fly_authorized"])
+                    self.assertEqual(plan["candidate_authority"], p._pure_axis_authority(baseline["authority"], axis))
+                    self.assertEqual(len(plan["levels"]), 5)
+                    self.assertEqual([x["pitch_mm"] for x in plan["levels"].values()],
+                                     [baseline["grid"]["pitch_mm"]] + [w["grid"]["pitch_mm"] for w in baseline["refinement_windows"]])
+                    child = root / axis
+                    self.freeze(child, plan)
+                    # Tiny fake vendor materialization, not a field solve claim.
+                    for label, original in zip(["parent", *plan["window_labels"]], [descriptor["parent"], *descriptor["refinement_windows"]], strict=True):
+                        target = child / "simion" / label / ("c0_static.pa" if label == "parent" else "c0_local.pa")
+                        shutil.copyfile(original["pa_path"], target)
+                        shutil.copyfile(original["surface_path"], str(target)+'-surf')
+                    response_path = self.publish(helper, child, plan)
+                    resolved = load_native_response_basis(response_path, baseline)
+                    self.assertEqual(resolved["response_basis"]["axis"], axis)
+                    with self.assertRaises(ValueError):
+                        load_binding(response_path)
+                    authority_path = child / "inputs/frozen_input.json"
+                    clean = p.read(authority_path)
+                    bad = copy.deepcopy(clean)
+                    bad["component_voltages_v"][0]["voltage_v"] = 1.
+                    p.write_json(authority_path, bad)
+                    helper.seal(child, child / "run_manifest.json")
+                    with self.assertRaises(ValueError):
+                        load_native_response_basis(response_path, baseline)
+                    p.write_json(authority_path, clean)
+                    helper.seal(child, child / "run_manifest.json")
+                    responses[axis] = str(response_path)
+            target = dict(s1=2, s2=3, p1=4, p2=-5)
+            plan = p.compile_request(dict(request, candidate_voltages_v=target, response_basis_paths=responses))
+            self.assertEqual(plan["operation"], "compose")
+            self.assertEqual(plan["candidate_authority"], candidate_authority(baseline["authority"], target))
+            output = root / "composed"
+            self.freeze(output, plan)
+            p.compose_run(plan, output)
+            result = load_binding(self.publish(helper, output, plan))
+            self.assertEqual(result["authority"]["component_voltages_v"], baseline["authority"]["component_voltages_v"])
+            self.assertEqual(result["instances"][0]["pa_path"], result["sources"]["scalar_pa"])
+            self.assertEqual(result["instances"][1:], baseline["instances"][1:])
+            self.assertEqual(result["grid"], baseline["grid"])
+            self.assertEqual([w["grid"] for w in result["refinement_windows"]], [w["grid"] for w in baseline["refinement_windows"]])
+            self.assertFalse(result["refine_performed"])
+            import struct
+            data = Path(result["sources"]["scalar_pa"]).read_bytes()
+            # Same affine V operation at a vacuum node; no numerical solver involved.
+            self.assertAlmostEqual(struct.unpack_from('<d', data, 64)[0], 2.0008, places=12)
+
+class IonProcessorFineExtensionTest(unittest.TestCase):
+    """Real tiny PA/manifest fixtures; no vendor execution or physics qualification."""
+
+    def fixture(self, root):
+        helper, descriptor, _, owner, request = IonProcessorResponseProviderTest.fixture(self, root)
+        parent = descriptor["parent"]
+        parent["grid"]["origin_mm"][2] = -8
+        parent["grid"]["dimensions"][2] += 3
+        plan_path = Path(parent["numerical_plan_path"])
+        plan = p.read(plan_path)
+        plan["box_mm"][2] = -8
+        plan["dimensions"] = parent["grid"]["dimensions"]
+        p.write_json(plan_path, plan)
+        header = PaHeader(-2, 1, 100000, *plan["dimensions"], 1, *plan["pitch_mm"])
+        Path(parent["pa_path"]).write_bytes(header.pack() + b"\0" * (header.node_count*8))
+        for i in (0, 1):
+            descriptor["instances"][i]["origin_mm"] = copy.deepcopy(parent["grid"]["origin_mm"])
+        descriptor["instances"][2]["origin_mm"] = copy.deepcopy(descriptor["refinement_windows"][0]["grid"]["origin_mm"])
+        (root / "results").mkdir()
+        path = root / "results/field_binding.json"
+        p.write_json(path, descriptor)
+        helper.seal(root, owner)
+        request.update(source_binding_path=str(path), reuse_source_levels=["parent", "window_1", "window_2", "window_3"],
+                       ion_processor_local_domain_update=dict(solve_z_min_mm=-7, active_z_min_mm=-5))
+        return helper, descriptor, path, owner, request
+
+    def materialize(self, root, plan, helper):
+        IonProcessorResponseProviderTest.freeze(self, root, plan)
+        fine = plan["levels"]["window_0"]
+        header = PaHeader(-2, 1, 100000, *fine["dimensions"], 1, *fine["pitch_mm"])
+        (root / "simion/window_0/c0_local.pa").write_bytes(header.pack() + b"\0"*(header.node_count*8))
+        (root / "simion/window_0/c0_local.pa-surf").write_bytes(b"fractional")
+        (root / "simion/ip_collision/ip_collision.pa").write_bytes(header.pack() + b"\0"*(header.node_count*8))
+        return IonProcessorResponseProviderTest.publish(self, helper, root, plan)
+
+    def test_extension_reuses_four_levels_strict_load_and_next_ordinary_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source = root / "source"; source.mkdir()
+            helper, original, _, owner, request = self.fixture(source)
+            plan = p.compile_request(request)
+            self.assertEqual([k for k, v in plan["levels"].items() if "reuse_source" not in v], ["window_0"])
+            self.assertNotIn("collision_build", plan)
+            self.assertNotIn("detector_build", plan)
+            self.assertEqual(plan["committed_new_bytes"], sum(plan["levels"][k]["committed_new_bytes"]
+                for k in plan["levels"]) + plan["ip_collision_build"]["committed_new_bytes"])
+            output = root / "extension"
+            path = self.materialize(output, plan, helper)
+            descriptor = p.read(path)
+            self.assertEqual(descriptor["parent"], original["parent"])
+            self.assertEqual(descriptor["refinement_windows"][1:], original["refinement_windows"][1:])
+            self.assertEqual([descriptor["instances"][i] for i in (0, 1, 3)],
+                             [original["instances"][i] for i in (0, 1, 3)])
+            loaded = load_binding(path)
+            self.assertEqual(loaded["manifest"], str(owner))
+            self.assertEqual(loaded["descriptor_owner"], str(output / "run_manifest.json"))
+            self.assertEqual(loaded["refinement_windows"][0]["grid"]["origin_mm"][2], -7)
+            self.assertEqual(loaded["instances"][2]["manifest"], loaded["descriptor_owner"])
+            self.assertFalse((output / "simion/parent").exists())
+            next_request = dict(schema_version=1, role=p.ROLE, source_binding_path=str(path),
+                source_field_manifest=loaded["descriptor_owner"], numerical_contract_path=request["numerical_contract_path"],
+                candidate_voltages_v={"s1": 0., "s2": 0., "p1": 1., "p2": 0.})
+            next_plan = p.compile_request(next_request)
+            self.assertEqual(next_plan["levels"]["window_0"]["box_mm"][2], -7)
+            self.assertEqual(next_plan["candidate_authority"]["component_voltages_v"], loaded["authority"]["component_voltages_v"])
+            IonProcessorResponseProviderTest.freeze(self, root / "next", next_plan)
+
+    def test_closed_extension_request_rejects_other_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            _, _, _, _, request = self.fixture(source)
+            mutations = [dict(candidate_voltages_v={"s1": 0., "s2": 0., "p1": 1., "p2": 0.}),
+                         dict(response_axis="p1"), dict(response_basis_paths={}), dict(geometry_contract_path="other"),
+                         dict(consumer_view_source_path="other"), dict(reuse_source_levels=["parent"])]
+            for change in mutations:
+                with self.subTest(change=list(change)), self.assertRaises(ValueError):
+                    p.compile_request(dict(request, **change))
+            for update in [dict(solve_z_min_mm=-5, active_z_min_mm=-5),
+                           dict(solve_z_min_mm=-7, active_z_min_mm=-3),
+                           dict(solve_z_min_mm=-9, active_z_min_mm=-5),
+                           dict(solve_z_min_mm=-7.1, active_z_min_mm=-5),
+                           dict(solve_z_min_mm=-7, active_z_min_mm=-5, pitch_mm=[.5, 1, .5])]:
+                with self.subTest(update=update), self.assertRaises(ValueError):
+                    p.compile_request(dict(request, ion_processor_local_domain_update=update))
+
+    def test_resealed_lineage_and_reused_field_tampering_are_rejected(self):
+        for mutation in ("lineage", "route", "pitch", "parent", "voltage", "geometry", "reuse", "occupancy", "scalar_alias"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); source = root / "source"; source.mkdir()
+                helper, _, _, _, request = self.fixture(source)
+                plan = p.compile_request(request)
+                output = root / "extension"; path = self.materialize(output, plan, helper)
+                descriptor = p.read(path)
+                fine = descriptor["refinement_windows"][0]
+                if mutation == "lineage":
+                    target = output / "inputs/ip_fine_domain_update.json"
+                    value = p.read(target); value["update"]["solve_z_min_mm"] -= 1
+                    p.write_json(target, value); descriptor["local_domain_update"] = helper.record(target)
+                elif mutation == "route":
+                    fine["active_box_mm"][0][0] += .5
+                elif mutation in ("pitch", "parent"):
+                    target = Path(fine["numerical_plan_path"]); value = p.read(target)
+                    if mutation == "pitch":
+                        fine["grid"]["pitch_mm"][2] = value["pitch_mm"][2] = .5
+                    else:
+                        value["parent_pa"] = fine["pa_path"]
+                    p.write_json(target, value)
+                elif mutation in ("voltage", "geometry"):
+                    target = Path(fine["voltage_authority_path"] if mutation == "voltage" else fine["geometry_authority_path"])
+                    value = p.read(target)
+                    if mutation == "voltage":
+                        value["analyzer_electrode_voltages_v"][15] += 1
+                    else:
+                        value["frame_id"] = "changed"
+                    p.write_json(target, value)
+                elif mutation == "reuse":
+                    descriptor["refinement_windows"][1]["active_box_mm"][1][0] += .5
+                elif mutation == "occupancy":
+                    descriptor["instances"][2] = copy.deepcopy(descriptor["instances"][1])
+                    descriptor["instances"][2]["role"] = "ion_processor_collision"
+                else:
+                    descriptor["instances"][2]["pa_path"] = fine["pa_path"]
+                p.write_json(path, descriptor); helper.seal(output, output / "run_manifest.json")
+                with self.assertRaises((ValueError, AssertionError)):
+                    load_binding(path)
+
+
+class IonProcessorFineResponseReuseTest(unittest.TestCase):
+    """Same sealed operator reuse, with real tiny binary composition and strict loaders."""
+
+    def full_fields(self, root, plan, helper):
+        import struct
+        IonProcessorResponseProviderTest.freeze(self, root, plan)
+        source = load_binding(Path(plan["inputs"]["source_binding"]))
+        surfaces = dict(zip(["parent", *plan["window_labels"]], [source, *source["refinement_windows"]], strict=True))
+        for label, spec in plan["levels"].items():
+            if "reuse_source" in spec:
+                continue
+            header = PaHeader(-2, 1, 100000, *spec["dimensions"], 1, *spec["pitch_mm"])
+            directory = root / "simion" / label
+            filename = "c0_static.pa" if label == "parent" else "c0_local.pa"
+            raw = Path(surfaces[label]["sources"]["scalar_pa"]).read_bytes()[p.HEADER.size:]
+            source_values = struct.unpack('<'+'d'*header.node_count, raw)
+            values = [200001. if value > 100000 else 1. for value in source_values]
+            (directory / filename).write_bytes(header.pack() + struct.pack('<'+'d'*len(values), *values))
+            (directory / (filename + "-surf")).write_bytes(Path(surfaces[label]["sources"]["surface"]).read_bytes())
+        return IonProcessorResponseProviderTest.publish(self, helper, root, plan)
+
+    def chain(self, root):
+        source = root / "source"; source.mkdir()
+        helper, _, path, _, extension_request = IonProcessorFineExtensionTest.fixture(self, source)
+        base_request = {k: v for k, v in extension_request.items()
+                        if k not in {"ion_processor_local_domain_update", "reuse_source_levels"}}
+        banks = {}
+        for axis in ("p1", "p2"):
+            plan = p.compile_request(dict(base_request, response_axis=axis))
+            banks[axis] = self.full_fields(root / axis, plan, helper)
+        candidate_request = dict(base_request, candidate_voltages_v={"s1": 0., "s2": 0., "p1": 342., "p2": 0.},
+                                 response_basis_paths={k: str(v) for k, v in banks.items()})
+        candidate_plan = p.compile_request(candidate_request)
+        candidate = root / "candidate"
+        IonProcessorResponseProviderTest.freeze(self, candidate, candidate_plan)
+        p.compose_run(candidate_plan, candidate)
+        candidate_path = IonProcessorResponseProviderTest.publish(self, helper, candidate, candidate_plan)
+        extension_request.update(source_binding_path=str(candidate_path), source_field_manifest=str(candidate / "run_manifest.json"))
+        extension_plan = p.compile_request(extension_request)
+        extension = root / "extension"
+        extension_path = IonProcessorFineExtensionTest.materialize(self, extension, extension_plan, helper)
+        return helper, banks, extension_path, extension_request
+
+    def test_two_axes_reuse_four_pure_fields_and_compose_against_extended_ordinary(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            helper, banks, source_path, extension_request = self.chain(root)
+            source = load_binding(source_path)
+            new_banks = {}
+            for axis in ("p1", "p2"):
+                request = dict(schema_version=1, role=p.ROLE, response_axis=axis,
+                    source_binding_path=str(source_path), source_field_manifest=source["descriptor_owner"],
+                    numerical_contract_path=extension_request["numerical_contract_path"],
+                    reuse_source_levels=["parent", "window_1", "window_2", "window_3"],
+                    reuse_response_basis_path=str(banks[axis]))
+                plan = p.compile_request(request)
+                self.assertEqual([k for k,v in plan["levels"].items() if "reuse_source" not in v], ["window_0"])
+                self.assertFalse(any(k.endswith("_build") for k in plan))
+                self.assertFalse(plan["fly_authorized"])
+                output = root / ("new_" + axis)
+                new_path = self.full_fields(output, plan, helper)
+                new_banks[axis] = str(new_path)
+                pure = load_native_response_basis(new_path, source)
+                self.assertEqual(pure["source_authority"], source["authority"])
+                self.assertEqual(pure["instances"][1:], source["instances"][1:])
+                self.assertEqual(p.read(new_path)["parent"], p.read(banks[axis])["parent"])
+                self.assertFalse((output / "simion/parent").exists())
+                with self.assertRaises(ValueError):
+                    load_binding(new_path)
+                for change in (dict(response_axis="s1"), dict(candidate_voltages_v={}),
+                               dict(reuse_source_levels=["parent"]), dict(response_axis="p2" if axis=="p1" else "p1")):
+                    with self.subTest(change=change), self.assertRaises(ValueError):
+                        p.compile_request(dict(request, **change))
+                profile_path = output / "inputs/ip_fine_response_reuse.json"
+                fine_plan_path = output / "inputs/window_0_plan.json"
+                snapshots = {f: f.read_bytes() for f in (new_path, profile_path, fine_plan_path)}
+                for mutation in ("lineage_axis", "lineage_owner", "route", "parent", "fly"):
+                    for f, content in snapshots.items():
+                        f.write_bytes(content)
+                    descriptor = p.read(new_path)
+                    if mutation.startswith("lineage"):
+                        profile = p.read(profile_path)
+                        if mutation == "lineage_axis":
+                            profile["axis"] = "p2" if axis == "p1" else "p1"
+                        else:
+                            profile["source_basis_manifest"]["sha256"] = "0"*64
+                        p.write_json(profile_path, profile)
+                        descriptor["response_level_reuse"] = helper.record(profile_path)
+                    elif mutation == "route":
+                        descriptor["refinement_windows"][0]["active_box_mm"][2][0] += .5
+                    elif mutation == "parent":
+                        fine_plan = p.read(fine_plan_path)
+                        fine_plan["parent_pa"] = source["sources"]["scalar_pa"]
+                        p.write_json(fine_plan_path, fine_plan)
+                    else:
+                        descriptor["fly_authorized"] = True
+                    p.write_json(new_path, descriptor); helper.seal(output, output / "run_manifest.json")
+                    with self.subTest(axis=axis, mutation=mutation), self.assertRaises((ValueError, AssertionError)):
+                        load_native_response_basis(new_path, source)
+                for f, content in snapshots.items():
+                    f.write_bytes(content)
+                helper.seal(output, output / "run_manifest.json")
+            candidate_request = dict(schema_version=1, role=p.ROLE, source_binding_path=str(source_path),
+                source_field_manifest=source["descriptor_owner"], numerical_contract_path=extension_request["numerical_contract_path"],
+                candidate_voltages_v={"s1": 0., "s2": 0., "p1": 350., "p2": -5.}, response_basis_paths=new_banks)
+            plan = p.compile_request(candidate_request)
+            output = root / "new_candidate"
+            IonProcessorResponseProviderTest.freeze(self, output, plan)
+            p.compose_run(plan, output)
+            path = IonProcessorResponseProviderTest.publish(self, helper, output, plan)
+            self.assertEqual(load_binding(path)["refinement_windows"][0]["grid"], source["refinement_windows"][0]["grid"])
+
+
 if __name__ == "__main__":
     unittest.main()

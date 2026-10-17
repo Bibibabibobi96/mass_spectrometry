@@ -57,7 +57,68 @@ CANDIDATE_DEFINITION = PROJECT / "config" / "candidate_bunch_source_n100.json"
 
 
 class BunchSourceAndScheduleTest(unittest.TestCase):
-    def test_publisher_capacity_startup_passes_warning_policy(self) -> None:
+    def test_controlled_slow_energy_list_publishes_seven_pure_probe_states(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            definition = self._definition()
+            definition.update(particle_count=7, angular_full_width_deg=0.0,
+                              controlled_slow_energy_half_spans_ev_per_charge=[0.1, 0.2, 0.3])
+            path = root / "definition.json"
+            path.write_text(json.dumps(definition), encoding="utf-8")
+            receipt = materialize_bunch_source_from_definition(
+                definition_path=path, state_table_path=root / "states.csv",
+                fly2_path=root / "source.fly2", receipt_path=root / "receipt.json",
+            )
+            verified = load_verified_bunch_source_receipt(root / "receipt.json")
+            self.assertEqual(verified, receipt)
+            self.assertEqual(receipt["particle_count"], 7)
+            self.assertEqual(receipt["mother_particle_count"], 1000)
+            self.assertEqual(receipt["controlled_head_particle_count"], 7)
+            self.assertNotIn("volume_particle_id_min", receipt)
+            self.assertNotIn("controlled_slow_energy_pair", receipt)
+            self.assertNotIn("controlled_focus_pair", receipt)
+            self.assertEqual([(p["negative_particle_id"], p["positive_particle_id"])
+                              for p in receipt["controlled_slow_energy_pairs"]], [(2, 3), (4, 5), (6, 7)])
+            with (root / "states.csv").open(encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual([float(r["kinetic_energy_ev"]) for r in rows],
+                             [5.0, 4.9, 5.1, 4.8, 5.2, 4.7, 5.3])
+            fixed = set(rows[0]) - {"particle_id", "kinetic_energy_ev"}
+            self.assertTrue(all(all(row[k] == rows[0][k] for k in fixed) for row in rows))
+            damaged = dict(receipt)
+            damaged["controlled_slow_energy_pairs"] = [dict(p) for p in receipt["controlled_slow_energy_pairs"]]
+            damaged["controlled_slow_energy_pairs"][2]["positive_particle_id"] = 5
+            (root / "receipt.json").write_text(json.dumps(damaged), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "slow-energy pairs"):
+                load_verified_bunch_source_receipt(root / "receipt.json")
+
+    def test_controlled_slow_energy_list_rejects_mixed_or_invalid_heads(self) -> None:
+        mutations = [
+            {"controlled_slow_energy_half_spans_ev_per_charge": []},
+            {"controlled_slow_energy_half_spans_ev_per_charge": [0.1, 0.1, 0.3]},
+            {"controlled_slow_energy_half_spans_ev_per_charge": [0.2, 0.1, 0.3]},
+            {"controlled_slow_energy_half_spans_ev_per_charge": [0.1, float("nan"), 0.3]},
+            {"controlled_slow_energy_half_span_ev_per_charge": 0.05},
+            {"controlled_focus_half_span_mm": 0.1},
+            {"controlled_envelope_half_span_fraction": 1.0},
+            {"particle_count": 100},
+        ]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                definition = self._definition()
+                definition.update(particle_count=7,
+                                  controlled_slow_energy_half_spans_ev_per_charge=[0.1, 0.2, 0.3])
+                definition.update(mutation)
+                path = root / "definition.json"
+                path.write_text(json.dumps(definition), encoding="utf-8")
+                with self.assertRaises(CandidateContractError):
+                    materialize_bunch_source_from_definition(
+                        definition_path=path, state_table_path=root / "states.csv",
+                        fly2_path=root / "source.fly2", receipt_path=root / "receipt.json",
+                    )
+
+    def test_publisher_capacity_startup_uses_hard_gate(self) -> None:
         script = r"""
 param($Source)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
@@ -67,10 +128,9 @@ if($errors.Count){throw ($errors|Out-String)}
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and
  $n.GetCommandName()-eq'Enter-ArtifactWorkflowCapacitySession'},$true)
 function Enter-ArtifactWorkflowCapacitySession {
- param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$Owner,
-       [ValidateSet('stop','warn')]$CapacityThresholdAction='stop')
- if($CapacityThresholdAction-ne'warn'){throw 'TARGET_CAPACITY_EXCEEDED'}
- @{status='active';action=$CapacityThresholdAction;protected_count=$ProtectedPaths.Count;
+ [CmdletBinding()]
+ param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$Owner)
+ @{status='active';protected_count=$ProtectedPaths.Count;
    committed_bytes=$CommittedNewBytes;owner=$Owner}|ConvertTo-Json -Compress
 }
 $python='python';$repoRoot='repo';$workspaceRoot='workspace';$RunId='fixture'
@@ -88,7 +148,6 @@ Invoke-Expression $node.Extent.Text
                 encoding="utf-8", errors="replace", timeout=40)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         actual = json.loads(result.stdout)
-        self.assertEqual(actual["action"], "warn")
         self.assertEqual(actual["protected_count"], 4)
         self.assertEqual(actual["committed_bytes"], 1048576)
         self.assertEqual(actual["owner"], "mrtof-publish-bunch-source:fixture")

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MR-owned ion processor matching preparation request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "provider_project_id", "consumer_project_id", "target_source", "design_variables", "policies", "requirements"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "mrtof_ion_processor_matching_request"},
+    "provider_project_id": {"const": "dual_pressure_rectilinear_ion_processor"},
+    "consumer_project_id": {"const": "parallel_mirror_dual_stripe_mr_tof"},
+    "target_source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["axial_energy", "pose"],
+      "properties": {
+        "axial_energy": {"const": "frozen_mr_provider_projection"},
+        "pose": {"const": "frozen_mr_trajectory"}
+      }
+    },
+    "design_variables": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["contract", "json_pointer", "purpose"],
+        "properties": {
+          "contract": {"enum": ["native_operating_point.json", "baseline.json"]},
+          "json_pointer": {"type": "string", "pattern": "^/(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])+)*$"},
+          "purpose": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "policies": {
+      "type": "object", "additionalProperties": false,
+      "required": ["execution", "energy_adjustment", "preserve_measured_state", "preserve_absolute_clock", "allow_geometry_change"],
+      "properties": {
+        "execution": {"const": "prepare_only"},
+        "energy_adjustment": {"const": "provider_voltage_and_geometry"},
+        "preserve_measured_state": {"const": true},
+        "preserve_absolute_clock": {"const": true},
+        "allow_geometry_change": {"const": true}
+      }
+    },
+    "requirements": {
+      "type": "object", "additionalProperties": false,
+      "required": ["energy_definition", "acceleration_direction", "spatial_reference", "beam_quality", "field_assembly"],
+      "properties": {
+        "energy_definition": {"const": "exit_axial_kinetic_energy_per_charge"},
+        "acceleration_direction": {"const": "negative_z"},
+        "spatial_reference": {"const": "z0_observation_not_proven_time_focus"},
+        "beam_quality": {"const": "characterize_before_setting_acceptance"},
+        "field_assembly": {"const": "replace_old_oa_and_rebuild_affected_boundaries"}
+      }
+    }
+  }
+}

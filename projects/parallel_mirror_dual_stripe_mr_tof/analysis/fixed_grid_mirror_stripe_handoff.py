@@ -74,6 +74,14 @@ def _same_mirror_physics(
         _remove_path(contract, "simion", "accelerator_pa_span_mm")
         _remove_path(contract, "simion", "analyzer_spatial_convergence")
         _remove_path(contract, "simion", "native_corridor")
+        # These settings belong to the assembled-field/statistics consumer,
+        # not to the immutable bare-mirror evidence being used as an initializer.
+        # Its original mesh, stopping and integration records remain manifest
+        # verified below; this does not qualify the downstream numerical model.
+        _remove_path(contract, "simion", "trajectory_profiles", "center_screening", "maximum_step_us")
+        _remove_path(contract, "simion", "numerical_profiles", "grid_generation")
+        _remove_path(contract, "simion", "numerical_profiles", "native_static_field")
+        contract.pop("peak_analysis", None)
         _remove_path(
             contract,
             "simion",

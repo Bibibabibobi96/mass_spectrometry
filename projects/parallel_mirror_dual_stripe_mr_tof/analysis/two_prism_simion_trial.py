@@ -17,6 +17,99 @@ import math
 from pathlib import Path
 from typing import Any
 
+
+def resolve_trajectory_recording(contract: dict[str, Any]) -> dict[str, Any] | None:
+    """Validate callback observation without changing integration or event settings."""
+    value = contract["simion"].get("trajectory_recording")
+    if value is None:
+        return None
+    common = {"schema_version", "mode", "retention_class", "reason", "output_budget_bytes"}
+    if not isinstance(value, dict) or value.get("mode") not in {"every_step", "fixed_interval"}:
+        raise ValueError("trajectory_recording requires every_step or fixed_interval")
+    expected = common | ({"interval_us"} if value["mode"] == "fixed_interval" else set())
+    if set(value) != expected or value["schema_version"] != 1:
+        raise ValueError("trajectory_recording fields differ from its schema 1 sampling mode")
+    if value["retention_class"] != "solver_review" or not isinstance(value["reason"], str) or not value["reason"].strip():
+        raise ValueError("recorded trajectories require solver_review with a reason")
+    if type(value["output_budget_bytes"]) is not int or value["output_budget_bytes"] < 1:
+        raise ValueError("trajectory output_budget_bytes must be a positive integer")
+    if value["mode"] == "fixed_interval":
+        interval = value["interval_us"]
+        if isinstance(interval, bool) or not isinstance(interval, (int, float)) or not math.isfinite(interval) or interval <= 0:
+            raise ValueError("trajectory interval_us must be finite and positive")
+    return dict(value)
+
+
+def extract_trajectory_samples(*, log_path: Path, output_path: Path, receipt_path: Path,
+                               recording_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Stream solver callback states into CSV, rejecting incomplete per-ion lifecycles."""
+    recording = resolve_trajectory_recording({"simion": {"trajectory_recording": recording_config}})
+    mode = recording["mode"] if recording else "every_step"
+    columns = ["ion", "phase", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"]
+    counts: dict[int, int] = {}
+    last: dict[int, tuple[float, str]] = {}
+    prior_time: dict[int, float] = {}
+    last_state: dict[int, tuple[float, ...]] = {}
+    terminal_clock_backsteps = []
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open(encoding="utf-8-sig") as source, output_path.open("w", encoding="utf-8", newline="") as target:
+        writer = csv.DictWriter(target, fieldnames=columns)
+        writer.writeheader()
+        for line in source:
+            if not line.startswith("MRTOF_TRAJECTORY "):
+                continue
+            row = dict(item.split("=", 1) for item in line.split()[1:])
+            if set(row) != set(columns):
+                raise ValueError("trajectory sample has missing or unknown fields")
+            ion, time = int(row["ion"]), float(row["t_us"])
+            if ion < 1 or not all(math.isfinite(float(row[key])) for key in columns[2:]):
+                raise ValueError("trajectory sample identity or state is invalid")
+            phase = row["phase"]
+            state = tuple(float(row[key]) for key in columns[3:])
+            if phase not in {"birth", "step", "terminal"}:
+                raise ValueError("unknown trajectory sample phase")
+            if ion not in last:
+                if phase != "birth":
+                    raise ValueError("trajectory does not start at birth")
+            else:
+                if phase == "birth" or last[ion][1] == "terminal":
+                    raise ValueError("trajectory lifecycle or time order is invalid")
+                if time < last[ion][0]:
+                    # Native electrode contact can restore the preceding callback
+                    # clock at terminate while retaining the last identical state.
+                    # Keep both raw records. Every-step recording requires the
+                    # exact prior callback clock; sparse recording bounds it by
+                    # adjacent observations and does not establish one-step size.
+                    clock_matches = time == prior_time.get(ion)
+                    if mode == "fixed_interval":
+                        clock_matches = prior_time.get(ion, last[ion][0]) <= time < last[ion][0]
+                    if phase != "terminal" or not clock_matches or state != last_state[ion]:
+                        raise ValueError("trajectory time order is invalid")
+                    terminal_clock_backsteps.append({"ion": ion, "backstep_us": last[ion][0] - time})
+                prior_time[ion] = last[ion][0]
+            last[ion] = (time, phase)
+            last_state[ion] = state
+            counts[ion] = counts.get(ion, 0) + 1
+            writer.writerow(row)
+    minimum_samples = 2 if mode == "fixed_interval" else 3
+    if not counts or any(phase != "terminal" or counts[ion] < minimum_samples for ion, (_, phase) in last.items()):
+        raise ValueError("trajectory is empty or lacks steps/terminal state")
+    result = {"schema_version": 1, "role": "mrtof_solver_step_trajectory", "status": "success",
+              "sampling": ("initialize__first_other_actions_callback_per_absolute_clock_bucket__terminate"
+                           if mode == "fixed_interval" else "initialize__every_other_actions_callback__terminate"),
+              "sampling_mode": mode, "sampling_interval_us": recording["interval_us"] if mode == "fixed_interval" else None,
+              "sampling_grid_origin_us": 0 if mode == "fixed_interval" else None,
+              "recording_configuration": recording,
+              "interpolated": False, "frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+              "clock_basis": "instrument_time_us_from_frozen_source_authority",
+              "sample_count": sum(counts.values()), "samples_per_particle": counts,
+              "terminal_clock_backsteps": terminal_clock_backsteps,
+              "record_order": "solver_callback_order__raw_terminal_clock_retained",
+              "source_log": str(log_path.resolve()), "source_log_sha256": _sha256(log_path),
+              "trajectory_csv": str(output_path.resolve()), "trajectory_csv_sha256": _sha256(output_path)}
+    receipt_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
 from common.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C,
@@ -1051,6 +1144,25 @@ def _static_consumed_analyzer_voltages(binding: dict[str, Any], requested: list[
     return list(binding['authority']['analyzer_electrode_voltages_v'])
 
 
+def clean_phase_effective_slow_action(*, state: dict[str, Any], mass_amu: float,
+                                     charge_state: int, target: dict[str, Any],
+                                     stripe_1_voltage_v: float) -> dict[str, float]:
+    """Evaluate the frozen L0 slow-action model on a measured Cartesian state.
+
+    Psi is the design effective potential, not the actual 3D scalar field.
+    Spatial applicability and crossing identity remain the caller's checks.
+    """
+    velocity = _vector(state.get("velocity_mm_per_us"), 3, "clean velocity")
+    position = _vector(state.get("position_mm"), 3, "clean position")
+    mass, charge = _finite(mass_amu, "particle mass"), _finite(charge_state, "particle charge")
+    if mass <= 0 or charge <= 0:
+        raise CandidateContractError("clean action requires positive mass and charge")
+    ky = 0.5*mass*AMU_KG*(velocity[1]*1000)**2/(ELEMENTARY_CHARGE_C*abs(charge))
+    psi = converging_design_potential_delta_v(target, stripe_1_voltage_v, position[1])
+    return dict(clean_phase_slow_energy_per_charge_v=ky, design_effective_potential_delta_v=psi,
+                **{CONVERGING_PRISM_ENERGY_RESIDUAL: ky+psi-target["slow_energy_reference_per_charge_v"]})
+
+
 def _converging_prism_energy_observation(events: list[dict[str, Any]], trial: dict[str, Any]) -> dict[str, Any]:
     """Measure reference slow energy at the first clean z=0 plane, not at a mirror turn."""
     target = trial.get("prism_handoff_target")
@@ -1075,18 +1187,46 @@ def _converging_prism_energy_observation(events: list[dict[str, Any]], trial: di
         raise CandidateContractError("clean-phase energy requires valid mass/charge and grounded S2")
     if any(e.get("kind") in {"terminal", "splat"} and e.get("splat", e.get("code")) == -1 for e in prefix):
         raise CandidateContractError("clean phase follows an electrode collision")
-    ky = 0.5*mass*AMU_KG*(vy*1000)**2/(ELEMENTARY_CHARGE_C*abs(charge))
-    phi = converging_design_potential_delta_v(target, trial["stripe_biases_v"][0], y)
-    return {"first_clean_phase_state": state, "clean_phase_slow_energy_per_charge_v": ky,
-            "design_potential_delta_v": phi,
-            CONVERGING_PRISM_ENERGY_RESIDUAL: ky+phi-target["slow_energy_reference_per_charge_v"]}
+    action = clean_phase_effective_slow_action(state=state, mass_amu=mass, charge_state=charge,
+                                             target=target, stripe_1_voltage_v=trial["stripe_biases_v"][0])
+    # Preserve the historical key for old centre receipts; the shared function
+    # deliberately names the effective model term so new consumers cannot
+    # confuse it with a measured physical scalar potential.
+    return {"first_clean_phase_state": state,
+            "clean_phase_slow_energy_per_charge_v": action["clean_phase_slow_energy_per_charge_v"],
+            "design_potential_delta_v": action["design_effective_potential_delta_v"],
+            CONVERGING_PRISM_ENERGY_RESIDUAL: action[CONVERGING_PRISM_ENERGY_RESIDUAL]}
+
+
+def _measured_converging_prism_energy_observation(events: list[dict[str, Any]], trial: dict[str, Any]) -> dict[str, Any]:
+    """Apply the same frozen L0 model to a declared measured 3D probe state."""
+    target=trial.get("prism_handoff_target")
+    if target is None:
+        return {}
+    if trial.get("source_projection") != "measured_exit_centroid" or trial["stripe_biases_v"][1] != 0:
+        raise CandidateContractError("Measured clean action requires explicit centroid identity and grounded S2")
+    prefix=_prism_handoff_event_prefix(events,clean_phase=True)
+    event=prefix[-1]
+    state=dict(position_mm=[_finite(event.get(f"{a}_mm"),"measured clean position") for a in "xyz"],
+               velocity_mm_per_us=[_finite(event.get(f"v{a}_mm_us"),"measured clean velocity") for a in "xyz"],
+               t_us=_finite(event.get("t_us"),"measured clean time"),event="central_plane_directional__n1__minus_z")
+    lo,hi=target["clean_y_interval_mm"]
+    if (not lo<state["position_mm"][1]<hi or state["position_mm"][2] != 0
+            or state["velocity_mm_per_us"][1]<=0 or state["velocity_mm_per_us"][2]>=0):
+        raise CandidateContractError("Measured clean phase is outside the declared L0 reference domain")
+    if any(e.get("kind") in {"terminal","splat"} and e.get("splat",e.get("code")) == -1 for e in prefix):
+        raise CandidateContractError("Measured clean action follows an electrode collision")
+    action=clean_phase_effective_slow_action(state=state,mass_amu=trial["particle_mass_th"],charge_state=trial["charge_state"],
+        target=target,stripe_1_voltage_v=trial["stripe_biases_v"][0])
+    return dict(action,first_clean_phase_state=state,
+                model_scope="Measured 3D state with original x/vx; frozen L0 design effective Psi, not physical 3D potential")
 
 
 def _bunch_center_prism_handoff_validation(
-    events: list[dict[str, Any]], trial: dict[str, Any],
+    events: list[dict[str, Any]], trial: dict[str, Any], *, source_state: ProjectPhaseSpaceState | None = None,
 ) -> dict[str, Any]:
     """Publish the forward P segment without qualifying the full flight."""
-    source = _bunch_center_source_state(trial)
+    source = _bunch_center_source_state(trial) if source_state is None else source_state
     if source is None:
         return {"status": "not_available__legacy_source_receipt"}
     try:
@@ -1100,7 +1240,8 @@ def _bunch_center_prism_handoff_validation(
                 trial["target_low_field_tangent_ratio_vy_over_vz"]
             ),
         ))
-        energy_observation = _converging_prism_energy_observation(events, trial)
+        energy_observation = (_converging_prism_energy_observation(events, trial) if source_state is None
+                              else _measured_converging_prism_energy_observation(events, trial))
         if energy_observation:
             residuals[CONVERGING_PRISM_ENERGY_RESIDUAL] = energy_observation[CONVERGING_PRISM_ENERGY_RESIDUAL]
     except CandidateContractError as error:
@@ -1131,10 +1272,10 @@ def _bunch_center_prism_handoff_validation(
 
 
 def _bunch_center_workpoint_validation(
-    events: list[dict[str, Any]], trial: dict[str, Any],
+    events: list[dict[str, Any]], trial: dict[str, Any], *, source_state: ProjectPhaseSpaceState | None = None,
 ) -> dict[str, Any]:
     """Measure the four existing workpoint residuals on frozen particle 1."""
-    source = _bunch_center_source_state(trial)
+    source = _bunch_center_source_state(trial) if source_state is None else source_state
     if source is None:
         return {"status": "not_available__legacy_source_receipt"}
     try:
@@ -1146,7 +1287,8 @@ def _bunch_center_workpoint_validation(
                 trial["target_low_field_tangent_ratio_vy_over_vz"]
             ),
         ))
-        energy_observation = _converging_prism_energy_observation(events, trial)
+        energy_observation = (_converging_prism_energy_observation(events, trial) if source_state is None
+                              else _measured_converging_prism_energy_observation(events, trial))
         if energy_observation:
             residuals[CONVERGING_PRISM_ENERGY_RESIDUAL] = energy_observation[CONVERGING_PRISM_ENERGY_RESIDUAL]
         target_ratio = _finite(
@@ -1251,10 +1393,10 @@ def _first_slow_turn_signature(
 
 
 def _bunch_center_stripe_stage_validation(
-    events: list[dict[str, Any]], trial: dict[str, Any],
+    events: list[dict[str, Any]], trial: dict[str, Any], *, source_state: ProjectPhaseSpaceState | None = None,
 ) -> dict[str, Any]:
     """Measure completed origin/slow-turn/target-K events before downstream loss."""
-    if _bunch_center_source_state(trial) is None:
+    if source_state is None and _bunch_center_source_state(trial) is None:
         return {"status": "not_available__legacy_source_receipt"}
     try:
         centre = [event for event in events if event.get("ion") == 1]
@@ -1275,21 +1417,24 @@ def _bunch_center_stripe_stage_validation(
         if any(event.get("kind") in forbidden for event in before):
             raise CandidateContractError("S stage terminated or entered an invalid branch before target-K")
         origins = [event for event in centre if event.get("kind") == "drift_phase_origin"]
-        first_slow = [event for event in before
-                      if event.get("kind") == "slow_turn" and event.get("n") == 1]
-        if len(origins) != 1 or len(first_slow) != 1:
-            raise CandidateContractError("S stage requires one phase origin and first slow turn")
-        origin, slow = origins[0], first_slow[0]
+        if len(origins) != 1:
+            raise CandidateContractError("S stage requires one phase origin")
+        origin=origins[0]
         slow_turns = [event for event in before if event.get("kind") == "slow_turn"
                       and _finite(event.get("t_us"), "stage slow-turn time")
                       > _finite(origin.get("t_us"), "stage origin time")]
+        first_slow = ([event for event in before if event.get("kind") == "slow_turn" and event.get("n") == 1]
+                      if source_state is None else slow_turns[:1])
+        if len(first_slow) != 1:
+            raise CandidateContractError("S stage requires one first post-origin slow turn")
+        slow=first_slow[0]
         if not slow_turns or slow_turns[0] is not slow:
             raise CandidateContractError("S stage first slow-turn identity is inconsistent")
         if not (_finite(origin.get("t_us"), "stage origin time")
                 < _finite(slow.get("t_us"), "stage slow-turn time") < target_time
                 and events.index(origin) < events.index(slow) < cutoff):
             raise CandidateContractError("S stage origin/first slow turn/target-K are out of order")
-        measured = _bunch_center_workpoint_validation(prefix, trial)
+        measured = _bunch_center_workpoint_validation(prefix, trial,source_state=source_state)
         return dict(measured, stage_only=True, full_workpoint_qualified=False,
                     first_slow_turn_signature=_first_slow_turn_signature(prefix, slow))
     except CandidateContractError as error:
@@ -1961,6 +2106,7 @@ def materialize_trial(
     trajectory_profile = _apply_trajectory_step_scale(
         trajectory_profile, trajectory_step_scale,
     )
+    trajectory_recording = resolve_trajectory_recording(trajectory_contract)
     timeout = _full_path_timeout_us(contract, source_contract, target_k)
     p1_plane = _finite(contract["prism_transport"]["first_prism"]["target_interface"]["coordinate_mm"], "P1 plane")
     p1_acceptance = contract["prisms"]["ground_shields"][0]["rectangular_slots_mm"][0]["box"][1:5:3]
@@ -2044,6 +2190,9 @@ def materialize_trial(
         f"phase_origin_mirror_side = {phase_contract.origin_mirror_side}, return_mirror_side = {phase_contract.return_mirror_side}, "
         f"detector_box_mm = {_lua_vector([float(v) for v in detector['box']])}, detector_normal_project = '+z', "
         f"trajectory_quality = {float(trajectory_profile['trajectory_quality']):.17g}, maximum_step_us = {float(trajectory_profile['maximum_step_us']):.17g}, "
+        f"trajectory_recording_enabled = {'true' if trajectory_recording else 'false'}, "
+        f"trajectory_recording_mode = '{trajectory_recording['mode'] if trajectory_recording else 'every_step'}', "
+        f"trajectory_recording_interval_us = {format(trajectory_recording['interval_us'], '.17g') if trajectory_recording and trajectory_recording['mode'] == 'fixed_interval' else 'nil'}, "
         f"full_path_timeout_us = {timeout:.17g}, nonaccelerator_scale = {_finite(simion['nonaccelerator_scale'], 'nonaccelerator scale'):.17g}, "
         f"target_drift_period_ratio = {target_k:.17g}, target_half_oscillation_count = {phase_contract.target_half_oscillation_count}, "
         f"runtime_fast_adjust_enable = {'true' if runtime_fast_adjust_enable else 'false'}, "
@@ -2202,6 +2351,7 @@ def materialize_trial(
         "particle_mass_th": mass,
         "charge_state": charge,
         "trajectory_profile": trajectory_profile,
+        "trajectory_recording": trajectory_recording,
         "nonaccelerator_mesh_mm_per_gu": list(
             simion["component_mesh_mm_per_gu"]["analyzer"]
         ),
@@ -2803,6 +2953,13 @@ def main() -> int:
     analyze.add_argument("--log", required=True, type=Path)
     analyze.add_argument("--trial-receipt", required=True, type=Path)
     analyze.add_argument("--output", required=True, type=Path)
+    recording = sub.add_parser("recording-config")
+    recording.add_argument("--contract", required=True, type=Path)
+    extract = sub.add_parser("extract-trajectory")
+    extract.add_argument("--log", required=True, type=Path)
+    extract.add_argument("--output", required=True, type=Path)
+    extract.add_argument("--receipt", required=True, type=Path)
+    extract.add_argument("--contract", type=Path)
     args = parser.parse_args()
     if args.command == "materialize":
         stripe_override = None
@@ -2854,6 +3011,13 @@ def main() -> int:
         )
         if short_exit_failed:
             return 1
+    elif args.command == "recording-config":
+        print(json.dumps(resolve_trajectory_recording(json.loads(args.contract.read_text(encoding="utf-8-sig")))))
+    elif args.command == "extract-trajectory":
+        recording = resolve_trajectory_recording(json.loads(args.contract.read_text(encoding="utf-8-sig"))) if args.contract else None
+        result = extract_trajectory_samples(log_path=args.log, output_path=args.output, receipt_path=args.receipt,
+                                            recording_config=recording)
+        print(f"MRTOF_TRAJECTORY_EXTRACT=PASS SAMPLES={result['sample_count']}")
     return 0
 
 

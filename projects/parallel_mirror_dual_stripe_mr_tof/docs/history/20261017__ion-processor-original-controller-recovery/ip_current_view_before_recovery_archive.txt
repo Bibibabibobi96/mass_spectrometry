@@ -1,0 +1,53 @@
+加速器接口可选`orthogonal_accelerator`或`dual_pressure_rectilinear_ion_processor`，默认OA保留；入口见[操作说明](../simion/README.md#加速器选择与接口准备)。
+IP独立器件GUI已由用户验收；下游采用冻结出口6D状态交接，不是同一Fly内的HP捕获／冷却到MR连续场求解。
+实测源来自152536独立N100：97出口、损失ID24/64/80及完整100母群保留，原ID、绝对时钟与速度不缩放。
+用户要求能量只报告差异、不判定达标；默认自动输出各时刻空间位置、Prism相空间和所有损失证据。
+
+当前可加载包为[004900 joint.iob](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_004900__analysis__python__ip-fine-extension-workbench/results/joint_workbench/runtime/joint.iob)，使用[003000扩域场](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_003000__build__simion__ip-fine-domain-extension/results/field_binding.json)；四实例及优先级保存／重载检查已通过，不等同GUI或匹配验收。
+
+新的数值域只将IPfine求解z下界扩到−20 mm、active下界到−10 mm；物理几何、电压、共同场和源6D保持。
+[004700同点审计](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_004700__analysis__python__ip-fine-extension-interface/results/patch_interface_audit/patch_interface_comparison.json)在新接口同点fine／covered的Δphi≈2.053×10⁻⁹ V；
+[005347实际轨迹点审计](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_005347__analysis__python__ip-fine-raw-interface/results/patch_interface_audit/patch_interface_comparison.json)在实际观测z≈−6.55／−10.55 mm两侧的H/q差≈−2.06×10⁻⁹ V，支持原局部约11.47 V跳变已消除。
+这只关闭已定位的局部场衔接缺陷，不授予全轨迹离散收敛资格；仍按各候选自身birth的K/q+实际phi记账。
+
+[005200构造质心N1](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_005200__sim__simion__ip-fine-extension-centroid/run_manifest.json)保留同源构造质心6D，已完成49次快速转折；首次正镜y=−3.092355 mm、慢转折y=339.201449 mm、返回相位K≈3.333337，工作点仍未闭合。
+该N1是97出口均值构造的探索射线，不是母群ID1或N100验收。
+[005055实际场事件审计](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_005055__analysis__python__ip-fine-centroid-field-audit/results/event_phi_audit/event_energy_field_audit.json)给出source H/q=4364.533956 V、P1相对birth差+0.079784 V，后续237事件H/q跨度0.041215 V；不能据此声称全程能量收敛。
+
+[005908冻结目标](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_005908__analysis__python__ip-centroid-target-authoring/results/target_authoring/target_authority.json)已完成两项严格导入和25项manifest核验；clean工程参考Ez=4359.320021、Ey=5.213248 eV/q。
+它保留Ws=5.374387143 eV/q、慢转折y=360 mm及K=24.5设计；原0.01°角容差按新参考重算为0.0524898 eV/q，不是N100能量验收阈值。
+有效慢势Psi与实际静电phi分开；Prism分配yz动能，不改变冻结源速度来补偿接口差异。
+
+继续原P预闭合→S／返回相位（四观测／三控制）→P重闭合→完整轨迹→原N100验证；S2接地，实际控制仍为P1/P2/S1。
+新fine域P1/P2响应均已真实求解成功并通过严格算子校验；新工作点N100尚未启动，不因未作GUI复核暂停其他工作。
+历史binding来源校验缺陷已关闭：原件12,772 B与副本12,522 B仅有250处CRLF→LF差异，分别核对各自实际owner封存记录后，完整JSON字典等价。
+[实际严格复验](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_014934__analysis__python__ip-retired-ancestry-copy-replay/run_manifest.json)的4项输出完整核验通过，003000场、新P1/P2响应、005908目标及005200种子均恢复严格加载；
+算子SHA及种子frozen_problem SHA与退役前逐字一致，没有重复Apply。来源校验恢复不授予新的轨迹或匹配资格。
+原runner继续P预闭合；[S1响应场](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_045956__build__simion__ip-extended-response-s1/results/response_basis.json)五层已真实Refine并封存，可用于后续原S／相位阶段；新工作点N100尚未启动。
+原Prepared检查点续接保留已封存P1列；发布失败的P2列已以新身份真实重飞并成功封存，未将失败发布直接改为成功。
+原控制器080730已自然结束：累计5次候选、17次飞行，终因为`maximum_iterations`，完整闭合为false；最后P残差为−1.531744 mm／+0.127411 eV/q。
+原控制器103827成功保留5次候选／17次飞行并清除旧列，已生成第18次响应所需场；但原trial准备器仍把候选预算变化当物理变化拒绝，父运行已失败封存、真实Fly未启动。
+该同一入口现复用原预算专属校验器，27项回归通过（含真实prepare路径的预算／观测变化和物理／数值变更拒绝），真实103827合同只差5→30已复核。
+105109以同max30及同policy沿原pending续接，复用成功场并保留5候选／18飞行；第18次子Fly成功，但父在身份／预测校验启动处失败，成功子记录保留供原恢复机制消费。
+根因已在新pwsh复现：完整pending决策约185 KB被直接放入argv，超过Windows原生命令行限制，表面错误为`StandardOutputEncoding`；原调用现改为核验bytes／SHA的冻结文件路径运输，算法与科学合同保持。109项runner回归全部通过，无skip；110322已成功消费018、不重飞，随后第19次场的容量准入先于旧场退役完成而失败封存。
+已消费018扰动场现沿公共owner退役释放32,300,637,684 B，全部轻量与轨迹证据保留；110720在恢复读取旧projection时因普通缓存读到零字节而失败，未发布新bootstrap。
+[111240读取审计](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_111240__analysis__python__ip-projection-read-audit/run_manifest.json)保存原manifest、恢复失败和严格复核：非缓存及后续普通读取均匹配原封存SHA、JSON有效，未写／flush旧文件或改变身份；首次坏buffer未保存，不据此推断物理变化。
+当前111125从最后完整110322检查点保留5候选／19飞行沿原pending续接。最新四路径L1与主树CLOC通过。S1响应已接入，后续仍按P→S／相位→P重闭合及完整返回验证。
+当前P残差已降到−1.154791 mm／+0.092863 eV/q（第7候选）；预测quality的`missing_valid_stage_events`实际由评估器漏用Prepared编译范围造成，事件齐全。正式决策使用正确范围，当前运行保守重测响应列，未改科学输入。
+隔离修复仅复用冻结decision已有`resolved_numerics`，97项回归通过；真实第6候选只读重放为trusted、最大归一化预测误差0.03513<原0.1门限。该修复尚未整合，不改变运行中源码。
+此前容量租约续期异常和下一候选容量拒绝均保留原失败记录；消耗完的未闭合扰动场沿公共owner退役，轻量投影及全部轨迹证据保留。
+按当前实测模型与1%信赖步幅估计，原5次候选预算不足；[执行预算作者记录](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_084827__analysis__python__ip-closure-budget-authoring/run_manifest.json)仅将累计总上限改为30，其余合同字段保持。
+预算续接及N100实际发射证据接线已在隔离源码工作树验证，并在080730自然结束后整合；主目录122项focused回归通过。
+103827显式采用仓库原OA棱镜policy：仅允许原无policy、P阶段且无pending，严格验证旧状态后清当前响应列／模型，再由原循环重测；累计候选、飞行及历史保留。
+采用边界最终108项runner测试通过（另1项因隔离树缺旧TE1资产跳过），三项延迟发布／失败点／重测列测试通过；独立只读审查未见阻断。
+候选IOB重建现以独立冻结源供原builder在`wb:save`后恢复运行副本，并逐字核验实际Fly输入，避免覆写同名FLY2；105109-stage018已真实Fly成功，飞行后326 B源与独立冻结源SHA完全一致、mass=524且六维状态及能量保持，默认merge源证据接线亦已越过。
+系统重启中断的015645父／场运行已封存interrupted，未完成的5个原生文件沿公共owner入口退役，保留冻结输入与小证据。
+[043529首扰动质心](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_043529__sim__simion__ip-original-stages-stage-001/run_manifest.json)真实飞行完成49次快速转折并记录检测器接触，仍只是闭合响应样本。
+其后停止于阶段视图重复读取：内存相空间tuple与磁盘JSON数组类型不同、数值相同，被误判为证据变化。
+适配器现按同一JSON表示比较／写入，仍拒绝任何实际内容变化；[045534冻结源码实际重放](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_045534__analysis__python__ip-staged-adapter-json-replay/run_manifest.json)重复调用一致，且与原视图逐字节一致。
+当前续接消费已封存质心及响应投影；未闭合场的历史IOB在PA退役后须重建。
+两套可重建性能缓存已沿公共owner／维护恢复释放34,607,842,347 B；首次维护因参数长度启动失败，审批小证据及恢复记录均保留。
+154142原场的10个标量／surface共31,806,317,364 B已精确公共退役并重新封存；原碰撞／检测器约2.17 GB、冻结输入／GEM及轨迹保留，
+账本原owner、pin、理由及deadline不变；当前实际使用的场PA仍受严格校验，历史IOB缺少退役场时须重建。
+旧r05全母群负结果及恢复诊断、接口准备／失效排查和已执行退役见[状态交接与局部接口修复里程碑](history/20261017__ion-processor-handoff-and-interface-boundary.md)。
+

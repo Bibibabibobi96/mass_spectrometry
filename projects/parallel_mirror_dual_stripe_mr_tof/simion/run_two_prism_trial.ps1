@@ -1,12 +1,15 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName='OA')]
 param(
-  [Parameter(Mandatory)][string]$GeometryReviewRunPath,
-  [Parameter(Mandatory)][string]$MirrorRunPath,
-  [Parameter(Mandatory)][string]$StripeRunPath,
-  [Parameter(Mandatory)][string]$AcceleratorProviderReceiptPath,
+  [Parameter(Mandatory,ParameterSetName='OA')][string]$GeometryReviewRunPath,
+  [Parameter(Mandatory,ParameterSetName='OA')][string]$MirrorRunPath,
+  [Parameter(Mandatory,ParameterSetName='OA')][string]$StripeRunPath,
+  [Parameter(Mandatory,ParameterSetName='OA')][string]$AcceleratorProviderReceiptPath,
+  [Parameter(Mandatory,ParameterSetName='PreparedJoint')][string]$PreparedJointWorkbenchRunPath,
+  [Parameter(ParameterSetName='PreparedJoint')][string]$TrajectoryEquivalenceReferenceRunPath='',
+  [Parameter(ParameterSetName='PreparedJoint')][ValidateSet('measured_population','centroid_probe')][string]$PreparedSourceMode='measured_population',
   [string]$AcceleratorFamilyRunPath='',
-  [Parameter(Mandatory)][double]$Prism1VoltageV,
-  [Parameter(Mandatory)][double]$Prism2VoltageV,
+  [Parameter(Mandatory,ParameterSetName='OA')][double]$Prism1VoltageV,
+  [Parameter(Mandatory,ParameterSetName='OA')][double]$Prism2VoltageV,
   [Nullable[double]]$Stripe1VoltageV=$null,
   [Nullable[double]]$Stripe2VoltageV=$null,
   [string]$NativeCorridorBankRunPath='',
@@ -165,6 +168,185 @@ $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRo
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
 if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable is missing: $python"}
 if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){throw "SIMION executable is missing: $simion"}
+
+function Invoke-PreparedJointTrial {
+  # One public trial entry; common run/lease/capacity and batch executors own
+  # lifecycle and admission. The compiler only freezes scientific inputs.
+  . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+  . (Join-Path $repoRoot 'common/multipole/resource_budget_support.ps1')
+  if(-not$ContractPath){throw 'Prepared joint flight requires an explicit observation ContractPath.'}
+  $prepared=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path
+  $observation=(Resolve-Path -LiteralPath $ContractPath).Path
+  $recording=(@(Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','recording-config','--contract',$observation))-join"`n")|ConvertFrom-Json
+  if($null-eq$recording){throw 'Prepared joint flight requires retained trajectory observations.'}
+  $jointRunId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)}
+  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts/projects/$projectId") `
+    -RunId $jointRunId -Project $projectId -Mode two_prism_joint_measured_trial -Software @('SIMION 2020','Python 3.11') `
+    -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $recording.reason -CapacityLedgerLifecycleEnabled
+  $runDir=[string]$package.artifact_run_dir
+  $resultDir=[string]$package.result_dir
+  $logDir=[string]$package.log_dir
+  $capacity=$null;$lease=$null;$terminalized=$false
+  $guards=[Collections.Generic.List[IO.FileStream]]::new()
+  $stage='capacity_startup'
+  try {
+    $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+      -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $runDir `
+      -CommittedNewBytes ([int64]$recording.output_budget_bytes) -ProtectedPaths @($runDir,$prepared) -Owner "mrtof-prepared-joint:$jointRunId"
+    Write-RunJson -Path (Join-Path $resultDir 'artifact_capacity_gate_startup.json') -Depth 14 -Value $capacity
+    $stage='freeze_measured_joint_trial'
+    $prepareArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial','prepare','--prepared-run',$prepared,'--contract',$observation,'--run-directory',$runDir,'--source-mode',$PreparedSourceMode)
+    if($FieldBindingPath){$prepareArguments+=@('--field-binding',(Resolve-Path -LiteralPath $FieldBindingPath).Path)}
+    if($TrajectoryEquivalenceReferenceRunPath){$prepareArguments+=@('--equivalence-reference-run',(Resolve-Path -LiteralPath $TrajectoryEquivalenceReferenceRunPath).Path)}
+    Invoke-ProjectPython -Arguments $prepareArguments
+    $preparationPath=Join-Path $resultDir 'prepared_joint_trial.json'
+    $trial=Get-Content -LiteralPath $preparationPath -Raw|ConvertFrom-Json -Depth 60
+    $renewal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity `
+      -ProtectedPaths (@($runDir)+@($trial.protected_paths)) -RemainingCommittedNewBytes ([int64]$recording.output_budget_bytes)
+    $capacity=$renewal.session
+    foreach($path in @($trial.guard_paths)){
+      $guards.Add([IO.File]::Open([string]$path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+      $surface=[string]$path+'-surf'
+      if(Test-Path -LiteralPath $surface -PathType Leaf){$guards.Add([IO.File]::Open($surface,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))}
+    }
+    $stage='plan_measured_joint_dispatch'
+    $request=Join-Path $resultDir 'simion_dispatch_request.json'
+    $profiles=Join-Path $resultDir 'simion_resource_profiles.json'
+    $dispatch=Join-Path $resultDir 'simion_repository_dispatch_plan.json'
+    $plan=Join-Path $resultDir 'simion_execution_batch_plan.json'
+    $usage=Join-Path $logDir 'simion_batch_resource_usage.json'
+    Invoke-ProjectPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $workspaceRoot "artifacts/projects/$projectId/runs"),'--output',$profiles)
+    Invoke-ProjectPython -Arguments @('-m','common.simion.resource_scheduler','--request',$request,'--profiles',$profiles,'--output',$dispatch)
+    Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatch,'--output',$plan)
+    $batchRoot=Join-Path $resultDir 'batches'
+    New-Item -ItemType Directory -Path $batchRoot|Out-Null
+    $records=@{}
+    function New-PreparedJointBatch {
+      param($PlannedBatch)
+      $batchDirectory=Join-Path $batchRoot ('batch_{0:D3}'-f[int]$PlannedBatch.index)
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','materialize-joint','--preparation',$preparationPath,'--particle-id-min',([string]$PlannedBatch.particle_id_min),'--particle-id-max',([string]$PlannedBatch.particle_id_max),'--output',$batchDirectory)|Out-Host
+      return [pscustomobject]@{
+        name=('mrtof_ip_measured_batch_{0:D3}'-f[int]$PlannedBatch.index);scheduler_batch=$PlannedBatch
+        file_path=$simion;working_directory=$batchDirectory;environment=@{}
+        stdout=Join-Path $logDir ('joint_flight_batch_{0:D3}.log'-f[int]$PlannedBatch.index)
+        stderr=Join-Path $logDir ('joint_flight_batch_{0:D3}.stderr.log'-f[int]$PlannedBatch.index)
+        argument_list=[string[]]@('--nogui','--noprompt','lua',[string]$trial.launcher,(Join-Path $batchDirectory 'joint.iob'),(Join-Path $batchDirectory 'joint.fly2'))
+        batch_receipt=Join-Path $batchDirectory 'batch_receipt.json'
+      }
+    }
+    $initial=Get-Content -LiteralPath $plan -Raw|ConvertFrom-Json
+    foreach($batch in @($initial.batches)){$records[[int]$batch.index]=New-PreparedJointBatch $batch}
+    $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
+    $configuration.inputs=[ordered]@{prepared_joint_trial=$preparationPath;parent_prepared_manifest=(Join-Path $prepared 'run_manifest.json');observation_contract=[string]$trial.trajectory_contract.path;simion_execution_batch_plan=$plan}
+    $configuration.parameters=[ordered]@{parent_prepared_run=$prepared;trajectory_equivalence_reference_run=$TrajectoryEquivalenceReferenceRunPath;accelerator_provider='dual_pressure_rectilinear_ion_processor';particle_count=[int]$trial.launched_particle_count;mother_particle_count=[int]$trial.mother_particle_count;expected_particle_ids=@($trial.expected_particle_ids);trajectory_recording=$recording;source_mode=$PreparedSourceMode;prism_voltages_v=@($trial.prism_voltages_v);stripe_biases_v=@($trial.stripe_biases_v);energy_target_acceptance='not_declared';gui_executed=$false}
+    Write-RunJson -Path $package.run_config -Depth 50 -Value $configuration
+    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status checkpoint `
+      -Software @('SIMION 2020','Python 3.11') -Outputs @($preparationPath,$request,$profiles,$dispatch,$plan)|Out-Null
+    $stage='measured_joint_flight'
+    $lease=Enter-HostResourceStage -Role SIMION -Stage mrtof_flight -Budget (Get-HostResourceBudget -Role SIMION -Stage mrtof_flight) -RunId $jointRunId
+    $dispatchValue=Get-Content -LiteralPath $dispatch -Raw|ConvertFrom-Json
+    $existing=@();$formalIndex=$null
+    if([string]$dispatchValue.estimation.kind-eq'formal_first_batch_observation'){
+      $formalIndex=[int]$initial.batches[0].index
+      $formal=Start-ObservedFormalProcess -DispatchPlanPath $dispatch -ProcessSpecification $records[$formalIndex]
+      $completed=[bool]$formal.process_record.completed
+      if($formal.resource_budget_exceeded-or($completed-and(-not$formal.completed_naturally-or[int]$formal.exit_code-ne0))){throw 'Measured formal first batch failed or exceeded the resource budget.'}
+      $adaptive=@('-m','common.simion.resource_scheduler','--request',$request,'--profiles',$profiles,'--output',$dispatch,'--observed-formal-peak-bytes',([string]$formal.observed_peak_process_tree_working_set_bytes),'--observed-formal-cpu-percent',([string]$formal.observed_process_cpu_percent),'--observed-background-cpu-percent',([string]$formal.observed_background_cpu_percent),'--available-memory-bytes',([string]$formal.available_memory_bytes),'--total-physical-memory-bytes',([string]$formal.total_physical_memory_bytes))
+      if($completed){$adaptive+='--first-batch-completed'}
+      Invoke-ProjectPython -Arguments $adaptive
+      $existing=@($formal.process_record)
+      Invoke-ProjectPython -Arguments @('-m','common.simion.particle_batching','--from-dispatch-plan',$dispatch,'--output',$plan)
+      $replanned=Get-Content -LiteralPath $plan -Raw|ConvertFrom-Json
+      foreach($batch in @($replanned.batches)){
+        if($records.ContainsKey([int]$batch.index)){
+          $prior=$records[[int]$batch.index].scheduler_batch
+          if([int]$prior.particle_id_min-ne[int]$batch.particle_id_min-or[int]$prior.count-ne[int]$batch.count){throw 'Adaptive plan changed an existing measured batch.'}
+        }else{$records[[int]$batch.index]=New-PreparedJointBatch $batch}
+      }
+    }
+    $final=Get-Content -LiteralPath $plan -Raw|ConvertFrom-Json
+    $pending=@($final.batches|Where-Object{$null-eq$formalIndex-or[int]$_.index-ne$formalIndex}|ForEach-Object{$records[[int]$_.index]})
+    $wave=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $dispatch -RunDir $runDir -UsagePath $usage `
+      -ProcessSpecifications $pending -ExistingProcessRecords $existing
+    if($wave.resource_budget_exceeded-or@($wave.processes|Where-Object{[int]$_.exit_code-ne0}).Count-ne0){throw 'Measured joint flight failed or exceeded repository resource budget.'}
+    if(Test-Path -LiteralPath $usage){Complete-ResourceUsage -RunDir $runDir -UsagePath $usage|Out-Null}
+    Exit-HostResourceStage -Lease $lease;$lease=$null
+    $stage='merge_measured_original_ids'
+    $merged=Join-Path $logDir 'native_two_prism_flight.log'
+    $mergeReceipt=Join-Path $resultDir 'batch_log_merge_receipt.json'
+    $merge=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','merge-joint','--preparation',$preparationPath,'--output',$merged,'--receipt',$mergeReceipt)
+    foreach($batch in @($final.batches)){$item=$records[[int]$batch.index];$merge+=@('--batch-log',$item.stdout,$item.batch_receipt)}
+    Invoke-ProjectPython -Arguments $merge
+    $stage='automatic_joint_diagnostics'
+    if($PreparedSourceMode-eq'centroid_probe'){
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial','analyze-probe','--preparation',$preparationPath,'--log',$merged,'--output',(Join-Path $resultDir 'diagnostics'))
+    }else{
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','analyze-joint','--preparation',$preparationPath,'--log',$merged,'--output',(Join-Path $resultDir 'diagnostics'))
+    }
+    if($trial.PSObject.Properties.Name-contains'trajectory_equivalence_reference'-and$null-ne$trial.trajectory_equivalence_reference){
+      $stage='field_consumer_trajectory_equivalence'
+      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','compare-joint','--preparation',$preparationPath,'--log',$merged,'--output',(Join-Path $resultDir 'trajectory_equivalence_receipt.json'))
+    }
+    Write-RunJson -Path $package.summary -Depth 20 -Value ([ordered]@{
+      schema_version=1;role='mrtof_measured_joint_flight_summary';status='success';mother_particle_count=[int]$trial.mother_particle_count
+      launched_particle_count=[int]$trial.launched_particle_count;joint_simulation_executed=$true;gui_executed=$false
+      qualification='candidate_joint_flight_only';energy_target_acceptance='not_declared';six_dimensional_match_qualified=$false;time_focus_qualified=$false
+      diagnostics=Join-Path $resultDir 'diagnostics';all_upstream_and_downstream_losses_retained=$true
+      dispatch_plan=$dispatch;resource_usage=$usage;batch_plan=$plan;merged_log=$merged
+    })
+    $stage='terminal_publication'
+    $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
+    $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity -RemainingCommittedNewBytes 0
+    $capacity=$terminal.session
+    Write-RunJson -Path (Join-Path $resultDir 'artifact_capacity_gate_terminal.json') -Depth 14 -Value $terminal
+    $outputs=@(Get-ChildItem -LiteralPath $resultDir -Recurse -File|ForEach-Object{$_.FullName})+@(Get-ChildItem -LiteralPath $logDir -File|ForEach-Object{$_.FullName})+@($package.summary,$retention)
+    # Retained trajectory payload is deliberately larger than the light-evidence
+    # finalize-ready contract. Publish scientific identity first, then use the
+    # same stopped-payload owner seal as the native field producer.
+    Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+    Invoke-ProjectPython -Arguments @('-m','common.contracts.verify_run_manifest',(Join-Path $runDir 'run_manifest.json'),'--require-status','success')
+    $terminalized=$true
+    $stage='stopped_payload_seal'
+    $null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity
+    $capacity=$null
+    Invoke-ProjectPython -Arguments @('-m','common.contracts.run_capacity_lifecycle','--action','seal-stopped-payload','--artifact-root',(Join-Path $workspaceRoot 'artifacts'),'--run-config',$package.run_config,'--owner',$projectId,'--confirm-writing-stopped','--retention-reason',[string]$recording.reason)
+    Write-Output "MEASURED_JOINT_TRIAL=PASS RUN_ID=$jointRunId JOINT_FLY=True GUI=False"
+  }catch{
+    if(-not$terminalized){
+      $failure=$_.Exception.Message
+      if($null-ne$lease){Exit-HostResourceStage -Lease $lease;$lease=$null}
+      Write-RunJson -Path $package.summary -Depth 20 -Value ([ordered]@{
+        schema_version=1;role='mrtof_measured_joint_flight_summary';status='failed';reason=$failure;failure_stage=$stage
+        gui_executed=$false;qualification='failed_joint_trial_no_performance_qualification'
+      })
+      $retention=Join-Path $runDir 'retention_actions.json'
+      if(-not(Test-Path -LiteralPath $retention -PathType Leaf)){
+        $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
+      }
+      $outputs=@(Get-ChildItem -LiteralPath $runDir -Recurse -File|Where-Object{$_.Name-notin@('run_config.json','run_manifest.json')}|ForEach-Object{$_.FullName})
+      Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status failed -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+      Invoke-ProjectPython -Arguments @('-m','common.contracts.verify_run_manifest',(Join-Path $runDir 'run_manifest.json'),'--require-status','failed')
+      $terminalized=$true
+      if($null-ne$capacity){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity;$capacity=$null}
+      Invoke-ProjectPython -Arguments @('-m','common.contracts.run_capacity_lifecycle','--action','seal-stopped-payload','--artifact-root',(Join-Path $workspaceRoot 'artifacts'),'--run-config',$package.run_config,'--owner',$projectId,'--confirm-writing-stopped','--retention-reason',[string]$recording.reason)
+    }else{
+      Write-Warning "Scientific manifest remains verified; stopped-payload sealing failed at $stage and requires the public owner recovery command."
+    }
+    throw
+  }finally{
+    if($null-ne$lease){Exit-HostResourceStage -Lease $lease}
+    foreach($guard in $guards){$guard.Dispose()}
+    if($null-ne$capacity){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity}
+  }
+}
+if($PSCmdlet.ParameterSetName-eq'PreparedJoint'){
+  foreach($name in $PSBoundParameters.Keys){
+    if($name-notin@('PreparedJointWorkbenchRunPath','TrajectoryEquivalenceReferenceRunPath','PreparedSourceMode','FieldBindingPath','ContractPath','RunId','SimionExe','PythonExe')){throw "Prepared joint replay does not permit changing $name"}
+  }
+  Invoke-PreparedJointTrial
+  return
+}
+
 foreach($value in @($Prism1VoltageV,$Prism2VoltageV)){if([double]::IsNaN($value)-or[double]::IsInfinity($value)){throw 'Prism voltages must be finite'}}
 if([double]::IsNaN($TrajectoryStepScale)-or[double]::IsInfinity($TrajectoryStepScale)-or$TrajectoryStepScale-le0){throw 'TrajectoryStepScale must be finite and positive.'}
 if(-not[double]::IsFinite($AcceleratorSourceYOffsetMm)){throw 'AcceleratorSourceYOffsetMm must be finite.'}
@@ -188,6 +370,12 @@ $mirrorVoltageVariation=if([string]::IsNullOrWhiteSpace($MirrorVoltageVariationP
 $trajectoryContractInput=if([string]::IsNullOrWhiteSpace($ContractPath)){
   Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\config\simion_candidate_two_zone.json'
 }else{(Resolve-Path -LiteralPath $ContractPath).Path}
+$trajectoryRecording=((@(Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','recording-config','--contract',$trajectoryContractInput))-join"`n")|ConvertFrom-Json)
+$trajectoryRetentionClass=if($null-eq$trajectoryRecording){'compact'}else{[string]$trajectoryRecording.retention_class}
+$trajectoryRetentionReason=if($null-eq$trajectoryRecording){''}else{[string]$trajectoryRecording.reason}
+if($null-ne$trajectoryRecording-and$null-ne$CapacityWorkflowSession){
+  throw 'Every-step trajectory retention requires a top-level run owner so its stopped payload can be sealed after releasing its own lease.'
+}
 $bunchSourceReceipt=if([string]::IsNullOrWhiteSpace($BunchSourceReceiptPath)){$null}else{(Resolve-Path -LiteralPath $BunchSourceReceiptPath).Path}
 $bunchSourceContract=$null;$bunchSourceManifest=$null
 $bunchSelectionRequested=$BunchParticleIdMin-ne0-or$BunchParticleIdMax-ne0
@@ -349,7 +537,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmm
 . (Join-Path $PSScriptRoot 'native_corridor_runtime_support.ps1')
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'finite_3d_two_prism_voltage_trial' -Software @('SIMION 2020','Python 3.11') `
-  -RetentionContractEnabled -RetentionClass compact `
+  -RetentionContractEnabled -RetentionClass $trajectoryRetentionClass -RetentionReason $trajectoryRetentionReason `
   -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion') -UseShortExecutionPath
 $runDir=$package.run_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
 $artifactSolverDir=Join-Path ([string]$package.artifact_run_dir) 'simion'
@@ -366,6 +554,9 @@ $batchWaveResult=$null
 $batchContinuationPlan=$null;$batchContinuationPlanPath=$null
 $checkpointOutputs=[Collections.Generic.List[string]]::new()
 $earlyAberrationReport=$null
+$trajectorySamples=$null;$trajectorySampleReceipt=$null
+$trajectoryPayloadNeedsSeal=$false
+$deferredHostCompletionNotification=$false
 $fixedMirrorStripeAuthority=$null;$fixedMirrorStripeAuthorityLocal=$null
 $stripeOperatingProvenance=$null
 $nativeRuntimeReceiptPath=$null;$nativeBankFrozenInputs=@();$nativeRuntime=$null
@@ -377,9 +568,10 @@ try{
     $failureStage='capacity_startup'
     $initialProtectedRuns=@($mirrorRun,$stripeRun,$acceleratorRun,$nativeCorridorRun,$nativeBankGeneration,$nativeRuntimeCheckpointOwner)
     $initialProtectedRuns=@($initialProtectedRuns|Where-Object{$null-ne$_}|Select-Object -Unique)
+    $initialOutputCommitment=if($null-eq$trajectoryRecording){[int64]26214400}else{[int64]$trajectoryRecording.output_budget_bytes}
     $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
       -ArtifactRoot $artifactRoot -RunDirectory $package.artifact_run_dir `
-      -CommittedNewBytes 26214400 -ProtectedPaths $initialProtectedRuns `
+      -CommittedNewBytes $initialOutputCommitment -ProtectedPaths $initialProtectedRuns `
       -ProtectedCacheKeys @() -Owner "mrtof-two-prism-trial:$RunId"
   }
   if($null-ne$nativeRuntimeCheckpointPath){
@@ -483,6 +675,7 @@ try{
     $startupProtectedCacheKeys=@()
   }
   [int64]$committedNewBytes=[math]::Max($requiredBytes,26214400)
+  if($null-ne$trajectoryRecording){$committedNewBytes+=[int64]$trajectoryRecording.output_budget_bytes}
   $failureStage=$(if($ownsCapacitySession){'capacity_scope_update'}else{'capacity_scope_inheritance'})
   [int64]$remainingCommitment=[math]::Max([int64]$capacitySession.committed_new_bytes,$committedNewBytes)
   $sessionUpdate=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -ProtectedPaths $protectedPaths -ProtectedCacheKeys $startupProtectedCacheKeys -RemainingCommittedNewBytes $remainingCommitment
@@ -989,6 +1182,12 @@ try{
   # over compact logs and must not reacquire or transition a heavy solver
   # reservation that the host scheduler may already have retired.
   $rawLog=Join-Path $logDir 'native_two_prism_flight.log';$observation=Join-Path $resultDir 'two_prism_trial_observation.json'
+  if($null-ne$trajectoryRecording){
+    $failureStage='extract_trajectory'
+    $trajectorySamples=Join-Path $resultDir 'trajectory_samples.csv'
+    $trajectorySampleReceipt=Join-Path $resultDir 'trajectory_samples_receipt.json'
+    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','extract-trajectory','--log',$rawLog,'--output',$trajectorySamples,'--receipt',$trajectorySampleReceipt)
+  }
   $failureStage='analyze_trial'
   Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
   $observed=Get-Content -LiteralPath $observation -Raw -Encoding UTF8|ConvertFrom-Json
@@ -1206,6 +1405,7 @@ try{
   $config.parameters.prism_1_voltage_v=$Prism1VoltageV;$config.parameters.prism_2_voltage_v=$Prism2VoltageV;$config.parameters.stripe_biases_v=@($trial.stripe_biases_v);$config.parameters.stripe_operating_provenance=$stripeOperatingProvenance;$config.parameters.source_particle_count=[int]$trial.source_particle_count;$config.parameters.source_cohort=$trial.source_cohort;$config.parameters.source_selection=$trial.source_selection;$config.parameters.source_y_offset_from_accelerator_axis_mm=$trial.source_y_offset_from_accelerator_axis_mm;$config.parameters.accelerator_y_anchor_mm=if($null-eq$AcceleratorYAnchorMm){$null}else{[double]$AcceleratorYAnchorMm};$config.parameters.simion_dispatch=$dispatchSummary;$config.parameters.flight_scope=if($isSafeExitOnly){'accelerator_safe_exit_envelope_only'}else{'complete_three_dimensional_static_return'};$config.parameters.execution_scope=[string]$trial.execution_scope;$config.parameters.accelerator_pulse=$trial.accelerator_pulse;$config.parameters.accelerator_field_mode=if($acceleratorPulseRequested){'manifest_bound_standalone_operating_pa__efield_gate_to_zero'}else{'manifest_bound_standalone_operating_pa__static'};$config.parameters.pa_binding_mode=if($null-ne$bunchSourceContract){'native_corridor_private_fast_adjust_family__four_instances__complete_bunch__no_refine'}else{'native_corridor_private_fast_adjust_family__four_instances__n1'};$config.parameters.trajectory_profile=$trial.trajectory_profile;$config.parameters.gui_workbench_retained=[bool]$retainGuiWorkbenchFiles
   if($staticFieldRequested){$config.parameters.pa_binding_mode=$staticFieldMode+'__four_read_only_collision_instances';$config.parameters.accelerator_field_mode=$staticFieldMode;$config.parameters.gui_field_queries_equivalent=$false}
   if($isBunchFlight){$config.parameters.execution_mode='mrtof_native_corridor_bunch';$config.parameters.particle_count=[int]$trial.source_particle_count;$config.parameters.launched_particle_count=[int]$trial.source_particle_count}
+  $config.parameters.trajectory_recording=$trajectoryRecording
   Write-RunJson -Path $runConfig -Value $config -Depth 100
   $sourceTimingDiagnostic=$null;$sourceTimingDiagnosticLog=$null
   if($isBunchFlight-and[int]$trial.source_particle_count-gt1-and-not$isSafeExitOnly-and
@@ -1232,6 +1432,7 @@ try{
   $capacitySession=$terminal.session
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   $manifestOutputs=@($summary,$observation,$trialReceipt,$voltageReceipt,$posePath,$startupPath,$terminalPath,$retention)
+  if($null-ne$trajectorySamples){$manifestOutputs+=@($trajectorySamples,$trajectorySampleReceipt)}
   if($null-ne$sourceTimingDiagnostic){$manifestOutputs+=@($sourceTimingDiagnostic,$sourceTimingDiagnosticLog)}
   if($null-ne$collectionGatePath){$manifestOutputs+=$collectionGatePath}
   if($null-ne$earlyAberrationReport-and(Test-Path -LiteralPath $earlyAberrationReport -PathType Leaf)){$manifestOutputs+=$earlyAberrationReport}
@@ -1245,8 +1446,20 @@ try{
   if($null-ne$capacityProtectionRenewalPath){$manifestOutputs+=$capacityProtectionRenewalPath}
   if($null-ne$guiWorkbenchReceipt){$manifestOutputs+=$guiWorkbenchReceipt}
   if($guiWorkbenchOutputs.Count){$manifestOutputs+=@($guiWorkbenchOutputs)}
-  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
-  $terminalized=$true;$hostOutcome='success';Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status)"
+  if($null-ne$trajectoryRecording){
+    # Dense trajectories remain governed payloads. The light-evidence finalizer
+    # is intentionally inapplicable; the project owner seals the stopped range
+    # through the public lifecycle API after its protection lease is released.
+    Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
+    Invoke-ProjectPython -Arguments @('-m','common.contracts.verify_run_manifest',(Join-Path $runDir 'run_manifest.json'),'--require-status','success')
+    $trajectoryPayloadNeedsSeal=$true
+  }else{
+    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs
+  }
+  $terminalized=$true
+  if($null-eq$trajectoryRecording){
+    $hostOutcome='success';Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status)"
+  }
 }catch{
   $failureRecord=$_
   if(-not$terminalized){
@@ -1273,12 +1486,28 @@ try{
   if($ownsHostResourceLease-and$null-ne$resourceLease){
     $topLevelLease=-not[bool]$resourceLease.inherited
     Exit-HostResourceStage -Lease $resourceLease
-    if($topLevelLease){Invoke-HostExecutionCompletionNotification -Outcome $hostOutcome -RunId $RunId}
+    if($topLevelLease){
+      if($trajectoryPayloadNeedsSeal){$deferredHostCompletionNotification=$true}
+      else{Invoke-HostExecutionCompletionNotification -Outcome $hostOutcome -RunId $RunId}
+    }
   }
   Remove-RunPackageExecutionAlias -Package $package
   if($null-ne$batchRuntimeRoot-and(Test-Path -LiteralPath $batchRuntimeRoot -PathType Container)){Remove-TemporarySolverDirectory -Path $batchRuntimeRoot}
   if($null-ne$temporarySolverDir-and-not$retainGuiWorkbenchFiles){Remove-TemporarySolverDirectory -Path $temporarySolverDir}
   if($ownsCapacitySession-and$null-ne$capacitySession){
     $null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession
+  }
+  if($trajectoryPayloadNeedsSeal){
+    try{
+      Invoke-ProjectPython -Arguments @('-m','common.contracts.run_capacity_lifecycle','--action','seal-stopped-payload','--artifact-root',$artifactRoot,'--run-config',(Join-Path ([string]$package.artifact_run_dir) 'run_config.json'),'--owner',$projectId,'--confirm-writing-stopped','--retention-reason',$trajectoryRetentionReason)
+      $hostOutcome='success'
+      Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status)"
+      if($deferredHostCompletionNotification){Invoke-HostExecutionCompletionNotification -Outcome $hostOutcome -RunId $RunId}
+    }catch{
+      $hostOutcome='failed'
+      Write-Host "MRTOF_TWO_PRISM_TRIAL=FAIL RUN_ID=$RunId STAGE=seal_stopped_payload SCIENTIFIC_MANIFEST=retained"
+      if($deferredHostCompletionNotification){Invoke-HostExecutionCompletionNotification -Outcome $hostOutcome -RunId $RunId}
+      throw
+    }
   }
 }

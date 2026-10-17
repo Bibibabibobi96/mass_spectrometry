@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "role": "mrtof_accelerator_interface_selection",
+  "default_provider": "orthogonal_accelerator",
+  "providers": {
+    "orthogonal_accelerator": {
+      "dependency_contract": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_dependency.json",
+      "request_contract": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_component_request_n100.json",
+      "preparation": "existing_oa_reference_requirements"
+    },
+    "dual_pressure_rectilinear_ion_processor": {
+      "dependency_contract": "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json",
+      "request_contract": "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_matching_request.json",
+      "preparation": "measured_exit_and_matching_request"
+    }
+  },
+  "execution_scope": "interface_preparation_only",
+  "joint_execution": "Existing OA runtime remains unchanged; IP needs a downstream measured-source adapter and new assembly qualification before joint execution."
+}

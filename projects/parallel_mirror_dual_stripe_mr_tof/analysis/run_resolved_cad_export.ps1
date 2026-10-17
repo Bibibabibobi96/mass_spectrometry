@@ -8,7 +8,7 @@ param(
  [ValidateSet('step','parasolid')][string]$ExchangeFormat='step',
  [string]$PublishCadRunPath,[string]$EnglishOverviewPath,[string]$OverviewManifestPath,
  [switch]$InspectMachiningHoles,[switch]$OmitMountingHoles,[string]$MachiningHoleAuditRunPath,
- [string]$ElectricalStepCadRunPath,[string]$IndividualStepDeliveryRunPath
+ [string]$ElectricalStepCadRunPath,[string]$IndividualStepDeliveryRunPath,[switch]$ConnectedStepContacts,[switch]$FrozenMirrorPose
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -28,7 +28,7 @@ foreach($run in @($field,$assembly)){
 $geometry=Join-Path $field 'inputs/resolved_geometry.json'
 $authority=Join-Path $field 'inputs/frozen_input.json'
 $materialization=Join-Path $assembly 'results/two_prism_trial_materialization.json'
-$publish=$null;$overview=$null;$overviewManifest=$null
+$publish=$null;$overview=$null;$overviewManifest=$null;$stepPublication=$false;$publicationZip=$null
 if(($EnglishOverviewPath-or$OverviewManifestPath)-and-not($PublishCadRunPath-or$ElectricalStepCadRunPath)){throw 'Word document inputs require publication or electrical STEP scope.'}
 if($ElectricalStepCadRunPath-and($EnglishOverviewPath-or$OverviewManifestPath)){
  if(-not$EnglishOverviewPath-or-not$OverviewManifestPath){throw 'English overview and its manifest must be paired.'}
@@ -38,14 +38,20 @@ if($ElectricalStepCadRunPath-and($EnglishOverviewPath-or$OverviewManifestPath)){
 if($PublishCadRunPath){
  if($Smoke-or$SmokePart-or$ReuseCadRunPath-or$OriginalStripeRunPath-or$StripePoseRunPath-or$InspectMachiningHoles-or$OmitMountingHoles-or$MachiningHoleAuditRunPath){throw 'Publication cannot create or revalidate CAD.'}
  $publish=(Resolve-Path -LiteralPath $PublishCadRunPath).Path
- if(-not$EnglishOverviewPath-or-not$OverviewManifestPath){throw 'Publication requires an accepted Word overview and its source manifest.'}
- $overview=(Resolve-Path -LiteralPath $EnglishOverviewPath).Path
- $overviewManifest=(Resolve-Path -LiteralPath $OverviewManifestPath).Path
+ $stepPublication=Test-Path -LiteralPath (Join-Path $publish 'mrtof_step_delivery.zip') -PathType Leaf
+ if($stepPublication){
+  if($EnglishOverviewPath-or$OverviewManifestPath){throw 'STEP-only publication does not consume a Word overview.'}
+ }else{
+  if(-not$EnglishOverviewPath-or-not$OverviewManifestPath){throw 'Publication requires an accepted Word overview and its source manifest.'}
+  $overview=(Resolve-Path -LiteralPath $EnglishOverviewPath).Path
+  $overviewManifest=(Resolve-Path -LiteralPath $OverviewManifestPath).Path
+ }
+ $publicationZip=Join-Path $publish $(if($stepPublication){'mrtof_step_delivery.zip'}else{'mrtof_cad_delivery.zip'})
  $publishedValidation=Get-Content -LiteralPath (Join-Path $publish 'cad_validation.json') -Raw|ConvertFrom-Json
  $ExchangeFormat=[string]$publishedValidation.exchange_format
 }
 $software=if($publish){@('Python 3.11')}else{@('SolidWorks 2022')}
-$committedBytes=if($publish){2*[long](Get-Item -LiteralPath (Join-Path $publish 'mrtof_cad_delivery.zip')).Length+16777216}else{536870912}
+$committedBytes=if($publish){2*[long](Get-Item -LiteralPath $publicationZip).Length+16777216}else{536870912}
 $original=$null;$pose=$null;$curveNames=@('s1_electrode_11','s1_electrode_12','s2_electrode_13','s2_electrode_14','central_ion_foil_ground')
 $holeAudit=$null
 if($MachiningHoleAuditRunPath){
@@ -72,12 +78,15 @@ $reuse=$null
 $electrical=$null
 $individual=$null
 if($IndividualStepDeliveryRunPath){
- if(-not$ElectricalStepCadRunPath-or$Smoke){throw 'Individual STEP requires a sealed electrical source and complete scope.'}
+ if(-not$ElectricalStepCadRunPath-or($Smoke-and-not$ConnectedStepContacts)){throw 'Individual STEP requires a sealed electrical source and complete scope.'}
  $individual=(Resolve-Path -LiteralPath $IndividualStepDeliveryRunPath).Path
  foreach($pair in @(@($geometry,'resolved_geometry.json'),@($authority,'frozen_input.json'),@($materialization,'assembly_materialization.json'))){
+  if($FrozenMirrorPose){continue} # The pure CAD compiler verifies the explicit rigid target mapping below.
   if((Get-FileHash -LiteralPath (Join-Path $individual ('inputs/'+$pair[1]))).Hash-ne(Get-FileHash -LiteralPath $pair[0]).Hash){throw 'Individual STEP prior physical inputs differ.'}
  }
 }
+if($ConnectedStepContacts-and-not$IndividualStepDeliveryRunPath){throw 'Connected STEP contact repair requires the sealed individual delivery source.'}
+if($FrozenMirrorPose-and-not($ConnectedStepContacts-and$ElectricalStepCadRunPath-and$IndividualStepDeliveryRunPath)){throw 'FrozenMirrorPose requires sealed individual CAD with connected contact scope.'}
 if($ElectricalStepCadRunPath){
  if($publish-or$ReuseCadRunPath-or$original-or$InspectMachiningHoles-or$OmitMountingHoles){throw 'Electrical STEP only consumes sealed CAD.'}
  $electrical=(Resolve-Path -LiteralPath $ElectricalStepCadRunPath).Path
@@ -103,12 +112,14 @@ $preflight=@('-B','-m',$module,'--geometry',$geometry,'--authority',$authority,'
 if($Smoke){$preflight+='--smoke'}
 if($SmokePart){$preflight+=@('--smoke-part',$SmokePart)}
 if($original){$preflight+=@('--original-stripe-run',$original,'--stripe-pose-run',$pose)}
-if($publish){$preflight+=@('--publish-cad-run',$publish,'--english-overview',$overview,'--overview-manifest',$overviewManifest)}
+if($publish){$preflight+=@('--publish-cad-run',$publish);if($overview){$preflight+=@('--english-overview',$overview,'--overview-manifest',$overviewManifest)}}
 if($InspectMachiningHoles){$preflight+='--inspect-machining-holes'}
 if($OmitMountingHoles){$preflight+='--omit-mounting-holes'}
 if($holeAudit){$preflight+=@('--machining-hole-audit-run',$holeAudit)}
 if($electrical){$preflight+=@('--electrical-step-cad-run',$electrical)}
 if($individual){$preflight+=@('--individual-step-delivery-run',$individual)}
+if($ConnectedStepContacts){$preflight+='--connected-step-contacts'}
+if($FrozenMirrorPose){$preflight+='--frozen-mirror-pose'}
 if($electrical-and$overview){$preflight+=@('--english-overview',$overview,'--overview-manifest',$overviewManifest)}
 Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {& $python @preflight;if($LASTEXITCODE-ne0){throw 'CAD physical input preflight failed.'}}
 if($CheckOnly){Write-Host 'MRTOF_CAD_CHECK_ONLY=PASS';return}
@@ -173,11 +184,13 @@ try{
   field_manifest=$fieldManifest;assembly_manifest=$assemblyManifest;launcher=(Join-Path $package.input_dir 'launcher.ps1');
   reused_cad_manifest=$reusedManifest}
  if($publish){
-  $config.inputs.english_overview=$overview
-  $overviewManifest=Copy-VerifiedRunInput -Source $overviewManifest -Destination (Join-Path $package.input_dir 'overview_source_manifest.json')
-  $config.inputs.overview_source_manifest=$overviewManifest
+  if($overview){
+   $config.inputs.english_overview=$overview
+   $overviewManifest=Copy-VerifiedRunInput -Source $overviewManifest -Destination (Join-Path $package.input_dir 'overview_source_manifest.json')
+   $config.inputs.overview_source_manifest=$overviewManifest
+  }
   $config.inputs.published_cad_manifest=Copy-VerifiedRunInput -Source (Join-Path $publish 'run_manifest.json') -Destination (Join-Path $package.input_dir 'published_cad_manifest.json')
-  $config.inputs.published_cad_zip=Join-Path $publish 'mrtof_cad_delivery.zip'
+  $config.inputs.published_cad_zip=$publicationZip
  }
  if($electrical){
   if($individual){$config.inputs.individual_step_source_manifest=Copy-VerifiedRunInput -Source (Join-Path $individual 'run_manifest.json') -Destination (Join-Path $package.input_dir 'individual_step_source_manifest.json')}
@@ -197,6 +210,8 @@ try{
   revalidate_saved_parts=[bool]$reuse;reused_part_copy_paths=$reusedPartFiles;original_stripe_native_reuse=[bool]$original;
   electrical_step_cad_run=$electrical;
   individual_step_delivery_run=$individual;
+  connected_step_contacts=[bool]$ConnectedStepContacts;
+  frozen_mirror_pose=[bool]$FrozenMirrorPose;
   step_exchange_tolerance_mm=$(if($electrical){0.005}else{$null});step_exchange_user_approved_date=$(if($electrical){'2026-10-13'}else{$null});step_volume_deviations_reported_separately=[bool]$electrical;
   original_stripe_run=$original;stripe_pose_run=$pose;exchange_format=$ExchangeFormat;curve_representation=$(if($publish-or$electrical){'published_original_native_bspline_and_features'}elseif($original){'original_native_bspline_and_features'}else{'frozen_resolved_polyline'})}
  Write-RunJson -Path $package.run_config -Depth 100 -Value $config
@@ -211,12 +226,14 @@ try{
  if($SmokePart){$arguments+=@('--smoke-part',$SmokePart)}
  if($reuse){$arguments+='--reuse-saved-parts'}
  if($original){$arguments+=@('--original-stripe-run',$original,'--stripe-pose-run',$pose)}
-if($publish){$arguments+=@('--publish-cad-run',$publish,'--english-overview',$overview,'--overview-manifest',$overviewManifest)}
+if($publish){$arguments+=@('--publish-cad-run',$publish);if($overview){$arguments+=@('--english-overview',$overview,'--overview-manifest',$overviewManifest)}}
  if($InspectMachiningHoles){$arguments+='--inspect-machining-holes'}
  if($OmitMountingHoles){$arguments+='--omit-mounting-holes'}
  if($holeAudit){$arguments+=@('--machining-hole-audit-run',$holeAudit)}
 if($electrical){$arguments+=@('--electrical-step-cad-run',$electrical)}
 if($individual){$arguments+=@('--individual-step-delivery-run',$individual)}
+if($ConnectedStepContacts){$arguments+='--connected-step-contacts'}
+if($FrozenMirrorPose){$arguments+='--frozen-mirror-pose'}
 if($electrical-and$overview){$arguments+=@('--english-overview',$overview,'--overview-manifest',$overviewManifest)}
  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
   & $python @arguments 1> (Join-Path $package.log_dir 'cad_stdout.log') 2> (Join-Path $package.log_dir 'cad_stderr.log')
@@ -237,13 +254,18 @@ if($electrical-and$overview){$arguments+=@('--english-overview',$overview,'--ove
    solidworks_revision=$validation.solidworks_revision;qualification=$validation.qualification;cad_validation='cad_validation.json'}
  }
  $null=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
- $outputs=@(Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Where-Object{$_.FullName-notlike "$($package.input_dir)*"-and$_.FullName-ne$package.run_config-and$_.Name-ne'run_manifest.json'}|Select-Object -ExpandProperty FullName)
+ # The public writer resolves declarations against frozen project_root, not
+ # run-relative paths. Preserve every output while reducing Windows argv.
+ $outputs=@(Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Where-Object{$_.FullName-notlike "$($package.input_dir)*"-and$_.FullName-ne$package.run_config-and$_.Name-ne'run_manifest.json'}|ForEach-Object{[IO.Path]::GetRelativePath($repoRoot,$_.FullName)})
+ $manifestArgumentCharacters=1024+($outputs|ForEach-Object{$_.Length+12}|Measure-Object -Sum).Sum
+ Write-Host "CAD_MANIFEST_ARGV_ESTIMATE_CHARS=$manifestArgumentCharacters OUTPUTS=$($outputs.Count)"
+ if($manifestArgumentCharacters-gt30000){Write-Warning 'CAD manifest command approaches the Windows command-line limit; retain completed CAD if publication fails.' -WarningAction Continue}
  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success `
   -Software $software -Outputs $outputs|Out-Host
  Write-Host "MRTOF_CAD_RUN=SUCCESS $($package.artifact_run_dir)"
 }catch{
  if($null-ne$package){
-  $failedOutputs=@(Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Where-Object{$_.FullName-notlike "$($package.input_dir)*"-and$_.FullName-ne$package.run_config-and$_.Name-ne'run_manifest.json'}|Select-Object -ExpandProperty FullName)
+  $failedOutputs=@(Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Where-Object{$_.FullName-notlike "$($package.input_dir)*"-and$_.FullName-ne$package.run_config-and$_.Name-ne'run_manifest.json'}|ForEach-Object{[IO.Path]::GetRelativePath($repoRoot,$_.FullName)})
   Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Summary $package.summary `
    -SummaryRole mrtof_cad_export_summary -Reason $_.Exception.Message -Software $software -AdditionalOutputs $failedOutputs|Out-Host
  }

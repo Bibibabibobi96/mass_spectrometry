@@ -6,6 +6,36 @@
 
 ## 当前决策与完成边界
 
+加速器接口可选`orthogonal_accelerator`或`dual_pressure_rectilinear_ion_processor`，默认OA保留；入口见[操作说明](../simion/README.md#加速器选择与接口准备)。
+IP独立器件GUI已由用户验收；下游采用冻结出口六维状态交接，不是同一Fly内连续积分HP捕获／冷却到MR。
+实测源来自152536独立N100：100母群、97出口，上游损失ID24/64/80；原ID、时钟及速度保持，不以缩放源补匹配。
+能量只报告差异、不判定达标；默认自动输出各时刻空间位置、Prism相空间及全部损失原始证据。
+
+172646已按原P→S／返回相位→P及完整返回通过，S2接地；原OA实际慢转折目标340mm，运行名称y360不是参数权威。
+第17候选／055实飞通过完整工作点；
+S1=−26.988823505V、P1=369.183763535V、P2=−212.537230795V。
+P位置／action残差为+0.083549981mm／+0.008216214eV/q；慢转折／返回相位残差为−0.020811814／+0.008540326mm，
+四项最大归一化残差0.835499809，S阶段为0.208118140。原判据及源保持，累计17候选／55计划、54次实飞。
+同场181502联合N100完整处理97颗交接粒子：检测19、下游损失78、超时0；母群检测率19%，已交接群19.587629%。
+78颗中76为原生接触终止、79／95为非碰撞的返回拓扑拒绝；81份逐离子证据含上游24/64/80，全部保留。
+P2固定z33mm平面仅61颗到达，角度2.016884±0.126776°，Ey=5.434391±0.681463、Ez=4364.497923±38.142882eV/q，
+均为到达子群总体标准差，不代表97颗整束。质心闭合通过，整束匹配和时间聚焦资格仍未取得。
+默认生成7个实际事件／寿命决定时刻的空间图、Prism能量分配图和母群损失图。
+本轮闭合、负结果、自动调度、发布与退役见[联合母群里程碑](history/20261017__ion-processor-closure-and-joint-population.md)；
+此前软件恢复、输入运输和治理异常见[恢复里程碑](history/20261017__ion-processor-original-controller-recovery.md)。
+最新L2实际退出0，MR静态1408项（10项跳过）；源码门禁不替代束团性能资格。
+
+[005908冻结目标](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_005908__analysis__python__ip-centroid-target-authoring/results/target_authoring/target_authority.json)
+能量参考保留Ws=5.374387143eV/q、K=24.5；clean参考Ez=4359.320021、Ey=5.213248eV/q。
+慢转折目标以[171041修订权威](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_171041__analysis__python__ip-original-mr-target-authoring/results/target_authority.json)的340mm为准。
+0.01°映射0.0524898eV/q只用于质心P控制，不是N100能量验收阈值；有效慢势与实际静电势分开记账。
+003000扩域场的同点及实际轨迹接口审计支持原约11.47V跳变已消除，不授予全轨迹离散收敛资格。
+
+当前可加载IP包为[183222 joint.iob](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261017_183222__analysis__python__ip-closed-joint-workbench/results/joint_workbench/runtime/joint.iob)，
+使用最终055场；四实例／三优先级、保存重载、98点接口场审计通过，97颗FLY2与N100源逐字节相同。
+20个分析器电压及15个IP电压、时钟与积分参数一致；用户可直接加载飞行，Agent未操作GUI。
+包用于复现上述19%母群检测结果，不授予全束匹配资格。下一物理问题是有限束团的接受度／损失位置分析，未自动启动优化或新扫描。
+
 主线为对称会聚双镜＋五次项偏置Stripe＋保留实体的接地线性Stripe；K=24.5、加速器y=−55 mm。
 原生SIMION自动闭合、响应组合和束团飞行已经可用；COMSOL进行同几何、同电压固定场复现，
 尚无新场上的空间闭合或高斯束团性能，两条链资格分开。
@@ -19,7 +49,8 @@ COMSOL各次完整受控N13均0/13检测器命中，尚未获得收敛或性能�
 
 ## 输入权威与物理定义
 
-当前电压来自[冻结闭合候选][native-anchor]，下表仅便于阅读；完整电压、几何和消费者按该运行输入重放。
+下表为保留OA分支的[冻结闭合候选][native-anchor]；IP分支使用本页当前决策中的独立闭合电压。
+完整电压、几何和消费者按各自冻结运行输入重放。
 
 | 部件／参数 | 当前值 |
 |---|---|
@@ -44,7 +75,7 @@ C0不是已经确认的机械腔体；省略它的开放BEM与该边界模型不
 TE1控制局部释放z一阶时间响应，不自动校正Ey、横向偶响应、宽幅z或接受度；改镜后须自动重闭合P/S。
 种子周期与实际镜周期区分记录，不在每次TE1中静默重定义几何或用旧轨迹Jacobian跨锚外推。
 
-## 真实源与束团证据
+## OA真实源与束团证据
 
 源中心[0,−56.05182899425077,32] mm，沿+y释放；圆柱高度1 mm、半径0.5 mm；质量524 Da、电荷+1、共同出生时刻。
 慢向动能均值5.374387143093758 eV。高斯σ是释放事件处动能标准差，不是速度sigma；
@@ -76,8 +107,8 @@ TE1控制局部释放z一阶时间响应，不自动校正Ey、横向偶响应�
 正常入口仍为[原trial](../simion/run_two_prism_trial.ps1)、[原staged](../analysis/run_downstream_workpoint_iteration.ps1)、
 [自动候选链](../analysis/run_native_candidate_chain.ps1)；场由`simion/run_native_static_field_provider.ps1`
 和`analysis/static_field_binding.py`接入，不另建手工闭合器。
-固定场binding、外场消费、原trial接线及标准诊断纳入同一发布主题；staged／候选自动链的其他工作区改动仍未发布，
-不能把本次普通冻结场重放范围扩大为干净Git检出已具备整套新自动闭合能力。
+固定场binding、外场消费、原trial接线、标准诊断及staged／候选自动链源码统一纳管。
+运行仍须提供对应冻结资产；源码发布不授予其他输入的闭合、束团性能或Formal资格。
 分块PA组合器及专属测试已作为项目模块纳管并推送ed745b07；算法字节未变、无公共兼容入口。
 Prism路径身份统一使用`two_prism_topology_signature`；已删除无人调用的私有兼容转发，不改变转折分支判定。
 相关导入／冻结路径已同步，28项组合器focused测试及MR Core/L1通过。
@@ -97,7 +128,11 @@ Prism路径身份统一使用`two_prism_topology_signature`；已删除无人调
 
 工作场[163135][native-field]复用父场与中央场、两镜Refine约553 s，建场/refine/裁剪约717 s；
 含排队总时2031 s。细档[032031][fine-field]两镜Refine约1637 s，总2018 s，约13.14 GB，峰值内存约22.04 GiB。
-它们是可用资产，不要求每个调压点重新求解；退役必须同时检查当前、下一消费者及GUI引用。
+032031细档仍为当前可用资产。163135旧粗档已在IP新场准备期间沿公共owner机制退役PA／surface，
+其冻结输入、轨迹和网格比较指标保留；历史IOB须重建场后才能重放。
+同轮还退役043210旧平行前驱及073134早期会聚前驱场，三组释放41,611,748,008 B。
+当前134039中央场、032031细镜、7515开头的OA响应缓存及用户GUI包全部保留。
+退役同时检查当前、下一消费者及GUI引用，不按文件年龄删除。
 
 所有层显式Refine convergence=1e−5 V、fractional表面；默认0.005 V是指导值，不能恢复成项目硬约束。
 同网格历史默认→严格产生重要响应变化；1e−5→1e−6在旧档检测器相对时间最大变化约0.025 ns，
@@ -213,11 +248,13 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 ## 开放动作与关闭条件
 
 1. 边界单因素、父场组合／停止、y／z拆轴及实际API查询已完成；所查父层慢向变化主要对z敏感。
-   下一项先确定最小的父层→中央→正镜传递对照预算，继承现有输入与五颗同入口，避免再次重复父场拆轴。
+   已获批的中央单阶段对照000829正在执行：仅以z=0.50 mm父场替换边界，完整中央网格及物理输入不变，
+   容量承诺9,817,256,922 B已准入；预计80–95分钟，完成后只查原25点，不自动建正镜或飞行。
+   新父身份绑定实际222113封存PA及网格，不消费其中旧parent_level投影；旧中央为物化、新中央为直接解，比较仅作传递诊断。
    不绕过中央层冒充原传递链；仍需检验实际轨迹影响，
    不按更接近FEM选择真值。余下横向／计时差仍待解释。
    不将FEM donor伪装成原生祖先，不以单镜改善替代整程或束团资格，不逐场调压冒充数值收敛。
-2. 冻结场消费的源码／配置按最小依赖闭包纳管；其余自动闭合工作区改动仍须独立验收发布。
+2. 冻结场消费与自动闭合源码／配置统一纳管；各模式资格仍按具名运行分别验证。
    通用COMSOL改压provider已有多窗编译与发布校验，但求解readback仍绑定sol1/std1，
    不授当前mesh4的sol4重建或改压资格；普通冻结场重放不执行该求场作者。
 3. 代表射线支持后才做冻结高斯N100复现，统一KDE、全部损失、峰形及不确定性；
@@ -233,7 +270,14 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 
 当前[STEP交付][cad-delivery]为40个独立电极STEP、6个C0参考面及装配概览；保留倾镜、精确曲线、去全部安装孔。
 仅真实连接同电位组件合并。5 μm为交换精度，不是场／制造精度；尚未完成对方软件消费验收。
-新英文Word仍待渲染封存，旧平行镜53件说明不能冒称与此包配套；唯一活动CAD入口为
+给Pulsar Physics的[英文交接包][pulsar-handoff]已精简为2页，包含倾镜STEP、完整电压、离子初态及真实逐步轨迹叠加STEP边线图；
+不展示分辨率目标或内部收敛过程。配套英文邮件保留会议五问并补充RF／脉冲、空间电荷、质谱应用与数据导出，由用户自行发送。
+代表离子采用040845源ID1同输入[重放][pulsar-trajectory]，213706条原始回调记录、350条旧事件逐字段完全一致；
+检测时刻仍为764.217930877 μs。原生terminal同状态回调的微小时钟回退原样保留，不排序或改值；不授予新束团性能资格。
+记录功能39项focused及真实N1通过；改动仍依赖工作区时钟／ID适配，未单独发布。
+旧四实例源码断言已按OA／IP分支合同修正；2026-10-16真实联合包闭环后22路径L1通过，
+包括MR Core42项及普通Lua回归、IP Static161项。该源码门禁不授予新装配联合飞行或GUI资格。
+旧平行镜53件说明不作配套；唯一活动CAD入口为
 [run_resolved_cad_export](../analysis/run_resolved_cad_export.ps1)。
 
 以下链接指向具名小证据，不复制全部manifest；资产保留期限以公共pin/lease与实际消费者为准。
@@ -247,6 +291,8 @@ S1单独−0.1 V对Ey响应改善很弱，却使空间相位偏约−0.915 mm，
 [native-field]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163135__build__simion__converging-mirror-y360-field/results/field_binding.json
 [fine-field]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_032031__build__simion__converging-y360-mirror-z002-field/results/field_binding.json
 [cad-delivery]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/summary.json
+[pulsar-handoff]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_140921__build__python__pulsar-trajectory-handoff/summary.json
+[pulsar-trajectory]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_142700__sim__simion__pulsar-representative-id1__r02/summary.json
 [mesh4-longest]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_164500__analysis__comsol__positive-turn-mesh4-longest__r02/summary.json
 [mesh4-export]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_174000__analysis__comsol__mesh4-coherent-beam-tube-export/summary.json
 [mesh4-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_181000__sim__simion__mesh4-fixed-u-controlled-n13/summary.json

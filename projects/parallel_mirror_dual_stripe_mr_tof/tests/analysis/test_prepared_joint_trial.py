@@ -1,0 +1,680 @@
+"""Measured joint batch identity/clock tests; no commercial solver."""
+import csv
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import (
+    compare_trajectory_representation, compile_memory_consumer_crops, materialize_batch,
+    validate_candidate_binding, analyze_centroid_probe, prepare_trial,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_measured_component_source as source_fixtures
+
+
+class PreparedJointBatchTests(unittest.TestCase):
+    def test_prepare_trial_allows_only_observation_and_total_budget_extension(self):
+        import copy
+        from common.contracts.write_run_manifest import file_record
+        fixture = source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture._materialize()
+        root, prepared = fixture.root, fixture.root / "prepared"
+        source = prepared / "results/joint_workbench/measured_source"
+        source.parent.mkdir(parents=True)
+        shutil.copytree(fixture.output, source)
+        reference = root / "reference"
+        (reference / "results").mkdir(parents=True)
+        (reference / "run_config.json").write_text("{}")
+        manifest = reference / "run_manifest.json"
+        manifest.write_text(json.dumps(dict(run_config=file_record(reference / "run_config.json"))))
+        (reference / "results/two_prism_trial_materialization.json").write_text(json.dumps(
+            dict(field_binding=dict(refinement_windows=[]))))
+        recording = dict(schema_version=1, mode="fixed_interval", interval_us=.1,
+                         retention_class="solver_review", reason="unit observation", output_budget_bytes=1000000)
+        original = dict(simion=dict(trajectory_recording=recording, maximum_step_us=.01,
+                                    numerical_profiles=dict(native_static_field=dict(target_layout=dict(windows=[])))),
+                        source=dict(energy_eV=5), target=dict(y_mm=360),
+                        downstream_fixed_grid_workpoint_profile=dict(automatic_iteration=dict(
+                            maximum_iterations=5, advance_multiplier=1.0, damping_factor=.5)))
+        original_path = root / "reference_contract.json"
+        original_path.write_text(json.dumps(original))
+        parent = dict(selected_provider="dual_pressure_rectilinear_ion_processor",
+                      status="workbench_ready_no_joint_flight",
+                      joint_workbench_binding=dict(field_assembly_verified=True, measured_source_matches_workpoint=True,
+                                                   field_run=str(root / "fields"), source_run=str(root / "source")),
+                      inputs=dict(reference_trajectory=file_record(original_path), reference_manifest=file_record(manifest)))
+        (prepared / "results/accelerator_interface_preparation.json").write_text(json.dumps(parent))
+        (source.parent / "static_field_binding.json").write_text("{}")
+        runtime = source.parent / "runtime"
+        runtime.mkdir()
+        (runtime / "joint.operating_point.lua").write_text("return {}")
+        (runtime / "mr_reference.operating_point.lua").write_text(
+            "return {trajectory_quality=3,maximum_step_us=.01,full_path_timeout_us=100}")
+        binding = dict(accelerator_provider="dual_pressure_rectilinear_ion_processor", refinement_windows=[],
+                       grid=dict(pitch_mm=[.1, .1, .1]), authority=dict(analyzer_electrode_voltages_v=[0.0]*20),
+                       sources=dict(scalar_pa="synthetic_pa_not_opened.pa"), instances=[],
+                       records=dict(scalar_pa=dict(sha256="A"*64)))
+        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        frozen_original = original_path.read_bytes()
+        for name in ("unchanged", "observation", "budget", "budget_and_observation", "energy", "step", "advance", "smaller_budget"):
+            with self.subTest(name=name):
+                contract = copy.deepcopy(original)
+                if name not in ("unchanged", "observation"):
+                    contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]["maximum_iterations"] = 30
+                if name in ("observation", "budget_and_observation"):
+                    contract["simion"]["trajectory_recording"]["interval_us"] = .2
+                if name == "energy":
+                    contract["source"]["energy_eV"] += 1
+                elif name == "step":
+                    contract["simion"]["maximum_step_us"] *= 2
+                elif name == "advance":
+                    contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]["advance_multiplier"] = .5
+                elif name == "smaller_budget":
+                    contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]["maximum_iterations"] = 4
+                path, output = root / f"{name}.json", root / name
+                path.write_text(json.dumps(contract))
+                with patch(module + ".verified_reference", side_effect=lambda run, relative: run / relative), \
+                     patch(module + ".load_binding", return_value=binding):
+                    if name in ("energy", "step", "advance", "smaller_budget"):
+                        with self.assertRaises(ValueError):
+                            prepare_trial(prepared, path, output)
+                        self.assertFalse(output.exists())
+                        continue
+                    result = prepare_trial(prepared, path, output)
+                published = json.loads((output / "results/prepared_joint_trial.json").read_text())
+                self.assertEqual(result, published)
+                provenance = result["controller_contract_provenance"]
+                self.assertEqual(provenance["prepared_reference_trajectory_contract"], file_record(original_path))
+                consumed = file_record(output / "inputs/trajectory_contract.json")
+                self.assertEqual(provenance["consumed_execution_contract"], consumed)
+                self.assertEqual(result["trajectory_contract"], consumed)
+                self.assertEqual((output / "inputs/trajectory_contract.json").read_bytes(), path.read_bytes())
+                self.assertEqual(result["expected_particle_ids"], [1, 7])
+                self.assertEqual(result["mother_particle_count"], 3)
+                if name in ("budget", "budget_and_observation"):
+                    self.assertEqual(provenance["execution_budget_change"]["maximum_iterations"], dict(previous=5, current=30))
+                    self.assertEqual(provenance["execution_budget_change"]["change_kind"], "execution_budget_only")
+                    self.assertNotEqual(consumed["sha256"], file_record(original_path)["sha256"])
+                else:
+                    self.assertIsNone(provenance["execution_budget_change"])
+        self.assertEqual(original_path.read_bytes(), frozen_original)
+
+    def test_staged_adapter_reuses_json_phase_space_and_rejects_changed_evidence(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import (
+            materialize_prepared_staged_adapter,
+        )
+        module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); authority=root/"authority.json";authority.write_text('{}')
+            state=dict(position_mm=(.1,-2.,33.),velocity_mm_per_us=(.01,1.4,40.))
+            trial=dict(observation=dict(center_particle_prism_handoff_validation=dict(
+                p2_low_field_reference_state=state)),materialization=dict(prism_voltages_v=[340.,-186.]))
+            with patch(module+".load_prepared_centroid_trial",return_value=trial):
+                first=materialize_prepared_staged_adapter(authority,authority,authority,root/"views")
+                second=materialize_prepared_staged_adapter(authority,authority,authority,root/"views")
+                self.assertEqual(first,second)
+                path=Path(first["outputs"]["observation"]["path"])
+                frozen=path.read_bytes()
+                trial["observation"]["center_particle_prism_handoff_validation"][
+                    "p2_low_field_reference_state"]["position_mm"]=(.1,-2.1,33.)
+                with self.assertRaisesRegex(ValueError,"change existing stage evidence"):
+                    materialize_prepared_staged_adapter(authority,authority,authority,root/"views")
+                self.assertEqual(path.read_bytes(),frozen)
+
+    def test_candidate_binding_keeps_ip_operator_and_reuses_new_parent(self):
+        import copy
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority
+        authority = dict(analyzer_electrode_voltages_v=[0.0]*20,
+                         component_voltages_v=[dict(namespace="ion_processor", id=i, value_v=i) for i in range(1,16)],
+                         assembly=dict(native_operating_point=dict(lift_v=4480.04379)))
+        baseline = dict(accelerator_provider="dual_pressure_rectilinear_ion_processor", geometry=dict(IP="same"),
+            authority=authority, sources=dict(scalar_pa="old_parent.pa"), grid=dict(origin_mm=[0,0,0]),
+            instances=[dict(role=r,pa_path="old_parent.pa" if i==0 else r+".pa",origin_mm=[0,0,0])
+                       for i,r in enumerate(["global_fallback","native_corridor","ion_processor_collision","detector"])])
+        candidate = copy.deepcopy(baseline)
+        candidate["authority"] = candidate_authority(authority, dict(s1=1,s2=2,p1=3,p2=4))
+        candidate["sources"]["scalar_pa"]="new_parent.pa"
+        candidate["instances"][0]["pa_path"]="new_parent.pa"
+        module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        with patch(module+".native_response_operator", return_value={}) as operator:
+            self.assertEqual(validate_candidate_binding(candidate,baseline),dict(s1=1,s2=2,p1=3,p2=4))
+            self.assertEqual(operator.call_count,2)
+            candidate["instances"][0]["pa_path"]="old_parent.pa"
+            with self.assertRaisesRegex(ValueError,"reuse"):
+                validate_candidate_binding(candidate,baseline)
+            candidate["instances"][0]["pa_path"]="new_parent.pa"
+            candidate["authority"]["component_voltages_v"][0]["value_v"] += 1
+            with self.assertRaisesRegex(ValueError,"IP15"):
+                validate_candidate_binding(candidate,baseline)
+        candidate=copy.deepcopy(baseline)
+        with patch(module+".native_response_operator", side_effect=[dict(grid="different"),dict(grid="baseline")]):
+            with self.assertRaisesRegex(ValueError,"numerical"):
+                validate_candidate_binding(candidate,baseline)
+
+    def test_probe_analysis_preserves_constructed_source_and_observed_collision(self):
+        from common.contracts.write_run_manifest import file_record
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_centroid_probe
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_measured_component_analysis import _terminal
+        fixture=source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
+        fixture.setUp();self.addCleanup(fixture.doCleanups);receipt=fixture._materialize()
+        from common.contracts.component_particle_state import write_component_particle_state_csv
+        canonical=fixture.output/"component_particle_state.csv"
+        with canonical.open() as handle:
+            mother=list(csv.DictReader(handle))
+        for row in mother:
+            row["position_z_mm"]=0.0
+        write_component_particle_state_csv(canonical,mother)
+        receipt["outputs"]["component_particle_state"]=file_record(canonical)
+        (fixture.output/"source_receipt.json").write_text(json.dumps(receipt))
+        root=fixture.root;probe=root/"probe"
+        materialize_centroid_probe(fixture.output,probe)
+        reference=root/"reference.json"
+        reference.write_text(json.dumps(dict(target_positive_mirror_turn_y_mm=0,target_low_field_tangent_ratio_vy_over_vz=.035)))
+        binding=root/"binding.json";binding.write_text('{}')
+        preparation=root/"prepared.json"
+        preparation.write_text(json.dumps(dict(source_mode="centroid_probe",expected_particle_ids=[1],
+            launched_particle_count=1,mother_particle_count=1,
+            measured_source_directory=str(probe),source_receipt=file_record(probe/"source_receipt.json"),
+            reference_materialization=file_record(reference),field_binding=file_record(binding),
+            trajectory_contract=file_record(reference),operating_point=file_record(reference),
+            stripe_biases_v=[0,0],prism_voltages_v=[10,20])))
+        log=root/"flight.log";log.write_text(_terminal(1,-1,7600.0)+"\nstatus,Fly completed. 1 splats\n")
+        module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        normalized=dict(authority=dict(analyzer_electrode_voltages_v=[0.0]*20,
+            component_voltages_v=[dict(component_namespace="ion_processor",component_electrode_id=i,voltage_v=i) for i in range(1,16)]))
+        normalized["authority"]["analyzer_electrode_voltages_v"][15:17]=[10,20]
+        with patch(module+".load_binding",return_value=normalized),patch(module+".native_response_operator",return_value={}),\
+             patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial._static_field_receipt",return_value=dict(mode="native_static_pa",path=str(binding))):
+            result=analyze_centroid_probe(preparation,log,root/"analysis")
+        self.assertEqual(result["frozen_problem"]["source_center_projection"]["role"],"measured_exit_centroid")
+        self.assertEqual(result["observation"]["terminal"]["splat"],-1)
+        self.assertEqual(result["observation"]["center_particle_prism_handoff_validation"]["status"],"incomplete")
+        self.assertFalse(result["physical_potential_evaluated"])
+        field=result["field_authority_projection"]
+        self.assertEqual(field["binding_record"],file_record(binding))
+        self.assertEqual(field["analyzer_electrode_voltages_v"],normalized["authority"]["analyzer_electrode_voltages_v"])
+        self.assertEqual(len(field["ion_processor_component_voltages_v15"]),15)
+        self.assertEqual(field["normalized_binding"],normalized)
+        self.assertTrue((root/"analysis/probe_event_states.csv").is_file())
+        # Once published, controller reanalysis consumes frozen metadata only:
+        # an absent (retired) PA must not be reopened to recover S/full evidence.
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import (
+            load_prepared_centroid_trial, materialize_prepared_staged_adapter, reanchor_prepared_target,
+        )
+        manifest=root/"run_manifest.json"
+        projection=root/"analysis/controller_projection.json"
+        manifest.write_text(json.dumps(dict(status="success",mode="two_prism_joint_measured_trial",
+            project="parallel_mirror_dual_stripe_mr_tof",outputs=[file_record(projection)])))
+        target=dict(target_positive_mirror_turn_y_mm=0,target_low_field_tangent_ratio_vy_over_vz=.035,
+            target_slow_turn_y_mm=360,target_k=24.5,prism_handoff_target=None,
+            inputs=dict(mother_source_receipt=file_record(fixture.output/"source_receipt.json"),
+                        trajectory_contract=file_record(reference)))
+        target["prism_handoff_target"]={"axial_energy_per_charge_v":4372}
+        adapter="projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
+        with patch(adapter+".load_measured_centroid_closure_target",return_value=target),\
+             patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",side_effect=AssertionError("retired PA opened")):
+            trial=load_prepared_centroid_trial(manifest,reference,reference)
+            self.assertEqual(trial["observation"]["status"],"measured_centroid_observation_incomplete")
+            self.assertEqual(trial["observation"]["termination_diagnostic"]["status"],"ambiguous")
+            self.assertIn("center_particle_stripe_stage_validation",trial["observation"])
+            self.assertFalse(trial["observation"]["static_return_diagnostic"]["event_contract_ok"])
+            state=dict(columns={"2":"old-column"},flight_count=8,attempts=["old"],prism_model_manifest="old-model")
+            reset=reanchor_prepared_target(state,anchor_manifest=manifest,target_path=reference,contract_path=reference)
+            self.assertEqual(reset["columns"],{})
+            self.assertEqual(reset["flight_count"],8)
+            self.assertEqual(reset["stage"],"prism_preclosure")
+            self.assertNotIn("prism_model_manifest",reset)
+            views=materialize_prepared_staged_adapter(manifest,reference,reference,root/"views")
+            self.assertFalse(views["field_payload_opened"])
+            self.assertFalse(views["full_population_qualified"])
+            with self.assertRaisesRegex(ValueError,"pending"):
+                reanchor_prepared_target(dict(pending_trial={"real":"flight"}),anchor_manifest=manifest,target_path=reference,contract_path=reference)
+
+    def test_explicit_slow_turn_reanchor_preserves_spent_budget_and_rejects_other_changes(self):
+        import copy
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import reanchor_prepared_target
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);old=root/"old.json";new=root/"new.json"
+            original=dict(target_slow_turn_y_mm=360,energy=4359.32,source="same")
+            old.write_text(json.dumps(original))
+            target=dict(original,target_slow_turn_y_mm=340)
+            new.write_text(json.dumps(target))
+            trial=dict(frozen_problem=dict(source_center_projection="same",static_field_problem="same",
+                                           selected_axial_energy_per_charge_v=4359.32))
+            state=dict(stage="stripe_preclosure",candidate_count=16,flight_count=51,columns={"0":"old"},
+                       attempts=[1],history=["keep"],prism_model_manifest="old",prediction_assessment={})
+            saved=copy.deepcopy(state)
+            module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
+            with patch(module+".load_prepared_centroid_trial",return_value=trial):
+                reset=reanchor_prepared_target(state,anchor_manifest=old,target_path=new,contract_path=old,previous_target_path=old)
+                self.assertEqual((reset["candidate_count"],reset["flight_count"]),(16,51))
+                self.assertEqual(reset["history"],["keep"])
+                self.assertEqual(reset["columns"],{})
+                self.assertEqual(reset["attempts"],[])
+                self.assertEqual(state,saved)
+                new.write_text(json.dumps(dict(target,target_slow_turn_y_mm=351)))
+                alternate=reanchor_prepared_target(state,anchor_manifest=old,target_path=new,contract_path=old,previous_target_path=old)
+                self.assertEqual(alternate["flight_count"],51)
+                with self.assertRaisesRegex(ValueError,"overwrite existing debit"):
+                    reanchor_prepared_target(reset,anchor_manifest=old,target_path=new,contract_path=old,previous_target_path=old)
+                for changed in (dict(target,energy=4360),dict(target,source="different"),dict(target,target_slow_turn_y_mm=360)):
+                    new.write_text(json.dumps(changed))
+                    with self.assertRaises(ValueError):
+                        reanchor_prepared_target(state,anchor_manifest=old,target_path=new,contract_path=old,previous_target_path=old)
+                new.write_text(json.dumps(target))
+            other=copy.deepcopy(trial);other["frozen_problem"]["source_center_projection"]="changed"
+            with patch(module+".load_prepared_centroid_trial",side_effect=[trial,other]):
+                with self.assertRaisesRegex(ValueError,"source or operator"):
+                    reanchor_prepared_target(state,anchor_manifest=old,target_path=new,contract_path=old,previous_target_path=old)
+
+    def test_candidate_batch_does_not_copy_old_iob_and_binds_all_actual_roles(self):
+        from common.contracts.write_run_manifest import file_record
+        fixture=source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
+        fixture.setUp();self.addCleanup(fixture.doCleanups);fixture._materialize()
+        root=fixture.root;runtime=root/"runtime";runtime.mkdir()
+        (runtime/"joint.iob").write_bytes(b"must not be loaded or copied")
+        (runtime/"joint.lua").write_text("-- program")
+        (runtime/"joint.operating_point.lua").write_text("return {accelerator_provider='dual_pressure_rectilinear_ion_processor',"
+            "field_assembly_verified=true,measured_source_matches_workpoint=true,"
+            "static_field={assembly_scope='full_c0_ion_processor_replacement'}}")
+        binding=root/"binding.json";binding.write_text('{}')
+        actual=dict(instances=[dict(pa_path=p,origin_mm=[i,0,0]) for i,p in enumerate(
+            ["new_parent.pa","original_corridor.pa","original_fine_occupancy.pa","original_detector.pa"])])
+        preparation=root/"prepared.json"
+        preparation.write_text(json.dumps(dict(candidate_iob_rebuild=True,field_binding=file_record(binding),
+            measured_source_directory=str(fixture.output),frozen_runtime_directory=str(runtime),
+            trajectory_recording=dict(mode="fixed_interval",interval_us=.1))))
+        module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        with patch(module+".load_binding",return_value=actual):
+            materialize_batch(preparation,1,2,root/"batch")
+        self.assertFalse((root/"batch/joint.iob").exists())
+        build=(root/"batch/joint.workbench_build.lua").read_text()
+        self.assertIn("new_parent.pa",build)
+        self.assertNotIn("old_parent.pa",build)
+        self.assertIn("original_fine_occupancy.pa",build)
+        self.assertIn("4_instance_seed.iob",build)
+        batch_dir = root / "batch"
+        provider = "dual_pressure_rectilinear_ion_processor"
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua
+        priority = dict(role="mrtof_native_corridor_iob_priority_contract", accelerator_provider=provider,
+                        instances=[dict(role=role, priority_number=index) for index, role in enumerate(
+                            ("global_fallback", "native_corridor", "ion_processor_collision", "detector"), 1)])
+        (batch_dir / "joint.priority.lua").write_text("return " + _lua(priority))
+        source = batch_dir / "measured_source/source.fly2"
+        before = source.read_bytes()
+        expected = file_record(source)
+        lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+        if not Path(lua).is_file():
+            self.skipTest("Plain Lua unavailable; no solver fallback")
+        script = root / "builder_save_overwrites.lua"
+        script.write_text(r'''
+local directory,builder=arg[1],arg[2]
+local request=assert(loadfile(directory..'/joint.workbench_build.lua'))()
+assert(request.fly2:gsub('\\','/')==directory..'/measured_source/source.fly2','independent source required')
+local instances={}
+for i=1,4 do
+ instances[i]={scale=1,pa={nx=11,ny=11,nz=11,dx_mm=1,dy_mm=1,dz_mm=1}}
+ instances[i].pa.load=function(self,path) self.path=path end
+ instances[i]._debug_update_size=function() end
+end
+local probes=0
+simion={wb={instances=instances,
+ load=function(self,path) self.filename=path end,
+ save=function(self,path)
+  local handle=assert(io.open(path:gsub('%.iob$','.fly2'),'wb'))
+  handle:write('particles { standard_beam { mass=0.00054858,charge=-1,tob=0, } }')
+  handle:close()
+ end,
+ find_at=function() probes=probes+1;return 0,probes+1 end}}
+arg={'--measured-source',directory..'/joint.workbench_build.lua'}
+dofile(builder)
+assert(probes==3)
+print('ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS')
+''', encoding="utf-8")
+        builder = Path(__file__).resolve().parents[2] / "simion/build_native_corridor_iob.lua"
+        result = subprocess.run([lua, str(script), batch_dir.as_posix(), str(builder)], cwd=root,
+                                timeout=30, capture_output=True, text=True, encoding="utf-8", check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS", result.stdout)
+        self.assertEqual(source.read_bytes(), before)
+        restored = file_record(batch_dir / "joint.fly2")
+        self.assertEqual((restored["sha256"], restored["bytes"]), (expected["sha256"], expected["bytes"]))
+        self.assertEqual((batch_dir / "joint.fly2").read_bytes(), before)
+        self.assertEqual(before.count(b"standard_beam {"), 2)
+
+    def test_representation_comparison_preserves_every_prefix_event_and_sample(self):
+        from common.contracts.write_run_manifest import file_record
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline, manifest = root / "reference.log", root / "reference_manifest.json"
+            text = ("MRTOF_TRAJECTORY ion=7 phase=birth t_us=7500.57 x_mm=0.1\n"
+                    "MRTOF_EVENT terminal ion=7 t_us=7501.57\n")
+            baseline.write_text(text)
+            manifest.write_text('{}')
+            preparation = root / "preparation.json"
+            preparation.write_text(json.dumps(dict(trajectory_equivalence_reference=dict(
+                reference_log=file_record(baseline),reference_manifest=file_record(manifest),
+                original_particle_ids=[7]))))
+            current = root / "current.log"
+            current.write_text(text+"MRTOF_EVENT terminal ion=9 t_us=7502\n")
+            receipt = root / "equivalence.json"
+            result = compare_trajectory_representation(preparation,current,receipt)
+            self.assertEqual(result["status"],"pass")
+            self.assertEqual(result["compared_line_count"],2)
+            self.assertFalse(result["physical_matching_qualified"])
+            current.write_text(text.replace("x_mm=0.1","x_mm=0.10000000000000002"))
+            with self.assertRaisesRegex(ValueError,"differs"):
+                compare_trajectory_representation(preparation,current,receipt)
+            failure=json.loads(receipt.read_text())
+            self.assertEqual(failure["status"],"fail")
+            self.assertEqual(failure["first_mismatches"][0]["selected_line"],1)
+
+    def test_memory_crop_uses_frozen_mirror_policy_without_changing_source(self):
+        names = ["positive_integer_grid_a", "negative_integer_grid_a", "covered_local"]
+        targets = [dict(pitch_mm=[.04,.2,.04],stored_xmax_mm=1.28),
+                   dict(pitch_mm=[.04,.2,.04],stored_xmax_mm=1.28),dict(pitch_mm=[.25,.25,.1])]
+        contract = dict(simion=dict(numerical_profiles=dict(native_static_field=dict(target_layout=dict(windows=targets)))))
+        reference = dict(field_binding=dict(refinement_windows=[dict(name=name) for name in names]))
+        windows = [dict(name=name,grid=dict(origin_mm=[0,-65,z],pitch_mm=[.04,.2,.04],
+                       dimensions=[51,2126,11701]),active_box_mm=[[-1,1],[-64.75,359.75],[90.25,323.75]])
+                   for name,z in zip(names[:2],[90,-324])]
+        binding = dict(refinement_windows=[dict(name="ion_processor_local"),*windows])
+        before = json.dumps(binding)
+        result = compile_memory_consumer_crops(contract,reference,binding)
+        self.assertEqual(json.dumps(binding),before)
+        self.assertEqual(set(result),set(names[:2]))
+        for descriptor in result.values():
+            self.assertEqual(descriptor["source_dimensions"],[51,2126,11701])
+            self.assertEqual(descriptor["consumer_dimensions"],[33,2126,11701])
+            self.assertEqual(descriptor["width_grid"],[32,2125,11700])
+        targets[0]["stored_xmax_mm"]=1.0
+        with self.assertRaisesRegex(ValueError,"halo"):
+            compile_memory_consumer_crops(contract,reference,binding)
+
+    def test_local_batch_fly2_and_actual_lua_launcher_keep_original_id_and_epoch(self):
+        fixture = source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        full = fixture._materialize()
+        root = fixture.root
+        runtime = root / "runtime"
+        runtime.mkdir()
+        (runtime / "joint.iob").write_bytes(b"mock saved IOB; no vendor load")
+        (runtime / "joint.lua").write_text("-- plain mock program")
+        (runtime / "joint.operating_point.lua").write_text("return {static_field=nil}")
+        preparation = root / "prepared.json"
+        preparation.write_text(json.dumps(dict(measured_source_directory=str(fixture.output),
+            frozen_runtime_directory=str(runtime), trajectory_recording=dict(mode="fixed_interval",interval_us=.1))))
+        batch_dir = root / "batch"
+        batch = materialize_batch(preparation, 2, 2, batch_dir)
+        self.assertEqual(batch["original_particle_ids"], [7])
+        self.assertEqual((batch_dir / "joint.fly2").read_text().count("standard_beam {"), 1)
+        with (batch_dir / "measured_source/ordinal_source_map.csv").open(newline="") as handle:
+            mapping = next(csv.DictReader(handle))
+        self.assertEqual(int(mapping["simion_ordinal"]), 1)
+        lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+        if not Path(lua).exists():
+            self.skipTest("Plain Lua interpreter is unavailable")
+        launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
+        script = root / "mock_launcher.lua"
+        script.write_text("""
+local directory,launcher,epoch,t=arg[1],arg[2],tonumber(arg[3]),tonumber(arg[4])
+local module=assert(loadfile(directory..'/measured_source/source_runtime.lua'))()
+local source=module.load(directory..'/measured_source')
+local initialized=source.initialize(1);assert(initialized.t==t)
+assert(source.source_id(1)==7)
+assert(source.instrument_time_us(t)==epoch+t)
+local point=assert(loadfile(directory..'/joint.operating_point.lua'))()
+assert(point.trajectory_recording_mode=='fixed_interval' and point.trajectory_recording_interval_us==.1)
+local calls=0
+simion={command=function(command)
+ calls=calls+1
+ assert(command:find('--particles="'..directory..'/joint.fly2"',1,true))
+ assert(not command:find('11..20',1,true))
+end}
+arg={directory..'/joint.iob',directory..'/joint.fly2'}
+assert(loadfile(launcher))()
+assert(calls==1)
+print('LOCAL_BATCH_LAUNCH_MAPPING_PASS')
+""", encoding="utf-8")
+        result = subprocess.run([lua,str(script),batch_dir.as_posix(),launcher.as_posix(),
+                                 str(full["solver_epoch_instrument_time_us"]),mapping["solver_birth_time_us"]],
+                                cwd=Path(__file__).resolve().parents[4],timeout=30,
+                                capture_output=True,text=True,encoding="utf-8",errors="replace",check=False)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn("LOCAL_BATCH_LAUNCH_MAPPING_PASS",result.stdout)
+
+    def test_existing_public_runner_replans_and_dispatches_local_batch_files(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 is unavailable")
+        runner = Path(__file__).resolve().parents[2] / "simion/run_two_prism_trial.ps1"
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "mock.ps1"
+            script.write_text(r'''param($Runner,$TestRoot,$PythonRuntime,$Repository,$Scenario)
+$ErrorActionPreference='Stop'
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
+$function=$ast.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-PreparedJointTrial'},$true)
+$code=$function.Extent.Text -replace '(?m)^  \. \(Join-Path[^\r\n]+',''
+Invoke-Expression $code
+$repoRoot=Split-Path -Parent $Runner;$workspaceRoot=$TestRoot;$projectId='mock'
+'{}'|Set-Content (Join-Path $TestRoot 'run_manifest.json')
+$env:PYTHONPATH=$Repository
+$PreparedJointWorkbenchRunPath=$TestRoot;$ContractPath=$Runner;$RunId='mockrun';$python='mock';$simion='mock'
+$script:adapted=$false;$script:observed=$false;$script:dispatched=$false;$script:analyzed=$false
+function Write-RunJson {param($Path,$Depth,$Value) $Value|ConvertTo-Json -Depth 60|Set-Content $Path}
+function New-RunPackage {
+ param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled)
+ $r=Join-Path $TestRoot 'run';$results=Join-Path $r 'results';$logs=Join-Path $r 'logs'
+ New-Item -ItemType Directory -Path $results,$logs|Out-Null
+ $config=Join-Path $r 'run_config.json';'{"run_id":"20261016_200000__sim__simion__fixture","project":"mock"}'|Set-Content $config
+ return @{artifact_run_dir=$r;result_dir=$results;log_dir=$logs;run_config=$config;summary=(Join-Path $r 'summary.json')}
+}
+function Enter-ArtifactWorkflowCapacitySession {return @{status='active'}}
+function Update-ArtifactWorkflowCapacitySession {return @{session=@{status='active'}}}
+function Exit-ArtifactWorkflowCapacitySession {}
+function Write-VerifiedRunManifest {
+ param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs)
+ & $PythonRuntime -m common.contracts.write_run_manifest --run-config $RunConfig --status $Status
+ if($LASTEXITCODE-ne0){throw 'Actual public manifest writer rejected runner inputs'}
+ $m=Get-Content (Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json') -Raw|ConvertFrom-Json
+ if($m.inputs.PSObject.Properties.Value.exists-contains$false){throw 'Actual manifest has an unbound input'}
+}
+function Write-RunManifest {
+ param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs)
+ $arguments=@('-m','common.contracts.write_run_manifest','--run-config',$RunConfig,'--status',$Status)
+ foreach($output in $Outputs){$arguments+=@('--output',$output)}
+ & $PythonRuntime @arguments
+ if($LASTEXITCODE-ne0){throw 'Actual terminal manifest writer rejected runner inputs'}
+}
+function Complete-FailedRun {throw 'Unexpected light-evidence finalizer used'}
+function Enter-HostResourceStage {return @{test=$true}}
+function Get-HostResourceBudget {return @{test=$true}}
+function Exit-HostResourceStage {}
+function Complete-ResourceUsage {}
+function Apply-RunArtifactRetention {$r=Join-Path $TestRoot 'run/retention_actions.json';'{}'|Set-Content $r;return $r}
+function Invoke-ProjectPython {
+ param($Arguments)
+ $command=$Arguments[2]
+ function Value($key){return $Arguments[[array]::IndexOf($Arguments,$key)+1]}
+ if($command-eq'recording-config'){return '{"mode":"fixed_interval","interval_us":0.1,"reason":"test","output_budget_bytes":10000}'}
+ if($command-eq'prepare'){
+  $r=Value '--run-directory';$results=Join-Path $r 'results'
+  Write-RunJson (Join-Path $results 'prepared_joint_trial.json') 60 @{protected_paths=@();guard_paths=@();launched_particle_count=2;mother_particle_count=3;expected_particle_ids=@(1,7);trajectory_contract=@{path=$Runner};launcher='mock_launcher.lua';trajectory_equivalence_reference=@{reference_log='frozen'}}
+  '{}'|Set-Content (Join-Path $results 'simion_dispatch_request.json')
+ }elseif($command-eq'discover'){'{}'|Set-Content (Value '--output')
+ }elseif($Arguments[1]-eq'common.simion.resource_scheduler'){
+  if($Arguments-contains'--observed-formal-peak-bytes'){$script:adapted=$true}
+  $kind=if($script:adapted){'observed'}else{'formal_first_batch_observation'}
+  Write-RunJson (Value '--output') 20 @{estimation=@{kind=$kind}}
+ }elseif($Arguments[1]-eq'common.simion.particle_batching'){
+  $batches=@(@{index=1;particle_id_min=1;particle_id_max=1;count=1})
+  if($script:adapted){$batches+=@{index=2;particle_id_min=2;particle_id_max=2;count=1}}
+  Write-RunJson (Value '--output') 20 @{batches=$batches}
+ }elseif($command-eq'materialize-joint'){
+  $d=Value '--output';New-Item -ItemType Directory -Path $d|Out-Null
+  '{}'|Set-Content (Join-Path $d 'batch_receipt.json');'local'|Set-Content (Join-Path $d 'joint.fly2')
+ }elseif($command-eq'merge-joint'){
+  if(@($Arguments|Where-Object{$_-eq'--batch-log'}).Count-ne2){throw 'Replanned second batch was not merged'}
+ }elseif($Arguments[1]-eq'common.contracts.verify_run_manifest'){
+  & $PythonRuntime @Arguments
+  if($LASTEXITCODE-ne0){throw 'Actual public verifier failed'}
+ }elseif($Arguments[1]-eq'common.contracts.run_capacity_lifecycle'){
+  if($Arguments-notcontains'seal-stopped-payload'){throw 'Wrong finalizer'}
+  $script:sealed=$true
+  if($Scenario-eq'seal_failure'){throw 'Synthetic stopped payload seal failure'}
+ }elseif($command-eq'compare-joint'){$script:compared=$true
+ }elseif($command-eq'analyze-joint'){$script:analyzed=$true;if($Scenario-eq'analysis_failure'){throw 'Synthetic diagnostics failure'}}
+ else{throw ('Unexpected Python command '+($Arguments-join' '))}
+}
+function Assert-LocalSpecification($Specification){
+ if($Specification.argument_list[-1]-notlike'*joint.fly2'){throw 'Missing explicit local Fly2'}
+ if($Specification.argument_list[-2]-notlike'*joint.iob'){throw 'Missing batch IOB'}
+ if((Split-Path -Parent $Specification.argument_list[-1])-ne$Specification.working_directory){throw 'Fly2/IOB batch mismatch'}
+ 'status,Fly completed. 1 splats'|Set-Content $Specification.stdout
+}
+function Start-ObservedFormalProcess {
+ param($DispatchPlanPath,$ProcessSpecification)
+ Assert-LocalSpecification $ProcessSpecification;$script:observed=$true
+ return @{resource_budget_exceeded=$false;completed_naturally=$true;exit_code=0;process_record=@{completed=$true};observed_peak_process_tree_working_set_bytes=100;observed_process_cpu_percent=10;observed_background_cpu_percent=0;available_memory_bytes=10000;total_physical_memory_bytes=20000}
+}
+function Invoke-ResourceBudgetedProcesses {
+ param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords)
+ if(@($ProcessSpecifications).Count-ne1-or$ProcessSpecifications[0].scheduler_batch.index-ne2){throw 'Wrong adaptive wave'}
+ Assert-LocalSpecification $ProcessSpecifications[0];$script:dispatched=$true
+ return @{resource_budget_exceeded=$false;processes=@(@{exit_code=0})}
+}
+try{Invoke-PreparedJointTrial;if($Scenario-ne'success'){throw 'Expected scenario failure did not happen'}}catch{if($Scenario-eq'success'){throw}}
+$manifest=Get-Content (Join-Path $TestRoot 'run/run_manifest.json') -Raw|ConvertFrom-Json
+$expectedStatus=if($Scenario-eq'analysis_failure'){'failed'}else{'success'}
+if($manifest.status-ne$expectedStatus){throw 'Scientific manifest was incorrectly rewritten'}
+if(-not($script:observed-and$script:adapted-and$script:dispatched-and$script:analyzed-and$script:sealed)){throw 'Missing public workflow stage'}
+if($Scenario-ne'analysis_failure'-and-not$script:compared){throw 'Trajectory equivalence gate was skipped'}
+'PUBLIC_PREPARED_RUNNER_MOCK_PASS'
+''', encoding="utf-8")
+            for scenario in ("success", "seal_failure", "analysis_failure"):
+                with self.subTest(scenario=scenario):
+                    case_root = Path(directory) / scenario
+                    case_root.mkdir()
+                    result = subprocess.run([powershell,"-NoProfile","-File",str(script),str(runner),str(case_root),
+                                             sys.executable,str(runner.parents[3]),scenario],
+                                            cwd=Path(__file__).resolve().parents[4],timeout=60,
+                                            capture_output=True,text=True,encoding="utf-8",errors="replace",check=False)
+                    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                    self.assertIn("PUBLIC_PREPARED_RUNNER_MOCK_PASS",result.stdout)
+
+    def test_public_manifest_and_stopped_payload_seal_above_light_budget(self):
+        from common.contracts.artifact_retention import apply_retention
+        from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+        from common.contracts.file_identity import file_sha256
+        from common.contracts.run_capacity_lifecycle import finalize_ready, register_writing, seal_checkpoint
+        from common.contracts.write_run_manifest import build_run_manifest
+        for status in ("success", "failed"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                initialize_capacity_ledger(root, objects=[])
+                run = root / "projects/p/runs/20261016_200001__sim__simion__payload-fixture"
+                run.mkdir(parents=True)
+                config = run / "run_config.json"
+                config.write_text(json.dumps(dict(schema_version=2,run_id=run.name,project="p",inputs={},
+                    artifact_retention=dict(policy_version=1,**{"class":"solver_review"},reason="fixture trajectories"),
+                    capacity_ledger_lifecycle=dict(schema_version=1,enabled=True,artifact_root=str(root),
+                                                  light_evidence_budget_bytes=26214400))))
+                summary = run / "summary.json"
+                summary.write_text(json.dumps(dict(status=status)))
+                register_writing(root,config)
+                payload = run / "trajectory_samples.csv"
+                with payload.open("wb") as handle:
+                    handle.truncate(26214401)
+                retained = apply_retention(config)
+                manifest = run / "run_manifest.json"
+                manifest.write_text(json.dumps(build_run_manifest(config,status,
+                    output_paths=[summary,payload,retained])))
+                verify = subprocess.run([sys.executable,"-m","common.contracts.verify_run_manifest",str(manifest),
+                                         "--require-status",status],capture_output=True,text=True,
+                                        cwd=Path(__file__).resolve().parents[4],timeout=60,
+                                        encoding="utf-8",errors="replace",check=False)
+                self.assertEqual(verify.returncode,0,verify.stdout+verify.stderr)
+                identity = file_sha256(manifest)
+                with self.assertRaisesRegex(ValueError,"cannot become light_evidence"):
+                    finalize_ready(root,config)
+                with self.assertRaises(ValueError):
+                    seal_checkpoint(root,config,owner="wrong",writing_stopped=True,retain_payload=True,
+                                    retention_reason="fixture trajectories")
+                self.assertEqual(file_sha256(manifest),identity)
+                receipt = seal_checkpoint(root,config,owner="p",writing_stopped=True,retain_payload=True,
+                                          retention_reason="fixture trajectories")
+                self.assertEqual(receipt["status"],"ready")
+                entry = load_capacity_ledger(root)["objects"][0]
+                self.assertEqual(entry["class"],"rebuildable_payload")
+                self.assertEqual(entry["status"],"ready")
+                self.assertGreater(entry["bytes"],26214400)
+                self.assertEqual(file_sha256(manifest),identity)
+                self.assertEqual(json.loads(manifest.read_text())["status"],status)
+
+    def test_merge_preserves_noncontiguous_original_ids_and_absolute_clock(self):
+        from common.contracts.write_run_manifest import file_record
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            preparation = root / "preparation.json"
+            preparation.write_text(json.dumps(dict(expected_particle_ids=[1,7],mother_particle_count=3,
+                                                   solver_epoch_instrument_time_us=7500.5)))
+            batches = []
+            for ordinal, identifier in enumerate([1,7], 1):
+                batch_dir = root / f"batch{ordinal}"
+                batch_dir.mkdir()
+                log, receipt = batch_dir / "flight.log", batch_dir / "batch_receipt.json"
+                fly = batch_dir / "joint.fly2"
+                fly.write_text("particles { standard_beam { tob = 0.01, } }")
+                log.write_text(f"MRTOF_TRAJECTORY ion={identifier} phase=birth t_us=7500.51\n"
+                               f"MRTOF_EVENT terminal ion={identifier} t_us=7501.5 splat=-1\n"
+                               "status,Fly completed. 1 splats\n")
+                receipt.write_text(json.dumps(dict(schema_version=1, role="mrtof_measured_source_batch",
+                                                   outputs=dict(source=file_record(fly)), count=1,original_particle_ids=[identifier],
+                                                   solver_epoch_instrument_time_us=7500.5)))
+                batches.append((log,receipt))
+            result = merge_measured_event_logs(batches=batches, preparation_path=preparation,
+                                               output_path=root/"merged.log", receipt_path=root/"merged.json")
+            self.assertEqual(result["original_particle_ids"], [1,7])
+            self.assertEqual(result["mother_particle_count"], 3)
+            self.assertFalse(result["id_rebasing_applied"])
+            self.assertEqual(result["preparation"], file_record(preparation))
+            self.assertEqual(len(result["batches"]), 2)
+            self.assertTrue(all("fly2" in row for row in result["batches"]))
+            self.assertIn("ion=7 t_us=7501.5", (root/"merged.log").read_text())
+            for changed in ("wrong_id", "missing_terminal", "wrong_epoch", "duplicate_batch"):
+                with self.subTest(changed=changed):
+                    log, receipt = batches[-1]
+                    original_log, original_receipt = log.read_text(), receipt.read_text()
+                    selected = batches
+                    if changed == "wrong_id":
+                        log.write_text(original_log.replace("ion=7", "ion=2"))
+                    elif changed == "missing_terminal":
+                        log.write_text(original_log.replace("MRTOF_EVENT terminal", "IGNORED terminal"))
+                    elif changed == "wrong_epoch":
+                        value=json.loads(original_receipt); value["solver_epoch_instrument_time_us"]=7500.6
+                        receipt.write_text(json.dumps(value))
+                    else:
+                        selected = [batches[0],batches[0]]
+                    with self.assertRaises(ValueError):
+                        merge_measured_event_logs(batches=selected,preparation_path=preparation,
+                                                  output_path=root/"bad.log",receipt_path=root/"bad.json")
+                    log.write_text(original_log); receipt.write_text(original_receipt)
+            fly = batches[-1][1].parent / "joint.fly2"
+            original = fly.read_bytes()
+            for content in (b"tampered", None):
+                if content is None:
+                    fly.unlink()
+                else:
+                    fly.write_bytes(content)
+                with self.assertRaisesRegex(AssertionError, "actual launched batch FLY2"):
+                    merge_measured_event_logs(batches=batches, preparation_path=preparation,
+                                             output_path=root/"bad.log", receipt_path=root/"bad.json")
+                fly.write_bytes(original)

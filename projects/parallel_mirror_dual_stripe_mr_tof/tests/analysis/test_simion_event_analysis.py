@@ -241,6 +241,33 @@ class SimionEventAnalysisTest(unittest.TestCase):
         self.assertEqual(raw["direction_ok"], 0)
         self.assertEqual(raw["vz_mm_us"], -34.7)
 
+    def test_p2_crossing_preserves_brackets_and_recomputes_velocity_and_angle(self):
+        event = parse_events(
+            "MRTOF_EVENT p2_low_field_crossing ion=1 t_us=18.2500625 "
+            "x_mm=0 y_mm=-9.3 z_mm=33 vx_mm_us=0 "
+            "vy_mm_us=1.400002 vz_mm_us=40.125001 inside_aperture=1 direction_ok=1 "
+            "fraction=0.25 before_t_us=18.25 before_z_mm=32.984375 "
+            "before_vy_mm_us=1.4 before_vz_mm_us=40.125 "
+            "after_t_us=18.25025 after_z_mm=33.046875 "
+            "after_vy_mm_us=1.400008 after_vz_mm_us=40.125004\n"
+        )[0]
+        fraction = ((event["z_mm"] - event["before_z_mm"])
+                    / (event["after_z_mm"] - event["before_z_mm"]))
+        self.assertEqual(fraction, event["fraction"])
+        self.assertEqual(event["before_vy_mm_us"], 1.4)
+        self.assertEqual(event["after_vz_mm_us"], 40.125004)
+        reconstructed = {
+            key: event[f"before_{key}"] + fraction
+            * (event[f"after_{key}"] - event[f"before_{key}"])
+            for key in ("t_us", "vy_mm_us", "vz_mm_us")
+        }
+        for key, value in reconstructed.items():
+            self.assertAlmostEqual(value, event[key], places=11)
+        self.assertAlmostEqual(
+            math.degrees(math.atan2(reconstructed["vy_mm_us"], reconstructed["vz_mm_us"])),
+            math.degrees(math.atan2(event["vy_mm_us"], event["vz_mm_us"])), places=11,
+        )
+
     def test_prism_phase_space_uses_all_surface_arrivals_not_detector_survivors(self):
         def phase_event(
             kind: str, ion: int, time: float, x: float, y: float,

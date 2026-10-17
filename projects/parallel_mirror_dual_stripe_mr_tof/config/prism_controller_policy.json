@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "role": "mrtof_prism_controller_policy",
+  "scope": "future_prism_proposals",
+  "prediction_error_fraction_of_acceptance_tolerance": 0.1,
+  "trusted_advance_multiplier": 1.0
+}

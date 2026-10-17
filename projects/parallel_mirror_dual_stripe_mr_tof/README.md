@@ -14,6 +14,7 @@
 |---|---|
 | 理解模型、符号、推导和验证范围 | [理论索引](docs/theory/index.md) |
 | 构建、检查或运行 SIMION | [SIMION 实施说明](simion/README.md) |
+| 选择 OA 或 Ion Processor 并准备接口（不求解） | [加速器选择与准备](simion/README.md#加速器选择与接口准备) |
 | 处理原始装配、曲线或机械证据 | [CAD 实施说明](docs/CAD.md) |
 | 查项目身份、旧资产位置、Candidate 成熟度和机器登记的 baseline | [项目描述符](config/project.json) |
 | 查活动几何与 CAD 变换 | [候选几何合同](config/simion_candidate_two_zone.json)、[坐标合同](config/cad_to_theory_frame.json) |
@@ -61,3 +62,8 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 - [边界输入隔离里程碑](docs/history/20261015__boundary-input-isolation.md)：冻结匹配场、消费分层和恢复／退役记录，边界因果验证仍开放。
 - [边界敏感性与父场组合一致性](docs/history/20261015__boundary-and-parent-consistency-isolation.md)
 - [父场组合、停止与单轴离散隔离](docs/history/20261015__parent-axis-field-isolation.md)
+
+- [Ion Processor状态交接与局部场接口修复](docs/history/20261017__ion-processor-handoff-and-interface-boundary.md)
+
+- [Ion Processor原闭合链恢复与账本局部恢复](docs/history/20261017__ion-processor-original-controller-recovery.md)
+- [Ion Processor原流程闭合与联合母群验证](docs/history/20261017__ion-processor-closure-and-joint-population.md)

@@ -10,6 +10,7 @@ param(
   [string[]]$RootScreeningRunPaths=@(),
   [string]$CompletedTe1WorkpointReclosureRunPath='',
   [string]$ReclosedRootScreeningRunPath='',
+  [string]$ReclosedResponseScreeningRunPath='',
   [string]$FinalScreeningRunPath='',
   [string]$PublishedSourceReceiptPath='',
   [string]$PublishedFormalSourceReceiptPath='',
@@ -18,8 +19,12 @@ param(
   [Parameter(Mandatory)][string]$MirrorRunPath,
   [Parameter(Mandatory)][string]$StripeRunPath,
   [Parameter(Mandatory)][string]$AcceleratorProviderReceiptPath,
-  [Parameter(Mandatory)][string]$NativeCorridorBankRunPath,
-  [Parameter(Mandatory)][string]$NativeSystemRuntimeBundlePath,
+  [string]$NativeCorridorBankRunPath='',
+  [string]$NativeSystemRuntimeBundlePath='',
+  [string]$FieldProviderRequestPath='',
+  [string]$CenterSourceReceiptPath='',
+  [string]$PrismControllerPolicyPath='',
+  [Nullable[double]]$TrajectoryStepScaleOverride=$null,
   [Parameter(Mandatory)][string]$SourceDefinitionPath,
   [Parameter(Mandatory)][double]$AcceleratorYAnchorMm,
   [ValidateRange(1,3)][int]$MaximumTe1RootFlights=3,
@@ -41,6 +46,9 @@ $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRo
 $artifactRoot=Join-Path $workspaceRoot "artifacts\projects\$project"
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__mrtof-native-candidate-chain'}
 if(-not[double]::IsFinite($AcceleratorYAnchorMm)){throw 'AcceleratorYAnchorMm must be finite.'}
+if($null-ne$TrajectoryStepScaleOverride-and(-not[double]::IsFinite([double]$TrajectoryStepScaleOverride)-or$TrajectoryStepScaleOverride-le0)){
+  throw 'TrajectoryStepScaleOverride must be finite and positive.'
+}
 if([bool]$ContinuationRunManifest-eq[bool]$QualifiedWorkpointRunPath){
   throw 'Supply exactly one ContinuationRunManifest or QualifiedWorkpointRunPath.'
 }
@@ -63,12 +71,49 @@ $screeningRunner=Join-Path $PSScriptRoot 'run_native_corridor_bunch_screening.ps
 $diagnosticRunner=Join-Path $PSScriptRoot 'run_source_z_energy_timing_diagnostic.ps1'
 $analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic'
 $focusFallbackSources=@{}
+$staticFieldMode=-not[string]::IsNullOrWhiteSpace($FieldProviderRequestPath)
+$staticCandidateFields=@{}
+$fieldProviderRunner=Join-Path $PSScriptRoot '../comsol/run_corridor_field_provider.ps1'
+$staticFieldRepresentation='comsol_static_scalar_v'
+$mirrorReferenceTrialManifest=''
+if($staticFieldMode){
+  if($NativeCorridorBankRunPath-or$NativeSystemRuntimeBundlePath-or$NativeRuntimeCheckpoint){throw 'Static candidate chain cannot consume a native bank/family/checkpoint.'}
+  if(-not$CenterSourceReceiptPath){throw 'Static candidate chain requires the frozen common centre receipt.'}
+  $fieldProviderRequest=Get-Content -LiteralPath (Resolve-Path $FieldProviderRequestPath).Path -Raw|ConvertFrom-Json -AsHashtable
+  switch($fieldProviderRequest.role){
+    'mrtof_same_mesh_field_provider_request' {}
+    'mrtof_native_static_field_provider_request' {
+      $staticFieldRepresentation='native_static_pa'
+      $fieldProviderRunner=Join-Path $PSScriptRoot '../simion/run_native_static_field_provider.ps1'
+    }
+    default {throw 'Unsupported static field provider request role.'}
+  }
+  if($fieldProviderRequest.ContainsKey('mirror_reference_trial_manifest')){$mirrorReferenceTrialManifest=[string]$fieldProviderRequest.mirror_reference_trial_manifest}
+}else{
+  if(-not$NativeCorridorBankRunPath-or-not$NativeSystemRuntimeBundlePath){throw 'Native candidate chain requires its bank and system bundle.'}
+}
 
 function Assert-Manifest {
-  param([Parameter(Mandatory)][string]$RunPath,[Parameter(Mandatory)][string]$Status,[Parameter(Mandatory)][string]$Mode)
+  param([Parameter(Mandatory)][string]$RunPath,[Parameter(Mandatory)][string]$Status,[Parameter(Mandatory)][string]$Mode,[switch]$StaticCenterSourceProjection)
   $manifest=Join-Path $RunPath 'run_manifest.json'
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifest `
-    --require-status $Status --require-project $project --require-mode $Mode|Out-Host
+  $arguments=@($manifest,'--require-status',$Status,'--require-project',$project,'--require-mode',$Mode)
+  if($StaticCenterSourceProjection){
+    $document=Get-Content -LiteralPath $manifest -Raw|ConvertFrom-Json -AsHashtable
+    $arguments+=@('--consumer-projection-id','mrtof_static_screening_center_v1')
+    foreach($name in @('trajectory_contract','reviewed_geometry_contract','mirror_summary','stripe_summary',
+      'mirror_run_manifest','stripe_run_manifest','accelerator_run_manifest','accelerator_provider_receipt',
+      'bunch_source_receipt','static_field_binding','trajectory_numerics_contract','trial_materialization',
+      'fixed_mirror_stripe_downstream_authority')){
+      if(-not$document.inputs.Contains($name)){throw "Centre source projection lacks required input: $name"}
+      $arguments+=@('--consumed-input',$name,[string]$document.inputs[$name].path)
+    }
+    if($document.inputs.Contains('terminal_time_mirror_voltage_variation')){
+      $arguments+=@('--consumed-input','terminal_time_mirror_voltage_variation',[string]$document.inputs.terminal_time_mirror_voltage_variation.path)
+    }
+    $arguments+=@('--consumed-output',(Get-ManifestOutputPath -ManifestPath $manifest -FileName 'two_prism_trial_observation.json'))
+    $arguments+=@('--consumed-output',(Get-ManifestOutputPath -ManifestPath $manifest -FileName 'two_prism_trial_materialization.json'))
+  }
+  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') @arguments|Out-Host
   if($LASTEXITCODE-ne0){throw "Run manifest verification failed: $manifest"}
   return $manifest
 }
@@ -143,6 +188,87 @@ function Test-SameVoltageVector {
   return $true
 }
 
+function Assert-NativeStaticFieldBinding {
+  param([Parameter(Mandatory)][string]$BindingPath,[Parameter(Mandatory)]$Voltages,[string]$Variation='',[Parameter(Mandatory)][string]$ContractPath,[string]$NumericalContractPath='',[string]$CenterMaterializationPath='')
+  # Reuse the sealed native loader and existing fixed-problem projection. Only
+  # the selected P/S and absolute mirror voltages may differ from the source.
+  $code=@'
+import copy, hashlib, json, sys
+from pathlib import Path
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, _record, native_numerics_match, resolve_native_refine_numerics
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import derive_candidate_authority
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _native_static_binding_problem
+def read(path):
+    return json.loads(Path(path).read_text(encoding='utf-8-sig'))
+request = read(sys.argv[2])
+source_path = Path(request['source_binding_path'])
+source, actual = load_binding(source_path), load_binding(Path(sys.argv[1]))
+if source['mode'] != 'native_static_pa' or actual['mode'] != source['mode']:
+    raise ValueError('Native screening field representation differs')
+if Path(request['source_field_manifest']).resolve() != Path(source['manifest']).resolve():
+    raise ValueError('Native source parent manifest differs')
+values = json.loads(sys.argv[3])
+request.update(candidate_voltages_v=dict(zip(('s1','s2','p1','p2'), values, strict=True)),
+               mirror_voltage_variation_path=sys.argv[4], mirror_contract_path=sys.argv[5],
+               mirror_reference_trial_manifest=sys.argv[6])
+expected, _ = derive_candidate_authority(request, source['authority'])
+if actual['authority'] != expected or actual['geometry'] != source['geometry']:
+    raise ValueError('Native screening full voltage or geometry authority differs')
+materialization = dict(analyzer_electrode_voltages_v=expected['analyzer_electrode_voltages_v'],
+                       stripe_biases_v=values[:2], prism_voltages_v=values[2:])
+if len(sys.argv) > 8 and sys.argv[8]:
+    materialization = read(sys.argv[8])
+    if Path(materialization['field_binding']['path']).resolve() != Path(sys.argv[1]).resolve():
+        raise ValueError('Centre storage projection materialization binds another field')
+expected_source = copy.deepcopy(source)
+expected_source['authority'] = expected
+target_numerics = None
+if len(sys.argv) > 7 and sys.argv[7]:
+    target_numerics = resolve_native_refine_numerics(read(sys.argv[7]))
+    if not native_numerics_match(actual, sys.argv[7]):
+        raise ValueError('Native screening stopping differs from current numerical contract')
+    for level in (expected_source, *expected_source['refinement_windows']):
+        level['native_solver_numerics'].update(target_numerics)
+if _native_static_binding_problem(actual, materialization, canonical_consumer_layout=True) != _native_static_binding_problem(expected_source, materialization, canonical_consumer_layout=True):
+    raise ValueError('Native screening numerical or collision identity differs')
+if Path(actual['manifest']).resolve() != Path(source['manifest']).resolve():
+    manifest = Path(actual['manifest'])
+    config = read(manifest.parent / 'run_config.json')
+    frozen_request = Path(config['inputs']['request'])
+    _record(manifest, frozen_request)
+    provider_request = read(frozen_request)
+    if provider_request['role'] != request['role']:
+        raise ValueError('Native screening uses a different provider role')
+    frozen_source = Path(config['inputs']['source_binding'])
+    _record(manifest, frozen_source)
+    if hashlib.sha256(Path(provider_request['source_binding_path']).read_bytes()).digest() != hashlib.sha256(frozen_source.read_bytes()).digest():
+        raise ValueError('Native provider source differs from its sealed binding input')
+    provider_source = load_binding(frozen_source)
+    if Path(provider_request['source_field_manifest']).resolve() != Path(provider_source['manifest']).resolve():
+        raise ValueError('Native provider source parent manifest differs')
+    provider_expected, _ = derive_candidate_authority(provider_request, provider_source['authority'])
+    if provider_expected != actual['authority']:
+        raise ValueError('Native provider request full voltage authority differs')
+    provider_source['authority'] = provider_expected
+    if target_numerics is not None:
+        for level in (provider_source, *provider_source['refinement_windows']):
+            level['native_solver_numerics'].update(target_numerics)
+    # Staged reclosure may rebase on a completed current anchor, not the initial
+    # request bytes. Its sealed source must retain the same fixed field problem.
+    if (provider_source['geometry'] != source['geometry'] or
+            _native_static_binding_problem(provider_source, materialization, canonical_consumer_layout=True) !=
+            _native_static_binding_problem(expected_source, materialization, canonical_consumer_layout=True)):
+        raise ValueError('Native provider source physical or numerical identity differs')
+'@
+  $arguments=@('-B','-c',$code,$BindingPath,$FieldProviderRequestPath,($Voltages|ConvertTo-Json -Compress),$Variation,$ContractPath,$mirrorReferenceTrialManifest)
+  if($NumericalContractPath){$arguments+=,$NumericalContractPath}
+  if($CenterMaterializationPath){
+    if(-not$NumericalContractPath){throw 'Centre storage projection requires its frozen numerical contract.'}
+    $arguments+=,$CenterMaterializationPath
+  }
+  Invoke-ProjectPython -Arguments $arguments
+}
+
 function Assert-WorkpointPhysicalBinding {
   param(
     [Parameter(Mandatory)][string]$WorkpointRun,
@@ -150,10 +276,50 @@ function Assert-WorkpointPhysicalBinding {
     [Parameter(Mandatory)][string]$ExpectedMirrorRun,
     [Parameter(Mandatory)][string]$ExpectedStripeRun,
     [Parameter(Mandatory)][string]$ExpectedProviderReceipt,
-    [Parameter(Mandatory)][string]$ExpectedRuntimeBundle,
+    [AllowEmptyString()][string]$ExpectedRuntimeBundle,
     [string]$ExpectedContract=''
   )
   $config=Get-Content -LiteralPath (Join-Path $WorkpointRun 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
+  if($staticFieldMode){
+    if($config.parameters.corridor_field-ne$staticFieldRepresentation){throw 'Qualified workpoint uses a different static field representation.'}
+    $request=Get-Content -LiteralPath $config.inputs.field_provider_request -Raw|ConvertFrom-Json -AsHashtable
+    $sameSourceBinding=Test-SameResolvedPath -First $request.source_binding_path -Second $fieldProviderRequest.source_binding_path
+    $handoff=Get-Content -LiteralPath (Join-Path $WorkpointRun 'results/best_physical_workpoint_handoff.json') -Raw|ConvertFrom-Json -AsHashtable
+    $centerManifest=Get-QualifiedCenterSeedManifest -WorkpointRun $WorkpointRun -Handoff $handoff
+    $centerConfig=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $centerManifest) 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
+    if(-not$sameSourceBinding){
+      if($staticFieldRepresentation-ne'native_static_pa'){throw 'Qualified workpoint uses a different source field binding.'}
+      $centerMaterialization=Get-ManifestOutputPath -ManifestPath $centerManifest -FileName 'two_prism_trial_materialization.json'
+      $storageCode=@'
+import json, sys
+from pathlib import Path
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _native_static_binding_problem
+materialization = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
+actual = load_binding(Path(materialization['field_binding']['path']))
+request = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8-sig'))
+source = load_binding(Path(request['source_binding_path']))
+if source.get('consumer_view') or Path(request['source_field_manifest']).resolve() != Path(source['manifest']).resolve():
+    raise ValueError('Native TE1 source must retain its full frozen operator')
+if source['geometry'] != actual['geometry'] or source['authority'] != actual['authority']:
+    raise ValueError('Qualified native storage projection changes geometry or full voltages')
+if _native_static_binding_problem(actual, materialization, canonical_consumer_layout=True) != _native_static_binding_problem(source, materialization):
+    raise ValueError('Qualified native storage projection changes discretization or collision identity')
+'@
+      Invoke-ProjectPython -Arguments @('-B','-c',$storageCode,$centerMaterialization,$FieldProviderRequestPath)
+    }
+    $provider=Get-ManifestOutputPath -ManifestPath $centerConfig.inputs.accelerator_run_manifest -FileName 'mrtof_runtime_receipt.json'
+    if((Get-FileHash -LiteralPath $provider -Algorithm SHA256).Hash-ne(Get-FileHash -LiteralPath $centerConfig.inputs.accelerator_provider_receipt -Algorithm SHA256).Hash){throw 'Original OA provider differs from the actually flown receipt.'}
+    foreach($binding in @(
+      @('mirror',[string]$centerConfig.inputs.mirror_run_manifest,(Join-Path $ExpectedMirrorRun 'run_manifest.json')),
+      @('stripe',[string]$centerConfig.inputs.stripe_run_manifest,(Join-Path $ExpectedStripeRun 'run_manifest.json')),
+      @('accelerator provider',[string]$provider,$ExpectedProviderReceipt)
+    )){
+      if(-not(Test-SameResolvedPath -First $binding[1] -Second $binding[2])){throw "Qualified static workpoint uses a different $($binding[0]) authority."}
+    }
+    if($ExpectedContract-and(Get-FileHash -LiteralPath $config.inputs.contract -Algorithm SHA256).Hash-ne(Get-FileHash -LiteralPath $ExpectedContract -Algorithm SHA256).Hash){throw 'Qualified workpoint uses a different condition contract.'}
+    return
+  }
   $problem=$config.parameters.native_recovery_problem
   foreach($binding in @(
     @('geometry',[string]$problem.geometry,$ExpectedGeometryRun),
@@ -179,14 +345,39 @@ function Assert-ScreeningEvidenceBinding {
     [Parameter(Mandatory)][string]$CohortRun,
     [Parameter(Mandatory)][string]$ExpectedWorkpointRun,
     [Parameter(Mandatory)][string]$ExpectedSourceReceipt,
-    [Parameter(Mandatory)][string]$ExpectedNativeBankRun,
-    [string]$ExpectedVariation=''
+    [AllowEmptyString()][string]$ExpectedNativeBankRun,
+    [string]$ExpectedVariation='',
+    [string]$ExpectedFieldBindingPath=''
   )
   $cohortConfig=Get-Content -LiteralPath (Join-Path $CohortRun 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
   $cohortSummary=Get-Content -LiteralPath (Join-Path $CohortRun 'summary.json') -Raw|ConvertFrom-Json -AsHashtable
   $workpointConfig=Get-Content -LiteralPath (Join-Path $ExpectedWorkpointRun 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
   $workpointHandoff=Get-Content -LiteralPath (Join-Path $ExpectedWorkpointRun 'results\best_physical_workpoint_handoff.json') -Raw|ConvertFrom-Json -AsHashtable
-  $problem=$workpointConfig.parameters.native_recovery_problem
+  $problem=$null
+  if($staticFieldMode){
+    $centerManifest=Get-QualifiedCenterSeedManifest -WorkpointRun $ExpectedWorkpointRun -Handoff $workpointHandoff
+    $centerConfig=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $centerManifest) 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
+    $problem=@{mirror=(Split-Path -Parent $centerConfig.inputs.mirror_run_manifest);stripe=(Split-Path -Parent $centerConfig.inputs.stripe_run_manifest);accelerator_provider_receipt=$AcceleratorProviderReceiptPath}
+    if(-not$cohortConfig.inputs.ContainsKey('static_field_binding')){throw 'Screening evidence omits its actual static field binding.'}
+    $actualBinding=Get-Content -LiteralPath $cohortConfig.inputs.static_field_binding -Raw|ConvertFrom-Json -AsHashtable
+    $sourceBinding=Get-Content -LiteralPath $fieldProviderRequest.source_binding_path -Raw|ConvertFrom-Json -AsHashtable
+    $actualHash=(Get-FileHash -LiteralPath $cohortConfig.inputs.static_field_binding -Algorithm SHA256).Hash
+    $sourceHash=(Get-FileHash -LiteralPath $fieldProviderRequest.source_binding_path -Algorithm SHA256).Hash
+    if($ExpectedFieldBindingPath-and$actualHash-ne(Get-FileHash -LiteralPath $ExpectedFieldBindingPath -Algorithm SHA256).Hash){throw 'Screening evidence uses a different actual static field binding.'}
+    if($staticFieldRepresentation-eq'native_static_pa'){
+      $variation=if($ExpectedVariation){$ExpectedVariation}elseif($centerConfig.inputs.ContainsKey('terminal_time_mirror_voltage_variation')){[string]$centerConfig.inputs.terminal_time_mirror_voltage_variation}else{''}
+      Assert-NativeStaticFieldBinding -BindingPath $cohortConfig.inputs.static_field_binding -Voltages $workpointHandoff.selected_workpoint.voltages_v -Variation $variation -ContractPath (Join-Path $ExpectedWorkpointRun 'inputs/contract.json') -NumericalContractPath $ContractPath
+    }else{
+    if($actualHash-ne$sourceHash){
+      $fieldConfig=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $actualBinding.export_manifest) 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
+      if(-not$fieldConfig.parameters.ContainsKey('source_binding_path')-or
+        (Get-FileHash -LiteralPath $fieldConfig.parameters.source_binding_path -Algorithm SHA256).Hash-ne$sourceHash){throw 'Screening evidence uses a different FEM source binding.'}
+    }
+    foreach($role in @('assembly_manifest','collision_manifest')){
+      if(-not(Test-SameResolvedPath -First $actualBinding[$role] -Second $sourceBinding[$role])){throw "Screening evidence uses a different static $role."}
+    }
+    }
+  }else{$problem=$workpointConfig.parameters.native_recovery_problem}
   $expectedVoltages=@($workpointHandoff.selected_workpoint.voltages_v)
   $actualVoltages=@($cohortSummary.stripe_biases_v)+@($cohortSummary.prism_voltages_v)
   if(-not(Test-SameVoltageVector -First $actualVoltages -Second $expectedVoltages)){
@@ -196,24 +387,26 @@ function Assert-ScreeningEvidenceBinding {
   $expectedProviderManifest=Join-Path (Split-Path -Parent (Split-Path -Parent ([string]$problem.accelerator_provider_receipt))) 'run_manifest.json'
   foreach($binding in @(
     @('source',[string]$cohortConfig.inputs.bunch_source_run_manifest,$expectedSourceManifest),
-    @('native field bank',[string]$cohortConfig.inputs.geometry_run_manifest,(Join-Path $ExpectedNativeBankRun 'run_manifest.json')),
+    $(if(-not$staticFieldMode){,@('native field bank',[string]$cohortConfig.inputs.geometry_run_manifest,(Join-Path $ExpectedNativeBankRun 'run_manifest.json'))}),
     @('mirror authority',[string]$cohortConfig.inputs.mirror_run_manifest,(Join-Path ([string]$problem.mirror) 'run_manifest.json')),
     @('stripe authority',[string]$cohortConfig.inputs.stripe_run_manifest,(Join-Path ([string]$problem.stripe) 'run_manifest.json')),
     @('accelerator provider',[string]$cohortConfig.inputs.accelerator_run_manifest,$expectedProviderManifest)
-  )){
+  )|Where-Object{$null-ne$_}){
     if(-not(Test-SameResolvedPath -First $binding[1] -Second $binding[2])){
       throw "Screening evidence uses a different $($binding[0])."
     }
   }
   foreach($binding in @(
-    @('native field bundle',[string]$cohortConfig.inputs.native_system_runtime_bundle,[string]$problem.native_system_runtime_bundle),
+    $(if(-not$staticFieldMode){,@('native field bundle',[string]$cohortConfig.inputs.native_system_runtime_bundle,[string]$problem.native_system_runtime_bundle)}),
     @('condition contract',[string]$cohortConfig.inputs.trajectory_contract,(Join-Path $ExpectedWorkpointRun 'inputs\contract.json'))
-  )){
+  )|Where-Object{$null-ne$_}){
     $actualHash=(Get-FileHash -LiteralPath $binding[1] -Algorithm SHA256).Hash
     $expectedHash=(Get-FileHash -LiteralPath $binding[2] -Algorithm SHA256).Hash
     if($actualHash-ne$expectedHash){throw "Screening evidence uses a different $($binding[0])."}
   }
-  $workpointVariation=if($workpointConfig.inputs.ContainsKey('terminal_time_mirror_voltage_variation')){
+  $workpointVariation=if($staticFieldMode-and$centerConfig.inputs.ContainsKey('terminal_time_mirror_voltage_variation')){
+    [string]$centerConfig.inputs.terminal_time_mirror_voltage_variation
+  }elseif($workpointConfig.inputs.ContainsKey('terminal_time_mirror_voltage_variation')){
     [string]$workpointConfig.inputs.terminal_time_mirror_voltage_variation
   }else{''}
   $expectedVariationPath=if($ExpectedVariation){$ExpectedVariation}else{$workpointVariation}
@@ -240,9 +433,10 @@ function Read-ScreeningEvidence {
     [Parameter(Mandatory)][ValidateSet('formal','focus','envelope')][string]$Scope,
     [Parameter(Mandatory)][string]$ExpectedWorkpointRun,
     [Parameter(Mandatory)][string]$ExpectedSourceReceipt,
-    [Parameter(Mandatory)][string]$ExpectedNativeBankRun,
+    [AllowEmptyString()][string]$ExpectedNativeBankRun,
     [string]$ExpectedVariation='',
-    [string]$ExpectedSourceStatesSha256=''
+    [string]$ExpectedSourceStatesSha256='',
+    [string]$ExpectedFieldBindingPath=''
   )
   $childRun=(Resolve-Path -LiteralPath $RunPath).Path
   $result=Read-ScreeningResult -RunPath $childRun
@@ -254,7 +448,7 @@ function Read-ScreeningEvidence {
   $summary=Get-Content -LiteralPath $summaryPath -Raw|ConvertFrom-Json -AsHashtable
   Assert-ScreeningEvidenceBinding -CohortRun $cohortRun -ExpectedWorkpointRun $ExpectedWorkpointRun `
     -ExpectedSourceReceipt $ExpectedSourceReceipt -ExpectedNativeBankRun $ExpectedNativeBankRun `
-    -ExpectedVariation $ExpectedVariation
+    -ExpectedVariation $ExpectedVariation -ExpectedFieldBindingPath $ExpectedFieldBindingPath
   $variationPath=Join-Path $cohortRun 'simion\terminal_time_mirror_voltage_variation.json'
   $te1Coordinate=0.0
   if(Test-Path -LiteralPath $variationPath -PathType Leaf){
@@ -295,6 +489,10 @@ function Read-ScreeningEvidence {
     run=$childRun;result=$result;particle_count=$particleCount;purpose=$purpose
     evidence_scope=$evidenceScope;envelope_available=($particleCount-in@(13,100))
     te1_coordinate=$te1Coordinate;variation_path=$variationPath
+    field_binding=$(if($staticFieldMode){
+      $materialization=Get-Content -LiteralPath (Join-Path $cohortRun 'results/two_prism_trial_materialization.json') -Raw|ConvertFrom-Json -AsHashtable
+      [string]$materialization.field_binding.path
+    }else{''})
   }
 }
 
@@ -331,11 +529,29 @@ function Read-CenterWorkpointGate {
     'Stripe_slow_turn_y_minus_L_mm',
     'Stripe_target_phase_y_minus_origin_mm'
   )
+  $authoredTarget=if($ContractDocument.Contains('prism_transport')){$ContractDocument.prism_transport['handoff_target']}else{$null}
+  if($null-ne$authoredTarget){
+    $materializationPath=Join-Path $cohortRun 'results\two_prism_trial_materialization.json'
+    $materialization=Get-Content -LiteralPath $materializationPath -Raw|ConvertFrom-Json -AsHashtable
+    $target=$materialization.prism_handoff_target
+    if($authoredTarget.mode-ne'converging_clean_phase_energy'-or$target.mode-ne$authoredTarget.mode){
+      throw 'Centre gate Prism handoff target differs from its frozen contract.'
+    }
+    foreach($key in $authoredTarget.Keys){
+      if(-not$target.Contains($key)-or$target[$key]-ne$authoredTarget[$key]){throw 'Centre gate Prism handoff authority differs.'}
+    }
+    $names[1]='P1_P2_clean_phase_effective_slow_energy_error_per_charge_v'
+    $tolerances=@{}+$tolerances
+    $tolerances[$names[1]]=$target.energy_tolerance_per_charge_v
+  }
   $failed=@()
   if(-not($validation-is[Collections.IDictionary])-or$validation.status-ne'observed'){
     $failed+='center_particle_workpoint_observation_incomplete'
   }else{
     foreach($name in $names){
+      if(-not$validation.physical_acceptance_residuals.Contains($name)-or-not$tolerances.Contains($name)){
+        $failed+=$name;continue
+      }
       $value=[double]$validation.physical_acceptance_residuals[$name]
       $limit=[double]$tolerances[$name]
       if(-not[double]::IsFinite($value)-or-not[double]::IsFinite($limit)-or$limit-le0-or[math]::Abs($value)-gt$limit){
@@ -349,6 +565,78 @@ function Read-CenterWorkpointGate {
   }
 }
 
+
+function Resolve-ScreeningFieldBinding {
+  param([Parameter(Mandatory)][string]$WorkpointRun,[string]$Variation='',[Parameter(Mandatory)][string]$ProviderRunId,$Handoff=$null)
+  if($null-eq$Handoff){$Handoff=Get-Content -LiteralPath (Join-Path $WorkpointRun 'results/best_physical_workpoint_handoff.json') -Raw|ConvertFrom-Json -AsHashtable}
+  $handoff=$Handoff
+  $centerManifest=Get-QualifiedCenterSeedManifest -WorkpointRun $WorkpointRun -Handoff $handoff
+  $centerMaterializationPath=Join-Path (Split-Path -Parent $centerManifest) 'results/two_prism_trial_materialization.json'
+  $center=Get-Content -LiteralPath $centerMaterializationPath -Raw|ConvertFrom-Json -AsHashtable
+  $centerBinding=Get-Content -LiteralPath $center.field_binding.path -Raw|ConvertFrom-Json -AsHashtable
+  if($center.field_binding.mode-ne$staticFieldRepresentation-or-not$handoff.selected_workpoint.ContainsKey('field_binding')){throw 'Selected static centre must bind its actually flown field.'}
+  if(-not(Test-SameResolvedPath -First $center.field_binding.path -Second $handoff.selected_workpoint.field_binding.path)){throw 'Selected handoff field differs from its centre flight.'}
+  $targetMirror=if($Variation){@((Get-Content -LiteralPath $Variation -Raw|ConvertFrom-Json -AsHashtable).target_mirror_voltages_v)}else{@($center.mirror_voltages_v)}
+  $voltages=@($handoff.selected_workpoint.voltages_v)
+  if(-not(Test-SameVoltageVector -First $voltages -Second (@($center.stripe_biases_v)+@($center.prism_voltages_v)))){throw 'Selected centre field has different P/S voltages.'}
+  if($voltages.Count-ne4){throw 'Selected static centre requires four P/S voltages.'}
+  $numericalContractPath=$ContractPath
+  $contractPath=Join-Path $WorkpointRun 'inputs/contract.json'
+  if(-not$numericalContractPath){$numericalContractPath=$contractPath}
+  $sameNumerics=$true
+  if($staticFieldRepresentation-eq'native_static_pa'){
+    $centerVariation=Join-Path (Split-Path -Parent $centerManifest) 'simion/terminal_time_mirror_voltage_variation.json'
+    Assert-NativeStaticFieldBinding -BindingPath $center.field_binding.path -Voltages $voltages -Variation $centerVariation -ContractPath $contractPath -NumericalContractPath $numericalContractPath -CenterMaterializationPath $centerMaterializationPath
+    $numericsCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,native_numerics_match; print(json.dumps(native_numerics_match(load_binding(Path(sys.argv[1])),sys.argv[2])))"
+    $sameNumerics=((Invoke-ProjectPython -Arguments @('-B','-c',$numericsCode,$center.field_binding.path,$numericalContractPath))-join"`n")|ConvertFrom-Json
+    if($sameNumerics-isnot[bool]){throw 'Native field numerical preflight did not return a boolean.'}
+  }
+  $key=@($fieldProviderRequest.source_binding_path,(Get-FileHash -LiteralPath $contractPath -Algorithm SHA256).Hash,$targetMirror,$voltages)|ConvertTo-Json -Depth 10 -Compress
+  if($staticFieldRepresentation-eq'native_static_pa'){$key+=','+(Get-FileHash -LiteralPath $numericalContractPath -Algorithm SHA256).Hash}
+  if($sameNumerics-and(Test-SameVoltageVector -First $targetMirror -Second $center.mirror_voltages_v)-and-not$centerBinding.ContainsKey('consumer_view')){
+    $staticCandidateFields[$key]=[string]$center.field_binding.path
+  }
+  if($staticFieldRepresentation-eq'native_static_pa'-and$centerBinding.ContainsKey('consumer_view')){
+    $fullReuseCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding,native_numerics_match; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority; r=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig')); b=load_binding(Path(r['source_binding_path'])); u=json.loads(sys.argv[2]); expected=candidate_authority(b['authority'],dict(zip(('s1','s2','p1','p2'),u,strict=True)),mirror_voltages_v=json.loads(sys.argv[3])); print(json.dumps(not b.get('consumer_view') and b['authority']==expected and native_numerics_match(b,sys.argv[4])))"
+    $reuseFull=((Invoke-ProjectPython -Arguments @('-B','-c',$fullReuseCode,$FieldProviderRequestPath,($voltages|ConvertTo-Json -Compress),($targetMirror|ConvertTo-Json -Compress),$numericalContractPath))-join"`n")|ConvertFrom-Json
+    if($reuseFull-isnot[bool]){throw 'Full native source reuse did not return a boolean.'}
+    if($reuseFull){$staticCandidateFields[$key]=[string]$fieldProviderRequest.source_binding_path}
+  }
+  if($staticCandidateFields.ContainsKey($key)){return [string]$staticCandidateFields[$key]}
+  $offsetKey=$null
+  if($staticFieldRepresentation-eq'native_static_pa'-and$fieldProviderRequest.ContainsKey('response_basis_paths')){
+    $offsetKey='native-offset:'+(@($fieldProviderRequest.source_binding_path,(Get-FileHash -LiteralPath $numericalContractPath -Algorithm SHA256).Hash,$targetMirror)|ConvertTo-Json -Depth 10 -Compress)
+  }
+  $request=$fieldProviderRequest|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable
+  if($offsetKey-and$staticCandidateFields.ContainsKey($offsetKey)){
+    $request.source_binding_path=[string]$staticCandidateFields[$offsetKey]
+    $offsetBinding=Get-Content -LiteralPath $request.source_binding_path -Raw|ConvertFrom-Json -AsHashtable
+    $request.source_field_manifest=[string]$offsetBinding.parent.manifest
+  }
+  $request.run_id=$ProviderRunId
+  $request.candidate_voltages_v=@{s1=[double]$voltages[0];s2=[double]$voltages[1];p1=[double]$voltages[2];p2=[double]$voltages[3]}
+  $request.mirror_voltage_variation_path=$Variation
+  $request.mirror_reference_trial_manifest=$mirrorReferenceTrialManifest
+  $request.mirror_contract_path=$contractPath
+  if($staticFieldRepresentation-eq'native_static_pa'){$request.numerical_contract_path=$numericalContractPath}
+  $requestPath=Join-Path $package.input_dir ($ProviderRunId+'_request.json')
+  Write-RunJson -Path $requestPath -Depth 100 -Value $request
+  $providerRun=Join-Path $artifactRoot "runs/$ProviderRunId"
+  & $fieldProviderRunner -RequestPath $requestPath -RunDirectory $providerRun -Approved|Out-Host
+  $summary=Get-Content -LiteralPath (Join-Path $providerRun 'summary.json') -Raw|ConvertFrom-Json -AsHashtable
+  if($summary.status-ne'success'-or-not$summary.field_binding){throw 'TE1 field provider did not publish a usable field; flight blocked.'}
+  if($offsetKey){
+    $protection=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -ProtectedPaths @($providerRun)
+    $script:capacitySession=$protection.session
+    $produced=Get-Content -LiteralPath $summary.field_binding -Raw|ConvertFrom-Json -AsHashtable
+    # A composed P/S point names its fixed offset; never cache the candidate
+    # itself as an incremental base. The ordinary offset has no materialization.
+    $staticCandidateFields[$offsetKey]=if($produced.ContainsKey('materialization')){[string]$produced.materialization.base_binding}else{[string]$summary.field_binding}
+  }
+  $staticCandidateFields[$key]=[string]$summary.field_binding
+  return [string]$summary.field_binding
+}
+
 function Invoke-Screening {
   param(
     [Parameter(Mandatory)][string]$Stage,
@@ -356,6 +644,7 @@ function Invoke-Screening {
     [Parameter(Mandatory)][string]$SourceReceipt,
     [string]$Variation='',
     [string]$ExistingCohortRun='',
+    [string]$FieldBindingPath='',
     [ValidateSet(3,13,100)][int]$ParticleCount=100,
     [switch]$FocusDiagnosticOnly,
     [ValidateSet('','controlled_aberration')][string]$DiagnosticPurpose=''
@@ -365,7 +654,14 @@ function Invoke-Screening {
     WorkpointRunPath=$WorkpointRun;NativeCorridorBankRunPath=$NativeCorridorBankRunPath
     BunchSourceReceiptPath=$SourceReceipt;CohortParticleCount=$ParticleCount;RunId=$childId;PythonExe=$python
   }
+  if($staticFieldMode){
+    $arguments.Remove('NativeCorridorBankRunPath')
+    if(-not$FieldBindingPath){$FieldBindingPath=Resolve-ScreeningFieldBinding -WorkpointRun $WorkpointRun -Variation $Variation -ProviderRunId ($childId+'-field') -Handoff $script:handoff}
+    $arguments.FieldBindingPath=$FieldBindingPath
+    if($staticFieldRepresentation-eq'native_static_pa'){$arguments.GeometryReviewRunPath=$GeometryReviewRunPath}
+  }
   if($FocusDiagnosticOnly){$arguments.FocusDiagnosticOnly=$true}
+  if($null-ne$TrajectoryStepScaleOverride){$arguments.TrajectoryStepScaleOverride=[double]$TrajectoryStepScaleOverride}
   if($DiagnosticPurpose){$arguments.DiagnosticPurpose=$DiagnosticPurpose}
   if($Variation){$arguments.MirrorVoltageVariationPath=$Variation}
   if($ExistingCohortRun){$arguments.InitialCohortRunPath=$ExistingCohortRun}
@@ -375,7 +671,7 @@ function Invoke-Screening {
   $scope=if($FocusDiagnosticOnly){'focus'}elseif($DiagnosticPurpose){'envelope'}else{'formal'}
   return Read-ScreeningEvidence -RunPath $childRun -Scope $scope -ExpectedWorkpointRun $WorkpointRun `
     -ExpectedSourceReceipt $SourceReceipt -ExpectedNativeBankRun $NativeCorridorBankRunPath `
-    -ExpectedVariation $Variation
+    -ExpectedVariation $Variation -ExpectedFieldBindingPath $FieldBindingPath
 }
 
 function Get-FocusFallbackSourceReceipt {
@@ -448,6 +744,23 @@ function Resolve-DetectorFocusSample {
 function Invoke-Diagnostic {
   param([Parameter(Mandatory)][string]$Stage,[Parameter(Mandatory)][string]$FlightManifest)
   $flightRun=Split-Path -Parent $FlightManifest
+  $manifestData=Get-Content -LiteralPath $FlightManifest -Raw|ConvertFrom-Json -Depth 100
+  if($manifestData.status-ne'success'-or$manifestData.project-ne$project-or
+    $manifestData.mode-ne'finite_3d_two_prism_voltage_trial'){
+    throw 'Source diagnostic requires a successful MRTOF flight manifest.'
+  }
+  $standardName='source_z_energy_timing_diagnostic.json'
+  $standardOutputs=@($manifestData.outputs|Where-Object {[IO.Path]::GetFileName([string]$_.path)-eq$standardName})
+  if($standardOutputs.Count-gt0){
+    $standardPath=Get-ManifestOutputPath -ManifestPath $FlightManifest -FileName $standardName
+    $standard=Get-Content -LiteralPath $standardPath -Raw|ConvertFrom-Json -Depth 100
+    if($standard.role-ne'mrtof_source_z_energy_timing_diagnostic'-or$standard.status-ne'candidate_diagnostic'){
+      throw 'The bound standard source diagnostic has an invalid result identity.'
+    }
+    return $standardPath
+  }
+  # Historical completed flights without the standard output retain the
+  # original governed post-analysis path; a corrupt bound output never retries.
   $childId=New-StageRunId -Activity analysis -Scope python -Subject "mrtof-$Stage-diagnostic"
   & $diagnosticRunner -FlightRunPath $flightRun -RunId $childId -PythonExe $python|Out-Host
   $childRun=Join-Path $artifactRoot "runs\$childId"
@@ -537,7 +850,24 @@ function Get-QualifiedCenterSeedManifest {
   param([Parameter(Mandatory)][string]$WorkpointRun,[Parameter(Mandatory)]$Handoff)
   $ordinal=[int]$Handoff.selected_history_ordinal
   $lineagePath=Join-Path $WorkpointRun 'results\iteration_lineage.json'
+  if($staticFieldMode){$lineagePath=Get-ManifestOutputPath -ManifestPath (Join-Path $WorkpointRun 'run_manifest.json') -FileName 'iteration_lineage.json'}
   $lineage=Get-Content -LiteralPath $lineagePath -Raw|ConvertFrom-Json -AsHashtable
+  if($staticFieldMode){
+    if(-not$Handoff.selected_workpoint.ContainsKey('field_binding')){throw 'Static handoff must identify the actual centre field.'}
+    $candidates=@($lineage.children)
+    if($lineage.ContainsKey('root_workpoint_manifest')){
+      $root=$lineage.root_workpoint_manifest
+      $candidates+=@{child_manifest=$root.path;child_manifest_sha256=$root.sha256}
+    }
+    $matches=@($candidates|Where-Object{
+      if((Get-FileHash -LiteralPath $_.child_manifest -Algorithm SHA256).Hash-ne([string]$_.child_manifest_sha256).ToUpperInvariant()){throw 'Static lineage child manifest identity differs.'}
+      $path=Get-ManifestOutputPath -ManifestPath $_.child_manifest -FileName 'two_prism_trial_materialization.json'
+      $value=Get-Content -LiteralPath $path -Raw|ConvertFrom-Json -AsHashtable
+      $value.ContainsKey('field_binding')-and$null-ne$value.field_binding-and(Test-SameResolvedPath -First $value.field_binding.path -Second $Handoff.selected_workpoint.field_binding.path)
+    })
+    if($matches.Count-ne1){throw 'Static handoff does not identify one actual centre child.'}
+    return (Resolve-Path -LiteralPath ([string]$matches[0].child_manifest)).Path
+  }
   $matches=@($lineage.children|Where-Object{[int]$_.iteration-eq$ordinal})
   if($ordinal-ge1-and$matches.Count-eq1){
     return (Resolve-Path -LiteralPath ([string]$matches[0].child_manifest)).Path
@@ -568,11 +898,22 @@ function Invoke-Te1WorkpointReclosure {
     [Parameter(Mandatory)][string]$SeedManifest,
     [Parameter(Mandatory)][string]$Variation,
     [Parameter(Mandatory)][string]$CurrentContractPath,
-    [Parameter(Mandatory)][string]$RuntimeCheckpoint
+    [Parameter(Mandatory)][AllowEmptyString()][string]$RuntimeCheckpoint
   )
   $childId=New-StageRunId -Activity sim -Scope simion -Subject ('mrtof-te1-reclose-{0:D2}'-f$Attempt)
+  $seedMaterializationPath=Get-ManifestOutputPath -ManifestPath $SeedManifest -FileName 'two_prism_trial_materialization.json'
+  $seedMaterialization=Get-Content -LiteralPath $seedMaterializationPath -Raw|ConvertFrom-Json -AsHashtable
+  $trajectory=$seedMaterialization.trajectory_profile
+  $profileId=if($trajectory.ContainsKey('base_profile_id')){[string]$trajectory.base_profile_id}else{[string]$trajectory.profile_id}
+  $contractData=Get-Content -LiteralPath $CurrentContractPath -Raw|ConvertFrom-Json -AsHashtable
+  $baseStep=[double]$contractData.simion.trajectory_profiles[$profileId].maximum_step_us
+  $seedStep=[double]$trajectory.maximum_step_us
+  if(-not[double]::IsFinite($baseStep)-or$baseStep-le0-or-not[double]::IsFinite($seedStep)-or$seedStep-le0){
+    throw 'Qualified TE1 seed has no valid trajectory step authority.'
+  }
   $arguments=@{
     SeedTrialManifest=$SeedManifest;MirrorVoltageVariationPath=$Variation
+    TrajectoryProfileId=$profileId;TrajectoryStepScale=$(if($null-eq$TrajectoryStepScaleOverride){$seedStep/$baseStep}else{[double]$TrajectoryStepScaleOverride})
     NativeCorridorBankRunPath=$NativeCorridorBankRunPath;GeometryReviewRunPath=$GeometryReviewRunPath
     MirrorRunPath=$MirrorRunPath;StripeRunPath=$StripeRunPath
     AcceleratorProviderReceiptPath=$AcceleratorProviderReceiptPath
@@ -582,9 +923,32 @@ function Invoke-Te1WorkpointReclosure {
     NativeRuntimeCheckpoint=$RuntimeCheckpoint
   }
   if($SimionExe){$arguments.SimionExe=$SimionExe}
+  if($PrismControllerPolicyPath){$arguments.PrismControllerPolicyPath=$PrismControllerPolicyPath}
+  if($staticFieldMode){
+    foreach($name in @('NativeCorridorBankRunPath','NativeSystemRuntimeBundlePath','NativeRuntimeCheckpoint')){$arguments.Remove($name)}
+    $arguments.FieldProviderRequestPath=$FieldProviderRequestPath
+    if($staticFieldRepresentation-eq'native_static_pa'){
+    # Reclosure starts from the actually flown TE1 centre, not the pre-TE1 PASS.
+    $request=Get-Content -LiteralPath $FieldProviderRequestPath -Raw|ConvertFrom-Json -AsHashtable
+    $request.source_binding_path=[string]$seedMaterialization.field_binding.path
+    $binding=Get-Content -LiteralPath $request.source_binding_path -Raw|ConvertFrom-Json -AsHashtable
+    $request.source_field_manifest=[string]$binding.parent.manifest
+    $voltages=@($seedMaterialization.stripe_biases_v)+@($seedMaterialization.prism_voltages_v)
+    $request.candidate_voltages_v=@{s1=[double]$voltages[0];s2=[double]$voltages[1];p1=[double]$voltages[2];p2=[double]$voltages[3]}
+    $request.mirror_reference_trial_manifest=$SeedManifest
+    $request.mirror_voltage_variation_path=$Variation
+    $request.mirror_contract_path=$CurrentContractPath
+    $request.numerical_contract_path=$CurrentContractPath
+    $request.Remove('run_id')
+    $requestPath=Join-Path $package.input_dir ($childId+'_request.json')
+    Write-RunJson -Path $requestPath -Depth 100 -Value $request
+    $arguments.FieldProviderRequestPath=$requestPath
+    }
+    $arguments.CenterSourceReceiptPath=$CenterSourceReceiptPath
+  }
   & $workpointRunner @arguments|Out-Host
   $childRun=Join-Path $artifactRoot "runs\$childId"
-  $manifest=Assert-Manifest -RunPath $childRun -Status checkpoint -Mode downstream_fixed_grid_workpoint_iteration
+  $manifest=Assert-Manifest -RunPath $childRun -Status $(if($staticFieldMode){'success'}else{'checkpoint'}) -Mode downstream_fixed_grid_workpoint_iteration
   $handoffPath=Join-Path $childRun 'results\best_physical_workpoint_handoff.json'
   if(-not(Test-Path -LiteralPath $handoffPath -PathType Leaf)){
     throw 'TE1 workpoint reclosure did not publish a qualified centre handoff.'
@@ -593,7 +957,7 @@ function Invoke-Te1WorkpointReclosure {
   if($handoff.status-ne'within_tolerance'-or$handoff.qualification-ne'candidate_bunch_screening_authorized'){
     throw 'TE1 workpoint reclosure did not satisfy every centre tolerance.'
   }
-  return [pscustomobject]@{run=$childRun;manifest=$manifest;handoff=$handoff}
+  return Read-CompletedTe1WorkpointReclosure -RunPath $childRun -Variation $Variation
 }
 
 function Read-CompletedTe1WorkpointReclosure {
@@ -602,7 +966,7 @@ function Read-CompletedTe1WorkpointReclosure {
     [Parameter(Mandatory)][string]$Variation
   )
   $childRun=(Resolve-Path -LiteralPath $RunPath).Path
-  $manifest=Assert-Manifest -RunPath $childRun -Status checkpoint -Mode downstream_fixed_grid_workpoint_iteration
+  $manifest=Assert-Manifest -RunPath $childRun -Status $(if($staticFieldMode){'success'}else{'checkpoint'}) -Mode downstream_fixed_grid_workpoint_iteration
   $handoffPath=Join-Path $childRun 'results\best_physical_workpoint_handoff.json'
   if(-not(Test-Path -LiteralPath $handoffPath -PathType Leaf)){
     throw 'Completed TE1 workpoint reclosure lacks a qualified centre handoff.'
@@ -612,8 +976,8 @@ function Read-CompletedTe1WorkpointReclosure {
     throw 'Completed TE1 workpoint reclosure did not satisfy every centre tolerance.'
   }
   $centerManifest=Get-QualifiedCenterSeedManifest -WorkpointRun $childRun -Handoff $handoff
-  $centerMaterialization=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $centerManifest) `
-    'results\two_prism_trial_materialization.json') -Raw|ConvertFrom-Json -AsHashtable
+  $centerMaterialization=Get-Content -LiteralPath (Get-ManifestOutputPath -ManifestPath $centerManifest `
+    -FileName 'two_prism_trial_materialization.json') -Raw|ConvertFrom-Json -AsHashtable
   $variationData=Get-Content -LiteralPath $Variation -Raw|ConvertFrom-Json -AsHashtable
   $expectedMirror=@($variationData.target_mirror_voltages_v|ForEach-Object{[double]$_})
   $actualMirror=@($centerMaterialization.mirror_voltages_v|ForEach-Object{[double]$_})
@@ -710,8 +1074,8 @@ try{
   $protectedPaths=@($package.artifact_run_dir,$QualifiedWorkpointRunPath,$ContinuationRunManifest,
     $BaselineEnvelopeScreeningRunPath,$BaselineScreeningRunPath,$BaselineCohortRunPath,
     $ProbeScreeningRunPath,$completedRootScreeningRuns,
-    $CompletedTe1WorkpointReclosureRunPath,$ReclosedRootScreeningRunPath,$FinalScreeningRunPath,
-    $PublishedSourceReceiptPath,$PublishedFormalSourceReceiptPath,$NativeCorridorBankRunPath)|
+    $CompletedTe1WorkpointReclosureRunPath,$ReclosedRootScreeningRunPath,$ReclosedResponseScreeningRunPath,$FinalScreeningRunPath,
+    $PublishedSourceReceiptPath,$PublishedFormalSourceReceiptPath,$NativeCorridorBankRunPath,$PrismControllerPolicyPath)|
     Where-Object{-not[string]::IsNullOrWhiteSpace([string]$_)}
   $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
@@ -742,7 +1106,22 @@ try{
   Write-RunJson -Path $sourceDefinition -Depth 30 -Value $sourceDefinitionData
   $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
   $config.inputs=[ordered]@{bunch_source_definition=$sourceDefinition}
+  if($staticFieldMode){
+    $FieldProviderRequestPath=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $FieldProviderRequestPath).Path `
+      -Destination (Join-Path $package.input_dir 'initial_field_provider_request.json')
+    $config.inputs.field_provider_request=$FieldProviderRequestPath
+    $config.inputs.center_source_receipt=(Resolve-Path -LiteralPath $CenterSourceReceiptPath).Path
+  }
+  if($PrismControllerPolicyPath){
+    $PrismControllerPolicyPath=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $PrismControllerPolicyPath).Path `
+      -Destination (Join-Path $package.input_dir 'prism_controller_policy.json')
+    Invoke-ProjectPython -Arguments @('-c',
+      'import sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))',
+      $PrismControllerPolicyPath)
+    $config.inputs.prism_controller_policy=$PrismControllerPolicyPath
+  }
   $config.parameters=[ordered]@{
+    trajectory_step_scale_override=$TrajectoryStepScaleOverride
     accelerator_y_anchor_mm=$AcceleratorYAnchorMm;cohort_particle_count=100
     accelerator_source_y_offset_mm=$sourceYOffsetMm
     accelerator_source_y_offset_authority='provider_receipt.mrtof_projection.required_source_y_offset_from_accelerator_axis_mm'
@@ -751,6 +1130,7 @@ try{
     workflow='N1_P_then_S_iteration__common_source__baseline__TE1_probe__continuous_root__comparison'
     completed_te1_workpoint_reclosure_run_path=$CompletedTe1WorkpointReclosureRunPath
     reclosed_root_screening_run_path=$ReclosedRootScreeningRunPath
+    reclosed_response_screening_run_path=$ReclosedResponseScreeningRunPath
     final_screening_run_path=$FinalScreeningRunPath
   }
   Write-RunJson -Path $package.run_config -Depth 20 -Value $config
@@ -771,12 +1151,18 @@ try{
       RunId=$workpointId;PythonExe=$python
     }
     if($ContractPath){$arguments.ContractPath=$ContractPath}
+    if($null-ne$TrajectoryStepScaleOverride){$arguments.TrajectoryStepScale=[double]$TrajectoryStepScaleOverride}
     if($NativeRuntimeCheckpoint){$arguments.NativeRuntimeCheckpoint=$NativeRuntimeCheckpoint}
     if($SimionExe){$arguments.SimionExe=$SimionExe}
+    if($staticFieldMode){
+      foreach($name in @('NativeCorridorBankRunPath','NativeSystemRuntimeBundlePath','NativeRuntimeCheckpoint')){$arguments.Remove($name)}
+      $arguments.FieldProviderRequestPath=$FieldProviderRequestPath
+      $arguments.CenterSourceReceiptPath=$CenterSourceReceiptPath
+    }
     & $workpointRunner @arguments
     $workpointRun=Join-Path $artifactRoot "runs\$workpointId"
   }
-  $workpointManifest=Assert-Manifest -RunPath $workpointRun -Status checkpoint -Mode downstream_fixed_grid_workpoint_iteration
+  $workpointManifest=Assert-Manifest -RunPath $workpointRun -Status $(if($staticFieldMode){'success'}else{'checkpoint'}) -Mode downstream_fixed_grid_workpoint_iteration
   Assert-WorkpointPhysicalBinding -WorkpointRun $workpointRun `
     -ExpectedGeometryRun $GeometryReviewRunPath -ExpectedMirrorRun $MirrorRunPath `
     -ExpectedStripeRun $StripeRunPath -ExpectedProviderReceipt $providerReceipt `
@@ -785,8 +1171,8 @@ try{
   # downstream stage.  It may point at an earlier owner run after a resume;
   # consumers must follow that declared output instead of relying on the
   # optional top-level transport argument.
-  $activeNativeRuntimeCheckpoint=Get-ManifestOutputPath -ManifestPath $workpointManifest `
-    -FileName 'native_corridor_runtime_checkpoint.json'
+  $activeNativeRuntimeCheckpoint=if($staticFieldMode){''}else{Get-ManifestOutputPath -ManifestPath $workpointManifest `
+    -FileName 'native_corridor_runtime_checkpoint.json'}
   $handoffPath=Join-Path $workpointRun 'results\best_physical_workpoint_handoff.json'
   $handoff=Get-Content -LiteralPath $handoffPath -Raw|ConvertFrom-Json -AsHashtable
   if($handoff.status-ne'within_tolerance'){
@@ -803,12 +1189,23 @@ try{
     throw 'N=1 workpoint does not satisfy every downstream tolerance.'
   }
   $qualifiedCenterSeedManifest=Get-QualifiedCenterSeedManifest -WorkpointRun $workpointRun -Handoff $handoff
+  if($staticFieldMode){
+    if(-not$mirrorReferenceTrialManifest){$mirrorReferenceTrialManifest=$qualifiedCenterSeedManifest}
+    # Preserve the original request; reclosure consumes this separately frozen
+    # TE1 reference, never the current candidate as an incremental mirror base.
+    $fieldProviderRequest.mirror_reference_trial_manifest=$mirrorReferenceTrialManifest
+    $FieldProviderRequestPath=Join-Path $package.input_dir 'te1_field_provider_request.json'
+    Write-RunJson -Path $FieldProviderRequestPath -Depth 100 -Value $fieldProviderRequest
+    $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
+    $config.inputs.te1_field_provider_request=$FieldProviderRequestPath
+    Write-RunJson -Path $package.run_config -Depth 100 -Value $config
+  }
   # The accepted centre child is the source-state authority.  A resumed parent
   # need not retain its original bootstrap file, and the bootstrap may predate
   # the final P/S correction that actually met every tolerance.
   $seedManifestPath=$qualifiedCenterSeedManifest
   $seedRun=Split-Path -Parent $seedManifestPath
-  $null=Assert-Manifest -RunPath $seedRun -Status success -Mode finite_3d_two_prism_voltage_trial
+  $null=Assert-Manifest -RunPath $seedRun -Status success -Mode finite_3d_two_prism_voltage_trial -StaticCenterSourceProjection:$staticFieldMode
   $seedManifest=Get-Content -LiteralPath $seedManifestPath -Raw|ConvertFrom-Json -AsHashtable
   $sourceObservations=@($seedManifest.outputs|Where-Object{[IO.Path]::GetFileName([string]$_.path)-eq'two_prism_trial_observation.json'})
   if($sourceObservations.Count-ne1){throw 'N=1 workpoint seed must bind one source-state observation.'}
@@ -1005,19 +1402,9 @@ try{
     return
   }
   $failureStage='te1_probe'
-  $reference=Get-Content -LiteralPath $te1Reference -Raw|ConvertFrom-Json -AsHashtable
-  $referenceCoordinate=[double]$reference.coordinate
-  $referenceBase=@($reference.base_mirror_voltages_v)
-  $referenceDelta=@($reference.voltage_delta_v)
-  $relativePerCoordinate=@(for($index=0;$index-lt4;$index++){
-    [math]::Abs(([double]$referenceDelta[$index]/$referenceCoordinate)/[double]$referenceBase[$index+1])
-  })
-  $fineRelativeStep=[double]$focusContract.downstream_fixed_grid_workpoint_profile.jacobian_relative_step_tiers.fine
-  $probeCoordinate=-1.0*$fineRelativeStep/($relativePerCoordinate|Measure-Object -Maximum).Maximum
-  if(-not[double]::IsFinite($probeCoordinate)-or$probeCoordinate-eq0.0){throw 'TE1 reference coordinate is invalid.'}
   $probeVariation=Join-Path $package.result_dir 'te1_probe_variation.json'
   Invoke-ProjectPython -Arguments @(
-    '-m',$analysisModule,'--te1-reference',$te1Reference,'--te1-coordinate',[string]$probeCoordinate,
+    '-m',$analysisModule,'--te1-reference',$te1Reference,'--baseline-coordinate',[string]$baselineCoordinate,
     '--mirror-period',$mirrorPeriod,'--mirror-correction',$mirrorCorrection,
     '--contract',$focusContractPath,
     '--output',$probeVariation
@@ -1026,6 +1413,7 @@ try{
   if($probeVariationData.status-ne'screening_candidate_materialized'){
     throw 'Fine TE1 probe variation is invalid.'
   }
+  $probeCoordinate=[double]$probeVariationData.coordinate
   if($ProbeScreeningRunPath){
     $probe=Read-ScreeningEvidence -RunPath $ProbeScreeningRunPath -Scope focus `
       -ExpectedWorkpointRun $workpointRun -ExpectedSourceReceipt $sourceReceipt `
@@ -1145,12 +1533,12 @@ try{
           -Variation $rootVariation
       }else{
         Invoke-Te1WorkpointReclosure -Attempt $reclosureCount `
-          -SeedManifest $qualifiedCenterSeedManifest -Variation $rootVariation `
+          -SeedManifest $(if($staticFieldMode){[string]$focused.result.cohort_run_manifest}else{$qualifiedCenterSeedManifest}) -Variation $rootVariation `
           -CurrentContractPath $focusContractPath -RuntimeCheckpoint $activeNativeRuntimeCheckpoint
       }
       $workpointRun=$reclosed.run;$workpointManifest=$reclosed.manifest;$handoff=$reclosed.handoff
-      $activeNativeRuntimeCheckpoint=Get-ManifestOutputPath -ManifestPath $workpointManifest `
-        -FileName 'native_corridor_runtime_checkpoint.json'
+      $activeNativeRuntimeCheckpoint=if($staticFieldMode){''}else{Get-ManifestOutputPath -ManifestPath $workpointManifest `
+        -FileName 'native_corridor_runtime_checkpoint.json'}
       $focusContractPath=Join-Path $workpointRun 'inputs\contract.json'
       $focusContract=Get-Content -LiteralPath $focusContractPath -Raw|ConvertFrom-Json -AsHashtable
       $qualifiedCenterSeedManifest=Get-QualifiedCenterSeedManifest -WorkpointRun $workpointRun -Handoff $handoff
@@ -1215,10 +1603,9 @@ try{
         $bestFocusContract=$focusContract;$bestQualifiedCenterSeedManifest=$qualifiedCenterSeedManifest
       }
       if($focusConverged){break}
-      $remeasureCoordinate=$rootCoordinate+$probeStepCoordinate
       $remeasureVariation=Join-Path $package.result_dir ('te1_reclosed_response_variation_{0:D2}.json'-f$reclosureCount)
       Invoke-ProjectPython -Arguments @(
-        '-m',$analysisModule,'--te1-reference',$te1Reference,'--te1-coordinate',[string]$remeasureCoordinate,
+        '-m',$analysisModule,'--te1-reference',$te1Reference,'--baseline-coordinate',[string]$rootCoordinate,
         '--mirror-period',$mirrorPeriod,'--mirror-correction',$mirrorCorrection,
         '--contract',$focusContractPath,'--output',$remeasureVariation
       )
@@ -1226,10 +1613,18 @@ try{
       if($remeasureVariationData.status-ne'screening_candidate_materialized'){
         throw 'Reclosed TE1 response variation is invalid.'
       }
+      $remeasureCoordinate=[double]$remeasureVariationData.coordinate
       $rootVariations+=,$remeasureVariation
-      $remeasured=Invoke-Screening -Stage ('te1-reclosed-response-{0:D2}'-f$reclosureCount) `
-        -WorkpointRun $workpointRun -SourceReceipt $sourceReceipt -Variation $remeasureVariation `
-        -ParticleCount 3 -FocusDiagnosticOnly
+      $remeasured=if($reclosureCount-eq1-and$ReclosedResponseScreeningRunPath){
+        Read-ScreeningEvidence -RunPath $ReclosedResponseScreeningRunPath -Scope focus `
+          -ExpectedWorkpointRun $workpointRun -ExpectedSourceReceipt $sourceReceipt `
+          -ExpectedNativeBankRun $NativeCorridorBankRunPath -ExpectedVariation $remeasureVariation `
+          -ExpectedSourceStatesSha256 ([string]$source.particle_states_sha256)
+      }else{
+        Invoke-Screening -Stage ('te1-reclosed-response-{0:D2}'-f$reclosureCount) `
+          -WorkpointRun $workpointRun -SourceReceipt $sourceReceipt -Variation $remeasureVariation `
+          -ParticleCount 3 -FocusDiagnosticOnly
+      }
       $remeasureDiagnostic=Invoke-Diagnostic -Stage ('te1-reclosed-response-{0:D2}'-f$reclosureCount) `
         -FlightManifest ([string]$remeasured.result.cohort_run_manifest)
       $remeasureCenterGate=Read-CenterWorkpointGate -ScreeningResult $remeasured.result -ContractDocument $focusContract
@@ -1241,11 +1636,11 @@ try{
         }
         $reclosureCount++
         $responseReclosed=Invoke-Te1WorkpointReclosure -Attempt $reclosureCount `
-          -SeedManifest $qualifiedCenterSeedManifest -Variation $remeasureVariation `
+          -SeedManifest $(if($staticFieldMode){[string]$remeasured.result.cohort_run_manifest}else{$qualifiedCenterSeedManifest}) -Variation $remeasureVariation `
           -CurrentContractPath $focusContractPath -RuntimeCheckpoint $activeNativeRuntimeCheckpoint
         $workpointRun=$responseReclosed.run;$workpointManifest=$responseReclosed.manifest;$handoff=$responseReclosed.handoff
-        $activeNativeRuntimeCheckpoint=Get-ManifestOutputPath -ManifestPath $workpointManifest `
-          -FileName 'native_corridor_runtime_checkpoint.json'
+        $activeNativeRuntimeCheckpoint=if($staticFieldMode){''}else{Get-ManifestOutputPath -ManifestPath $workpointManifest `
+          -FileName 'native_corridor_runtime_checkpoint.json'}
         $focusContractPath=Join-Path $workpointRun 'inputs\contract.json'
         $focusContract=Get-Content -LiteralPath $focusContractPath -Raw|ConvertFrom-Json -AsHashtable
         $qualifiedCenterSeedManifest=Get-QualifiedCenterSeedManifest -WorkpointRun $workpointRun -Handoff $handoff
@@ -1316,10 +1711,11 @@ try{
     Read-ScreeningEvidence -RunPath $FinalScreeningRunPath -Scope formal `
       -ExpectedWorkpointRun $workpointRun -ExpectedSourceReceipt $formalSourceReceipt `
       -ExpectedNativeBankRun $NativeCorridorBankRunPath -ExpectedVariation $rootVariation `
-      -ExpectedSourceStatesSha256 ([string]$formalSource.particle_states_sha256)
+      -ExpectedSourceStatesSha256 ([string]$formalSource.particle_states_sha256) `
+      -ExpectedFieldBindingPath $(if($staticFieldMode){$selectedEnvelope.field_binding}else{''})
   }else{
     Invoke-Screening -Stage 'te1-final' -WorkpointRun $workpointRun -SourceReceipt $formalSourceReceipt `
-      -Variation $rootVariation
+      -Variation $rootVariation -FieldBindingPath $(if($staticFieldMode){$selectedEnvelope.field_binding}else{''})
   }
   if([math]::Abs([double]$focused.te1_coordinate-$rootCoordinate)-gt1e-12){
     throw 'Final screening evidence belongs to a different TE1 coordinate.'

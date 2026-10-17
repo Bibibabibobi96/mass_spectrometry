@@ -57,6 +57,7 @@ class CheckpointFixture:
         }
         self.contract = {"downstream_fixed_grid_workpoint_profile": {
             "schema_version": 1,
+            "active_stripe_axes": ["stripe_1_voltage_v", "stripe_2_voltage_v"],
             "jacobian_relative_step_tiers": {
                 "coarse": 0.01,
                 "medium": 0.0025,

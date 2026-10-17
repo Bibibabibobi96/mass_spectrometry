@@ -81,6 +81,81 @@ class CompiledTwoZoneLayout:
 
 
 @dataclass(frozen=True)
+class ResolvedClosedTwoZoneElectrodes:
+    """Closed two-zone electrode geometry before solver-specific discretization."""
+
+    enclosure: ShieldedRectangularEnclosure
+    local_exit_z_mm: float
+    local_repeller_z_mm: float
+    repeller_thickness_mm: float
+    aperture_half_x_mm: float
+    aperture_half_y_mm: float
+    pa_y_offset_mm: float
+    grid_supports: tuple[Mapping[str, float | int], ...]
+    rings: tuple[Mapping[str, float | int], ...]
+    local_electrode_ids: Mapping[int, int]
+
+    def to_dict(self) -> dict[str, object]:
+        """Return local boxes, apertures and transparent sheets, all in mm."""
+        enclosure = self.enclosure
+        aperture_x, aperture_y = self.aperture_half_x_mm, self.aperture_half_y_mm
+
+        def box(x: float, y: float, z_min: float, z_max: float) -> dict[str, float]:
+            return {"x_min_mm": -x, "x_max_mm": x, "y_min_mm": -y,
+                    "y_max_mm": y, "z_min_mm": z_min, "z_max_mm": z_max}
+
+        grounded = {
+            "component_electrode_id": 15, "local_pa_electrode_id": self.local_electrode_ids[15],
+            "outer_box_mm": box(enclosure.guard_half_x_mm, enclosure.guard_half_y_mm,
+                                self.local_exit_z_mm, enclosure.rear_cap_outer_z_mm),
+            "cavity_box_mm": box(enclosure.guard_inner_half_x_mm, enclosure.guard_inner_half_y_mm,
+                                 self.local_exit_z_mm, enclosure.rear_cap_inner_z_mm),
+            "exit_opening_box_mm": box(aperture_x, aperture_y, self.local_exit_z_mm,
+                                       self.local_exit_z_mm + enclosure.guard_wall_mm),
+        }
+        repeller = {
+            "component_electrode_id": 22, "local_pa_electrode_id": self.local_electrode_ids[22],
+            "solid_box_mm": box(enclosure.electrode_half_x_mm, enclosure.electrode_half_y_mm,
+                                self.local_repeller_z_mm,
+                                self.local_repeller_z_mm + self.repeller_thickness_mm),
+        }
+        supports = []
+        for support in self.grid_supports:
+            component_id = int(support["id"])
+            z_min, z_max = float(support["front_z_mm"]), float(support["back_z_mm"])
+            ax, ay = float(support["aperture_half_x_mm"]), float(support["aperture_half_y_mm"])
+            supports.append({
+                "component_electrode_id": component_id,
+                "local_pa_electrode_id": self.local_electrode_ids[component_id],
+                "frame_outer_box_mm": box(float(support["outer_half_x_mm"]),
+                                          float(support["outer_half_y_mm"]), z_min, z_max),
+                "aperture_box_mm": box(ax, ay, z_min, z_max),
+                "ideal_sheet_mm": {"x_min_mm": -ax, "x_max_mm": ax,
+                                   "y_min_mm": -ay, "y_max_mm": ay,
+                                   "z_mm": float(support["grid_z_mm"])},
+                "transmission": "ideal_transparent",
+            })
+        rings = []
+        for ring in self.rings:
+            component_id = int(ring["id"])
+            center, thickness = float(ring["center_z_mm"]), float(ring["thickness_z_mm"])
+            rings.append({
+                "component_electrode_id": component_id,
+                "local_pa_electrode_id": self.local_electrode_ids[component_id],
+                "outer_box_mm": box(enclosure.electrode_half_x_mm,
+                                    enclosure.electrode_half_y_mm,
+                                    center - thickness / 2.0, center + thickness / 2.0),
+                "aperture_box_mm": box(aperture_x, aperture_y,
+                                      center - thickness / 2.0, center + thickness / 2.0),
+            })
+        return {"schema_version": 1,
+                "coordinate_frame": "accelerator_centered_transverse_local_z_mm",
+                "local_to_pa_translation_mm": [0.0, self.pa_y_offset_mm, 0.0],
+                "acceleration_direction": "-z", "grounded_enclosure": grounded,
+                "repeller": repeller, "grid_supports": supports, "rings": rings}
+
+
+@dataclass(frozen=True)
 class CompiledTwoZoneAccelerator:
     """Closed-end local PA and its provider-owned resolved geometry."""
 
@@ -93,6 +168,7 @@ class CompiledTwoZoneAccelerator:
     static_minimum_y_extent_mm: float
     static_axial_length_mm: float
     layout: CompiledTwoZoneLayout
+    resolved_electrodes: ResolvedClosedTwoZoneElectrodes
 
 
 _REQUIRED_REQUEST_KEYS = {
@@ -246,6 +322,17 @@ def compile_closed_two_zone_accelerator(requirements: Mapping[str, Any], *, geom
     )
     rings = tuple({"id": 26 + index, "center_z_mm": center, "thickness_z_mm": ring_thickness}
                   for index, center in enumerate(layout.centers_mm))
+    local_supports = tuple({**support,
+                            "grid_z_mm": float(support["grid_z_mm"]) + local_offset_z,
+                            "front_z_mm": float(support["front_z_mm"]) + local_offset_z,
+                            "back_z_mm": float(support["back_z_mm"]) + local_offset_z}
+                           for support in grid_supports)
+    local_rings = tuple({**ring, "center_z_mm": float(ring["center_z_mm"]) + local_offset_z}
+                        for ring in rings)
+    resolved_electrodes = ResolvedClosedTwoZoneElectrodes(
+        enclosure, exit_z, repeller_z, repeller_thickness, aperture_x, aperture_y,
+        span[1] / 2.0, local_supports, local_rings, local_ids,
+    )
     gem = render_closed_two_zone_local_pa(
         span_mm=span, mesh_mm_per_gu=mesh, local_exit_z_mm=exit_z, local_repeller_z_mm=repeller_z,
         focus_y_mm=focus_y, global_repeller_z_mm=global_repeller_z, enclosure=enclosure,
@@ -265,7 +352,7 @@ def compile_closed_two_zone_accelerator(requirements: Mapping[str, Any], *, geom
     )
     return CompiledTwoZoneAccelerator(
         gem, exit_z, repeller_z, radius, height, source_center_z,
-        static_y_extent, static_axial_length, resolved_layout,
+        static_y_extent, static_axial_length, resolved_layout, resolved_electrodes,
     )
 
 

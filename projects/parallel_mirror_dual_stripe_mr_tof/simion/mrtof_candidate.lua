@@ -6,7 +6,60 @@ sim_segment_global = 1
 local program_path = debug.getinfo(1, 'S').source:sub(2)
 local operating_point_path = assert(program_path:gsub('%.lua$', '.operating_point.lua'))
 local operating_point = assert(loadfile(operating_point_path), 'missing run-local operating-point sidecar: '..operating_point_path)()
+local accelerator_provider = operating_point.accelerator_provider or 'orthogonal_accelerator'
+assert(accelerator_provider == 'orthogonal_accelerator'
+    or accelerator_provider == 'dual_pressure_rectilinear_ion_processor', 'unknown accelerator provider')
+local measured_mode = accelerator_provider == 'dual_pressure_rectilinear_ion_processor'
 local static_field = operating_point.static_field
+local measured_source
+if measured_mode then
+  assert(operating_point.field_assembly_verified == true
+      and operating_point.measured_source_matches_workpoint == true,
+    'IP flight requires verified replacement fields and measured source matching')
+  assert(static_field and static_field.accelerator_provider == accelerator_provider
+      and static_field.assembly_scope == 'full_c0_ion_processor_replacement',
+    'measured IP source requires its full C0 replacement static field')
+  assert(operating_point.runtime_fast_adjust_enable == false,
+    'measured IP source forbids runtime Fast Adjust')
+  assert(type(operating_point.measured_source_directory) == 'string'
+      and #operating_point.measured_source_directory > 0, 'measured source directory required')
+  measured_source = assert(loadfile(program_path:gsub('%.lua$', '.source_runtime.lua')))().load(
+    operating_point.measured_source_directory)
+end
+-- Official SIMION initialize/time globals; source projection owns the single
+-- epoch mapping (https://simion.com/info/time.html, reviewed 2026-10-16).
+local function instrument_time_us()
+  if measured_source then return measured_source.instrument_time_us(ion_time_of_flight) end
+  return ion_time_of_flight
+end
+local function event_id()
+  if measured_source then return measured_source.source_id(ion_number) end
+  return ion_number
+end
+-- Official SIMION initialize/other_actions/terminate callbacks expose actual
+-- solver states. Observation only: no time-step or particle-state assignment.
+-- https://simion.com/info/trajectory_programming.html (SIMION 8.1+, 2026-10-16).
+local trajectory_sample_buckets = {}
+local function record_trajectory_sample(phase, explicit_time_us)
+  if operating_point.trajectory_recording_enabled ~= true then return end
+  local sample_time_us = explicit_time_us or instrument_time_us()
+  local mode = operating_point.trajectory_recording_mode or 'every_step'
+  assert(mode == 'every_step' or mode == 'fixed_interval', 'unknown trajectory recording mode')
+  if mode == 'fixed_interval' then
+    local interval = operating_point.trajectory_recording_interval_us
+    assert(type(interval) == 'number' and interval > 0 and interval < math.huge,
+      'fixed_interval trajectory recording requires a positive finite interval')
+    -- Select actual callbacks after absolute-clock bucket crossings. Never
+    -- interpolate a state, force an integration step, or suppress MR events.
+    local bucket = math.floor(sample_time_us / interval)
+    if phase == 'step' and trajectory_sample_buckets[ion_number] ~= nil
+        and bucket <= trajectory_sample_buckets[ion_number] then return end
+    trajectory_sample_buckets[ion_number] = bucket
+  end
+  print(string.format('MRTOF_TRAJECTORY ion=%d phase=%s t_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_us=%.17g vy_mm_us=%.17g vz_mm_us=%.17g',
+    event_id(), phase, sample_time_us, ion_px_mm, ion_py_mm, ion_pz_mm,
+    ion_vx_mm, ion_vy_mm, ion_vz_mm))
+end
 local static_field_adjust
 if static_field then
   static_field_adjust = assert(loadfile(program_path:gsub('%.lua$', '.scalar_field_adapter.lua')))()(static_field)
@@ -17,11 +70,17 @@ assert(type(native_corridor_roles) == 'table'
     and native_corridor_roles.role == 'mrtof_native_corridor_iob_priority_contract'
     and native_corridor_roles.schema_version == 1,
   'native-corridor priority sidecar has the wrong role or schema')
+local role_count = 4
 assert(type(native_corridor_roles.instances) == 'table'
-    and #native_corridor_roles.instances == 4,
-  'native-corridor priority sidecar requires exactly four instances')
+    and #native_corridor_roles.instances == role_count,
+  'native-corridor priority sidecar has wrong instance count')
+if measured_mode then
+  assert(native_corridor_roles.accelerator_provider == accelerator_provider,
+    'priority sidecar must identify the IP replacement assembly')
+end
 local native_corridor_instances = {}
-local expected_roles = {'global_fallback', 'native_corridor', 'accelerator', 'detector'}
+local expected_roles = measured_mode and {'global_fallback', 'native_corridor', 'ion_processor_collision', 'detector'}
+  or {'global_fallback', 'native_corridor', 'accelerator', 'detector'}
 for index, expected_role in ipairs(expected_roles) do
   local definition = native_corridor_roles.instances[index]
   assert(type(definition) == 'table'
@@ -31,16 +90,21 @@ for index, expected_role in ipairs(expected_roles) do
   native_corridor_instances[expected_role] = index
 end
 local native_corridor_voltage_groups = native_corridor_roles.corridor_voltage_groups
-assert(type(native_corridor_voltage_groups) == 'table'
-    and #native_corridor_voltage_groups == 8,
-  'native-corridor priority sidecar requires exactly eight voltage groups')
-for local_id, physical_ids in ipairs(native_corridor_voltage_groups) do
-  assert(type(physical_ids) == 'table' and #physical_ids > 0,
-    'native-corridor voltage group is empty for local ID '..local_id)
+if not measured_mode then
+  assert(type(native_corridor_voltage_groups) == 'table'
+      and #native_corridor_voltage_groups == 8,
+    'native-corridor priority sidecar requires exactly eight voltage groups')
+  for local_id, physical_ids in ipairs(native_corridor_voltage_groups) do
+    assert(type(physical_ids) == 'table' and #physical_ids > 0,
+      'native-corridor voltage group is empty for local ID '..local_id)
+  end
 end
 local applied_native_corridor_values, applied_accelerator_values
 local voltage_map_path = program_path:gsub('%.lua$', '.voltage_map.lua')
-local voltage_map = assert(loadfile(voltage_map_path), 'missing run-local voltage mapper: '..voltage_map_path)()
+local voltage_map
+if not measured_mode then
+  voltage_map = assert(loadfile(voltage_map_path), 'missing run-local voltage mapper: '..voltage_map_path)()
+end
 local cycle_counter_path = program_path:gsub('%.lua$', '.mirror_cycle_counter.lua')
 local mirror_cycle_counter = assert(loadfile(cycle_counter_path), 'missing run-local mirror-cycle counter: '..cycle_counter_path)()
 local mirror_voltages = assert(operating_point.mirror_voltages_v, 'operating point has no mirror-voltage table')
@@ -63,14 +127,18 @@ local target_half_oscillation_count = assert(operating_point.target_half_oscilla
   'operating point has no target half-oscillation count')
 local stripe_biases = assert(operating_point.stripe_biases_v, 'operating point has no Stripe-bias table')
 local prism_voltages = assert(operating_point.prism_voltages_v, 'operating point has no prism-voltage table')
-local accelerator_voltages = assert(operating_point.accelerator_voltages_v, 'operating point has no accelerator-voltage table')
-local accelerator_ring_voltages = assert(operating_point.accelerator_ring_voltages_v, 'operating point has no accelerator-ring voltage table')
+local accelerator_voltages = operating_point.accelerator_voltages_v
+local accelerator_ring_voltages = operating_point.accelerator_ring_voltages_v
 assert(#detector_box == 6 and detector_box[1] < detector_box[4]
   and detector_box[2] < detector_box[5] and detector_box[3] < detector_box[6],
   'numerical detector box must be positive')
 assert(type(first_prism_l0.target_plane_z_mm) == 'number', 'P1 interface needs a z plane')
-assert(#stripe_biases == 2 and #prism_voltages == 2 and #accelerator_voltages == 3 and #accelerator_ring_voltages > 0,
-  'operating point requires two Stripe, two prism, three endpoint, and nonempty stage-2 ring voltages')
+assert(#stripe_biases == 2 and #prism_voltages == 2, 'two Stripe and prism voltages required')
+if not measured_mode then
+  assert(type(accelerator_voltages) == 'table' and #accelerator_voltages == 3
+      and type(accelerator_ring_voltages) == 'table' and #accelerator_ring_voltages > 0,
+    'OA requires three endpoint and nonempty stage-2 ring voltages')
+end
 for index,value in ipairs(prism_voltages) do
   assert(type(value)=='number' and value==value and math.abs(value)<math.huge,
     'prism voltage '..index..' must be finite')
@@ -93,9 +161,9 @@ adjustable V_mirror_B = mirror_voltages[2]
 adjustable V_mirror_C = mirror_voltages[3]
 adjustable V_mirror_D = mirror_voltages[4]
 adjustable V_mirror_E = mirror_voltages[5]
-adjustable V_repeller = accelerator_voltages[1]
-adjustable V_grid1 = accelerator_voltages[2]
-adjustable V_grid2 = accelerator_voltages[3]
+adjustable V_repeller = accelerator_voltages and accelerator_voltages[1] or 0
+adjustable V_grid1 = accelerator_voltages and accelerator_voltages[2] or 0
+adjustable V_grid2 = accelerator_voltages and accelerator_voltages[3] or 0
 adjustable V_nonaccelerator_scale = operating_point.nonaccelerator_scale
 adjustable trajectory_quality = operating_point.trajectory_quality
 adjustable maximum_step_us = operating_point.maximum_step_us
@@ -109,6 +177,11 @@ assert(accelerator_field_gate_requested == nil
 local accelerator_pulse_mode = operating_point.accelerator_pulse_mode or 'static'
 local accelerator_safe_exit_only = operating_point.accelerator_safe_exit_only or false
 local accelerator_exit_plane_z = operating_point.accelerator_exit_plane_project_z_mm
+if measured_mode then
+  assert(accelerator_pulse_mode == 'static' and not accelerator_safe_exit_only
+      and not accelerator_field_gate_requested and accelerator_exit_plane_z == nil,
+    'measured IP handoff forbids OA launch and safe-exit controls')
+end
 assert(type(accelerator_safe_exit_only) == 'boolean',
   'accelerator_safe_exit_only must be boolean')
 assert(accelerator_pulse_mode == 'static'
@@ -171,6 +244,7 @@ local accelerator_safe_exit_observed = {}
 local accelerator_geometric_exit_observed = {}
 local p2_low_field_reference_emitted = {}
 local detector_native_contacts = {}
+local solver_birth_times = {}
 
 local function role_instance(role)
   return assert(native_corridor_instances[role],
@@ -178,6 +252,7 @@ local function role_instance(role)
 end
 
 local function accelerator_instance_number()
+  if measured_mode then return nil end
   return role_instance('accelerator')
 end
 
@@ -262,19 +337,19 @@ local function emit_cycle_events(events)
         and prism_stage[ion_number] == 'p1_complete' then
         prism_stage[ion_number] = 'awaiting_p2_entry'
         print(string.format('MRTOF_EVENT pre_injection_mirror_turn ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+          event_id(), event.t_us, event.x_mm, event.y_mm, event.z_mm,
           event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
       end
       if event.accepted then
         local n = event.is_pre_origin_turn and 0 or event.half_cycles
         print(string.format('MRTOF_EVENT turn ion=%d n=%d t_us=%.12g z_mm=%.12g',
-          ion_number, n, event.t_us, event.z_mm))
+          event_id(), n, event.t_us, event.z_mm))
         print(string.format('MRTOF_EVENT fast_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, n, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+          event_id(), n, event.t_us, event.x_mm, event.y_mm, event.z_mm,
           event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
         if event.is_pre_origin_turn then
           print(string.format('MRTOF_EVENT pre_origin_positive_mirror_turn ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-            ion_number, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+            event_id(), event.t_us, event.x_mm, event.y_mm, event.z_mm,
             event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
         end
       elseif event.stage == 'after_main_drift' then
@@ -286,7 +361,7 @@ local function emit_cycle_events(events)
           -- would put the detector behind its reviewed physical plane.
           prism_stage[ion_number] = 'awaiting_static_detector'
           print(string.format('MRTOF_EVENT return_positive_mirror_turn ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, event.t_us,
+          event_id(), event.t_us,
           event.x_mm, event.y_mm, event.z_mm,
           event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
         else
@@ -301,39 +376,39 @@ local function emit_cycle_events(events)
         -- analyser reflection; the mirror-only reversal invariant begins at
         -- the first safe accelerator exit.
         print(string.format('MRTOF_EVENT accelerator_launch_vz_zero ion=%d direction_before=%d direction_after=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, event.direction_before, event.direction_after,
+          event_id(), event.direction_before, event.direction_after,
           event.t_us, event.x_mm, event.y_mm, event.z_mm,
           event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
       else
         return_sequence_error[ion_number] = 'nonmirror_vz_reversal'
         print(string.format('MRTOF_EVENT nonmirror_reversal ion=%d direction_before=%d direction_after=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, event.direction_before, event.direction_after,
+          event_id(), event.direction_before, event.direction_after,
           event.t_us, event.x_mm, event.y_mm, event.z_mm,
           event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
       end
     elseif event.kind == 'drift_phase_origin' then
       print(string.format('MRTOF_EVENT drift_phase_origin ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        ion_number, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+        event_id(), event.t_us, event.x_mm, event.y_mm, event.z_mm,
         event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
     elseif event.kind == 'drift_phase_candidate' then
       print(string.format('MRTOF_EVENT drift_phase_candidate ion=%d k=%.12g half_cycles=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        ion_number, event.period_ratio, event.half_cycles,
+        event_id(), event.period_ratio, event.half_cycles,
         event.t_us, event.x_mm, event.y_mm, event.z_mm,
         event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
       if event.half_cycles == target_half_oscillation_count then
         print(string.format('MRTOF_EVENT target_k_phase_sample ion=%d k=%.12g half_cycles=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, event.period_ratio, event.half_cycles, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+          event_id(), event.period_ratio, event.half_cycles, event.t_us, event.x_mm, event.y_mm, event.z_mm,
           event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
       end
     elseif event.kind == 'drift_phase_return' then
       print(string.format('MRTOF_EVENT drift_phase_return ion=%d k=%.12g half_cycles=%d slow_coordinate_residual_mm=%.12g t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        ion_number, event.period_ratio, event.half_cycles, event.slow_coordinate_residual_mm,
+        event_id(), event.period_ratio, event.half_cycles, event.slow_coordinate_residual_mm,
         event.t_us, event.x_mm, event.y_mm, event.z_mm,
         event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
       if event.half_cycles == target_half_oscillation_count and not target_k_emitted[ion_number] then
         target_k_emitted[ion_number] = true
         print(string.format('MRTOF_EVENT target_k ion=%d k=%.12g half_cycles=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-          ion_number, event.period_ratio, event.half_cycles,
+          event_id(), event.period_ratio, event.half_cycles,
           event.t_us, event.x_mm, event.y_mm, event.z_mm))
         if prism_stage[ion_number] == 'p2_complete' then
           prism_stage[ion_number] = 'awaiting_return_p2_entry'
@@ -344,7 +419,7 @@ local function emit_cycle_events(events)
     elseif event.kind == 'slow_coordinate' then
       y0_crossings[ion_number] = (y0_crossings[ion_number] or 0) + 1
       print(string.format('MRTOF_EVENT slow_coordinate_y0 ion=%d n=%d direction_y=%d t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        ion_number, y0_crossings[ion_number], event.direction,
+        event_id(), y0_crossings[ion_number], event.direction,
         event.t_us, event.x_mm, event.z_mm,
         event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
     elseif event.kind == 'drift_coordinate_return' then
@@ -355,15 +430,15 @@ local function emit_cycle_events(events)
           event.phase_time_residual_us, event.phase_period_us)
       end
       print(string.format('MRTOF_EVENT drift_coordinate_return ion=%d k_before=%.12g fractional_k=%.12g%s t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        ion_number, event.k_before, event.fractional_k, phase_fields,
+        event_id(), event.k_before, event.fractional_k, phase_fields,
         event.t_us, event.x_mm, event.z_mm, event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
     elseif event.kind == 'central_plane' and event.stage == 'main_drift' then
       crossings[ion_number] = (crossings[ion_number] or 0) + 1
       local n = crossings[ion_number]
       print(string.format('MRTOF_EVENT central_plane ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g',
-        ion_number, n, event.t_us, event.x_mm, event.y_mm))
+        event_id(), n, event.t_us, event.x_mm, event.y_mm))
       print(string.format('MRTOF_EVENT central_plane_directional ion=%d n=%d direction_z=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        ion_number, n, event.direction, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+        event_id(), n, event.direction, event.t_us, event.x_mm, event.y_mm, event.z_mm,
         event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
     end
   end
@@ -375,6 +450,8 @@ local function emit_cycle_events(events)
 end
 
 function segment.initialize_run()
+  trajectory_sample_buckets = {}
+  solver_birth_times = {}
   detector_native_contacts = {}
   applied_native_corridor_values, applied_accelerator_values = nil, nil
   sim_trajectory_quality = trajectory_quality
@@ -388,7 +465,7 @@ function segment.initialize_run()
   accelerator_safe_exit_observed = {}
   accelerator_geometric_exit_observed = {}
   assert(simion.wb and #simion.wb.instances == maximum_instance_number(),
-    'native-corridor flight requires exactly four role-bound instances')
+    'native-corridor flight has wrong role-bound instance count')
   -- Roles are the explicit priority-contract slots verified when the IOB is
   -- built.  Published PA basenames are provenance details, not role identity;
   -- direct read-only reuse must not require old per-trial projection names.
@@ -406,13 +483,29 @@ function segment.initialize_run()
   -- here, immediately before the run, without saving either PA.
   segment.fast_adjust()
   if static_field then
-    print('MRTOF_CANDIDATE: status=prototype geometry=four_collision_instances field='..(static_field.mode or 'comsol_static_scalar_v')..' fast_adjust=false gui_field_queries_equivalent=false')
+    print('MRTOF_CANDIDATE: status=prototype geometry='..tostring(role_count)..'_collision_instances field='..(static_field.mode or 'comsol_static_scalar_v')..' fast_adjust=false gui_field_queries_equivalent=false')
   else
     print('MRTOF_CANDIDATE: status=prototype geometry=native_corridor_4_instance corridor_fast_adjust=8_channel accelerator_fast_adjust=profile_sized')
   end
 end
 
 function segment.fast_adjust()
+  if measured_mode then
+    assert(runtime_fast_adjust_enable == 0, 'measured IP field cannot be Fast Adjusted')
+    local frozen = assert(static_field.analyzer_voltages_v)
+    assert(#frozen == 20, 'IP replacement needs twenty analyzer voltage slots')
+    local function same(index, value)
+      assert(type(frozen[index]) == 'number' and math.abs(frozen[index]-value) <= 1e-9,
+        'static IP field does not match analyzer voltage '..index)
+    end
+    local mirrors = {0,V_mirror_B,V_mirror_C,V_mirror_D,V_mirror_E}
+    for i=1,5 do same(i,mirrors[i]*V_nonaccelerator_scale); same(i+5,mirrors[i]*V_nonaccelerator_scale) end
+    same(11,V_stripe_1*V_nonaccelerator_scale); same(12,V_stripe_1*V_nonaccelerator_scale)
+    same(13,V_stripe_2*V_nonaccelerator_scale); same(14,V_stripe_2*V_nonaccelerator_scale)
+    same(16,V_prism_1); same(17,V_prism_2)
+    for _,i in ipairs({15,18,19,20}) do same(i,0) end
+    return
+  end
   local current_mirror_voltages = {0,V_mirror_B,V_mirror_C,V_mirror_D,V_mirror_E}
   local values=voltage_map(current_mirror_voltages,{V_stripe_1,V_stripe_2},{V_prism_1,V_prism_2},
     {V_repeller,V_grid1,V_grid2},accelerator_ring_voltages,V_nonaccelerator_scale)
@@ -466,7 +559,7 @@ function segment.efield_adjust()
   if accelerator_pulse_mode == 'initial_exit_triggered_single_center' then
     field_active = not accelerator_pulse_complete[ion_number]
   elseif accelerator_pulse_mode == 'fixed_global_time' then
-    field_active = (tonumber(ion_time_of_flight) or 0) < accelerator_pulse_off_time_us
+    field_active = (tonumber(instrument_time_us()) or 0) < accelerator_pulse_off_time_us
   end
   if not field_active then
     -- The instance remains present as the exact electrode/collision geometry;
@@ -476,7 +569,7 @@ function segment.efield_adjust()
 end
 
 function segment.instance_adjust()
-  if static_field and ion_instance == accelerator_instance_number()
+  if not measured_mode and static_field and ion_instance == accelerator_instance_number()
       and ion_pz_mm < static_field.accelerator_front_z_mm then
     ion_instance = 0 -- Leave only the frozen OA numerical front padding.
   end
@@ -485,33 +578,50 @@ end
 function segment.tstep_adjust()
   ion_time_step = math.min(ion_time_step, maximum_step_us)
   if accelerator_pulse_mode == 'fixed_global_time'
-      and ion_time_of_flight < accelerator_pulse_off_time_us then
-    local remaining_us = accelerator_pulse_off_time_us - ion_time_of_flight
+      and instrument_time_us() < accelerator_pulse_off_time_us then
+    local remaining_us = accelerator_pulse_off_time_us - instrument_time_us()
     if remaining_us > 0 then ion_time_step = math.min(ion_time_step, remaining_us) end
   end
 end
 
 function segment.initialize()
+  local birth_time_us = instrument_time_us()
+  if measured_source then
+    -- Reserved variables belong to this workbench environment, not the pure
+    -- loadfile module: https://simion.com/info/lua_scope.html (2026-10-16).
+    local source_state = measured_source.initialize(ion_number)
+    ion_mass, ion_charge = source_state.mass, source_state.charge
+    ion_time_of_birth = source_state.t
+    ion_px_mm, ion_py_mm, ion_pz_mm = source_state.x, source_state.y, source_state.z
+    ion_vx_mm, ion_vy_mm, ion_vz_mm = source_state.vx, source_state.vy, source_state.vz
+    -- SIMION 2020 can expose TOF=0 in initialize before applying FLY2 TOB.
+    -- The frozen source owns this observation epoch; never assign engine TOF.
+    solver_birth_times[ion_number] = source_state.t
+    birth_time_us = measured_source.instrument_time_us(source_state.t)
+  end
   -- Retain the release state so a first-step plane crossing is not omitted.
   if previous_z[ion_number] == nil then
+    record_trajectory_sample('birth', birth_time_us)
     previous_x[ion_number], previous_y[ion_number], previous_z[ion_number] = ion_px_mm, ion_py_mm, ion_pz_mm
-    previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight
+    previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, birth_time_us
     cycle_counters[ion_number] = mirror_cycle_counter.new(
       mirror_regions, phase_origin_mirror_side, return_mirror_side,
       target_half_oscillation_count)
     prism_stage[ion_number] = 'awaiting_p1_exit'
+    if measured_mode then accelerator_safe_exit_observed[ion_number] = true end
     emit_cycle_events(cycle_counters[ion_number]:sample(cycle_sample(
-      ion_px_mm, ion_py_mm, ion_pz_mm, ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight)))
+      ion_px_mm, ion_py_mm, ion_pz_mm, ion_vx_mm, ion_vy_mm, ion_vz_mm, birth_time_us)))
   end
 end
 
 function segment.other_actions()
+  record_trajectory_sample('step')
   if accelerator_pulse_mode == 'fixed_global_time'
       and not accelerator_pulse_complete[ion_number]
-      and ion_time_of_flight >= accelerator_pulse_off_time_us then
+      and instrument_time_us() >= accelerator_pulse_off_time_us then
     accelerator_pulse_complete[ion_number] = true
     print(string.format('MRTOF_EVENT accelerator_global_pulse_applied ion=%d t_us=%.12g scheduled_t_us=%.12g instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g trigger=fixed_global_time',
-      ion_number, ion_time_of_flight, accelerator_pulse_off_time_us, ion_instance,
+      event_id(), instrument_time_us(), accelerator_pulse_off_time_us, ion_instance,
       ion_px_mm, ion_py_mm, ion_pz_mm))
   end
   local accelerator_instance = accelerator_instance_number()
@@ -524,13 +634,13 @@ function segment.other_actions()
           and ion_instance ~= accelerator_instance then
         accelerator_safe_exit_observed[ion_number] = true
         print(string.format('MRTOF_EVENT accelerator_safe_exit ion=%d t_us=%.12g from_instance=%d to_instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, ion_time_of_flight, selected_instances[ion_number], ion_instance,
+          event_id(), instrument_time_us(), selected_instances[ion_number], ion_instance,
           ion_px_mm, ion_py_mm, ion_pz_mm, ion_vx_mm, ion_vy_mm, ion_vz_mm))
         if accelerator_safe_exit_only then
           splat_codes[ion_number] = 1
           splat_event_emitted[ion_number] = true
           print(string.format('MRTOF_EVENT splat ion=%d code=1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=0 central_crossings=0',
-            ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm))
+            event_id(), instrument_time_us(), ion_px_mm, ion_py_mm, ion_pz_mm))
           selected_instances[ion_number] = ion_instance
           ion_splat = 1
           return
@@ -541,7 +651,7 @@ function segment.other_actions()
           and ion_instance == accelerator_instance then
         return_sequence_error[ion_number] = 'accelerator_reentry_after_safe_exit'
         print(string.format('MRTOF_EVENT accelerator_reentry ion=%d t_us=%.12g instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, ion_time_of_flight, ion_instance, ion_px_mm, ion_py_mm, ion_pz_mm,
+          event_id(), instrument_time_us(), ion_instance, ion_px_mm, ion_py_mm, ion_pz_mm,
           ion_vx_mm, ion_vy_mm, ion_vz_mm))
       end
       if accelerator_pulse_mode == 'initial_exit_triggered_single_center'
@@ -550,17 +660,20 @@ function segment.other_actions()
           and ion_instance ~= accelerator_instance then
         accelerator_pulse_complete[ion_number] = true
         print(string.format('MRTOF_EVENT accelerator_pulse_off ion=%d t_us=%.12g from_instance=%d to_instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-          ion_number, ion_time_of_flight, selected_instances[ion_number], ion_instance,
+          event_id(), instrument_time_us(), selected_instances[ion_number], ion_instance,
           ion_px_mm, ion_py_mm, ion_pz_mm))
       end
       print(string.format('MRTOF_EVENT instance_transition ion=%d t_us=%.12g instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-        ion_number, ion_time_of_flight, ion_instance, ion_px_mm, ion_py_mm, ion_pz_mm))
+        event_id(), instrument_time_us(), ion_instance, ion_px_mm, ion_py_mm, ion_pz_mm))
       selected_instances[ion_number] = ion_instance
   end
-  if ion_time_of_flight >= full_path_timeout_us and ion_splat == 0 then
+  -- Timeout is elapsed downstream flight, independent of instrument epoch
+  -- and differing measured handoff times within the packet.
+  local elapsed_us = ion_time_of_flight - (solver_birth_times[ion_number] or 0)
+  if elapsed_us >= full_path_timeout_us and ion_splat == 0 then
     splat_codes[ion_number] = 2
     print(string.format('MRTOF_EVENT splat ion=%d code=2 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
-      ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
+      event_id(), instrument_time_us(), ion_px_mm, ion_py_mm, ion_pz_mm,
       turns[ion_number] or 0, crossings[ion_number] or 0))
     splat_event_emitted[ion_number] = true
     ion_splat = 2
@@ -586,12 +699,12 @@ function segment.other_actions()
       local exit = interpolated_sample(
         cycle_sample(px, py, pz, pvx, pvy, pvz, pt),
         cycle_sample(ion_px_mm, ion_py_mm, ion_pz_mm,
-          ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight),
+          ion_vx_mm, ion_vy_mm, ion_vz_mm, instrument_time_us()),
         (accelerator_exit_plane_z-pz)/dz)
       if exit.vz_mm_us < 0 then
         accelerator_geometric_exit_observed[ion_number] = true
         print(string.format('MRTOF_EVENT accelerator_geometric_exit ion=%d localization=linear_bracket t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, exit.t_us, exit.x_mm, exit.y_mm, accelerator_exit_plane_z,
+          event_id(), exit.t_us, exit.x_mm, exit.y_mm, accelerator_exit_plane_z,
           exit.vx_mm_us, exit.vy_mm_us, exit.vz_mm_us))
       end
     end
@@ -603,15 +716,15 @@ function segment.other_actions()
         local p1_crossing = cycle_sample(
           px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), first_prism_l0.target_plane_z_mm,
           pvx + fraction*(ion_vx_mm-pvx), pvy + fraction*(ion_vy_mm-pvy), vz,
-          pt + fraction*(ion_time_of_flight-pt))
+          pt + fraction*(instrument_time_us()-pt))
         print(string.format('MRTOF_EVENT p1_plane ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, p1_crossings[ion_number], p1_crossing.t_us,
+          event_id(), p1_crossings[ion_number], p1_crossing.t_us,
           p1_crossing.x_mm, p1_crossing.y_mm, p1_crossing.z_mm,
           p1_crossing.vx_mm_us, p1_crossing.vy_mm_us, p1_crossing.vz_mm_us))
         if state.stage == 'before_main_drift' and prism_stage[ion_number] == 'awaiting_p1_exit' then
           prism_stage[ion_number] = 'p1_complete'
           print(string.format('MRTOF_EVENT prism_pass ion=%d n=1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-            ion_number, p1_crossing.t_us, p1_crossing.x_mm, p1_crossing.y_mm, p1_crossing.z_mm,
+            event_id(), p1_crossing.t_us, p1_crossing.x_mm, p1_crossing.y_mm, p1_crossing.z_mm,
             p1_crossing.vx_mm_us, p1_crossing.vy_mm_us, p1_crossing.vz_mm_us))
         end
       end
@@ -622,7 +735,7 @@ function segment.other_actions()
     -- that finite CAD envelope provides a solver-observable passage event.
     local before = cycle_sample(px, py, pz, pvx, pvy, pvz, pt)
     local after = cycle_sample(ion_px_mm, ion_py_mm, ion_pz_mm,
-      ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight)
+      ion_vx_mm, ion_vy_mm, ion_vz_mm, instrument_time_us())
     if dz > 0 and prism_stage[ion_number] == 'awaiting_p2_entry'
       and pz < prism_regions.p2.z_min_mm and ion_pz_mm >= prism_regions.p2.z_min_mm then
       local entry = interpolated_sample(before, after,
@@ -630,7 +743,7 @@ function segment.other_actions()
       if inside_region(entry, prism_regions.p2) then
         prism_stage[ion_number] = 'inside_p2_station'
         print(string.format('MRTOF_EVENT prism_entry ion=%d n=2 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, entry.t_us, entry.x_mm, entry.y_mm, entry.z_mm,
+          event_id(), entry.t_us, entry.x_mm, entry.y_mm, entry.z_mm,
           entry.vx_mm_us, entry.vy_mm_us, entry.vz_mm_us))
       end
     end
@@ -641,7 +754,7 @@ function segment.other_actions()
       if inside_region(exit, prism_regions.p2) then
         prism_stage[ion_number] = 'p2_complete'
         print(string.format('MRTOF_EVENT prism_pass ion=%d n=2 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, exit.t_us, exit.x_mm, exit.y_mm, exit.z_mm,
+          event_id(), exit.t_us, exit.x_mm, exit.y_mm, exit.z_mm,
           exit.vx_mm_us, exit.vy_mm_us, exit.vz_mm_us))
         state = emit_cycle_events(counter:arm_main_drift(exit))
       end
@@ -661,7 +774,7 @@ function segment.other_actions()
       local direction_ok = reference.vy_mm_us > 0 and reference.vz_mm_us > 0
       p2_low_field_reference_emitted[ion_number] = true
       print(string.format('MRTOF_EVENT p2_low_field_crossing ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g inside_aperture=%d direction_ok=%d fraction=%.17g before_t_us=%.17g before_z_mm=%.17g before_vy_mm_us=%.17g before_vz_mm_us=%.17g after_t_us=%.17g after_z_mm=%.17g after_vy_mm_us=%.17g after_vz_mm_us=%.17g',
-        ion_number, reference.t_us, reference.x_mm, reference.y_mm,
+        event_id(), reference.t_us, reference.x_mm, reference.y_mm,
         reference.z_mm, reference.vx_mm_us, reference.vy_mm_us,
         reference.vz_mm_us, inside_aperture and 1 or 0,
         direction_ok and 1 or 0, (p2_low_field_reference.z_mm-pz)/dz,
@@ -669,7 +782,7 @@ function segment.other_actions()
         after.t_us, after.z_mm, after.vy_mm_us, after.vz_mm_us))
       if inside_aperture and direction_ok then
         print(string.format('MRTOF_EVENT p2_low_field_reference ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, reference.t_us, reference.x_mm, reference.y_mm,
+          event_id(), reference.t_us, reference.x_mm, reference.y_mm,
           reference.z_mm, reference.vx_mm_us, reference.vy_mm_us,
           reference.vz_mm_us))
       end
@@ -681,7 +794,7 @@ function segment.other_actions()
       if inside_region(entry, prism_regions.p2) then
         prism_stage[ion_number] = 'inside_return_p2'
         print(string.format('MRTOF_EVENT return_p2_entry ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, entry.t_us, entry.x_mm, entry.y_mm, entry.z_mm,
+          event_id(), entry.t_us, entry.x_mm, entry.y_mm, entry.z_mm,
           entry.vx_mm_us, entry.vy_mm_us, entry.vz_mm_us))
       end
     end
@@ -692,12 +805,12 @@ function segment.other_actions()
       if inside_region(exit, prism_regions.p2) then
         prism_stage[ion_number] = 'awaiting_return_positive_mirror'
         print(string.format('MRTOF_EVENT return_p2_pass ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, exit.t_us, exit.x_mm, exit.y_mm, exit.z_mm,
+          event_id(), exit.t_us, exit.x_mm, exit.y_mm, exit.z_mm,
           exit.vx_mm_us, exit.vy_mm_us, exit.vz_mm_us))
       end
     end
     state = emit_cycle_events(counter:sample(cycle_sample(
-      ion_px_mm, ion_py_mm, ion_pz_mm, ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight)))
+      ion_px_mm, ion_py_mm, ion_pz_mm, ion_vx_mm, ion_vy_mm, ion_vz_mm, instrument_time_us())))
     if (not state.sequence_valid or return_sequence_error[ion_number] ~= nil)
       and ion_splat == 0 then
       local rejection_reason = return_sequence_error[ion_number]
@@ -707,8 +820,8 @@ function segment.other_actions()
       -- ion_splat is SIMION's only programmatic stop mechanism.  Code 4 is a
       -- project topology rejection, not contact with an electrode.
       print(string.format('MRTOF_EVENT splat ion=%d code=4 termination_kind=programmatic_topology_rejection physical_collision=0 reason=%s t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
-        ion_number, rejection_reason,
-        ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
+        event_id(), rejection_reason,
+        instrument_time_us(), ion_px_mm, ion_py_mm, ion_pz_mm,
         turns[ion_number] or 0, crossings[ion_number] or 0))
       ion_splat = 4
       return
@@ -717,7 +830,7 @@ function segment.other_actions()
       local fraction = -pvy / (ion_vy_mm - pvy)
       slow_turns[ion_number] = (slow_turns[ion_number] or 0) + 1
       print(string.format('MRTOF_EVENT slow_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-        ion_number, slow_turns[ion_number], pt + fraction*(ion_time_of_flight-pt),
+        event_id(), slow_turns[ion_number], pt + fraction*(instrument_time_us()-pt),
         px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), pz + fraction*(ion_pz_mm-pz)))
     end
     local detector_contact = detector_contact_sample(before, after, ion_splat,
@@ -733,7 +846,7 @@ function segment.other_actions()
         local vy = pvy + fraction * (ion_vy_mm - pvy)
         local vz = pvz + fraction * (ion_vz_mm - pvz)
         local detector_direction = detector_contact and -1 or (dz < 0 and -1 or 1)
-        local detector_time = pt + fraction * (ion_time_of_flight - pt)
+        local detector_time = pt + fraction * (instrument_time_us() - pt)
         local localization = 'linear_bracket'
         local contact_evidence = ''
         if detector_contact then
@@ -743,11 +856,11 @@ function segment.other_actions()
           localization = 'detector_contact_projection'
           detector_native_contacts[ion_number] = true
           contact_evidence = string.format(' native_splat=-1 raw_t_us=%.17g raw_x_mm=%.17g raw_y_mm=%.17g raw_z_mm=%.17g projection_dt_us=%.17g step_span_us=%.17g',
-            ion_time_of_flight,ion_px_mm,ion_py_mm,ion_pz_mm,
-            detector_time-ion_time_of_flight,ion_time_of_flight-pt)
+            instrument_time_us(),ion_px_mm,ion_py_mm,ion_pz_mm,
+            detector_time-instrument_time_us(),instrument_time_us()-pt)
         end
         print(string.format('MRTOF_EVENT detector_plane ion=%d direction_z=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g localization=%s%s',
-          ion_number, detector_direction, detector_time, x, y,
+          event_id(), detector_direction, detector_time, x, y,
           detector_z, vx, vy, vz,localization,contact_evidence))
         if detector_direction == -1
           and prism_stage[ion_number] == 'awaiting_static_detector'
@@ -757,11 +870,11 @@ function segment.other_actions()
           detected[ion_number] = true
           prism_stage[ion_number] = 'static_detector_complete'
           print(string.format('MRTOF_EVENT detector ion=%d direction_z=-1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g localization=%s%s',
-            ion_number, detector_time, x, y, detector_z,localization,contact_evidence))
+            event_id(), detector_time, x, y, detector_z,localization,contact_evidence))
           splat_codes[ion_number] = 1
           splat_event_emitted[ion_number] = true
           print(string.format('MRTOF_EVENT splat ion=%d code=1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d localization=%s%s',
-            ion_number, detector_time, x, y, detector_z,
+            event_id(), detector_time, x, y, detector_z,
             turns[ion_number] or 0, crossings[ion_number] or 0,localization,contact_evidence))
           ion_splat = 1
         end
@@ -771,21 +884,22 @@ function segment.other_actions()
   if ion_splat ~= 0 and not splat_event_emitted[ion_number] then
     splat_event_emitted[ion_number] = true
     print(string.format('MRTOF_EVENT splat ion=%d code=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
-      ion_number, splat_codes[ion_number] or ion_splat, ion_time_of_flight,
+      event_id(), splat_codes[ion_number] or ion_splat, instrument_time_us(),
       ion_px_mm, ion_py_mm, ion_pz_mm,
       turns[ion_number] or 0, crossings[ion_number] or 0))
   end
   previous_x[ion_number], previous_y[ion_number], previous_z[ion_number] = ion_px_mm, ion_py_mm, ion_pz_mm
-  previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight
+  previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, instrument_time_us()
 end
 
 function segment.terminate()
+  record_trajectory_sample('terminal')
   local contact_evidence = detector_native_contacts[ion_number]
     and ' native_splat=-1 localization=detector_contact_projection' or ''
   print(string.format('MRTOF_EVENT terminal ion=%d splat=%d instance=%d volts=%.12g t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g turns=%d central_crossings=%d%s',
-    ion_number, splat_codes[ion_number] or 0,
+    event_id(), splat_codes[ion_number] or 0,
     ion_instance, ion_volts,
-    ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
+    instrument_time_us(), ion_px_mm, ion_py_mm, ion_pz_mm,
     ion_vx_mm, ion_vy_mm, ion_vz_mm,
     turns[ion_number] or 0, crossings[ion_number] or 0,contact_evidence))
 end

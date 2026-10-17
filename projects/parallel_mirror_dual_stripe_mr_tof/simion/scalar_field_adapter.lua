@@ -2,14 +2,51 @@
 simion.early_access(8.2)
 local function load_native_field(binding, reuse_workbench)
   local pa
+  local crop = binding.memory_consumer_crop
+  local size = crop and crop.consumer_dimensions or binding.dimensions
+  if crop then
+    assert(not reuse_workbench and (binding.name=='positive_integer_grid_a'
+      or binding.name=='negative_integer_grid_a'), 'memory consumer crop requires a non-WB mirror window')
+    local known={source_dimensions=true,consumer_dimensions=true,start_grid=true,width_grid=true}
+    local count=0
+    for key in pairs(crop) do assert(known[key], 'unknown memory consumer crop field');count=count+1 end
+    assert(count==4, 'complete memory consumer crop descriptor required')
+    for _,key in ipairs({'source_dimensions','consumer_dimensions','start_grid','width_grid'}) do
+      assert(type(crop[key])=='table' and #crop[key]==3, 'memory consumer crop triple required')
+    end
+    assert(binding.symmetry=='x' and binding.origin_mm[1]==0, 'memory crop requires the unchanged x mirror origin')
+    for a=1,3 do
+      local full,consumer=crop.source_dimensions[a],size[a]
+      assert(type(full)=='number' and full==math.floor(full) and full==binding.dimensions[a],
+        'memory crop source dimensions differ from frozen binding')
+      assert(type(consumer)=='number' and consumer==math.floor(consumer) and consumer>=5
+        and crop.start_grid[a]==0 and crop.width_grid[a]==consumer-1,
+        'memory crop requires origin-preserving integer support')
+      assert((a==1 and consumer<full) or (a~=1 and consumer==full), 'only mirror x support may be cropped')
+      local box=assert(binding.active_box_mm, 'memory crop requires the unchanged active box')[a]
+      local lower,upper=(box[1]-binding.origin_mm[a])/binding.pitch_mm[a],
+        (box[2]-binding.origin_mm[a])/binding.pitch_mm[a]
+      if a==1 then lower=0;upper=math.max(math.abs(box[1]),math.abs(box[2]))/binding.pitch_mm[a] end
+      assert((a==1 or math.floor(lower)-1>=0) and math.ceil(upper)+1<consumer,
+        'memory crop lacks complete active-box gradient halo')
+    end
+  end
   local function same_path(path)
     return type(path)=='string' and path:gsub('\\','/'):lower()==binding.scalar_pa:gsub('\\','/'):lower()
   end
-  local function matches(candidate)
+  local function matches_shape(candidate, dimensions)
     return candidate and same_path(candidate.path) and candidate.symmetry=='3dplanar[x]'
-      and candidate.nx==binding.dimensions[1] and candidate.ny==binding.dimensions[2]
-      and candidate.nz==binding.dimensions[3] and candidate.dx_mm==binding.pitch_mm[1]
+      and candidate.nx==dimensions[1] and candidate.ny==dimensions[2]
+      and candidate.nz==dimensions[3] and candidate.dx_mm==binding.pitch_mm[1]
       and candidate.dy_mm==binding.pitch_mm[2] and candidate.dz_mm==binding.pitch_mm[3]
+  end
+  local function matches(candidate)
+    return matches_shape(candidate,size) or (crop and matches_shape(candidate,crop.source_dimensions))
+  end
+  if crop and simion.wb and simion.wb.instances then
+    for index=1,#simion.wb.instances do
+      assert(not same_path(simion.wb.instances[index].pa.path), 'memory crop must not mutate a WB-owned PA')
+    end
   end
   if reuse_workbench and simion.wb and simion.wb.instances then
     -- Official existing-object access: https://simion.com/info/lua_simion.pas.html
@@ -37,7 +74,23 @@ local function load_native_field(binding, reuse_workbench)
   pa=pa or assert(simion.pas:open(binding.scalar_pa))
   print('MRTOF_NATIVE_PA_LOAD workbench_reused='..tostring(reused)
     ..' existing_pa_reused='..tostring(existing_reused)..' path='..binding.scalar_pa)
-  local pitch,size = binding.pitch_mm,binding.dimensions
+  local pitch = binding.pitch_mm
+  if crop then
+    local cropped=false
+    if matches_shape(pa,crop.source_dimensions) then
+      assert(pa.crop, 'official PA crop API required')
+      -- Official SIMION 8.1.1.22+ preserves fractional surfaces in pa:crop.
+      -- Keep origin, pitch, active routing and all retained node values. The
+      -- source file and independent WB collision PAs are never saved/modified.
+      -- https://simion.com/info/lua_simion.pas.html (reviewed 2026-10-16).
+      pa:crop(crop.start_grid[1],crop.start_grid[2],crop.start_grid[3],
+        crop.width_grid[1],crop.width_grid[2],crop.width_grid[3],false)
+      cropped=true
+    end
+    assert(matches_shape(pa,size), 'memory consumer crop dimensions/pitch/mirror differ')
+    print('MRTOF_NATIVE_PA_MEMORY_CROP name='..binding.name..' performed='..tostring(cropped)
+      ..' source_nx='..crop.source_dimensions[1]..' consumer_nx='..size[1]..' save=false refine=false')
+  end
   assert(binding.symmetry == 'x' and pa.symmetry == '3dplanar[x]', 'native PA requires actual x mirror')
   assert(pa.nx == size[1] and pa.ny == size[2] and pa.nz == size[3], 'native dimensions differ')
   assert(pa.dx_mm == pitch[1] and pa.dy_mm == pitch[2] and pa.dz_mm == pitch[3], 'native pitch differs')

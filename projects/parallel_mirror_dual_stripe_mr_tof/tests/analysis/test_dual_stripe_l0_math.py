@@ -4,6 +4,7 @@ import json
 import math
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import numpy as np
@@ -977,9 +978,19 @@ class DualStripeL0MathTest(unittest.TestCase):
             manifest_sha256="A" * 64,
             parent_mirror_manifest_sha256="B" * 64,
         )
-        result = _evaluate_exact_k_seed_consistency(
-            exact_k, materialized.stripe_biases_v,
-        )
+        # Keep the real B-spline factory active while checking that every
+        # consistency/Jacobian voltage trial inherits its endpoint derivatives.
+        with patch(
+            "projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed.stripes_from_contract",
+            wraps=stripes_from_contract,
+        ) as native_stripes:
+            result = _evaluate_exact_k_seed_consistency(
+                exact_k, materialized.stripe_biases_v,
+            )
+        self.assertGreater(native_stripes.call_count, 1)
+        for call in native_stripes.call_args_list:
+            self.assertIs(call.args[0], contract)
+            self.assertEqual(len(call.args[1]), 2)
         self.assertEqual(result["status"], "single_inverse_seed_point_evaluated__no_search")
         self.assertEqual(result["selected_energy_nodes_per_charge_v"][1], selected_energy)
         self.assertEqual(len(result["raw_residuals"]), 9)
