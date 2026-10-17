@@ -16,7 +16,7 @@ import zipfile
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.recorded_file_removal import remove_recorded_files
-from common.contracts.write_run_manifest import build_run_manifest, write_json_atomic
+from common.contracts.write_run_manifest import build_run_manifest, resolve_path, write_json_atomic
 from common.contracts.verify_run_manifest import record_path
 from common.ion_release.release import generate_release_states
 from common.contracts.particle_physics import kinetic_energy_ev
@@ -41,11 +41,16 @@ def publish_manifest(run: Path, status: str) -> dict:
     """Pass arbitrarily many worker outputs directly to the public Python API.
 
     Repeated absolute --output arguments can exceed Windows' command-line limit.
-    Keep the same file selection and public retention/identity validation.
+    Frozen inputs retain their input identity; only generated files are outputs.
     """
     if status not in {"success", "failed"}:
         raise ValueError("native run requires a terminal status")
+    config = _read(run/"run_config.json")
+    project_root = Path(config["project_root"]).resolve() if config.get("project_root") else None
+    input_paths = {resolve_path(value, run.resolve(), project_root)
+                   for value in config.get("inputs", {}).values() if isinstance(value, str)}
     outputs = sorted(path for path in run.rglob("*") if path.is_file()
+                     and path.resolve() not in input_paths
                      and path.name not in {"run_manifest.json", "run_config.json"}
                      and not path.name.startswith("."))
     manifest = build_run_manifest(run/"run_config.json", status,

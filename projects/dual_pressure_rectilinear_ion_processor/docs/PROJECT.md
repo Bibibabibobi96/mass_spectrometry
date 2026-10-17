@@ -22,6 +22,8 @@
 活动生产链仍只消费原生电极场及native_operating_point电压。历史冻结源码和运行输入不变。
 截面图导出不再逐次执行随机几何自测或物化无人消费的section_validation.json；切孔与截面减法由确定性回归覆盖。
 同次三图共用一次计算的冻结源／snapshot／producer身份，移除绘图前后重复全文哈希；输入只读、图像和来源身份仍发布。
+终态manifest不再把已登记的冻结输入重复列为输出；未登记为冻结输入的生成结果、原生PA与runtime checkpoint仍作为输出。
+输入与输出均由公共writer和完整verifier逐阶段核验，不跨发布边界缓存哈希；既有历史manifest不改写。
 
 | 项目 | 封存参考 |
 |---|---|

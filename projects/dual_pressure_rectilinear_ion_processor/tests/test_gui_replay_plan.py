@@ -121,6 +121,19 @@ class GuiReplayPlanTests(unittest.TestCase):
             "t_us,x_mm,y_mm,z_mm,potential_v\n750,170,0,0,1\n", encoding="utf-8")
         self.publish_manifest()
 
+    def test_gui_preparation_consumes_frozen_controls_bound_only_as_inputs(self) -> None:
+        manifest_path = self.baseline/"run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        controls = [record for record in manifest["outputs"] if
+                    Path(record["path"]).parent == self.baseline/"inputs" or
+                    Path(record["path"]).suffix in {".lua", ".gem", ".fly2"}]
+        manifest["inputs"] = {str(index):record for index,record in enumerate(controls)}
+        manifest["outputs"] = [record for record in manifest["outputs"] if record not in controls]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        plan = prepare_replay(self.run, self.baseline)
+        self.assertEqual(plan["construction_status"], "inputs_prepared_no_field_or_IOB_yet")
+        self.assertEqual((self.run/"simion/processor.gem").read_bytes(), (self.baseline/"simion/processor.gem").read_bytes())
+
     def test_prepare_never_clones_native_baseline_family(self) -> None:
         plan = prepare_replay(self.run, self.baseline)
         self.assertFalse(list((self.run / "simion").glob("processor.pa*")))

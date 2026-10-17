@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import copy
 import os
+import sys
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
 
+from common.contracts import verify_run_manifest, write_run_manifest
+from common.contracts.file_identity import file_sha256
 from common.simion.particle_batching import batch_plan_from_dispatch
 from common.simion.resource_scheduler import plan_simion_dispatch, plan_adaptive_followup
 from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional
@@ -43,21 +46,61 @@ class BatchingTests(unittest.TestCase):
     def save_config(self) -> None:
         functional.write_json(self.run/"inputs/resolved_model.json",self.config)
 
+    def publishable_config(self) -> None:
+        functional.write_json(self.run/"run_config.json", dict(
+            schema_version=2, run_id="20261017_120000__test__simion__manifest-fixture",
+            project=functional.PROJECT, mode="native_electrode_functional",
+            project_root=str(self.run),
+            inputs=dict(model="inputs/resolved_model.json", runtime=str(self.run/"simion/processor.lua")),
+            artifact_retention=dict(policy_version=1, **{"class":"solver_review"}, reason="Inert native output fixture")))
+
+    def verify_published_manifest(self) -> None:
+        with patch.object(sys, "argv", ["verifier", str(self.run/"run_manifest.json")]):
+            verify_run_manifest.main()
+
+    def test_frozen_inputs_are_read_once_per_publication_stage_and_generated_assets_remain_outputs(self) -> None:
+        self.publishable_config()
+        field = self.run/"simion/processor.pa0"
+        field.write_bytes(b"inert generated native field")
+        checkpoint = self.run/"results/native_field_preparation.json"
+        checkpoint.write_text('{"status":"prepared"}', encoding="utf-8")
+        runtime = (self.run/"simion/processor.lua").resolve()
+        with patch.object(write_run_manifest, "file_sha256", wraps=file_sha256) as reader:
+            manifest = batching.publish_manifest(self.run,"success")
+            self.assertEqual(sum(Path(call.args[0]).resolve()==runtime for call in reader.call_args_list),1)
+            reader.reset_mock()
+            self.verify_published_manifest()
+            self.assertEqual(sum(Path(call.args[0]).resolve()==runtime for call in reader.call_args_list),1)
+        inputs = {Path(record["path"]).resolve() for record in manifest["inputs"].values()}
+        outputs = {Path(record["path"]).resolve():record for record in manifest["outputs"]}
+        self.assertFalse(inputs & outputs.keys())
+        self.assertIn((self.run/"inputs/resolved_model.json").resolve(), inputs)
+        self.assertEqual(outputs[field.resolve()]["retention_role"],"solver_native_binary")
+        self.assertIn(checkpoint.resolve(), outputs)
+
+    def test_input_tampering_fails_full_verifier_without_duplicate_output(self) -> None:
+        self.publishable_config()
+        batching.publish_manifest(self.run,"success")
+        runtime = self.run/"simion/processor.lua"
+        payload = runtime.read_bytes()
+        runtime.write_bytes(payload[:-1]+b"!")
+        with self.assertRaisesRegex(AssertionError,"SHA-256 changed"):
+            self.verify_published_manifest()
+
     def test_many_worker_outputs_use_public_manifest_api_without_argv(self) -> None:
+        self.publishable_config()
         for index in range(300):
             path=self.run/"results"/("worker_"+str(index)+"_"+"x"*90+".csv")
             path.write_text("particle_id\n1\n",encoding="utf-8")
         (self.run/"run_manifest.json").write_text("{}",encoding="utf-8")
         (self.run/"results/.private").write_text("private",encoding="utf-8")
-        with patch.object(batching,"build_run_manifest",return_value={"status":"failed"}) as build:
-            batching.publish_manifest(self.run,"failed")
-        args,kwargs=build.call_args
-        self.assertEqual(args,(self.run/"run_config.json","failed"))
-        outputs=kwargs["output_paths"]
+        manifest = batching.publish_manifest(self.run,"failed")
+        outputs = [Path(record["path"]) for record in manifest["outputs"]]
         self.assertEqual(len([path for path in outputs if path.name.startswith("worker_")]),300)
         self.assertGreater(sum(len(str(path)) for path in outputs),32767)
         self.assertFalse(any(path.name in {"run_manifest.json","run_config.json",".private"} for path in outputs))
-        self.assertEqual(functional.read_json(self.run/"run_manifest.json"),{"status":"failed"})
+        with patch.object(sys,"argv",["verifier",str(self.run/"run_manifest.json"),"--require-status","failed"]):
+            verify_run_manifest.main()
 
     def planning(self) -> tuple[dict,dict]:
         request=batching.prepare_request(self.run)
