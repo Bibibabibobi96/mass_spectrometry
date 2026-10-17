@@ -58,9 +58,9 @@ function Get-HostResourceBudget {param($Role,$Stage) if($Role-ne'SIMION'-or$Stag
 function Enter-HostResourceStage {param($Role,$Stage,$Budget,$RunId) return @{}}
 function Exit-HostResourceStage {param($Lease) $script:exits++}
 function Update-HostResourceStage {throw 'Collision must not Refine'}
-function Write-RunJson {param($Path,$Value,$Depth)}
+function Write-RunJson {throw "Unexpected budget transport materialization"}
 function Invoke-ResourceBudgetedProcess {
- param($ResolvedBudgetPath,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
+ param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
  $script:calls+=,@($ArgumentList)
  $name=Split-Path -Leaf $WorkingDirectory
  if($name-notin@('collision','ip_collision','detector')-or($ArgumentList-join',')-ne('--nogui,--noprompt,gem2pa,'+$name+'.gem,'+$name+'.pa')){throw 'Unexpected Refine/Fast Adjust/copy'}
@@ -107,9 +107,9 @@ function Get-HostResourceBudget {param($Role,$Stage) $script:stages+=@{action='b
 function Enter-HostResourceStage {param($Role,$Stage,$Budget,$RunId) $script:stages+=@{action='enter';role=$Role;stage=$Stage};return @{stage=$Stage}}
 function Update-HostResourceStage {throw 'Composition must not switch to Refine/crop'}
 function Exit-HostResourceStage {param($Lease) $script:exits++}
-function Write-RunJson {param($Path,$Value,$Depth) $Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path}
+function Write-RunJson {throw "Unexpected budget transport materialization"}
 function Invoke-ResourceBudgetedProcess {
- param($ResolvedBudgetPath,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
+ param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
  if($FilePath-ne$python-or$WorkingDirectory-ne$repo-or$ArgumentList[-1]-ne'--compose'){throw 'Unexpected commercial/GEM/Refine/crop process'}
  $script:calls+=@{file=$FilePath;arguments=@($ArgumentList);working_directory=$WorkingDirectory}
  if($Failure-eq'exit_nonzero'){return @{exit_code=1}}
@@ -249,7 +249,7 @@ function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBy
 function Exit-HostResourceStage {param($Lease)}
 function Write-RunJson {param($Path,$Value,$Depth) $Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path}
 function Invoke-ResourceBudgetedProcess {
- param($ResolvedBudgetPath,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
+ param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
  $script:calls+=,@($ArgumentList)
  @{wall_clock_seconds=1;peak_process_tree_working_set_bytes=1}|ConvertTo-Json|Set-Content -LiteralPath $UsagePath
  $label=Split-Path -Leaf $WorkingDirectory

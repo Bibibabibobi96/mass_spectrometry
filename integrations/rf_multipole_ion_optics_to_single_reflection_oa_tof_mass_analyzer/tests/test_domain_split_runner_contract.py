@@ -527,11 +527,11 @@ try {
         self.assertNotIn("role='rf_oatof_standalone_dynamic_field_bank'", self.source)
 
     def test_parent_workflow_owns_one_capacity_session_without_startup_maintenance(self) -> None:
-        budget = self.source.index("$stageBudgetDocument = Get-Content")
+        budget = self.source.index("$budget = Initialize-RfIntegrationStageBudget")
         enter = self.source.index("Enter-ArtifactWorkflowCapacitySession", budget)
         self.assertLess(budget, enter)
         self.assertIn(
-            "-CommittedNewBytes ([int64]$stageBudgetDocument.limits.transient_run_directory_bytes)",
+            "-CommittedNewBytes ([int64]$budget.limits.transient_run_directory_bytes)",
             self.source[enter:enter + 900],
         )
         self.assertNotIn("reconcile_interrupted_compact_runs", self.source)

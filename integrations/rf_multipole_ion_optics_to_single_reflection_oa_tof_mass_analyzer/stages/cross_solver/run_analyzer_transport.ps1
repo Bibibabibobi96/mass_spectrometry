@@ -763,7 +763,7 @@ try {
         $hostResourceStage = Update-HostResourceStage -Lease $hostResourceStage -Stage pa_refine `
           -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
         $buildResult = Invoke-ResourceBudgetedProcess `
-          -ResolvedBudgetPath $budgetBinding.stage_budget -RunDir $package.run_dir `
+          -Limits $budgetBinding.limits -RunDir $package.run_dir `
           -UsagePath $interfaceBuildUsage -FilePath $SimionExe `
           -WorkingDirectory $interfacePaRoot -RedirectStandardOutput $interfaceBuildStdout `
           -RedirectStandardError $interfaceBuildStderr -ArgumentList @(
@@ -851,7 +851,6 @@ try {
       source_run_manifest = $sourceManifestPath
       source_run_config = $sourceConfigPath
       resolved_integration_engineering_budget = $budgetBinding.frozen_budget
-      resolved_stage_resource_budget = $budgetBinding.stage_budget
       source_summary = $sourceSummary
       analyzer_source_summary = $analysisSourceSummary
       source_canonical = $sourceCanonical
@@ -873,7 +872,6 @@ try {
     dependency_identities = $dependencyIdentities
     resource_budget_identity = [ordered]@{
       resolved_budget_sha256 = $budgetBinding.resolved_budget_sha256
-      stage_budget_sha256 = $budgetBinding.stage_budget_sha256
     }
     source_run_identity = $sourceIdentity
     upstream_source_identity = $runtime.source_identity
@@ -960,7 +958,7 @@ try {
     $hostResourceStage = Update-HostResourceStage -Lease $hostResourceStage -Stage flight `
       -Budget (Get-HostResourceBudget -Role SIMION -Stage flight) -RetainedMemoryBytes 0
     $processResult = Invoke-ResourceBudgetedProcess `
-      -ResolvedBudgetPath $budgetBinding.stage_budget `
+      -Limits $budgetBinding.limits `
       -RunDir $package.run_dir -UsagePath $resourceUsage `
       -FilePath $SimionExe -WorkingDirectory $runtimeDir `
       -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
@@ -1077,7 +1075,6 @@ try {
   })
   $outputs += $retentionActions
   if (-not (Complete-ResourceUsage `
-      -ResolvedBudgetPath $budgetBinding.stage_budget `
       -RunDir $package.run_dir -UsagePath $resourceUsage)) {
     $resourceBudgetExceeded = $true
     throw 'SIMION analyzer compact final retained-byte budget exceeded.'

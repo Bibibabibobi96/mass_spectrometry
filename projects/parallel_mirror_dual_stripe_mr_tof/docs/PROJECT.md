@@ -111,6 +111,9 @@ TE1控制局部释放z一阶时间响应，不自动校正Ey、横向偶响应�
 
 ## 活动原生场与消费合同
 
+静态场 provider 的资源限额直接由已编译 plan 传给同进程公共观察器，不再另写 composition、各 occupancy
+或各 field level 的 `*_resource_budget.json`；完整 plan 和 usage 内的 limits 仍冻结，预算和数值不变。
+
 正常入口仍为[原trial](../simion/run_two_prism_trial.ps1)、[原staged](../analysis/run_downstream_workpoint_iteration.ps1)、
 [自动候选链](../analysis/run_native_candidate_chain.ps1)；场由`simion/run_native_static_field_provider.ps1`
 和`analysis/static_field_binding.py`接入，不另建手工闭合器。

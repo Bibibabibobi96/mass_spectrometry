@@ -134,6 +134,37 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.assertEqual(plan["construction_status"], "inputs_prepared_no_field_or_IOB_yet")
         self.assertEqual((self.run/"simion/processor.gem").read_bytes(), (self.baseline/"simion/processor.gem").read_bytes())
 
+    def test_gui_limits_match_legacy_budget_without_copying_derived_budget(self) -> None:
+        profile = json.loads((Path(__file__).resolve().parents[1]/"config/execution_profiles.json").read_text(encoding="utf-8"))
+        profile["profiles"][0]["limits"]["transient_run_directory_sample_interval_seconds"] = 17
+        profile_path = self.baseline/"inputs/execution_profiles.json"
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        old_limits = dict(profile["profiles"][0]["limits"], transient_run_directory_bytes=123456789)
+        old_budget = self.baseline/"inputs/resource_budget.json"
+        old_budget.write_text(json.dumps({"limits":old_limits}), encoding="utf-8")
+        self.publish_manifest()
+        source_records = {path:file_record(path) for path in (profile_path,old_budget)}
+        prepare_replay(self.run,self.baseline)
+        self.assertFalse((self.run/"inputs/resource_budget.json").exists())
+        inputs = json.loads((self.run/"run_config.json").read_text())["inputs"]
+        self.assertTrue(all(Path(path).name != "resource_budget.json" for path in inputs.values()))
+        copied_profile = self.run/"inputs/execution_profiles.json"
+        self.assertIn(str(copied_profile), inputs.values())
+        self.assertEqual(copied_profile.read_bytes(), profile_path.read_bytes())
+        for path,record in source_records.items():
+            self.assertEqual(file_record(path),record)
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 unavailable for the GUI limits projection")
+        script = (Path(__file__).resolve().parents[1]/"simion/prepare_gui_replay.ps1").read_text(encoding="utf-8")
+        projection = script[script.index(" $limits=$profile.limits"):script.index(" $runConfig=Get-Content")]
+        committed = profile["profiles"][0]["gui_preparation_committed_new_bytes"]
+        command = f"$profile=(Get-Content -Raw -LiteralPath '{copied_profile}'|ConvertFrom-Json).profiles[0];$guiCommitted=[long]{committed};" + projection + ";$limits|ConvertTo-Json -Compress"
+        result = subprocess.run([powershell,"-NoProfile","-NonInteractive","-Command",command],
+                                cwd=self.run,capture_output=True,text=True,encoding="utf-8",check=False,timeout=20)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(json.loads(result.stdout),dict(old_limits,transient_run_directory_bytes=committed))
+
     def test_prepare_never_clones_native_baseline_family(self) -> None:
         plan = prepare_replay(self.run, self.baseline)
         self.assertFalse(list((self.run / "simion").glob("processor.pa*")))

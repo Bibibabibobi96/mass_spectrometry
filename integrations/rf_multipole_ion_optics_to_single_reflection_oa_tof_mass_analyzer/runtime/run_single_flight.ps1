@@ -267,7 +267,7 @@ function Resolve-RfNativeOperatingPaCompanion {
           [string]$export.source_controller,[string]$export.output,[string]$export.receipt) +
           @($export.voltage_arguments | ForEach-Object { [string]$_ })
         $kind = [IO.Path]::GetFileNameWithoutExtension([string]$export.output)
-        $result = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+        $result = Invoke-ResourceBudgetedProcess -Limits $budget.limits `
           -RunDir $package.run_dir `
           -UsagePath (Join-Path $package.log_dir ($kind + '_resource_usage.json')) `
           -FilePath $SimionExe -WorkingDirectory $FamilyDirectory `
@@ -349,7 +349,7 @@ function Export-RfStandalonePaResponses {
     $native = Join-Path $Directory ("{0}.pa{1}" -f $Prefix,[int]$solutionId)
     $standalone = Join-Path $Directory ("{0}.response_{1}.pa" -f $Prefix,[int]$solutionId)
     if (-not (Test-Path -LiteralPath $standalone -PathType Leaf)) {
-      $export = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+      $export = Invoke-ResourceBudgetedProcess -Limits $budget.limits `
         -RunDir $package.run_dir `
         -UsagePath (Join-Path $package.log_dir ("{0}_export_pa{1}_resource_usage.json" -f $LogStem,[int]$solutionId)) `
         -FilePath $SimionExe -WorkingDirectory $Directory `
@@ -1257,10 +1257,8 @@ try {
   })
   $resolvedBudgetDocument = Read-RfFrozenResolvedBudgetDocument `
     -StageBudgetReceipt $budget
-  $stageBudgetDocument = Get-Content -Raw -LiteralPath $budget.stage_budget `
-    -Encoding UTF8 | ConvertFrom-Json
   $minimumSystemAvailableMemoryBytes =
-    [int64]$stageBudgetDocument.limits.minimum_system_available_memory_bytes
+    [int64]$budget.limits.minimum_system_available_memory_bytes
   # The whole-machine parent owns one workflow-capacity session.  Its frozen
   # stage peak covers all child preparation, cache publication and flight
   # phases; helpers only extend this same session's protected scope.
@@ -1268,7 +1266,7 @@ try {
     -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') `
     -RunDirectory $package.artifact_run_dir `
-    -CommittedNewBytes ([int64]$stageBudgetDocument.limits.transient_run_directory_bytes) `
+    -CommittedNewBytes ([int64]$budget.limits.transient_run_directory_bytes) `
     -ProtectedPaths $artifactCapacityProtectedPaths `
     -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
     -Owner "rf-oatof-single-flight:$RunId"
@@ -2285,7 +2283,7 @@ try {
     if (-not $frontendComplete) {
     Copy-Item -LiteralPath $frontendCacheGem -Destination $cacheGem -Force
     Copy-Item -LiteralPath $frontendBasisInitializerFrozen -Destination $cacheBasisInitializer -Force
-    $gem2pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+    $gem2pa = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'frontend_gem2pa_resource_usage.json') -FilePath $SimionExe `
       -WorkingDirectory $frontendBuildDir -RedirectStandardOutput (Join-Path $package.log_dir 'frontend_gem2pa.stdout.log') `
       -RedirectStandardError (Join-Path $package.log_dir 'frontend_gem2pa.stderr.log') `
@@ -2305,7 +2303,7 @@ try {
     $artifactCapacitySession = $frontendCapacityScope.session
     $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
       -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
-    $basisInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+    $basisInitialization = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'frontend_basis_initialization_resource_usage.json') -FilePath $SimionExe `
       -WorkingDirectory $frontendBuildDir -RedirectStandardOutput (Join-Path $package.log_dir 'frontend_basis_initialization.stdout.log') `
       -RedirectStandardError (Join-Path $package.log_dir 'frontend_basis_initialization.stderr.log') `
@@ -2470,7 +2468,7 @@ try {
         $paCacheDispositions[$DispositionKey].disposition='cache_miss_build_authorized'; $staging = New-RfCacheStagingDirectory -CacheRoot $root
         try {
           $buildGem=Join-Path $staging "$Name.gem"; $buildPa0=Join-Path $staging "$Name.pa0"; Copy-Item -LiteralPath $Gem -Destination $buildGem
-          $build=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir "${Name}_gem2pa_resource_usage.json") -FilePath $SimionExe -WorkingDirectory $staging -RedirectStandardOutput (Join-Path $package.log_dir "${Name}_gem2pa.stdout.log") -RedirectStandardError (Join-Path $package.log_dir "${Name}_gem2pa.stderr.log") -ArgumentList @('--nogui','--noprompt','gem2pa',$buildGem,$buildPa0)
+          $build=Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir "${Name}_gem2pa_resource_usage.json") -FilePath $SimionExe -WorkingDirectory $staging -RedirectStandardOutput (Join-Path $package.log_dir "${Name}_gem2pa.stdout.log") -RedirectStandardError (Join-Path $package.log_dir "${Name}_gem2pa.stderr.log") -ArgumentList @('--nogui','--noprompt','gem2pa',$buildGem,$buildPa0)
           if ($build.resource_budget_exceeded -or $build.exit_code -ne 0 -or -not (Test-Path -LiteralPath $buildPa0 -PathType Leaf)) { throw "Raw collision GEM conversion failed: $Name" }
           $entry=Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $root -CacheKey $key -Role $Role -Identity $collisionIdentity -StagingDirectory $staging -ProviderRunId $RunId -ArtifactCapacitySession $artifactCapacitySession
           $paCacheDispositions[$DispositionKey].disposition='built_and_published'
@@ -2608,7 +2606,7 @@ try {
               -Label ("frontend_to_{0}" -f $fineDefinition.name)
             try {
             Copy-Item -LiteralPath $fineDefinition.gem -Destination $fineBuildGem
-            $gem2pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+            $gem2pa = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
               -UsagePath (Join-Path $package.log_dir ($fineDefinition.name + '_gem2pa_resource_usage.json')) `
               -FilePath $SimionExe -WorkingDirectory $fineBuildDir `
               -RedirectStandardOutput (Join-Path $package.log_dir ($fineDefinition.name + '_gem2pa.stdout.log')) `
@@ -2622,7 +2620,7 @@ try {
                 -Failure "$($fineDefinition.name) PA+ file rendering failed."
               $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
                 -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
-              $paPlusInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+              $paPlusInitialization = Invoke-ResourceBudgetedProcess -Limits $budget.limits `
                 -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir ($fineDefinition.name + '_pa_plus_initialization_resource_usage.json')) `
                 -FilePath $SimionExe -WorkingDirectory $fineBuildDir `
                 -RedirectStandardOutput (Join-Path $package.log_dir ($fineDefinition.name + '_pa_plus_initialization.stdout.log')) `
@@ -2635,7 +2633,7 @@ try {
                 throw "$($fineDefinition.name) PA+ controller initialization failed."
               }
             }
-              $basis = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+              $basis = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
                 -UsagePath (Join-Path $package.log_dir ($fineDefinition.name + '_basis_resource_usage.json')) `
                 -FilePath $SimionExe -WorkingDirectory $fineBuildDir `
                 -RedirectStandardOutput (Join-Path $package.log_dir ($fineDefinition.name + '_basis.stdout.log')) `
@@ -2712,7 +2710,7 @@ try {
                   "basis_repair_pa{0}.json" -f $solutionId)
                 $repairModeSpec = '{0}:{0}=1' -f $solutionId
                 $repair = Invoke-ResourceBudgetedProcess `
-                  -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+                  -Limits $budget.limits -RunDir $package.run_dir `
                   -UsagePath (Join-Path $package.log_dir (
                     "{0}_basis_repair_pa{1}_resource_usage.json" -f $fineDefinition.name,$solutionId)) `
                   -FilePath $SimionExe -WorkingDirectory $fineBuildDir `
@@ -3007,7 +3005,7 @@ try {
               -Label 'main_to_accelerator_entrance_local'
             try {
             Copy-Item -LiteralPath $acceleratorEntranceLocalGem -Destination $localBuildGem
-            $gem2pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+            $gem2pa = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
               -UsagePath (Join-Path $package.log_dir 'accelerator_entrance_local_gem2pa_resource_usage.json') `
               -FilePath $SimionExe -WorkingDirectory $localBuildDir `
               -RedirectStandardOutput (Join-Path $package.log_dir 'accelerator_entrance_local_gem2pa.stdout.log') `
@@ -3022,7 +3020,7 @@ try {
               -Failure 'Accelerator entrance-local PA+ file rendering failed.'
             $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
               -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
-            $localPaPlusInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+            $localPaPlusInitialization = Invoke-ResourceBudgetedProcess -Limits $budget.limits `
               -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'accelerator_entrance_local_pa_plus_initialization_resource_usage.json') `
               -FilePath $SimionExe -WorkingDirectory $localBuildDir `
               -RedirectStandardOutput (Join-Path $package.log_dir 'accelerator_entrance_local_pa_plus_initialization.stdout.log') `
@@ -3042,7 +3040,7 @@ try {
               } | ConvertTo-Json -Compress
               throw "$localPaPlusInitializationFailure $localPaPlusInitializationDetail"
             }
-              $basis = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+              $basis = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
                 -UsagePath (Join-Path $package.log_dir 'accelerator_entrance_local_basis_resource_usage.json') `
                 -FilePath $SimionExe -WorkingDirectory $localBuildDir `
                 -RedirectStandardOutput (Join-Path $package.log_dir 'accelerator_entrance_local_basis.stdout.log') `
@@ -3113,7 +3111,7 @@ try {
                   "basis_repair_pa{0}.json" -f $solutionId)
                 $repairModeSpec = '{0}:{0}=1' -f $solutionId
                 $repair = Invoke-ResourceBudgetedProcess `
-                  -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+                  -Limits $budget.limits -RunDir $package.run_dir `
                   -UsagePath (Join-Path $package.log_dir (
                     "accelerator_entrance_local_basis_repair_pa{0}_resource_usage.json" -f $solutionId)) `
                   -FilePath $SimionExe -WorkingDirectory $localBuildDir `
@@ -3391,7 +3389,7 @@ try {
         $overlayBuildBasisReport = Join-Path $overlayBuildDir 'basis_build.json'
         $overlayCacheGem = Join-Path $overlayBuildDir 'accelerator_overlay.gem'
         Copy-Item -LiteralPath $overlayGem -Destination $overlayCacheGem
-        $overlayGem2Pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+        $overlayGem2Pa = Invoke-ResourceBudgetedProcess -Limits $budget.limits `
           -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'overlay_gem2pa_resource_usage.json') `
           -FilePath $SimionExe -WorkingDirectory $overlayBuildDir `
           -RedirectStandardOutput (Join-Path $package.log_dir 'overlay_gem2pa.stdout.log') `
@@ -3401,7 +3399,7 @@ try {
         if ($overlayGem2Pa.exit_code -ne 0) { throw 'Overlay GEM conversion failed.' }
         $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
           -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
-        $overlayBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+        $overlayBuild = Invoke-ResourceBudgetedProcess -Limits $budget.limits `
           -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'overlay_basis_resource_usage.json') `
           -FilePath $SimionExe -WorkingDirectory $overlayBuildDir `
           -RedirectStandardOutput (Join-Path $package.log_dir 'overlay_basis.stdout.log') `
@@ -3607,14 +3605,14 @@ try {
           $buildBasisReport = Join-Path $overlayBuildDir 'basis_build.json'
           Copy-Item -LiteralPath $twoLocalOverlay.gem -Destination $buildGem
           $basisSourceForBuildPa0 = $basisSourcePa0
-          $gem2pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+          $gem2pa = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
             -UsagePath (Join-Path $package.log_dir "${overlayId}_gem2pa_resource_usage.json") -FilePath $SimionExe -WorkingDirectory $overlayBuildDir `
             -RedirectStandardOutput (Join-Path $package.log_dir "${overlayId}_gem2pa.stdout.log") -RedirectStandardError (Join-Path $package.log_dir "${overlayId}_gem2pa.stderr.log") `
             -ArgumentList @('--nogui','--noprompt','gem2pa',$buildGem,$buildPaSharp)
           if ($gem2pa.resource_budget_exceeded -or $gem2pa.exit_code -ne 0) { throw "$overlayId GEM conversion failed." }
           $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
             -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
-          $basis = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+          $basis = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
             -UsagePath (Join-Path $package.log_dir "${overlayId}_basis_resource_usage.json") -FilePath $SimionExe -WorkingDirectory $overlayBuildDir `
             -RedirectStandardOutput (Join-Path $package.log_dir "${overlayId}_basis.stdout.log") -RedirectStandardError (Join-Path $package.log_dir "${overlayId}_basis.stderr.log") `
             -ArgumentList @('--nogui','--noprompt','lua',$basisBuilderFrozen,$basisSourceForBuildPa0,$buildPaSharp,
@@ -4043,7 +4041,7 @@ try {
       } else { @($domainSplitFineBuild.geometry.pa_plus_solution_model.mode_ids) }
       $maskReceipt = Join-Path $package.result_dir ($domainSplitFineBuild.name + '_boundary_mask_restoration.json')
       $maskResult = Invoke-ResourceBudgetedProcess `
-        -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+        -Limits $budget.limits -RunDir $package.run_dir `
         -UsagePath (Join-Path $package.log_dir ($domainSplitFineBuild.name + '_boundary_mask_resource_usage.json')) `
         -FilePath $SimionExe -WorkingDirectory $runtimeDir `
         -RedirectStandardOutput (Join-Path $package.log_dir ($domainSplitFineBuild.name + '_boundary_mask.stdout.log')) `
@@ -4225,8 +4223,7 @@ try {
     $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config
     foreach ($usage in $resourceUsageFiles) {
-      if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget `
-            -RunDir $package.run_dir -UsagePath $usage)) {
+      if (-not (Complete-ResourceUsage -RunDir $package.run_dir -UsagePath $usage)) {
         $resourceBudgetExceeded = $true
         throw 'Compact pre-pulse retained-byte budget exceeded.'
       }
@@ -4553,7 +4550,7 @@ try {
     }
     Assert-RfExactPaCacheGenerationBinding -ActiveCaches $activePaCaches
     $overlayRuntimePa0 = Join-Path $runtimeDir 'accelerator_overlay.pa0'
-    $overlayVerify = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+    $overlayVerify = Invoke-ResourceBudgetedProcess -Limits $budget.limits `
       -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'overlay_interface_verify_resource_usage.json') `
       -FilePath $SimionExe -WorkingDirectory $runtimeDir `
       -RedirectStandardOutput (Join-Path $package.log_dir 'overlay_interface_verify.stdout.log') `
@@ -4576,7 +4573,7 @@ try {
         -Pattern ($twoLocalOverlayBuild.overlay_id + '.pa*')
       $activePaCaches += [ordered]@{role=$twoLocalOverlayBuild.cache_role;cache_key=$twoLocalOverlayBuild.cache_key;cache_directory=$twoLocalOverlayBuild.cache_dir}
       $overlayRuntimePa0 = Join-Path $runtimeDir ($twoLocalOverlayBuild.overlay_id + '.pa0')
-      $overlayVerify = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+      $overlayVerify = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
         -UsagePath (Join-Path $package.log_dir ($twoLocalOverlayBuild.overlay_id + '_interface_verify_resource_usage.json')) `
         -FilePath $SimionExe -WorkingDirectory $runtimeDir `
         -RedirectStandardOutput (Join-Path $package.log_dir ($twoLocalOverlayBuild.overlay_id + '_interface_verify.stdout.log')) `
@@ -4655,7 +4652,7 @@ try {
     -BooleanBoundaryPolicy ([string]$apertureTopologyDiscretization.boolean_boundary_policy) `
     -InvokeVerifier {
       param($verifierPath)
-      Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+      Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
         -UsagePath (Join-Path $package.log_dir 'frontend_aperture_topology_resource_usage.json') -FilePath $SimionExe `
         -WorkingDirectory (Split-Path -Parent $apertureTopologyPa) -RedirectStandardOutput (Join-Path $package.log_dir 'frontend_aperture_topology.stdout.log') `
         -RedirectStandardError (Join-Path $package.log_dir 'frontend_aperture_topology.stderr.log') `
@@ -4680,7 +4677,7 @@ try {
     $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
       -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
     $flightTubeBuild = Invoke-ResourceBudgetedProcess `
-      -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+      -Limits $budget.limits -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'flight_tube_build_resource_usage.json') `
       -FilePath $SimionExe -WorkingDirectory $runtimeDir `
       -RedirectStandardOutput $flightTubeBuildStdout `
@@ -4732,7 +4729,7 @@ try {
     $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
       -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
     $reflectronBuild = Invoke-ResourceBudgetedProcess `
-      -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+      -Limits $budget.limits -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'reflectron_build_resource_usage.json') `
       -FilePath $SimionExe -WorkingDirectory $runtimeDir `
       -RedirectStandardOutput $reflectronBuildStdout `
@@ -4763,7 +4760,7 @@ try {
       $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage pa_refine `
         -Budget (Get-HostResourceBudget -Role SIMION -Stage pa_refine) -RetainedMemoryBytes 0
       $singleRefine = Invoke-ResourceBudgetedProcess `
-        -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+        -Limits $budget.limits -RunDir $package.run_dir `
         -UsagePath (Join-Path $package.log_dir "reflectron_refine_pa${electrode}_resource_usage.json") `
         -FilePath $SimionExe -WorkingDirectory $runtimeDir `
         -RedirectStandardOutput (Join-Path $package.log_dir "reflectron_refine_pa${electrode}.stdout.log") `
@@ -4797,7 +4794,7 @@ try {
     }
     $assignments = @($assignmentsDocument.assignments | ForEach-Object { [string]$_ })
     $fastAdjust = Invoke-ResourceBudgetedProcess `
-      -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+      -Limits $budget.limits -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'reflectron_fast_adjust_resource_usage.json') `
       -FilePath $SimionExe -WorkingDirectory $runtimeDir `
       -RedirectStandardOutput (Join-Path $package.log_dir 'reflectron_fast_adjust.stdout.log') `
@@ -4850,7 +4847,7 @@ try {
       Get-ChildItem -LiteralPath $overlayContainerFrozenDir -File |
         Copy-Item -Destination $overlayIobStageDir
       $overlayIobContainerRuntime = Join-Path $overlayIobStageDir 'mag_quad_2dp.iob'
-      $overlayIobBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+      $overlayIobBuild = Invoke-ResourceBudgetedProcess -Limits $budget.limits `
         -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'overlay_iob_build_resource_usage.json') `
         -FilePath $SimionExe -WorkingDirectory $runtimeDir `
         -RedirectStandardOutput (Join-Path $package.log_dir 'overlay_iob_build.stdout.log') `
@@ -4869,7 +4866,7 @@ try {
         # Same five PA files and transforms as the runnable IOB, but no
         # same-basename Program/Fly2 for SIMION to auto-run during top-level Lua.
         $totalAxisFieldIob = Join-Path $runtimeDir 'total_axis_field.iob'
-        $axisFieldIobBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+        $axisFieldIobBuild = Invoke-ResourceBudgetedProcess -Limits $budget.limits `
           -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'total_axis_field_iob_build_resource_usage.json') `
           -FilePath $SimionExe -WorkingDirectory $runtimeDir `
           -RedirectStandardOutput (Join-Path $package.log_dir 'total_axis_field_iob_build.stdout.log') `
@@ -4935,7 +4932,7 @@ try {
         (Join-Path $runtimeDir 'accelerator_entrance_overlay.pa0'),(Join-Path $runtimeDir 'accelerator_intermediate_overlay.pa0'),
         ([string]$entranceOverlay[0].geometry.instance_origin_mm.x),([string]$entranceOverlay[0].geometry.instance_origin_mm.y),([string]$entranceOverlay[0].geometry.instance_origin_mm.z),
         ([string]$intermediateOverlay[0].geometry.instance_origin_mm.x),([string]$intermediateOverlay[0].geometry.instance_origin_mm.y),([string]$intermediateOverlay[0].geometry.instance_origin_mm.z))
-      $overlayIobBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+      $overlayIobBuild = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
         -UsagePath (Join-Path $package.log_dir 'two_overlay_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir `
         -RedirectStandardOutput (Join-Path $package.log_dir 'two_overlay_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'two_overlay_iob_build.stderr.log') `
         -ArgumentList ($twoOverlayArguments + @((Join-Path $runtimeDir 'oatof_ideal_grounded.lua'),(Join-Path $runtimeDir 'oatof_ideal_grounded.fly2')))
@@ -4943,7 +4940,7 @@ try {
       if ($ProgramAxisFieldExport) {
         $totalAxisFieldIob = Join-Path $runtimeDir 'total_axis_field.iob'
         $twoOverlayAxisFieldArguments = @($twoOverlayArguments[0..5]) + @($totalAxisFieldIob) + @($twoOverlayArguments[7..18])
-        $axisFieldIobBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+        $axisFieldIobBuild = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir `
           -UsagePath (Join-Path $package.log_dir 'two_overlay_total_axis_field_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir `
           -RedirectStandardOutput (Join-Path $package.log_dir 'two_overlay_total_axis_field_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'two_overlay_total_axis_field_iob_build.stderr.log') `
           -ArgumentList $twoOverlayAxisFieldArguments
@@ -4980,7 +4977,7 @@ try {
         ([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),
         ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
         ([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z))
-      $axisFieldIobBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'domain_split_main_pa_only_total_axis_field_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'domain_split_main_pa_only_total_axis_field_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'domain_split_main_pa_only_total_axis_field_iob_build.stderr.log') -ArgumentList $domainMainOnlyIobArguments
+      $axisFieldIobBuild = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'domain_split_main_pa_only_total_axis_field_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'domain_split_main_pa_only_total_axis_field_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'domain_split_main_pa_only_total_axis_field_iob_build.stderr.log') -ArgumentList $domainMainOnlyIobArguments
       if ($axisFieldIobBuild.resource_budget_exceeded -or $axisFieldIobBuild.exit_code -ne 0 -or -not (Test-Path -LiteralPath $totalAxisFieldIob -PathType Leaf)) { throw 'Domain-split main-PA-only total-axis-field IOB build failed.' }
     } elseif ($prePulseEntranceZoneCollision) {
       $prePulseIobBuilder = Join-Path $package.input_dir 'build_single_flight_pre_pulse_iob.lua'
@@ -5020,7 +5017,7 @@ try {
         ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
         ([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),
         ([string]$entranceLocalBuild[0].geometry.instance_origin_mm.x),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.y),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.z))
-      $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'pre_pulse_compact_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'pre_pulse_compact_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'pre_pulse_compact_iob_build.stderr.log') -ArgumentList $prePulseIobArguments
+      $built = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'pre_pulse_compact_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'pre_pulse_compact_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'pre_pulse_compact_iob_build.stderr.log') -ArgumentList $prePulseIobArguments
       if ($built.resource_budget_exceeded -or $built.exit_code -ne 0) { throw 'Compact pre-pulse IOB build failed.' }
     } elseif ($domainSplitLocalAxisField) {
       $postPulseIobBuilder = Join-Path $package.input_dir 'build_single_flight_post_pulse_iob.lua'
@@ -5040,7 +5037,7 @@ try {
         (Join-Path $runtimeDir 'accelerator_main.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),(Join-Path $runtimeDir 'accelerator_entrance_local.pa0'),
         ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
         ([string]$entranceLocalBuild[0].geometry.instance_origin_mm.x),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.y),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.z))
-      $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'local_axis_field_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'local_axis_field_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'local_axis_field_iob_build.stderr.log') -ArgumentList $localAxisIobArguments
+      $built = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'local_axis_field_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'local_axis_field_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'local_axis_field_iob_build.stderr.log') -ArgumentList $localAxisIobArguments
       if ($built.resource_budget_exceeded -or $built.exit_code -ne 0 -or -not (Test-Path -LiteralPath $totalAxisFieldIob -PathType Leaf)) { throw 'Local axis-field IOB build failed.' }
     } elseif ($postPulseHandoffMinimal) {
       # Omitting the upstream/connector PA is only valid when the frozen
@@ -5078,7 +5075,7 @@ try {
         ([string]$entranceLocalBuild[0].geometry.instance_origin_mm.x),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.y),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.z))
       $postPulseIobStdout = Join-Path $package.log_dir 'post_pulse_handoff_iob_build.stdout.log'
       $postPulseIobStderr = Join-Path $package.log_dir 'post_pulse_handoff_iob_build.stderr.log'
-      $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'post_pulse_handoff_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput $postPulseIobStdout -RedirectStandardError $postPulseIobStderr -ArgumentList $postPulseIobArguments
+      $built = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'post_pulse_handoff_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput $postPulseIobStdout -RedirectStandardError $postPulseIobStderr -ArgumentList $postPulseIobArguments
       if ($built.resource_budget_exceeded -or $built.exit_code -ne 0) {
         throw ('Post-pulse handoff IOB build failed: exit_code={0}; resource_budget_exceeded={1}; stderr={2}' -f
           $built.exit_code,$built.resource_budget_exceeded,(Get-RfProcessDiagnosticTail -Path $postPulseIobStderr))
@@ -5116,7 +5113,7 @@ try {
       ([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),
       ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
       ([string]$entranceLocalBuild[0].geometry.instance_origin_mm.x),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.y),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.z))
-    $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'full_flight_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'full_flight_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'full_flight_iob_build.stderr.log') -ArgumentList $fullFlightIobArguments
+    $built = Invoke-ResourceBudgetedProcess -Limits $budget.limits -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'full_flight_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'full_flight_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'full_flight_iob_build.stderr.log') -ArgumentList $fullFlightIobArguments
     if ($built.resource_budget_exceeded -or $built.exit_code -ne 0) { throw 'Seven-instance continuous full-flight IOB build failed.' }
     }
   }
@@ -5327,7 +5324,7 @@ try {
   $runConfiguration = [ordered]@{
     schema_version=2; run_id=$RunId; project=$runProjectId; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
     upstream_project_id=$runtime.upstream_project_id
-    inputs=[ordered]@{ configuration=$configuration; resolved_single_flight_execution_profile=$executionProfilePath; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; resolved_population_contract=$populationContractFrozen; resolved_single_flight_population=$runtimePopulationPath; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_region_field_contract=$resolvedRegionFieldContractFrozen; analyzer_component=$analyzerComponent; pulse_hook=$pulseHook; frontend_hook=$frontendHook; rf_drive_kernel=$rfDriveKernel; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; mother_particle_source_materialization_receipt=$motherSourceReceiptFrozen; initial_global_state=$globalSource; particle_row_map=$particleRowMap; pre_pulse_restart_validation=$prePulseValidationFrozen; particle_input=$particleInput; frontend_gem=$frontendGem; frontend_basis_initializer=$frontendBasisInitializerFrozen; frontend_contract=$frontendContract; frontend_electrode_topology=$frontendElectrodeTopologyContract; frontend_pa_cache_manifest=$frontendCacheManifestInput; accelerator_overlay_gem=$overlayGem; accelerator_overlay_contract=$overlayContract; accelerator_overlay_basis_builder=$overlayBasisBuilderFrozen; accelerator_overlay_refiner=$overlayRefinerFrozen; accelerator_overlay_interface_verifier=$overlayInterfaceVerifierFrozen; accelerator_overlay_pa_cache_manifest=$overlayCacheManifestInput; accelerator_overlay_iob_builder=$overlayIobBuilderFrozen; accelerator_overlay_iob_container=$overlayIobContainerFrozen; accelerator_overlay_iob_container_gems=$overlayIobContainerGemFrozen; accelerator_overlay_basis_report=$overlayBasisReport; accelerator_overlay_interface_report=$overlayInterfaceReport; accelerator_overlay_refine_dispatch_request=$overlayRefineDispatchRequest; accelerator_overlay_refine_dispatch_plan=$overlayRefineDispatchPlan; accelerator_overlay_refine_resource_usage=$overlayRefineResourceUsage; flight_tube_pa_cache_manifest=$flightTubeCacheManifestInput; reflectron_pa_cache_manifest=$reflectronCacheManifestInput; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen; candidate_reflectron_refiner=$reflectronRefinerFrozen }
+    inputs=[ordered]@{ configuration=$configuration; resolved_single_flight_execution_profile=$executionProfilePath; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; resolved_population_contract=$populationContractFrozen; resolved_single_flight_population=$runtimePopulationPath; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_region_field_contract=$resolvedRegionFieldContractFrozen; analyzer_component=$analyzerComponent; pulse_hook=$pulseHook; frontend_hook=$frontendHook; rf_drive_kernel=$rfDriveKernel; resolved_integration_engineering_budget=$budget.frozen_budget; mother_particle_source=$motherSource; mother_particle_source_materialization_receipt=$motherSourceReceiptFrozen; initial_global_state=$globalSource; particle_row_map=$particleRowMap; pre_pulse_restart_validation=$prePulseValidationFrozen; particle_input=$particleInput; frontend_gem=$frontendGem; frontend_basis_initializer=$frontendBasisInitializerFrozen; frontend_contract=$frontendContract; frontend_electrode_topology=$frontendElectrodeTopologyContract; frontend_pa_cache_manifest=$frontendCacheManifestInput; accelerator_overlay_gem=$overlayGem; accelerator_overlay_contract=$overlayContract; accelerator_overlay_basis_builder=$overlayBasisBuilderFrozen; accelerator_overlay_refiner=$overlayRefinerFrozen; accelerator_overlay_interface_verifier=$overlayInterfaceVerifierFrozen; accelerator_overlay_pa_cache_manifest=$overlayCacheManifestInput; accelerator_overlay_iob_builder=$overlayIobBuilderFrozen; accelerator_overlay_iob_container=$overlayIobContainerFrozen; accelerator_overlay_iob_container_gems=$overlayIobContainerGemFrozen; accelerator_overlay_basis_report=$overlayBasisReport; accelerator_overlay_interface_report=$overlayInterfaceReport; accelerator_overlay_refine_dispatch_request=$overlayRefineDispatchRequest; accelerator_overlay_refine_dispatch_plan=$overlayRefineDispatchPlan; accelerator_overlay_refine_resource_usage=$overlayRefineResourceUsage; flight_tube_pa_cache_manifest=$flightTubeCacheManifestInput; reflectron_pa_cache_manifest=$reflectronCacheManifestInput; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen; candidate_reflectron_refiner=$reflectronRefinerFrozen }
     upstream_source_identity=$resolvedBudgetDocument.source_identity
     parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; single_flight_pa_cache_policy=$PaCachePolicy; single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance; pa_cache_dispositions=$paCacheDispositions; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; trajectory_quality_profile_id=$selectedTrajectoryQualityProfileId; trajectory_quality=$trajectoryQuality; time_integration_profile_id=$selectedTimeIntegrationProfileId; rf_steps_per_period=$rfStepsPerPeriod; spatial_window_profile_id=$executionProfile.spatial_window_profile_id; source_region_diagnostic_profile_id=$(if($sourceRegionDiagnosticProfiles.Count -eq 1){$sourceRegionDiagnosticProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; resolved_region_field_contract_sha256=$ResolvedRegionFieldContractSha256; resolved_region_field_semantic_sha256=$ResolvedRegionFieldSemanticSha256; resolved_population_contract_sha256=$ResolvedPopulationContractSha256; clock_basis=[string]$executionProfile.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$PopulationDenominatorCount; eligible_population_count=$EligiblePopulationCount; population_basis=$populationBasis; execution_batch_count=$executionBatchCount; execution_batches_parallel=[bool]($executionBatchCount -gt 1); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=[double]$frontendGeometry.junction_enclosure.rod_end_to_accelerator_shield_mm; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=$(if($prePulseEntranceZoneCollision -or $postPulseHandoffMinimal){$null}else{(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash}); accelerator_overlay_pa0_sha256=$(if($overlayEnabled -and $overlayLayout -eq 'whole_accelerator_v1'){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
@@ -5520,7 +5517,7 @@ try {
         $axisFieldEnvironment.OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0
       }
       $axisFieldResult = Invoke-ResourceBudgetedProcess `
-        -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+        -Limits $budget.limits -RunDir $package.run_dir `
         -UsagePath $axisFieldUsage -FilePath $SimionExe -WorkingDirectory $runtimeDir `
         -RedirectStandardOutput (Join-Path $package.log_dir 'total_axis_field.stdout.log') `
         -RedirectStandardError (Join-Path $package.log_dir 'total_axis_field.stderr.log') `
@@ -5546,7 +5543,7 @@ try {
     $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config
     if ($axisFieldUsage -and -not (Complete-ResourceUsage `
-          -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+          -RunDir $package.run_dir `
           -UsagePath $axisFieldUsage)) {
       $resourceBudgetExceeded = $true
       throw 'BuildOnly total-axis-field compact retained-byte budget exceeded.'
@@ -6194,8 +6191,7 @@ try {
     $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config
     foreach ($usage in $resourceUsageFiles) {
-      if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget `
-            -RunDir $package.run_dir -UsagePath $usage)) {
+      if (-not (Complete-ResourceUsage -RunDir $package.run_dir -UsagePath $usage)) {
         $resourceBudgetExceeded = $true
         throw 'Pre-pulse time-series compact retained-byte budget exceeded.'
       }
@@ -6333,7 +6329,7 @@ try {
   } else { @() }
   $outputs = @($checkpoints) + $diagnosticOutputs + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
   foreach ($usage in $resourceUsageFiles) {
-    if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
+    if (-not (Complete-ResourceUsage -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }
   $resourceProfile = $null
   if ($resourceIdentityWasUnknown) {

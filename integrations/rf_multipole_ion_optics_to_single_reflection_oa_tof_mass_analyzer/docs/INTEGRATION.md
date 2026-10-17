@@ -49,6 +49,16 @@ Lua 校验和当前 streaming CSV writer；原先仅由测试调用的全量内�
 其时钟 ULP、非法采样时刻和终态分类测试改为验证实际 streaming 输出。冻结输入、完整母群、cache generation 及终态 manifest 的身份校验
 均有实际消费者，本次保留；未执行商业求解，不新增物理或资格结论。
 
+selected-source 人口数量只由 prepare 生成的 state-SHA 绑定 receipt 派生；runtime 验证 receipt 的来源、
+数量和区分大小写的 selector，并复核原 state 字节身份，不再为相同 state 另起 Python 计数和临时 JSON。
+launched-source CSV 计数仍保留。adapter 的源合同/上游设计路径与 SHA 检查统一由紧接的 runtime resolver
+执行；runner 冻结输入副本及其身份校验继续保留。单飞路径每次解析省一次 selected-state 扫描、一次 Python
+进程及一次临时 JSON 写读删除；标准 adapter+runner 路径共省两套，分段三阶段路径共省五套。
+
+阶段资源限额在冻结并校验原始 engineering budget 后直接以内存 limits 对象传给进程与容量边界，
+不再另写 `resolved_resource_budget__<stage>.json` 或为该派生副本计算、登记 SHA。原始 run-local budget、
+其 source identity 与 PA cache policy 继续冻结，实际进程限额由各次 usage 的完整 limits 记录。
+
 ## 当前资格与有效证据
 
 | 范围 | 当前判定 | 证据与限制 |

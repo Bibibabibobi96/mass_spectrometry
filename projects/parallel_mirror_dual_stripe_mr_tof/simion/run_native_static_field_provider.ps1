@@ -102,11 +102,9 @@ try{
         $limits=@{};foreach($key in $plan.levels.parent.resource_limits.Keys){$limits[$key]=$plan.levels.parent.resource_limits[$key]}
         $limits.transient_run_directory_bytes=[int64]$plan.committed_new_bytes
         $limits.compact_final_retained_bytes=[int64]$plan.final_retained_estimate_bytes
-        $budgetPath=Join-Path $RunDirectory 'inputs/composition_resource_budget.json'
-        Write-RunJson -Path $budgetPath -Value @{limits=$limits} -Depth 12
         $stage='compose_static_fields';$timer=[Diagnostics.Stopwatch]::StartNew()
         # Bounded Python blocks do not invoke SIMION or require its heavy lease.
-        $step=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budgetPath -RunDir $RunDirectory -UsagePath (Join-Path $RunDirectory 'results/composition_resource_usage.json') -FilePath $python -WorkingDirectory $repo -ArgumentList @('-B','-m',$module,'--plan',$planPath,'--run-directory',$RunDirectory,'--compose') -RedirectStandardOutput (Join-Path $RunDirectory 'logs/composition.log') -RedirectStandardError (Join-Path $RunDirectory 'logs/composition.stderr.log')
+        $step=Invoke-ResourceBudgetedProcess -Limits ([pscustomobject]$limits) -RunDir $RunDirectory -UsagePath (Join-Path $RunDirectory 'results/composition_resource_usage.json') -FilePath $python -WorkingDirectory $repo -ArgumentList @('-B','-m',$module,'--plan',$planPath,'--run-directory',$RunDirectory,'--compose') -RedirectStandardOutput (Join-Path $RunDirectory 'logs/composition.log') -RedirectStandardError (Join-Path $RunDirectory 'logs/composition.stderr.log')
         $timings[$stage]=$timer.Elapsed.TotalSeconds
         if($step.exit_code-ne0){throw 'Native response materialization failed.'}
         foreach($label in $plan.execution_order){
@@ -128,10 +126,8 @@ try{
         $limits.process_tree_working_set_bytes=[Math]::Max([int64]$limits.process_tree_working_set_bytes,2*[int64]$collision.pa_bytes)
         $limits.transient_run_directory_bytes=[int64]$plan.committed_new_bytes
         $limits.compact_final_retained_bytes=[int64]$plan.final_retained_estimate_bytes
-        $budgetPath=Join-Path $RunDirectory ('inputs/'+$occupancyName+'_resource_budget.json')
-        Write-RunJson -Path $budgetPath -Value @{limits=$limits} -Depth 12
         $stage=$occupancyName+'_gem2pa';$timer=[Diagnostics.Stopwatch]::StartNew()
-        $step=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budgetPath -RunDir $RunDirectory -UsagePath (Join-Path $RunDirectory ('results/'+$occupancyName+'_resource_usage.json')) -FilePath $exe -WorkingDirectory (Join-Path $pkg.run_dir ('simion/'+$occupancyName)) -ArgumentList @('--nogui','--noprompt','gem2pa',($occupancyName+'.gem'),($occupancyName+'.pa')) -RedirectStandardOutput (Join-Path $RunDirectory ('logs/'+$occupancyName+'_gem2pa.log')) -RedirectStandardError (Join-Path $RunDirectory ('logs/'+$occupancyName+'_gem2pa.stderr.log'))
+        $step=Invoke-ResourceBudgetedProcess -Limits ([pscustomobject]$limits) -RunDir $RunDirectory -UsagePath (Join-Path $RunDirectory ('results/'+$occupancyName+'_resource_usage.json')) -FilePath $exe -WorkingDirectory (Join-Path $pkg.run_dir ('simion/'+$occupancyName)) -ArgumentList @('--nogui','--noprompt','gem2pa',($occupancyName+'.gem'),($occupancyName+'.pa')) -RedirectStandardOutput (Join-Path $RunDirectory ('logs/'+$occupancyName+'_gem2pa.log')) -RedirectStandardError (Join-Path $RunDirectory ('logs/'+$occupancyName+'_gem2pa.stderr.log'))
         $timings[$stage]=$timer.Elapsed.TotalSeconds
         $collisionPa=Join-Path $RunDirectory ('simion/'+$occupancyName+'/'+$occupancyName+'.pa')
         if($step.exit_code-ne0-or-not(Test-Path -LiteralPath $collisionPa)-or(Get-Item -LiteralPath $collisionPa).Length-ne[int64]$collision.pa_bytes){throw 'Ordinary collision gem2pa failed or grid payload length differs.'}
@@ -152,13 +148,11 @@ try{
         $limits=@{};foreach($key in $level.resource_limits.Keys){$limits[$key]=$level.resource_limits[$key]}
         $limits.transient_run_directory_bytes=[int64]$plan.committed_new_bytes
         $limits.compact_final_retained_bytes=[int64]$plan.final_retained_estimate_bytes
-        $budgetPath=Join-Path $RunDirectory ('inputs/'+$label+'_resource_budget.json')
-        Write-RunJson -Path $budgetPath -Value @{limits=$limits} -Depth 12
         $working=Join-Path $pkg.run_dir ('simion/'+$label)
         $basename=if($label-eq'parent'){'c0_static'}else{'c0_local'}
         $pa=Join-Path $RunDirectory ('simion/'+$label+'/'+$basename+'.pa')
         $usage=Join-Path $RunDirectory ('results/'+$label+'_resource_usage.json')
-        $processArgs=@{ResolvedBudgetPath=$budgetPath;RunDir=$RunDirectory;UsagePath=$usage;FilePath=$exe;WorkingDirectory=$working}
+        $processArgs=@{Limits=([pscustomobject]$limits);RunDir=$RunDirectory;UsagePath=$usage;FilePath=$exe;WorkingDirectory=$working}
         if(-not$isConsumerView){
         $stage=$label+'_gem2pa';$timer=[Diagnostics.Stopwatch]::StartNew()
         $step=Invoke-ResourceBudgetedProcess @processArgs -ArgumentList @('--nogui','--noprompt','gem2pa',($basename+'.gem'),($basename+'.pa')) -RedirectStandardOutput (Join-Path $RunDirectory ('logs/'+$stage+'.log')) -RedirectStandardError (Join-Path $RunDirectory ('logs/'+$stage+'.stderr.log'))

@@ -114,7 +114,7 @@ class PaPlusBoundaryMaskContractTests(unittest.TestCase):
         self.assertIn("Copy-RfStableFile -SourceRunRoot $repoRoot", block)
         self.assertIn("-Destination $maskRestorer", block)
         self.assertIn("$maskResult = Invoke-ResourceBudgetedProcess", block)
-        self.assertIn("-ResolvedBudgetPath $budget.stage_budget", block)
+        self.assertIn("-Limits $budget.limits", block)
         self.assertIn("(Join-Path $runtimeDir ($domainSplitFineBuild.name + '.pa#'))", block)
         self.assertIn("$maskResult.resource_budget_exceeded", block)
         self.assertIn("$maskResult.exit_code -ne 0", block)

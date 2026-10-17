@@ -138,6 +138,11 @@ effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_
 
 ## 求解器投影
 
+单进程资源观察器 `Invoke-ResourceBudgetedProcess` 只接受已解析的 `-Limits` 对象，调用者在冻结预算边界
+解析一次并直接传递；观察收据仍记录完整 `limits`。原工程预算输入继续冻结；Python→PowerShell的
+派生预算只经临时JSON传递，解析后由现有finally清理，不再另存run内的`resolved_resource_budget.json`。
+`Complete-ResourceUsage` 只读取已有 usage 收据收尾，不接收无消费者的预算路径。
+
 求解器底层入口为 [COMSOL 传输](run_finite_3d_transport.ps1) 和
 [SIMION 传输](run_simion_finite_3d_transport.ps1)。它们由项目 wrapper 或 campaign 传入冻结的
 `ProjectId`、`RuntimeProfileId`、`DesignProfileId`、`ParticleSourcePath` 和 `EngineeringBudgetPath`，

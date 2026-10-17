@@ -353,12 +353,10 @@ try {
       oatof_accelerator_builder = $oaBuilder
       particle_source = $particleInput
       resolved_integration_engineering_budget = $budgetBinding.frozen_budget
-      resolved_stage_resource_budget = $budgetBinding.stage_budget
     }
     dependency_identities = $dependencyIdentities
     resource_budget_identity = [ordered]@{
       resolved_budget_sha256 = $budgetBinding.resolved_budget_sha256
-      stage_budget_sha256 = $budgetBinding.stage_budget_sha256
     }
     source_particle_identity = $sourceParticleIdentity
     parameters = [ordered]@{
@@ -433,7 +431,7 @@ try {
     }
     $powerShellExe = (Get-Process -Id $PID).Path
     $processResult = Invoke-ResourceBudgetedProcess `
-      -ResolvedBudgetPath $budgetBinding.stage_budget `
+      -Limits $budgetBinding.limits `
       -RunDir $package.run_dir -UsagePath $resourceUsage `
       -FilePath $powerShellExe -WorkingDirectory $snapshotRoot `
       -RedirectStandardOutput $comsolWrapperStdout `
@@ -505,7 +503,6 @@ try {
   })
   $outputs += $retentionActions
   if (-not (Complete-ResourceUsage `
-      -ResolvedBudgetPath $budgetBinding.stage_budget `
       -RunDir $package.run_dir -UsagePath $resourceUsage)) {
     $resourceBudgetExceeded = $true
     throw 'COMSOL PrePulse compact final retained-byte budget exceeded.'

@@ -139,7 +139,7 @@ Assert-RepositoryDispatchLimits -Limits @{duration=7;bytes=[int64]3221225472} -P
                         "function Assert-HostResourceHeavyStage {throw 'fixture-permit-denied'};"
                         "function Start-Process {throw 'fixture-reached-start'};"
                         "try {Invoke-ResourceBudgetedProcess "
-                        f"-ResolvedBudgetPath '{budget}' -RunDir '{root}' "
+                        f"-Limits ((Get-Content -LiteralPath '{budget}' -Raw|ConvertFrom-Json).limits) -RunDir '{root}' "
                         f"-UsagePath '{root / 'usage.json'}' -FilePath 'C:\\fixture\\simion.exe' "
                         f"-ArgumentList @('--nogui','--noprompt','{verb}','build_simion_runtime_iob.lua');exit 3}} catch {{"
                         f"if($_.Exception.Message-ne'{expected}'){{throw}}}};exit 0"
@@ -185,7 +185,8 @@ function Assert-HostResourceHeavyStage {
  if(-not$Lease.heavy){throw 'inherited-light-denied'}
 }
 function Invoke-ResourceBudgetedProcess {
- param($ResolvedBudgetPath,$RunDir,$UsagePath,$FilePath,$ArgumentList)
+ param($Limits,$RunDir,$UsagePath,$FilePath,$ArgumentList)
+ if($Limits.wall_clock_seconds-ne30){throw 'resolved-limits-not-forwarded'}
  $script:events+='child-start'
  if($scenario-eq'inherited_heavy'){
    if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN-ne'parent'){throw 'inherited-token-cleared'}
@@ -206,7 +207,7 @@ function Invoke-ResourceBudgetedProcess {
    Exit-HostExecutionLease -Lease $child
  }
 }
-$RunId='fixture';$resolvedResourceBudget='unused';$runDir='.';$resourceUsage='unused'
+$RunId='fixture';$resolvedBudget=[pscustomobject]@{limits=[pscustomobject]@{wall_clock_seconds=30}};$runDir='.';$resourceUsage='unused'
 $pwsh='unused';$codeRoot='.';$task='unused';$report='unused'
 if($scenario-like'inherited_*'){
  $hostExecutionLease=@{token='parent';role='COMSOL';stage='prepare';inherited=$true;heavy=($scenario-eq'inherited_heavy')}
@@ -1109,6 +1110,25 @@ if($scenario-eq'inherited_light'){
             with self.assertRaisesRegex(ValueError, "unknown runtime profile"):
                 resolve_runtime_profile(REPO_ROOT, HEX, profile)
 
+    def test_preflight_temp_cleanup_runs_after_success_and_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
+                runner = REPO_ROOT / "common/multipole" / name
+                command = f"$path='{runner}';$budgetPreflight='{Path(directory)/'budget.json'}';" + r'''
+$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$null,[ref]$null)
+$blocks=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.TryStatementAst] -and $node.Finally -and $node.Finally.Extent.Text.Contains('Remove-Item -LiteralPath $budgetPreflight')},$true))
+if($blocks.Count-ne1-or-not$blocks[0].Body.Extent.Text.Contains('common.multipole.resource_budget')){throw 'TEMP cleanup does not belong to the compiler preflight'}
+foreach($fail in @($false,$true)){
+ Set-Content -LiteralPath $budgetPreflight -Value '{}'
+ $script=[scriptblock]::Create('try {if($fail){throw "fixture"}} finally '+$blocks[0].Finally.Extent.Text)
+ try{& $script}catch{if($_.Exception.Message-ne'fixture'){throw}}
+ if(Test-Path -LiteralPath $budgetPreflight){throw 'Compiler TEMP budget leaked'}
+}
+'''
+                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                                        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=False, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_high_cost_runners_validate_before_creating_run_package(self) -> None:
         for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
             source = (REPO_ROOT / "common/multipole" / name).read_text(encoding="utf-8")
@@ -1685,7 +1705,7 @@ if($scenario-eq'inherited_light'){
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
                 f". '{support}';{HOST_PERMIT_FIXTURE}"
-                f"$r=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath '{budget}' "
+                f"$r=Invoke-ResourceBudgetedProcess -Limits ((Get-Content -LiteralPath '{budget}' -Raw|ConvertFrom-Json).limits) "
                 f"-RunDir '{root}' -UsagePath '{usage}' -FilePath (Get-Process -Id $PID).Path "
                 "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 5');"
                 "if($r.resource_budget_exceeded-or$r.exit_code-ne0){exit 3}"
@@ -1704,6 +1724,122 @@ if($scenario-eq'inherited_light'){
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
             self.assertEqual(measured["status"], "running")
             self.assertIsNone(measured["limit_name"])
+
+    def test_every_production_completion_call_binds_to_the_real_usage_helper(self) -> None:
+        """Execute parsed call sites, including multiline staged-runner cleanup."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            command = f"""
+. '{REPO_ROOT / 'common/multipole/resource_budget_support.ps1'}'
+function Get-RunDirectoryBytes {{ param($RunDir) return [int64]128 }}
+$runDir='{root}';$run=$runDir
+$usage=Join-Path $runDir 'usage.json'
+$usagePath=$usage
+$resourceUsage=$usage;$controlResourceUsage=$usage;$axisFieldUsage=$usage
+$batchResourceUsagePath=$usage
+$package=@{{run_dir=$runDir}};$arguments=@{{RunDir=$runDir;UsagePath=$usage}}
+$count=0
+foreach($folder in @('common','projects','integrations')){{
+    foreach($source in Get-ChildItem -LiteralPath (Join-Path '{REPO_ROOT}' $folder) -Recurse -File -Filter '*.ps1'){{
+        if($source.FullName-match'[\\/]docs[\\/]history[\\/]|[\\/]tests[\\/]'){{continue}}
+        $tokens=$null;$errors=$null
+        $ast=[Management.Automation.Language.Parser]::ParseFile($source.FullName,[ref]$tokens,[ref]$errors)
+        if($errors){{throw ($errors|Out-String)}}
+        $invocations=@($ast.FindAll({{param($node)
+            $node-is[Management.Automation.Language.CommandAst]-and
+            $node.GetCommandName()-eq'Invoke-ResourceBudgetedProcess'
+        }},$true))
+        foreach($invoke in $invocations){{
+            $splat=@($invoke.CommandElements|Where-Object{{
+                $_-is[Management.Automation.Language.VariableExpressionAst]-and$_.Splatted
+            }})
+            $parameters=@($invoke.CommandElements|Where-Object{{
+                $_-is[Management.Automation.Language.CommandParameterAst]
+            }}|ForEach-Object ParameterName)
+            if($splat.Count-eq0-and$parameters-notcontains'Limits'){{
+                throw ('Single-process invocation omits Limits: '+$source.FullName+': '+$invoke.Extent.Text)
+            }}
+        }}
+        $calls=@($ast.FindAll({{param($node)
+            $node-is[Management.Automation.Language.CommandAst]-and
+            $node.GetCommandName()-eq'Complete-ResourceUsage'
+        }},$true))
+        foreach($call in $calls){{
+            @{{status='running';peak_run_directory_bytes=0;limits=@{{fixture=42}}}} |
+                ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $usage
+            $completed=. ([scriptblock]::Create($call.Extent.Text))
+            $receipt=Get-Content -LiteralPath $usage -Raw|ConvertFrom-Json
+            if($completed-ne$true-or$receipt.status-ne'completed'-or
+                $receipt.final_retained_bytes-ne128-or$receipt.limits.fixture-ne42){{
+                throw ('Completion receipt changed: '+$source.FullName)
+            }}
+            $count++
+        }}
+    }}
+}}
+if($count-eq0){{throw 'No production usage completion calls found'}}
+Write-Output "COMPLETION_CALLS=$count"
+exit 0
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn("COMPLETION_CALLS=", completed.stdout)
+
+    def test_single_process_limits_preserve_receipts_for_json_and_dictionary_inputs(self) -> None:
+        """The real observer accepts existing JSON objects and both map types equally."""
+        limits = dict(wall_clock_seconds=10, transient_run_directory_bytes=1,
+                      transient_run_directory_sample_interval_seconds=1,
+                      process_tree_working_set_bytes=1024**3,
+                      minimum_system_available_memory_bytes=1,
+                      compact_final_retained_bytes=1024**2, automatic_retry_count=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = f"""
+. '{support}'
+{HOST_PERMIT_FIXTURE}
+$decoded = '{json.dumps(limits)}' | ConvertFrom-Json
+$plain = @{{}}; $ordered = [ordered]@{{}}
+foreach($property in $decoded.PSObject.Properties){{
+    $plain[$property.Name]=$property.Value
+    $ordered[$property.Name]=$property.Value
+}}
+function Get-RunDirectoryBytes {{ param($RunDir) return [int64]2 }}
+$variants=@($decoded,$plain,$ordered)
+for($index=0;$index-lt$variants.Count;$index++){{
+    $usage=Join-Path '{root}' ($index.ToString()+'.json')
+    $result=Invoke-ResourceBudgetedProcess -Limits $variants[$index] -RunDir '{root}' `
+        -UsagePath $usage -FilePath (Get-Process -Id $PID).Path `
+        -ArgumentList @('-NoProfile','-NonInteractive','-Command','exit 7')
+    if($result.exit_code-ne7-or$result.resource_budget_exceeded-or$null-ne$result.limit_name){{
+        throw 'Object limits changed process exit or advisory limit semantics'
+    }}
+    $variants[$index].transient_run_directory_sample_interval_seconds=0
+    try{{
+        Invoke-ResourceBudgetedProcess -Limits $variants[$index] -RunDir '{root}' `
+            -UsagePath $usage -FilePath 'must-not-launch' -ArgumentList @('unused')
+        throw 'Invalid sample interval was accepted'
+    }}catch{{if($_.Exception.Message-ne'Transient run-directory sample interval must be one positive integer.'){{throw}}}}
+}}
+exit 0
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            for index in range(3):
+                measured = json.loads((root / f"{index}.json").read_text(encoding="utf-8-sig"))
+                self.assertEqual(measured["limits"], limits)
+                self.assertEqual(measured["status"], "process_failed")
+                self.assertIsNone(measured["limit_name"])
+                self.assertEqual(measured["peak_run_directory_bytes"], 2)
+                self.assertEqual(measured["warning_names"], ["transient_run_directory_bytes"])
 
     def test_single_process_waits_for_verified_live_root_when_tree_sample_is_empty(
         self,
@@ -1739,7 +1875,7 @@ if($scenario-eq'inherited_light'){
                 "managed_memory_bytes=0;total_processor_time_ticks=0}"
                 "};"
                 f"$started=[Diagnostics.Stopwatch]::StartNew();$r=Invoke-ResourceBudgetedProcess "
-                f"-ResolvedBudgetPath '{budget}' -RunDir '{root}' -UsagePath '{usage}' "
+                f"-Limits ((Get-Content -LiteralPath '{budget}' -Raw|ConvertFrom-Json).limits) -RunDir '{root}' -UsagePath '{usage}' "
                 "-FilePath (Get-Process -Id $PID).Path "
                 "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 2');"
                 "$started.Stop();if($r.resource_budget_exceeded-or$r.exit_code-ne0-or"
@@ -1804,7 +1940,7 @@ if($scenario-eq'inherited_light'){
                 "active_process_ids=@(987654);working_set_bytes=0;private_bytes=0;"
                 "managed_memory_bytes=0;total_processor_time_ticks=0}"
                 "};"
-                f"$r=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath '{budget}' "
+                f"$r=Invoke-ResourceBudgetedProcess -Limits ((Get-Content -LiteralPath '{budget}' -Raw|ConvertFrom-Json).limits) "
                 f"-RunDir '{root}' -UsagePath '{usage}' -FilePath 'C:\\SIMION\\simion.exe' "
                 "-ArgumentList @('ignored');"
                 "if($r.resource_budget_exceeded-or$r.exit_code-ne0){exit 3}"
@@ -1967,7 +2103,7 @@ if($scenario-eq'inherited_light'){
                 "function Get-RunDirectoryBytes {"
                 "param([string]$RunDir);$script:directoryMeasurements+=1;"
                 "if($script:directoryMeasurements-eq 1){return 0};return 2048};"
-                f"$r=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath '{budget}' "
+                f"$r=Invoke-ResourceBudgetedProcess -Limits ((Get-Content -LiteralPath '{budget}' -Raw|ConvertFrom-Json).limits) "
                 f"-RunDir '{root}' -UsagePath '{usage}' "
                 "-FilePath (Get-Process -Id $PID).Path "
                 "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 1');"

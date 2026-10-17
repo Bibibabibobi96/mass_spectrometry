@@ -627,6 +627,10 @@ function Resolve-RfOatofRuntimeBinding {
       [string]$sourcePopulationReceipt.role -ne
         'rf_multipole_oatof_source_population_receipt' -or
       [string]$sourcePopulationReceipt.status -ne 'PASS' -or
+      [string]$sourcePopulationReceipt.selector.event -cne
+        [string]$sourceContract.selector.event -or
+      [string]$sourcePopulationReceipt.selector.status -cne
+        [string]$sourceContract.selector.status -or
       [string]$sourcePopulationReceipt.source_state.sha256 -ne
         [string]$sourceRecord.state.sha256 -or
       [int]$sourcePopulationReceipt.particle_count -ne
@@ -734,22 +738,6 @@ function Resolve-RfOatofRuntimeBinding {
         ([string]$sourceRecord.state.sha256).ToUpperInvariant()) {
     throw 'Runtime source manifest does not prove the frozen successful source run.'
   }
-  $countReceipt = Join-Path ([IO.Path]::GetTempPath()) ('rf_oatof_csv_count_{0}.json' -f [guid]::NewGuid())
-  try {
-    Invoke-RfOatofRepositoryPython -RepoRoot $repo -PythonExe $pythonExe `
-      -ArgumentList @('-m','common.simion.particle_batching',
-        '--count-csv',$sourceState,
-        '--event',([string]$sourcePopulationReceipt.selector.event),
-        '--status',([string]$sourcePopulationReceipt.selector.status),
-        '--output',$countReceipt) | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Python selected-state CSV count failed.' }
-    $selectedStateRowCount = [int]((Get-Content -Raw -LiteralPath $countReceipt | ConvertFrom-Json).rows)
-  } finally { Remove-Item -LiteralPath $countReceipt -Force -ErrorAction SilentlyContinue }
-  if ($selectedStateRowCount -ne
-      [int]$sourceRecord.particle_count) {
-    throw 'Runtime source state does not contain the receipt-derived population.'
-  }
-
   $sourceIdentity = [ordered]@{
     source_branch_id = $SourceBranchId
     solver_id = $sourceBranchSolverId

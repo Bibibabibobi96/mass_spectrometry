@@ -435,7 +435,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertNotIn("New-PublishedPaCacheProtectionSnapshot", runner)
         self.assertNotIn("published_pa_cache_protection_snapshot.json", runner)
         gate = runner[capacity:capacity + 1100]
-        self.assertIn("-CommittedNewBytes ([int64]$stageBudgetDocument.limits.transient_run_directory_bytes)", gate)
+        self.assertIn("-CommittedNewBytes ([int64]$budget.limits.transient_run_directory_bytes)", gate)
         self.assertIn("-ProtectedPaths $artifactCapacityProtectedPaths", gate)
         self.assertIn(
             "Add-RfArtifactCapacityProtectedRunPath -Path $package.artifact_run_dir",
@@ -945,6 +945,84 @@ try {{
             "single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance",
             runner,
         )
+
+    def test_stage_budget_freezes_only_raw_authority_and_returns_typed_limits(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        support = INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1"
+        with tempfile.TemporaryDirectory() as directory:
+            script = f"""
+. '{support}'
+$root = '{directory}'
+$document = [ordered]@{{
+  schema_version=1; role='integration_resolved_engineering_budget'
+  integration_id='integration_fixture'; connection_profile_id='connection_fixture'
+  retention_class='compact'; particle_count=7
+  source_identity=@{{run_id='source_fixture'}}
+  single_flight_pa_cache_policy='require_existing'
+  stage_limits=@{{fixture=@{{solver='simion'; automatic_retry_count=0
+    wall_clock_seconds=11; transient_run_directory_bytes=12000
+    process_tree_working_set_bytes=13000
+    minimum_system_available_memory_bytes=14000; compact_final_retained_bytes=15000}}}}
+}}
+function Initialize-Fixture {{
+  param([string]$Case, [string]$Stage='fixture', [string]$Solver='simion')
+  $source=Join-Path $root ($Case+'.json')
+  $inputs=Join-Path $root ($Case+'_inputs')
+  New-Item -ItemType Directory -Path $inputs | Out-Null
+  Write-RunJson -Path $source -Value $document
+  return Initialize-RfIntegrationStageBudget -ResolvedBudget $source -InputDir $inputs `
+    -ExpectedIntegrationId integration_fixture -ExpectedConnectionProfileId connection_fixture `
+    -StageId $Stage -Solver $Solver
+}}
+$binding=Initialize-Fixture -Case valid
+$files=@(Get-ChildItem -LiteralPath (Split-Path -Parent $binding.frozen_budget) -File)
+if ($files.Count -ne 1 -or $files[0].Name -ne 'resolved_integration_engineering_budget.json') {{
+  throw 'initialization must freeze only the raw budget'
+}}
+$names=@($binding.PSObject.Properties.Name | Sort-Object)
+if (($names -join ',') -ne 'frozen_budget,limits,resolved_budget_sha256') {{
+  throw 'derived budget path or identity remains'
+}}
+if ($binding.resolved_budget_sha256 -cne (Get-FileHash (Join-Path $root 'valid.json')).Hash -or
+    (Get-Content -Raw $binding.frozen_budget) -cne (Get-Content -Raw (Join-Path $root 'valid.json'))) {{
+  throw 'raw frozen budget identity differs'
+}}
+$expected=@{{wall_clock_seconds=11; transient_run_directory_bytes=12000
+  process_tree_working_set_bytes=13000; minimum_system_available_memory_bytes=14000
+  compact_final_retained_bytes=15000; automatic_retry_count=0}}
+foreach ($name in $expected.Keys) {{
+  $type=if ($name -in @('wall_clock_seconds','automatic_retry_count')) {{[int]}} else {{[long]}}
+  if ($binding.limits.$name -ne $expected[$name] -or $binding.limits.$name -isnot $type) {{
+    throw "stage limit value or type differs: $name"
+  }}
+}}
+foreach ($case in @('missing','solver','nonpositive','retry')) {{
+  $document.stage_limits.fixture.transient_run_directory_bytes=12000
+  $document.stage_limits.fixture.automatic_retry_count=0
+  $stage='fixture'; $solver='simion'
+  switch ($case) {{
+    missing {{$stage='missing'}}
+    solver {{$solver='comsol'}}
+    nonpositive {{$document.stage_limits.fixture.transient_run_directory_bytes=0}}
+    retry {{$document.stage_limits.fixture.automatic_retry_count=1}}
+  }}
+  try {{
+    $null=Initialize-Fixture -Case $case -Stage $stage -Solver $solver
+    throw 'invalid stage was accepted'
+  }} catch {{
+    if ($_.Exception.Message -notmatch 'engineering-budget stage|budget omits stage') {{throw}}
+  }}
+}}
+'STAGE_LIMITS_FROM_RAW_BUDGET=PASS'
+"""
+            completed = subprocess.run(
+                [pwsh, "-NoProfile", "-Command", script], cwd=REPO,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("STAGE_LIMITS_FROM_RAW_BUDGET=PASS", completed.stdout)
 
     def test_resolved_budget_authority_switches_to_run_local_frozen_copy(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")

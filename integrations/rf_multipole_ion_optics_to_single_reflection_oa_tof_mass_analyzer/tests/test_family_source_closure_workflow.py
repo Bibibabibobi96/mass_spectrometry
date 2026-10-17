@@ -2494,6 +2494,14 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 . '{runtime_support}'
 . '{runtime_resolver}'
+$repositoryPython = (Get-Command Invoke-RfOatofRepositoryPython).ScriptBlock
+$script:csvCountPaths = [Collections.Generic.List[string]]::new()
+function Invoke-RfOatofRepositoryPython {{
+  param([string]$RepoRoot, [string]$PythonExe, [string[]]$ArgumentList)
+  $index = [array]::IndexOf($ArgumentList, '--count-csv')
+  if ($index -ge 0) {{ $script:csvCountPaths.Add($ArgumentList[$index + 1]) }}
+  & $repositoryPython -RepoRoot $RepoRoot -PythonExe $PythonExe -ArgumentList $ArgumentList
+}}
 $runtime = Resolve-RfOatofRuntimeBinding `
   -RepoRoot '{REPO_ROOT}' `
   -ResolvedConnection '{resolved}' `
@@ -2508,39 +2516,101 @@ if ($runtime.binding.schema_version -ne 4) {{ throw 'runtime binding schema diff
 if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
   throw 'runtime resolver did not preserve the frozen source contract'
 }}
+if ($script:csvCountPaths.Count -ne 1 -or
+    $script:csvCountPaths[0] -ne $runtime.source_particle_source) {{
+  throw 'runtime resolver must count only the launched particle source once'
+}}
 'EXPLORATION_RUNTIME_RESOLUTION=PASS'
 """
-                result = subprocess.run(
-                    ["pwsh", "-NoProfile", "-Command", script],
-                    cwd=REPO_ROOT,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=90,
-                )
+                def run_resolver(source_sha: str = frozen["resolved_source_contract_sha256"]):
+                    invocation = script.replace(
+                        "-ResolvedSourceContractSha256 '" + frozen["resolved_source_contract_sha256"] + "'",
+                        "-ResolvedSourceContractSha256 '" + source_sha + "'",
+                    )
+                    return subprocess.run(
+                        ["pwsh", "-NoProfile", "-Command", invocation], cwd=REPO_ROOT,
+                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90,
+                    )
+
+                result = run_resolver()
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("EXPLORATION_RUNTIME_RESOLUTION=PASS", result.stdout)
+                source_bytes = resolved_source.read_bytes()
+                source_document = json.loads(source_bytes)
+                source_record = source_document["source_branches"][frozen["source_branch_id"]]["source"]
+                receipt_path = REPO_ROOT.parent / source_record["population_derivation_receipt"]["path"]
+                receipt_bytes = receipt_path.read_bytes()
+                mutations = (
+                    (("selector", "event"), "HANDOFF"),
+                    (("selector", "status"), "TRANSMITTED"),
+                    (("particle_count",), source_record["particle_count"] - 1),
+                    (("source_state", "sha256"), "0" * 64),
+                )
+                for keys, value in mutations:
+                    with self.subTest(receipt_field=".".join(keys)):
+                        try:
+                            receipt = json.loads(receipt_bytes)
+                            target = receipt
+                            for key in keys[:-1]:
+                                target = target[key]
+                            target[keys[-1]] = value
+                            write_json(receipt_path, receipt)
+                            source = json.loads(source_bytes)
+                            source["source_branches"][frozen["source_branch_id"]]["source"][
+                                "population_derivation_receipt"
+                            ]["sha256"] = hashlib.sha256(receipt_path.read_bytes()).hexdigest().upper()
+                            write_json(resolved_source, source)
+                            changed_sha = hashlib.sha256(resolved_source.read_bytes()).hexdigest().upper()
+                            rejected = run_resolver(changed_sha)
+                            self.assertNotEqual(rejected.returncode, 0)
+                            self.assertIn(
+                                "Runtime source population receipt differs from the frozen source.",
+                                rejected.stdout + rejected.stderr,
+                            )
+                        finally:
+                            receipt_path.write_bytes(receipt_bytes)
+                            resolved_source.write_bytes(source_bytes)
+                state_path = REPO_ROOT.parent / source_record["state"]["path"]
+                state_bytes = state_path.read_bytes()
+                try:
+                    state_path.write_bytes(state_bytes + b" ")
+                    rejected = run_resolver()
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn("runtime source state SHA-256 differs", rejected.stdout + rejected.stderr)
+                finally:
+                    state_path.write_bytes(state_bytes)
                 campaign_path.write_text("{\"superseded\": true}\n", encoding="utf-8")
                 adapter = INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
-                prepared = subprocess.run(
-                    [
-                        "pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                        "-File", str(adapter),
-                        "-CompositionPlan", str(plan),
-                        "-ResolvedConnection", str(resolved),
-                        "-PythonExe", sys.executable,
-                        "-RepoRoot", str(REPO_ROOT),
-                        "-RunId", execution_run_id,
-                        "-PrepareOnly",
-                    ],
-                    cwd=REPO_ROOT,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=90,
-                )
+                def run_adapter():
+                    return subprocess.run(
+                        [
+                            "pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                            "-File", str(adapter),
+                            "-CompositionPlan", str(plan),
+                            "-ResolvedConnection", str(resolved),
+                            "-PythonExe", sys.executable,
+                            "-RepoRoot", str(REPO_ROOT),
+                            "-RunId", execution_run_id,
+                            "-PrepareOnly",
+                        ],
+                        cwd=REPO_ROOT,
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        timeout=90,
+                    )
+                for input_path in (resolved_source, upstream_design):
+                    with self.subTest(adapter_tampered_input=input_path.name):
+                        original = input_path.read_bytes()
+                        try:
+                            input_path.write_bytes(original + b" ")
+                            rejected = run_adapter()
+                            self.assertNotEqual(rejected.returncode, 0)
+                            self.assertIn("current parent-run input with its raw SHA-256", rejected.stdout + rejected.stderr)
+                        finally:
+                            input_path.write_bytes(original)
+                prepared = run_adapter()
                 self.assertEqual(
                     prepared.returncode, 0, prepared.stdout + prepared.stderr
                 )

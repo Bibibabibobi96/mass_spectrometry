@@ -49,11 +49,8 @@ try {
  if($LASTEXITCODE-ne0){throw 'GUI replay input preparation failed'}
  $guiBudget=Join-Path $package.input_dir 'gui_execution_budget.json'
  Write-RunJson -Path $guiBudget -Value @{schema_version=1;committed_new_bytes=$guiCommitted;basis='Baseline frozen native_functional GUI preparation forecast (legacy: full functional forecast); private fractional field, logs and IOB only';user_fly_trajectory_growth_reserved=$false;user_fly_notice='Manual Fly can create multi-GiB retained trajectories beyond this preparation reservation'}
- $budgetPath=Join-Path $package.input_dir 'resource_budget.json'
- $budget=Get-Content $budgetPath -Raw|ConvertFrom-Json -AsHashtable
- $budget.limits.transient_run_directory_bytes=$guiCommitted
- $budget.committed_new_bytes=$guiCommitted
- Write-RunJson -Path $budgetPath -Value $budget
+ $limits=$profile.limits.PSObject.Copy()
+ $limits.transient_run_directory_bytes=$guiCommitted
  $runConfig=Get-Content $package.run_config -Raw|ConvertFrom-Json -AsHashtable
  $runConfig.inputs.gui_execution_budget=$guiBudget
  Write-RunJson -Path $package.run_config -Value $runConfig
@@ -74,7 +71,7 @@ try {
   $stageBudget=Get-HostResourceBudget -Role SIMION -Stage $command.stage
   if($command.name-eq'potential_audit'){$stageBudget.memory_bytes=[long]$profile.native_field_query_memory_bytes}
   $lease=Update-HostResourceStage -Lease $lease -Stage $command.stage -Budget $stageBudget -RetainedMemoryBytes 0
-  $result=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budgetPath -RunDir $package.run_dir -UsagePath (Join-Path $package.result_dir "$($command.name)_resource_usage.json") -FilePath $SimionExe -ArgumentList $command.arguments -WorkingDirectory $solver -RedirectStandardOutput (Join-Path $package.log_dir "$($command.name).log") -RedirectStandardError (Join-Path $package.log_dir "$($command.name).stderr.log")
+  $result=Invoke-ResourceBudgetedProcess -Limits $limits -RunDir $package.run_dir -UsagePath (Join-Path $package.result_dir "$($command.name)_resource_usage.json") -FilePath $SimionExe -ArgumentList $command.arguments -WorkingDirectory $solver -RedirectStandardOutput (Join-Path $package.log_dir "$($command.name).log") -RedirectStandardError (Join-Path $package.log_dir "$($command.name).stderr.log")
   if($result.exit_code-ne0){throw "Private GUI preparation stage failed: $($command.name)"}
  }
  & $PythonExe -c 'import sys; from pathlib import Path; from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import record_prepared_native_family; record_prepared_native_family(Path(sys.argv[1]))' $package.run_dir

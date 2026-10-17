@@ -62,8 +62,7 @@ class PulseCaptureChainAuditTests(unittest.TestCase):
             "'-m','common.contracts.component_particle_state',"
         )
         comsol = text.index(
-            "Invoke-ResourceBudgetedProcess `\n"
-            "      -ResolvedBudgetPath $budgetBinding.stage_budget"
+            "$processResult = Invoke-ResourceBudgetedProcess"
         )
         adapter_call = text.index(
             "$localExitAdapter,'--source',$particleInput"

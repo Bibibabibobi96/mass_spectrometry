@@ -347,7 +347,7 @@ function Write-ResourceUsage {
 function Invoke-ResourceBudgetedProcess {
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory)][string]$ResolvedBudgetPath,
+    [Parameter(Mandatory)][pscustomobject]$Limits,
     [Parameter(Mandatory)][string]$RunDir,
     [Parameter(Mandatory)][string]$UsagePath,
     [Parameter(Mandatory)][string]$FilePath,
@@ -357,8 +357,7 @@ function Invoke-ResourceBudgetedProcess {
     [string]$RedirectStandardError='',
     [hashtable]$Environment=@{}
   )
-  $budget=Get-Content -LiteralPath $ResolvedBudgetPath -Raw -Encoding UTF8|ConvertFrom-Json
-  $limits=$budget.limits
+  if($Limits -is [Collections.IDictionary]){$Limits=[pscustomobject]$Limits}
   $directorySampleProperty=$limits.PSObject.Properties[
     'transient_run_directory_sample_interval_seconds'
   ]
@@ -1245,7 +1244,6 @@ function Invoke-ResourceBudgetedProcesses {
 function Complete-ResourceUsage {
   [CmdletBinding()]
   param(
-    [string]$ResolvedBudgetPath,
     [Parameter(Mandatory)][string]$RunDir,
     [Parameter(Mandatory)][string]$UsagePath
   )

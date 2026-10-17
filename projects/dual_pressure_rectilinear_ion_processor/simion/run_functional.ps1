@@ -99,12 +99,9 @@ try {
  & $python @prepareArguments
  if($LASTEXITCODE-ne0){throw 'Input preparation failed'}
  Copy-VerifiedRunInput (Join-Path $projectRoot 'config/execution_profiles.json') (Join-Path $package.input_dir 'execution_profiles.json')|Out-Null
- $budget=Join-Path $package.input_dir 'resource_budget.json'
  $profile.limits.transient_run_directory_bytes=$committedNewBytes
- Write-RunJson -Path $budget -Value @{schema_version=1;limits=$profile.limits;committed_new_bytes=$committedNewBytes;capacity_basis=$(if($NativeFieldRun){'Verified external PA reference; conservative legacy retained-trajectory forecast'}else{$profile.capacity_estimate_basis})}
  $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
  $config.inputs.execution_profiles=Join-Path $package.input_dir 'execution_profiles.json'
- $config.inputs.resource_budget=$budget
  Write-RunJson -Path $package.run_config -Value $config
  $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare
  $numerics=Get-Content (Join-Path $package.input_dir 'numerics.json') -Raw|ConvertFrom-Json
@@ -121,7 +118,7 @@ try {
   if($command.name-eq'potential_audit'){$stageBudget.memory_bytes=[long]$profile.native_field_query_memory_bytes}
   $lease=Update-HostResourceStage -Lease $lease -Stage $command.stage -Budget $stageBudget -RetainedMemoryBytes 0
   Write-Output "ION_PROCESSOR_STAGE=$($command.name) RUN=$RunId"
-  $result=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget -RunDir $run -UsagePath (Join-Path $package.result_dir "$($command.name)_resource_usage.json") -FilePath $SimionExe -ArgumentList $command.arguments -WorkingDirectory $solver -RedirectStandardOutput (Join-Path $package.log_dir "$($command.name).log") -RedirectStandardError (Join-Path $package.log_dir "$($command.name).stderr.log")
+  $result=Invoke-ResourceBudgetedProcess -Limits $profile.limits -RunDir $run -UsagePath (Join-Path $package.result_dir "$($command.name)_resource_usage.json") -FilePath $SimionExe -ArgumentList $command.arguments -WorkingDirectory $solver -RedirectStandardOutput (Join-Path $package.log_dir "$($command.name).log") -RedirectStandardError (Join-Path $package.log_dir "$($command.name).stderr.log")
   if($result.exit_code-ne0){throw "SIMION $($command.name) failed: $($result.exit_code)"}
  }
  # Public dispatch controls every native particle flight. Use only the frozen
@@ -141,7 +138,7 @@ try {
    $paRecord=$iobPreparation.native_pa0_record
    $guard=Protect-ImmutablePaSource -Source $paRecord.path -ExpectedBytes $paRecord.bytes -ExpectedSha256 $paRecord.sha256
    try {
-    $build=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget -RunDir $run -UsagePath (Join-Path $package.result_dir 'batch_iob_template_resource_usage.json') -FilePath $SimionExe -ArgumentList @('--nogui','--noprompt','lua',$iobPreparation.script) -WorkingDirectory $solver -RedirectStandardOutput (Join-Path $package.log_dir 'batch_iob_templates.log') -RedirectStandardError (Join-Path $package.log_dir 'batch_iob_templates.stderr.log')
+    $build=Invoke-ResourceBudgetedProcess -Limits $profile.limits -RunDir $run -UsagePath (Join-Path $package.result_dir 'batch_iob_template_resource_usage.json') -FilePath $SimionExe -ArgumentList @('--nogui','--noprompt','lua',$iobPreparation.script) -WorkingDirectory $solver -RedirectStandardOutput (Join-Path $package.log_dir 'batch_iob_templates.log') -RedirectStandardError (Join-Path $package.log_dir 'batch_iob_templates.stderr.log')
     if($build.exit_code-ne0){throw 'Native batch IOB template preparation failed'}
     $stream=$global:MassSpectrometryImmutablePaSourceGuards[[IO.Path]::GetFullPath($paRecord.path)].stream
     if((Get-ImmutablePaSourceVerificationSha256 -Stream $stream -Length $paRecord.bytes)-ne$paRecord.sha256){throw 'Native source PA0 changed during template preparation'}

@@ -62,7 +62,8 @@ def validate_baseline_for_private_gui(baseline_run: Path) -> dict:
         controls.append("probe_native_field.lua")
     required = [baseline_run / name for name in ("run_config.json", "summary.json", "logs/flight.log", "simion/events.csv", "simion/samples.csv", "results/particle_state.csv", "inputs/resolved_model.json")]
     required += [baseline_run / "simion" / name for name in [*controls, "processor.lua"]]
-    required += list((baseline_run / "inputs").glob("*.json"))
+    required += [path for path in (baseline_run / "inputs").glob("*.json")
+                 if path.name != "resource_budget.json"]
     verified = {}
     for path in dict.fromkeys(p.resolve() for p in required):
         matches = [r for r in records if record_path(r, base_dir=baseline_run) == path]
@@ -106,6 +107,8 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
     for name in controls:
         shutil.copyfile(baseline_run / "simion" / name, solver / name)
     for source in (baseline_run / "inputs").glob("*.json"):
+        if source.name == "resource_budget.json":
+            continue
         if source.resolve() not in verified:
             raise ValueError(f"unbound baseline input: {source}")
         shutil.copyfile(source, inputs / source.name)

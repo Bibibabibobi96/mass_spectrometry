@@ -515,8 +515,7 @@ class AnalyzerTransportTests(unittest.TestCase):
             "$frozenProgramBuilder,'--formal',$frozenFormalLua"
         )
         simion = runner.index(
-            "$processResult = Invoke-ResourceBudgetedProcess `\n"
-            "      -ResolvedBudgetPath $budgetBinding.stage_budget"
+            "$processResult = Invoke-ResourceBudgetedProcess"
         )
         diagnostics = runner.index(
             "$frozenSolverDiagnostics,'analyze-simion-log'"

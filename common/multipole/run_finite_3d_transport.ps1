@@ -135,9 +135,8 @@ try{
     ($null-ne$authorizedHmax-and[double]$authorizedHmax-ne$WorkingRegionMaximumElementSizeMm)){
     throw 'COMSOL numerical arguments differ from the authorized runtime profile.'
   }
-}catch{
+}finally{
   Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
-  throw
 }
 $hostRuntimeSourcePaths=@(
   'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
@@ -194,9 +193,7 @@ try{
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'
   $engineeringBudget=Join-Path $inputDir 'engineering_budget.json'
-  $resolvedResourceBudget=Join-Path $inputDir 'resolved_resource_budget.json'
   Copy-Item -LiteralPath $engineeringBudgetInput -Destination $engineeringBudget
-  Move-Item -LiteralPath $budgetPreflight -Destination $resolvedResourceBudget
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
@@ -340,7 +337,7 @@ try{
       source_family_sha256=$sourceFamilySha;operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
       particle_source_operating_point_binding=$sourceMeta.operating_point_binding};
     inputs=[ordered]@{project_registry=$registry;project_descriptor=$descriptor;design_profiles=$profiles;
-      engineering_budget=$engineeringBudget;resolved_resource_budget=$resolvedResourceBudget;
+      engineering_budget=$engineeringBudget;
       design_profile_resolution=$profileResolution;design_request=$request;design_variables=$variables;
       optimization_envelope=$envelope;operating_mode_registry=$modeRegistry;
       multipole_resolved_design=$resolved;particle_source=$particleSource;
@@ -391,7 +388,7 @@ try{
     }
     $solverLaunchFailed=$false
     try{
-      $solverProcess=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $resolvedResourceBudget `
+      $solverProcess=Invoke-ResourceBudgetedProcess -Limits $resolvedBudget.limits `
         -RunDir $runDir -UsagePath $resourceUsage -FilePath $pwsh -ArgumentList @(
           '-NoProfile','-NonInteractive','-File',(Join-Path $codeRoot 'common\comsol\run_comsol_r2025b.ps1'),
           '-TaskScript',$task,'-ReportPath',$report,'-StartupAttempts','1')
@@ -460,8 +457,7 @@ try{
     $summaryDocument|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
     $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
       -RunConfig $runConfig
-    if(-not(Complete-ResourceUsage -ResolvedBudgetPath $resolvedResourceBudget `
-      -RunDir $runDir -UsagePath $resourceUsage)){
+    if(-not(Complete-ResourceUsage -RunDir $runDir -UsagePath $resourceUsage)){
       $resourceBudgetExceeded=$true
       throw 'COMSOL mesh-build retained-byte budget exceeded.'
     }
@@ -541,8 +537,7 @@ try{
     $summaryDocument|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
     $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
       -RunConfig $runConfig
-    if(-not(Complete-ResourceUsage -ResolvedBudgetPath $resolvedResourceBudget `
-      -RunDir $runDir -UsagePath $resourceUsage)){
+    if(-not(Complete-ResourceUsage -RunDir $runDir -UsagePath $resourceUsage)){
       $resourceBudgetExceeded=$true
       throw 'COMSOL field-solve retained-byte budget exceeded.'
     }
@@ -615,8 +610,7 @@ try{
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
   $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
     -RunConfig $runConfig
-  if(-not(Complete-ResourceUsage -ResolvedBudgetPath $resolvedResourceBudget `
-    -RunDir $runDir -UsagePath $resourceUsage)){
+  if(-not(Complete-ResourceUsage -RunDir $runDir -UsagePath $resourceUsage)){
     $resourceBudgetExceeded=$true
     throw 'COMSOL compact final retained-byte budget exceeded.'
   }
@@ -650,7 +644,6 @@ try{
     -ResourceUsagePath $(if($null-ne(Get-Variable resourceUsage -ErrorAction SilentlyContinue)){$resourceUsage}else{''})
   throw
 }finally{
-  Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after COMSOL run: $($_.Exception.Message)"
   }

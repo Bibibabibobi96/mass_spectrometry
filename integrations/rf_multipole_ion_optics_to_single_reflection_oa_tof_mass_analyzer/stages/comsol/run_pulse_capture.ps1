@@ -359,14 +359,12 @@ try {
       source_run_manifest = $sourceManifest
       source_run_config = $sourceRunConfig
       resolved_integration_engineering_budget = $budgetBinding.frozen_budget
-      resolved_stage_resource_budget = $budgetBinding.stage_budget
       particle_source = $particleInput; particle_state_validation = $particleValidation
       timing_state = $timingState; pulse_schedule = $pulseSchedule
     }
     dependency_identities = $dependencyIdentities
     resource_budget_identity = [ordered]@{
       resolved_budget_sha256 = $budgetBinding.resolved_budget_sha256
-      stage_budget_sha256 = $budgetBinding.stage_budget_sha256
     }
     source_particle_identity = $sourceIdentity
     upstream_source_identity = $runtime.source_identity
@@ -422,7 +420,7 @@ try {
       Split-Path -Parent $multipoleRodBuilder
     $powerShellExe = (Get-Process -Id $PID).Path
     $processResult = Invoke-ResourceBudgetedProcess `
-      -ResolvedBudgetPath $budgetBinding.stage_budget `
+      -Limits $budgetBinding.limits `
       -RunDir $package.run_dir -UsagePath $resourceUsage `
       -FilePath $powerShellExe -WorkingDirectory $snapshotRoot `
       -RedirectStandardOutput $comsolWrapperStdout `
@@ -500,7 +498,6 @@ try {
   })
   $outputs += $retentionActions
   if (-not (Complete-ResourceUsage `
-      -ResolvedBudgetPath $budgetBinding.stage_budget `
       -RunDir $package.run_dir -UsagePath $resourceUsage)) {
     $resourceBudgetExceeded = $true
     throw 'COMSOL PulseCapture compact final retained-byte budget exceeded.'

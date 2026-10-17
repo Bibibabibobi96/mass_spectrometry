@@ -220,12 +220,10 @@ try{
     [double]$authorizedNumerics.trajectory.maximum_global_time_us-ne$MaximumTimeUs){
     throw 'SIMION numerical arguments differ from the authorized runtime profile.'
   }
-}catch{
+}finally{
   Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
-  throw
 }
 if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){
-  Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
   throw "SIMION executable is missing: $simion"
 }
 $hostRuntimeSourcePaths=@(
@@ -314,14 +312,12 @@ try{
     }
   }
   $engineeringBudget=Join-Path $inputDir 'engineering_budget.json'
-  $resolvedResourceBudget=Join-Path $inputDir 'resolved_resource_budget.json'
   $engineeringBudget=Copy-VerifiedRunInput -Source $engineeringBudgetInput `
     -Destination $engineeringBudget
   if($campaignSelection-and
     (Get-FileHash -LiteralPath $engineeringBudget -Algorithm SHA256).Hash-ne
       [string]$campaignSelection.sha256
   ){throw 'Frozen campaign authority differs from the resolved runtime-profile snapshot.'}
-  Move-Item -LiteralPath $budgetPreflight -Destination $resolvedResourceBudget
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
@@ -904,7 +900,7 @@ try{
     }
   }
   $runInputs=[ordered]@{project_registry=$registry;project_descriptor=$descriptor;design_profiles=$profiles;
-    engineering_budget=$engineeringBudget;resolved_resource_budget=$resolvedResourceBudget;
+    engineering_budget=$engineeringBudget;
     design_profile_resolution=$profileResolution;design_request=$request;design_variables=$variables;
     optimization_envelope=$envelope;operating_mode_registry=$modeRegistry;
     multipole_resolved_design=$resolved;particle_source=$particleSource;
@@ -949,7 +945,7 @@ try{
   $resourceUsage=Join-Path $resultDir 'resource_usage.json'
   function Invoke-SimionStep([string]$name,[string[]]$arguments){
     $stdout=Join-Path $logDir "simion_stdout__$name.txt";$stderr=Join-Path $logDir "simion_stderr__$name.txt"
-    $step=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $resolvedResourceBudget `
+    $step=Invoke-ResourceBudgetedProcess -Limits $resolvedBudgetPreflight.limits `
       -RunDir $runDir -UsagePath $resourceUsage -FilePath $simion -WorkingDirectory $solverDir `
       -ArgumentList $arguments -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     if($step.resource_budget_exceeded){
@@ -1348,8 +1344,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
   $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `
     -RunConfig $runConfig
-  if(-not(Complete-ResourceUsage -ResolvedBudgetPath $resolvedResourceBudget `
-    -RunDir $runDir -UsagePath $resourceUsage)){
+  if(-not(Complete-ResourceUsage -RunDir $runDir -UsagePath $resourceUsage)){
     $resourceBudgetExceeded=$true
     throw 'SIMION compact final retained-byte budget exceeded.'
   }
@@ -1358,8 +1353,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
   $caseResourceUsage[$primaryName]=$resourceUsage
   if($null-ne$control){
     $controlResourceUsage=Join-Path $resultDir "resource_usage__$controlName.json"
-    if(-not(Complete-ResourceUsage -ResolvedBudgetPath $resolvedResourceBudget `
-      -RunDir $runDir -UsagePath $controlResourceUsage)){
+    if(-not(Complete-ResourceUsage -RunDir $runDir -UsagePath $controlResourceUsage)){
       $resourceBudgetExceeded=$true
       throw 'SIMION control compact final retained-byte budget exceeded.'
     }
@@ -1419,7 +1413,6 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     -ResourceUsagePath $(if($null-ne(Get-Variable resourceUsage -ErrorAction SilentlyContinue)){$resourceUsage}else{''})
   throw
 }finally{
-  Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after SIMION run: $($_.Exception.Message)"
   }

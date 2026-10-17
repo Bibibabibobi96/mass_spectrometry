@@ -877,17 +877,7 @@ function Initialize-RfIntegrationStageBudget {
       throw "Resolved integration engineering-budget stage has no positive ${limitName}: $StageId"
     }
   }
-  $stageBudget = Join-Path $InputDir "resolved_resource_budget__$StageId.json"
-  Write-RunJson -Path $stageBudget -Value ([ordered]@{
-    schema_version = 1
-    role = 'integration_resolved_stage_resource_budget'
-    integration_id = $ExpectedIntegrationId
-    connection_profile_id = $ExpectedConnectionProfileId
-    stage_id = $StageId
-    solver = $Solver
-    source_identity = $document.source_identity
-    retention_class = 'compact'
-    limits = [ordered]@{
+  $stageLimits = [pscustomobject][ordered]@{
       wall_clock_seconds = [int]$limits.wall_clock_seconds
       transient_run_directory_bytes = [long]$limits.transient_run_directory_bytes
       process_tree_working_set_bytes = [long]$limits.process_tree_working_set_bytes
@@ -896,15 +886,10 @@ function Initialize-RfIntegrationStageBudget {
       compact_final_retained_bytes = [long]$limits.compact_final_retained_bytes
       automatic_retry_count = 0
     }
-  })
-  $stageBudgetSha256 = (
-    Get-FileHash -LiteralPath $stageBudget -Algorithm SHA256
-  ).Hash
   return [pscustomobject]@{
+    limits = $stageLimits
     frozen_budget = $frozen
-    stage_budget = $stageBudget
     resolved_budget_sha256 = $identity.sha256
-    stage_budget_sha256 = $stageBudgetSha256
   }
 }
 

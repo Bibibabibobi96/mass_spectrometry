@@ -13,6 +13,10 @@
 
 ## 当前输入权威
 
+CLI 与 GUI 准备直接从冻结execution profile的limits派生同一承诺值，并传给公共进程观察器；
+不再物化或复制`resource_budget.json`，完整实际限额记录在usage。GUI独立容量承诺仍由
+`gui_execution_budget.json`交给后续finalize读取；原生场、数值和历史输入不变。
+
 [baseline](../config/baseline.json)拥有几何、气体、RF和时序；
 [原生电压](../config/native_operating_point.json)拥有电极电压；
 [释放](../config/source.json)、[数值](../config/numerics.json)与[验收](../config/acceptance.json)分别拥有其语义。

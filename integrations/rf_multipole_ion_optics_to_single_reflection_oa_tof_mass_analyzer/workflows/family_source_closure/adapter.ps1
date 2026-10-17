@@ -1458,13 +1458,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
     throw 'Prepared single-flight execution profile is missing or stale.'
   }
 }
-if ($frozenArguments.resolved_source_contract_filename -ne
-      'resolved_source_contract.json' -or
-    -not (Test-Path -LiteralPath $resolvedSourceContractPath -PathType Leaf) -or
-    (Get-FileHash -LiteralPath $resolvedSourceContractPath -Algorithm SHA256).Hash -ne
-      $frozenArguments.resolved_source_contract_sha256) {
-  throw 'Prepared resolved source contract is missing or stale.'
-}
 if ($frozenArguments.resolved_budget_filename -ne
       'resolved_engineering_budget.json' -or
     -not (Test-Path -LiteralPath $resolvedBudgetPath -PathType Leaf) -or
@@ -1472,18 +1465,6 @@ if ($frozenArguments.resolved_budget_filename -ne
       $frozenArguments.resolved_budget_sha256) {
   throw 'Prepared family engineering budget is missing or stale.'
 }
-if ($frozenArguments.upstream_resolved_design_filename -ne
-      'upstream_resolved_design.json' -or
-    -not $upstreamResolvedDesignPath.StartsWith(
-      $runDirectory + [IO.Path]::DirectorySeparatorChar,
-      [StringComparison]::OrdinalIgnoreCase
-    ) -or
-    -not (Test-Path -LiteralPath $upstreamResolvedDesignPath -PathType Leaf) -or
-    (Get-FileHash -LiteralPath $upstreamResolvedDesignPath -Algorithm SHA256).Hash -ne
-      $frozenArguments.upstream_resolved_design_sha256) {
-  throw 'Upstream resolved design is outside the workspace, missing or stale.'
-}
-
 $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repo `
   -ResolvedConnection $ResolvedConnection `
   -RuntimeBinding $runtimeBinding `
