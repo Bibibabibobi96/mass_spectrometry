@@ -28,3 +28,4 @@ GUI 包也应从同一冻结几何独立求场，保留完整母群，由用户�
 ## History 索引
 
 - [旧原生运行、随机重放与源身份边界](docs/history/20261016__native-flight-and-source-identity.md)
+- [横向热源功能复现与用户GUI确认](docs/history/20261016__thermal-source-gui-accepted.md)

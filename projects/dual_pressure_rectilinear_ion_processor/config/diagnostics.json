@@ -38,27 +38,27 @@
     },
     {
       "label": "pre_extraction",
-      "anchor": "extraction_start_us",
+      "anchor": "primary_quench_us",
       "offset_us": 0
     },
     {
       "label": "extraction_010",
-      "anchor": "extraction_start_us",
+      "anchor": "primary_quench_us",
       "offset_us": 0.1
     },
     {
       "label": "extraction_030",
-      "anchor": "extraction_start_us",
+      "anchor": "primary_quench_us",
       "offset_us": 0.3
     },
     {
       "label": "extraction_060",
-      "anchor": "extraction_start_us",
+      "anchor": "primary_quench_us",
       "offset_us": 0.6
     },
     {
       "label": "extraction_100",
-      "anchor": "extraction_start_us",
+      "anchor": "primary_quench_us",
       "offset_us": 1
     }
   ],

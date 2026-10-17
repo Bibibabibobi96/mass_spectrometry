@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+import zipfile
 
 from common.simion.particle_batching import batch_plan_from_dispatch
 from common.simion.resource_scheduler import plan_simion_dispatch, plan_adaptive_followup
@@ -25,6 +26,7 @@ class BatchingTests(unittest.TestCase):
         for name in ("inputs","simion","results","logs"):(self.run/name).mkdir(parents=True)
         self.config={name:functional.read_json(PROJECT/"config"/f"{name}.json") for name in ("baseline","numerics","source","native_operating_point")}
         self.config["coordinate_transform"]=functional.read_json(PROJECT/"config/coordinate_transform.json")
+        self.config["native_timing"]=functional.derive_native_timing(self.config["baseline"])
         self.config["native_projection"]=functional.native_projection(self.config["baseline"],self.config["numerics"])
         self.field=Path(self.temp.name)/"native"
         self.field.mkdir()
@@ -102,6 +104,10 @@ class BatchingTests(unittest.TestCase):
         self.config["coordinate_transform"]["translation_mm"][2]+=0.1
         self.save_config()
         self.assertNotEqual(changed,batching.prepare_request(self.run)["case_input_sha256"])
+        before = batching.prepare_request(self.run)["case_input_sha256"]
+        self.config["native_timing"]["primary_quench_us"] += .001
+        self.save_config()
+        self.assertNotEqual(before, batching.prepare_request(self.run)["case_input_sha256"])
 
     def test_trajectory_output_policy_is_frozen_in_worker_and_resource_identity(self) -> None:
         initial, _ = self.planning()
@@ -109,6 +115,7 @@ class BatchingTests(unittest.TestCase):
         self.materialize(initial)
         text=(self.run/"simion_batch_0001/frozen_config.lua").read_text()
         self.assertIn('["retain_trajectories"]=false', text)
+        self.assertIn('["native_timing"]='+functional.lua_literal(self.config["native_timing"]),text)
         profile=functional.read_json(self.run/"inputs/execution_profiles.json")
         profile["profiles"][0]["retain_batch_trajectories"]=True
         functional.write_json(self.run/"inputs/execution_profiles.json",profile)
@@ -222,6 +229,143 @@ class BatchingTests(unittest.TestCase):
         batching._csv(folder/"collision_rng_seeds.csv",fields,seeds)
         with self.assertRaisesRegex(ValueError,"RNG"):
             batching.merge_batches(self.run,self.run/"results/batches.json")
+
+    def test_worker_archive_preserves_exact_bytes_and_all_loss_ids(self) -> None:
+        _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
+        originals = {}
+        for batch in plan["batches"]:
+            folder = self.run/f"simion_batch_{batch['index']:04d}"
+            fields, events = batching._rows(folder/"events.csv")
+            # Keep an explicit rejected/lost particle as well as every timeout.
+            events[-1]["reason"] = "electrode_splat"
+            batching._csv(folder/"events.csv", fields, events)
+            expected = Path(self.temp.name)/"expected_id_first.csv"
+            batching._csv(expected, ["particle_id", *[field for field in fields if field != "particle_id"]], events)
+            for name in ("events.csv", "samples.csv"):
+                originals[(folder/name).relative_to(self.run).as_posix()] = (folder/name).read_bytes()
+            originals[(folder/"events_id_first.csv").relative_to(self.run).as_posix()] = expected.read_bytes()
+        batching.merge_batches(self.run,self.run/"results/batches.json")
+        found = {}
+        archives = list((self.run/"results").glob("merged_worker_csv_batch_*.zip"))
+        self.assertEqual(len(archives), len(plan["batches"]))
+        for archive in archives:
+            with zipfile.ZipFile(archive) as bundle:
+                self.assertIsNone(bundle.testzip())
+                for name in bundle.namelist():
+                    self.assertNotIn(name, found)
+                    found[name] = bundle.read(name)
+                    self.assertFalse((self.run/name).exists())
+        self.assertEqual(found, originals)
+        receipt = functional.read_json(self.run/"results/merged_worker_csv_archive_receipt.json")
+        self.assertEqual(receipt["status"], "complete")
+        self.assertEqual({name for batch in receipt["batches"] for name in batch["removed_files"]}, set(originals))
+        _, events = batching._rows(self.run/"simion/events.csv")
+        terminals = [row for row in events if row["event"] == "terminal"]
+        self.assertEqual([int(row["particle_id"]) for row in terminals], list(range(1,101)))
+        self.assertEqual(sum(row["reason"] == "electrode_splat" for row in terminals), len(plan["batches"]))
+        for batch in plan["batches"]:
+            folder=self.run/f"simion_batch_{batch['index']:04d}"
+            for name in ("collision_rng_seeds.csv", "hs1_bound_parameters.csv", "batch_input.json", "processor.lua"):
+                self.assertTrue((folder/name).is_file())
+
+    def test_corrupt_worker_archive_cannot_remove_any_source(self) -> None:
+        _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
+        originals = {path: path.read_bytes() for path in self.run.glob("simion_batch_*/*.csv")}
+        verifier = batching._verify_worker_archive
+        def corrupt_then_verify(archive: Path, records: list[dict]) -> None:
+            # A structurally valid zip and valid CRC still must fail byte/SHA identity.
+            with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+                for record in records:
+                    bundle.writestr(record["path"], b"corrupted evidence")
+            verifier(archive, records)
+        with patch.object(batching, "_verify_worker_archive", side_effect=corrupt_then_verify):
+            with self.assertRaisesRegex(ValueError, "archive identity differs"):
+                batching.merge_batches(self.run,self.run/"results/batches.json")
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes(), original)
+        self.assertFalse(list((self.run/"results").glob("merged_worker_csv_batch_*_archive_plan.json")))
+
+    def test_worker_archive_false_flag_preserves_plain_worker_csv(self) -> None:
+        profile = functional.read_json(self.run/"inputs/execution_profiles.json")
+        profile["profiles"][0]["archive_merged_worker_csv"] = False
+        functional.write_json(self.run/"inputs/execution_profiles.json", profile)
+        _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
+        batching.merge_batches(self.run,self.run/"results/batches.json")
+        self.assertFalse(list((self.run/"results").glob("merged_worker_csv_batch_*.zip")))
+        for batch in plan["batches"]:
+            for name in ("events.csv", "samples.csv", "events_id_first.csv"):
+                self.assertTrue((self.run/f"simion_batch_{batch['index']:04d}"/name).is_file())
+
+    def test_worker_archive_removal_failure_preserves_archive_and_progress(self) -> None:
+        _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
+        remover = batching.remove_recorded_files
+        def fail_after_one(root: Path, records: list[dict]):
+            yield from remover(root, records[:1])
+            raise OSError("injected removal interruption")
+        with patch.object(batching, "remove_recorded_files", side_effect=fail_after_one):
+            with self.assertRaisesRegex(OSError, "injected removal"):
+                batching.merge_batches(self.run,self.run/"results/batches.json")
+        archived = functional.read_json(self.run/"results/merged_worker_csv_batch_0001_archive_plan.json")
+        receipt = functional.read_json(self.run/"results/merged_worker_csv_batch_0001_archive_receipt.json")
+        self.assertEqual(receipt["status"], "removal_failed")
+        self.assertEqual(receipt["removed_files"], [archived["source_files"][0]["path"]])
+        batching._verify_worker_archive(self.run/"results/merged_worker_csv_batch_0001.zip", archived["source_files"])
+        for record in archived["source_files"][1:]:
+            self.assertTrue((self.run/record["path"]).is_file())
+
+    def test_worker_archive_removes_first_raw_before_second_sample_is_opened(self) -> None:
+        _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
+        first=self.run/f"simion_batch_{plan['batches'][0]['index']:04d}"
+        second=self.run/f"simion_batch_{plan['batches'][1]['index']:04d}"/"samples.csv"
+        real_open=Path.open
+        merge_started=False
+        observed=[]
+        def tracked_open(path, *args, **kwargs):
+            nonlocal merge_started
+            if path == self.run/"simion/samples.csv":
+                merge_started=True
+            if merge_started and path == second:
+                self.assertFalse((first/"samples.csv").exists())
+                self.assertFalse((first/"events.csv").exists())
+                self.assertTrue((self.run/"results/merged_worker_csv_batch_0001.zip").is_file())
+                observed.append(True)
+            return real_open(path, *args, **kwargs)
+        with patch.object(Path, "open", tracked_open):
+            batching.merge_batches(self.run,self.run/"results/batches.json")
+        self.assertTrue(observed)
+
+    def test_later_canonical_merge_failure_retains_earlier_archive_and_remaining_raw(self) -> None:
+        _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
+        original = (self.run/"simion_batch_0001/samples.csv").read_bytes()
+        real_merge = batching.merge_rebased_particle_csvs
+        def fail_later(sources, output):
+            if output != self.run/"simion/samples.csv":
+                return real_merge(sources, output)
+            iterator = iter(sources)
+            real_merge([next(iterator)], output)
+            next(iterator)  # Archives the first consumed source before yielding the second.
+            raise ValueError("injected later canonical merge failure")
+        with patch.object(batching, "merge_rebased_particle_csvs", side_effect=fail_later):
+            with self.assertRaisesRegex(ValueError, "later canonical"):
+                batching.merge_batches(self.run,self.run/"results/batches.json")
+        with zipfile.ZipFile(self.run/"results/merged_worker_csv_batch_0001.zip") as bundle:
+            self.assertEqual(bundle.read("simion_batch_0001/samples.csv"), original)
+        self.assertFalse((self.run/"simion_batch_0001/samples.csv").exists())
+        self.assertTrue((self.run/"simion_batch_0002/samples.csv").exists())
+        self.assertFalse((self.run/"results/batch_merge_receipt.json").exists())
+        self.assertFalse((self.run/"results/merged_worker_csv_archive_receipt.json").exists())
+
+    def test_worker_archive_policy_requires_explicit_frozen_boolean(self) -> None:
+        profile = functional.read_json(self.run/"inputs/execution_profiles.json")
+        for value in (None, "true", 1):
+            profile["profiles"][0]["archive_merged_worker_csv"] = value
+            functional.write_json(self.run/"inputs/execution_profiles.json", profile)
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "must be boolean"):
+                batching.prepare_request(self.run)
+        del profile["profiles"][0]["archive_merged_worker_csv"]
+        functional.write_json(self.run/"inputs/execution_profiles.json", profile)
+        with self.assertRaises(KeyError):
+            batching.prepare_request(self.run)
 
 
 if __name__=="__main__":unittest.main()

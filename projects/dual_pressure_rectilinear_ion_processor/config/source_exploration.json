@@ -13,24 +13,20 @@
       0
     ],
     "axis": "x",
-    "radius_mm": 0.1,
-    "height_mm": 0.001
+    "radius_mm": 1,
+    "height_mm": 5
   },
   "species": {
     "mass_amu": 524,
     "charge_state": 1
   },
   "sampling": {
-    "strategy": "center_first_halton_cylinder_v1",
-    "kinetic_energy": {
-      "center_ev": 5,
-      "full_width_ev": 0
+    "strategy": "center_first_halton_cylinder_thermal_transverse_v1",
+    "axial_kinetic_energy": {
+      "distribution": "positive_truncated_gaussian",
+      "mean_ev": 5,
+      "sigma_ev": 1
     },
-    "nominal_direction": [
-      1,
-      0,
-      0
-    ],
-    "angular_full_width_deg": 0
+    "transverse_temperature_k": 300.0
   }
 }

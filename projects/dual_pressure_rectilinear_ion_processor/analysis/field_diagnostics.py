@@ -318,7 +318,7 @@ def build_section_figure(rows: list[dict], config: dict, projection: dict, stage
     return figure, axes
 
 
-def export_field_diagnostics(run: Path) -> dict[str, Any]:
+def export_field_diagnostics(run: Path, output_directory: Path | None = None) -> dict[str, Any]:
     """Export diagnostic PNG/SVG/JSON from frozen native CSV and config, no solver.
 
     The caller owns run lifecycle and must include outputs in its final manifest.
@@ -327,8 +327,8 @@ def export_field_diagnostics(run: Path) -> dict[str, Any]:
     c = json.loads((run/"inputs/resolved_model.json").read_text(encoding="utf-8"))
     config = c["field_diagnostics"]
     validate_field_diagnostics_config(config)
-    output = run/"results"
-    output.mkdir(exist_ok=True)
+    output = run/"results" if output_directory is None else Path(output_directory).resolve()
+    output.mkdir(parents=True, exist_ok=True)
     metadata_path = output/"field_diagnostics.json"
     if metadata_path.exists():
         raise FileExistsError("native field diagnostics already exported; use a new run")
@@ -353,14 +353,14 @@ def export_field_diagnostics(run: Path) -> dict[str, Any]:
         with project_csv.open("w", encoding="utf-8", newline="") as stream:
             writer = csv.DictWriter(stream, fieldnames=list(plot_rows[0]))
             writer.writeheader(); writer.writerows(plot_rows)
-        outputs.append({"path": str(project_csv.relative_to(run)), "sha256": file_sha256(project_csv)})
+        outputs.append({"path": str(project_csv.relative_to(run)) if project_csv.is_relative_to(run) else str(project_csv), "sha256": file_sha256(project_csv)})
 
     def save(figure: Any, name: str) -> None:
         from matplotlib import pyplot as plt
         for extension in ("png", "svg"):
             path = output/(name+"."+extension)
             figure.savefig(path, format=extension, dpi=config["dpi"], facecolor="white")
-            outputs.append({"path": str(path.relative_to(run)), "sha256": file_sha256(path)})
+            outputs.append({"path": str(path.relative_to(run)) if path.is_relative_to(run) else str(path), "sha256": file_sha256(path)})
         plt.close(figure)
 
     for kind in ("axial", "orthogonal"):
@@ -412,6 +412,7 @@ def export_field_diagnostics(run: Path) -> dict[str, Any]:
                 "raw_samples_sha256": file_sha256(source), "native_pa0_sha256": file_sha256(native),
                 "resolved_config_sha256": file_sha256(run/"inputs/resolved_model.json"),
                 "native_field_identity": c["native_field"], "sampling_and_plot_config": config,
+                "native_timing": c.get("native_timing", {"policy":"legacy_requested_quench", "scope":"historical frozen native query; no zero alignment retroactively applied"}),
                 "field_units_conversion": "field_vc negative gradient V/GU divided by grid_mm; sign retained",
                 "transformations": "nearest-node electrode mask; cross-section crop to configured radius scale; declared rigid position/vector transform for project plots/CSV; no smoothing/interpolation/extrapolation; unweighted quadratic vacuum fit in local_y-local_z circle",
                 "color_comparison_groups": "shared limits across all stages with the same native field component: dc, rf_only_peak, total",

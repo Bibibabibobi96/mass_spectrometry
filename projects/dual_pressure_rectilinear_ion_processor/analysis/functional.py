@@ -37,6 +37,52 @@ PROJECT = "dual_pressure_rectilinear_ion_processor"
 EVENTS = ["source", "hp_enter", "capture", "transfer", "pre_extraction", "extraction_exit", "terminal"]
 
 
+def derive_native_timing(baseline: dict[str, Any]) -> dict[str, Any]:
+    """Compile author-selected LP switch alignment on the instrument clock.
+
+    Eight ULPs of the computed half-cycle index cover phase arithmetic roundoff
+    at an already-zero request; this is not a physical switching tolerance.
+    Other consumers read the frozen result and never recompute alignment.
+    """
+    electric, clock, schedule = (baseline[key] for key in ("electric", "clock", "schedule"))
+    frequency = electric["rf_frequency_hz"] * 1e-6
+    phase_cycles = clock["rf_phase_rad"] / (2 * math.pi)
+    requested = schedule["extraction_start_us"]
+    delay = electric["rf_quench_delay_cycles"]
+    alignment = electric["rf_quench_alignment"]
+    if not isinstance(alignment, str) or alignment not in {"requested_time", "next_cosine_zero"}:
+        raise ValueError("unsupported electric.rf_quench_alignment")
+    if not all(math.isfinite(value) for value in (frequency, phase_cycles, requested, delay, clock["epoch_us"])) or frequency <= 0 or delay <= 0:
+        raise ValueError("invalid native RF timing inputs")
+    if alignment == "requested_time":
+        primary = requested
+        roundoff_us = 0
+        policy = "requested_instrument_time_v1"
+    else:
+        if 2 * delay != round(2 * delay):
+            raise ValueError("side RF zero switching requires a positive integer number of half-cycles")
+        index = 2 * (frequency * (clock["epoch_us"] + requested) + phase_cycles) - .5
+        if not math.isfinite(index):
+            raise ValueError("native RF timing phase overflows its finite clock")
+        roundoff = 8 * math.ulp(index)
+        nearest = round(index)
+        if abs(index - nearest) <= roundoff:
+            primary = requested
+        else:
+            primary = (.25 + .5 * math.ceil(index) - phase_cycles) / frequency - clock["epoch_us"]
+            if primary < requested:
+                raise ValueError("derived primary RF quench precedes its requested time")
+        roundoff_us = roundoff/(2*frequency)
+        policy = "cosine_zero_at_or_after_requested_v1"
+    pulse = primary + delay / frequency
+    if not schedule["lift_end_us"] <= primary < pulse < schedule["terminal_us"]:
+        raise ValueError("derived RF quench/pulse must follow lift and precede terminal time")
+    return dict(schema_version=1, role="native_electrode_timing",
+                policy=policy, requested_quench_us=requested,
+                primary_quench_us=primary, side_quench_us=pulse, pulse_start_us=pulse,
+                alignment_roundoff_us=roundoff_us)
+
+
 def read_json(path: Path) -> dict[str, Any]:
     """Read one versioned UTF-8 JSON object."""
     return json.loads(path.read_text(encoding="utf-8-sig"))
@@ -126,7 +172,7 @@ def validate_configs(config: dict[str, Any]) -> None:
     baseline, numerics, source, acceptance = (config[k] for k in ("baseline", "numerics", "source", "acceptance"))
     expected = {
         "geometry": "guide_length_mm hp_length_mm lp_length_mm r0_mm guide_r0_mm guide_order hp_center_mm lp_center_mm interface_halfwidth_mm guide_blend_halfwidth_mm extraction_slit_length_mm extraction_slit_width_mm extraction_end_y_mm boundary_radius_mm",
-        "electric": "rf_frequency_hz rf_peak_to_peak_v guide_rf_peak_to_peak_v rf_quench_delay_cycles hp_axial_curvature_v_per_mm2 lp_axial_curvature_v_per_mm2 lp_capture_offset_v hp_transfer_offset_v lift_v extraction_gradient_v_per_mm hp_transfer_gradient_v_per_mm lp_transfer_axial_curvature_v_per_mm2",
+        "electric": "rf_frequency_hz rf_peak_to_peak_v guide_rf_peak_to_peak_v rf_quench_delay_cycles rf_quench_alignment hp_axial_curvature_v_per_mm2 lp_axial_curvature_v_per_mm2 lp_capture_offset_v hp_transfer_offset_v lift_v extraction_gradient_v_per_mm hp_transfer_gradient_v_per_mm lp_transfer_axial_curvature_v_per_mm2",
         "gas": "temperature_k mass_amu hp_pressure_pa lp_pressure_pa cross_section_m2 mean_free_path_mm",
         "schedule": "capture_end_us transfer_end_us lift_end_us extraction_start_us terminal_us",
         "clock": "epoch_us frame_id rf_phase_rad",
@@ -137,7 +183,10 @@ def validate_configs(config: dict[str, Any]) -> None:
         if set(baseline[section]) != set(fields.split()):
             raise ValueError(f"unknown or missing {section} fields")
         for key, value in baseline[section].items():
-            if key == "frame_id":
+            if section == "electric" and key == "rf_quench_alignment":
+                if not isinstance(value, str) or value not in {"requested_time", "next_cosine_zero"}:
+                    raise ValueError("unsupported electric.rf_quench_alignment")
+            elif key == "frame_id":
                 if not isinstance(value, str) or not value:
                     raise ValueError("frame_id must be nonempty")
             elif isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
@@ -171,6 +220,9 @@ def validate_configs(config: dict[str, Any]) -> None:
         raise ValueError("time step exceeds declared RF resolution")
     if baseline["clock"]["epoch_us"] != 0:
         raise ValueError("single-cohort workflow begins at instrument epoch zero")
+    timing = derive_native_timing(baseline)
+    if "native_timing" in config and config["native_timing"] != timing:
+        raise ValueError("native timing differs from its scientific compiler")
     transform_from_config(config)
     validate_release_spec(source)
     validate_source_profile(config)
@@ -193,7 +245,7 @@ def validate_configs(config: dict[str, Any]) -> None:
         raise ValueError("extraction energy bounds must be ordered")
     native_projection(baseline, numerics)
     point=config["native_operating_point"]
-    point_keys="schema_version capture_hp_offset_v capture_lp_offset_v guide_offset_v hp_aux_capture_relative_v hp_aux_transfer_relative_v hp_transfer_offset_v lp_outer_relative_v lp_inner_relative_v entrance_lens_v end_lens_relative_v extraction_push_relative_v extraction_pull_relative_v lift_v".split()
+    point_keys="schema_version capture_hp_offset_v capture_lp_offset_v guide_offset_v hp_aux_capture_relative_v hp_aux_transfer_relative_v hp_transfer_offset_v lp_outer_relative_v lp_inner_relative_v entrance_lens_v end_lens_relative_v extraction_push_relative_v extraction_pull_relative_v extraction_shield_relative_v lift_v".split()
     if set(point)!=set(point_keys) or point["schema_version"]!=1:
         raise ValueError("unsupported native operating point")
     if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) for v in point.values()):
@@ -220,9 +272,10 @@ def derive_numerical_boundaries(projection: dict[str, Any]) -> dict[str, Any]:
 
 
 def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path | None = None,
-            source_profile: str = "functional") -> None:
+            source_profile: str = "functional", configuration_directory: Path | None = None) -> None:
     """Freeze contracts, official HS1, RF kernel and shared release for one run."""
     repo = project.parent.parent
+    configuration = configuration_directory.resolve() if configuration_directory is not None else project / "config"
     inputs, solver = run / "inputs", run / "simion"
     solver.mkdir(exist_ok=True)
     if source_profile not in {"functional", "exploration"}:
@@ -230,21 +283,27 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     config_files = {name: f"{name}.json" for name in
                     ("baseline", "numerics", "source", "acceptance", "native_operating_point", "diagnostics", "field_diagnostics")}
     config_files["source"] = "source_exploration.json" if source_profile == "exploration" else "source.json"
-    config = {name: read_json(project / "config" / filename) for name, filename in config_files.items()}
-    if (project / "config/coordinate_transform.json").is_file():
+    config = {name: read_json(configuration / filename) for name, filename in config_files.items()}
+    if (configuration / "coordinate_transform.json").is_file():
         config_files["coordinate_transform"] = "coordinate_transform.json"
-        config["coordinate_transform"] = read_json(project / "config/coordinate_transform.json")
+        config["coordinate_transform"] = read_json(configuration / "coordinate_transform.json")
+    elif configuration_directory is not None:
+        raise ValueError("external configuration directory requires its explicit coordinate transform")
     config["source_profile"] = source_profile
     config["source_authority_file"] = config_files["source"]
     validate_configs(config)
+    config["native_timing"] = derive_native_timing(config["baseline"])
+    write_json(inputs / "native_timing.json", config["native_timing"])
     from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import validate_diagnostics_config
     from projects.dual_pressure_rectilinear_ion_processor.analysis.field_diagnostics import validate_field_diagnostics_config
     validate_diagnostics_config(config["diagnostics"])
     validate_field_diagnostics_config(config["field_diagnostics"])
     for name, filename in config_files.items():
-        shutil.copyfile(project / "config" / filename, inputs / f"{name}.json")
-    if (project / "config/geometry_sources.json").is_file():
-        shutil.copyfile(project / "config/geometry_sources.json", inputs / "geometry_sources.json")
+        shutil.copyfile(configuration / filename, inputs / f"{name}.json")
+    for evidence_name in ("geometry_sources", "source_parameter_sources", "component_matching_derivation"):
+        evidence_path = configuration / f"{evidence_name}.json"
+        if evidence_path.is_file():
+            shutil.copyfile(evidence_path, inputs / evidence_path.name)
     git_context = {}
     for key, arguments in (("git_sha", ["rev-parse", "HEAD"]), ("worktree_porcelain", ["status", "--porcelain"])):
         result = subprocess.run(["git", "-C", str(repo), *arguments], capture_output=True,
@@ -344,7 +403,8 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     if "coordinate_transform" in config:
         run_config["parameters"]["canonical_state_frame"] = transform_from_config(config).to_frame_id
         run_config["parameters"]["native_geometry_frame"] = transform_from_config(config).from_frame_id
-    run_config["parameters"].update(source_profile=source_profile, source_authority_file=config_files["source"])
+    run_config["parameters"].update(source_profile=source_profile, source_authority_file=config_files["source"],
+                                    configuration_directory=str(configuration.resolve()))
     write_json(run / "run_config.json", run_config)
 
 
@@ -359,7 +419,10 @@ def analyze(run: Path) -> dict[str, Any]:
     with (run / "simion/events.csv").open(encoding="utf-8", newline="") as f:
         raw = list(csv.DictReader(f))
     schedule=b["schedule"]
-    stage_times={"capture":schedule["capture_end_us"],"transfer":schedule["transfer_end_us"],"pre_extraction":schedule["extraction_start_us"]}
+    timing = c["native_timing"]
+    if timing != derive_native_timing(b):
+        raise ValueError("frozen native timing differs from scientific inputs")
+    stage_times={"capture":schedule["capture_end_us"],"transfer":schedule["transfer_end_us"],"pre_extraction":timing["primary_quench_us"]}
     previous_time: dict[int,float]={}
     for event in raw:
         particle=int(event["particle_id"]);t=float(event["t_us"])
@@ -381,7 +444,7 @@ def analyze(run: Path) -> dict[str, Any]:
         if event["event"]=="extraction_exit":
             local_position = to_local_position(c, [float(event[k]) for k in ("x_mm", "y_mm", "z_mm")])
             local_velocity = to_local_vector(c, [float(event[k]) for k in ("vx_mm_us", "vy_mm_us", "vz_mm_us")])
-            if t<schedule["extraction_start_us"] or abs(local_position[1]-b["geometry"]["extraction_end_y_mm"])>1e-9 or local_velocity[1]<=0:
+            if t<timing["primary_quench_us"] or abs(local_position[1]-b["geometry"]["extraction_end_y_mm"])>1e-9 or local_velocity[1]<=0:
                 raise ValueError("extraction event is outside its acceptance plane/clock/direction")
     rows = []
     local_guide_positions = {}
@@ -473,10 +536,12 @@ def main() -> None:
     parser.add_argument("--batch-plan",type=Path)
     parser.add_argument("--status",choices=("success","failed"))
     parser.add_argument("--source-profile",choices=("functional","exploration"),default="functional")
+    parser.add_argument("--configuration-directory",type=Path)
     args=parser.parse_args()
     if args.action=="prepare":
         if args.simion_dir is None: parser.error("prepare requires --simion-dir")
-        prepare(args.run,Path(__file__).resolve().parent.parent,args.simion_dir,args.native_field_run,args.source_profile)
+        prepare(args.run,Path(__file__).resolve().parent.parent,args.simion_dir,args.native_field_run,args.source_profile,
+                args.configuration_directory)
     elif args.action in {"prepare-dispatch", "materialize-batches", "merge-batches", "publish-manifest"}:
         from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
         if args.action == "publish-manifest":

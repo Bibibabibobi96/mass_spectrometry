@@ -58,10 +58,10 @@ class NativeGeometryTests(unittest.TestCase):
         self.assertEqual(len(self.by_id[10]["solids"]), 2 * self.numerics["native_aux_segments"])
 
     def test_baseline_pa_domain_and_grid(self) -> None:
-        self.assertEqual(self.p["origin_mm"], [-1, -4, -4])
+        self.assertEqual(self.p["origin_mm"], [-2, -4, -4])
         grid = self.numerics["native_grid_mm"]
-        self.assertEqual(self.p["shape_gu"], [math.ceil(span / grid - 1e-12) + 1 for span in (213, 14, 8)])
-        self.assertEqual(self.p["span_mm"], [213, 14, 8])
+        self.assertEqual(self.p["shape_gu"], [math.ceil(span / grid - 1e-12) + 1 for span in (214, 14, 8)])
+        self.assertEqual(self.p["span_mm"], [214, 14, 8])
         self.assertEqual(self.p["grid_mm"], grid)
         for electrode in self.by_id.values():
             for shape in electrode["solids"]:
@@ -173,7 +173,7 @@ class NativeGeometryTests(unittest.TestCase):
         nx, ny, nz = self.p["shape_gu"]
         grid = format(self.numerics["native_grid_mm"], ".12g")
         self.assertIn(f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{grid},{grid},{grid},surface=fractional)", gem)
-        self.assertIn("locate(1,4,4)", gem)
+        self.assertIn("locate(2,4,4)", gem)
         self.assertEqual(gem.count("cylinder("), 9)  # eight guide rods plus circular HP entrance
         self.assertEqual(gem.count("notin_inside"), 7)  # pull, four shield slabs, two lenses
         self.assertIn("e(0)", gem)

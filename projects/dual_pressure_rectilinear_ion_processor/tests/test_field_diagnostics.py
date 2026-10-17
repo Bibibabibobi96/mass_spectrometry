@@ -15,7 +15,7 @@ from unittest import mock
 import numpy as np
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis import field_diagnostics as diagnostics
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
+from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_native_timing, lua_literal
 from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
 
 
@@ -194,6 +194,7 @@ class FieldDiagnosticsTests(unittest.TestCase):
         config={name:json.loads((PROJECT/"config"/f"{name}.json").read_text(encoding="utf-8"))
                 for name in ("baseline","numerics","native_operating_point")}
         config["native_projection"]=native_projection(config["baseline"],config["numerics"])
+        config["native_timing"] = derive_native_timing(config["baseline"])
         d=config_fixture();d.update(section_grid_multiple=10,axial_grid_multiple=100,orthogonal_grid_multiple=10)
         config["field_diagnostics"]=d
         with tempfile.TemporaryDirectory(prefix="native_field_probe_fixture_") as temporary:
@@ -223,6 +224,14 @@ assert(loadfile(arg[1]))()
             with (folder/"native_potential_audit.csv").open(encoding="utf-8") as handle:
                 audit=list(csv.DictReader(handle))
             self.assertGreater(max(float(row["t_us"]) for row in audit),config["baseline"]["schedule"]["extraction_start_us"])
+            self.assertEqual({float(row["t_us"]) for row in audit},
+                             {float(format(time,".15g")) for time in (
+                                 config["native_timing"]["primary_quench_us"]-d["epsilon_us"],
+                                 config["native_timing"]["primary_quench_us"],
+                                 config["native_timing"]["pulse_start_us"]+d["epsilon_us"])})
+            middle = {row["t_us"] for row in rows if row["stage_id"] == "quench_total"}
+            self.assertTrue(all(config["native_timing"]["primary_quench_us"] < time < config["native_timing"]["pulse_start_us"]
+                                for time in middle))
 
     def test_export_metadata_binds_raw_native_config_and_figure_hashes(self) -> None:
         c={name:json.loads((PROJECT/"config"/f"{name}.json").read_text(encoding="utf-8"))
@@ -231,6 +240,7 @@ assert(loadfile(arg[1]))()
         d["stages"]=[stage for stage in d["stages"] if stage["component"]=="rf_only_peak"]
         c["field_diagnostics"]=d
         c["native_projection"]=native_projection(c["baseline"],c["numerics"])
+        c["native_timing"] = derive_native_timing(c["baseline"])
         rows=[]
         for stage in d["stages"]:
             for section in d["sections"]:
@@ -250,6 +260,7 @@ assert(loadfile(arg[1]))()
                 writer=csv.DictWriter(handle,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
             metadata=diagnostics.export_field_diagnostics(run)
             self.assertEqual(metadata["sample_count"],len(rows))
+            self.assertEqual(metadata["native_timing"], c["native_timing"])
             self.assertEqual(len(metadata["fits"]),6)
             self.assertEqual(len(metadata["outputs"]),8)
             self.assertEqual(metadata["units"]["electric_field"],"V/mm")
@@ -281,6 +292,17 @@ assert(loadfile(arg[1]))()
             self.assertEqual(len(exported),len(rows))
             self.assertAlmostEqual(float(exported[0]["z_mm"]),9.8-rows[0]["y_mm"])
             self.assertAlmostEqual(float(exported[0]["ez_v_per_mm"]),-rows[0]["ey_v_per_mm"])
+            self.assertEqual((project_run/"simion/native_field_samples.csv").read_bytes(),original)
+            # A read-only derivative writes outside the source run. Both the
+            # transformed CSV and figures must point to those actual outputs.
+            outside=run/"external_field_figures"
+            external_metadata=diagnostics.export_field_diagnostics(project_run,outside)
+            self.assertEqual(len(external_metadata["outputs"]),9)
+            for record in external_metadata["outputs"]:
+                output_path=Path(record["path"])
+                self.assertTrue(output_path.is_absolute())
+                self.assertTrue(output_path.is_relative_to(outside))
+                self.assertTrue(output_path.is_file())
             self.assertEqual((project_run/"simion/native_field_samples.csv").read_bytes(),original)
             record=next(record for record in project_metadata["outputs"] if record["path"].endswith(".csv"))
             self.assertEqual(record["sha256"],diagnostics.file_sha256(project_path))

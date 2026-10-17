@@ -17,14 +17,17 @@
       "retention_class": "solver_review",
       "retention_reason": "Retain native electrode field and workbench for GUI review of the functional model",
       "retain_batch_trajectories": false,
+      "archive_merged_worker_csv": true,
       "native_field_query_memory_bytes": 4294967296,
       "native_field_query_memory_basis": "r17 results/potential_audit_resource_usage.json measured 3154186240 bytes peak; 4GiB declaration provides margin for this same 24.3M-node native query, without qualifying historical physics. Worker concurrency remains public live planning.",
-      "committed_new_bytes": 4294967296,
+      "committed_new_bytes": 3530000000,
+      "gui_preparation_committed_new_bytes": 3345000000,
+      "gui_preparation_capacity_basis": "Measured104840 GUI3437619349B minus copied baseline samples99807954B =3337811395B. New preparation references verified immutable canonical baseline samples, keeps private fullfield/runtime and complete100source, and reserves3345000000B withabout7.2MBmargin for same2141x141x81grid; manualFlygrowth excluded.",
       "limits": {
-        "transient_run_directory_bytes": 4294967296,
+        "transient_run_directory_bytes": 3530000000,
         "transient_run_directory_sample_interval_seconds": 30
       },
-      "capacity_estimate_basis": "Forecast: 24.4M-node 18-file private native family about 3.3GB; CLI workers suppress optional dense TRJ files while preserving unchanged event and scheduled state CSVs (about 0.2GB including merge copies), plots and margin within 4GiB. Full-cohort GUI master retains trajectories when the user flies it. Actual usage monitored."
+      "capacity_estimate_basis": "ID20 repair keeps N100, fullR1/H5source, grid0.1mm and terminal7520us. Measured103546 native family3328648864B and retained244818149B includes99807954B duplicateworker samples. Streaming verified per-worker ZIP replaces consumed duplicates; measured12.1MBworker Deflate ratio0.4301 predictsabout43MBarchive. Expected final3328648864+244818149-99807954+43000000=3516659059B; consumption/archiving interleaves so no full duplicate plus canonical peak. Reserve3530000000B and monitor actual growth; public600GiB/minfree295GiB unchanged."
     }
   ]
 }

@@ -5,12 +5,13 @@
   "guide_offset_v": 0,
   "hp_aux_capture_relative_v": 3,
   "hp_aux_transfer_relative_v": 20,
-  "hp_transfer_offset_v": 2,
+  "hp_transfer_offset_v": 5,
   "lp_outer_relative_v": 5,
-  "lp_inner_relative_v": -5,
+  "lp_inner_relative_v": -1,
   "entrance_lens_v": 0,
   "end_lens_relative_v": 50,
   "extraction_push_relative_v": 900,
   "extraction_pull_relative_v": -900,
+  "extraction_shield_relative_v": -900,
   "lift_v": 4000
 }

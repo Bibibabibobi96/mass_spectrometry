@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "role": "ion_processor_source_parameter_evidence",
+  "project_id": "dual_pressure_rectilinear_ion_processor",
+  "purpose": "Evidence only; source.json and source_exploration.json own release parameters.",
+  "review_date": "2026-10-16",
+  "parameter": "sampling.transverse_temperature_k",
+  "classification": "room_temperature_reference_assumption_not_measured_inlet_temperature",
+  "reference_temperature_k": 300,
+  "model": "Two zero-mean Cartesian Gaussian transverse velocities, component variance k_B*T/m; independent Halton quantile dimensions, no finite-sample recentering or variance/total-energy renormalization.",
+  "longitudinal_energy_semantics": "The previously requested positive Gaussian 5 eV mean / 1 eV sigma now explicitly describes forward energy along local+x=world+y. Total energy includes added world x/z thermal energy.",
+  "sources": [
+    {
+      "title": "A Conjoined Rectilinear Collision Cell and Pulsed Extraction Ion Trap with Auxiliary DC Electrodes",
+      "doi": "10.1021/jasms.3c00311",
+      "url": "https://pubs.acs.org/doi/10.1021/jasms.3c00311",
+      "local_pdf_sha256": "c9dbea62311b26262b5fe0d91df837f5a5703db2174c832e37db476008b53d84",
+      "pdf_pages": [3, 4],
+      "printed_pages": [76, 77],
+      "support": "The trapped population approaches buffer-gas room temperature after about 1.5 ms; extraction simulations use a room-temperature trapped ensemble.",
+      "limitation": "These are cooled trapped states, not a measured transverse temperature at the upstream inlet. The exact value 300 K is the declared room-temperature reference."
+    },
+    {
+      "title": "Multi-reflection Astral mass spectrometer with isochronous drift in elongated ion mirrors",
+      "url": "https://www.sciencedirect.com/science/article/pii/S0168900223010173",
+      "pdf_page": 5,
+      "section": "6",
+      "support": "Thermalization to approximately room temperature precedes orthogonal extraction.",
+      "limitation": "No numerical upstream inlet transverse-temperature measurement established."
+    }
+  ]
+}

@@ -4,6 +4,7 @@ local c=assert(loadfile(directory..'frozen_config.lua'))()
 local drive=assert(loadfile(directory..'native_drive.lua'))()
 local kernel=assert(loadfile(directory..'simion_rf_drive.lua'))()
 local b=c.baseline
+local timing=assert(c.native_timing,'frozen native timing required')
 local d=assert(c.field_diagnostics,'frozen field diagnostics config required')
 local rf=kernel.new{waveform='cosine',frequency_hz=b.electric.rf_frequency_hz,
  phase_rad=b.clock.rf_phase_rad,rf_amplitude_v=b.electric.rf_peak_to_peak_v/2,
@@ -23,7 +24,7 @@ local expected_samples=#d.stages*(
 assert(expected_samples<=d.maximum_samples,'native field diagnostic sample budget exceeded before queries')
 local out=assert(io.open(directory..'native_potential_audit.csv','w'))
 out:write('t_us,x_mm,y_mm,z_mm,potential_v\n')
-for _,t in ipairs({b.schedule.extraction_start_us-d.epsilon_us,b.schedule.extraction_start_us,
+for _,t in ipairs({timing.primary_quench_us-d.epsilon_us,timing.primary_quench_us,
  drive.pulse_start_us(c)+d.epsilon_us}) do
  local voltages=drive.voltages(c,t,rf.differential_at(b.clock.epoch_us+t))
  for _,y in ipairs({0,2,3.6,6,8,b.geometry.extraction_end_y_mm,c.native_projection.maximum_mm[2]}) do
@@ -37,8 +38,8 @@ print('NATIVE_POTENTIAL_AUDIT=COMPLETE')
 -- Read only the solved basis with explicit stage-specific electrode voltages.
 local times={capture_mid=b.schedule.capture_end_us/2,
  transfer_mid=(b.schedule.capture_end_us+b.schedule.transfer_end_us)/2,
- pre_extraction=b.schedule.extraction_start_us-d.epsilon_us,
- quench_mid=(b.schedule.extraction_start_us+drive.pulse_start_us(c))/2,
+ pre_extraction=timing.primary_quench_us-d.epsilon_us,
+ quench_mid=(timing.primary_quench_us+drive.pulse_start_us(c))/2,
  pulse_after=drive.pulse_start_us(c)+d.epsilon_us}
 local function voltages_for(stage,t)
  if stage.component=='total' then return drive.voltages(c,t,rf.differential_at(b.clock.epoch_us+t)) end

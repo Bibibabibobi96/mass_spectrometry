@@ -38,8 +38,9 @@ try {
  if(($profile.native_field_query_memory_bytes-isnot[long]-and$profile.native_field_query_memory_bytes-isnot[int])-or$profile.native_field_query_memory_bytes-le0){throw 'Native query memory declaration must be positive integer bytes'}
  if($profile.retention_class-ne'solver_review'){throw 'GUI native evidence requires baseline solver_review retention'}
  # This reservation covers preparation only; no Fly/trajectory growth is included.
- if($profile.committed_new_bytes-is[bool]-or$profile.committed_new_bytes-isnot[valuetype]-or[long]$profile.committed_new_bytes-le0){throw 'Baseline profile committed_new_bytes must be a positive byte budget'}
- $guiCommitted=[long]$profile.committed_new_bytes
+ $guiForecast=$(if($profile.PSObject.Properties.Name-contains'gui_preparation_committed_new_bytes'){$profile.gui_preparation_committed_new_bytes}else{$profile.committed_new_bytes})
+ if($guiForecast-is[bool]-or$guiForecast-isnot[valuetype]-or[long]$guiForecast-le0){throw 'Baseline profile GUI preparation forecast must be a positive byte budget'}
+ $guiCommitted=[long]$guiForecast
  if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}
  if(-not(Test-Path -LiteralPath $SimionExe -PathType Leaf)){throw 'SIMION executable missing for private GUI field build'}
  $capacity=Enter-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -ArtifactRoot $artifacts -RunDirectory (Join-Path $projectArtifacts "runs/$RunId") -CommittedNewBytes $guiCommitted -ProtectedPaths @($sourceRun)
@@ -47,10 +48,11 @@ try {
  & $PythonExe -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional prepare-replay --run $package.run_dir --baseline-run $sourceRun --repeat-fly-count $RepeatFlyCount
  if($LASTEXITCODE-ne0){throw 'GUI replay input preparation failed'}
  $guiBudget=Join-Path $package.input_dir 'gui_execution_budget.json'
- Write-RunJson -Path $guiBudget -Value @{schema_version=1;committed_new_bytes=$guiCommitted;basis='Baseline frozen native_functional profile.committed_new_bytes for private fractional native family, native logs and IOB preparation only';user_fly_trajectory_growth_reserved=$false;user_fly_notice='Manual Fly can create multi-GiB retained trajectories beyond this preparation reservation'}
+ Write-RunJson -Path $guiBudget -Value @{schema_version=1;committed_new_bytes=$guiCommitted;basis='Baseline frozen native_functional GUI preparation forecast (legacy: full functional forecast); private fractional field, logs and IOB only';user_fly_trajectory_growth_reserved=$false;user_fly_notice='Manual Fly can create multi-GiB retained trajectories beyond this preparation reservation'}
  $budgetPath=Join-Path $package.input_dir 'resource_budget.json'
  $budget=Get-Content $budgetPath -Raw|ConvertFrom-Json -AsHashtable
  $budget.limits.transient_run_directory_bytes=$guiCommitted
+ $budget.committed_new_bytes=$guiCommitted
  Write-RunJson -Path $budgetPath -Value $budget
  $runConfig=Get-Content $package.run_config -Raw|ConvertFrom-Json -AsHashtable
  $runConfig.inputs.gui_execution_budget=$guiBudget

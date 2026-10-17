@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 import csv
+from itertools import chain
 import json
 import math
 from pathlib import Path
@@ -20,6 +21,10 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.multipole.exit_state_plot import prepare_visual_style_map
 from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import to_project_position
+# Top-level imports are deliberate: prepare() freezes loaded repository modules
+# before Fly, so these mandatory default producers travel with the same run.
+from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import export_sections
+from projects.dual_pressure_rectilinear_ion_processor.analysis.post_extraction_diagnostics import export_post_extraction
 
 PRODUCER_SOURCE_SHA256 = file_sha256(Path(__file__))
 
@@ -57,12 +62,20 @@ def _json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-def _csv(path: Path, required: set[str]) -> list[dict]:
+def _iter_csv(path: Path, required: set[str]):
+    """Validate the header once and stream each actual recorded row."""
     with path.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
         if not required <= set(reader.fieldnames or []):
             raise ValueError(f"missing diagnostic columns in {path.name}")
-        rows = list(reader)
+        for row in reader:
+            if None in row or any(value is None for value in row.values()):
+                raise ValueError(f"malformed diagnostic row in {path.name}")
+            yield row
+
+
+def _csv(path: Path, required: set[str]) -> list[dict]:
+    rows = list(_iter_csv(path, required))
     if not rows:
         raise ValueError(f"empty diagnostic input {path.name}")
     return rows
@@ -88,7 +101,7 @@ def validate_diagnostics_config(config: dict) -> None:
     if contract["png_dpi"] < 180:
         raise ValueError("diagnostic PNG requires at least 180 DPI")
     labels = []
-    allowed_anchors = {"epoch_us", "capture_end_us", "transfer_end_us", "lift_end_us", "extraction_start_us", "terminal_us"}
+    allowed_anchors = {"epoch_us", "capture_end_us", "transfer_end_us", "lift_end_us", "extraction_start_us", "terminal_us", "primary_quench_us", "pulse_start_us"}
     if not isinstance(contract["snapshots"], list) or not contract["snapshots"]:
         raise ValueError("diagnostic snapshots must be nonempty")
     for item in contract["snapshots"]:
@@ -106,12 +119,17 @@ def validate_diagnostics_config(config: dict) -> None:
 def pulse_timing_context(data: dict) -> dict:
     """Describe frozen quench and actual pulse timing without a new authority."""
     b = data["config"]["baseline"]
+    timing = data["config"].get("native_timing")
+    if timing is not None:
+        return dict(quench_start_us=timing["primary_quench_us"], pulse_start_us=timing["pulse_start_us"],
+                    requested_quench_us=timing["requested_quench_us"], timing_policy=timing["policy"],
+                    meaning="frozen native_timing actual author-selected quench and pulse; snapshot offsets reference their explicitly named anchor")
     quench = b["schedule"]["extraction_start_us"]
     electric = b.get("electric", {})
     if not {"rf_quench_delay_cycles", "rf_frequency_hz"} <= set(electric):
-        return dict(quench_start_us=quench, pulse_start_us=None, meaning="frozen extraction_start_us denotes LP RF quench start; pulse delay unavailable in this older input")
+        return dict(quench_start_us=quench, pulse_start_us=None, timing_policy="legacy_requested_quench", meaning="historical frozen input: requested extraction_start_us was the actual non-aligned RF quench; pulse delay unavailable")
     delay = electric["rf_quench_delay_cycles"] / electric["rf_frequency_hz"] * 1e6
-    return dict(quench_start_us=quench, pulse_start_us=quench+delay, rf_quench_delay_cycles=electric["rf_quench_delay_cycles"], meaning="extraction_start_us is LP RF quench start; extraction pulse begins after the frozen RF-cycle delay; snapshot offsets reference quench start")
+    return dict(quench_start_us=quench, pulse_start_us=quench+delay, timing_policy="legacy_requested_quench", rf_quench_delay_cycles=electric["rf_quench_delay_cycles"], meaning="historical frozen input: extraction_start_us was actual non-aligned RF quench; snapshot offsets reference quench start; no new zero alignment applied")
 
 
 def prepare_data(run: Path) -> dict[str, Any]:
@@ -119,12 +137,12 @@ def prepare_data(run: Path) -> dict[str, Any]:
     c = _json(run / "inputs/resolved_model.json")
     contract = _json(run / "inputs/diagnostics.json")
     validate_diagnostics_config(contract)
-    events = _csv(run / "simion/events.csv", {"particle_id", "event", "reason", "t_us", *VALUES})
-    samples = _csv(run / "simion/samples.csv", {"particle_id", "t_us", *VALUES})
+    events = _iter_csv(run / "simion/events.csv", {"particle_id", "event", "reason", "t_us", *VALUES})
+    samples = _iter_csv(run / "simion/samples.csv", {"particle_id", "t_us", *VALUES})
     canonical = _csv(run / "results/particle_state.csv", {"particle_id", "event", "status"})
     sources, terminals, tracks = {}, {}, {}
     mass = c["source"]["species"]["mass_amu"]
-    for raw in [*samples, *events]:
+    for raw in chain(samples, events):
         particle = int(raw["particle_id"])
         row = {key: float(raw[key]) for key in ("t_us", *VALUES)}
         if any(not math.isfinite(value) for value in row.values()):
@@ -155,7 +173,10 @@ def prepare_data(run: Path) -> dict[str, Any]:
     for item in contract["snapshots"]:
         if set(item) != {"label", "anchor", "offset_us"}:
             raise ValueError("snapshot must declare label/anchor/offset")
-        anchor = b["clock"]["epoch_us"] if item["anchor"] == "epoch_us" else b["schedule"][item["anchor"]]
+        if item["anchor"] in {"primary_quench_us", "pulse_start_us"}:
+            anchor = c["native_timing"][item["anchor"]]
+        else:
+            anchor = b["clock"]["epoch_us"] if item["anchor"] == "epoch_us" else b["schedule"][item["anchor"]]
         time = anchor + item["offset_us"]
         if not math.isfinite(time) or not b["clock"]["epoch_us"] <= time <= b["schedule"]["terminal_us"]:
             raise ValueError("snapshot time outside declared clock")
@@ -185,7 +206,7 @@ def state_at(data: dict, particle: int, time: float) -> dict:
         return base
     left, right = data["tracks"][particle][index-1:index+1]
     gap = right["t_us"] - left["t_us"]
-    extraction = data["config"]["baseline"]["schedule"]["extraction_start_us"]
+    extraction = pulse_timing_context(data)["quench_start_us"]
     limit = data["contract"]["max_extraction_bracket_us" if right["t_us"] >= extraction else "max_ordinary_bracket_us"]
     bracket = dict(bracket_start_us=left["t_us"], bracket_end_us=right["t_us"], bracket_gap_us=gap)
     if gap > limit + 1e-12:
@@ -274,7 +295,7 @@ def _shared_legend(figure, axis) -> None:
         figure.legend(unique.values(), unique.keys(), loc="outside lower center", ncol=4, fontsize=6, frameon=False)
 
 
-def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict]) -> dict:
+def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], *, include_projected_geometry: bool = True) -> dict:
     """Render full-cohort views plus explicitly conditional LP/cooling panels."""
     styles = prepare_visual_style_map(list(STATES))
     projection = project_geometry(data["config"])
@@ -282,65 +303,70 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict]) 
     figures = {}
     bounds = display_bounds(data)
     quench = pulse_timing_context(data)["quench_start_us"]
-    figure, axes = plt.subplots(2, 1, figsize=(13, 7), constrained_layout=True)
-    for axis, vertical in zip(axes, (fast, transverse)):
-        add_geometry(axis, projection, slow, vertical)
-        lines = [np.array([[row[slow+"_mm"], row[vertical+"_mm"]] for row in track]) for track in data["tracks"].values()]
-        axis.add_collection(LineCollection(lines, colors="#0072B2", linewidths=.7, alpha=.65, label="all recorded particle tracks"))
-        for state in ("lost", "extracted"):
-            terminals = [row for row in data["terminals"].values() if (row["reason"] == "acceptance_surface") == (state == "extracted")]
-            if terminals:
-                axis.scatter([row[slow+"_mm"] for row in terminals], [row[vertical+"_mm"] for row in terminals], color=styles[state]["color"], marker=styles[state]["marker"], label=state+" last positions", zorder=5)
-        axis.autoscale_view()
-        axis.set_title("Recorded trajectories with projected electrode outlines")
-    _shared_legend(figure, axes[0])
-    figures["trajectory_geometry"] = figure
-    columns = 3
-    figure, axes = plt.subplots(math.ceil(len(data["snapshots"])/columns), columns, figsize=(14, 11), constrained_layout=True)
-    for axis, (label, time) in zip(np.asarray(axes).flat, data["snapshots"]):
-        rows = [row for row in snapshot_rows if row["snapshot"] == label]
-        add_geometry(axis, projection, slow, fast)
-        axis.set_aspect("auto")
-        axis.set(xlim=bounds["full_x_mm"], ylim=bounds["full_y_mm"])
-        for state in ("alive", "lost", "extracted"):
-            selected = [row for row in rows if row["status"] == state]
-            axis.scatter([row[slow+"_mm"] for row in selected], [row[fast+"_mm"] for row in selected], color=styles[state]["color"], marker=styles[state]["marker"], s=12, label=state if state == "alive" else state+" last")
-        counts = {state: sum(row["status"] == state for row in rows) for state in STATES}
-        snapshot_spec = next(item for item in data["contract"]["snapshots"] if item["label"] == label)
-        display_label = f"quench_start{snapshot_spec['offset_us']:+g} us" if snapshot_spec["anchor"] == "extraction_start_us" else label
-        axis.set_title(f"{display_label} t={time:g} us\n" + ", ".join(f"{state}={n}" for state, n in counts.items()), fontsize=8)
-    for axis in list(np.asarray(axes).flat)[len(data["snapshots"]):]:
-        axis.set_visible(False)
-    _shared_legend(figure, np.asarray(axes).flat[0])
-    pulse_context = pulse_timing_context(data)
-    pulse_label = "unavailable in frozen input" if pulse_context["pulse_start_us"] is None else f"{pulse_context['pulse_start_us']:.8g} us"
-    figure.suptitle(f"Full apparatus: axial/transverse display scales differ; quench offsets, pulse starts {pulse_label}", fontsize=10)
-    figures["timed_clouds"] = figure
-    extraction_snapshots = [(label,time) for label,time in data["snapshots"] if time >= quench]
-    if extraction_snapshots:
-        figure, axes = plt.subplots(math.ceil(len(extraction_snapshots)/3),3,figsize=(14,6),squeeze=False,constrained_layout=True)
-        for axis,(label,time) in zip(axes.flat,extraction_snapshots):
-            add_geometry(axis,projection,slow,fast)
+    if include_projected_geometry:
+        figure, axes = plt.subplots(2, 1, figsize=(13, 7), constrained_layout=True)
+        for axis, vertical in zip(axes, (fast, transverse)):
+            add_geometry(axis, projection, slow, vertical)
+            lines = [np.array([[row[slow+"_mm"], row[vertical+"_mm"]] for row in track]) for track in data["tracks"].values()]
+            axis.add_collection(LineCollection(lines, colors="#0072B2", linewidths=.7, alpha=.65, label="all recorded particle tracks"))
+            for state in ("lost", "extracted"):
+                terminals = [row for row in data["terminals"].values() if (row["reason"] == "acceptance_surface") == (state == "extracted")]
+                if terminals:
+                    axis.scatter([row[slow+"_mm"] for row in terminals], [row[vertical+"_mm"] for row in terminals], color=styles[state]["color"], marker=styles[state]["marker"], label=state+" last positions", zorder=5)
+            axis.autoscale_view()
+            axis.set_title("Recorded trajectories with projected electrode outlines")
+        _shared_legend(figure, axes[0])
+        figures["trajectory_geometry"] = figure
+        columns = 3
+        figure, axes = plt.subplots(math.ceil(len(data["snapshots"])/columns), columns, figsize=(14, 11), constrained_layout=True)
+        for axis, (label, time) in zip(np.asarray(axes).flat, data["snapshots"]):
+            rows = [row for row in snapshot_rows if row["snapshot"] == label]
+            add_geometry(axis, projection, slow, fast)
             axis.set_aspect("auto")
-            axis.set(xlim=bounds["local_x_mm"],ylim=bounds["local_y_mm"])
-            rows=[row for row in snapshot_rows if row["snapshot"]==label]
-            for state in ("alive","lost","extracted"):
-                selected=[row for row in rows if row["status"]==state]
-                axis.scatter([row[slow+"_mm"] for row in selected],[row[fast+"_mm"] for row in selected],color=styles[state]["color"],marker=styles[state]["marker"],s=18,label=state if state=="alive" else state+" last")
-            alive=[row for row in rows if row["status"]=="alive"]
-            outside=sum(not(bounds["local_x_mm"][0]<=row[slow+"_mm"]<=bounds["local_x_mm"][1] and bounds["local_y_mm"][0]<=row[fast+"_mm"]<=bounds["local_y_mm"][1]) for row in alive)
-            axis.set_title(f"quench_start{time-quench:+g} us\nalive outside zoom={outside}/{len(alive)}",fontsize=8)
-        for axis in list(axes.flat)[len(extraction_snapshots):]:
+            axis.set(xlim=bounds["full_x_mm"], ylim=bounds["full_y_mm"])
+            for state in ("alive", "lost", "extracted"):
+                selected = [row for row in rows if row["status"] == state]
+                axis.scatter([row[slow+"_mm"] for row in selected], [row[fast+"_mm"] for row in selected], color=styles[state]["color"], marker=styles[state]["marker"], s=12, label=state if state == "alive" else state+" last")
+            counts = {state: sum(row["status"] == state for row in rows) for state in STATES}
+            snapshot_spec = next(item for item in data["contract"]["snapshots"] if item["label"] == label)
+            anchor_label = {"extraction_start_us":"requested_quench" if "native_timing" in data["config"] else "legacy_quench", "primary_quench_us":"quench_start", "pulse_start_us":"pulse_start"}.get(snapshot_spec["anchor"])
+            display_label = f"{anchor_label}{snapshot_spec['offset_us']:+g} us" if anchor_label else label
+            axis.set_title(f"{display_label} t={time:g} us\n" + ", ".join(f"{state}={n}" for state, n in counts.items()), fontsize=8)
+        for axis in list(np.asarray(axes).flat)[len(data["snapshots"]):]:
             axis.set_visible(False)
-        _shared_legend(figure,axes.flat[0])
-        figure.suptitle("LP extraction zoom: HP/outside particles remain in full apparatus view; scales differ",fontsize=10)
-        figures["extraction_local_clouds"]=figure
+        _shared_legend(figure, np.asarray(axes).flat[0])
+        pulse_context = pulse_timing_context(data)
+        pulse_label = "unavailable in frozen input" if pulse_context["pulse_start_us"] is None else f"{pulse_context['pulse_start_us']:.8g} us"
+        figure.suptitle(f"Full apparatus: axial/transverse display scales differ; quench offsets, pulse starts {pulse_label}", fontsize=10)
+        figures["timed_clouds"] = figure
+        extraction_snapshots = [(label,time) for label,time in data["snapshots"] if time >= quench]
+        if extraction_snapshots:
+            figure, axes = plt.subplots(math.ceil(len(extraction_snapshots)/3),3,figsize=(14,6),squeeze=False,constrained_layout=True)
+            for axis,(label,time) in zip(axes.flat,extraction_snapshots):
+                add_geometry(axis,projection,slow,fast)
+                axis.set_aspect("auto")
+                axis.set(xlim=bounds["local_x_mm"],ylim=bounds["local_y_mm"])
+                rows=[row for row in snapshot_rows if row["snapshot"]==label]
+                for state in ("alive","lost","extracted"):
+                    selected=[row for row in rows if row["status"]==state]
+                    axis.scatter([row[slow+"_mm"] for row in selected],[row[fast+"_mm"] for row in selected],color=styles[state]["color"],marker=styles[state]["marker"],s=18,label=state if state=="alive" else state+" last")
+                alive=[row for row in rows if row["status"]=="alive"]
+                outside=sum(not(bounds["local_x_mm"][0]<=row[slow+"_mm"]<=bounds["local_x_mm"][1] and bounds["local_y_mm"][0]<=row[fast+"_mm"]<=bounds["local_y_mm"][1]) for row in alive)
+                axis.set_title(f"quench_start{time-quench:+g} us\nalive outside zoom={outside}/{len(alive)}",fontsize=8)
+            for axis in list(axes.flat)[len(extraction_snapshots):]:
+                axis.set_visible(False)
+            _shared_legend(figure,axes.flat[0])
+            figure.suptitle("LP extraction zoom: HP/outside particles remain in full apparatus view; scales differ",fontsize=10)
+            figures["extraction_local_clouds"]=figure
 
     labels = data["contract"]["stage_labels"]
     figure, axes = plt.subplots(2, len(labels), figsize=(13, 7), squeeze=False, constrained_layout=True)
     for index, label in enumerate(labels):
         rows = [row for row in snapshot_rows if row["snapshot"] == label and row["status"] == "alive"]
-        add_geometry(axes[0,index], projection, fast, transverse)
+        if include_projected_geometry:
+            add_geometry(axes[0,index], projection, fast, transverse)
+        else:
+            axes[0,index].set(xlabel=f"{fast} (mm)", ylabel=f"{transverse} (mm)")
         axes[0,index].scatter([row[fast+"_mm"] for row in rows], [row[transverse+"_mm"] for row in rows], marker="o", color="#0072B2", label="alive")
         axes[1,index].scatter([row[slow+"_mm"] for row in rows], [row["v"+slow+"_mm_us"]*1000 for row in rows], marker="s", color="#0072B2")
         lp=lp_members(data,rows)
@@ -355,14 +381,36 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict]) 
         axes[1,index].set(xlabel=f"{slow} (mm)", ylabel=f"v{slow} (m/s)")
     _shared_legend(figure,axes[0,0])
     figures["stage_phase_space"] = figure
-    figure, axes = plt.subplots(1,len(labels),figsize=(13,4),squeeze=False,constrained_layout=True)
-    for axis,label in zip(axes.flat,labels):
-        rows=[row for row in snapshot_rows if row["snapshot"]==label and row["status"]=="alive"]
+    cooling_stages = [("source (individual birth)", [dict(particle_id=p, **row) for p,row in sorted(data["sources"].items())])]
+    cooling_stages.extend((label, [row for row in snapshot_rows if row["snapshot"]==label and row["status"]=="alive"]) for label in labels)
+    figure, axes = plt.subplots(3,len(cooling_stages),figsize=(16,10),squeeze=False,constrained_layout=True)
+    mass = data["config"]["source"]["species"]["mass_amu"]
+    source_energy = sorted(row["kinetic_energy_ev"] for row in data["sources"].values())
+    for column,(label,rows) in enumerate(cooling_stages):
+        axis = axes[0,column]
         axis.scatter([row["particle_id"] for row in rows],[row["kinetic_energy_ev"] for row in rows],marker="o",color="#0072B2",label="observed alive")
-        axis.set(xlabel="Particle ID",ylabel="Kinetic energy (eV)",title=f"{label}: all observed alive N={len(rows)}")
+        energy = sorted(row["kinetic_energy_ev"] for row in rows)
+        stats = "no observed alive states" if not energy else f"mean={np.mean(energy):.4g}, std={np.std(energy):.4g} eV"
+        axis.set(xlabel="Particle ID",ylabel="Total kinetic energy (eV)",title=f"{label}: N={len(rows)}/{len(data['sources'])}\n{stats}")
+        distribution = axes[1,column]
+        distribution.step(source_energy,np.arange(1,len(source_energy)+1)/len(source_energy),where="post",color="#777777",linestyle=":",label="all initial IDs")
+        if energy:
+            distribution.step(energy,np.arange(1,len(energy)+1)/len(energy),where="post",color="#0072B2",label="stage alive")
+            matched = sorted(data["sources"][row["particle_id"]]["kinetic_energy_ev"] for row in rows)
+            distribution.step(matched,np.arange(1,len(matched)+1)/len(matched),where="post",color="#D55E00",linestyle="--",label="same IDs at birth")
+        distribution.set(xlabel="Total kinetic energy (eV)",ylabel="Conditional empirical CDF")
+        distribution.legend(fontsize=7)
+        component = axes[2,column]
+        for coordinate,color,style in (("x","#0072B2","-"),("y","#D55E00","--"),("z","#009E73",":")):
+            values = sorted(kinetic_energy_ev(mass,row[f"v{coordinate}_mm_us"]*1000,0,0) for row in rows)
+            if values:
+                component.step(values,np.arange(1,len(values)+1)/len(values),where="post",color=color,linestyle=style,label=f"E{coordinate}")
+        component.set(xlabel="Directional kinetic energy (eV)",ylabel="Alive empirical CDF")
+        if rows:
+            component.legend(fontsize=7)
+    for axis in axes.flat:
         axis.grid(alpha=.16)
-    _shared_legend(figure,axes.flat[0])
-    figure.suptitle("Cooling detail: per-stage energy scales; full high-energy history retained separately",fontsize=10)
+    figure.suptitle("Cooling: initial versus observed alive states; N uses full source denominator\nDirectional energies include drift and RF micromotion; instantaneous snapshots are not equilibrium temperatures",fontsize=10)
     figures["cooling_stage_energy"]=figure
 
     figure, axes = plt.subplots(2, 3, figsize=(14, 8), constrained_layout=True)
@@ -394,15 +442,39 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict]) 
     return figures
 
 
-def export_diagnostics(run: Path) -> dict:
-    """Export six PNG/SVG roles, CSVs and explicit per-figure provenance."""
+def cooling_statistics(data: dict, snapshots: list[dict]) -> dict:
+    """Keep full-source and matched-birth cohorts beside each stage distribution."""
+    mass = data["config"]["source"]["species"]["mass_amu"]
+    def describe(rows):
+        distributions = {"total": [row["kinetic_energy_ev"] for row in rows]}
+        distributions.update((axis, [kinetic_energy_ev(mass,row[f"v{axis}_mm_us"]*1000,0,0) for row in rows]) for axis in "xyz")
+        return {axis: dict(count=len(values),mean_ev=float(np.mean(values)) if values else None,
+                          std_ev=float(np.std(values)) if values else None,
+                          quantiles_10_50_90_ev=[float(value) for value in np.quantile(values,[.1,.5,.9])] if values else None)
+                for axis,values in distributions.items()}
+    stages = {}
+    for label in data["contract"]["stage_labels"]:
+        rows = [row for row in snapshots if row["snapshot"]==label]
+        alive = [row for row in rows if row["status"]=="alive"]
+        stages[label] = dict(census={state:sum(row["status"]==state for row in rows) for state in STATES},
+                             alive_particle_ids=[row["particle_id"] for row in alive],
+                             alive=describe(alive),same_ids_at_birth=describe([data["sources"][row["particle_id"]] for row in alive]))
+    return dict(schema_version=1,role="ion_processor_cooling_distributions",source_count=len(data["sources"]),
+                source=describe(list(data["sources"].values())),stages=stages,
+                interpretation="Instantaneous kinetic energies include drift and RF micromotion, not equilibrium temperatures. Alive distributions are conditional; matched initial IDs and full census disclose survivor selection. No no-collision counterfactual is implied.",
+                standard_deviation="population, ddof=0; finite source samples are not recentered to configured distribution parameters")
+
+
+def export_diagnostics(run: Path, output_directory: Path | None = None) -> dict:
+    """Automatically export English sections, statistics and packet evidence."""
     run = run.resolve()
     data = prepare_data(run)
-    results = run / "results"
-    roles = ("trajectory_geometry", "timed_clouds", "extraction_local_clouds", "stage_phase_space", "cooling_stage_energy", "population_evolution")
+    results = run / "results" if output_directory is None else Path(output_directory).resolve()
+    roles = ("structure_sections", "timed_clouds_sections", "extraction_clouds_sections",
+             "stage_phase_space", "cooling_stage_energy", "population_evolution", "post_extraction_packet")
     if any((results/f"{role}.{extension}").exists() for role in roles for extension in ("png", "svg", "metadata.json")):
         raise FileExistsError("diagnostics require a fresh run output; refusing evidence overwrite")
-    results.mkdir(exist_ok=True)
+    results.mkdir(parents=True, exist_ok=True)
     snapshots, census_rows = [], []
     maximum_used_gap = 0.0
     for label, time in data["snapshots"]:
@@ -420,6 +492,7 @@ def export_diagnostics(run: Path) -> dict:
     _write_csv(results / "diagnostic_census.csv",census_rows,list(census_rows[0]))
     losses = [dict(particle_id=particle,**row) for particle,row in sorted(data["terminals"].items()) if row["reason"] != "acceptance_surface"]
     _write_csv(results / "diagnostic_losses.csv",losses,["particle_id","t_us",*VALUES,"kinetic_energy_ev","reason","electrode_id"])
+    (results / "cooling_distributions.json").write_text(json.dumps(cooling_statistics(data,snapshots),indent=2,allow_nan=False)+"\n",encoding="utf-8")
     repo = Path(__file__).resolve().parents[3]
     context_path=run/"inputs/source_context.json"
     if context_path.is_file():
@@ -434,8 +507,8 @@ def export_diagnostics(run: Path) -> dict:
     source_paths = [run/relative for relative in ("inputs/resolved_model.json","inputs/diagnostics.json","simion/events.csv","simion/samples.csv","results/particle_state.csv")]
     if context_path.is_file():
         source_paths.append(context_path)
-    metadata = dict(schema_version=1, role="ion_processor_diagnostic_figure", source_run=str(run), source_profile=data["config"].get("source_profile"), source_particle_count=len(data["sources"]), displayed_particle_ids=sorted(data["sources"]), source_records=[dict(path=str(path),sha256=file_sha256(path),bytes=path.stat().st_size) for path in source_paths], git=git, code_sha256=PRODUCER_SOURCE_SHA256, frame_id=data["config"].get("coordinate_transform", {}).get("to_frame_id",data["config"]["baseline"]["clock"]["frame_id"]), coordinate_transform=data["config"].get("coordinate_transform"), sigma_csv_compatibility="new frames use sigma_slow_mm/lp_sigma_slow_mm with explicit sigma_axis; sigma_x aliases exist only for legacy local-axis runs", units=dict(position="mm",velocity="mm/us in CSV; m/s phase-space display",time="instrument absolute us",energy="eV"), selection="full-range views preserve all source IDs; explicitly conditional LP zoom and per-stage alive energy details accompany full-cohort views; no KDE, smoothing, fitting or subsampling", display_bounds=display_bounds(data), interpolation="display only; linear between adjacent recorded positions/velocities within frozen bracket limit; energy recomputed from interpolated velocity", maximum_used_interpolation_gap_us=maximum_used_gap, pulse_timing=pulse_timing_context(data), snapshot_census=[dict(label=label,**census(data,time)[0]) for label,time in data["snapshots"]], lp_conditioning="alive with guide_length+hp_length < slow_coordinate < guide_length+hp_length+lp_length; slow=project y for transformed runs, local x for legacy; no detector-outcome selection; global sigma includes HP-retained ions", geometry_provenance="frozen native_projection electrode solids projected as bounding outlines; cylinder projection bounded rectangle; cutouts retained in projection but not subtracted in outline drawing; no independently authored dimensions", geometry_sha256=file_sha256(run/"inputs/resolved_model.json"), display_claim="all recorded trajectories and bounded display interpolation, not every integration step; lost/extracted points are last positions, never alive clouds", uncertainty="none; N10 exploration or N100 functional only", numerical_or_GUI_qualification=False)
-    figures = build_figures(data,snapshots,census_rows)
+    metadata = dict(schema_version=1, role="ion_processor_diagnostic_figure", source_run=str(run), source_profile=data["config"].get("source_profile"), source_particle_count=len(data["sources"]), displayed_particle_ids=sorted(data["sources"]), source_records=[dict(path=str(path),sha256=file_sha256(path),bytes=path.stat().st_size) for path in source_paths], git=git, code_sha256=PRODUCER_SOURCE_SHA256, frame_id=data["config"].get("coordinate_transform", {}).get("to_frame_id",data["config"]["baseline"]["clock"]["frame_id"]), coordinate_transform=data["config"].get("coordinate_transform"), sigma_csv_compatibility="new frames use sigma_slow_mm/lp_sigma_slow_mm with explicit sigma_axis; sigma_x aliases exist only for legacy local-axis runs", units=dict(position="mm",velocity="mm/us in CSV; m/s phase-space display",time="instrument absolute us",energy="eV"), selection="full-range views preserve all source IDs; explicitly conditional LP zoom and per-stage alive energy details accompany full-cohort views; no KDE, smoothing, fitting or subsampling", display_bounds=display_bounds(data), interpolation="display only; linear between adjacent recorded positions/velocities within frozen bracket limit; energy recomputed from interpolated velocity", maximum_used_interpolation_gap_us=maximum_used_gap, pulse_timing=pulse_timing_context(data), snapshot_census=[dict(label=label,**census(data,time)[0]) for label,time in data["snapshots"]], lp_conditioning="alive with guide_length+hp_length < slow_coordinate < guide_length+hp_length+lp_length; slow=project y for transformed runs, local x for legacy; no detector-outcome selection; global sigma includes HP-retained ions", geometry_provenance="statistical panels contain no projected electrode boxes; separate section panels consume frozen CSG solids/cutouts and declare any projected E9 footprints explicitly", geometry_sha256=file_sha256(run/"inputs/resolved_model.json"), display_claim="all recorded trajectories and bounded display interpolation, not every integration step; lost/extracted points are last positions, never alive clouds", uncertainty="none; N10 exploration or N100 functional only", numerical_or_GUI_qualification=False)
+    figures = build_figures(data,snapshots,census_rows,include_projected_geometry=False)
     output_roles = []
     for role,figure in figures.items():
         outputs = []
@@ -451,6 +524,22 @@ def export_diagnostics(run: Path) -> dict:
         (results/f"{role}.metadata.json").write_text(json.dumps(figure_metadata,indent=2,allow_nan=False)+"\n",encoding="utf-8")
         plt.close(figure)
         output_roles.append(role)
-    summary=dict(schema_version=1,role="ion_processor_diagnostics_summary",source_particle_count=len(data["sources"]),figure_roles=output_roles,all_recorded_particle_ids=True,snapshot_count=len(data["snapshots"]),census_rows=len(census_rows),loss_count=len(losses),qualification="diagnostic_only_no_physics_or_GUI_pass",maximum_used_interpolation_gap_us=metadata["maximum_used_interpolation_gap_us"])
+    # Mandatory default panels consume the just-written common snapshot table
+    # and this run's actual events/samples. No task wrapper or fixed timestamp.
+    export_sections(run, results)
+    export_post_extraction(run, results)
+    for role in ("structure_sections", "timed_clouds_sections", "extraction_clouds_sections", "post_extraction_packet"):
+        for extension in ("png", "svg", "metadata.json"):
+            if not (results / f"{role}.{extension}").is_file():
+                raise ValueError(f"mandatory default diagnostic output missing: {role}.{extension}")
+        output_roles.append(role)
+    packet_statistics = _json(results / "post_extraction_statistics.json")
+    packet_status = packet_statistics.get("packet_status", packet_statistics.get("status"))
+    if not isinstance(packet_status, str) or not packet_status:
+        raise ValueError("post-extraction diagnostics must declare meaningful availability status")
+    for filename in ("post_extraction_plane_states.csv", "post_extraction_common_time_states.csv"):
+        if not (results / filename).is_file():
+            raise ValueError(f"required post-extraction table missing: {filename}")
+    summary=dict(schema_version=1,role="ion_processor_diagnostics_summary",post_extraction_status=packet_status,source_particle_count=len(data["sources"]),figure_roles=output_roles,all_recorded_particle_ids=True,snapshot_count=len(data["snapshots"]),census_rows=len(census_rows),loss_count=len(losses),qualification="diagnostic_only_no_physics_or_GUI_pass",maximum_used_interpolation_gap_us=metadata["maximum_used_interpolation_gap_us"])
     (results/"diagnostics_summary.json").write_text(json.dumps(summary,indent=2)+"\n",encoding="utf-8")
     return summary

@@ -104,4 +104,15 @@ near(m.pressure(m.geometry.lp_end_mm + 1, 0, 0, 0), 0, 0, 'downstream vacuum')
 
 local bad = {schema_version=99}
 assert(not pcall(module.new, bad), 'unknown schema must fail')
+local original_alignment=e.rf_quench_alignment
+for _,alignment in ipairs({'requested_time','next_cosine_zero'}) do
+ e.rf_quench_alignment=alignment
+ assert(pcall(module.new,baseline),'known author enum must be accepted without changing reference equations')
+end
+e.rf_quench_alignment='unsupported'
+assert(not pcall(module.new,baseline),'unknown alignment must fail separately from numeric checks')
+e.rf_quench_alignment=original_alignment
+local frequency=e.rf_frequency_hz;e.rf_frequency_hz='3700000'
+assert(not pcall(module.new,baseline),'numeric scientific fields must not accept strings')
+e.rf_frequency_hz=frequency
 print('FIELD_MODEL_TEST_PASS comparisons=' .. comparisons)

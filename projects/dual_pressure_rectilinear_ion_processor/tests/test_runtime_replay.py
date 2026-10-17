@@ -119,6 +119,29 @@ local function contents(path)
   local handle=assert(io.open(path,'r'))
   local value=handle:read('*a');handle:close();return value
 end
+if arg[2]=='upstream-source' then
+  segment.initialize_run()
+  local upstream=config.native_projection.origin_mm[1]
+  for id=1,sim_ions_count do
+    local source=sources[id]
+    ion_number=id;ion_splat=0;ion_time_of_flight=0
+    assert(source.x<0 and source.x>upstream,'fixture must start upstream of guide inside PA')
+    put_local(source.x,source.y,source.z,source.vx,source.vy,source.vz)
+    segment.initialize();segment.other_actions()
+    assert(ion_splat==0,'valid upstream source must survive its first callback')
+    ion_time_of_flight=1
+    put_local(upstream,0,0,-1,0,0);segment.other_actions()
+    assert(ion_splat==0,'numerical escape must not occur before crossing the lower PA bound')
+    ion_time_of_flight=2
+    put_local(upstream-0.01,0,0,-1,0,0);segment.other_actions()
+    assert(ion_splat==1,'crossing the frozen upstream PA bound must terminate')
+    segment.terminate()
+  end
+  segment.terminate_run()
+  local _,count=contents(directory..'events.csv'):gsub('terminal,%d+,backward_escape,','')
+  assert(count==sim_ions_count,'record one backward escape per out-of-domain particle')
+  print('RUNTIME_UPSTREAM_SOURCE_PASS');return
+end
 local function fly_again(preinitialize)
   -- Emulate changing GUI defaults before each click; reproducibility must be
   -- imposed at the run boundary rather than relying on previous GUI state.
@@ -164,7 +187,7 @@ local function fly_again(preinitialize)
       config.baseline.geometry.hp_length_mm+config.baseline.geometry.lp_length_mm
     local times={100,capture_time,capture_time+100,capture_time+200,
       config.baseline.schedule.transfer_end_us,
-      config.baseline.schedule.extraction_start_us,
+      config.native_timing.primary_quench_us,
       config.baseline.schedule.extraction_start_us+1}
     local xs={35,120,lp_end+0.1,170,170,170,170}
     for index,t in ipairs(times) do
@@ -173,6 +196,15 @@ local function fly_again(preinitialize)
       put_local(xs[index],y,source.z,source.vx,source.vy,source.vz)
       if index==2 then assert(test_hs.pressure()==config.baseline.gas.hp_pressure_pa, "HP pressure must use local region") end
       if index==4 then assert(test_hs.pressure()==config.baseline.gas.lp_pressure_pa, "LP pressure must use local region") end
+      if index==6 then
+        for _,boundary in ipairs({config.baseline.schedule.lift_end_us,
+          config.native_timing.primary_quench_us,config.native_timing.pulse_start_us}) do
+          ion_time_of_flight=boundary-0.001;ion_time_step=1
+          segment.tstep_adjust()
+          assert(math.abs(ion_time_step-0.001)<1e-9,'timestep must land at lift/quench/pulse boundary')
+        end
+        ion_time_of_flight=t
+      end
       segment.fast_adjust()
       segment.other_actions()
       if t==capture_time+100 then
@@ -290,8 +322,15 @@ class RuntimeReplayTests(unittest.TestCase):
             self.skipTest("Standalone Lua unavailable; set SIMION_LUA_EXE for replay contract test")
         config = {name: json.loads((PROJECT / "config" / f"{name}.json").read_text(encoding="utf-8"))
                   for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point")}
-        if mode == "transformed":
+        if mode == "zero-alignment":
+            config["baseline"]["electric"]["rf_quench_alignment"] = "next_cosine_zero"
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_native_timing
+        config["native_timing"] = derive_native_timing(config["baseline"])
+        if mode in {"transformed", "upstream-source"}:
             config["coordinate_transform"] = json.loads((PROJECT / "config/coordinate_transform.json").read_text(encoding="utf-8"))
+        if mode == "upstream-source":
+            # A distinct lower bound detects a hardcoded replacement for zero.
+            config["baseline"]["native_geometry"]["domain_start_x_mm"] = -3.7
         config["source"]["particle_count"] = 2
         if mode in {"offset", "csv-batch"}:
             config["source"]["particle_count"] = 100
@@ -316,6 +355,9 @@ class RuntimeReplayTests(unittest.TestCase):
             (folder / "frozen_config.lua").write_text("return " + lua_literal(config), encoding="utf-8")
             sources = [{"particle_id": index, "t": 0, "x": 1, "y": index * 0.01,
                         "z": 0, "vx": 1, "vy": 0, "vz": 0, "ke": 5} for index in (1, 2)]
+            if mode == "upstream-source":
+                for state in sources:
+                    state["x"] = config["native_projection"]["origin_mm"][0] + 0.5
             (folder / "source_states.lua").write_text("return " + lua_literal(sources), encoding="utf-8")
             (folder / "replay.lua").write_text(LUA_HARNESS, encoding="utf-8")
             unrelated = folder / "unrelated_gui_cwd"
@@ -329,11 +371,17 @@ class RuntimeReplayTests(unittest.TestCase):
     def test_repeated_initialize_run_resets_state_and_draws_numerical_outline(self) -> None:
         self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("replay"))
 
+    def test_zero_alignment_preserves_lift_quench_pulse_clamps(self) -> None:
+        self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("zero-alignment"))
+
     def test_all_creation_callbacks_precede_sequential_flight_without_rng_leak(self) -> None:
         self.assertIn("RUNTIME_PREINITIALIZED_PARTICLES_PASS", self.run_runtime_fixture("preinitialize"))
 
     def test_project_rotation_preserves_local_regions_boundaries_and_replay(self) -> None:
         self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("transformed"))
+
+    def test_upstream_source_survives_until_crossing_frozen_pa_lower_bound(self) -> None:
+        self.assertIn("RUNTIME_UPSTREAM_SOURCE_PASS", self.run_runtime_fixture("upstream-source"))
 
     def test_nonzero_batch_offset_sets_canonical_particle_seeds(self) -> None:
         self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("offset"))

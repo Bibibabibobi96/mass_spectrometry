@@ -56,6 +56,7 @@ def load_config() -> dict:
     config = {name: functional.read_json(PROJECT / "config" / f"{name}.json")
               for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point")}
     config["source_profile"] = "functional"
+    config["native_timing"] = functional.derive_native_timing(config["baseline"])
     return config
 
 
@@ -74,14 +75,14 @@ def event_fixture(config: dict) -> list[dict]:
             ("hp_enter", 100, g["guide_length_mm"]),
             ("capture", s["capture_end_us"], g["hp_center_mm"]),
             ("transfer", s["transfer_end_us"], g["lp_center_mm"]),
-            ("pre_extraction", s["extraction_start_us"], g["lp_center_mm"]),
+            ("pre_extraction", config["native_timing"]["primary_quench_us"], g["lp_center_mm"]),
         ):
             rows.append({**initial, "event": name, "t_us": time, "x_mm": x,
                          "y_mm": 0, "z_mm": 0, "vx_mm_us": 0,
                          "vy_mm_us": 0, "vz_mm_us": 0})
-        # Source energy is 5 eV, so multiplying the source speed by sqrt(800)
-        # independently constructs a 4000 eV fixture without solver dynamics.
-        speed = abs(initial["vx_mm_us"]) * (4000 / 5) ** 0.5
+        # Construct an explicit 4000 eV fixture independent of source spread;
+        # this prescribed state is never presented as solver dynamics.
+        speed = math.sqrt(2*4000*1.602176634e-19/(state["mass_amu"]*1.66053906660e-27))/1000
         exit_row = {**initial, "event": "extraction_exit", "reason": "acceptance_surface",
                     "t_us": s["extraction_start_us"] + 1, "x_mm": g["lp_center_mm"],
                     "y_mm": g["extraction_end_y_mm"], "z_mm": 0,
@@ -111,6 +112,62 @@ class FunctionalContractTests(unittest.TestCase):
 
     def test_validate_current_config(self) -> None:
         functional.validate_configs(self.config)
+
+    def test_native_timing_aligns_both_switches_and_preserves_lift_end(self) -> None:
+        baseline = copy.deepcopy(self.config["baseline"])
+        baseline["electric"]["rf_quench_alignment"] = "next_cosine_zero"
+        timing = functional.derive_native_timing(baseline)
+        self.assertAlmostEqual(timing["primary_quench_us"], 7500 + .25/3.7, places=9)
+        self.assertAlmostEqual(timing["pulse_start_us"], 7500 + .75/3.7, places=9)
+        self.assertGreater(timing["primary_quench_us"], baseline["schedule"]["lift_end_us"])
+        self.assertEqual(timing["pulse_start_us"], timing["side_quench_us"])
+        for phase in (0, .7, -.9):
+            b = copy.deepcopy(baseline)
+            b["clock"]["rf_phase_rad"] = phase
+            for frequency in (3.7e6, 2.1e6):
+                b["electric"]["rf_frequency_hz"] = frequency
+                result = functional.derive_native_timing(b)
+                for key in ("primary_quench_us", "side_quench_us"):
+                    angle = 2*math.pi*frequency*1e-6*result[key]+phase
+                    self.assertLess(abs(math.cos(angle)), 1e-9)
+
+    def test_native_timing_zero_roundoff_and_invalid_resolved_times(self) -> None:
+        b = copy.deepcopy(self.config["baseline"])
+        b["electric"]["rf_quench_alignment"] = "next_cosine_zero"
+        zero = functional.derive_native_timing(b)["primary_quench_us"]
+        b["schedule"]["extraction_start_us"] = zero
+        self.assertEqual(functional.derive_native_timing(b)["primary_quench_us"], zero)
+        for offset in (-1e-6, 1e-6):
+            b["schedule"]["extraction_start_us"] = zero + offset
+            result = functional.derive_native_timing(b)
+            self.assertGreaterEqual(result["primary_quench_us"], zero + offset)
+            self.assertAlmostEqual(result["primary_quench_us"], zero if offset < 0 else zero+.5/3.7)
+        b["electric"]["rf_quench_delay_cycles"] = .3
+        with self.assertRaisesRegex(ValueError, "half-cycles"):
+            functional.derive_native_timing(b)
+        b = copy.deepcopy(self.config["baseline"])
+        b["schedule"]["terminal_us"] = zero + .01
+        with self.assertRaisesRegex(ValueError, "precede terminal"):
+            functional.derive_native_timing(b)
+        self.config["native_timing"]["primary_quench_us"] += .01
+        with self.assertRaisesRegex(ValueError, "native timing differs"):
+            functional.validate_configs(self.config)
+
+    def test_requested_time_policy_keeps_authored_clock_and_arbitrary_positive_delay(self) -> None:
+        b = copy.deepcopy(self.config["baseline"])
+        b["electric"]["rf_quench_alignment"] = "requested_time"
+        b["electric"]["rf_quench_delay_cycles"] = .3
+        b["clock"]["rf_phase_rad"] = .7
+        result = functional.derive_native_timing(b)
+        self.assertEqual(result["policy"], "requested_instrument_time_v1")
+        self.assertEqual(result["primary_quench_us"], b["schedule"]["extraction_start_us"])
+        self.assertEqual(result["alignment_roundoff_us"], 0)
+        self.assertAlmostEqual(result["pulse_start_us"], result["primary_quench_us"]+.3/3.7)
+        for invalid in ("unknown", False, 1, [], {}):
+            c = copy.deepcopy(self.config)
+            c["baseline"]["electric"]["rf_quench_alignment"] = invalid
+            with self.assertRaisesRegex(ValueError, "rf_quench_alignment"):
+                functional.validate_configs(c)
 
     def test_functional_profile_rejects_small_cohort(self) -> None:
         self.config["source"]["particle_count"] = 10
@@ -249,6 +306,7 @@ class FunctionalContractTests(unittest.TestCase):
         for name in ("diagnostics", "field_diagnostics"):
             functional.write_json(project / "config" / f"{name}.json",
                                   functional.read_json(PROJECT / "config" / f"{name}.json"))
+        shutil.copyfile(PROJECT / "config/source_parameter_sources.json", project / "config/source_parameter_sources.json")
         functional.write_json(project / "config/source_exploration.json",
                               functional.read_json(PROJECT / "config/source_exploration.json"))
         for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua"):
@@ -264,10 +322,39 @@ class FunctionalContractTests(unittest.TestCase):
         functional.write_json(self.run / "run_config.json", {"schema_version": 1})
         return project, vendor
 
+    def test_external_candidate_configuration_uses_explicit_voltage_geometry_and_frame(self) -> None:
+        project, vendor = self.make_prepare_fixture()
+        candidate = Path(self.temporary.name) / "candidate_inputs"
+        shutil.copytree(project / "config", candidate)
+        baseline = functional.read_json(candidate / "baseline.json")
+        baseline["geometry"]["lp_length_mm"] = 61.5
+        baseline["electric"]["lift_v"] = 4480.043790844389
+        functional.write_json(candidate / "baseline.json", baseline)
+        point = functional.read_json(candidate / "native_operating_point.json")
+        point["lift_v"] = baseline["electric"]["lift_v"]
+        functional.write_json(candidate / "native_operating_point.json", point)
+        shutil.copyfile(PROJECT / "config/coordinate_transform.json", candidate / "coordinate_transform.json")
+        original = (project / "config/baseline.json").read_bytes()
+        functional.prepare(self.run, project, vendor, configuration_directory=candidate)
+        frozen = functional.read_json(self.run / "inputs/resolved_model.json")
+        self.assertEqual(frozen["baseline"]["geometry"]["lp_length_mm"], 61.5)
+        self.assertEqual(frozen["native_operating_point"]["lift_v"], 4480.043790844389)
+        self.assertEqual((project / "config/baseline.json").read_bytes(), original)
+        self.assertEqual(functional.read_json(self.run / "run_config.json")["parameters"]["configuration_directory"], str(candidate.resolve()))
+
+    def test_external_configuration_does_not_fall_back_to_project_transform(self) -> None:
+        project, vendor = self.make_prepare_fixture()
+        with self.assertRaisesRegex(ValueError, "explicit coordinate"):
+            functional.prepare(self.run, project, vendor, configuration_directory=project / "config")
+
     def test_prepare_preserves_source_identity_in_fly2_projection(self) -> None:
         """Synthetic source files test copying only; no vendor code is executed."""
         project, vendor = self.make_prepare_fixture()
         functional.prepare(self.run, project, vendor)
+        self.assertEqual(functional.read_json(self.run/"inputs/source_parameter_sources.json"),
+                         functional.read_json(PROJECT/"config/source_parameter_sources.json"))
+        self.assertEqual(functional.read_json(self.run/"inputs/native_timing.json"),
+                         functional.read_json(self.run/"inputs/resolved_model.json")["native_timing"])
         fly2 = (self.run / "simion/processor.fly2").read_text(encoding="utf-8")
         positions = re.findall(r"position = vector\(([^)]+)\)", fly2)
         directions = re.findall(r"direction = vector\(([^)]+)\)", fly2)
@@ -281,7 +368,8 @@ class FunctionalContractTests(unittest.TestCase):
                 self.assertAlmostEqual(value, state[name], places=12)
             for value, name in zip(map(float, direction.split(",")), ("vx_m_s", "vy_m_s", "vz_m_s")):
                 self.assertAlmostEqual(value, state[name], places=9)
-            self.assertAlmostEqual(energy, 5, places=10)
+            expected_energy=functional.kinetic_energy_ev(state["mass_amu"],*(state[key] for key in ("vx_m_s","vy_m_s","vz_m_s")))
+            self.assertAlmostEqual(energy, expected_energy, places=10)
         with (self.run / "inputs/release.csv").open(encoding="utf-8", newline="") as handle:
             released = list(csv.DictReader(handle))
         self.assertEqual([int(row["particle_id"]) for row in released],
@@ -394,10 +482,11 @@ class FunctionalContractTests(unittest.TestCase):
         projection = functional.native_projection(self.config["baseline"], self.config["numerics"])
         self.config["native_projection"] = projection
         self.config["numerical_boundaries"] = functional.derive_numerical_boundaries(projection)
+        transfer = self.config["baseline"]["schedule"]["transfer_end_us"]
         rows = [row for row in event_fixture(self.config)
-                if row["particle_id"] != 1 or row["t_us"] <= 4000]
+                if row["particle_id"] != 1 or row["t_us"] <= transfer]
         rows.append(dict(particle_id=1, event="terminal", reason="downstream_domain_exit",
-                         t_us=4100, x_mm=211.25, y_mm=0, z_mm=0,
+                         t_us=transfer+100, x_mm=211.25, y_mm=0, z_mm=0,
                          vx_mm_us=1, vy_mm_us=0, vz_mm_us=0))
         return rows
 
@@ -428,7 +517,7 @@ class FunctionalContractTests(unittest.TestCase):
                     self.config["numerical_boundaries"]["downstream_exit_x_mm"] += 0.01
                 else:
                     rows[-1]["event"] = "transfer"
-                    rows[-1]["t_us"] = 4000
+                    rows[-1]["t_us"] = self.config["baseline"]["schedule"]["transfer_end_us"]
                 self.write_events(rows)
                 with self.assertRaisesRegex(ValueError, "downstream"):
                     functional.analyze(self.run)

@@ -4,6 +4,7 @@ local program_file=debug.getinfo(1,'S').source:sub(2)
 local directory=program_file:match('^(.*[/\\])') or './'
 local c=assert(loadfile(directory..'frozen_config.lua'))()
 local b,n,g=c.baseline,c.numerics,c.baseline.geometry
+local timing=assert(c.native_timing,'frozen native timing required')
 -- Native PA geometry remains local; SIMION particle coordinates are project XYZ.
 -- The common rigid-transform contract is validated before this frozen input exists.
 local rotation=c.coordinate_transform and c.coordinate_transform.rotation or {{1,0,0},{0,1,0},{0,0,1}}
@@ -106,13 +107,14 @@ local events,trace,rng_audit
 local active_particle
 local seen,done,previous,next_sample,extraction_trace={},{},{},{},{}
 local checkpoints={{b.schedule.capture_end_us,'capture'},
- {b.schedule.transfer_end_us,'transfer'}, {b.schedule.extraction_start_us,'pre_extraction'}}
+ {b.schedule.transfer_end_us,'transfer'}, {timing.primary_quench_us,'pre_extraction'}}
 local hp_end=g.guide_length_mm+g.hp_length_mm
 local lp_end=hp_end+g.lp_length_mm
 -- Observe downstream escape inside the PA, after the physical end-lens bore.
 -- Once an ion leaves every PA, SIMION may no longer call this program's
 -- terminate callback. This numerical plane adds no metal or electric field.
 local downstream_exit=assert(c.numerical_boundaries,'numerical boundaries required').downstream_exit_x_mm
+local upstream_exit=c.native_projection.origin_mm[1]
 assert(downstream_exit>lp_end and downstream_exit<c.native_projection.maximum_mm[1],
  'downstream observation must remain after the lens and inside the PA')
 local function draw_numerical_exit_outline()
@@ -223,6 +225,9 @@ function segment.tstep_adjust()
  for _,point in ipairs(checkpoints) do
   if point[1]>t then ion_time_step=math.min(ion_time_step,point[1]-t) end
  end
+ if b.schedule.lift_end_us>t then
+  ion_time_step=math.min(ion_time_step,b.schedule.lift_end_us-t)
+ end
  local pulse_start=drive.pulse_start_us(c)
  if pulse_start>t then ion_time_step=math.min(ion_time_step,pulse_start-t) end
  if b.schedule.terminal_us>t then
@@ -238,9 +243,9 @@ function segment.other_actions()
  activate_collision_particle()
  hs.segment.other_actions()
  local s=now()
- if s.t>=b.schedule.extraction_start_us and not extraction_trace[id] then
+ if s.t>=timing.primary_quench_us and not extraction_trace[id] then
   extraction_trace[id]=true
-  next_sample[id]=math.min(next_sample[id],b.schedule.extraction_start_us)
+  next_sample[id]=math.min(next_sample[id],timing.primary_quench_us)
  end
  if s.t>=next_sample[id] then
   local output=world_state(s)
@@ -254,7 +259,7 @@ function segment.other_actions()
  for _,point in ipairs(checkpoints) do
   if s.t>=point[1] then emit(point[2],s) end
  end
- local extraction=s.t>=b.schedule.extraction_start_us and s.x>hp_end
+ local extraction=s.t>=timing.primary_quench_us and s.x>hp_end
  if extraction and s.y>=g.extraction_end_y_mm and previous[id].y<g.extraction_end_y_mm then
   local exit=crossing(previous[id],s,'y',g.extraction_end_y_mm)
   write_state('extraction_exit','acceptance_surface',exit)
@@ -264,7 +269,9 @@ function segment.other_actions()
  elseif s.x>=downstream_exit and previous[id].x<downstream_exit then
   finish('downstream_domain_exit',crossing(previous[id],s,'x',downstream_exit))
  end
- if s.x<0 then finish('backward_escape',s) end
+ -- The guide starts at zero, but the source may occupy the upstream fringe.
+ -- Numerical escape follows the frozen PA extent in the same local frame.
+ if s.x<upstream_exit then finish('backward_escape',s) end
  -- The LP end is an open lens aperture, not an absorbing metal plane.
  -- Native PA electrode/domain termination governs downstream losses.
  if s.t>=b.schedule.terminal_us then finish('timeout',s) end

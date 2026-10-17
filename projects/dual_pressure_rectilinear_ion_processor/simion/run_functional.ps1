@@ -1,5 +1,6 @@
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$RunId,[string]$SimionExe='',[string]$NativeFieldRun='',
+ [string]$ConfigurationDirectory='',
  [ValidateSet('functional','exploration')][string]$SourceProfile='functional')
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -71,6 +72,7 @@ $python=Join-Path $repoRoot '.venv/Scripts/python.exe'
 if(-not $SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}
 if(-not(Test-Path -LiteralPath $SimionExe)){throw 'SIMION 2020 executable missing'}
 $profile=(Get-Content (Join-Path $projectRoot 'config/execution_profiles.json') -Raw|ConvertFrom-Json).profiles[0]
+$configurationRoot=if($ConfigurationDirectory){(Resolve-Path -LiteralPath $ConfigurationDirectory).Path}else{Join-Path $projectRoot 'config'}
 if($profile.retain_batch_trajectories-isnot[bool]){throw 'Execution profile retain_batch_trajectories must be boolean'}
 if($profile.native_field_query_memory_bytes-isnot[long]-and$profile.native_field_query_memory_bytes-isnot[int]){throw 'Native query memory declaration must be integer bytes'}
 if($profile.native_field_query_memory_bytes-le0){throw 'Native query memory declaration must be positive'}
@@ -78,7 +80,7 @@ $retainBatchTrajectories=[int]$profile.retain_batch_trajectories
 $committedNewBytes=[long]$profile.committed_new_bytes
 if($NativeFieldRun){
  $sourceFile=$(if($SourceProfile-eq'exploration'){'source_exploration.json'}else{'source.json'})
- $count=(Get-Content (Join-Path $projectRoot "config/$sourceFile") -Raw|ConvertFrom-Json).particle_count
+ $count=(Get-Content (Join-Path $configurationRoot $sourceFile) -Raw|ConvertFrom-Json).particle_count
  $committedNewBytes=[long][Math]::Max(2GB,([long]$count*50MB+256MB))
 }
 $artifacts=Join-Path $workspaceRoot 'artifacts'
@@ -87,11 +89,12 @@ $capacity=$null;$package=$null;$lease=$null;$finished=$false;$runSucceeded=$fals
 $savedPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$repoRoot
 Push-Location $repoRoot
 try {
- $protected=@();if($NativeFieldRun){$NativeFieldRun=(Resolve-Path -LiteralPath $NativeFieldRun).Path;$protected=@($NativeFieldRun)}
+ $protected=@($configurationRoot);if($NativeFieldRun){$NativeFieldRun=(Resolve-Path -LiteralPath $NativeFieldRun).Path;$protected+=@($NativeFieldRun)}
  $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifacts -RunDirectory (Join-Path $projectArtifacts "runs/$RunId") -CommittedNewBytes $committedNewBytes -ProtectedPaths $protected
  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts -RunId $RunId -Project dual_pressure_rectilinear_ion_processor -Mode native_electrode_functional -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass $profile.retention_class -RetentionReason $profile.retention_reason -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion')
  $run=$package.run_dir;$solver=Join-Path $run 'simion'
  $prepareArguments=@('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','prepare','--run',$run,'--simion-dir',(Split-Path -Parent $SimionExe),'--source-profile',$SourceProfile)
+ if($ConfigurationDirectory){$prepareArguments+=@('--configuration-directory',$configurationRoot)}
  if($NativeFieldRun){$prepareArguments+=@('--native-field-run',$NativeFieldRun)}
  & $python @prepareArguments
  if($LASTEXITCODE-ne0){throw 'Input preparation failed'}

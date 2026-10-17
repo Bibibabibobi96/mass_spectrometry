@@ -45,7 +45,13 @@ function model.new(baseline)
   for name, target in pairs({geometry=geometry, electric=electric, schedule=schedule, gas=gas}) do
     assert(type(baseline[name]) == 'table', 'missing baseline.' .. name)
     for key, value in pairs(baseline[name]) do
-      target[key] = finite(value, name .. '.' .. key)
+      if name=='electric' and key=='rf_quench_alignment' then
+        assert(value=='requested_time' or value=='next_cosine_zero',
+          'unsupported electric.rf_quench_alignment')
+        -- This analytic reference retains its own historical pulse formula;
+        -- the native waveform consumes separately compiled native_timing.
+        target[key]=value
+      else target[key] = finite(value, name .. '.' .. key) end
     end
   end
   local g, e, s = geometry, electric, schedule

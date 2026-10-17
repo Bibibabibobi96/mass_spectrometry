@@ -7,13 +7,14 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from matplotlib import pyplot as plt
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics import (
     build_figures, census, export_diagnostics, prepare_data, state_at,
     pulse_timing_context, validate_diagnostics_config,
-    project_geometry,
+    project_geometry, cooling_statistics,
 )
 from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import to_project_position, to_project_vector
 
@@ -61,6 +62,24 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual(state_at(data,2,2)["electrode_id"],"unknown")
         self.assertEqual(state_at(data,3,0)["status"],"notborn")
         self.assertEqual(state_at(data,1,4)["status"],"extracted")
+
+    def test_cooling_distributions_preserve_loss_and_unknown_cohorts(self) -> None:
+        data=prepare_data(self.run)
+        snapshots=[]
+        for label,time in data["snapshots"]:
+            _,states=census(data,time)
+            snapshots.extend(dict(snapshot=label,**state) for state in states)
+        result=cooling_statistics(data,snapshots)
+        self.assertEqual(result["source_count"],3)
+        self.assertEqual(result["source"]["total"]["count"],3)
+        transfer=result["stages"]["transfer"]
+        self.assertEqual(transfer["census"]["lost"],1)
+        self.assertEqual(transfer["census"]["unknown"],1)
+        self.assertEqual(transfer["alive_particle_ids"],[1])
+        self.assertEqual(transfer["same_ids_at_birth"]["total"]["count"],1)
+        self.assertEqual(transfer["alive"]["x"]["mean_ev"],transfer["alive"]["total"]["mean_ev"])
+        self.assertEqual(transfer["alive"]["y"]["mean_ev"],0)
+        self.assertIsNone(result["stages"]["pre_extraction"]["alive"]["total"]["mean_ev"])
 
     def test_world_axes_and_geometry_are_rotated_together(self) -> None:
         """A rotated source changes positions/vectors, not membership or energy."""
@@ -117,6 +136,23 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertAlmostEqual(context["pulse_start_us"],3+0.5/3.7)
         self.assertLess(3.1,context["pulse_start_us"])
         self.assertIn("snapshot offsets reference quench start",context["meaning"])
+        self.assertEqual(context["timing_policy"], "legacy_requested_quench")
+
+    def test_frozen_actual_timing_drives_context_and_named_snapshot_anchors(self) -> None:
+        c=json.loads((self.run/"inputs/resolved_model.json").read_text(encoding="utf-8"))
+        c["native_timing"]=dict(primary_quench_us=3.05,pulse_start_us=3.2,requested_quench_us=3,
+                                policy="frozen_fixture_not_recomputed")
+        (self.run/"inputs/resolved_model.json").write_text(json.dumps(c),encoding="utf-8")
+        contract=json.loads((self.run/"inputs/diagnostics.json").read_text(encoding="utf-8"))
+        contract["snapshots"][-1].update(anchor="primary_quench_us", offset_us=.01)
+        contract["snapshots"].append(dict(label="pulse",anchor="pulse_start_us",offset_us=.02))
+        (self.run/"inputs/diagnostics.json").write_text(json.dumps(contract),encoding="utf-8")
+        data=prepare_data(self.run)
+        context=pulse_timing_context(data)
+        self.assertEqual(context["quench_start_us"],3.05)
+        self.assertEqual(context["pulse_start_us"],3.2)
+        self.assertAlmostEqual(dict(data["snapshots"])["pre_extraction"],3.06)
+        self.assertAlmostEqual(dict(data["snapshots"])["pulse"],3.22)
 
     def test_census_closes_with_unknown(self) -> None:
         data=prepare_data(self.run)
@@ -151,7 +187,23 @@ class DiagnosticsTests(unittest.TestCase):
         for figure in figures.values():
             plt.close(figure)
         (self.run/"inputs/source_context.json").write_text(json.dumps({"git_sha":"frozen-test-sha","worktree_porcelain":"M frozen_file.py"}),encoding="utf-8")
-        result=export_diagnostics(self.run)
+        # The legacy fixture validates census/statistical panels, not full native
+        # CSG section geometry. Mandatory producer wiring has its own test.
+        def sections(run,out):
+            template=(out/"stage_phase_space.metadata.json").read_text(encoding="utf-8")
+            for role in ("structure_sections","timed_clouds_sections","extraction_clouds_sections"):
+                for ext in ("png","svg","metadata.json"):
+                    (out/f"{role}.{ext}").write_text(template,encoding="utf-8")
+        def packet(run,out):
+            template=(out/"stage_phase_space.metadata.json").read_text(encoding="utf-8")
+            for ext in ("png","svg","metadata.json"):
+                (out/f"post_extraction_packet.{ext}").write_text(template,encoding="utf-8")
+            (out/"post_extraction_statistics.json").write_text('{"packet_status":"synthetic"}',encoding="utf-8")
+            for name in ("plane","common_time"):
+                (out/f"post_extraction_{name}_states.csv").write_text("particle_id\n",encoding="utf-8")
+        module="projects.dual_pressure_rectilinear_ion_processor.analysis.diagnostics"
+        with patch(module+".export_sections",side_effect=sections),patch(module+".export_post_extraction",side_effect=packet):
+            result=export_diagnostics(self.run)
         self.assertEqual(result["source_particle_count"],3)
         self.assertEqual(result["loss_count"],2)
         for role in result["figure_roles"]:
@@ -189,7 +241,7 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual(tuple(local.get_xlim()),(166,174))
         self.assertIn("outside zoom",local.get_title())
         self.assertIn("quench start",figures["population_evolution"].axes[-1].get_xlabel())
-        self.assertIn("per-stage energy scales",figures["cooling_stage_energy"]._suptitle.get_text())
+        self.assertIn("full source denominator",figures["cooling_stage_energy"]._suptitle.get_text())
         for figure in figures.values():
             plt.close(figure)
 

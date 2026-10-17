@@ -21,6 +21,7 @@
     "rf_peak_to_peak_v": 1000,
     "guide_rf_peak_to_peak_v": 1000,
     "rf_quench_delay_cycles": 0.5,
+    "rf_quench_alignment": "requested_time",
     "hp_axial_curvature_v_per_mm2": 0.01,
     "lp_axial_curvature_v_per_mm2": 0.1,
     "lp_capture_offset_v": 20,
@@ -40,10 +41,10 @@
   },
   "schedule": {
     "capture_end_us": 1500,
-    "transfer_end_us": 4000,
-    "lift_end_us": 5500,
-    "extraction_start_us": 5500,
-    "terminal_us": 5520
+    "transfer_end_us": 6000,
+    "lift_end_us": 7500,
+    "extraction_start_us": 7500,
+    "terminal_us": 7520
   },
   "clock": {
     "epoch_us": 0,
@@ -69,7 +70,7 @@
     "lp_side_split_half_gap_y_mm": 0.4,
     "lens_thickness_mm": 0.5,
     "lens_outer_halfwidth_mm": 3,
-    "domain_start_x_mm": -1,
+    "domain_start_x_mm": -2,
     "domain_end_x_margin_mm": 2,
     "domain_min_y_mm": -4,
     "domain_max_y_mm": 10,

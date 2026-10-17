@@ -12,7 +12,8 @@
 前一解析场workflow尚未运行。`efield_adjust`中的解析规定场和旧curvature/offset仅供受控参考；
 不得将其输出或普通GUI静态电势显示混为原生动态场证据。旧0.2 mm场族的15组原生响应Refine完成（15.47 s），当前0.1 mm场族已求解；旧场不自动继承资格，当前恢复与结果边界见PROJECT。
 RF波形复用`common/multipole/simion_rf_drive.lua`，所有阶段使用唯一绝对instrument time。
-LP浮动屏蔽件电极14与LP common-mode同步，HP屏蔽件电极15与HP common-mode同步；
+LP浮动屏蔽件电极14平时与LP common-mode同步，引出脉冲时消费原生电压配置中的相对偏置；
+当前跟随Pull的−900 V修正及条件对照见PROJECT。HP屏蔽件电极15与HP common-mode同步；
 屏蔽件与接地外边界的关系由原生几何统一派生，避免4 kV抬升把离子云暴露于未经声明的近地泄漏场。
 屏蔽件是简化功能几何，不是实际商业CAD。
 单位响应的尺寸、原点、电极映射、网格、Refine误差与源码身份必须冻结；几何壁碰撞和状态事件由实际积分记录。
@@ -54,13 +55,16 @@ HS1示例的2.27e-18 m²用于He与约200 amu离子示例，不是N2与524 amu�
 `native_electrode_functional`、唯一runner及五份相对输入路径，不复制物理标量。该合同使用项目专用role，
 由项目编译器校验；不冒充公共通用execution profile格式。
 本轮选择`solver_review`，理由为保留原生电极场与工作台供GUI审查。
-当前执行profile预留4 GiB：新建私有18文件场族约3.3 GB，CLI保留完整事件与既定采样CSV及合并副本，
+N100和独立GUI准备的字节承诺分别消费本次冻结profile的`committed_new_bytes`与
+`gui_preparation_committed_new_bytes`，实际承诺与准入结果写入run；不将旧尺寸场族的体积当作新几何的实际占用。
+CLI保留完整事件与既定采样CSV及合并副本，
 但不再保留供应商稠密TRJ临时文件；不改变积分、采样间隔或粒子母群。实际目录占用仍每30 s监测。
 `retain_batch_trajectories`冻结进各worker配置并进入资源身份；master完整100粒子工作台不带该batch开关，
 用户Fly时仍显示并保留原生轨迹。官方依据（2026-10-16核查，SIMION 2020）：
 `examples/child_particles/child80.lua`明确image control 0为YES/YES、3为NO/NO，
 `examples/multiprocess_zmq/tune_series.lua`展示关闭磁盘轨迹；本项目CSV记录独立于此开关。
 该预留是运行前估计，不代表GUI验收或实际峰值。
+GUI预留只覆盖准备；用户手动Fly的稠密轨迹增长另计。两种预留均来自冻结profile，中央容量策略不变。
 原生场查询的主机内存声明单独消费同一profile的`native_field_query_memory_bytes`：
 历史同尺寸查询实测峰值3,154,186,240 bytes，因此本轮声明4 GiB；历史资源观测不授予其物理结果资格。
 它不改变主机中央准入策略或飞行worker并发，后者继续按首正式批实测重规划。
@@ -106,9 +110,14 @@ HP入口按论文2 mm钢孔解释为圆孔直径；LP outer以中心4 mm、端�
 工作台使用新run的绝对路径保存IOB与载入FLY2，避免`wb:load`改变CWD后误写来源目录。
 builder不做Fast Adjust；运行时由冻结动态回调驱动电压。
 
-4 GiB承诺仅覆盖私有求场、日志和IOB准备，不包含用户Fly后可能增长数GiB的TRJ轨迹。
+冻结profile中的GUI承诺仅覆盖私有求场、日志和IOB准备，不包含用户Fly后可能增长数GiB的TRJ轨迹。
 checkpoint只表示准备完成，不表示GUI视觉通过、轨迹等价或功能验收。重新Refine和随机碰撞条件下不预设逐轨迹相同；
 后续比较只能报告实测差异。只有用户真实手动确认，才可记录`gui_visual_review=true`。
+
+若baseline声明原生场诊断，准备结束默认生成`results/native_field_preparation_comparison.json`，
+对照双方manifest／文件身份绑定的`native_field_samples.csv`和`native_potential_audit.csv`。
+报告各列最大差、行数和既有序列化比较口径；数值差仅记录，采样位置／时间／标签或证据身份不一致则失败关闭。
+未声明诊断时明确记录`not_declared_by_baseline`，不补造场相等结论。此报告不执行Fly、不授予GUI或轨迹一致性资格。
 
 当前wrapper还在每次Fly开始用官方`simion.experimental.plot_line_segment`画出出口线框
 （由局部HP末端至LP末端、测量面及PA横向范围派生，再转换世界坐标，颜色12）。这是数值面的GUI图形标记，
@@ -163,10 +172,10 @@ FLY2与工作台姿态使用同一合同；runtime将SIMION世界状态逆转到
 输出事件和samples再转世界。canonical快轴z，半径及散角按世界z计算；原生接受参数另行注明，压缩使用慢轴y。
 旧无合同冻结运行保留原坐标解释，不通过重命名旧CSV伪造新证据。
 
-历史r07/r10运行、源身份与旧碰撞绑定边界见[历史记录](history/20261016__native-flight-and-source-identity.md)。旧N=10结果不作为当前N=100已验证N2结果。当前真实统计与功能判据统一见[项目状态](PROJECT.md#当前n100运行)。
+历史r07/r10运行、源身份与旧碰撞绑定边界见[历史记录](history/20261016__native-flight-and-source-identity.md)。旧N=10结果不作为当前N=100已验证N2结果。当前真实统计与功能判据统一见[项目状态](PROJECT.md)。
 
 原生场另输出`native_field_samples_project.csv`，保存转换后的项目位置/电场向量；
-原生局部场CSV保留，电势为旋转不变量。六个全过程图角色和元数据区分全母群、条件LP子群及unknown，
+原生局部场CSV保留，电势为旋转不变量。默认全过程图角色和元数据区分全母群、条件LP子群及unknown，
 全母群展宽不能以LP局部展宽替代。
 
 当前用户工作台为 `20261016_015429__test__simion__ion-processor-n100-user-workbench`，从同一冻结GEM独立Refine并保留完整18文件场族。57,106个对应采样点的电势和三分量电场值与CLI相同；未执行GUI Fly。GUI操作和Programs状态确认由用户完成；旧clone包不作为当前入口。
@@ -202,6 +211,11 @@ SIMION的`adjustable`具有独立作用域；不能用普通Lua全局赋值推�
 
 ## 自动分批与单工作台重放
 
+`run_functional.ps1 -ConfigurationDirectory <directory>`支持MR匹配候选的完整科学／数值配置目录；
+未指定时仍消费本项目`config/`。显式目录要求自身包含坐标合同，冻结全部实际消费配置及可选的
+`component_matching_derivation.json`，不回退到封存基线拼接缺项。准备、资源调度、求场与自动诊断复用原入口。
+候选目录仅是求解输入，不表示已经求场或完成出口匹配。
+
 外层主机`flight`租约只管理整项重任务的准入；粒子worker并发由公共
 `common.simion.resource_scheduler`、`common.simion.particle_batching`及
 `Invoke-ResourceBudgetedProcesses`决定。未知资源身份先保留首正式批，观测峰值后重规划；
@@ -228,3 +242,10 @@ worker全局ID为公共batch offset加本地ion_number；赋种参数由global I
 随机碰撞允许不同随机实现产生不同单离子轨迹。原生分区对照未通过仅表示精确重放未验证，
 不自动判定碰撞物理或公共并发失败，也不阻塞完整N100统计评价。GUI手动Fly比较捕获/引出率、
 损失位置和空间/能量分布；单次N100不能证明统计等价，不承诺逐离子重合。
+
+
+### Automatic English diagnostic panels
+
+The existing `functional.analyze` → `export_diagnostics` path exports the English structure/section atlas (including E9), timed section clouds, extraction section clouds, three population/energy/phase-space panels, and the combined post-extraction packet/axis-energy figure. Both producer modules are imported before `prepare` captures the Python source closure; each fresh run freezes the implementation it uses. No separate manual plotting command is required.
+
+The post-extraction common time is selected from recorded crossings and sampling support, with bounded interpolation and no extrapolation. Missing extracted ions or insufficient common-time support produce explicit availability metadata, header-only tables where appropriate, and explanatory panels; these diagnostic states do not upgrade the measured physical `functional_status`. Source paths, timings, cohort counts and electrode dimensions come from the run's frozen inputs and recorded data. Existing evidence is never overwritten; historical sealed runs retain their frozen diagnostic implementation.

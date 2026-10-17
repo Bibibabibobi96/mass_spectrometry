@@ -9,10 +9,13 @@ import copy
 import csv
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
+import zipfile
 
 from common.contracts.file_identity import file_sha256
+from common.contracts.recorded_file_removal import remove_recorded_files
 from common.contracts.write_run_manifest import build_run_manifest, write_json_atomic
 from common.contracts.verify_run_manifest import record_path
 from common.ion_release.release import generate_release_states
@@ -54,6 +57,7 @@ def publish_manifest(run: Path, status: str) -> dict:
 def prepare_request(run: Path) -> dict:
     """Describe the real one-instance native loading identity without CPU limits."""
     c = _read(run/"inputs/resolved_model.json")
+    _archive_policy(run)
     profile = _read(run/"inputs/execution_profiles.json")["profiles"][0]
     retain = profile["retain_batch_trajectories"]
     if not isinstance(retain, bool):
@@ -71,6 +75,7 @@ def prepare_request(run: Path) -> dict:
     identity = {key:c[key] for key in ("baseline", "numerics", "source", "native_operating_point", "native_projection")}
     if "coordinate_transform" in c:
         identity["coordinate_transform"] = c["coordinate_transform"]
+    identity["native_timing"] = c["native_timing"]
     identity["programs"] = {name:file_sha256(run/"simion"/name) for name in ("processor.lua", "collision_hs1.lua", "native_drive.lua", "simion_rf_drive.lua")}
     identity["retain_batch_trajectories"] = retain
     request = dict(solver="SIMION", field_kind="rf", particle_count=c["source"]["particle_count"], independent_particles=True,
@@ -191,8 +196,83 @@ def _csv(path: Path, fields: list[str], rows: list[dict]) -> None:
         writer=csv.DictWriter(stream,fieldnames=fields);writer.writeheader();writer.writerows(rows)
 
 
+def _archive_policy(run: Path) -> bool:
+    profiles = _read(run/"inputs/execution_profiles.json")["profiles"]
+    matches = [profile for profile in profiles if profile["profile_id"] == "native_functional"]
+    if len(matches) != 1:
+        raise ValueError("exactly one frozen native_functional execution profile is required")
+    enabled = matches[0]["archive_merged_worker_csv"]
+    if not isinstance(enabled, bool):
+        raise ValueError("archive_merged_worker_csv must be boolean")
+    return enabled
+
+
+def _verify_worker_archive(archive: Path, records: list[dict]) -> None:
+    """Read every archived byte and verify CRC plus original SHA/size identities."""
+    with zipfile.ZipFile(archive) as bundle:
+        if bundle.namelist() != [record["path"] for record in records] or bundle.testzip() is not None:
+            raise ValueError("worker CSV archive member inventory or CRC differs")
+        for record in records:
+            digest, size = hashlib.sha256(), 0
+            with bundle.open(record["path"]) as stream:
+                while block := stream.read(1024*1024):
+                    digest.update(block)
+                    size += len(block)
+            if size != record["bytes"] or digest.hexdigest().upper() != record["sha256"]:
+                raise ValueError("worker CSV archive identity differs: " + record["path"])
+
+
+def _archive_merged_worker_csv(run: Path, batch: dict) -> dict:
+    """Retain one consumed worker before the public merger opens the next."""
+    run = run.resolve()
+    prefix = f"merged_worker_csv_batch_{batch['index']:04d}"
+    archive = run/"results"/(prefix+".zip")
+    plan_path = run/"results"/(prefix+"_archive_plan.json")
+    receipt_path = run/"results"/(prefix+"_archive_receipt.json")
+    if any(path.exists() for path in (archive, plan_path, receipt_path)):
+        raise ValueError("worker CSV archive outputs already exist; use a new run")
+    records = []
+    for name in ("events.csv", "samples.csv", "events_id_first.csv"):
+        path = run/f"simion_batch_{batch['index']:04d}"/name
+        if path.resolve() != path or not path.is_file() or path.is_symlink():
+            raise ValueError("worker CSV archive source is not an exact same-run regular file")
+        records.append(dict(path=path.relative_to(run).as_posix(),
+                            bytes=path.stat().st_size, sha256=file_sha256(path)))
+    if not records or len({record["path"] for record in records}) != len(records):
+        raise ValueError("worker CSV archive source inventory is empty or duplicated")
+    with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as bundle:
+        for record in records:
+            with (run/record["path"]).open("rb") as source, bundle.open(record["path"], "w", force_zip64=True) as target:
+                shutil.copyfileobj(source, target, length=1024*1024)
+    with archive.open("rb+") as stream:
+        stream.flush()
+        os.fsync(stream.fileno())
+    _verify_worker_archive(archive, records)
+    plan = dict(schema_version=1, role="ion_processor_worker_csv_archive_plan", status="verified",
+                source_files=records, archive=dict(path=archive.relative_to(run).as_posix(),
+                    bytes=archive.stat().st_size, sha256=file_sha256(archive)),
+                validation_receipt_sha256=file_sha256(run/"results/batch_input_validation_receipt.json"),
+                semantics="Byte-exact worker CSV preservation after all ID/HS1/seed checks and consumption by the public CSV merger; archives reconstruct evidence even if a later batch merge fails")
+    write_json_atomic(plan_path, plan)
+    receipt = dict(schema_version=1, role="ion_processor_worker_csv_archive_receipt", status="removal_pending",
+                   plan_path=plan_path.relative_to(run).as_posix(), plan_sha256=file_sha256(plan_path), removed_files=[])
+    write_json_atomic(receipt_path, receipt)
+    try:
+        for record in remove_recorded_files(run, records):
+            receipt["removed_files"].append(record["path"])
+            write_json_atomic(receipt_path, receipt)
+    except Exception as exc:
+        receipt.update(status="removal_failed", error=str(exc))
+        write_json_atomic(receipt_path, receipt)
+        raise
+    receipt["status"] = "complete"
+    write_json_atomic(receipt_path, receipt)
+    return receipt
+
+
 def merge_batches(run: Path, batch_plan: Path) -> dict:
     """Validate full native batch closure, then use public offset rebasing once."""
+    archive_workers = _archive_policy(run)
     c, plan = _read(run/"inputs/resolved_model.json"), _read(batch_plan)
     events, samples, seeds, audits, log_parts = [], [], [], [], []
     original_fields = None
@@ -225,7 +305,6 @@ def merge_batches(run: Path, batch_plan: Path) -> dict:
     merged=run/"simion/events_id_first.csv"
     merge_rebased_particle_csvs(events,merged)
     _,rows=_rows(merged);_csv(run/"simion/events.csv",original_fields,rows)
-    merge_rebased_particle_csvs(samples,run/"simion/samples.csv")
     merge_rebased_particle_csvs(seeds,run/"simion/collision_rng_seeds.csv")
     _,seed_rows=_rows(run/"simion/collision_rng_seeds.csv")
     ids=[]
@@ -245,5 +324,20 @@ def merge_batches(run: Path, batch_plan: Path) -> dict:
     (run/"logs/flight.log").write_text("\n".join(log_parts),encoding="utf-8")
     result=dict(schema_version=1,role="ion_processor_batch_merge",particle_count=len(ids),batch_count=len(plan["batches"]),all_ids_closed=True,
                 hs1_audit="all per-worker rows validated; canonical CSV is the identical before/after pair",rng_policy=c["numerics"]["collision_rng_policy"])
+    write_json_atomic(run/"results/batch_input_validation_receipt.json",
+           {**result, "role": "ion_processor_batch_input_validation", "status": "validated_before_sample_merge"})
+    archive_receipts = []
+    def consumed_samples():
+        for batch, source in zip(plan["batches"], samples, strict=True):
+            yield source
+            # The public merger closes each source before requesting the next.
+            # Retain its byte-exact ZIP before removing any raw source file.
+            if archive_workers:
+                archive_receipts.append(_archive_merged_worker_csv(run, batch))
+    merge_rebased_particle_csvs(consumed_samples(),run/"simion/samples.csv")
     _write(run/"results/batch_merge_receipt.json",result)
+    if archive_workers:
+        write_json_atomic(run/"results/merged_worker_csv_archive_receipt.json",
+            dict(schema_version=1, role="ion_processor_worker_csv_archive_aggregate", status="complete",
+                 merge_receipt_sha256=file_sha256(run/"results/batch_merge_receipt.json"), batches=archive_receipts))
     return result

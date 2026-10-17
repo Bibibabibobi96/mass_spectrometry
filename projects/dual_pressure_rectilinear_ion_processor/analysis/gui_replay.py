@@ -95,7 +95,9 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
     projection = validate_baseline_for_private_gui(baseline_run)
     manifest_path = baseline_run / "run_manifest.json"
     verified, profile, controls = (projection[key] for key in ("verified", "profile", "controls"))
-    field_diagnostic_files = []  # New private field is queried; old field CSVs are not consumed.
+    # No field table is cloned. After a fresh private query, the recording step
+    # compares manifest-bound baseline CSVs without opening baseline PA payloads.
+    field_diagnostic_files = []
     inputs, solver = run / "inputs", run / "simion"
     inputs.mkdir(exist_ok=True)
     solver.mkdir(exist_ok=True)
@@ -107,7 +109,7 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
         if source.resolve() not in verified:
             raise ValueError(f"unbound baseline input: {source}")
         shutil.copyfile(source, inputs / source.name)
-    for source, target in ((manifest_path, "baseline_manifest.json"), (baseline_run / "summary.json", "baseline_summary.json"), (baseline_run / "simion/events.csv", "baseline_events.csv"), (baseline_run / "simion/samples.csv", "baseline_samples.csv"), (baseline_run / "results/particle_state.csv", "baseline_particle_state.csv")):
+    for source, target in ((manifest_path, "baseline_manifest.json"), (baseline_run / "summary.json", "baseline_summary.json"), (baseline_run / "simion/events.csv", "baseline_events.csv"), (baseline_run / "results/particle_state.csv", "baseline_particle_state.csv")):
         shutil.copyfile(source, inputs / target)
     project = Path(__file__).resolve().parents[1]
     runtime = baseline_run / "simion/processor.lua"
@@ -135,6 +137,8 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
     seed = project.parents[1] / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob"
     shutil.copyfile(seed, solver / "1_instance_seed.iob")
     config = _read(inputs / "resolved_model.json")
+    if "native_timing" in config and _read(inputs / "native_timing.json") != config["native_timing"]:
+        raise ValueError("GUI frozen native timing JSON differs from baseline resolved timing")
     from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import lua_literal
 
     config["native_field"] = {"directory": str(solver.resolve()), "source_manifest": None, "construction_policy": "new_private_refine_from_frozen_GEM"}
@@ -144,6 +148,8 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
     builder_source = baseline_run / "simion/build_workbench.lua"
     shutil.copyfile(builder_source, solver / "build_gui_workbench.lua")
     baseline_runtime_record = verified[(baseline_run / "simion/processor.lua").resolve()]
+    baseline_samples = (baseline_run / "simion/samples.csv").resolve()
+    baseline_samples_record = {**verified[baseline_samples], "path": str(baseline_samples)}
     replay_runtime_record = file_record(solver / "processor.lua")
     runtime_wrapper_changed = baseline_runtime_record["sha256"].upper() != replay_runtime_record["sha256"].upper()
     wrapper_difference = (
@@ -151,10 +157,11 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
         if not runtime_wrapper_changed else
         "baseline_exact_copy plus explicit repeat-Fly orchestration only; frozen runtime and drive/RF/source/HS1 preserved, no workspace runtime upgrade; repeated trajectory equivalence requires measured comparison"
     )
-    plan = dict(schema_version=1, role="ion_processor_gui_replay_plan", repeat_fly_count=repeat_fly_count, repeat_orchestration="official_segment_flym_two_run_calls_with_complete_event_sample_snapshots" if repeat_fly_count == 2 else "single_Fly_default_unchanged", runtime_source_policy="baseline_exact_copy", field_diagnostics_policy="query_new_private_field_using_frozen_probe" if projection["field_diagnostics_enabled"] else "not_declared_by_baseline", field_diagnostics_source_records=[verified[path.resolve()] for path in field_diagnostic_files], baseline_run=str(baseline_run), source_profile=profile, baseline_evidence_scope=profile + "_baseline", baseline_manifest_sha256=file_sha256(manifest_path), baseline_events_record=file_record(inputs / "baseline_events.csv"), baseline_samples_record=file_record(inputs / "baseline_samples.csv"), baseline_particle_state_record=file_record(inputs / "baseline_particle_state.csv"), workbench_seed_record=file_record(seed), workbench_seed_placeholder_record=file_record(seed.parent / "iob_seed_placeholder_01.pa0"), initial_display_voltage_policy="new private Refine; no builder Fast Adjust; runtime owns time-dependent voltages", native_pa_records=projection["historical_native_records"], baseline_consumer_projection_id="ion_processor_gui_private_refine_light_v1", baseline_retirement_verified=projection["retired"], baseline_retirement_record=projection["retirement_record"], source_PA_bytes_consumed=False, baseline_consumed_records=list(verified.values()), field_diagnostics_enabled=projection["field_diagnostics_enabled"], pa_policy="new_private_refine_from_frozen_GEM_no_baseline_PA_clone", construction_status="inputs_prepared_no_field_or_IOB_yet", geometry_record=file_record(solver / "processor.gem"), frozen_control_records=[file_record(solver / name) for name in sorted(set(controls + ["processor.lua", "build_gui_workbench.lua"]))], expected_native_members=projection["expected_native_members"], local_native_pa_records=[], initial_local_pa0_record=None, builder_source_record=file_record(builder_source), workbench_save_policy="IOB save may persist associated private GUI PA0; no baseline native PA is vendor-opened; private numbered responses remain byte-identical", baseline_runtime_record=baseline_runtime_record, replay_runtime_record=replay_runtime_record, runtime_wrapper_changed=runtime_wrapper_changed, wrapper_difference=wrapper_difference, gui_iob=str(solver / "processor.iob"), grouped=0, random_seed=config["numerics"]["seed"], trajectory_quality=config["numerics"]["trajectory_quality"], retain_trajectories=1, gui_manual_fly_completed=False)
+    plan = dict(schema_version=1, role="ion_processor_gui_replay_plan", repeat_fly_count=repeat_fly_count, repeat_orchestration="official_segment_flym_two_run_calls_with_complete_event_sample_snapshots" if repeat_fly_count == 2 else "single_Fly_default_unchanged", runtime_source_policy="baseline_exact_copy", field_diagnostics_policy="query_new_private_field_using_frozen_probe" if projection["field_diagnostics_enabled"] else "not_declared_by_baseline", field_diagnostics_source_records=[verified[path.resolve()] for path in field_diagnostic_files], baseline_run=str(baseline_run), source_profile=profile, baseline_evidence_scope=profile + "_baseline", baseline_manifest_sha256=file_sha256(manifest_path), baseline_events_record=file_record(inputs / "baseline_events.csv"), baseline_samples_record=baseline_samples_record, baseline_trajectory_storage="verified_immutable_source_reference", baseline_particle_state_record=file_record(inputs / "baseline_particle_state.csv"), workbench_seed_record=file_record(seed), workbench_seed_placeholder_record=file_record(seed.parent / "iob_seed_placeholder_01.pa0"), initial_display_voltage_policy="new private Refine; no builder Fast Adjust; runtime owns time-dependent voltages", native_pa_records=projection["historical_native_records"], baseline_consumer_projection_id="ion_processor_gui_private_refine_light_v1", baseline_retirement_verified=projection["retired"], baseline_retirement_record=projection["retirement_record"], source_PA_bytes_consumed=False, baseline_consumed_records=list(verified.values()), field_diagnostics_enabled=projection["field_diagnostics_enabled"], pa_policy="new_private_refine_from_frozen_GEM_no_baseline_PA_clone", construction_status="inputs_prepared_no_field_or_IOB_yet", geometry_record=file_record(solver / "processor.gem"), frozen_control_records=[file_record(solver / name) for name in sorted(set(controls + ["processor.lua", "build_gui_workbench.lua"]))], expected_native_members=projection["expected_native_members"], local_native_pa_records=[], initial_local_pa0_record=None, builder_source_record=file_record(builder_source), workbench_save_policy="IOB save may persist associated private GUI PA0; no baseline native PA is vendor-opened; private numbered responses remain byte-identical", baseline_runtime_record=baseline_runtime_record, replay_runtime_record=replay_runtime_record, runtime_wrapper_changed=runtime_wrapper_changed, wrapper_difference=wrapper_difference, gui_iob=str(solver / "processor.iob"), grouped=0, random_seed=config["numerics"]["seed"], trajectory_quality=config["numerics"]["trajectory_quality"], retain_trajectories=1, gui_manual_fly_completed=False)
     _write(inputs / "gui_replay_plan.json", plan)
     run_config = _read(run / "run_config.json")
     run_config.setdefault("inputs", {}).update({"baseline_manifest": str(manifest_path), "public_workbench_seed": str(seed), "public_seed_placeholder": str(seed.parent / "iob_seed_placeholder_01.pa0"), **{f"baseline_light_{index}": str(path) for index, path in enumerate(verified)}})
+    run_config["inputs"]["baseline_samples"] = str(baseline_samples)
     if projection["retired"]:
         shutil.copyfile(baseline_run / "solver_review_retirement_receipt.json", inputs / "baseline_retirement_receipt.json")
         run_config["inputs"]["baseline_retirement_receipt"] = str(baseline_run / "solver_review_retirement_receipt.json")
@@ -210,6 +217,8 @@ def record_prepared_native_family(run: Path) -> dict:
         for name in ("native_field_samples.csv", "native_potential_audit.csv"):
             if not (solver / name).is_file():
                 raise ValueError("new private field diagnostic is missing")
+    comparison = _record_native_field_preparation_comparison(run, plan)
+    plan["native_field_preparation_comparison_record"] = file_record(run / "results/native_field_preparation_comparison.json")
     plan["local_native_pa_records"] = [file_record(path) for path in family if path.name != "processor.pa0"]
     plan["initial_local_pa0_record"] = file_record(solver / "processor.pa0")
     plan["private_iob_record"] = file_record(solver / "processor.iob")
@@ -226,12 +235,14 @@ def record_prepared_native_family(run: Path) -> dict:
             if not path.is_file():
                 raise ValueError("new private field diagnostic is missing")
             config["inputs"]["private_" + name] = str(path)
+        for name, table in comparison["tables"].items():
+            config["inputs"]["baseline_" + name] = table["baseline"]["path"]
     config["parameters"]["native_field_construction"] = plan["construction_status"]
     _write(run / "run_config.json", config)
     return plan
 
 
-def _compare_tables(actual_path: Path, expected_path: Path) -> dict[str, Any]:
+def _compare_tables(actual_path: Path, expected_path: Path, *, identity_fields: set[str] | None = None) -> dict[str, Any]:
     with actual_path.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
         fields, actual = reader.fieldnames, list(reader)
@@ -240,12 +251,15 @@ def _compare_tables(actual_path: Path, expected_path: Path) -> dict[str, Any]:
         expected_fields, expected = reader.fieldnames, list(reader)
     if fields != expected_fields or not fields or len(actual) != len(expected) or not actual:
         raise ValueError("replay table columns/row count differ or contain no evidence")
-    identity = {"particle_id", "event", "status", "terminal_reason", "reason"}
+    identity = {"particle_id", "event", "status", "terminal_reason", "reason"} | (identity_fields or set())
     maximum = {field: 0.0 for field in fields if field not in identity}
     passed = True
     for left, right in zip(actual, expected):
         for field in fields:
             if field in identity:
+                if field in {"t_us", "x_mm", "y_mm", "z_mm", "electrode"}:
+                    if not all(math.isfinite(float(value)) for value in (left[field], right[field])):
+                        raise ValueError("replay contains nonfinite numerical sample identity")
                 if left[field] != right[field]:
                     raise ValueError(f"replay identity/event order mismatch: {field}")
             else:
@@ -255,6 +269,51 @@ def _compare_tables(actual_path: Path, expected_path: Path) -> dict[str, Any]:
                 maximum[field] = max(maximum[field], abs(a-b))
                 passed = passed and abs(a-b) <= ABS_TOL + REL_TOL * abs(b)
     return dict(passed=passed, rows=len(actual), max_absolute_difference=maximum, column_tolerances={field: dict(absolute=ABS_TOL, relative=REL_TOL, source="15-significant-digit serialization comparison; absolute plus relative times baseline magnitude") for field in maximum})
+
+
+def _record_native_field_preparation_comparison(run: Path, plan: dict) -> dict:
+    """Report only corresponding sampled native fields, never a Fly/GUI claim."""
+    result = dict(schema_version=1, role="ion_processor_native_field_preparation_comparison",
+                  comparison_scope="new_private_refine_samples_vs_manifest_bound_baseline_samples",
+                  numerical_differences_are_diagnostic_only=True, solver_fly_executed=False,
+                  gui_operated=False, gui_visual_review=False, trajectory_equivalence_verified=False,
+                  qualification="sampled_field_preparation_only_no_Candidate_or_Formal", tables={})
+    if not plan.get("field_diagnostics_enabled", bool(plan["field_diagnostics_source_records"])):
+        result["status"] = "not_declared_by_baseline"
+    else:
+        baseline = Path(plan["baseline_run"])
+        manifest_path = baseline / "run_manifest.json"
+        if file_sha256(manifest_path) != plan["baseline_manifest_sha256"]:
+            raise ValueError("baseline manifest identity changed during private field preparation")
+        manifest = _read(manifest_path)
+        if manifest.get("project") != PROJECT or manifest.get("status") not in {"success", "failed"}:
+            raise ValueError("native field comparison requires a terminal IP baseline manifest")
+        records = [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
+        headers = {
+            "native_field_samples.csv": ["stage_id", "section_id", "sample_kind", "t_us", "x_mm", "y_mm", "z_mm", "potential_v", "ex_v_per_mm", "ey_v_per_mm", "ez_v_per_mm", "electrode"],
+            "native_potential_audit.csv": ["t_us", "x_mm", "y_mm", "z_mm", "potential_v"],
+        }
+        for name, columns in headers.items():
+            expected = baseline / "simion" / name
+            actual = run / "simion" / name
+            matches = [record for record in records if record_path(record, base_dir=baseline) == expected.resolve()]
+            if not matches:
+                raise ValueError(f"baseline field diagnostic is not manifest-bound: {name}")
+            for record in matches:
+                verify_record("baseline native field comparison", record, base_dir=baseline)
+            for path in (expected, actual):
+                with path.open(encoding="utf-8-sig", newline="") as stream:
+                    if csv.DictReader(stream).fieldnames != columns:
+                        raise ValueError(f"native field diagnostic columns differ: {path}")
+            comparison = _compare_tables(actual, expected, identity_fields={
+                "stage_id", "section_id", "sample_kind", "t_us", "x_mm", "y_mm", "z_mm"})
+            result["tables"][name] = dict(baseline=file_record(expected), prepared=file_record(actual), **comparison)
+        result.update(status="compared", baseline_manifest_record=file_record(manifest_path),
+                      all_sampled_values_within_existing_comparison_tolerances=all(
+                          row["passed"] for row in result["tables"].values()))
+    (run / "results").mkdir(exist_ok=True)
+    _write(run / "results/native_field_preparation_comparison.json", result)
+    return result
 
 
 def _verify_active_gui_receipts(run: Path, config: dict) -> dict:
@@ -312,9 +371,12 @@ def finalize_replay(run: Path, manual_gui_confirmed: bool = False) -> dict:
         verify_record(f"GUI immutable native basis/family {index}", record)
     current_pa0 = file_record(run / "simion/processor.pa0")
     pa0_changed = current_pa0["sha256"] != plan["initial_local_pa0_record"]["sha256"]
-    verify_record("frozen baseline events", plan["baseline_events_record"])
-    verify_record("frozen baseline samples", plan["baseline_samples_record"])
-    verify_record("frozen baseline canonical states", plan["baseline_particle_state_record"])
+    verify_record("frozen baseline events", plan["baseline_events_record"], base_dir=run)
+    verify_record("frozen baseline samples", plan["baseline_samples_record"], base_dir=run)
+    verify_record("frozen baseline canonical states", plan["baseline_particle_state_record"], base_dir=run)
+    expected_events = record_path(plan["baseline_events_record"], base_dir=run)
+    expected_samples = record_path(plan["baseline_samples_record"], base_dir=run)
+    expected_states = record_path(plan["baseline_particle_state_record"], base_dir=run)
     native_receipts = _verify_active_gui_receipts(run, _read(run / "inputs/resolved_model.json"))
     measured = analyze(run)
     profile = _read(run / "inputs/resolved_model.json").get("source_profile")
@@ -328,15 +390,15 @@ def finalize_replay(run: Path, manual_gui_confirmed: bool = False) -> dict:
             return _compare_tables(actual, expected)
         except ValueError as exc:
             return dict(passed=False, difference=str(exc))
-    raw = compare_recorded(run / "simion/events.csv", run / "inputs/baseline_events.csv")
-    samples = compare_recorded(run / "simion/samples.csv", run / "inputs/baseline_samples.csv")
-    canonical = compare_recorded(run / "results/particle_state.csv", run / "inputs/baseline_particle_state.csv")
+    raw = compare_recorded(run / "simion/events.csv", expected_events)
+    samples = compare_recorded(run / "simion/samples.csv", expected_samples)
+    canonical = compare_recorded(run / "results/particle_state.csv", expected_states)
     repeats = []
     if plan["repeat_fly_count"] == 2:
         for index in (1, 2):
             repeats.append(dict(repeat_index=index,
-                raw_events=compare_recorded(run / f"simion/repeat_{index}_events.csv", run / "inputs/baseline_events.csv"),
-                sampled_trajectory=compare_recorded(run / f"simion/repeat_{index}_samples.csv", run / "inputs/baseline_samples.csv")))
+                raw_events=compare_recorded(run / f"simion/repeat_{index}_events.csv", expected_events),
+                sampled_trajectory=compare_recorded(run / f"simion/repeat_{index}_samples.csv", expected_samples)))
     repeat_equivalence = all(row["raw_events"]["passed"] and row["sampled_trajectory"]["passed"] for row in repeats)
     result = dict(schema_version=1, role="ion_processor_gui_replay_comparison", comparison_scope="manual_gui_replay_vs_baseline" if manual_gui_confirmed else "headless_replay_vs_baseline", numerical_equivalence=raw["passed"] and canonical["passed"] and samples["passed"] and repeat_equivalence, repeat_fly_count=plan["repeat_fly_count"], repeated_fly_comparisons=repeats, gui_pa0_record=current_pa0, gui_pa0_changed=pa0_changed, source_native_family_verified=False, source_PA_bytes_consumed=False, baseline_light_projection_verified=True, native_receipts=native_receipts, exact_trajectory_match_required=False, local_immutable_basis_verified=True, workbench_save_policy=plan["workbench_save_policy"], comparison_coverage="all_recorded_events_and_samples_not_every_integration_step", sampled_trajectory=samples, gui_visual_review=bool(manual_gui_confirmed), manual_gui_confirmed=bool(manual_gui_confirmed), source_profile=profile, qualification="unqualified_" + profile + "_replay_no_Candidate_or_Formal", measured_functional_status=measured_status, raw_events=raw, canonical_particle_state=canonical, baseline_manifest_sha256=plan["baseline_manifest_sha256"])
     _write(run / "results/gui_comparison.json", result)

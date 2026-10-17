@@ -42,9 +42,9 @@
   },
   "known_gaps": [
     "Simplified solid-electrode geometry is a functional abstraction, not a complete manufacturer mechanical reconstruction",
-    "Native fields and N10 trajectories have exploratory solver evidence only; numerical convergence, N100 functional baseline and GUI confirmation remain unqualified",
+    "Native N100 functional baseline and user GUI confirmation are recorded; full spatial and whole-flight time-step convergence remain unqualified",
     "Ion-neutral collision cross section is an uncalibrated placeholder, not a measured N2/524amu value",
-    "No fragmentation, space charge, gas-flow solution, CAD or GUI-equivalent delivery qualification",
+    "No fragmentation, space charge, gas-flow solution or manufacturer CAD qualification",
     "COMSOL projection and real upstream multipole handoff remain future work",
     "Analytical prescribed-field code is an unrun reference control, not the production field workflow"
   ]

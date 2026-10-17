@@ -1,111 +1,112 @@
 # 双压力区矩形射频离子处理器项目状态
 
-## 当前目标与资格
+## 当前状态与封存边界
 
-以贴近公开文献的简化实体电极贯通多极引导、HP 捕获冷却、LP 输运聚集、整体抬升、RF 淬灭和正交引出。
-生产电场来自真实电极的原生 Laplace 求解；旧解析规定场不是生产场。
-当前未建立新的 N=100 功能结论、空间/全程时间步收敛、GUI/CAD 验收、COMSOL 对照或实际仪器性能资格。
-旧探索与旧场借用方案已被取代，完整记录见[历史快照](history/20261016__native-flight-and-source-identity.md)。
+2026-10-16用户确认最新SIMION加载与GUI飞行检查没有问题；独立器件功能阶段暂封存。
+冻结参考为真实N100运行`20261016_121423__sim__simion__ion-processor-thermal-n100-auto`及用户加载包
+`20261016_122844__test__simion__ion-processor-thermal-user-workbench/simion/processor.iob`。
+最新加载包完整保留，不删除PA或唯一轨迹，不覆盖封存输入。
 
-## 科学权威与几何
+原生实体电极、GEM→Refine、动态RF/DC/脉冲与HS1碰撞已贯通；此结论属于简化功能模型。
+未建立完整网格／全程时间步收敛、厂家CAD、COMSOL对照或实际仪器性能资格。
+完整源变化、ID20因果、损失与结构诊断历史见[功能里程碑](history/20261016__thermal-source-gui-accepted.md)。
 
-[baseline](../config/baseline.json)拥有几何、气体、RF 和时序；
-[原生电压](../config/native_operating_point.json)是电极电压唯一权威；
-[numerics](../config/numerics.json)拥有离散；[geometry sources](../config/geometry_sources.json)只映射来源，不另维护设备参数。
-文献依据为 Stewart 等的[装置论文](https://pubs.acs.org/doi/10.1021/jasms.3c00311) Figure 2/3 及正文。
+## 当前输入权威
 
-| 几何量 | 当前解释与边界 |
+[baseline](../config/baseline.json)拥有几何、气体、RF和时序；
+[原生电压](../config/native_operating_point.json)拥有电极电压；
+[释放](../config/source.json)、[数值](../config/numerics.json)与[验收](../config/acceptance.json)分别拥有其语义。
+尺寸来源见[geometry_sources](../config/geometry_sources.json)，热源依据见[source_parameter_sources](../config/source_parameter_sources.json)。
+来源文件不是第二份可调物理真值。旧解析规定场不是生产场。
+
+| 项目 | 封存参考 |
 |---|---|
-| HP / LP 长度 | 100 / 80 mm；主阱内切半径 r0=2 mm |
-| 引出狭缝 | 8×0.8 mm，实体 Pull 板开孔 |
-| HP 辅助楔形电极 | 对角间距4→7 mm，对应径向2→3.5 mm；不是理想四极双曲面 |
-| 入口孔 | 将文献“2 mm 钢孔”解释为直径2 mm圆孔，不是半径2 mm；孔型属于模型解释 |
-| LP 外辅助板 | 面向离子的内表面总间隙中心4 mm、端部3.7 mm，板厚向外增长 |
-| LP 内辅助板 | 轴向全长2.5 mm，局部 z 内表面±1.4 mm、板外表面±1.6 mm，内表面净距2.8 mm |
-| 离散 | 0.1 mm均匀网格，HP/LP辅助形状各60段中点阶梯；不表示60组独立电极 |
+| HP / LP / 引导长度 | 100 / 80 / 30 mm；r0=2 mm |
+| 狭缝／入口孔 | 8×0.8 mm狭缝；入口孔按文献解释为直径2 mm |
+| 网格 | 0.1 mm；辅助电极各60段中点阶梯，非独立编号 |
+| 源 | N100，524 u、+1；圆柱半径1 mm、全高5 mm |
+| 纵向初态 | +y，Ey正值截断Gaussian；截断前均值5 eV、标准差1 eV |
+| 横向初态 | vx、vz零均值Gaussian目标，300 K、单轴sigma=68.9941195 m/s |
+| RF | 3.7 MHz、1000 Vpp |
+| 气体 | 300 K、28 u；HP1 Pa、LP0.2 Pa；HS1截面为未标定示例值 |
+| HP转运 | 5 V；旧2 V形成入口局部势垒的因果检查已归档 |
+| 抬升／引出 | 4 kV、push/pull相对±900 V；具体电极表消费原生电压JSON |
+| 时序 | capture1500、transfer6000、lift/quench7500 us；脉冲时间由冻结native_timing派生 |
 
-引导段30 mm、LP 中心 local x=170 mm、平板宽厚、内辅助板具体定位、3/3.5 mm浮动屏蔽半宽、
-透镜细节和末端透镜50 V是项目假设或工作种子，不称厂家 CAD。
-15个可调电极包含随 HP/LP common-mode 浮动的屏蔽；实体、孔、场域和编号由同一 native projection 派生。
-几何改变必须重新 Refine；当前方案每个新主运行从 GEM 构建私有场，不用旧 PA 族的重读匹配追认为身份恢复。
+300 K依据Stewart与Grinfeld的室温冷却描述选为入口横向参考假设，不是厂家测得的入口温度。
+横向能量直接叠加，原纵向逐ID速度不变；有限Halton样本不重居中或缩放。
 
-## 坐标、时序与工作点
+## 坐标与实体解释
 
-原生 PA、native projection 和 source.json 保留局部母集：local x 沿 guide→HP→LP，local y 引出，local z 为另一径向。
-[刚体变换](../config/coordinate_transform.json)给出 `world=(-local_z, local_x, 9.8-local_y)` mm；向量只旋转，时间不变。
-世界 x 为横向、+y 为慢漂移、−z 为加速，frame 为 `ion_processor.xyz.reflection_z.drift_y.transverse_x.local.v2`。
-它与 MRTOF 方向兼容，但装配 port Y 尚未注册，不能称 MRTOF 全局坐标。
-气体分区、接受域和 HP/LP 占据仍在逆变换后的 local 坐标判断，慢轴压缩使用 `slow_sigma_y_mm`；
-canonical 半径/散角相对 world z，`max_rod_radius_mm` 不代表世界原点圆柱门。
+[刚体变换](../config/coordinate_transform.json)为`world=(-local_z,local_x,9.8-local_y)` mm；
+world x横向、+y慢漂移、-z加速，速度只旋转，时间不变。
+这是与MR方向兼容的器件局部世界帧，不自动等于MR装配坐标。
 
-RF 配置为3.7 MHz、`rf_peak_to_peak_v=1000 V`，实际电极波形由公共 RF 核及原生 drive 派生。
-捕获时 HP−5 V、LP0 V；HP 输运偏置2 V；LP 抬升至4 kV，引出 push/pull 及 split 侧电极相对电压±900 V。
-这些是功能工作点，尚未优化；均匀整体抬升不直接增加阱内动能，主要加速来自出阱电势落差。
+LP母区world y=130…210 mm。E7/E8为两侧RF板沿引出方向分开的两半，
+各跨y=130.5…209.5 mm；囚禁时径向RF约束，引出时跟随Pull/Push整形。
+E10外辅助对跨y=132…208 mm，端部／中心间隙渐变形成向中心收集的慢轴势阱；
+E11内辅助对仅y=168.75…171.25 mm，以局部负偏置进一步聚集，并不贯穿LP。
+E10/E11相对LP common-mode为+5/-1 V，不跟随±900 V提取脉冲。
+HP角辅助E9及全部有限实体来源、投影与截面解释由统一CSG和诊断元数据维护。
+这些定位及有限板厚不称厂家完整CAD。
 
-捕获截止1500 μs、输运截止4000 μs、整体抬升4000…5500 μs；
-`extraction_start_us=5500`是 RF 淬灭时刻，真正脉冲延后0.5 RF周期，即5500.135135… μs。
-测量面 local y=9.8 mm（world z=0）距 local y=10 mm数值地边界两个网格，只是观察面，不是实际质量分析器。
-末透镜后的 local x=211.25 mm 是 PA 内下游数值出口，不是金属；`radial_escape`也是接受域终止，
-`solver_stop`不能独自确定撞击电极。
-
-## 母群与碰撞绑定
-
-默认源为524 amu、+1、5 eV、N=100，使用公共 Halton 薄圆柱入射片；版本化 N=10 只供探索，不授予功能资格。
-气体规定为28 amu、300 K，HP 1 Pa、LP 0.2 Pa；压力是几何回调，不是气流求解。
-截面2.27e−18 m²来自官方 HS1 示例，未经 N2/524 amu标定；MFP=-1、steps_per_mfp=20。
-未建模碎裂、反应、空间电荷或离子间碰撞。
-
-runtime 使用显式 `adjustable` 设置导入 HS1 的9项参数，初始化前后内部 getter 逐项断言并写审计。
-每粒子实际开始积分时重置 HS1 私有状态、重赋和核对参数，然后执行 `seed=base_seed+globalID−1`；
-本母群映射42…141，HS1初始化参数43不是所有粒子的最终seed。
-这些是可追溯赋种及模块绑定机制，不证明随机子流独立或逐轨迹精确重放。
-旧气体绑定或旧源身份问题的运行不能提升为当前已验证 N2 物理证据。
-
-## 自动并发与统计评价
-
-生产入口使用公共首正式批45秒观测、实测资源重规划和批执行器，不固定项目并发数。
-worker 消费同一冻结100粒子母群的区间，保持绝对 RF 时钟，按公共 offset 合并事件、样本和 seed；
-根控制文件保留完整100粒子，根 HS1 CSV 是所有 worker 核验同值后的派生 pair，不表示 master 自身 Fly。
-CLI worker 关闭可选稠密 TRJ，但完整 events/samples CSV仍保留；GUI 的完整母群保留轨迹显示策略。
-资源与峰值容量由[execution profile](../config/execution_profiles.json)及实际公共回执约束。
-
-功能目标以[验收合同](../config/acceptance.json)为准：捕获/引出率均至少0.9、HP均能不超过1 eV、
-引出前慢轴σ不超过2 mm、引出子群均能3500…4500 eV。
-保留完整母群和损失，不用仅LP条件子群代替全体分母，也不调阈值制造通过。
-随机碰撞实现不同本身不是物理或并发失败；GUI统计复现应比较比例及位置/能量分布。
-精确分区重放未验证，不作为新的 N=100 门禁；尚无独立 ensemble 重复或统计等价检验，不能承诺单次 N=100 误差范围。
-
-## 当前N100运行
-
-`20261016_014153__sim__simion__ion-processor-n100-auto-private` 已完成真实 N=100：10批、实际峰值9路，公共批执行374.156秒（不含首批45秒观测、前置构建和后处理）。100个source与100个terminal ID闭合，18文件场族在Fly前后身份一致，HS1内部参数与42…141赋种审计完整。
+## 有效结果与默认诊断
 
 | 指标 | 实测 |
-| --- | --- |
-| 捕获 | 100/100 |
-| 引出观察面 | 85/100 |
-| 终态 | acceptance_surface 85、solver_stop 14、timeout 1 |
-| 捕获均动能 | 0.03908 eV |
-| 引出均动能 | 3928.694 eV |
-| 引出前全体存活 | 99；慢轴σ=5.24752 mm |
-| 其中LP子群 | 98；慢轴σ≈0.2008 mm（条件子群，不替代全体判据） |
+|---|---|
+| 源／终态闭合 | 100 / 100 |
+| HP捕获／引出 | 97 / 97；六项原功能检查通过 |
+| 损失 | ID24、64、80为入口附近solver_stop；0 timeout |
+| 同97粒子出生总能量 | 4.989944±0.989983 eV（人口sigma） |
+| 同97粒子捕获总能量 | 0.042768±0.035544 eV |
+| 引出前总能量均值 | 0.035340 eV |
+| 引出总能量均值／sigma | 3892.109885 / 35.327658 eV |
+| z=0束斑sigma(x,y) | 0.084756 / 0.345205 mm |
+| z=0到达时间sigma | 3.179094 ns |
 
-`functional_status=functional_incomplete`、公共终态`status=failed`：引出率、全体聚集及LP占据判据未满足；捕获、冷却及引出能量满足。未调整参数或阈值制造PASS。
-纯分析run `20261016_015317__analysis__simion__ion-processor-n100-loss-diagnosis` 保存全部15个未引出ID的终态六维状态、最后样本、连续CSG最近电极/间距、脉冲相对时刻和图。
-13个solver_stop在引出阶段邻近E5拉出电极(9)、E7侧电极(3)、E14屏蔽(1)；1个在输运阶段邻近E11。它们是几何关联，原生碰撞电极ID仍unknown，不能仅凭最近电极证明因果或数值收敛。
-ID37在5520 μs超时，world y=118.6858 mm，仍在HP；不得把timeout的最近金属解释为撞击。
+3个未引出离子的全部原始事件、采样、行号及SHA保留；ID64/80末态在连续入口板前约8/6 um，
+不能仅凭0.1 mm网格和终止回调把三者全部证明为精确电极撞击。无HP滞留超时。
+不将本次97/100与其他源配置95/100或100/100的单次差异称优化或显著改善。
 
-完成分析后，通过公共owner-completion退役本CLI场族3,313,116,304 B，保留全部CSV、日志、图、IOB和冻结输入，并用公共退役回执验证剩余证据；原manifest保持历史身份。CLI旧IOB须重建场后才能用，不作为用户直接入口。
-用户工作台 `20261016_015429__test__simion__ion-processor-n100-user-workbench` 已从同一冻结GEM独立Refine并封存为未Fly checkpoint，完整18文件场族保留；未复制或vendor-open已退役PA。运行控制、完整100源及Fly2与CLI master逐字节相同。57,106个对应采样点的电势及三分量电场值全部相同（max绝对差均0）；该有限采样比较不代表全场身份或收敛证明。GUI由用户打开、Fly和确认，Agent未执行GUI或追加重复Fly。
+[diagnostics](../config/diagnostics.json)默认自动产生17组英文PNG/SVG及配套CSV/metadata，
+包括结构纵横截面、分时空间云、状态／损失、相空间、冷却能量及引出后组合图。
+共同时间由实际记录自动选取；z=0穿越集合与同一时刻三维云分别标注，不外推终止面后的整团。
+最新GUI包独立Refine后77项输出manifest通过，与CLI的7个控制文件和科学配置一致，
+57,113个对应原生电势／场采样点差值均为0；这不是全场收敛或随机轨迹逐点一致的证明。
+149项目测试、33公共释放测试及受影响范围L1通过。CLI可重建场族已公共退役，全部轻证据保留。
 
-首个准备运行 `20261016_013420__sim__simion__ion-processor-n100-auto-private` 在Fly前失败：官方wb:save同时输出IOB/Lua/Fly2，而消费器原先只允许IOB。现先核对伴随Lua与完整母群Fly2的SHA，再生成批次切片；未知项或漂移仍拒绝。该失败run的3,313,116,304 B可重建场已公共退役，小证据保留15,332,048 B，不复用其run_id。
-新producer结束写入后，在私有可写场范围完成落盘再建立不可变身份；不对旧immutable场flush来追认历史身份。summary.status使用success/failed供公共生命周期消费，functional_status单独保存功能判据结果。
+## MR接口准备与后续工作
 
-## 诊断与剩余边界
+[component_exit.py](../analysis/component_exit.py)只读已封存运行，发布公共component_particle_state v1，
+保留实测6D、原ID、物种、绝对instrument time与全部母群census；它不执行求解或重建速度。
+跨组件单位粒子权重只代表测试粒子计数，不代表实际电流；无反应谱系为generation0，未发布相位参考时phase为空。
+观察z=0不冒称实体端口、接地／无场面或时间焦点。
 
-[全过程诊断](../config/diagnostics.json)包括几何轨迹、分时离子云、阶段相空间、能量/慢轴位置/展宽、
-全母群状态闭合和带 ID 损失表；缺记录为unknown，不能外推最后位置为存活。
-[原生场诊断](../config/field_diagnostics.json)查询真实 PA 的分时电势/电场，原始局部 CSV保留，
-另输出项目坐标 CSV；图形明确来源、单位、选择和拟合范围，不把局部二次拟合用作电场或收敛证明。
-
-本轮N=100、真实负结果、损失证据和用户加载包已完成；GUI人工确认由用户执行。上游端口、MRTOF 全局装配、COMSOL 对照、
-全程时间步与网格收敛仍未完成，不自动扩展成优化或高统计扫描。
+MR拥有OA／IP可选的准备入口、目标能量和装配需求，见[MR操作说明](../../parallel_mirror_dual_stripe_mr_tof/simion/README.md#加速器选择与接口准备)。
+当前约3892 eV、几何和时序只是封存基线，后续可按MR需求改变电压、几何和时序；
+任何改变建立新运行并重新求场／实测验证，不缩放旧输出伪称新工作点。
+MR分支已准备实测源下游适配器、替换OA的整体场GEM／数值计划及独立候选配置，新装配场已在MR侧完成求解；当前联合验证由MR状态页记录。
+候选电压、LP长度和P1罩适配由MR需求派生，数值见MR状态页；不修改本页封存基线。
+原`run_functional.ps1 -ConfigurationDirectory <candidate-config-directory>`可消费完整外部候选配置，
+继续使用既有N100自动并发／默认诊断和损失证据链；显式外部目录缺坐标等配置时失败关闭。
+MR候选的新独立运行`20261016_152536__sim__simion__ion-processor-mr-match-n100-r02`已完成：
+抬升4480.043790844389 V、LP长度61.5 mm，源与其余冻结设置不变，重新GEM→Refine后运行N100。
+公共调度器45 s正式首批观测后选择最多9并发；10批100颗完整闭合、全部正常退出，飞行419.164 s。
+97颗引出，损失ID24/64/80的原始事件、全部采样、逐批压缩副本及17组英文图保留在该run的`results/`。
+z=0处Ez=4364.647136±44.654000 eV，K总=4364.822522±44.568125 eV（人口sigma）；
+束斑sigma(x,y)=0.060895/0.335032 mm，到达时间sigma=3.458173 ns。六项独立器件功能检查通过，
+其中旧`extraction_energy`检查不是MR匹配判据；用户明确只报告能量差，暂不判定达标。
+IP的近零慢轴能量是器件设计特征，不能按原OA的Ey直接判失配；后续由MR的Prism调节轨迹方向，
+同时遵守总能量与参考面电势关系。时间聚焦和完整六维匹配仍未取得资格。
+MR已用此新实测源与新装配场生成184610联合加载包，实际保存／重载和四角色选择检查通过；
+43项输出manifest核验通过；该准备过程未执行飞行或GUI。具体加载入口与后续真实联合结果由MR状态页维护，不以旧97颗轨迹代表新工作点。
+随后MR运行200610/r05已真实传播全部97交接粒子，原3上游损失保留为100母群。
+97颗经过P1及负镜预反射，但均未到达P2后设计参考面；这是当时该下游Prism工作点的联合结果，
+不推翻独立器件97引出的实测结论。出生采样时钟修复、完整损失和恢复诊断由MR状态页维护。
+独立用户复验包沿原`prepare_gui_replay.ps1`重新求场，避免手动Fly写入CLI证据目录；
+准备入口默认发布`native_field_preparation_comparison.json`，保留与baseline原生场采样的双方身份和差异。
+该报告及加载准备不替代用户GUI确认，不要求随机轨迹逐点相同。
+本次新包为`20261016_173323__test__simion__ion-processor-mr-match-user-workbench/simion/processor.iob`，
+76项输出通过完整manifest核验；56,980个场采样点及21个电势审计点与新N100对应记录差值均为0。
+该包独立保存手动Fly输出，准备过程未飞行；原122844用户已确认包继续保留。
+COMSOL、上游真实多极杆、空间电荷和气体截面标定同样未完成，不自动扩展。
