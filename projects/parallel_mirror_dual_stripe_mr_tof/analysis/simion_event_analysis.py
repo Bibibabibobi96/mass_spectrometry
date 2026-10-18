@@ -1100,6 +1100,22 @@ def collision_diagnostics(
                        "polygon_holes": [] if polygon_holes is None else polygon_holes,
                        "extruded_holes": [] if extruded_holes is None else extruded_holes})
 
+    def primitive_contains(point: tuple[float, float, float], shape: dict[str, Any], margin: float) -> bool:
+        # Match the normalized IP GEM union-minus-cutouts, including finite
+        # cylinder end caps. Negative margin selects a strict interior hole.
+        if shape["shape"] == "box":
+            box = shape["min_mm"] + shape["max_mm"]
+            return (_box_contains(point, box, margin) if margin >= 0 else
+                    _strict_box_hole(point, box, -margin))
+        if shape["shape"] != "cylinder3d":
+            raise ValueError("unsupported normalized IP collision primitive")
+        start, end = shape["endpoints_mm"]
+        axis = [end[a] - start[a] for a in range(3)]
+        length = math.sqrt(sum(v * v for v in axis))
+        along = sum((point[a] - start[a]) * axis[a] for a in range(3)) / length
+        radial = math.sqrt(sum((point[a] - start[a] - along * axis[a] / length) ** 2 for a in range(3)))
+        return -margin < along < length + margin and radial < float(shape["radius_mm"]) + margin
+
     for shield in collision_geometry.get("prism_ground_shields", []):
         component = ("p2_central_prism_ground_shield" if int(shield["id"]) == 20
                      else "p1_accelerator_exit_ground_shield")
@@ -1136,6 +1152,14 @@ def collision_diagnostics(
         for part in prism["parts"]:
             add_polygon(f"p{int(prism['id']) - 15}_prism_electrode", int(prism["id"]),
                         part["x"], part["polygon_yz_mm"])
+    for electrode in collision_geometry.get("ion_processor_electrodes", []):
+        for shape in electrode["solids"]:
+            solids.append({"component": "ion_processor_" + electrode["name"],
+                           "electrode_id": int(electrode["electrode_id"]), "primitive": shape,
+                           "primitive_holes": electrode["cutouts"], "box_holes": []})
+    if "detector" in collision_geometry:
+        detector = collision_geometry["detector"]
+        add_box("detector", int(detector["id"]), detector["box"])
 
     by_ion: dict[int, list[dict[str, Any]]] = {}
     for event in events:
@@ -1147,9 +1171,12 @@ def collision_diagnostics(
         point = (float(terminal["x_mm"]), float(terminal["y_mm"]), float(terminal["z_mm"]))
         matches = []
         for solid in solids:
-            occupied = (_box_contains(point, solid["box"], tolerance) if "box" in solid else
+            occupied = (primitive_contains(point, solid["primitive"], tolerance) if "primitive" in solid else
+                        _box_contains(point, solid["box"], tolerance) if "box" in solid else
                         _extruded_polygon_contains(point, solid["x"], solid["polygon"], tolerance))
             if not occupied or any(_strict_box_hole(point, hole, tolerance) for hole in solid["box_holes"]):
+                continue
+            if any(primitive_contains(point, hole, -tolerance) for hole in solid.get("primitive_holes", [])):
                 continue
             if any(
                 float(solid["x"][0]) + tolerance < point[0] < float(solid["x"][1]) - tolerance

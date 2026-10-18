@@ -22,8 +22,19 @@ end
 local particle_option = particles and (' --particles="'..particles..'"') or ''
 local operating = assert(loadfile(operating_point), 'invalid operating point')()
 local collision = operating.static_field and operating.static_field.collision_pa_path
+local collisions = {}
+if collision and collision:lower():match('%.pa$') then collisions[1] = collision end
+local overlay = operating.static_field and operating.static_field.collision_overlay
+if overlay then
+  assert(operating.accelerator_provider == 'dual_pressure_rectilinear_ion_processor'
+      and operating.field_assembly_verified == true and overlay.schema_version == 1
+      and overlay.role == 'mrtof_analyzer_collision_overlay'
+      and type(overlay.pa_path) == 'string' and overlay.pa_path:lower():match('%.pa$')
+      and #collisions == 1, 'collision patch preload requires the verified IP overlay projection')
+  collisions[2] = overlay.pa_path
+end
 local preload_option = ''
-if collision and collision:lower():match('%.pa$') then
+for _, collision in ipairs(collisions) do
   -- Official SIMION field_array examples use refinable=false to prevent IOB
   -- load auto-Refine. This PA supplies collisions only; the callback owns E.
   -- A same-process IOB builder may already own this PA. The official integer

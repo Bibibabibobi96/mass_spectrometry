@@ -26,7 +26,11 @@ from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import (
     _load_source, _log_roundoff_us, analyze_measured_component,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.loss_acceptance_diagnostics import (
+    build_loss_acceptance_figure, prepare_loss_rows, prepare_mirror_domain_rows, summarize_loss_acceptance,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import _prism_phase_space_diagnostic
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import extract_trajectory_samples
 
 COORDINATES = ("x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
@@ -515,6 +519,10 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     if output_directory.exists():
         raise FileExistsError(output_directory)
     prepared, source_path, source, states, mother, contract = _inputs(preparation_receipt)
+    binding_path = _bound(prepared["field_binding"], preparation_receipt.parent)
+    binding = load_binding(binding_path)
+    if binding["geometry"]["frame_id"] != source["frame_id"]:
+        raise ValueError("Loss diagnostic native geometry and measured source frame differ")
     if merge_receipt is not None:
         merged = _read(merge_receipt)
         if (merged.get("schema_version") != 1 or merged.get("role") != "mrtof_measured_batch_log_merge"
@@ -581,6 +589,23 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     species = {(float(r["mass_amu"]), int(r["charge_state"])) for r in states.values()}
     standard = _prism_phase_space_diagnostic(events, tuple(sorted(states)), *next(iter(species))) if len(species) == 1 else None
     loss = _loss_evidence(merged_log, output_directory / "loss_evidence", census, source)
+    acceptance_rows, collisions = prepare_loss_rows(events, states, census, binding["geometry"])
+    _write_rows(output_directory / "loss_acceptance.csv", acceptance_rows, list(acceptance_rows[0]))
+    domain_rows, crossing_rows, domain = prepare_mirror_domain_rows(
+        output_directory / "trajectory_samples.csv", binding, set(states),
+        {int(e["ion"]): e for e in events if e["kind"] == "terminal"})
+    domain_columns = ["particle_id", "window", "scope", "sample_count", "inside_x_sample_count", "outside_x_sample_count",
+                      "inside_active_box_sample_count", "maximum_abs_x_mm", "x_min_mm", "x_max_mm", "z_min_mm", "z_max_mm"]
+    _write_rows(output_directory / "mirror_domain_samples.csv", domain_rows, domain_columns)
+    crossing_columns = ["particle_id", "window", "boundary_x_mm", "first_negative_mirror_pass",
+                        *[prefix+key for prefix in ("before_", "after_") for key in ("t_us", *COORDINATES)]]
+    _write_rows(output_directory / "mirror_x_boundary_crossings.csv", crossing_rows, crossing_columns)
+    acceptance = summarize_loss_acceptance(acceptance_rows, collisions, domain)
+    acceptance["inputs"] = dict(field_binding=file_record(binding_path))
+    acceptance["producer"] = file_record(Path(__file__).with_name("loss_acceptance_diagnostics.py"))
+    acceptance["outputs"] = [file_record(output_directory / name) for name in (
+        "loss_acceptance.csv", "mirror_domain_samples.csv", "mirror_x_boundary_crossings.csv")]
+    _write(output_directory / "loss_acceptance_receipt.json", acceptance)
     repo = Path(__file__).resolve().parents[3]
     git = {}
     for key, arguments in (("sha", ["rev-parse", "HEAD"]), ("worktree", ["status", "--porcelain"])):
@@ -590,13 +615,15 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     metadata = dict(schema_version=1, role="mrtof_prepared_joint_diagnostic_figure", counts=population["counts"], git=git,
                     frame_id=source["frame_id"], clock_epoch_id=source["clock_epoch_id"],
                     units=dict(position="mm", velocity="mm/us", time="absolute instrument us", energy="eV/abs(q)", angle="deg"),
-                    inputs=dict(preparation=file_record(preparation_receipt), merged_log=file_record(merged_log), source_receipt=file_record(source_path)),
+                    inputs=dict(preparation=file_record(preparation_receipt), merged_log=file_record(merged_log),
+                                source_receipt=file_record(source_path), field_binding=file_record(binding_path)),
                     producer=file_record(Path(__file__)), style="English, color plus marker/line, 180 DPI PNG and vector SVG", design_reference=design,
                     filtering="no mother exclusion; first crossing plots preserve every raw branch in CSV; no detector-conditioned selection",
                     interpolation="linear only between adjacent recorded states; no extrapolation; terminal points separately marked",
                     maximum_interpolation_gap_us=gap, automatic_snapshot_selection=times,
                     recording_policy=prepared["trajectory_recording"], uncertainty="descriptive finite cohort; no inferred acceptance or confidence interval",
                     birth_clock_projection=birth_projection,
+                    loss_acceptance=acceptance,
                     potential_correction="not evaluated; terminal ion_volts is not used as scalar-field potential; raw K differences are not conservation residuals",
                     qualification="diagnostic_only_no_physics_GUI_or_Formal_pass")
     if merge_receipt is not None:
@@ -604,19 +631,21 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     with plt.rc_context({"font.size": 9, "axes.titlesize": 9}):
         for role, builder, args in (("prism_phase_space", build_prism_figure, (prism, len(mother), design)),
                                     ("timed_spatial_clouds", build_snapshot_figure, (snapshots, times, len(mother), source["solver_epoch_instrument_time_us"])),
-                                    ("population_and_losses", build_loss_figure, (census,))):
+                                    ("population_and_losses", build_loss_figure, (census,)),
+                                    ("loss_acceptance", build_loss_acceptance_figure, (acceptance_rows, binding["geometry"]))):
             figure, _ = builder(*args)
             _save_figure(figure, output_directory / role, metadata)
     result = dict(schema_version=1, role="mrtof_prepared_joint_diagnostics", status="complete_recorded_diagnostics",
                   inputs=metadata["inputs"],
-                  counts=population["counts"], figure_roles=["prism_phase_space", "timed_spatial_clouds", "population_and_losses"],
+                  counts=population["counts"], figure_roles=["prism_phase_space", "timed_spatial_clouds", "population_and_losses", "loss_acceptance"],
                   snapshot_count=len(times), maximum_interpolation_gap_us=gap, trajectory=trajectory,
                   birth_clock_projection=birth_projection,
                   prism_phase_space_reference=standard, signed_angle_definition="atan2(vy,vz), full quadrant; zero yz speed undefined",
                   prism_statistics=_prism_statistics(prism, {int(row["particle_id"]) for row in mother}),
                   frozen_design_reference=design,
                   legacy_reference_angle_definition="existing reference diagnostic uses atan2(vy,abs(vz)); use explicit CSV signed_yz_angle_deg for full quadrant",
-                  loss_evidence=loss, qualification="descriptive_diagnostics_only_no_whole_beam_acceptance_or_performance_pass",
+                  loss_evidence=loss, loss_acceptance=acceptance,
+                  qualification="descriptive_diagnostics_only_no_whole_beam_acceptance_or_performance_pass",
                   outputs=[file_record(path) for path in sorted(output_directory.rglob("*")) if path.is_file()])
     _write(output_directory / "diagnostics_receipt.json", result)
     return result

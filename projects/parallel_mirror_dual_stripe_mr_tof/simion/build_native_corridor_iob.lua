@@ -23,8 +23,9 @@ if measured_mode then
   seed, paths, origins = request.seed, request.paths, request.origins
   output, program, fly2 = request.output, request.program, request.fly2
   operating_path, priority_path = request.operating, request.priority
-  assert(seed:match('4_instance_seed%.iob$') and #paths == 4 and #origins == 4,
-    'measured-source replacement requires four declared roles')
+  assert((#paths == 4 or #paths == 5) and #origins == #paths
+      and seed:match(tostring(#paths)..'_instance_seed%.iob$'),
+    'measured-source replacement requires its four/five-role seed')
 else
   seed = input(1, 'four-instance seed')
   paths = {input(2, 'global PA'), input(3, 'corridor family PA0'), input(4, 'accelerator PA'), input(5, 'detector PA')}
@@ -45,6 +46,14 @@ assert(priority.role == 'mrtof_native_corridor_iob_priority_contract' and type(p
   'native corridor priority contract is incomplete')
 local expected_roles = measured_mode and {'global_fallback', 'native_corridor', 'ion_processor_collision', 'detector'}
   or {'global_fallback', 'native_corridor', 'accelerator', 'detector'}
+local overlay = priority.collision_overlay
+if measured_mode and #paths == 5 then
+  assert(type(overlay) == 'table' and overlay.schema_version == 1
+      and overlay.role == 'mrtof_analyzer_collision_overlay', 'fifth instance requires verified collision overlay')
+  expected_roles[5] = 'analyzer_collision_patch'
+else
+  assert(overlay == nil, 'collision overlay requires the measured fifth instance')
+end
 local role_instances = {}
 for index, role in ipairs(expected_roles) do
   local item = priority.instances[index]
@@ -76,6 +85,14 @@ if measured_mode then
     'measured workbench requires verified new fields and matching source')
   assert(operating.static_field and operating.static_field.assembly_scope == 'full_c0_ion_processor_replacement',
     'measured workbench rejects old OA field assembly')
+  if overlay then
+    local projected = operating.static_field.collision_overlay
+    assert(projected and projected.patch_plan_path == overlay.patch_plan_path
+        and projected.pa_path == overlay.pa_path and paths[5] == overlay.pa_path,
+      'workbench collision overlay differs from the frozen operating projection')
+  else
+    assert(operating.static_field.collision_overlay == nil, 'undeclared operating collision overlay')
+  end
 end
 if operating.static_field then
   assert(paths[2]:match('%.pa$') or paths[2]:match('%.pa0$'),
@@ -182,6 +199,12 @@ local function overlap_probe(label, expected, left_index, right_index)
   assert(x1 > x0 and y1 > y0 and z1 > z0,
     string.format('priority probe has no geometric overlap: %s', label))
   local x, y, z = (x0+x1)/2, (y0+y1)/2, (z0+z1)/2
+  if overlay then
+    local box = overlay.box_mm
+    if math.abs(x) <= box[4] and y >= box[2] and y <= box[5] and z >= box[3] and z <= box[6] then
+      expected = role_instances.analyzer_collision_patch
+    end
+  end
   local electrode, instance = wb:find_at(x, y, z)
   assert(instance == expected,
     string.format('priority probe %s selected instance=%s expected=%d electrode=%s at %.9g,%.9g,%.9g',
@@ -200,6 +223,31 @@ else
 end
 overlap_probe('corridor_intersection_detector', role_instances.detector,
   role_instances.native_corridor, role_instances.detector)
+if overlay then
+  local instance = wb.instances[5]
+  assert(instance.pa.refinable == false, 'saved collision patch must retain its persistent nonrefinable flag')
+  assert(instance.pa.symmetry == '3dplanar[x]', 'collision patch must retain x mirror symmetry')
+  local box, pitch, dimensions = overlay.box_mm, overlay.pitch_mm, overlay.dimensions
+  assert(box[1] == 0 and instance.x == box[1] and instance.y == box[2] and instance.z == box[3],
+    'saved collision patch origin differs from its plan')
+  for axis, key in ipairs({'nx','ny','nz'}) do
+    assert(instance.pa[key] == dimensions[axis], 'saved collision patch dimensions differ')
+  end
+  for axis, key in ipairs({'dx_mm','dy_mm','dz_mm'}) do
+    assert(instance.pa[key] == pitch[axis], 'saved collision patch pitch differs')
+  end
+  assert(type(overlay.priority_probes) == 'table' and #overlay.priority_probes >= 3,
+    'collision patch requires frozen metal/vacuum/exterior probes')
+  for _, probe in ipairs(overlay.priority_probes) do
+    local p = probe.point_mm
+    local electrode, selected = wb:find_at(p[1],p[2],p[3])
+    local metal = electrode == true or (type(electrode) == 'number' and electrode ~= 0)
+    assert(selected == probe.expected_instance and metal == probe.expected_electrode,
+      'collision overlay priority/occupancy probe failed: '..probe.label)
+    print(string.format('MRTOF_COLLISION_OVERLAY_PROBE=%s instance=%s electrode=%s',
+      probe.label,tostring(selected),tostring(electrode)))
+  end
+end
 print('MRTOF_NATIVE_CORRIDOR_PRIORITY_API=' .. (priority_field or 'unavailable_documented_setter'))
 local function copy(source, target)
   if source == target then return end
@@ -223,7 +271,7 @@ if measured_mode then
   copy(program:gsub('%.lua$', '.source_runtime.lua'), output:gsub('%.iob$', '.source_runtime.lua'))
 end
 if measured_mode then
-  print('MRTOF_NATIVE_CORRIDOR_IOB_BUILD=PASS instances=4 static_measured_source=true pa_save=false refine=false priority=probe_verified')
+  print('MRTOF_NATIVE_CORRIDOR_IOB_BUILD=PASS instances='..#paths..' static_measured_source=true pa_save=false refine=false priority=probe_verified')
 else
   print('MRTOF_NATIVE_CORRIDOR_IOB_BUILD=PASS instances=4 corridor_voltage_table_ids=1..8 fast_adjust=flight pa_save=false refine=false priority=probe_verified')
 end

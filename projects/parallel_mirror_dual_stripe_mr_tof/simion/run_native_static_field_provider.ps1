@@ -35,19 +35,26 @@ $runId=Split-Path -Leaf $RunDirectory
 $software=@('Python 3.11','SIMION 2020')
 $isComposition=$plan.operation-eq'compose'
 $isConsumerView=$plan.operation-eq'crop_view'
+$isCollisionOverlay=$plan.operation-eq'collision_overlay'
+$occupancyNames=@('collision','ip_collision','detector','analyzer_collision_patch')
 $isResponse=$plan.ContainsKey('response_basis')-and$null-ne$plan.response_basis
 $reason=if($isResponse){'Pure-axis native response retained for voltage composition; not authorized for direct trajectory consumption.'}else{'Production ordinary-static C0 parent/local fields retained for downstream native trajectory consumption.'}
+if($isCollisionOverlay){$reason='Same-CSG local collision-only numerical overlay; all sealed source fields, geometry and voltages retained.'}
 $newLevels=@($plan.execution_order|Where-Object{-not$plan.levels[$_].ContainsKey('reuse_source')})
 $directories=@($newLevels|ForEach-Object{'simion/'+$_})
 $surfacePaths=@($newLevels|ForEach-Object{'simion/'+$_+'/'+$(if($_-eq'parent'){'c0_static'}else{'c0_local'})+'.pa-surf'})
-foreach($occupancyName in @('collision','ip_collision','detector')){if($plan.ContainsKey($occupancyName+'_build')){$directories+=@('simion/'+$occupancyName);$surfacePaths+=@('simion/'+$occupancyName+'/'+$occupancyName+'.pa-surf')}}
+foreach($occupancyName in $occupancyNames){if($plan.ContainsKey($occupancyName+'_build')){$directories+=@('simion/'+$occupancyName);$surfacePaths+=@('simion/'+$occupancyName+'/'+$occupancyName+'.pa-surf')}}
 $pkg=New-RunPackage -Python $python -RepoRoot $repo -ArtifactRoot $projectRoot -RunId $runId -Project $plan.project -Mode 'native_static_field_provider' -Software $software -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $reason -CapacityLedgerLifecycleEnabled -AdditionalDirectories $directories -UseShortExecutionPath -ExpectedExecutionRelativePaths $surfacePaths
 $capacity=$null;$lease=$null;$parentGuard=$null
+$overlayGuards=[Collections.Generic.List[IDisposable]]::new()
 $status='failed';$stage='capacity_startup';$failure=$null;$parentDone=$false;$windowDone=$false
 $fieldBinding=$null;$responseBasis=$null;$watch=[Diagnostics.Stopwatch]::StartNew();$timings=[ordered]@{}
 $levelStatus=[ordered]@{}
 try{
     $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -ArtifactRoot $artifacts -RunDirectory $RunDirectory -Owner $plan.project -CommittedNewBytes ([int64]$plan.committed_new_bytes) -ProtectedPaths @($plan.protected_paths)
+    if($isCollisionOverlay){
+        foreach($path in $plan.guard_paths){$overlayGuards.Add([IO.File]::Open([string]$path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))}
+    }
     $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_static_field_provider.py');geometry_emitter=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_geometry.py');analyzer_shapes=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/analyzer_candidate_geometry.py');candidate_authority=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/corridor_field_provider.py');binding_loader=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/static_field_binding.py');builder=(Join-Path $repo 'common/simion/build_dirichlet_patch_basis.lua');executor=(Join-Path $repo 'common/multipole/resource_budget_support.ps1')}
     foreach($key in $plan.inputs.Keys){$copies[$key]=$plan.inputs[$key]}
     if($plan.ContainsKey('collision_build')){
@@ -82,16 +89,17 @@ try{
             $frozen[$label+'_consumer_plan']=Join-Path $RunDirectory ('inputs/'+$label+'_consumer_plan.json')
         }
     }
-    foreach($occupancyName in @('collision','ip_collision','detector')){if($plan.ContainsKey($occupancyName+'_build')){$frozen[$occupancyName+'_plan']=Join-Path $RunDirectory ('inputs/'+$occupancyName+'_plan.json')}}
+    foreach($occupancyName in $occupancyNames){if($plan.ContainsKey($occupancyName+'_build')){$frozen[$occupancyName+'_plan']=Join-Path $RunDirectory ('inputs/'+$occupancyName+'_plan.json')}}
     $cfg=Get-Content -LiteralPath $pkg.run_config -Raw|ConvertFrom-Json -AsHashtable
     $cfg.inputs=$frozen
     $cfg.parameters=@{workflow='native_static_field_provider';operation=$plan.operation;refine_stopping=$plan.refine_stopping;automatic_retry_count=0;fly_performed=$false;qualification_passed=$false;collision_role1='new C0 parent; other three sealed collision roles unchanged';resource_limit_semantics='Resource measurements warning-only; public artifact capacity hard.'}
-    if($plan.levels.parent.ContainsKey('reuse_source')){
+    if(-not$isCollisionOverlay-and$plan.levels.parent.ContainsKey('reuse_source')){
         $cfg.parameters.collision_role1='unchanged sealed C0 parent; all collision roles unchanged'
         $cfg.parameters.reused_source_levels=@($plan.execution_order|Where-Object{$plan.levels[$_].ContainsKey('reuse_source')})
     }
     if($plan.ContainsKey('collision_build')){$cfg.parameters.collision_role1='new C0 parent';$cfg.parameters.collision_role2='same new resolved analyzer; ordinary occupancy PA; gem2pa only, no Refine/Fast Adjust'}
-    if(-not$isComposition-and-not$isConsumerView){$cfg.parameters.refine_options=$plan.refine_options}
+    if(-not$isComposition-and-not$isConsumerView-and-not$isCollisionOverlay){$cfg.parameters.refine_options=$plan.refine_options}
+    if($isCollisionOverlay){$cfg.parameters.collision_role1='unchanged source fields and original four collision instances';$cfg.parameters.collision_role5='same complete analyzer CSG, finer occupancy only; gem2pa; no Refine/Fast Adjust'}
     if($plan.ContainsKey('consumer_view')){$cfg.parameters.collision_role1='unchanged full source collision PA';$cfg.parameters.consumer_view=$plan.consumer_view}
     if($isResponse){$cfg.parameters.response_basis=$plan.response_basis;$cfg.parameters.fly_authorized=$false}
     Write-RunJson -Path $pkg.run_config -Value $cfg -Depth 40
@@ -115,14 +123,15 @@ try{
     }else{
     $exe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'
     if(-not(Test-Path -LiteralPath $exe -PathType Leaf)){throw 'Installed SIMION2020 missing.'}
-    foreach($occupancyName in @('collision','ip_collision','detector')){
+    foreach($occupancyName in $occupancyNames){
       if($plan.ContainsKey($occupancyName+'_build')){
         $collision=$plan[$occupancyName+'_build']
         $levelStatus[$occupancyName]=@{refine_completed=$false;crop_completed=$false;completed=$false}
         $budget=Get-HostResourceBudget -Role SIMION -Stage prepare
         $budget.memory_bytes=[Math]::Max([int64]$budget.memory_bytes,2*[int64]$collision.pa_bytes)
         $lease=Enter-HostResourceStage -Role SIMION -Stage prepare -Budget $budget -RunId $runId
-        $limits=@{};foreach($key in $plan.levels.parent.resource_limits.Keys){$limits[$key]=$plan.levels.parent.resource_limits[$key]}
+        $sourceLimits=if($isCollisionOverlay){$plan.resource_limits}else{$plan.levels.parent.resource_limits}
+        $limits=@{};foreach($key in $sourceLimits.Keys){$limits[$key]=$sourceLimits[$key]}
         $limits.process_tree_working_set_bytes=[Math]::Max([int64]$limits.process_tree_working_set_bytes,2*[int64]$collision.pa_bytes)
         $limits.transient_run_directory_bytes=[int64]$plan.committed_new_bytes
         $limits.compact_final_retained_bytes=[int64]$plan.final_retained_estimate_bytes
@@ -131,6 +140,7 @@ try{
         $timings[$stage]=$timer.Elapsed.TotalSeconds
         $collisionPa=Join-Path $RunDirectory ('simion/'+$occupancyName+'/'+$occupancyName+'.pa')
         if($step.exit_code-ne0-or-not(Test-Path -LiteralPath $collisionPa)-or(Get-Item -LiteralPath $collisionPa).Length-ne[int64]$collision.pa_bytes){throw 'Ordinary collision gem2pa failed or grid payload length differs.'}
+        if($isCollisionOverlay-and(-not(Test-Path -LiteralPath ($collisionPa+'-surf'))-or(Get-Item -LiteralPath ($collisionPa+'-surf')).Length-le0)){throw 'Collision overlay fractional surface is absent or empty.'}
         $levelStatus[$occupancyName].completed=$true
         Exit-HostResourceStage -Lease $lease;$lease=$null
     }
@@ -209,7 +219,7 @@ try{
         $levelStatus[$label].completed=$true
         Exit-HostResourceStage -Lease $lease;$lease=$null
     }
-    $windowDone=(-not$isConsumerView)-and(@($plan.window_labels|Where-Object{-not$levelStatus[$_].completed}).Count-eq0)
+    $windowDone=(-not$isConsumerView-and-not$isCollisionOverlay)-and(@($plan.window_labels|Where-Object{-not$levelStatus[$_].completed}).Count-eq0)
     }
     $stage='binding_publication'
     if($isResponse){$responseBasis=Join-Path $RunDirectory 'results/response_basis.json'}else{$fieldBinding=Join-Path $RunDirectory 'results/field_binding.json'}
@@ -223,6 +233,7 @@ try{
 }catch{
     $failure=$_.Exception.Message;throw
 }finally{
+    foreach($guard in $overlayGuards){$guard.Dispose()}
     if($null-ne$parentGuard){$parentGuard.Dispose()}
     if($null-ne$lease){Exit-HostResourceStage -Lease $lease}
     try{

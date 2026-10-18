@@ -17,10 +17,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_sou
     RUNTIME_LUA, _rows, materialize_measured_source_slice, materialize_centroid_probe,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
-    ION_PROCESSOR, freeze_file, verified_reference,
+    ION_PROCESSOR, freeze_file, verified_reference, validate_execution_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, native_response_operator
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, collision_workbench_layout
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import resolve_trajectory_recording
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import FLY_COMPLETED
 
@@ -72,6 +72,16 @@ def compile_memory_consumer_crops(contract: dict[str, Any], reference: dict[str,
 def validate_candidate_binding(binding: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
     """Keep the actual IP operator fixed while allowing only four P/S coordinates."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import candidate_authority, PS_GROUPS
+    collision_workbench_layout(binding)
+    if baseline.get("collision_overlay") and not binding.get("collision_overlay"):
+        raise ValueError("Candidate cannot silently remove the prepared collision overlay")
+    if binding.get("collision_overlay"):
+        # The public loader verifies the complete overlay and its original four
+        # instances. Compare only its source field operator, not collision pitch.
+        source = load_binding(Path(binding["source_descriptor_path"]))
+        baseline_source = (load_binding(Path(baseline["source_descriptor_path"]))
+                           if baseline.get("collision_overlay") else baseline)
+        return validate_candidate_binding(source, baseline_source)
     roles = ["global_fallback", "native_corridor", "ion_processor_collision", "detector"]
     if (binding.get("accelerator_provider") != ION_PROCESSOR
             or [r["role"] for r in binding["instances"]] != roles
@@ -101,6 +111,8 @@ def _native_projection(binding: dict[str, Any]) -> dict[str, Any]:
                   collision_pa_path=binding["instances"][1]["pa_path"],
                   refinement_windows=[dict(level(item), name=item["name"], active_box_mm=item["active_box_mm"])
                                       for item in binding["refinement_windows"]])
+    if binding.get("collision_overlay"):
+        result["collision_overlay"] = collision_workbench_layout(binding)["priority"]["collision_overlay"]
     return result
 
 
@@ -127,15 +139,11 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     recording = resolve_trajectory_recording(contract)
     if recording is None:
         raise ValueError("Joint flight requires explicit solver_review trajectory recording")
-    scientific = json.loads(json.dumps(contract))
-    scientific["simion"].pop("trajectory_recording", None)
-    expected_contract["simion"].pop("trajectory_recording", None)
-    budget_change = None
-    if scientific != expected_contract:
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import (
-            assert_bounded_controller_resume,
-        )
-        budget_change = assert_bounded_controller_resume(expected_contract, scientific, None, budget_only=True)
+    execution = validate_execution_contract(expected_contract, contract, allow_controller_budget=True)
+    reference_profile = execution["reference_profile"]
+    trajectory_profile = execution["selected_profile"]
+    step_change = execution["numerical_change"]
+    budget_change = execution["execution_budget_change"]
     results, inputs = run_directory / "results", run_directory / "inputs"
     results.mkdir(parents=True, exist_ok=True)
     inputs.mkdir(parents=True, exist_ok=True)
@@ -187,6 +195,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         validate_candidate_binding(candidate, binding)
         binding_path = Path(freeze_file(field_binding_path, inputs / "candidate_field_binding.json")["path"])
         binding = candidate
+    layout = collision_workbench_layout(binding)
     memory_crops = compile_memory_consumer_crops(contract, _read(reference_materialization_copy), binding)
     guard_paths = [item["pa_path"] for item in binding["instances"]]
     for level in [binding, *binding["refinement_windows"]]:
@@ -208,8 +217,27 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     freeze_file(source_copy / "source_runtime.lua", frozen_runtime / "joint.source_runtime.lua")
     freeze_file(Path(__file__).parents[1] / "simion/scalar_field_adapter.lua",
                 frozen_runtime / "joint.scalar_field_adapter.lua")
+    reference = runtime / "mr_reference.operating_point.lua"
+    verified_reference(prepared_run, reference.relative_to(prepared_run).as_posix())
+    freeze_file(reference, frozen_runtime / reference.name)
+    (frozen_runtime / "joint.priority.lua").write_text("return " + _lua(layout["priority"]) + "\n",
+                                                      encoding="utf-8", newline="\n")
+    reference_text = reference.read_text(encoding="utf-8-sig")
+    reference_numerics = {}
+    for name in ("trajectory_quality", "maximum_step_us", "full_path_timeout_us"):
+        match = re.search(r"\b"+name+r"\s*=\s*([-+0-9.eE]+)", reference_text)
+        if match is None:
+            raise ValueError("Prepared reference lacks "+name)
+        reference_numerics[name] = float(match[1])
+    if any(reference_numerics[name] != reference_profile[name]
+           for name in ("trajectory_quality", "maximum_step_us")):
+        raise ValueError("Prepared runtime numerics differ from its default trajectory profile")
+    numerics = dict(reference_numerics, trajectory_quality=trajectory_profile["trajectory_quality"],
+                    maximum_step_us=trajectory_profile["maximum_step_us"])
     sidecar = ("local t=assert(loadfile("+json.dumps((frozen_runtime / "prepared.operating_point.lua").as_posix())+"))()\n"
                "t.measured_source_directory="+json.dumps(source_copy.as_posix())+"\n"
+               "t.maximum_step_us="+_lua(numerics["maximum_step_us"])+"\n"
+               "t.trajectory_quality="+_lua(numerics["trajectory_quality"])+"\n"
                + ("t.static_field="+_lua(_native_projection(binding))+"\n"
                   "t.stripe_biases_v="+_lua([binding["authority"]["analyzer_electrode_voltages_v"][i] for i in (10,12)])+"\n"
                   "t.prism_voltages_v="+_lua([binding["authority"]["analyzer_electrode_voltages_v"][i] for i in (15,16)])+"\n"
@@ -218,9 +246,6 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                "for _,window in ipairs(t.static_field.refinement_windows) do\n"
                "  window.memory_consumer_crop=crops[window.name]\nend\nreturn t\n")
     (frozen_runtime / "joint.operating_point.lua").write_text(sidecar, encoding="utf-8", newline="\n")
-    reference = runtime / "mr_reference.operating_point.lua"
-    verified_reference(prepared_run, reference.relative_to(prepared_run).as_posix())
-    freeze_file(reference, frozen_runtime / reference.name)
     launcher = Path(__file__).parents[1] / "simion/run_iob_flight.lua"
     freeze_file(launcher, inputs / launcher.name)
     effective_launcher = inputs / launcher.name
@@ -232,14 +257,8 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
             "arg={'--measured-source',iob:gsub('%.iob$','.workbench_build.lua')}\n"
             "dofile("+_lua(str(inputs / builder.name))+ ")\narg=saved_arg\n"
             "dofile("+_lua(str(inputs / launcher.name))+ ")\n", encoding="utf-8", newline="\n")
-    reference_text = reference.read_text(encoding="utf-8-sig")
-    numerics = {}
-    for name in ("trajectory_quality", "maximum_step_us", "full_path_timeout_us"):
-        match = re.search(r"\b"+name+r"\s*=\s*([-+0-9.eE]+)", reference_text)
-        if match is None:
-            raise ValueError("Prepared reference lacks "+name)
-        numerics[name] = float(match[1])
     identifiers = [int(row["particle_id"]) for row in rows]
+    topology = "five" if len(layout["roles"]) == 5 else "four"
     result = dict(schema_version=1, role="mrtof_prepared_joint_trial", parent_prepared_run=str(prepared_run.resolve()),
                   measured_source_directory=str(source_copy.resolve()), expected_particle_ids=identifiers,
                   mother_particle_count=source_receipt["counts"]["source"], launched_particle_count=len(rows),
@@ -247,7 +266,10 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                   trajectory_contract=file_record(contract_copy), trajectory_recording=recording,
                   controller_contract_provenance=dict(
                       prepared_reference_trajectory_contract=dict(expected_contract_record),
-                      consumed_execution_contract=file_record(contract_copy), execution_budget_change=budget_change),
+                      consumed_execution_contract=file_record(contract_copy), execution_budget_change=budget_change,
+                      numerical_change=step_change, prepared_reference_numerics=reference_numerics,
+                      selected_trajectory_profile=dict(trajectory_profile)),
+                  trajectory_profile=dict(trajectory_profile),
                   reference_materialization=file_record(reference_materialization_copy),
                   source_receipt=file_record(source_copy / "source_receipt.json"),
                   flight_program=file_record(frozen_runtime / "joint.lua"),
@@ -265,8 +287,8 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                   time_focus_qualified=False)
     result["dispatch_request"] = dict(
         solver="SIMION", field_kind="electrostatic", particle_count=len(rows), independent_particles=True,
-        frontend_grid_profile_id="mrtof_ip_replacement_static_four_instances",
-        oatof_numerical_profile_id=None, trajectory_quality_profile_id="frozen_prepared_joint",
+        frontend_grid_profile_id=f"mrtof_ip_replacement_static_{topology}_instances",
+        oatof_numerical_profile_id=None, trajectory_quality_profile_id=trajectory_profile["profile_id"],
         time_integration_profile_id="mrtof_candidate_adaptive_time_step",
         frontend_cell_mm_xyz=binding["grid"]["pitch_mm"], accelerator_overlay_cell_mm_xyz=None,
         reflectron_cell_mm=None, trajectory_quality=numerics["trajectory_quality"],
@@ -274,13 +296,12 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         frontend_pa0_sha256=binding["records"]["scalar_pa"]["sha256"],
         accelerator_overlay_pa0_sha256=None, reflectron_pa0_sha256=None,
         case_input_sha256=result["operating_point"]["sha256"],
-        workload_topology_id="mrtof_ip_measured_four_instances_full_flight",
-        field_loading_policy_id=("native_static_pa__four_read_only_collision_instances__memory_mirror_x_crop"
-                                 if memory_crops else "native_static_pa__four_read_only_collision_instances"))
+        workload_topology_id=f"mrtof_ip_measured_{topology}_instances_full_flight",
+        field_loading_policy_id=(f"native_static_pa__{topology}_read_only_collision_instances"
+                                 + ("__memory_mirror_x_crop" if memory_crops else "")))
     result["trajectory_equivalence_reference"] = None
-    if field_binding_path is not None:
-        result["protected_paths"] += sorted({str(Path(item["manifest"]).parent)
-                                               for item in [binding, *binding["refinement_windows"]]})
+    result["protected_paths"] += sorted({str(Path(item["manifest"]).parent)
+                                           for item in [binding, *binding["refinement_windows"], *binding["instances"]]})
     if reference_flight_run is not None:
         result["trajectory_equivalence_reference"] = freeze_equivalence_reference(
             reference_flight_run, result, inputs)
@@ -396,8 +417,9 @@ def materialize_batch(preparation_path: Path, ordinal_min: int, ordinal_max: int
     if preparation.get("candidate_iob_rebuild"):
         verify_record("candidate field binding", preparation["field_binding"])
         binding = load_binding(Path(preparation["field_binding"]["path"]))
+        layout = collision_workbench_layout(binding)
         build = dict(schema_version=1, role="mrtof_measured_source_workbench_build",
-            seed=str(Path(__file__).resolve().parents[3] / "common/simion/assets/iob_instance_seeds/4_instance_seed.iob"),
+            seed=layout["seed"],
             paths=[item["pa_path"] for item in binding["instances"]],
             origins=[item["origin_mm"] for item in binding["instances"]],
             output=str((output_directory / "joint.iob").resolve()), program=str((output_directory / "joint.lua").resolve()),

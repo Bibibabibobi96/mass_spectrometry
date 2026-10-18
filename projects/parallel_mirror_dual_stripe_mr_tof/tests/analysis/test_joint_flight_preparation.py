@@ -19,6 +19,75 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class JointPreparationTests(unittest.TestCase):
+    def test_five_role_builder_checks_saved_patch_occupancy_and_boundary_priority(self):
+        lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+        if not Path(lua).is_file():
+            self.skipTest('plain Lua unavailable')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            overlay = dict(schema_version=1,role='mrtof_analyzer_collision_overlay',patch_plan_path='sealed_plan.json',
+                pa_path='patch.pa',box_mm=[0,2,2,2,4,4],pitch_mm=[1,1,1],dimensions=[3,3,3],
+                priority_probes=[dict(label=label,point_mm=p,expected_instance=instance,expected_electrode=metal)
+                    for label,p,instance,metal in [('metal',[.5,2.5,2.5],5,True),('vacuum',[1.5,2.5,2.5],5,False),
+                        ('boundary_inside',[1.9,3,3],5,False),('boundary_outside',[2.1,3,3],2,False)]])
+            roles = ['global_fallback','native_corridor','ion_processor_collision','detector','analyzer_collision_patch']
+            request = dict(schema_version=1,role='mrtof_measured_source_workbench_build',seed='5_instance_seed.iob',
+                paths=['global.pa','corridor.pa','ip.pa','detector.pa','patch.pa'],
+                origins=[[0,0,0],[0,0,0],[0,8,0],[0,0,8],[0,2,2]],output=str(root/'out.iob'),
+                program=str(root/'program.lua'),fly2=str(root/'source.fly2'),operating=str(root/'operating.lua'),
+                priority=str(root/'priority.lua'))
+            priority = dict(schema_version=1,role='mrtof_native_corridor_iob_priority_contract',
+                accelerator_provider='dual_pressure_rectilinear_ion_processor',collision_overlay=overlay,
+                instances=[dict(role=role,priority_number=i) for i,role in enumerate(roles,1)])
+            operating = dict(accelerator_provider='dual_pressure_rectilinear_ion_processor',field_assembly_verified=True,
+                measured_source_matches_workpoint=True,static_field=dict(assembly_scope='full_c0_ion_processor_replacement',
+                                                                        collision_overlay=overlay))
+            for name,value in [('request.lua',request),('priority.lua',priority),('operating.lua',operating)]:
+                (root/name).write_text('return '+_lua(value))
+            for name in ('program.lua','program.mirror_cycle_counter.lua','program.source_runtime.lua','source.fly2'):
+                (root/name).write_text('-- fixture')
+            (root/'fixture.lua').write_text(r'''
+local root,builder,fault=unpack(arg)
+local instances={}
+for i=1,5 do
+  local pa={nx=11,ny=11,nz=11,dx_mm=1,dy_mm=1,dz_mm=1,symmetry='3dplanar[x]'}
+  if i==3 then pa.ny=3 elseif i==4 then pa.nz=3 elseif i==5 then pa.nx=3;pa.ny=3;pa.nz=3 end
+  if i==5 then pa.refinable=false end
+  pa.load=function(self,path) self.path=path end
+  instances[i]={pa=pa,_debug_update_size=function() end}
+end
+local loads,saves,probes=0,0,0
+simion={wb={instances=instances}}
+function simion.wb:load(path)
+  loads=loads+1;self.filename=path
+  if loads==2 and fault=='saved_grid' then instances[5].pa.nx=4 end
+  if loads==2 and fault=='saved_refinable' then instances[5].pa.refinable=true end
+end
+function simion.wb:save() saves=saves+1 end
+function simion.wb:find_at(x,y,z)
+  probes=probes+1
+  if probes<=3 then return 0,probes+1 end
+  if fault=='priority' then return 0,2 end
+  if fault=='metal' then return 0,5 end
+  if fault=='boundary' and x>2 then return 0,5 end
+  return x==.5 and 1 or 0,x>2 and 2 or 5
+end
+arg={'--measured-source',root..'/request.lua'}
+dofile(builder)
+assert(loads==2 and saves==1 and probes==7,'save/reload plus metal/vacuum/boundary probes required')
+assert(instances[3].pa.path=='ip.pa' and instances[4].pa.path=='detector.pa' and instances[5].pa.path=='patch.pa')
+print('FIVE_ROLE_BUILDER_MOCK=PASS')
+''')
+            for fault in ('none','saved_grid','saved_refinable','priority','metal','boundary'):
+                with self.subTest(fault=fault):
+                    actual = subprocess.run([lua,str(root/'fixture.lua'),str(root),str(PROJECT/'simion/build_native_corridor_iob.lua'),fault],
+                                            cwd=root,capture_output=True,text=True,timeout=30)
+                    if fault=='none':
+                        self.assertEqual(actual.returncode,0,actual.stdout+actual.stderr)
+                        self.assertIn('IOB_BUILD=PASS instances=5',actual.stdout)
+                    else:
+                        self.assertNotEqual(actual.returncode,0)
+
     def test_same_second_default_run_ids_are_distinct_across_providers(self):
         pwsh = shutil.which('pwsh') or 'C:/Program Files/PowerShell/7/pwsh.exe'
         script = PROJECT / 'analysis/run_prepare_accelerator_interface.ps1'
@@ -268,6 +337,23 @@ print('FINALIZED_FIELD_VOLTAGES=PASS')
                 self.assertIn('FINALIZED_FIELD_VOLTAGES=PASS', evaluated.stdout)
                 self.assertEqual(result["measured_source"]["counts"],
                                  {"source": 100, "transferred": 97, "not_transferred": 3})
+                original_fields = json.loads(json.dumps(binding))
+                binding["source_descriptor_path"] = str(fields/"inputs/source_binding.json")
+                binding["collision_overlay"] = dict(schema_version=1,role="mrtof_analyzer_collision_overlay",
+                    patch_plan_path=str(fields/"inputs/patch_plan.json"),box_mm=[0,-4,-100,2,0,-92],
+                    pitch_mm=[.05,.05,.05],dimensions=[41,81,161],priority_probes=[])
+                binding["instances"].append(dict(role="analyzer_collision_patch",pa_path=str(fields/"patch.pa"),origin_mm=[0,-4,-100]))
+                patched = bind_joint_workbench(design_run=design,field_run=fields,source_run=actual,
+                    handoff_receipt=handoff,energy_comparison=comparison,output_directory=root/"bound_five")
+                self.assertIn("5_instance_seed.iob",patched["workbench_build_contract"]["seed"])
+                self.assertEqual(patched["workbench_build_contract"]["paths"][:4],result["workbench_build_contract"]["paths"])
+                self.assertIn("analyzer_collision_patch",(root/"bound_five/runtime/joint.priority.lua").read_text())
+                self.assertIn("collision_overlay",(root/"bound_five/runtime/joint.operating_point.lua").read_text())
+                self.assertIn(str(fields/"patch.pa"),patched["guard_paths"])
+                self.assertIn(str(fields/"ip_local.pa"),patched["guard_paths"])
+                for key in ("authority","geometry","grid","sources","refinement_windows"):
+                    self.assertEqual(binding[key],original_fields[key])
+                binding.clear();binding.update(original_fields)
                 changed = dict(configs, native_operating_point={"old": "point"})
                 write(actual / "inputs/resolved_model.json", changed)
                 with self.assertRaisesRegex(ValueError, "differs from prepared design: native_operating_point"):

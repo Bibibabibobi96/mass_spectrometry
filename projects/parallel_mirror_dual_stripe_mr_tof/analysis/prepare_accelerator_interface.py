@@ -123,6 +123,41 @@ def _verify_frozen_inputs(frozen: dict[str, Any]) -> None:
         verify_record("unchanged source dependency", {**record, "path": record["source_path"]})
 
 
+def validate_execution_contract(reference: dict[str, Any], contract: dict[str, Any], *,
+                                allow_controller_budget: bool = False) -> dict[str, Any]:
+    """Allow observation changes and one selected integration bound, never physics."""
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import resolve_trajectory_profile
+
+    expected = json.loads(json.dumps(reference))
+    scientific = json.loads(json.dumps(contract))
+    expected["simion"].pop("trajectory_recording", None)
+    scientific["simion"].pop("trajectory_recording", None)
+    previous = resolve_trajectory_profile(expected)
+    current = resolve_trajectory_profile(scientific)
+    profile_id = previous["profile_id"]
+    if current["profile_id"] != profile_id:
+        raise ValueError("Prepared joint trial must retain its selected trajectory profile")
+    if current["trajectory_quality"] != previous["trajectory_quality"]:
+        raise ValueError("Prepared joint timestep comparison must retain trajectory quality")
+    selected = scientific["simion"]["trajectory_profiles"][profile_id]["maximum_step_us"]
+    if isinstance(selected, bool) or not isinstance(selected, (int, float)):
+        raise ValueError("Selected maximum_step_us must be a numeric integration bound")
+    change = None
+    if current["maximum_step_us"] != previous["maximum_step_us"]:
+        change = dict(change_kind="selected_trajectory_maximum_step_only", profile_id=profile_id,
+                      maximum_step_us=dict(previous=previous["maximum_step_us"], current=current["maximum_step_us"]))
+    scientific["simion"]["trajectory_profiles"][profile_id]["maximum_step_us"] = (
+        expected["simion"]["trajectory_profiles"][profile_id]["maximum_step_us"])
+    budget = None
+    if scientific != expected:
+        if not allow_controller_budget:
+            raise ValueError("Finalization contract changes more than the selected trajectory step")
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import assert_bounded_controller_resume
+        budget = assert_bounded_controller_resume(expected, scientific, None, budget_only=True)
+    return dict(reference_profile=previous, selected_profile=current, numerical_change=change,
+                execution_budget_change=budget)
+
+
 def prepare_interface(*, source_run: Path | None, reference_mr_run: Path,
                       run_directory: Path, provider: str | None = None,
                       lua_executable: Path | None = None) -> dict[str, Any]:
@@ -192,7 +227,7 @@ def prepare_interface(*, source_run: Path | None, reference_mr_run: Path,
 
 
 def finalize_interface(*, source_run: Path, reference_mr_run: Path, design_run: Path,
-                       field_run: Path, run_directory: Path) -> dict[str, Any]:
+                       field_run: Path, run_directory: Path, contract_path: Path | None = None) -> dict[str, Any]:
     """Bind one measured replacement design; the public launcher builds IOB only."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import compare_measured_exit_energy
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import bind_joint_workbench
@@ -219,17 +254,24 @@ def finalize_interface(*, source_run: Path, reference_mr_run: Path, design_run: 
     }
     for name, path in sources.items():
         frozen[name] = freeze_file(path, inputs / (name + path.suffix))
+    execution = None
+    if contract_path is not None:
+        execution = validate_execution_contract(_read(Path(frozen["reference_trajectory"]["path"])), _read(contract_path),
+                                                allow_controller_budget=True)
+        frozen["historical_reference_trajectory"] = frozen["reference_trajectory"]
+        frozen["reference_trajectory"] = freeze_file(contract_path, inputs / "execution_trajectory.json")
     _prepare_ip_handoff(source_run=source_run, results=results, inputs=inputs, frozen=frozen)
     energy = compare_measured_exit_energy(results / "ion_processor_exit/component_exit_receipt.json", reference_mr_run)
     binding = bind_joint_workbench(
         design_run=design_run, field_run=field_run, source_run=source_run,
         handoff_receipt=results / "mrtof_handoff/handoff_receipt.json", energy_comparison=energy,
-        output_directory=results / "joint_workbench")
+        output_directory=results / "joint_workbench", execution_contract=execution)
     _verify_frozen_inputs(frozen)
     receipt = dict(schema_version=1, role="mrtof_accelerator_interface_preparation", status="bound_iob_pending",
                    selected_provider=selected, preparation_stage="finalize_joint_workbench",
                    solver_executed=False, joint_simulation_executed=False, inputs=frozen,
                    joint_workbench_binding=binding,
+                   execution_contract_provenance=execution,
                    limitations=["Energy comparison has no declared acceptance tolerance.",
                                 "Six-dimensional source matching and time focus are unqualified.",
                                 "Workbench construction does not propagate particles or qualify joint performance."])
@@ -247,15 +289,16 @@ def main() -> None:
     parser.add_argument("--finalize-joint-workbench", action="store_true")
     parser.add_argument("--prepared-interface-run", type=Path)
     parser.add_argument("--joint-field-run", type=Path)
+    parser.add_argument("--contract", type=Path)
     args = parser.parse_args()
     if args.finalize_joint_workbench:
         if args.provider != ION_PROCESSOR or not all((args.source_run, args.prepared_interface_run, args.joint_field_run)):
             parser.error("finalization requires explicit IP provider, new source, design and field run")
         result = finalize_interface(source_run=args.source_run, reference_mr_run=args.reference_mr_run,
                                     design_run=args.prepared_interface_run, field_run=args.joint_field_run,
-                                    run_directory=args.run_directory)
+                                    run_directory=args.run_directory, contract_path=args.contract)
     else:
-        if args.prepared_interface_run or args.joint_field_run:
+        if args.prepared_interface_run or args.joint_field_run or args.contract:
             parser.error("design/field runs require --finalize-joint-workbench")
         result = prepare_interface(source_run=args.source_run, reference_mr_run=args.reference_mr_run,
                                run_directory=args.run_directory, provider=args.provider,

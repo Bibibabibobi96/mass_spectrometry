@@ -70,7 +70,18 @@ assert(type(native_corridor_roles) == 'table'
     and native_corridor_roles.role == 'mrtof_native_corridor_iob_priority_contract'
     and native_corridor_roles.schema_version == 1,
   'native-corridor priority sidecar has the wrong role or schema')
-local role_count = 4
+local collision_overlay = static_field and static_field.collision_overlay
+local role_count = collision_overlay and 5 or 4
+if collision_overlay then
+  assert(measured_mode and collision_overlay.schema_version == 1
+      and collision_overlay.role == 'mrtof_analyzer_collision_overlay'
+      and native_corridor_roles.collision_overlay
+      and native_corridor_roles.collision_overlay.patch_plan_path == collision_overlay.patch_plan_path
+      and native_corridor_roles.collision_overlay.pa_path == collision_overlay.pa_path,
+    'fifth collision instance requires matching verified overlay projections')
+else
+  assert(native_corridor_roles.collision_overlay == nil, 'undeclared collision overlay in priority contract')
+end
 assert(type(native_corridor_roles.instances) == 'table'
     and #native_corridor_roles.instances == role_count,
   'native-corridor priority sidecar has wrong instance count')
@@ -81,6 +92,7 @@ end
 local native_corridor_instances = {}
 local expected_roles = measured_mode and {'global_fallback', 'native_corridor', 'ion_processor_collision', 'detector'}
   or {'global_fallback', 'native_corridor', 'accelerator', 'detector'}
+if collision_overlay then expected_roles[5] = 'analyzer_collision_patch' end
 for index, expected_role in ipairs(expected_roles) do
   local definition = native_corridor_roles.instances[index]
   assert(type(definition) == 'table'
@@ -477,6 +489,12 @@ function segment.initialize_run()
       'native-corridor role '..role..' has no PA filename')
     assert(type(filename) == 'string' and #filename > 0,
       'native-corridor role '..role..' has an empty PA filename')
+    if role == 'analyzer_collision_patch' then
+      local function normalized(path) return path:gsub('\\','/'):lower() end
+      local pa_path = assert(simion.wb.instances[instance].pa.path, 'collision patch PA path is unavailable')
+      assert(normalized(pa_path) == normalized(collision_overlay.pa_path),
+        'flight collision patch PA differs from its verified projection')
+    end
   end
   -- SIMION does not invoke fast_adjust automatically when a PA0 controller is
   -- loaded without adj_elect globals.  Apply both consumed voltage tables once

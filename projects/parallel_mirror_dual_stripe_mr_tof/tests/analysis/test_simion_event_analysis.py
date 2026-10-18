@@ -1021,5 +1021,43 @@ class SimionEventAnalysisTest(unittest.TestCase):
         })
 
 
+    def test_ip_contacts_respect_normalized_csg_and_preserve_early_detector_loss(self):
+        def box(low, high):
+            return dict(shape="box", min_mm=low, max_mm=high)
+        hole = box([-.4, -59, 6.2], [.4, -51, 7.9])
+        geometry = dict(mesh_mm_per_gu=.25, ion_processor_electrodes=[
+            dict(name="lp_pull", electrode_id=5, solids=[box([-1, -94.5, 7.3], [1, -34, 7.8])], cutouts=[hole]),
+            dict(name="lp_side_upper", electrode_id=7, solids=[box([2, -94.5, 8.8], [2.5, -34, 9.4])], cutouts=[]),
+            dict(name="lp_commonmode_shield", electrode_id=14,
+                 solids=[box([-3.5, -94.5, 6.3], [3.5, -34, 6.8])], cutouts=[hole]),
+            dict(name="rod", electrode_id=1,
+                 solids=[dict(shape="cylinder3d", endpoints_mm=[[20, 0, 0], [20, 5, 0]], radius_mm=1)], cutouts=[]),
+        ], detector=dict(id=25, box=[-25, -87, 95, 25, -37, 97]), prism_ground_shields=[
+            dict(id=20, x=[-12, 12], body_sections=[dict(x=[-12, 12], polygon_yz_mm=[
+                [-3, -97], [-32, -97], [-32, 97], [-3, 97], [-3, 21], [3, 21], [3, -21], [-3, -21]])],
+                prism_clearance_polygon_yz_mm=[[0, 0], [-26, -26], [-26, 26]],
+                rectangular_slots_mm=[[-2, -28, -97, 2, -4, 97], [-2, -32, -40, 2, 3, 40]])])
+        points = {38: [-.399999995755, -54.0359636339, 7.60239017994],
+                  75: [1.99999999652, -58.2956459256, 9.17533951664],
+                  91: [.378585637199, -61.0689806762, 6.29999999628],
+                  19: [.819742095072, -57.8713608767, 97.000000037],
+                  65: [-1.68013344731, -55.5252684328, 97.0000000064],
+                  101: [0, -55, 7.55], 102: [20, 2, .9], 103: [20, 6, 0],
+                  11: [-.0117201483797, -2.27132965096, -96.0000001415]}
+        events = [dict(kind="terminal", ion=ion, splat=-1, t_us=100, turns=48,
+                       central_crossings=48, **dict(zip(("x_mm", "y_mm", "z_mm"), point)))
+                  for ion, point in points.items()]
+        original = copy.deepcopy(events)
+        particles = {v["ion"]: v for v in collision_diagnostics(events, geometry)["collision_particles"]}
+        for ion, name in ((38, "lp_pull"), (75, "lp_side_upper"), (91, "lp_commonmode_shield"), (102, "rod")):
+            self.assertEqual(particles[ion]["component"], "ion_processor_" + name)
+        for ion in (19, 65):
+            self.assertEqual(particles[ion]["component"], "detector")
+            self.assertIsNone(particles[ion]["last_completed_stage"])
+        for ion in (11, 101, 103):
+            self.assertEqual(particles[ion]["component"], "unclassified")
+        self.assertEqual(events, original)  # A physical detector contact does not create a detected event.
+
+
 if __name__ == "__main__":
     unittest.main()

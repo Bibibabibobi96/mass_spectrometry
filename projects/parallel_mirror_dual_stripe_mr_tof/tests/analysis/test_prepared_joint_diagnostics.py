@@ -62,6 +62,17 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                              reference_materialization=file_record(reference), trajectory_recording=policy,
                              expected_particle_ids=[1, 7], mother_particle_count=3,
                              solver_epoch_instrument_time_us=source["solver_epoch_instrument_time_us"])
+        binding_path = self.root / "field_binding.json"
+        producer._write(binding_path, {"fixture": "native geometry is mocked; no PA is read"})
+        self.prepared["field_binding"] = file_record(binding_path)
+        geometry = {key: [] for key in ("mirror_electrodes", "mirror_slot", "mirror_inner_shield_slot",
+                    "mirror_ground_shields", "mirror_e_closures", "stripe_electrodes", "stripe_slot",
+                    "central_ground_electrodes", "central_ground_slots", "prism_electrodes", "prism_ground_shields")}
+        geometry["frame_id"] = "mr_frame.v2"
+        binding_mock = patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics.load_binding",
+                             return_value=dict(geometry=geometry, refinement_windows=[]))
+        binding_mock.start()
+        self.addCleanup(binding_mock.stop)
         producer._write(self.preparation, self.prepared)
         self.log = self.root / "merged.log"
         self.original_lines = []
@@ -93,9 +104,15 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["counts"]["upstream_not_transferred"], 1)
         self.assertEqual(result["prism_statistics"]["p2_fixed_plane"]["outside_aperture_ids"], [7])
         self.assertEqual(result["prism_statistics"]["p2_fixed_plane"]["missing_mother_particle_ids"], [9])
-        self.assertEqual(len(list(self.output.glob("*.png"))), 3)
-        self.assertEqual(len(list(self.output.glob("*.svg"))), 3)
-        self.assertEqual(len(list(self.output.glob("*.metadata.json"))), 3)
+        self.assertEqual(len(list(self.output.glob("*.png"))), 4)
+        self.assertEqual(len(list(self.output.glob("*.svg"))), 4)
+        self.assertEqual(len(list(self.output.glob("*.metadata.json"))), 4)
+        with (self.output / "loss_acceptance.csv").open(newline="") as stream:
+            loss_rows = list(csv.DictReader(stream))
+        self.assertEqual({int(r["particle_id"]) for r in loss_rows}, {1, 7, 9})
+        self.assertEqual(loss_rows[2]["source_position_x_mm"], "")
+        self.assertEqual(result["loss_acceptance"]["group_counts"],
+                         {"detected": 1, "early_contact": 1, "not_transferred": 1})
         with (self.output / "prism_phase_space.csv").open(newline="") as stream:
             rows = list(csv.DictReader(stream))
         self.assertEqual({int(r["particle_id"]) for r in rows}, {1, 7})
@@ -114,6 +131,21 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         self.assertTrue(all(r["x_mm"] == "" for r in snapshots if r["particle_id"] == "9"))
         self.assertTrue(any(r["state"] == "not_yet_handed_off" for r in snapshots))
         self.assertEqual(before, self.log.read_bytes())
+
+    def test_missing_or_changed_native_binding_fails_before_output(self) -> None:
+        binding = self.prepared["field_binding"]
+        for mode in ("missing", "changed"):
+            with self.subTest(mode=mode):
+                value = dict(self.prepared)
+                if mode == "missing":
+                    del value["field_binding"]
+                else:
+                    value["field_binding"] = dict(binding, sha256="0"*64)
+                self.preparation.write_text(json.dumps(value))
+                output = self.root / ("rejected_binding_"+mode)
+                with self.assertRaises((KeyError, ValueError, AssertionError)):
+                    analyze_prepared_joint_flight(self.preparation, self.log, output)
+                self.assertFalse(output.exists())
 
     def test_default_cli_transports_real_batches_without_mutating_preparation(self) -> None:
         epoch = self.prepared["solver_epoch_instrument_time_us"]
@@ -146,7 +178,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         for path in self.output.glob("*.metadata.json"):
             metadata = json.loads(path.read_text())
             self.assertEqual(metadata["inputs"]["batch_log_merge_receipt"], file_record(merge_path))
-        self.assertEqual(len(list(self.output.glob("*.png"))), 3)
+        self.assertEqual(len(list(self.output.glob("*.png"))), 4)
         evidence = result["birth_clock_projection"]["authority"]["actual_launch_evidence"]
         self.assertEqual(evidence["verified_particle_count"], 2)
         self.assertEqual([row["verified_particle_ids"] for row in evidence["batches"]], [[1], [7]])

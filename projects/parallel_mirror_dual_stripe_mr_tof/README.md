@@ -67,3 +67,4 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 
 - [Ion Processor原闭合链恢复与账本局部恢复](docs/history/20261017__ion-processor-original-controller-recovery.md)
 - [Ion Processor原流程闭合与联合母群验证](docs/history/20261017__ion-processor-closure-and-joint-population.md)
+- [Ion Processor束团接受度与碰撞网格诊断](docs/history/20261018__ion-processor-beam-acceptance-and-collision-grid.md)

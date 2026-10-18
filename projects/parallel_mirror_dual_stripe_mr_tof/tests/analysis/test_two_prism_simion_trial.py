@@ -52,6 +52,24 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 
 class TwoPrismSimionTrialTest(unittest.TestCase):
+    def test_collision_projection_preserves_optional_ip_detector_and_legacy_geometry(self):
+        keys = ("mirror_electrodes", "mirror_slot", "mirror_inner_shield_slot", "mirror_ground_shields",
+                "mirror_e_closures", "stripe_electrodes", "stripe_slot", "central_ground_electrodes",
+                "central_ground_slots", "prism_electrodes", "prism_ground_shields")
+        geometry = {key: [] for key in keys}
+        legacy = two_prism_simion_trial._collision_geometry_projection(geometry)
+        self.assertNotIn("ion_processor_electrodes", legacy)
+        self.assertNotIn("detector", legacy)
+        geometry.update(ion_processor_electrodes=[dict(name="lp_pull", electrode_id=5, solids=[], cutouts=[])],
+                        detector=dict(id=25, box=[-25, -87, 95, 25, -37, 97]))
+        projected = two_prism_simion_trial._collision_geometry_projection(geometry)
+        self.assertEqual(projected["detector"], geometry["detector"])
+        self.assertEqual(projected["ion_processor_electrodes"], geometry["ion_processor_electrodes"])
+        projected["detector"]["box"][0] = -99
+        projected["ion_processor_electrodes"][0]["solids"].append({})
+        self.assertEqual(geometry["detector"]["box"][0], -25)
+        self.assertEqual(geometry["ion_processor_electrodes"][0]["solids"], [])
+
     def test_retired_single_center_schedule_command_is_rejected(self) -> None:
         with patch("sys.argv", ["two_prism_simion_trial", "freeze-pulse-schedule"]), patch("sys.stderr"):
             with self.assertRaises(SystemExit) as caught:
@@ -189,6 +207,56 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         self.assertNotIn("physical_potential_v",result)
         self.assertIn("design_effective_potential_delta_v",result)
         self.assertAlmostEqual(result[two_prism_simion_trial.CONVERGING_PRISM_ENERGY_RESIDUAL],-.36835835613722345)
+
+    def test_launcher_preloads_overlay_occupancy_without_refine_save_or_duplicate_open(self) -> None:
+        lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"
+        if not lua.is_file():
+            self.skipTest("plain vendor Lua unavailable; no commercial execution")
+        launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            iob = root/"joint.iob"
+            for suffix in ("lua","fly2"):
+                iob.with_suffix('.'+suffix).write_text('')
+            iob.with_suffix('.operating_point.lua').write_text("return {accelerator_provider='dual_pressure_rectilinear_ion_processor',"
+                "field_assembly_verified=true,static_field={collision_pa_path='C:/frozen/collision.pa',"
+                "collision_overlay={schema_version=1,role='mrtof_analyzer_collision_overlay',pa_path='C:/patch/patch.pa'}}}")
+            harness = root/"fixture.lua"
+            harness.write_text(r'''
+local launcher,iob,mode=unpack(arg)
+local function forbidden() error('occupancy may not be refined, saved, closed or discarded') end
+local coarse={path='c:\\FROZEN\\collision.pa',refinable=true,refined=false,save=forbidden,refine=forbidden}
+local patch={path='C:/patch/patch.pa',refinable=true,refined=false,save=forbidden,refine=forbidden}
+local unrelated={path='C:/different/patch.pa',refinable=true}
+local inventory={coarse,unrelated}
+if mode=='warm' or mode=='ambiguous' then inventory[#inventory+1]=patch end
+if mode=='ambiguous' then inventory[#inventory+1]={path='c:\\PATCH\\patch.pa'} end
+local opens,commands=0,0
+function inventory:open(path)
+  opens=opens+1;assert(path==patch.path,'coarse must be reused by full normalized path')
+  self[#self+1]=patch;return patch
+end
+inventory.close=forbidden
+simion={pas=inventory,command=function(command)
+  commands=commands+1
+  assert(command:match('--remove%-pas=0'))
+  assert(not coarse.refinable and not patch.refinable)
+  assert(not coarse.refined and not patch.refined and unrelated.refinable)
+end}
+arg={iob};local ok,err=pcall(assert(loadfile(launcher)))
+if mode=='ambiguous' then
+  assert(not ok and err:match('ambiguous collision PA inventory') and commands==0 and opens==0)
+else
+  assert(ok,err);assert(commands==1 and opens==(mode=='warm' and 0 or 1))
+end
+print('OVERLAY_COLLISION_PRELOAD_PASS')
+''')
+            for mode in ('cold','warm','ambiguous'):
+                with self.subTest(mode=mode):
+                    actual = subprocess.run([str(lua),str(harness),str(launcher),str(iob),mode],
+                                            cwd=root,capture_output=True,text=True,timeout=30)
+                    self.assertEqual(actual.returncode,0,actual.stdout+actual.stderr)
+                    self.assertIn('OVERLAY_COLLISION_PRELOAD_PASS',actual.stdout)
 
     def test_launcher_preloads_only_static_ordinary_collision_without_saving(self) -> None:
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"

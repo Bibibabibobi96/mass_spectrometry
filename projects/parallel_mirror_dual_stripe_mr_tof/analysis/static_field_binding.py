@@ -1075,10 +1075,86 @@ def _load_native_materialized(descriptor: dict[str, Any], path: Path) -> dict[st
     return result
 
 
+def _load_collision_overlay(binding: dict[str, Any], path: Path) -> dict[str, Any]:
+    """Preserve the source operator seal and independently verify new occupancy."""
+    from .native_static_field_provider import collision_overlay_plan, collision_pa_header, COLLISION_NOTREFINABLE_FLAG
+    required = {"schema_version", "role", "manifest", "source_binding", "source_binding_copy",
+                "patch_plan_path", "patch_pa_path", "patch_surface_path"}
+    if set(binding) != required or binding["schema_version"] != 1:
+        raise ValueError("unsupported collision overlay binding")
+    owner = Path(binding["manifest"]).resolve()
+    sealed = _record(owner, owner.parent / "results/field_binding.json")
+    verify_record("collision overlay descriptor", dict(sealed, path=str(path.resolve())))
+    reference = binding["source_binding"]
+    if not isinstance(reference, dict) or set(reference) != {"path", "bytes", "sha256", "manifest"}:
+        raise ValueError("collision overlay requires an exact sealed source record and owner")
+    source_owner, source_path = Path(reference["manifest"]), Path(reference["path"])
+    if source_owner.resolve() == owner:
+        raise ValueError("collision overlay source requires an independent owner")
+    original = _record(source_owner, source_path)
+    if any(reference[k] != original[k] for k in ("path", "bytes", "sha256")):
+        raise ValueError("collision overlay source seal differs")
+    verify_record("collision overlay original source", original, base_dir=source_owner.parent)
+    frozen = Path(binding["source_binding_copy"])
+    if frozen.resolve() != (owner.parent / "inputs/source_binding.json").resolve():
+        raise ValueError("collision overlay frozen source must belong to its owner")
+    frozen_record = _record(owner, frozen)
+    if any(frozen_record[k] != original[k] for k in ("bytes", "sha256")):
+        raise ValueError("collision overlay source copy changed bytes")
+    verify_record("collision overlay source copy", frozen_record, base_dir=owner.parent)
+    if _read(frozen).get("role") != "mrtof_native_static_field_binding":
+        raise ValueError("collision overlays cannot be recursive or wrap response declarations")
+    source = load_binding(frozen)
+    if Path(source.get("descriptor_owner", source["manifest"])).resolve() != source_owner.resolve():
+        raise ValueError("collision overlay source loader resolved a different descriptor owner")
+    plan_path = Path(binding["patch_plan_path"])
+    if plan_path.resolve() != (owner.parent / "inputs/analyzer_collision_patch_plan.json").resolve():
+        raise ValueError("collision overlay plan belongs to another owner")
+    verify_record("collision overlay plan", _record(owner, plan_path), base_dir=owner.parent)
+    plan = _read(plan_path)
+    geometry_path, contract_path = Path(plan["resolved_geometry"]), Path(plan["numerical_contract_path"])
+    for label, item in (("geometry", geometry_path), ("numerics", contract_path)):
+        verify_record("collision overlay "+label, _record(owner, item), base_dir=owner.parent)
+    if _read(geometry_path) != source["geometry"]:
+        raise ValueError("collision overlay changed continuous geometry")
+    expected = collision_overlay_plan(source, {k: plan[k] for k in ("box_mm", "pitch_mm", "priority_probes")}, _read(contract_path))
+    gem = expected.pop("gem")
+    if {k: v for k, v in plan.items() if k not in {"resolved_geometry", "numerical_contract_path"}} != expected:
+        raise ValueError("collision overlay plan differs from its source geometry/numerics")
+    directory = owner.parent / "simion/analyzer_collision_patch"
+    gem_path = directory / "analyzer_collision_patch.gem"
+    verify_record("collision overlay GEM", _record(owner, gem_path), base_dir=owner.parent)
+    if gem_path.read_text(encoding="utf-8") != gem:
+        raise ValueError("collision overlay GEM changed the full analyzer CSG")
+    pa_path, surface_path = Path(binding["patch_pa_path"]), Path(binding["patch_surface_path"])
+    if (pa_path.resolve() != (directory / "analyzer_collision_patch.pa").resolve()
+            or surface_path.resolve() != Path(str(pa_path.resolve())+"-surf")):
+        raise ValueError("collision overlay PA and surface must belong to its owner")
+    pa_record = _native_payload_record(owner, pa_path)
+    surface_record = _native_payload_record(owner, surface_path)
+    header = collision_pa_header(pa_path)
+    if (header.symmetry != 1 or header.raw_mirror & 7 != 1
+            or not header.raw_mirror & COLLISION_NOTREFINABLE_FLAG
+            or [header.nx, header.ny, header.nz] != plan["dimensions"]
+            or [header.dx_mm, header.dy_mm, header.dz_mm] != plan["pitch_mm"]
+            or pa_record["bytes"] != plan["pa_bytes"] or surface_record["bytes"] <= 0):
+        raise ValueError("collision overlay PA grid/symmetry/surface differs")
+    result = copy.deepcopy(source)
+    result["instances"].append(dict(role="analyzer_collision_patch", manifest=str(owner),
+        pa_path=str(pa_path.resolve()), origin_mm=plan["origin_mm"], record=pa_record))
+    result.update(source_descriptor_path=str(frozen.resolve()), descriptor_owner=str(owner), descriptor_path=str(path.resolve()),
+        collision_overlay=dict(schema_version=1, role="mrtof_analyzer_collision_overlay", patch_plan_path=str(plan_path.resolve()),
+            **{k: plan[k] for k in ("box_mm", "pitch_mm", "dimensions", "symmetry", "priority_probes",
+                                    "refine_performed", "fast_adjust_performed")}))
+    return result
+
+
 @_within_record_lookup
 def load_binding(path: Path, *, _allow_responses: bool = True) -> dict[str, Any]:
     """Resolve the base and ordered local scalar fields; unknown support never falls back."""
     binding = _read(path)
+    if binding.get("role") == "mrtof_native_collision_overlay_binding":
+        return _load_collision_overlay(binding, path)
     if binding.get("role") == "mrtof_native_static_field_binding":
         if "materialization" in binding:
             return _load_native_materialized(binding, path)

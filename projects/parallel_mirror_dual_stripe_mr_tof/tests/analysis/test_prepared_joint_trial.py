@@ -18,12 +18,34 @@ from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_meas
 
 
 class PreparedJointBatchTests(unittest.TestCase):
-    def test_prepare_trial_allows_only_observation_and_total_budget_extension(self):
+    def test_prepare_trial_allows_observation_budget_and_selected_step_without_changing_97_states(self):
         import copy
         from common.contracts.write_run_manifest import file_record
+        from common.contracts.component_particle_state import write_component_particle_state_csv
         fixture = source_fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
+        # Synthetic 100-mother/97-handoff fixture, not a solver result. Reuse the
+        # real handoff/materialization adapters so every source companion agrees.
+        upstream = fixture.fixture
+        selected_ids = [particle for particle in range(1,101) if particle not in {24,64,80}]
+        upstream.rows = [upstream._row(particle) for particle in selected_ids]
+        write_component_particle_state_csv(upstream.source, upstream.rows)
+        with upstream.census.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(["particle_id","transfer_status","terminal_reason","instrument_time_us","particle_birth_time_us","particle_age_us"])
+            for particle in range(1,101):
+                time = upstream._row(particle)["instrument_time_us"]
+                writer.writerow([particle,"transferred" if particle in selected_ids else "not_transferred",
+                                 "downstream_domain_exit" if particle in selected_ids else "solver_stop",time,0,time])
+        upstream.receipt.update(counts=dict(source=100,transferred=97,not_transferred=3),
+                                transferred_particle_ids=selected_ids,lost_particle_ids=[24,64,80])
+        upstream.receipt["outputs"] = dict(component_states=upstream._identity(upstream.source),
+                                           mother_census=upstream._identity(upstream.census))
+        upstream._write(upstream.receipt_path,upstream.receipt)
+        upstream.output = fixture.root / "synthetic_handoff97"
+        upstream._prepare()
+        fixture.handoff = upstream.output / "handoff_receipt.json"
         fixture._materialize()
         root, prepared = fixture.root, fixture.root / "prepared"
         source = prepared / "results/joint_workbench/measured_source"
@@ -39,6 +61,10 @@ class PreparedJointBatchTests(unittest.TestCase):
         recording = dict(schema_version=1, mode="fixed_interval", interval_us=.1,
                          retention_class="solver_review", reason="unit observation", output_budget_bytes=1000000)
         original = dict(simion=dict(trajectory_recording=recording, maximum_step_us=.01,
+                                    default_trajectory_profile_id="center_screening",
+                                    trajectory_profiles=dict(center_screening=dict(trajectory_quality=3,maximum_step_us=.004,
+                                                                                  purpose="synthetic prepared integration")),
+                                    full_path_timeout_axial_path_multiplier=2,
                                     numerical_profiles=dict(native_static_field=dict(target_layout=dict(windows=[])))),
                         source=dict(energy_eV=5), target=dict(y_mm=360),
                         downstream_fixed_grid_workpoint_profile=dict(automatic_iteration=dict(
@@ -54,19 +80,25 @@ class PreparedJointBatchTests(unittest.TestCase):
         (source.parent / "static_field_binding.json").write_text("{}")
         runtime = source.parent / "runtime"
         runtime.mkdir()
-        (runtime / "joint.operating_point.lua").write_text("return {}")
+        (runtime / "joint.operating_point.lua").write_text("return {static_field={refinement_windows={}},trajectory_quality=3,maximum_step_us=.004,full_path_timeout_us=100}")
         (runtime / "mr_reference.operating_point.lua").write_text(
-            "return {trajectory_quality=3,maximum_step_us=.01,full_path_timeout_us=100}")
+            "return {trajectory_quality=3,maximum_step_us=.004,full_path_timeout_us=100}")
         binding = dict(accelerator_provider="dual_pressure_rectilinear_ion_processor", refinement_windows=[],
-                       grid=dict(pitch_mm=[.1, .1, .1]), authority=dict(analyzer_electrode_voltages_v=[0.0]*20),
-                       sources=dict(scalar_pa="synthetic_pa_not_opened.pa"), instances=[],
+                       manifest=str(root/"fields/run_manifest.json"),
+                       geometry={}, grid=dict(origin_mm=[0,0,0],pitch_mm=[.1, .1, .1],dimensions=[2,2,2]),
+                       authority=dict(analyzer_electrode_voltages_v=[0.0]*20),
+                       sources=dict(scalar_pa="synthetic_pa_not_opened.pa"),
+                       instances=[dict(role=role,pa_path=role+".pa",origin_mm=[0,0,0],manifest=str(root/"fields/run_manifest.json"))
+                                  for role in ("global_fallback","native_corridor","ion_processor_collision","detector")],
                        records=dict(scalar_pa=dict(sha256="A"*64)))
+        binding["instances"][0]["pa_path"] = binding["sources"]["scalar_pa"]
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
         frozen_original = original_path.read_bytes()
-        for name in ("unchanged", "observation", "budget", "budget_and_observation", "energy", "step", "advance", "smaller_budget"):
+        for name in ("unchanged", "observation", "budget", "budget_and_observation", "selected_step", "budget_and_selected_step",
+                     "energy", "step", "advance", "smaller_budget", "quality", "mixed_physics", "mixed_timeout", "selector"):
             with self.subTest(name=name):
                 contract = copy.deepcopy(original)
-                if name not in ("unchanged", "observation"):
+                if name not in ("unchanged", "observation", "selected_step"):
                     contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]["maximum_iterations"] = 30
                 if name in ("observation", "budget_and_observation"):
                     contract["simion"]["trajectory_recording"]["interval_us"] = .2
@@ -78,11 +110,22 @@ class PreparedJointBatchTests(unittest.TestCase):
                     contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]["advance_multiplier"] = .5
                 elif name == "smaller_budget":
                     contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]["maximum_iterations"] = 4
+                elif name == "quality":
+                    contract["simion"]["trajectory_profiles"]["center_screening"]["trajectory_quality"] = 8
+                elif name == "mixed_physics":
+                    contract["source"]["energy_eV"] += 1
+                elif name == "mixed_timeout":
+                    contract["simion"]["full_path_timeout_axial_path_multiplier"] += 1
+                elif name == "selector":
+                    contract["simion"]["trajectory_profiles"]["other"] = copy.deepcopy(contract["simion"]["trajectory_profiles"]["center_screening"])
+                    contract["simion"]["default_trajectory_profile_id"] = "other"
+                if name in ("selected_step", "budget_and_selected_step", "mixed_physics", "mixed_timeout"):
+                    contract["simion"]["trajectory_profiles"]["center_screening"]["maximum_step_us"] = .002
                 path, output = root / f"{name}.json", root / name
                 path.write_text(json.dumps(contract))
                 with patch(module + ".verified_reference", side_effect=lambda run, relative: run / relative), \
                      patch(module + ".load_binding", return_value=binding):
-                    if name in ("energy", "step", "advance", "smaller_budget"):
+                    if name in ("energy", "step", "advance", "smaller_budget", "quality", "mixed_physics", "mixed_timeout", "selector"):
                         with self.assertRaises(ValueError):
                             prepare_trial(prepared, path, output)
                         self.assertFalse(output.exists())
@@ -96,15 +139,157 @@ class PreparedJointBatchTests(unittest.TestCase):
                 self.assertEqual(provenance["consumed_execution_contract"], consumed)
                 self.assertEqual(result["trajectory_contract"], consumed)
                 self.assertEqual((output / "inputs/trajectory_contract.json").read_bytes(), path.read_bytes())
-                self.assertEqual(result["expected_particle_ids"], [1, 7])
-                self.assertEqual(result["mother_particle_count"], 3)
-                if name in ("budget", "budget_and_observation"):
+                self.assertEqual(result["expected_particle_ids"], selected_ids)
+                self.assertEqual(result["mother_particle_count"], 100)
+                self.assertEqual(result["launched_particle_count"], 97)
+                for filename in ("component_particle_state.csv","source.fly2","source_states.lua","source_projection.lua","source_census.csv"):
+                    self.assertEqual((Path(result["measured_source_directory"])/filename).read_bytes(),(source/filename).read_bytes())
+                changed_step = name in ("selected_step", "budget_and_selected_step")
+                maximum_step = .002 if changed_step else .004
+                self.assertEqual(result["numerics"],dict(trajectory_quality=3,maximum_step_us=maximum_step,full_path_timeout_us=100))
+                self.assertEqual(result["dispatch_request"]["trajectory_quality"],3)
+                self.assertEqual(result["dispatch_request"]["particle_count"],97)
+                self.assertEqual(result["dispatch_request"]["trajectory_quality_profile_id"],"center_screening")
+                self.assertEqual(result["dispatch_request"]["case_input_sha256"],result["operating_point"]["sha256"])
+                self.assertIn("t.maximum_step_us="+str(maximum_step),Path(result["operating_point"]["path"]).read_text())
+                self.assertEqual(provenance["selected_trajectory_profile"]["profile_id"],"center_screening")
+                if changed_step:
+                    self.assertEqual(provenance["numerical_change"],dict(change_kind="selected_trajectory_maximum_step_only",profile_id="center_screening",
+                                                                         maximum_step_us=dict(previous=.004,current=.002)))
+                else:
+                    self.assertIsNone(provenance["numerical_change"])
+                if name in ("budget", "budget_and_observation", "budget_and_selected_step"):
                     self.assertEqual(provenance["execution_budget_change"]["maximum_iterations"], dict(previous=5, current=30))
                     self.assertEqual(provenance["execution_budget_change"]["change_kind"], "execution_budget_only")
                     self.assertNotEqual(consumed["sha256"], file_record(original_path)["sha256"])
                 else:
                     self.assertIsNone(provenance["execution_budget_change"])
+                if name == "selected_step":
+                    batch_directory = output / "batch_all_97"
+                    batch = materialize_batch(output/"results/prepared_joint_trial.json",1,97,batch_directory)
+                    self.assertEqual(batch["original_particle_ids"],selected_ids)
+                    lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+                    if Path(lua).is_file():
+                        script = output/"check_sidecar.lua"
+                        script.write_text("local t=assert(loadfile(arg[1]))();assert(t.maximum_step_us==.002 and t.trajectory_quality==3 and t.full_path_timeout_us==100);print('CONTRACT_STEP_PROPAGATED')")
+                        for sidecar in (Path(result["operating_point"]["path"]),batch_directory/"joint.operating_point.lua"):
+                            actual = subprocess.run([lua,str(script),str(sidecar)],capture_output=True,text=True,
+                                                    cwd=root,encoding="utf-8",timeout=30,check=False)
+                            self.assertEqual(actual.returncode,0,actual.stdout+actual.stderr)
+                            self.assertIn("CONTRACT_STEP_PROPAGATED",actual.stdout)
         self.assertEqual(original_path.read_bytes(), frozen_original)
+        overlay = copy.deepcopy(binding)
+        overlay["source_descriptor_path"] = str(root/"overlay_source.json")
+        overlay["collision_overlay"] = dict(schema_version=1,role="mrtof_analyzer_collision_overlay",
+            patch_plan_path=str(root/"patch_plan.json"),box_mm=[0,-4,-100,2,0,-92],pitch_mm=[.05,.05,.05],
+            dimensions=[41,81,161],symmetry="x",priority_probes=[])
+        overlay["instances"].append(dict(role="analyzer_collision_patch",pa_path="fine_patch.pa",origin_mm=[0,-4,-100],
+                                         manifest=str(root/"patch_owner/run_manifest.json")))
+        overlay_path = root/"overlay.json"
+        overlay_path.write_text('{}')
+        def overlay_loader(path):
+            return overlay if Path(path)==overlay_path else binding
+        with patch(module+".verified_reference",side_effect=lambda run,relative:run/relative), \
+             patch(module+".load_binding",side_effect=overlay_loader), \
+             patch(module+".native_response_operator",return_value={}):
+            patched = prepare_trial(prepared,original_path,root/"five_role_prepared",field_binding_path=overlay_path)
+        self.assertIn("five_instances",patched["dispatch_request"]["workload_topology_id"])
+        self.assertIn("fine_patch.pa",patched["guard_paths"])
+        self.assertIn(str(root/"patch_owner"),patched["protected_paths"])
+        self.assertIn("analyzer_collision_patch",(Path(patched["frozen_runtime_directory"])/"joint.priority.lua").read_text())
+        self.assertIn("collision_overlay",Path(patched["operating_point"]["path"]).read_text())
+        self.assertEqual(patched["expected_particle_ids"],selected_ids)
+        for filename in ("component_particle_state.csv","source.fly2","source_states.lua","source_projection.lua","source_census.csv"):
+            self.assertEqual((Path(patched["measured_source_directory"])/filename).read_bytes(),(source/filename).read_bytes())
+        with patch(module+".load_binding",return_value=overlay):
+            materialize_batch(root/"five_role_prepared/results/prepared_joint_trial.json",1,97,root/"five_role_batch")
+        self.assertIn("5_instance_seed.iob",(root/"five_role_batch/joint.workbench_build.lua").read_text())
+        self.assertIn("fine_patch.pa",(root/"five_role_batch/joint.workbench_build.lua").read_text())
+        # Pure finalization -> ordinary preparation: generated effective reference
+        # must carry the selected contract rather than inherit the old .004 Lua.
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import bind_joint_workbench
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import validate_execution_contract
+        final = root / "finalized"
+        (final / "results").mkdir(parents=True)
+        design, actual, fields = [root/name for name in ("design_final", "actual_final", "fields_final")]
+        for folder in (design/"inputs", design/"results/joint_flight", actual/"inputs", fields/"results"):
+            folder.mkdir(parents=True)
+        configs = {name: dict(identity=name) for name in ("baseline","native_operating_point","numerics","source","coordinate_transform")}
+        paths = {}
+        for name, value in configs.items():
+            path = design/"inputs"/(name+".json")
+            path.write_text(json.dumps(value))
+            paths[name] = str(path)
+        geometry = design/"inputs/geometry.json"
+        geometry.write_text('{}')
+        (actual/"inputs/resolved_model.json").write_text(json.dumps(configs))
+        (design/"results/joint_flight/joint_preparation_receipt.json").write_text(json.dumps(dict(
+            assembly=dict(source_config_paths=paths, assembly_geometry_path=str(geometry)))))
+        (design/"inputs/reference_operating_point.lua").write_text(
+            "return {trajectory_quality=3,maximum_step_us=.004,full_path_timeout_us=100}")
+        # Deliberately noncanonical whitespace/key order: exact descriptor bytes
+        # are the owner-bound transport authority, not reserialized JSON.
+        descriptor = fields/"results/field_binding.json"
+        descriptor.write_bytes(b'{  "z": 1, "a":2}\r\n')
+        bound_field = copy.deepcopy(binding)
+        bound_field.update(geometry={}, grid=dict(origin_mm=[0,0,0],pitch_mm=[.1,.1,.1],dimensions=[2,2,2]),
+            instances=[dict(role=role,pa_path=role+".pa",origin_mm=[0,0,0],manifest=str(root/(role+"_owner")/"run_manifest.json")) for role in
+                       ("global_fallback","native_corridor","ion_processor_collision","detector")])
+        bound_field["source_descriptor_path"] = overlay["source_descriptor_path"]
+        bound_field["collision_overlay"] = copy.deepcopy(overlay["collision_overlay"])
+        bound_field["instances"].append(copy.deepcopy(overlay["instances"][4]))
+        component = root/"final_component.json"
+        component.write_text(json.dumps(dict(source_run=str(actual))))
+        handoff = root/"final_handoff.json"
+        handoff.write_text(json.dumps(dict(inputs=dict(component_receipt=file_record(component)))))
+        selected = copy.deepcopy(original)
+        selected["simion"]["trajectory_profiles"]["center_screening"]["maximum_step_us"] = .002
+        selected_path = final/"selected_contract.json"
+        selected_path.write_text(json.dumps(selected))
+        def source_projection(_handoff, output):
+            shutil.copytree(source, output)
+            return dict(counts=dict(source=100,transferred=97,not_transferred=3))
+        compiler = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation"
+        with patch(compiler+".verified_reference",side_effect=lambda run,relative:run/relative), \
+             patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",return_value=bound_field), \
+             patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source.materialize_measured_source",side_effect=source_projection), \
+             patch(compiler+".prepare_interface_field_audit",return_value={}):
+            finalized = bind_joint_workbench(design_run=design,field_run=fields,source_run=actual,
+                handoff_receipt=handoff,energy_comparison=dict(role="mrtof_measured_exit_energy_comparison",
+                    centroid_match_accepted=None,inputs=dict(component_receipt=file_record(component))),
+                output_directory=final/"results/joint_workbench",
+                execution_contract=validate_execution_contract(original,selected))
+        self.assertEqual((final/"results/joint_workbench/static_field_binding.json").read_bytes(),descriptor.read_bytes())
+        final_parent = copy.deepcopy(parent)
+        final_parent["inputs"]["reference_trajectory"] = file_record(selected_path)
+        final_parent["joint_workbench_binding"].update(finalized)
+        # Public IOB builder normally commits this no-Fly readiness state; this
+        # fixture exercises Python preparation only and claims no IOB execution.
+        (final/"results/accelerator_interface_preparation.json").write_text(json.dumps(final_parent))
+        with patch(module+".verified_reference",side_effect=lambda run,relative:run/relative), \
+             patch(module+".load_binding",return_value=bound_field):
+            replay = prepare_trial(final,selected_path,root/"finalized_replay")
+        self.assertIn("five_instances",replay["dispatch_request"]["workload_topology_id"])
+        self.assertFalse(replay["candidate_iob_rebuild"])
+        for item in [bound_field,*bound_field["refinement_windows"],*bound_field["instances"]]:
+            self.assertIn(str(Path(item["manifest"]).parent),replay["protected_paths"])
+        self.assertEqual(replay["numerics"],dict(trajectory_quality=3,maximum_step_us=.002,full_path_timeout_us=100))
+        self.assertIsNone(replay["controller_contract_provenance"]["numerical_change"])
+        self.assertEqual(replay["expected_particle_ids"],selected_ids)
+        for filename in ("component_particle_state.csv","source.fly2","source_states.lua","source_projection.lua","source_census.csv"):
+            self.assertEqual((Path(replay["measured_source_directory"])/filename).read_bytes(),(source/filename).read_bytes())
+        lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
+        if Path(lua).is_file():
+            check = root/"check_finalized_step.lua"
+            check.write_text("local t=dofile(arg[1]);assert(t.maximum_step_us==.002 and t.trajectory_quality==3 and t.full_path_timeout_us==100)")
+            for sidecar in (final/"results/joint_workbench/runtime/joint.operating_point.lua",Path(replay["operating_point"]["path"])):
+                actual_lua = subprocess.run([lua,str(check),str(sidecar)],cwd=root,capture_output=True,text=True,timeout=30)
+                self.assertEqual(actual_lua.returncode,0,actual_lua.stdout+actual_lua.stderr)
+        (runtime/"mr_reference.operating_point.lua").write_text("return {trajectory_quality=3,maximum_step_us=.01,full_path_timeout_us=100}")
+        with patch(module+".verified_reference",side_effect=lambda run,relative:run/relative), \
+             patch(module+".load_binding",return_value=binding):
+            with self.assertRaisesRegex(ValueError,"runtime numerics differ"):
+                prepare_trial(prepared,original_path,root/"inconsistent_default_runtime")
 
     def test_staged_adapter_reuses_json_phase_space_and_rejects_changed_evidence(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import (
@@ -143,6 +328,18 @@ class PreparedJointBatchTests(unittest.TestCase):
         candidate["sources"]["scalar_pa"]="new_parent.pa"
         candidate["instances"][0]["pa_path"]="new_parent.pa"
         module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        overlay = copy.deepcopy(candidate)
+        overlay["instances"].append(dict(role="analyzer_collision_patch",pa_path="patch.pa",origin_mm=[0,-4,-100]))
+        with self.assertRaisesRegex(ValueError,"topology"):
+            validate_candidate_binding(overlay,baseline)
+        overlay.update(source_descriptor_path="sealed_source.json",collision_overlay=dict(
+            schema_version=1,role="mrtof_analyzer_collision_overlay",patch_plan_path="sealed_plan.json"))
+        with patch(module+".load_binding",return_value=candidate) as source_loader, \
+             patch(module+".native_response_operator",return_value={}):
+            self.assertEqual(validate_candidate_binding(overlay,baseline),dict(s1=1,s2=2,p1=3,p2=4))
+            source_loader.assert_called_once_with(Path("sealed_source.json"))
+            with self.assertRaisesRegex(ValueError,"silently remove"):
+                validate_candidate_binding(candidate,overlay)
         with patch(module+".native_response_operator", return_value={}) as operator:
             self.assertEqual(validate_candidate_binding(candidate,baseline),dict(s1=1,s2=2,p1=3,p2=4))
             self.assertEqual(operator.call_count,2)
@@ -285,7 +482,8 @@ class PreparedJointBatchTests(unittest.TestCase):
             "field_assembly_verified=true,measured_source_matches_workpoint=true,"
             "static_field={assembly_scope='full_c0_ion_processor_replacement'}}")
         binding=root/"binding.json";binding.write_text('{}')
-        actual=dict(instances=[dict(pa_path=p,origin_mm=[i,0,0]) for i,p in enumerate(
+        roles = ["global_fallback","native_corridor","ion_processor_collision","detector"]
+        actual=dict(instances=[dict(role=roles[i],pa_path=p,origin_mm=[i,0,0]) for i,p in enumerate(
             ["new_parent.pa","original_corridor.pa","original_fine_occupancy.pa","original_detector.pa"])])
         preparation=root/"prepared.json"
         preparation.write_text(json.dumps(dict(candidate_iob_rebuild=True,field_binding=file_record(binding),

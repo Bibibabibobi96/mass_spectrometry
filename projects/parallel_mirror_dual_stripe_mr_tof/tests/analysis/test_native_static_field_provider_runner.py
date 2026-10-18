@@ -42,44 +42,66 @@ class NativeProviderRunnerTest(unittest.TestCase):
             root = Path(directory)
             script = root / 'collision.ps1'
             script.write_text(r'''
-param($Runner,$Root)
+param($Runner,$Root,$Mode)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
-$blocks=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.ForEachStatementAst]-and $n.Extent.Text.StartsWith("foreach(`$occupancyName in @('collision','ip_collision','detector'))")-and $n.Extent.Text.Contains("`$stage=`$occupancyName+'_gem2pa'")},$true))
+$blocks=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.ForEachStatementAst]-and $n.Variable.Extent.Text-eq'$occupancyName'-and $n.Condition.Extent.Text-eq'$occupancyNames'-and $n.Extent.Text.Contains("`$stage=`$occupancyName+'_gem2pa'")},$true))
 if($blocks.Count-ne1){throw 'Collision-only block not unique'}
-$plan=@{collision_build=@{pa_bytes=8};ip_collision_build=@{pa_bytes=8};detector_build=@{pa_bytes=8};levels=@{parent=@{resource_limits=@{process_tree_working_set_bytes=16}}};committed_new_bytes=32;final_retained_estimate_bytes=24}
+$names=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and $n.Left.Extent.Text-eq'$occupancyNames'},$true))
+$overlayMode=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and $n.Left.Extent.Text-eq'$isCollisionOverlay'},$true))
+if($names.Count-ne1-or$overlayMode.Count-ne1){throw 'Collision names/mode assignments not unique'}
+if($Mode-eq'overlay'){
+ $expectedNames=@('analyzer_collision_patch')
+ $plan=@{operation='collision_overlay';analyzer_collision_patch_build=@{pa_bytes=8};resource_limits=@{process_tree_working_set_bytes=32};levels=@{};committed_new_bytes=32;final_retained_estimate_bytes=24}
+}else{
+ $expectedNames=@('collision','ip_collision','detector')
+ $plan=@{operation='refine';collision_build=@{pa_bytes=8};ip_collision_build=@{pa_bytes=8};detector_build=@{pa_bytes=8};levels=@{parent=@{resource_limits=@{process_tree_working_set_bytes=16}}};committed_new_bytes=32;final_retained_estimate_bytes=24}
+}
+. ([scriptblock]::Create($names[0].Extent.Text))
+. ([scriptblock]::Create($overlayMode[0].Extent.Text))
 $RunDirectory=$Root;$pkg=@{run_dir=$Root};$runId='pure-collision';$exe='mock-simion';$lease=$null
 $levelStatus=[ordered]@{};$timings=[ordered]@{};$script:calls=@();$script:exits=0
-foreach($name in @('collision','ip_collision','detector')){$null=New-Item -ItemType Directory -Path (Join-Path $Root ('simion/'+$name))}
+foreach($name in $expectedNames){$null=New-Item -ItemType Directory -Path (Join-Path $Root ('simion/'+$name))}
 function Get-HostResourceBudget {param($Role,$Stage) if($Role-ne'SIMION'-or$Stage-ne'prepare'){throw 'Wrong host stage'};return @{memory_bytes=16}}
 function Enter-HostResourceStage {param($Role,$Stage,$Budget,$RunId) return @{}}
 function Exit-HostResourceStage {param($Lease) $script:exits++}
 function Update-HostResourceStage {throw 'Collision must not Refine'}
+function Copy-Item {throw 'Collision must not copy any PA'}
 function Write-RunJson {throw "Unexpected budget transport materialization"}
 function Invoke-ResourceBudgetedProcess {
  param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
  $script:calls+=,@($ArgumentList)
  $name=Split-Path -Leaf $WorkingDirectory
- if($name-notin@('collision','ip_collision','detector')-or($ArgumentList-join',')-ne('--nogui,--noprompt,gem2pa,'+$name+'.gem,'+$name+'.pa')){throw 'Unexpected Refine/Fast Adjust/copy'}
+ if($FilePath-ne$exe-or$name-notin$expectedNames-or($ArgumentList-join',')-ne('--nogui,--noprompt,gem2pa,'+$name+'.gem,'+$name+'.pa')){throw 'Unexpected Refine/Fast Adjust/copy'}
+ $expectedMemory=if($Mode-eq'overlay'){32}else{16}
+ if($Limits.process_tree_working_set_bytes-ne$expectedMemory){throw 'Wrong ordinary/overlay resource limit source'}
  [IO.File]::WriteAllBytes((Join-Path $WorkingDirectory ($name+'.pa')),[byte[]]::new(8))
+ if($Mode-eq'overlay'){[IO.File]::WriteAllText((Join-Path $WorkingDirectory ($name+'.pa-surf')),'fractional')}
  return @{exit_code=0}
 }
 . ([scriptblock]::Create($blocks[0].Extent.Text))
-@{calls=$script:calls;statuses=$levelStatus;exits=$script:exits}|ConvertTo-Json -Depth 10 -Compress
+@{calls=$script:calls;statuses=$levelStatus;exits=$script:exits;overlay=$isCollisionOverlay}|ConvertTo-Json -Depth 10 -Compress
 ''', encoding='utf-8')
-            result = subprocess.run([PWSH, '-NoProfile', '-File', str(script), str(RUNNER), str(root)],
-                                    cwd=REPO_ROOT, timeout=30, capture_output=True, text=True, encoding='utf-8')
-            self.assertEqual(result.returncode, 0, result.stderr)
-            value = json.loads(result.stdout)
-            self.assertEqual(set(value['statuses']), {'collision', 'ip_collision', 'detector'})
-            for status in value['statuses'].values():
-                self.assertTrue(status['completed'])
-                self.assertFalse(status['refine_completed'])
-            self.assertEqual(value['exits'], 3)
-            self.assertEqual(len(value['calls']), 3)
+            for mode, expected in [('ordinary', {'collision', 'ip_collision', 'detector'}),
+                                   ('overlay', {'analyzer_collision_patch'})]:
+                with self.subTest(mode=mode):
+                    case_root = root / mode
+                    case_root.mkdir()
+                    result = subprocess.run([PWSH, '-NoProfile', '-File', str(script), str(RUNNER), str(case_root), mode],
+                                            cwd=REPO_ROOT, timeout=30, capture_output=True, text=True, encoding='utf-8')
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    value = json.loads(result.stdout)
+                    self.assertEqual(value['overlay'], mode == 'overlay')
+                    self.assertEqual(set(value['statuses']), expected)
+                    for status in value['statuses'].values():
+                        self.assertTrue(status['completed'])
+                        self.assertFalse(status['refine_completed'])
+                        self.assertFalse(status['crop_completed'])
+                    self.assertEqual(value['exits'], len(expected))
+                    self.assertEqual(len(value['calls']), len(expected))
 
     def execute_composition(self, failure=''):
         with tempfile.TemporaryDirectory() as directory:

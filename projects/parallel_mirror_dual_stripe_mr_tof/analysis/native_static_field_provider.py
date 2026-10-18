@@ -12,6 +12,7 @@ import argparse
 import copy
 import json
 import math
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +75,8 @@ def _operator_ancestry_inputs(inputs: dict[str, str], bindings: list[dict]) -> l
 
 ROLE = "mrtof_native_static_field_provider_request"
 PROJECT = "parallel_mirror_dual_stripe_mr_tof"
+# Installed official examples/matlab/simion_pa_save.m: NOTREFINABLE = 2^28.
+COLLISION_NOTREFINABLE_FLAG = 1 << 28
 # Official SIMION electrode-solution normalization; not an actual workpoint.
 RESPONSE_NORMALIZATION_V = 10000.0
 TE1_AXIS = "te1"
@@ -774,8 +777,169 @@ def _compile_ip_fine_response_reuse(request: dict[str, Any]) -> dict[str, Any]:
     return plan
 
 
+def collision_pa_header(path: Path) -> PaHeader:
+    """Read occupancy bounds only, including SIMION's ordinary unit-grid format.
+
+    Installed SIMION 2020 lib/python/SIMION/PA.py load/save defines mode -1
+    with 32 header bytes and implicit unit pitch. The affine composer remains
+    mode -2 only; this reader cannot authorize field composition or PA families.
+    """
+    with path.open("rb") as stream:
+        raw = stream.read(32)
+        pitch_raw = stream.read(24)
+    if len(raw) != 32:
+        raise ValueError("collision occupancy header is truncated")
+    values = struct.unpack("<iidiiii", raw)
+    if values[0] == -2 and len(pitch_raw) != 24:
+        raise ValueError("collision occupancy pitch header is truncated")
+    header = PaHeader(*values, *(struct.unpack("<ddd", pitch_raw) if values[0] == -2 else (1, 1, 1)))
+    # The collision-only reader accepts the documented persistent not-refinable
+    # flag; affine composition and all source field readers remain unchanged.
+    known_flags = ((1 << 21)-1) | COLLISION_NOTREFINABLE_FLAG
+    if (path.suffix.lower() != ".pa" or header.mode not in (-1, -2) or header.symmetry != 1
+            or header.raw_mirror < 0 or header.raw_mirror & 8 or header.raw_mirror & ~known_flags
+            or min(header.nx, header.ny, header.nz) < 1
+            or not math.isfinite(header.max_voltage) or header.max_voltage <= 0
+            or any(not math.isfinite(v) or v <= 0 for v in (header.dx_mm, header.dy_mm, header.dz_mm))
+            or path.stat().st_size != (56 if header.mode == -2 else 32)+header.node_count*8):
+        raise ValueError("invalid ordinary collision occupancy header or payload")
+    return header
+
+
+def collision_overlay_plan(source: dict[str, Any], update: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
+    """Compile same-CSG occupancy; its vacuum replaces the coarse PA too."""
+    from .ion_processor_assembly import ordinary_pa_file_bytes
+    if (not isinstance(update, dict) or set(update) != {"box_mm", "pitch_mm", "priority_probes"}
+            or "collision_overlay" in source or source.get("consumer_view")
+            or source.get("accelerator_provider") != IP_PROVIDER
+            or [i["role"] for i in source["instances"]] != ["global_fallback", "native_corridor", "ion_processor_collision", "detector"]):
+        raise ValueError("collision overlay requires one complete four-role IP source and explicit patch numerics")
+    box, pitch = update["box_mm"], update["pitch_mm"]
+    if (not isinstance(box, list) or len(box) != 6
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in box)
+            or box[0] != 0 or any(box[a] >= box[a+3] for a in range(3))):
+        raise ValueError("collision overlay requires a finite x-mirrored nonempty box")
+    validate_generation_grid_pitch(contract, pitch)
+    dimensions = _grid_shape(box, pitch)
+    if min(dimensions) < 3:
+        raise ValueError("collision overlay requires at least three nodes on every axis")
+    def bounds(instance):
+        header = collision_pa_header(Path(instance["pa_path"]))
+        if header.symmetry != 1 or header.raw_mirror & 7 not in (0, 1):
+            raise ValueError("collision overlay requires planar independent collision instances")
+        origin = instance["origin_mm"]
+        extent = [(n-1)*d for n, d in zip((header.nx, header.ny, header.nz),
+                  (header.dx_mm, header.dy_mm, header.dz_mm), strict=True)]
+        return [origin[0]-extent[0] if header.raw_mirror & 1 else origin[0], *origin[1:],
+                *[origin[a]+extent[a] for a in range(3)]]
+    effective = [-box[3], box[1], box[2], *box[3:]]
+    corridor = bounds(source["instances"][1])
+    if any(effective[a] < corridor[a] or effective[a+3] > corridor[a+3] for a in range(3)):
+        raise ValueError("collision overlay must remain inside the original corridor")
+    for instance in source["instances"][2:]:
+        other = bounds(instance)
+        if all(effective[a] <= other[a+3] and other[a] <= effective[a+3] for a in range(3)):
+            raise ValueError("collision overlay cannot mask the IP or detector PA volume")
+    probes = update["priority_probes"]
+    if not isinstance(probes, list) or not probes:
+        raise ValueError("collision overlay requires declared metal, vacuum and exterior priority probes")
+    labels, categories = set(), set()
+    for probe in probes:
+        if (not isinstance(probe, dict) or set(probe) != {"label", "point_mm", "expected_electrode", "expected_instance"}
+                or not isinstance(probe["label"], str) or not probe["label"] or probe["label"] in labels
+                or type(probe["expected_electrode"]) is not bool or type(probe["expected_instance"]) is not int
+                or probe["expected_instance"] not in (2, 5)):
+            raise ValueError("invalid collision overlay priority probe")
+        point = probe["point_mm"]
+        if (not isinstance(point, list) or len(point) != 3
+                or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in point)):
+            raise ValueError("collision overlay probe requires finite project coordinates")
+        inside = all(effective[a] <= point[a] <= effective[a+3] for a in range(3))
+        if inside != (probe["expected_instance"] == 5) or not all(corridor[a] <= point[a] <= corridor[a+3] for a in range(3)):
+            raise ValueError("collision overlay probe instance contradicts its declared box")
+        for instance in source["instances"][2:]:
+            other = bounds(instance)
+            if all(other[a] <= point[a] <= other[a+3] for a in range(3)):
+                raise ValueError("collision overlay exterior probe is masked by another instance")
+        labels.add(probe["label"])
+        categories.add((inside, probe["expected_electrode"]))
+    if not {(True, True), (True, False)} <= categories or not any(not inside for inside, _ in categories):
+        raise ValueError("collision overlay probes must cover interior metal, interior vacuum and exterior")
+    bracket = any(
+        sum(a != b for a, b in zip(inner["point_mm"], outer["point_mm"], strict=True)) == 1
+        and all(abs(inner["point_mm"][a]-outer["point_mm"][a]) <= 2*pitch[a] for a in range(3))
+        for inner in probes if inner["expected_instance"] == 5
+        for outer in probes if outer["expected_instance"] == 2)
+    if not bracket:
+        raise ValueError("collision overlay probes require an adjacent inside/outside face bracket")
+    gem = ("; Same complete analyzer CSG; collision only, no Refine or Fast Adjust.\npa_define("
+           + ",".join(map(str, dimensions)) + ",planar,x,electric_,,"
+           + ",".join(format(v, ".17g") for v in pitch) + ",surface=fractional)\nlocate("
+           + ",".join(format(-v, ".17g") for v in box[:3]) + ") {\n"
+           + "\n".join(_analyzer_geometry_lines(source["geometry"])) + "\n}\n")
+    pa_bytes = ordinary_pa_file_bytes(dimensions, pitch)
+    # Fractional surface storage is unknown before native GEM conversion. Reserve
+    # another full PA plus evidence; the owner still measures the actual output.
+    committed = 2*pa_bytes + 16*1024**2
+    return dict(box_mm=box, origin_mm=box[:3], pitch_mm=pitch, dimensions=dimensions,
+                symmetry="x", pa_bytes=pa_bytes, committed_new_bytes=committed,
+                surface_allowance_bytes=pa_bytes, priority_probes=copy.deepcopy(probes), gem=gem,
+                refine_performed=False, fast_adjust_performed=False, refinable=False)
+
+
+def _compile_collision_overlay(request: dict[str, Any]) -> dict[str, Any]:
+    required = {"schema_version", "role", "source_binding_path", "source_field_manifest",
+                "numerical_contract_path", "collision_overlay_update"}
+    if set(request)-{"run_id"} != required or request["schema_version"] != 1 or request["role"] != ROLE:
+        raise ValueError("unsupported collision-only overlay request")
+    run_id = request.get("run_id")
+    if run_id is not None and (not isinstance(run_id, str) or not run_id or run_id in {".", ".."} or any(c in run_id for c in "/\\")):
+        raise ValueError("invalid overlay run_id")
+    path = Path(request["source_binding_path"]).resolve()
+    if read(path).get("role") != "mrtof_native_static_field_binding":
+        raise ValueError("collision overlay source must be an original ordinary or materialized native binding")
+    source = load_binding(path)
+    owner = Path(source.get("descriptor_owner", source["manifest"])).resolve()
+    if Path(request["source_field_manifest"]).resolve() != owner:
+        raise ValueError("collision overlay source descriptor owner differs")
+    record = _record(owner, path)
+    verify_record("collision overlay source", record, base_dir=owner.parent)
+    contract_path = Path(request["numerical_contract_path"]).resolve()
+    patch = collision_overlay_plan(source, request["collision_overlay_update"], read(contract_path))
+    source_plan = read(Path(source["sources"]["numerical_plan"]))
+    limits = copy.deepcopy(source_plan["resource_limits"])
+    if limits.get("automatic_retry_count") != 0:
+        raise ValueError("collision overlay cannot enable automatic retry")
+    protected = [str(owner.parent), str(path)]
+    for level in [source, *source["refinement_windows"]]:
+        protected += [level["manifest"], *[v for v in level["sources"].values() if v]]
+    for instance in source["instances"]:
+        protected += [instance["manifest"], instance["pa_path"]]
+    return dict(schema_version=1, role="mrtof_native_static_field_provider_plan", operation="collision_overlay",
+                run_id=run_id, project=PROJECT, inputs=dict(source_binding=str(path), source_manifest=str(owner),
+                numerical_contract=str(contract_path)), protected_paths=sorted(set(protected)), levels={},
+                execution_order=[], window_labels=[], source_authority=source["authority"],
+                candidate_authority=source["authority"], resolved_geometry=source["geometry"],
+                source_binding_record={k: record[k] for k in ("path", "bytes", "sha256")}, source_descriptor_owner=str(owner), resource_limits=limits,
+                guard_paths=sorted({v for v in protected if Path(v).suffix.lower() == ".pa" or v.endswith(".pa-surf")}),
+                analyzer_collision_patch_build=patch, committed_new_bytes=patch["committed_new_bytes"],
+                final_retained_estimate_bytes=patch["committed_new_bytes"], automatic_retry_count=0,
+                refine_stopping="not_performed_collision_only", fly_authorized=False, qualification_passed=False,
+                official_sources=[dict(title="SIMION Multiple PAs", url="https://simion.com/info/multiple_pas.html",
+                    consulted="2026-10-18", installed_version="SIMION 2020",
+                    method="Highest-priority instance replaces the complete overlap volume, including vacuum; project collision-only overlay uses unchanged field callback."),
+                    dict(title="SIMION GEM Geometry File", url="https://simion.com/info/gem_geometry_file.html",
+                    consulted="2026-10-18", installed_version="SIMION 2020",
+                    method="Native gem2pa of the same complete analyzer CSG; fractional surface; electric_ persists refinable=false (supported since 8.1.1.0); no Refine/Fast Adjust."),
+                    dict(title="SIMION 2020 official MATLAB PA writer", path="C:/Program Files/SIMION-2020/examples/matlab/simion_pa_save.m",
+                    consulted="2026-10-18", installed_version="SIMION 2020",
+                    method="NOTREFINABLE = 2^28 in mirrordata; collision-only header validation accepts this documented flag, leaving affine composition readers unchanged.")])
+
+
 def compile_request(request: dict[str, Any]) -> dict[str, Any]:
     """Validate a native source and derive one four-coordinate candidate."""
+    if "collision_overlay_update" in request:
+        return _compile_collision_overlay(request)
     if "reuse_response_basis_path" in request:
         return _compile_ip_fine_response_reuse(request)
     if "ion_processor_local_domain_update" in request:
@@ -1289,6 +1453,24 @@ def write_json(path: Path, value: Any) -> None:
 def prepare_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
     """Emit full-solve GEMs and consumer plans, without PA I/O or solver calls."""
     inputs = run_directory / "inputs"
+    if plan.get("operation") == "collision_overlay":
+        source = load_binding(inputs / "source_binding.json")
+        verify_record("collision overlay frozen source", dict(plan["source_binding_record"],
+                      path=str((inputs / "source_binding.json").resolve())))
+        update = {k: plan["analyzer_collision_patch_build"][k] for k in ("box_mm", "pitch_mm", "priority_probes")}
+        patch = collision_overlay_plan(source, update, read(inputs / "numerical_contract.json"))
+        if (patch != plan["analyzer_collision_patch_build"] or source["authority"] != plan["candidate_authority"]
+                or source["geometry"] != plan["resolved_geometry"]):
+            raise ValueError("collision overlay frozen source or compiled plan differs")
+        write_json(inputs / "frozen_input.json", source["authority"])
+        write_json(inputs / "resolved_geometry.json", source["geometry"])
+        directory = run_directory / "simion/analyzer_collision_patch"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "analyzer_collision_patch.gem").write_text(patch.pop("gem"), encoding="utf-8", newline="\n")
+        patch.update(resolved_geometry=str((inputs / "resolved_geometry.json").resolve()),
+                     numerical_contract_path=str((inputs / "numerical_contract.json").resolve()))
+        write_json(inputs / "analyzer_collision_patch_plan.json", patch)
+        return plan
     if plan.get("operator_ancestry_projections"):
         projection_path = inputs / "operator_ancestry_projection.json"
         write_json(projection_path, {
@@ -1585,6 +1767,13 @@ def compose_run(plan: dict[str, Any], run_directory: Path) -> None:
 def binding_spec(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
     """Describe new fields; a geometry rebuild also replaces analyzer collision occupancy."""
     manifest = str((run_directory / "run_manifest.json").resolve())
+    if plan.get("operation") == "collision_overlay":
+        return dict(schema_version=1, role="mrtof_native_collision_overlay_binding", manifest=manifest,
+                    source_binding=dict(plan["source_binding_record"], manifest=plan["source_descriptor_owner"]),
+                    source_binding_copy=str((run_directory / "inputs/source_binding.json").resolve()),
+                    patch_plan_path=str((run_directory / "inputs/analyzer_collision_patch_plan.json").resolve()),
+                    patch_pa_path=str((run_directory / "simion/analyzer_collision_patch/analyzer_collision_patch.pa").resolve()),
+                    patch_surface_path=str((run_directory / "simion/analyzer_collision_patch/analyzer_collision_patch.pa-surf").resolve()))
 
     def level(label: str) -> dict[str, Any]:
         spec = plan["levels"][label]

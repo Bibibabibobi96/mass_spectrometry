@@ -52,6 +52,8 @@ IP路径由版本化[依赖](../config/ion_processor_dependency.json)冻结produ
 
 `build_native_corridor_iob.lua --measured-source <workbench_build.lua>`实现IP的四个角色
 `global_fallback → native_corridor → ion_processor_collision → detector`；旧OA四角色协议保持。
+局部碰撞网格对照可在原四角色后追加显式`analyzer_collision_patch`，使用已有五实例种子；
+它在完整盒内接管碰撞判定，包括真空，实际电场仍由同一标量场回调提供。
 独立IP细碰撞PA避免0.5/1/1 mm背景网格漏掉薄辅助电极；细网格0.05/0.10/0.05 mm覆盖完整15电极。
 场输入必须全部来自替换OA后的新装配，不能混用旧OA的父场、中央层或镜边界。
 全域碰撞GEM保留金属，移除数值边界接地面；网格表达不等于数值收敛资格。
@@ -67,6 +69,9 @@ IP路径由版本化[依赖](../config/ion_processor_dependency.json)冻结produ
 ```
 
 该模式重新导出实测源、绑定全部新PA，调用SIMION CLI保存／重载IOB并检查三处实际重叠优先级；不执行Fly。
+需要让新IOB复现积分步长对照时，同一finalize入口接受`-ContractPath`：冻结所选合同和历史参考，
+复用prepared trial的数值／预算校验，生成一致的参考与实际runtime；源、场、Q及物理定义保持原权威。
+场描述文件按原字节冻结，既有加载器继续核验其原owner封存，不以JSON重新排版产生另一种副本。
 它保留原设计电压，不从新出口再次自动派生抬升。配置／场身份检查不代表能量或时间聚焦验收。
 用户要求只报告能量差，`centroid_match_accepted=null`，六维匹配与时间聚焦均不赋予资格。
 
@@ -97,7 +102,10 @@ IP路径由版本化[依赖](../config/ion_processor_dependency.json)冻结produ
   -ContractPath '<same-frozen-trajectory-contract-with-explicit-recording>' -RunId '<new-run-id>'
 ```
 
-该参数组允许增加轨迹观测配置，或通过原预算校验器显式增大累计候选上限；其余物理／数值字段必须一致。
+该参数组允许增加轨迹观测配置，或通过原预算校验器显式增大累计候选上限。
+同源、同场积分诊断也可在新`ContractPath`中只改变当前默认trajectory profile的`maximum_step_us`；
+profile选择、trajectory quality、超时及其他科学字段保持。编译器将解析值写入实际master／batch sidecar，
+以其SHA绑定调度case，记录原数值、所选profile及步长差异，不以CLI覆盖第二份数值权威。
 准备收据分别记录原准备合同和实际执行合同身份，不能同时改变源、场、电压或积分设置。公共调度器先观测正式首批，再自动重规划；
 每批独立FLY2和局部序号共享原instrument epoch，输出保留原始ID，合并不施加OA offset。
 镜场可按冻结数值合同已有`stored_xmax_mm`派生显式`memory_consumer_crop`；源PA完整尺寸、
@@ -112,6 +120,23 @@ IP路径由版本化[依赖](../config/ion_processor_dependency.json)冻结produ
 候选场重建的builder从独立`measured_source/source.fly2`读取粒子定义，在保存IOB后恢复运行用`joint.fly2`，
 避免`wb:save`以种子定义覆写同名文件。原批次合并收据绑定实际Fly使用的FLY2、逐批收据、日志及完整ID覆盖；
 默认诊断沿该收据验证逐粒子出生时间，只在内存中组合发射证据，不改写已冻结的准备输入。
+
+默认还输出`loss_acceptance.csv`及英文`loss_acceptance`组合图：全母群连接原交接六维状态、
+速度计算的各方向能量、首缺记录阶段、连续几何接触候选和拓扑终止；无上游交接态时留空。
+碰撞投影含IP原生电极及检测器，提前接触检测器仍受原完整返回事件判据约束。
+`mirror_domain_samples.csv`与`mirror_x_boundary_crossings.csv`保存实际细镜窗口内外采样及每次有符号x边界
+跨越前后状态。它们是记录和数值域证据，不把跨界本身当作电场跳变，也不复用质心容差作为整束接受度门槛。
+几何图是轮廓投影，孔不以白填充擦除其他部件，有限方向孔的投影不冒充真实布尔截面。
+
+碰撞离散的局部修正沿同一`run_native_static_field_provider.ps1`声明`collision_overlay_update`：
+指定`box_mm`、`pitch_mm`及金属／真空、盒内外的`priority_probes`，不与改压或几何请求混合。
+原ordinary或materialized场先按原owner完整验证，新overlay独立封存源副本、完整分析器CSG、
+网格、PA和fractional surface；只执行gem2pa，不Refine或Fast Adjust，不生成新的电场解。
+补丁盒须在原碰撞域内，且不得与IP或检测器PA体积接触；禁止嵌套overlay或用单个疑似电极替代盒内全部实体。
+新IOB须实际保存重载并核验第五实例的金属、真空和边界优先级；请求中期望值或纯测试不能代替原生验收。
+方法依据为[官方多PA优先级说明](https://simion.com/info/multiple_pas.html)和
+[GEM接口](https://simion.com/info/gem_geometry_file.html)，实际版本为SIMION 2020；这是基于官方接口的项目局部碰撞表示，
+其适用范围由同源步长对照及修正后的真实飞行证据分别限定。
 
 IP分支采用`state_handoff`，继承实测六维状态和到达时刻，后段采用RF为零、提取脉冲保持的静态装配场。
 这不是同一Fly内连续积分捕获／冷却到MR。分析入口为`measured_component_analysis.analyze_measured_component`，

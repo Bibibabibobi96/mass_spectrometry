@@ -419,6 +419,26 @@ def summarize_event_field_audit(directory: Path) -> dict:
     return result
 
 
+def collision_workbench_layout(binding: dict[str, Any]) -> dict[str, Any]:
+    """Project the loader-verified IP collision topology without changing fields."""
+    roles = ["global_fallback", "native_corridor", "ion_processor_collision", "detector"]
+    overlay = binding.get("collision_overlay")
+    if overlay is not None:
+        if (overlay.get("schema_version") != 1 or overlay.get("role") != "mrtof_analyzer_collision_overlay"
+                or not binding.get("source_descriptor_path")):
+            raise ValueError("Collision patch requires the verified overlay descriptor")
+        roles.append("analyzer_collision_patch")
+    if [item["role"] for item in binding["instances"]] != roles:
+        raise ValueError("IP collision instances differ from the verified four/five-role topology")
+    priority = dict(schema_version=1, role="mrtof_native_corridor_iob_priority_contract",
+        accelerator_provider="dual_pressure_rectilinear_ion_processor",
+        instances=[dict(role=role, priority_number=index) for index, role in enumerate(roles, 1)])
+    if overlay is not None:
+        priority["collision_overlay"] = dict(overlay, pa_path=binding["instances"][4]["pa_path"])
+    return dict(roles=roles, priority=priority,
+        seed=str(REPO / f"common/simion/assets/iob_instance_seeds/{len(roles)}_instance_seed.iob"))
+
+
 def render_measured_operating_point(reference_path: Path, source_directory: Path, native_field: dict, *,
                                     field_assets_verified: bool = False, source_identity_verified: bool = False) -> str:
     """Retain the MR core operating point, removing every OA launch-only field."""
@@ -663,7 +683,7 @@ def verify_joint_asset_records(records: dict[str, Any], *, assembly_sha256: str,
 
 def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
                          handoff_receipt: Path, energy_comparison: dict[str, Any],
-                         output_directory: Path) -> dict[str, Any]:
+                         output_directory: Path, execution_contract: dict[str, Any] | None = None) -> dict[str, Any]:
     """Bind newly measured states and freshly sealed replacement fields, without Fly.
 
     Readiness means asset/configuration identity only. Energy acceptance, full
@@ -690,9 +710,8 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
             raise ValueError("measured IP run differs from prepared design: " + name)
     binding_path = verified_reference(field_run, "results/field_binding.json")
     binding = load_binding(binding_path)
-    roles = ["global_fallback", "native_corridor", "ion_processor_collision", "detector"]
+    layout = collision_workbench_layout(binding)
     if (binding.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor"
-            or [item["role"] for item in binding["instances"]] != roles
             or binding["geometry"] != _read(assembly_path)):
         raise ValueError("new fields do not bind the prepared IP replacement geometry")
     handoff = _read(handoff_receipt)
@@ -721,7 +740,25 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
     reference_path = design_run / "inputs/reference_operating_point.lua"
     verified_reference(design_run, reference_path.relative_to(design_run).as_posix())
     reference = runtime / "mr_reference.operating_point.lua"
-    freeze_file(reference_path, reference)
+    if execution_contract is None:
+        freeze_file(reference_path, reference)
+    else:
+        historical = runtime / "historical_mr_reference.operating_point.lua"
+        freeze_file(reference_path, historical)
+        text = historical.read_text(encoding="utf-8-sig")
+        for name in ("trajectory_quality", "maximum_step_us"):
+            match = re.search(r"\b" + name + r"\s*=\s*([-+0-9.eE]+)", text)
+            if match is None or float(match[1]) != execution_contract["reference_profile"][name]:
+                raise ValueError("Prepared runtime numerics differ from its reference trajectory profile")
+        timeout = re.search(r"\bfull_path_timeout_us\s*=\s*([-+0-9.eE]+)", text)
+        if timeout is None or not math.isfinite(float(timeout[1])) or float(timeout[1]) <= 0:
+            raise ValueError("Prepared runtime lacks its positive frozen full path timeout")
+        profile = execution_contract["selected_profile"]
+        reference.write_text("local t=assert(loadfile(" + _lua(str(historical)) + "))()\n"
+            "t.trajectory_quality=" + _lua(profile["trajectory_quality"]) + "\n"
+            "t.maximum_step_us=" + _lua(profile["maximum_step_us"]) + "\n"
+            "t.full_path_timeout_us=" + _lua(float(timeout[1])) + "\n"
+            "return t\n", encoding="utf-8", newline="\n")
     def field_projection(level: dict[str, Any]) -> dict[str, Any]:
         grid = level["grid"]
         return dict(mode="native_static_pa", scalar_pa=level["sources"]["scalar_pa"],
@@ -733,15 +770,15 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
                   collision_pa_path=binding["instances"][1]["pa_path"], refinement_windows=[])
     for level in binding["refinement_windows"]:
         native["refinement_windows"].append(dict(field_projection(level), name=level["name"], active_box_mm=level["active_box_mm"]))
+    if "collision_overlay" in layout["priority"]:
+        native["collision_overlay"] = layout["priority"]["collision_overlay"]
     (runtime / "joint.operating_point.lua").write_text(render_measured_operating_point(
         reference, output_directory / "measured_source", native, field_assets_verified=True,
         source_identity_verified=True), encoding="utf-8", newline="\n")
-    priority = dict(schema_version=1, role="mrtof_native_corridor_iob_priority_contract",
-                    accelerator_provider="dual_pressure_rectilinear_ion_processor",
-                    instances=[dict(role=role, priority_number=index) for index, role in enumerate(roles, 1)])
+    priority = layout["priority"]
     (runtime / "joint.priority.lua").write_text("return " + _lua(priority) + "\n", encoding="utf-8", newline="\n")
     build = dict(schema_version=1, role="mrtof_measured_source_workbench_build",
-                 seed=str(REPO / "common/simion/assets/iob_instance_seeds/4_instance_seed.iob"),
+                 seed=layout["seed"],
                  paths=[item["pa_path"] for item in binding["instances"]],
                  origins=[item["origin_mm"] for item in binding["instances"]],
                  output=str(runtime / "joint.iob"), program=str(runtime / "mrtof_candidate.lua"),
@@ -749,7 +786,7 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
                  priority=str(runtime / "joint.priority.lua"))
     (runtime / "workbench_build.lua").write_text("return " + _lua(build) + "\n", encoding="utf-8", newline="\n")
     _write(output_directory / "energy_comparison.json", energy_comparison)
-    _write(output_directory / "static_field_binding.json", _read(binding_path))
+    freeze_file(binding_path, output_directory / "static_field_binding.json")
     interface_audit = prepare_interface_field_audit(source_run=source_run, handoff=handoff,
         source_directory=output_directory / "measured_source", binding=binding, native=native,
         runtime=runtime, output=output_directory)
@@ -761,9 +798,15 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
                    time_focus_qualified=False, joint_simulation_executed=False, gui_executed=False,
                    field_run=str(field_run.resolve()), source_run=str(source_run.resolve()),
                    measured_source=source, workbench_build_contract=build,
+                   guard_paths=sorted({item["pa_path"] for item in binding["instances"]}
+                       | {level["sources"]["scalar_pa"] for level in [binding,*binding["refinement_windows"]]}),
                    interface_field_audit=interface_audit,
+                   execution_contract_provenance=execution_contract,
                    inputs={"design_receipt": file_record(design_path), "field_binding": file_record(binding_path),
-                           "source_resolved_model": file_record(actual_path), "handoff_receipt": file_record(handoff_receipt)},
+                           "source_resolved_model": file_record(actual_path), "handoff_receipt": file_record(handoff_receipt),
+                           "effective_reference_operating_point": file_record(reference),
+                           "historical_reference_operating_point": file_record(
+                               reference if execution_contract is None else historical)},
                    builder_arguments=["--measured-source", str(runtime / "workbench_build.lua")])
     _write(output_directory / "joint_binding_receipt.json", receipt)
     return receipt

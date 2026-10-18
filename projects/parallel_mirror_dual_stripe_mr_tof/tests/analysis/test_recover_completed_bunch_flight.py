@@ -113,11 +113,54 @@ class CompletedBunchRecoveryTests(unittest.TestCase):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_measured_source_slice
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prepared_joint_diagnostics import PreparedJointDiagnosticsTests
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import PaHeader
 
         fixture = PreparedJointDiagnosticsTests("test_initialize_zero_clock_projects_only_birth_in_full_pipeline")
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         root = fixture.root
+        # The recovery CLI is a separate Python process: the in-process geometry
+        # mock in the diagnostics unit fixture cannot authorize its field input.
+        # Reuse the complete small IP binding/assembly fixture and seal real
+        # records. These zero-field assets exercise loading, not solver physics.
+        assets = root / "native_binding"
+        assets.mkdir()
+        native_fixture = IonProcessorNativeBindingTest()
+        descriptor, binding_path, owner = native_fixture.fixture(assets, detector_box=[20,20,20,21,21,21])
+        frame = json.loads((fixture.source / "source_receipt.json").read_text())["frame_id"]
+        geometry_path = assets / "assembly_geometry.json"
+        geometry = json.loads(geometry_path.read_text())
+        geometry.update(frame_id=frame, detector=dict(id=25,box=[20,20,20,21,21,21]))
+        for key in ("mirror_electrodes", "mirror_slot", "mirror_inner_shield_slot", "mirror_ground_shields",
+                    "mirror_e_closures", "stripe_electrodes", "stripe_slot", "central_ground_electrodes",
+                    "central_ground_slots", "prism_electrodes", "prism_ground_shields"):
+            geometry[key] = []
+        geometry_path.write_text(json.dumps(geometry))
+        replacement_path = assets / "replacement.json"
+        replacement = json.loads(replacement_path.read_text())
+        replacement["assembly_coordinate_transform"]["to_frame_id"] = frame
+        replacement_path.write_text(json.dumps(replacement))
+        design_owner = assets / "design_manifest.json"
+        design_owner.write_text(json.dumps(dict(status="success", outputs=[file_record(path)
+            for path in (replacement_path,assets/"point.json",geometry_path)])))
+        descriptor["replacement_assembly"] = file_record(replacement_path)
+        for level in (descriptor["parent"],*descriptor["refinement_windows"]):
+            Path(level["geometry_authority_path"]).write_text(json.dumps(geometry))
+            path = Path(level["voltage_authority_path"])
+            authority = json.loads(path.read_text())
+            authority["assembly"].update(detector=geometry["detector"],
+                ion_processor_registration=replacement["assembly_coordinate_transform"],
+                replacement_assembly=file_record(replacement_path), replacement_assembly_manifest=file_record(design_owner))
+            path.write_text(json.dumps(authority))
+        for instance in descriptor["instances"]:
+            header = PaHeader(-2,1,100000.,11,11,11,1,.5,1.,1.)
+            Path(instance["pa_path"]).write_bytes(header.pack()+b"\0"*(header.node_count*8))
+        binding_path.write_text(json.dumps(descriptor))
+        native_fixture.seal(assets,owner)
+        # No load_binding or diagnostics patch is installed in the subprocess.
+        self.assertEqual(load_binding(binding_path)["geometry"]["frame_id"],frame)
         source = root / "failed"
         results, logs = source / "results", source / "logs"
         results.mkdir(parents=True)
@@ -125,7 +168,8 @@ class CompletedBunchRecoveryTests(unittest.TestCase):
         shutil.copytree(fixture.source, results / "measured_source")
         prepared = dict(fixture.prepared, launched_particle_count=2,
                         measured_source_directory=str(results / "measured_source"),
-                        source_receipt=file_record(results / "measured_source/source_receipt.json"))
+                        source_receipt=file_record(results / "measured_source/source_receipt.json"),
+                        field_binding=file_record(binding_path))
         pairs = []
         epoch = prepared["solver_epoch_instrument_time_us"]
         for index, particle in enumerate((1, 7), 1):
@@ -200,6 +244,9 @@ class CompletedBunchRecoveryTests(unittest.TestCase):
         self.assertEqual(result, {"status": "success", "sealed": True})
         self.assertEqual(merged.read_bytes(), (recovery / "logs/native_two_prism_flight.log").read_bytes())
         proof = json.loads((recovery / "results/prepared_joint_trial.json").read_text(encoding="utf-8-sig"))
+        recovered_binding = Path(proof["field_binding"]["path"])
+        self.assertEqual(recovered_binding.read_bytes(),binding_path.read_bytes())
+        self.assertEqual(load_binding(recovered_binding)["geometry"],geometry)
         self.assertEqual(len(proof["completed_source_batches"]), 2)
         self.assertTrue(all(Path(b["fly2"]["path"]).is_file() for b in proof["completed_source_batches"]))
         self.assertTrue((recovery / "results/diagnostics/birth_clock_projection.json").is_file())

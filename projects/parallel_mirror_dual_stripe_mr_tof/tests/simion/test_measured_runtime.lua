@@ -23,10 +23,11 @@ local priority={role='mrtof_native_corridor_iob_priority_contract',schema_versio
     {role='global_fallback',priority_number=1},{role='native_corridor',priority_number=2},
     {role='ion_processor_collision',priority_number=3},{role='detector',priority_number=4}}}
 local original_loadfile,original_print=loadfile,print
+local scalar_calls=0
 loadfile=function(path)
   if path=='virtual/source.operating_point.lua' then return function() return point end end
   if path=='virtual/source.priority.lua' then return function() return priority end end
-  if path=='virtual/source.scalar_field_adapter.lua' then return function() return function() return function() end end end end
+  if path=='virtual/source.scalar_field_adapter.lua' then return function() return function() return function() scalar_calls=scalar_calls+1 end end end end
   if path=='virtual/source.source_runtime.lua' then
     local module_chunk=assert(original_loadfile(source_directory..'/source_runtime.lua'))
     -- Deliberately isolate loadfile modules from workbench reserved variables.
@@ -138,6 +139,25 @@ rejects(function() priority.instances[5]={role='accelerator',priority_number=5} 
   function() priority.instances[5]=nil end)
 rejects(function() point.accelerator_safe_exit_only=true end,
   function() point.accelerator_safe_exit_only=nil end)
+-- A loader-verified fifth collision carrier never replaces scalar E, and keeps
+-- the provider/detector slots at 3/4. This is a callback fixture, not a PA query.
+local overlay={schema_version=1,role='mrtof_analyzer_collision_overlay',patch_plan_path='sealed_plan.json',pa_path='patch.pa'}
+point.static_field.collision_overlay=overlay;priority.collision_overlay=overlay
+priority.instances[5]={role='analyzer_collision_patch',priority_number=5}
+simion.wb.instances[5]={filename='patch.pa',pa={path='patch.pa'}}
+compile();begin()
+local before_scalar=scalar_calls
+engine.ion_instance=4;engine.segment.efield_adjust()
+engine.ion_instance=5;engine.segment.efield_adjust()
+assert(scalar_calls==before_scalar+2,'vacuum in the patch must retain the same scalar field callback')
+simion.wb.instances[5].pa.path='different.pa'
+assert(not pcall(engine.segment.initialize_run),'changed fifth collision PA accepted')
+simion.wb.instances[5].pa.path='patch.pa'
+rejects(function() priority.instances[5].role='detector' end,
+  function() priority.instances[5].role='analyzer_collision_patch' end)
+priority.collision_overlay=nil
+assert(not pcall(compile),'unverified fifth collision projection accepted')
+priority.instances[5]=nil;point.static_field.collision_overlay=nil;simion.wb.instances[5]=nil
 compile();engine.V_prism_1=engine.V_prism_1+1
 assert(not pcall(engine.segment.initialize_run),'changed voltage on frozen full C0 field accepted')
 io.flush=original_flush;print=original_print

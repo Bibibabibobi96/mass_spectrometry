@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import copy
 import json
+import hashlib
+import struct
 from pathlib import Path
 import tempfile
 import unittest
@@ -17,6 +19,136 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composit
 
 
 class NativeStaticProviderTest(unittest.TestCase):
+    def overlay_fixture(self):
+        self.source["accelerator_provider"] = p.IP_PROVIDER
+        self.source["instances"][2]["role"] = "ion_processor_collision"
+        for index, instance in enumerate(self.source["instances"][1:], 1):
+            header = PaHeader(-2, 1, 100000, 21, 21, 21, 1, 1, 1, 1)
+            Path(instance["pa_path"]).write_bytes(header.pack()+b"\0"*(header.node_count*8))
+            instance["origin_mm"] = [0, -10 if index == 1 else 30*index, -10]
+        p.write_json(self.root / "binding.json", {"schema_version": 1, "role": "mrtof_native_static_field_binding"})
+        mock = patch.object(p, "_analyzer_geometry_lines", return_value=["e(1) { box(0,-1,-1,1,1,1) }"])
+        mock.start()
+        self.addCleanup(mock.stop)
+        update = dict(box_mm=[0, -2, -2, 2, 2, 2], pitch_mm=[.5]*3, priority_probes=[
+            dict(label="metal", point_mm=[.5, 0, 0], expected_electrode=True, expected_instance=5),
+            dict(label="inside", point_mm=[.5, 1.9, 0], expected_electrode=False, expected_instance=5),
+            dict(label="outside", point_mm=[.5, 2.1, 0], expected_electrode=False, expected_instance=2)])
+        return dict(schema_version=1, role=p.ROLE, numerical_contract_path=str(self.contract_path),
+                    source_binding_path=str(self.root/"binding.json"), source_field_manifest=self.source["manifest"],
+                    collision_overlay_update=update)
+
+    def test_collision_overlay_compiles_only_same_csg_occupancy_and_no_parent(self):
+        request = self.overlay_fixture()
+        original = copy.deepcopy(self.source)
+        plan = p.compile_request(request)
+        self.assertEqual(plan["operation"], "collision_overlay")
+        self.assertEqual(plan["execution_order"], [])
+        self.assertEqual(plan["levels"], {})
+        self.assertEqual(plan["candidate_authority"], self.source["authority"])
+        patch_plan = plan["analyzer_collision_patch_build"]
+        self.assertEqual(patch_plan["dimensions"], [5, 9, 9])
+        self.assertEqual(patch_plan["pa_bytes"], 56+8*5*9*9)
+        self.assertFalse(patch_plan["refine_performed"])
+        self.assertFalse(patch_plan["refinable"])
+        self.assertIn(",planar,x,electric_,,", patch_plan["gem"])
+        self.assertIn("e(1) { box", patch_plan["gem"])
+        self.assertEqual(self.source, original)
+
+    def test_collision_overlay_accepts_original_unit_grid_detector_without_broadening_composer(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import read_pa_header
+        request = self.overlay_fixture()
+        detector = Path(self.source["instances"][3]["pa_path"])
+        detector.write_bytes(struct.pack("<iidiiii", -1, 1, 100000, 21, 21, 21, 1600)+b"\0"*(21**3*8))
+        request["collision_overlay_update"]["pitch_mm"] = [1, 1, 1]
+        plan = p.compile_request(request)
+        self.assertEqual(plan["analyzer_collision_patch_build"]["pa_bytes"], 32+8*3*5*5)
+        self.assertEqual(p.collision_pa_header(detector).dx_mm, 1)
+        with self.assertRaisesRegex(ValueError, "mode -2"):
+            read_pa_header(detector)
+
+    def test_collision_overlay_rejects_source_changes_masking_and_invalid_numerics(self):
+        request = self.overlay_fixture()
+        for mutation in ("recursive", "ip_overlap", "quantum", "missing_probe", "far_probe", "voltage"):
+            value = copy.deepcopy(request)
+            source = copy.deepcopy(self.source)
+            if mutation == "recursive":
+                source["collision_overlay"] = {}
+            elif mutation == "ip_overlap":
+                source["instances"][2]["origin_mm"] = [0, 0, 0]
+            elif mutation == "quantum":
+                value["collision_overlay_update"]["pitch_mm"] = [.015]*3
+            elif mutation == "missing_probe":
+                value["collision_overlay_update"]["priority_probes"].pop()
+            elif mutation == "far_probe":
+                value["collision_overlay_update"]["priority_probes"][-1]["point_mm"][1] = 5
+            else:
+                value["candidate_voltages_v"] = request.get("candidate_voltages_v", {})
+            with self.subTest(mutation=mutation), patch.object(p, "load_binding", return_value=source), self.assertRaises(ValueError):
+                p.compile_request(value)
+
+    def test_collision_overlay_loader_preserves_materialization_and_checks_all_new_assets(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as b
+        request = self.overlay_fixture()
+        source_path = Path(request["source_binding_path"])
+        p.write_json(source_path, dict(schema_version=1, role="mrtof_native_static_field_binding", materialization={}))
+        def record(path):
+            return dict(path=str(path.resolve()), bytes=path.stat().st_size,
+                        sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+        source_owner = Path(request["source_field_manifest"])
+        p.write_json(source_owner, dict(status="success", outputs=[dict(record(source_path), exists=True, retention_role="lightweight_optional")]))
+        with patch.object(p, "_record", side_effect=_record):
+            plan = p.compile_request(request)
+        run = self.root / "overlay"
+        (run / "inputs").mkdir(parents=True)
+        (run / "results").mkdir()
+        for name, path in plan["inputs"].items():
+            (run / "inputs" / (name+Path(path).suffix)).write_bytes(Path(path).read_bytes())
+        p.prepare_run(plan, run)
+        patch_plan = plan["analyzer_collision_patch_build"]
+        directory = run / "simion/analyzer_collision_patch"
+        pa = directory / "analyzer_collision_patch.pa"
+        header = PaHeader(-2, 1, 100000, *patch_plan["dimensions"], p.COLLISION_NOTREFINABLE_FLAG | 1, *patch_plan["pitch_mm"])
+        pa.write_bytes(header.pack()+b"\0"*(header.node_count*8))
+        Path(str(pa)+"-surf").write_bytes(b"fractional")
+        path = run / "results/field_binding.json"
+        p.write_json(path, p.binding_spec(plan, run))
+        def seal():
+            p.write_json(run/"run_manifest.json", dict(status="success", outputs=[
+                record(item) for item in run.rglob("*") if item.is_file() and item.name != "run_manifest.json"]))
+        seal()
+        original = copy.deepcopy(self.source)
+        with patch.object(b, "_load_native_materialized", return_value=self.source) as materialized:
+            loaded = b.load_binding(path)
+        self.assertEqual(loaded["instances"][:4], self.source["instances"])
+        self.assertEqual(loaded["instances"][4]["role"], "analyzer_collision_patch")
+        self.assertEqual(loaded["authority"], self.source["authority"])
+        self.assertEqual(loaded["refinement_windows"], self.source["refinement_windows"])
+        self.assertEqual(loaded["source_descriptor_path"], str((run/"inputs/source_binding.json").resolve()))
+        self.assertEqual(materialized.call_args.args[1], run/"inputs/source_binding.json")
+        self.assertEqual(self.source, original)
+        for mutation in ("source_copy", "gem", "refine", "header", "refinable"):
+            target = {"source_copy": run/"inputs/source_binding.json", "gem": directory/"analyzer_collision_patch.gem",
+                      "refine": run/"inputs/analyzer_collision_patch_plan.json", "header": pa, "refinable": pa}[mutation]
+            before = target.read_bytes()
+            if mutation == "refine":
+                value = p.read(target)
+                value["refine_performed"] = True
+                p.write_json(target, value)
+            elif mutation in ("header", "refinable"):
+                flag = p.COLLISION_NOTREFINABLE_FLAG if mutation == "header" else 1
+                changed = PaHeader(-2, 1, 100000, *patch_plan["dimensions"], flag, *patch_plan["pitch_mm"])
+                target.write_bytes(changed.pack()+before[56:])
+            else:
+                target.write_bytes(before.replace(b"CSG", b"BAD") if mutation == "gem" else before.replace(b"schema_version", b"schema_versioX"))
+            # Even a fresh overlay owner seal cannot authorize changed source bytes,
+            # a new CSG expression, a Refine or the wrong actual native grid.
+            seal()
+            with self.subTest(mutation=mutation), patch.object(b, "_load_native_materialized", return_value=self.source), self.assertRaises((AssertionError, ValueError)):
+                b.load_binding(path)
+            target.write_bytes(before)
+            seal()
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -68,7 +200,7 @@ class NativeStaticProviderTest(unittest.TestCase):
                         "source_field_manifest": self.source["manifest"],
                         "candidate_voltages_v": {"p1": 1, "p2": -2, "s1": -27, "s2": 55}}
         for name, replacement in (("load_binding", lambda _: self.source),
-                                  ("_record", lambda *_: {}),
+                                  ("_record", lambda *_: {"path": "fixture", "bytes": 0, "sha256": "fixture"}),
                                   ("verify_record", lambda *_a, **_k: None),
                                   ("derive_candidate_authority", lambda *_: (self.authority, {})),
                                   ("build_static_c0_gem", lambda *_a, **_k: ("pa_define{}\n", {}))):

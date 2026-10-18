@@ -192,6 +192,7 @@ def _collision_geometry_projection(resolved: dict[str, Any]) -> dict[str, Any]:
         "schema_version": 1,
         "mesh_mm_per_gu": 0.25,
         **{key: copy.deepcopy(resolved[key]) for key in keys},
+        **{key: copy.deepcopy(resolved[key]) for key in ("ion_processor_electrodes", "detector") if key in resolved},
     }
 
 
