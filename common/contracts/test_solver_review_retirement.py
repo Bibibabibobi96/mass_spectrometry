@@ -25,6 +25,7 @@ from common.contracts.solver_review_retirement import (
     plan_retirement,
     structured_target_references,
     verify_retirement,
+    repair_preserved_native_file,
 )
 
 
@@ -33,6 +34,43 @@ def _sha(path: Path) -> str:
 
 
 class RetirementWrapperTest(unittest.TestCase):
+    def test_preserved_repair_wrapper_uses_capacity_and_forwards_original_identities(self):
+        pwsh=shutil.which("pwsh")
+        if not pwsh:self.skipTest("PowerShell 7 required")
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);contracts=root/"contracts";contracts.mkdir()
+            wrapper=contracts/"invoke_solver_review_retirement.ps1"
+            wrapper.write_bytes(Path(__file__).with_name(wrapper.name).read_bytes())
+            (root/"host_execution_lease.ps1").write_text("""
+function Enter-HostExecutionLease { $global:calls.Add('host-enter');return @{} }
+function Exit-HostExecutionLease { $global:calls.Add('host-exit') }
+""")
+            (contracts/"run_artifact_support.ps1").write_text("""
+function Enter-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$Owner)
+ if($CommittedNewBytes-ne63-or$ProtectedPaths.Count-ne2-or$Owner-ne'owned-payload-view-repair:p:audit'){throw 'capacity arguments differ'}
+ $global:calls.Add('capacity-enter');return @{lease_id='fixture'}
+}
+function Exit-ArtifactWorkflowCapacitySession {$global:calls.Add('capacity-exit');@{released=$true}}
+""")
+            script=root/"test.ps1"
+            script.write_text("""
+param($Root)
+$global:calls=[Collections.Generic.List[string]]::new()
+function python {
+ if($args-contains'--apply'){
+  if($args-notcontains'--capacity-lease-id'-or$args-notcontains'fixture'-or$args-notcontains'MANIFEST'-or$args-notcontains'RETIREMENT'){throw 'identity or lease missing'}
+  $global:calls.Add('repair');'{"status":"complete"}'
+ }else{$global:calls.Add('plan');'{"committed_new_bytes":63}'}
+ $global:LASTEXITCODE=0
+}
+$out=@(& "$Root/contracts/invoke_solver_review_retirement.ps1" -ArtifactRoot $Root -RepositoryRoot $Root -TargetRun "$Root/source" -Owner p -ConfirmWritingStopped -RepairPreservedFile simion/collision.pa -RepairEvidenceRun "$Root/audit" -ExpectedManifestSha256 MANIFEST -ExpectedRetirementSha256 RETIREMENT -Apply -Confirm:$false)
+if($out.Count-ne1-or($out[0]|ConvertFrom-Json).status-ne'complete'){throw 'repair stdout was polluted'}
+$global:calls|ConvertTo-Json -Compress
+""")
+            result=subprocess.run([pwsh,"-NoProfile","-File",str(script),str(root)],cwd=Path(__file__).resolve().parents[2],capture_output=True,text=True,timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertEqual(json.loads(result.stdout),["host-enter","plan","capacity-enter","repair","capacity-exit","host-exit"])
+
     def test_apply_finalizes_opted_in_terminal_under_same_lease(self) -> None:
         self._check_wrapper("apply", enabled=True, expected=["enter", "retire", "finalize", "exit"])
 
@@ -292,6 +330,212 @@ function Exit-HostExecutionLease { param($Lease) }
             owner_abandonment_reason="completed pilot comparison; no further payload consumer",
             **kwargs,
         )
+
+    def _view_repair_fixture(self):
+        """Retire one actual fixture member while preserving a second native PA."""
+        source = self.target / "simion/collision.pa"
+        source.write_bytes(b"original-native-bytes")
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["outputs"].append(dict(path=str(source), exists=True, bytes=source.stat().st_size,
+                                        sha256=_sha(source), retention_role="solver_native_binary"))
+        manifest_path.write_text(json.dumps(manifest))
+        with mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[]), mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"]))
+        audit = self.runs / "20260103_000000__analysis__python__payload-view-repair"
+        audit.mkdir()
+        (audit / "run_config.json").write_text(json.dumps(dict(
+            project="p", run_id=audit.name, mode="owned_payload_view_repair",
+            artifact_retention=dict(policy_version=1, **{"class":"solver_review"}, reason="view repair audit"),
+            capacity_ledger_lifecycle=dict(enabled=True, artifact_root=str(self.artifacts)))))
+        create_capacity_protection_lease(self.artifacts, lease_id="repair", ttl_seconds=60,
+            owner=f"owned-payload-view-repair:p:{audit.name}", protected_paths=[self.target, audit],
+            committed_new_bytes=3 * source.stat().st_size)
+        options = dict(owner="p", expected_manifest_sha256=_sha(manifest_path),
+            expected_retirement_sha256=_sha(self.target / "solver_review_retirement_receipt.json"),
+            writing_stopped=True, capacity_lease_id="repair", apply=True)
+        return source, audit, options
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_keeps_large_io_outside_capacity_lock(self):
+        from contextlib import contextmanager
+        from common.contracts import solver_review_retirement as module
+        from common.simion.cache_generation import snapshot_immutable_file
+        source, audit, options = self._view_repair_fixture()
+        original_lock = module.protection.capacity_decision_lock
+        original_replace = os.replace
+        original_atomic = module._atomic_json
+        held = False
+        calls = []
+
+        @contextmanager
+        def tracked_lock(root):
+            nonlocal held
+            with original_lock(root):
+                self.assertFalse(held)
+                held = True
+                calls.append("lock")
+                try:
+                    yield
+                finally:
+                    held = False
+
+        def checked_hash(path):
+            if Path(path).suffix == ".pa":
+                self.assertFalse(held, "PA hashing must not hold the capacity lock")
+            return _sha(Path(path))
+
+        def checked_copy(src, dst, record):
+            self.assertFalse(held, "PA snapshots must not hold the capacity lock")
+            return snapshot_immutable_file(src, dst, record)
+
+        def checked_atomic(path, document):
+            self.assertFalse(held, "journal publication must not hold the capacity lock")
+            return original_atomic(path, document)
+
+        def checked_replace(src, dst):
+            if Path(src).suffix == ".pa":
+                self.assertTrue(held, "payload renames require the short capacity CAS lock")
+                calls.append("rename")
+            return original_replace(src, dst)
+
+        with mock.patch.object(module, "_VIEW_REPAIR_MIN_BYTES", 1), mock.patch.object(
+            module.protection, "capacity_decision_lock", side_effect=tracked_lock), mock.patch.object(
+            module, "file_sha256", side_effect=checked_hash), mock.patch.object(
+            module, "file_sha256_unbuffered", side_effect=checked_hash), mock.patch.object(
+            module, "_atomic_json", side_effect=checked_atomic), mock.patch.object(
+            module.os, "replace", side_effect=checked_replace), mock.patch(
+            "common.simion.cache_generation.snapshot_immutable_file", side_effect=checked_copy), mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            result = repair_preserved_native_file(self.artifacts, self.target, "simion/collision.pa", audit, **options)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(calls, ["lock", "lock", "rename", "lock", "rename"])
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_replaces_object_without_changing_records(self):
+        source, audit, options = self._view_repair_fixture()
+        before = source.stat().st_ino
+        expected = source.read_bytes()
+        def buffered(path):
+            if Path(path) == source and source.stat().st_ino == before:
+                return "A" * 64
+            return _sha(Path(path))
+        with mock.patch("common.contracts.solver_review_retirement._VIEW_REPAIR_MIN_BYTES", 1), mock.patch(
+            "common.contracts.solver_review_retirement.file_sha256", side_effect=buffered), mock.patch(
+            "common.contracts.solver_review_retirement.file_sha256_unbuffered", side_effect=_sha), mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            result = repair_preserved_native_file(self.artifacts, self.target, "simion/collision.pa", audit, **options)
+            self.assertEqual(result,repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options))
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["observations"][0]["buffered_sha256"], "A" * 64)
+        self.assertNotEqual(source.stat().st_ino, before)
+        self.assertEqual(Path(result["quarantine_path"]).stat().st_ino, before)
+        self.assertEqual(Path(result["retained_snapshot"]).read_bytes(), expected)
+        self.assertEqual(source.read_bytes(), expected)
+        self.assertEqual(_sha(self.target/"run_manifest.json"), options["expected_manifest_sha256"])
+        self.assertEqual(_sha(self.target/"solver_review_retirement_receipt.json"), options["expected_retirement_sha256"])
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_rejects_bad_snapshot_and_protection(self):
+        from common.simion.cache_generation import snapshot_immutable_file
+        source,audit,options=self._view_repair_fixture()
+        before=source.stat().st_ino
+        count=0
+        def bad_copy(src,dst,record):
+            nonlocal count
+            count+=1
+            result=snapshot_immutable_file(src,dst,record)
+            if count==2:dst.write_bytes(b"changed")
+            return result
+        with mock.patch("common.contracts.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
+            "common.contracts.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
+            os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            with mock.patch("common.simion.cache_generation.snapshot_immutable_file",side_effect=bad_copy), self.assertRaisesRegex(RetirementError,"read views"):
+                repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+            self.assertEqual(source.stat().st_ino,before)
+            create_capacity_protection_lease(self.artifacts,lease_id="other",owner="consumer",ttl_seconds=60,protected_paths=[self.target])
+            with self.assertRaisesRegex(RetirementError,"consumer lease"):
+                repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+            with self.assertRaisesRegex(RetirementError,"CAS"):
+                repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**{**options,"expected_manifest_sha256":"0"*64})
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_replays_both_rename_boundaries(self):
+        source,audit,options=self._view_repair_fixture()
+        real_replace=os.replace
+        for phase in ("before_quarantine", "quarantine", "replace"):
+            def interrupt(src,dst):
+                if phase == "before_quarantine" and Path(src) == source:
+                    raise OSError("fixture interrupted before rename")
+                real_replace(src,dst)
+                if (phase=="quarantine" and Path(src)==source) or (phase=="replace" and Path(dst)==source):
+                    raise OSError("fixture interrupted after rename")
+            with mock.patch("common.contracts.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
+                "common.contracts.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
+                os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+                with mock.patch("common.contracts.solver_review_retirement.os.replace",side_effect=interrupt),self.assertRaisesRegex(OSError,"interrupted"):
+                    repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+        with mock.patch("common.contracts.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
+            "common.contracts.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
+            os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            result=repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+        self.assertEqual(result["status"],"complete")
+        self.assertEqual(source.read_bytes(),b"original-native-bytes")
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_preflight_is_read_only_and_rejects_scope_changes(self):
+        source,audit,options=self._view_repair_fixture()
+        with mock.patch("common.contracts.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1):
+            plan=repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**{**options,"apply":False})
+            self.assertEqual(plan["status"],"plan")
+            self.assertFalse((audit/"results").exists())
+            cases=({"writing_stopped":False},{"owner":"other"},{"capacity_lease_id":"missing"},
+                   {"expected_retirement_sha256":"0"*64})
+            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+                for change in cases:
+                    with self.subTest(change=change),self.assertRaises((RetirementError,ValueError)):
+                        repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**{**options,**change})
+                for path in ("simion/analyzer.pa0","simion/unknown.pa","../collision.pa","summary.json"):
+                    with self.subTest(path=path),self.assertRaises(RetirementError):
+                        repair_preserved_native_file(self.artifacts,self.target,path,audit,**options)
+            self.assertFalse((audit/"results").exists())
+            self.assertEqual(source.read_bytes(),b"original-native-bytes")
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_writer_and_final_divergence_fail_closed(self):
+        source,audit,options=self._view_repair_fixture()
+        original_id=source.stat().st_ino
+        def divergent(path):
+            return "F"*64 if Path(path)==source and source.stat().st_ino!=original_id else _sha(Path(path))
+        with mock.patch("common.contracts.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
+            "common.contracts.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
+            os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            with source.open("r+b"),self.assertRaises(OSError):
+                repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+            with mock.patch("common.contracts.solver_review_retirement.file_sha256",side_effect=divergent),self.assertRaisesRegex(RetirementError,"read views"):
+                repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+        journal=json.loads((audit/"results/payload_view_repair/repair_journal.json").read_text())
+        self.assertEqual(journal["status"],"replaced")
+        self.assertEqual((audit/"results/payload_view_repair/quarantine/collision.pa").stat().st_ino,original_id)
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_original_manifest_cas_after_snapshots(self):
+        from common.simion.cache_generation import snapshot_immutable_file
+        source,audit,options=self._view_repair_fixture()
+        original_id=source.stat().st_ino
+        def change_manifest(src,dst,record):
+            result=snapshot_immutable_file(src,dst,record)
+            if dst.parent.name=="snapshot_2":
+                with (self.target/"run_manifest.json").open("a") as stream:stream.write(" ")
+            return result
+        with mock.patch("common.contracts.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
+            "common.contracts.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
+            os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}),mock.patch(
+            "common.simion.cache_generation.snapshot_immutable_file",side_effect=change_manifest),self.assertRaisesRegex(RetirementError,"before quarantine"):
+            repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+        self.assertEqual(source.stat().st_ino,original_id)
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_selected_heavy_scope_preserves_other_native_assets_and_verifies(self, _scan):

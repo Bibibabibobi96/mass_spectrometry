@@ -13,6 +13,10 @@ param(
   [string[]]$CompatibilityInputRoles=@(),
   [string[]]$CompatibilityInputRoleMaps=@(),
   [string[]]$SelectedHeavyPaths=@(),
+  [string]$RepairPreservedFile='',
+  [string]$RepairEvidenceRun='',
+  [string]$ExpectedManifestSha256='',
+  [string]$ExpectedRetirementSha256='',
   [switch]$Apply
 )
 Set-StrictMode -Version Latest
@@ -22,6 +26,38 @@ $python = Join-Path $RepositoryRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { $python = 'python' }
 $arguments = @('-m','common.contracts.solver_review_retirement','--artifact-root',$ArtifactRoot,
   '--repository-root',$RepositoryRoot,'--target-run',$TargetRun)
+if($RepairPreservedFile){
+  if(-not$Owner.Trim()-or-not$ConfirmWritingStopped-or-not$RepairEvidenceRun-or
+     -not$ExpectedManifestSha256-or-not$ExpectedRetirementSha256-or$ReplacementRun-or
+     $CompatibilityAssertion-or$OwnerAbandonmentReason-or$RuntimeCheckpoint-or
+     $ApprovedStoppedConsumers.Count-or$CompatibilityInputRoles.Count-or$CompatibilityInputRoleMaps.Count-or$SelectedHeavyPaths.Count){
+    throw 'Preserved payload repair requires owner, stopped-writing confirmation, audit run and original SHA identities; retirement options are forbidden.'
+  }
+  $arguments+=@('--repair-preserved-file',$RepairPreservedFile,'--repair-evidence-run',$RepairEvidenceRun,
+    '--expected-manifest-sha256',$ExpectedManifestSha256,'--expected-retirement-sha256',$ExpectedRetirementSha256,
+    '--owner',$Owner,'--confirm-writing-stopped')
+  if(-not$Apply){& $python @arguments;exit $LASTEXITCODE}
+  if(-not$PSCmdlet.ShouldProcess($TargetRun,'replace one preserved PA object with verified identical bytes; retain old object')){return}
+  . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
+  $lease=Enter-HostExecutionLease -Role GATE -Stage artifact_retirement -RunId ([IO.Path]::GetFileName($RepairEvidenceRun))
+  $session=$null
+  try{
+    $raw=@(& $python @arguments)
+    if($LASTEXITCODE-ne0){throw 'Preserved payload repair preflight failed.'}
+    $plan=($raw-join"`n")|ConvertFrom-Json
+    $session=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $RepositoryRoot -ArtifactRoot $ArtifactRoot `
+      -RunDirectory $RepairEvidenceRun -CommittedNewBytes ([long]$plan.committed_new_bytes) `
+      -ProtectedPaths @($TargetRun,$RepairEvidenceRun) -Owner "owned-payload-view-repair:$($Owner):$([IO.Path]::GetFileName($RepairEvidenceRun))"
+    & $python @arguments --capacity-lease-id $session.lease_id --apply
+    if($LASTEXITCODE-ne0){throw 'Preserved payload repair failed; retain its pending audit and replay the same identities.'}
+  }finally{
+    try{
+      if($session){$null=Exit-ArtifactWorkflowCapacitySession -Session $session -Python $python -RepoRoot $RepositoryRoot}
+    }finally{Exit-HostExecutionLease -Lease $lease}
+  }
+  return
+}
+if($RepairEvidenceRun-or$ExpectedManifestSha256-or$ExpectedRetirementSha256){throw 'Repair options require RepairPreservedFile.'}
 if ($Owner -or $OwnerAbandonmentReason) {
   if (-not $Owner.Trim() -or -not $OwnerAbandonmentReason.Trim()) {
     throw 'Owner completion requires owner and a nonempty abandonment reason.'

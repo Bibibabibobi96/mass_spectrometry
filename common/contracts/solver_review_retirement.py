@@ -7,16 +7,18 @@ retirement receipt becomes the only valid verifier for the reduced run.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import posixpath
 import subprocess
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
 from common.contracts.recorded_file_removal import remove_recorded_files, write_json_atomic as _atomic_json
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import file_sha256, file_sha256_unbuffered
 from common.contracts.artifact_retention import classify_file, validate_retention
 from common.contracts import capacity_protection as protection
 from common.contracts.verify_run_manifest import record_path, verify_record
@@ -1183,6 +1185,281 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         raise
 
 
+_VIEW_REPAIR_MIN_BYTES = 8 * 1024**2
+
+
+@contextmanager
+def _payload_owner_lock(path: Path):
+    """Serialize this exact stopped-file transaction with a Windows kernel mutex.
+
+    Unlike the capacity decision lock this target-specific owner lock may span
+    copies and hashes. The kernel releases it after process exit; no run-local
+    lock file or additional lifecycle state is created.
+    https://learn.microsoft.com/windows/win32/sync/using-mutex-objects
+    """
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel.CreateMutexW.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.ReleaseMutex.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    name = "Local\\MassSpectrometryPreservedPA_" + hashlib.sha256(str(path).casefold().encode()).hexdigest()
+    handle = kernel.CreateMutexW(None, False, name)
+    if not handle:
+        raise OSError(ctypes.get_last_error(), "cannot create payload owner mutex")
+    acquired = False
+    try:
+        result = kernel.WaitForSingleObject(handle, 0)
+        if result not in (0, 0x80):
+            raise RetirementError("preserved payload already has an active repair owner")
+        acquired = True
+        yield
+    finally:
+        if acquired:
+            kernel.ReleaseMutex(handle)
+        kernel.CloseHandle(handle)
+
+
+def _assert_payload_repair_capacity(root: Path, source: Path, audit: Path,
+                                    owner: str, lease_id: str, budget: int) -> None:
+    """Check only lease metadata; caller holds the short capacity decision lock."""
+    leases = protection.load_capacity_protection_leases(root)
+    active = [v for v in leases["audit"] if v.get("status") == "active"]
+    own = [v for v in active if v["lease_id"] == lease_id]
+    if len(own) != 1 or own[0]["owner"] != f"owned-payload-view-repair:{owner}:{audit.name}":
+        raise RetirementError("payload repair requires its explicit active capacity lease")
+    for entry in active:
+        protected_paths = [Path(value) for value in entry["protected_paths"]]
+        if entry["lease_id"] == lease_id:
+            if (entry.get("committed_new_bytes", 0) < budget
+                    or not protection.path_is_protected(source, protected_paths)
+                    or not protection.path_is_protected(audit, protected_paths)):
+                raise RetirementError("payload repair capacity reservation or protection is incomplete")
+        elif (protection.path_is_protected(source, protected_paths)
+              or protection.path_is_protected(audit, protected_paths)):
+            raise RetirementError("payload repair conflicts with another active consumer lease")
+
+
+@contextmanager
+def _payload_read_guard(path: Path):
+    """Deny source writers while allowing the owner to rename its old object.
+
+    CreateFileW GENERIC_READ and FILE_SHARE_READ|FILE_SHARE_DELETE permit only
+    reads and renames. No writable handle, FlushFileBuffers or source flush is
+    used. Existing incompatible readers/writers make opening or renaming fail.
+    https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew
+    """
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                  ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateFileW("\\\\?\\" + str(path), 0x80000000, 1 | 4, None, 3, 0, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise OSError(ctypes.get_last_error(), "preserved payload cannot be protected against writers", str(path))
+    try:
+        yield
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _payload_object_identity(path: Path) -> dict[str, int]:
+    stat = path.stat()
+    if path.is_symlink() or getattr(stat, "st_file_attributes", 0) & 1024 or not path.is_file():
+        raise RetirementError("payload repair requires a regular non-reparse file")
+    return dict(bytes=stat.st_size, device=stat.st_dev, file_id=stat.st_ino,
+                mtime_ns=stat.st_mtime_ns, creation_ns=stat.st_ctime_ns)
+
+
+def _payload_views(path: Path) -> dict[str, Any]:
+    """Record both read paths; agreement is required explicitly by the caller."""
+    result = dict(path=str(path), started_at_utc=datetime.now(timezone.utc).isoformat())
+    result.update(buffered_sha256=file_sha256(path), unbuffered_sha256=file_sha256_unbuffered(path),
+                  object=_payload_object_identity(path), completed_at_utc=datetime.now(timezone.utc).isoformat())
+    return result
+
+
+def repair_preserved_native_file(
+    artifact_root: Path, run_dir: Path, relative_path: str, evidence_run: Path, *,
+    owner: str, expected_manifest_sha256: str, expected_retirement_sha256: str,
+    writing_stopped: bool = False, capacity_lease_id: str = "", apply: bool = False,
+) -> dict[str, Any]:
+    """Replace one stopped preserved PA object with verified identical bytes.
+
+    This explicit Windows owner action keeps historical manifests unchanged.
+    Two private /J snapshots must each agree under both read methods. The old
+    object is retained in the audit run; a pending journal supports replay at
+    every rename boundary. It neither deletes data nor repairs persistent damage.
+    """
+    from common.contracts.artifact_naming import validate_run_id
+    from common.simion.cache_generation import snapshot_immutable_file
+    root, run, audit = artifact_root.resolve(), run_dir.resolve(), evidence_run.resolve()
+    for selected in (run, audit):
+        parts = selected.relative_to(root).parts
+        if len(parts) != 4 or parts[:3] != ("projects", owner, "runs"):
+            raise RetirementError("payload repair requires canonical same-owner runs")
+        validate_run_id(parts[3])
+    if run == audit or os.name != "nt" or not writing_stopped:
+        raise RetirementError("payload repair requires Windows, a separate audit run and stopped-writing confirmation")
+    selected = _selected_heavy_paths([relative_path])[0]
+    source = _under(run / selected, run)
+    if source != run / selected or source.suffix.lower() != ".pa":
+        raise RetirementError("payload view repair only accepts ordinary standalone .pa files")
+    manifest_path, retirement_path = run / "run_manifest.json", run / RECEIPT_NAME
+    expected_manifest_sha256 = expected_manifest_sha256.upper()
+    expected_retirement_sha256 = expected_retirement_sha256.upper()
+    with _payload_owner_lock(source):
+        if (file_sha256(manifest_path) != expected_manifest_sha256
+                or file_sha256(retirement_path) != expected_retirement_sha256):
+            raise RetirementError("payload repair manifest or retirement receipt CAS differs")
+        state = _load_run(run)
+        receipt = _json(retirement_path)
+        if (state["config"].get("project") != owner or receipt.get("target_run_id") != run.name
+                or receipt.get("target_manifest", {}).get("sha256", "").upper() != expected_manifest_sha256
+                or receipt.get("role") != "solver_review_retirement_receipt"
+                or (receipt.get("retirement_mode") == "completed_experiment" and receipt.get("owner") != owner)
+                or receipt.get("lifecycle_status") not in {"completed_experiment_payload_retired", "superseded_payload_retired"}):
+            raise RetirementError("payload repair requires original successful owned retired-run evidence")
+        _manifest_records(state, retired_paths={source, *(_under(run / v["path"], run) for v in receipt["removed_files"])},
+                          inherit_heavy_identity=True)
+        preserved = [v for v in receipt["preserved_files"] if v["path"] == selected]
+        records = [v for v in state["manifest"]["outputs"] if record_path(v, base_dir=run) == source]
+        if (len(preserved) != 1 or len(records) != 1
+                or records[0].get("retention_role") != "solver_native_binary"
+                or records[0]["bytes"] < _VIEW_REPAIR_MIN_BYTES
+                or any(preserved[0][k] != records[0][k] for k in ("bytes", "sha256"))
+                or any(v["path"] == selected for v in receipt["removed_files"])):
+            raise RetirementError("payload is not uniquely preserved with its original native manifest identity")
+        expected = dict(name=source.name, bytes=records[0]["bytes"], sha256=records[0]["sha256"].upper())
+        audit_config = _json(audit / "run_config.json")
+        if (audit_config.get("project") != owner or audit_config.get("run_id") != audit.name
+                or audit_config.get("mode") != "owned_payload_view_repair"
+                or validate_retention(audit_config.get("artifact_retention")).class_id != "solver_review"
+                or audit_config.get("capacity_ledger_lifecycle", {}).get("enabled") is not True
+                or Path(audit_config["capacity_ledger_lifecycle"]["artifact_root"]).resolve() != root):
+            raise RetirementError("payload repair requires a governed solver-review audit run")
+        plan = dict(schema_version=1, role="solver_review_preserved_payload_view_repair",
+                    owner=owner, source_run=str(run), source_path=str(source), relative_path=selected,
+                    expected=expected, manifest_sha256=expected_manifest_sha256,
+                    retirement_sha256=expected_retirement_sha256, evidence_run=str(audit),
+                    committed_new_bytes=3 * expected["bytes"], source_write_or_flush=False)
+        if not apply:
+            return {**plan, "status": "plan", "mutation_performed": False}
+        if not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
+            raise RetirementError("payload repair apply requires the shared HostExecutionLease")
+        with protection.capacity_decision_lock(root):
+            _assert_payload_repair_capacity(root, source, audit, owner, capacity_lease_id, plan["committed_new_bytes"])
+        directory = audit / "results" / "payload_view_repair"
+        journal_path = directory / "repair_journal.json"
+        old = directory / "quarantine" / source.name
+        snapshots = [directory / name / source.name for name in ("snapshot_1", "snapshot_2")]
+        if journal_path.exists():
+            journal = _json(journal_path)
+            if journal.get("plan") != plan:
+                raise RetirementError("payload repair journal identity differs")
+        else:
+            if directory.exists():
+                raise RetirementError("payload repair audit directory already contains unknown evidence")
+            directory.mkdir(parents=True)
+            journal = dict(plan=plan, status="preparing", observations=[])
+            _atomic_json(journal_path, journal)
+
+        def verify_views(path: Path) -> dict[str, Any]:
+            view = _payload_views(path)
+            if (view["object"]["bytes"] != expected["bytes"]
+                    or view["buffered_sha256"] != expected["sha256"]
+                    or view["unbuffered_sha256"] != expected["sha256"]):
+                journal["observations"].append(view)
+                _atomic_json(journal_path, journal)
+                raise RetirementError("payload repair independent read views do not both match the original manifest")
+            return view
+
+        if journal["status"] == "complete":
+            with _payload_read_guard(source):
+                verify_views(source)
+            verify_views(snapshots[1])
+            if not old.is_file() or _payload_object_identity(old) != journal["original_object"]:
+                raise RetirementError("payload repair quarantine evidence is missing")
+            return journal
+        guard_path = old if old.exists() else source
+        with _payload_read_guard(guard_path):
+            snapshots_fresh = False
+            if journal["status"] == "preparing":
+                observed = _payload_views(source)
+                journal["observations"].append(observed)
+                _atomic_json(journal_path, journal)
+                if (observed["object"]["bytes"] != expected["bytes"]
+                        or observed["unbuffered_sha256"] != expected["sha256"]):
+                    raise RetirementError("payload repair cannot recover persistent missing or changed bytes")
+                verified_snapshots = []
+                for snapshot in snapshots:
+                    if not snapshot.exists():
+                        snapshot_immutable_file(source, snapshot, expected)
+                    verified_snapshots.append(verify_views(snapshot))
+                if _payload_object_identity(source) != observed["object"]:
+                    raise RetirementError("payload repair source object changed during snapshots")
+                journal.update(status="snapshots_verified", original_object=observed["object"],
+                               snapshots=verified_snapshots)
+                _atomic_json(journal_path, journal)
+                snapshots_fresh = True
+            if journal["status"] == "snapshots_verified":
+                if not snapshots_fresh:
+                    for snapshot in snapshots:
+                        verify_views(snapshot)
+                # Only small authority CAS, lease metadata and one rename are
+                # inside the capacity lock. All PA copying/hashing is outside.
+                with protection.capacity_decision_lock(root):
+                    _assert_payload_repair_capacity(root, source, audit, owner, capacity_lease_id, plan["committed_new_bytes"])
+                    if (file_sha256(manifest_path) != expected_manifest_sha256
+                            or file_sha256(retirement_path) != expected_retirement_sha256):
+                        raise RetirementError("payload repair original records changed before quarantine")
+                    if old.exists():
+                        if source.exists() or _payload_object_identity(old) != journal["original_object"]:
+                            raise RetirementError("payload repair quarantine rename replay differs")
+                    else:
+                        if _payload_object_identity(source) != journal["original_object"]:
+                            raise RetirementError("payload repair source object CAS differs")
+                        old.parent.mkdir(exist_ok=True)
+                        os.replace(source, old)
+                journal["status"] = "quarantined"
+                _atomic_json(journal_path, journal)
+            if journal["status"] == "quarantined":
+                if _payload_object_identity(old) != journal["original_object"]:
+                    raise RetirementError("payload repair old object identity changed")
+                verify_views(snapshots[1])
+                if source.exists():
+                    if snapshots[0].exists():
+                        raise RetirementError("payload repair source unexpectedly reappeared")
+                    verify_views(source)
+                else:
+                    verify_views(snapshots[0])
+                    with protection.capacity_decision_lock(root):
+                        _assert_payload_repair_capacity(root, source, audit, owner, capacity_lease_id, plan["committed_new_bytes"])
+                        if (file_sha256(manifest_path) != expected_manifest_sha256
+                                or file_sha256(retirement_path) != expected_retirement_sha256):
+                            raise RetirementError("payload repair original records changed before replacement")
+                        os.replace(snapshots[0], source)
+                journal["status"] = "replaced"
+                _atomic_json(journal_path, journal)
+            if journal["status"] != "replaced":
+                raise RetirementError("payload repair journal state is unknown")
+            with _payload_read_guard(source):
+                journal["post_replacement"] = verify_views(source)
+            if (file_sha256(manifest_path) != expected_manifest_sha256
+                    or file_sha256(retirement_path) != expected_retirement_sha256):
+                raise RetirementError("payload repair original records changed before completion")
+            journal.update(status="complete", mutation_performed=True, quarantine_path=str(old),
+                           retained_snapshot=str(snapshots[1]), completed_at_utc=datetime.now(timezone.utc).isoformat())
+            _atomic_json(journal_path, journal)
+        return journal
+
+
 def verify_retirement(run_dir: Path) -> dict[str, Any]:
     receipt = _json(run_dir / RECEIPT_NAME)
     owner_mode = receipt.get("retirement_mode") == "completed_experiment"
@@ -1312,9 +1589,28 @@ def main(argv: Iterable[str] | None = None) -> int:
     )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--verify", type=Path)
+    parser.add_argument("--repair-preserved-file")
+    parser.add_argument("--repair-evidence-run", type=Path)
+    parser.add_argument("--expected-manifest-sha256")
+    parser.add_argument("--expected-retirement-sha256")
+    parser.add_argument("--capacity-lease-id", default="")
     args = parser.parse_args(argv)
     try:
-        if args.verify:
+        if args.repair_preserved_file:
+            if (not all((args.artifact_root, args.target_run, args.owner, args.repair_evidence_run,
+                         args.expected_manifest_sha256, args.expected_retirement_sha256))
+                    or args.verify or args.replacement_run or args.compatibility_assertion
+                    or args.owner_abandonment_reason or args.runtime_checkpoint or args.prepared_gui_checkpoint
+                    or args.selected_heavy_path or args.approved_stopped_consumer
+                    or args.compatibility_input_role or args.compatibility_input_role_map):
+                parser.error("preserved payload repair requires its explicit identities and no retirement/verify action")
+            result = repair_preserved_native_file(args.artifact_root, args.target_run, args.repair_preserved_file,
+                args.repair_evidence_run, owner=args.owner, expected_manifest_sha256=args.expected_manifest_sha256,
+                expected_retirement_sha256=args.expected_retirement_sha256,
+                writing_stopped=args.confirm_writing_stopped, capacity_lease_id=args.capacity_lease_id, apply=args.apply)
+        elif args.repair_evidence_run or args.expected_manifest_sha256 or args.expected_retirement_sha256 or args.capacity_lease_id:
+            parser.error("repair options require --repair-preserved-file")
+        elif args.verify:
             result = verify_retirement(args.verify.resolve())
         else:
             if not all((args.artifact_root, args.repository_root, args.target_run)):

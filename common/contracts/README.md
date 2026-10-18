@@ -75,6 +75,27 @@ producer关闭载荷后，writer CLI计算全部身份并检查保留合同，�
 选择待删对象。容量、run retention和solver-review退休各自决定准入并先发布pending；迭代器每删除一项
 返回该记录，由调用方保存原有进度和终态语义。目录收尾、缺失容忍和退休续做仍在各自生命周期边界。
 
+容量账本出现唯一退役、未pin、0字节记录的`path`键大小写损坏时，可显式调用原公共入口
+`reconcile_artifact_capacity --restore-retired-path-key-receipt <completed-recovery-receipt>`，并提供
+`--expected-ledger-sha256`、`--expected-receipt-sha256`。该已完成收据认证的原始raw备份必须包含
+逐字段完全相同的正常记录；恢复只替换唯一键token，其他原始字节、容量和对象均保持。
+默认dry-run，`--apply`仍要求HostExecutionLease；原坏字节以base64保存，pending journal支持原子发布后重放。
+其他损坏或完整账本均拒绝，不重新校准、不扫描载荷。
+
+已完成退役的solver-review run若保留的普通PA出现缓冲／无缓冲读取分叉，owner可显式使用
+`invoke_solver_review_retirement.ps1 -RepairPreservedFile <relative.pa> -RepairEvidenceRun <audit-run>`，
+同时提供原manifest／退役收据SHA及`-ConfirmWritingStopped`；这不是自动读取重试或持续损坏恢复。
+audit须为同项目规范run、`mode=owned_payload_view_repair`、solver_review保留类且启用容量生命周期。
+公共入口申请3倍载荷预算，两个独立`/J`快照均须经两种读取匹配原SHA，才隔离旧文件对象并以同字节
+新对象替换；原清单不变，旧对象和第二快照保留。pending journal支持两个rename边界重放；
+源只读、禁止源写入／flush，修复后两种读取仍不一致则失败关闭。仅限Windows、至少8 MiB、
+原成功run中已封存且唯一保留的`solver_native_binary`；Formal、原生family、未结束写入及其他消费者冲突拒绝。
+依据（Microsoft Win32、Windows 8+，2026-10-18查阅）：
+[CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)的
+`GENERIC_READ`和`FILE_SHARE_READ|FILE_SHARE_DELETE`允许只读保护下rename、禁止writer；
+[MoveFileExW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw)定义同卷替换限制。
+这是基于官方接口的仓库owner恢复协议，复用既有`snapshot_immutable_file`，不声称厂商推荐该恢复算法。
+
 `New-RunPackage`在创建前要求受管`ArtifactRoot`精确指向`artifacts/projects/<Project>`。
 历史误传导致的`projects/<owner>/runs/runs/<run-id>`轻证据包，可显式用
 `run_capacity_lifecycle --action retire-misplaced-light-run --artifact-root <root> --run-config <original-config> --backup-manifest <backup-manifest> --owner <project>`预检。
