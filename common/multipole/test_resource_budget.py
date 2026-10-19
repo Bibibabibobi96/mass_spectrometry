@@ -30,11 +30,80 @@ def dispatch_limits(**overrides: int | float) -> dict[str, int | float]:
         "maximum_memory_danger_termination_attempts": 2,
         "memory_admission_reserve_bytes": 1024**3,
         "memory_critical_reserve_bytes": 512 * 1024**2,
-        "cpu_admission_percent": 95.0, **overrides,
+        "cpu_admission_percent": 95.0, "minimum_process_cpu_percent": 6.25, **overrides,
     }
 
 
 class ResourceBudgetTests(unittest.TestCase):
+    def test_live_launcher_rejects_missing_or_invalid_cpu_floor(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            for floor in (None, 0, 101):
+                with self.subTest(cpu_floor=floor):
+                    limits = dispatch_limits()
+                    if floor is None:
+                        limits.pop("minimum_process_cpu_percent")
+                    else:
+                        limits["minimum_process_cpu_percent"] = floor
+                    dispatch = root / "dispatch.json"
+                    dispatch.write_text(json.dumps({
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {"kind": "exact_resource_profile"}, "limits": limits,
+                    }), encoding="utf-8")
+                    command = (
+                        f". '{support}';"
+                        "$record=[pscustomobject]@{name='completed';completed=$true;"
+                        "exit_code=0;peak_working_set_bytes=0;peak_managed_memory_bytes=0};"
+                        f"Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' "
+                        f"-RunDir '{root}' -UsagePath '{root}/usage.json' "
+                        "-ExistingProcessRecords @($record)"
+                    )
+                    completed = subprocess.run(
+                        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                        cwd=REPO_ROOT, check=False, capture_output=True, text=True,
+                        encoding="utf-8", errors="replace", timeout=10,
+                    )
+                    self.assertNotEqual(completed.returncode, 0)
+                    expected = "require minimum_process_cpu_percent" if floor is None else "must be finite"
+                    self.assertIn(expected, completed.stderr)
+
+    def test_live_launcher_consumes_normalized_cpu_floor_and_keeps_cpu_ceiling(self) -> None:
+        """A 16-core worker fits at 86%; an exact 95% projection must wait."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            dispatch.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan",
+                "estimation": {"kind": "exact_resource_profile", "per_process_cpu_percent": 6.2},
+                "limits": dispatch_limits(maximum_concurrency=1, launch_stagger_seconds=1),
+            }), encoding="utf-8")
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}$script:cpuSamples=0;"
+                "function Get-RepositoryAvailableMemoryBytes {return [int64](64GB)};"
+                "function Get-SystemCpuPercent {$script:cpuSamples+=1;"
+                "if($script:cpuSamples-eq1){return [double]88.75};return [double]86};"
+                "$exe=(Get-Process -Id $PID).Path;"
+                f"$spec=[pscustomobject]@{{name='cpu-fixture';file_path=$exe;"
+                "argument_list=@('-NoProfile','-Command','exit 0');"
+                f"stdout='{root}/child.out';stderr='{root}/child.err';"
+                f"environment=@{{}};working_directory='{root}'}};"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' "
+                f"-RunDir '{root}' -UsagePath '{usage}' -ProcessSpecifications @($spec);"
+                "if($r.resource_budget_exceeded-or$script:cpuSamples-lt2){exit 3};"
+                "if($r.processes.Count-ne1-or$r.processes[0].exit_code-ne0){exit 4}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, check=False, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            receipt = json.loads(usage.read_text(encoding="utf-8-sig"))
+            pauses = receipt["scheduler_receipt"]["launch_pause_events"]
+            self.assertTrue(any(event["reason"] == "cpu_admission_exceeded" for event in pauses))
+
     def test_simion_formal_observation_warns_past_critical_duration(self) -> None:
         """A real child completes naturally even beyond the old kill duration."""
         with tempfile.TemporaryDirectory() as directory:

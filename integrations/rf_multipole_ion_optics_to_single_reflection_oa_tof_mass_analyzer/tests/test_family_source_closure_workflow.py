@@ -398,8 +398,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "observed_batch_work_units": 8,
         }
         with patch(
-            "common.simion.resource_scheduler.available_physical_memory_bytes",
-            return_value=1000,
+            "common.simion.resource_scheduler.physical_memory_bytes",
+            return_value=(1000, 2000),
         ), patch("common.simion.resource_scheduler.os.cpu_count", return_value=8):
             plan = resolve_single_flight_dispatch_plan(
                 {"single_flight_time_integration_profile_id": "dt64"},
@@ -407,7 +407,13 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 resource_profiles=[profile],
             )
         self.assertEqual(plan["estimation"]["kind"], "exact_resource_profile")
-        self.assertEqual(plan["waves"][0]["batch_count"], 8)
+        # Eight logical CPUs each cost at least 12.5% of total host CPU;
+        # the central 95% admission threshold allows seven simultaneous lanes.
+        self.assertEqual(plan["host"]["logical_processors"], 8)
+        self.assertEqual(plan["limits"]["minimum_process_cpu_percent"], 12.5)
+        self.assertEqual(plan["limits"]["cpu_capacity"], 7)
+        self.assertEqual(plan["waves"][0]["batch_count"], 7)
+        self.assertEqual(sum(batch["count"] for batch in plan["waves"][0]["batches"]), 8)
 
     def test_dispatch_plan_uses_resolved_inline_numerics_for_profile_match(self) -> None:
         profile = {

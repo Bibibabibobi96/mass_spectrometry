@@ -24,7 +24,6 @@ from typing import Any
 
 FORMAL_OBSERVATION_SECONDS = 45
 INITIAL_CPU_LANES = 10
-MINIMUM_PROCESS_CPU_PERCENT = 10.0
 _HOST_RESOURCE_POLICY = json.loads(
     Path(__file__).resolve().parents[1].joinpath("host_resource_policy.json").read_text("utf-8")
 )
@@ -210,9 +209,10 @@ def _capacity(
     *, particle_count: int, available_memory_bytes: int | None,
     total_physical_memory_bytes: int | None, per_process_memory_bytes: int,
     process_cpu_percent: float, background_cpu_percent: float,
+    minimum_process_cpu_percent: float,
 ) -> tuple[int, int, int]:
     _memory_admission(available_memory_bytes, total_physical_memory_bytes, per_process_memory_bytes)
-    cpu_cost = max(MINIMUM_PROCESS_CPU_PERCENT, process_cpu_percent)
+    cpu_cost = max(minimum_process_cpu_percent, process_cpu_percent)
     cpu_capacity = max(1, math.floor(
         max(0.0, CPU_ADMISSION_PERCENT - background_cpu_percent) / cpu_cost
     ))
@@ -227,14 +227,17 @@ def _capacity(
     return min(particle_count, cpu_capacity, memory_capacity), cpu_capacity, memory_capacity
 
 
-def _public_limits(maximum_concurrency: int, cpu_capacity: int, memory_capacity: int) -> dict[str, Any]:
+def _public_limits(
+    maximum_concurrency: int, cpu_capacity: int, memory_capacity: int,
+    minimum_process_cpu_percent: float,
+) -> dict[str, Any]:
     return {
         "maximum_concurrency": maximum_concurrency,
         "cpu_capacity": cpu_capacity,
         "memory_capacity": memory_capacity,
         "memory_policy": MEMORY_POLICY,
         "formal_observation_seconds": FORMAL_OBSERVATION_SECONDS,
-        "minimum_process_cpu_percent": MINIMUM_PROCESS_CPU_PERCENT,
+        "minimum_process_cpu_percent": minimum_process_cpu_percent,
         "cpu_admission_percent": CPU_ADMISSION_PERCENT,
         "memory_admission_reserve_bytes": MEMORY_ADMISSION_RESERVE_BYTES,
         "memory_critical_reserve_bytes": MEMORY_CRITICAL_RESERVE_BYTES,
@@ -397,8 +400,12 @@ def plan_simion_dispatch(
     host = {
         "available_memory_bytes": available_memory_bytes,
         "total_physical_memory_bytes": total_physical_memory_bytes,
-        "logical_processors": logical_processors or os.cpu_count() or 1,
+        "logical_processors": _positive_int(
+            (os.cpu_count() or 1) if logical_processors is None else logical_processors,
+            "logical_processors",
+        ),
     }
+    minimum_process_cpu_percent = 100.0 / host["logical_processors"]
     if profile is None:
         first = _initial_formal_batch(work_count, unit)
         count_field = "particle_count" if unit == "particles" else "work_item_count"
@@ -417,7 +424,7 @@ def plan_simion_dispatch(
                     "_seconds_then_replan_remaining_particles"
                 ),
             },
-            "host": host, "limits": _public_limits(1, 1, 1),
+            "host": host, "limits": _public_limits(1, 1, 1, minimum_process_cpu_percent),
             "waves": [{
                 "index": 1, "kind": "formal_observation", "batch_count": 1,
                 count_field: work_count, "coverage": "initial_formal_batch_only",
@@ -433,6 +440,7 @@ def plan_simion_dispatch(
             total_physical_memory_bytes=total_physical_memory_bytes,
             per_process_memory_bytes=memory_budget, process_cpu_percent=process_cpu,
             background_cpu_percent=0.0,
+            minimum_process_cpu_percent=minimum_process_cpu_percent,
         )
         batches = _batches_from_counts(
             _balanced_lane_loads(work_count, concurrency), unit=unit
@@ -462,7 +470,7 @@ def plan_simion_dispatch(
                     "_seconds_then_replan_remaining_particles"
                 ),
             },
-            "host": host, "limits": _public_limits(1, 1, 1),
+            "host": host, "limits": _public_limits(1, 1, 1, minimum_process_cpu_percent),
             "waves": [{
                 "index": 1, "kind": "formal_observation", "batch_count": 1,
                 count_field: work_count, "coverage": "initial_formal_batch_only",
@@ -478,13 +486,13 @@ def plan_simion_dispatch(
         "estimation": {
             "kind": "exact_resource_profile", "observed_peak_bytes": peak,
             "per_process_memory_budget_bytes": memory_budget,
-            "per_process_cpu_percent": max(MINIMUM_PROCESS_CPU_PERCENT, process_cpu),
+            "per_process_cpu_percent": max(minimum_process_cpu_percent, process_cpu),
             "observed_batch_work_units": profile["observed_batch_work_units"],
             "memory_safety_factor": KNOWN_MEMORY_SAFETY_FACTOR,
             "observation_wait_skipped": True,
         },
         "admission": _memory_admission(available_memory_bytes, total_physical_memory_bytes, memory_budget),
-        "host": host, "limits": _public_limits(concurrency, cpu_capacity, memory_capacity),
+        "host": host, "limits": _public_limits(concurrency, cpu_capacity, memory_capacity, minimum_process_cpu_percent),
         "waves": [{
             "index": 1, "kind": "scheduled", "batch_count": len(batches),
             count_field: work_count, "coverage": "complete_population",
@@ -514,6 +522,10 @@ def plan_adaptive_followup(
         plan.get("host", {}).get("total_physical_memory_bytes")
         if total_physical_memory_bytes is None else total_physical_memory_bytes
     )
+    # The frozen host normalizes CPU percentages to total machine capacity.
+    minimum_process_cpu_percent = 100.0 / _positive_int(
+        plan["host"]["logical_processors"], "logical_processors"
+    )
     memory_budget = math.ceil(peak * OBSERVED_MEMORY_SAFETY_FACTOR)
     unit = plan.get("dispatch_unit", "particles")
     count_field = "particle_count" if unit == "particles" else "work_item_count"
@@ -526,6 +538,7 @@ def plan_adaptive_followup(
         # capacity. The executor gates every staggered launch against the
         # live CPU value plus this observed per-process cost.
         background_cpu_percent=0.0,
+        minimum_process_cpu_percent=minimum_process_cpu_percent,
     )
     if not first_batch_completed:
         # Available RAM is sampled while the retained formal batch is already
@@ -555,7 +568,7 @@ def plan_adaptive_followup(
     result["estimation"] = {
         "kind": "observed_formal_batch", "observed_peak_bytes": peak,
         "per_process_memory_budget_bytes": memory_budget,
-        "per_process_cpu_percent": max(MINIMUM_PROCESS_CPU_PERCENT, cpu),
+        "per_process_cpu_percent": max(minimum_process_cpu_percent, cpu),
         "background_cpu_percent": background,
         "memory_safety_factor": OBSERVED_MEMORY_SAFETY_FACTOR,
         "first_batch_completed_during_observation": bool(first_batch_completed),
@@ -565,7 +578,7 @@ def plan_adaptive_followup(
     result["host"]["available_memory_bytes"] = available_memory_bytes
     result["host"]["total_physical_memory_bytes"] = total_physical_memory_bytes
     result["admission"] = _memory_admission(available_memory_bytes, total_physical_memory_bytes, memory_budget)
-    result["limits"] = _public_limits(concurrency, cpu_capacity, memory_capacity)
+    result["limits"] = _public_limits(concurrency, cpu_capacity, memory_capacity, minimum_process_cpu_percent)
     result["waves"] = [{
         "index": 1, "kind": "scheduled", "batch_count": len(batches),
         count_field: work_count, "coverage": "complete_population",
@@ -681,7 +694,10 @@ def plan_simion_case_dispatch(
                     "per_process_cpu_percent"
                 ],
             }]
-        limits = _public_limits(len(selected), len(selected), len(selected))
+        limits = _public_limits(
+            len(selected), len(selected), len(selected),
+            plans[0][1]["limits"]["minimum_process_cpu_percent"],
+        )
         estimation = "exact_resource_profiles"
         kind = "scheduled"
     admission = {} if unknown else {"admission": _memory_admission(

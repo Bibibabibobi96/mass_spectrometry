@@ -319,7 +319,8 @@ $script:existingFormalProcessRecords=@(@{name='primary-first'})
                            "maximum_memory_danger_termination_attempts": 2,
                            "memory_admission_reserve_bytes": 1024**3,
                            "memory_critical_reserve_bytes": 512 * 1024**2,
-                           "cpu_admission_percent": 95},
+                           "cpu_admission_percent": 95,
+                           "minimum_process_cpu_percent": 6.25},
             }), encoding="utf-8")
             def quoted(path: Path) -> str:
                 return "'" + str(path).replace("'", "''") + "'"

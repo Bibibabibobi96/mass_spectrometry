@@ -58,6 +58,7 @@ launched-source CSV 计数仍保留。adapter 的源合同/上游设计路径与
 阶段资源限额在冻结并校验原始 engineering budget 后直接以内存 limits 对象传给进程与容量边界，
 不再另写 `resolved_resource_budget__<stage>.json` 或为该派生副本计算、登记 SHA。原始 run-local budget、
 其 source identity 与 PA cache policy 继续冻结，实际进程限额由各次 usage 的完整 limits 记录。
+共享启动器消费公共调度器冻结的单进程CPU下限；依赖发布经既有binding刷新器更新，未改变集成物理输入或资格。
 
 分域选择直接消费冻结 connection/provider 的间隙、端区跨度与终端厚度，不再另写无人读取的
 `domain_split_runtime_contract.json` 或维护只为该副本设置的 `required_pa_roles`。实际分域模式、

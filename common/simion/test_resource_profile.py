@@ -59,6 +59,7 @@ class ResourceProfileTests(unittest.TestCase):
             plan = {
                 "role": "simion_repository_dispatch_plan",
                 "resource_identity": {"solver": "SIMION", "field_kind": "electrostatic"},
+                "estimation": {"per_process_cpu_percent": 10.0},
                 "waves": [{"kind": "scheduled", "batch_count": 1, "batches": [{"count": 1}]}],
             }
             usage = {
@@ -66,6 +67,7 @@ class ResourceProfileTests(unittest.TestCase):
                 "first_formal_observation": {
                     "peak_working_set_bytes": 100,
                     "peak_managed_memory_bytes": 250,
+                    "process_cpu_percent": 6.2,
                 },
             }
             plan_path = run / "inputs" / "dispatch.json"
@@ -76,6 +78,7 @@ class ResourceProfileTests(unittest.TestCase):
                 run_id="formal", resource_usage_path=usage_path, dispatch_plan_path=plan_path
             )
         self.assertEqual(profile["per_batch_peak_working_set_bytes"], 250)
+        self.assertEqual(profile["per_batch_cpu_percent"], 6.2)
 
     def test_historical_missing_loading_policy_remains_unspecified(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

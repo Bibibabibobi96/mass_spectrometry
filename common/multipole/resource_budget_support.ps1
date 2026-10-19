@@ -923,9 +923,13 @@ function Invoke-ResourceBudgetedProcesses {
   $batchFailureEvents=[Collections.ArrayList]::new();$batchFailureDetected=$false
   $dangerTerminationAttempts=0;$unschedulable=$false
   $resourcePauseActive=$false;$resourcePauseReason=$null
-  $estimatedProcessCpu=[double]10.0
-  if($limits.PSObject.Properties.Name-contains'minimum_process_cpu_percent'){
-    $estimatedProcessCpu=[math]::Max($estimatedProcessCpu,[double]$limits.minimum_process_cpu_percent)
+  if(-not($limits.PSObject.Properties.Name-contains'minimum_process_cpu_percent')){
+    throw 'Repository dispatch limits require minimum_process_cpu_percent.'
+  }
+  $estimatedProcessCpu=[double]$limits.minimum_process_cpu_percent
+  if([double]::IsNaN($estimatedProcessCpu)-or[double]::IsInfinity($estimatedProcessCpu)-or
+     $estimatedProcessCpu-le0-or$estimatedProcessCpu-gt100){
+    throw 'Repository minimum process CPU percent must be finite and in (0,100].'
   }
   if($null-ne$estimation-and$estimation.PSObject.Properties.Name-contains'per_process_cpu_percent'){
     $estimatedProcessCpu=[math]::Max($estimatedProcessCpu,[double]$estimation.per_process_cpu_percent)

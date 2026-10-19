@@ -158,15 +158,79 @@ class ResourceSchedulerTests(unittest.TestCase):
     def test_adaptive_followup_does_not_freeze_background_cpu_into_lane_count(self) -> None:
         initial = plan_simion_dispatch(
             self.request(), [], available_memory_bytes=100 * GIB,
-            total_physical_memory_bytes=128 * GIB,
+            total_physical_memory_bytes=128 * GIB, logical_processors=16,
         )
         final = plan_adaptive_followup(
             initial, GIB, observed_cpu_percent=8, background_cpu_percent=80,
             available_memory_bytes=100 * GIB, total_physical_memory_bytes=128 * GIB,
             first_batch_completed=False,
         )
-        self.assertEqual(final["limits"]["cpu_capacity"], 9)
-        self.assertEqual(final["limits"]["maximum_concurrency"], 9)
+        self.assertEqual(final["limits"]["cpu_capacity"], 11)
+        self.assertEqual(final["limits"]["maximum_concurrency"], 11)
+
+    def test_cpu_floor_tracks_one_logical_processor_and_keeps_measured_cost(self) -> None:
+        for cores, observed, expected_floor, expected_capacity in (
+            (16, 6.2, 6.25, 15),
+            (4, 6.2, 25.0, 3),
+            (16, 25.0, 6.25, 3),
+        ):
+            with self.subTest(logical_processors=cores, observed_cpu=observed):
+                initial = plan_simion_dispatch(
+                    self.request(100), [], available_memory_bytes=100 * GIB,
+                    total_physical_memory_bytes=128 * GIB, logical_processors=cores,
+                )
+                known = plan_simion_dispatch(
+                    self.request(100), [self.profile(peak=GIB, cpu=observed)],
+                    available_memory_bytes=100 * GIB,
+                    total_physical_memory_bytes=128 * GIB, logical_processors=cores,
+                )
+                for completed in (True, False):
+                    adaptive = plan_adaptive_followup(
+                        initial, GIB, observed_cpu_percent=observed,
+                        available_memory_bytes=100 * GIB,
+                        total_physical_memory_bytes=128 * GIB,
+                        first_batch_completed=completed,
+                    )
+                    for plan in (known, adaptive):
+                        self.assertEqual(plan["limits"]["minimum_process_cpu_percent"], expected_floor)
+                        self.assertEqual(plan["limits"]["cpu_capacity"], expected_capacity)
+                        self.assertEqual(plan["limits"]["maximum_concurrency"], expected_capacity)
+                        self.assertEqual(plan["estimation"]["per_process_cpu_percent"], max(expected_floor, observed))
+                        batches = plan["waves"][0]["batches"]
+                        self.assertEqual(sum(batch["count"] for batch in batches), 100)
+                        self.assertEqual(batches[0]["particle_id_min"], 1)
+                        self.assertEqual(batches[-1]["particle_id_max"], 100)
+
+    def test_cpu_floor_change_preserves_memory_constraint(self) -> None:
+        plan = plan_simion_dispatch(
+            self.request(100), [self.profile(peak=3 * GIB, cpu=6.2)],
+            available_memory_bytes=8 * GIB,
+            total_physical_memory_bytes=48 * GIB, logical_processors=16,
+        )
+        self.assertEqual(plan["limits"]["cpu_capacity"], 15)
+        self.assertEqual(plan["limits"]["memory_capacity"], 2)
+        self.assertEqual(plan["limits"]["maximum_concurrency"], 2)
+
+    def test_case_dispatch_publishes_the_same_host_cpu_floor(self) -> None:
+        for cores, capacity in ((16, 15), (4, 3)):
+            with self.subTest(logical_processors=cores):
+                plan = plan_simion_case_dispatch(
+                    [{"case_id": f"case{index}", "resource_identity": {}} for index in range(20)],
+                    self.request(1), [self.profile(peak=GIB, cpu=6.2)],
+                    available_memory_bytes=100 * GIB,
+                    total_physical_memory_bytes=128 * GIB, logical_processors=cores,
+                )
+                self.assertEqual(plan["limits"]["maximum_concurrency"], capacity)
+                self.assertEqual(plan["limits"]["minimum_process_cpu_percent"], 100.0 / cores)
+                self.assertEqual(len(plan["waves"][0]["cases"]), capacity)
+
+    def test_explicit_invalid_processor_count_fails_before_planning(self) -> None:
+        for cores in (0, -1, True, 1.5):
+            with self.subTest(logical_processors=cores), self.assertRaisesRegex(ValueError, "logical_processors"):
+                plan_simion_dispatch(
+                    self.request(), [], available_memory_bytes=GIB,
+                    total_physical_memory_bytes=2 * GIB, logical_processors=cores,
+                )
 
     def test_temporary_memory_pressure_keeps_work_until_live_admission(self) -> None:
         plan = plan_simion_dispatch(
