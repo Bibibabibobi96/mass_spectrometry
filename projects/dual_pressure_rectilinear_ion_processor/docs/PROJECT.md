@@ -171,6 +171,23 @@ A全部发生在Pull前z=7.978…9.623 mm、碰撞前约48…753 eV。C虽然事
 C的新独立加载包为`20261019_115853__test__simion__extraction-user-workbench/simion/processor.iob`；
 只准备私有场与完整100源，用户手动Fly／GUI确认，不覆盖旧封存包，未启动MR联合飞行。
 
+## RF零交叉关断对照
+
+在上述C工况上，仅将`baseline.electric.rf_quench_alignment`从`requested_time`改为`next_cosine_zero`，
+保持全程RF初相位、几何、压力、电压、源和数值设置。沿已有编译器，主RF关断从7500变为
+7500.067567568 us，侧RF关断／提取脉冲从7500.135135135变为7500.202702703 us，仍相隔半周期。
+这符合论文printed76–77页的先主RF、半周期后侧RF与提取脉冲、零电压交叉关断序列；未模拟实测电源过渡波形。
+
+新N100经公共首批实测自动达到14路并发，100终态／97引出，损失仍为24/64/80，全部证据保留。
+z=0的共同97颗人口sigma：x角宽0.247912→0.293659°（增18.45%），y角宽0.256784→0.189964°（降26.02%）；
+x/y束斑sigma为0.106759/0.274057 mm，RMS发射度为0.393595/0.890069 mm·mrad。
+本次未证明两个方向同时改善，不替换封存默认或当前C加载包。
+两组出生状态及18个PA族成员身份相同，但捕获／转运微观状态已在干预前分叉，因此结果是单次N100、
+非严格微观配对的描述性对照，不能将全部差异归为RF相位纯因果效应或总体显著性。
+候选自动生成18组英文PNG/SVG、分时空间云、引出后束团和受力／碰撞诊断；509项输出完整manifest核验通过。
+[RF对照报告与全部证据](../../../../artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/20261019_132354__analysis__python__rf-zero-crossing-control/results/scientific_report.md)
+记录配置、电压、实际开关回调、干预前身份、全母群及损失；未启动MR联合飞行或操作GUI。
+
 ## MR接口准备与后续工作
 
 [component_exit.py](../analysis/component_exit.py)只读已封存运行，发布公共component_particle_state v1，
