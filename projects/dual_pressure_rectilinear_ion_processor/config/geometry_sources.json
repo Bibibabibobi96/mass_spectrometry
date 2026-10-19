@@ -39,7 +39,7 @@
       "classification": "reported",
       "source_id": "stewart_2023",
       "location": "Figure 2 and extraction-region description",
-      "explanation": "The reported extraction slit is 8 mm by 0.8 mm; cuts through finite model plates and shield are project projections."
+      "explanation": "The reported extraction slit is 8 mm by 0.8 mm and seeds the Pull plate opening. Extending its dimensions to a separate model-completion shield opening is an assumption, not an additional reported shield dimension."
     },
     {
       "authority_paths": [
@@ -98,6 +98,15 @@
       "source_id": null,
       "location": "project floating shields",
       "explanation": "Halfwidths 3/3.5 mm are project boundary/shield choices. Their HP/LP common-mode tracking is modeled; dimensions are not attributed to manufacturer CAD."
+    },
+    {
+      "authority_paths": [
+        "baseline.json#/native_geometry/shield_extraction_slit_width_mm"
+      ],
+      "classification": "assumption",
+      "source_id": null,
+      "location": "project LP floating-shield extraction clearance",
+      "explanation": "The default shield opening width is initially equal to the 0.8 mm Pull slit to preserve the existing model. Its independent authority permits a controlled shield-clearance correction without widening the reported Pull slit. The shield width, any wider candidate value, and its effect on extraction fringe fields are project hypotheses requiring a new geometry identity, Refine and measured flight; no manufacturer dimension or proven performance improvement is claimed."
     },
     {
       "authority_paths": [

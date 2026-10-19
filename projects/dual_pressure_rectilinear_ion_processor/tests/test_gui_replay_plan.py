@@ -134,6 +134,25 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.assertEqual(plan["construction_status"], "inputs_prepared_no_field_or_IOB_yet")
         self.assertEqual((self.run/"simion/processor.gem").read_bytes(), (self.baseline/"simion/processor.gem").read_bytes())
 
+    def test_declared_force_audit_copies_its_frozen_module_into_gui_package(self) -> None:
+        path=self.baseline/"inputs/resolved_model.json"
+        config=json.loads(path.read_text())
+        config["extraction_force_audit"]={"schema_version":1,"role":"native_extraction_force_audit"}
+        path.write_text(json.dumps(config),encoding="utf-8")
+        module=self.baseline/"simion/extraction_force_audit.lua"
+        module.write_text("-- immutable source force-audit module fixture\n",encoding="utf-8")
+        self.publish_manifest()
+        prepare_replay(self.run,self.baseline)
+        self.assertEqual((self.run/"simion/extraction_force_audit.lua").read_bytes(),module.read_bytes())
+        copied=json.loads((self.run/"inputs/resolved_model.json").read_text())
+        self.assertEqual(copied["extraction_force_audit"],config["extraction_force_audit"])
+
+    def test_historical_gui_source_without_force_contract_stays_without_new_module(self) -> None:
+        prepare_replay(self.run,self.baseline)
+        self.assertFalse((self.run/"simion/extraction_force_audit.lua").exists())
+        copied=json.loads((self.run/"inputs/resolved_model.json").read_text())
+        self.assertNotIn("extraction_force_audit",copied)
+
     def test_gui_limits_match_legacy_budget_without_copying_derived_budget(self) -> None:
         profile = json.loads((Path(__file__).resolve().parents[1]/"config/execution_profiles.json").read_text(encoding="utf-8"))
         profile["profiles"][0]["limits"]["transient_run_directory_sample_interval_seconds"] = 17

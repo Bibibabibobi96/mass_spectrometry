@@ -49,6 +49,13 @@ class NativeGeometryTests(unittest.TestCase):
         self.p = native_projection(self.baseline, self.numerics)
         self.by_id = {row["electrode_id"]: row for row in self.p["electrodes"]}
 
+    def test_recorded_schema_v1_coupled_aperture_preserves_projection_without_mutation(self) -> None:
+        historical = copy.deepcopy(self.baseline)
+        del historical["native_geometry"]["shield_extraction_slit_width_mm"]
+        before = copy.deepcopy(historical)
+        self.assertEqual(native_projection(historical, self.numerics), self.p)
+        self.assertEqual(historical, before)
+
     def test_full_adjustable_electrode_inventory(self) -> None:
         self.assertEqual(self.p["electrode_ids"], list(range(1, 16)))
         self.assertEqual(set(self.by_id), set(range(1, 16)))
@@ -102,6 +109,31 @@ class NativeGeometryTests(unittest.TestCase):
         guide_end = max(shape["x_max_mm"] for key in (1, 2) for shape in self.by_id[key]["solids"])
         self.assertEqual(guide_end, 29)
         self.assertGreater(metal["min_mm"][0] - guide_end, 0)
+
+    def test_shield_clearance_changes_only_its_cutout_and_keeps_reported_pull_slit(self) -> None:
+        baseline = copy.deepcopy(self.baseline)
+        baseline["native_geometry"]["shield_extraction_slit_width_mm"] = 1.6
+        changed = native_projection(baseline, self.numerics)
+        by_id = {row["electrode_id"]:row for row in changed["electrodes"]}
+        for electrode_id in self.by_id:
+            if electrode_id != 14:
+                self.assertEqual(by_id[electrode_id],self.by_id[electrode_id])
+        self.assertEqual(by_id[14]["solids"],self.by_id[14]["solids"])
+        center = baseline["geometry"]["lp_center_mm"]
+        self.assertTrue(occupied(self.by_id[14],(center,3.25,.6)))
+        self.assertFalse(occupied(by_id[14],(center,3.25,.6)))
+        self.assertTrue(occupied(by_id[5],(center,2.25,.6)))
+        pull = by_id[5]["cutouts"][0]
+        self.assertAlmostEqual(pull["max_mm"][2]-pull["min_mm"][2],.8)
+        self.assertEqual(baseline["geometry"]["extraction_slit_width_mm"],.8)
+
+    def test_invalid_shield_slit_width_is_rejected(self) -> None:
+        for value in (0,-.1,6,7,float("nan"),True):
+            with self.subTest(value=value):
+                baseline=copy.deepcopy(self.baseline)
+                baseline["native_geometry"]["shield_extraction_slit_width_mm"]=value
+                with self.assertRaises(ValueError):
+                    native_projection(baseline,self.numerics)
 
     def test_exit_lens_retains_its_independent_square_bore(self) -> None:
         exit_lens = self.by_id[13]

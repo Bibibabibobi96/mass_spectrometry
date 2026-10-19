@@ -23,7 +23,7 @@ lp_inner_half_length_x_mm lp_inner_center_z_mm lp_inner_thickness_z_mm
 lp_side_split_half_gap_y_mm lens_thickness_mm entrance_aperture_diameter_mm exit_lens_half_aperture_mm
 lens_outer_halfwidth_mm domain_start_x_mm domain_end_x_margin_mm domain_min_y_mm
 domain_max_y_mm domain_halfwidth_z_mm
-shield_inner_halfwidth_mm shield_outer_halfwidth_mm
+shield_inner_halfwidth_mm shield_outer_halfwidth_mm shield_extraction_slit_width_mm
 """.split())
 
 
@@ -35,6 +35,11 @@ def _box(lo: list[float], hi: list[float]) -> dict[str, Any]:
 
 def _inputs(baseline: dict, numerics: dict) -> tuple[dict, dict, float, int]:
     n = baseline["native_geometry"]
+    # Recorded schema-v1 geometry had one shared Pull/shield aperture. Preserve
+    # that exact meaning for frozen MR/analysis consumers, without rewriting it.
+    # Current author inputs are separately required to declare the new field.
+    if baseline["schema_version"] == 1 and set(n) == NATIVE_GEOMETRY_FIELDS - {"shield_extraction_slit_width_mm"}:
+        n = {**n, "shield_extraction_slit_width_mm": baseline["geometry"]["extraction_slit_width_mm"]}
     if set(n) != NATIVE_GEOMETRY_FIELDS:
         raise ValueError("unknown or missing native_geometry fields")
     for key, value in n.items():
@@ -58,6 +63,8 @@ def _inputs(baseline: dict, numerics: dict) -> tuple[dict, dict, float, int]:
         raise ValueError("LP auxiliary electrodes must fit inside side-electrode gap")
     if n["shield_inner_halfwidth_mm"] >= n["shield_outer_halfwidth_mm"]:
         raise ValueError("shield must have positive metal thickness")
+    if n["shield_extraction_slit_width_mm"] >= 2*n["shield_inner_halfwidth_mm"]:
+        raise ValueError("shield extraction aperture must fit inside its frame")
     return baseline["geometry"], n, float(grid), int(segments)
 
 
@@ -173,7 +180,13 @@ def native_projection(baseline: dict, numerics: dict) -> dict[str, Any]:
             low, high = sorted((sign * shield_inner, sign * shield_outer))
             add(electrode_id, _box([x0, low, -shield_outer], [x1, high, shield_outer]))
             add(electrode_id, _box([x0, -shield_inner, low], [x1, shield_inner, high]))
-    electrodes[13]["cutouts"].append(slit)
+    # The reported Pull slit and the model-completion shield opening are
+    # independent boundaries. A shield clearance change must not widen Pull.
+    shield_half_width = n["shield_extraction_slit_width_mm"] / 2
+    shield_slit = _box(
+        [g["lp_center_mm"] - slit_half_length, r - grid, -shield_half_width],
+        [g["lp_center_mm"] + slit_half_length, n["shield_outer_halfwidth_mm"] + grid, shield_half_width])
+    electrodes[13]["cutouts"].append(shield_slit)
 
     minimum = [n["domain_start_x_mm"], n["domain_min_y_mm"], -n["domain_halfwidth_z_mm"]]
     requested_maximum = [lp_end + n["domain_end_x_margin_mm"], n["domain_max_y_mm"], n["domain_halfwidth_z_mm"]]

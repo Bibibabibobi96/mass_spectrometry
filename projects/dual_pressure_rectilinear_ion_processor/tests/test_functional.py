@@ -92,6 +92,12 @@ def event_fixture(config: dict) -> list[dict]:
 
 
 class FunctionalContractTests(unittest.TestCase):
+    def test_current_author_inputs_require_explicit_shield_aperture(self) -> None:
+        config = load_config()
+        del config["baseline"]["native_geometry"]["shield_extraction_slit_width_mm"]
+        with self.assertRaisesRegex(ValueError, "explicit shield extraction aperture"):
+            functional.validate_configs(config)
+
     """Exercise current configuration, frozen projections, and full source IDs."""
 
     def setUp(self) -> None:
@@ -309,7 +315,7 @@ class FunctionalContractTests(unittest.TestCase):
         shutil.copyfile(PROJECT / "config/source_parameter_sources.json", project / "config/source_parameter_sources.json")
         functional.write_json(project / "config/source_exploration.json",
                               functional.read_json(PROJECT / "config/source_exploration.json"))
-        for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua"):
+        for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
             (project / "simion" / name).write_text("-- inert copy fixture\n", encoding="utf-8")
         vendor = Path(self.temporary.name) / "vendor_copy_fixture"
         fixture_paths = [repo / "common/multipole/simion_rf_drive.lua",
@@ -351,6 +357,15 @@ class FunctionalContractTests(unittest.TestCase):
         """Synthetic source files test copying only; no vendor code is executed."""
         project, vendor = self.make_prepare_fixture()
         functional.prepare(self.run, project, vendor)
+        audit=functional.read_json(self.run/"inputs/resolved_model.json")["extraction_force_audit"]
+        self.assertEqual(audit["schema_version"],1)
+        self.assertEqual(audit["role"],"native_extraction_force_audit")
+        self.assertEqual(audit["field_basis_count"],15)
+        self.assertEqual(audit["start_reference"],"native_timing.primary_quench_us")
+        self.assertEqual(audit["step_state_scope"],"actual_pre_and_post_HS1")
+        self.assertEqual(audit["integration"],"Hermite_composite_Simpson_5_vs_3")
+        self.assertEqual((self.run/"simion/extraction_force_audit.lua").read_bytes(),
+                         (project/"simion/extraction_force_audit.lua").read_bytes())
         self.assertEqual(functional.read_json(self.run/"inputs/source_parameter_sources.json"),
                          functional.read_json(PROJECT/"config/source_parameter_sources.json"))
         self.assertEqual(functional.read_json(self.run/"inputs/native_timing.json"),

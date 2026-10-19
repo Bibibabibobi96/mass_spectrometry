@@ -46,6 +46,7 @@ else assert(#source==c.source.particle_count,'master source must contain the ful
 assert(type(n.seed)=='number' and n.seed==math.floor(n.seed) and n.seed>=1 and
  n.seed+c.source.particle_count-1<=2147483646,'invalid per-particle seed range')
 local drive=assert(loadfile(directory..'native_drive.lua'))()
+local force_module=assert(loadfile(directory..'extraction_force_audit.lua'))()
 local rf=assert(loadfile(directory..'simion_rf_drive.lua'))().new{
  waveform='cosine',frequency_hz=b.electric.rf_frequency_hz,
  phase_rad=b.clock.rf_phase_rad,rf_amplitude_v=b.electric.rf_peak_to_peak_v/2,
@@ -104,6 +105,7 @@ local function reset_collision_module(audit_run)
  if audit_run then print('HS1_BOUND_PARAMETERS=PASS mass_amu='..b.gas.mass_amu..' temperature_k='..b.gas.temperature_k) end
 end
 local events,trace,rng_audit
+local force_audit
 local active_particle
 local seen,done,previous,next_sample,extraction_trace={},{},{},{},{}
 local checkpoints={{b.schedule.capture_end_us,'capture'},
@@ -165,6 +167,7 @@ function segment.initialize_run()
  if events then events:close() end
  if trace then trace:close() end
  if rng_audit then rng_audit:close() end
+ if force_audit then force_audit:close();force_audit=nil end
  seen,done,previous,next_sample,extraction_trace={},{},{},{},{}
  active_particle=nil
  reset_collision_module(true)
@@ -177,6 +180,7 @@ function segment.initialize_run()
  sim_trajectory_image_control=(batch and not batch.retain_trajectories) and 3 or 0
  draw_numerical_exit_outline()
  assert(#simion.wb.instances==1 and #source==sim_ions_count,'source/volume mismatch')
+ force_audit=force_module.new(c,simion.wb.instances[1].pa,drive,rf,directory)
  events=assert(io.open(directory..'events.csv','w'))
  events:write('event,particle_id,reason,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n')
  trace=assert(io.open(directory..'samples.csv','w'))
@@ -241,8 +245,13 @@ function segment.other_actions()
  end
  if done[id] then return end
  activate_collision_particle()
+ local force_pre,force_pressure
+ if ion_time_of_flight>=timing.primary_quench_us then
+  force_pre=world_state(now());force_pressure=local_pressure()
+ end
  hs.segment.other_actions()
  local s=now()
+ if force_pre then force_audit:observe(id,force_pre,world_state(s),force_pressure) end
  if s.t>=timing.primary_quench_us and not extraction_trace[id] then
   extraction_trace[id]=true
   next_sample[id]=math.min(next_sample[id],timing.primary_quench_us)
@@ -287,6 +296,7 @@ function segment.terminate_run()
  if events then events:close();events=nil end
  if trace then trace:close();trace=nil end
  if rng_audit then rng_audit:close();rng_audit=nil end
+ if force_audit then force_audit:close();force_audit=nil end
  for id=1,#source do assert(done[id],'native flight lacks recorded terminal for particle '..id) end
  print('ION_PROCESSOR_END')
 end

@@ -68,6 +68,7 @@
     "domain_halfwidth_z_mm": 4,
     "shield_inner_halfwidth_mm": 3,
     "shield_outer_halfwidth_mm": 3.5,
+    "shield_extraction_slit_width_mm": 0.8,
     "lp_outer_inner_surface_center_z_mm": 2,
     "lp_outer_inner_surface_end_z_mm": 1.85,
     "exit_lens_half_aperture_mm": 2.2,

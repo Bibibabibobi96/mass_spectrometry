@@ -15,6 +15,7 @@ from common.contracts.file_identity import file_sha256
 from common.simion.particle_batching import batch_plan_from_dispatch
 from common.simion.resource_scheduler import plan_simion_dispatch, plan_adaptive_followup
 from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional
+from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
 
 PROJECT=Path(__file__).resolve().parents[1]
 
@@ -37,7 +38,7 @@ class BatchingTests(unittest.TestCase):
         self.manifest=self.field/"run_manifest.json"
         functional.write_json(self.manifest,dict(inputs={},outputs=[dict(path=str(self.field/"processor.pa0"),sha256="A"*64)]))
         self.config["native_field"]=dict(directory=str(self.field),source_manifest=str(self.manifest))
-        for name in ("processor.lua","collision_hs1.lua","native_drive.lua","simion_rf_drive.lua","processor.iob"):
+        for name in ("processor.lua","collision_hs1.lua","native_drive.lua","simion_rf_drive.lua","extraction_force_audit.lua","processor.iob"):
             (self.run/"simion"/name).write_bytes(b"inert frozen control "+name.encode())
         self.save_config()
         functional.write_json(self.run/"inputs/execution_profiles.json",functional.read_json(PROJECT/"config/execution_profiles.json"))
@@ -245,6 +246,9 @@ class BatchingTests(unittest.TestCase):
                 seeds.append(dict(particle_id=local,global_particle_id=global_id,seed=41+global_id))
             batching._csv(folder/"events.csv",fields,rows)
             batching._csv(folder/"samples.csv",sample_fields,samples)
+            from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
+            batching._csv(folder/"extraction_steps.csv", list(STEP_COLUMNS), [])
+            batching._csv(folder/"extraction_impulses.csv", list(IMPULSE_COLUMNS), [])
             batching._csv(folder/"collision_rng_seeds.csv",["particle_id","global_particle_id","seed"],seeds)
             batching._csv(folder/"hs1_bound_parameters.csv",["phase",*expected],[dict(phase=phase,**expected) for phase in ("before_init","after_init")])
             (self.run/f"logs/flight_batch_{batch['index']:04d}.log").write_text("INERT FIXTURE\nION_PROCESSOR_END\n",encoding="utf-8")
@@ -273,6 +277,49 @@ class BatchingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"RNG"):
             batching.merge_batches(self.run,self.run/"results/batches.json")
 
+    def test_force_csv_merge_rebases_only_particle_ids_and_preserves_protocol(self) -> None:
+        _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
+        expected=[]
+        for batch in plan["batches"]:
+            folder=self.run/f"simion_batch_{batch['index']:04d}"
+            step={key:0 for key in STEP_COLUMNS}
+            step.update(particle_id=1,step_index=2,start_t_us=7500,end_t_us=7500.01,pressure_pa=.2)
+            batching._csv(folder/"extraction_steps.csv",list(STEP_COLUMNS),[step])
+            impulses=[]
+            for electrode in range(1,16):
+                row={key:0 for key in IMPULSE_COLUMNS}
+                row.update(particle_id=1,step_index=2,electrode_id=electrode,start_t_us=7500,end_t_us=7500.01,unit_integral_ex_us_per_mm=electrode*.001)
+                impulses.append(row)
+            batching._csv(folder/"extraction_impulses.csv",list(IMPULSE_COLUMNS),impulses)
+            expected.append(batch["particle_id_min"])
+        batching.merge_batches(self.run,self.run/"results/batches.json")
+        fields,steps=batching._rows(self.run/"simion/extraction_steps.csv")
+        self.assertEqual(tuple(fields),STEP_COLUMNS)
+        self.assertEqual([int(r["particle_id"]) for r in steps],expected)
+        self.assertTrue(all(r["step_index"]=="2" and r["start_t_us"]=="7500" for r in steps))
+        fields,impulses=batching._rows(self.run/"simion/extraction_impulses.csv")
+        self.assertEqual(tuple(fields),IMPULSE_COLUMNS)
+        self.assertEqual([int(r["particle_id"]) for r in impulses],[pid for pid in expected for _ in range(15)])
+        for offset in range(0,len(impulses),15):
+            self.assertEqual([int(r["electrode_id"]) for r in impulses[offset:offset+15]],list(range(1,16)))
+            self.assertAlmostEqual(float(impulses[offset+14]["unit_integral_ex_us_per_mm"]),.015)
+
+    def test_force_csv_rejects_reordered_header_and_foreign_local_id(self) -> None:
+        _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
+        folder=self.run/"simion_batch_0001"
+        for name,columns in (("extraction_steps.csv",STEP_COLUMNS),("extraction_impulses.csv",IMPULSE_COLUMNS)):
+            with self.subTest(file=name,case="header"):
+                swapped=list(columns);swapped[1],swapped[2]=swapped[2],swapped[1]
+                batching._csv(folder/name,swapped,[])
+                with self.assertRaisesRegex(ValueError,"force-audit header"):
+                    batching.merge_batches(self.run,self.run/"results/batches.json")
+                self.populate(plan)
+            with self.subTest(file=name,case="foreign ID"):
+                row={key:0 for key in columns};row["particle_id"]=plan["batches"][0]["count"]+1
+                batching._csv(folder/name,list(columns),[row])
+                with self.assertRaisesRegex(ValueError,"foreign batch force-audit ID"):
+                    batching.merge_batches(self.run,self.run/"results/batches.json")
+                self.populate(plan)
     def test_worker_archive_preserves_exact_bytes_and_all_loss_ids(self) -> None:
         _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
         originals = {}
@@ -284,7 +331,7 @@ class BatchingTests(unittest.TestCase):
             batching._csv(folder/"events.csv", fields, events)
             expected = Path(self.temp.name)/"expected_id_first.csv"
             batching._csv(expected, ["particle_id", *[field for field in fields if field != "particle_id"]], events)
-            for name in ("events.csv", "samples.csv"):
+            for name in ("events.csv", "samples.csv", "extraction_steps.csv", "extraction_impulses.csv"):
                 originals[(folder/name).relative_to(self.run).as_posix()] = (folder/name).read_bytes()
             originals[(folder/"events_id_first.csv").relative_to(self.run).as_posix()] = expected.read_bytes()
         batching.merge_batches(self.run,self.run/"results/batches.json")

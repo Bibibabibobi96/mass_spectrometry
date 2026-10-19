@@ -243,6 +243,8 @@ def validate_configs(config: dict[str, Any]) -> None:
         raise ValueError("fraction threshold outside (0,1]")
     if acceptance["minimum_extraction_mean_energy_ev"] > acceptance["maximum_extraction_mean_energy_ev"]:
         raise ValueError("extraction energy bounds must be ordered")
+    if "shield_extraction_slit_width_mm" not in baseline["native_geometry"]:
+        raise ValueError("current author inputs require an explicit shield extraction aperture")
     native_projection(baseline, numerics)
     point=config["native_operating_point"]
     point_keys="schema_version capture_hp_offset_v capture_lp_offset_v guide_offset_v hp_aux_capture_relative_v hp_aux_transfer_relative_v hp_transfer_offset_v lp_outer_relative_v lp_inner_relative_v entrance_lens_v end_lens_relative_v extraction_push_relative_v extraction_pull_relative_v extraction_shield_relative_v lift_v".split()
@@ -312,7 +314,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         git_context[key] = result.stdout.strip() if result.returncode == 0 else "unavailable"
     git_context["worktree_dirty"] = bool(git_context["worktree_porcelain"])
     write_json(inputs / "source_context.json", git_context)
-    for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua"):
+    for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
         shutil.copyfile(project / "simion" / name, solver / name)
     shutil.copyfile(repo / "common/multipole/simion_rf_drive.lua", solver / "simion_rf_drive.lua")
     shutil.copyfile(simion_dir / "examples/collision_hs1/collision_hs1.lua", inputs / "collision_hs1_original.lua")
@@ -332,6 +334,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         beams.append(dict(tob=0, mass=row["mass_amu"], charge=row["charge_state"], x=x, y=y, z=z, direction=direction, ke=energy, cwf=1, color=1))
     (solver / "processor.fly2").write_text(render_standard_beams(beams), encoding="utf-8")
     (solver / "source_states.lua").write_text(render_source_states(companions), encoding="utf-8")
+    config["extraction_force_audit"] = dict(schema_version=1, role="native_extraction_force_audit", start_reference="native_timing.primary_quench_us", field_basis_count=15, step_state_scope="actual_pre_and_post_HS1", integration="Hermite_composite_Simpson_5_vs_3")
     config["native_projection"] = native_projection(config["baseline"],config["numerics"])
     config["numerical_boundaries"] = derive_numerical_boundaries(config["native_projection"])
     (solver / "processor.gem").write_text(render_gem(config["baseline"],config["numerics"]),encoding="utf-8")
@@ -370,7 +373,9 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     write_json(inputs / "clock_authority.json", dict(schema_version=1, role="canonical_clock_authority", clock_epoch_id="ion_processor_epoch_zero_v1", instrument_time_unit="us", canonical_time_basis="instrument_epoch_absolute_time", authority=dict(path="inputs/instrument_epoch.json", sha256=file_sha256(epoch_path), field="instrument_time_us"), solver_local_time_basis="elapsed_time_from_zero_us", adapter_materialization="instrument_time_us_equals_authority_epoch_plus_solver_elapsed_once", handoff_policy="preserve_instrument_time_us_and_clock_epoch_id", legacy_new_campaign_allowed=False))
     write_json(inputs / "clock_validation.json",validate_clock_authority(inputs/"clock_authority.json",run))
     from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
+    from projects.dual_pressure_rectilinear_ion_processor.analysis import extraction_force_budget
     assert batching.resource_profile.PROFILE_ROLE == "simion_resource_profile"
+    assert callable(extraction_force_budget.export_force_budget)
     # Freeze the loaded repository source closure after shared source generation.
     # Solver inputs remain independent of an editable working tree.
     for module in tuple(sys.modules.values()):
@@ -520,6 +525,11 @@ def analyze(run: Path) -> dict[str, Any]:
     if (run / "inputs/field_diagnostics.json").is_file():
         from projects.dual_pressure_rectilinear_ion_processor.analysis.field_diagnostics import export_field_diagnostics
         export_field_diagnostics(run)
+    # New native runs always provide passive per-step force/collision evidence.
+    # Historical sealed runs keep their own frozen analysis implementation.
+    if "extraction_force_audit" in c:
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import export_force_budget
+        export_force_budget(run)
     return summary
 
 

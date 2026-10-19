@@ -44,6 +44,43 @@ HS1示例的2.27e-18 m²用于He与约200 amu离子示例，不是N2与524 amu�
 
 本轮是基于官方求场接口和官方碰撞算法的项目实体电极模型，不是供应商验证过的Astral装置模型。
 
+## 被动引出受力与碰撞审计
+
+新准备的resolved输入声明`extraction_force_audit`并冻结
+[`extraction_force_audit.lua`](../simion/extraction_force_audit.lua)；它在实际primary quench后，
+围绕既有HS1调用记录同时间、同位置的pre/post速度。相邻步的上一post-HS1至当前pre-HS1速度差
+是实际数值传播增量，当前post减pre是实际碰撞跳变。记录不改粒子状态、积分步长或随机流；
+初始化只查询全部15个单位响应，使首正式批资源观测包含这些原生场的实际载入。
+历史GUI复验仍按其冻结resolved合同选择依赖，不向未声明审计的旧包注入新模块。
+
+2026-10-19重新核对的官方支持路径如下；在线资料标注2026，生产适用性同时依据本机2020示例
+及本项目已有原生场查询，不推断新版本独有能力在2020可用。
+
+| 资料 | 支持的范围与限制 |
+|---|---|
+| [Field I/O](https://simion.com/info/field_io.html)、[simion.pas](https://simion.com/info/lua_simion.pas.html) | 官方`field_vc`、`potential_vc`读取原生PA响应；显式电压表和单位响应线性叠加沿已有查询路径使用 |
+| [Calculation Time](https://simion.com/info/calculation_time.html)、[加速度变量说明](https://simion.com/info/asms_short_course.html) | 调整回调每步可能调用多次，`ion_ax_mm`等是加速度；未提供可直接据回调次数推导积分权重的合同 |
+| `C:/Program Files/SIMION-2020/examples/field_dump/fielddumplib.lua`、`examples/drag/drag.lua`、`examples/collision_sds/README.html` | 本机官方场导出、加速度变量与回调用法；不把供应商示例称为逐电极冲量分析算法 |
+
+项目分析采用实际段端点的三次Hermite路径，对官方单位响应场作5节点复合Simpson求积，并保留
+3节点粗结果之差。这是基于官方场查询API的项目后处理算法，**不是官方推荐算法或SIMION实际积分权重的精确重放**。
+primary/side quench及pulse边界显式分段；段末恰逢电压不连续时，仅电压求值使用相邻binary64左极限，
+不修改粒子时间或位置。每点同时直接查询总电压场并核对单位响应重构；CSV保留加权场时间积分、
+未加权单位响应积分及最大重构差。q/m、单位换算和速度／能量预算由Python公共物理权威计算，Lua不维护第二份常数。
+
+两份原始表为`simion/extraction_steps.csv`和`simion/extraction_impulses.csv`，公共分批合并只重映射
+首列粒子ID，校验严格header和worker所属ID，并保存原始逐批压缩证据。
+第一行是实际首审计回调的零时长anchor，保留该时刻碰撞跳变；actual末步可能晚于线性插值的z=0出口事件，
+完整原始步预算与出口面统计分别说明作用域，不强行配成同一状态。
+电场分量和、实际速度变化、碰撞跳变及细粗求积差共同进入闭合检查；未分配残差保留，不按比例塞给电极或碰撞。
+方差预算保留起始状态、各电极、碰撞和残差间的协方差，不能将各分量方差直接相加或称为原因百分比。
+
+Pull与LP shield的狭缝是实体cutout，狭缝几何本身不是独立单位响应电极。
+`native_geometry.shield_extraction_slit_width_mm`单独控制E14屏蔽开口，默认仍等于原0.8 mm；
+`geometry.extraction_slit_width_mm`继续控制文献种子的E5 Pull开口。
+独立屏蔽宽度属于功能模型补全与受控修正假设，来源由[geometry_sources](../config/geometry_sources.json)分类，
+不能称为厂家尺寸；任何改变仍需新GEM、Refine和真实飞行验证。
+
 ## 执行与验收边界
 
 生产入口为`simion/run_functional.ps1`，准备与分析由`analysis/functional.py`承担；

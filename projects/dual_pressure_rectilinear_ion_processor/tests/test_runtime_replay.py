@@ -35,6 +35,19 @@ function rand()
 end
 segment={}
 simion={wb={instances={{}}},workbench_program=function() end}
+local force_queries=0
+simion.wb.instances[1].pa={
+ inside_vc=function(self,x,y,z)
+  assert(x==x and y==y and z==z,'force query coordinates must be finite')
+  return true -- Inert PA covers prescribed, deliberately nonphysical excursions.
+ end,
+ field_vc=function(self,x,y,z,voltages)
+  assert(#voltages==15,'runtime must pass the complete native voltage vector')
+  force_queries=force_queries+1
+  local total=0;for id=1,15 do total=total+voltages[id]*id end
+  return total,2*total,-total
+ end,
+}
 simion.experimental={plot_line_segment=function(...)
   assert(sim_trajectory_image_control==expected_image_control,'outline follows frozen output policy')
   plot_calls[#plot_calls+1]={...}
@@ -121,6 +134,7 @@ local function contents(path)
 end
 if arg[2]=='upstream-source' then
   segment.initialize_run()
+  assert(force_queries>=15,'all native response bases must be observed before Fly')
   local upstream=config.native_projection.origin_mm[1]
   for id=1,sim_ions_count do
     local source=sources[id]
@@ -342,7 +356,7 @@ class RuntimeReplayTests(unittest.TestCase):
                                         "classification":"numerical_observation_not_metal"}
         with tempfile.TemporaryDirectory(prefix="ion_processor_replay_test_") as temporary:
             folder = Path(temporary)
-            for name in ("runtime.lua", "native_drive.lua"):
+            for name in ("runtime.lua", "native_drive.lua", "extraction_force_audit.lua"):
                 if name == "runtime.lua":
                     # Syntax adapter for standalone Lua only; real SIMION evidence
                     # is required to prove adjustable binding.

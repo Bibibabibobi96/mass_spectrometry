@@ -57,6 +57,8 @@ def validate_baseline_for_private_gui(baseline_run: Path) -> dict:
     if not functional_status.startswith(profile + "_"):
         raise ValueError("baseline status would upgrade or mislabel its frozen source profile")
     controls = ["frozen_config.lua", "collision_hs1.lua", "source_states.lua", "native_drive.lua", "simion_rf_drive.lua", "processor.fly2", "processor.gem", "build_workbench.lua"]
+    if "extraction_force_audit" in config:
+        controls.append("extraction_force_audit.lua")
     field_diagnostics = (baseline_run / "inputs/field_diagnostics.json").is_file()
     if field_diagnostics:
         controls.append("probe_native_field.lua")
