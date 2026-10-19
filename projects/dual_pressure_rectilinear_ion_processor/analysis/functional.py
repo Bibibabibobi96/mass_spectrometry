@@ -526,7 +526,7 @@ def analyze(run: Path) -> dict[str, Any]:
 def main() -> None:
     """Single workflow boundary for preparation and solver-output analysis."""
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action",choices=("prepare","analyze","prepare-replay","finalize-replay","prepare-dispatch","materialize-batches","merge-batches","publish-manifest"))
+    parser.add_argument("action",choices=("prepare","analyze","prepare-replay","finalize-replay","prepare-dispatch","materialize-batches","merge-batches","publish-manifest","compare-extraction-study"))
     parser.add_argument("--run",required=True,type=Path)
     parser.add_argument("--simion-dir",type=Path)
     parser.add_argument("--baseline-run",type=Path)
@@ -538,7 +538,11 @@ def main() -> None:
     parser.add_argument("--source-profile",choices=("functional","exploration"),default="functional")
     parser.add_argument("--configuration-directory",type=Path)
     args=parser.parse_args()
-    if args.action=="prepare":
+    if args.action=="compare-extraction-study":
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import analyze_registered_study
+        result=analyze_registered_study(args.run)
+        print(json.dumps({key:result[key] for key in ("status","source_counts","extracted_counts")}))
+    elif args.action=="prepare":
         if args.simion_dir is None: parser.error("prepare requires --simion-dir")
         prepare(args.run,Path(__file__).resolve().parent.parent,args.simion_dir,args.native_field_run,args.source_profile,
                 args.configuration_directory)
