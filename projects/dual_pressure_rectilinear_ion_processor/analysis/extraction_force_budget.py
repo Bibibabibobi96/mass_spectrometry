@@ -19,6 +19,7 @@ from matplotlib.figure import Figure
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import charge_to_mass_c_per_kg
 from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import to_project_position, to_project_vector
+from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
 
 AXES = "xyz"
 STEP_COLUMNS = ("particle_id", "step_index", "start_t_us", "end_t_us",
@@ -65,26 +66,26 @@ def _vector(row: dict, template: str) -> np.ndarray:
 
 
 def extraction_surfaces(config: dict) -> dict:
-    """Derive the four -world-z extraction slab surfaces from frozen E5/E14 CSG."""
+    """Derive four axial envelope planes from frozen E5/E14 CSG, not contacts."""
     direction = to_project_vector(config, (0, 1, 0))
     if tuple(direction) != (0.0, 0.0, -1.0):
         raise ValueError("force audit requires declared world -z extraction frame")
     electrodes = {item["electrode_id"]: item for item in config["native_projection"]["electrodes"]}
     slabs = []
     for electrode_id in (5, 14):
-        boxes = [box for box in electrodes[electrode_id]["solids"]
-                 if box["shape"] == "box" and box["min_mm"][1] > 0]
-        if len(boxes) != 1:
+        bounds = [shape_bounds(shape) for shape in electrodes[electrode_id]["solids"]]
+        positive = [(low,high) for low,high in bounds if low[1] > 0]
+        if len(positive) != 1:
             raise ValueError("ambiguous extraction-side E5/E14 slab geometry")
-        box = boxes[0]
+        low,high = positive[0]
         z = [to_project_position(config, corner)[2] for corner in
-             itertools.product(*zip(box["min_mm"], box["max_mm"], strict=True))]
+             itertools.product(*zip(low, high, strict=True))]
         slabs.append(dict(electrode_id=electrode_id, upstream_z_mm=max(z), downstream_z_mm=min(z)))
     planes = [value for slab in slabs for value in (slab["upstream_z_mm"], slab["downstream_z_mm"])]
     if any(left <= right for left, right in zip(planes, planes[1:])):
         raise ValueError("E5/E14 surfaces are not ordered along -z extraction")
     return dict(slabs=slabs, planes_z_mm=planes, region_labels=list(REGIONS),
-                interpretation="Axial slabs, not electrode contact tests; frozen cutouts remain geometric holes.")
+                interpretation="Axial CSG envelope slabs, not local metal faces or electrode contact tests; formed slopes and frozen cutouts remain geometric boundaries.")
 
 
 def spatial_fractions(start_z_mm: float, end_z_mm: float, planes_z_mm: list[float]) -> np.ndarray:
@@ -397,14 +398,16 @@ def _write_csv(path: Path, rows: list[dict], fallback_fields: list[str]) -> None
         writer.writerows(rows)
 
 
-def export_force_budget(run: Path) -> dict:
+def export_force_budget(run: Path, *, output_directory: Path | None = None) -> dict:
     """Write a fresh force-budget directory; missing inputs and existing evidence fail closed.
 
     No old-run auto-discovery, solver call, velocity update or residual normalization.
     Caller owns terminal publication and must include these outputs in its run manifest.
+    A separate analysis run may explicitly own output_directory while the source
+    run remains immutable; source consumption verification belongs to that caller.
     """
     run = Path(run).resolve()
-    output = run/"results/extraction_force_budget"
+    output = Path(output_directory).resolve() if output_directory is not None else run/"results/extraction_force_budget"
     if output.exists():
         raise FileExistsError("force audit requires fresh evidence output")
     data = prepare_force_budget(run)

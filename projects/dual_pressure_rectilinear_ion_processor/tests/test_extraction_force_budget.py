@@ -89,6 +89,25 @@ class ForceBudgetTests(unittest.TestCase):
         write_table(self.run/"simion/extraction_steps.csv", self.steps, STEP_COLUMNS)
         write_table(self.run/"simion/extraction_impulses.csv", self.impulses, IMPULSE_COLUMNS)
 
+    def test_formed_pull_uses_axial_envelope_without_claiming_metal_contacts(self) -> None:
+        config=copy.deepcopy(self.config)
+        pull=next(e for e in config["native_projection"]["electrodes"] if e["electrode_id"]==5)
+        pull["solids"]=[dict(shape="convex_polyhedron",vertices_mm=[
+            [x,y,z] for x in (130.5,209.5) for y,z in ((2,-.8),(2,.8),(2.3,1.5),(2.5,1.5),(2.5,-1.5),(2.3,-1.5))])]
+        result=extraction_surfaces(config)
+        np.testing.assert_allclose(result["planes_z_mm"],[7.8,7.3,6.8,6.3])
+        self.assertIn("not local metal faces",result["interpretation"])
+
+    def test_reanalysis_exports_elsewhere_without_modifying_source_evidence(self) -> None:
+        before={p.relative_to(self.run):p.read_bytes() for p in self.run.rglob('*') if p.is_file()}
+        with tempfile.TemporaryDirectory(prefix="ip_force_analysis_") as tmp:
+            output=Path(tmp)/"force_budget"
+            export_force_budget(self.run,output_directory=output)
+            self.assertTrue((output/"budget.json").is_file())
+            self.assertFalse((self.run/"results/extraction_force_budget").exists())
+        after={p.relative_to(self.run):p.read_bytes() for p in self.run.rglob('*') if p.is_file()}
+        self.assertEqual(before,after)
+
     def test_unscaled_electric_collision_and_residual_close_full_census(self) -> None:
         data = prepare_force_budget(self.run)
         self.assertEqual(data["source_count"], 100)

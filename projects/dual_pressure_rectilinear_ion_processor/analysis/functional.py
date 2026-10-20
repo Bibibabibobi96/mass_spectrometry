@@ -177,7 +177,7 @@ def validate_configs(config: dict[str, Any]) -> None:
         "schedule": "capture_end_us transfer_end_us lift_end_us extraction_start_us terminal_us",
         "clock": "epoch_us frame_id rf_phase_rad",
     }
-    if set(baseline) != {"schema_version", "native_geometry", *expected} or baseline["schema_version"] != 1:
+    if set(baseline) - {"electrode_contours"} != {"schema_version", "native_geometry", *expected} or baseline["schema_version"] != 1:
         raise ValueError("unsupported baseline schema/fields")
     for section, fields in expected.items():
         if set(baseline[section]) != set(fields.split()):
@@ -536,7 +536,7 @@ def analyze(run: Path) -> dict[str, Any]:
 def main() -> None:
     """Single workflow boundary for preparation and solver-output analysis."""
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action",choices=("prepare","analyze","prepare-replay","finalize-replay","prepare-dispatch","materialize-batches","merge-batches","publish-manifest","compare-extraction-study"))
+    parser.add_argument("action",choices=("prepare","analyze","prepare-replay","finalize-replay","prepare-dispatch","materialize-batches","merge-batches","publish-manifest","compare-extraction-study","compare-geometry-study"))
     parser.add_argument("--run",required=True,type=Path)
     parser.add_argument("--simion-dir",type=Path)
     parser.add_argument("--baseline-run",type=Path)
@@ -548,7 +548,10 @@ def main() -> None:
     parser.add_argument("--source-profile",choices=("functional","exploration"),default="functional")
     parser.add_argument("--configuration-directory",type=Path)
     args=parser.parse_args()
-    if args.action=="compare-extraction-study":
+    if args.action=="compare-geometry-study":
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.geometry_comparison import analyze_geometry_study
+        print(json.dumps(analyze_geometry_study(args.run)))
+    elif args.action=="compare-extraction-study":
         from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import analyze_registered_study
         result=analyze_registered_study(args.run)
         print(json.dumps({key:result[key] for key in ("status","source_counts","extracted_counts")}))

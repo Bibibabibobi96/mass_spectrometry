@@ -4,6 +4,21 @@
 
 ## 表示与官方支持路径
 
+2026-10-20补充：成形提取件及连续辅助片用原生GEM `half_space(x,y,z,nx,ny,nz)`交集表示凸体，
+顶点为唯一CSG几何输入，SciPy ConvexHull只在准备/绘图时派生支持平面，不在逐离子回调重建。
+采用[官方GEM说明](https://simion.com/info/gem_geometry_file.html#half-space)的法向外侧约定，
+该功能标记从8.2EA-20170324提供；本机8.2.0.11已对四组候选完成真实GEM／Refine与N100飞行。在线文档标注2026，
+不据此使用新版本独有接口。原有Fast Adjust、HS1、RF和飞行积分入口不变。
+`analysis/electrode_contours.py`编译显式`baseline.electrode_contours`，
+`analysis/convex_geometry.py`提供凸体边界与截面，默认几何图按真实多边形减孔绘制，不以AABB替代金属。
+几何改变必须重新求解全部15个响应，不能复用旧几何PA。
+跨组诊断通过现有functional入口`compare-geometry-study --run <analysis-run>`消费冻结三组或四组合同，
+不启动求解器；物理判据失败但具有完整真实终态的组仍保留并参与比较。
+受力诊断用E5/E14真实CSG的轴向包络定义分区；成形斜面不能再按单个box读取，也不能把包络平面当金属碰撞面。
+历史已封存运行若缺该派生诊断，比较入口核验原始step/impulse记录后在新的分析run中补齐，
+原manifest状态及原始飞行均保持，后续新运行仍沿默认自动输出。`export_force_budget`的显式
+`output_directory`仅转移派生产物owner，不改变源、积分或统计定义。
+
 目标版本为本机SIMION 2020。唯一生产workflow为简化实体电极几何→GEM/PA→原生Laplace单位响应求解→
 按实际RF、DC与脉冲电压组合电场→官方HS1碰撞与同一次连续Fly。实体电极、透镜、辅助DC阶梯和引出狭缝
 来自同一baseline。原生电压只消费`config/native_operating_point.json`，RF/时序沿既有baseline冻结。

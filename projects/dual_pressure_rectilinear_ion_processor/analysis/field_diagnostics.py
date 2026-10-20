@@ -240,40 +240,53 @@ def build_transfer_line_figure(rows: list[dict], config: dict, baseline: dict) -
 
 
 def section_metal_rectangles(electrode: dict, x_mm: float) -> list[tuple[float, float, float, float]]:
-    """Slice box solids and subtract box apertures before drawing metal outlines."""
-    rectangles = []
-    for shape in electrode["solids"]:
-        if shape["shape"] != "box" or not shape["min_mm"][0] <= x_mm <= shape["max_mm"][0]:
-            continue
-        lo, hi = shape["min_mm"], shape["max_mm"]
-        pieces = [(lo[1], lo[2], hi[1], hi[2])]
-        for cut in electrode["cutouts"]:
-            if cut["shape"] != "box" or not cut["min_mm"][0] <= x_mm <= cut["max_mm"][0]:
-                continue
-            next_pieces = []
-            for y0, z0, y1, z1 in pieces:
-                cy0, cz0 = max(y0, cut["min_mm"][1]), max(z0, cut["min_mm"][2])
-                cy1, cz1 = min(y1, cut["max_mm"][1]), min(z1, cut["max_mm"][2])
-                if cy0 >= cy1 or cz0 >= cz1:
-                    next_pieces.append((y0, z0, y1, z1)); continue
-                candidates = [(y0,z0,cy0,z1),(cy1,z0,y1,z1),(cy0,z0,cy1,cz0),(cy0,cz1,cy1,z1)]
-                next_pieces.extend(r for r in candidates if r[2] > r[0] and r[3] > r[1])
-            pieces = next_pieces
-        rectangles.extend(pieces)
-    return sorted(set(rectangles))
+    """Retain the legacy rectangle-only view of exact shared CSG sections."""
+    return sorted(set(p for kind,p in section_metal_parts(electrode,x_mm) if kind == "rect"))
+
+
+def section_metal_parts(electrode: dict, x_mm: float) -> list[tuple[str, tuple]]:
+    """Return shared CSG sections in local (y,z), preserving actual polygons."""
+    from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import parts
+    result = []
+    for kind,p in parts(electrode,"cross",x_mm,0):
+        if kind == "rect":
+            result.append((kind,(-p[3],-p[2],-p[1],-p[0])))
+        elif kind == "circle":
+            result.append((kind,(-p[1],-p[0],p[2])))
+        else:
+            result.append((kind,tuple((-v,-h) for h,v in p)))
+    return result
 
 
 def add_electrode_outlines(ax: Any, projection: dict, x_mm: float, transform_config: dict | None = None) -> None:
-    """Overlay actual cross-section metal rectangles with electrode ID labels."""
-    from matplotlib.patches import Rectangle
+    """Overlay actual CSG section outlines and electrode ID labels."""
+    from matplotlib.patches import Rectangle, Polygon, Circle
+    from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import section_centroid
     for electrode in projection["electrodes"]:
-        for y0, z0, y1, z1 in section_metal_rectangles(electrode, x_mm):
-            if transform_config is not None:
-                corners = [to_project_position(transform_config, (x_mm,y,z)) for y,z in ((y0,z0),(y1,z1))]
-                y0,y1 = sorted(point[2] for point in corners)
-                z0,z1 = sorted(point[0] for point in corners)
-            ax.add_patch(Rectangle((y0,z0), y1-y0, z1-z0, fill=False, edgecolor="black", linewidth=.7))
-            ax.text((y0+y1)/2, (z0+z1)/2, str(electrode["electrode_id"]), fontsize=7, ha="center", va="center", clip_on=True)
+        for kind,p in section_metal_parts(electrode,x_mm):
+            style = dict(fill=False,edgecolor="black",linewidth=.7)
+            if kind == "rect":
+                y0,z0,y1,z1 = p
+                if transform_config is not None:
+                    corners = [to_project_position(transform_config,(x_mm,y,z)) for y,z in ((y0,z0),(y1,z1))]
+                    y0,y1 = sorted(point[2] for point in corners)
+                    z0,z1 = sorted(point[0] for point in corners)
+                ax.add_patch(Rectangle((y0,z0),y1-y0,z1-z0,**style))
+                center = ((y0+y1)/2,(z0+z1)/2)
+            elif kind == "circle":
+                center = p[:2]
+                if transform_config is not None:
+                    position = to_project_position(transform_config,(x_mm,*center))
+                    center = (position[2],position[0])
+                ax.add_patch(Circle(center,p[2],**style))
+            else:
+                vertices = p
+                if transform_config is not None:
+                    vertices = [to_project_position(transform_config,(x_mm,y,z)) for y,z in vertices]
+                    vertices = [(p[2],p[0]) for p in vertices]
+                ax.add_patch(Polygon(vertices,closed=True,**style))
+                center = section_centroid("polygon",vertices)
+            ax.text(*center,str(electrode["electrode_id"]),fontsize=7,ha="center",va="center",clip_on=True)
 
 
 def build_section_figure(rows: list[dict], config: dict, projection: dict, stage_id: str,

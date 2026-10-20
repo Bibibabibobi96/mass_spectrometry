@@ -46,12 +46,8 @@ def project_geometry(config: dict) -> dict:
     for electrode in projection["electrodes"]:
         solids = []
         for shape in electrode["solids"]:
-            if shape["shape"] == "box":
-                low, high = shape["min_mm"], shape["max_mm"]
-            else:
-                r = shape["radius_mm"]
-                low = [shape["x_min_mm"], shape["center_y_mm"]-r, shape["center_z_mm"]-r]
-                high = [shape["x_max_mm"], shape["center_y_mm"]+r, shape["center_z_mm"]+r]
+            from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
+            low, high = shape_bounds(shape)
             corners = [to_project_position(config, (x,y,z)) for x in (low[0],high[0]) for y in (low[1],high[1]) for z in (low[2],high[2])]
             solids.append(dict(shape="box", min_mm=[min(p[i] for p in corners) for i in range(3)], max_mm=[max(p[i] for p in corners) for i in range(3)]))
         electrodes.append({**electrode, "solids": solids})
@@ -245,17 +241,13 @@ def census(data: dict, time: float) -> tuple[dict, list[dict]]:
 
 
 def add_geometry(axis, projection: dict, horizontal: str, vertical: str) -> None:
-    """Project the frozen solids; cutout detail stays in semantic provenance."""
+    """Draw conservative solid-bound footprints; these are not metal sections."""
+    from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
     hi, vi = "xyz".index(horizontal), "xyz".index(vertical)
     for electrode in projection["electrodes"]:
         first = True
         for solid in electrode["solids"]:
-            if solid["shape"] == "box":
-                low, high = solid["min_mm"], solid["max_mm"]
-            else:
-                radius = solid["radius_mm"]
-                low = [solid["x_min_mm"], solid["center_y_mm"]-radius, solid["center_z_mm"]-radius]
-                high = [solid["x_max_mm"], solid["center_y_mm"]+radius, solid["center_z_mm"]+radius]
+            low, high = shape_bounds(solid)
             axis.add_patch(Rectangle((low[hi], low[vi]), high[hi]-low[hi], high[vi]-low[vi], facecolor="none", edgecolor="#777777", linewidth=.5, alpha=.45, label=f"E{electrode['electrode_id']} {electrode['name']}" if first else None))
             first = False
     axis.set(xlabel=f"{horizontal} (mm)", ylabel=f"{vertical} (mm)")

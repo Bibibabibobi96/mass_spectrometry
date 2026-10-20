@@ -48,12 +48,14 @@ def _write_csv(path: Path, rows: list[dict], fields: list[str] | None = None) ->
         writer.writerows(rows)
 
 
-def load_recorded_case(run: Path, label: str, *, include_samples: bool = False) -> dict:
+def load_recorded_case(run: Path, label: str, *, include_samples: bool = False,
+                       allow_failed: bool = False) -> dict:
     """Verify only consumed immutable records, keeping raw loss evidence upstream."""
     run = Path(run).resolve()
     require_completed_terminal_publication(run / "run_manifest.json")
     manifest = _json(run / "run_manifest.json")
-    if manifest.get("status") != "success" or manifest.get("project") != PROJECT or manifest.get("run_id") != run.name:
+    allowed_status = {"success", "failed"} if allow_failed else {"success"}
+    if manifest.get("status") not in allowed_status or manifest.get("project") != PROJECT or manifest.get("run_id") != run.name:
         raise ValueError("source run identity or status differs")
     records = {}
     for record in [manifest["run_config"], *manifest["inputs"].values(), *manifest["outputs"]]:
@@ -68,11 +70,17 @@ def load_recorded_case(run: Path, label: str, *, include_samples: bool = False) 
                 "results/diagnostic_snapshots.csv", "results/diagnostic_losses.csv")
     if include_samples:
         consumed += ("simion/samples.csv",)
+    if manifest["status"] == "failed":
+        consumed += ("summary.json",)
     for name in consumed:
         if name not in records:
             raise ValueError(f"consumed record not manifest-bound: {name}")
         verify_record(name, records[name], base_dir=run)
     config = _json(run / consumed[0])
+    if manifest["status"] == "failed":
+        summary = _json(run / "summary.json")
+        if summary.get("role") != "ion_processor_functional_summary":
+            raise ValueError("failed source lacks a measured physical summary")
     if "coordinate_transform" not in config:
         raise ValueError("comparison requires declared project XYZ frame")
     events = _table(run / "simion/events.csv")
@@ -87,6 +95,8 @@ def load_recorded_case(run: Path, label: str, *, include_samples: bool = False) 
         target[particle] = row
     if not sources or set(terminals) != set(sources) or not set(exits) <= set(sources):
         raise ValueError("source/terminal/exit census differs")
+    if len(sources) != config["source"]["particle_count"]:
+        raise ValueError("source census differs from frozen particle count")
     snapshots = _table(run / "results/diagnostic_snapshots.csv")
     stages = [item["label"] for item in _json(run / "inputs/diagnostics.json")["snapshots"] if item["label"] != "source"]
     states = []
@@ -158,10 +168,10 @@ def validate_controlled_cases(cases: list[dict], contract: dict) -> None:
         raise ValueError("registered factorial cells are incomplete")
 
 
-def prepare_statistics(cases: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
+def prepare_statistics(cases: list[dict], *, allow_empty_common: bool = False) -> tuple[list[dict], list[dict], list[int]]:
     """Return full-census and conditional widths, plus same-ID interval budgets."""
     common = set.intersection(*(set(case["exits"]) for case in cases))
-    if not common:
+    if not common and not allow_empty_common:
         raise ValueError("no common extracted IDs")
     statistics, intervals = [], []
     for case in cases:

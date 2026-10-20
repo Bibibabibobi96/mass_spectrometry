@@ -7,7 +7,7 @@ import math
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-from matplotlib.patches import Rectangle, Circle
+from matplotlib.patches import Rectangle, Circle, Polygon
 from matplotlib.lines import Line2D
 NAMES = {1: 'Octupole RF A', 2: 'Octupole RF B', 3: 'HP vertical RF', 4: 'HP transverse RF', 5: 'LP pull', 6: 'LP push', 7: 'LP upper side', 8: 'LP lower side', 9: 'HP corner auxiliary', 10: 'LP outer auxiliary', 11: 'LP inner auxiliary', 12: 'Entrance lens', 13: 'Exit lens', 14: 'LP shield', 15: 'HP shield'}
 STATE = {'alive': ('#0069A8', 'o', 'Alive'), 'extracted': ('#00845A', 's', 'Extracted (last position)'), 'lost': ('#B42532', 'x', 'Lost / timeout (last position)')}
@@ -17,12 +17,21 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 def world_bounds(shape, origin_z_mm: float):
-    a, b = (shape['min_mm'], shape['max_mm'])
+    from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
+    a, b = shape_bounds(shape)
     return ([-b[2], a[0], origin_z_mm - b[1]], [-a[2], b[0], origin_z_mm - a[1]])
 
 def section(shape, view, value, origin_z_mm: float):
-    """Exact plane intersection; rectangles or circle, in project coordinates."""
+    """Exact plane intersection; rectangles, circles or ordered world polygons."""
     h, v, f = {'long': (1, 2, 0), 'top': (1, 0, 2), 'cross': (0, 2, 1)}[view]
+    if shape['shape'] == 'convex_polyhedron':
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import convex_section
+        axis, local_value = {'long': (2, -value), 'top': (1, origin_z_mm-value), 'cross': (0, value)}[view]
+        vertices = convex_section(shape, axis, local_value)
+        if vertices is None or len(vertices) < 3:
+            return None
+        world = [(-p[2], p[0], origin_z_mm-p[1]) for p in vertices]
+        return ('polygon', tuple((p[h], p[v]) for p in world))
     if shape['shape'] == 'box':
         a, b = world_bounds(shape, origin_z_mm)
         if not a[f] <= value <= b[f]:
@@ -50,6 +59,65 @@ def subtract(rect, cut):
         return [rect]
     return [r for r in [(a, b, x0, d), (x1, b, c, d), (x0, b, x1, y0), (x0, y1, x1, d)] if r[2] > r[0] and r[3] > r[1]]
 
+def _polygon_vertices(item):
+    if item[0] == 'polygon':
+        return list(item[1])
+    if item[0] != 'rect':
+        raise ValueError('Circular apertures require curved Boolean section support')
+    a, b, c, d = item[1]
+    return [(a,b),(c,b),(c,d),(a,d)]
+
+def _polygon_area(vertices):
+    return sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(vertices,vertices[1:]+vertices[:1]))/2
+
+def _half_plane(vertices, a, b, inside):
+    """Clip one convex polygon against an oriented closed half-plane."""
+    result = []
+    if not vertices:
+        return result
+    def distance(p):
+        return (b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0])
+    for previous, current in zip(vertices[-1:]+vertices[:-1],vertices):
+        d0, d1 = distance(previous), distance(current)
+        keep0, keep1 = (d0 >= 0, d1 >= 0) if inside else (d0 <= 0, d1 <= 0)
+        if keep0 != keep1:
+            fraction = d0/(d0-d1)
+            result.append(tuple(p+fraction*(q-p) for p,q in zip(previous,current)))
+        if keep1:
+            result.append(tuple(current))
+    unique = []
+    for point in result:
+        if not unique or point != unique[-1]:
+            unique.append(point)
+    if len(unique)>1 and unique[0] == unique[-1]:
+        unique.pop()
+    return unique if len(unique)>=3 and abs(_polygon_area(unique))>0 else []
+
+def _subtract_polygon(vertices, cut):
+    """Partition a convex polygon minus a convex cut into disjoint polygons."""
+    if _polygon_area(cut)<0:
+        cut = list(reversed(cut))
+    result, remaining = [], vertices
+    for a,b in zip(cut,cut[1:]+cut[:1]):
+        outside = _half_plane(remaining,a,b,False)
+        if outside:
+            result.append(outside)
+        remaining = _half_plane(remaining,a,b,True)
+        if not remaining:
+            break
+    return result
+
+def section_centroid(kind, shape):
+    """Return a section annotation point without substituting its bounding box."""
+    if kind == 'circle':
+        return tuple(shape[:2])
+    if kind == 'rect':
+        return ((shape[0]+shape[2])/2,(shape[1]+shape[3])/2)
+    vertices = list(shape)
+    area = _polygon_area(vertices)
+    factors = [a[0]*b[1]-b[0]*a[1] for a,b in zip(vertices,vertices[1:]+vertices[:1])]
+    return tuple(sum((a[k]+b[k])*f for a,b,f in zip(vertices,vertices[1:]+vertices[:1],factors))/(6*area) for k in (0,1))
+
 def parts(electrode, view, value, origin_z_mm: float):
     cuts = [section(s, view, value, origin_z_mm) for s in electrode['cutouts']]
     result = []
@@ -60,6 +128,13 @@ def parts(electrode, view, value, origin_z_mm: float):
         if item[0] == 'circle':
             assert not any(cuts)
             result.append(item)
+            continue
+        if item[0] == 'polygon' or any(c and c[0] == 'polygon' for c in cuts):
+            polygons = [_polygon_vertices(item)]
+            for cut in cuts:
+                if cut is not None:
+                    polygons = [piece for polygon in polygons for piece in _subtract_polygon(polygon,_polygon_vertices(cut))]
+            result.extend(('polygon',tuple(p)) for p in polygons)
             continue
         rects = [item[1]]
         for cut in cuts:
@@ -80,8 +155,10 @@ class SectionDiagnostics:
                 style = dict(facecolor='#C99736' if eid == 9 else '#D9DDE1', edgecolor='#84601C' if eid == 9 else '#666E75', linewidth=0.65, zorder=1)
                 if kind == 'rect':
                     ax.add_patch(Rectangle((p[0], p[1]), p[2] - p[0], p[3] - p[1], **style))
-                else:
+                elif kind == 'circle':
                     ax.add_patch(Circle(p[:2], p[2], **style))
+                else:
+                    ax.add_patch(Polygon(p, closed=True, **style))
         if view == 'long' and value == 0:
             self.draw_e9_projection(ax)
         ax.spines[['top', 'right']].set_visible(False)
@@ -92,18 +169,32 @@ class SectionDiagnostics:
         e9 = next((e for e in self.ELECTRODES if e['electrode_id'] == 9))
         footprints = set()
         for solid in e9['solids']:
+            if solid['shape'] == 'convex_polyhedron':
+                from scipy.spatial import ConvexHull
+                vertices = [(p[0],self.origin_z_mm-p[1]) for p in solid['vertices_mm']]
+                hull = ConvexHull(vertices)
+                footprints.add(('polygon',tuple(vertices[i] for i in hull.vertices)))
+                continue
             a, b = world_bounds(solid, self.origin_z_mm)
-            footprints.add((a[1], a[2], b[1], b[2]))
-        for a, b, c, d in sorted(footprints):
-            ax.add_patch(Rectangle((a, b), c - a, d - b, facecolor='#C99736', edgecolor='#84601C', linewidth=0.35, alpha=0.8, zorder=2))
+            footprints.add(('rect',(a[1], a[2], b[1], b[2])))
+        style = dict(facecolor='#C99736', edgecolor='#84601C', linewidth=0.35, alpha=0.8, zorder=2)
+        for kind, points in sorted(footprints):
+            if kind == 'polygon':
+                ax.add_patch(Polygon(points, closed=True, **style))
+            else:
+                a,b,c,d = points
+                ax.add_patch(Rectangle((a,b),c-a,d-b,**style))
 
     def callout(self, ax, eid, target, text, detail=''):
         ax.annotate(f'E{eid}  {NAMES[eid]}{detail}', xy=target, xytext=text, fontsize=8.5, ha='left', va='center', bbox=dict(facecolor='white', edgecolor='none', pad=1), arrowprops=dict(arrowstyle='-', color='#333333', lw=0.7, connectionstyle='angle3'), zorder=10)
 
     def region_labels(self, ax):
-        for left, right, label in [(0, 30, 'Octupole'), (30, 130, 'HP capture / cooling'), (130, 210, 'LP bunching / extraction')]:
+        guide = self.G['guide_length_mm']
+        hp = guide+self.G['hp_length_mm']
+        end = hp+self.G['lp_length_mm']
+        for left, right, label in [(0, guide, 'Octupole'), (guide, hp, 'HP capture / cooling'), (hp, end, 'LP bunching / extraction')]:
             ax.text((left + right) / 2, 14.45, label, ha='center', va='bottom', fontsize=8, color='#42484E')
-        ax.set(xlim=(-5, 215), ylim=(-0.5, 15.6))
+        ax.set(xlim=(-5, end+5), ylim=(-0.5, 15.6))
 
     def plot_states(self, ax, rows, local=False):
         for state, (color, marker, label) in STATE.items():
@@ -133,13 +224,15 @@ class SectionDiagnostics:
         plt.close(fig)
 
     def atlas(self):
+        axial_end = self.G['guide_length_mm'] + self.G['hp_length_mm'] + self.G['lp_length_mm']
+        lens_middle = axial_end+self.C['baseline']['native_geometry']['lens_thickness_mm']/2
         fig = plt.figure(figsize=(19, 13))
         grid = fig.add_gridspec(3, 3, height_ratios=[0.8, 0.8, 1.4], left=0.08, right=0.98, top=0.92, bottom=0.08, hspace=0.55, wspace=0.28)
         ax = fig.add_subplot(grid[0, :])
         self.draw_geometry(ax)
-        ax.set(xlim=(-5, 215), ylim=(5.5, 15.5))
+        ax.set(xlim=(-5, axial_end+5), ylim=(5.5, 15.5))
         ax.set_title('Center section x = 0 mm + amber E9 projection (the corners are off-plane)', loc='left', fontsize=12)
-        for eid, xy, txt in [(1, (15, 12.4), (1, 15)), (12, (29.75, 11.8), (26, 15)), (3, (75, 12.05), (64, 15)), (15, (110, 13.05), (103, 15)), (6, (155, 12.05), (143, 15)), (14, (194, 13.05), (179, 15)), (13, (210.25, 12.5), (199, 10.2))]:
+        for eid, xy, txt in [(1, (15, 12.4), (1, 15)), (12, (29.75, 11.8), (26, 15)), (3, (75, 12.05), (64, 15)), (15, (110, 13.05), (103, 15)), (6, (155, 12.05), (143, 15)), (14, (axial_end-8, 13.05), (axial_end-25, 15)), (13, (lens_middle, 12.5), (axial_end-11, 10.2))]:
             self.callout(ax, eid, xy, txt)
         ax = fig.add_subplot(grid[1, :])
         self.draw_geometry(ax, 'top', self.origin_z_mm)
@@ -173,12 +266,11 @@ class SectionDiagnostics:
                 e9 = next((e for e in self.ELECTRODES if e['electrode_id'] == 9))
                 quadrants = {}
                 for kind, p in parts(e9, 'cross', y, self.origin_z_mm):
-                    assert kind == 'rect'
-                    x, z = ((p[0] + p[2]) / 2, (p[1] + p[3]) / 2)
-                    quadrants[x > 0, z > 9.8] = (x, z)
+                    x, z = section_centroid(kind,p)
+                    quadrants[x > 0, z > self.origin_z_mm] = (x, z)
                 assert len(quadrants) == 4
                 for x, z in quadrants.values():
-                    ax.annotate('E9', xy=(x, z), xytext=(x + (-0.9 if x < 0 else 0.6), z + (0.7 if z > 9.8 else -0.7)), fontsize=9, color='#84601C', arrowprops=dict(arrowstyle='-', color='#84601C', lw=0.7))
+                    ax.annotate('E9', xy=(x, z), xytext=(x + (-0.9 if x < 0 else 0.6), z + (0.7 if z > self.origin_z_mm else -0.7)), fontsize=9, color='#84601C', arrowprops=dict(arrowstyle='-', color='#84601C', lw=0.7))
                 ax.text(-6.6, 5.2, 'Amber: E9 HP corner auxiliaries', fontsize=9, color='#84601C')
             else:
                 for eid, xy, txt in [(6, (0, 12.05), (-6.6, 14.3)), (5, (0.75, 7.55), (1.3, 5.3)), (7, (-2.25, 9.1), (-6.8, 8)), (8, (-2.25, 10.5), (-6.8, 11.8)), (10, (2.1, 9.8), (2.7, 11.2)), (11, (-1.5, 9.8), (-6.8, 10)), (14, (3.25, 8.2), (2.7, 6.5))]:

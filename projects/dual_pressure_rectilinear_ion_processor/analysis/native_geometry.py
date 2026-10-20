@@ -2,7 +2,8 @@
 
 This module defines geometry only; Refine must solve the potential separately.
 Millimetres and electrode IDs are preserved in the semantic projection. Corner
-and axial auxiliary electrodes use declared staircase segments, not imposed
+and axial auxiliary electrodes use declared staircase segments by default;
+explicit contour variants use continuous solid boundaries. Neither imposes
 analytical fields. Gas pressure remains a prescribed bath outside this module.
 """
 
@@ -12,6 +13,8 @@ import math
 from typing import Any
 
 from common.simion.gem_primitives import centered_box3d, format_number
+from projects.dual_pressure_rectilinear_ion_processor.analysis.electrode_contours import apply_contours
+from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import convex_planes
 
 
 NATIVE_GEOMETRY_FIELDS = frozenset("""
@@ -194,7 +197,7 @@ def native_projection(baseline: dict, numerics: dict) -> dict[str, Any]:
     if any(value < 3 for value in shape):
         raise ValueError("native PA domain must have at least three nodes per axis")
     maximum = [low + (count - 1) * grid for low, count in zip(minimum, shape)]
-    return {"schema_version": 1, "role": "native_electrode_geometry_projection",
+    projection = {"schema_version": 1, "role": "native_electrode_geometry_projection",
             "frame_id": baseline["clock"]["frame_id"], "length_unit": "mm",
             "origin_mm": minimum, "maximum_mm": maximum, "shape_gu": shape,
             "span_mm": [(count - 1) * grid for count in shape],
@@ -204,6 +207,7 @@ def native_projection(baseline: dict, numerics: dict) -> dict[str, Any]:
             "entrance_aperture_interpretation": "literature_2_mm_aperture_as_circular_diameter_model_interpretation",
             "exit_aperture_provenance": "independent_square_bore_model_assumption",
             "auxiliary_segments": segments, "gas_model": "prescribed_pressure_not_gas_flow_solution"}
+    return apply_contours(projection, baseline) if "electrode_contours" in baseline else projection
 
 
 def _primitive(shape: dict) -> str:
@@ -211,6 +215,13 @@ def _primitive(shape: dict) -> str:
         low, high = shape["min_mm"], shape["max_mm"]
         return centered_box3d(*[(a + b) / 2 for a, b in zip(low, high)],
                               *[b - a for a, b in zip(low, high)])
+    if shape["shape"] == "convex_polyhedron":
+        # Official SIMION 8.2 half_space: the normal points out of material.
+        # Each supporting plane is intersected by the surrounding within{}.
+        planes = convex_planes(shape)
+        return " ".join("half_space(" + ",".join(format_number(v) for v in [*[-d*x for x in (nx,ny,nz)],nx,ny,nz]) + ")" for nx,ny,nz,d in planes)
+    if shape["shape"] != "cylinder_x":
+        raise ValueError("unsupported native primitive")
     # SIMION's cylinder extends in local -Z; +90 degree azimuth maps it
     # toward -X. Locate at x_max so the rod occupies [x_min,x_max].
     f = format_number
@@ -227,7 +238,7 @@ def render_gem(baseline: dict, numerics: dict) -> str:
     grid = f(p["grid_mm"])
     origin = p["origin_mm"]
     lines = ["; Simplified native electrodes; Refine required; no analytical field override.",
-             "; Auxiliary surfaces are midpoint-sampled staircase discretizations.",
+             ("; Auxiliary surfaces: " + p["auxiliary_surface_model"] + ".") if "electrode_contours" in baseline else "; Auxiliary surfaces are midpoint-sampled staircase discretizations.",
              f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{grid},{grid},{grid},surface=fractional)",
              f"locate({f(-origin[0])},{f(-origin[1])},{f(-origin[2])}) {{"]
     for electrode in p["electrodes"]:
