@@ -20,6 +20,7 @@ import numpy as np
 
 from common.contracts.write_run_manifest import file_record
 from common.contracts.verify_run_manifest import record_path, verify_record
+from projects.dual_pressure_rectilinear_ion_processor.analysis import beam_focus_diagnostics
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import (
     COLORS, MARKERS, VALUES, load_recorded_case, prepare_spatial_crossings, prepare_statistics,
 )
@@ -341,7 +342,9 @@ def build_geometry_figures(cases: list[dict], plane_statistics: list[dict], plan
     for ax, (metric, label) in zip(axes.flat, metrics, strict=True):
         for index, case in enumerate(cases):
             rows = [r for r in plane_statistics if r["case"] == case["label"] and r["cohort"] == cohort]
-            counts = "/".join(str(r["observed_count"]) for r in rows)
+            observed = [r["observed_count"] for r in rows]
+            counts = (f"{observed[0]} at all {len(rows)} planes" if len(set(observed)) == 1
+                      else f"{min(observed)}-{max(observed)}; per-plane counts in CSV")
             ax.plot(planes, [np.nan if r[metric] is None else r[metric] for r in rows], color=COLORS[index],
                     marker=MARKERS[index], linestyle=LINESTYLES[index], label=f"{case['label']} | valid N={counts}")
         ax.set(xlabel="Observation z (mm); flight toward decreasing z", ylabel=label)
@@ -349,7 +352,7 @@ def build_geometry_figures(cases: list[dict], plane_statistics: list[dict], plan
         ax.grid(alpha=.2)
     handles,labels = axes[0,0].get_legend_handles_labels()
     evolution.legend(handles,labels,loc="outside upper center",ncol=2,fontsize=8,frameon=False,
-                     title=f"Extraction plane evolution\n{cohort}; common exit N={len(common)} | Counts follow planes left to right")
+                     title=f"Extraction plane evolution\n{cohort}; common exit N={len(common)} | Recorded bounded crossings")
     geometry_figures, geometry_metadata = build_electrode_comparison_figures(cases)
     return {**geometry_figures,"geometry_exit_phase_space": phase, "geometry_exit_distributions": distributions,
             "geometry_plane_evolution": evolution}, dict(bounds=bounds, histogram_bins={k: v.tolist() for k, v in bins.items()},
@@ -377,6 +380,7 @@ def analyze_geometry_study(run: Path) -> dict:
     spatial = [{**case, "states": prepare_spatial_crossings(case, planes), "stages": [f"z_{z:g}_mm" for z in planes]} for case in cases]
     plane_stats, _, _ = prepare_statistics(spatial, allow_empty_common=True)
     extend_statistics(spatial, plane_stats, common)
+    focus = beam_focus_diagnostics.prepare_focus_diagnostics(spatial, planes, common)
     census, losses = loss_evidence(cases)
     output = run/"results/geometry_comparison"
     output.mkdir(parents=True, exist_ok=True)
@@ -390,8 +394,12 @@ def analyze_geometry_study(run: Path) -> dict:
     _write_csv(output/"plane_statistics.csv", plane_stats)
     _write_csv(output/"mother_census.csv", census)
     _write_csv(output/"all_losses.csv", losses, list(census[0]))
+    for key in ("plane_statistics", "exit_angle_decomposition", "field_free_predictions", "sampled_minima"):
+        _write_csv(output/f"beam_focus_{key}.csv", focus[key])
+    (output/"beam_focus_diagnostics.json").write_text(json.dumps(focus, indent=2, allow_nan=False)+"\n", encoding="utf-8")
     with plt.rc_context({"font.family": "DejaVu Sans", "font.size": 9, "svg.fonttype": "none"}):
         figures, visual = build_geometry_figures(cases, plane_stats, planes, common)
+        figures["beam_focus_diagnostics"] = beam_focus_diagnostics.build_focus_figure(focus)
         for role, figure in figures.items():
             for extension in ("png", "svg"):
                 figure.savefig(output/f"{role}.{extension}", format=extension, dpi=210, facecolor="white")
@@ -401,10 +409,13 @@ def analyze_geometry_study(run: Path) -> dict:
                    source_run_statuses={c["label"]: _json(Path(c["run"])/"run_manifest.json")["status"] for c in cases},
                    common_extracted_ids=common, loss_records=len(losses), all_mother_outcomes_retained=True,
                    force_audits=force_audits,
+                   sampled_envelope_minima=focus["sampled_minima"],
                    exit_statistics=[r for r in stats if r["stage"] == "exit_z0"],
                    qualification=f"Single N={study['particle_count']} per declared contour; descriptive population moments; no convergence or significance qualification")
     manifest = dict(schema_version=1, role="ion_processor_geometry_figure_sources", study_contract=file_record(study_path),
-                    producer=file_record(Path(__file__)), cases=[dict(label=c["label"], run=c["run"], source_manifest=file_record(Path(c["run"])/"run_manifest.json"), source_records=c["source_records"]) for c in cases],
+                    producer=file_record(Path(__file__)), focus_producer=file_record(Path(beam_focus_diagnostics.__file__)),
+                    focus_methods=focus["metadata"],
+                    cases=[dict(label=c["label"], run=c["run"], source_manifest=file_record(Path(c["run"])/"run_manifest.json"), source_records=c["source_records"]) for c in cases],
                     frame=cases[0]["config"]["coordinate_transform"], formats=["png", "svg"], png_dpi=210, figures=list(figures), **visual,
                     units=dict(position="mm", velocity="mm/us", angle="degree", energy="eV", time="instrument us; centered time figure ns"),
                     metrics="Population SD (ddof=0); centered population covariance; RMS projected emittance; no Gaussian/FWHM inference",

@@ -109,6 +109,18 @@ class ExtractionPhaseSpaceComparisonTests(unittest.TestCase):
             self.assertTrue(all(r["status"]=="unknown" for r in result if r["particle_id"]==2))
             with self.assertRaisesRegex(ValueError,"descending"):
                 prepare_spatial_crossings(case,[0,9])
+
+            # A real exit may bound the unsampled positive-z tail, without z=0
+            # being requested. A long gap must remain unknown.
+            case["exits"][1]["t_us"] = 11.51
+            tail = prepare_spatial_crossings(case,[2,1])
+            self.assertTrue(all(r["status"] == "alive" for r in tail if r["particle_id"] == 1))
+            self.assertEqual(tail[0]["method"],"bounded_sample_to_exit_event_crossing")
+            self.assertEqual(tail[0]["lower_sample_line"],5)
+            self.assertIsNone(tail[0]["upper_sample_line"])
+            self.assertAlmostEqual(tail[0]["t_us"],11.5+.01/3)
+            case["exits"][1]["t_us"] = 11.6
+            self.assertTrue(all(r["status"] == "unknown" for r in prepare_spatial_crossings(case,[2,1])))
     def test_only_registered_physical_variables_may_change(self):
         cases = cases_fixture()
         contract = dict(factor_A=dict(levels=[80.,61.5]), factor_B=dict(levels=[4000.,4480.]), execution=dict(particle_count=3), stages=cases[0]["stages"])

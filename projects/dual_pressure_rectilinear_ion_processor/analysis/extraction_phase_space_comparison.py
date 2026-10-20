@@ -318,11 +318,26 @@ def prepare_spatial_crossings(case: dict, planes: list[float]) -> list[dict]:
                 state["z_mm"] = z
                 crossed[pid,z] = dict(**state, bracket_start_us=before["t_us"], bracket_end_us=t, bracket_gap_us=gap,
                                       lower_sample_line=before["line"], upper_sample_line=line, interpolation_alpha=alpha, method="bounded_linear_sample_crossing")
-    if 0 in planes:
-        for pid, raw in case["exits"].items():
-            state = {key:float(raw[key]) for key in ("t_us", *VALUES)}
-            if state["t_us"] < pulse or state["vz_mm_us"] >= 0 or abs(state["z_mm"]) > 1e-10:
-                raise ValueError("recorded exit violates spatial crossing contract")
+    for pid, raw in case["exits"].items():
+        state = {key:float(raw[key]) for key in ("t_us", *VALUES)}
+        if any(not math.isfinite(value) for value in state.values()) or state["t_us"] < pulse or state["vz_mm_us"] >= 0 or abs(state["z_mm"]) > 1e-10:
+            raise ValueError("recorded exit violates spatial crossing contract")
+        before = previous.get(pid)
+        # The actual exit is a measured upper anchor when sampling stops at z>0.
+        # Preserve the same temporal bound; never extrapolate or invent a CSV line.
+        if before is not None:
+            gap = state["t_us"]-before["t_us"]
+            if 0 < gap <= limit+1e-12 and before["vz_mm_us"] < 0 and before["z_mm"] > 0:
+                for z in planes:
+                    if z == 0 or (pid,z) in crossed or not before["z_mm"] >= z > 0:
+                        continue
+                    alpha = (z-before["z_mm"])/(state["z_mm"]-before["z_mm"])
+                    interpolated = {key:before[key]+alpha*(state[key]-before[key]) for key in ("t_us", *VALUES)}
+                    interpolated["z_mm"] = z
+                    crossed[pid,z] = dict(**interpolated, bracket_start_us=before["t_us"], bracket_end_us=state["t_us"], bracket_gap_us=gap,
+                                          lower_sample_line=before["line"], upper_sample_line=None, interpolation_alpha=alpha,
+                                          method="bounded_sample_to_exit_event_crossing")
+        if 0 in planes:
             crossed[pid,0] = dict(**state, bracket_start_us=None, bracket_end_us=None, bracket_gap_us=None,
                                   lower_sample_line=None, upper_sample_line=None, interpolation_alpha=None, method="recorded_extraction_exit_event")
     rows = []

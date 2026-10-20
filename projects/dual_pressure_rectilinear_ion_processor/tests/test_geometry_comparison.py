@@ -231,8 +231,13 @@ class GeometryComparisonTests(unittest.TestCase):
             result = geometry.analyze_geometry_study(parent)
         self.assertEqual(result["loss_records"], 3)
         output = parent/"results/geometry_comparison"
-        self.assertEqual(len(list(output.glob("*.png"))), 5)
-        self.assertEqual(len(list(output.glob("*.svg"))), 5)
+        self.assertEqual(len(list(output.glob("*.png"))), 6)
+        self.assertEqual(len(list(output.glob("*.svg"))), 6)
+        focus = json.loads((output/"beam_focus_diagnostics.json").read_text())
+        self.assertEqual(focus["common_ids"], [1, 2])
+        self.assertTrue(all(row["cohort_membership_constant"] for row in focus["sampled_minima"]
+                            if row["cohort"] == "common_extracted_ids"))
+        self.assertEqual(len(result["sampled_envelope_minima"]), 27)
         metadata = json.loads((output/"figure_manifest.json").read_text())
         for edges in metadata["histogram_bins"].values():
             self.assertEqual(len(edges), 21)
