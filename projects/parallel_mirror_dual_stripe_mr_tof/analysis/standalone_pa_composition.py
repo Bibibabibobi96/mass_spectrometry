@@ -27,6 +27,7 @@ import numpy as np
 from common.contracts.file_identity import file_sha256
 
 HEADER = struct.Struct('<iidiiiiddd')
+PA_CHUNK_NODES = 1 << 20
 
 
 @dataclass(frozen=True)
@@ -116,12 +117,40 @@ def _read_block(stream: BinaryIO, count: int, header: PaHeader) -> tuple[np.ndar
     return raw, flags
 
 
+def validate_standalone_pa_payload(path: Path, *, chunk_nodes: int = PA_CHUNK_NODES) -> dict[str, Any]:
+    """Check every newly refined ordinary PA node in bounded, read-only blocks.
+
+    Reuse the installed SL format boundary above, including negative electrode
+    potentials encoded as potential + 2*max_voltage. This is a producer check,
+    not an accuracy test or a repeated consumer scan of sealed source arrays.
+    """
+    if isinstance(chunk_nodes, bool) or not isinstance(chunk_nodes, int) or chunk_nodes < 1:
+        raise ValueError('chunk_nodes must be a positive integer')
+    path = Path(path).resolve()
+    header = read_pa_header(path)
+    nodes = blocks = 0
+    with path.open('rb') as stream:
+        stream.seek(HEADER.size)
+        while nodes < header.node_count:
+            count = min(chunk_nodes, header.node_count - nodes)
+            try:
+                _read_block(stream, count, header)
+            except ValueError as exc:
+                raise ValueError(f'ordinary PA payload validation failed at node block {nodes}: {exc}') from exc
+            nodes += count
+            blocks += 1
+    return dict(schema_version=1, role='simion_standalone_pa_payload_validation', status='PASS',
+                path=str(path), bytes=header.file_bytes, expected_nodes=header.node_count,
+                validated_nodes=nodes, finite_nodes=nodes, encoded_range_valid=True,
+                chunk_nodes=chunk_nodes, blocks=blocks, full_pa_hash_performed=False)
+
+
 def compose_standalone_pa(
     base_path: Path,
     output_path: Path,
     responses: Sequence[tuple[Path, float]],
     *,
-    chunk_nodes: int = 1 << 20,
+    chunk_nodes: int = PA_CHUNK_NODES,
 ) -> dict[str, Any]:
     """Write BASE + sum(coefficient*response) in bounded float64 blocks.
 

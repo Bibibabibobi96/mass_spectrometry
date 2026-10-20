@@ -37,9 +37,15 @@ def _point(point: list, rotation: list, translation: list) -> list:
 
 
 def transform_shape(shape: dict, rotation: list, translation: list) -> dict:
-    """Preserve boxes and circular holes under an axis permutation rigid pose."""
+    """Preserve boxes, convex vertices and circular holes in an axis-permutation pose."""
     if any(sorted(abs(v) for v in row) != [0, 0, 1] for row in rotation):
         raise ValueError("assembly CSG requires axis permutation rotation")
+    if shape["shape"] == "convex_polyhedron":
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
+
+        shape_bounds(shape)
+        return {"shape": "convex_polyhedron",
+                "vertices_mm": [_point(vertex, rotation, translation) for vertex in shape["vertices_mm"]]}
     if shape["shape"] == "box":
         vertices = [
             _point(list(p), rotation, translation) for p in itertools.product(*zip(shape["min_mm"], shape["max_mm"]))
@@ -59,6 +65,11 @@ def transform_shape(shape: dict, rotation: list, translation: list) -> dict:
 
 
 def _bounds(shape: dict) -> list:
+    if shape["shape"] == "convex_polyhedron":
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.convex_geometry import shape_bounds
+
+        lower, upper = shape_bounds(shape)
+        return lower + upper
     if shape["shape"] == "box":
         return shape["min_mm"] + shape["max_mm"]
     ends, r = shape["endpoints_mm"], shape["radius_mm"]
@@ -68,6 +79,10 @@ def _bounds(shape: dict) -> list:
 
 
 def _primitive(shape: dict) -> str:
+    if shape["shape"] == "convex_polyhedron":
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import _primitive as native_primitive
+
+        return native_primitive(shape)
     if shape["shape"] == "box":
         low, high = shape["min_mm"], shape["max_mm"]
         return centered_box3d(*[(a + b) / 2 for a, b in zip(low, high)], *[b - a for a, b in zip(low, high)])
@@ -210,11 +225,17 @@ def _gem(
 
 
 def derive_lift_seed(source: dict, request: dict) -> float:
-    """First-order editable seed only; measured trajectories are never rescaled."""
+    """Apply the explicit voltage policy without rescaling measured trajectories."""
     lift = _finite(source["native_operating_point"]["lift_v"])
     target = _finite(request["target"]["axial_energy_per_charge_v"])
     measured = _finite(request["current_measured_baseline"]["directional_energy"]["z"]["mean"])
-    result = lift + target - measured
+    policy = request["policies"]["energy_adjustment"]
+    if policy == "provider_voltage_and_geometry":
+        result = lift + target - measured
+    elif policy == "preserve_measured_workpoint":
+        result = lift
+    else:
+        raise ValueError("unsupported IP energy adjustment policy")
     if min(lift, target, measured, result) <= 0:
         raise ValueError("positive lift and axial energies required")
     return result
@@ -492,12 +513,17 @@ def prepare_ion_processor_assembly(
         "assembly_coordinate_transform": coordinate,
         "runtime_geometry": runtime_geometry,
         "energy_seed": {
-            "formula": "lift_seed = lift_baseline + target_Ez_per_q - measured_baseline_mean_Ez_per_q",
+            "policy": request["policies"]["energy_adjustment"],
+            "formula": ("lift_seed = lift_baseline" if request["policies"]["energy_adjustment"] == "preserve_measured_workpoint"
+                        else "lift_seed = lift_baseline + target_Ez_per_q - measured_baseline_mean_Ez_per_q"),
             "baseline_lift_v": old_lift,
             "target_ez_per_q_v": target,
             "measured_baseline_ez_per_q_v": measured,
             "new_lift_v": point["lift_v"],
-            "qualification": "first_order_seed_only_requires_fresh_IP_flight_no_velocity_scaling",
+            "measured_minus_target_ez_per_q_v": measured - target,
+            "qualification": ("measured_workpoint_preserved__target_difference_reported_without_acceptance"
+                              if request["policies"]["energy_adjustment"] == "preserve_measured_workpoint"
+                              else "first_order_seed_only_requires_fresh_IP_flight_no_velocity_scaling"),
         },
         "geometry_changes": {
             "lp_length_before_mm": old_length,
@@ -531,7 +557,9 @@ def prepare_ion_processor_assembly(
             for p in (source_resolved_model, reference_trajectory, matching_request_resolved)
         ],
         "required_before_joint_flight": [
-            "Fresh IP GEM build/Refine and N100 flight with seed voltage and shortened LP; export actual states preserving full census",
+            ("Verify prepared IP configuration matches the measured source; retain measured states and complete census"
+             if request["policies"]["energy_adjustment"] == "preserve_measured_workpoint"
+             else "Fresh IP GEM build/Refine and N100 flight with seed voltage and shortened LP; export actual states preserving full census"),
             "Rebuild C0 and every local field from this assembly; inherit boundaries only from the new parent",
             "Verify field handover guards, collisions, state transfer and instrument clock before joint flight",
             "Match downstream spatial/time response; old OA working point is an initial seed only",

@@ -111,6 +111,7 @@ class AssemblyTests(unittest.TestCase):
             },
         )
         self.request = {
+            "policies": {"energy_adjustment": "provider_voltage_and_geometry"},
             "target": {"axial_energy_per_charge_v": 4372.010347796, "frame_id": "mr"},
             "current_measured_baseline": {"directional_energy": {"z": {"mean": 3891.9665569516114}}},
             "requirements": {"energy_definition": "exit_axial_kinetic_energy_per_charge"},
@@ -157,6 +158,28 @@ class AssemblyTests(unittest.TestCase):
         self.assertIn("cylinder3d(", text)
         self.assertIn("namespace=ion_processor id=12", text)
         self.assertIn("notin_inside", text)
+
+    def test_preserve_measured_workpoint_keeps_voltage_and_reports_original_target(self):
+        lift = 4480.043790844389
+        self.source["native_operating_point"]["lift_v"] = lift
+        self.source["baseline"]["electric"]["lift_v"] = lift
+        self.source["baseline"]["geometry"]["lp_length_mm"] = 61.5
+        self.request["policies"]["energy_adjustment"] = "preserve_measured_workpoint"
+        self.request["current_measured_baseline"]["directional_energy"]["z"]["mean"] = 4359.0
+        report = self.prepare()
+        seed = report["energy_seed"]
+        self.assertEqual(seed["new_lift_v"], lift)
+        self.assertEqual(seed["target_ez_per_q_v"], 4372.010347796)
+        self.assertAlmostEqual(seed["measured_minus_target_ez_per_q_v"], 4359.0 - 4372.010347796)
+        self.assertEqual(report["geometry_changes"]["lp_length_after_mm"], 61.5)
+        for name, field in (("baseline", "electric"), ("native_operating_point", None)):
+            prepared = json.loads(Path(report["source_config_paths"][name]).read_text())
+            self.assertEqual((prepared[field] if field else prepared)["lift_v"], lift)
+
+    def test_lift_seed_rejects_unknown_energy_adjustment_policy(self):
+        self.request["policies"]["energy_adjustment"] = "unknown"
+        with self.assertRaisesRegex(ValueError, "energy adjustment policy"):
+            assembly.derive_lift_seed(self.source, self.request)
 
     def test_historical_source_authors_current_native_seed_without_retired_analytic_fields(self):
         expected = copy.deepcopy(self.source["baseline"])

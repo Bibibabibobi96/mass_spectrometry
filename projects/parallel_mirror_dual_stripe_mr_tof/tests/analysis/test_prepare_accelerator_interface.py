@@ -115,6 +115,37 @@ class InterfacePreparationTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 freeze_file(source, target)
 
+    def test_reference_ignores_normalized_projection_and_verifies_manifest_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            binding = run / 'static_field_binding.json'
+            binding.write_bytes(b'{"field":1}\n')
+            config = run / 'run_config.json'
+            config.write_text(json.dumps({'inputs': {'static_field_dependencies': {
+                'path': str(binding), 'mode': 'native_static_pa', 'records': {}}}}), encoding='utf-8')
+            manifest = dict(project='parallel_mirror_dual_stripe_mr_tof', status='success',
+                            run_config=file_record(config), inputs={'static_field_binding': file_record(binding)},
+                            outputs=[])
+            (run / 'run_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            self.assertEqual(verified_reference(run, binding.name), binding)
+            binding.write_bytes(b'{"field":2}\n')
+            with self.assertRaises(AssertionError):
+                verified_reference(run, binding.name)
+
+    def test_normalized_projection_alone_does_not_bind_reference(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            binding = run / 'static_field_binding.json'
+            binding.write_bytes(b'{}\n')
+            config = run / 'run_config.json'
+            config.write_text(json.dumps({'inputs': {'static_field_dependencies': {
+                'path': str(binding), 'mode': 'native_static_pa'}}}), encoding='utf-8')
+            manifest = dict(project='parallel_mirror_dual_stripe_mr_tof', status='success',
+                            run_config=file_record(config), inputs={}, outputs=[])
+            (run / 'run_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'does not bind'):
+                verified_reference(run, binding.name)
+
     def test_reference_accepts_config_bound_input_and_rejects_tampering(self):
         with tempfile.TemporaryDirectory() as directory:
             run = Path(directory)

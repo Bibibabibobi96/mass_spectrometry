@@ -101,6 +101,43 @@ class StandaloneCompositionTest(unittest.TestCase):
                 self.assertFalse(result['refine_performed'])
                 self.assertFalse(result['qualification_passed'])
 
+    def test_new_payload_validation_reads_every_node_in_bounded_blocks(self):
+        original = c.np.fromfile
+        counts = []
+        def observe(stream, *, dtype, count):
+            counts.append(count)
+            self.assertLessEqual(count, 7)
+            return original(stream, dtype=dtype, count=count)
+        before = self.base.read_bytes()
+        with patch.object(c.np, 'fromfile', side_effect=observe), patch.object(c, 'file_sha256', side_effect=AssertionError('no PA hash')):
+            result = c.validate_standalone_pa_payload(self.base, chunk_nodes=7)
+        self.assertEqual(counts, [7, 7, 7, 7, 2])
+        self.assertEqual(result['expected_nodes'], 30)
+        self.assertEqual(result['validated_nodes'], 30)
+        self.assertEqual(result['finite_nodes'], 30)
+        self.assertEqual(result['blocks'], 5)
+        self.assertTrue(result['encoded_range_valid'])
+        self.assertEqual(self.base.read_bytes(), before)
+        # Several electrode potentials are negative and their raw values lie
+        # strictly between max_voltage and 2*max_voltage; these remain legal.
+        self.assertTrue(np.any(self.flags & (self.b < 0)))
+
+    def test_new_payload_validation_rejects_late_nonfinite_and_encoded_range(self):
+        for value in (float('nan'), float('inf'), -float('inf'), -101., 301.):
+            with self.subTest(value=value):
+                values = self.b.copy()
+                values[-1] = value
+                path = self.write('invalid_new.pa', values, flags=np.zeros(30, dtype=bool))
+                before = path.read_bytes()
+                with self.assertRaisesRegex(ValueError, 'node block 28'):
+                    c.validate_standalone_pa_payload(path, chunk_nodes=7)
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_new_payload_validation_rejects_invalid_block_sizes(self):
+        for size in (0, -1, True, 1.5):
+            with self.subTest(size=size), self.assertRaisesRegex(ValueError, 'chunk_nodes'):
+                c.validate_standalone_pa_payload(self.base, chunk_nodes=size)
+
     def test_negative_electrode_uses_raw_greater_than_max_not_twice_max(self):
         base = self.write('negative.pa', np.full(30, -75.0))
         c.compose_standalone_pa(base, self.output, [], chunk_nodes=5)

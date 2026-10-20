@@ -21,6 +21,113 @@
 
 ## 输入与装配
 
+### IP到P1的局部距离对照
+
+`analysis/run_ip_prism_distance_study.ps1 -RunId <new-run> -ContractPath <experiment.json>`
+只求解IP出口与第一Prism的小域静电场，并在合同的`p1_exit`面停止，不进入镜组或整机闭合。
+合同显式冻结五份封存来源（几何、电压、实测出口、完整母群、提取时序）、距离列表、局部盒／网格、
+Refine精度、最大积分步长、观测面和容量承诺。`analysis/ip_prism_distance_study.py`验证并准备输入；
+`ip_prism_local_geometry.py`复用canonical CSG，P1固定、IP与屏蔽延长段同步平移，保持1mm机械间隙。
+距离指名义束轴处离轴三角电极的投影近端，不冒充尖锐的电场入口；实际场剖面随运行输出。
+
+入口复用公共主机许可、资源画像和独立工作项调度；每工况原生GEM→普通PA Refine→保存重载IOB→Fly，
+自动并发由首工况实测决定。同一进程分配多个工况时按公共计划串行执行，没有嵌套并行。
+测得的出口六维状态与绝对时间保持，仅位置作刚体平移；原母群未交接离子继续登记为上游损失。
+`ip_prism_local_diagnostics.py`自动输出全部损失原行身份、共同ID与各自到达群的相空间／时间宽度、
+共同时间空间云及静态K+qV漂移；时间宽度采用人口SD，不据此给出整机R或高斯FWHM。
+局部五面接地／x镜像边界是独立小域近似，截断导体清单显式保留，不继承旧几何父场；
+它不验证近移屏蔽对上游捕获／引出状态的反馈，也不代表GUI、CAD或MR接受度资格。
+
+### IP轮廓、时间焦点与接受度局部验证
+
+同一局部入口接受schema version 4的`ip_prism_contour_focus_experiment`合同；它以每行明确的来源、几何、网格及步长，
+消费B／C／D各自完整出口与母群，而不是把旧平板场用于新轮廓。来源诊断失败时，只有完整物理事件和
+实际消费记录通过身份核验才允许交接；保留原producer状态，不将其改为成功。
+电压通过冻结的IP原生Lua时序投影，不在Python复制电压公式。跨项目依赖由
+`config/ion_processor_dependency.json`声明，实际进口源码闭包冻结进本次输入。
+
+`field_sources`必须精确覆盖全部`field_case_id`：每项为`{action:'build'}`或
+`{action:'reuse',source_run:<sealed-run>,source_field_case_id:<field-id>}`。复用来源可为success或failed，
+但必须具备manifest绑定的完整有限值／编码范围／网格验证，编译出的GEM、原生电压及Refine身份必须一致。
+PA及实际surface经公共机制复制到本次独立目录并核验目标SHA；不修改来源状态，不复用失败的飞行记录。
+完整`field_owners`与实际需新建的`build_cases`分开；全部复用时跳过求场，仍验证所有场。
+每个`field_case_id`仅建场或物化一次，完整载荷有限性／网格校验后再调度只读共享PA的Fly；
+半步对照共享对应场。`validate-fields`自动生成实际PA节点与连续CSG的截面对照和逐节点表；
+新准备保留科学case表顺序，另冻结按场节点数降序的建场／飞行顺序；最大场的首个正式工况自然完成后，
+再用完整进程的实测峰值自动规划余项并发，避免用粗网格或GEM早期观测代替细网格的完整内存需求。
+这复用公共`WaitForNaturalCompletionAfterObservation`机制，不把PA文件大小伪装成实测内存；已启动冻结运行不回写。
+节点截面包括中心XZ、auxiliary中面XY、束轴YZ及RF／内外辅助电极的几何派生YZ位置，保留请求面与实际节点面。
+这些图展示离散表示，不把fractional求场表面视为Fly的精确碰撞表面。
+`validate-fields`还自动调用`ip_prism_field_theory.export_field_theory`，在Fly前输出全出口的无场协方差、
+逐面束腰与理想薄透镜权衡，以及实际PA在恒速参考路径上的场／对角曲率探针；全部声明观察面和出生点均保留。
+场探针不是实飞或SIMION力插值；电极／越界stencil显式记录，局部场保持的速度变化尺度不是积分偏转量或误差界。
+理想准直与指定下游面最小束斑使用不同透镜强度，不据此宣称实际电压可达性能；普通单工作点PA不能识别单电极调压响应。
+飞行后自动输出全母群损失、沿程时间宽度、共同ID比较、统一法向面与全局z面的配对结果，
+以及明确位置／尺寸的虚拟y狭缝和圆孔比较。采样最小值若位于范围边缘或群体缺失，必须显式标记。
+`sampled_minima.csv`保留时间宽度极小值；`sampled_spatial_minima.csv`使用同一完整支撑区间机制，
+分别给出全局z面的σx／σy与参考法向面的局部横向束宽最小值、位置和边界标记，不将损失后的窄群当作原群束腰。
+虚拟筛选不改变场，不能替代有厚度实体孔及其边缘场的独立求解；两者分开报告。
+新合同每行必须显式给出`physical_aperture`，无孔为`null`；实体孔完整声明中心、world-z法向、
+板厚、有限外尺寸、孔径及电位／连接。当前只支持x镜像对称的z法向圆孔和有限x宽的y狭缝，
+孔板必须位于实际出口和末观测面之间，并核验与屏蔽的真实接触及与P1实体的分离。
+GEM切孔工具沿z延伸到局部域外一个网格，避免等长切孔工具在板面留下端帽；实际板厚、孔径和连续CSG不变。
+该方式依照[官方GEM交集示例](https://simion.com/info/gem_geometry_file.html#intersecting-within-and-notin-inside)，
+已在SIMION 2020 8.2.0.11以两孔形、两网格实际GEM2PA与PA:point验证；仍须逐个新场检查全厚度节点。
+数值比较忽略派生切孔工具／网格说明，但保留真实板和孔CSG；场复用继续严格核对完整GEM身份。
+旧schema version 1／2／3仅由已启动运行的冻结源码继续消费或读取历史记录，不用于新的求场准备。
+version 3删除未执行的作者`limits`目录限额字段：旧运行保存该字段不代表执行了硬上限或周期检查。
+真实资源准入仍由公共CPU／内存调度及`committed_new_bytes`容量承诺控制，不将启动容量预留称为持续目录上限监控。
+`aperture_comparison.frame`显式选择`global_z`或`reference_normal`；z法向实体孔应与相同z面、中心和孔径的
+虚拟筛选比较，不能把平面定义差异算作孔边缘场效应。
+已有成功局部运行可通过同一Python入口的`prepare-recorded-analysis --run <new-analysis> --source-run <native-run>`
+冻结实际观察记录再执行`analyze`；不读取PA、不重新飞行。可附`--contract <selection.json>`显式调整
+虚拟筛选合同及claim，所有物理／数值输入必须与原native合同完全相同，原resolved也单独保留。
+自动图包括时间焦点、法向面对照、虚拟接受度、出口相空间与时间—能量、共同时间空间云和沿程束宽／角宽／能散。
+全程同时刻图按出生／终态及出口时刻自动取样，输出绝对XZ／YZ、生命周期状态和同active群的居中放大XZ／YZ。
+`transport_time_census.csv`保留全部母ID与绝对位置，`display_zoom_centers.csv`记录仅供显示的均值与相同active ID；
+未出生、上游未交接或已终止的粒子只有状态，不外推位置。居中显示不改变轨迹，也不证明冷却或聚焦。
+局部重启不验证上游源对新场的反馈，也不授予完整MR分辨率或数值收敛资格。
+
+跨运行的实体孔比较接口已有纯记录测试及C设计粗网格实体实飞对照，当前科学结果与圆孔碰撞表示限制见PROJECT。
+接口复用同一Python入口的`prepare --contract <comparison.json>`及`analyze`，
+作者role为`ip_prism_recorded_aperture_comparison`，在新建分析run中消费已封存的无孔和实体孔案例；
+不通过上述原生模拟PowerShell入口，不求场、不Fly。每项`comparisons`明确`comparison_id`、
+`baseline_case`／`physical_case`（各含`producer_run`及`case_id`）、`virtual_thin_plane`（front／center／back）
+及`downstream_plane_name`；顶层还须给出schema version 1、`committed_new_bytes`与`claim`。
+孔尺寸和三面位置只从实体案例的冻结几何派生；基线在声明孔面筛出的固定ID传递到同一实际下游观察面，
+不在下游重新筛孔。未筛基线、虚拟群和实体群分别报告，并另列同ID配对结果及全部母群决定。
+实体与薄虚拟孔的差异包含板厚与场变化，不能单独归因为边缘场；缺失状态不外推。
+
+局部driver的`assemble`执行阶段只加载已有PA、检查源位置并保存重载IOB，不运行GEM、Refine或Fly。
+Workbench保存会同时写伴随文件，driver按公共实现恢复并核验完整Lua及FLY2字节。
+只在Fly前保存重载：本机8.2.0.11的headless命令接口Fly返回时会清空当前Workbench，
+不得随后保存该空对象覆盖已验证IOB。该行为有实际三离子、两顺序case的生命周期证据；
+保存前后同名Lua／FLY2仍按完整字节核验，GUI默认启用状态需另行独立进程复验。
+程序在`initialize_run`飞行初始化设置合同Q值；独立GUI副本可显式声明
+`frontend={schema_version=1,role='ip_prism_local_frontend',trajectory_image_control=0}`显示并保留轨迹，
+未声明的批处理输入保持原来的3。0／3含义来自安装版官方`examples/child_particles/child80.lua`及
+[Trajectory Programming](https://simion.com/info/trajectory_programming.html)（2026-10-20核对，SIMION 8.2）；
+这是显示配置，不改变物理输入。IOB默认Program启用状态仍须独立副本无CLI覆盖重放验证。
+本机2020及在线官方资料包含在`load`设置Q的例子，但本次headless `wb:load`／保存重载上下文实际拒绝该写入；
+因此采用已实飞通过的`initialize_run`路径，不把这个上下文差异表述成所有`load`均禁止写Q。
+依据为[官方initialize_run权限说明](https://simion.com/info/workbench_program_extensions.html#segment-initialize-run)
+与安装版`examples/collision_rs/test.lua`／`examples/child_particles/child80.lua`（2026-10-20核对）。
+终止记录函数不写`ion_splat`；只有`other_actions`中的主动出口／超时请求停止，原生`terminate`只记录原生终态。
+该权限边界依据上述官方停止粒子示例及安装版2020的`examples/count_transmission/count.lua`与
+`examples/child_particles/child80.lua`（2026-10-20核对），并由真实Lua回调权限fixture复现原缺陷。
+交付副本必须独立于封存的case目录，因为手动Fly会重新写events／samples；不能用封存证据目录作为GUI工作目录。
+
+同一PowerShell入口接受schema version 1的`ip_prism_local_replay_package`作者合同，顶层必须声明
+`schema_version、role、cases、frontend、committed_new_bytes、scope`；每个case显式选择
+`source_run`和`case_id`，允许来自多个已成功封存的轮廓运行；也允许明确失败于自动诊断、但完整原生飞行阶段
+通过日志、资源收据和逐母终态闭合核验的封存来源，原failed身份保留。它冻结母群、实测状态、原配置与电压投影，
+按来源manifest的精确库存私有复制普通PA及实际存在的surface侧车，再重建全部IOB路径。
+公共大文件复制验证目标SHA，不硬链接或回写来源；容量会话在复制前进入，实际小文件与所需PA总量
+超过作者承诺时拒绝复制。装配复用公共调度，按最大场完整正式观测决定并发，仅执行`assemble`。
+准备成功只证明独立文件装配完成；无`--programs`、粒子或Q覆盖参数的原生重放仍需另行验证，不能以准备状态代替。
+当前B／C／D交付已完成三次独立默认重放，完整CSV逐字段与字节一致；具名来源、全部损失及边界见PROJECT。
+该证明不等同于GUI人工显示验收，也不自动授予以后修改的交付；每次改变控制、场或粒子后应重新验证。
+
 ### 加速器选择与接口准备
 
 独立的准备入口为[run_prepare_accelerator_interface.ps1](../analysis/run_prepare_accelerator_interface.ps1)。

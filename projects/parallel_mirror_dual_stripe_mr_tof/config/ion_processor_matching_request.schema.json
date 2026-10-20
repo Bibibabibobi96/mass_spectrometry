@@ -34,7 +34,7 @@
       "required": ["execution", "energy_adjustment", "preserve_measured_state", "preserve_absolute_clock", "allow_geometry_change"],
       "properties": {
         "execution": {"const": "prepare_only"},
-        "energy_adjustment": {"const": "provider_voltage_and_geometry"},
+        "energy_adjustment": {"enum": ["provider_voltage_and_geometry", "preserve_measured_workpoint"]},
         "preserve_measured_state": {"const": true},
         "preserve_absolute_clock": {"const": true},
         "allow_geometry_change": {"const": true}

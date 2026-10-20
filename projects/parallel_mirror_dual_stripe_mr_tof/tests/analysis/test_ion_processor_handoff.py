@@ -104,6 +104,23 @@ class IonProcessorHandoffTests(unittest.TestCase):
             self._prepare()
         self.assertFalse(self.output.exists())
 
+    def test_preserve_workpoint_policy_survives_resolution_without_changing_target(self) -> None:
+        request = json.loads(self.request.read_text())
+        request["policies"]["energy_adjustment"] = "preserve_measured_workpoint"
+        self._write(self.request, request)
+        self._prepare()
+        resolved = json.loads((self.output / "matching_request_resolved.json").read_text())
+        self.assertEqual(resolved["policies"], request["policies"])
+        self.assertEqual(resolved["target"]["axial_energy_per_charge_v"], 4372.010347796)
+
+    def test_rejects_unknown_energy_adjustment_policy(self) -> None:
+        request = json.loads(self.request.read_text())
+        request["policies"]["energy_adjustment"] = "unknown"
+        self._write(self.request, request)
+        with self.assertRaises(ValidationError):
+            self._prepare()
+        self.assertFalse(self.output.exists())
+
     def test_rejects_opposite_direction(self) -> None:
         self.rows[0]["velocity_z_m_s"] *= -1
         write_component_particle_state_csv(self.source, self.rows)

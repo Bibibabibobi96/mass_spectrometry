@@ -10,7 +10,9 @@
   "provider_support_modules": [
     "projects/dual_pressure_rectilinear_ion_processor/analysis/coordinates.py",
     "projects/dual_pressure_rectilinear_ion_processor/analysis/native_geometry.py",
-    "projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py"
+    "projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py",
+    "projects/dual_pressure_rectilinear_ion_processor/analysis/extraction_phase_space_comparison.py",
+    "projects/dual_pressure_rectilinear_ion_processor/analysis/convex_geometry.py"
   ],
   "consumer_preparation_modules": [
     "projects/parallel_mirror_dual_stripe_mr_tof/analysis/joint_flight_preparation.py",

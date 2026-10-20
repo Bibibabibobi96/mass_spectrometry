@@ -47,9 +47,11 @@ def verified_reference(run: Path, relative: str, *, required_status: str = "succ
     verify_record("reference run config", manifest["run_config"], base_dir=run)
     config = _read(record_path(manifest["run_config"], base_dir=run))
     desired = (run / relative).resolve()
-    # Preparation runs freeze inputs in their manifest-bound run config.
+    # Preparation runs freeze file records in their manifest-bound run config.
+    # A normalized dependency projection can also have a path; it describes the
+    # dependency and is not a second file record with byte/hash authority.
     config_records = [record for record in config.get("inputs", {}).values()
-                      if isinstance(record, dict) and "path" in record]
+                      if isinstance(record, dict) and {"path", "bytes", "sha256"} <= record.keys()]
     records = [*manifest.get("inputs", {}).values(), *config_records, *manifest["outputs"]]
     matches = [r for r in records if record_path(r, base_dir=run) == desired]
     if not matches:
