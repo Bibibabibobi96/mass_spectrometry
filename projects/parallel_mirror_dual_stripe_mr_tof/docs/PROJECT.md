@@ -13,74 +13,78 @@ IP 替换装配从历史冻结源派生当前 seed 时，只剔除九个退役�
 
 ## 当前决策与完成边界
 
-B／C／D轮廓的理论、局部带场飞行、焦点与接受度对照及独立默认回放已完成；以下明确结论与数值边界。
-本轮主要目标为降低x／y角分散并尽可能实现空间聚焦，同时报告时间宽度、能散和收集率的取舍。
-仅使用局部IP出口、屏蔽及第一Prism场，不进入镜组或大型联合飞行；未操作GUI，不覆盖用户验收包。
-必要时可修改IP几何或增加透镜，但须先有理论预测，再有受控实算支持；当前没有经过实算验证的额外透镜。
+D三路线局部研究已完成，完整理论、输入身份、失败与数值边界见
+[三路线与默认回放里程碑](history/20261020__d-routes-theory-local-validation-and-replay.md)。
+基线为IP104000的完整100出生／96实测出口；内部调压和对称几何重新运行完整源循环，透镜继承原D六维出口及绝对时钟。
+这里只研究IP及第一Prism局部场，不恢复大型联合模拟；未操作GUI，不覆盖旧用户包，也未更换OA／IP可选接口。
 
-完整证据、英文图及七项要求对应关系汇总于[本轮综合报告](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_192806__analysis__python__ip-p1-goal7-synthesis/results/scientific_report.md)。
-每设计100母群、96实测出口和4个上游损失全部保留，使用原始ID、六维状态及绝对时钟；没有重采样或缩放速度。
-原生来源171512九组Fly全部完成，仅自动诊断失败，原failed身份保留；
-[独立记录分析](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_173804__analysis__python__ip-bcd-recorded-focus/results/local_focus_diagnostics/metadata.json)
-核验完整原生阶段并输出全部逐母、逐面及相空间结果，不将后处理失败算作离子损失。
+| 独立配置／case ID | 实际源／100母群 | P1到达／100母群 | P1 σθx／σθy（°） | P1 σx／σy（mm） | P1 σt（ns） | P1总能量均值／σ（eV） |
+|---|---:|---:|---|---|---:|---|
+| D_no_lens | 96 | 92 | 0.543081／0.238986 | 0.980937／0.448534 | 12.058440 | 4412.7161／40.7901 |
+| D_aux_no_lens | 97 | 86 | 0.500450／0.243734 | 0.906882／0.432302 | 11.559468 | 4419.9172／37.0152 |
+| D_sym_no_lens | 34 | 30 | 0.411607／0.264657 | 0.750030／0.503201 | 11.801114 | 4411.8353／42.5090 |
+| D_doublet_zero_y010 | 96 | 92 | 0.543005／0.238967 | 0.980906／0.448543 | 12.058738 | 4412.7162／40.7941 |
+| D_doublet_candidate_y010 | 96 | 92 | 0.535202／0.196635 | 0.942565／0.504406 | 12.074818 | 4412.7140／40.8149 |
 
-| 设计 | 源面σθx／σθy（°） | 完整96群最小σt（ns） | 时焦采样z（mm） | 到P1出口／100母群 |
-|---|---|---:|---:|---:|
-| B formed | 0.79627／0.17477 | 3.28785 | −22.5 | 83 |
-| C continuous aux | 0.81807／0.21326 | 4.12354 | −11.0 | 79 |
-| D parabolic inner | 0.64439／0.23986 | 4.60015 | −4.5 | 92 |
+此表为各自P1到达群的人口SD，前3行网格[0.1,0.2,0.1]mm，后2行为[0.1,0.1,0.1]mm；不是同群排名。
+完整配置、场、电压、源和时钟可由
+[独立交付绑定](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_232700__build__simion__d-five-case-private-replay/inputs/replay_source_binding.json)
+按case ID唯一解析。θx／θy为全局xz／yz投影角；空间分布和实际Prism法向诊断分别保留，未重置时间或缩放出口速度。
 
-源面角宽取全局z=−0.5mm完整96群的人口SD；P1透过率相对96输入为86.458%／82.292%／95.833%。
-D相对B的源面x角宽小约19%，收集率较高，但y角宽和最小时宽较大；没有两轴、时间和收集率同时占优的设计。
-[空间／时间最小值](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_184918__analysis__python__ip-fine-sampled-minima/results/report.md)
-中三设计σx最小均在首面−0.5mm，约0.04382／0.04845／0.04787mm，不能定位内部下游x束腰。
-y束宽最小分别在−34／−54／−13mm，σy约0.26616／0.26514／0.29595mm，与时间焦点不同。
-0.5mm采样间距不是焦点位置精度；中央68%／90%宽度、参考法向统计及边界标记完整保留。
-[全程同时刻束团](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_181638__analysis__python__ip-fine-transport-snapshots/results/report.md)
-覆盖三设计至Prism后约z=−97.5mm，2100条母群—时刻状态闭合；绝对及居中XZ／YZ图均为默认自动输出。
-居中图保留同active ID和显示均值，终止后不外推；不同幸存群变窄不能称为冷却或聚焦。
+### 物理取舍与推荐
 
-[文献逐电极复核](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_052431__analysis__python__ip-bcd-local-validation-plan/results/literature_geometry_review.md)
-分别标注文献报告、图示支持和模型假设。LP61.5mm、精确抽气窗、唇边／倒角及D抛物线边缘不作为厂家尺寸或轮廓。
-“近似二次DC势阱”约束实际离子占据区的曲率、对称性和非谐项，不能唯一反演金属形状。
-[理论先行计划](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_164316__analysis__python__ip-bcd-theory-validation-plan/results/report.md)
-保留全部来源和时钟、自由漂移束腰与可证伪预测；[理想透镜预筛](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_165411__analysis__python__ip-ideal-lens-screen/results/report.md)
-显示z=−20mm的独立x／y准直强度不能由同面单圆透镜或固定单四极同时实现，柱面x透镜仅为待验证候选。
-理想强度不是实际电压；发射度、有限幅度像差、色差和时间—能量相关性不能省略，当前不验证空间电荷。
-[P1／屏蔽耦合场的实算响应](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_173418__analysis__python__ip-born-native-pair/results/report.md)
-在z=−50mm保持C／D完整96颗，实际x斜率SD较源增加30.682%／30.466%，一阶预测误差小于0.83%。
-这支持耦合总场作用，不是独立Prism电极的因果比例；进入强偏转区不能以恒速探针代替轨迹。
+保留D作为比较基线。辅助候选只改E10／E11为+4／−1.10V，完整源引出97颗，但P1总收集数降至86；
+D—调压真正共同P1到达81颗的条件角宽／时宽较小，不能忽略共同源96颗到达数92→85而称整体改善。
+对称候选只把E10覆盖改为150.5…189.5mm、中心170mm，保留LP长度和HP接口；局部转运奇势项降低，偶项与入口势垒亦改变。
+其34出口、30到P1的负结果不支持替换D；上游functional_incomplete身份和66个未引出记录保持，未用D状态补齐。
+单独电极的固定路径导数与联合调压完整冷却循环是两类证据，不将前者当储存云反馈预测。
 
-[无孔网格／步长和损失复核](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_172931__analysis__python__ip-local-loss-mesh-review/results/report.md)
-中B／C／D粗细及半步损失ID相同；同ID出口最大差不超过0.01203ns、0.857μm和0.03640mrad。
-实际节点与连续CSG截面随求场自动导出；D67碰撞位置仍约0.15mm敏感，不授予普遍连续边界收敛。
-上游出口来源仍为0.1mm网格的完整IP运行；局部加密不重新验证捕获／冷却／提取，不能称全IP收敛。
+真实四极双透镜的中心z为−13／−18mm、长度5／3mm、内接半径1.4mm、杆半径0.2mm，
+选定电压+66.86483288／−77.57244682V来自实际单位场响应、有限长度输运及13拟合／83检验射线；不是理想角度kick。
+同细y网格、同92个P1 ID，偏置相对零偏的x／y角宽下降1.44%／17.71%，x束宽下降3.91%，y束宽增加12.45%，σt增加0.01608ns。
+可保留为准直候选，未产生新的完整群空间／时间焦点，也不称全局最优。透镜绝缘支撑、馈电和制造设计仍未建立。
+已采样LP内部及出口反馈小；150个域外与5个梯度邻域不足样本不补零，不能据此授全HP反馈上界。
 
-理论筛选后仅执行C的无孔／圆孔／有限y狭缝三项实体对照，不无条件扩成完整12工况。
-孔板中心(0,−55,−20)mm、厚0.4mm、接地；圆孔半径0.3mm，狭缝x／y半宽1.5／0.3mm。
-[实体／虚拟固定ID比较](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_183500__analysis__python__c-physical-vs-virtual-aperture/results/report.md)
-到P1分别为无孔79、实体圆孔51、实体狭缝67；相同位置虚拟选择传到P1为42／61。
-实体额外通过的9／6颗仍在连续孔外，同ID轨迹差接近数值噪声；群宽下降主要为筛选，不是已证明的聚焦改善。
-[零场隔离](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_185917__test__simion__zero-field-aperture-collision/results/report.md)
-复现该异常，粗档半步不改变通过集合；[0.02／0.01mm探针](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_191045__test__simion__zero-field-aperture-fine-collision/results/report.md)
-两档圆孔均45／96，而连续几何为42，额外ID15／72／91进入名义金属约4–5μm；狭缝两档均72且逐ID一致。
-计数平台不是连续碰撞正确或收敛；不将额外通过称物理收集率改善，不向项目最小0.01mm以下加密。
-两次约84分钟的全域细场Refine不具当前判别价值，未执行；纯Lua首接触预检也未冒充集成原生结果。
-[探针载荷退役](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_193811__analysis__python__fine-collision-payload-retirement/results/report.md)
-仅移除四个可重建零势PA及两个真实surface，释放2,968,967,720B；原success身份、全部小证据和重建输入保留。
-这不是用户交付PA；若重放该探针旧IOB须先重建其零势场。
+### 焦点与数值资格
 
-[独立可加载包](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_183935__build__simion__ip-bcd-private-local-replay/summary.json)
-保留B／C／D三套细场、独立IOB及frontend=0的轨迹显示配置。
-[独立默认回放汇总](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_194300__test__python__bcd-default-replay-summary/summary.json)
-对应三次全新进程，无Program／Q／粒子覆盖，各96实际源／100母群；events和samples逐记录逐字段零差异且字节一致。
-来源及私有控制／PA身份保持，所有损失保留；这验证默认文件回放，不冒充GUI人工验收。
-手动Fly会写events／samples，须将所选case完整复制到独立可写目录再打开local.iob，不能在封存来源原位飞行。
-前期准备／包装器失败均保留原状态和诊断，不计为离子损失；未放宽公共容量或身份判据以制造成功。
+完整96群最小σt约4.600154ns、采样z=−4.5mm；中央68%最小位于−38.5mm，中央90%最小位于−8.5mm，
+分别报告核心与尾部，不将σ最小处的68%／90%当作各自最小值。x束宽最小落在首面−0.5mm，不能定位内部x束腰；
+粗档D零偏／透镜候选的y最小约0.295947／0.296396mm，采样面分别−13／−9.5mm，不支持最小y束斑改善。
+固定完整区间、缺失、并列与边界见
+[独立时间最小值和场奇偶审查](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_233500__analysis__python__d-routes-completion-audit/results/audit/report.md)。
+穿面σz=0不是纵向空间焦点；默认同时刻三维云与穿面统计分开。
 
-[干净HEAD主题闭包](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_193645__test__python__clean-head-local-ip-bcd-closure/results/report.md)
-仅叠加31主题文件，14模块179项测试、0失败／0错误／1历史产物缺失跳过，导入无工作区泄漏。
-原生数值／轨迹资格由各具名运行分别证明；最终L1和精确提交代码度量由独立最终校验记录给出。
+半时间步和单轴网格对照已保留。
+[粗细同ID比较](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_232242__analysis__python__d-doublet-y-grid-comparison/results/report.md)
+显示较小的净x改善仍有网格敏感性；候选P1同ID最大位置／时间差为0.150267mm／0.148355ns。
+未删尾、不调压补偿数值差，不授完整网格收敛、统计显著性、整机透过率或MR分辨率资格。
+碰撞截面、未知电极尺寸和轮廓仍按原来源记录的假设解释。
+
+### 可加载文件与验证
+
+[五方案独立加载包](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_232700__build__simion__d-five-case-private-replay/summary.json)
+的`simion/case_01`至`case_05`依次对应上表，每个目录含`local.iob`、独立PA／surface和完整控制文件。
+手动Fly前完整复制所选case至独立可写目录，再打开`local.iob`；不要原位改写封存模板。
+[五个全新进程默认回放](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261020_233902__test__simion__d-five-default-private-replay/summary.json)
+已通过：无Program／Q／粒子覆盖，10份events／samples共842,568条原始记录逐字段零差异且字节完全相同。
+500母群记录及全部108个未到P1结果保留；重复使用同源的对照不累计为独立N500统计样本。
+装配summary中的pending保留其冻结时刻含义，新验证另行证明，不回写旧记录或冒充GUI人工验收。
+
+活动局部合同为schema5，每case显式声明`lens_elements`；空列表保持无透镜几何，旧schema仅用于历史读取。
+真实有限电极、同轴绘图、同ID数值比较均复用现有生产core，内部调压继续走Fast Adjust基场复用。
+源码经干净HEAD叠加20文件252项测试（1项历史产物缺失跳过），显式L1另有307项Python测试及9项合成Lua检查通过；
+这些软件检查不代替上述真实原生证据。
+
+## B/C/D局部研究的有效边界
+
+此前B／C／D轮廓、实际局部时间焦点、孔口筛选及独立默认回放已完成，详见
+[局部聚焦与回放里程碑](history/20261020__ip-bcd-local-focus-and-replay.md)。
+D保留较高收集率，但未同时占优于两轴角宽和最小时宽；当前三路线以D为固定基线，不能混用不同轮廓的出口。
+原研究的厂家未知尺寸、连续孔口碰撞偏差及局部网格／步长资格边界继续有效，不能由新透镜单轴对照覆盖。
+旧183935独立B／C／D细场用户包保持；默认文件回放证明来自194300记录，不作为本轮五方案的新回放证明。
+手动Fly应先完整复制所选case到独立可写目录，避免修改封存模板。
+
+## 加速器接口与整机暂停边界
 
 加速器接口可选`orthogonal_accelerator`或`dual_pressure_rectilinear_ion_processor`，默认OA保留；入口见[操作说明](../simion/README.md#加速器选择与接口准备)。
 IP独立器件GUI已由用户验收；下游采用冻结出口六维状态交接，不是同一Fly内连续积分HP捕获／冷却到MR。

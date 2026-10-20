@@ -21,6 +21,47 @@ def state(t: float, x: float, y: float, z: float) -> dict:
 
 
 class FocusDiagnosticsTests(unittest.TestCase):
+    def test_numerical_comparison_rows_preserve_frozen_vectors_order_and_missing_ids(self) -> None:
+        first = dict(case=dict(case_id="coarse", pitch_mm=[.1, .2, .1], maximum_step_us=.001),
+                     planes={"near": {9: state(10., 1., 2., -3.), 2: state(20., 4., 5., -6.)},
+                             "far": {2: state(30., 7., 8., -9.), 7: state(40., 0., 0., -9.)}})
+        second = dict(case=dict(case_id="fine", pitch_mm=[.1, .1, .1], maximum_step_us=.001),
+                      planes={"near": {2: state(20.25, 5., 3., -6.), 9: state(10.5, 2., 4., -3.),
+                                       11: state(21., 0., 0., -3.)},
+                              "far": {2: state(30.125, 9., 7., -9.)}})
+        second["planes"]["near"][9].update(vx_mm_us=3., vy_mm_us=5., vz_mm_us=-1., potential_v=6.)
+        planes = [dict(name="near"), dict(name="far")]
+        original = copy.deepcopy((first, second, planes))
+        expected = []
+        for plane, pid, dt, dx, dy, dvx, dvy, dvz, dv in (
+                ("near", 2, 250., 1., -2., 0., 0., 0., 0.),
+                ("near", 9, 500., 1., 2., 3., 4., 1., 6.),
+                ("far", 2, 125., 2., -1., 0., 0., 0., 0.)):
+            expected.append(dict(case_a="coarse", case_b="fine", plane=plane, particle_id=pid,
+                pitch_a_mm=[.1, .2, .1], pitch_b_mm=[.1, .1, .1], maximum_step_a_us=.001,
+                maximum_step_b_us=.001, delta_t_ns=dt, delta_x_mm=dx, delta_y_mm=dy,
+                delta_z_mm=0., delta_vx_mm_us=dvx, delta_vy_mm_us=dvy, delta_vz_mm_us=dvz,
+                delta_potential_v=dv))
+        actual = d.numerical_comparison_rows([(first, second)], planes)
+        self.assertEqual(actual, expected)
+        self.assertEqual([list(row) for row in actual], [list(row) for row in expected])
+        self.assertEqual((first, second, planes), original)
+        self.assertEqual(d.numerical_comparison_rows([], planes), [])
+        self.assertEqual(d.numerical_comparison_rows([(first, second)], []), [])
+        # Freeze the former inline algorithm as an independent equivalence oracle.
+        legacy = []
+        for a, b in [(first, second)]:
+            for plane in planes:
+                x, y = a["planes"][plane["name"]], b["planes"][plane["name"]]
+                for pid in sorted(x.keys() & y.keys()):
+                    legacy.append(dict(case_a=a["case"]["case_id"], case_b=b["case"]["case_id"],
+                        plane=plane["name"], particle_id=pid, pitch_a_mm=a["case"]["pitch_mm"],
+                        pitch_b_mm=b["case"]["pitch_mm"], maximum_step_a_us=a["case"]["maximum_step_us"],
+                        maximum_step_b_us=b["case"]["maximum_step_us"],
+                        delta_t_ns=(y[pid]["t_us"]-x[pid]["t_us"])*1000,
+                        **{f"delta_{k}": y[pid][k]-x[pid][k] for k in d.local.STATE_FIELDS[1:]}))
+        self.assertEqual(actual, legacy)
+
     def test_integer_selector_centers_project_in_both_frames(self) -> None:
         normal = np.array([0., 1., -2.]) / np.sqrt(5)
         reference = dict(origin_mm=[0, 0, -20], normal=normal.tolist(),
@@ -235,6 +276,45 @@ class FocusDiagnosticsTests(unittest.TestCase):
         for curve in curves:
             self.assertTrue(np.isfinite(curve[0]))
             self.assertTrue(np.isnan(curve[1:]).all())
+
+    def test_time_and_transport_comparisons_share_column_scales_without_removing_data(self) -> None:
+        from matplotlib import pyplot as plt
+
+        cases = [dict(case=dict(case_id=name, label=label, mass_u=524.,
+                               pitch_mm=[.1, .2, .1], maximum_step_us=.001),
+                      planes=dict(p1_exit={}), births={}, terminals={})
+                 for name, label in (("reference", "B reference"), ("candidate", "D candidate"))]
+        metrics = ("time_sigma_ns", "central68_ns", "central90_ns", "sigma_x_mm",
+                   "sigma_y_mm", "sigma_theta_x_deg", "sigma_theta_y_deg", "sigma_kinetic_energy_ev")
+        rows = [dict(case_id=case["case"]["case_id"], cohort="own_extracted_ids", frame="global_z",
+                     z_mm=-z, count=96, missing_ids=[], **{key: scale*z for key in metrics})
+                for case, scale, positions in zip(cases, (1., 30.), ((1., 2.), (5., 10.))) for z in positions]
+        unchanged = copy.deepcopy(rows)
+        for empty in (False, True):
+            with self.subTest(empty=empty):
+                data = [] if empty else rows
+                seen = []
+                def save(figure, path):
+                    if path.name in {"time_focus", "transport_widths"}:
+                        figure.canvas.draw()
+                        columns = 3 if path.name == "time_focus" else 6
+                        for col in range(columns):
+                            upper, lower = figure.axes[col], figure.axes[columns+col]
+                            self.assertEqual(upper.get_xlim(), lower.get_xlim())
+                            self.assertEqual(upper.get_ylim(), lower.get_ylim())
+                            for index, ax in enumerate((upper, lower)):
+                                expected_x = [] if empty else ([1., 2.] if index == 0 else [5., 10.])
+                                self.assertEqual(list(ax.lines[0].get_xdata()), expected_x)
+                                expected_y = [] if empty else ([96, 96] if path.name == "transport_widths" and col == 5
+                                                               else ([1., 2.] if index == 0 else [150., 300.]))
+                                self.assertEqual(list(ax.lines[0].get_ydata()), expected_y)
+                        seen.append(path.name)
+                    plt.close(figure)
+                with patch.object(d.local, "_save_figure", side_effect=save):
+                    d._figures(Path("unused"), data, [], cases, [])
+                    d._transport_figures(Path("unused"), cases, data, [], 7500.)
+                self.assertEqual(seen, ["time_focus", "transport_widths"])
+        self.assertEqual(rows, unchanged)
 
     def test_complete_interval_focus_survives_later_single_ion_false_minimum(self) -> None:
         planes = [dict(name=f"p{i}", z_mm=-float(i)) for i in range(5)]

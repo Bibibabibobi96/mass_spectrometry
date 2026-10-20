@@ -488,7 +488,9 @@ class FunctionalContractTests(unittest.TestCase):
         self.assertIn(str(frozen_policy), config["inputs"].values())
         resolved = functional.read_json(self.run / "inputs/resolved_model.json")
         self.assertEqual(resolved["numerical_boundaries"], {
-            "downstream_exit_x_mm": 211.25, "classification": "numerical_observation_not_metal"})
+            "schema_version": 2, "role": "native_numerical_observation_boundaries",
+            "upstream_exit_x_mm": -1.9, "downstream_exit_x_mm": 211.25,
+            "classification": "numerical_observation_not_metal"})
         self.assertEqual(resolved["native_projection"], functional.native_projection(
             self.config["baseline"], self.config["numerics"]))
 
@@ -542,6 +544,46 @@ class FunctionalContractTests(unittest.TestCase):
         projection["maximum_mm"][0] = 210.5
         with self.assertRaisesRegex(ValueError, "after lens and inside PA"):
             functional.derive_numerical_boundaries(projection)
+
+    def test_observation_schema_requires_active_upstream_but_preserves_explicit_recorded_contract(self) -> None:
+        projection = functional.native_projection(self.config["baseline"], self.config["numerics"])
+        boundaries = functional.derive_numerical_boundaries(projection)
+        self.assertEqual(boundaries["upstream_exit_x_mm"], projection["origin_mm"][0]+projection["grid_mm"])
+        functional.validate_numerical_boundaries(boundaries, projection)
+        legacy = {key: boundaries[key] for key in ("downstream_exit_x_mm", "classification")}
+        with self.assertRaisesRegex(ValueError, "derived authority"):
+            functional.validate_numerical_boundaries(legacy, projection)
+        functional.validate_numerical_boundaries(legacy, projection, recorded=True)
+        for malformed in ({**legacy,"downstream_exit_x_mm":0}, {**legacy,"schema_version":1},
+                          {**boundaries,"upstream_exit_x_mm":projection["origin_mm"][0]}):
+            with self.subTest(malformed=malformed), self.assertRaisesRegex(ValueError,"derived authority"):
+                functional.validate_numerical_boundaries(malformed, projection, recorded=True)
+
+    def test_prepare_refuses_birth_on_internal_upstream_observation(self) -> None:
+        project, vendor = self.make_prepare_fixture()
+        source = functional.read_json(project / "config/source.json")
+        source["geometry"]["center_mm"][0] = -1.9
+        functional.write_json(project / "config/source.json", source)
+        with self.assertRaisesRegex(ValueError, "strictly inside the upstream"):
+            functional.prepare(self.run, project, vendor)
+
+    def test_upstream_exit_validates_derived_inside_plane_and_negative_direction(self) -> None:
+        for mutation in (None, "position", "velocity", "missing", "event"):
+            with self.subTest(mutation=mutation):
+                rows = self.downstream_fixture()
+                rows[-1].update(reason="backward_escape", x_mm=self.config["numerical_boundaries"]["upstream_exit_x_mm"], vx_mm_us=-1)
+                if mutation=="position": rows[-1]["x_mm"]-=0.01
+                elif mutation=="velocity": rows[-1]["vx_mm_us"]=1
+                elif mutation=="missing": self.config.pop("numerical_boundaries")
+                elif mutation=="event":
+                    rows[-1]["event"]="transfer"
+                    rows[-1]["t_us"]=self.config["baseline"]["schedule"]["transfer_end_us"]
+                self.write_events(rows)
+                if mutation is None:
+                    self.assertEqual(functional.analyze(self.run)["terminal_reasons"]["backward_escape"],1)
+                else:
+                    with self.assertRaisesRegex(ValueError,"upstream"):
+                        functional.analyze(self.run)
 
     def test_prepare_exploration_freezes_selected_profile_and_source(self) -> None:
         project, vendor = self.make_prepare_fixture()

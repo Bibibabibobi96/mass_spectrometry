@@ -135,26 +135,50 @@ end
 if arg[2]=='upstream-source' then
   segment.initialize_run()
   assert(force_queries>=15,'all native response bases must be observed before Fly')
-  local upstream=config.native_projection.origin_mm[1]
+  local origin=config.native_projection.origin_mm[1]
+  local upstream=config.numerical_boundaries.upstream_exit_x_mm
+  local function inside_callback(x)
+    -- Outside the native PA no segment is invoked, including terminate.
+    assert(x>origin,'fixture must never supply an outside-PA callback')
+    segment.other_actions()
+  end
   for id=1,sim_ions_count do
     local source=sources[id]
     ion_number=id;ion_splat=0;ion_time_of_flight=0
     assert(source.x<0 and source.x>upstream,'fixture must start upstream of guide inside PA')
     put_local(source.x,source.y,source.z,source.vx,source.vy,source.vz)
-    segment.initialize();segment.other_actions()
+    segment.initialize();inside_callback(source.x)
     assert(ion_splat==0,'valid upstream source must survive its first callback')
+    put_local(upstream,0,0,1,0,0)
+    ion_time_step=0.002;segment.tstep_adjust()
+    assert(ion_time_step>0,'on-plane inward travel must not create a zero timestep')
+    inside_callback(upstream)
+    assert(ion_splat==0,'inward motion on the plane must remain alive')
     ion_time_of_flight=1
-    put_local(upstream,0,0,-1,0,0);segment.other_actions()
-    assert(ion_splat==0,'numerical escape must not occur before crossing the lower PA bound')
-    ion_time_of_flight=2
-    put_local(upstream-0.01,0,0,-1,0,0);segment.other_actions()
-    assert(ion_splat==1,'crossing the frozen upstream PA bound must terminate')
-    segment.terminate()
+    put_local(upstream+0.001,0,0,-1,0,0);inside_callback(upstream+0.001)
+    ion_time_step=1;segment.tstep_adjust()
+    assert(ion_time_step>0 and ion_time_step<=0.001000001,
+      'negative flight must land on the internal observation before leaving PA')
+    ion_time_of_flight=ion_time_of_flight+ion_time_step
+    local endpoint=id==1 and upstream or upstream-config.native_projection.grid_mm/2
+    put_local(endpoint,0,0,-1,0,0);inside_callback(endpoint)
+    assert(ion_splat==1,'arrival exactly on the inside observation must terminate')
+    -- No synthetic terminate callback. The next ion must activate cleanly.
   end
   segment.terminate_run()
   local _,count=contents(directory..'events.csv'):gsub('terminal,%d+,backward_escape,','')
-  assert(count==sim_ions_count,'record one backward escape per out-of-domain particle')
+  assert(count==sim_ions_count,'record one numerical backward escape per particle')
   print('RUNTIME_UPSTREAM_SOURCE_PASS');return
+end
+if arg[2]=='unfinished-interleaving' then
+  segment.initialize_run()
+  ion_number=1;ion_splat=0;ion_time_of_flight=0
+  put_local(1,0,0,1,0,0);segment.initialize();segment.other_actions()
+  ion_number=2
+  local ok,message=pcall(segment.tstep_adjust)
+  assert(not ok and tostring(message):match('unfinished particle interleaving'),
+    'missing terminal must remain a hard error, never silently reseed')
+  print('RUNTIME_UNFINISHED_INTERLEAVING_REFUSED_PASS');return
 end
 local function fly_again(preinitialize)
   -- Emulate changing GUI defaults before each click; reproducibility must be
@@ -350,10 +374,8 @@ class RuntimeReplayTests(unittest.TestCase):
             config["source"]["particle_count"] = 100
             config["execution_batch"] = {"particle_id_offset": 50, "particle_id_min": 51, "particle_id_max": 52, "retain_trajectories": mode != "csv-batch"}
         config["native_projection"] = native_projection(config["baseline"], config["numerics"])
-        geom=config["baseline"]["geometry"]
-        lens_end=geom["guide_length_mm"]+geom["hp_length_mm"]+geom["lp_length_mm"]+config["baseline"]["native_geometry"]["lens_thickness_mm"]
-        config["numerical_boundaries"]={"downstream_exit_x_mm":(lens_end+config["native_projection"]["maximum_mm"][0])/2,
-                                        "classification":"numerical_observation_not_metal"}
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_numerical_boundaries
+        config["numerical_boundaries"]=derive_numerical_boundaries(config["native_projection"])
         with tempfile.TemporaryDirectory(prefix="ion_processor_replay_test_") as temporary:
             folder = Path(temporary)
             for name in ("runtime.lua", "native_drive.lua", "extraction_force_audit.lua"):
@@ -394,8 +416,11 @@ class RuntimeReplayTests(unittest.TestCase):
     def test_project_rotation_preserves_local_regions_boundaries_and_replay(self) -> None:
         self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("transformed"))
 
-    def test_upstream_source_survives_until_crossing_frozen_pa_lower_bound(self) -> None:
+    def test_upstream_source_stops_inside_pa_without_outside_or_terminate_callback(self) -> None:
         self.assertIn("RUNTIME_UPSTREAM_SOURCE_PASS", self.run_runtime_fixture("upstream-source"))
+
+    def test_unfinished_particle_interleaving_remains_refused(self) -> None:
+        self.assertIn("RUNTIME_UNFINISHED_INTERLEAVING_REFUSED_PASS", self.run_runtime_fixture("unfinished-interleaving"))
 
     def test_nonzero_batch_offset_sets_canonical_particle_seeds(self) -> None:
         self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("offset"))

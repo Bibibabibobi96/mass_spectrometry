@@ -72,13 +72,13 @@ class ContourPreparationTests(unittest.TestCase):
         numerical = DistanceContractTests()
         numerical.setUp()
         old = numerical.contract
-        return dict(schema_version=4, role="ip_prism_contour_focus_experiment",field_sources={"B_field":{"action":"build"}},
+        return dict(schema_version=5, role="ip_prism_contour_focus_experiment",field_sources={"B_field":{"action":"build"}},
                     references={"geometry": {}, "voltages": {}},
                     source_registration=dict(translation_mm=[0, -225, 0], from_frame_id="IP-world", to_frame_id="test_frame"),
                     cases=[dict(case_id="B", label="B formed", source_run="source_B", distance_mm=10,
-                                pitch_mm=[.1, .2, .2], maximum_step_us=.001, field_case_id="B_field", physical_aperture=None),
+                                pitch_mm=[.1, .2, .2], maximum_step_us=.001, field_case_id="B_field", physical_aperture=None, lens_elements=[]),
                            dict(case_id="B_half_dt", label="B half step", source_run="source_B", distance_mm=10,
-                                pitch_mm=[.1, .2, .2], maximum_step_us=.0005, field_case_id="B_field", physical_aperture=None)],
+                                pitch_mm=[.1, .2, .2], maximum_step_us=.0005, field_case_id="B_field", physical_aperture=None, lens_elements=[])],
                     numerics=old["numerics"], observation_planes=old["observation_planes"],
                     aperture_comparison=dict(plane_names=["p1_exit"], half_widths_mm=[.1, .2], center_x_mm=0,
                                              center_y_mm=-55, slit_x_half_width_mm=None, reference_case_id="B", frame="reference_normal"),
@@ -93,11 +93,15 @@ class ContourPreparationTests(unittest.TestCase):
                        lambda c: c.update(schema_version=1),
                        lambda c: c.update(schema_version=2, limits={}),
                        lambda c: c.update(schema_version=3),
+                       lambda c: c.update(schema_version=4),
                        lambda c: c.update(field_sources={}),
                        lambda c: c.update(field_sources={"B_field":{"action":"reuse","source_run":"relative","source_field_case_id":"B"}}),
                        lambda c: c.update(limits={}),
                        lambda c: c["cases"][0].pop("physical_aperture"),
                        lambda c: c["cases"][0].update(physical_aperture=True),
+                       lambda c: c["cases"][0].pop("lens_elements"),
+                       lambda c: c["cases"][0].update(lens_elements=None),
+                       lambda c: c["cases"][0].update(lens_elements=[True]),
                        lambda c: c["source_registration"]["translation_mm"].__setitem__(2, 1),
                        lambda c: c["cases"][1].update(case_id="B"),
                        lambda c: c["cases"][0].update(pitch_mm=[.1, float("nan"), .2]),
@@ -112,6 +116,8 @@ class ContourPreparationTests(unittest.TestCase):
     def test_recorded_v2_author_is_readonly_and_not_an_active_prepare_contract(self):
         contract=dict(self.contract(), schema_version=2, limits={"transient_run_directory_bytes":1000})
         contract.pop("field_sources")
+        for row in contract["cases"]:
+            row.pop("lens_elements")
         validate_contour_contract(contract, recorded_author=True)
         with self.assertRaises(ValueError):
             validate_contour_contract(contract)
@@ -119,9 +125,20 @@ class ContourPreparationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_contour_contract(contract, recorded_author=True)
         third=self.contract();third["schema_version"]=3;third.pop("field_sources")
+        for row in third["cases"]:
+            row.pop("lens_elements")
         validate_contour_contract(third,recorded_author=True)
         with self.assertRaises(ValueError):
             validate_contour_contract(third)
+
+    def test_recorded_v4_is_readonly_and_retains_original_fields(self):
+        fourth = self.contract()
+        fourth["schema_version"] = 4
+        for row in fourth["cases"]:
+            row.pop("lens_elements")
+        validate_contour_contract(fourth, recorded_author=True)
+        with self.assertRaises(ValueError):
+            validate_contour_contract(fourth)
 
     def source_case(self, path):
         path.mkdir()
@@ -217,6 +234,31 @@ class ContourPreparationTests(unittest.TestCase):
                 self.assertEqual(mixed["dispatch_policy"]["first_formal_observation"],"wait_for_natural_completion")
                 mixed_request=json.loads((mixed_run/"inputs/simion_dispatch_request.json").read_text())
                 self.assertEqual(mixed_request["frontend_cell_mm_xyz"],[.05,.1,.1])
+                lens_contract = copy.deepcopy(contract)
+                for row in lens_contract["cases"]:
+                    row["distance_mm"] = 52.828
+                lens_case = lens_contract["cases"][1]
+                lens_case["field_case_id"] = "B_quadrupole_field"
+                lens_case["lens_elements"] = [dict(name="Q1", frame_id="test_frame", center_mm=[0, -55, -13],
+                    length_mm=5, inscribed_radius_mm=1.4, rod_radius_mm=.2, voltage_v=1)]
+                lens_contract["field_sources"] = {r["field_case_id"]: {"action": "build"} for r in lens_contract["cases"]}
+                cp.write_text(json.dumps(lens_contract))
+                lens_run=root/"lens_run";lens_run.mkdir();(lens_run/"inputs").mkdir()
+                (lens_run/"run_config.json").write_text(json.dumps(dict(inputs={}, parameters={})))
+                lens_result = prepare(lens_run, cp)
+                self.assertEqual(len(lens_result["field_owners"]), 2)
+                no_lens, with_lens = lens_result["cases"]
+                self.assertEqual(Path(no_lens["source_csv"]).read_bytes(), Path(with_lens["source_csv"]).read_bytes())
+                rod_geometry = json.loads((Path(with_lens["directory"])/"geometry.json").read_text())
+                self.assertEqual(len(rod_geometry["geometry"]["lens_electrodes"]), 4)
+                self.assertEqual(rod_geometry["geometry"]["lens_electrodes"][0]["specification"], lens_case["lens_elements"][0])
+                lens_case["field_case_id"] = lens_contract["cases"][0]["field_case_id"]
+                lens_contract["field_sources"].pop("B_quadrupole_field")
+                cp.write_text(json.dumps(lens_contract))
+                bad_lens=root/"bad_lens";bad_lens.mkdir();(bad_lens/"inputs").mkdir()
+                (bad_lens/"run_config.json").write_text(json.dumps(dict(inputs={}, parameters={})))
+                with self.assertRaisesRegex(ValueError, "shared field_case_id"):
+                    prepare(bad_lens, cp)
                 conflicting = root/"conflicting_run";conflicting.mkdir();(conflicting/"inputs").mkdir()
                 (conflicting/"run_config.json").write_text(json.dumps(dict(inputs={}, parameters={})))
                 contract["cases"][1]["pitch_mm"] = [.2, .2, .2]
@@ -481,6 +523,8 @@ class RecordedContourAnalysisTests(unittest.TestCase):
                                  limits={"transient_run_directory_bytes":34359738368,
                                          "transient_run_directory_sample_interval_seconds":30})
             native_contract.pop("field_sources")
+            for row in native_contract["cases"]:
+                row.pop("lens_elements")
             study.write_text(json.dumps(dict(role="resolved_ip_prism_contour_focus_study",cases=[case],contract=native_contract)))
             paths.append(study)
             config=source/"run_config.json";config.write_text(json.dumps(dict(inputs={})))

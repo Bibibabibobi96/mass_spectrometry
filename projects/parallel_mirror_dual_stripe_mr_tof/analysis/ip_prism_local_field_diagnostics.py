@@ -50,7 +50,7 @@ def _section(geometry: dict, x: float, box: list, pixel_mm: float) -> tuple[np.n
     ys = box[1] + (np.arange(ny)+0.5)*(box[4]-box[1])/ny
     zs = box[2] + (np.arange(nz)+0.5)*(box[5]-box[2])/nz
     image = np.zeros((ny, nz), np.uint8)
-    for electrode in geometry["ion_processor_electrodes"]:
+    for electrode in geometry["ion_processor_electrodes"]+geometry.get("lens_electrodes", []):
         for solid in electrode["solids"]:
             bounds = _bounds(solid)
             if not bounds[0] <= x <= bounds[3]:
@@ -64,7 +64,8 @@ def _section(geometry: dict, x: float, box: list, pixel_mm: float) -> tuple[np.n
             for hole in electrode["cutouts"]:
                 mask &= ~_shape_mask(hole, x, y, z)
             region = image[np.ix_(yi, zi)]
-            region[mask] = 2 if electrode["electrode_id"] == 14 else 1
+            category = (5 if electrode["pair"] == "x" else 6) if electrode.get("namespace") == "quadrupole_lens" else (2 if electrode["electrode_id"] == 14 else 1)
+            region[mask] = category
             image[np.ix_(yi, zi)] = region
     y, z = np.meshgrid(ys, zs, indexing="ij")
     points = np.column_stack((y.ravel(), z.ravel()))
@@ -87,13 +88,16 @@ def _geometry_figure(cases: list, box: list, section_x: float, pixel: float):
     from matplotlib.colors import ListedColormap
     from matplotlib.patches import Patch
     colors = ["white", "#b9b9b9", "#444444", "#56B4E9", "#E69F00"]
+    has_lens = any(c["prepared"]["geometry"].get("lens_electrodes") for c in cases)
+    if has_lens:
+        colors += ["#0072B2", "#D55E00"]
     rows = (len(cases)+1)//2
     figure, axes = plt.subplots(rows, 2, figsize=(16, 5*rows), sharex=True, sharey=True, squeeze=False)
     for ax, case in zip(axes.flat, cases):
         prepared = case["prepared"]
         image, extent = _section(prepared["geometry"], section_x, box, pixel)
         ax.imshow(image, origin="lower", extent=extent, interpolation="nearest",
-                  cmap=ListedColormap(colors), vmin=0, vmax=4, aspect="equal")
+                  cmap=ListedColormap(colors), vmin=0, vmax=len(colors)-1, aspect="equal")
         exit_z = prepared["exit_z_mm"]
         nominal_y = prepared["geometry_checks"]["nominal_y_mm"]
         shield = prepared["geometry"]["prism_ground_shields"][0]
@@ -111,7 +115,8 @@ def _geometry_figure(cases: list, box: list, section_x: float, pixel: float):
                     arrowprops=dict(arrowstyle="->", color="black"))
         ax.annotate("Ground shield", xy=(-95, -75), xytext=(-118, -91), fontsize=8,
                     arrowprops=dict(arrowstyle="->", color="black"))
-        ax.set_title(f"D = {case['distance_mm']:.3f} mm; equal physical scale", fontsize=11)
+        label = case["case_id"] if has_lens else f"D = {case['distance_mm']:.3f} mm"
+        ax.set_title(f"{label}; equal physical scale", fontsize=11)
         ax.set_xlim(box[2], box[5]);ax.set_ylim(box[1], box[4])
         ax.set_xlabel("MR z (mm); forward flight toward -z")
         ax.set_ylabel("MR y (mm)")
@@ -119,9 +124,11 @@ def _geometry_figure(cases: list, box: list, section_x: float, pixel: float):
         ax.set_visible(False)
     figure.suptitle(f"Actual CSG YZ section at x = +{section_x:g} mm (off-axis)\n"
                    "Source and P1-distance references belong to the beam axis x = 0", fontsize=13)
-    figure.legend(handles=[Patch(facecolor=colors[k], edgecolor="black", label=label) for k, label in
-                           ((1, "IP conductors"), (2, "E14 LP shield"), (3, "P1 ground shield"), (4, "P1 biased side electrode"))],
-                  loc="lower center", ncol=4, frameon=False)
+    labels = [(1, "IP conductors"), (2, "E14 LP shield"), (3, "P1 ground shield"), (4, "P1 biased side electrode")]
+    if has_lens:
+        labels += [(5, "Quadrupole x rods"), (6, "Quadrupole y rods")]
+    figure.legend(handles=[Patch(facecolor=colors[k], edgecolor="black", label=label) for k, label in labels],
+                  loc="lower center", ncol=3 if has_lens else 4, frameon=False)
     figure.tight_layout(rect=(0, 0.05, 1, 0.92))
     return figure
 
@@ -132,16 +139,18 @@ def _field_figure(cases: list):
     styles = [("#000000", "-", "o"), ("#0072B2", "--", "s"),
               ("#D55E00", ":", "^"), ("#009E73", "-.", "D")]
     quantities = [("potential_v", "Potential (V)"), ("ey_v_per_mm", "Ey (V/mm)"), ("ez_v_per_mm", "Ez (V/mm)")]
+    has_lens = any(c["prepared"]["geometry"].get("lens_electrodes") for c in cases)
     for index, case in enumerate(cases):
         color, line, marker = styles[index % len(styles)]
         distance = np.array([case["prepared"]["exit_z_mm"]-r["z_mm"] for r in case["axis"]])
+        case_label = case["case_id"] if has_lens else f"D = {case['distance_mm']:.3f} mm"
         for ax, (key, label) in zip(axes, quantities):
             values = [r[key] for r in case["axis"]]
             ax.plot(distance, values, color=color, linestyle=line, marker=marker,
                     markevery=max(1, len(distance)//14), markersize=3, linewidth=1.3,
-                    label=f"D = {case['distance_mm']:.3f} mm")
+                    label=case_label)
             ax.set_ylabel(label);ax.grid(alpha=0.2)
-        axes[-1].annotate(f"{case['distance_mm']:.3f} mm", xy=(distance[-1], case["axis"][-1]["ez_v_per_mm"]),
+        axes[-1].annotate(case_label if has_lens else f"{case['distance_mm']:.3f} mm", xy=(distance[-1], case["axis"][-1]["ez_v_per_mm"]),
                           xytext=(3, 7), textcoords="offset points", fontsize=8, color=color)
     axes[0].legend(loc="best", ncol=2, frameon=False)
     axes[-1].set_xlim(0, max(c["prepared"]["exit_z_mm"]-c["axis"][-1]["z_mm"] for c in cases)*1.08)
@@ -149,6 +158,45 @@ def _field_figure(cases: list):
     figure.suptitle("Native nominal-axis field probes: x = 0, y = source nominal y\n"
                    "Actual finite fields; these are not trajectory-force samples or sharp field-entry boundaries", fontsize=12)
     figure.tight_layout(rect=(0, 0, 1, 0.93))
+    return figure
+
+
+def _lens_geometry_figure(case: dict, plans: list[dict]):
+    """Show every finite rod in three geometry sections at actual PA node planes."""
+    from matplotlib import pyplot as plt
+    from matplotlib.patches import Circle, Polygon, Patch
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_mesh_diagnostics import _metal, _section_shapes
+
+    figure, axes = plt.subplots(1, 3, figsize=(15, 5), layout="constrained")
+    name = plans[0]["lens_element_name"]
+    rods = [e for e in case["prepared"]["geometry"]["lens_electrodes"] if e["element_name"] == name]
+    styles = {"x": ("#0072B2", "///"), "y": ("#D55E00", "...")}
+    for ax, plan in zip(axes, plans):
+        h, v = np.meshgrid(*plan["grids"], indexing="xy")
+        xyz = [None]*3
+        xyz[plan["fixed_axis"]] = np.full(h.shape, plan["actual_mm"])
+        for axis, values in zip(plan["axes"], (h, v)):
+            xyz[axis] = values
+        for rod in rods:
+            color, hatch = styles[rod["pair"]]
+            mask = _metal([rod], xyz)
+            ax.scatter(h[mask], v[mask], s=4, color=color, marker="s" if rod["pair"] == "x" else "o", rasterized=True)
+            for solid in rod["solids"]:
+                for kind, points in _section_shapes(solid, plan["fixed_axis"], plan["actual_mm"], plan["axes"]):
+                    style = dict(facecolor=color, alpha=.25, edgecolor="black", hatch=hatch, linewidth=.8)
+                    ax.add_patch(Circle(points[:2], points[2], **style) if kind == "circle" else Polygon(points, closed=True, **style))
+                    center = points[:2] if kind == "circle" else np.mean(points, axis=0)
+                    ax.annotate(rod["name"], center, ha="center", va="center", fontsize=7)
+        a, b = plan["axes"]
+        ax.set(xlabel=f"MR {'xyz'[a]} (mm)", ylabel=f"MR {'xyz'[b]} (mm)", aspect="equal",
+               title=f"{'xyz'[a].upper()}{'xyz'[b].upper()}: requested {'xyz'[plan['fixed_axis']]}={plan['requested_mm']:g}\nActual node plane={plan['actual_mm']:g} mm",
+               xlim=(plan["display_bounds_mm"][0], plan["display_bounds_mm"][2]),
+               ylim=(plan["display_bounds_mm"][1], plan["display_bounds_mm"][3]))
+    handles = [Patch(facecolor=color, edgecolor="black", hatch=hatch,
+                     label=f"{pair} rods: {next(e['voltage_v'] for e in rods if e['pair'] == pair):+g} V")
+               for pair, (color, hatch) in styles.items()]
+    figure.legend(handles=handles, loc="outside lower center", ncol=2)
+    figure.suptitle(f"{case['case_id']} | {name}: finite quadrupole geometry\nCSG samples at native grid coordinates; outlines are exact sections, not a Fly collision qualification", fontsize=11)
     return figure
 
 
@@ -192,6 +240,14 @@ def export_field_diagnostics(run: Path) -> dict:
     pixel = min(pitch)
     figures = {"local_geometry_yz_sections": _geometry_figure(cases, box, section_x, pixel),
                "nominal_axis_field_profiles": _field_figure(cases)}
+    lens_sections = []
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_mesh_diagnostics import _lens_slice_plans
+    for index, case in enumerate(cases):
+        plans = _lens_slice_plans(case["prepared"])
+        for offset in range(0, len(plans), 3):
+            group = plans[offset:offset+3]
+            figures[f"case_{index:02d}__lens_{group[0]['lens_element_name']}_sections"] = _lens_geometry_figure(case, group)
+        lens_sections.extend(dict(case_id=case["case_id"], **{k: v for k, v in p.items() if k not in {"grids", "indices"}}) for p in plans)
     assets = []
     for name, figure in figures.items():
         for extension in ("png", "svg"):
@@ -211,6 +267,9 @@ def export_field_diagnostics(run: Path) -> dict:
                     geometry_gap_mm=[c["prepared"]["gap_mm"] for c in cases],
                     source_feedback_validated=False, full_analyzer_flight_executed=False, gui_executed=False,
                     dpi=200, geometry_size_inches=[16,5*((len(cases)+1)//2)], field_size_inches=[12,10])
+    if lens_sections:
+        metadata.update(lens_sections=lens_sections, lens_size_inches=[15, 5],
+                        lens_scope="All four canonical rods; XY center plus XZ/YZ center sections. Requested and nearest actual planes retained; crop is rod bounds plus one PA cell, clipped to the field domain. CSG node membership is not native collision validation.")
     metadata_path = output/"figure_metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2, allow_nan=False)+"\n", encoding="utf-8")
     return dict(status="success", output_directory=str(output), metadata=file_record(metadata_path), figures=assets)

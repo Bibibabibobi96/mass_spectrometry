@@ -139,7 +139,7 @@ def freeze_code(repo: Path, inputs: Path) -> None:
 
 
 def validate_contour_contract(contract: dict, *, recorded_author: bool = False) -> None:
-    """Validate active v4 authors, or explicitly read frozen v2/v3 selectors.
+    """Validate active v5 authors, or explicitly read frozen v2/v3/v4 selectors.
 
     The historical v2 limits were inert metadata. They remain immutable when
     consuming an already recorded run; new preparation never accepts them.
@@ -151,7 +151,7 @@ def validate_contour_contract(contract: dict, *, recorded_author: bool = False) 
         required.add("limits")
     elif recorded_author and version == 3:
         pass
-    elif version == 4:
+    elif version == 5 or (recorded_author and version == 4):
         required.add("field_sources")
     else:
         raise ValueError("unsupported contour focus experiment contract")
@@ -177,9 +177,14 @@ def validate_contour_contract(contract: dict, *, recorded_author: bool = False) 
     if not isinstance(cases, list) or not cases:
         raise ValueError("nonempty contour case table required")
     fields = {"case_id", "label", "source_run", "distance_mm", "pitch_mm", "maximum_step_us", "field_case_id", "physical_aperture"}
+    if version == 5:
+        fields.add("lens_elements")
     if any(set(row) != fields for row in cases) or len({row["case_id"] for row in cases}) != len(cases):
         raise ValueError("complete unique contour cases required")
     for row in cases:
+        if version == 5 and (not isinstance(row["lens_elements"], list) or
+                             any(not isinstance(element, dict) for element in row["lens_elements"])):
+            raise ValueError("lens_elements requires an explicit list of electrode specifications")
         if row["physical_aperture"] is not None and not isinstance(row["physical_aperture"], dict):
             raise ValueError("physical_aperture must be an explicit object or null")
         if not all(isinstance(row[key], str) and row[key] for key in ("case_id", "label", "source_run", "field_case_id")):
@@ -193,7 +198,7 @@ def validate_contour_contract(contract: dict, *, recorded_author: bool = False) 
         if (not isinstance(row["pitch_mm"], list) or len(row["pitch_mm"]) != 3 or
                 any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0 for v in row["pitch_mm"])):
             raise ValueError("positive finite case pitch xyz required")
-    if version == 4:
+    if version in (4, 5):
         sources = contract["field_sources"]
         if not isinstance(sources, dict) or set(sources) != {row["field_case_id"] for row in cases}:
             raise ValueError("field_sources must exactly cover every unique field_case_id")
@@ -536,6 +541,7 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
         prepared = prepare_geometry(local, projection["values_v15"], prism_voltage, row["distance_mm"],
                                    contract["numerics"]["box_mm"], row["pitch_mm"], contract["numerics"]["convergence_v"],
                                    physical_aperture=row["physical_aperture"],
+                                   lens_elements=row["lens_elements"],
                                    downstream_observation_z_mm=contract["observation_planes"][-1]["z_mm"])
         if contract["observation_planes"][0]["z_mm"] >= prepared["exit_z_mm"]:
             raise ValueError("contour observation plane lies upstream of registered source")

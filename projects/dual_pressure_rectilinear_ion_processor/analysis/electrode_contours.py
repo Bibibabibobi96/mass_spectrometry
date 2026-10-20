@@ -18,13 +18,25 @@ def validate_contours(c: dict, baseline: dict) -> None:
     """Reject unspecified, nonfinite or interfering author dimensions."""
     parabolic = c.get("mode") == "formed_extraction_continuous_aux_parabolic_inner"
     expected = FIELDS | {"inner_parabola_sag_mm"} if parabolic else FIELDS
+    outer_bounds = "outer_axial_bounds_mm" in c
+    if outer_bounds and c.get("mode") in {"formed_extraction_continuous_aux", "formed_extraction_continuous_aux_parabolic_inner"}:
+        expected |= {"outer_axial_bounds_mm"}
     if set(c) != expected or c["schema_version"] != 1 or c["mode"] not in MODES:
         raise ValueError("unsupported electrode_contours schema/fields/mode")
-    for key in expected - {"schema_version", "mode"}:
+    for key in expected - {"schema_version", "mode", "outer_axial_bounds_mm"}:
         v = c[key]
         if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0:
             raise ValueError(f"electrode_contours.{key} must be finite and positive")
     g, n = baseline["geometry"], baseline["native_geometry"]
+    if outer_bounds:
+        bounds = c["outer_axial_bounds_mm"]
+        if (not isinstance(bounds, list) or len(bounds) != 2 or
+                any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in bounds)):
+            raise ValueError("outer_axial_bounds_mm requires two finite native axial coordinates")
+        lp_start = g["guide_length_mm"] + g["hp_length_mm"]
+        gap = n["segment_end_gap_mm"]
+        if not (lp_start + gap <= bounds[0] < g["lp_center_mm"] < bounds[1] <= lp_start + g["lp_length_mm"] - gap):
+            raise ValueError("outer auxiliary bounds must contain the extraction center and retain LP end gaps")
     if parabolic and c["inner_parabola_sag_mm"] >= n["lp_inner_thickness_z_mm"]:
         raise ValueError("parabolic inner sheet must retain positive thickness at both ends")
     depth = c["nose_depth_mm"] + c["backing_thickness_mm"]
@@ -86,6 +98,8 @@ def _continuous_aux(electrodes: list[dict], b: dict) -> None:
     electrodes[8]["solids"] = corners
     start = g["guide_length_mm"]+g["hp_length_mm"]+n["lp_aux_axial_inset_mm"]
     stop = g["guide_length_mm"]+g["hp_length_mm"]+g["lp_length_mm"]-n["lp_aux_axial_inset_mm"]
+    if "outer_axial_bounds_mm" in b["electrode_contours"]:
+        start, stop = b["electrode_contours"]["outer_axial_bounds_mm"]
     center = g["lp_center_mm"]
     zc, ze, thick, half_y = (n["lp_outer_inner_surface_center_z_mm"], n["lp_outer_inner_surface_end_z_mm"], n["lp_outer_thickness_z_mm"], n["lp_aux_halfwidth_y_mm"])
     outer = []

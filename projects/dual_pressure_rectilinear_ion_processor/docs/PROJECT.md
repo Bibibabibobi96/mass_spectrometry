@@ -261,6 +261,27 @@ B97/C45/D55的开关末步约−62m/s轴向残差与开关后场的1/6节点权�
 [机制报告与全部证据](../../../../artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/20261020_120402__analysis__python__contour-focus-loss-mechanism/results/scientific_report.md)
 包含自动英文束腰图、96面相空间表、逐离子损失和受力原始行身份。
 
+### D基准的内部改动与比较入口
+
+D参考维持原冻结几何、RF、压力、源和电压；内部调压、Outer覆盖对称与出口后透镜分开评价。
+完整独立IP对照已完成：D、辅助调压、Outer覆盖对称分别引出96／97／34颗，原母群各100颗。
+调压仅将E10／E11相对电压从+5／−1V改为+4／−1.10V；覆盖对称仅将E10改为150.5…189.5mm，中心170mm。
+后者保留LP总长和HP接口，却形成不利于冷却后输运的入口势垒；外观对称未带来性能改善。
+共同34群的两个改动都未降低角宽和时宽；与D—调压共同96群的条件结果分别保留，不替换D默认。
+完整300终态、73个未引出记录、实际场／随机路径边界及英文诊断见[里程碑](history/20261020__d-auxiliary-voltage-and-symmetric-coverage.md)。
+
+`electrode_contours.outer_axial_bounds_mm`显式控制E10本地慢轴x覆盖；缺省不改变D。
+两端须满足有效LP机械间隙并严格跨越提取中心；不能把整个LP直接居中造成的HP空段视为已验证结构。
+`analysis.functional compare-geometry-study`的活动study为schema2，以`reference_case_id`和每cell的
+`configuration_changes`声明原生工作点／电极轮廓的JSON pointer及存在性、前后值；未声明变化失败关闭。
+出生、frame、时钟、数值和诊断配置保持不变量，同D模式允许分别比较两条改动；schema1仅显式读取历史作者。
+比较复用既有统计、空间／时间焦点和全部损失实现；默认同时刻云图及metadata保留各producer身份，
+不将出口事件拼成同一时刻云团。输出记录原run状态、runtime和数值观察面差异，不宣称纯物理因果等价。
+
+当前原生schema2数值观察在PA起点加一网格的内部面记录向外的`backward_escape`，并保持既有下游观察面；
+这是数值退出而非金属碰撞，出生必须在域内。真实对称N100已命中12次该退出，旧封存合同和字段不重写。
+MR侧的实际局部传播、额外透镜和最终加载包由[MR状态页](../../parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md)维护；不启动大型联合模拟或操作GUI。
+
 ### 系统时间焦点与假想小孔接受度
 
 出口sigma(t)不等于最小sigma(t)。现有`compare-geometry-study`可由冻结study的

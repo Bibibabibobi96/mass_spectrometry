@@ -226,6 +226,91 @@ class IpPrismLocalGeometryTest(unittest.TestCase):
         self.assertEqual(explicit, original)
         self.assertNotIn("aperture_electrodes", original["geometry"])
 
+    def lens(self, **updates):
+        spec = dict(name="Q1", frame_id="test_frame", center_mm=[0,-55,-13],
+                    length_mm=3, inscribed_radius_mm=1.4, rod_radius_mm=.2, voltage_v=12.5)
+        spec.update(updates)
+        return spec
+
+    def test_empty_lenses_preserve_exact_old_result(self):
+        old = self.prepare(distance=52.828)
+        self.assertEqual(old,self.prepare(distance=52.828,lens_elements=None))
+        self.assertEqual(old,self.prepare(distance=52.828,lens_elements=[]))
+        self.assertNotIn("lens_electrodes",old["geometry"])
+
+    def test_quadrupole_has_real_four_rods_and_three_half_domain_primitives(self):
+        spec = self.lens()
+        original = copy.deepcopy(spec)
+        base = self.prepare(distance=52.828)
+        result = self.prepare(distance=52.828,lens_elements=[spec],downstream_observation_z_mm=-98)
+        self.assertEqual(spec,original)
+        rods = result["geometry"]["lens_electrodes"]
+        self.assertEqual(len(rods),4)
+        self.assertEqual(len({r["electrode_id"] for r in rods}),4)
+        for rod in rods:
+            self.assertEqual(rod["namespace"],"quadrupole_lens")
+            self.assertEqual(rod["specification"],spec)
+            self.assertEqual(rod["cutouts"],[])
+            solid = rod["solids"][0]
+            self.assertEqual(solid["shape"],"cylinder3d")
+            self.assertEqual(solid["radius_mm"],.2)
+            self.assertEqual([p[2] for p in solid["endpoints_mm"]],[-14.5,-11.5])
+            center = solid["endpoints_mm"][0]
+            self.assertAlmostEqual(abs(center[0] if rod["pair"]=="x" else center[1]+55),1.6)
+            self.assertEqual(rod["voltage_v"],12.5 if rod["pair"]=="x" else -12.5)
+            self.assertEqual(rod["represented_by_x_mirror"],rod["pair"]=="x" and center[0]<0)
+        for key in ("ion_processor_electrodes","prism_electrodes","prism_ground_shields"):
+            self.assertEqual(result["geometry"][key],base["geometry"][key])
+        self.assertEqual(result["gem"].count("; namespace=quadrupole_lens"),3)
+        self.assertEqual(result["gem"].count("cylinder3d("),base["gem"].count("cylinder3d(")+3)
+        self.assertEqual(result["gem"].count("e(12.5) {"),1)
+        self.assertEqual(result["gem"].count("e(-12.5) {"),2)
+        self.assertIn("PASS_sufficient_conservative",result["geometry_checks"]["lens_geometry_checks"]["status"])
+
+    def test_doublet_polarity_and_input_order_are_explicit(self):
+        elements=[self.lens(),self.lens(name="Q2",center_mm=[0,-55,-20],length_mm=4,voltage_v=-17)]
+        result=self.prepare(distance=52.828,lens_elements=elements,downstream_observation_z_mm=-98)
+        reverse=self.prepare(distance=52.828,lens_elements=list(reversed(elements)),downstream_observation_z_mm=-98)
+        self.assertEqual(result,reverse)
+        second=[r for r in result["geometry"]["lens_electrodes"] if r["element_name"]=="Q2"]
+        self.assertEqual([r["voltage_v"] for r in second],[-17,-17,17,17])
+
+    def test_lens_contract_rejects_malformed_nonfinite_unknown_and_duplicate(self):
+        changes=[dict(extra=1),dict(name=""),dict(frame_id="other"),dict(center_mm=[0,-55]),
+                 dict(center_mm=[True,-55,-13]),dict(center_mm=[.1,-55,-13]),
+                 dict(length_mm=True),dict(length_mm=0),dict(rod_radius_mm=-1),
+                 dict(inscribed_radius_mm=float("inf")),dict(voltage_v=float("nan"))]
+        for change in changes:
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                self.prepare(distance=52.828,lens_elements=[self.lens(**change)],downstream_observation_z_mm=-98)
+        for elements in ({},"quad",[self.lens(),self.lens()]):
+            with self.subTest(elements=elements),self.assertRaises(ValueError):
+                self.prepare(distance=52.828,lens_elements=elements,downstream_observation_z_mm=-98)
+
+    def test_lens_order_domain_and_metal_contacts_fail_closed(self):
+        changes=[dict(center_mm=[0,-55,-1],length_mm=2),dict(center_mm=[0,-55,-97],length_mm=2),
+                 dict(center_mm=[0,-26,-13]),dict(inscribed_radius_mm=1.6),
+                 dict(inscribed_radius_mm=.1,rod_radius_mm=.8),
+                 dict(center_mm=[0,-55,-60],inscribed_radius_mm=2)]
+        for change in changes:
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                self.prepare(distance=52.828,lens_elements=[self.lens(**change)],downstream_observation_z_mm=-98)
+        with self.assertRaisesRegex(ValueError,"contact each other"):
+            self.prepare(distance=52.828,lens_elements=[self.lens(),self.lens(name="Q2")],downstream_observation_z_mm=-98)
+        with self.assertRaisesRegex(ValueError,"downstream observation"):
+            self.prepare(distance=52.828,lens_elements=[self.lens()])
+
+    def test_lens_clearance_recognizes_real_ground_slot_and_retains_contacts(self):
+        geometry=fixture()
+        geometry["prism_ground_shields"][0]["rectangular_slots_mm"]=[]
+        with self.assertRaisesRegex(ValueError,"actual shield"):
+            self.prepare(distance=52.828,geometry=geometry,lens_elements=[self.lens()],downstream_observation_z_mm=-98)
+        geometry=fixture()
+        # A separate IP solid in the measured downstream region must not be hidden.
+        geometry["ion_processor_electrodes"][0]["solids"]=[dict(shape="box",min_mm=[1.5,-55.1,-14],max_mm=[1.7,-54.9,-12])]
+        with self.assertRaises(ValueError):
+            self.prepare(distance=52.828,geometry=geometry,lens_elements=[self.lens()],downstream_observation_z_mm=-98)
+
     def test_invalid_geometry_gap_and_grid_fail(self):
         for changes in (dict(distance_mm=5), dict(distance_mm=float("nan")),
                         dict(pitch_mm=[0.015, 0.2, 0.2]), dict(ip_voltages=[0]*14),

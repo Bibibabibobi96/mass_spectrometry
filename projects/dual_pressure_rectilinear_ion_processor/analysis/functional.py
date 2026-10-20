@@ -255,7 +255,7 @@ def validate_configs(config: dict[str, Any]) -> None:
 
 
 def derive_numerical_boundaries(projection: dict[str, Any]) -> dict[str, Any]:
-    """Place a diagnostic exit inside the native domain after the last lens.
+    """Place numerical observations inside both native axial domain ends.
 
     This midpoint is an observation/termination surface, not metal. It leaves
     the native geometry and GEM unchanged and uses only the frozen projection.
@@ -270,7 +270,22 @@ def derive_numerical_boundaries(projection: dict[str, Any]) -> dict[str, Any]:
     boundary = (last_lens + domain_end) / 2
     if not all(math.isfinite(value) for value in (last_lens, domain_end, boundary)) or not last_lens < boundary < domain_end:
         raise ValueError("numerical downstream exit must lie after lens and inside PA domain")
-    return {"downstream_exit_x_mm": boundary, "classification": "numerical_observation_not_metal"}
+    origin, grid = projection["origin_mm"][0], projection["grid_mm"]
+    upstream = origin + grid
+    if not all(math.isfinite(value) for value in (origin, grid, upstream)) or grid <= 0 or not origin < upstream < boundary:
+        raise ValueError("numerical upstream exit must lie one positive PA cell inside domain")
+    return {"schema_version": 2, "role": "native_numerical_observation_boundaries",
+            "upstream_exit_x_mm": upstream, "downstream_exit_x_mm": boundary,
+            "classification": "numerical_observation_not_metal"}
+
+
+def validate_numerical_boundaries(boundaries: dict, projection: dict, *, recorded: bool = False) -> None:
+    """Validate active observations or an explicit read-only historical record."""
+    expected = derive_numerical_boundaries(projection)
+    if recorded and set(boundaries) == {"downstream_exit_x_mm", "classification"}:
+        expected = {key: expected[key] for key in boundaries}
+    if boundaries != expected:
+        raise ValueError("numerical observation boundaries differ from their derived authority")
 
 
 def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path | None = None,
@@ -337,6 +352,8 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     config["extraction_force_audit"] = dict(schema_version=1, role="native_extraction_force_audit", start_reference="native_timing.primary_quench_us", field_basis_count=15, step_state_scope="actual_pre_and_post_HS1", integration="Hermite_composite_Simpson_5_vs_3")
     config["native_projection"] = native_projection(config["baseline"],config["numerics"])
     config["numerical_boundaries"] = derive_numerical_boundaries(config["native_projection"])
+    if any(row["x_mm"] <= config["numerical_boundaries"]["upstream_exit_x_mm"] for row in states):
+        raise ValueError("source births must lie strictly inside the upstream numerical observation")
     (solver / "processor.gem").write_text(render_gem(config["baseline"],config["numerics"]),encoding="utf-8")
     config["workbench_seed_path"]=str(repo/"common/simion/assets/iob_instance_seeds/1_instance_seed.iob")
     config["native_field"]={"directory":str(solver),"source_manifest":None}
@@ -436,16 +453,21 @@ def analyze(run: Path) -> dict[str, Any]:
         previous_time[particle]=t
         if event["event"] in stage_times and abs(t-stage_times[event["event"]])>1e-6:
             raise ValueError("scientific event does not match its frozen stage clock")
-        if event["reason"] == "downstream_domain_exit":
+        if event["reason"] in {"downstream_domain_exit", "backward_escape"}:
+            downstream = event["reason"] == "downstream_domain_exit"
+            direction = "downstream" if downstream else "upstream"
             if event["event"] != "terminal":
-                raise ValueError("downstream domain exit must be a terminal event")
+                raise ValueError(f"{direction} domain exit must be a terminal event")
             boundaries = c.get("numerical_boundaries")
-            if boundaries is None or boundaries != derive_numerical_boundaries(c["native_projection"]):
-                raise ValueError("downstream domain exit lacks its derived numerical boundary")
+            try:
+                validate_numerical_boundaries(boundaries or {}, c["native_projection"])
+            except ValueError:
+                raise ValueError(f"{direction} domain exit lacks its derived numerical boundary")
             position = to_local_position(c, [float(event[k]) for k in ("x_mm", "y_mm", "z_mm")])
             velocity = to_local_vector(c, [float(event[k]) for k in ("vx_mm_us", "vy_mm_us", "vz_mm_us")])
-            if abs(position[0] - boundaries["downstream_exit_x_mm"]) > 1e-9 or velocity[0] <= 0:
-                raise ValueError("downstream domain exit is outside its plane/direction")
+            plane = boundaries["downstream_exit_x_mm" if downstream else "upstream_exit_x_mm"]
+            if abs(position[0] - plane) > 1e-9 or (velocity[0] <= 0 if downstream else velocity[0] >= 0):
+                raise ValueError(f"{direction} domain exit is outside its plane/direction")
         if event["event"]=="extraction_exit":
             local_position = to_local_position(c, [float(event[k]) for k in ("x_mm", "y_mm", "z_mm")])
             local_velocity = to_local_vector(c, [float(event[k]) for k in ("vx_mm_us", "vy_mm_us", "vz_mm_us")])

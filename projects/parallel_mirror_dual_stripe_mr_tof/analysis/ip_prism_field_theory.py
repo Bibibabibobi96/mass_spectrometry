@@ -205,6 +205,37 @@ def _figure(statistics: list[dict], probes: list[dict], owners: list[dict], opti
     return fig
 
 
+def _lens_axis_rows(raw: np.ndarray, header, prepared: dict, planes: list[dict], step_mm: float) -> list[dict]:
+    """Sample the declared nominal axis; nearest nodes are diagnostics, not Fly forces.
+
+    Keep every requested position, including repeated nearest nodes and invalid
+    stencils. The endpoint is included even when the interval is not step-aligned.
+    """
+    checks = prepared["geometry_checks"]
+    start, stop = float(prepared["exit_z_mm"]), float(planes[-1]["z_mm"])
+    y = float(checks["nominal_y_mm"])
+    if not all(math.isfinite(v) for v in (start, stop, y, step_mm)) or step_mm <= 0 or stop >= start:
+        raise ValueError("lens axis requires finite descending endpoints and positive probe_step_mm")
+    count = int(math.floor((start-stop)/step_mm))
+    z_values = start-np.arange(count+1)*step_mm
+    if z_values[-1] > stop:
+        z_values = np.append(z_values, stop)
+    origin = np.asarray(checks["box_mm"][:3], float)
+    pitch = np.array([header.dx_mm, header.dy_mm, header.dz_mm])
+    rows = []
+    for index, z in enumerate(z_values):
+        point = np.array([0., y, float(z)])
+        node = origin+np.rint((point-origin)/pitch)*pitch
+        row = dict(sample_index=index)
+        for axis, value, center in zip("xyz", point, node):
+            row[f"requested_{axis}_mm"] = float(value)
+            row[f"node_{axis}_mm"] = float(center)
+            row[f"node_offset_{axis}_mm"] = float(center-value)
+        row.update(probe_pa(raw, header, checks["box_mm"], point.tolist()))
+        rows.append(row)
+    return rows
+
+
 def export_field_theory(run: Path) -> dict:
     """Export all unique declared field owners before Fly, without changing PA."""
     run = Path(run).resolve()
@@ -219,6 +250,7 @@ def export_field_theory(run: Path) -> dict:
     output = run/"results/field_theory"
     output.mkdir(parents=True, exist_ok=False)
     statistics, optics, decisions, probes, records, covariances = [], [], [], [], [], []
+    lens_axis = []
     for owner in owners:
         directory = Path(owner["directory"])
         source_path, geometry_path = directory/"source_states.json", directory/"geometry.json"
@@ -241,9 +273,13 @@ def export_field_theory(run: Path) -> dict:
         try:
             s, o, d = _drift_rows(states, planes, owner["mass_u"])
             p = _field_rows(states, planes, header, raw, checks["box_mm"], owner["mass_u"], owner["charge_state"])
+            axis_rows = (_lens_axis_rows(raw, header, prepared, planes,
+                                        float(study["contract"]["numerics"]["probe_step_mm"]))
+                         if prepared.get("geometry", {}).get("lens_electrodes") else [])
         finally:
             raw._mmap.close()
         base = dict(field_case_id=owner["field_case_id"], mother_count=len(census), source_count=len(states))
+        lens_axis.extend(dict(base, **row) for row in axis_rows)
         for target, rows in ((statistics, s), (optics, o), (decisions, d), (probes, p)):
             target.extend(dict(base, **r) for r in rows)
         covariances.extend(dict(base, **r) for r in plane_covariances(states, planes))
@@ -276,6 +312,8 @@ def export_field_theory(run: Path) -> dict:
             field_statistics.append(summary)
     for name, rows in (("source_drift_moments", statistics), ("linear_optics", optics), ("drift_decisions", decisions), ("drift_path_field_probes", probes), ("field_probe_statistics", field_statistics), ("drift_covariances", covariances)):
         local._write_csv(output/f"{name}.csv", rows)
+    if lens_axis:
+        local._write_csv(output/"lens_axis_field_response.csv", lens_axis)
     figure = _figure(statistics, probes, owners, optics)
     from matplotlib import pyplot as plt
     for extension in ("png", "svg"):
@@ -291,5 +329,12 @@ def export_field_theory(run: Path) -> dict:
                     voltage_sensitivity_limit="One ordinary PA at one voltage working point cannot identify individual-electrode dE/dV. Probes begin at the transferred source surface and cannot predict how changing upstream LP auxiliary voltages changes extraction states; that requires an upstream controlled fast-adjust case and newly generated source states.",
                     minimal_validation="Compare same-ID actual crossings to straight reference at existing declared planes; local field/curvature scales identify regions requiring this comparison, not confirmed trajectory error. Then compare unchanged-source mesh and time-step pairs. A physical lens voltage test requires a new frozen controlled native case, not interpretation of the ideal lens map.",
                     files=[file_record(p) for p in sorted(output.iterdir())])
+    if lens_axis:
+        metadata["lens_axis_sampling"] = dict(
+            file="lens_axis_field_response.csv", sample_count=len(lens_axis),
+            probe_step_mm=study["contract"]["numerics"]["probe_step_mm"],
+            coordinates="Requested x=0, y=geometry_checks.nominal_y_mm; descending z from exit_z_mm to last declared observation plane, inclusive. Repeated nearest nodes retained.",
+            units="Positions mm; potential V; E=-grad(V) V/mm; diagonal potential Hessian and Laplacian V/mm^2.",
+            scope="Actual working-point PA only, seven-point nearest-node diagnostic, not vendor trajectory force or an integrated transfer matrix. Invalid stencils retained without physics values. A single PA is not an individual-lens unit-voltage response or dE/dV; compare explicitly bound same-geometry zero/unit-voltage fields separately.")
     (output/"metadata.json").write_text(json.dumps(metadata, indent=2, allow_nan=False)+"\n", encoding="utf-8")
     return metadata

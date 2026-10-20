@@ -13,7 +13,10 @@
 - 仓库规则：[根入口](../../README.md)。
 
 生产入口为 `simion/run_functional.ps1`，准备与分析由 `analysis/functional.py` 负责。
-当前 N=100 路线从冻结 GEM 重新 Refine 私有原生场，不再借用或 raw-clone 旧 PA 族来建立新证据。
+几何、网格或求场设置变化时，从冻结 GEM 重新 Refine 私有原生场。
+仅调电压且基场身份一致时，使用同一入口的 `-NativeFieldRun <已封存来源run>` 复用 Fast Adjust 基场，
+跳过 GEM／Refine；来源完整性和几何／网格／精度仍由既有消费合同核验，不 raw-clone 旧 PA 族。
+电压由 `segment.fast_adjust` 更新15个 `adj_elect`，每组仍独立冻结配置、源、飞行和诊断证据。
 GUI 包也应从同一冻结几何独立求场，保留完整母群，由用户打开、Fly 和确认；准备文件不等于 GUI 验收。
 `verify_project.ps1` 的轻量测试不启动商业软件，不代表真实仿真通过。
 
@@ -29,3 +32,4 @@ GUI 包也应从同一冻结几何独立求场，保留完整母群，由用户�
 
 - [旧原生运行、随机重放与源身份边界](docs/history/20261016__native-flight-and-source-identity.md)
 - [横向热源功能复现与用户GUI确认](docs/history/20261016__thermal-source-gui-accepted.md)
+- [D辅助调压与Outer覆盖对称对照](docs/history/20261020__d-auxiliary-voltage-and-symmetric-coverage.md)

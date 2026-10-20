@@ -129,6 +129,12 @@ class FieldTheoryTests(unittest.TestCase):
         self.assertTrue(row["complete_source"])
 
     def test_export_fixture_and_identity(self):
+        self._export_fixture(False)
+
+    def test_export_lens_axis_fixture(self):
+        self._export_fixture(True)
+
+    def _export_fixture(self, lens):
         with tempfile.TemporaryDirectory() as temp:
             run = Path(temp)
             (run/"inputs").mkdir()
@@ -140,18 +146,71 @@ class FieldTheoryTests(unittest.TestCase):
             original = path.read_bytes()
             states = [source(1, -.5, .1), source(2, .5, -.1)]
             (case/"source_states.json").write_text(json.dumps(states))
-            (case/"geometry.json").write_text(json.dumps(dict(geometry_checks=dict(box_mm=box, grid_dimensions=[9, 9, 13]))))
+            geometry = dict(geometry_checks=dict(box_mm=box, grid_dimensions=[9, 9, 13]))
+            if lens:
+                geometry.update(geometry=dict(lens_electrodes=[dict(namespace="fixture")]), exit_z_mm=0.)
+                geometry["geometry_checks"]["nominal_y_mm"] = 0.
+            (case/"geometry.json").write_text(json.dumps(geometry))
             census = case/"census.csv"
             census.write_text("particle_id\n1\n2\n3\n")
             owner = dict(field_case_id="B_fixture", directory=str(case), field_path=str(path), source_census_csv=str(census),
                          source_count=2, mother_count=3, mass_u=524, charge_state=1, pitch_mm=[.5]*3)
-            (run/"inputs/resolved_study.json").write_text(json.dumps(dict(field_owners=[owner], contract=dict(observation_planes=[dict(name="near", z_mm=-1), dict(name="exit", z_mm=-2)]))))
+            contract = dict(observation_planes=[dict(name="near", z_mm=-1), dict(name="exit", z_mm=-2)])
+            if lens:
+                contract["numerics"] = dict(probe_step_mm=.6)
+            (run/"inputs/resolved_study.json").write_text(json.dumps(dict(field_owners=[owner], contract=contract)))
             metadata = theory.export_field_theory(run)
             self.assertEqual(metadata["fields"][0]["upstream_not_transferred_ids"], [3])
             self.assertEqual(path.read_bytes(), original)
             self.assertTrue((run/"results/field_theory/field_theory.png").stat().st_size > 1000)
             with (run/"results/field_theory/drift_path_field_probes.csv").open() as stream:
                 self.assertEqual(len(list(csv.DictReader(stream))), 6)
+            axis_path = run/"results/field_theory/lens_axis_field_response.csv"
+            self.assertEqual(axis_path.exists(), lens)
+            self.assertEqual("lens_axis_sampling" in metadata, lens)
+            if lens:
+                with axis_path.open() as stream:
+                    rows = list(csv.DictReader(stream))
+                self.assertEqual(len(rows), 5)
+                np.testing.assert_allclose([float(r["requested_z_mm"]) for r in rows], [0., -.6, -1.2, -1.8, -2.], rtol=0, atol=1e-15)
+                self.assertEqual({r["field_case_id"] for r in rows}, {"B_fixture"})
+                self.assertAlmostEqual(float(rows[0]["d2v_dx2_v_per_mm2"]), 2.)
+
+    def test_lens_axis_quadrupole_mirror_and_invalid_rows(self):
+        header, raw, box = quadratic_fixture()
+        z, y, x = np.meshgrid(np.arange(13)*.5-4, np.arange(9)*.5-2, np.arange(9)*.5, indexing="ij")
+        raw = 3*(x*x-y*y)+0*z
+        prepared = dict(exit_z_mm=0., geometry_checks=dict(box_mm=box, nominal_y_mm=0.))
+        planes = [dict(name="last", z_mm=-1.)]
+        rows = theory._lens_axis_rows(raw, header, prepared, planes, .2)
+        self.assertEqual(len(rows), 6)
+        self.assertEqual(rows[0]["node_z_mm"], rows[1]["node_z_mm"])
+        for row in rows:
+            self.assertEqual(row["status"], "valid")
+            self.assertAlmostEqual(row["ex_v_per_mm"], 0.)
+            self.assertAlmostEqual(row["d2v_dx2_v_per_mm2"], 6.)
+            self.assertAlmostEqual(row["d2v_dy2_v_per_mm2"], -6.)
+            self.assertAlmostEqual(row["d2v_dz2_v_per_mm2"], 0.)
+        raw[8, 4, 0] = 2*header.max_voltage
+        rows = theory._lens_axis_rows(raw, header, prepared, planes, .2)
+        invalid = [r for r in rows if r["status"] == "invalid"]
+        self.assertTrue(invalid)
+        self.assertEqual(invalid[0]["reason"], "electrode_in_stencil")
+        self.assertIn("node_z_mm", invalid[0])
+        self.assertNotIn("potential_v", invalid[0])
+        self.assertEqual(len(rows), 6)
+        outside = theory._lens_axis_rows(raw, header, prepared, [dict(z_mm=-4.5)], 1.)[-1]
+        self.assertEqual(outside["reason"], "probe_outside_pa")
+        self.assertEqual(outside["requested_z_mm"], -4.5)
+
+    def test_lens_axis_rejects_invalid_sampling_contract(self):
+        header, raw, box = quadratic_fixture()
+        prepared = dict(exit_z_mm=0., geometry_checks=dict(box_mm=box, nominal_y_mm=0.))
+        for step in [0., -1., float("nan"), float("inf")]:
+            with self.subTest(step=step), self.assertRaises(ValueError):
+                theory._lens_axis_rows(raw, header, prepared, [dict(z_mm=-1.)], step)
+        with self.assertRaises(ValueError):
+            theory._lens_axis_rows(raw, header, prepared, [dict(z_mm=1.)], .1)
 
 
 if __name__ == "__main__":

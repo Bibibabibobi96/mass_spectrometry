@@ -100,6 +100,56 @@ class ElectrodeContourTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             native_projection(self.b,self.n)
 
+    def test_default_d_outer_coverage_is_unchanged(self) -> None:
+        self.b["geometry"]["lp_length_mm"] = 61.5
+        self.c.update(mode="formed_extraction_continuous_aux_parabolic_inner",inner_parabola_sag_mm=.1)
+        default = native_projection(self.b,self.n)
+        outer = default["electrodes"][9]
+        self.assertEqual({v[0] for s in outer["solids"] for v in s["vertices_mm"]}, {132,170,189.5})
+        self.c["outer_axial_bounds_mm"] = [132,189.5]
+        explicit = native_projection(self.b,self.n)
+        self.assertEqual(default["electrodes"],explicit["electrodes"])
+
+    def test_symmetric_outer_bounds_change_only_e10(self) -> None:
+        self.b["geometry"]["lp_length_mm"] = 61.5
+        for mode in ("formed_extraction_continuous_aux", "formed_extraction_continuous_aux_parabolic_inner"):
+            self.c["mode"] = mode
+            if mode.endswith("parabolic_inner"):
+                self.c["inner_parabola_sag_mm"] = .1
+            before = native_projection(self.b,self.n)
+            self.c["outer_axial_bounds_mm"] = [150.5,189.5]
+            frozen = copy.deepcopy(self.b)
+            after = native_projection(self.b,self.n)
+            self.assertEqual(self.b,frozen)
+            for a,b in zip(before["electrodes"],after["electrodes"]):
+                if a["electrode_id"] != 10:
+                    self.assertEqual(a,b)
+            vertices = {tuple(v) for s in after["electrodes"][9]["solids"] for v in s["vertices_mm"]}
+            self.assertEqual({v[0] for v in vertices},{150.5,170,189.5})
+            self.assertEqual(vertices,{(340-x,y,z) for x,y,z in vertices})
+            self.assertFalse(occupied(after["electrodes"][9],[140,0,2]))
+            self.assertTrue(occupied(after["electrodes"][9],[150.5,0,1.851]))
+            self.assertIn("half_space(",render_gem(self.b,self.n))
+            del self.c["outer_axial_bounds_mm"]
+
+    def test_invalid_outer_bounds_fail_before_solver(self) -> None:
+        self.b["geometry"]["lp_length_mm"] = 61.5
+        self.c["mode"] = "formed_extraction_continuous_aux"
+        for bounds in (None, [], [150.5], [150.5,189.5,190], [True,189.5],
+                       [float("nan"),189.5], [150.5,float("inf")], ["150.5",189.5],
+                       [170,189.5], [150.5,170], [189.5,150.5], [130.4,189.5], [150.5,191.1]):
+            with self.subTest(bounds=bounds),self.assertRaises(ValueError):
+                b=copy.deepcopy(self.b);b["electrode_contours"]["outer_axial_bounds_mm"]=bounds
+                native_projection(b,self.n)
+        self.c["outer_axial_bounds_mm"] = [150.5,189.5]
+        self.c["mode"] = "formed_extraction"
+        with self.assertRaises(ValueError):
+            native_projection(self.b,self.n)
+        self.c["mode"] = "formed_extraction_continuous_aux"
+        self.c["outer_axial_bounds_m"] = self.c.pop("outer_axial_bounds_mm")
+        with self.assertRaises(ValueError):
+            native_projection(self.b,self.n)
+
 
 if __name__ == "__main__":
     unittest.main()

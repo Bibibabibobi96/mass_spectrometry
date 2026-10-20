@@ -24,7 +24,7 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis import beam_focus
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import (
     COLORS, MARKERS, VALUES, load_recorded_case, prepare_spatial_crossings, prepare_statistics,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_numerical_boundaries
+from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import validate_numerical_boundaries
 from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
 from projects.dual_pressure_rectilinear_ion_processor.analysis.section_diagnostics import parts, section_centroid
 
@@ -47,20 +47,80 @@ def _write_csv(path: Path, rows: list[dict], fields: list[str] | None = None) ->
         writer.writerows(rows)
 
 
-def validate_geometry_cases(cases: list[dict], study: dict) -> None:
-    """Require declared contour-only changes and identical actual full birth 6D/time."""
-    if study.get("schema_version") != 1 or study.get("role") != "ion_processor_geometry_control_study":
+def _declared_configuration(reference: dict, changes: list[dict]) -> dict:
+    """Apply exact, nonoverlapping design changes, including explicit absence.
+
+    Paths are RFC6901 object pointers. Arrays are atomic values; source, clocks,
+    frame, observation policy and numerics remain comparison invariants.
+    """
+    if not isinstance(changes, list):
+        raise ValueError("configuration_changes must be an explicit list")
+    result, paths = copy.deepcopy(reference), []
+    for change in changes:
+        if not isinstance(change, dict) or set(change) != {"path", "before", "after"}:
+            raise ValueError("configuration change requires path/before/after")
+        pointer = change["path"]
+        if not isinstance(pointer, str) or not pointer.startswith("/"):
+            raise ValueError("configuration change requires an object JSON pointer")
+        tokens = pointer[1:].split("/")
+        if any(not t or "~" in t.replace("~1", "").replace("~0", "") for t in tokens):
+            raise ValueError("invalid configuration JSON pointer")
+        tokens = tuple(t.replace("~1", "/").replace("~0", "~") for t in tokens)
+        if not (tokens[0] == "native_operating_point" and len(tokens) > 1 or
+                tokens[:2] == ("baseline", "electrode_contours")):
+            raise ValueError("configuration changes must name native voltages or electrode contour design fields")
+        if any(tokens[:len(p)] == p or p[:len(tokens)] == tokens for p in paths):
+            raise ValueError("duplicate or ancestor-conflicting configuration change path")
+        paths.append(tokens)
+        for state in (change["before"], change["after"]):
+            if (not isinstance(state, dict) or type(state.get("exists")) is not bool or
+                    set(state) != ({"exists", "value"} if state["exists"] else {"exists"})):
+                raise ValueError("change endpoints require explicit exists and value iff present")
+            json.dumps(state, allow_nan=False)
+        parent = result
+        for token in tokens[:-1]:
+            if not isinstance(parent, dict) or token not in parent or not isinstance(parent[token], dict):
+                raise ValueError("configuration change parent must exist as an object")
+            parent = parent[token]
+        key = tokens[-1]
+        actual = dict(exists=True, value=parent[key]) if key in parent else dict(exists=False)
+        if actual != change["before"] or change["before"] == change["after"]:
+            raise ValueError("configuration change has wrong before value or is a no-op")
+        if change["after"]["exists"]:
+            parent[key] = copy.deepcopy(change["after"]["value"])
+        else:
+            del parent[key]
+    return result
+
+
+def validate_geometry_cases(cases: list[dict], study: dict, *, recorded_author: bool = False) -> None:
+    """Validate current declared design comparisons or explicit historical authors."""
+    version = study.get("schema_version")
+    if type(version) is not int or (version != 2 and not (recorded_author and version == 1)) or study.get("role") != "ion_processor_geometry_control_study":
         raise ValueError("unsupported geometry study contract")
     cells = study["cells"]
     expected_modes = MODES | ({PARABOLIC_MODE} if len(cells) == 4 else set())
-    if len(cases) != len(cells) or len(cases) not in (3, 4) or {c["contour_mode"] for c in cells} != expected_modes:
+    if version == 1 and (len(cases) != len(cells) or len(cases) not in (3, 4) or {c["contour_mode"] for c in cells} != expected_modes):
         raise ValueError("geometry study requires the three original contour modes and optionally one unique parabolic-inner mode")
+    if not cases or len(cases) != len(cells) or len(cases) > len(LINESTYLES):
+        raise ValueError("design comparison requires one to four declared cases")
+    if version == 2:
+        fields = {"case_id", "label", "run", "run_id", "contour_mode", "configuration_changes"}
+        if any(not isinstance(cell, dict) or set(cell) != fields or
+               any(not isinstance(cell[key], str) or not cell[key].strip() for key in fields - {"configuration_changes"})
+               for cell in cells) or len({c["case_id"] for c in cells}) != len(cells):
+            raise ValueError("complete unique design comparison cells required")
+        references = [i for i, c in enumerate(cells) if c["case_id"] == study.get("reference_case_id")]
+        if len(references) != 1 or cells[references[0]]["configuration_changes"] != []:
+            raise ValueError("reference_case_id must name one unchanged reference")
+        reference = {key: cases[references[0]]["config"][key] for key in CONFIG_KEYS}
+    else:
+        reference = None
     if len({c["label"] for c in cells}) != len(cells) or len({c["run_id"] for c in cells}) != len(cells):
         raise ValueError("duplicate geometry study label or run identity")
     count = study["particle_count"]
     if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
         raise ValueError("particle_count must be a positive integer")
-    reference = None
     births = None
     stages = None
     for case, cell in zip(cases, cells, strict=True):
@@ -73,13 +133,15 @@ def validate_geometry_cases(cases: list[dict], study: dict) -> None:
             raise ValueError("actual contour mode differs from declaration")
         if config["native_projection"] != native_projection(config["baseline"], config["numerics"]):
             raise ValueError("native projection differs from geometry authority")
-        if config["numerical_boundaries"] != derive_numerical_boundaries(config["native_projection"]):
-            raise ValueError("numerical boundaries differ from authority")
+        validate_numerical_boundaries(config["numerical_boundaries"], config["native_projection"], recorded=True)
         normalized = copy.deepcopy({key: config[key] for key in CONFIG_KEYS})
-        normalized["baseline"].pop("electrode_contours", None)
-        if reference is not None and normalized != reference:
+        expected = _declared_configuration(reference, cell["configuration_changes"]) if version == 2 else reference
+        if version == 1:
+            normalized["baseline"].pop("electrode_contours", None)
+        if expected is not None and normalized != expected:
             raise ValueError("undeclared scientific or numerical configuration change")
-        reference = normalized
+        if version == 1:
+            reference = normalized
         ids = set(range(1, count + 1))
         if set(case["sources"]) != ids or set(case["terminals"]) != ids or not set(case["exits"]) <= ids:
             raise ValueError("geometry case lacks complete mother census")
@@ -93,6 +155,29 @@ def validate_geometry_cases(cases: list[dict], study: dict) -> None:
         if stages is not None and case["stages"] != stages:
             raise ValueError("observation stages differ")
         stages = case["stages"]
+
+
+def comparison_execution_evidence(cases: list[dict]) -> list[dict]:
+    """Bind each actual runtime and observation boundary without causal equivalence.
+
+    Historical and current internal observation contracts may both be read, but
+    their difference is retained alongside runtime bytes and original status.
+    """
+    rows = []
+    for case in cases:
+        run = Path(case["run"])
+        manifest = _json(run/"run_manifest.json")
+        path = (run/"simion/runtime.lua").resolve()
+        records = [r for r in [*manifest["inputs"].values(), *manifest["outputs"]]
+                   if record_path(r, base_dir=run) == path]
+        if not records or any((r["sha256"], r["bytes"]) != (records[0]["sha256"], records[0]["bytes"]) for r in records[1:]):
+            raise ValueError("comparison runtime lacks an unambiguous manifest-bound identity")
+        verify_record("comparison runtime", records[0], base_dir=run)
+        rows.append(dict(case=case["label"], source_run_status=manifest["status"],
+                         runtime={**records[0], "path": str(path)},
+                         numerical_boundaries=case["config"]["numerical_boundaries"],
+                         interpretation="Recorded execution identity; differing runtime or observation boundaries prevent an unqualified claim of isolated physical causality."))
+    return rows
 
 
 def extend_statistics(cases: list[dict], statistics: list[dict], common: list[int]) -> list[dict]:
@@ -370,10 +455,11 @@ def analyze_geometry_study(run: Path) -> dict:
     if not study_path.is_absolute():
         study_path = run/study_path
     study = _json(study_path)
-    if study.get("schema_version") != 1 or study.get("role") != "ion_processor_geometry_control_study":
+    if study.get("schema_version") != 2 or study.get("role") != "ion_processor_geometry_control_study":
         raise ValueError("unsupported geometry study contract")
     cases = [load_recorded_case(Path(cell["run"]), cell["label"], include_samples=True, allow_failed=True) for cell in study["cells"]]
     validate_geometry_cases(cases, study)
+    execution_evidence = comparison_execution_evidence(cases)
     stats, intervals, common = prepare_statistics(cases, allow_empty_common=True)
     extend_statistics(cases, stats, common)
     planes = study["extraction_planes_z_mm"]
@@ -424,10 +510,11 @@ def analyze_geometry_study(run: Path) -> dict:
                    source_counts={c["label"]: len(c["sources"]) for c in cases}, extracted_counts={c["label"]: len(c["exits"]) for c in cases},
                    source_run_statuses={c["label"]: _json(Path(c["run"])/"run_manifest.json")["status"] for c in cases},
                    common_extracted_ids=common, loss_records=len(losses), all_mother_outcomes_retained=True,
+                   reference_case_id=study["reference_case_id"], execution_evidence=execution_evidence,
                    force_audits=force_audits,
                    sampled_envelope_minima=focus["sampled_minima"],
                    exit_statistics=[r for r in stats if r["stage"] == "exit_z0"],
-                   qualification=f"Single N={study['particle_count']} per declared contour; descriptive population moments; no convergence or significance qualification")
+                   qualification=f"Single N={study['particle_count']} per declared design; descriptive population moments; own and common survivors are conditional ensembles. Runtime/boundary differences are recorded, not certified equivalent; no isolated causal, convergence or significance qualification")
     manifest = dict(schema_version=1, role="ion_processor_geometry_figure_sources", study_contract=file_record(study_path),
                     producer=file_record(Path(__file__)), focus_producer=file_record(Path(beam_focus_diagnostics.__file__)),
                     focus_methods=focus["metadata"],
@@ -435,6 +522,7 @@ def analyze_geometry_study(run: Path) -> dict:
                     aperture_methods=aperture["metadata"] if aperture is not None else None,
                     aperture_producer=file_record(Path(aperture_acceptance_diagnostics.__file__)) if aperture is not None else None,
                     cases=[dict(label=c["label"], run=c["run"], source_manifest=file_record(Path(c["run"])/"run_manifest.json"), source_records=c["source_records"]) for c in cases],
+                    execution_evidence=execution_evidence, reference_case_id=study["reference_case_id"],
                     frame=cases[0]["config"]["coordinate_transform"], formats=["png", "svg"], png_dpi=210, figures=list(figures), **visual,
                     units=dict(position="mm", velocity="mm/us", angle="degree", energy="eV", time="instrument us; centered time figure ns"),
                     metrics="Population SD (ddof=0); centered population covariance; RMS projected emittance; no Gaussian/FWHM inference",

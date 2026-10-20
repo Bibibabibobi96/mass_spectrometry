@@ -77,7 +77,7 @@ def _aperture_frame(contract: dict) -> str:
     aperture = contract["aperture_comparison"]
     if version == 1:
         return "reference_normal"
-    if version not in {2, 3, 4} or aperture.get("frame") not in {"global_z", "reference_normal"}:
+    if version not in {2, 3, 4, 5} or aperture.get("frame") not in {"global_z", "reference_normal"}:
         raise ValueError("Contour aperture comparison requires explicit global_z/reference_normal frame")
     return aperture["frame"]
 
@@ -319,6 +319,25 @@ def _numerical_case_pairs(run: Path, resolved: dict, cases: list[dict]) -> list[
             if identities[i] == identities[j]]
 
 
+def numerical_comparison_rows(pairs: list[tuple[dict, dict]], planes: list[dict]) -> list[dict]:
+    """Return existing same-ID event differences for physics-qualified case pairs.
+
+    Preserve pair/plane order and sorted common IDs; missing arrivals remain in
+    each input case for the caller's census/loss tables, never synthesized here.
+    """
+    comparisons = []
+    for first, second in pairs:
+        for p in planes:
+            a, b = first["planes"][p["name"]], second["planes"][p["name"]]
+            for pid in sorted(a.keys() & b.keys()):
+                comparisons.append(dict(case_a=first["case"]["case_id"], case_b=second["case"]["case_id"], plane=p["name"], particle_id=pid,
+                                        pitch_a_mm=first["case"]["pitch_mm"], pitch_b_mm=second["case"]["pitch_mm"],
+                                        maximum_step_a_us=first["case"]["maximum_step_us"], maximum_step_b_us=second["case"]["maximum_step_us"],
+                                        delta_t_ns=(b[pid]["t_us"]-a[pid]["t_us"])*1000,
+                                        **{f"delta_{k}": b[pid][k]-a[pid][k] for k in local.STATE_FIELDS[1:]}))
+    return comparisons
+
+
 def _zero_field_tables(cases: list[dict], planes: list[dict], common: set[int]) -> dict:
     """Keep counterfactual free propagation and actual survivor pairing separate."""
     statistics, particles, decisions, minima, paired, deltas = [], [], [], [], [], []
@@ -454,7 +473,7 @@ def _figures(output: Path, stats: list[dict], aperture: list[dict], cases: list[
     colors = {"B": "#0072B2", "C": "#D55E00", "D": "#009E73"}
     groups = list(dict.fromkeys(c["case"]["label"] for c in cases))
     styles = ("-", "--", "-.", ":")
-    fig, axes = plt.subplots(len(groups), 3, figsize=(15, 3.4*len(groups)+1), squeeze=False, layout="constrained")
+    fig, axes = plt.subplots(len(groups), 3, figsize=(15, 3.4*len(groups)+1), squeeze=False, sharex="col", sharey="col", layout="constrained")
     for case in cases:
         spec = case["case"]
         group = groups.index(spec["label"])
@@ -506,7 +525,7 @@ def _transport_figures(output: Path, cases: list[dict], stats: list[dict], snaps
         local._save_figure(local.build_spatial_snapshots_figure(cases, snapshots, epoch, axis), output/name)
         names.append(name)
     groups = list(dict.fromkeys(c["case"]["label"] for c in cases))
-    fig, axes = plt.subplots(len(groups), 6, figsize=(23, 3.2*len(groups)+1), squeeze=False, layout="constrained")
+    fig, axes = plt.subplots(len(groups), 6, figsize=(23, 3.2*len(groups)+1), squeeze=False, sharex="col", sharey="col", layout="constrained")
     metrics = (("sigma_x_mm", "x position SD (mm)"), ("sigma_y_mm", "y position SD (mm)"),
                ("sigma_theta_x_deg", "xz angle SD (deg)"), ("sigma_theta_y_deg", "yz angle SD (deg)"),
                ("sigma_kinetic_energy_ev", "Total K SD (eV)"), ("count", "Arriving / fixed source IDs"))
@@ -617,16 +636,7 @@ def analyze_focus_study(run: Path) -> dict:
                                  accepted_count=len(accepted), transmission_mother=len(accepted)/len(case["census"]),
                                  transmission_exit=len(accepted)/len(pid_exit) if pid_exit else None,
                                  slit_x_half_width_mm=aperture["slit_x_half_width_mm"], **widths))
-    comparisons = []
-    for first, second in _numerical_case_pairs(run, resolved, cases):
-        for p in planes:
-            a, b = first["planes"][p["name"]], second["planes"][p["name"]]
-            for pid in sorted(a.keys() & b.keys()):
-                comparisons.append(dict(case_a=first["case"]["case_id"], case_b=second["case"]["case_id"], plane=p["name"], particle_id=pid,
-                                        pitch_a_mm=first["case"]["pitch_mm"], pitch_b_mm=second["case"]["pitch_mm"],
-                                        maximum_step_a_us=first["case"]["maximum_step_us"], maximum_step_b_us=second["case"]["maximum_step_us"],
-                                        delta_t_ns=(b[pid]["t_us"]-a[pid]["t_us"])*1000,
-                                        **{f"delta_{k}": b[pid][k]-a[pid][k] for k in local.STATE_FIELDS[1:]}))
+    comparisons = numerical_comparison_rows(_numerical_case_pairs(run, resolved, cases), planes)
     snapshots = local.prepare_common_time_snapshots(cases)
     energy = [r for c in cases for r in local._energy_drift_rows([c], c["case"]["mass_u"], c["case"]["charge_state"])]
     tables = dict(plane_statistics=stats, plane_particles=particles, time_interval_variance=budgets,

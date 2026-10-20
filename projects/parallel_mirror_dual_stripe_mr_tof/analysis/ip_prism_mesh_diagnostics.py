@@ -103,6 +103,33 @@ def _node_plan(name: str, fixed: int, requested: float, axes: tuple, low: np.nda
                 display_bounds_mm=[float(low[a]) for a in axes]+[float(high[a]) for a in axes])
 
 
+def _lens_slice_plans(prepared: dict) -> list[dict]:
+    """Three nearest-node views per finite lens; crop margin is one actual cell."""
+    checks = prepared["geometry_checks"]
+    box, pitch = np.array(checks["box_mm"], float), np.array(checks["pitch_mm"], float)
+    groups = {}
+    for electrode in prepared["geometry"].get("lens_electrodes", []):
+        groups.setdefault(electrode["element_name"], []).append(electrode)
+    plans = []
+    for name, electrodes in groups.items():
+        if not name or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for c in name):
+            raise ValueError("lens element name must be a path-safe identifier")
+        spec = electrodes[0]["specification"]
+        if any(e["specification"] != spec for e in electrodes):
+            raise ValueError("lens element must share one frozen specification")
+        bounds = np.array([_bounds(s) for e in electrodes for s in e["solids"]])
+        low = np.maximum(bounds[:, :3].min(0)-pitch, [-box[3], box[1], box[2]])
+        high = np.minimum(bounds[:, 3:].max(0)+pitch, box[3:])
+        pairs = "; ".join(f"{pair} rods {next(e['voltage_v'] for e in electrodes if e['pair'] == pair):+g} V"
+                          for pair in ("x", "y"))
+        for view, fixed, axes in (("xy_center", 2, (0, 1)), ("xz_center_y", 1, (0, 2)), ("yz_center_x", 0, (1, 2))):
+            plan = _node_plan(f"lens_{name}_{view}", fixed, spec["center_mm"][fixed], axes,
+                              low, high, box, pitch, checks["grid_dimensions"])
+            plan.update(lens_element_name=name, lens_description=f"{name}: finite quadrupole rods; {pairs}")
+            plans.append(plan)
+    return plans
+
+
 def _slice_plan(prepared: dict, header: PaHeader) -> list[dict]:
     checks = prepared["geometry_checks"]
     box, pitch = np.array(checks["box_mm"], float), np.array(checks["pitch_mm"], float)
@@ -163,7 +190,7 @@ def _slice_plan(prepared: dict, header: PaHeader) -> list[dict]:
             plan["aperture_index"] = i
             plan["aperture_description"] = f"Physical {spec['shape']} aperture; plate thickness={spec['thickness_mm']:g} mm"
             plans.append(plan)
-    return plans
+    return plans + _lens_slice_plans(prepared)
 
 
 def _closed_slab_layers(origin: float, pitch: float, count: int, lower: float, upper: float) -> np.ndarray:
@@ -284,9 +311,23 @@ def _figure(plan: dict, sampled: dict, electrodes: list[dict], case: str, pitch:
                                      linestyle="-" if role == "solids" else "--")
                         ax.add_patch(Circle(section[:2], section[2], **style) if kind == "circle" else Polygon(section, closed=True, **style))
     description = f"{plan['aperture_description']}\n" if "aperture_description" in plan else ""
+    if "lens_description" in plan:
+        description = plan["lens_description"]+"\n"
+        for electrode in electrodes:
+            if electrode.get("element_name") != plan["lens_element_name"]:
+                continue
+            for shape in electrode["solids"]:
+                for kind, points in _section_shapes(shape, plan["fixed_axis"], plan["actual_mm"], plan["axes"]):
+                    center = points[:2] if kind == "circle" else np.mean(points, axis=0)
+                    axes[1].annotate(electrode["name"], center, ha="center", va="center", fontsize=7,
+                                     bbox=dict(facecolor="white", edgecolor="none", alpha=.8, pad=1))
     fig.suptitle(f"{case} | Pitch {pitch} mm | {plan['name']}\n{description}Requested {'xyz'[plan['fixed_axis']]}={plan['requested_mm']:.6g}; actual node plane={plan['actual_mm']:.6g} mm\n"
                  "Blue solid: CSG solid boundary; orange dashed: cutout boundary. Display crop only.\nFractional data assist Refine; these flags are not a continuous Fly collision boundary.", fontsize=10)
-    fig.tight_layout(rect=(0, 0, 1, .80 if description else .86))
+    if "lens_description" in plan:
+        # Equal-aspect XY crops need explicit room below the shared node panels.
+        fig.subplots_adjust(left=.065, right=.985, bottom=.14, top=.72, wspace=.22)
+    else:
+        fig.tight_layout(rect=(0, 0, 1, .80 if description else .86))
     return fig
 
 
@@ -318,7 +359,8 @@ def export_mesh_diagnostics(run: Path) -> dict:
         header = read_pa_header(path)
         plans = _slice_plan(prepared, header)
         apertures = prepared["geometry"].get("aperture_electrodes", [])
-        electrodes = prepared["geometry"]["ion_processor_electrodes"]+apertures
+        lenses = prepared["geometry"].get("lens_electrodes", [])
+        electrodes = prepared["geometry"]["ion_processor_electrodes"]+apertures+lenses
         raw = np.memmap(path, dtype="<f8", mode="r", offset=HEADER.size, shape=(header.nz, header.ny, header.nx))
         record = dict(field_case_id=owner["field_case_id"], pa_path=str(path.resolve()), pa_header=asdict(header),
                       pa_bytes=path.stat().st_size, full_pa_hash_performed=False, geometry=file_record(geometry_path),
@@ -345,16 +387,20 @@ def export_mesh_diagnostics(run: Path) -> dict:
                                coordinates=file_record(csv_path), figures=assets)
                 record["sections"].append(section)
                 for e in electrodes:
-                    if e.get("electrode_id") not in {5, 6, 11, 14}:
+                    if e.get("electrode_id") not in {5, 6, 11, 14} and e.get("namespace") != "quadrupole_lens":
                         continue
                     for role in ("solids", "cutouts"):
                         for index, shape in enumerate(e[role]):
                             for kind, points in _section_shapes(shape, plan["fixed_axis"], plan["actual_mm"], plan["axes"]):
                                 spans = np.ptp(points, axis=0) if kind == "polygon" else [2*points[2]]*2
                                 for axis, span in zip(plan["axes"], spans):
-                                    feature_rows.append(dict(field_case_id=owner["field_case_id"], section=plan["name"], electrode_id=e["electrode_id"],
+                                    row = dict(field_case_id=owner["field_case_id"], section=plan["name"], electrode_id=e["electrode_id"],
                                         primitive_role=role, primitive_index=index, axis="xyz"[axis], span_mm=float(span),
-                                        span_gu=float(span/prepared["geometry_checks"]["pitch_mm"][axis])))
+                                        span_gu=float(span/prepared["geometry_checks"]["pitch_mm"][axis]))
+                                    if e.get("namespace") == "quadrupole_lens":
+                                        row.update(namespace=e["namespace"], element_name=e["element_name"],
+                                                   electrode_name=e["name"], pair=e["pair"], voltage_v=e["voltage_v"])
+                                    feature_rows.append(row)
             for index, aperture in enumerate(apertures):
                 topology = _aperture_topology(raw, header, prepared, aperture, index, output, f"field_{owner_index:02d}")
                 record["aperture_topology"].append(topology)
@@ -367,6 +413,8 @@ def export_mesh_diagnostics(run: Path) -> dict:
     feature_path = output/"primitive_section_spans.csv"
     with feature_path.open("w", encoding="utf-8", newline="") as stream:
         fields = ["field_case_id", "section", "electrode_id", "primitive_role", "primitive_index", "axis", "span_mm", "span_gu"]
+        if any("element_name" in row for row in feature_rows):
+            fields += ["namespace", "element_name", "electrode_name", "pair", "voltage_v"]
         writer = csv.DictWriter(stream, fieldnames=fields); writer.writeheader(); writer.writerows(feature_rows)
     metadata = dict(schema_version=1, role="ip_prism_ordinary_pa_mesh_sections", status="FAIL" if failed_apertures else "success",
         failed_apertures=failed_apertures, fields=records, source=file_record(resolved_path),
@@ -374,8 +422,10 @@ def export_mesh_diagnostics(run: Path) -> dict:
         selection="Every unique build owner; nearest node plane (numpy ties-to-even), requested/actual coordinates retained. Full negative-x display mirrors raw positive-x indices; CSG evaluated at signed physical x.",
         crop="IP views: display-only union bounds of E5/E6/E11/E14. YZ views include x=0 and the nearest positive-x solid's bounding-box center for E7/E8/E10/E11, exposing axial end walls and side-electrode depth; requested and nearest actual node planes are explicit. Aperture xy: plate bounds plus one grid cell; aperture xz: hole x bounds and full plate thickness plus one grid cell, all clipped to PA. Thickness-node/column CSVs retain the entire plate footprint. Negative x restored by mirror; no interpolation.",
         format="Official ordinary PA format via standalone_pa_composition.read_pa_header, HEADER.size56, little-endian doubles [nz,ny,nx], flag iff raw>max_voltage.",
-        scope="Node/CSG sections include IP and declared physical aperture metal; P1 solids are not included in these CSG membership masks. Mismatch can include P1 metal, PA boundary electrodes and boundary conventions. Fractional Refine assistance is not a continuous Fly collision boundary. Aperture check addresses sampled straight-z columns, not the public PA-x rectangular gate.",
+        scope="Node/CSG sections include IP, declared physical aperture and optional finite quadrupole lens metal; P1 solids are not included in these CSG membership masks. Mismatch can include P1 metal, PA boundary electrodes and boundary conventions. Fractional Refine assistance is not a continuous Fly collision boundary. Aperture check addresses sampled straight-z columns, not the public PA-x rectangular gate.",
         limitations="Primitive section spans include cutouts separately; not net remaining metal widths or complete thin-feature detection. No accuracy threshold, convergence, manufacturer CAD or trajectory qualification. PA full SHA belongs to parent manifest.")
+    if any("lens_element_name" in section for record in records for section in record["sections"]):
+        metadata["crop"] += " Lens views: each element's finite rod union plus one actual PA cell, clipped to the field box; XY center and XZ/YZ center planes expose both rod pairs."
     target = output/"metadata.json"
     target.write_text(json.dumps(metadata, indent=2, allow_nan=False)+"\n", encoding="utf-8")
     if failed_apertures:

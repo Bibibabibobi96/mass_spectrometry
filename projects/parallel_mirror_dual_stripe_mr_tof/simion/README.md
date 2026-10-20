@@ -40,11 +40,16 @@ Refine精度、最大积分步长、观测面和容量承诺。`analysis/ip_pris
 
 ### IP轮廓、时间焦点与接受度局部验证
 
-同一局部入口接受schema version 4的`ip_prism_contour_focus_experiment`合同；它以每行明确的来源、几何、网格及步长，
+同一局部入口接受schema version 5的`ip_prism_contour_focus_experiment`合同；它以每行明确的来源、几何、网格及步长，
 消费B／C／D各自完整出口与母群，而不是把旧平板场用于新轮廓。来源诊断失败时，只有完整物理事件和
 实际消费记录通过身份核验才允许交接；保留原producer状态，不将其改为成功。
 电压通过冻结的IP原生Lua时序投影，不在Python复制电压公式。跨项目依赖由
 `config/ion_processor_dependency.json`声明，实际进口源码闭包冻结进本次输入。
+
+每行还须显式声明`lens_elements`列表；空列表保持无透镜几何。
+有限圆杆四极透镜逐项声明`name、frame_id、center_mm、length_mm、inscribed_radius_mm、rod_radius_mm、voltage_v`，
+x杆对为+V、y杆对为−V，由真实有限电极GEM求场，不能用角度kick代替。
+准备阶段校验实体接触、屏蔽孔口、局部域和镜像条件；同一场ID的透镜、全部GEM及电压身份必须一致。
 
 `field_sources`必须精确覆盖全部`field_case_id`：每项为`{action:'build'}`或
 `{action:'reuse',source_run:<sealed-run>,source_field_case_id:<field-id>}`。复用来源可为success或failed，
@@ -66,6 +71,8 @@ PA及实际surface经公共机制复制到本次独立目录并核验目标SHA�
 以及明确位置／尺寸的虚拟y狭缝和圆孔比较。采样最小值若位于范围边缘或群体缺失，必须显式标记。
 `sampled_minima.csv`保留时间宽度极小值；`sampled_spatial_minima.csv`使用同一完整支撑区间机制，
 分别给出全局z面的σx／σy与参考法向面的局部横向束宽最小值、位置和边界标记，不将损失后的窄群当作原群束腰。
+`time_focus`和`transport_widths`的同指标列跨工况使用统一x／y范围，保留全部原始曲线与到达数，
+避免独立自动缩放掩盖束斑或角宽变化。历史封存图不原地重画。
 虚拟筛选不改变场，不能替代有厚度实体孔及其边缘场的独立求解；两者分开报告。
 新合同每行必须显式给出`physical_aperture`，无孔为`null`；实体孔完整声明中心、world-z法向、
 板厚、有限外尺寸、孔径及电位／连接。当前只支持x镜像对称的z法向圆孔和有限x宽的y狭缝，
@@ -74,7 +81,7 @@ GEM切孔工具沿z延伸到局部域外一个网格，避免等长切孔工具�
 该方式依照[官方GEM交集示例](https://simion.com/info/gem_geometry_file.html#intersecting-within-and-notin-inside)，
 已在SIMION 2020 8.2.0.11以两孔形、两网格实际GEM2PA与PA:point验证；仍须逐个新场检查全厚度节点。
 数值比较忽略派生切孔工具／网格说明，但保留真实板和孔CSG；场复用继续严格核对完整GEM身份。
-旧schema version 1／2／3仅由已启动运行的冻结源码继续消费或读取历史记录，不用于新的求场准备。
+旧schema version 1／2／3／4仅由已启动运行的冻结源码继续消费或读取历史记录，不用于新的求场准备。
 version 3删除未执行的作者`limits`目录限额字段：旧运行保存该字段不代表执行了硬上限或周期检查。
 真实资源准入仍由公共CPU／内存调度及`committed_new_bytes`容量承诺控制，不将启动容量预留称为持续目录上限监控。
 `aperture_comparison.frame`显式选择`global_z`或`reference_normal`；z法向实体孔应与相同z面、中心和孔径的

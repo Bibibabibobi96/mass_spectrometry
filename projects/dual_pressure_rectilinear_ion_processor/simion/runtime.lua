@@ -115,8 +115,13 @@ local lp_end=hp_end+g.lp_length_mm
 -- Observe downstream escape inside the PA, after the physical end-lens bore.
 -- Once an ion leaves every PA, SIMION may no longer call this program's
 -- terminate callback. This numerical plane adds no metal or electric field.
-local downstream_exit=assert(c.numerical_boundaries,'numerical boundaries required').downstream_exit_x_mm
-local upstream_exit=c.native_projection.origin_mm[1]
+local boundaries=assert(c.numerical_boundaries,'numerical boundaries required')
+assert(boundaries.schema_version==2 and boundaries.role=='native_numerical_observation_boundaries',
+ 'active runtime requires numerical observation boundaries schema 2')
+local downstream_exit=boundaries.downstream_exit_x_mm
+local upstream_exit=boundaries.upstream_exit_x_mm
+assert(upstream_exit==c.native_projection.origin_mm[1]+c.native_projection.grid_mm,
+ 'upstream observation must remain one PA cell inside domain')
 assert(downstream_exit>lp_end and downstream_exit<c.native_projection.maximum_mm[1],
  'downstream observation must remain after the lens and inside the PA')
 local function draw_numerical_exit_outline()
@@ -222,6 +227,9 @@ function segment.tstep_adjust()
  ion_time_step=math.min(ion_time_step,n.dt_us,rf.timestep_cap_us)
  local x=local_position(ion_px_mm,ion_py_mm,ion_pz_mm)
  local vx=local_vector(ion_vx_mm,ion_vy_mm,ion_vz_mm)
+ if x>upstream_exit and vx<0 then
+  ion_time_step=math.min(ion_time_step,(upstream_exit-x)/vx)
+ end
  if x>lp_end and x<downstream_exit and vx>0 then
   ion_time_step=math.min(ion_time_step,(downstream_exit-x)/vx)
  end
@@ -278,9 +286,15 @@ function segment.other_actions()
  elseif s.x>=downstream_exit and previous[id].x<downstream_exit then
   finish('downstream_domain_exit',crossing(previous[id],s,'x',downstream_exit))
  end
- -- The guide starts at zero, but the source may occupy the upstream fringe.
- -- Numerical escape follows the frozen PA extent in the same local frame.
- if s.x<upstream_exit then finish('backward_escape',s) end
+ -- Observe inside the PA: callbacks, including terminate, need not run after
+ -- leaving every instance. This is a numerical surface, never a metal hit.
+ if s.x<=upstream_exit and s.vx<0 then
+  if s.x==upstream_exit then finish('backward_escape',s)
+  else
+   assert(previous[id].x>upstream_exit,'upstream crossing lacks an inside state')
+   finish('backward_escape',crossing(previous[id],s,'x',upstream_exit))
+  end
+ end
  -- The LP end is an open lens aperture, not an absorbing metal plane.
  -- Native PA electrode/domain termination governs downstream losses.
  if s.t>=b.schedule.terminal_us then finish('timeout',s) end

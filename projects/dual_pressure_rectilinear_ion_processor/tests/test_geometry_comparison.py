@@ -75,6 +75,7 @@ def source_fixture(run: Path, mode: str, *, status: str = "success", exits: tupl
     write_csv(run/"simion/samples.csv", samples)
     write_csv(run/"results/diagnostic_snapshots.csv", snapshots)
     write_csv(run/"results/diagnostic_losses.csv", [dict(particle_id=3, reason="solver_stop")])
+    (run/"simion/runtime.lua").write_text("-- fixture runtime\n", encoding="utf-8")
     files = [p for p in run.rglob("*") if p.is_file() and p.name != "run_manifest.json"]
     write_json(run/"run_manifest.json", dict(project=recorded.PROJECT, run_id=run.name, status=status,
                run_config=file_record(run/"run_config.json"), inputs={}, outputs=[file_record(p) for p in files if p.name != "run_config.json"]))
@@ -104,14 +105,133 @@ class GeometryComparisonTests(unittest.TestCase):
                      cells=cells, extraction_planes_z_mm=[9.5, 7.3, 6.3, 5., 0.])
         return cases, study
 
+    def current_study(self, cases, old):
+        study = copy.deepcopy(old)
+        study.update(schema_version=2, reference_case_id="reference")
+        reference = cases[0]["config"]["baseline"]
+        for index, (case, cell) in enumerate(zip(cases, study["cells"], strict=True)):
+            cell.update(case_id="reference" if index == 0 else f"design_{index}", configuration_changes=[])
+            contour = case["config"]["baseline"].get("electrode_contours")
+            before = dict(exists=True, value=reference["electrode_contours"]) if "electrode_contours" in reference else dict(exists=False)
+            after = dict(exists=True, value=contour) if contour is not None else dict(exists=False)
+            if before != after:
+                cell["configuration_changes"].append(dict(path="/baseline/electrode_contours", before=before, after=after))
+        return study
+
+    def design_cases(self):
+        cases, old = self.cases()
+        for case in cases:
+            case["config"]["baseline"]["electrode_contours"] = dict(mode=geometry.PARABOLIC_MODE)
+            case["config"]["native_operating_point"].update(lp_outer_relative_v=5, lp_inner_relative_v=-1)
+        for cell in old["cells"]:
+            cell["contour_mode"] = geometry.PARABOLIC_MODE
+        study = self.current_study(cases, old)
+        changes = study["cells"][1]["configuration_changes"]
+        for key, before, after in (("lp_outer_relative_v",5,4),("lp_inner_relative_v",-1,-1.1)):
+            cases[1]["config"]["native_operating_point"][key] = after
+            changes.append(dict(path=f"/native_operating_point/{key}", before=dict(exists=True,value=before), after=dict(exists=True,value=after)))
+        bounds = [132,208]
+        cases[2]["config"]["baseline"]["electrode_contours"]["outer_axial_bounds_mm"] = bounds
+        study["cells"][2]["configuration_changes"] = [dict(path="/baseline/electrode_contours/outer_axial_bounds_mm",before=dict(exists=False),after=dict(exists=True,value=bounds))]
+        return cases, study
+
+    def test_active_same_mode_voltage_and_absent_contour_field_are_exactly_declared(self):
+        cases, study = self.design_cases()
+        with patch.object(geometry,"native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+            geometry.validate_geometry_cases(cases,study)
+            for mutation in ("undeclared","wrong_before","duplicate","ancestor","source","numerics"):
+                bad, contract = copy.deepcopy(cases), copy.deepcopy(study)
+                if mutation == "undeclared": contract["cells"][1]["configuration_changes"].pop()
+                elif mutation == "wrong_before": contract["cells"][1]["configuration_changes"][0]["before"]["value"] = 6
+                elif mutation == "duplicate": contract["cells"][1]["configuration_changes"] *= 2
+                elif mutation == "ancestor":
+                    contract["cells"][2]["configuration_changes"].insert(0,dict(path="/baseline/electrode_contours",before=dict(exists=True,value=cases[0]["config"]["baseline"]["electrode_contours"]),after=dict(exists=True,value=cases[2]["config"]["baseline"]["electrode_contours"])))
+                elif mutation == "source": bad[1]["states"][0]["vx_mm_us"] += 1
+                elif mutation == "numerics": bad[1]["config"]["numerics"]["native_grid_mm"] *= 2
+                with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                    geometry.validate_geometry_cases(bad,contract)
+
+    def test_historical_author_is_explicitly_readonly(self):
+        cases, study = self.cases()
+        with self.assertRaisesRegex(ValueError,"unsupported"):
+            geometry.validate_geometry_cases(cases,study)
+        parent=self.root/"old_active"
+        write_json(parent/"inputs/study.json",study)
+        write_json(parent/"run_config.json",dict(project=recorded.PROJECT,inputs=dict(study_contract="inputs/study.json")))
+        with self.assertRaisesRegex(ValueError,"unsupported"):
+            geometry.analyze_geometry_study(parent)
+
+    def test_full_mother_and_common_exits_are_independent_of_own_exit_counts(self):
+        cases, study = self.design_cases()
+        study["particle_count"] = 100
+        for case, count in zip(cases, (96,97,34), strict=True):
+            original = {stage: next(r for r in case["states"] if r["stage"] == stage) for stage in case["stages"]}
+            case["sources"] = {pid:dict(particle_id=pid) for pid in range(1,101)}
+            case["terminals"] = copy.deepcopy(case["sources"])
+            case["exits"] = {pid:dict(particle_id=pid) for pid in range(1,count+1)}
+            case["states"] = [dict(original[stage],particle_id=pid,
+                status=("extracted" if pid <= count else "lost") if stage == "exit_z0" else "alive")
+                for stage in case["stages"] for pid in range(1,101)]
+        with patch.object(geometry,"native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+            geometry.validate_geometry_cases(cases,study)
+            statistics, _, common = recorded.prepare_statistics(cases)
+            geometry.extend_statistics(cases,statistics,common)
+            self.assertEqual(common,list(range(1,35)))
+            self.assertEqual([r["observed_count"] for r in statistics if r["cohort"] == "own_extracted_ids" and r["stage"] == "exit_z0"],[96,97,34])
+            self.assertTrue(all(r["source_count"] == 100 for r in statistics))
+            cases[2]["terminals"].pop(100)
+            with self.assertRaisesRegex(ValueError,"complete mother"):
+                geometry.validate_geometry_cases(cases,study)
+
+    def test_execution_difference_evidence_binds_runtime_and_preserves_failed_status(self):
+        cases, _ = self.cases()
+        old = dict(downstream_exit_x_mm=192.75,classification="numerical_observation_not_metal")
+        cases[0]["config"]["numerical_boundaries"] = old
+        cases[1]["config"]["numerical_boundaries"] = dict(old,schema_version=2,role="native_numerical_observation_boundaries",upstream_exit_x_mm=-1.9)
+        source=Path(cases[1]["run"])
+        manifest=json.loads((source/"run_manifest.json").read_text())
+        manifest["status"]="failed"
+        write_json(source/"run_manifest.json",manifest)
+        rows=geometry.comparison_execution_evidence(cases)
+        self.assertEqual(rows[1]["source_run_status"],"failed")
+        self.assertNotEqual(rows[0]["numerical_boundaries"],rows[1]["numerical_boundaries"])
+        self.assertEqual(rows[0]["runtime"]["sha256"],file_record(Path(cases[0]["run"])/"simion/runtime.lua")["sha256"])
+        (source/"simion/runtime.lua").write_text("-- changed\n",encoding="utf-8")
+        with self.assertRaises(AssertionError):
+            geometry.comparison_execution_evidence(cases)
+
+    def test_declared_changes_reject_ambiguous_absence_and_protected_invariants(self):
+        reference = dict(native_operating_point=dict(v=5), baseline=dict(electrode_contours=dict(mode="D")))
+        valid = dict(path="/native_operating_point/v",before=dict(exists=True,value=5),after=dict(exists=True,value=4))
+        for change in (
+            dict(valid, before=dict(exists=False,value=5)),
+            dict(valid, after=dict(exists=True)),
+            dict(valid, before=dict(exists=1,value=5)),
+            dict(valid, path="/source/particle_count"),
+            dict(valid, path="/native_operating_point/missing/child"),
+            dict(valid, path="/native_operating_point/bad~escape"),
+            dict(valid, after=dict(exists=True,value=float("nan"))),
+        ):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                geometry._declared_configuration(reference,[change])
+        removed = geometry._declared_configuration(reference,[dict(valid,after=dict(exists=False))])
+        self.assertNotIn("v",removed["native_operating_point"])
+        self.assertEqual(reference["native_operating_point"]["v"],5)
+
+    def test_reference_case_can_be_last_without_changing_comparison_semantics(self):
+        cases, study = self.design_cases()
+        cases.reverse();study["cells"].reverse()
+        with patch.object(geometry,"native_projection",return_value=projection_fixture()), patch.object(geometry,"validate_numerical_boundaries"):
+            geometry.validate_geometry_cases(cases,study)
+
     def test_fourth_parabolic_geometry_is_optional_unique_and_renders(self) -> None:
         cases, study = self.cases(include_parabolic=True)
-        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "derive_numerical_boundaries", return_value={}):
-            geometry.validate_geometry_cases(cases, study)
+        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
+            geometry.validate_geometry_cases(cases, study, recorded_author=True)
             duplicate = copy.deepcopy(study)
             duplicate["cells"][3]["contour_mode"] = "formed_extraction_continuous_aux"
             with self.assertRaisesRegex(ValueError, "unique parabolic"):
-                geometry.validate_geometry_cases(cases, duplicate)
+                geometry.validate_geometry_cases(cases, duplicate, recorded_author=True)
         spatial = [{**c, "states": recorded.prepare_spatial_crossings(c, study["extraction_planes_z_mm"]),
                     "stages": [f"z_{z:g}_mm" for z in study["extraction_planes_z_mm"]]} for c in cases]
         statistics, _, common = recorded.prepare_statistics(spatial)
@@ -120,6 +240,7 @@ class GeometryComparisonTests(unittest.TestCase):
         self.assertEqual(len(figures["geometry_exit_phase_space"].axes), 12)
         self.assertEqual(figures["geometry_plane_evolution"].axes[0].lines[3].get_linestyle(), "-.")
         self.assertIsNone(figures["geometry_plane_evolution"].axes[0].get_legend())
+
         self.assertEqual(len(figures["geometry_plane_evolution"].legends),1)
         self.assertIsNone(figures["geometry_plane_evolution"]._suptitle)
         legend_title=figures["geometry_plane_evolution"].legends[0].get_title().get_text()
@@ -129,6 +250,19 @@ class GeometryComparisonTests(unittest.TestCase):
         self.assertEqual(len(metadata["histogram_bins"]), 4)
         for figure in figures.values():
             plt.close(figure)
+
+    def test_recorded_boundary_validation_is_explicit_and_errors_propagate(self) -> None:
+        cases, study = self.cases()
+        with patch.object(geometry, "native_projection", return_value=projection_fixture()), \
+             patch.object(geometry, "validate_numerical_boundaries") as validator:
+            geometry.validate_geometry_cases(cases, study, recorded_author=True)
+            self.assertEqual(validator.call_count, len(cases))
+            for call, case in zip(validator.call_args_list, cases, strict=True):
+                self.assertEqual(call.args, (case["config"]["numerical_boundaries"], case["config"]["native_projection"]))
+                self.assertEqual(call.kwargs, dict(recorded=True))
+            validator.side_effect = ValueError("numerical boundaries differ from authority")
+            with self.assertRaisesRegex(ValueError, "numerical boundaries"):
+                geometry.validate_geometry_cases(cases, study, recorded_author=True)
 
     def test_failed_run_opt_in_requires_physical_summary_and_full_terminal_census(self) -> None:
         run = self.root/"failed"
@@ -159,16 +293,16 @@ class GeometryComparisonTests(unittest.TestCase):
 
     def test_contour_only_contract_rejects_voltage_or_birth_change(self) -> None:
         cases, study = self.cases()
-        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "derive_numerical_boundaries", return_value={}):
-            geometry.validate_geometry_cases(cases, study)
+        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
+            geometry.validate_geometry_cases(cases, study, recorded_author=True)
             changed = copy.deepcopy(cases)
             changed[1]["config"]["baseline"]["electric"]["lift_v"] += 1
             with self.assertRaisesRegex(ValueError, "undeclared"):
-                geometry.validate_geometry_cases(changed, study)
+                geometry.validate_geometry_cases(changed, study, recorded_author=True)
             changed = copy.deepcopy(cases)
             changed[1]["states"][0]["vx_mm_us"] += .001
             with self.assertRaisesRegex(ValueError, "birth states differ"):
-                geometry.validate_geometry_cases(changed, study)
+                geometry.validate_geometry_cases(changed, study, recorded_author=True)
 
     def test_empty_common_is_explicit_and_retains_empty_cohort_metrics(self) -> None:
         cases, _ = self.cases()
@@ -226,10 +360,11 @@ class GeometryComparisonTests(unittest.TestCase):
         cases, study = self.cases()
         study["time_focus_diagnostics"] = dict(drift_lengths_mm=[0.,1.])
         study["aperture_acceptance"] = dict(drift_lengths_mm=[0.,1.], aperture_radii_mm=[.1,1.],center_x_mm=0.,center_y_mm=0.)
+        study = self.current_study(cases, study)
         parent = self.root/"comparison"
         write_json(parent/"inputs/study_contract.json", study)
         write_json(parent/"run_config.json", dict(project=recorded.PROJECT, inputs=dict(study_contract="inputs/study_contract.json")))
-        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "derive_numerical_boundaries", return_value={}):
+        with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
             result = geometry.analyze_geometry_study(parent)
         self.assertEqual(result["loss_records"], 3)
         output = parent/"results/geometry_comparison"
@@ -259,7 +394,7 @@ class GeometryComparisonTests(unittest.TestCase):
         for figure in figures.values():
             plt.close(figure)
         with self.assertRaises(FileExistsError):
-            with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "derive_numerical_boundaries", return_value={}):
+            with patch.object(geometry, "native_projection", return_value=projection_fixture()), patch.object(geometry, "validate_numerical_boundaries", return_value=None):
                 geometry.analyze_geometry_study(parent)
 
     def test_actual_polygon_sections_and_auxiliary_crops_render_for_three_and_four_cases(self) -> None:

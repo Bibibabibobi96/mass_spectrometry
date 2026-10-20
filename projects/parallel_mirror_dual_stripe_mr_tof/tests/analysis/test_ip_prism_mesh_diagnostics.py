@@ -30,6 +30,60 @@ def _prepared() -> dict:
 
 
 class MeshDiagnosticsTests(unittest.TestCase):
+    def _install_lens(self) -> None:
+        spec = dict(name="Q1", center_mm=[0., .26, 0.], length_mm=1., inscribed_radius_mm=.5,
+                    rod_radius_mm=.25, voltage_v=20.)
+        rods = []
+        for index, (pair, x, y) in enumerate((("x", .75, .26), ("x", -.75, .26),
+                                             ("y", 0., 1.01), ("y", 0., -.49))):
+            rods.append(dict(namespace="quadrupole_lens", electrode_id=1000+index, element_name="Q1", pair=pair,
+                             name=f"Q1_{pair}_{index}", voltage_v=20. if pair == "x" else -20., specification=spec,
+                             solids=[dict(shape="cylinder3d", endpoints_mm=[[x, y, -.5], [x, y, .5]], radius_mm=.25)], cutouts=[]))
+        self.prepared["geometry"]["lens_electrodes"] = rods
+        (self.directory/"geometry.json").write_text(json.dumps(self.prepared), encoding="utf-8")
+        z, y, x = np.meshgrid(np.arange(9)*.5-2, np.arange(9)*.5-2, np.arange(5)*.5, indexing="ij")
+        flags = m._metal(self.prepared["geometry"]["ion_processor_electrodes"]+rods, [x, y, z])
+        self.path.write_bytes(self.header.pack()+(np.full(flags.shape, -50., dtype="<f8")+flags*200.).tobytes())
+
+    def test_lens_three_sections_include_four_cylinders_and_requested_planes(self):
+        self._install_lens()
+        plans = m._lens_slice_plans(self.prepared)
+        self.assertEqual([p["axes"] for p in plans], [(0, 1), (0, 2), (1, 2)])
+        self.assertEqual(plans[1]["requested_mm"], .26)
+        self.assertEqual(plans[1]["actual_mm"], .5)
+        rods = self.prepared["geometry"]["lens_electrodes"]
+        xy = [np.array([.75, -.75, 0., 0., .99]), np.array([.26, .26, 1.01, -.49, .5]), np.zeros(5)]
+        np.testing.assert_array_equal(m._metal(rods, xy), [True, True, True, True, False])
+        raw = np.memmap(self.path, dtype="<f8", mode="r", offset=m.HEADER.size, shape=(9, 9, 5))
+        try:
+            sampled = m._sample_section(raw, self.header, plans[0], self.prepared["geometry"]["ion_processor_electrodes"]+rods)
+            np.testing.assert_array_equal(sampled["metal"], sampled["flags"])
+            np.testing.assert_array_equal(sampled["flags"], sampled["flags"][:, ::-1])
+            from matplotlib import pyplot as plt
+            figure = m._figure(plans[0], sampled, self.prepared["geometry"]["ion_processor_electrodes"]+rods, "fixture", [.5]*3)
+            try:
+                figure.canvas.draw()
+                self.assertTrue(all(ax.xaxis.label.get_window_extent().y0 >= 0 for ax in figure.axes))
+            finally:
+                plt.close(figure)
+        finally:
+            del raw
+
+    def test_lens_export_adds_views_and_rod_spans_without_rewriting_source(self):
+        self._install_lens()
+        before = self.path.read_bytes()
+        result = m.export_mesh_diagnostics(self.run)
+        metadata = json.loads(Path(result["metadata"]["path"]).read_text())
+        self.assertIn("one actual PA cell", metadata["crop"])
+        sections = [p for p in metadata["fields"][0]["sections"] if "lens_element_name" in p]
+        self.assertEqual(len(sections), 3)
+        self.assertTrue(all(p["mismatch_count"] == 0 for p in sections))
+        with Path(metadata["primitive_section_spans"]["path"]).open(newline="", encoding="utf-8") as stream:
+            rods = [r for r in csv.DictReader(stream) if r["namespace"] == "quadrupole_lens"]
+        self.assertEqual({r["pair"] for r in rods}, {"x", "y"})
+        self.assertEqual({r["electrode_name"] for r in rods}, {e["name"] for e in self.prepared["geometry"]["lens_electrodes"]})
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_closed_slab_keeps_both_aligned_faces_without_physical_margin(self):
         coarse = m._closed_slab_layers(-120., .1, 1451, -20.2, -19.8)
         np.testing.assert_array_equal(coarse, np.arange(998, 1003))

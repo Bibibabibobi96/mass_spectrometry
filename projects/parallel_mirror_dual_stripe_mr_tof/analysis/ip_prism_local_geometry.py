@@ -238,6 +238,92 @@ def _prepare_aperture(spec: dict, local: dict, box: list, exit_z: float, downstr
                 downstream_observation_z_mm=downstream_z)
 
 
+def _lens_rod_clearance(rod: dict, local: dict) -> None:
+    """Prove separation using rod AABBs and actual convex shield cutouts.
+
+    Failure is conservative: a box touching metal is rejected even if the
+    enclosed circular rod might clear it. This does not compute a 3D distance.
+    """
+    bounds = _bounds(rod)
+    vertices = np.asarray(list(itertools.product(*zip(bounds[:3], bounds[3:]))))
+    for electrode in [*local["ion_processor_electrodes"], *local.get("aperture_electrodes", [])]:
+        for solid in electrode["solids"]:
+            other = _bounds(solid)
+            if all(max(bounds[a], other[a]) <= min(bounds[a+3], other[a+3]) for a in range(3)):
+                raise ValueError("lens rod bounding box may contact IP/aperture metal")
+    for electrode in local["prism_electrodes"]:
+        for part in electrode["parts"]:
+            points = vertices
+            for plane in _extrusion_planes(part):
+                points = _clip_points(points, plane)
+            if len(points):
+                raise ValueError("lens rod bounding box may contact P1 metal")
+    for shield in local["prism_ground_shields"]:
+        holes = [_extrusion_planes(dict(x=shield["x"], polygon_yz_mm=shield["prism_clearance_polygon_yz_mm"]))]
+        for b in shield["rectangular_slots_mm"]:
+            holes.append(convex_planes(dict(shape="convex_polyhedron", vertices_mm=[list(p) for p in itertools.product(*zip(b[:3], b[3:]))])))
+        for part in shield["body_sections"]:
+            points = vertices
+            for plane in _extrusion_planes(part):
+                points = _clip_points(points, plane)
+            if not len(points):
+                continue
+            tolerance = 64*np.finfo(float).eps*max(1., float(np.max(np.abs(points))))
+            if not any(all(np.max(points @ np.asarray(p[:3]) + p[3]) < -tolerance for p in hole) for hole in holes):
+                raise ValueError("lens rod bounding box is not strictly clear of actual shield metal")
+
+
+def _prepare_lenses(elements: list, local: dict, box: list, exit_z: float, downstream_z: float | None) -> list[dict]:
+    """Compile explicit finite round-rod quadrupoles, not ideal field kicks."""
+    fields = {"name", "frame_id", "center_mm", "length_mm", "inscribed_radius_mm", "rod_radius_mm", "voltage_v"}
+    if not isinstance(elements, list):
+        raise ValueError("lens_elements must be an explicit list")
+    specs, names = [], set()
+    for original in elements:
+        if not isinstance(original, dict) or set(original) != fields:
+            raise ValueError("complete quadrupole lens fields required")
+        spec = copy.deepcopy(original)
+        name = spec["name"]
+        if not isinstance(name, str) or not name.strip() or name != name.strip() or name in names or "\n" in name or "\r" in name:
+            raise ValueError("lens names must be nonempty, unique single-line strings")
+        names.add(name)
+        if spec["frame_id"] != local["frame_id"] or not isinstance(spec["center_mm"], list) or len(spec["center_mm"]) != 3:
+            raise ValueError("lens requires matching frame and center_mm3")
+        spec["center_mm"] = [_finite(v) for v in spec["center_mm"]]
+        for key in ("length_mm", "inscribed_radius_mm", "rod_radius_mm", "voltage_v"):
+            spec[key] = _finite(spec[key])
+        if spec["center_mm"][0] != 0 or min(spec[k] for k in ("length_mm", "inscribed_radius_mm", "rod_radius_mm")) <= 0:
+            raise ValueError("lens requires x center zero and positive finite dimensions")
+        specs.append(spec)
+    rods = []
+    for spec in sorted(specs, key=lambda s: s["name"]):
+        x, y, z = spec["center_mm"]
+        radius, offset, half = spec["rod_radius_mm"], spec["inscribed_radius_mm"]+spec["rod_radius_mm"], spec["length_mm"]/2
+        if downstream_z is None or not _finite(downstream_z) < z-half < z+half < exit_z:
+            raise ValueError("lens must lie downstream of measured exit and before downstream observation")
+        for pair, sign in (("x", -1), ("x", 1), ("y", -1), ("y", 1)):
+            cx, cy = (x+sign*offset, y) if pair == "x" else (x, y+sign*offset)
+            solid = dict(shape="cylinder3d", endpoints_mm=[[cx, cy, z-half], [cx, cy, z+half]], radius_mm=radius)
+            bounds = _bounds(solid)
+            if (bounds[0] <= -box[3] or bounds[3] >= box[3] or
+                    any(bounds[a] <= box[a] or bounds[a+3] >= box[a+3] for a in (1, 2))):
+                raise ValueError("lens rod must be fully inside local domain with x mirror")
+            _lens_rod_clearance(solid, local)
+            for previous in rods:
+                other = previous["solids"][0]
+                if (max(solid["endpoints_mm"][0][2], other["endpoints_mm"][0][2]) <=
+                        min(solid["endpoints_mm"][1][2], other["endpoints_mm"][1][2]) and
+                        math.dist(solid["endpoints_mm"][0][:2], other["endpoints_mm"][0][:2]) <= radius+other["radius_mm"]):
+                    raise ValueError("lens rods must not contact each other")
+            identifier = 1000+len(rods)
+            rods.append(dict(namespace="quadrupole_lens", electrode_id=identifier,
+                             name=f"{spec['name']}_{pair}_{'positive' if sign > 0 else 'negative'}",
+                             element_name=spec["name"], pair=pair, specification=copy.deepcopy(spec),
+                             voltage_v=spec["voltage_v"] if pair == "x" else -spec["voltage_v"],
+                             solids=[solid], cutouts=[], represented_by_x_mirror=bounds[3] <= 0))
+    return rods
+
+
 def _aperture_gem_subtraction(aperture: dict, box: list, pitch: list) -> dict:
     """Extend only a subtraction tool, keeping the physical plate/hole intact.
 
@@ -275,6 +361,10 @@ def _render(geometry: dict, ip_voltages: list, prism_voltage: float, box: list,
         for part in electrode["parts"]:
             lines.extend(_extrude_polygon_bands(part["x"], part["polygon_yz_mm"]))
         lines.append("}")
+    for rod in geometry.get("lens_electrodes", []):
+        if not rod["represented_by_x_mirror"]:
+            lines.extend(("; namespace=quadrupole_lens", "e("+format_number(rod["voltage_v"])+") {",
+                          "fill { within { "+_primitive(rod["solids"][0])+" } }", "}"))
     for aperture in geometry.get("aperture_electrodes", []):
         lines.extend(("; namespace=physical_aperture", "e(" + format_number(aperture["voltage_v"]) + ") {",
                       "fill {", "within { " + _primitive(aperture["solids"][0]) + " }",
@@ -299,13 +389,18 @@ def _render(geometry: dict, ip_voltages: list, prism_voltage: float, box: list,
 def prepare_geometry(geometry: dict, ip_voltages: list, prism_voltage: float,
                      distance_mm: float, box_mm: list, pitch_mm: list,
                      convergence_v: float, *, physical_aperture: dict | None = None,
-                     downstream_observation_z_mm: float | None = None) -> dict:
+                     downstream_observation_z_mm: float | None = None,
+                     lens_elements: list | None = None) -> dict:
     """Return isolated canonical CSG/GEM and checks in mm/V, without side effects.
 
     Raises ValueError for invalid grids, gap, identity, source location or a
     conservative IP/P1 overlap. Optional physical plates are restricted to
     world-z normals and x symmetry; downstream_observation_z_mm is mandatory
-    for those plates. Exact CSG contacts do not replace compiled PA topology.
+    for plates and nonempty lens lists. Lenses use native finite cylinder metal
+    at explicit potentials, with conservative separation and actual shield-hole
+    containment; they are not ideal quadrupole field prescriptions. Full four-rod
+    CSG is retained while negative-x rods are supplied by the PA mirror.
+    Exact CSG contacts do not replace compiled PA topology.
     Other MR bodies are deliberately excluded.
     """
     volts = [*map(_finite, ip_voltages)]
@@ -364,6 +459,10 @@ def prepare_geometry(geometry: dict, ip_voltages: list, prism_voltage: float,
                     plate_faces_z_gu=[(spec["center_mm"][2]+side*spec["thickness_mm"]/2-box[2])/pitch[2] for side in (-1, 1)],
                     compiled_pa_through_hole_and_guard_validation_required=True,
                     surface="fractional", numerical_thickening_or_hole_expansion_mm=0)
+    if lens_elements is not None:
+        rods = _prepare_lenses(lens_elements, local, box, delta, downstream_observation_z_mm)
+        if rods:
+            local["lens_electrodes"] = rods
     checks = dict(status="PASS_conservative_separating_planes", nominal_y_mm=nominal_y,
                   ip_to_p1_z_separation_mm=all_low-p1_high, ip_to_shield_z_separation_mm=all_low-shield_high,
                   grid_dimensions=dimensions, box_mm=box, pitch_mm=pitch, convergence_v=convergence_v,
@@ -372,6 +471,15 @@ def prepare_geometry(geometry: dict, ip_voltages: list, prism_voltage: float,
                   negative_x_geometry="Represented by the x=0 mirror boundary, not physical clipping",
                   official_geometry_reference="https://simion.com/info/gem_geometry_file.html",
                   scope="Static CSG separation and clipping inventory; not CAD or mesh convergence qualification")
+    if "lens_electrodes" in local:
+        checks["lens_geometry_checks"] = dict(status="PASS_sufficient_conservative_separation",
+            method="parallel_cylinder_pair_separation; rod_AABB_vs_IP_aperture; rod_AABB_vs_actual_convex_P1_and_shield_minus_strict_cutout_containment",
+            scope="Conservative rejection, not exact cylinder/CSG clearance or manufacturing/field qualification",
+            canonical_rod_count=len(local["lens_electrodes"]),
+            gem_half_domain_rod_count=sum(not r["represented_by_x_mirror"] for r in local["lens_electrodes"]),
+            official_source="https://simion.com/info/gem_geometry_file.html#cylinder3d",
+            installed_reference="SIMION-2020/examples/einzel/einzel_param.gem",
+            vendor_version="SIMION 2020 8.2.0.11", checked="2026-10-20")
     return dict(geometry=local, gem=_render(local, volts, prism_voltage, box, pitch, dimensions),
                 delta_z_mm=delta, exit_z_mm=delta, gap_mm=lip-new_end,
                 projected_near_z_mm=near_z, geometry_checks=checks)
