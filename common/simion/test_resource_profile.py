@@ -59,7 +59,9 @@ class ResourceProfileTests(unittest.TestCase):
             plan = {
                 "role": "simion_repository_dispatch_plan",
                 "resource_identity": {"solver": "SIMION", "field_kind": "electrostatic"},
-                "estimation": {"per_process_cpu_percent": 10.0},
+                "estimation": {"per_process_cpu_percent": 10.0,
+                               "per_process_cpu_budget_percent": 10.5,
+                               "cpu_demand_safety_factor": 1.05},
                 "waves": [{"kind": "scheduled", "batch_count": 1, "batches": [{"count": 1}]}],
             }
             usage = {

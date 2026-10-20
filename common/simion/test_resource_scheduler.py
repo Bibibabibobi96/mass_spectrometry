@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from common.simion.resource_scheduler import (
+    CPU_DEMAND_SAFETY_FACTOR,
     MAXIMUM_MEMORY_DANGER_TERMINATION_ATTEMPTS,
     MAXIMUM_MEMORY_RECOVERY_ATTEMPTS,
     MEMORY_RECOVERY_STABLE_SECONDS,
@@ -68,7 +69,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             "SIMION_RESOURCE_EVENT=DISPATCH_DECISION MEASUREMENT=FIRST_FORMAL_BATCH "
             "PARTICLES=5000 BATCHES=1 MAX_CONCURRENCY=1 CPU_CAPACITY=1 "
             "MEMORY_CAPACITY=1 AVAILABLE_MEMORY=0.00GiB MEMORY_RESERVE=0.00GiB "
-            "OBSERVATION_SECONDS=45",
+            "OBSERVATION_SECONDS=45 CPU_BUDGET_PERCENT=6.5625 CPU_DEMAND_FACTOR=1.05",
         )
 
     def test_formal_observation_batch_is_one_tenth_of_large_population(self) -> None:
@@ -170,7 +171,7 @@ class ResourceSchedulerTests(unittest.TestCase):
 
     def test_cpu_floor_tracks_one_logical_processor_and_keeps_measured_cost(self) -> None:
         for cores, observed, expected_floor, expected_capacity in (
-            (16, 6.2, 6.25, 15),
+            (16, 6.2, 6.25, 14),
             (4, 6.2, 25.0, 3),
             (16, 25.0, 6.25, 3),
         ):
@@ -207,12 +208,12 @@ class ResourceSchedulerTests(unittest.TestCase):
             available_memory_bytes=8 * GIB,
             total_physical_memory_bytes=48 * GIB, logical_processors=16,
         )
-        self.assertEqual(plan["limits"]["cpu_capacity"], 15)
+        self.assertEqual(plan["limits"]["cpu_capacity"], 14)
         self.assertEqual(plan["limits"]["memory_capacity"], 2)
         self.assertEqual(plan["limits"]["maximum_concurrency"], 2)
 
     def test_case_dispatch_publishes_the_same_host_cpu_floor(self) -> None:
-        for cores, capacity in ((16, 15), (4, 3)):
+        for cores, capacity in ((16, 14), (4, 3)):
             with self.subTest(logical_processors=cores):
                 plan = plan_simion_case_dispatch(
                     [{"case_id": f"case{index}", "resource_identity": {}} for index in range(20)],
@@ -223,6 +224,54 @@ class ResourceSchedulerTests(unittest.TestCase):
                 self.assertEqual(plan["limits"]["maximum_concurrency"], capacity)
                 self.assertEqual(plan["limits"]["minimum_process_cpu_percent"], 100.0 / cores)
                 self.assertEqual(len(plan["waves"][0]["cases"]), capacity)
+
+    def test_cpu_relative_margin_retains_raw_measurement_and_floor(self) -> None:
+        for observed, cores, expected in ((1., 128, 1.05), (6.25, 16, 6.5625), (0., 16, 6.5625)):
+            with self.subTest(observed=observed, cores=cores):
+                initial = plan_simion_dispatch(self.request(100), [], available_memory_bytes=100*GIB,
+                                              total_physical_memory_bytes=128*GIB, logical_processors=cores)
+                known = plan_simion_dispatch(self.request(100), [self.profile(peak=GIB, cpu=observed)],
+                                            available_memory_bytes=100*GIB, total_physical_memory_bytes=128*GIB,
+                                            logical_processors=cores)
+                adaptive = plan_adaptive_followup(initial, GIB, observed_cpu_percent=observed,
+                                                  available_memory_bytes=100*GIB, total_physical_memory_bytes=128*GIB)
+                for plan in (known, adaptive):
+                    self.assertEqual(plan["estimation"]["observed_process_cpu_percent"], observed)
+                    self.assertAlmostEqual(plan["estimation"]["per_process_cpu_budget_percent"], expected)
+                    self.assertEqual(plan["estimation"]["cpu_demand_safety_factor"], CPU_DEMAND_SAFETY_FACTOR)
+                    self.assertAlmostEqual(plan["limits"]["minimum_process_cpu_budget_percent"], 100/cores*1.05)
+                    event = format_dispatch_decision_event(plan)
+                    self.assertIn(f"CPU_BUDGET_PERCENT={expected}", event)
+                    self.assertIn("CPU_DEMAND_FACTOR=1.05", event)
+
+    def test_repeated_runtime_replanning_never_inflates_cpu_twice(self) -> None:
+        plan = plan_simion_dispatch(self.request(100), [self.profile(peak=GIB, cpu=6.25)],
+                                    available_memory_bytes=100*GIB, total_physical_memory_bytes=128*GIB,
+                                    logical_processors=16)
+        for _ in range(3):
+            self.assertEqual(plan["limits"]["maximum_concurrency"], 14)
+            self.assertEqual(plan["estimation"]["per_process_cpu_percent"], 6.25)
+            self.assertEqual(plan["estimation"]["per_process_cpu_budget_percent"], 6.5625)
+            plan = plan_runtime_dispatch(plan, available_memory_bytes=100*GIB,
+                                         total_physical_memory_bytes=128*GIB, logical_processors=16)
+
+    def test_work_item_and_case_selection_consume_effective_cpu_budget_once(self) -> None:
+        request = self.request(100)
+        request.pop("particle_count")
+        request.pop("independent_particles")
+        request.update(work_item_count=100, independent_work_items=True)
+        plan = plan_simion_dispatch(request, [self.profile(peak=GIB, cpu=6.25)],
+                                    available_memory_bytes=100*GIB, total_physical_memory_bytes=128*GIB,
+                                    logical_processors=16)
+        self.assertEqual(plan["dispatch_unit"], "independent_work_items")
+        self.assertEqual(plan["limits"]["maximum_concurrency"], 14)
+        self.assertEqual(sum(batch["count"] for batch in plan["waves"][0]["batches"]), 100)
+        cases = plan_simion_case_dispatch([dict(case_id=f"case{i}", resource_identity={}) for i in range(20)],
+                                          self.request(1), [self.profile(peak=GIB, cpu=6.25)],
+                                          available_memory_bytes=100*GIB, total_physical_memory_bytes=128*GIB,
+                                          logical_processors=16)
+        self.assertEqual(len(cases["waves"][0]["cases"]), 14)
+        self.assertTrue(all(c["per_process_cpu_budget_percent"] == 6.5625 for c in cases["waves"][0]["cases"]))
 
     def test_explicit_invalid_processor_count_fails_before_planning(self) -> None:
         for cores in (0, -1, True, 1.5):

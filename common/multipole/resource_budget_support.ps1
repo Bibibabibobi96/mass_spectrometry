@@ -934,6 +934,23 @@ function Invoke-ResourceBudgetedProcesses {
   if($null-ne$estimation-and$estimation.PSObject.Properties.Name-contains'per_process_cpu_percent'){
     $estimatedProcessCpu=[math]::Max($estimatedProcessCpu,[double]$estimation.per_process_cpu_percent)
   }
+  # New plans carry the centrally compiled effective demand. Never multiply a
+  # raw observation here: this preserves old frozen plans and prevents applying
+  # the margin again during live admission, recovery or resource publication.
+  if($limits.PSObject.Properties.Name-contains'minimum_process_cpu_budget_percent'){
+    $minimumCpuBudget=[double]$limits.minimum_process_cpu_budget_percent
+    if([double]::IsNaN($minimumCpuBudget)-or[double]::IsInfinity($minimumCpuBudget)-or$minimumCpuBudget-le0){
+      throw 'Repository minimum CPU demand budget must be finite and positive.'
+    }
+    $estimatedProcessCpu=[math]::Max($estimatedProcessCpu,$minimumCpuBudget)
+  }
+  if($null-ne$estimation-and$estimation.PSObject.Properties.Name-contains'per_process_cpu_budget_percent'){
+    $cpuBudget=[double]$estimation.per_process_cpu_budget_percent
+    if([double]::IsNaN($cpuBudget)-or[double]::IsInfinity($cpuBudget)-or$cpuBudget-le0){
+      throw 'Repository effective CPU demand must be finite and positive.'
+    }
+    $estimatedProcessCpu=[math]::Max($estimatedProcessCpu,$cpuBudget)
+  }
   while($pending.Count-gt 0-or$running.Count-gt 0){
     $now=Get-RepositoryUtcNow;$nextRunning=[Collections.ArrayList]::new()
     $completedThisCycle=[Collections.ArrayList]::new()
@@ -1220,6 +1237,7 @@ function Invoke-ResourceBudgetedProcesses {
       final_maximum_concurrency=$maximumConcurrency;peak_concurrency=$peakConcurrency
       minimum_available_memory_bytes=$minimumAvailable
       dynamic_admission_bytes_at_finish=$dynamicAdmissionBytes
+      per_process_cpu_budget_percent=$estimatedProcessCpu
       launch_pause_events=@($pauseEvents);termination_requeue_events=@($terminationEvents)
       recovery_relaunch_events=@($recoveryEvents);recovery_attempt_count=$recoveryAttempts
       danger_termination_attempt_count=$dangerTerminationAttempts

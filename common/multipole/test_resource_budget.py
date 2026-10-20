@@ -35,6 +35,74 @@ def dispatch_limits(**overrides: int | float) -> dict[str, int | float]:
 
 
 class ResourceBudgetTests(unittest.TestCase):
+    def test_live_launcher_rejects_invalid_frozen_effective_cpu_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for section, field in (("limits", "minimum_process_cpu_budget_percent"),
+                                   ("estimation", "per_process_cpu_budget_percent")):
+                for budget in (0, "NaN"):
+                    with self.subTest(section=section, budget=budget):
+                        plan = dict(role="simion_repository_dispatch_plan", limits=dispatch_limits(),
+                                    estimation=dict(kind="exact_resource_profile"))
+                        plan[section][field] = budget
+                        dispatch = root/"dispatch.json"
+                        dispatch.write_text(json.dumps(plan), encoding="utf-8")
+                        support = REPO_ROOT/"common/multipole/resource_budget_support.ps1"
+                        command = (
+                            f". '{support}';"
+                            "$record=[pscustomobject]@{name='completed';completed=$true;exit_code=0;"
+                            "peak_working_set_bytes=0;peak_managed_memory_bytes=0};"
+                            f"Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' "
+                            f"-RunDir '{root}' -UsagePath '{root}/usage.json' -ExistingProcessRecords @($record)"
+                        )
+                        completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                                                   cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                                                   errors="replace", timeout=10, check=False)
+                        self.assertNotEqual(completed.returncode, 0)
+                        self.assertIn("must be finite and positive", completed.stderr)
+
+    def test_live_cpu_admission_uses_frozen_margin_once_and_preserves_legacy_plan(self) -> None:
+        """88.5+6.5625 waits; 88.4+6.5625 fits, without multiplying twice."""
+        for effective in (None, 6.5625):
+            with self.subTest(effective_budget=effective), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                estimation = dict(kind="exact_resource_profile", per_process_cpu_percent=6.25)
+                limits = dispatch_limits(maximum_concurrency=1, launch_stagger_seconds=1)
+                if effective is not None:
+                    estimation.update(per_process_cpu_budget_percent=effective, cpu_demand_safety_factor=1.05)
+                    limits.update(minimum_process_cpu_budget_percent=effective, cpu_demand_safety_factor=1.05)
+                dispatch = root/"dispatch.json"
+                dispatch.write_text(json.dumps(dict(role="simion_repository_dispatch_plan", estimation=estimation,
+                                                   limits=limits)), encoding="utf-8")
+                support = REPO_ROOT/"common/multipole/resource_budget_support.ps1"
+                expected_sample = 1 if effective is None else 2
+                command = (
+                    f". '{support}';{HOST_PERMIT_FIXTURE}$script:cpuSamples=0;"
+                    "function Get-RepositoryAvailableMemoryBytes {[int64](64GB)};"
+                    "function Get-SystemCpuPercent {$script:cpuSamples++;"
+                    "if($script:cpuSamples-eq1){88.5}elseif($script:cpuSamples-eq2){88.4}else{0.0}};"
+                    "$script:originalStart=${function:Start-RepositoryScheduledProcess};"
+                    "function Start-RepositoryScheduledProcess {param($Specification);"
+                    "$script:cpuAtLaunch=$script:cpuSamples;& $script:originalStart -Specification $Specification};"
+                    "$exe=(Get-Process -Id $PID).Path;"
+                    "$spec=[pscustomobject]@{name='cpu-margin';file_path=$exe;"
+                    "argument_list=@('-NoProfile','-Command','exit 0');"
+                    f"stdout='{root}/child.out';stderr='{root}/child.err';"
+                    f"environment=@{{}};working_directory='{root}'}};"
+                    f"$result=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' "
+                    f"-RunDir '{root}' -UsagePath '{root}/usage.json' -ProcessSpecifications @($spec);"
+                    f"if($script:cpuAtLaunch-ne{expected_sample}){{throw ('wrong launch sample '+$script:cpuAtLaunch)}};"
+                    "if($result.resource_budget_exceeded-or$result.processes[0].exit_code-ne0){exit 4}"
+                )
+                completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                                           cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                                           errors="replace", timeout=15, check=False)
+                self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+                usage = json.loads((root/"usage.json").read_text(encoding="utf-8-sig"))
+                self.assertEqual(usage["scheduler_receipt"]["per_process_cpu_budget_percent"], effective or 6.25)
+                pauses = usage["scheduler_receipt"]["launch_pause_events"]
+                self.assertEqual(any(p["reason"] == "cpu_admission_exceeded" for p in pauses), effective is not None)
+
     def test_live_launcher_rejects_missing_or_invalid_cpu_floor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

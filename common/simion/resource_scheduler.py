@@ -28,6 +28,9 @@ _HOST_RESOURCE_POLICY = json.loads(
     Path(__file__).resolve().parents[1].joinpath("host_resource_policy.json").read_text("utf-8")
 )
 CPU_ADMISSION_PERCENT = float(_HOST_RESOURCE_POLICY["cpu_admission_percent"])
+# User-requested relative 5% margin on measured/floor CPU demand, applied once
+# when compiling a plan. Raw observation/profile percentages stay uninflated.
+CPU_DEMAND_SAFETY_FACTOR = 1.05
 # SIMION memory is an observed concurrency constraint, not a single-worker veto.
 MEMORY_ADMISSION_RESERVE_BYTES = 0
 MEMORY_POLICY = "warn_single_worker"
@@ -212,7 +215,7 @@ def _capacity(
     minimum_process_cpu_percent: float,
 ) -> tuple[int, int, int]:
     _memory_admission(available_memory_bytes, total_physical_memory_bytes, per_process_memory_bytes)
-    cpu_cost = max(minimum_process_cpu_percent, process_cpu_percent)
+    cpu_cost = max(minimum_process_cpu_percent, process_cpu_percent) * CPU_DEMAND_SAFETY_FACTOR
     cpu_capacity = max(1, math.floor(
         max(0.0, CPU_ADMISSION_PERCENT - background_cpu_percent) / cpu_cost
     ))
@@ -238,6 +241,8 @@ def _public_limits(
         "memory_policy": MEMORY_POLICY,
         "formal_observation_seconds": FORMAL_OBSERVATION_SECONDS,
         "minimum_process_cpu_percent": minimum_process_cpu_percent,
+        "minimum_process_cpu_budget_percent": minimum_process_cpu_percent * CPU_DEMAND_SAFETY_FACTOR,
+        "cpu_demand_safety_factor": CPU_DEMAND_SAFETY_FACTOR,
         "cpu_admission_percent": CPU_ADMISSION_PERCENT,
         "memory_admission_reserve_bytes": MEMORY_ADMISSION_RESERVE_BYTES,
         "memory_critical_reserve_bytes": MEMORY_CRITICAL_RESERVE_BYTES,
@@ -296,6 +301,11 @@ def format_dispatch_decision_event(plan: dict[str, Any]) -> str:
             f"PEAK_MEMORY={_format_gib(estimation.get('observed_peak_bytes'))}",
             f"PROCESS_MEMORY_BUDGET={_format_gib(estimation.get('per_process_memory_budget_bytes'))}",
             f"PROCESS_CPU_PERCENT={estimation.get('per_process_cpu_percent', 'UNKNOWN')}",
+        ))
+    if "cpu_demand_safety_factor" in limits:
+        fields.extend((
+            f"CPU_BUDGET_PERCENT={estimation.get('per_process_cpu_budget_percent', limits.get('minimum_process_cpu_budget_percent'))}",
+            f"CPU_DEMAND_FACTOR={limits['cpu_demand_safety_factor']}",
         ))
     return " ".join(fields)
 
@@ -487,6 +497,9 @@ def plan_simion_dispatch(
             "kind": "exact_resource_profile", "observed_peak_bytes": peak,
             "per_process_memory_budget_bytes": memory_budget,
             "per_process_cpu_percent": max(minimum_process_cpu_percent, process_cpu),
+            "observed_process_cpu_percent": process_cpu,
+            "per_process_cpu_budget_percent": max(minimum_process_cpu_percent, process_cpu) * CPU_DEMAND_SAFETY_FACTOR,
+            "cpu_demand_safety_factor": CPU_DEMAND_SAFETY_FACTOR,
             "observed_batch_work_units": profile["observed_batch_work_units"],
             "memory_safety_factor": KNOWN_MEMORY_SAFETY_FACTOR,
             "observation_wait_skipped": True,
@@ -569,6 +582,9 @@ def plan_adaptive_followup(
         "kind": "observed_formal_batch", "observed_peak_bytes": peak,
         "per_process_memory_budget_bytes": memory_budget,
         "per_process_cpu_percent": max(minimum_process_cpu_percent, cpu),
+        "observed_process_cpu_percent": cpu,
+        "per_process_cpu_budget_percent": max(minimum_process_cpu_percent, cpu) * CPU_DEMAND_SAFETY_FACTOR,
+        "cpu_demand_safety_factor": CPU_DEMAND_SAFETY_FACTOR,
         "background_cpu_percent": background,
         "memory_safety_factor": OBSERVED_MEMORY_SAFETY_FACTOR,
         "first_batch_completed_during_observation": bool(first_batch_completed),
@@ -617,7 +633,7 @@ def plan_runtime_dispatch(
         profiles.append({
             "resource_identity": prepared_plan["resource_identity"],
             "per_batch_peak_working_set_bytes": estimation["observed_peak_bytes"],
-            "per_batch_cpu_percent": estimation.get("per_process_cpu_percent", 0.0),
+            "per_batch_cpu_percent": estimation.get("observed_process_cpu_percent", estimation.get("per_process_cpu_percent", 0.0)),
             "observed_batch_work_units": estimation.get("observed_batch_work_units"),
         })
     return plan_simion_dispatch(
@@ -671,7 +687,7 @@ def plan_simion_case_dispatch(
         selected = []
         for case_id, plan in plans:
             memory = int(plan["estimation"]["per_process_memory_budget_bytes"])
-            cpu = float(plan["estimation"]["per_process_cpu_percent"])
+            cpu = float(plan["estimation"]["per_process_cpu_budget_percent"])
             if memory_left is not None and memory > memory_left:
                 continue
             if cpu > cpu_left:
@@ -679,7 +695,10 @@ def plan_simion_case_dispatch(
             selected.append({
                 "case_id": case_id,
                 "per_process_memory_budget_bytes": memory,
-                "per_process_cpu_percent": cpu,
+                "per_process_cpu_percent": plan["estimation"]["per_process_cpu_percent"],
+                "observed_process_cpu_percent": plan["estimation"]["observed_process_cpu_percent"],
+                "per_process_cpu_budget_percent": cpu,
+                "cpu_demand_safety_factor": CPU_DEMAND_SAFETY_FACTOR,
             })
             if memory_left is not None:
                 memory_left -= memory
@@ -693,6 +712,9 @@ def plan_simion_case_dispatch(
                 "per_process_cpu_percent": plans[0][1]["estimation"][
                     "per_process_cpu_percent"
                 ],
+                "observed_process_cpu_percent": plans[0][1]["estimation"]["observed_process_cpu_percent"],
+                "per_process_cpu_budget_percent": plans[0][1]["estimation"]["per_process_cpu_budget_percent"],
+                "cpu_demand_safety_factor": CPU_DEMAND_SAFETY_FACTOR,
             }]
         limits = _public_limits(
             len(selected), len(selected), len(selected),
