@@ -72,3 +72,5 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 - [Ion Processor B/C/D局部聚焦、孔口及默认回放](docs/history/20261020__ip-bcd-local-focus-and-replay.md)
 
 - [D三路线理论、局部验证及独立回放](docs/history/20261020__d-routes-theory-local-validation-and-replay.md)
+
+- [双透镜相空间机制与加大间距验证](docs/history/20261021__doublet-phase-space-and-wide-spacing-validation.md)
