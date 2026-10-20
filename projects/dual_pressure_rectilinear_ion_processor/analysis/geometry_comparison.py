@@ -20,7 +20,7 @@ import numpy as np
 
 from common.contracts.write_run_manifest import file_record
 from common.contracts.verify_run_manifest import record_path, verify_record
-from projects.dual_pressure_rectilinear_ion_processor.analysis import beam_focus_diagnostics
+from projects.dual_pressure_rectilinear_ion_processor.analysis import beam_focus_diagnostics, aperture_acceptance_diagnostics
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import (
     COLORS, MARKERS, VALUES, load_recorded_case, prepare_spatial_crossings, prepare_statistics,
 )
@@ -381,6 +381,10 @@ def analyze_geometry_study(run: Path) -> dict:
     plane_stats, _, _ = prepare_statistics(spatial, allow_empty_common=True)
     extend_statistics(spatial, plane_stats, common)
     focus = beam_focus_diagnostics.prepare_focus_diagnostics(spatial, planes, common)
+    time_focus = (beam_focus_diagnostics.prepare_time_focus_diagnostics(spatial, planes, common, study["time_focus_diagnostics"])
+                  if "time_focus_diagnostics" in study else None)
+    aperture = (aperture_acceptance_diagnostics.prepare_aperture_diagnostics(spatial, study["aperture_acceptance"])
+                if "aperture_acceptance" in study else None)
     census, losses = loss_evidence(cases)
     output = run/"results/geometry_comparison"
     output.mkdir(parents=True, exist_ok=True)
@@ -397,9 +401,21 @@ def analyze_geometry_study(run: Path) -> dict:
     for key in ("plane_statistics", "exit_angle_decomposition", "field_free_predictions", "sampled_minima"):
         _write_csv(output/f"beam_focus_{key}.csv", focus[key])
     (output/"beam_focus_diagnostics.json").write_text(json.dumps(focus, indent=2, allow_nan=False)+"\n", encoding="utf-8")
+    for role, prepared, tables in (
+        ("time_focus", time_focus, ("plane_time_statistics", "plane_drift_predictions", "reference_plane_predictions", "reference_particle_predictions", "sampled_minima", "time_interval_variance_rows")),
+        ("aperture_acceptance", aperture, ("summary_rows", "particle_rows", "reference_rows")),
+    ):
+        if prepared is not None:
+            for table in tables:
+                _write_csv(output/f"{role}_{table}.csv", prepared[table])
+            (output/f"{role}_diagnostics.json").write_text(json.dumps(prepared, indent=2, allow_nan=False)+"\n", encoding="utf-8")
     with plt.rc_context({"font.family": "DejaVu Sans", "font.size": 9, "svg.fonttype": "none"}):
         figures, visual = build_geometry_figures(cases, plane_stats, planes, common)
         figures["beam_focus_diagnostics"] = beam_focus_diagnostics.build_focus_figure(focus)
+        if time_focus is not None:
+            figures["time_focus_diagnostics"] = beam_focus_diagnostics.build_time_focus_figure(time_focus)
+        if aperture is not None:
+            figures["aperture_acceptance_diagnostics"] = aperture_acceptance_diagnostics.build_aperture_figure(aperture)
         for role, figure in figures.items():
             for extension in ("png", "svg"):
                 figure.savefig(output/f"{role}.{extension}", format=extension, dpi=210, facecolor="white")
@@ -415,6 +431,9 @@ def analyze_geometry_study(run: Path) -> dict:
     manifest = dict(schema_version=1, role="ion_processor_geometry_figure_sources", study_contract=file_record(study_path),
                     producer=file_record(Path(__file__)), focus_producer=file_record(Path(beam_focus_diagnostics.__file__)),
                     focus_methods=focus["metadata"],
+                    time_focus_methods=time_focus["metadata"] if time_focus is not None else None,
+                    aperture_methods=aperture["metadata"] if aperture is not None else None,
+                    aperture_producer=file_record(Path(aperture_acceptance_diagnostics.__file__)) if aperture is not None else None,
                     cases=[dict(label=c["label"], run=c["run"], source_manifest=file_record(Path(c["run"])/"run_manifest.json"), source_records=c["source_records"]) for c in cases],
                     frame=cases[0]["config"]["coordinate_transform"], formats=["png", "svg"], png_dpi=210, figures=list(figures), **visual,
                     units=dict(position="mm", velocity="mm/us", angle="degree", energy="eV", time="instrument us; centered time figure ns"),

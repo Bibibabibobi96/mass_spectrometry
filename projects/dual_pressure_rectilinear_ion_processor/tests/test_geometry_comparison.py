@@ -224,6 +224,8 @@ class GeometryComparisonTests(unittest.TestCase):
 
     def test_full_export_uses_shared_axes_bins_and_preserves_losses(self) -> None:
         cases, study = self.cases()
+        study["time_focus_diagnostics"] = dict(drift_lengths_mm=[0.,1.])
+        study["aperture_acceptance"] = dict(drift_lengths_mm=[0.,1.], aperture_radii_mm=[.1,1.],center_x_mm=0.,center_y_mm=0.)
         parent = self.root/"comparison"
         write_json(parent/"inputs/study_contract.json", study)
         write_json(parent/"run_config.json", dict(project=recorded.PROJECT, inputs=dict(study_contract="inputs/study_contract.json")))
@@ -231,8 +233,10 @@ class GeometryComparisonTests(unittest.TestCase):
             result = geometry.analyze_geometry_study(parent)
         self.assertEqual(result["loss_records"], 3)
         output = parent/"results/geometry_comparison"
-        self.assertEqual(len(list(output.glob("*.png"))), 6)
-        self.assertEqual(len(list(output.glob("*.svg"))), 6)
+        self.assertEqual(len(list(output.glob("*.png"))), 8)
+        self.assertEqual(len(list(output.glob("*.svg"))), 8)
+        self.assertTrue((output/"time_focus_reference_plane_predictions.csv").is_file())
+        self.assertTrue((output/"aperture_acceptance_particle_rows.csv").is_file())
         focus = json.loads((output/"beam_focus_diagnostics.json").read_text())
         self.assertEqual(focus["common_ids"], [1, 2])
         self.assertTrue(all(row["cohort_membership_constant"] for row in focus["sampled_minima"]

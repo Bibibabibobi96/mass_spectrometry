@@ -261,6 +261,33 @@ B97/C45/D55的开关末步约−62m/s轴向残差与开关后场的1/6节点权�
 [机制报告与全部证据](../../../../artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/20261020_120402__analysis__python__contour-focus-loss-mechanism/results/scientific_report.md)
 包含自动英文束腰图、96面相空间表、逐离子损失和受力原始行身份。
 
+### 系统时间焦点与假想小孔接受度
+
+出口sigma(t)不等于最小sigma(t)。现有`compare-geometry-study`可由冻结study的
+`time_focus_diagnostics.drift_lengths_mm`启用系统时间诊断，输出实测沿程sigma、中央68%／90%宽度、
+时间与位置／速度／能量相关性及相邻截面的同ID时间方差预算；不按高斯把sigma换成FWHM。
+零场预测保持每颗实际配对的t与vz，使用`t(L)=t+L/|vz|`及完整协方差，
+由时间方差二次式求RMS最小；常速没有唯一焦点，不能将预测称实际Prism焦点。
+
+2026-10-20继续分析四组既有N100，共同91出口ID：B/C/D从z=0起的零场下游RMS最小位置为
+L=22.421/10.416/4.777mm，最小sigma(t)=3.362933/4.167121/4.517684ns，
+相对出口分别降17.91%／2.62%／0.78%。B有较明显可由漂移压缩的时间—速度相关，D仅移动位置改善很小。
+A实测内部最小仍在z=5.3mm、1.805464ns。中央68%与90%宽度的采样最小位置不同于RMS最小，
+说明核心和尾部不能用一个焦点或高斯宽度概括。760项相邻截面方差预算闭合不等于原生步长已收敛。
+
+冻结study的`aperture_acceptance`显式声明圆孔半径、中心及距离，自动输出无场薄孔的全部母群接受／拒绝ID、
+出口与原始母群两种透过率、x/y角宽、时间与能量宽度。单孔选位置，有限漂移后才耦合角度，
+不等于直接角度裁剪，也不冷却单颗离子。比较始终保留未筛选参考，不删除被挡尾部或上游损失。
+本轮各自完整出口A94/B96/C96/D96；例如D在同一L=20mm面，未筛选sigma(theta_y)=0.239857°、
+sigma(t)=4.937696ns。假想半径0.5mm孔保留80/100，降至0.181515°、3.593184ns；
+半径0.3mm孔保留48/100，降至0.123214°、2.916552ns。圆孔同时裁剪x，不能称纯y修正。
+若主要限制y接受度，可后续评估y狭缝或分离双孔；本轮未改变实体几何、实际场或启动新飞行。
+
+[时间焦点与小孔报告](../../../../artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/20261020_050710__analysis__python__time-focus-aperture-acceptance/results/scientific_report.md)
+包含自动英文图、0…60mm零场曲线、168组假想孔径／位置组合及19,200条母群级筛选记录。
+这些为局部接受度预估，不证明真实下游最小、最佳孔径、MR分辨率或统计显著性；
+真实孔厚、边缘场、Prism及前述开关数值问题仍需局部验证。既有加载包和全部原始N100不变。
+
 [component_exit.py](../analysis/component_exit.py)只读已封存运行，发布公共component_particle_state v1，
 保留实测6D、原ID、物种、绝对instrument time与全部母群census；它不执行求解或重建速度。
 跨组件单位粒子权重只代表测试粒子计数，不代表实际电流；无反应谱系为generation0，未发布相位参考时phase为空。

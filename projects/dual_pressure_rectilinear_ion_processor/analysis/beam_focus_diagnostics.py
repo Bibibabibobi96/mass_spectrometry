@@ -71,13 +71,14 @@ def _free_prediction(rows: list[dict], coordinate: str, reference_z_mm: float) -
     return result
 
 
-def _sampled_minima(statistics: list[dict], case: str, cohort: str) -> list[dict]:
+def _sampled_minima(statistics: list[dict], case: str, cohort: str,
+                    metrics: tuple[str, ...] = ("sigma_x_mm","sigma_y_mm","sigma_t_ns")) -> list[dict]:
     sets = [set(row["available_ids"]) for row in statistics]
     constant = all(ids==sets[0] for ids in sets[1:])
     eligible = bool(sets[0]) and constant
     covers_cohort = all(row["missing_count"]==0 for row in statistics)
     result = []
-    for metric in ("sigma_x_mm","sigma_y_mm","sigma_t_ns"):
+    for metric in metrics:
         valid = [row for row in statistics if row[metric] is not None]
         minimum = min((row[metric] for row in valid),default=None)
         indices = [i for i,row in enumerate(statistics) if minimum is not None and row[metric]==minimum]
@@ -189,4 +190,232 @@ def build_focus_figure(prepared: dict):
     handles,labels = axes[0,0].get_legend_handles_labels()
     figure.legend(handles,labels,loc="outside upper center",ncol=2,frameon=False,
         title=f"Recorded envelopes and linear phase-space diagnostics | {cohort}\nDeclared common exit N={len(prepared['common_ids'])}; missing IDs in tables; residual is not cooling; predictions assume zero field")
+    return figure
+
+
+def _time_distribution(times_us: np.ndarray | None) -> dict:
+    result = dict(mean_t_us=None,sigma_t_ns=None,central68_width_ns=None,central90_width_ns=None)
+    if times_us is None or not len(times_us):
+        return result
+    mean = float(times_us.mean())
+    centered_ns = (times_us-mean)*1000
+    q05,q16,q84,q95 = np.quantile(centered_ns,[.05,.16,.84,.95],method="linear")
+    return dict(mean_t_us=mean,sigma_t_ns=float(centered_ns.std()),
+                central68_width_ns=float(q84-q16),central90_width_ns=float(q95-q05))
+
+
+def _time_observable(row: dict, field: str) -> float | None:
+    if field == "inverse_abs_vz":
+        value = row.get("vz_mm_us")
+        if value is None:
+            return None
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("time correlations require finite supplied values")
+        return 1/abs(value) if value != 0 else None
+    value = row.get(field)
+    if value is None:
+        return None
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError("time correlations require finite supplied values")
+    return value
+
+
+def _time_correlations(rows: list[dict]) -> dict:
+    result = {}
+    for label,field in (("x_mm","x_mm"),("y_mm","y_mm"),("vz","vz_mm_us"),("inverse_abs_vz","inverse_abs_vz"),
+                        ("Ex_eV","Ex_eV"),("Ez_eV","Ez_eV"),
+                        ("total_energy_eV","total_energy_eV"),("theta_y_deg","theta_y_deg")):
+        pairs = []
+        for row in rows:
+            t,value = _time_observable(row,"t_us"),_time_observable(row,field)
+            if t is not None and value is not None:
+                pairs.append((t,value))
+        rho = None
+        if len(pairs)>1:
+            array = np.asarray(pairs)
+            centered = array-array.mean(axis=0)
+            variance = np.mean(centered**2,axis=0)
+            if np.all(variance>0):
+                rho = float(np.mean(centered[:,0]*centered[:,1])/np.sqrt(variance.prod()))
+        result[f"rho_t_{label}"] = rho
+        result[f"rho_t_{label}_matched_count"] = len(pairs)
+    return result
+
+
+def _time_drift_rows(rows: list[dict], lengths: list[float]) -> tuple[dict,list[dict]]:
+    values = _array(rows,("t_us","vz_mm_us"))
+    valid = values is not None and bool(np.all(values[:,1]<0))
+    matched = sum(row.get("t_us") is not None and row.get("vz_mm_us") is not None
+                  and float(row["vz_mm_us"])<0 for row in rows)
+    coefficients = dict(paired_forward_count=matched,paired_complete=valid,
+        variance_a_ns2=None,variance_b_ns2_per_mm=None,variance_c_ns2_per_mm2=None,
+        unconstrained_L_star_mm=None,downstream_L_star_mm=None,
+        downstream_min_sigma_t_ns=None,unique_time_waist=None)
+    if valid:
+        centered = (values[:,0]-values[:,0].mean())*1000
+        inverse_speed = 1000/np.abs(values[:,1])  # ns/mm; vz input is mm/us.
+        centered_inverse = inverse_speed-inverse_speed.mean()
+        a,b,c = float(centered.var()),float(2*np.mean(centered*centered_inverse)),float(centered_inverse.var())
+        length = -b/(2*c) if c>0 else None
+        downstream = max(0.,length) if length is not None else 0.
+        coefficients.update(variance_a_ns2=a,variance_b_ns2_per_mm=b,variance_c_ns2_per_mm2=c,
+            unconstrained_L_star_mm=length,downstream_L_star_mm=downstream,
+            downstream_min_sigma_t_ns=float((centered+downstream*centered_inverse).std()),
+            unique_time_waist=c>0)
+    curves = []
+    for length in lengths:
+        item = dict(drift_length_mm=length,predicted_sigma_t_ns=None,predicted_central68_width_ns=None,
+                    predicted_central90_width_ns=None,quadratic_variance_ns2=None,variance_identity_residual_ns2=None,
+                    paired_forward_count=matched,paired_complete=valid)
+        if valid:
+            centered_prediction = centered+length*centered_inverse
+            q05,q16,q84,q95 = np.quantile(centered_prediction,[.05,.16,.84,.95],method="linear")
+            variance = a+b*length+c*length**2
+            item.update(predicted_sigma_t_ns=float(centered_prediction.std()),
+                predicted_central68_width_ns=float(q84-q16),predicted_central90_width_ns=float(q95-q05),
+                quadratic_variance_ns2=variance,
+                variance_identity_residual_ns2=float(centered_prediction.var()-variance))
+        curves.append(item)
+    return coefficients,curves
+
+
+def _time_interval_variances(group: list[dict], lookup: dict) -> list[dict]:
+    result = []
+    for before,after in zip(group,group[1:]):
+        candidate_ids = sorted(set(before["available_ids"]) & set(after["available_ids"]))
+        matched = [pid for pid in candidate_ids if lookup[before["plane_z_mm"],pid].get("t_us") is not None
+                   and lookup[after["plane_z_mm"],pid].get("t_us") is not None]
+        row = dict(case=before["case"],cohort=before["cohort"],before_z_mm=before["plane_z_mm"],after_z_mm=after["plane_z_mm"],
+            cohort_count=before["cohort_count"],paired_count=len(matched),matched_ids=matched,
+            missing_before_ids=before["missing_ids"],missing_after_ids=after["missing_ids"],
+            unpaired_available_ids=sorted((set(before["available_ids"]) | set(after["available_ids"]))-set(matched)),
+            complete_declared_cohort=len(matched)==before["cohort_count"],
+            var_t_before_ns2=None,var_delta_t_ns2=None,twice_cov_t_before_delta_ns2=None,var_t_after_ns2=None,
+            variance_change_ns2=None,closure_residual_ns2=None,mean_delta_t_ns=None)
+        if matched:
+            a = np.array([lookup[before["plane_z_mm"],pid]["t_us"] for pid in matched])
+            b = np.array([lookup[after["plane_z_mm"],pid]["t_us"] for pid in matched])
+            if np.any(b<a):
+                raise ValueError("paired arrival times contradict downstream plane order")
+            delta = (b-a)*1000
+            ac,bc,dc = (a-a.mean())*1000,(b-b.mean())*1000,delta-delta.mean()
+            va,vd,vb = float(ac.var()),float(dc.var()),float(bc.var())
+            cross = float(2*np.mean(ac*dc))
+            row.update(var_t_before_ns2=va,var_delta_t_ns2=vd,twice_cov_t_before_delta_ns2=cross,
+                var_t_after_ns2=vb,variance_change_ns2=vb-va,closure_residual_ns2=vb-va-vd-cross,
+                mean_delta_t_ns=float(delta.mean()))
+        result.append(row)
+    return result
+
+
+def prepare_time_focus_diagnostics(spatial_cases: list[dict], planes: list[float],
+                                   common_ids: list[int], contract: dict) -> dict:
+    """Prepare paired time widths/correlations and declared zero-field drifts.
+
+    Quantile widths retain all IDs (linear empirical quantiles); they are not
+    Gaussian conversions. Per-ID predictions are published only at min(planes).
+    Per-plane predictions use complete observed t/vz pairs, never silently trim
+    a group with missing or non-forward velocity. No real downstream flight.
+    """
+    import copy
+    if not isinstance(contract,dict) or set(contract)!={"drift_lengths_mm"}:
+        raise ValueError("time-focus contract requires only drift_lengths_mm")
+    lengths = contract.get("drift_lengths_mm") if isinstance(contract,dict) else None
+    if not isinstance(lengths,list) or not lengths or any(isinstance(v,bool) or not isinstance(v,(int,float))
+            or not math.isfinite(v) or v<0 for v in lengths):
+        raise ValueError("explicit finite nonnegative drift_lengths_mm list required")
+    if len(set(lengths))!=len(lengths):
+        raise ValueError("declared drift lengths must be unique")
+    base = prepare_focus_diagnostics(spatial_cases,planes,common_ids)
+    cohorts = list(COHORTS[1:])
+    statistics, predictions, particles, minima, intervals = [], [], [], [], []
+    count_keys = ("case","cohort","plane_z_mm","cohort_count","observed_count","available_ids","missing_ids","missing_count")
+    by_case = {case["label"]:case for case in spatial_cases}
+    lookups = {case["label"]:{(r["plane_z_mm"],r["particle_id"]):r for r in case["states"]} for case in spatial_cases}
+    for label in base["case_order"]:
+        for cohort in cohorts:
+            group = []
+            original = [r for r in base["plane_statistics"] if r["case"]==label and r["cohort"]==cohort]
+            for counts in original:
+                z = counts["plane_z_mm"]
+                rows = [lookups[label][z,pid] for pid in counts["available_ids"]]
+                values = _array(rows,("t_us",))
+                coefficients,curves = _time_drift_rows(rows,lengths)
+                stat = {key:counts[key] for key in count_keys}
+                stat.update(_time_distribution(values[:,0] if values is not None else None),
+                            **_time_correlations(rows),**coefficients)
+                statistics.append(stat);group.append(stat)
+                prediction_keys = ("case","cohort","plane_z_mm","cohort_count","observed_count","missing_count")
+                predictions.extend(dict(**{key:counts[key] for key in prediction_keys},**curve) for curve in curves)
+                if z == base["reference_z_mm"]:
+                    ids = sorted(by_case[label]["exits"]) if cohort==COHORTS[1] else sorted(common_ids)
+                    available = {row["particle_id"]:row for row in rows}
+                    for pid in ids:
+                        row = available.get(pid)
+                        valid = row is not None and row.get("t_us") is not None and row.get("vz_mm_us") is not None and row["vz_mm_us"]<0
+                        for length in lengths:
+                            particles.append(dict(case=label,cohort=cohort,particle_id=pid,reference_z_mm=z,
+                                drift_length_mm=length,predicted_z_mm=z-length,
+                                reference_t_us=row.get("t_us") if row else None,reference_vz_mm_us=row.get("vz_mm_us") if row else None,
+                                predicted_t_us=row["t_us"]+length/abs(row["vz_mm_us"]) if valid else None,
+                                availability="available" if valid else "missing_reference_state_or_not_forward"))
+            minima.extend(_sampled_minima(group,label,cohort,("sigma_t_ns","central68_width_ns","central90_width_ns")))
+            intervals.extend(_time_interval_variances(group,lookups[label]))
+    return dict(schema_version=1,role="recorded_time_focus_diagnostics",contract=copy.deepcopy(contract),
+        case_order=base["case_order"],cohorts=cohorts,common_ids=base["common_ids"],
+        display_cohort=COHORTS[2] if common_ids else COHORTS[1],reference_z_mm=base["reference_z_mm"],
+        planes_mm=list(planes),drift_lengths_mm=list(lengths),plane_time_statistics=statistics,
+        plane_drift_predictions=predictions,
+        reference_plane_predictions=[r for r in predictions if r["plane_z_mm"]==base["reference_z_mm"]],
+        reference_particle_predictions=particles,sampled_minima=minima,
+        time_interval_variance_rows=intervals,source_counts={case["label"]:len(case["sources"]) for case in spatial_cases},
+        metadata=dict(moment_definition="Population SD, ddof=0; all observed cohort IDs retained. No tail rejection or Gaussian/FWHM conversion.",
+            quantiles="NumPy quantile(method='linear'): central68=q84-q16; central90=q95-q05; all observations participate",
+            correlations="Pearson population correlation; constant/empty pair is null; per-observable matched counts declared; missing energy fields remain null, not inferred",
+            energy_fields_queried=["Ex_eV","Ez_eV","total_energy_eV"],
+            energy_fields_available_by_case={case["label"]:[field for field in ("Ex_eV","Ez_eV","total_energy_eV")
+                if any(row.get(field) is not None for row in case["states"])] for case in spatial_cases},
+            prediction="Independent counterfactual from each plane: t_i(L)=t_i+L/abs(vz_i); L mm, vz mm/us, t absolute instrument us. No field, collision or aperture.",
+            quadratic="Var_t_ns2(L)=A+B*L+C*L^2; A=Var(t_ns), B=2Cov(t_ns,1000/abs(vz)), C=Var(1000/abs(vz)); downstream L*=max(0,-B/(2C))",
+            constant_speed="If C=0 there is no unique time waist; downstream_L_star=0 is a representative minimizer, not a focal location",
+            reference="Most downstream recorded plane min(planes), explicitly declared; per-ID predictions only from that reference",
+            prediction_identity="Join plane/reference drift curves to plane_time_statistics on case/cohort/plane_z_mm for available/missing ID lists; do not duplicate those lists per declared length",
+            missing="All declared reference cohort IDs retained even when prediction null; incomplete paired groups produce null predicted widths; paired_forward_count is explicit",
+            interval_variance="Same-ID adjacent-plane pairs: Var(t_b)=Var(t_a)+Var(delta_t)+2Cov(t_a,delta_t), ns2. Matched and missing IDs explicit; SDs are never added; this is not independent electrode causal attribution.",
+            sampled_scope=base["metadata"]["sampled_scope"],membership_scope=base["metadata"]["membership_scope"],
+            claim="Recorded along-path time widths plus zero-field predictions; output sigma_t need not be the minimum; no real downstream focus or resolution qualification"))
+
+
+def build_time_focus_figure(prepared: dict):
+    """Compare recorded widths with explicitly separate zero-field predictions."""
+    from matplotlib import pyplot as plt
+    colors = ("#0072B2","#E69F00","#009E73","#D55E00")
+    markers = ("o","s","^","D")
+    lines = ("-","--",":","-.")
+    figure,axes = plt.subplots(3,2,figsize=(13,11),constrained_layout=True)
+    cohort = prepared["display_cohort"]
+    metrics = (("sigma_t_ns","predicted_sigma_t_ns","Population SD (ns)"),
+               ("central68_width_ns","predicted_central68_width_ns","Central 68% width (ns)"),
+               ("central90_width_ns","predicted_central90_width_ns","Central 90% width (ns)"))
+    for index,case in enumerate(prepared["case_order"]):
+        real = [r for r in prepared["plane_time_statistics"] if r["case"]==case and r["cohort"]==cohort]
+        prediction = sorted((r for r in prepared["reference_plane_predictions"] if r["case"]==case and r["cohort"]==cohort),key=lambda r:r["drift_length_mm"])
+        counts = [r["observed_count"] for r in real]
+        count_label = str(counts[0]) if min(counts)==max(counts) else f"{min(counts)}-{max(counts)}"
+        style = dict(color=colors[index%4],marker=markers[index%4],linestyle=lines[index%4],markersize=3)
+        for row,(observed_key,predicted_key,label) in enumerate(metrics):
+            axes[row,0].plot([r["plane_z_mm"] for r in real],[np.nan if r[observed_key] is None else r[observed_key] for r in real],**style,label=f"{case} | observed N={count_label}")
+            axes[row,1].plot([r["drift_length_mm"] for r in prediction],[np.nan if r[predicted_key] is None else r[predicted_key] for r in prediction],**style)
+            axes[row,0].set(xlabel="Recorded plane z (mm); flight toward -z",ylabel=label,
+                            xlim=(max(prepared["planes_mm"]),min(prepared["planes_mm"])))
+            axes[row,1].set(xlabel="Declared zero-field drift L (mm); forward -z",ylabel=label)
+            for ax in axes[row]:
+                ax.grid(alpha=.2)
+    axes[0,0].set_title("Actual recorded crossings; sampled interval only")
+    axes[0,1].set_title(f"Zero-field prediction from z={prepared['reference_z_mm']:g} mm; not real downstream flight")
+    handles,labels = axes[0,0].get_legend_handles_labels()
+    figure.legend(handles,labels,loc="outside upper center",ncol=2,frameon=False,
+        title=f"Time focus and full-tail time widths | {cohort}\nDeclared common N={len(prepared['common_ids'])}; quantile widths use all observations; predicted propagation assumes zero field")
     return figure
