@@ -303,7 +303,8 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         self.assertIn("refinement_convergence='simion_official_default'", runner)
         self.assertIn("open_columns > 0", verifier)
         self.assertIn("for ix = ix_min, ix_max", verifier)
-        self.assertIn("pa:point(ix, iy, iz)", verifier)
+        self.assertIn("point(ix, iy, iz)", verifier)
+        self.assertIn("pa:point(indices[1], indices[2], indices[3])", verifier)
 
     def test_analysis_capabilities_are_unique_and_lifecycle_bounded(self) -> None:
         catalog = load(CONFIG_ROOT / "analysis_capabilities.json")

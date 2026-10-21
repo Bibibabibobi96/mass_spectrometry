@@ -22,6 +22,7 @@ from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
 )
 from projects.orthogonal_accelerator.simion.rectangular_accelerator import (
     emit_closed_two_zone_endplates,
+    emit_grounded_enclosure,
     emit_ideal_grid,
     emit_open_rectangular_frame,
 )
@@ -54,10 +55,11 @@ class CompiledTwoZoneLayout:
     aperture_height_y_mm: float
     static_minimum_y_extent_mm: float
     static_axial_length_mm: float
+    side_entry: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable projection without exposing geometry inputs."""
-        return {
+        result = {
             "geometry_profile_id": self.geometry_profile_id,
             "acceleration_direction": self.acceleration_direction,
             "local_exit_z_mm": self.local_exit_z_mm,
@@ -78,6 +80,9 @@ class CompiledTwoZoneLayout:
             "static_minimum_y_extent_mm": self.static_minimum_y_extent_mm,
             "static_axial_length_mm": self.static_axial_length_mm,
         }
+        if self.side_entry is not None:
+            result["side_entry"] = dict(self.side_entry)
+        return result
 
 
 @dataclass(frozen=True)
@@ -94,6 +99,7 @@ class ResolvedClosedTwoZoneElectrodes:
     grid_supports: tuple[Mapping[str, float | int], ...]
     rings: tuple[Mapping[str, float | int], ...]
     local_electrode_ids: Mapping[int, int]
+    side_entry: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return local boxes, apertures and transparent sheets, all in mm."""
@@ -113,6 +119,8 @@ class ResolvedClosedTwoZoneElectrodes:
             "exit_opening_box_mm": box(aperture_x, aperture_y, self.local_exit_z_mm,
                                        self.local_exit_z_mm + enclosure.guard_wall_mm),
         }
+        if self.side_entry is not None:
+            grounded["side_entry"] = dict(self.side_entry)
         repeller = {
             "component_electrode_id": 22, "local_pa_electrode_id": self.local_electrode_ids[22],
             "solid_box_mm": box(enclosure.electrode_half_x_mm, enclosure.electrode_half_y_mm,
@@ -148,7 +156,7 @@ class ResolvedClosedTwoZoneElectrodes:
                 "aperture_box_mm": box(aperture_x, aperture_y,
                                       center - thickness / 2.0, center + thickness / 2.0),
             })
-        return {"schema_version": 1,
+        return {"schema_version": 2 if self.side_entry is not None else 1,
                 "coordinate_frame": "accelerator_centered_transverse_local_z_mm",
                 "local_to_pa_translation_mm": [0.0, self.pa_y_offset_mm, 0.0],
                 "acceleration_direction": "-z", "grounded_enclosure": grounded,
@@ -244,9 +252,11 @@ def compile_closed_two_zone_accelerator(requirements: Mapping[str, Any], *, geom
     fields: this provider derives those structures and rejects every topology
     other than a solid positive-z repeller/rear cap with a negative-z exit grid.
     """
-    request = _mapping(requirements, "two-zone accelerator requirements", _REQUIRED_REQUEST_KEYS)
+    version = requirements.get("schema_version") if isinstance(requirements, Mapping) else None
+    keys = _REQUIRED_REQUEST_KEYS | ({"side_entry"} if version == 2 else set())
+    request = _mapping(requirements, "two-zone accelerator requirements", keys)
     geometry = _load_geometry_profile(geometry_profile_id)
-    if (request["schema_version"] != 1
+    if (type(version) is not int or version not in (1, 2)
             or request["role"] != "orthogonal_accelerator_two_zone_requirements"
             or request["variant_id"] != "two_zone"
             or request["acceleration_direction"] != "-z"):
@@ -329,9 +339,41 @@ def compile_closed_two_zone_accelerator(requirements: Mapping[str, Any], *, geom
                            for support in grid_supports)
     local_rings = tuple({**ring, "center_z_mm": float(ring["center_z_mm"]) + local_offset_z}
                         for ring in rings)
+    side_entry = None
+    if version == 2:
+        port = _mapping(request["side_entry"], "side_entry", {"face", "half_width_x_mm", "half_width_z_mm"})
+        if port["face"] != "negative_y":
+            raise TwoZoneGeometryError("side_entry must select the negative-y wall")
+        half_x = _finite_positive(port["half_width_x_mm"], "side_entry.half_width_x_mm")
+        half_z = _finite_positive(port["half_width_z_mm"], "side_entry.half_width_z_mm")
+        center_z = exit_z + gap_2 + gap_1/2
+        if half_x >= enclosure.guard_inner_half_x_mm or half_z >= gap_1/2:
+            raise TwoZoneGeometryError("side entry must remain strictly inside the first gap and between wall corners")
+        physical_box = [-half_x, -enclosure.guard_half_y_mm, center_z-half_z,
+                        half_x, -enclosure.guard_inner_half_y_mm, center_z+half_z]
+        # Test the actual three-dimensional boxes, never whole-z slabs. The
+        # support frames terminate inside the wall and may overlap port z.
+        for solid in (
+            [-enclosure.electrode_half_x_mm, -enclosure.electrode_half_y_mm, repeller_z,
+             enclosure.electrode_half_x_mm, enclosure.electrode_half_y_mm, repeller_z+repeller_thickness],
+            [-enclosure.guard_half_x_mm, -enclosure.guard_half_y_mm, enclosure.rear_cap_inner_z_mm,
+             enclosure.guard_half_x_mm, enclosure.guard_half_y_mm, enclosure.rear_cap_outer_z_mm],
+            *[[-float(s["outer_half_x_mm"]), -float(s["outer_half_y_mm"]), float(s["front_z_mm"]),
+               float(s["outer_half_x_mm"]), float(s["outer_half_y_mm"]), float(s["back_z_mm"])] for s in local_supports],
+        ):
+            if all(max(physical_box[a], solid[a]) <= min(physical_box[a+3], solid[a+3]) for a in range(3)):
+                raise TwoZoneGeometryError("side entry intersects a solid electrode or cap")
+        side_entry = {
+            "face": "negative_y", "center_mm": [0.0, -(enclosure.guard_half_y_mm+enclosure.guard_inner_half_y_mm)/2, center_z],
+            "normal": [0, -1, 0], "half_width_x_mm": half_x, "half_width_z_mm": half_z,
+            "physical_cutout_box_mm": physical_box, "component_electrode_id": 15,
+            "local_pa_electrode_id": local_ids[15], "potential_v": 0.0,
+            "boolean_cut_padding_y_mm": mesh[1], "boolean_transverse_expansion_mm": 0.0,
+            "scope": "Explicit grounded negative-y side entry; no repeller/cap opening or Fly collision override",
+        }
     resolved_electrodes = ResolvedClosedTwoZoneElectrodes(
         enclosure, exit_z, repeller_z, repeller_thickness, aperture_x, aperture_y,
-        span[1] / 2.0, local_supports, local_rings, local_ids,
+        span[1] / 2.0, local_supports, local_rings, local_ids, side_entry,
     )
     gem = render_closed_two_zone_local_pa(
         span_mm=span, mesh_mm_per_gu=mesh, local_exit_z_mm=exit_z, local_repeller_z_mm=repeller_z,
@@ -340,6 +382,7 @@ def compile_closed_two_zone_accelerator(requirements: Mapping[str, Any], *, geom
         aperture_half_y_mm=aperture_y, local_margin_z_mm=margin_z,
         grid_support_frames=grid_supports, stage_2_rings=rings, local_electrode_ids=local_ids,
         global_exit_z_mm=global_exit_z,
+        side_entry=side_entry,
     )
     static_y_extent = 2.0 * enclosure.guard_half_y_mm
     static_axial_length = enclosure.rear_cap_outer_z_mm - exit_z
@@ -348,7 +391,7 @@ def compile_closed_two_zone_accelerator(requirements: Mapping[str, Any], *, geom
         tuple(center + local_offset_z for center in layout.centers_mm), source_center_z + exit_z,
         source_center_z - radius + exit_z, source_center_z + radius + exit_z,
         radius, height, 2.0 * aperture_x, 2.0 * aperture_y,
-        static_y_extent, static_axial_length,
+        static_y_extent, static_axial_length, side_entry,
     )
     return CompiledTwoZoneAccelerator(
         gem, exit_z, repeller_z, radius, height, source_center_z,
@@ -364,6 +407,7 @@ def render_closed_two_zone_local_pa(
     local_margin_z_mm: float, grid_support_frames: Sequence[Mapping[str, Any]],
     stage_2_rings: Sequence[Mapping[str, Any]], local_electrode_ids: Mapping[int, int],
     global_exit_z_mm: float,
+    side_entry: Mapping[str, Any] | None = None,
 ) -> str:
     """Render one complete local two-zone accelerator PA from frozen inputs."""
     if len(span_mm) != 3 or len(mesh_mm_per_gu) != 3:
@@ -375,17 +419,9 @@ def render_closed_two_zone_local_pa(
     if not (0.0 < aperture_half_x_mm < enclosure.electrode_half_x_mm and
             0.0 < aperture_half_y_mm < enclosure.electrode_half_y_mm):
         raise TwoZoneGeometryError("accelerator aperture must retain electrode material")
-    ground_id, repeller_id = int(local_electrode_ids[15]), int(local_electrode_ids[22])
     local_repeller = float(local_repeller_z_mm)
     if local_repeller <= local_exit_z_mm:
         raise TwoZoneGeometryError("local repeller must remain behind the negative-z exit")
-    endplates = emit_closed_two_zone_endplates(
-        grounded_id=ground_id, repeller_id=repeller_id, enclosure=enclosure,
-        exit_z_mm=float(local_exit_z_mm), repeller_front_z_mm=local_repeller,
-        repeller_back_z_mm=local_repeller + float(repeller_thickness_mm),
-        repeller_half_x_mm=enclosure.electrode_half_x_mm,
-        repeller_half_y_mm=enclosure.electrode_half_y_mm,
-    )
     if enclosure.rear_cap_outer_z_mm + float(local_margin_z_mm) > span_z + 1e-9:
         raise TwoZoneGeometryError("accelerator local PA z span does not enclose both endplates and margins")
     stored_x_span = span_x / 2.0
@@ -406,34 +442,91 @@ def render_closed_two_zone_local_pa(
         "# local nz = math.floor(z_span/mmgu_z + 0.5) + 1",
         "pa_define($(nx),$(ny),$(nz),planar,x,electrostatic,, $(mmgu_x),$(mmgu_y),$(mmgu_z),surface=none)",
         "locate(0,$(y_span/2),0) {",
+    ]
+    resolved = ResolvedClosedTwoZoneElectrodes(
+        enclosure, float(local_exit_z_mm), local_repeller, float(repeller_thickness_mm),
+        float(aperture_half_x_mm), float(aperture_half_y_mm), span_y/2,
+        tuple({**support,
+               "grid_z_mm": float(support["grid_z_mm"])+offset_z,
+               "front_z_mm": float(support["front_z_mm"])+offset_z,
+               "back_z_mm": float(support["back_z_mm"])+offset_z} for support in grid_support_frames),
+        tuple({**ring, "center_z_mm": float(ring["center_z_mm"])+offset_z} for ring in stage_2_rings),
+        local_electrode_ids, side_entry,
+    )
+    lines.extend(render_closed_two_zone_electrode_body(resolved))
+    lines.extend(("}", ""))
+    return "\n".join(lines)
+
+
+def render_closed_two_zone_electrode_body(
+    resolved: ResolvedClosedTwoZoneElectrodes, *,
+    local_electrode_ids: Mapping[int, int] | None = None,
+) -> list[str]:
+    """Render canonical electrodes in the centered transverse component frame.
+
+    There is no PA header, transverse storage offset or instrument placement.
+    Axial coordinates are the resolved local z coordinates, including its
+    explicit exit plane. A consumer may wrap these lines in official GEM
+    locate/rotate operations and supply its own one-to-one local ID namespace.
+    Geometry, ideal sheets, physical side entry and Boolean extents remain
+    provider-owned; the namespace never rewrites text or changes geometry.
+    """
+    if not isinstance(resolved, ResolvedClosedTwoZoneElectrodes):
+        raise TwoZoneGeometryError("canonical resolved two-zone electrodes required")
+    ids = resolved.local_electrode_ids if local_electrode_ids is None else local_electrode_ids
+    required = {15, 22, *[int(s["id"]) for s in resolved.grid_supports],
+                *[int(r["id"]) for r in resolved.rings]}
+    if (not isinstance(ids, Mapping) or set(ids) != required
+            or any(type(key) is not int for key in ids)
+            or any(type(value) is not int or value < 1 for value in ids.values())
+            or len(set(ids.values())) != len(ids)):
+        raise TwoZoneGeometryError("local electrode namespace must exactly and uniquely map every canonical electrode")
+    enclosure = resolved.enclosure
+    ground_id, repeller_id = ids[15], ids[22]
+    local_exit_z_mm = resolved.local_exit_z_mm
+    aperture_half_x_mm, aperture_half_y_mm = resolved.aperture_half_x_mm, resolved.aperture_half_y_mm
+    endplates = emit_closed_two_zone_endplates(
+        grounded_id=ground_id, repeller_id=repeller_id, enclosure=enclosure,
+        exit_z_mm=local_exit_z_mm, repeller_front_z_mm=resolved.local_repeller_z_mm,
+        repeller_back_z_mm=resolved.local_repeller_z_mm+resolved.repeller_thickness_mm,
+        repeller_half_x_mm=enclosure.electrode_half_x_mm,
+        repeller_half_y_mm=enclosure.electrode_half_y_mm,
+    )
+    if resolved.side_entry is not None:
+        endplates["grounded_rear_cap"] = emit_grounded_enclosure(
+            enclosure, exit_z_mm=local_exit_z_mm,
+            negative_y_entry_box_mm=resolved.side_entry["physical_cutout_box_mm"],
+            entry_cut_padding_mm=float(resolved.side_entry["boolean_cut_padding_y_mm"]),
+        )
+    lines = [
         "  ; Closed positive-z grounded cap; the negative-z exit remains open.",
         f"  e({ground_id}) {{ {endplates['grounded_rear_cap']} notin {{ box3D(-{_number(aperture_half_x_mm)},-{_number(aperture_half_y_mm)},{_number(local_exit_z_mm-1)},{_number(aperture_half_x_mm)},{_number(aperture_half_y_mm)},{_number(local_exit_z_mm+1)}) }} }}",
         "  ; Solid repeller; no coaxial return aperture is permitted.",
         endplates["repeller"],
     ]
-    for support in grid_support_frames:
-        electrode_id = int(local_electrode_ids[int(support["id"])])
+    for support in resolved.grid_supports:
+        electrode_id = ids[int(support["id"])]
         lines.extend((
             emit_open_rectangular_frame(
                 electrode_id, outer_half_x_mm=float(support["outer_half_x_mm"]),
                 outer_half_y_mm=float(support["outer_half_y_mm"]),
                 aperture_half_x_mm=float(support["aperture_half_x_mm"]),
                 aperture_half_y_mm=float(support["aperture_half_y_mm"]),
-                front_z_mm=float(support["front_z_mm"]) + offset_z,
-                back_z_mm=float(support["back_z_mm"]) + offset_z,
+                front_z_mm=float(support["front_z_mm"]),
+                back_z_mm=float(support["back_z_mm"]),
                 cut_padding_mm=float(support["thickness_z_mm"]),
             ),
             emit_ideal_grid(
                 electrode_id, half_x_mm=float(support["aperture_half_x_mm"]),
                 half_y_mm=float(support["aperture_half_y_mm"]),
-                z_mm=float(support["grid_z_mm"]) + offset_z,
+                z_mm=float(support["grid_z_mm"]),
             ),
         ))
-    for ring in stage_2_rings:
+    for ring in resolved.rings:
         thickness = float(ring["thickness_z_mm"])
-        center = float(ring["center_z_mm"]) + offset_z
+        center = float(ring["center_z_mm"])
         lines.append(emit_open_rectangular_frame(
-            int(local_electrode_ids[int(ring["id"])]),
+            ids[int(ring["id"])],
             outer_half_x_mm=enclosure.electrode_half_x_mm,
             outer_half_y_mm=enclosure.electrode_half_y_mm,
             aperture_half_x_mm=aperture_half_x_mm,
@@ -441,5 +534,4 @@ def render_closed_two_zone_local_pa(
             front_z_mm=center - thickness / 2.0, back_z_mm=center + thickness / 2.0,
             cut_padding_mm=1.0,
         ))
-    lines.extend(("}", ""))
-    return "\n".join(lines)
+    return lines

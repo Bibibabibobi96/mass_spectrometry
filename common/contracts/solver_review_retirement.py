@@ -395,6 +395,27 @@ def _manifest_records(
                 for path in configured_paths(member, name=f"{name}[{index}]")
             ]
         if isinstance(value, dict):
+            if "path" in value and any(key in value for key in ("exists", "bytes", "sha256")):
+                required = {"path", "exists", "bytes", "sha256"}
+                digest = value.get("sha256")
+                if (not required.issubset(value) or set(value) - required - {"source_path"}
+                        or not isinstance(value["path"], str) or not value["path"]
+                        or value.get("exists") is not True
+                        or isinstance(value.get("bytes"), bool) or not isinstance(value.get("bytes"), int)
+                        or value["bytes"] < 0 or not isinstance(digest, str) or len(digest) != 64
+                        or any(character not in "0123456789abcdefABCDEF" for character in digest)
+                        or "source_path" in value and (
+                            not isinstance(value["source_path"], str) or not value["source_path"])):
+                    raise RetirementError(f"configured input file record has an invalid shape: {name}")
+                path = record_path(value, base_dir=run["dir"])
+                # The file may be a generated frozen input sealed as an output.
+                # Its source_path is provenance, not a second consumed file.
+                bound = result.get(path)
+                if bound is None:
+                    raise RetirementError(f"manifest does not bind configured input file record: {name}")
+                if value["bytes"] != bound["bytes"] or digest.upper() != str(bound["sha256"]).upper():
+                    raise RetirementError(f"configured input file record identity differs: {name}")
+                return [path]
             return [
                 path for key, member in value.items()
                 for path in configured_paths(member, name=f"{name}.{key}")

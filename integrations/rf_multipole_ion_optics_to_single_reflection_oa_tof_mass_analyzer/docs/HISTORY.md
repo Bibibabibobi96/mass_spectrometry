@@ -7,6 +7,7 @@
 
 ## 归档条目
 
+- [同源裸八极杆接二区／三区 OA 的 N=100 与默认加载闭合](history/20261021__same-source-local-multipole-oa-n100.md)
 - [单飞集成收口与失效对照快照](history/20260911__single-flight-documentation-and-invalidated-comparisons.md)
 
 <details>

@@ -578,6 +578,9 @@ $sourceOverrideArgumentNames = @(
 )
 if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
   $expectedArguments += $sourceOverrideArgumentNames
+  if ($frozenArguments.ContainsKey('single_flight_particle_source_filename')) {
+    $expectedArguments += 'single_flight_particle_source_filename'
+  }
 }
 $materializedSourceArgumentNames = @(
   'single_flight_source_materialization_profile_id',
@@ -866,21 +869,56 @@ if ($pulseCandidateConfirmation -ne $hasPulseCandidateConfirmationArguments) {
 if ($pulseCandidateConfirmation -and $prePulseTimeSeriesScreening) {
   throw 'Pulse candidate confirmation and screening authorities are mutually exclusive.'
 }
-$singleFlightParticleSourcePath = $null
-if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
-  $singleFlightParticleSourcePath = [IO.Path]::GetFullPath(
-    (Join-Path $repo $frozenArguments.single_flight_particle_source_path)
+function Resolve-RfSingleFlightParticleSourceOverride {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][System.Collections.IDictionary]$Arguments,
+    [Parameter(Mandatory)]$DeclaredSource,
+    [Parameter(Mandatory)][string]$RepositoryRoot,
+    [Parameter(Mandatory)][string]$PreparedRoot
   )
-  $declaredSource = $experiment.single_flight_particle_source
-  if ($null -eq $declaredSource -or
-      [string]$declaredSource.path -ne $frozenArguments.single_flight_particle_source_path -or
-      [string]$declaredSource.sha256 -ne $frozenArguments.single_flight_particle_source_sha256 -or
-      [int]$declaredSource.particle_count -ne [int]$frozenArguments.single_flight_particle_source_count -or
-      -not $singleFlightParticleSourcePath.StartsWith($repo + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or
-      -not (Test-Path -LiteralPath $singleFlightParticleSourcePath -PathType Leaf) -or
-      (Get-FileHash -LiteralPath $singleFlightParticleSourcePath -Algorithm SHA256).Hash -ne $frozenArguments.single_flight_particle_source_sha256) {
+  if ($null -eq $DeclaredSource -or
+      [string]$DeclaredSource.path -ne $Arguments.single_flight_particle_source_path -or
+      [string]$DeclaredSource.sha256 -ne $Arguments.single_flight_particle_source_sha256 -or
+      [int]$DeclaredSource.particle_count -ne [int]$Arguments.single_flight_particle_source_count) {
     throw 'Single-flight particle-source override is missing or stale.'
   }
+  $workspaceSource = ([string]$DeclaredSource.path).StartsWith('artifacts/',[StringComparison]::Ordinal)
+  if ($workspaceSource) {
+    if (-not $Arguments.Contains('single_flight_particle_source_filename') -or
+        [string]$DeclaredSource.sampling_mode -ne 'continuous_injection_full_population') {
+      throw 'Workspace single-flight source requires a frozen full-population input.'
+    }
+    $filename = [string]$Arguments.single_flight_particle_source_filename
+    if ([IO.Path]::IsPathRooted($filename)) {
+      throw 'Frozen single-flight source must stay inside prepared inputs.'
+    }
+    $inputsRoot = [IO.Path]::GetFullPath((Join-Path $PreparedRoot 'inputs'))
+    $path = [IO.Path]::GetFullPath((Join-Path $PreparedRoot $filename))
+    if (-not $path.StartsWith($inputsRoot + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) {
+      throw 'Frozen single-flight source must stay inside prepared inputs.'
+    }
+  } else {
+    if ($Arguments.Contains('single_flight_particle_source_filename')) {
+      throw 'Repository source cannot declare a workspace frozen-source filename.'
+    }
+    $path = [IO.Path]::GetFullPath((Join-Path $RepositoryRoot $Arguments.single_flight_particle_source_path))
+    if (-not $path.StartsWith($RepositoryRoot + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) {
+      throw 'Single-flight particle-source override escapes the repository.'
+    }
+  }
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $Arguments.single_flight_particle_source_sha256) {
+    throw 'Single-flight particle-source override is missing or stale.'
+  }
+  return $path
+}
+
+$singleFlightParticleSourcePath = $null
+if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
+  $singleFlightParticleSourcePath = Resolve-RfSingleFlightParticleSourceOverride `
+    -Arguments $frozenArguments -DeclaredSource $experiment.single_flight_particle_source `
+    -RepositoryRoot $repo -PreparedRoot (Split-Path -Parent $CompositionPlan)
 }
 if ($frozenArguments.ContainsKey('single_flight_materialized_source_filename')) {
   if ($null -ne $singleFlightParticleSourcePath -or

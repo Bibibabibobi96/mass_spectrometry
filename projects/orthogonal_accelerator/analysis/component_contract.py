@@ -95,13 +95,22 @@ def load_accelerator_dependency(
     request_api = provider["request_api"]
     if request_api != {"two_zone": {
         "role": "orthogonal_accelerator_two_zone_requirements",
+        "requirements_schema_versions": {
+            "1": "closed_sidewalls",
+            "2": "explicit_negative_y_side_entry__provider_centered_in_first_gap",
+        },
         "fixed_topology": "solid_positive_z_repeller_and_grounded_cap__negative_z_exit_grid",
         "source_shape": "cylinder",
         "flight_source": "caller_supplied_repository_ion_release_spec__run_input_only__excluded_from_pa_geometry_identity",
         "compaction_objective": "minimize_y_z_subject_to_focus",
         "geometry_authority": "provider_owned__consumer_requests_only_source_envelope_mesh_and_rigid_placement",
         "exit_energy_acceptance": "caller_supplied_positive_Ex_Ey_Ez_and_signed_x_velocity_bias_tolerances__center_and_complete_release_cohort_must_pass_at_true_exit_plane",
-    }}:
+    }, "three_zone": {'role': 'orthogonal_accelerator_bare_three_zone_requirements',
+ 'requirements_schema_versions': {'1': 'explicit_existing_sectioned_geometry__negative_x_side_entry'},
+ 'geometry_authority': 'caller_explicit_sectioned_dimensions__provider_owns_existing_CSG',
+ 'solver_frame': 'provider_slow_positive_x_extraction_positive_z__consumer_proper_rotation_required',
+ 'entrance_components': 'bare_guide__no_generated_sleeve_or_plate',
+ 'voltage_authority': 'caller_complete_explicit_electrode_table__linear_downstream_ring_interpolation'}}:
         raise ValueError("accelerator provider request API differs")
     profiles = provider["geometry_profiles"]
     if not isinstance(profiles, dict) or set(profiles) != {"closed_two_zone_compact_mr_axial_r3_gap1_4mm"}:

@@ -37,3 +37,7 @@ docs/        # 当前集成状态
 
 当前支持分阶段三段链与连续SIMION单次飞行；准确流程、电极映射、参数分类和资格边界只查
 [`docs/INTEGRATION.md`](docs/INTEGRATION.md)。
+
+## History 索引
+
+- [同源裸八极杆接二区／三区 OA 的 N=100 与默认加载闭合](docs/history/20261021__same-source-local-multipole-oa-n100.md)

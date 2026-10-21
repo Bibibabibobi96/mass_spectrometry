@@ -153,6 +153,84 @@ def _make_file_writable(path: Path) -> None:
 
 _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES = 8 * 1024 * 1024
 _PERSISTED_COPY_MAX_ATTEMPTS = 6
+PAYLOAD_VERIFICATION_ATTEMPTS = 3
+PAYLOAD_RECOVERY_CONSECUTIVE_MATCHES = 2
+PAYLOAD_VERIFICATION_RETRY_DELAY_S = 0.2
+
+
+def verify_immutable_payload_record(root: str | Path, record: Mapping[str, Any]) -> None:
+    """Verify one immutable payload, recovering only from a transient read.
+
+    A normal byte verification performs one full read.  If that read differs,
+    accept the payload only after two consecutive complete re-reads reproduce
+    the manifest exactly.  This keeps persistent damage fail-closed while
+    avoiding a false CORRUPT result from one unstable large-file read.
+    """
+
+    root = Path(root)
+    path = root / record["name"]
+    observations: list[str] = []
+    mismatch_seen = False
+    consecutive_matches = 0
+    for attempt in range(1, PAYLOAD_VERIFICATION_ATTEMPTS + 1):
+        if path.is_file():
+            observed_bytes = path.stat().st_size
+            observed_sha256 = file_sha256(path)
+        else:
+            observed_bytes = None
+            observed_sha256 = None
+        observations.append(
+            f"attempt={attempt},bytes={observed_bytes},sha256={observed_sha256}"
+        )
+        matches = (
+            observed_bytes == record["bytes"]
+            and observed_sha256 == record["sha256"]
+        )
+        if matches:
+            consecutive_matches += 1
+            required = PAYLOAD_RECOVERY_CONSECUTIVE_MATCHES if mismatch_seen else 1
+            if consecutive_matches >= required:
+                return
+        else:
+            mismatch_seen = True
+            consecutive_matches = 0
+            # A large Windows PA can retain stale pages in the ordinary
+            # buffered view even though an unbuffered read of the persisted
+            # file is correct.  Recover only by making one disposable /J
+            # snapshot and validating that independent file against the
+            # manifest.  The cache payload itself remains untouched.
+            if (
+                os.name == "nt"
+                and observed_bytes == record["bytes"]
+                and observed_bytes is not None
+                and observed_bytes >= _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES
+            ):
+                with tempfile.TemporaryDirectory(
+                    prefix="pa-cache-verify-", dir=root.parent
+                ) as temporary:
+                    snapshot = Path(temporary) / path.name
+                    try:
+                        snapshot_record = snapshot_immutable_file(path, snapshot, record)
+                    except ValueError:
+                        snapshot_record = None
+                    observations.append(
+                        "unbuffered_snapshot="
+                        f"{snapshot_record['sha256'] if snapshot_record else 'MISMATCH'}"
+                    )
+                    if snapshot_record == {
+                        "name": record["name"],
+                        "bytes": record["bytes"],
+                        "sha256": record["sha256"],
+                    }:
+                        return
+        if attempt < PAYLOAD_VERIFICATION_ATTEMPTS:
+            time.sleep(PAYLOAD_VERIFICATION_RETRY_DELAY_S)
+    raise ValueError(
+        "PA cache family payload differs: "
+        f"{record['name']} expected_bytes={record['bytes']} "
+        f"expected_sha256={record['sha256']} observations=[{' ; '.join(observations)}]"
+    )
+
 
 
 def _flush_writable_source(path: Path) -> None:

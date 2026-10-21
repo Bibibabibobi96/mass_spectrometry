@@ -15,6 +15,7 @@ from common.multipole.grounded_shield import (
     require_grounded_potential,
 )
 from common.multipole.simion_geometry import (
+    render_grouped_rod_array_gem,
     render_axis_mapped_segmented_rod_array_gem,
     segmented_rod_electrode_ids,
 )
@@ -29,11 +30,404 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     PA_PLUS_FIELD_LOADING_POLICY_ID,
     ROD_ELECTRODE_IDS,
     THREE_ZONE_PA_PLUS_MODEL_ID,
+    THREE_ZONE_BARE_VARIANT,
     frontend_electrodes,
     require_published_frontend_electrodes,
     resolve_frontend_electrode_topology,
     resolve_three_zone_pa_plus_solution_model,
 )
+
+_COMPONENT_ROTATION = [[0, 1, 0], [1, 0, 0], [0, 0, -1]]
+_GUIDE_ROTATION = [[0, 0, 1], [1, 0, 0], [0, 1, 0]]
+_BARE_VARIANT = "canonical_two_zone_bare_continuous_rods_v1"
+_BARE_VARIANTS = {_BARE_VARIANT, THREE_ZONE_BARE_VARIANT}
+
+
+def _component_point(point: list[float], rotation: list, translation: list) -> list[float]:
+    return [sum(rotation[a][k]*point[k] for k in range(3))+translation[a] for a in range(3)]
+
+
+def _component_bounds(boxes: list[list[float]], rotation: list, translation: list) -> dict[str, float]:
+    points = [_component_point([box[0 if x == 0 else 3], box[1 if y == 0 else 4],
+                                box[2 if z == 0 else 5]], rotation, translation)
+              for box in boxes for x in (0, 1) for y in (0, 1) for z in (0, 1)]
+    return {f"{axis}_{side}": operation(p[a] for p in points)
+            for a, axis in enumerate("xyz") for side, operation in (("min", min), ("max", max))}
+
+
+def _canonical_three_zone_component(component: dict[str, Any], *, cells: dict[str, float],
+                                    target_solver_frame: str | None) -> dict[str, Any]:
+    """Project the existing explicit sectioned provider; copy no OA CSG model."""
+    from projects.orthogonal_accelerator.simion.bare_three_zone_component import (
+        resolve_bare_three_zone_component, render_bare_three_zone_electrode_body,
+    )
+    from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
+        project_pa_plus_mode_voltages, resolve_three_zone_bare_pa_plus_solution_model,
+    )
+    required = {"schema_version", "role", "variant_id", "geometry_profile_id", "requirements",
+                "transform", "local_electrode_ids", "electrode_voltages_v", "pulse_voltage_policy_id"}
+    if (set(component) != required or type(component["schema_version"]) is not int or component["schema_version"] != 1
+            or component["role"] != "rf_oatof_accelerator_component" or component["variant_id"] != "three_zone"
+            or not isinstance(component["geometry_profile_id"], str) or not component["geometry_profile_id"]):
+        raise ValueError("explicit canonical three-zone accelerator component required")
+    if target_solver_frame not in (None, "mrtof_global_cartesian"):
+        raise ValueError("unsupported canonical three-zone solver frame")
+    mr = target_solver_frame == "mrtof_global_cartesian"
+    rotation = _COMPONENT_ROTATION if mr else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    transform = component["transform"]
+    if not isinstance(transform, dict) or set(transform) != {"rotation", "translation_mm"} or transform["rotation"] != rotation:
+        raise ValueError("sectioned component requires proper slow+x/main+z to native slow+y/main-z pose")
+    translation = transform["translation_mm"]
+    if (not isinstance(translation, list) or len(translation) != 3
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in translation)):
+        raise ValueError("sectioned component translation must be finite xyz")
+    resolved = resolve_bare_three_zone_component(component["requirements"])
+    electrodes = frontend_electrodes(ring_count=len(resolved["ring_z_mm"]), three_zone=True, variant=THREE_ZONE_BARE_VARIANT)
+    expected = {1: electrodes["grounded_shield_id"], 2: electrodes["accelerator_repeller_id"],
+                3: electrodes["accelerator_grid1_id"], 4: electrodes["accelerator_intermediate2_id"],
+                5: electrodes["accelerator_grid2_id"],
+                **dict(zip(resolved["electrodes"]["accelerator_ring_ids"], electrodes["accelerator_ring_ids"]))}
+    mapping, volts = component["local_electrode_ids"], component["electrode_voltages_v"]
+    if (not isinstance(mapping, dict) or set(mapping) != {str(k) for k in expected}
+            or any(type(v) is not int for v in mapping.values()) or {int(k): v for k, v in mapping.items()} != expected):
+        raise ValueError("sectioned component namespace differs from the actual bare three-zone basis")
+    if (not isinstance(volts, dict) or set(volts) != set(mapping)
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in volts.values())):
+        raise ValueError("complete finite sectioned component electrode voltages required")
+    values = {expected[int(k)]: float(v) for k, v in volts.items()}
+    if values[9] != 0. or component["pulse_voltage_policy_id"] != "all_accelerator_electrodes_zero_before_pulse_v1":
+        raise ValueError("explicit grounded sectioned shield and zero-before-pulse policy required")
+    def world_bounds(box: dict) -> dict:
+        return _component_bounds([[box[f"{a}_{side}"] for side in ("min", "max") for a in "xyz"]], rotation, translation)
+    planes = {name: translation[2] + (-z if mr else z) for name, z in resolved["planes"].items()}
+    rings = [translation[2] + (-z if mr else z) for z in resolved["ring_z_mm"]]
+    model = resolve_three_zone_bare_pa_plus_solution_model(electrodes, planes_global_z_mm=planes, ring_z_mm=rings,
+                                                          acceleration_direction=-1 if mr else 1)
+    project_pa_plus_mode_voltages(model, {**dict.fromkeys(ROD_ELECTRODE_IDS, 0.), **values})
+    local_cells = dict(x=cells["y"], y=cells["x"], z=cells["z"]) if mr else cells
+    lines = render_bare_three_zone_electrode_body(resolved, cell_mm_xyz=local_cells, local_electrode_ids=expected)
+    body = [f"  locate({_fmt(translation[0])},{_fmt(translation[1])},{_fmt(translation[2])}) {{"]
+    if mr:
+        body.extend(["    rotate_z(90) { rotate_x(180) {", *lines, "    } }"])
+    else:
+        body.extend(lines)
+    body.append("  }")
+    g, raw_port = resolved["geometry"], resolved["port"]
+    port = dict(raw_port, normal_axis="y" if mr else "x",
+                center_mm=_component_point(raw_port["center_mm"], rotation, translation),
+                flange_min_mm=translation[1 if mr else 0]+raw_port["flange_min_mm"],
+                flange_max_mm=translation[1 if mr else 0]+raw_port["flange_max_mm"])
+    if not mr:
+        port["negative_x_face_mm"] = port["flange_min_mm"]
+    return dict(body=body, electrodes=electrodes, actual_bounds_mm=world_bounds(resolved["actual_bounds_mm"]),
+                planes=planes, ring_z_mm=rings, port=port, pa_plus_solution_model=model,
+                first_gap_bounds_mm=world_bounds(resolved["first_gap_bounds_mm"]),
+                axis_center_mm=_component_point([g["axis_x_mm"], g["axis_y_mm"], 0.], rotation, translation),
+                operating_voltages_v={str(k): v for k, v in values.items()},
+                off_voltages_v={str(k): 0. for k in values}, pulse_voltage_policy_id=component["pulse_voltage_policy_id"],
+                canonical_electrodes=resolved["canonical_electrodes"], accelerator_component=component)
+
+
+def _canonical_component(component: dict[str, Any], *, target_solver_frame: str | None = None, cells: dict[str, float] | None = None) -> dict[str, Any]:
+    """Adapt the owned OA projection; no legacy scalar geometry or voltages."""
+    if isinstance(component, dict) and component.get("variant_id") == "three_zone":
+        if cells is None:
+            raise ValueError("sectioned canonical adapter requires its actual xyz PA grid")
+        return _canonical_three_zone_component(component, cells=cells, target_solver_frame=target_solver_frame)
+    from projects.orthogonal_accelerator.simion.two_zone_candidate import (
+        compile_closed_two_zone_accelerator, render_closed_two_zone_electrode_body,
+    )
+    from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
+        project_pa_plus_mode_voltages, resolve_two_zone_bare_pa_plus_solution_model,
+    )
+    required = {"schema_version", "role", "variant_id", "geometry_profile_id", "requirements",
+                "transform", "local_electrode_ids", "electrode_voltages_v", "pulse_voltage_policy_id"}
+    if (not isinstance(component, dict) or set(component) != required or type(component["schema_version"]) is not int or component["schema_version"] != 1
+            or component["role"] != "rf_oatof_accelerator_component" or component["variant_id"] != "two_zone"):
+        raise ValueError("explicit canonical two-zone accelerator component required")
+    mr_frame = target_solver_frame == "mrtof_global_cartesian"
+    if target_solver_frame not in (None, "mrtof_global_cartesian"):
+        raise ValueError("unsupported canonical target solver frame")
+    rotation = [[1, 0, 0], [0, 1, 0], [0, 0, 1]] if mr_frame else _COMPONENT_ROTATION
+    transform = component["transform"]
+    if (not isinstance(transform, dict) or set(transform) != {"rotation", "translation_mm"}
+            or transform["rotation"] != rotation):
+        raise ValueError("component requires the proper +y to +x, -z to +z rotation")
+    translation = transform["translation_mm"]
+    if (not isinstance(translation, list) or len(translation) != 3
+            or any(isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v) for v in translation)):
+        raise ValueError("component translation must be finite xyz")
+    compiled = compile_closed_two_zone_accelerator(component["requirements"], geometry_profile_id=component["geometry_profile_id"])
+    resolved = compiled.resolved_electrodes
+    if resolved.side_entry is None:
+        raise ValueError("continuous bare guide requires an explicit provider side entry")
+    electrodes = frontend_electrodes(ring_count=len(resolved.rings), three_zone=False, variant=_BARE_VARIANT)
+    expected = {15: electrodes["grounded_shield_id"], 22: electrodes["accelerator_repeller_id"],
+                23: electrodes["accelerator_grid1_id"], 24: electrodes["accelerator_grid2_id"],
+                **{int(r["id"]): target for r, target in zip(resolved.rings, electrodes["accelerator_ring_ids"])}}
+    mapping = component["local_electrode_ids"]
+    volts = component["electrode_voltages_v"]
+    if (not isinstance(mapping, dict) or len(mapping) != len(expected) or {str(k) for k in mapping} != {str(k) for k in expected}
+            or any(type(value) is not int for value in mapping.values())
+            or {int(k): v for k, v in mapping.items()} != expected):
+        raise ValueError("component namespace differs from the canonical bare-guide physical basis")
+    if (not isinstance(volts, dict) or len(volts) != len(expected) or {str(k) for k in volts} != {str(k) for k in expected}
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in volts.values())):
+        raise ValueError("complete finite component electrode voltages required")
+    values = {expected[int(k)]: float(v) for k, v in volts.items()}
+    if values[electrodes["grounded_shield_id"]] != 0:
+        raise ValueError("canonical side-wall must remain grounded")
+    if component["pulse_voltage_policy_id"] != "all_accelerator_electrodes_zero_before_pulse_v1":
+        raise ValueError("explicit canonical OA zero-before-pulse policy required")
+    data = resolved.to_dict()
+    boxes = [data["grounded_enclosure"]["outer_box_mm"], data["repeller"]["solid_box_mm"],
+             *[s["frame_outer_box_mm"] for s in data["grid_supports"]], *[r["outer_box_mm"] for r in data["rings"]]]
+    arrays = [[b[f"{axis}_{side}_mm"] for side in ("min", "max") for axis in "xyz"] for b in boxes]
+    bounds = _component_bounds(arrays, rotation, translation)
+    sign = 1 if mr_frame else -1
+    planes = {name: translation[2]+sign*z for name, z in (("repeller", resolved.local_repeller_z_mm),
+              ("grid1", float(resolved.grid_supports[0]["grid_z_mm"])), ("exit", resolved.local_exit_z_mm))}
+    ring_z = [translation[2]+sign*float(r["center_z_mm"]) for r in resolved.rings]
+    model_kwargs = {"acceleration_direction": -1} if mr_frame else {}
+    model = resolve_two_zone_bare_pa_plus_solution_model(electrodes, planes_global_z_mm=planes, ring_z_mm=ring_z, **model_kwargs)
+    project_pa_plus_mode_voltages(model, {**{i: 0.0 for i in ROD_ELECTRODE_IDS}, **values})
+    port = resolved.side_entry
+    port_center = _component_point(port["center_mm"], rotation, translation)
+    body = [f"  locate({_fmt(translation[0])},{_fmt(translation[1])},{_fmt(translation[2])}) {{",
+            "    rotate_z(90) { rotate_x(180) {",
+            *render_closed_two_zone_electrode_body(resolved, local_electrode_ids=expected), "    } }", "  }"]
+    if mr_frame:
+        body = [f"  locate({_fmt(translation[0])},{_fmt(translation[1])},{_fmt(translation[2])}) {{",
+                *render_closed_two_zone_electrode_body(resolved, local_electrode_ids=expected), "  }"]
+    face = {"normal_axis": "y", "flange_min_mm": translation[1]-resolved.enclosure.guard_half_y_mm,
+            "flange_max_mm": translation[1]-resolved.enclosure.guard_inner_half_y_mm,
+            "boolean_boundary_policy": "exclude_shape_inside_only_v1"} if mr_frame else {
+        "negative_x_face_mm": translation[0]-resolved.enclosure.guard_half_y_mm}
+    return dict(body=body, electrodes=electrodes, actual_bounds_mm=bounds, planes=planes, ring_z_mm=ring_z,
+                port=dict(center_mm=port_center, **face,
+                          wall_thickness_mm=resolved.enclosure.guard_wall_mm,
+                          width_mm=2*float(port["half_width_x_mm"]), height_mm=2*float(port["half_width_z_mm"])),
+                pa_plus_solution_model=model, operating_voltages_v={str(k): v for k, v in values.items()},
+                off_voltages_v={str(k): 0.0 for k in values}, pulse_voltage_policy_id=component["pulse_voltage_policy_id"],
+                canonical_electrodes=data, accelerator_component=json.loads(json.dumps(component)))
+
+
+def _canonical_pa(body: list[str], raw_bounds: dict[str, float], cells: dict[str, float], *, origin: dict | None = None) -> tuple[str, dict]:
+    if (set(cells) != {"x", "y", "z"} or any(isinstance(v, bool) or not isinstance(v, (int, float))
+            or not math.isfinite(v) or v <= 0 for v in cells.values())):
+        raise ValueError("explicit finite positive canonical PA xyz cells required")
+    origin = {a: 0.0 for a in "xyz"} if origin is None else origin
+    bounds = {f"{a}_{s}": _outward_aligned_boundary(raw_bounds[f"{a}_{s}"], origin[a], cells[a], side=s)
+              for a in "xyz" for s in ("min", "max")}
+    dimensions = {f"n{a}": round((bounds[f"{a}_max"]-bounds[f"{a}_min"])/cells[a])+1 for a in "xyz"}
+    if any(n < 3 for n in dimensions.values()):
+        raise ValueError("canonical PA needs interior nodes in every axis")
+    lines = ["; Canonical provider electrodes; shared frontend workflow.",
+             f"pa_define({dimensions['nx']},{dimensions['ny']},{dimensions['nz']},planar,none,electrostatic,,{_fmt(cells['x'])},{_fmt(cells['y'])},{_fmt(cells['z'])},surface=none)",
+             f"locate({_fmt(-bounds['x_min'])},{_fmt(-bounds['y_min'])},{_fmt(-bounds['z_min'])}) {{", *body, "}", ""]
+    return "\n".join(lines), dict(cell_mm_xyz=dict(cells), dimensions=dimensions, instance_bounds_mm=bounds,
+                                  instance_origin_mm={a: bounds[f"{a}_min"] for a in "xyz"})
+
+
+def _compile_bare_frontend(upstream: dict, connection: dict, component: dict, cells: dict, *, target_solver_frame: str | None = None) -> tuple[str, dict]:
+    vacuum = upstream.get("vacuum", {})
+    if (upstream.get("schema_version") != 1 or upstream.get("role") != "ion_processor_bare_guide_interface"
+            or upstream.get("mechanical_components") != dict(shield=False, entrance_plate=False, exit_plate=False, reference_sleeve=False)
+            or vacuum.get("pressure_pa") != 0 or vacuum.get("collision_model") != "none"
+            or vacuum.get("policy_id") != "native_guide_before_hp_vacuum_v1"
+            or upstream.get("frame_id") != "multipole_cartesian_z_axis_v1" or upstream.get("length_unit") != "mm"):
+        raise ValueError("canonical frontend requires the explicit bare vacuum guide topology")
+    if (set(cells) != set("xyz") or any(isinstance(v, bool) or not isinstance(v, (float, int))
+            or not math.isfinite(v) or v <= 0 for v in cells.values())):
+        raise ValueError("canonical frontend requires positive finite xyz cells")
+    mr_frame = target_solver_frame == "mrtof_global_cartesian"
+    projected = _canonical_component(component, target_solver_frame=target_solver_frame, cells=cells)
+    registration = connection.get("spatial_registration", {})
+    rotation = registration.get("rotation_upstream_to_downstream")
+    translation = registration.get("translation_mm")
+    if (not isinstance(rotation, list) or len(rotation) != 3
+            or any(not isinstance(row, list) or len(row) != 3
+                   or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in row) for row in rotation)
+            or not isinstance(translation, list) or len(translation) != 3
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in translation)):
+        raise ValueError("bare-guide registration must declare finite rotation and translation")
+    phi = math.atan2(-rotation[2][0], rotation[0][0]) if mr_frame else math.atan2(rotation[2][0], rotation[1][0])
+    cosine, sine = math.cos(phi), math.sin(phi)
+    expected = [[cosine, -sine, 0], [0, 0, 1], [-sine, -cosine, 0]] if mr_frame else [[0, 0, 1], [cosine, -sine, 0], [sine, cosine, 0]]
+    if any(not math.isclose(rotation[a][k], expected[a][k], abs_tol=1e-12, rel_tol=0) for a in range(3) for k in range(3)):
+        raise ValueError("bare-guide proper rotation must map its longitudinal axis to the declared slow axis")
+    angle_degrees = math.degrees(phi)
+    rods = upstream["rod_array"]["rods"]
+    if (len(rods) != 8 or sorted(r["physical_electrode_id"] for r in rods) != list(ROD_ELECTRODE_IDS)
+            or any(r["electrode_group"] != (1 if r["physical_electrode_id"] % 2 else 2) for r in rods)):
+        raise ValueError("eight independent physical rods with alternating groups required")
+    if any(any(isinstance(r[k], bool) or not isinstance(r[k], (float, int)) or not math.isfinite(r[k])
+               for k in ("center_x_mm", "center_y_mm", "radius_mm", "z_min_mm", "z_max_mm"))
+           or r["radius_mm"] <= 0 or r["z_min_mm"] >= r["z_max_mm"] for r in rods):
+        raise ValueError("finite continuous rod geometry required")
+    if (any((r["z_min_mm"], r["z_max_mm"]) != (rods[0]["z_min_mm"], rods[0]["z_max_mm"]) for r in rods)
+            or upstream.get("guide_exit_surface") != dict(center_mm=[0, 0, rods[0]["z_max_mm"]], normal=[0, 0, 1])):
+        raise ValueError("continuous rods and the declared axial exit must coincide")
+    body = [f"  locate({_fmt(translation[0])},{_fmt(translation[1])},{_fmt(translation[2])}) {{"]
+    if angle_degrees != 0:
+        body.append(f"    rotate_{'y' if mr_frame else 'x'}({_fmt(angle_degrees)}) {{")
+    body.append("    rotate_x(-90) {" if mr_frame else "    rotate_y(90) { rotate_z(90) {")
+    for pair in range(4):
+        ids = (2*pair+1, 2*pair+2)
+        array = {**upstream["rod_array"], "rods": [r for r in rods if r["physical_electrode_id"] in ids]}
+        body.extend(render_grouped_rod_array_gem(array, electrode_group_ids={1: ids[0], 2: ids[1]}).splitlines())
+    body.append("    }" if mr_frame else "    } }")
+    if angle_degrees != 0:
+        body.append("    }")
+    body.extend(["  }", *projected["body"]])
+    boxes = [[r["center_x_mm"]-r["radius_mm"], r["center_y_mm"]-r["radius_mm"], r["z_min_mm"],
+              r["center_x_mm"]+r["radius_mm"], r["center_y_mm"]+r["radius_mm"], r["z_max_mm"]] for r in rods]
+    envelope = upstream.get("source_envelope_bounds_mm")
+    if not isinstance(envelope, dict) or set(envelope) != {"min_mm", "max_mm"}:
+        raise ValueError("complete declared source envelope is required for frontend coverage")
+    if any(not isinstance(envelope[k], list) or len(envelope[k]) != 3
+           or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in envelope[k])
+           for k in ("min_mm", "max_mm")):
+        raise ValueError("finite xyz source envelope required")
+    if any(envelope["min_mm"][a] >= envelope["max_mm"][a] for a in range(3)):
+        raise ValueError("source envelope must have positive extents")
+    boxes.append([*envelope["min_mm"], *envelope["max_mm"]])
+    guide_bounds = _component_bounds(boxes, rotation, translation)
+    guide_exit = _component_point(upstream["guide_exit_surface"]["center_mm"], rotation, translation)
+    port = projected["port"]
+    gap = connection.get("connector", {}).get("length_mm")
+    if isinstance(gap, bool) or not isinstance(gap, (int, float)) or not math.isfinite(gap) or gap <= 0:
+        raise ValueError("bare rod ends require an explicit positive vacuum separation from the grounded side wall")
+    slow_axis = 1 if mr_frame else 0
+    face_position = port["flange_min_mm" if mr_frame else "negative_x_face_mm"]
+    _require_close(face_position-guide_exit[slow_axis], gap, "bare-guide end to OA side wall gap")
+    for a in ((0, 2) if mr_frame else (1, 2)):
+        _require_close(guide_exit[a], port["center_mm"][a], "bare-guide axis to side entry")
+    bounds = {f"{a}_{s}": op(guide_bounds[f"{a}_{s}"], projected["actual_bounds_mm"][f"{a}_{s}"])
+              + (-cells[a] if s == "min" else cells[a]) for a in "xyz" for s, op in (("min", min), ("max", max))}
+    gem, numerical = _canonical_pa(body, bounds, cells)
+    source_exit = list(port["center_mm"])
+    source_exit[slow_axis] = face_position
+    contract = dict(schema_version=2, role="rf_oatof_simion_single_flight_frontend_contract", frame_id="mrtof_global_cartesian" if mr_frame else "oatof_global",
+                    **numerical, frontend_variant=resolve_frontend_electrode_topology(projected["electrodes"])["topology_id"], accelerator_component=projected["accelerator_component"],
+                    electrodes=projected["electrodes"], accelerator_local_region={k: v for k, v in projected.items() if k != "body"},
+                    guide_contract=upstream, guide_registration=registration,
+                    guide_exit_center_mm=dict(zip("xyz", guide_exit)), source_exit_center_mm=dict(zip("xyz", source_exit)),
+                    junction_enclosure=dict(profile_gap_mm=gap, rod_end_to_accelerator_shield_mm=gap, geometry="vacuum_gap", generated_solids=[]),
+                    aperture=dict(shape="rectangular", width_mm=port["width_mm"], height_mm=port["height_mm"]),
+                    cylindrical_sideport=None, connector_terminal=dict(present=False), entrance_reference_sleeve=None,
+                    pa_plus_solution_model=projected["pa_plus_solution_model"], bare_guide_generated_shield_or_plate=False)
+    if mr_frame:
+        contract.update(native_frame_id="mrtof_global_cartesian", slow_axis="y", acceleration_direction=-1)
+        contract["accelerator_local_region"].update(native_frame_id="mrtof_global_cartesian", slow_axis="y", acceleration_direction=-1)
+    port_axis = "y" if mr_frame else "x"
+    flange_min = port["flange_min_mm"] if mr_frame else port["negative_x_face_mm"]
+    contract["accelerator_local_region"]["accelerator_port_aperture_discretization"] = resolve_rectangular_aperture_discretization(
+        mechanical_width_mm=port["width_mm"], mechanical_height_mm=port["height_mm"],
+        cell_mm_xyz=cells, normal_axis=port_axis,
+        flange_min_mm=flange_min, flange_max_mm=flange_min + port["wall_thickness_mm"],
+        center_mm=dict(zip("xyz", port["center_mm"])), pa_origin_mm=numerical["instance_origin_mm"],
+        boolean_boundary_policy=("exclude_shape_inside_or_on_v1" if component["variant_id"] == "three_zone"
+                                 else "exclude_shape_inside_only_v1"),
+    )
+    return gem, contract
+
+
+def _compile_canonical_field_domain(frontend: dict, component: dict | None, cells: dict,
+                                    domain_policy: dict, *, main: dict | None = None,
+                                    aperture_mm: dict | None = None) -> tuple[str, dict]:
+    """Compile native main/local geometry with the same five-mode basis.
+
+    Dirichlet initialization and runtime loading remain with the existing
+    runner. These contracts never claim an isolated Refine is a coupled field.
+    """
+    if frontend.get("frontend_variant") not in _BARE_VARIANTS:
+        raise ValueError("canonical field domain requires the bare-guide frontend")
+    frozen = frontend["accelerator_component"]
+    if component is not None and component != frozen:
+        raise ValueError("canonical field domain component differs from frontend")
+    projected = _canonical_component(frozen, cells=cells, target_solver_frame=(
+        "mrtof_global_cartesian" if frontend.get("frontend_variant") == THREE_ZONE_BARE_VARIANT and frontend.get("native_frame_id") == "mrtof_global_cartesian" else None))
+    origin = frontend["instance_origin_mm"]
+    coarse = frontend["cell_mm_xyz"]
+    for axis in "xyz":
+        if axis not in cells or not isinstance(cells[axis], (float, int)) or isinstance(cells[axis], bool) or cells[axis] <= 0:
+            raise ValueError("canonical field cells must be finite positive xyz")
+        ratio = coarse[axis]/cells[axis]
+        if not math.isfinite(ratio) or ratio < 1 or not math.isclose(ratio, round(ratio), abs_tol=1e-9):
+            raise ValueError("canonical field grid must be an integer refinement of frontend")
+    if set(cells) != set("xyz"):
+        raise ValueError("canonical field cells require exactly xyz")
+    port = projected["port"]
+    width, height = port["width_mm"], port["height_mm"]
+    if aperture_mm is not None:
+        if set(aperture_mm) != {"width", "height"}:
+            raise ValueError("canonical aperture must have width and height")
+        _require_close(float(aperture_mm["width"]), width, "canonical aperture width")
+        _require_close(float(aperture_mm["height"]), height, "canonical aperture height")
+    if main is None:
+        if domain_policy != {"policy_id": "full_accelerator_v1"}:
+            raise ValueError("canonical two-zone main currently requires the complete accelerator domain")
+        raw = {f"{a}_{s}": projected["actual_bounds_mm"][f"{a}_{s}"]+(-coarse[a] if s == "min" else coarse[a])
+               for a in "xyz" for s in ("min", "max")}
+    else:
+        if (main.get("role") != "rf_oatof_simion_accelerator_main_contract"
+                or main.get("accelerator_component") != frozen or main.get("pa_plus_solution_model") != projected["pa_plus_solution_model"]
+                or main.get("cell_mm_xyz") != cells):
+            raise ValueError("canonical entrance local requires the matching main basis and grid")
+        required = {"policy_id", "accelerator_side_extent_mm", "transverse_half_span_mm", "grid1_downstream_guard_mm"}
+        if (set(domain_policy) != required or domain_policy["policy_id"] != "aperture_perturbation_local_v1"
+                or any(isinstance(domain_policy[k], bool) or not isinstance(domain_policy[k], (float, int))
+                       or not math.isfinite(domain_policy[k]) or domain_policy[k] <= 0 for k in required-{"policy_id"})):
+            raise ValueError("explicit positive canonical entrance-local extents required")
+        bounds = main["instance_bounds_mm"]
+        if frontend["frontend_variant"] == THREE_ZONE_BARE_VARIANT and frontend.get("native_frame_id") == "mrtof_global_cartesian":
+            raw = dict(x_min=port["center_mm"][0]-domain_policy["transverse_half_span_mm"],
+                       x_max=port["center_mm"][0]+domain_policy["transverse_half_span_mm"],
+                       y_min=bounds["y_min"], y_max=port["flange_max_mm"]+domain_policy["accelerator_side_extent_mm"],
+                       z_min=projected["planes"]["grid1"]-domain_policy["grid1_downstream_guard_mm"], z_max=bounds["z_max"])
+        else:
+            raw = dict(x_min=bounds["x_min"], x_max=port["negative_x_face_mm"]+port["wall_thickness_mm"]+domain_policy["accelerator_side_extent_mm"],
+                       y_min=port["center_mm"][1]-domain_policy["transverse_half_span_mm"],
+                       y_max=port["center_mm"][1]+domain_policy["transverse_half_span_mm"],
+                       z_min=bounds["z_min"], z_max=projected["planes"]["grid1"]+domain_policy["grid1_downstream_guard_mm"])
+    _, numerical = _canonical_pa([], raw, cells, origin=origin)
+    bounds = numerical["instance_bounds_mm"]
+    parent_bounds = frontend["instance_bounds_mm"] if main is None else main["instance_bounds_mm"]
+    if any(bounds[f"{a}_min"] < parent_bounds[f"{a}_min"]-1e-9 or bounds[f"{a}_max"] > parent_bounds[f"{a}_max"]+1e-9 for a in "xyz"):
+        raise ValueError("canonical child domain extends outside its parent")
+    topology = resolve_frontend_electrode_topology(projected["electrodes"])
+    basis = topology["basis_electrode_ids"]
+    if numerical["dimensions"]["nz"]-2 < len(basis):
+        raise ValueError("canonical boundary has insufficient sentinel rows")
+    sentinels = [f"  e({value}) {{ fill {{ within {{ {_box(bounds['x_min'], bounds['y_min']+cells['y'], bounds['z_min']+i*cells['z'], cells['x']/2, cells['y']/2, cells['z']/2)} }} }} }}"
+                 for i, value in enumerate(basis, 1)]
+    gem, _ = _canonical_pa([*projected["body"], "  ; Boundary-only basis sentinels, not physical electrodes.", *sentinels], raw, cells, origin=origin)
+    role = "rf_oatof_simion_accelerator_main_contract" if main is None else "rf_oatof_simion_accelerator_entrance_aperture_local_contract"
+    if frontend["frontend_variant"] == THREE_ZONE_BARE_VARIANT:
+        projected["accelerator_port_aperture_discretization"] = resolve_rectangular_aperture_discretization(
+            mechanical_width_mm=width, mechanical_height_mm=height, cell_mm_xyz=cells,
+            normal_axis=port["normal_axis"], flange_min_mm=port["flange_min_mm"], flange_max_mm=port["flange_max_mm"],
+            center_mm=dict(zip("xyz", port["center_mm"])), pa_origin_mm=numerical["instance_origin_mm"],
+            boolean_boundary_policy=port["boolean_boundary_policy"],
+        )
+    return gem, dict(schema_version=2, role=role, frame_id=frontend["frame_id"], **numerical,
+                     frontend_variant=frontend["frontend_variant"], accelerator_component=frozen, electrodes=projected["electrodes"],
+                     accelerator_local_region={k: v for k, v in projected.items() if k != "body"},
+                     pa_plus_solution_model=projected["pa_plus_solution_model"],
+                     domain_policy=dict(domain_policy), domain_split=None, cross_section="canonical_rectangular",
+                     actual_accelerator_bounds_mm=projected["actual_bounds_mm"], axial_planes_global_z_mm=projected["planes"],
+                     operating_voltages_v=projected["operating_voltages_v"],
+                     accelerator_port_aperture=dict(scanned_aperture_owned_by_local_pa=main is None,
+                         reference_aperture_mm=dict(width=width, height=height),
+                         mechanical_aperture_mm=dict(width=width, height=height),
+                         authority="canonical_provider_side_entry__no_implicit_aperture_resizing"),
+                     active_bounds_mm={f"{a}_{s}": bounds[f"{a}_{s}"]+(cells[a] if s == "min" else -cells[a]) for a in "xyz" for s in ("min", "max")},
+                     boundary_condition=dict(mode="bridge_electrode_basis_dirichlet_required_v1" if main is None else "accelerator_main_electrode_basis_dirichlet_v1",
+                         source_role=frontend["role"] if main is None else main["role"], refinement_required=True, direct_refinement_prohibited=True,
+                         basis_electrode_ids=basis, pa_plus_mode_ids=projected["pa_plus_solution_model"]["mode_ids"], missing_basis_sentinel_electrode_ids=basis),
+                     replacement_semantics=dict(mode="highest_priority_complete_local_replacement_v1", field_superposition_prohibited=True,
+                         parent_role=frontend["role"] if main is None else main["role"]))
 
 
 
@@ -349,6 +743,7 @@ def compile_accelerator_main(
     connection: dict[str, Any] | None = None,
     domain_policy: dict[str, Any] | None = None,
     reference_aperture_mm: dict[str, float] | None = None,
+    accelerator_component: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Compile the local physical geometry for a standalone three-zone PA.
 
@@ -358,6 +753,9 @@ def compile_accelerator_main(
     this compiler records that requirement rather than silently treating the
     isolated PA as a replacement for the coupled frontend field.
     """
+    if accelerator_component is not None or frontend.get("frontend_variant") in _BARE_VARIANTS:
+        return _compile_canonical_field_domain(frontend, accelerator_component, cell_mm_xyz, domain_policy,
+                                               aperture_mm=reference_aperture_mm)
     if frontend.get("role") != "rf_oatof_simion_single_flight_frontend_contract":
         raise ValueError("accelerator main requires a compiled frontend contract")
     if set(cell_mm_xyz) != {"x", "y", "z"}:
@@ -651,13 +1049,12 @@ def compile_accelerator_main(
             mechanical_width_mm=reference_width_mm,
             mechanical_height_mm=reference_height_mm,
             cell_mm_xyz=cells,
-            flange_x_min_mm=float(geometry["negative_x_face_mm"]),
-            flange_x_max_mm=float(geometry["negative_x_face_mm"])
-            + float(geometry["shield_wall_mm"]),
-            center_y_mm=float(source_exit["y"]),
-            center_z_mm=float(source_exit["z"]),
-            pa_origin_y_mm=bounds["y_min"],
-            pa_origin_z_mm=bounds["z_min"],
+            normal_axis="x",
+            flange_min_mm=float(geometry['negative_x_face_mm']),
+            flange_max_mm=float(geometry['negative_x_face_mm']) + float(geometry['shield_wall_mm']),
+            center_mm={"x": (float(geometry['negative_x_face_mm']) + float(geometry['negative_x_face_mm']) + float(geometry['shield_wall_mm'])) / 2, "y": float(source_exit['y']), "z": float(source_exit['z'])},
+            pa_origin_mm={"x": bounds["x_min"], "y": bounds['y_min'], "z": bounds['z_min']},
+            boolean_boundary_policy="exclude_shape_inside_or_on_v1",
         )
         geometry["numerical_port_width_mm"] = float(
             fine_aperture_discretization["numerical_carve_width_mm"]
@@ -712,7 +1109,7 @@ def compile_accelerator_main(
                 inner_radius_mm=float(sideport_for_main["connector_inner_radius_mm"]),
                 aperture_width_mm=float(sideport_for_main["mechanical_aperture_mm"]["width"]),
                 aperture_height_mm=float(sideport_for_main["mechanical_aperture_mm"]["height"]),
-                cell_mm_xyz=cells, pa_origin_y_mm=bounds["y_min"], pa_origin_z_mm=bounds["z_min"],
+                cell_mm_xyz=cells, pa_origin_x_mm=bounds["x_min"], pa_origin_y_mm=bounds["y_min"], pa_origin_z_mm=bounds["z_min"],
             )
             connector_lines = ["  ; Grounded cylindrical side-port collar/end plate.", *sideport_lines]
             cylindrical_sideport = {
@@ -828,6 +1225,7 @@ def compile_accelerator_entrance_aperture_local(
     cell_mm_xyz: dict[str, float],
     domain_policy: dict[str, Any],
     aperture_mm: dict[str, float] | None = None,
+    accelerator_component: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Compile the scanned entrance aperture as a small nested main-PA domain.
 
@@ -837,6 +1235,9 @@ def compile_accelerator_entrance_aperture_local(
     default Refine is run.
     """
 
+    if accelerator_component is not None or frontend.get("frontend_variant") in _BARE_VARIANTS:
+        return _compile_canonical_field_domain(frontend, accelerator_component, cell_mm_xyz, domain_policy,
+                                               main=accelerator_main, aperture_mm=aperture_mm)
     if frontend.get("role") != "rf_oatof_simion_single_flight_frontend_contract":
         raise ValueError("accelerator entrance local requires a compiled frontend")
     if accelerator_main.get("role") != "rf_oatof_simion_accelerator_main_contract":
@@ -922,13 +1323,12 @@ def compile_accelerator_entrance_aperture_local(
         mechanical_width_mm=aperture_width_mm,
         mechanical_height_mm=aperture_height_mm,
         cell_mm_xyz=cells,
-        flange_x_min_mm=float(geometry["negative_x_face_mm"]),
-        flange_x_max_mm=float(geometry["negative_x_face_mm"])
-        + float(geometry["shield_wall_mm"]),
-        center_y_mm=float(source_exit["y"]),
-        center_z_mm=float(source_exit["z"]),
-        pa_origin_y_mm=float(main_origin["y"]),
-        pa_origin_z_mm=float(main_origin["z"]),
+        normal_axis="x",
+        flange_min_mm=float(geometry['negative_x_face_mm']),
+        flange_max_mm=float(geometry['negative_x_face_mm']) + float(geometry['shield_wall_mm']),
+        center_mm={"x": (float(geometry['negative_x_face_mm']) + float(geometry['negative_x_face_mm']) + float(geometry['shield_wall_mm'])) / 2, "y": float(source_exit['y']), "z": float(source_exit['z'])},
+        pa_origin_mm={"x": float(main_origin["x"]), "y": float(main_origin['y']), "z": float(main_origin['z'])},
+        boolean_boundary_policy="exclude_shape_inside_or_on_v1",
     )
     geometry["numerical_port_width_mm"] = float(
         discretization["numerical_carve_width_mm"]
@@ -1001,7 +1401,7 @@ def compile_accelerator_entrance_aperture_local(
                 aperture_width_mm=aperture_width_mm,
                 aperture_height_mm=aperture_height_mm,
                 cell_mm_xyz=cells,
-                pa_origin_y_mm=bounds["y_min"],
+                pa_origin_x_mm=bounds["x_min"], pa_origin_y_mm=bounds["y_min"],
                 pa_origin_z_mm=bounds["z_min"],
             )
             cylindrical_sideport = {
@@ -1198,12 +1598,12 @@ def compile_upstream_bridge(
         mechanical_width_mm=aperture_width_mm,
         mechanical_height_mm=aperture_height_mm,
         cell_mm_xyz=cells,
-        flange_x_min_mm=exit_x,
-        flange_x_max_mm=exit_x + shield_wall,
-        center_y_mm=center_y,
-        center_z_mm=center_z,
-        pa_origin_y_mm=y_min,
-        pa_origin_z_mm=z_min,
+        normal_axis="x",
+        flange_min_mm=exit_x,
+        flange_max_mm=exit_x + shield_wall,
+        center_mm={"x": (exit_x + exit_x + shield_wall) / 2, "y": center_y, "z": center_z},
+        pa_origin_mm={"x": x_min, "y": y_min, "z": z_min},
+        boolean_boundary_policy="exclude_shape_inside_or_on_v1",
     )
     port_width = float(aperture_discretization["numerical_carve_width_mm"])
     port_height = float(aperture_discretization["numerical_carve_height_mm"])
@@ -1555,8 +1955,18 @@ def compile_frontend(
     *,
     cell_mm_xyz: dict[str, float] | None = None,
     accelerator_port_aperture_mm: dict[str, float] | None = None,
+    accelerator_component: dict[str, Any] | None = None,
+    target_solver_frame: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Return a composite GEM and its placement/electrode contract."""
+    if accelerator_component is not None:
+        if cell_mm_xyz is None:
+            raise ValueError("canonical frontend requires explicitly authored xyz cells")
+        if accelerator_port_aperture_mm is not None:
+            raise ValueError("canonical side-entry aperture is owned by the explicit provider requirements")
+        return _compile_bare_frontend(upstream, connection, accelerator_component, cell_mm_xyz, target_solver_frame=target_solver_frame)
+    if target_solver_frame is not None:
+        raise ValueError("target solver frame is supported only by the canonical bare frontend")
     cells = {"x": 0.2, "y": 0.2, "z": 0.2} if cell_mm_xyz is None else cell_mm_xyz
     if set(cells) != {"x", "y", "z"}:
         raise ValueError("single-flight frontend cell_mm_xyz must contain exactly x, y and z")
@@ -1922,7 +2332,7 @@ def compile_frontend(
             inner_radius_mm=inner_radius, aperture_width_mm=port_width,
             aperture_height_mm=port_height,
             cell_mm_xyz={"x": cell_x_mm, "y": cell_y_mm, "z": cell_z_mm},
-            pa_origin_y_mm=y_min, pa_origin_z_mm=z_min,
+            pa_origin_x_mm=x_min, pa_origin_y_mm=y_min, pa_origin_z_mm=z_min,
         )
         connection_lines.insert(0, "  ; Grounded cylindrical side-port collar/end plate.")
         cylindrical_sideport["coarse_aperture_discretization"] = rendered_sideport["aperture_discretization"]
@@ -1931,13 +2341,13 @@ def compile_frontend(
     aperture_discretization = resolve_rectangular_aperture_discretization(
         mechanical_width_mm=port_width,
         mechanical_height_mm=port_height,
-        cell_mm_xyz={"x": cell_x_mm, "y": cell_y_mm, "z": cell_z_mm},
-        flange_x_min_mm=exit_x,
-        flange_x_max_mm=exit_x + shield_wall,
-        center_y_mm=center_y,
-        center_z_mm=center_z,
-        pa_origin_y_mm=y_min,
-        pa_origin_z_mm=z_min,
+        cell_mm_xyz={'x': cell_x_mm, 'y': cell_y_mm, 'z': cell_z_mm},
+        normal_axis="x",
+        flange_min_mm=exit_x,
+        flange_max_mm=exit_x + shield_wall,
+        center_mm={"x": (exit_x + exit_x + shield_wall) / 2, "y": center_y, "z": center_z},
+        pa_origin_mm={"x": x_min, "y": y_min, "z": z_min},
+        boolean_boundary_policy="exclude_shape_inside_or_on_v1",
     )
     numerical_port_width = float(aperture_discretization["numerical_carve_width_mm"])
     numerical_port_height = float(aperture_discretization["numerical_carve_height_mm"])

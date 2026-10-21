@@ -18,6 +18,24 @@ from projects.orthogonal_accelerator.simion.rectangular_accelerator import (
 
 
 class RectangularAcceleratorTest(unittest.TestCase):
+    def test_negative_y_entry_only_subtracts_the_declared_wall(self) -> None:
+        enclosure = derive_shielded_rectangular_enclosure(
+            electrode_outer_width_x_mm=40, electrode_outer_height_y_mm=30,
+            guard_outer_width_x_mm=44, guard_outer_height_y_mm=34,
+            guard_wall_thickness_mm=1, lateral_clearance_mm=1,
+            repeller_z_mm=40, repeller_thickness_z_mm=2, rear_gap_mm=1,
+        )
+        closed = emit_grounded_enclosure(enclosure, exit_z_mm=6)
+        opened = emit_grounded_enclosure(enclosure, exit_z_mm=6,
+                                         negative_y_entry_box_mm=[-1.5, -17, 36.6, 1.5, -16, 39.4],
+                                         entry_cut_padding_mm=.1)
+        self.assertEqual(opened, closed + " notin_inside { box3D(-1.5,-17.1,36.6,1.5,-15.9,39.4) }")
+        for box in ([-1.5, -17, 36.6, 1.5, 16, 39.4], [-1.5, -17, 36.6, 2, -16, 39.4]):
+            with self.subTest(box=box), self.assertRaises(TwoZoneGeometryError):
+                emit_grounded_enclosure(enclosure, exit_z_mm=6, negative_y_entry_box_mm=box, entry_cut_padding_mm=.1)
+        with self.assertRaises(TwoZoneGeometryError):
+            emit_grounded_enclosure(enclosure, exit_z_mm=6, entry_cut_padding_mm=.1)
+
     def test_closed_two_zone_endplates_cannot_be_rendered_as_grids(self) -> None:
         enclosure = derive_shielded_rectangular_enclosure(
             electrode_outer_width_x_mm=40.0, electrode_outer_height_y_mm=36.0,

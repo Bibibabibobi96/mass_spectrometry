@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory)][string]$Campaign,
+  [string]$Campaign = '',
+  [string]$FrontendRequest = '',
+  [string]$ExecutionBudgetPath = '',
   [string]$ExperimentId = '',
   [switch]$AllExperiments,
   [string]$OutputDirectory = '',
@@ -16,6 +18,19 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$localFrontend = -not [string]::IsNullOrWhiteSpace($FrontendRequest)
+if ($localFrontend -eq (-not [string]::IsNullOrWhiteSpace($Campaign))) {
+  throw 'Select exactly one of Campaign or FrontendRequest.'
+}
+if ($localFrontend -and ($AllExperiments -or $FinalizeOnly -or $Exploration -or
+    -not [string]::IsNullOrWhiteSpace($ExperimentId) -or
+    -not [string]::IsNullOrWhiteSpace($SemanticDiffAgainst) -or
+    -not [string]::IsNullOrWhiteSpace($RecoveryRunId))) {
+  throw 'FrontendRequest accepts only ValidateOnly, PrepareOnly or SolverAuthorized and its execution budget.'
+}
+if (-not $localFrontend -and -not [string]::IsNullOrWhiteSpace($ExecutionBudgetPath)) {
+  throw 'ExecutionBudgetPath is owned by the local frontend workflow.'
+}
 $selectedModeCount = (
   [int][bool]$ValidateOnly +
   [int][bool]$PrepareOnly +
@@ -40,7 +55,7 @@ if ($AllExperiments -and -not [string]::IsNullOrWhiteSpace($RecoveryRunId)) {
 if (-not [string]::IsNullOrWhiteSpace($RecoveryRunId) -and -not $FinalizeOnly) {
   throw 'RecoveryRunId is accepted only for FinalizeOnly.'
 }
-if (-not $AllExperiments -and [string]::IsNullOrWhiteSpace($ExperimentId)) {
+if (-not $localFrontend -and -not $AllExperiments -and [string]::IsNullOrWhiteSpace($ExperimentId)) {
   throw 'ExperimentId is required unless AllExperiments is selected.'
 }
 if ($PrepareOnly -and [string]::IsNullOrWhiteSpace($OutputDirectory)) {
@@ -55,6 +70,7 @@ if (-not $PrepareOnly -and
 $workflowRoot = $PSScriptRoot
 $integrationRoot = (Resolve-Path (Join-Path $workflowRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
+. (Join-Path $repoRoot 'common\require_powershell7.ps1')
 if ([string]::IsNullOrWhiteSpace($PythonExe)) {
   $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
   if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
@@ -70,6 +86,21 @@ if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
 $pythonVersion = (& $PythonExe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
 if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
   throw "Family source closure requires Python 3.11, found $pythonVersion at $PythonExe"
+}
+
+if ($localFrontend) {
+  $localParameters = @{
+    Request = $FrontendRequest; RepoRoot = $repoRoot; Python = $PythonExe
+    ExecutionBudgetPath = $ExecutionBudgetPath
+  }
+  if ($ValidateOnly) { $localParameters.ValidateOnly = $true }
+  elseif ($PrepareOnly) {
+    $localParameters.PrepareOnly = $true
+    $localParameters.OutputDirectory = $OutputDirectory
+  }
+  else { $localParameters.SolverAuthorized = $true }
+  & (Join-Path $integrationRoot 'workflows/local_frontend/execute.ps1') @localParameters
+  return
 }
 
 $campaignCandidate = if ([IO.Path]::IsPathRooted($Campaign)) {

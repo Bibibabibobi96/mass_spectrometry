@@ -4627,10 +4627,10 @@ try {
     -CellMmX ([double]$apertureTopologyGeometry.cell_mm_xyz.x) `
     -CellMmY ([double]$apertureTopologyGeometry.cell_mm_xyz.y) `
     -CellMmZ ([double]$apertureTopologyGeometry.cell_mm_xyz.z) `
-    -FlangeXMinMm ([double]$apertureTopologyDiscretization.flange_x_min_mm) `
-    -FlangeXMaxMm ([double]$apertureTopologyDiscretization.flange_x_max_mm) `
-    -CenterYmm ([double]$frontendGeometry.source_exit_center_mm.y) `
-    -CenterZmm ([double]$frontendGeometry.source_exit_center_mm.z) `
+    -NormalAxis ([string]$apertureTopologyDiscretization.normal_axis) `
+    -FlangeMinimumMm ([double]$apertureTopologyDiscretization.flange_min_mm) `
+    -FlangeMaximumMm ([double]$apertureTopologyDiscretization.flange_max_mm) `
+    -ApertureCenterMm @([double]$apertureTopologyDiscretization.center_mm.x,[double]$apertureTopologyDiscretization.center_mm.y,[double]$apertureTopologyDiscretization.center_mm.z) `
     -MechanicalWidthMm $apertureWidthMm -MechanicalHeightMm $apertureHeightMm `
     -BooleanBoundaryPolicy ([string]$apertureTopologyDiscretization.boolean_boundary_policy) `
     -InvokeVerifier {

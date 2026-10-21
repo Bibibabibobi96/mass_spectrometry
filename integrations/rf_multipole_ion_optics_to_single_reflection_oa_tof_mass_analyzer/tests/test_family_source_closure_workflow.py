@@ -29,6 +29,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _resolve_single_flight_profiles,
     semantic_diff_experiments,
     _repo_byte_record,
+    _prepare_single_flight_particle_source,
     _workspace_record,
     prepare_family_source_closure,
     resolve_single_flight_dispatch_plan,
@@ -46,8 +47,10 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _retry_suffix,
     _selection_is_explicitly_authorized,
     _single_flight_run_stem,
+    _prepared_external_source_inputs,
     publish_family_source_closure_run,
 )
+
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
     select_profile,
@@ -1125,6 +1128,161 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             receipt.write_bytes(crlf.replace(b"\r\n", b"\n"))
             with self.assertRaisesRegex(ContractError, "missing, stale"):
                 _repo_byte_record(root, record, "loader receipt")
+
+    @staticmethod
+    def _workspace_source_fixture(count: int = 100, **changes: str) -> bytes:
+        columns = ["particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm",
+                   "vx_m_s", "vy_m_s", "vz_m_s", "mass_amu", "charge_state"]
+        lines = [",".join(columns)]
+        for particle_id in range(1, count + 1):
+            row = dict(zip(columns, [str(particle_id), "0.002", "1", "2", "3",
+                                     "4", "5", "6", "524", "1"]))
+            row.update(changes)
+            lines.append(",".join(row[name] for name in columns))
+        return ("\r\n".join(lines) + "\r\n").encode("utf-8")
+
+    def test_workspace_single_flight_source_preserves_full_raw_population(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            source = workspace / "artifacts/projects/ip/runs/source/release.csv"
+            source.parent.mkdir(parents=True)
+            raw = self._workspace_source_fixture()
+            source.write_bytes(raw)
+            record = dict(path=source.relative_to(workspace).as_posix(),
+                          sha256=hashlib.sha256(raw).hexdigest().upper(),
+                          particle_count=100, sampling_mode="continuous_injection_full_population")
+            prepared = workspace / "prepared"
+            frozen = _prepare_single_flight_particle_source(
+                root=workspace / "repo", workspace=workspace, record=record,
+                prepared_root=prepared,
+            )
+            self.assertEqual(frozen.read_bytes(), raw)
+            self.assertEqual(source.read_bytes(), raw)
+            self.assertEqual(len(frozen.read_bytes().splitlines()) - 1, 100)
+            identity = load(frozen.with_name("single_flight_particle_source_identity.json"))
+            self.assertEqual(identity["source"]["path"], record["path"])
+            self.assertEqual(identity["frozen"]["bytes"], len(raw))
+            self.assertEqual(identity["frozen"]["sha256"], record["sha256"])
+            with patch("shutil.copyfile", side_effect=AssertionError("unexpected recopy")):
+                self.assertEqual(_prepare_single_flight_particle_source(
+                    root=workspace / "repo", workspace=workspace, record=record,
+                    prepared_root=prepared,
+                ), frozen)
+            frozen.write_bytes(raw + b" ")
+            with self.assertRaisesRegex(ContractError, "identity conflicts"):
+                _prepare_single_flight_particle_source(
+                    root=workspace / "repo", workspace=workspace, record=record,
+                    prepared_root=prepared,
+                )
+            source.write_bytes(raw + b" ")
+            with self.assertRaisesRegex(ContractError, "SHA-256 is stale"):
+                _prepare_single_flight_particle_source(
+                    root=workspace / "repo", workspace=workspace, record=record,
+                    prepared_root=prepared,
+                )
+
+    def test_workspace_single_flight_source_rejects_invalid_rows_and_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            source = workspace / "artifacts/release.csv"
+            source.parent.mkdir()
+            base = dict(path="artifacts/release.csv", particle_count=2,
+                        sampling_mode="continuous_injection_full_population")
+            for changes in ({"x_mm": "nan"}, {"vy_m_s": "inf"}, {"mass_amu": "0"},
+                            {"mass_amu": "-1"}, {"charge_state": "0"}, {"charge_state": "1.5"}, {"particle_id": "1"}):
+                with self.subTest(changes=changes):
+                    raw = self._workspace_source_fixture(2, **changes)
+                    source.write_bytes(raw)
+                    record = dict(base, sha256=hashlib.sha256(raw).hexdigest().upper())
+                    with self.assertRaises(ContractError):
+                        _prepare_single_flight_particle_source(
+                            root=workspace / "repo", workspace=workspace,
+                            record=record, prepared_root=workspace / "prepared",
+                        )
+            raw = self._workspace_source_fixture(2)
+            source.write_bytes(raw)
+            record = dict(base, sha256=hashlib.sha256(raw).hexdigest().upper())
+            for change in ({"particle_count": 3}, {"sampling_mode": "pulse_eligible_conditional"}):
+                with self.subTest(change=change), self.assertRaises(ContractError):
+                    _prepare_single_flight_particle_source(
+                        root=workspace / "repo", workspace=workspace,
+                        record=dict(record, **change), prepared_root=workspace / "prepared",
+                    )
+            (workspace / "outside.csv").write_bytes(raw)
+            with self.assertRaisesRegex(ContractError, "escapes workspace artifacts"):
+                _prepare_single_flight_particle_source(
+                    root=workspace / "repo", workspace=workspace,
+                    record=dict(record, path="artifacts/../outside.csv"),
+                    prepared_root=workspace / "prepared",
+                )
+
+    def test_repository_single_flight_source_keeps_existing_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            repo = workspace / "repo"
+            repo.mkdir()
+            raw = self._workspace_source_fixture(7).replace(b"\r\n", b"\n")
+            source = repo / "source.csv"
+            source.write_bytes(raw)
+            actual = _prepare_single_flight_particle_source(
+                root=repo, workspace=workspace,
+                record=dict(path="source.csv", sha256=hashlib.sha256(raw).hexdigest().upper(),
+                            particle_count=7, sampling_mode="continuous_injection_full_population"),
+                prepared_root=workspace / "prepared",
+            )
+            self.assertEqual(actual, source)
+            self.assertFalse((workspace / "prepared/inputs").exists())
+
+    def test_adapter_workspace_static_source_validates_frozen_path_and_sha(self) -> None:
+        adapter = INTEGRATION_ROOT / "workflows/family_source_closure/adapter.ps1"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = root / "prepared/inputs"
+            inputs.mkdir(parents=True)
+            raw = self._workspace_source_fixture()
+            (inputs / "single_flight_particle_source.csv").write_bytes(raw)
+            script = r"""
+$ErrorActionPreference='Stop'
+$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($env:RF_ADAPTER_PATH,[ref]$null,[ref]$errors)
+if($errors){throw $errors[0]}
+$f=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Resolve-RfSingleFlightParticleSourceOverride'},$true)
+. ([scriptblock]::Create($f.Extent.Text))
+$declared=[pscustomobject]@{path='artifacts/projects/ip/runs/source/release.csv';sha256=$env:RF_SOURCE_SHA;particle_count=100;sampling_mode='continuous_injection_full_population'}
+$a=@{single_flight_particle_source_path=$declared.path;single_flight_particle_source_sha256=$declared.sha256;single_flight_particle_source_count=100;single_flight_particle_source_filename='inputs/single_flight_particle_source.csv'}
+$result=Resolve-RfSingleFlightParticleSourceOverride -Arguments $a -DeclaredSource $declared -RepositoryRoot $env:RF_ROOT -PreparedRoot "$env:RF_ROOT/prepared"
+if($result-ne[IO.Path]::GetFullPath("$env:RF_ROOT/prepared/inputs/single_flight_particle_source.csv")){throw 'Wrong frozen source'}
+'VALID=PASS'
+foreach($filename in @('../outside.csv','inputs/../../outside.csv')){
+ $bad=$a.Clone();$bad.single_flight_particle_source_filename=$filename
+ try{$null=Resolve-RfSingleFlightParticleSourceOverride -Arguments $bad -DeclaredSource $declared -RepositoryRoot $env:RF_ROOT -PreparedRoot "$env:RF_ROOT/prepared";throw 'escape accepted'}catch{if($_.Exception.Message-notmatch 'inside prepared inputs'){throw}}
+}
+'ESCAPE=REJECTED'
+$bad=$a.Clone();$bad.single_flight_particle_source_sha256='0'*64
+try{$null=Resolve-RfSingleFlightParticleSourceOverride -Arguments $bad -DeclaredSource $declared -RepositoryRoot $env:RF_ROOT -PreparedRoot "$env:RF_ROOT/prepared";throw 'stale accepted'}catch{if($_.Exception.Message-notmatch 'missing or stale'){throw}}
+'SHA=REJECTED'
+$bytes=[IO.File]::ReadAllBytes($result)
+[IO.File]::AppendAllText($result,' ')
+try{$null=Resolve-RfSingleFlightParticleSourceOverride -Arguments $a -DeclaredSource $declared -RepositoryRoot $env:RF_ROOT -PreparedRoot "$env:RF_ROOT/prepared";throw 'changed frozen CSV accepted'}catch{if($_.Exception.Message-notmatch 'missing or stale'){throw}}
+'FROZEN_BYTES=REJECTED'
+[IO.File]::WriteAllBytes("$env:RF_ROOT/repository.csv",$bytes)
+$legacy=$a.Clone();$legacy.Remove('single_flight_particle_source_filename');$legacy.single_flight_particle_source_path='repository.csv'
+$legacyDeclared=[pscustomobject]@{path='repository.csv';sha256=$env:RF_SOURCE_SHA;particle_count=100;sampling_mode='continuous_injection_full_population'}
+$legacyResult=Resolve-RfSingleFlightParticleSourceOverride -Arguments $legacy -DeclaredSource $legacyDeclared -RepositoryRoot $env:RF_ROOT -PreparedRoot "$env:RF_ROOT/prepared"
+if($legacyResult-ne[IO.Path]::GetFullPath("$env:RF_ROOT/repository.csv")){throw 'Legacy repository path changed'}
+'REPOSITORY=PASS'
+"""
+            environment = dict(os.environ, RF_ADAPTER_PATH=str(adapter), RF_ROOT=str(root),
+                               RF_SOURCE_SHA=hashlib.sha256(raw).hexdigest().upper())
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                env=environment, text=True, encoding="utf-8", errors="replace",
+                capture_output=True, check=False, timeout=300,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            for marker in ("VALID=PASS", "ESCAPE=REJECTED", "SHA=REJECTED",
+                           "FROZEN_BYTES=REJECTED", "REPOSITORY=PASS"):
+                self.assertIn(marker, completed.stdout)
 
     def test_adapter_validates_pulse_orchestration_argument_group_and_file(self) -> None:
         adapter = (
@@ -2756,6 +2914,29 @@ if ($script:csvCountPaths.Count -ne 1 -or
             )
         )
 
+
+
+class ExternalSourcePublicationTests(unittest.TestCase):
+    def test_parent_binds_both_frozen_source_and_its_receipt(self):
+        from common.contracts.file_identity import file_sha256
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            run = workspace / "run"
+            source = run / "inputs/single_flight_particle_source.csv"
+            source.parent.mkdir(parents=True)
+            self.assertEqual(_prepared_external_source_inputs(run, workspace), {})
+            source.write_text("original source bytes\n", encoding="utf-8")
+            with self.assertRaises(ContractError):
+                _prepared_external_source_inputs(run, workspace)
+            receipt = source.with_name("single_flight_particle_source_identity.json")
+            receipt.write_text(json.dumps({"frozen": {"path": "inputs/"+source.name,
+                "bytes": source.stat().st_size, "sha256": file_sha256(source)}}), encoding="utf-8")
+            bindings = _prepared_external_source_inputs(run, workspace)
+            self.assertEqual(set(bindings), {"single_flight_particle_source", "single_flight_particle_source_identity"})
+            self.assertEqual(workspace / bindings["single_flight_particle_source"], source)
+            source.write_text("changed source bytes\n", encoding="utf-8")
+            with self.assertRaises(AssertionError):
+                _prepared_external_source_inputs(run, workspace)
 
 if __name__ == "__main__":
     unittest.main()

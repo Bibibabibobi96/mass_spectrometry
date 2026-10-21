@@ -70,6 +70,13 @@ if standalone_dynamic then
     upstream_bridge=instances[4].pa,
     accelerator_entrance_local=instances[6].pa,
   }
+  for _,instance in ipairs(instances) do
+    if instance.filename:find('/',1,true) then
+      instance.pa.path=instance.filename
+      instance.filename=instance.filename:match('([^/]+)$')
+      instance.pa.filename=instance.filename
+    end
+  end
   for role,carrier in pairs(carriers) do
     local rf=pa(role..'_rf',carrier.nx,carrier.ny,carrier.nz,
       carrier.dx_mm,carrier.dy_mm,carrier.dz_mm)

@@ -40,6 +40,8 @@ class IntegrationGateFailureTests(unittest.TestCase):
             tests.mkdir(parents=True)
             common_integration.mkdir(parents=True)
             shutil.copy2(SOURCE_GATE, integration / "verify_integration.ps1")
+            shutil.copy2(REPO_ROOT / "common/require_powershell7.ps1",
+                         root / "common/require_powershell7.ps1")
             (common_integration / "fixture.py").write_text(
                 "VALUE = 1\n", encoding="utf-8"
             )

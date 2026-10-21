@@ -1019,7 +1019,7 @@ if($scenario-eq'inherited_light'){
                             "per_process_memory_budget_bytes": 1024**2,
                             "memory_safety_factor": 1.10,
                         },
-                        "limits": dispatch_limits(),
+                        "limits": dispatch_limits(launch_stagger_seconds=1),
                     }
                 ),
                 encoding="utf-8",
@@ -2130,6 +2130,8 @@ exit 0
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
                 f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Get-SystemCpuPercent {0.0};"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](64GB)};"
                 "$child=(Get-Process -Id $PID).Path;"
                 "$spec=[pscustomobject]@{name='launcher';file_path=$child;"
                 "argument_list=@('-NoProfile','-Command',"
@@ -2142,20 +2144,25 @@ exit 0
                 "-ProcessSpecifications @($spec);"
                 "if($r.resource_budget_exceeded-or$r.processes[0].exit_code-ne0){exit 3}"
             )
-            completed = subprocess.run(
-                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT,
-                check=False,
-                # The test deliberately launches a descendant which outlives
-                # its PowerShell launcher.  Captured anonymous pipes would be
-                # inherited by that descendant and make ``communicate`` wait
-                # for a handle that is unrelated to the tested scheduler
-                # completion condition.
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=15,
+            scheduler_log = root / "scheduler.log"
+            try:
+                # A real file preserves admission/lifecycle evidence without
+                # an inherited anonymous PIPE delaying communicate().
+                with scheduler_log.open("w", encoding="utf-8") as stream:
+                    completed = subprocess.run(
+                        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                        cwd=REPO_ROOT,
+                        check=False,
+                        stdout=stream,
+                        stderr=subprocess.STDOUT,
+                        timeout=15,
+                    )
+            except subprocess.TimeoutExpired as exc:
+                self.fail(f"{exc}\n{scheduler_log.read_text(encoding='utf-8', errors='replace')}")
+            self.assertEqual(
+                completed.returncode, 0,
+                scheduler_log.read_text(encoding="utf-8", errors="replace"),
             )
-            self.assertEqual(completed.returncode, 0)
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
             self.assertEqual(measured["status"], "running")
             self.assertGreaterEqual(measured["wall_clock_seconds"], 1.5)
@@ -2176,9 +2183,12 @@ exit 0
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
                 f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Get-SystemCpuPercent {0.0};"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](64GB)};"
                 "function Start-RepositoryScheduledProcess {param($Specification);"
                 "$p=Start-Process -FilePath (Get-Process -Id $PID).Path "
-                "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 1') -PassThru;"
+                "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 1') "
+                "-PassThru -WindowStyle Hidden;"
                 "[pscustomobject]@{name='direct_simion';specification=$Specification;process=$p;"
                 "root_process_id=$p.Id;root_process_started_at_utc_ticks=[int64]$p.StartTime.ToUniversalTime().Ticks;"
                 "started_at=(Get-RepositoryUtcNow);tracked_process_ids=@($p.Id);"
@@ -2197,18 +2207,22 @@ exit 0
                 f"-UsagePath '{usage}' -ProcessSpecifications @($spec);"
                 "if($r.resource_budget_exceeded-or$r.processes.Count-ne1-or$r.processes[0].exit_code-ne0){exit 3}"
             )
-            completed = subprocess.run(
-                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT,
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=15,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-            self.assertIn("SIMION_RESOURCE_EVENT=BATCH_WAVE_COMPLETED", completed.stdout)
+            scheduler_log = root / "scheduler.log"
+            try:
+                with scheduler_log.open("w", encoding="utf-8") as stream:
+                    completed = subprocess.run(
+                        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                        cwd=REPO_ROOT,
+                        check=False,
+                        stdout=stream,
+                        stderr=subprocess.STDOUT,
+                        timeout=15,
+                    )
+            except subprocess.TimeoutExpired as exc:
+                self.fail(f"{exc}\n{scheduler_log.read_text(encoding='utf-8', errors='replace')}")
+            events = scheduler_log.read_text(encoding="utf-8", errors="replace")
+            self.assertEqual(completed.returncode, 0, events)
+            self.assertIn("SIMION_RESOURCE_EVENT=BATCH_WAVE_COMPLETED", events)
 
     def test_watchdog_samples_run_directory_on_frozen_cadence_and_at_exit(
         self,

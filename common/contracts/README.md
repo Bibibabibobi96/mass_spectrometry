@@ -183,6 +183,10 @@ plan/apply 重新核对同一选择及完整保留库存，收据沿用原格式
 owner 随后沿用原 owner、保留理由和 pin，通过上述 `seal-stopped-payload` 登记剩余重载荷。
 所有下游引用、活动 consumer 与租约保护保持原判据，子集选择不绕过这些检查。
 
+退役读取配置中的完整`file_record`（`path/exists/bytes/sha256`，可选`source_path`来源说明）时，
+要求其路径及身份与已验证manifest的input或output记录一致；来源说明不作为第二个消费文件。
+普通输入集合仍逐路径严格检查，不改写原封存配置或manifest，也不因这项解析额外扫描PA。
+
 maintenance 以固定顺序调用 owner continuation；某一历史 owner 的 JSON 或处置失败只记录该 action 的
 错误，仍继续其他彼此独立的 run、PA、scratch 与别名续做。终态历史 run 若已经逐项登记、总量在轻量
 证据预算内且不含重型角色，可从真实 terminal manifest 收敛为一个 `ready` light-evidence range；有完整

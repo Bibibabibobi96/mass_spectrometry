@@ -9,6 +9,7 @@ from pathlib import Path
 from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
+    pulse_candidate_concentration,
     select_profile,
 )
 
@@ -18,6 +19,15 @@ INTEGRATION = REPO / "integrations/rf_multipole_ion_optics_to_single_reflection_
 
 
 class SingleFlightLayoutTests(unittest.TestCase):
+    def test_pulse_concentration_uses_each_rectangular_half_width(self) -> None:
+        bounds = {a: {"full_width_mm": width} for a, width in zip("xyz", (20., 4., 8.))}
+        result = pulse_candidate_concentration(dict(x=1., y=1., z=-2.), dict(x=2., y=.5, z=1.), bounds)
+        self.assertEqual(result["normalized_xyz_centroid"], dict(x=.1, y=.5, z=-.5))
+        self.assertEqual(result["normalized_xyz_spread"], dict(x=.2, y=.25, z=.25))
+        self.assertAlmostEqual(result["normalized_xyz_centroid_distance"], math.sqrt(.51))
+        with self.assertRaises(ContractError):
+            pulse_candidate_concentration(dict(x=0., y=0., z=0.), dict(x=1., y=-1., z=1.), bounds)
+
     @staticmethod
     def _three_zone_candidate() -> dict[str, object]:
         return {

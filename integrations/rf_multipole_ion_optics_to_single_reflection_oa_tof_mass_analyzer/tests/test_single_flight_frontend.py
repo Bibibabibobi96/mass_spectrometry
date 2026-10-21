@@ -838,8 +838,8 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertEqual(
             sideport["collar_x_min_mm"], frontend["source_exit_center_mm"]["x"]
         )
-        self.assertEqual(junction["aperture_discretization"]["flange_x_min_mm"], sideport["collar_x_min_mm"])
-        self.assertEqual(junction["aperture_discretization"]["flange_x_max_mm"], sideport["collar_x_max_mm"])
+        self.assertEqual(junction["aperture_discretization"]["flange_min_mm"], sideport["collar_x_min_mm"])
+        self.assertEqual(junction["aperture_discretization"]["flange_max_mm"], sideport["collar_x_max_mm"])
         self.assertEqual(
             sideport["collar_x_max_mm"] - sideport["collar_x_min_mm"],
             sideport["positive_volume_overlap_mm"],
@@ -1521,6 +1521,356 @@ class ZeroFieldCollisionGemTests(unittest.TestCase):
         expected = "e(0) { box(0,0,0,1,1,1) }\ne(0) {}\ne(0) {}\nn(0) {}\n"
         self.assertEqual(_zero_field_collision_gem(source), expected)
         self.assertEqual(_zero_field_collision_gem(expected), expected)
+
+
+def canonical_frontend_fixture() -> tuple[dict, dict, dict]:
+    """Synthetic, artifact-free input for geometry/contract tests only."""
+    from common.multipole.round_rod_geometry import build_rod_array
+    from projects.orthogonal_accelerator.simion.two_zone_candidate import compile_closed_two_zone_accelerator
+
+    requirements = dict(schema_version=2, role="orthogonal_accelerator_two_zone_requirements", variant_id="two_zone",
+                        acceleration_direction="-z", source_cylinder=dict(radius_mm=1, height_mm=5),
+                        focus=dict(mode="two_zone_time_focus", focus_plane="test_plane"),
+                        compaction=dict(axes=["y", "z"], objective="minimize_subject_to_focus"),
+                        local_pa=dict(span_mm=[64, 64, 84], mesh_mm_per_gu=[.25, .25, .1], exit_z_mm=6, margin_z_mm=6),
+                        placement=dict(focus_y_mm=0, global_repeller_z_mm=34, global_exit_z_mm=0),
+                        side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4))
+    compiled = compile_closed_two_zone_accelerator(requirements)
+    ids = {15: 9, 22: 10, 23: 11, 24: 27, **{26+i: 12+i for i in range(15)}}
+    volts = {15: 0.0, 22: 4400.0, 23: 4000.0, 24: 0.0,
+             **{int(r["id"]): 4000*(r["center_z_mm"]-6)/30 for r in compiled.resolved_electrodes.rings}}
+    component = dict(schema_version=1, role="rf_oatof_accelerator_component", variant_id="two_zone",
+                     geometry_profile_id="closed_two_zone_compact_mr_axial_r3_gap1_4mm", requirements=requirements,
+                     transform=dict(rotation=[[0, 1, 0], [1, 0, 0], [0, 0, -1]], translation_mm=[0, 0, 40]),
+                     local_electrode_ids={str(k): v for k, v in ids.items()},
+                     electrode_voltages_v={str(k): v for k, v in volts.items()},
+                     pulse_voltage_policy_id="all_accelerator_electrodes_zero_before_pulse_v1")
+    array = build_rod_array(radial_order_n=4, electrode_count=8, inscribed_radius_r0_mm=2,
+                           rod_radius_mm=.6, rod_z_min_mm=0, rod_z_max_mm=29)
+    for rod in array["rods"]:
+        rod["physical_electrode_id"] = rod["rod_id"]
+    upstream = dict(schema_version=1, role="ion_processor_bare_guide_interface", frame_id="multipole_cartesian_z_axis_v1",
+                    length_unit="mm", rod_array=array,
+                    mechanical_components=dict(shield=False, entrance_plate=False, exit_plate=False, reference_sleeve=False),
+                    vacuum=dict(pressure_pa=0, collision_model="none", policy_id="native_guide_before_hp_vacuum_v1"),
+                    source_envelope_bounds_mm=dict(min_mm=[-1, -1, -1.5], max_mm=[1, 1, 3.5]),
+                    drive=dict(waveform="cosine", frequency_hz=3700000, phase_rad=0, rf_amplitude_v=500,
+                               group_dc_v=[0, 0], common_mode_v=0, group_polarities={"1": 1, "2": -1}),
+                    guide_exit_surface=dict(center_mm=[0, 0, 29], normal=[0, 0, 1]))
+    connection = dict(spatial_registration=dict(rotation_upstream_to_downstream=[[0, 0, 1], [1, 0, 0], [0, 1, 0]],
+                                               translation_mm=[-47, 0, 2]), connector=dict(length_mm=1))
+    return upstream, connection, component
+
+
+def canonical_three_zone_frontend_fixture() -> tuple[dict, dict, dict]:
+    """Explicit compact functional test geometry, not a provider default."""
+    from projects.orthogonal_accelerator.tests.analysis.test_bare_three_zone_component import three_zone_requirements_fixture
+    upstream, _, _ = canonical_frontend_fixture()
+    req = three_zone_requirements_fixture()
+    g = req["geometry"]
+    mapping = {1: 9, 2: 10, 3: 11, 4: 17, 5: 16, 6: 12, 7: 13, 8: 14, 9: 15}
+    volts = {1: 0., 2: 4400., 3: 4000., 4: 1800., 5: 0.}
+    for pid, z in zip(range(6, 10), g["ring_z_mm"]):
+        left, right, a, b = (4000., 1800., 4., 14.) if z < 14. else (1800., 0., 14., 34.)
+        volts[pid] = left + (right-left)*(z-a)/(b-a)
+    component = dict(schema_version=1, role="rf_oatof_accelerator_component", variant_id="three_zone",
+                     geometry_profile_id="explicit_sectioned_compact_three_zone_fixture", requirements=req,
+                     transform=dict(rotation=[[0,1,0],[1,0,0],[0,0,-1]], translation_mm=[0.,-50.,34.]),
+                     local_electrode_ids={str(k): v for k, v in mapping.items()},
+                     electrode_voltages_v={str(k): v for k, v in volts.items()},
+                     pulse_voltage_policy_id="all_accelerator_electrodes_zero_before_pulse_v1")
+    connection = dict(spatial_registration=dict(rotation_upstream_to_downstream=[[0,-1,0],[0,0,1],[-1,0,0]],
+                                               translation_mm=[0.,-97.,32.]),connector=dict(length_mm=1.))
+    return upstream, connection, component
+
+
+class BareThreeZoneFrontendTests(unittest.TestCase):
+    def compile(self):
+        upstream, connection, component = canonical_three_zone_frontend_fixture()
+        return compile_frontend(upstream, {}, connection, accelerator_component=component,
+                                cell_mm_xyz=dict(x=.1,y=.2,z=.1), target_solver_frame="mrtof_global_cartesian")
+
+    def test_true_eight_rods_and_sectioned_body_use_six_actual_modes_in_mr(self):
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
+            THREE_ZONE_BARE_VARIANT, THREE_ZONE_BARE_PA_PLUS_MODEL_ID, require_pa_plus_solution_model,
+            project_pa_plus_mode_voltages, render_pa_plus_solution_model,
+        )
+        gem, frontend = self.compile()
+        local = frontend["accelerator_local_region"]
+        self.assertEqual(frontend["frontend_variant"], THREE_ZONE_BARE_VARIANT)
+        self.assertEqual(local["planes"], dict(repeller=34.,grid1=30.,intermediate2=20.,exit=0.))
+        self.assertEqual(local["axis_center_mm"], [0.,-50.,34.])
+        self.assertEqual(frontend["guide_exit_center_mm"], dict(x=0.,y=-68.,z=32.))
+        self.assertEqual(local["port"]["flange_min_mm"], -67.)
+        self.assertEqual(local["port"]["normal_axis"], "y")
+        self.assertEqual(local["port"]["boolean_boundary_policy"], "exclude_shape_inside_or_on_v1")
+        self.assertEqual(local["accelerator_port_aperture_discretization"]["boolean_boundary_policy"], "exclude_shape_inside_or_on_v1")
+        self.assertEqual(local["first_gap_bounds_mm"], dict(x_min=-16.,x_max=16.,y_min=-66.,y_max=-34.,z_min=30.,z_max=34.))
+        self.assertNotIn("entrance_reference_sleeve_id", frontend["electrodes"])
+        self.assertNotIn("entrance_plate_id", frontend["electrodes"])
+        self.assertEqual(gem.count("cylinder("), 8)
+        self.assertIn("rotate_z(90) { rotate_x(180)", gem)
+        model = require_pa_plus_solution_model(frontend["pa_plus_solution_model"])
+        self.assertEqual(model["model_id"], THREE_ZONE_BARE_PA_PLUS_MODEL_ID)
+        self.assertEqual(model["mode_count"], 6)
+        self.assertEqual(model["mode_ids"], list(range(18, 24)))
+        self.assertEqual([m["name"] for m in model["modes"]], ["rod_common","rod_differential","repeller","grid1","intermediate2","grid2"])
+        values = {int(k): v for k,v in local["operating_voltages_v"].items()} | dict.fromkeys(range(1,9),0.)
+        self.assertEqual(len(project_pa_plus_mode_voltages(model, values)), 6)
+        self.assertIn("18", render_pa_plus_solution_model(model))
+
+    def test_same_provider_and_six_mode_metadata_feed_existing_child_compilers(self):
+        _, frontend = self.compile()
+        _, _, component = canonical_three_zone_frontend_fixture()
+        cells = dict(x=.1,y=.1,z=.1)
+        _, main = compile_accelerator_main(frontend, {}, cell_mm_xyz=cells,
+            domain_policy=dict(policy_id="full_accelerator_v1"), accelerator_component=component)
+        _, local = compile_accelerator_entrance_aperture_local(frontend, {}, {}, main, cell_mm_xyz=cells,
+            domain_policy=dict(policy_id="aperture_perturbation_local_v1", accelerator_side_extent_mm=2.,
+                               transverse_half_span_mm=10., grid1_downstream_guard_mm=1.),
+            accelerator_component=component)
+        for child in (main, local):
+            self.assertEqual(child["pa_plus_solution_model"], frontend["pa_plus_solution_model"])
+            self.assertEqual(child["accelerator_local_region"]["planes"], frontend["accelerator_local_region"]["planes"])
+            aperture = child["accelerator_local_region"]["accelerator_port_aperture_discretization"]
+            self.assertEqual(aperture["normal_axis"], "y")
+            self.assertEqual(aperture["pa_origin_mm"], {a: round(v,12) for a,v in child["instance_origin_mm"].items()})
+            self.assertEqual(child["cross_section"], "canonical_rectangular")
+            self.assertTrue(child["boundary_condition"]["direct_refinement_prohibited"])
+
+    def test_component_pose_ring_voltages_and_missing_geometry_fail_closed(self):
+        for mutation in ("pose", "ids", "missing", "ring_voltage", "wall_ground"):
+            up, conn, component = canonical_three_zone_frontend_fixture()
+            if mutation == "pose": component["transform"]["rotation"] = [[1,0,0],[0,1,0],[0,0,1]]
+            elif mutation == "ids": component["local_electrode_ids"]["4"] = 99
+            elif mutation == "missing": del component["requirements"]["geometry"]["intermediate2_z_mm"]
+            elif mutation == "ring_voltage": component["electrode_voltages_v"]["6"] += 1.
+            else: component["electrode_voltages_v"]["1"] = 1.
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                compile_frontend(up, {}, conn,accelerator_component=component, cell_mm_xyz=dict(x=.1,y=.2,z=.1),target_solver_frame="mrtof_global_cartesian")
+
+    def test_six_mode_model_rejects_legacy_plate_or_dropped_endpoint(self):
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import require_pa_plus_solution_model
+        _, frontend = self.compile()
+        for change in ("mode", "partition", "namespace"):
+            model = copy.deepcopy(frontend["pa_plus_solution_model"])
+            if change == "mode": model["modes"][4]["name"] = "entrance_plate"
+            elif change == "partition": model["modes"][3]["physical_electrode_coefficients"]["12"] = .1
+            else: model["mode_ids"][-1] += 2
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                require_pa_plus_solution_model(model)
+
+
+class CanonicalProviderFrontendTests(unittest.TestCase):
+    def test_bare_roll_rotates_rods_and_source_bounds_with_the_same_proper_pose(self):
+        upstream, connection, component = canonical_frontend_fixture()
+        # Deliberately asymmetric fixture makes the transverse AABB observable.
+        upstream["source_envelope_bounds_mm"] = dict(min_mm=[-30, -1, -1.5], max_mm=[2, 1, 3.5])
+        cells = dict(x=.5, y=.5, z=.1)
+        old_gem, old = compile_frontend(upstream, {}, connection, cell_mm_xyz=cells, accelerator_component=component)
+        rolled = copy.deepcopy(connection)
+        rolled["spatial_registration"]["rotation_upstream_to_downstream"] = [[0, 0, 1], [0, -1, 0], [1, 0, 0]]
+        gem, result = compile_frontend(upstream, {}, rolled, cell_mm_xyz=cells, accelerator_component=component)
+        self.assertNotIn("rotate_x(0)", old_gem)
+        self.assertIn("rotate_x(90)", gem)
+        self.assertEqual(gem.count("cylinder("), 8)
+        self.assertEqual(result["guide_registration"], rolled["spatial_registration"])
+        self.assertEqual(result["guide_exit_center_mm"], old["guide_exit_center_mm"])
+        self.assertLess(old["instance_bounds_mm"]["y_min"], -30)
+        self.assertGreater(result["instance_bounds_mm"]["y_min"], -30)
+        self.assertLess(result["instance_bounds_mm"]["z_min"], -28)
+        self.assertGreater(old["instance_bounds_mm"]["z_min"], -28)
+
+    def test_bare_roll_rejects_nonproper_or_nonaxial_registration(self):
+        upstream, original, component = canonical_frontend_fixture()
+        for rotation in ([[0, 0, 1], [1, 0, 0], [0, -1, 0]],
+                         [[0, 0, -1], [1, 0, 0], [0, 1, 0]],
+                         [[0, 0, 1], [1, .1, 0], [0, 1, 0]],
+                         [[0, 0, 1], [float("nan"), 0, 0], [0, 1, 0]]):
+            connection = copy.deepcopy(original)
+            connection["spatial_registration"]["rotation_upstream_to_downstream"] = rotation
+            with self.subTest(rotation=rotation), self.assertRaises(ValueError):
+                compile_frontend(upstream, {}, connection, cell_mm_xyz=dict(x=.5, y=.5, z=.1), accelerator_component=component)
+
+    def test_actual_provider_export_api_feeds_the_existing_composite_entry(self):
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.guide_interface import export_guide_contract
+        from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+
+        config = REPO/"projects/dual_pressure_rectilinear_ion_processor/config"
+        read = lambda name: json.loads((config/name).read_text(encoding="utf-8-sig"))
+        baseline = read("baseline.json")
+        model = dict(baseline=baseline, source=read("source.json"),
+                     native_projection=native_projection(baseline, read("numerics.json")),
+                     native_operating_point=read("native_operating_point.json"))
+        identities = {k: dict(path=f"synthetic-fixture/{k}", bytes=1, sha256="A"*64)
+                      for k in ("resolved_model", "source_spec", "release_csv")}
+        exported = export_guide_contract(model, identities)
+        _, connection, component = canonical_frontend_fixture()
+        gem, result = compile_frontend(exported, {}, connection, cell_mm_xyz=dict(x=.5, y=.5, z=.1), accelerator_component=component)
+        self.assertEqual(gem.count("cylinder("), 8)
+        self.assertEqual(result["guide_contract"], exported)
+        self.assertEqual(result["guide_contract"]["source_particle_count"], model["source"]["particle_count"])
+
+    def compile(self):
+        upstream, connection, component = canonical_frontend_fixture()
+        gem, frontend = compile_frontend(upstream, {}, connection, cell_mm_xyz=dict(x=.5, y=.5, z=.1),
+                                         accelerator_component=component)
+        return gem, frontend, connection, component
+
+    def test_composite_keeps_eight_continuous_rods_and_asymmetric_provider_geometry(self):
+        gem, frontend, _, component = self.compile()
+        self.assertIn("rotate_y(90) { rotate_z(90)", gem)
+        self.assertIn("rotate_z(90) { rotate_x(180)", gem)
+        for i in range(1, 9):
+            self.assertEqual(len(re.findall(rf"\be\({i}\)", gem)), 1)
+        self.assertEqual(gem.count("cylinder("), 8)
+        self.assertNotIn("entrance_reference_sleeve_id", frontend["electrodes"])
+        self.assertFalse(frontend["bare_guide_generated_shield_or_plate"])
+        region = frontend["accelerator_local_region"]
+        bounds = region["actual_bounds_mm"]
+        self.assertEqual(bounds["x_max"]-bounds["x_min"], 34)
+        self.assertEqual(bounds["y_max"]-bounds["y_min"], 44)
+        self.assertEqual(region["planes"], dict(repeller=0, grid1=4, exit=34))
+        self.assertEqual(region["pa_plus_solution_model"]["mode_count"], 5)
+        self.assertEqual(frontend["accelerator_component"], component)
+        self.assertEqual(set(region["operating_voltages_v"]), {str(i) for i in range(9, 28)})
+        self.assertEqual(region["off_voltages_v"], {str(i): 0 for i in range(9, 28)})
+        self.assertLess(frontend["instance_bounds_mm"]["x_min"], -48.5)
+        self.assertEqual(frontend["guide_contract"]["drive"]["rf_amplitude_v"], 500)
+
+    def test_same_canonical_renderer_and_model_feed_main_and_entrance_local(self):
+        _, frontend, connection, component = self.compile()
+        cells = dict(x=.25, y=.25, z=.1)
+        main_gem, main = compile_accelerator_main(frontend, {}, cell_mm_xyz=cells,
+                                                 domain_policy=dict(policy_id="full_accelerator_v1"),
+                                                 accelerator_component=component,
+                                                 reference_aperture_mm=dict(width=3, height=2.8))
+        local_gem, local = compile_accelerator_entrance_aperture_local(
+            frontend, {}, connection, main, cell_mm_xyz=cells,
+            domain_policy=dict(policy_id="aperture_perturbation_local_v1", accelerator_side_extent_mm=8,
+                               transverse_half_span_mm=4, grid1_downstream_guard_mm=.5),
+            aperture_mm=dict(width=3, height=2.8))
+        for gem, contract in ((main_gem, main), (local_gem, local)):
+            self.assertIn("rotate_z(90) { rotate_x(180)", gem)
+            self.assertNotIn("cylinder(", gem)
+            self.assertEqual(contract["pa_plus_solution_model"], frontend["pa_plus_solution_model"])
+            self.assertEqual(contract["pa_plus_solution_model"]["mode_count"], 5)
+            self.assertTrue(contract["boundary_condition"]["direct_refinement_prohibited"])
+            self.assertEqual(contract["electrodes"], frontend["electrodes"])
+            self.assertEqual(contract["accelerator_component"], component)
+            self.assertEqual(contract["cross_section"], "canonical_rectangular")
+        self.assertEqual(local["replacement_semantics"]["parent_role"], main["role"])
+
+    def test_invalid_or_legacy_mixed_inputs_fail_closed(self):
+        upstream, connection, original = canonical_frontend_fixture()
+        cells = dict(x=.5, y=.5, z=.1)
+        for change in (dict(pulse_voltage_policy_id="implicit"), dict(variant_id="three_zone"),
+                       dict(transform=dict(rotation=[[1, 0, 0], [0, 1, 0], [0, 0, 1]], translation_mm=[0, 0, 40]))):
+            component = {**original, **change}
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                compile_frontend(upstream, {}, connection, cell_mm_xyz=cells, accelerator_component=component)
+        altered = copy.deepcopy(original)
+        altered["electrode_voltages_v"]["26"] += 1
+        with self.assertRaises(ValueError):
+            compile_frontend(upstream, {}, connection, cell_mm_xyz=cells, accelerator_component=altered)
+        with self.assertRaises(ValueError):
+            compile_frontend(upstream, {}, connection, accelerator_component=original)
+        upstream["mechanical_components"]["shield"] = True
+        with self.assertRaises(ValueError):
+            compile_frontend(upstream, {}, connection, cell_mm_xyz=cells, accelerator_component=original)
+
+    def test_gap_source_coverage_and_child_grid_authorities_fail_closed(self):
+        upstream, connection, component = canonical_frontend_fixture()
+        for change in (dict(connector=dict(length_mm=0)), dict(connector=dict(length_mm=2))):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                compile_frontend(upstream, {}, {**connection, **change}, cell_mm_xyz=dict(x=.5, y=.5, z=.1), accelerator_component=component)
+        wrong = copy.deepcopy(upstream)
+        wrong.pop("source_envelope_bounds_mm")
+        with self.assertRaises(ValueError):
+            compile_frontend(wrong, {}, connection, cell_mm_xyz=dict(x=.5, y=.5, z=.1), accelerator_component=component)
+        _, frontend, _, _ = self.compile()
+        with self.assertRaises(ValueError):
+            compile_accelerator_main(frontend, {}, cell_mm_xyz=dict(x=.3, y=.3, z=.1), domain_policy=dict(policy_id="full_accelerator_v1"))
+
+    def test_local_never_resizes_the_provider_aperture_or_accepts_foreign_component(self):
+        _, frontend, _, component = self.compile()
+        with self.assertRaises(ValueError):
+            compile_accelerator_main(frontend, {}, cell_mm_xyz=dict(x=.25, y=.25, z=.1),
+                                     domain_policy=dict(policy_id="full_accelerator_v1"),
+                                     reference_aperture_mm=dict(width=1, height=1))
+        changed = copy.deepcopy(component)
+        changed["electrode_voltages_v"]["22"] += 1
+        with self.assertRaises(ValueError):
+            compile_accelerator_main(frontend, {}, cell_mm_xyz=dict(x=.25, y=.25, z=.1),
+                                     domain_policy=dict(policy_id="full_accelerator_v1"), accelerator_component=changed)
+
+
+class DirectMrFrontendTests(unittest.TestCase):
+    def compile(self, *, direct=False):
+        upstream, connection, component = canonical_frontend_fixture()
+        if direct:
+            # This is a rigid rotation of the whole fixture before PA creation.
+            component["transform"] = dict(rotation=[[1, 0, 0], [0, 1, 0], [0, 0, 1]], translation_mm=[0, 0, -40])
+            connection["spatial_registration"] = dict(rotation_upstream_to_downstream=[[1, 0, 0], [0, 0, 1], [0, -1, 0]],
+                                                        translation_mm=[0, -47, -2])
+        return compile_frontend(upstream, {}, connection, cell_mm_xyz=dict(x=.1, y=.2, z=.1),
+                                accelerator_component=component, target_solver_frame="mrtof_global_cartesian" if direct else None)
+
+    def test_default_option_is_byte_identical_and_direct_mr_has_real_decreasing_planes(self):
+        upstream, connection, component = canonical_frontend_fixture()
+        omitted = compile_frontend(upstream, {}, connection, cell_mm_xyz=dict(x=.1, y=.2, z=.1), accelerator_component=component)
+        self.assertEqual(omitted, self.compile())
+        gem, result = self.compile(direct=True)
+        self.assertEqual(result["native_frame_id"], "mrtof_global_cartesian")
+        self.assertEqual(result["slow_axis"], "y")
+        self.assertEqual(result["acceleration_direction"], -1)
+        planes = result["accelerator_local_region"]["planes"]
+        self.assertGreater(planes["repeller"], planes["grid1"])
+        self.assertGreater(planes["grid1"], planes["exit"])
+        self.assertEqual(gem.count("cylinder("), 8)
+        self.assertNotIn("rotate_z(90) { rotate_x(180)", gem)
+        self.assertIn("rotate_x(-90)", gem)
+        port = result["accelerator_local_region"]["port"]
+        self.assertEqual(port["normal_axis"], "y")
+        self.assertEqual(port["flange_min_mm"] - result["guide_exit_center_mm"]["y"], 1)
+        self.assertNotIn("negative_x_face_mm", port)
+        self.assertEqual(result["cell_mm_xyz"], dict(x=.1, y=.2, z=.1))
+
+    def test_direct_mr_aperture_binds_world_grid_and_preserves_off_grid_warning(self):
+        gem, result = self.compile(direct=True)
+        local = result["accelerator_local_region"]
+        aperture = local["accelerator_port_aperture_discretization"]
+        self.assertEqual(aperture["normal_axis"], "y")
+        self.assertEqual(aperture["schema_version"], 3)
+        self.assertEqual(aperture["center_mm"], dict(zip("xyz", local["port"]["center_mm"])))
+        self.assertEqual(aperture["pa_origin_mm"], {a: round(v, 12) for a, v in result["instance_origin_mm"].items()})
+        self.assertEqual(aperture["boolean_boundary_policy"], "exclude_shape_inside_only_v1")
+        self.assertEqual(set(aperture["grid_alignment"]["edge_grid_coordinates"]),
+                         {"x_min", "x_max", "z_min", "z_max"})
+        upstream, connection, component = canonical_frontend_fixture()
+        component["transform"] = dict(rotation=[[1,0,0],[0,1,0],[0,0,1]], translation_mm=[0,0,-40])
+        connection["spatial_registration"] = dict(rotation_upstream_to_downstream=[[1,0,0],[0,0,1],[0,-1,0]],
+                                                    translation_mm=[0, -47, -2])
+        component["requirements"]["side_entry"]["half_width_x_mm"] = 1.513
+        changed_gem, changed = compile_frontend(upstream, {}, connection,
+            cell_mm_xyz=dict(x=.1, y=.2, z=.1), accelerator_component=component,
+            target_solver_frame="mrtof_global_cartesian")
+        warning = changed["accelerator_local_region"]["accelerator_port_aperture_discretization"]
+        self.assertIn("aperture_width_not_integer_cell_multiple", warning["grid_alignment"]["warnings"])
+        self.assertIn("aperture_x_edges_not_on_grid_nodes", warning["grid_alignment"]["warnings"])
+        self.assertEqual(warning["numerical_carve_width_mm"], 3.026)
+        self.assertNotEqual(gem, changed_gem)
+
+    def test_signed_axis_solution_coefficients_are_rigid_reflection_invariant(self):
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import resolve_two_zone_bare_pa_plus_solution_model
+        _, old = self.compile()
+        _, direct = self.compile(direct=True)
+        self.assertEqual(old["pa_plus_solution_model"], direct["pa_plus_solution_model"])
+        local = direct["accelerator_local_region"]
+        for direction in (0, True, 1.5, 2):
+            with self.subTest(direction=direction), self.assertRaises(ValueError):
+                resolve_two_zone_bare_pa_plus_solution_model(direct["electrodes"], planes_global_z_mm=local["planes"],
+                                                           ring_z_mm=local["ring_z_mm"], acceleration_direction=direction)
 
 
 if __name__ == "__main__":

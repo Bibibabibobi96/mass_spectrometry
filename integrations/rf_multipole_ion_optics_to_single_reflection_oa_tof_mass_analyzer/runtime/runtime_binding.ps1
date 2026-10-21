@@ -139,7 +139,8 @@ function Resolve-RfOatofDependencyContract {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string]$ContractPath
+    [Parameter(Mandatory)][string]$ContractPath,
+    [string]$ConsumerId=''
   )
   $contract = Get-Content -LiteralPath $ContractPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
@@ -160,7 +161,11 @@ function Resolve-RfOatofDependencyContract {
       @($dependencyIds | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -ne 0) {
     throw 'Family runtime dependency authority contains an empty identity.'
   }
-  foreach ($requiredId in @(
+  if ($ConsumerId -and @($contract.consumer_ids) -notcontains $ConsumerId) {
+    throw "Unregistered runtime dependency consumer: $ConsumerId"
+  }
+  $requiredIds=@()
+  if(-not$ConsumerId){$requiredIds=@(
       'common_multipole_simion_geometry',
       'common_multipole_simion_rf_drive_kernel',
       'common_grounded_shield_connector',
@@ -170,7 +175,8 @@ function Resolve-RfOatofDependencyContract {
       'rf_single_flight_pure_boundary_validator',
       'rf_single_flight_electrode_contract',
       'oatof_simion_stable_entry'
-    )) {
+    )}
+  foreach ($requiredId in $requiredIds) {
     if (@($dependencyIds | Where-Object { $_ -eq $requiredId }).Count -ne 1) {
       throw "Family runtime dependency authority must contain required ID exactly once: $requiredId"
     }
@@ -187,6 +193,10 @@ function Resolve-RfOatofDependencyContract {
       @($runInputNames | Select-Object -Unique).Count -ne $allDependencies.Count -or
       @($frozenFilenames | Select-Object -Unique).Count -ne $allDependencies.Count) {
     throw 'Resolved family dependency inventory contains duplicate identities or paths.'
+  }
+  if ($ConsumerId) {
+    $allDependencies=@($allDependencies|Where-Object{@($_.consumers)-contains$ConsumerId})
+    if(-not$allDependencies.Count){throw "Runtime dependency consumer has no declared files: $ConsumerId"}
   }
   foreach ($dependency in $allDependencies) {
     if ($dependency.PSObject.Properties.Name -notcontains 'source_repo_path' -or
@@ -210,13 +220,43 @@ function Resolve-RfOatofDependencyContract {
     schema_version = 3
     role = 'rf_to_oatof_semantic_transfer_resolved_dependencies'
     consumer_project = [string]$contract.consumer_project
-    consumer_ids = @($contract.consumer_ids)
+    consumer_ids = $(if($ConsumerId){@($ConsumerId)}else{@($contract.consumer_ids)})
     dependencies = $allDependencies
     runtime_policy = $contract.runtime_policy
     consumer_scope = [string]$contract.consumer_scope
     authority = [pscustomobject]@{
       path = [IO.Path]::GetFullPath($ContractPath)
     }
+  }
+}
+
+function Freeze-RfOatofConsumerDependencies {
+  <# Freeze one explicitly registered consumer through the existing verified
+     dependency copier and inventory publisher; no discovery or provider model. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$ContractPath,
+    [Parameter(Mandatory)][string]$InputDir,
+    [Parameter(Mandatory)][string]$ConsumerId
+  )
+  $resolved=Resolve-RfOatofDependencyContract -RepoRoot $RepoRoot -ContractPath $ContractPath -ConsumerId $ConsumerId
+  $relative=[IO.Path]::GetRelativePath([IO.Path]::GetFullPath($RepoRoot),[IO.Path]::GetFullPath($ContractPath)).Replace('\','/')
+  if($relative.StartsWith('../')){throw 'Dependency contract must be repository-local.'}
+  $runtime=[pscustomobject]@{
+    binding=[pscustomobject]@{contracts=[pscustomobject]@{dependency_contract=[pscustomobject]@{path=$relative}}}
+    contracts=[pscustomobject]@{dependency_contract=$ContractPath}
+    dependency_contract=$resolved
+  }
+  $publication=Publish-RfOatofDependencyInventory -Runtime $runtime -RepoRoot $RepoRoot -InputDir $InputDir -Role $ConsumerId
+  $identities=@(foreach($dependency in $resolved.dependencies){
+    Copy-RfFrozenDependency -RepoRoot $RepoRoot -InputDir $InputDir -Dependency $dependency
+  })
+  return [pscustomobject]@{
+    execution_root=Join-Path $InputDir 'runtime_snapshot'
+    code_inventory_path=$publication.code_inventory_path
+    dependency_contract_path=$publication.dependency_contract_path
+    identities=$identities
   }
 }
 

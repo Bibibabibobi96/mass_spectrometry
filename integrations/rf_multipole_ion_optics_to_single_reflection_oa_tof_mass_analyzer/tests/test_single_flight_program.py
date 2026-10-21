@@ -4,6 +4,7 @@ import json
 import copy
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -14,6 +15,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     SOURCE_RELEASE_MODES,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
     build_successor_program,
+    build_local_frontend_program,
+    _successor_analyzer_config,
     load_initial_state,
     load_row_map,
     reflectron_fast_adjust_assignments,
@@ -38,6 +41,11 @@ def _pa_plus_model() -> dict:
     )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
     FRONTEND_ELECTRODES,
+    TWO_ZONE_BARE_VARIANT,
+    frontend_electrodes,
+    render_pa_plus_solution_model,
+    require_pa_plus_solution_model,
+    resolve_two_zone_bare_pa_plus_solution_model,
     THREE_ZONE_FRONTEND_ELECTRODES,
     project_pa_plus_mode_voltages,
     resolve_frontend_electrode_topology,
@@ -287,7 +295,395 @@ def _standalone_domain_inputs(
     return upstream, frontend, oatof, region, domain, local
 
 
+def _canonical_two_zone_program_inputs(directory: Path) -> tuple[dict, dict, dict, dict]:
+    """Synthetic actual metadata for the two-zone Program adapter tests."""
+    geometry_path = REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+    oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+    region = build_resolved_region_field_contract(geometry_path, directory / "region.json", "accelerator_real_pa")
+    upstream = {
+        "role": "ion_processor_bare_guide_interface", "schema_version": 1,
+        "drive": {"group_dc_v": [7., -7.], "group_polarities": {"1": 1, "2": -1}, "common_mode_v": 3., "waveform": "cosine", "frequency_hz": 1e6, "phase_rad": 0., "rf_amplitude_v": 100.},
+        "rod_array": {"rods": [{"physical_electrode_id": i, "electrode_group": 1 if i % 2 else 2} for i in range(1, 9)]},
+    }
+    electrodes = frontend_electrodes(ring_count=15, three_zone=False, variant=TWO_ZONE_BARE_VARIANT)
+    planes = {"repeller": -40., "grid1": -36., "exit": -6.}
+    ring_z = [-36. + 30. * i / 16 for i in range(1, 16)]
+    model = resolve_two_zone_bare_pa_plus_solution_model(electrodes, planes_global_z_mm=planes, ring_z_mm=ring_z)
+    on = {str(i): 0. for i in range(9, 28)}
+    on.update({"10": 2200., "11": 1900.})
+    for i, eid in enumerate(electrodes["accelerator_ring_ids"], 1):
+        on[str(eid)] = 1900. * (16 - i) / 16
+    local = {"planes": planes, "ring_z_mm": ring_z, "operating_voltages_v": on,
+             "off_voltages_v": {k: 0. for k in on},
+             "pulse_voltage_policy_id": "all_accelerator_electrodes_zero_before_pulse_v1",
+             "actual_bounds_mm": {"x_min": -10., "x_max": 30., "y_min": -20., "y_max": 20., "z_min": -43., "z_max": -5.},
+             "accelerator_component": {"transform": {"translation_mm": [10., 2., 0.]}}, "pa_plus_solution_model": model}
+    frontend = {"role": "rf_oatof_simion_single_flight_frontend_contract", "frontend_variant": TWO_ZONE_BARE_VARIANT,
+                "electrodes": electrodes, "accelerator_local_region": local, "pa_plus_solution_model": model,
+                "source_exit_center_mm": {"x": -1., "y": 2., "z": -38.},
+                "instance_origin_mm": {"x": -10., "y": -20., "z": -43.}}
+    return upstream, frontend, oatof, region
+
+
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_local_three_zone_program_uses_actual_intermediate_plane(self) -> None:
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.test_single_flight_frontend import canonical_three_zone_frontend_fixture
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import compile_frontend
+        upstream, connection, component = canonical_three_zone_frontend_fixture()
+        _, frontend = compile_frontend(upstream, {}, connection, accelerator_component=component,
+                                       cell_mm_xyz=dict(x=.1, y=.2, z=.1), target_solver_frame="mrtof_global_cartesian")
+        kwargs = dict(birth_times_us=[0.], particle_ids=[1], initial_velocities_mm_per_us=[[0., 1., 0.]],
+            pulse_time_us=1., pulse_width_us=10., maximum_flight_us=2., maximum_step_us=.01,
+            shared_times_us=[0., .5, 1.], trajectory_cadence_us=.1,
+            standalone_dynamic_field_bank=_standalone_dynamic_field_bank({"coarse_frontend": 1}),
+            rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE, pulse_hook_source=PULSE_HOOK_SOURCE,
+            frontend_hook_source=FRONTEND_HOOK_SOURCE, rf_steps_per_period=160, trajectory_quality=8)
+        program = build_local_frontend_program(upstream, frontend, **kwargs)
+        self.assertIn("'accelerator_intermediate2_forward'", program)
+        self.assertIn("for _,plane in ipairs({30,20,0})", program)
+        stop = frontend["instance_bounds_mm"]["z_min"] / 2
+        self.assertIn(f"local numerical_stop_z_mm={stop:.17g}", program)
+        for bound in (0., 1., float("nan"), True):
+            bad = copy.deepcopy(frontend)
+            bad["instance_bounds_mm"]["z_min"] = bound
+            with self.subTest(downstream_bound=bound), self.assertRaises(ValueError):
+                build_local_frontend_program(upstream, bad, **kwargs)
+        self.assertNotIn("single_flight_analyzer", program)
+        for mutation in (dict(intermediate2=31.), dict(intermediate2=-1.)):
+            bad = copy.deepcopy(frontend)
+            bad["accelerator_local_region"]["planes"].update(mutation)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                build_local_frontend_program(upstream, bad, **kwargs)
+
+    @unittest.skipUnless(Path(shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe").is_file(), "plain Lua interpreter unavailable")
+    def test_local_frontend_plain_lua_uses_one_carrier_absolute_clock_and_unique_terminal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, frontend, _, _ = _canonical_two_zone_program_inputs(root)
+            frontend.update(native_frame_id="mrtof_global_cartesian", slow_axis="y", acceleration_direction=-1)
+            frontend["accelerator_local_region"]["port"] = dict(normal_axis="y", flange_min_mm=3., flange_max_mm=4.)
+            frontend["accelerator_local_region"]["planes"] = {k: -v for k, v in frontend["accelerator_local_region"]["planes"].items()}
+            frontend["accelerator_local_region"]["ring_z_mm"] = [-v for v in frontend["accelerator_local_region"]["ring_z_mm"]]
+            frontend["instance_bounds_mm"] = dict(z_min=-43., z_max=47.)
+            kwargs = dict(birth_times_us=[.25, .5], particle_ids=[3, 11],
+                initial_velocities_mm_per_us=[[0., 1., -10.], [0., 0., -1.]],
+                pulse_time_us=1., pulse_width_us=10., maximum_flight_us=2., maximum_step_us=.01,
+                shared_times_us=[.25, .5, 1., 1.1], trajectory_cadence_us=.1,
+                standalone_dynamic_field_bank=_standalone_dynamic_field_bank({"coarse_frontend": 1}),
+                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE, pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE, rf_steps_per_period=160, trajectory_quality=8)
+            program = build_local_frontend_program(upstream, frontend, **kwargs)
+            self.assertIn("sim_segment_global=1", program)
+            self.assertNotIn("single_flight_analyzer", program)
+            self.assertNotIn("reflectron", program)
+            self.assertNotIn("simion.command", program)
+            for key, value in (("particle_ids", [3, 3]), ("pulse_width_us", .1), ("shared_times_us", [1., .5]), ("trajectory_quality", 0), ("trajectory_quality", True), ("trajectory_quality", 501)):
+                with self.subTest(key=key), self.assertRaises(ValueError):
+                    build_local_frontend_program(upstream, frontend, **{**kwargs, key: value})
+            for change in (dict(normal_axis="x", flange_min_mm=3., flange_max_mm=4.),
+                           dict(normal_axis="y", flange_min_mm=4., flange_max_mm=3.)):
+                bad = copy.deepcopy(frontend)
+                bad["accelerator_local_region"]["port"] = change
+                with self.subTest(port=change), self.assertRaises(ValueError):
+                    build_local_frontend_program(upstream, bad, **kwargs)
+            path = root / "local.lua"
+            path.write_text(program, encoding="utf-8")
+            clock_path = root / "local_shared_clock.lua"
+            clock_path.write_text(build_local_frontend_program(upstream, frontend, **{
+                **kwargs, "shared_times_us": [.25, 6.25, 6.5], "maximum_flight_us": 10., "pulse_width_us": 20.,
+            }), encoding="utf-8")
+            script = root / "local_callbacks.lua"
+            script.write_text(r"""
+local field_queries=0
+local function response(values)
+ return {nx=501,ny=301,nz=901,dx_mm=.1,dy_mm=.2,dz_mm=.1,symmetry='3dplanar',potential_type='electrostatic',
+ inside_vc=function(self,x,y,z) return x>=0 and x<=self.nx-1 and y>=0 and y<=self.ny-1 and z>=0 and z<=self.nz-1 end,
+ field_vc=function(self,x,y,z)
+  assert(self:inside_vc(x,y,z),'field_vc must never receive an outside-PA trial')
+  field_queries=field_queries+1;return values[1],values[2],values[3] end}
+end
+local rf,pulse=response({1,2,3}),response({4,5,6})
+local carrier={filename='coarse_frontend__off_static.pa',x=-10,y=-20,z=-43,scale=1,az=0,el=0,rt=0,pa=response({0,0,0}),
+ wb_to_pa_coords=function(self,x,y,z) return (x-self.x)/self.pa.dx_mm,(y-self.y)/self.pa.dy_mm,(z-self.z)/self.pa.dz_mm end}
+carrier.pa.filename=carrier.filename
+carrier.pa.path='C:\\frozen fields\\coarse_frontend__off_static.pa'
+if arg[2]=='missing_path' then carrier.pa.path=carrier.filename end
+if arg[2]=='wrong_carrier' then carrier.pa.path='C:/decoy/wrong.pa' end
+segment={}
+simion={workbench_program=function() end,wb={instances={carrier}},pas={open=function(_,path)
+ if path=='C:/frozen fields/coarse_frontend__rf_differential.pa' then return rf end
+ if path=='C:/frozen fields/coarse_frontend__pulse_delta.pa' then return pulse end
+ error('unexpected sidecar '..path) end}}
+local logs={};local original_print=print
+print=function(value) logs[#logs+1]=value end
+assert(dofile(arg[1])==nil)
+assert(sim_segment_global==1,'actual outside-PA terminal callbacks must remain registered')
+sim_trajectory_quality=1;sim_trajectory_image_control=3
+segment.load();assert(sim_trajectory_quality==8 and sim_trajectory_image_control==0,'GUI load quality/visible trajectories')
+sim_trajectory_quality=2;sim_trajectory_image_control=3
+segment.initialize_run();assert(sim_trajectory_quality==8 and sim_trajectory_image_control==0,'run quality/visible trajectories')
+ion_number=1;ion_instance=1;ion_time_of_flight=0;ion_px_mm=10;ion_py_mm=2;ion_pz_mm=38
+ion_vx_mm=99;ion_vy_mm=99;ion_vz_mm=99;ion_splat=0;ion_time_step=.1
+segment.initialize();assert(ion_vy_mm==1 and ion_vz_mm==-10)
+segment.other_actions()
+ion_time_of_flight=.1
+ion_dvoltsx_gu=10;ion_dvoltsy_gu=20;ion_dvoltsz_gu=30
+segment.efield_adjust()
+assert(math.abs(ion_dvoltsx_gu-(10-100*math.cos(2*math.pi*.35)))<1e-8,'OFF RF canonical clock')
+assert(math.abs(ion_dvoltsy_gu-(20-200*math.cos(2*math.pi*.35)))<1e-8 and
+ math.abs(ion_dvoltsz_gu-(30-300*math.cos(2*math.pi*.35)))<1e-8,'OFF transverse field components')
+local before_queries=field_queries
+ion_pz_mm=100;ion_dvoltsx_gu=17;ion_dvoltsy_gu=19;ion_dvoltsz_gu=23
+segment.efield_adjust();segment.efield_adjust()
+assert(field_queries==before_queries,'outside trials must not query either response PA')
+assert(ion_dvoltsx_gu==17 and ion_dvoltsy_gu==19 and ion_dvoltsz_gu==23,'outside trials must preserve native gradients')
+assert(ion_splat==0 and ion_pz_mm==100 and ion_vz_mm==-10,'outside trial is not an accepted terminal or coordinate edit')
+local outside_logs=0
+for _,line in ipairs(logs) do
+ if line:match('FIELD_QUERY_OUTSIDE:') then
+  outside_logs=outside_logs+1
+  assert(line:match('basis=query_only') and line:match('particle_id=3 ') and line:match('z_gu=1430'),'query provenance and actual world-to-PA coordinates')
+ end
+end
+assert(outside_logs==1,'only first outside query per particle is logged')
+ion_pz_mm=38;ion_dvoltsx_gu=10;ion_dvoltsy_gu=20;ion_dvoltsz_gu=30
+segment.efield_adjust()
+assert(field_queries==before_queries+1 and ion_splat==0,'a later inside trial must continue normally')
+assert(math.abs(ion_dvoltsx_gu-(10-100*math.cos(2*math.pi*.35)))<1e-8,'inside field is unchanged after an outside trial')
+-- OFF-phase y-face landings are independent of the inactive -z grid hook.
+ion_time_of_flight=.11;ion_py_mm=2.999;segment.other_actions()
+ion_time_step=.1;segment.tstep_adjust();assert(math.abs(ion_time_step-.001)<1e-12,'OFF pre-face cap')
+ion_time_of_flight=.111;ion_py_mm=2.9999999999999996;segment.other_actions()
+ion_time_step=.1;segment.tstep_adjust();assert(ion_time_step==0,'one aperture boundary confirmation')
+segment.other_actions();ion_time_step=.1;segment.tstep_adjust();assert(ion_time_step>0,'aperture zero step progresses')
+ion_time_of_flight=.12;ion_py_mm=3.999;segment.other_actions()
+ion_time_step=.1;segment.tstep_adjust();assert(math.abs(ion_time_step-.001)<1e-12,'OFF post-face cap')
+ion_time_of_flight=.121;ion_py_mm=4;segment.other_actions()
+-- A true backward passage rearms, and the next forward crossing stays in raw logs.
+ion_time_of_flight=.13;ion_py_mm=2.9;ion_vy_mm=-1;segment.other_actions()
+ion_time_of_flight=.14;ion_px_mm=10;ion_py_mm=2.999;ion_vx_mm=.2;ion_vy_mm=1;segment.other_actions()
+ion_time_step=.1;segment.tstep_adjust()
+ion_time_of_flight=.141;ion_px_mm=10.005;ion_py_mm=3.00000004;ion_pz_mm=37.999
+ion_vx_mm=.4;ion_vy_mm=1.2;ion_vz_mm=-9.8;segment.other_actions()
+local pre,post,endpoints=0,0,0
+local function trace_fields(line)
+ local row={};for key,value in line:gmatch('([%w_]+)=([^%s]+)') do row[key]=tonumber(value) end
+ return row
+end
+for _,line in ipairs(logs) do
+ if line:match('TRACE: local_aperture_pre ') then
+  pre=pre+1;local row=trace_fields(line)
+  if pre==1 then
+   assert(row.y_mm==2.9999999999999996,'zero-step must retain actual near-plane position')
+  else
+   local f=(3-2.999)/(3.00000004-2.999)
+   assert(row.y_mm==3 and row.instrument_time_us<.391,'overshoot must interpolate inside native step')
+   assert(math.abs(row.instrument_time_us-(.39+f*.001))<1e-14,'interpolated aperture clock')
+   assert(math.abs(row.x_mm-(10+f*.005))<1e-13,'interpolated aperture position')
+   assert(math.abs(row.vx_mm_per_us-(.2+f*.2))<1e-13,'interpolated aperture velocity')
+  end
+ end
+ if line:match('TRACE: local_aperture_post ') then post=post+1 end
+ if line:match('TRACE: local_aperture_.*_step_before ') or line:match('TRACE: local_aperture_.*_step_after ') then endpoints=endpoints+1 end
+end
+assert(pre==2 and post==1 and endpoints==6,'aperture recrossing and native endpoint census')
+ion_time_of_flight=.25;ion_pz_mm=37;segment.other_actions()
+ion_time_of_flight=.75;segment.other_actions()
+ion_pz_mm=36.000000000000007;ion_time_step=.1;segment.tstep_adjust()
+ion_time_of_flight=.7500000000000007;segment.other_actions()
+ion_time_step=.1;segment.tstep_adjust();assert(ion_time_step==0,'one boundary confirmation')
+segment.other_actions();ion_time_step=.1;segment.tstep_adjust();assert(ion_time_step>0,'hook progresses after zero step')
+ion_time_of_flight=.85
+ion_dvoltsx_gu=10;ion_dvoltsy_gu=20;ion_dvoltsz_gu=30
+segment.efield_adjust()
+assert(math.abs(ion_dvoltsx_gu-(10-100*math.cos(2*math.pi*1.1)-4))<1e-8,'ON pulse delta')
+assert(math.abs(ion_dvoltsy_gu-(20-200*math.cos(2*math.pi*1.1)-5))<1e-8 and
+ math.abs(ion_dvoltsz_gu-(30-300*math.cos(2*math.pi*1.1)-6))<1e-8,'ON transverse field components')
+before_queries=field_queries
+ion_pz_mm=100;ion_dvoltsx_gu=17;ion_dvoltsy_gu=19;ion_dvoltsz_gu=23
+segment.efield_adjust()
+assert(field_queries==before_queries and ion_dvoltsx_gu==17 and ion_dvoltsy_gu==19 and ion_dvoltsz_gu==23 and ion_splat==0,'ON outside trial also leaves both response fields and native gradient untouched')
+ion_pz_mm=36;ion_dvoltsx_gu=10;ion_dvoltsy_gu=20;ion_dvoltsz_gu=30;segment.efield_adjust()
+assert(field_queries==before_queries+2,'inside ON trial resumes both RF and pulse responses')
+ion_pz_mm=5;segment.other_actions();assert(ion_splat==0,'scientific exit observation cannot stop the particle')
+-- Only post-exit motion receives the padding-derived step cap.
+ion_time_step=.1;ion_vz_mm=-10000;segment.tstep_adjust()
+assert(ion_time_step<=49/4/10000,'post-exit cap derives from existing padding')
+ion_vz_mm=-9.8
+ion_time_of_flight=.86;ion_pz_mm=7;segment.other_actions()
+ion_time_of_flight=.87;ion_pz_mm=5;segment.other_actions()
+ion_time_of_flight=.9;ion_pz_mm=-18;segment.other_actions()
+local before_stop_logs=#logs
+ion_time_of_flight=.95;ion_pz_mm=-19;segment.other_actions();assert(ion_splat==1)
+assert(#logs==before_stop_logs+1 and logs[#logs]:match('LOCAL_NUMERICAL_STOP:'),'stop callback must not publish later trajectory/shared observations')
+-- Real SIMION N1 retained the preceding accepted endpoint on this stop action.
+ion_time_of_flight=.9;ion_pz_mm=-18
+segment.terminate();segment.terminate()
+local exit,terminal,shared,exit_endpoints,exit_diagnostics=0,0,0,0,0
+local exit_before,exit_after
+for _,line in ipairs(logs) do
+ if line:match('TRACE: local_accelerator_exit_step_before ') then
+  exit_endpoints=exit_endpoints+1;exit_before=trace_fields(line)
+ end
+ if line:match('TRACE: local_accelerator_exit_step_after ') then
+  exit_endpoints=exit_endpoints+1;exit_after=trace_fields(line)
+ end
+ if line:match('TRACE: local_accelerator_exit ') then
+  exit=exit+1;local row=trace_fields(line)
+  assert(exit_before and exit_after and exit_before.z_mm>6 and exit_after.z_mm<6,'exit retains the actual forward bracket')
+  local f=(6-exit_before.z_mm)/(exit_after.z_mm-exit_before.z_mm)
+  for _,key in ipairs({'instrument_time_us','x_mm','y_mm','z_mm','vx_mm_per_us','vy_mm_per_us','vz_mm_per_us'}) do
+   assert(math.abs(row[key]-(exit_before[key]+f*(exit_after[key]-exit_before[key])))<1e-12,'exit retains same-step 6D interpolation')
+  end
+ end
+ if line:match('LOCAL_EXIT_OBSERVER:') then
+  exit_diagnostics=exit_diagnostics+1
+  assert(line:match('basis=callback_before_splat_override') and line:match('native_ion_splat=0 '),'record native splat flag before existing stop action')
+ end
+ if line:match('TRACE: accelerator_exit_stop ') then
+  terminal=terminal+1;local row=trace_fields(line)
+  assert(row.particle_id==3 and row.z_mm==-18 and row.instrument_time_us==1.15,'true later terminal must remain unmodified')
+ end
+ if line:match('TRACE: local_shared_time ') then shared=shared+1 end
+end
+assert(exit==1 and terminal==1 and shared==4 and exit_endpoints==2 and exit_diagnostics==1,'exit/shared endpoint counts')
+ion_number=2;ion_instance=1;ion_time_of_flight=0;ion_px_mm=10;ion_py_mm=2;ion_pz_mm=38;ion_splat=0
+segment.initialize();before_queries=field_queries
+ion_dvoltsx_gu=10;ion_dvoltsy_gu=20;ion_dvoltsz_gu=30;segment.efield_adjust()
+assert(field_queries==before_queries+1 and ion_splat==0,'the next original particle must still receive its RF field')
+ion_pz_mm=100;segment.efield_adjust();ion_pz_mm=38
+outside_logs=0
+for _,line in ipairs(logs) do if line:match('FIELD_QUERY_OUTSIDE:') then outside_logs=outside_logs+1 end end
+assert(outside_logs==2,'the next original particle has independent query-only evidence')
+ion_time_of_flight=2;segment.other_actions();assert(ion_splat==1)
+segment.terminate();segment.terminate()
+local timeout=0
+for _,line in ipairs(logs) do if line:match('TRACE: local_timeout ') then timeout=timeout+1;assert(line:match('particle_id=11')) end end
+assert(timeout==1,'timeout terminal uniqueness')
+-- Actual extraction regression: 47 ULP early passes relative-epsilon but not 32 ULP.
+assert(dofile(arg[3])==nil)
+logs={};segment.initialize_run()
+ion_number=1;ion_instance=1;ion_time_of_flight=0;ion_px_mm=10;ion_py_mm=2;ion_pz_mm=38;ion_splat=0
+segment.initialize()
+local function shared_count(target)
+ local count=0
+ for _,line in ipairs(logs) do
+  if line:match('TRACE: local_shared_time ') and trace_fields(line).requested_time_us==target then count=count+1 end
+ end
+ return count
+end
+local target=6.25;local early=target-47*2^-50
+ion_time_of_flight=early-.25;segment.other_actions()
+assert(shared_count(target)==0,'47 ULP early state must not consume the shared target')
+ion_time_step=.1;segment.tstep_adjust()
+assert(ion_time_step==target-early,'the unconsumed target must still cap the next step')
+ion_time_of_flight=target-.25;segment.other_actions();segment.other_actions()
+assert(shared_count(target)==1,'the exact landing must be emitted once')
+for _,line in ipairs(logs) do
+ if line:match('TRACE: local_shared_time ') and trace_fields(line).requested_time_us==target then
+  assert(trace_fields(line).instrument_time_us==target,'the recorded state must retain its actual clock')
+ end
+end
+ion_time_of_flight=6.5-32*2^-50-.25;segment.other_actions()
+assert(shared_count(6.5)==1,'the inclusive 32 ULP boundary remains supported')
+-- Global registration must not extend fields, limiting, diagnostics, or stopping outside the PA.
+local before_logs=#logs;before_queries=field_queries
+ion_instance=0;ion_time_of_flight=20;ion_time_step=.123;ion_splat=0
+ion_dvoltsx_gu=17;ion_dvoltsy_gu=19;ion_dvoltsz_gu=23
+segment.efield_adjust();segment.tstep_adjust();segment.other_actions()
+assert(field_queries==before_queries and #logs==before_logs,'outside callback scope is observation-only at terminate')
+assert(ion_time_step==.123 and ion_splat==0 and ion_dvoltsx_gu==17 and ion_dvoltsy_gu==19 and ion_dvoltsz_gu==23,'outside native motion remains unchanged')
+segment.terminate();segment.terminate()
+local native_stops=0
+for _,line in ipairs(logs) do if line:match('TRACE: local_native_stop ') then
+ native_stops=native_stops+1;local row=trace_fields(line)
+ assert(row.particle_id==3 and row.source_instance==0 and row.instrument_time_us==20.25,'true outside terminal retains its native clock and source')
+end end
+assert(native_stops==1,'outside native terminal is recorded exactly once')
+local okay,message=pcall(segment.initialize)
+assert(not okay and tostring(message):match('inside the actual carrier'),'global scope must not expand the initial source')
+print=original_print;print('LOCAL_FRONTEND_PLAIN_CALLBACKS=PASS')
+""", encoding="utf-8")
+            result = subprocess.run([shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe", str(script), str(path), "valid", str(clock_path)], capture_output=True, text=True, check=False, cwd=REPO, timeout=30)
+            for mode, message in (("missing_path", "carrier directory is missing"),
+                                  ("wrong_carrier", "carrier path differs")):
+                with self.subTest(path_mode=mode):
+                    rejected = subprocess.run([shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe", str(script), str(path), mode],
+                                              capture_output=True, text=True, check=False, cwd=REPO, timeout=30)
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn(message, rejected.stdout+rejected.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("LOCAL_FRONTEND_PLAIN_CALLBACKS=PASS", result.stdout)
+
+    def test_canonical_two_zone_program_uses_actual_metadata_not_legacy_scalars(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            upstream, frontend, oatof, region = _canonical_two_zone_program_inputs(Path(directory))
+            config = _successor_analyzer_config(oatof, frontend, region)
+            self.assertEqual(config["geometry"]["accelerator_grid2_z_mm"], -6.)
+            self.assertEqual(config["geometry"]["accelerator_instance_z_mm"], -43.)
+            self.assertEqual(config["geometry"]["accelerator_axis_x_mm"], 10.)
+            self.assertEqual(config["accelerator_ring_count"], 15)
+            self.assertEqual(config["voltages"]["repeller_v"], 2200.)
+            kwargs = dict(birth_times_us=[.25], analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+                          pulse_hook_source=PULSE_HOOK_SOURCE, frontend_hook_source=FRONTEND_HOOK_SOURCE,
+                          rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE)
+            metadata: dict = {}
+            program = build_successor_program(upstream, frontend, oatof, region, **kwargs,
+                                               terminate_at_accelerator_exit=True, build_metadata=metadata)
+            self.assertIn("TRACE: accelerator_exit_stop", program)
+            self.assertNotIn("adjustable V_intermediate2", program)
+            self.assertNotIn("TRACE: accelerator_intermediate2_forward", program)
+            self.assertEqual(metadata["terminal_event"], "accelerator_exit_stop")
+            for mutation in ("rings", "on_exit", "off"):
+                bad = copy.deepcopy(frontend)
+                if mutation == "rings":
+                    bad["accelerator_local_region"]["ring_z_mm"][0] += .1
+                elif mutation == "on_exit":
+                    bad["accelerator_local_region"]["operating_voltages_v"]["27"] = 1.
+                else:
+                    bad["accelerator_local_region"]["off_voltages_v"]["10"] = 1.
+                with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                    _successor_analyzer_config(oatof, bad, region)
+
+    @unittest.skipUnless(Path(shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe").is_file(), "plain Lua interpreter unavailable")
+    def test_canonical_two_zone_plain_lua_exit_stop_callback_and_absolute_rf_clock(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, frontend, oatof, region = _canonical_two_zone_program_inputs(root)
+            program = build_successor_program(upstream, frontend, oatof, region, birth_times_us=[.25],
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE, pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE, rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                terminate_at_accelerator_exit=True) + CALLBACK_TEST_CONTROL
+            path = root / "program.lua"
+            path.write_text(re.sub(r"\badjustable\s+", "", program), encoding="utf-8")
+            prefix = CALLBACK_HARNESS.read_text(encoding="utf-8").split("assert(dofile(program_path)", 1)[0]
+            script = root / "callbacks.lua"
+            script.write_text(prefix + "\n" + r"""
+assert(dofile(program_path)==nil)
+callbacks.__successor_test_set_adjustable('handoff_pulse_time_us',1)
+callbacks.__successor_test_set_adjustable('trajectory_log_enable',1)
+callbacks.initialize_run()
+ion_number=1;ion_instance=3;ion_time_of_flight=0.1
+ion_px_mm=10;ion_py_mm=2;ion_pz_mm=-7
+ion_vx_mm=0;ion_vy_mm=0;ion_vz_mm=10;ion_ke=4350;ion_mass=524
+ion_splat=0;adj_elect={};ion_time_step=0.01
+callbacks.initialize();callbacks.fast_adjust()
+assert(math.abs(adj_elect[1]-(3+7+100*math.cos(2*math.pi*.35)))<1e-8,'RF absolute clock or polarity changed')
+callbacks.other_actions();assert(ion_splat==0)
+ion_time_of_flight=.3;ion_pz_mm=-5
+callbacks.other_actions();assert(ion_splat==1,'forward exit did not stop')
+local captured={};local original_print=print
+print=function(value) captured[#captured+1]=value end
+callbacks.terminate();callbacks.terminate()
+print=original_print
+assert(#captured==1 and captured[1]:match('TRACE: accelerator_exit_stop'),'exit terminal is not unique')
+assert(not captured[1]:match('detector_crossing') and not captured[1]:match('non_detector_splat'))
+print('CANONICAL_TWO_ZONE_PLAIN_CALLBACKS=PASS')
+""", encoding="utf-8")
+            result = subprocess.run([shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe", str(script), str(path), "canonical"], capture_output=True, text=True, check=False, cwd=REPO, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("CANONICAL_TWO_ZONE_PLAIN_CALLBACKS=PASS", result.stdout)
+
     def test_build_receipt_roles_are_the_same_map_used_by_generated_iob_check(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             metadata: dict[str, object] = {}
@@ -396,8 +792,11 @@ class SingleFlightProgramTests(unittest.TestCase):
             "numerical_carve_width_mm": 1.0,
             "numerical_carve_height_mm": 1.0,
             "compiled_pa_open_column_check_required": True,
-            "flange_x_min_mm": -88.013621843807,
-            "flange_x_max_mm": -84.013621843807,
+            "normal_axis": "x",
+            "center_mm": {"x": -86.013621843807, "y": 67., "z": -6.3},
+            "pa_origin_mm": {"x": 90., "y": -8., "z": -20.},
+            "flange_min_mm": -88.013621843807,
+            "flange_max_mm": -84.013621843807,
             "grid_alignment": {
                 "width_cells": 2.0,
                 "height_cells": 10.0,
@@ -646,11 +1045,11 @@ class SingleFlightProgramTests(unittest.TestCase):
             standalone_program,
         )
         self.assertIn(
-            "carrier.filename,spec.rf_differential_pa_basename",
+            "carrier.pa.path,spec.rf_differential_pa_basename",
             standalone_program,
         )
         self.assertIn(
-            "carrier.filename,spec.pulse_delta_pa_basename",
+            "carrier.pa.path,spec.pulse_delta_pa_basename",
             standalone_program,
         )
         self.assertIn("carrier directory is missing", standalone_program)
@@ -1198,7 +1597,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         ]
         retained_with_rod = _pa_plus_model()
         retained_with_rod["modes"][-1]["physical_electrode_coefficients"]["1"] = 0.25
-        with self.assertRaisesRegex(ValueError, "rod mode role is invalid"):
+        with self.assertRaisesRegex(ValueError, "endpoint shape is invalid"):
             resolve_post_pulse_pa_plus_solution_projection(
                 retained_with_rod,
                 rod_physical_electrode_ids=list(range(1, 9)),
@@ -1210,13 +1609,101 @@ class SingleFlightProgramTests(unittest.TestCase):
         non_independent_rod["modes"][0]["physical_electrode_coefficients"] = {
             "1": 0.5, "10": 0.5,
         }
-        with self.assertRaisesRegex(ValueError, "rod mode basis is invalid"):
+        with self.assertRaisesRegex(ValueError, "rod symmetry coefficients are invalid"):
             resolve_post_pulse_pa_plus_solution_projection(
                 non_independent_rod,
                 rod_physical_electrode_ids=list(range(1, 9)),
                 upstream_rod_electrodes=rods,
                 source_release_mode="pre_pulse_restart",
             )
+
+    def test_bare_two_zone_pa_plus_five_modes_and_exact_reconstruction(self) -> None:
+        electrodes = frontend_electrodes(ring_count=15, three_zone=False, variant=TWO_ZONE_BARE_VARIANT)
+        self.assertEqual(electrodes["multipole_rod_ids"], list(range(1, 9)))
+        self.assertNotIn("entrance_plate_id", electrodes)
+        self.assertNotIn("entrance_reference_sleeve_id", electrodes)
+        self.assertEqual(electrodes["accelerator_grid2_id"], 27)
+        model = resolve_two_zone_bare_pa_plus_solution_model(
+            electrodes, planes_global_z_mm={"repeller": -40., "grid1": -36., "exit": -6.},
+            ring_z_mm=[-35. + i * 1.9 for i in range(15)],
+        )
+        self.assertEqual(require_pa_plus_solution_model(model), model)
+        self.assertEqual(model["mode_ids"], list(range(28, 33)))
+        self.assertEqual([m["name"] for m in model["modes"]], ["rod_common", "rod_differential", "repeller", "grid1", "grid2"])
+        weights = dict(zip(model["mode_ids"], [3.25, -17., 2300., 2000., -10.]))
+        physical = {9: 0.}
+        for mode in model["modes"]:
+            for key, value in mode["physical_electrode_coefficients"].items():
+                eid = int(key)
+                physical[eid] = physical.get(eid, 0.) + value * weights[mode["mode_id"]]
+        self.assertEqual(project_pa_plus_mode_voltages(model, physical), weights)
+        self.assertIn("[28]", render_pa_plus_solution_model(model))
+        # Actual nonuniform z positions, not ring index, determine interpolation.
+        self.assertAlmostEqual(physical[12], 2000. + (-10. - 2000.) / 30.)
+        physical[12] += .01
+        with self.assertRaises(ValueError):
+            project_pa_plus_mode_voltages(model, physical)
+        physical[9] = 1.
+        with self.assertRaises(ValueError):
+            project_pa_plus_mode_voltages(model, physical)
+        projection = resolve_post_pulse_pa_plus_solution_projection(
+            model, rod_physical_electrode_ids=list(range(1, 9)),
+            upstream_rod_electrodes=[{"electrode_id": i, "potential_V": 4.} for i in range(1, 9)],
+            source_release_mode="pre_pulse_restart",
+        )
+        retained = projection["projected_pa_plus_solution_model"]
+        self.assertEqual(retained["mode_ids"], [30, 31, 32])
+        self.assertIn("[32]", render_pa_plus_solution_model(retained))
+        with self.assertRaises(ValueError):
+            require_pa_plus_solution_model(retained)
+
+    def test_bare_two_zone_operating_coefficients_use_declared_mode_ids(self) -> None:
+        model = resolve_two_zone_bare_pa_plus_solution_model(
+            frontend_electrodes(ring_count=15, three_zone=False, variant=TWO_ZONE_BARE_VARIANT),
+            planes_global_z_mm={"repeller": -40., "grid1": -36., "exit": -6.},
+            ring_z_mm=[-35. + i * 1.9 for i in range(15)],
+        )
+        upstream = {
+            "role": "ion_processor_bare_guide_interface", "schema_version": 1,
+            "drive": {"group_dc_v": [7., -7.], "group_polarities": {"1": 1, "2": -1}, "common_mode_v": 3., "waveform": "sine", "frequency_hz": 1000000., "phase_rad": .2, "rf_amplitude_v": 100.},
+            "rod_array": {"rods": [{"physical_electrode_id": i, "electrode_group": 1 if i % 2 else 2} for i in range(1, 9)]},
+        }
+        def plan(endpoint_values: list[float]) -> dict[int, float]:
+            result: dict[int, float] = {}
+            for mode, voltage in zip(model["modes"][2:], endpoint_values):
+                for key, weight in mode["physical_electrode_coefficients"].items():
+                    eid = int(key)
+                    result[eid] = result.get(eid, 0.) + weight * voltage
+            return result
+        result = resolve_standalone_dynamic_operating_coefficients(
+            model, upstream, accelerator_off_physical_voltages_v=plan([10., 9., 0.]),
+            accelerator_on_physical_voltages_v=plan([2200., 1900., 0.]),
+        )
+        self.assertEqual(result["mode_ids"], [28, 29, 30, 31, 32])
+        self.assertEqual(result["carrier_off_mode_coefficients_v"], {"28": 3., "29": 7., "30": 10., "31": 9., "32": 0.})
+        self.assertEqual(result["rf_differential_mode_coefficients_per_v"], {"28": 0., "29": 1., "30": 0., "31": 0., "32": 0.})
+
+    def test_bare_two_zone_pa_plus_fails_closed_for_invalid_geometry_and_modes(self) -> None:
+        with self.assertRaises(ValueError):
+            frontend_electrodes(ring_count=15, three_zone=True, variant=TWO_ZONE_BARE_VARIANT)
+        electrodes = frontend_electrodes(ring_count=15, three_zone=False, variant=TWO_ZONE_BARE_VARIANT)
+        kwargs = {"planes_global_z_mm": {"repeller": -40., "grid1": -36., "exit": -6.}, "ring_z_mm": [-35. + i * 1.9 for i in range(15)]}
+        model = resolve_two_zone_bare_pa_plus_solution_model(electrodes, **kwargs)
+        for mutation in ("id", "rod", "partition", "nan"):
+            bad = copy.deepcopy(model)
+            if mutation == "id":
+                bad["modes"][0]["mode_id"] = 1
+            elif mutation == "rod":
+                bad["modes"][0]["physical_electrode_coefficients"]["1"] = .5
+            elif mutation == "partition":
+                bad["modes"][3]["physical_electrode_coefficients"]["12"] = .5
+            else:
+                bad["modes"][3]["physical_electrode_coefficients"]["12"] = float("nan")
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                require_pa_plus_solution_model(bad)
+        for bad_z in (-36., -6., float("nan")):
+            with self.subTest(z=bad_z), self.assertRaises(ValueError):
+                resolve_two_zone_bare_pa_plus_solution_model(electrodes, **{**kwargs, "ring_z_mm": [bad_z] + kwargs["ring_z_mm"][1:]})
 
     def test_pa_plus_octupole_projection_reconstructs_common_and_differential_drive(self) -> None:
         model = _pa_plus_model()

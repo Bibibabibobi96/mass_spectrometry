@@ -8,6 +8,7 @@ numerical Boolean extent, not a physical aperture enlargement.
 from __future__ import annotations
 
 from math import isfinite
+from typing import Sequence
 
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
     ShieldedRectangularEnclosure,
@@ -108,17 +109,42 @@ def emit_ideal_grid(
 
 def emit_grounded_enclosure(
     enclosure: ShieldedRectangularEnclosure, *, exit_z_mm: float,
+    negative_y_entry_box_mm: Sequence[float] | None = None,
+    entry_cut_padding_mm: float | None = None,
 ) -> str:
-    """Emit a -z-facing hollow shell CSG expression, without assigning its ID."""
+    """Emit the shell, optionally cutting only its explicitly declared -y wall.
+
+    The box is the physical opening. One declared numerical padding along y
+    makes the Boolean tool pass through both wall faces; x/z are unchanged.
+    ``notin_inside`` retains the physical x/z aperture-edge nodes, as for the
+    existing open-frame emitter. This does not alter Fly collision semantics.
+    """
     if not exit_z_mm < enclosure.rear_cap_inner_z_mm < enclosure.rear_cap_outer_z_mm:
         raise TwoZoneGeometryError("exit must precede the rear cap in the -z accelerating frame")
     x, y = enclosure.guard_half_x_mm, enclosure.guard_half_y_mm
     ix, iy = enclosure.guard_inner_half_x_mm, enclosure.guard_inner_half_y_mm
-    return (
+    result = (
         f"box3D(-{_number(x)},-{_number(y)},{_number(exit_z_mm)},"
         f"{_number(x)},{_number(y)},{_number(enclosure.rear_cap_outer_z_mm)}) notin {{ "
         f"box3D(-{_number(ix)},-{_number(iy)},{_number(exit_z_mm)},"
         f"{_number(ix)},{_number(iy)},{_number(enclosure.rear_cap_inner_z_mm)}) }}"
+    )
+    if negative_y_entry_box_mm is None:
+        if entry_cut_padding_mm is not None:
+            raise TwoZoneGeometryError("entry cut padding requires a physical side opening")
+        return result
+    box = list(negative_y_entry_box_mm)
+    if (len(box) != 6 or any(isinstance(v, bool) or not isfinite(v) for v in box)
+            or any(box[a] >= box[a+3] for a in range(3))
+            or box[0] != -box[3] or not 0 < box[3] < ix
+            or box[1] != -y or box[4] != -iy
+            or not exit_z_mm < box[2] < box[5] < enclosure.rear_cap_inner_z_mm
+            or entry_cut_padding_mm is None or isinstance(entry_cut_padding_mm, bool)
+            or not isfinite(entry_cut_padding_mm) or entry_cut_padding_mm <= 0):
+        raise TwoZoneGeometryError("side opening must cross only the negative-y wall with explicit positive padding")
+    return (
+        result + f" notin_inside {{ box3D({_number(box[0])},{_number(box[1]-entry_cut_padding_mm)},"
+        f"{_number(box[2])},{_number(box[3])},{_number(box[4]+entry_cut_padding_mm)},{_number(box[5])}) }}"
     )
 
 

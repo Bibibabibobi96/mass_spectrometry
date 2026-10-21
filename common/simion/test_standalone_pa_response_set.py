@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
+from common.simion import cache_generation
 from common.simion.standalone_pa_response_set import (
     POLICY_ID,
     ResponseExport,
@@ -139,6 +140,72 @@ class StandalonePaResponseSetTests(unittest.TestCase):
             ["field.response_36.pa", "field.response_37.pa"],
         )
         self.assertTrue(all(record.name.endswith(".pa") for record in selected))
+
+    def test_selector_recovers_transient_native_and_standalone_reads(self) -> None:
+        self._write_receipt()
+        manifest = self._manifest()
+        for name in ("field.pa36", "field.response_36.pa"):
+            target = self.root / name
+            reads = 0
+
+            def transient_digest(path: Path) -> str:
+                nonlocal reads
+                if path == target:
+                    reads += 1
+                    if reads == 1:
+                        return "0" * 64
+                return file_sha256(path)
+
+            with (
+                self.subTest(name=name),
+                patch.object(cache_generation, "file_sha256", side_effect=transient_digest),
+                patch.object(cache_generation, "PAYLOAD_VERIFICATION_RETRY_DELAY_S", 0),
+            ):
+                selected = select_standalone_pa_records(
+                    self.root, manifest, self.receipt_name, expected_response_ids=(36, 37)
+                )
+                self.assertEqual([record.response_id for record in selected], [36, 37])
+                self.assertEqual(reads, 3)
+
+    def test_selector_rejects_persistent_same_size_native_hash_drift(self) -> None:
+        self._write_receipt()
+        manifest = self._manifest()
+        target = self.root / "field.pa36"
+        target.write_bytes(b"x" * target.stat().st_size)
+        with patch.object(cache_generation, "PAYLOAD_VERIFICATION_RETRY_DELAY_S", 0):
+            with self.assertRaisesRegex(
+                StandalonePaResponseSetError, "native response 36 bytes differ"
+            ) as caught:
+                select_standalone_pa_records(self.root, manifest, self.receipt_name)
+        self.assertIsInstance(caught.exception.__cause__, ValueError)
+        self.assertIn("field.pa36", str(caught.exception.__cause__))
+        self.assertEqual(str(caught.exception.__cause__).count("attempt="), 3)
+
+    @unittest.skipUnless(cache_generation.os.name == "nt", "Windows PA snapshot recovery")
+    def test_selector_recovers_only_manifest_matching_persisted_snapshot(self) -> None:
+        self._write_receipt()
+        manifest = self._manifest()
+        target = self.root / "field.pa36"
+        original = target.read_bytes()
+
+        def stale_digest(path: Path) -> str:
+            return "D" * 64 if path == target else file_sha256(path)
+
+        with (
+            patch.object(cache_generation, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 0),
+            patch.object(cache_generation, "file_sha256", side_effect=stale_digest),
+            patch.object(cache_generation, "PAYLOAD_VERIFICATION_RETRY_DELAY_S", 0),
+            patch.object(
+                cache_generation, "_flush_writable_source",
+                side_effect=AssertionError("immutable verification must not flush source"),
+            ),
+        ):
+            selected = select_standalone_pa_records(self.root, manifest, self.receipt_name)
+            self.assertEqual([record.response_id for record in selected], [36, 37])
+            self.assertEqual(target.read_bytes(), original)
+            target.write_bytes(b"x" * len(original))
+            with self.assertRaisesRegex(StandalonePaResponseSetError, "bytes differ"):
+                select_standalone_pa_records(self.root, manifest, self.receipt_name)
 
     def test_pa_family_cache_v2_inventory_is_accepted(self) -> None:
         """A PA-family cache uses the same sealed direct-file record schema."""

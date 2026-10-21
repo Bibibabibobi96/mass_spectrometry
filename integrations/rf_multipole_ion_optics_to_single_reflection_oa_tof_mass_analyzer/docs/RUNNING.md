@@ -28,6 +28,82 @@ refine操作或波次结束后回到准备阶段；纯缓存命中及已完成�
 
 ## 审查与 dry-run
 
+不含下游分析器的同源裸导引／OA 局部验证仍通过同一入口选择：
+
+```powershell
+& workflows/family_source_closure/execute.ps1 -FrontendRequest <request.json> -ValidateOnly
+& workflows/family_source_closure/execute.ps1 -FrontendRequest <request.json> -PrepareOnly -OutputDirectory <managed-run>
+& workflows/family_source_closure/execute.ps1 -FrontendRequest <request.json> -ExecutionBudgetPath <budget.json> -SolverAuthorized
+```
+
+上述相对路径从本 integration 根执行。科学 request 冻结完整源 producer manifest／原始释放、
+提供者几何、电压、真实 MR 位姿及独立数值设置；预算沿用 engineering-budget 合同，保留类别为
+`solver_review`。准备目录须由公共 run package 管理；原生执行创建新身份，不覆盖失败运行。
+
+`accelerator_component.variant_id` 选择 `two_zone` 或 `three_zone`；二区显式侧口由提供者
+requirements schema 2 编译，三区使用完整 sectioned 几何 requirements schema 1。两者共用
+`compile_frontend`、源物化、Program、场阶段和诊断入口，分别输出五／六模式模型和真实检查面。
+作者必须给出实际几何、局部电极映射、ON 电压及零 OFF 策略，不能把旧整机八模式 family 当作裸导引三区。
+准备只生成物理 cache 输入；执行发现真实 SIMION 身份后按公共机制求键，缓存命中必须核验完整库存。
+单位响应参考电压由原生采样记录并归一化，不假定供应商 basis 文件本来就是 1 V。
+合成前由公共 PA 输入入口一次创建每个响应的受保护短副本，三项工作场共享该组副本；供应商退出后
+核验并清理。预算包含这组临时副本，不能只计算最终保留的 PA。run 自有的三项工作场在孔拓扑、
+批次飞行及默认回放期间持有公共禁止写入／删除句柄，不按粒子批复制。
+响应场路径使用实际 Workbench 载体的 `instance.pa.path` 所在目录；`filename` 仅用于冻结的 basename
+核验，不作为完整路径，也不回退到当前工作目录。缺目录或载体文件名不符时在生成离子前拒绝。
+局部动态场回调先用实际 carrier 的 `wb_to_pa_coords` 和 `pa:inside_vc` 检查查询点；PA 外只跳过
+响应查询，不钳制坐标、不扩展或补造场，也不修改梯度或 `ion_splat`。积分试探点不等同已接受轨迹点，
+所以首次域外查询只记为 `FIELD_QUERY_OUTSIDE` 的 query-only 诊断；最终损失仍由原生终态与实际状态记录。
+依据为 SIMION 2020 本机 `docs/simion.chm` 的 `lua_simion.pas.html`（`inside_vc`／`field_vc`）、
+`lua_simion.wb.html`（`wb_to_pa_coords`）及官方 `examples/dielectric/resistive_2dp.lua:26–28`
+的“坐标转换→域内检查→场查询”顺序（2026-10-21核对）；不采用该示例的额外单位换算。
+局部 Program 使用官方 `sim_segment_global=1` 保留离开 PA 后的实际 `terminate` 状态；
+`tstep_adjust` 和 `other_actions` 在 `ion_instance=0` 时立即返回，场回调保留域内检查，
+源初始化仍要求位于真实 carrier 内。PA 外终态可能位于 Workbench 边界，不能称为首次离开 PA 的位置。
+离开 PA 到真实终态之间不继续生成固定时刻快照；这段仍存活但无原生共享观测的区间保留为
+`numerical_unsupported`，须结合最后域内状态、query-only 记录和真实终态解释，不补造域外轨迹。
+依据为同一 CHM 的 `workbench_program_extensions.html`；该开关作用于整 Program，
+不存在本实现另行假定的逐回调注册接口。出口同时记录原生步前／步后及插值状态，
+覆盖 `ion_splat` 前的原生值单独保存为非 TRACE 诊断，不能据此替代实际终态。
+科学出口观察面与数值停止面分开：负 z 出口仍为提供者声明的实际平面，停止面由该平面与 PA 下游
+边界的中点派生，必须严格处于既有 PA 留白内。出口穿面只记录一次，继续到停止面才请求结束，
+避免在穿面回调立即停止时，SIMION 返回的前一步终态早于穿面插值。该延迟不增加电极或改变场；
+出口相空间和到达时间始终取科学观察面，数值停止面不能解释为器件出口或焦面。
+出口之后的步长另受四分之一留白长度与当前轴向速度限制；该约束不影响出口之前的积分，
+也不是空间判定容差。停止判断在本步轨迹／共享时刻输出之前执行，真实终态仍由 `terminate` 记录。
+
+源按冻结的 source→common→solver 正规刚体变换直接进入 MR 世界坐标，保持全部粒子与出生时钟。
+FLY2 的 TOB=0 是原生局部启动时钟；Program 必须按 `source_clock.json` 从冻结表恢复绝对 instrument time。
+真实慢轴为 +y，引出为 -z；`observer_to_mr` 是单位阵。孔拓扑参数使用真实 `normal_axis`、壁两面、
+世界中心及两横向尺寸，schema 3 的离散警告不允许自动放大孔或移动边界。
+
+执行依次冻结依赖／输入、建立或复用场、核验响应与孔贯通、held-OFF 实际占据发现、无检测器信息的
+脉冲选择、完整母群引出和自动诊断；首批自然结束后由公共调度器重规划后续并发。
+SIMION 的 `--default-num-particles` 仅预分配 ion-list 容量，沿用已有运行器的 `max(100, batch_count)`；
+实际 FLY2 仍严格保留调度批次的粒子，例如首批 10 个和后续剩余 90 个，不补齐物理粒子。
+共有时刻由冻结的全飞行期限、出生时间、导引／捕获／脉冲标记和提供者理想出射估计派生，理想时间只决定显示采样，
+不能代替实际出口事件。真实孔前后、栅面／三区 intermediate2、出口及所有终态必须独立记录；
+零出口仍作为完整母群负结果发布，不以筛选或伪造空 Fly 掩盖损失。
+自动诊断同时输出各检查面的时间标准差和完整出口群相对平均到达时刻的经验累积分布；各检查面
+使用自身到达群，不能把筛选后的展宽变化直接解释为无损时间聚焦。
+共享时刻采用与分析器一致的 binary64 32 ULP 判据；提前且超出该范围的状态不会消耗待采样时刻，
+下一原生步仍受该时刻限步。原生实际时间和请求时间分别保留，无法支持的记录继续标为 unsupported，
+不补造状态，也不计为额外损失。空间图最多展示五个时刻：存在全母群终态时刻时，从有有效存活样点的
+已记录时刻中均匀按索引选最多四个，再保留晚于最后活跃／缺测时刻的首个全母群终态；否则最多选五个
+活跃时刻。未出生或缺测不能作为全终态。绘图按已核验样点的 `requested_time_us` 分组，实际时钟和
+位置不变，图中人数仍必须与 census 严格一致。展示子集不能代替完整时序 CSV。
+
+全量可加载 case 在同一次执行中组装。Program 在 load／initialize_run 设置显式 Q 并保留轨迹显示；
+随后自动在新进程中加载保存的 IOB 执行默认 Fly，不加 Program、Q、粒子或脉冲覆盖，再与调度飞行
+逐粒子对照。原始日志、所有损失及差异均保留；默认回放未通过时不能发布“用户直接 Fly 等价”。
+这项无 GUI 的默认一致性门禁不替代用户 GUI 验收，也不授予 MR 接受度或分辨率资格。
+当前真实验证状态见 [INTEGRATION](INTEGRATION.md#同源八极导引接入与二区三区复用)。
+用户加载同次成功 run 下的 `simion/extraction/gui_full_population/local.iob` 后即可 Fly；需保留整个
+run 的相对目录和 PA 文件，不能只复制 IOB。检查面诊断位于 `results/local_frontend/extraction/`：
+`checkpoint_evolution.png` 汇总角分散、束宽和穿面到达时间，`shared_time_distributions.png` 显示
+共同绝对时刻的空间分布，`all_losses.csv` 与原始日志保留全部损失。历史 run 如需修正诊断，建立新分析
+run 并引用原数据，不能改写已验证的 IOB／Program 或旧证据；具体恢复图入口由集成状态页指定。
+
 公开入口可用 `execute.ps1 -ExperimentId BEFORE -SemanticDiffAgainst AFTER` 比较同一 campaign 的两条**已展开**实验行；
 它内部调用 `prepare.py --semantic-diff-experiment-json`，输出稳定 JSON：
 每个字段的旧/新值及其审查类别（物理/场、数值/资源、采样、资格、运行控制或证据）。这是读操作，不参与

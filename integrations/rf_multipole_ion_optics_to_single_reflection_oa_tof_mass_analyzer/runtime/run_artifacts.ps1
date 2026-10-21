@@ -840,7 +840,8 @@ function Initialize-RfIntegrationStageBudget {
     [Parameter(Mandatory)][string]$ExpectedIntegrationId,
     [Parameter(Mandatory)][string]$ExpectedConnectionProfileId,
     [Parameter(Mandatory)][string]$StageId,
-    [Parameter(Mandatory)][ValidateSet('comsol','simion')][string]$Solver
+    [Parameter(Mandatory)][ValidateSet('comsol','simion')][string]$Solver,
+    [ValidateSet('compact','solver_review')][string]$ExpectedRetentionClass='compact'
   )
   $frozen = Join-Path $InputDir 'resolved_integration_engineering_budget.json'
   $identity = Copy-RfStableFile `
@@ -853,7 +854,7 @@ function Initialize-RfIntegrationStageBudget {
       $document.role -ne 'integration_resolved_engineering_budget' -or
       $document.integration_id -ne $ExpectedIntegrationId -or
       $document.connection_profile_id -ne $ExpectedConnectionProfileId -or
-      $document.retention_class -ne 'compact' -or
+      $document.retention_class -ne $ExpectedRetentionClass -or
       [int]$document.particle_count -lt 1) {
     throw 'Resolved integration engineering-budget identity differs.'
   }

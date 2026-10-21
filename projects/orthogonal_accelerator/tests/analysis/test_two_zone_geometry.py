@@ -1,6 +1,9 @@
 """Regression tests for solver-neutral two-zone accelerator geometry."""
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 import unittest
 
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
@@ -10,10 +13,114 @@ from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
 )
 from projects.orthogonal_accelerator.simion.two_zone_candidate import (
     compile_closed_two_zone_accelerator,
+    render_closed_two_zone_electrode_body,
 )
 
 
 class TwoZoneGeometryTest(unittest.TestCase):
+    def test_body_is_exact_full_gem_electrode_block_without_storage_placement(self) -> None:
+        for version in (1, 2):
+            request = self.requirements()
+            if version == 2:
+                request.update(schema_version=2, side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4))
+            compiled = compile_closed_two_zone_accelerator(request)
+            body = render_closed_two_zone_electrode_body(compiled.resolved_electrodes)
+            full = compiled.gem.splitlines()
+            start = full.index("locate(0,$(y_span/2),0) {")+1
+            self.assertEqual(body, full[start:-1])
+            text = "\n".join(body)
+            self.assertNotIn("pa_define", text)
+            self.assertNotIn("locate(", text)
+            self.assertNotIn("y_span", text)
+            self.assertIn("box3D(-20,-15,40,20,15,42)", text)
+
+    def test_body_namespace_changes_only_ids_and_never_mutates_canonical_geometry(self) -> None:
+        request = self.requirements()
+        request.update(schema_version=2, side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4))
+        compiled = compile_closed_two_zone_accelerator(request)
+        resolved = compiled.resolved_electrodes
+        before = json.dumps(resolved.to_dict(), sort_keys=True)
+        original = "\n".join(render_closed_two_zone_electrode_body(resolved))
+        mapping = {key: value+100 for key, value in resolved.local_electrode_ids.items()}
+        renamed = "\n".join(render_closed_two_zone_electrode_body(resolved, local_electrode_ids=mapping))
+        expected = re.sub(r"\be\((\d+)\)", lambda m: f"e({int(m[1])+100})", original)
+        self.assertEqual(renamed, expected)
+        self.assertIn("e(101)", renamed)
+        self.assertIn("notin_inside { box3D(-1.5,-17.25,36.6,1.5,-15.75,39.4) }", renamed)
+        self.assertEqual(before, json.dumps(resolved.to_dict(), sort_keys=True))
+
+    def test_body_namespace_rejects_missing_extra_alias_and_invalid_ids(self) -> None:
+        resolved = compile_closed_two_zone_accelerator(self.requirements()).resolved_electrodes
+        original = dict(resolved.local_electrode_ids)
+        bad = []
+        value = dict(original); value.pop(15); bad.append(value)
+        value = dict(original); value[99] = 999; bad.append(value)
+        value = dict(original); value[15] = value[22]; bad.append(value)
+        for identifier in (0, -1, True, "1", 1.5):
+            value = dict(original); value[15] = identifier; bad.append(value)
+        value = dict(original); value["15"] = value.pop(15); bad.append(value)
+        for mapping in bad:
+            with self.subTest(mapping=mapping), self.assertRaises(TwoZoneGeometryError):
+                render_closed_two_zone_electrode_body(resolved, local_electrode_ids=mapping)
+
+    def test_closed_schema1_frozen_gem_and_projection_bytes_unchanged(self) -> None:
+        compiled = compile_closed_two_zone_accelerator(self.requirements())
+        self.assertEqual(hashlib.sha256(compiled.gem.encode()).hexdigest(),
+                         "1105dfb1e01fbb3995832f879e65f5981572fa7eae5efac16deb37441cb87939")
+        for value, expected in [
+            (compiled.layout.to_dict(), "8f39793ef46f99f97e95b8d7f039826da5c4afd24c57f5366dfeec39c5961e4d"),
+            (compiled.resolved_electrodes.to_dict(), "7b78faa7c2993a598f2c8f74492dfc852661627c22748204e85f906fbc4ad8ea"),
+        ]:
+            self.assertEqual(hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest(), expected)
+
+    def test_explicit_negative_y_side_entry_has_provider_center_and_distinct_identity(self) -> None:
+        request = self.requirements()
+        closed = compile_closed_two_zone_accelerator(request)
+        request.update(schema_version=2, side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4))
+        compiled = compile_closed_two_zone_accelerator(request)
+        port = compiled.layout.to_dict()["side_entry"]
+        self.assertEqual(port["center_mm"], [0.0, -16.5, 38.0])
+        self.assertEqual(port["physical_cutout_box_mm"], [-1.5, -17, 36.6, 1.5, -16, 39.4])
+        self.assertEqual(port["boolean_cut_padding_y_mm"], .25)
+        self.assertEqual(port["boolean_transverse_expansion_mm"], 0)
+        self.assertEqual(compiled.resolved_electrodes.to_dict()["schema_version"], 2)
+        self.assertEqual(compiled.resolved_electrodes.to_dict()["grounded_enclosure"]["side_entry"], port)
+        self.assertIn("notin_inside { box3D(-1.5,-17.25,36.6,1.5,-15.75,39.4) }", compiled.gem)
+        self.assertNotEqual(hashlib.sha256(compiled.gem.encode()).hexdigest(), hashlib.sha256(closed.gem.encode()).hexdigest())
+        before, after = closed.resolved_electrodes.to_dict(), compiled.resolved_electrodes.to_dict()
+        for name in ("repeller", "grid_supports", "rings", "local_to_pa_translation_mm"):
+            self.assertEqual(before[name], after[name])
+        self.assertEqual(compiled.gem.count("e("), closed.gem.count("e("))
+        self.assertEqual(compiled.static_axial_length_mm, closed.static_axial_length_mm)
+
+    def test_side_port_z_overlap_with_support_slab_is_not_solid_intersection(self) -> None:
+        request = self.requirements()
+        request.update(schema_version=2, side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.8))
+        compiled = compile_closed_two_zone_accelerator(request)
+        data = compiled.resolved_electrodes.to_dict()
+        cut = data["grounded_enclosure"]["side_entry"]["physical_cutout_box_mm"]
+        support = data["grid_supports"][0]["frame_outer_box_mm"]
+        self.assertLess(cut[2], support["z_max_mm"])
+        self.assertLess(cut[4], support["y_min_mm"])
+
+    def test_side_entry_requires_version2_exact_fields_and_strict_first_gap(self) -> None:
+        for change in (
+            dict(schema_version=2),
+            dict(side_entry=dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4)),
+            *[dict(schema_version=2, side_entry=port) for port in (
+                dict(face="negative_x", half_width_x_mm=1.5, half_width_z_mm=1.4),
+                dict(face="negative_y", half_width_x_mm=22, half_width_z_mm=1.4),
+                dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=2),
+                dict(face="negative_y", half_width_x_mm=True, half_width_z_mm=1.4),
+                dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=float("nan")),
+                dict(face="negative_y", half_width_x_mm=1.5, half_width_z_mm=1.4, center_z_mm=38),
+            )],
+        ):
+            request = self.requirements()
+            request.update(change)
+            with self.subTest(change=change), self.assertRaises(TwoZoneGeometryError):
+                compile_closed_two_zone_accelerator(request)
+
     @staticmethod
     def requirements() -> dict[str, object]:
         return {

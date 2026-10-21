@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -75,6 +76,9 @@ class FamilyDependencyResolutionTests(unittest.TestCase):
             "comsol/build_two_zone_geometry.m",
             "simion/build_two_zone_pa.lua",
             "simion/sectioned_accelerator.py",
+            "simion/bare_three_zone_component.py",
+            "simion/rectangular_accelerator.py",
+            "simion/two_zone_candidate.py",
             "simion/two_zone_accelerator.gem",
         }
         self.assertEqual(
@@ -216,7 +220,7 @@ if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n",
             "runtime/rf_handoff_adapter.py",
         )
         self.assertEqual(
-            handoff_adapter["consumers"],
+            [c for c in handoff_adapter["consumers"] if c != "local_frontend"],
             [
                 "pre_pulse_interface_transport",
                 "analyzer_transport",
@@ -242,7 +246,7 @@ if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n",
             "common_multipole_simion_rf_drive_kernel",
         ):
             self.assertEqual(
-                by_id[successor]["consumers"],
+                [c for c in by_id[successor]["consumers"] if c != "local_frontend"],
                 ["single_flight_transport"],
             )
         for staged_legacy in (
@@ -272,6 +276,126 @@ if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n",
                 self.assertFalse(relative.is_absolute())
                 self.assertNotIn("..", relative.parts)
                 self.assertTrue((REPO_ROOT / relative).is_file())
+
+    def test_local_consumer_declares_complete_python_import_closure(self) -> None:
+        selected = [r for r in load(INVENTORY)["dependencies"] if "local_frontend" in r["consumers"]]
+        paths = {r["source_repo_path"] for r in selected}
+        required_ip = {"projects/dual_pressure_rectilinear_ion_processor/analysis/"+name+".py"
+                       for name in ("guide_interface", "native_geometry", "electrode_contours", "convex_geometry")}
+        self.assertTrue(required_ip <= paths)
+        self.assertNotIn("oatof_analyzer_component", {r["id"] for r in selected})
+        for relative in sorted(paths):
+            if not relative.endswith(".py"):
+                continue
+            tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8-sig"))
+            for node in ast.walk(tree):
+                names = []
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    names = [node.module, *[node.module+"."+a.name for a in node.names]]
+                elif isinstance(node, ast.Import):
+                    names = [a.name for a in node.names]
+                for name in names:
+                    imported = name.replace(".", "/")+".py"
+                    if name.split(".")[0] in {"common", "projects", "integrations"} and (REPO_ROOT/imported).is_file():
+                        self.assertIn(imported, paths, f"unregistered import: {relative} -> {imported}")
+
+    def test_scoped_local_freezer_and_missing_provider_fail_closed(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            script = f"""
+. '{INTEGRATION_ROOT / 'runtime/run_artifacts.ps1'}'
+. '{INTEGRATION_ROOT / 'runtime/runtime_binding.ps1'}'
+$f=Freeze-RfOatofConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -ConsumerId local_frontend
+if(@($f.identities).Count-lt1){{throw 'empty selected closure'}}
+try{{Resolve-RfOatofDependencyContract -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -ConsumerId unknown;throw 'unregistered consumer accepted'}}catch{{if($_.Exception.Message-notlike '*Unregistered runtime dependency consumer*'){{throw}}}}
+$bad=Get-Content '{INVENTORY}' -Raw|ConvertFrom-Json
+($bad.dependencies|Where-Object{{$_.source_repo_path-like '*/analysis/guide_interface.py'}}).source_repo_path='projects/dual_pressure_rectilinear_ion_processor/analysis/missing_provider.py'
+$badPath=Join-Path '{output}' 'bad_contract.json';$bad|ConvertTo-Json -Depth 30|Set-Content $badPath
+try{{Resolve-RfOatofDependencyContract -RepoRoot '{REPO_ROOT}' -ContractPath $badPath -ConsumerId local_frontend;throw 'missing provider accepted'}}catch{{if($_.Exception.Message-notlike '*dependency source is missing*'){{throw}}}}
+Write-Output $f.execution_root
+"""
+            result = subprocess.run([pwsh, "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            snapshot = output/"runtime_snapshot"
+            env = dict(os.environ)
+            env.pop("PYTHONPATH", None)
+            statement = ("from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.local_frontend "
+                         "import prepare,runtime,analyze; from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime "
+                         "import standalone_pa_family; from common.contracts import run_capacity_lifecycle; "
+                         "assert prepare.ROLE=='rf_oatof_local_frontend_request'; print('LOCAL_SNAPSHOT_IMPORT=PASS')")
+            completed = subprocess.run([sys.executable, "-s", "-c", statement], cwd=snapshot, env=env,
+                                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+            # Removing one declared provider proves the clean snapshot cannot
+            # silently recover an undeclared cross-project import from the repo.
+            (snapshot/"projects/dual_pressure_rectilinear_ion_processor/analysis/guide_interface.py").unlink()
+            missing = subprocess.run([sys.executable, "-B", "-s", "-c", statement], cwd=snapshot, env=env,
+                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("guide_interface", missing.stderr)
+
+    def test_local_snapshot_prepares_both_variants_and_requires_runtime_resources(self) -> None:
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.test_local_frontend_workflow import fixture
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.test_single_flight_frontend import canonical_three_zone_frontend_fixture
+
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            request_path, request = fixture(workspace)
+            freeze = f"""
+. '{INTEGRATION_ROOT / 'runtime/run_artifacts.ps1'}'
+. '{INTEGRATION_ROOT / 'runtime/runtime_binding.ps1'}'
+$null=Freeze-RfOatofConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{workspace / 'frozen'}' -ConsumerId local_frontend
+"""
+            frozen = subprocess.run([pwsh, "-NoProfile", "-Command", freeze], cwd=REPO_ROOT,
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+            self.assertEqual(frozen.returncode, 0, frozen.stdout+frozen.stderr)
+            snapshot = workspace / "frozen/runtime_snapshot"
+            environment = dict(os.environ)
+            environment.pop("PYTHONPATH", None)
+            module = "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.local_frontend.prepare"
+            command = [sys.executable, "-B", "-s", "-m", module, "--request", str(request_path),
+                       "--repo-root", str(snapshot), "--workspace-root", str(workspace), "--validate-only"]
+
+            def run_prepare():
+                return subprocess.run(command, cwd=snapshot, env=environment, capture_output=True,
+                                      text=True, encoding="utf-8", errors="replace", timeout=60)
+
+            for variant in ("two_zone", "three_zone"):
+                with self.subTest(variant=variant):
+                    if variant == "three_zone":
+                        _, connection, component = canonical_three_zone_frontend_fixture()
+                        request["accelerator_component"] = component
+                        request["registration"]["guide_to_solver"].update(
+                            rotation=connection["spatial_registration"]["rotation_upstream_to_downstream"],
+                            translation_mm=connection["spatial_registration"]["translation_mm"])
+                        request["connection"]["rod_end_to_side_wall_gap_mm"] = connection["connector"]["length_mm"]
+                    request_path.write_text(json.dumps(request), encoding="utf-8")
+                    completed = run_prepare()
+                    self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+                    result = json.loads(completed.stdout)
+                    self.assertEqual((result["status"], result["particle_count"]), ("validated", 100))
+
+            # Each omitted resource failed in a real frozen run. Fresh processes
+            # and -B prevent an already imported module/pyc masking the omission.
+            for relative in ("common/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
+                             "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py"):
+                with self.subTest(missing=relative):
+                    resource = snapshot / relative
+                    original = resource.read_bytes()
+                    resource.unlink()
+                    try:
+                        missing = run_prepare()
+                        self.assertNotEqual(missing.returncode, 0, missing.stdout)
+                        self.assertIn(resource.stem, missing.stderr)
+                    finally:
+                        resource.write_bytes(original)
 
     def test_active_bindings_use_one_inventory_authority(self) -> None:
         expected_path = INVENTORY.relative_to(REPO_ROOT).as_posix()

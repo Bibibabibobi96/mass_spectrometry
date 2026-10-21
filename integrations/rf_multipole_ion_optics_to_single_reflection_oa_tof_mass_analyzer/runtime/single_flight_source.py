@@ -15,6 +15,7 @@ from common.contracts.particle_physics import (
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,
 )
+from common.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 from common.ion_release.continuous_axial_volume import (
     METHOD as ION_SOURCE_VOLUME_METHOD,
 )
@@ -487,6 +488,13 @@ def materialize(
     source_path: Path,
     connection: dict[str, object],
 ) -> tuple[list[list[str]], list[dict[str, str]]]:
+    """Map every frozen source row through the connection's proper rotation.
+
+    The registration is solver/accelerator-variant neutral: positions use Rr+t,
+    velocities use Rv, and birth times, IDs and species remain unchanged. The
+    existing ION encoder still targets this integration's accelerator instance.
+    No sampling, propagation, population selection or file writing occurs here.
+    """
     with source_path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames != SOURCE_COLUMNS:
@@ -495,11 +503,13 @@ def materialize(
     if not source_rows:
         raise ValueError("mother sample is empty")
     registration = connection["spatial_registration"]
-    rotation = registration["rotation_upstream_to_downstream"]
-    translation = registration["translation_mm"]
-    if rotation != [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]:
-        raise ValueError("single-flight source requires the canonical multipole-to-oaTOF rotation")
-    tx, ty, tz = map(float, translation)
+    # The CSV has no frame column. These internal labels identify the two sides
+    # of the explicit connection registration, not an inferred instrument pose.
+    transform = RigidTransform(
+        "connection_upstream_source", "connection_downstream_source",
+        registration["rotation_upstream_to_downstream"],
+        registration["translation_mm"],
+    )
     ion_rows: list[list[str]] = []
     global_rows: list[dict[str, str]] = []
     actual_ids = [int(row["particle_id"]) for row in source_rows]
@@ -507,13 +517,17 @@ def materialize(
         raise ValueError("mother-sample particle IDs must be positive and unique")
     for row in source_rows:
         particle_id = int(row["particle_id"])
-        local_x, local_y, local_z = (float(row[f"{axis}_mm"]) for axis in "xyz")
-        local_vx, local_vy, local_vz = (float(row[f"v{axis}_m_s"]) for axis in "xyz")
-        x, y, z = local_z + tx, local_x + ty, local_y + tz
-        vx, vy, vz = local_vz, local_vx, local_vy
+        state = transform.transform_state(PhaseSpaceState(
+            transform.from_frame_id,
+            tuple(float(row[f"{axis}_mm"]) for axis in "xyz"),
+            tuple(float(row[f"v{axis}_m_s"]) for axis in "xyz"),
+            float(row["birth_time_s"]) * 1e6,
+        ))
+        x, y, z = state.position_mm
+        vx, vy, vz = state.velocity_m_s
         mass = float(row["mass_amu"])
         charge = int(row["charge_state"])
-        time_us = float(row["birth_time_s"]) * 1e6
+        time_us = state.instrument_time_us
         energy = kinetic_energy_ev(mass, vx, vy, vz)
         azimuth, elevation = encode_simion_accelerator_velocity((vx, vy, vz))
         ion_rows.append(

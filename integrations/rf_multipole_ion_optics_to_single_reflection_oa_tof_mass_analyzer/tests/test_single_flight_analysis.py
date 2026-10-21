@@ -556,6 +556,66 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertIsNone(diagnostic["cubic_fit"])
         self.assertIsNone(diagnostic["cubic_random_residual"])
 
+    def test_exit_signed_component_angles_use_population_sd_in_integration_frame(self) -> None:
+        rows = pd.DataFrame({
+            "particle_id": [3, 11], "event": ["local_accelerator_exit"] * 2,
+            "x_mm": [-1., 1.], "y_mm": [-2., 2.], "z_mm": [0., 0.],
+            "vx_mm_per_us": [-1., 1.], "vy_mm_per_us": [1., 1.],
+            "vz_mm_per_us": [-1., -1.], "instrument_time_us": [2., 2.002],
+            "kinetic_energy_eV": [100., 104.],
+        })
+        result = _checkpoint_distribution_summary(rows, "local_accelerator_exit")
+        c = result["integration_frame_components"]
+        self.assertEqual(c["frame"], "oatof_global_cartesian")
+        self.assertEqual(c["mr_frame_mapping"], "not_bound")
+        self.assertAlmostEqual(c["theta_x_deg"]["signed_mean"], 0.)
+        self.assertAlmostEqual(c["theta_x_deg"]["population_std"], 45.)
+        self.assertAlmostEqual(c["theta_y_deg"]["signed_mean"], 45.)
+        self.assertAlmostEqual(c["theta_y_deg"]["population_std"], 0.)
+        self.assertEqual(c["space_population_sigma_mm"]["x"], 1.)
+        self.assertAlmostEqual(c["instrument_time_us"]["population_std"] * 1000., 1.)
+        self.assertEqual(c["kinetic_energy_eV"]["population_std"], 2.)
+        self.assertIn("sample_std", result["total_off_axis_angle_deg"])
+        upstream = _checkpoint_distribution_summary(rows, "pre_pulse_state")["integration_frame_components"]
+        self.assertIsNone(upstream["theta_x_deg"])
+        zero = rows.copy()
+        zero.loc[0, "vz_mm_per_us"] = 0.
+        self.assertIsNone(_checkpoint_distribution_summary(zero, "local_accelerator_exit")["integration_frame_components"]["theta_y_deg"])
+        missing = rows.drop(columns=["kinetic_energy_eV"])
+        self.assertEqual(_checkpoint_distribution_summary(missing, "local_accelerator_exit")["integration_frame_components"]["kinetic_energy_eV_unavailable_reason"], "canonical_column_missing")
+
+    def test_incoming_aperture_angles_use_y_and_outgoing_aliases_keep_z(self) -> None:
+        rows = pd.DataFrame(dict(x_mm=[0., 1.], y_mm=[-.2, -.2], z_mm=[0., 2.],
+                                 vx_mm_per_us=[-1., 1.], vy_mm_per_us=[1., 1.],
+                                 vz_mm_per_us=[-1., 1.], instrument_time_us=[0., 1.],
+                                 kinetic_energy_eV=[4., 6.]))
+        incoming = _checkpoint_distribution_summary(rows, "local_aperture_pre",
+            frame_id="mrtof_global_cartesian", propagation_axis="y")["integration_frame_components"]
+        self.assertEqual(set(incoming["local_transverse_angles_deg"]), {"theta_x_y", "theta_z_y"})
+        self.assertEqual(incoming["local_transverse_angles_deg"]["theta_x_y"]["population_std"], 45.)
+        self.assertEqual(incoming["local_transverse_angles_deg"]["theta_z_y"]["population_std"], 45.)
+        self.assertIsNone(incoming["theta_x_deg"])
+        self.assertIsNone(incoming["theta_y_deg"])
+        self.assertIn("abs(v_y)", incoming["local_angle_definition"])
+        outgoing = _checkpoint_distribution_summary(rows, "local_accelerator_exit",
+            frame_id="mrtof_global_cartesian")["integration_frame_components"]
+        self.assertEqual(outgoing["theta_x_deg"], outgoing["local_transverse_angles_deg"]["theta_x_z"])
+        self.assertEqual(outgoing["theta_y_deg"], outgoing["local_transverse_angles_deg"]["theta_y_z"])
+        self.assertEqual(incoming["space_population_sigma_mm"]["x"], .5)
+        self.assertEqual(incoming["space_population_sigma_mm"]["z"], 1.)
+
+    def test_native_mr_checkpoint_axes_do_not_relabel_source_x_as_slow_axis(self) -> None:
+        rows = pd.DataFrame({"particle_id": [3, 11], "x_mm": [0., 1.], "y_mm": [0., 2.], "z_mm": [0., 0.],
+                             "vx_mm_per_us": [0., 0.], "vy_mm_per_us": [1., 1.], "vz_mm_per_us": [-1., -1.]})
+        source = _checkpoint_distribution_summary(rows, "source_release", frame_id="mrtof_global_cartesian", propagation_axis="y")
+        self.assertEqual(source["local_propagation_axis"], "y")
+        self.assertAlmostEqual(source["total_off_axis_angle_deg"]["median"], 45.)
+        self.assertEqual(source["integration_frame_components"]["frame"], "mrtof_global_cartesian")
+        self.assertIsNone(source["integration_frame_components"]["theta_y_deg"])
+        exit_row = _checkpoint_distribution_summary(rows, "local_accelerator_exit", frame_id="mrtof_global_cartesian")
+        self.assertEqual(exit_row["integration_frame_components"]["mr_frame_mapping"], "native_mr_frame")
+        self.assertAlmostEqual(exit_row["integration_frame_components"]["theta_y_deg"]["signed_mean"], 45.)
+
     def test_checkpoint_evolution_csv_records_extended_z_vz_metrics(self) -> None:
         z_values = [-2.0, -1.0, 0.0, 1.0, 2.0]
         checkpoints = pd.DataFrame(
@@ -585,6 +645,13 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 checkpoints_path, figure_path, metadata_path, data_path
             )
             table = pd.read_csv(data_path)
+            metadata = json.loads(metadata_path.read_text())
+            self.assertEqual(metadata["exit_phase_portrait"]["particle_ids"], list(range(1, 6)))
+            self.assertEqual(metadata["exit_phase_portrait"]["mr_frame_mapping"], "not_bound")
+            self.assertEqual(table.loc[0, "theta_x_population_std_deg"], 0.)
+            self.assertEqual(table.loc[0, "sigma_x_mm"], 0.)
+            self.assertEqual(table.loc[0, "sigma_t_ns"], 0.)
+            self.assertTrue(pd.isna(table.loc[0, "kinetic_energy_eV_population_std"]))
         self.assertIn("z_vz_k_m_per_s_per_mm", table.columns)
         self.assertIn("z_vz_linear_residual_sigma_m_per_s", table.columns)
         self.assertIn("z_vz_quadratic_coefficient_m_per_s_per_mm2", table.columns)
@@ -598,6 +665,47 @@ class SingleFlightAnalysisTests(unittest.TestCase):
     def test_n1000_marker_does_not_obscure_geometry(self) -> None:
         self.assertLess(marker_area(1000), marker_area(100))
         self.assertLessEqual(marker_area(1000), 2.0)
+
+    def test_checkpoint_time_panels_preserve_all_exit_times_and_handle_no_exits(self) -> None:
+        for event in ("local_accelerator_exit", "source_release"):
+            with self.subTest(event=event), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                rows = pd.DataFrame({"particle_id": [3, 11, 27], "event": [event] * 3,
+                    "instrument_time_us": [2.003, 2., 2.001], "x_mm": [-.1, 0., .1],
+                    "y_mm": [1., 2., 3.], "z_mm": [0., 0., 0.],
+                    "vx_mm_per_us": [.01, .02, .03], "vy_mm_per_us": [1., 1., 1.],
+                    "vz_mm_per_us": [-40., -40., -40.]})
+                rows.to_csv(root / "checkpoints.csv", index=False)
+                with mock.patch.object(plt, "close") as close:
+                    write_checkpoint_evolution_outputs(root / "checkpoints.csv", root / "plot.png",
+                        root / "metadata.json", root / "statistics.csv", frame_id="mrtof_global_cartesian",
+                        checkpoint_axes={"source_release": "y"})
+                    figure = close.call_args.args[0]
+                try:
+                    self.assertEqual(len(figure.axes), 8)
+                    table = pd.read_csv(root / "statistics.csv")
+                    expected_sigma_ns = (14. / 9.)**.5
+                    self.assertAlmostEqual(table.loc[0, "sigma_t_ns"], expected_sigma_ns)
+                    self.assertAlmostEqual(figure.axes[6].lines[0].get_ydata()[0], expected_sigma_ns)
+                    metadata = json.loads((root / "metadata.json").read_text())
+                    panel = metadata["time_panels"]
+                    self.assertEqual(panel["standard_deviation_ddof"], 0)
+                    if event == "local_accelerator_exit":
+                        self.assertEqual(panel["exit_particle_ids"], [3, 11, 27])
+                        self.assertAlmostEqual(panel["exit_mean_time_us"], 2. + 4. / 3000.)
+                        curve = figure.axes[7].lines[0]
+                        for actual, expected in zip(curve.get_xdata(), [-4. / 3., -1. / 3., 5. / 3.], strict=True):
+                            self.assertAlmostEqual(actual, expected)
+                        self.assertEqual(curve.get_ydata().tolist(), [1. / 3., 2. / 3., 1.])
+                        self.assertEqual(len(figure.axes[4].collections[0].get_offsets()), 3)
+                        self.assertEqual(len(figure.axes[5].collections[0].get_offsets()), 3)
+                    else:
+                        self.assertIsNone(panel["exit_mean_time_us"])
+                        self.assertEqual(panel["exit_particle_ids"], [])
+                        self.assertFalse(figure.axes[7].lines)
+                        self.assertIn("unavailable", figure.axes[7].texts[0].get_text())
+                finally:
+                    plt.close(figure)
 
     def test_three_zone_panel_d_renders_electrode_thickness_and_grid_planes(self) -> None:
         oatof = {

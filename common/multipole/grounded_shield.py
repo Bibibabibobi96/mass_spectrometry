@@ -107,6 +107,7 @@ def render_grounded_circular_to_rectangular_connection(
     aperture_width_mm: float,
     aperture_height_mm: float,
     cell_mm_xyz: dict[str, float],
+    pa_origin_x_mm: float,
     pa_origin_y_mm: float,
     pa_origin_z_mm: float,
 ) -> tuple[list[str], dict[str, Any]]:
@@ -147,12 +148,12 @@ def render_grounded_circular_to_rectangular_connection(
         mechanical_width_mm=aperture_width_mm,
         mechanical_height_mm=aperture_height_mm,
         cell_mm_xyz=cell_mm_xyz,
-        flange_x_min_mm=sleeve_x_max_mm,
-        flange_x_max_mm=flange_x_max_mm,
-        center_y_mm=center_y_mm,
-        center_z_mm=center_z_mm,
-        pa_origin_y_mm=pa_origin_y_mm,
-        pa_origin_z_mm=pa_origin_z_mm,
+        normal_axis="x",
+        flange_min_mm=sleeve_x_max_mm,
+        flange_max_mm=flange_x_max_mm,
+        center_mm={"x": (sleeve_x_max_mm + flange_x_max_mm) / 2, "y": center_y_mm, "z": center_z_mm},
+        pa_origin_mm={"x": pa_origin_x_mm, "y": pa_origin_y_mm, "z": pa_origin_z_mm},
+        boolean_boundary_policy="exclude_shape_inside_or_on_v1",
     )
     numerical_aperture_width_mm = aperture_discretization[
         "numerical_carve_width_mm"

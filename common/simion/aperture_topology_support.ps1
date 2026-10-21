@@ -13,25 +13,36 @@ function Invoke-SimionCompiledApertureTopologyCheck {
     [Parameter(Mandatory)][double]$CellMmX,
     [Parameter(Mandatory)][double]$CellMmY,
     [Parameter(Mandatory)][double]$CellMmZ,
-    [Parameter(Mandatory)][double]$FlangeXMinMm,
-    [Parameter(Mandatory)][double]$FlangeXMaxMm,
-    [Parameter(Mandatory)][double]$CenterYmm,
-    [Parameter(Mandatory)][double]$CenterZmm,
+    [Parameter(Mandatory)][ValidateSet('x','y','z')][string]$NormalAxis,
+    [Parameter(Mandatory)][double]$FlangeMinimumMm,
+    [Parameter(Mandatory)][double]$FlangeMaximumMm,
+    [Parameter(Mandatory)][double[]]$ApertureCenterMm,
     [Parameter(Mandatory)][double]$MechanicalWidthMm,
     [Parameter(Mandatory)][double]$MechanicalHeightMm,
     [Parameter(Mandatory)][string]$BooleanBoundaryPolicy,
     [Parameter(Mandatory)][scriptblock]$InvokeVerifier
   )
 
+  $cells = @{x=$CellMmX;y=$CellMmY;z=$CellMmZ}
+  $transverseAxes = @('x','y','z') | Where-Object { $_ -ne $NormalAxis }
+  $numericInputs = @($OriginXmm,$OriginYmm,$OriginZmm,$CellMmX,$CellMmY,$CellMmZ,
+    $FlangeMinimumMm,$FlangeMaximumMm,$MechanicalWidthMm,$MechanicalHeightMm)
+  if (@($numericInputs | Where-Object { -not [double]::IsFinite($_) }).Count -ne 0) {
+    throw 'SIMION aperture coordinates, mesh and dimensions must be finite.'
+  }
+  if ($ApertureCenterMm.Count -ne 3 -or
+      @($ApertureCenterMm | Where-Object { -not [double]::IsFinite($_) }).Count -ne 0) {
+    throw 'SIMION aperture center must contain three finite world coordinates.'
+  }
   if ($CellMmX -le 0 -or $CellMmY -le 0 -or $CellMmZ -le 0 -or
-      $MechanicalWidthMm -lt $CellMmY -or
-      $MechanicalHeightMm -lt $CellMmZ) {
+      $MechanicalWidthMm -lt $cells[$transverseAxes[0]] -or
+      $MechanicalHeightMm -lt $cells[$transverseAxes[1]]) {
     throw 'SIMION aperture width and height must each be at least one positive cell.'
   }
-  if ($FlangeXMaxMm -lt $FlangeXMinMm) {
+  if ($FlangeMaximumMm -lt $FlangeMinimumMm) {
     throw 'SIMION aperture flange bounds are reversed.'
   }
-  if ($BooleanBoundaryPolicy -cne 'exclude_shape_inside_or_on_v1') {
+  if ($BooleanBoundaryPolicy -cnotin @('exclude_shape_inside_or_on_v1','exclude_shape_inside_only_v1')) {
     throw "Unsupported SIMION aperture Boolean boundary policy: $BooleanBoundaryPolicy"
   }
   foreach ($path in @($PaPath,$VerifierPath)) {
@@ -50,10 +61,12 @@ function Invoke-SimionCompiledApertureTopologyCheck {
     SIMION_APERTURE_CELL_MM_X = $CellMmX.ToString('R',$invariant)
     SIMION_APERTURE_CELL_MM_Y = $CellMmY.ToString('R',$invariant)
     SIMION_APERTURE_CELL_MM_Z = $CellMmZ.ToString('R',$invariant)
-    SIMION_APERTURE_FLANGE_X_MIN_MM = $FlangeXMinMm.ToString('R',$invariant)
-    SIMION_APERTURE_FLANGE_X_MAX_MM = $FlangeXMaxMm.ToString('R',$invariant)
-    SIMION_APERTURE_CENTER_Y_MM = $CenterYmm.ToString('R',$invariant)
-    SIMION_APERTURE_CENTER_Z_MM = $CenterZmm.ToString('R',$invariant)
+    SIMION_APERTURE_NORMAL_AXIS = $NormalAxis
+    SIMION_APERTURE_FLANGE_MIN_MM = $FlangeMinimumMm.ToString('R',$invariant)
+    SIMION_APERTURE_FLANGE_MAX_MM = $FlangeMaximumMm.ToString('R',$invariant)
+    SIMION_APERTURE_CENTER_X_MM = $ApertureCenterMm[0].ToString('R',$invariant)
+    SIMION_APERTURE_CENTER_Y_MM = $ApertureCenterMm[1].ToString('R',$invariant)
+    SIMION_APERTURE_CENTER_Z_MM = $ApertureCenterMm[2].ToString('R',$invariant)
     SIMION_APERTURE_WIDTH_MM = $MechanicalWidthMm.ToString('R',$invariant)
     SIMION_APERTURE_HEIGHT_MM = $MechanicalHeightMm.ToString('R',$invariant)
     SIMION_APERTURE_BOOLEAN_BOUNDARY_POLICY = $BooleanBoundaryPolicy

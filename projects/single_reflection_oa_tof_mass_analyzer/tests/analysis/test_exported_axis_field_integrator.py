@@ -1,3 +1,4 @@
+import ast
 import csv
 from pathlib import Path
 import tempfile
@@ -96,7 +97,21 @@ class ExportedAxisFieldIntegratorTests(unittest.TestCase):
         self.assertIn("instance:field_wc(x,y,z,values)", source)
         self.assertIn("TOTAL_AXIS_FIELD_SAMPLE", source)
         self.assertIn("for _,overlay in ipairs(overlay_specs) do", source)
-        exporter_source = source[source.index('exporter = f"""'):]
+        builder_function = next(
+            node for node in ast.parse(source).body
+            if isinstance(node, ast.FunctionDef) and node.name == "build_successor_program"
+        )
+        exporter_assignments = [
+            node for node in builder_function.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "exporter"
+                    for target in node.targets)
+        ]
+        self.assertEqual(len(exporter_assignments), 1)
+        self.assertIsInstance(exporter_assignments[0].value, ast.JoinedStr)
+        # Later Program builders may legitimately declare their own workbench.
+        exporter_source = ast.get_source_segment(source, exporter_assignments[0].value)
+        self.assertIsNotNone(exporter_source)
         self.assertNotIn("simion.workbench_program()", exporter_source)
         self.assertIn("analyzer.initialize_workbench", source)
         self.assertIn("ai.x,ai.y,ai.z={_lua_number(origin['x'])}", exporter_source)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -11,7 +12,9 @@ from pathlib import Path
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.ordered_pre_pulse_subset import materialize_ordered_pre_pulse_subset, ordered_subset_source_particle_ids, validate_ordered_pre_pulse_subset
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import UPSTREAM_TERMINAL_COLUMNS, materialize, materialize_ideal_linear_source, materialize_pre_pulse_restart, materialize_terminal_handoff_continuation, render_pre_pulse_fly2
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import SOURCE_COLUMNS, UPSTREAM_TERMINAL_COLUMNS, materialize, materialize_ideal_linear_source, materialize_pre_pulse_restart, materialize_terminal_handoff_continuation, render_pre_pulse_fly2
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.rf_handoff_adapter import encode_simion_accelerator_velocity
+from common.contracts.particle_physics import kinetic_energy_ev
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import _validate_canonical_pulse_restart_state
 
 
@@ -21,6 +24,91 @@ SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
 
 
 class SingleFlightSourceTests(unittest.TestCase):
+    def _materialize_rows(self, rotation, translation, rows):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source.csv"
+            with path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.writer(handle, lineterminator="\n")
+                writer.writerow(SOURCE_COLUMNS)
+                writer.writerows(rows)
+            before = path.read_bytes()
+            result = materialize(path, {"spatial_registration": {
+                "rotation_upstream_to_downstream": rotation,
+                "translation_mm": translation,
+            }})
+            self.assertEqual(path.read_bytes(), before)
+            return result
+
+    def test_registration_maps_ip_axis_x_to_oa_slow_y_without_resampling(self):
+        rows = [
+            [1, 0, 1, 0, 0, 1356.9536221848405, 0, 0, 524, 1],
+            [2, 0, -.5, -.35, .61, 1203.4, -92.1, -98.4, 524, 1],
+            [7, .000003, 2, .2, -.4, 1400, 30, -40, 524, 1],
+        ]
+        ion, states = self._materialize_rows(
+            [[0, 0, -1], [1, 0, 0], [0, -1, 0]], [0, -43, 32], rows,
+        )
+        self.assertEqual([row["particle_id"] for row in states], ["1", "2", "7"])
+        for source, actual, solver in zip(rows, states, ion):
+            expected_position = (-source[4], source[2] - 43, 32 - source[3])
+            expected_velocity = (-source[7], source[5], -source[6])
+            self.assertEqual(tuple(float(actual[f"position_{a}_mm"]) for a in "xyz"), expected_position)
+            self.assertEqual(tuple(float(actual[f"velocity_{a}_m_s"]) for a in "xyz"), expected_velocity)
+            self.assertEqual(float(actual["instrument_time_us"]), source[1] * 1e6)
+            self.assertEqual((actual["mass_amu"], actual["charge_state"]), ("524", "1"))
+            self.assertAlmostEqual(float(actual["kinetic_energy_eV"]), kinetic_energy_ev(524, *source[5:8]))
+            self.assertEqual(solver[1:3], ["524", "1"])
+
+    def test_general_nonpermutation_rotation_and_translation(self):
+        angle = math.pi / 6
+        c, s = math.cos(angle), math.sin(angle)
+        rows = [[4, .000002, 1, 2, 3, 10, 20, 30, 100, 2]]
+        _, states = self._materialize_rows(
+            [[c, -s, 0], [s, c, 0], [0, 0, 1]], [4, 5, 6], rows,
+        )
+        row = states[0]
+        for axis, expected in zip("xyz", (c - 2*s + 4, s + 2*c + 5, 9)):
+            self.assertAlmostEqual(float(row[f"position_{axis}_mm"]), expected)
+        for axis, expected in zip("xyz", (10*c - 20*s, 10*s + 20*c, 30)):
+            self.assertAlmostEqual(float(row[f"velocity_{axis}_m_s"]), expected)
+        self.assertEqual((row["particle_id"], row["instrument_time_us"], row["charge_state"]), ("4", "2", "2"))
+
+    def test_legacy_registration_preserves_exact_serialized_outputs(self):
+        rows = [[3, .00000125, .125, -.375, 2.5, 10, -20, 1300, 524, 1],
+                [8, 0, 0, 0, 0, 0, 0, 1000, 100, 2]]
+        translation = [-168.5, .5, -61.25]
+        ion, states = self._materialize_rows(
+            [[0, 0, 1], [1, 0, 0], [0, 1, 0]], translation, rows,
+        )
+        for source, actual, solver in zip(rows, states, ion):
+            # Independent pre-change permutation oracle, including .17g bytes.
+            p = (source[4] + translation[0], source[2] + translation[1], source[3] + translation[2])
+            v = (source[7], source[5], source[6])
+            energy = kinetic_energy_ev(source[8], *v)
+            azimuth, elevation = encode_simion_accelerator_velocity(v)
+            expected = {
+                "particle_id": str(source[0]), "instrument_time_us": format(source[1]*1e6, ".17g"),
+                "mass_amu": format(source[8], ".17g"), "charge_state": str(source[9]),
+                **{f"position_{a}_mm": format(value, ".17g") for a, value in zip("xyz", p)},
+                **{f"velocity_{a}_m_s": format(value, ".17g") for a, value in zip("xyz", v)},
+                "kinetic_energy_eV": format(energy, ".17g"),
+            }
+            self.assertEqual(actual, expected)
+            self.assertEqual(solver, ["0", format(source[8], ".17g"), str(source[9]),
+                                     *[format(value, ".17g") for value in p],
+                                     format(azimuth, ".17g"), format(elevation, ".17g"),
+                                     format(energy, ".17g"), "1", "3"])
+
+    def test_invalid_registration_fails_before_materialization(self):
+        source = [[1, 0, 0, 0, 0, 0, 0, 1000, 100, 1]]
+        for rotation, translation in (
+            ([[-1, 0, 0], [0, 1, 0], [0, 0, 1]], [0, 0, 0]),
+            ([[2, 0, 0], [0, 1, 0], [0, 0, 1]], [0, 0, 0]),
+            ([[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0, float("nan"), 0]),
+        ):
+            with self.subTest(rotation=rotation, translation=translation), self.assertRaises(ValueError):
+                self._materialize_rows(rotation, translation, source)
+
     def test_terminal_handoff_continuation_preserves_clock_ids_and_upstream_losses(self) -> None:
         connection = {
             "spatial_registration": {

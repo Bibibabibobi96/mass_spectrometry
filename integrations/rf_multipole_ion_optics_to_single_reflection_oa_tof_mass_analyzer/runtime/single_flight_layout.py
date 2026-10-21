@@ -800,6 +800,30 @@ def _pulse_candidate_sort_key(candidate: dict[str, Any]) -> tuple[float, ...]:
     )
 
 
+def pulse_candidate_concentration(
+    centered_means_mm: dict[str, float], population_sigmas_mm: dict[str, float],
+    normalization_bounds: dict[str, dict[str, float]],
+) -> dict[str, Any]:
+    """Normalize observed moments using declared geometry, including rectangles.
+
+    Callers retain their established moment accumulator: this helper neither
+    changes streaming summation nor infers eligibility or drops particles.
+    """
+    centroid, spread = {}, {}
+    for axis in "xyz":
+        half = float(normalization_bounds[axis]["full_width_mm"]) / 2.0
+        mean, sigma = float(centered_means_mm[axis]), float(population_sigmas_mm[axis])
+        if not all(math.isfinite(v) for v in (half, mean, sigma)) or half <= 0 or sigma < 0:
+            raise ContractError("pulse concentration requires finite moments and positive geometry widths")
+        centroid[axis], spread[axis] = mean / half, sigma / half
+    return {
+        "normalized_xyz_centroid": centroid,
+        "normalized_xyz_centroid_distance": math.sqrt(sum(v * v for v in centroid.values())),
+        "normalized_xyz_spread": spread,
+        "normalized_xyz_spread_norm": math.sqrt(sum(v * v for v in spread.values())),
+    }
+
+
 def _pulse_normalization_bounds(
     repeller_z: float, grid1_z: float, bore_half: float, axis_x: float, axis_y: float,
 ) -> dict[str, dict[str, float]]:
@@ -997,15 +1021,14 @@ def select_detector_blind_real_field_pulse_time(
                 for axis in ("x", "y", "z")
             )
         ]
-        normalized_centroid: dict[str, float] = {}
-        normalized_spread: dict[str, float] = {}
+        centered_means, sigmas = {}, {}
         for axis in ("x", "y", "z"):
             values = [float(state[f"{axis}_mm"]) for state in eligible_states]
-            half_width = normalization_bounds[axis]["full_width_mm"] / 2.0
-            normalized_centroid[axis] = (
-                statistics.fmean(values) - normalization_bounds[axis]["center_mm"]
-            ) / half_width
-            normalized_spread[axis] = statistics.pstdev(values) / half_width
+            centered_means[axis] = statistics.fmean(values) - normalization_bounds[axis]["center_mm"]
+            sigmas[axis] = statistics.pstdev(values)
+        concentration = pulse_candidate_concentration(centered_means, sigmas, normalization_bounds)
+        normalized_centroid = concentration["normalized_xyz_centroid"]
+        normalized_spread = concentration["normalized_xyz_spread"]
         candidates.append({
             "sample_index": sample_index,
             "candidate_time_us": time_us,
@@ -1027,13 +1050,9 @@ def select_detector_blind_real_field_pulse_time(
             "transverse_nonbore_count": len(transverse_nonbore_ids),
             "source_region_count": len(source_region_ids),
             "normalized_xyz_centroid": normalized_centroid,
-            "normalized_xyz_centroid_distance": math.sqrt(
-                sum(value * value for value in normalized_centroid.values())
-            ),
+            "normalized_xyz_centroid_distance": concentration["normalized_xyz_centroid_distance"],
             "normalized_xyz_spread": normalized_spread,
-            "normalized_xyz_spread_norm": math.sqrt(
-                sum(value * value for value in normalized_spread.values())
-            ),
+            "normalized_xyz_spread_norm": concentration["normalized_xyz_spread_norm"],
             "actual_instrument_time_us": {
                 "minimum": min(
                     float(state["actual_instrument_time_us"]) for state in states
@@ -1218,14 +1237,14 @@ def select_detector_blind_natural_archive_pulse_time(
         if eligible_count == 0:
             continue
         time_us = grid_origin_us + (sample_index - 1) * grid_step_us
-        normalized_centroid: dict[str, float] = {}
-        normalized_spread: dict[str, float] = {}
+        centered_means, sigmas = {}, {}
         for axis_index, axis in enumerate("xyz"):
             mean = state["sum"][axis_index] / eligible_count
             variance = max(0.0, state["sum_sq"][axis_index] / eligible_count - mean * mean)
-            half_width = normalization_bounds[axis]["full_width_mm"] / 2.0
-            normalized_centroid[axis] = mean / half_width
-            normalized_spread[axis] = math.sqrt(variance) / half_width
+            centered_means[axis], sigmas[axis] = mean, math.sqrt(variance)
+        concentration = pulse_candidate_concentration(centered_means, sigmas, normalization_bounds)
+        normalized_centroid = concentration["normalized_xyz_centroid"]
+        normalized_spread = concentration["normalized_xyz_spread"]
         candidate = {
             "sample_index": sample_index,
             "candidate_time_us": time_us,
@@ -1239,9 +1258,9 @@ def select_detector_blind_natural_archive_pulse_time(
             "transverse_nonbore_count": len(expected_ids) - state["bore"].bit_count(),
             "source_region_count": state["source"].bit_count(),
             "normalized_xyz_centroid": normalized_centroid,
-            "normalized_xyz_centroid_distance": math.sqrt(sum(value * value for value in normalized_centroid.values())),
+            "normalized_xyz_centroid_distance": concentration["normalized_xyz_centroid_distance"],
             "normalized_xyz_spread": normalized_spread,
-            "normalized_xyz_spread_norm": math.sqrt(sum(value * value for value in normalized_spread.values())),
+            "normalized_xyz_spread_norm": concentration["normalized_xyz_spread_norm"],
             "actual_instrument_time_us": {
                 "minimum": state["actual_min"], "maximum": state["actual_max"],
                 "maximum_absolute_candidate_error_us": state["actual_error"],

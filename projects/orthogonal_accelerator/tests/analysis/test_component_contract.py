@@ -31,6 +31,9 @@ class ComponentContractTest(unittest.TestCase):
             self.assertTrue((PROJECT / relative).is_file(), relative)
         self.assertEqual(api["request_api"]["two_zone"]["role"],
                          "orthogonal_accelerator_two_zone_requirements")
+        self.assertEqual(api["request_api"]["two_zone"]["requirements_schema_versions"], {
+            "1": "closed_sidewalls", "2": "explicit_negative_y_side_entry__provider_centered_in_first_gap",
+        })
         self.assertEqual(api["request_api"]["two_zone"]["fixed_topology"],
                          "solid_positive_z_repeller_and_grounded_cap__negative_z_exit_grid")
         self.assertEqual(api["request_api"]["two_zone"]["flight_source"],
@@ -38,6 +41,8 @@ class ComponentContractTest(unittest.TestCase):
         self.assertEqual(api["request_api"]["two_zone"]["geometry_authority"],
                          "provider_owned__consumer_requests_only_source_envelope_mesh_and_rigid_placement")
         self.assertIn("simion/two_zone_candidate.py", api["implementation_modules"])
+        self.assertEqual(api["request_api"]["three_zone"]["role"], "orthogonal_accelerator_bare_three_zone_requirements")
+        self.assertIn("simion/bare_three_zone_component.py", api["implementation_modules"])
         self.assertEqual(descriptor["formal_assets"]["status"], "none")
 
     def test_consumers_explicitly_declare_provider_and_variant(self) -> None:

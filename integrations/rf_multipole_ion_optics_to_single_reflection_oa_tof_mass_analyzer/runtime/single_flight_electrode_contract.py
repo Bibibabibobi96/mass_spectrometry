@@ -13,7 +13,78 @@ from common.contracts.file_identity import file_sha256
 ROD_ELECTRODE_IDS = tuple(range(1, 9))
 POST_PULSE_FIELD_LOADING_POLICY_ID = "pre_pulse_restart_zero_rod_modes_v1"
 THREE_ZONE_PA_PLUS_MODEL_ID = "three_zone_linear_ring_octupole_symmetry_pa_plus_v2"
+TWO_ZONE_BARE_VARIANT = "canonical_two_zone_bare_continuous_rods_v1"
+TWO_ZONE_BARE_PA_PLUS_MODEL_ID = "two_zone_linear_ring_bare_octupole_pa_plus_v1"
+THREE_ZONE_BARE_VARIANT = "canonical_three_zone_bare_continuous_rods_v1"
+THREE_ZONE_BARE_PA_PLUS_MODEL_ID = "three_zone_linear_ring_bare_octupole_pa_plus_v1"
 PA_PLUS_FIELD_LOADING_POLICY_ID = "octupole_common_differential_pa_plus_v2"
+
+
+def require_pa_plus_solution_model(
+    model: Mapping[str, Any], *, allow_post_pulse_projection: bool = False,
+) -> dict[str, Any]:
+    """Validate supported physical PA+ bases without inventing a new model."""
+    model_id = model.get("model_id")
+    if model_id not in {THREE_ZONE_PA_PLUS_MODEL_ID, TWO_ZONE_BARE_PA_PLUS_MODEL_ID, THREE_ZONE_BARE_PA_PLUS_MODEL_ID}:
+        raise ValueError("unsupported PA+ solution model")
+    two_zone = model_id == TWO_ZONE_BARE_PA_PLUS_MODEL_ID
+    bare = model_id in {TWO_ZONE_BARE_PA_PLUS_MODEL_ID, THREE_ZONE_BARE_PA_PLUS_MODEL_ID}
+    expected_names = ["rod_common", "rod_differential", "repeller", "grid1"]
+    if not two_zone:
+        expected_names.append("intermediate2")
+    expected_names.append("grid2")
+    if not bare:
+        expected_names.extend(["entrance_reference_sleeve", "entrance_plate"])
+    modes, ids = model.get("modes"), model.get("mode_ids")
+    if not isinstance(modes, list) or not isinstance(ids, list) or model.get("mode_count") != len(modes):
+        raise ValueError("PA+ solution model modes are invalid")
+    names = [item.get("name") if isinstance(item, Mapping) else None for item in modes]
+    projected = names == expected_names[2:] and allow_post_pulse_projection
+    if names != expected_names and not projected:
+        raise ValueError("PA+ solution model named modes are invalid")
+    policy = model.get("voltage_control_policy", {})
+    expected_policy = "two_zone_linear_ring_interpolation_v1" if two_zone else "three_zone_linear_ring_interpolation_v1"
+    if policy.get("policy_id") != expected_policy or policy.get("per_ring_independent_adjustment_supported") is not False:
+        raise ValueError("PA+ solution model voltage policy is invalid")
+    endpoint_ids = policy.get("independent_accelerator_electrode_ids")
+    ring_ids = policy.get("derived_accelerator_ring_ids")
+    if not isinstance(endpoint_ids, list) or len(endpoint_ids) != (3 if two_zone else 4) or not isinstance(ring_ids, list) or not ring_ids:
+        raise ValueError("PA+ solution model electrode policy is invalid")
+    physical_ids = set(ROD_ELECTRODE_IDS) | {9} | set(endpoint_ids) | set(ring_ids)
+    if not bare:
+        physical_ids |= {int(endpoint_ids[-1]) + 1, int(endpoint_ids[-1]) + 2}
+    first = max(physical_ids) + 1 if bare else 36
+    expected_ids = list(range(first + (2 if projected else 0), first + len(expected_names)))
+    if ids != expected_ids or [mode.get("mode_id") for mode in modes] != ids:
+        raise ValueError("PA+ solution model IDs are invalid")
+    shapes: dict[str, dict[int, float]] = {}
+    for mode in modes:
+        try:
+            shape = {int(k): float(v) for k, v in mode["physical_electrode_coefficients"].items()}
+            projection = {int(k): float(v) for k, v in mode["voltage_projection_coefficients"].items()}
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise ValueError("PA+ solution model coefficients are invalid") from exc
+        if not shape or not projection or any(not (v == v and abs(v) < float("inf")) for v in [*shape.values(), *projection.values()]):
+            raise ValueError("PA+ solution model coefficients are non-finite or empty")
+        name = mode["name"]
+        if name in {"rod_common", "rod_differential"}:
+            expected = {i: (1. if name == "rod_common" or i % 2 else -1.) for i in ROD_ELECTRODE_IDS}
+            if shape != expected or projection != {i: v / 8 for i, v in expected.items()}:
+                raise ValueError("PA+ rod symmetry coefficients are invalid")
+        else:
+            if len(projection) != 1 or list(projection.values()) != [1.]:
+                raise ValueError("PA+ endpoint projection is invalid")
+            own = next(iter(projection))
+            if shape.get(own) != 1. or set(shape) - {own} - set(ring_ids) or any(v < 0. or v > 1. for v in shape.values()):
+                raise ValueError("PA+ endpoint shape is invalid")
+        shapes[name] = shape
+    endpoint_names = [name for name in expected_names[2:] if name not in {"entrance_reference_sleeve", "entrance_plate"}]
+    for ring in ring_ids:
+        if abs(sum(shapes[name].get(ring, 0.) for name in endpoint_names) - 1.) > 1e-12:
+            raise ValueError("PA+ ring partition is invalid")
+    if model.get("grounded_physical_electrode_ids") != [9]:
+        raise ValueError("PA+ grounded electrode policy is invalid")
+    return dict(model)
 
 
 def project_pa_plus_mode_voltages(
@@ -26,8 +97,7 @@ def project_pa_plus_mode_voltages(
     the physical table here makes that reduction an explicit contract rather
     than a Program-only assumption.
     """
-    if model.get("model_id") != THREE_ZONE_PA_PLUS_MODEL_ID:
-        raise ValueError("PA+ voltage projection model is unsupported")
+    model = require_pa_plus_solution_model(model)
     modes = model.get("modes")
     mode_ids = model.get("mode_ids")
     if (
@@ -44,6 +114,8 @@ def project_pa_plus_mode_voltages(
     if any(not (value == value and abs(value) < float("inf")) for value in physical.values()):
         raise ValueError("PA+ physical voltages are non-finite")
 
+    if any(physical.get(int(i), 0.0) != 0.0 for i in model["grounded_physical_electrode_ids"]):
+        raise ValueError("PA+ ground voltage must be zero")
     projected: dict[int, float] = {}
     reconstructed: dict[int, float] = {}
     for raw_mode in modes:
@@ -98,16 +170,17 @@ def resolve_post_pulse_pa_plus_solution_projection(
     """
     if source_release_mode != "pre_pulse_restart":
         raise ValueError("post-pulse PA+ projection requires a pre-pulse restart")
-    if model.get("model_id") != THREE_ZONE_PA_PLUS_MODEL_ID:
-        raise ValueError("post-pulse PA+ projection model is unsupported")
+    model = require_pa_plus_solution_model(model)
     modes = model.get("modes")
     mode_ids = model.get("mode_ids")
+    expected_count = {TWO_ZONE_BARE_PA_PLUS_MODEL_ID: 5, THREE_ZONE_BARE_PA_PLUS_MODEL_ID: 6,
+                      THREE_ZONE_PA_PLUS_MODEL_ID: 8}[model["model_id"]]
     if (
         not isinstance(modes, list)
         or not isinstance(mode_ids, list)
-        or model.get("mode_count") != 8
-        or len(modes) != 8
-        or len(mode_ids) != 8
+        or model.get("mode_count") != expected_count
+        or len(modes) != expected_count
+        or len(mode_ids) != expected_count
     ):
         raise ValueError("post-pulse PA+ projection modes are invalid")
     try:
@@ -161,8 +234,8 @@ def resolve_post_pulse_pa_plus_solution_projection(
         mode for mode in normalized_modes
         if int(mode["mode_id"]) not in rod_mode_ids
     ]
-    if len(retained_modes) != 6:
-        raise ValueError("post-pulse PA+ projection must retain six non-rod modes")
+    if len(retained_modes) != expected_count - 2:
+        raise ValueError("post-pulse PA+ projection has an invalid non-rod mode count")
     projected_model = {
         **dict(model),
         "mode_ids": [int(mode["mode_id"]) for mode in retained_modes],
@@ -190,11 +263,14 @@ def resolve_post_pulse_pa_plus_solution_projection(
     }
 
 
-def resolve_three_zone_pa_plus_solution_model(
+def _resolve_linear_ring_pa_plus_solution_model(
     electrodes: Mapping[str, Any],
     *,
     planes_global_z_mm: Mapping[str, Any],
     ring_z_mm: list[Any],
+    two_zone_bare: bool,
+    acceleration_direction: int = 1,
+    three_zone_bare: bool = False,
 ) -> dict[str, Any]:
     """Derive the exact PA+ projection for a three-zone linear ring stack.
 
@@ -205,16 +281,26 @@ def resolve_three_zone_pa_plus_solution_model(
     modes with coefficients that sum to one.
     """
     topology = resolve_frontend_electrode_topology(electrodes)
-    if topology["topology_id"] not in {
+    bare = two_zone_bare or three_zone_bare
+    accepted = {THREE_ZONE_BARE_VARIANT} if three_zone_bare else {TWO_ZONE_BARE_VARIANT} if two_zone_bare else {
         "three_zone_frontend_v1", "three_zone_frontend_contract_derived_v1"
-    }:
+    }
+    if topology["topology_id"] not in accepted:
         raise ValueError("PA+ solution model requires a three-zone frontend")
-    required_planes = {"repeller", "intermediate1", "intermediate2", "exit"}
+    required_planes = ({"repeller", "grid1", "exit"} if two_zone_bare else
+                       {"repeller", "grid1", "intermediate2", "exit"} if three_zone_bare else
+                       {"repeller", "intermediate1", "intermediate2", "exit"})
     if set(planes_global_z_mm) != required_planes:
         raise ValueError("PA+ solution model requires exactly four accelerator planes")
-    planes = {name: float(planes_global_z_mm[name]) for name in required_planes}
-    if not all(value == value and abs(value) < float("inf") for value in planes.values()) or not (
-        planes["repeller"] < planes["intermediate1"] < planes["intermediate2"] < planes["exit"]
+    if type(acceleration_direction) is not int or acceleration_direction not in (-1, 1):
+        raise ValueError("PA+ acceleration direction must be +1 or -1")
+    # Use a signed longitudinal coordinate only while computing interpolation.
+    # Callers continue to own and freeze the actual world-z plane positions.
+    planes = {name: acceleration_direction * float(planes_global_z_mm[name]) for name in required_planes}
+    first_grid = "grid1" if bare else "intermediate1"
+    ordered_planes = ("repeller", "grid1", "exit") if two_zone_bare else ("repeller", first_grid, "intermediate2", "exit")
+    if not all(value == value and abs(value) < float("inf") for value in planes.values()) or not all(
+        planes[left] < planes[right] for left, right in zip(ordered_planes, ordered_planes[1:])
     ):
         raise ValueError("PA+ solution model planes are invalid")
     ring_ids = [int(value) for value in electrodes["accelerator_ring_ids"]]
@@ -225,9 +311,10 @@ def resolve_three_zone_pa_plus_solution_model(
         electrode_id: 1.0 if electrode_id % 2 else -1.0
         for electrode_id in ROD_ELECTRODE_IDS
     }
+    first_mode_id = topology["maximum_electrode_id"] + 1 if bare else 36
     modes = [
         {
-            "mode_id": 36,
+            "mode_id": first_mode_id,
             "name": "rod_common",
             "physical_electrode_coefficients": {
                 str(electrode_id): 1.0 for electrode_id in ROD_ELECTRODE_IDS
@@ -238,7 +325,7 @@ def resolve_three_zone_pa_plus_solution_model(
             },
         },
         {
-            "mode_id": 37,
+            "mode_id": first_mode_id + 1,
             "name": "rod_differential",
             "physical_electrode_coefficients": {
                 str(electrode_id): polarity
@@ -250,17 +337,19 @@ def resolve_three_zone_pa_plus_solution_model(
             },
         },
     ]
-    for index, (name, electrode_id) in enumerate(
-        (
-            ("repeller", int(electrodes["accelerator_repeller_id"])),
-            ("grid1", int(electrodes["accelerator_grid1_id"])),
-            ("intermediate2", int(electrodes["accelerator_intermediate2_id"])),
-            ("grid2", int(electrodes["accelerator_grid2_id"])),
+    endpoints = [
+        ("repeller", int(electrodes["accelerator_repeller_id"])),
+        ("grid1", int(electrodes["accelerator_grid1_id"])),
+    ]
+    if not two_zone_bare:
+        endpoints.append(("intermediate2", int(electrodes["accelerator_intermediate2_id"])))
+    endpoints.append(("grid2", int(electrodes["accelerator_grid2_id"])))
+    if not bare:
+        endpoints.extend([
             ("entrance_reference_sleeve", int(electrodes["entrance_reference_sleeve_id"])),
             ("entrance_plate", int(electrodes["entrance_plate_id"])),
-        ),
-        start=38,
-    ):
+        ])
+    for index, (name, electrode_id) in enumerate(endpoints, start=first_mode_id + 2):
         modes.append(
             {
                 "mode_id": index,
@@ -271,12 +360,17 @@ def resolve_three_zone_pa_plus_solution_model(
         )
     by_name = {mode["name"]: mode for mode in modes}
     for ring_id, raw_z in zip(ring_ids, ring_z_mm):
-        z = float(raw_z)
+        z = acceleration_direction * float(raw_z)
         if not (z == z and abs(z) < float("inf")):
             raise ValueError("PA+ solution model ring position is invalid")
-        if planes["intermediate1"] < z < planes["intermediate2"]:
+        if two_zone_bare and planes["grid1"] < z < planes["exit"]:
+            left, right = "grid1", "grid2"
+            z0, z1 = planes["grid1"], planes["exit"]
+        elif two_zone_bare:
+            raise ValueError("PA+ solution model ring is outside its two-zone interval")
+        elif planes[first_grid] < z < planes["intermediate2"]:
             left, right = "grid1", "intermediate2"
-            z0, z1 = planes["intermediate1"], planes["intermediate2"]
+            z0, z1 = planes[first_grid], planes["intermediate2"]
         elif planes["intermediate2"] < z < planes["exit"]:
             left, right = "intermediate2", "grid2"
             z0, z1 = planes["intermediate2"], planes["exit"]
@@ -288,7 +382,8 @@ def resolve_three_zone_pa_plus_solution_model(
         by_name[right]["physical_electrode_coefficients"][str(ring_id)] = right_weight
     return {
         "schema_version": 1,
-        "model_id": THREE_ZONE_PA_PLUS_MODEL_ID,
+        "model_id": (TWO_ZONE_BARE_PA_PLUS_MODEL_ID if two_zone_bare else
+                     THREE_ZONE_BARE_PA_PLUS_MODEL_ID if three_zone_bare else THREE_ZONE_PA_PLUS_MODEL_ID),
         "field_loading_policy_id": PA_PLUS_FIELD_LOADING_POLICY_ID,
         # This is deliberately part of the frozen model, rather than an
         # incidental implementation detail.  The existing three-zone Program
@@ -297,11 +392,11 @@ def resolve_three_zone_pa_plus_solution_model(
         # study must select a different model (and therefore a different PA
         # cache identity), not silently reuse this one.
         "voltage_control_policy": {
-            "policy_id": "three_zone_linear_ring_interpolation_v1",
+            "policy_id": "two_zone_linear_ring_interpolation_v1" if two_zone_bare else "three_zone_linear_ring_interpolation_v1",
             "independent_accelerator_electrode_ids": [
                 int(electrodes["accelerator_repeller_id"]),
                 int(electrodes["accelerator_grid1_id"]),
-                int(electrodes["accelerator_intermediate2_id"]),
+                *([] if two_zone_bare else [int(electrodes["accelerator_intermediate2_id"])]),
                 int(electrodes["accelerator_grid2_id"]),
             ],
             "derived_accelerator_ring_ids": ring_ids,
@@ -320,10 +415,29 @@ def resolve_three_zone_pa_plus_solution_model(
     }
 
 
+def resolve_three_zone_pa_plus_solution_model(
+    electrodes: Mapping[str, Any], *, planes_global_z_mm: Mapping[str, Any], ring_z_mm: list[Any],
+) -> dict[str, Any]:
+    """Preserve the published three-zone model and its solution IDs."""
+    return _resolve_linear_ring_pa_plus_solution_model(
+        electrodes, planes_global_z_mm=planes_global_z_mm, ring_z_mm=ring_z_mm, two_zone_bare=False,
+    )
+
+
+def resolve_two_zone_bare_pa_plus_solution_model(
+    electrodes: Mapping[str, Any], *, planes_global_z_mm: Mapping[str, Any], ring_z_mm: list[Any],
+    acceleration_direction: int = 1,
+) -> dict[str, Any]:
+    """Derive five modes for eight continuous rods and a bare two-zone OA."""
+    return _resolve_linear_ring_pa_plus_solution_model(
+        electrodes, planes_global_z_mm=planes_global_z_mm, ring_z_mm=ring_z_mm, two_zone_bare=True,
+        acceleration_direction=acceleration_direction,
+    )
+
+
 def render_pa_plus_solution_model(model: Mapping[str, Any]) -> str:
     """Render the official SIMION PA+ electrode-to-solution projection."""
-    if model.get("model_id") != THREE_ZONE_PA_PLUS_MODEL_ID:
-        raise ValueError("unsupported PA+ solution model")
+    model = require_pa_plus_solution_model(model, allow_post_pulse_projection=True)
     modes = model.get("modes")
     mode_ids = model.get("mode_ids")
     if (
@@ -353,9 +467,13 @@ def render_pa_plus_solution_model(model: Mapping[str, Any]) -> str:
         raise ValueError("PA+ solution mode order is invalid")
     lines.extend(["  }", "}", ""])
     return "\n".join(lines)
-def frontend_electrodes(*, ring_count: int, three_zone: bool) -> dict[str, Any]:
+def frontend_electrodes(*, ring_count: int, three_zone: bool, variant: str | None = None) -> dict[str, Any]:
     """Derive the contiguous PA electrode namespace from the ring contract."""
-    if isinstance(ring_count, bool) or ring_count < 1:
+    if (variant not in {None, TWO_ZONE_BARE_VARIANT, THREE_ZONE_BARE_VARIANT}
+            or (variant == TWO_ZONE_BARE_VARIANT and three_zone)
+            or (variant == THREE_ZONE_BARE_VARIANT and not three_zone)):
+        raise ValueError("frontend electrode variant is unsupported for this topology")
+    if isinstance(ring_count, bool) or not isinstance(ring_count, int) or ring_count < 1:
         raise ValueError("accelerator ring count must be a positive integer")
     first_ring_id = 12
     grid2_id = first_ring_id + ring_count
@@ -369,8 +487,11 @@ def frontend_electrodes(*, ring_count: int, three_zone: bool) -> dict[str, Any]:
         "entrance_reference_sleeve_id": grid2_id + 1,
         "entrance_plate_id": grid2_id + 2,
     }
+    if variant in {TWO_ZONE_BARE_VARIANT, THREE_ZONE_BARE_VARIANT}:
+        del result["entrance_reference_sleeve_id"]
+        del result["entrance_plate_id"]
     if three_zone:
-        result["accelerator_intermediate2_id"] = grid2_id + 3
+        result["accelerator_intermediate2_id"] = grid2_id + (1 if variant == THREE_ZONE_BARE_VARIANT else 3)
     return result
 
 
@@ -385,6 +506,17 @@ PUBLISHED_ELECTRODE_TOPOLOGIES: dict[str, dict[str, Any]] = {
 }
 MAXIMUM_ELECTRODE_ID = 19
 BASIS_ELECTRODE_IDS = tuple(range(MAXIMUM_ELECTRODE_ID + 1))
+
+
+def resolve_three_zone_bare_pa_plus_solution_model(
+    electrodes: Mapping[str, Any], *, planes_global_z_mm: Mapping[str, Any], ring_z_mm: list[Any],
+    acceleration_direction: int = 1,
+) -> dict[str, Any]:
+    """Derive six real modes, without adding a sleeve or entrance plate."""
+    return _resolve_linear_ring_pa_plus_solution_model(
+        electrodes, planes_global_z_mm=planes_global_z_mm, ring_z_mm=ring_z_mm,
+        two_zone_bare=False, three_zone_bare=True, acceleration_direction=acceleration_direction,
+    )
 
 
 def _flatten_electrode_ids(value: Mapping[str, Any]) -> tuple[int, ...]:
@@ -408,7 +540,9 @@ def resolve_frontend_electrode_topology(value: Mapping[str, Any]) -> dict[str, A
     ring_ids = electrodes.get("accelerator_ring_ids")
     if not isinstance(ring_ids, list) or not ring_ids:
         raise ValueError("frontend electrode topology lacks accelerator rings")
-    expected = frontend_electrodes(ring_count=len(ring_ids), three_zone=three_zone)
+    bare = "entrance_reference_sleeve_id" not in electrodes and "entrance_plate_id" not in electrodes
+    bare_variant = THREE_ZONE_BARE_VARIANT if three_zone else TWO_ZONE_BARE_VARIANT
+    expected = frontend_electrodes(ring_count=len(ring_ids), three_zone=three_zone, variant=bare_variant if bare else None)
     if electrodes != expected:
         raise ValueError("frontend electrodes do not match the derived topology")
     matches = [
@@ -417,7 +551,7 @@ def resolve_frontend_electrode_topology(value: Mapping[str, Any]) -> dict[str, A
         if electrodes == published
     ]
     topology_id = (
-        matches[0] if len(matches) == 1 else
+        bare_variant if bare else matches[0] if len(matches) == 1 else
         ("three_zone_frontend_contract_derived_v1" if three_zone else
          "two_zone_frontend_contract_derived_v1")
     )

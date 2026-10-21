@@ -112,6 +112,25 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
+def _prepared_external_source_inputs(run_dir: Path, workspace_root: Path) -> dict[str, str]:
+    """Bind the optional raw source and its freeze receipt in the parent manifest."""
+    source = run_dir / "inputs/single_flight_particle_source.csv"
+    receipt = source.with_name("single_flight_particle_source_identity.json")
+    if not source.exists() and not receipt.exists():
+        return {}
+    if not source.is_file() or not receipt.is_file():
+        raise ContractError("prepared workspace source and identity receipt must both exist")
+    identity = _load(receipt)
+    frozen = identity.get("frozen", {})
+    if frozen.get("path") != "inputs/" + source.name:
+        raise ContractError("prepared workspace source receipt path differs")
+    verify_record("prepared workspace source", frozen, base_dir=run_dir)
+    return {
+        "single_flight_particle_source": _portable(source, workspace_root),
+        "single_flight_particle_source_identity": _portable(receipt, workspace_root),
+    }
+
+
 def _file_binding(path: Path, workspace_root: Path) -> dict[str, Any]:
     return {
         "path": _portable(path, workspace_root),
@@ -1479,6 +1498,7 @@ def publish_family_source_closure_run(
             "resolved_source_contract": _portable(resolved_source_contract_path, workspace_root),
             "upstream_resolved_design": _portable(upstream_resolved_design_path, workspace_root),
             "resolved_engineering_budget": _portable(budget_path, workspace_root),
+            **_prepared_external_source_inputs(run_dir, workspace_root),
             **{f"{stage['phase']}_manifest": (stage["path"] + "/run_manifest.json") for stage in stages},
             **(
                 {
@@ -1687,6 +1707,17 @@ def publish_family_source_closure_failure(
         for name in frozen_names
         if (run_dir / name).is_file()
     }
+    # A failed preparation may have stopped between source copy and receipt
+    # publication. Preserve whichever bytes exist without claiming a complete
+    # successful source binding or preventing publication of the failure.
+    frozen_inputs.update({
+        key: _portable(run_dir / "inputs" / name, workspace_root)
+        for key, name in (
+            ("single_flight_particle_source", "single_flight_particle_source.csv"),
+            ("single_flight_particle_source_identity", "single_flight_particle_source_identity.json"),
+        )
+        if (run_dir / "inputs" / name).is_file()
+    })
     run_config = {
         "schema_version": 2,
         "run_id": run_id,

@@ -1,18 +1,24 @@
-"""Resolve fixed and dynamic fields from one eight-mode standalone PA set."""
+"""Resolve fixed and dynamic fields from a validated standalone PA mode set."""
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import re
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from common.contracts.write_run_manifest import file_record
+
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program import (
     STANDALONE_DYNAMIC_FIELD_BANK_ROLE,
     STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION,
     _successor_analyzer_config,
     resolve_standalone_dynamic_operating_coefficients,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
+    require_pa_plus_solution_model,
 )
 
 
@@ -29,13 +35,14 @@ ROLE_PREFIXES = {
 def _accelerator_plan(
     analyzer: Mapping[str, Any], pulse_state: str
 ) -> dict[int, float]:
-    """Mirror the frozen three-zone analyzer's linear electrode plan."""
+    """Project the existing two/three-zone analyzer's linear electrode plan."""
 
     if pulse_state not in {"off", "on"}:
         raise ValueError("pulse state must be off or on")
     ids = analyzer["electrode_ids"]
     geometry = analyzer["geometry"]
     voltages = analyzer["voltages"]
+    three_zone = "intermediate2" in ids
     pre = 0.0
     if pulse_state == "off":
         return {
@@ -44,31 +51,68 @@ def _accelerator_plan(
                 ids["repeller"],
                 ids["grid1"],
                 *ids["rings"],
-                ids["intermediate2"],
+                *([ids["intermediate2"]] if three_zone else []),
                 ids["grid2"],
             )
         }
     result = {
         int(ids["repeller"]): float(voltages["repeller_v"]),
         int(ids["grid1"]): float(voltages["grid1_v"]),
-        int(ids["intermediate2"]): float(voltages["intermediate2_v"]),
         int(ids["grid2"]): float(voltages["exit_v"]),
     }
     z_grid1 = float(geometry["accelerator_grid1_z_mm"])
-    z_middle = float(geometry["accelerator_intermediate2_z_mm"])
     z_grid2 = float(geometry["accelerator_grid2_z_mm"])
+    endpoints = [(z_grid1, float(voltages["grid1_v"]))]
+    if three_zone:
+        middle = float(voltages["intermediate2_v"])
+        result[int(ids["intermediate2"])] = middle
+        endpoints.append((float(geometry["accelerator_intermediate2_z_mm"]), middle))
+    endpoints.append((z_grid2, float(voltages["exit_v"])))
     for electrode_id, raw_z in zip(
         ids["rings"], geometry["accelerator_ring_z_mm"], strict=True
     ):
         z = float(raw_z)
-        if z <= z_middle:
-            z0, z1 = z_grid1, z_middle
-            v0, v1 = float(voltages["grid1_v"]), float(voltages["intermediate2_v"])
-        else:
-            z0, z1 = z_middle, z_grid2
-            v0, v1 = float(voltages["intermediate2_v"]), float(voltages["exit_v"])
+        interval = next(((a, b) for a, b in zip(endpoints, endpoints[1:]) if z <= b[0]),
+                        (endpoints[-2], endpoints[-1]))
+        (z0, v0), (z1, v1) = interval
         result[int(electrode_id)] = v0 + (v1 - v0) * (z - z0) / (z1 - z0)
     return result
+
+
+def _component_voltage_states(
+    frontend: Mapping[str, Any], model: Mapping[str, Any],
+) -> tuple[dict[int, float], dict[int, float]]:
+    """Consume provider-projected voltages under the explicit frozen pulse policy."""
+    region = frontend["accelerator_local_region"]
+    if region.get("pulse_voltage_policy_id") != "all_accelerator_electrodes_zero_before_pulse_v1":
+        raise ValueError("canonical component pulse voltage policy is missing or unsupported")
+    physical: list[dict[int, float]] = []
+    for key in ("off_voltages_v", "operating_voltages_v"):
+        raw = region.get(key)
+        if not isinstance(raw, Mapping) or not raw:
+            raise ValueError(f"canonical component {key} is missing")
+        values = {}
+        for electrode_id, value in raw.items():
+            if (type(electrode_id) is not int and
+                    (not isinstance(electrode_id, str) or re.fullmatch(r"[1-9][0-9]*", electrode_id) is None)):
+                raise ValueError("canonical component electrode ID must be a positive integer")
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ValueError(f"canonical component {key} voltage must be finite")
+            parsed_id = int(electrode_id)
+            if parsed_id in values:
+                raise ValueError("canonical component electrode IDs are duplicated")
+            values[parsed_id] = float(value)
+        physical.append(values)
+    off, on = physical
+    rod_ids = set(frontend["electrodes"]["multipole_rod_ids"])
+    grounds = set(model["grounded_physical_electrode_ids"])
+    required = {int(key) for mode in model["modes"] for key in mode["physical_electrode_coefficients"]} - rod_ids
+    if set(off) != set(on) or set(on) != required | grounds:
+        raise ValueError("canonical component off/on physical electrode coverage differs")
+    if any(value != 0.0 for value in off.values()) or any(on[key] != 0.0 for key in grounds):
+        raise ValueError("canonical component zero-before-pulse or ground voltage differs")
+    return ({key: value for key, value in off.items() if key not in grounds},
+            {key: value for key, value in on.items() if key not in grounds})
 
 
 def resolve_mode_states(
@@ -80,22 +124,22 @@ def resolve_mode_states(
 ) -> dict[str, dict[int, float]]:
     """Return carrier, unit RF response and extraction-pulse delta coefficients."""
 
-    analyzer = _successor_analyzer_config(
-        dict(oatof), dict(frontend), dict(region_field)
-    )
-    physical_off = {
-        **_accelerator_plan(analyzer, "off"),
-        int(frontend["electrodes"]["entrance_reference_sleeve_id"]): float(
-            upstream["axial_dc"]["entrance_reference_sleeve"]["potential_V"]
-        ),
-        int(frontend["electrodes"]["entrance_plate_id"]): float(
-            upstream["axial_dc"]["entrance_plate_potential_V"]
-        ),
-    }
-    physical_on = dict(physical_off)
-    physical_on.update(_accelerator_plan(analyzer, "on"))
+    model = require_pa_plus_solution_model(pa_plus_model)
+    if "accelerator_component" in frontend:
+        physical_off, physical_on = _component_voltage_states(frontend, model)
+    else:
+        analyzer = _successor_analyzer_config(dict(oatof), dict(frontend), dict(region_field))
+        physical_off = {
+            **_accelerator_plan(analyzer, "off"),
+            int(frontend["electrodes"]["entrance_reference_sleeve_id"]): float(
+                upstream["axial_dc"]["entrance_reference_sleeve"]["potential_V"]),
+            int(frontend["electrodes"]["entrance_plate_id"]): float(
+                upstream["axial_dc"]["entrance_plate_potential_V"]),
+        }
+        physical_on = dict(physical_off)
+        physical_on.update(_accelerator_plan(analyzer, "on"))
     projection = resolve_standalone_dynamic_operating_coefficients(
-        pa_plus_model,
+        model,
         upstream,
         accelerator_off_physical_voltages_v=physical_off,
         accelerator_on_physical_voltages_v=physical_on,
@@ -116,37 +160,114 @@ def resolve_mode_states(
     }
     states = {"carrier_off": carrier, "rf_differential_unit": rf_unit, "pulse_delta": pulse_delta}
     if any(
-        set(values) != set(MODE_IDS) or any(not math.isfinite(value) for value in values.values())
+        set(values) != set(model["mode_ids"]) or any(not math.isfinite(value) for value in values.values())
         for values in states.values()
     ):
-        raise ValueError("standalone eight-mode voltage state is incomplete")
+        raise ValueError("standalone model voltage state is incomplete")
     return states
 
 
 def composition_terms(
-    records: Sequence[Mapping[str, Any]], coefficients: Mapping[int, float]
+    records: Sequence[Mapping[str, Any]], coefficients: Mapping[int, float], *,
+    response_normalization_v: Mapping[int, float] | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Represent a linear state with the smallest useful response working set."""
+    """Compose requested volts using explicit measured basis-reference volts.
+
+    Omitted normalization preserves the legacy unit-response contract; callers
+    must establish that contract independently rather than infer it from a PA
+    filename. A supplied mapping is the physical +1 coefficient anchor voltage
+    of each raw response, not an assumed SIMION fast-adjust scale.
+    """
 
     by_id = {int(record["response_id"]): str(record["path"]) for record in records}
-    if set(by_id) != set(MODE_IDS):
-        raise ValueError("standalone response selection must contain modes 36 through 43")
-    nonzero_ids = [mode_id for mode_id in MODE_IDS if float(coefficients[mode_id]) != 0.0]
-    base_id = nonzero_ids[0] if nonzero_ids else 36
+    mode_ids = list(by_id)
+    if not by_id or len(by_id) != len(records) or set(by_id) != set(coefficients):
+        raise ValueError("standalone response selection differs from coefficient mode set")
+    if any(not math.isfinite(float(value)) for value in coefficients.values()):
+        raise ValueError("standalone response coefficients must be finite")
+    if response_normalization_v is not None:
+        if set(response_normalization_v) != set(by_id) or any(
+            isinstance(value, bool) or not math.isfinite(float(value)) or float(value) == 0.
+            for value in response_normalization_v.values()
+        ):
+            raise ValueError("measured response normalization must cover every mode with finite nonzero volts")
+        coefficients = {mode_id: float(value) / float(response_normalization_v[mode_id])
+                        for mode_id, value in coefficients.items()}
+        if any(not math.isfinite(value) for value in coefficients.values()):
+            raise ValueError("normalized response coefficient is nonfinite")
+    nonzero_ids = [mode_id for mode_id in mode_ids if float(coefficients[mode_id]) != 0.0]
+    base_id = nonzero_ids[0] if nonzero_ids else mode_ids[0]
     base = by_id[base_id]
     terms = []
-    for mode_id in MODE_IDS:
+    for mode_id in mode_ids:
         coefficient = float(coefficients[mode_id]) - (1.0 if mode_id == base_id else 0.0)
         if coefficient != 0.0:
             terms.append({"path": by_id[mode_id], "coefficient": coefficient})
     if not terms:
         # The composer requires one response; adding an exact zero preserves bytes.
-        zero_id = 36 if base_id != 36 else 37
+        zero_id = next((mode_id for mode_id in mode_ids if mode_id != base_id), base_id)
         terms.append({"path": by_id[zero_id], "coefficient": 0.0})
     return base, terms
 
 
-def _selection_records(role: str, selection: Mapping[str, Any]) -> list[dict[str, Any]]:
+def read_response_normalization(path: Path, records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Read measured unity anchors bound with the selected PA cache inventory.
+
+    The caller selects the immutable generation through the existing cache
+    verification boundary. This checks the small measurement bytes and exact
+    selected PA inventory identities without scanning those PA payloads again.
+    """
+    path = Path(path).resolve()
+    manifest_path = path.parent / "cache_manifest.json"
+    manifest = _load(manifest_path)
+    inventory = manifest.get("files", [])
+    by_name = {row["name"]: row for row in inventory}
+    actual = file_record(path)
+    measured = by_name.get(path.name)
+    if measured is None or (measured["bytes"], measured["sha256"].lower()) != (actual["bytes"], actual["sha256"].lower()):
+        raise ValueError("normalization measurement is not bound to the selected cache inventory")
+    selected = {int(row["response_id"]): row for row in records}
+    if len(selected) != len(records) or not selected:
+        raise ValueError("normalization requires unique selected response IDs")
+    for row in records:
+        response = Path(str(row["path"])).resolve()
+        bound = by_name.get(response.name)
+        if response.parent != path.parent or bound is None or (bound["bytes"], bound["sha256"].lower()) != (row["bytes"], str(row["sha256"]).lower()):
+            raise ValueError("normalization and selected response inventory identities differ")
+    references: dict[int, float] = {}
+    anchors: dict[int, dict[str, Any]] = {}
+    with path.open(encoding="utf-8", newline="") as stream:
+        reader = csv.DictReader(stream, delimiter="\t")
+        required = {"mode_id", "label", "x_gu", "y_gu", "z_gu", "potential_v", "electrode",
+                    "expected_coefficient", "basis_reference_v", "normalized_coefficient", "policy"}
+        if set(reader.fieldnames or []) != required:
+            raise ValueError("measured normalization columns differ")
+        rods: dict[int, set[str]] = {mode: set() for mode in selected}
+        for row in reader:
+            mode, reference = int(row["mode_id"]), float(row["basis_reference_v"])
+            if mode not in selected or not math.isfinite(reference) or reference == 0. or references.get(mode, reference) != reference:
+                raise ValueError("measured normalization mode/reference is invalid or inconsistent")
+            references[mode] = reference
+            if row["label"] in {f"rod_{i}" for i in range(1, 9)}:
+                if row["label"] in rods[mode]:
+                    raise ValueError("normalization repeats a physical rod")
+                rods[mode].add(row["label"])
+            if row["policy"] == "unity_anchor":
+                if mode in anchors or row["electrode"] != "true" or float(row["expected_coefficient"]) != 1. or float(row["potential_v"]) != reference:
+                    raise ValueError("invalid measured physical unity anchor")
+                anchors[mode] = {key: row[key] for key in ("label", "x_gu", "y_gu", "z_gu", "potential_v", "electrode")}
+            elif row["policy"] != "declared_sample":
+                raise ValueError("unknown normalization sample policy")
+        if set(anchors) != set(selected) or any(len(value) != 8 for value in rods.values()):
+            raise ValueError("normalization requires one unity anchor and all eight rods per mode")
+    return {"policy_id": "native_measured_physical_unity_anchor_v1", "mode_reference_v": references,
+            "anchors": anchors, "measurement": actual, "cache_manifest": file_record(manifest_path),
+            "scope": "Declared native metal samples; not a full-array field convergence certificate"}
+
+
+def _selection_records(
+    role: str, selection: Mapping[str, Any], *, mode_ids: Sequence[int] = MODE_IDS,
+) -> list[dict[str, Any]]:
     """Strictly accept only the adapter's manifest-validated selection schema."""
 
     if (
@@ -156,8 +277,10 @@ def _selection_records(role: str, selection: Mapping[str, Any]) -> list[dict[str
         or selection.get("prefix") != ROLE_PREFIXES.get(role)
     ):
         raise ValueError(f"standalone selection identity differs for {role}")
+    if not mode_ids or len(set(mode_ids)) != len(mode_ids) or any(type(value) is not int or value < 1 for value in mode_ids):
+        raise ValueError("standalone selection mode IDs are invalid")
     values = selection.get("records")
-    if not isinstance(values, list) or len(values) != len(MODE_IDS):
+    if not isinstance(values, list) or len(values) != len(mode_ids):
         raise ValueError(f"standalone selection records differ for {role}")
     records: list[dict[str, Any]] = []
     for value in values:
@@ -177,7 +300,7 @@ def _selection_records(role: str, selection: Mapping[str, Any]) -> list[dict[str
         if (
             isinstance(response_id, bool)
             or not isinstance(response_id, int)
-            or response_id not in MODE_IDS
+            or response_id not in mode_ids
             or not isinstance(name, str)
             or name
             != f"{ROLE_PREFIXES[role]}.response_{response_id}.pa"
@@ -192,7 +315,7 @@ def _selection_records(role: str, selection: Mapping[str, Any]) -> list[dict[str
         ):
             raise ValueError(f"standalone selection record identity differs for {role}")
         records.append(dict(value))
-    if [int(record["response_id"]) for record in records] != list(MODE_IDS):
+    if [int(record["response_id"]) for record in records] != list(mode_ids):
         raise ValueError(f"standalone selection response order differs for {role}")
     return records
 
@@ -223,20 +346,31 @@ def main() -> int:
     parser.add_argument("--region-field", type=Path, required=True)
     parser.add_argument("--accelerator-main", type=Path, required=True)
     parser.add_argument("--role-selection", action="append", required=True)
+    parser.add_argument("--role-normalization", action="append", required=True,
+                        help="ROLE=cache-bound measured normalization TSV; unmeasured native bases are rejected")
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--field-bank", type=Path, required=True)
     args = parser.parse_args()
 
     accelerator = _load(args.accelerator_main)
+    model = require_pa_plus_solution_model(accelerator["pa_plus_solution_model"])
     states = resolve_mode_states(
         _load(args.upstream),
         _load(args.frontend),
         _load(args.oatof),
         _load(args.region_field),
-        accelerator["pa_plus_solution_model"],
+        model,
     )
     roles = [_role_spec(value) for value in args.role_selection]
+    normalization_paths = {}
+    for value in args.role_normalization:
+        role, separator, raw_path = value.partition("=")
+        if not separator or not raw_path or role in normalization_paths:
+            raise ValueError("role normalization requires unique ROLE=MEASUREMENT.tsv entries")
+        normalization_paths[role] = Path(raw_path)
+    if set(normalization_paths) != {role for role, _, _ in roles}:
+        raise ValueError("every native response role requires measured normalization")
     if len({role for role, _, _ in roles}) != len(roles) or len(
         {index for _, index, _ in roles}
     ) != len(roles):
@@ -244,10 +378,13 @@ def main() -> int:
     compositions: list[dict[str, Any]] = []
     response_copies: list[dict[str, Any]] = []
     dynamic_roles: list[dict[str, Any]] = []
+    normalizations = {}
     args.output_directory.mkdir(parents=True, exist_ok=True)
     for role, index, selection_path in roles:
         selection = _load(selection_path)
-        records = _selection_records(role, selection)
+        records = _selection_records(role, selection, mode_ids=model["mode_ids"])
+        normalization = read_response_normalization(normalization_paths[role], records)
+        normalizations[role] = normalization
         runtime_records: list[dict[str, Any]] = []
         for record in records:
             mode_id = int(record["response_id"])
@@ -275,7 +412,8 @@ def main() -> int:
             ("pulse_delta", pulse_name),
             ("rf_differential_unit", rf_name),
         ):
-            base, terms = composition_terms(runtime_records, states[kind])
+            base, terms = composition_terms(runtime_records, states[kind],
+                                             response_normalization_v=normalization["mode_reference_v"])
             compositions.append(
                 {
                     "role": role,
@@ -302,6 +440,7 @@ def main() -> int:
             for key, state in states.items()
         },
         "response_copies": response_copies,
+        "response_normalization": normalizations,
         "compositions": compositions,
     }
     bank = {

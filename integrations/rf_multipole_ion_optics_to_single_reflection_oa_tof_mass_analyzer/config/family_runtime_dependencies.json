@@ -6,7 +6,8 @@
     "pre_pulse_interface_transport",
     "pulse_capture",
     "analyzer_transport",
-    "single_flight_transport"
+    "single_flight_transport",
+    "local_frontend"
   ],
   "dependencies": [
     {
@@ -47,7 +48,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "analyzer_transport",
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -143,7 +145,8 @@
       "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_pulse_hook.lua",
       "run_input_name": "rf_single_flight_pulse_hook",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -155,7 +158,8 @@
       "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_frontend_hook.lua",
       "run_input_name": "rf_single_flight_frontend_hook",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -167,7 +171,8 @@
       "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/pure_boundary_validator.py",
       "run_input_name": "rf_single_flight_pure_boundary_validator",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -230,7 +235,8 @@
         "pre_pulse_interface_transport",
         "pulse_capture",
         "analyzer_transport",
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -255,7 +261,8 @@
       "frozen_filename": "runtime_snapshot/common/simion/gem_primitives.py",
       "run_input_name": "common_simion_gem_primitives",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -267,7 +274,8 @@
       "frozen_filename": "runtime_snapshot/projects/orthogonal_accelerator/simion/sectioned_accelerator.py",
       "run_input_name": "orthogonal_accelerator_sectioned_simion_geometry",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -279,7 +287,8 @@
       "frozen_filename": "runtime_snapshot/projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
       "run_input_name": "orthogonal_accelerator_two_zone_theory",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -291,7 +300,8 @@
       "frozen_filename": "runtime_snapshot/projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
       "run_input_name": "orthogonal_accelerator_two_zone_geometry",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -303,7 +313,8 @@
       "frozen_filename": "runtime_snapshot/projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
       "run_input_name": "orthogonal_accelerator_three_zone_theory",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -315,7 +326,8 @@
       "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
       "run_input_name": "oatof_candidate_design_compiler",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -327,7 +339,8 @@
       "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/analysis/finite_interval_design_compiler.py",
       "run_input_name": "oatof_finite_interval_design_compiler",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -534,7 +547,8 @@
       "frozen_filename": "runtime_snapshot/common/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
       "run_input_name": "common_simion_aperture_discretization_schema",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -546,7 +560,8 @@
       "frozen_filename": "runtime_snapshot/common/simion/aperture.py",
       "run_input_name": "common_simion_aperture_discretizer",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -558,7 +573,8 @@
       "frozen_filename": "runtime_snapshot/common/simion/aperture_topology_support.ps1",
       "run_input_name": "common_simion_aperture_topology_support",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -570,7 +586,8 @@
       "frozen_filename": "runtime_snapshot/common/simion/verify_aperture_topology.lua",
       "run_input_name": "common_simion_aperture_topology_verifier",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -582,7 +599,8 @@
       "frozen_filename": "runtime_snapshot/common/multipole/grounded_shield.py",
       "run_input_name": "common_grounded_shield_connector",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -594,7 +612,8 @@
       "frozen_filename": "runtime_snapshot/common/multipole/simion_geometry.py",
       "run_input_name": "common_multipole_simion_geometry",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -606,7 +625,8 @@
       "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_electrode_contract.py",
       "run_input_name": "rf_single_flight_electrode_contract",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -618,7 +638,8 @@
       "frozen_filename": "runtime_snapshot/common/multipole/simion_rf_drive.lua",
       "run_input_name": "common_multipole_simion_rf_drive_kernel",
       "consumers": [
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -667,7 +688,8 @@
       "run_input_name": "common_machine_contracts",
       "consumers": [
         "pre_pulse_interface_transport",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -691,7 +713,8 @@
       "frozen_filename": "runtime_snapshot/common/contracts/particle_count_policy.py",
       "run_input_name": "common_particle_count_policy",
       "consumers": [
-        "pre_pulse_interface_transport"
+        "pre_pulse_interface_transport",
+        "local_frontend"
       ]
     },
     {
@@ -753,7 +776,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -768,7 +792,8 @@
         "pre_pulse_interface_transport",
         "pulse_capture",
         "analyzer_transport",
-        "single_flight_transport"
+        "single_flight_transport",
+        "local_frontend"
       ]
     },
     {
@@ -810,7 +835,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -824,7 +850,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -838,7 +865,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -852,7 +880,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -866,7 +895,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -880,7 +910,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -894,7 +925,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -908,7 +940,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -922,7 +955,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -936,7 +970,8 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture",
-        "analyzer_transport"
+        "analyzer_transport",
+        "local_frontend"
       ]
     },
     {
@@ -1016,6 +1051,774 @@
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_artifact_capacity_policy_json",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/artifact_capacity_policy.json",
+      "frozen_filename": "runtime_snapshot/common/contracts/artifact_capacity_policy.json",
+      "run_input_name": "local_frontend_common_contracts_artifact_capacity_policy_json",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_artifact_identity_archive_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/artifact_identity_archive.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/artifact_identity_archive.py",
+      "run_input_name": "local_frontend_common_contracts_artifact_identity_archive_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_capacity_ledger_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/capacity_ledger.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/capacity_ledger.py",
+      "run_input_name": "local_frontend_common_contracts_capacity_ledger_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_capacity_protection_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/capacity_protection.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/capacity_protection.py",
+      "run_input_name": "local_frontend_common_contracts_capacity_protection_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_execution_aliases_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/execution_aliases.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/execution_aliases.py",
+      "run_input_name": "local_frontend_common_contracts_execution_aliases_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_expected_values_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/expected_values.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/expected_values.py",
+      "run_input_name": "local_frontend_common_contracts_expected_values_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_historical_source_scratch_retirement_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/historical_source_scratch_retirement.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/historical_source_scratch_retirement.py",
+      "run_input_name": "local_frontend_common_contracts_historical_source_scratch_retirement_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_legacy_owner_disposition_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/legacy_owner_disposition.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/legacy_owner_disposition.py",
+      "run_input_name": "local_frontend_common_contracts_legacy_owner_disposition_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_particle_count_policy_json",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/particle_count_policy.json",
+      "frozen_filename": "runtime_snapshot/common/contracts/particle_count_policy.json",
+      "run_input_name": "local_frontend_common_contracts_particle_count_policy_json",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_reconcile_artifact_capacity_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/reconcile_artifact_capacity.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/reconcile_artifact_capacity.py",
+      "run_input_name": "local_frontend_common_contracts_reconcile_artifact_capacity_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_run_capacity_lifecycle_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/run_capacity_lifecycle.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/run_capacity_lifecycle.py",
+      "run_input_name": "local_frontend_common_contracts_run_capacity_lifecycle_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_solver_review_retirement_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/solver_review_retirement.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/solver_review_retirement.py",
+      "run_input_name": "local_frontend_common_contracts_solver_review_retirement_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_validate_design_request_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/validate_design_request.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/validate_design_request.py",
+      "run_input_name": "local_frontend_common_contracts_validate_design_request_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_contracts_verify_artifact_layout_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/contracts/verify_artifact_layout.py",
+      "frozen_filename": "runtime_snapshot/common/contracts/verify_artifact_layout.py",
+      "run_input_name": "local_frontend_common_contracts_verify_artifact_layout_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_host_execution_lease_ps1",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/host_execution_lease.ps1",
+      "frozen_filename": "runtime_snapshot/common/host_execution_lease.ps1",
+      "run_input_name": "local_frontend_common_host_execution_lease_ps1",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_host_resource_policy_json",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/host_resource_policy.json",
+      "frozen_filename": "runtime_snapshot/common/host_resource_policy.json",
+      "run_input_name": "local_frontend_common_host_resource_policy_json",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_host_resource_scheduler_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/host_resource_scheduler.py",
+      "frozen_filename": "runtime_snapshot/common/host_resource_scheduler.py",
+      "run_input_name": "local_frontend_common_host_resource_scheduler_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_ion_release_continuous_axial_volume_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/ion_release/continuous_axial_volume.py",
+      "frozen_filename": "runtime_snapshot/common/ion_release/continuous_axial_volume.py",
+      "run_input_name": "local_frontend_common_ion_release_continuous_axial_volume_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_ion_release_cylinder_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/ion_release/cylinder.py",
+      "frozen_filename": "runtime_snapshot/common/ion_release/cylinder.py",
+      "run_input_name": "local_frontend_common_ion_release_cylinder_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_ion_release_mt19937_disk_cone_rf_phase_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/ion_release/mt19937_disk_cone_rf_phase.py",
+      "frozen_filename": "runtime_snapshot/common/ion_release/mt19937_disk_cone_rf_phase.py",
+      "run_input_name": "local_frontend_common_ion_release_mt19937_disk_cone_rf_phase_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_ion_release_release_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/ion_release/release.py",
+      "frozen_filename": "runtime_snapshot/common/ion_release/release.py",
+      "run_input_name": "local_frontend_common_ion_release_release_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_multipole_axial_acceleration_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/axial_acceleration.py",
+      "frozen_filename": "runtime_snapshot/common/multipole/axial_acceleration.py",
+      "run_input_name": "local_frontend_common_multipole_axial_acceleration_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_multipole_connector_geometry_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/connector_geometry.py",
+      "frozen_filename": "runtime_snapshot/common/multipole/connector_geometry.py",
+      "run_input_name": "local_frontend_common_multipole_connector_geometry_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_multipole_round_rod_geometry_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/round_rod_geometry.py",
+      "frozen_filename": "runtime_snapshot/common/multipole/round_rod_geometry.py",
+      "run_input_name": "local_frontend_common_multipole_round_rod_geometry_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_multipole_simion_numerics_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/multipole/simion_numerics.py",
+      "frozen_filename": "runtime_snapshot/common/multipole/simion_numerics.py",
+      "run_input_name": "local_frontend_common_multipole_simion_numerics_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_assets_iob_instance_seeds_1_instance_seed_iob",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
+      "frozen_filename": "runtime_snapshot/common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
+      "run_input_name": "local_frontend_common_simion_assets_iob_instance_seeds_1_instance_seed_iob",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_01_pa0",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",
+      "frozen_filename": "runtime_snapshot/common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",
+      "run_input_name": "local_frontend_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_01_pa0",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_cache_generation_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/cache_generation.py",
+      "frozen_filename": "runtime_snapshot/common/simion/cache_generation.py",
+      "run_input_name": "local_frontend_common_simion_cache_generation_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_compose_standalone_pa_lua",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/compose_standalone_pa.lua",
+      "frozen_filename": "runtime_snapshot/common/simion/compose_standalone_pa.lua",
+      "run_input_name": "local_frontend_common_simion_compose_standalone_pa_lua",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_export_standalone_pa_lua",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/export_standalone_pa.lua",
+      "frozen_filename": "runtime_snapshot/common/simion/export_standalone_pa.lua",
+      "run_input_name": "local_frontend_common_simion_export_standalone_pa_lua",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_immutable_pa_parity_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/immutable_pa_parity.py",
+      "frozen_filename": "runtime_snapshot/common/simion/immutable_pa_parity.py",
+      "run_input_name": "local_frontend_common_simion_immutable_pa_parity_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_pa_family_cache_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/pa_family_cache.py",
+      "frozen_filename": "runtime_snapshot/common/simion/pa_family_cache.py",
+      "run_input_name": "local_frontend_common_simion_pa_family_cache_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_particle_batching_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/particle_batching.py",
+      "frozen_filename": "runtime_snapshot/common/simion/particle_batching.py",
+      "run_input_name": "local_frontend_common_simion_particle_batching_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_resource_profile_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/resource_profile.py",
+      "frozen_filename": "runtime_snapshot/common/simion/resource_profile.py",
+      "run_input_name": "local_frontend_common_simion_resource_profile_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_resource_scheduler_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/resource_scheduler.py",
+      "frozen_filename": "runtime_snapshot/common/simion/resource_scheduler.py",
+      "run_input_name": "local_frontend_common_simion_resource_scheduler_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_short_pa_path_support_ps1",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/short_pa_path_support.ps1",
+      "frozen_filename": "runtime_snapshot/common/simion/short_pa_path_support.ps1",
+      "run_input_name": "local_frontend_common_simion_short_pa_path_support_ps1",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_common_simion_standalone_pa_response_set_py",
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "provider_repo_path": "common",
+      "source_repo_path": "common/simion/standalone_pa_response_set.py",
+      "frozen_filename": "runtime_snapshot/common/simion/standalone_pa_response_set.py",
+      "run_input_name": "local_frontend_common_simion_standalone_pa_response_set_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_analysis_plot_single_flight_spatial_six_panel_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/plot_single_flight_spatial_six_panel.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/plot_single_flight_spatial_six_panel.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_analysis_plot_single_flight_spatial_six_panel_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_build_single_flight_program_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/build_single_flight_program.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/build_single_flight_program.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_build_single_flight_program_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_initialize_fast_adjust_pa_basis_lua",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/initialize_fast_adjust_pa_basis.lua",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/initialize_fast_adjust_pa_basis.lua",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_initialize_fast_adjust_pa_basis_lua",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_local_frontend_field_support_ps1",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/local_frontend_field_support.ps1",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/local_frontend_field_support.ps1",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_local_frontend_field_support_ps1",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_resolved_region_field_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/resolved_region_field.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/resolved_region_field.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_resolved_region_field_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_run_artifacts_ps1",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_artifacts.ps1",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_artifacts.ps1",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_run_artifacts_ps1",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_runtime_binding_ps1",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/runtime_binding.ps1",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/runtime_binding.ps1",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_runtime_binding_ps1",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_single_flight_frontend_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_frontend.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_frontend.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_single_flight_frontend_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_single_flight_layout_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_layout.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_layout.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_single_flight_layout_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_single_flight_source_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_source.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_source.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_single_flight_source_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_standalone_field_bank_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/standalone_field_bank.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/standalone_field_bank.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_standalone_field_bank_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_standalone_pa_family_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/standalone_pa_family.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/standalone_pa_family.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_standalone_pa_family_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_verify_local_frontend_fields_lua",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/verify_local_frontend_fields.lua",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/verify_local_frontend_fields.lua",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_runtime_verify_local_frontend_fields_lua",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_workflows_local_frontend_analyze_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/analyze.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/analyze.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_workflows_local_frontend_analyze_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_workflows_local_frontend_prepare_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/prepare.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/prepare.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_workflows_local_frontend_prepare_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_workflows_local_frontend_runtime_py",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/runtime.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/runtime.py",
+      "run_input_name": "local_frontend_integrations_rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer_workflows_local_frontend_runtime_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_convex_geometry_py",
+      "provider_scope": "project",
+      "provider_project": "dual_pressure_rectilinear_ion_processor",
+      "provider_repo_path": "projects/dual_pressure_rectilinear_ion_processor",
+      "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/convex_geometry.py",
+      "frozen_filename": "runtime_snapshot/projects/dual_pressure_rectilinear_ion_processor/analysis/convex_geometry.py",
+      "run_input_name": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_convex_geometry_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_electrode_contours_py",
+      "provider_scope": "project",
+      "provider_project": "dual_pressure_rectilinear_ion_processor",
+      "provider_repo_path": "projects/dual_pressure_rectilinear_ion_processor",
+      "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/electrode_contours.py",
+      "frozen_filename": "runtime_snapshot/projects/dual_pressure_rectilinear_ion_processor/analysis/electrode_contours.py",
+      "run_input_name": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_electrode_contours_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_guide_interface_py",
+      "provider_scope": "project",
+      "provider_project": "dual_pressure_rectilinear_ion_processor",
+      "provider_repo_path": "projects/dual_pressure_rectilinear_ion_processor",
+      "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/guide_interface.py",
+      "frozen_filename": "runtime_snapshot/projects/dual_pressure_rectilinear_ion_processor/analysis/guide_interface.py",
+      "run_input_name": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_guide_interface_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_native_geometry_py",
+      "provider_scope": "project",
+      "provider_project": "dual_pressure_rectilinear_ion_processor",
+      "provider_repo_path": "projects/dual_pressure_rectilinear_ion_processor",
+      "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/native_geometry.py",
+      "frozen_filename": "runtime_snapshot/projects/dual_pressure_rectilinear_ion_processor/analysis/native_geometry.py",
+      "run_input_name": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_native_geometry_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_projects_orthogonal_accelerator_simion_rectangular_accelerator_py",
+      "provider_scope": "project",
+      "provider_project": "orthogonal_accelerator",
+      "provider_repo_path": "projects/orthogonal_accelerator",
+      "source_repo_path": "projects/orthogonal_accelerator/simion/rectangular_accelerator.py",
+      "frozen_filename": "runtime_snapshot/projects/orthogonal_accelerator/simion/rectangular_accelerator.py",
+      "run_input_name": "local_frontend_projects_orthogonal_accelerator_simion_rectangular_accelerator_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_projects_orthogonal_accelerator_simion_two_zone_candidate_py",
+      "provider_scope": "project",
+      "provider_project": "orthogonal_accelerator",
+      "provider_repo_path": "projects/orthogonal_accelerator",
+      "source_repo_path": "projects/orthogonal_accelerator/simion/two_zone_candidate.py",
+      "frozen_filename": "runtime_snapshot/projects/orthogonal_accelerator/simion/two_zone_candidate.py",
+      "run_input_name": "local_frontend_projects_orthogonal_accelerator_simion_two_zone_candidate_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_projects_single_reflection_oa_tof_mass_analyzer_analysis_geometry_contract_py",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py",
+      "run_input_name": "local_frontend_projects_single_reflection_oa_tof_mass_analyzer_analysis_geometry_contract_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_projects_single_reflection_oa_tof_mass_analyzer_analysis_oatof_oaaccelerator_coupling_py",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
+      "run_input_name": "local_frontend_projects_single_reflection_oa_tof_mass_analyzer_analysis_oatof_oaaccelerator_coupling_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_projects_single_reflection_oa_tof_mass_analyzer_analysis_reflectron_dual_stage_solver_py",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
+      "run_input_name": "local_frontend_projects_single_reflection_oa_tof_mass_analyzer_analysis_reflectron_dual_stage_solver_py",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_replay",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/replay.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/local_frontend/replay.py",
+      "run_input_name": "local_frontend_replay",
+      "consumers": [
+        "local_frontend"
+      ]
+    },
+    {
+      "id": "local_frontend_bare_three_zone_component",
+      "provider_scope": "project",
+      "provider_project": "orthogonal_accelerator",
+      "provider_repo_path": "projects/orthogonal_accelerator",
+      "source_repo_path": "projects/orthogonal_accelerator/simion/bare_three_zone_component.py",
+      "frozen_filename": "runtime_snapshot/projects/orthogonal_accelerator/simion/bare_three_zone_component.py",
+      "run_input_name": "local_frontend_bare_three_zone_component",
+      "consumers": [
+        "local_frontend"
       ]
     }
   ],

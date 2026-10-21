@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 
 $integrationRoot = $PSScriptRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $integrationRoot)
+. (Join-Path $repoRoot 'common\require_powershell7.ps1')
 $hostExecutionLease = $null
 $hostExecutionLeaseSupport = Join-Path $repoRoot 'common\host_execution_lease.ps1'
 if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {

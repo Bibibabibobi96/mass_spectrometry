@@ -2386,7 +2386,7 @@ class PAFamilyCacheTest(unittest.TestCase):
 
     def test_transient_payload_read_requires_two_consecutive_manifest_matches(self) -> None:
         published = publish_pa_family_cache(self.cache, identity(), self.source, self.names)
-        real_file_sha256 = pa_family_cache.file_sha256
+        real_file_sha256 = cache_generation.file_sha256
         target_reads = 0
 
         def transient_digest(path: Path) -> str:
@@ -2397,7 +2397,7 @@ class PAFamilyCacheTest(unittest.TestCase):
                     return "0" * 64
             return real_file_sha256(path)
 
-        with patch.object(pa_family_cache, "file_sha256", side_effect=transient_digest):
+        with patch.object(cache_generation, "file_sha256", side_effect=transient_digest):
             manifest = validate_pa_family_cache_generation(
                 published.generation_directory, expected_filenames=self.names
             )
@@ -2480,7 +2480,7 @@ class PAFamilyCacheTest(unittest.TestCase):
         expected = next(
             record for record in published.manifest["files"] if record["name"] == target.name
         )
-        real_file_sha256 = pa_family_cache.file_sha256
+        real_file_sha256 = cache_generation.file_sha256
 
         def stale_buffered_digest(path: Path) -> str:
             if Path(path) == target:
@@ -2488,11 +2488,9 @@ class PAFamilyCacheTest(unittest.TestCase):
             return real_file_sha256(path)
 
         with patch.object(
-            pa_family_cache, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 0
-        ), patch.object(
             cache_generation, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 0
         ), patch.object(
-            pa_family_cache, "file_sha256", side_effect=stale_buffered_digest
+            cache_generation, "file_sha256", side_effect=stale_buffered_digest
         ):
             pa_family_cache._verify_payload_record(
                 published.generation_directory, expected
@@ -2511,11 +2509,9 @@ class PAFamilyCacheTest(unittest.TestCase):
         wrong = {**expected, "sha256": "E" * 64}
 
         with patch.object(
-            pa_family_cache, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 0
-        ), patch.object(
             cache_generation, "_WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES", 0
-        ), patch.object(pa_family_cache, "file_sha256", return_value="D" * 64), patch.object(
-            pa_family_cache, "PAYLOAD_VERIFICATION_RETRY_DELAY_S", 0
+        ), patch.object(cache_generation, "file_sha256", return_value="D" * 64), patch.object(
+            cache_generation, "PAYLOAD_VERIFICATION_RETRY_DELAY_S", 0
         ):
             with self.assertRaisesRegex(PAFamilyCacheError, "payload differs"):
                 pa_family_cache._verify_payload_record(

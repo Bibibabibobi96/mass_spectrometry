@@ -28,12 +28,12 @@ from common.contracts import capacity_ledger, capacity_protection
 from common.contracts.file_identity import canonical_json_sha256, file_sha256, file_sha256_unbuffered
 from common.contracts.recorded_file_removal import remove_recorded_files
 from common.simion.cache_generation import (
-    _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES,
+    PAYLOAD_VERIFICATION_RETRY_DELAY_S,
     _flush_writable_source,
     _remove_tree_writable,
     materialize_direct_inventory, inventory_named_files, copy_verified_file,
     snapshot_immutable_file, stable_inventory_direct_files,
-    validate_direct_inventory,
+    validate_direct_inventory, verify_immutable_payload_record,
 )
 from common.simion.immutable_pa_parity import (
     ALGORITHM as PARITY_ALGORITHM,
@@ -74,9 +74,6 @@ CACHE_KEY_FIELDS = (
 SHA256 = re.compile(r"^[0-9A-F]{64}$")
 REDUNDANCY_CREATION_MAX_ATTEMPTS = 3
 NO_REDUNDANCY_ALGORITHM = "none_reconstructible"
-PAYLOAD_VERIFICATION_ATTEMPTS = 3
-PAYLOAD_RECOVERY_CONSECUTIVE_MATCHES = 2
-PAYLOAD_VERIFICATION_RETRY_DELAY_S = 0.2
 
 
 class PAFamilyCacheError(ValueError):
@@ -163,76 +160,11 @@ def _set_file_writable(path: Path) -> None:
 
 
 def _verify_payload_record(root: Path, record: Mapping[str, Any]) -> None:
-    """Verify one immutable payload, recovering only from a transient read.
-
-    A normal cache hit still performs one full read.  If that read differs,
-    accept the payload only after two consecutive complete re-reads reproduce
-    the manifest exactly.  This keeps persistent damage fail-closed while
-    avoiding a false CORRUPT result from one unstable large-file read.
-    """
-
-    path = root / record["name"]
-    observations: list[str] = []
-    mismatch_seen = False
-    consecutive_matches = 0
-    for attempt in range(1, PAYLOAD_VERIFICATION_ATTEMPTS + 1):
-        if path.is_file():
-            observed_bytes = path.stat().st_size
-            observed_sha256 = file_sha256(path)
-        else:
-            observed_bytes = None
-            observed_sha256 = None
-        observations.append(
-            f"attempt={attempt},bytes={observed_bytes},sha256={observed_sha256}"
-        )
-        matches = (
-            observed_bytes == record["bytes"]
-            and observed_sha256 == record["sha256"]
-        )
-        if matches:
-            consecutive_matches += 1
-            required = PAYLOAD_RECOVERY_CONSECUTIVE_MATCHES if mismatch_seen else 1
-            if consecutive_matches >= required:
-                return
-        else:
-            mismatch_seen = True
-            consecutive_matches = 0
-            # A large Windows PA can retain stale pages in the ordinary
-            # buffered view even though an unbuffered read of the persisted
-            # file is correct.  Recover only by making one disposable /J
-            # snapshot and validating that independent file against the
-            # manifest.  The cache payload itself remains untouched.
-            if (
-                os.name == "nt"
-                and observed_bytes == record["bytes"]
-                and observed_bytes is not None
-                and observed_bytes >= _WINDOWS_UNBUFFERED_COPY_THRESHOLD_BYTES
-            ):
-                with tempfile.TemporaryDirectory(
-                    prefix="pa-cache-verify-", dir=root.parent
-                ) as temporary:
-                    snapshot = Path(temporary) / path.name
-                    try:
-                        snapshot_record = snapshot_immutable_file(path, snapshot, record)
-                    except ValueError:
-                        snapshot_record = None
-                    observations.append(
-                        "unbuffered_snapshot="
-                        f"{snapshot_record['sha256'] if snapshot_record else 'MISMATCH'}"
-                    )
-                    if snapshot_record == {
-                        "name": record["name"],
-                        "bytes": record["bytes"],
-                        "sha256": record["sha256"],
-                    }:
-                        return
-        if attempt < PAYLOAD_VERIFICATION_ATTEMPTS:
-            time.sleep(PAYLOAD_VERIFICATION_RETRY_DELAY_S)
-    raise PAFamilyCacheError(
-        "PA cache family payload differs: "
-        f"{record['name']} expected_bytes={record['bytes']} "
-        f"expected_sha256={record['sha256']} observations=[{' ; '.join(observations)}]"
-    )
+    """Preserve the PA-family error contract around shared byte verification."""
+    try:
+        verify_immutable_payload_record(root, record)
+    except ValueError as exc:
+        raise PAFamilyCacheError(str(exc)) from exc
 
 
 def _seal_generation_files(directory: Path, manifest: Mapping[str, Any]) -> None:

@@ -10,6 +10,24 @@
 
 ## 当前能力
 
+- 二区 requirements schema 2 增加显式 `side_entry`：选择负 y 侧面及 x/z 半宽，入口中心由提供者
+  派生在首区中心，保持实心 repeller、接地后盖和负 z 出口拓扑。切口仅贯穿接地侧壁，并检查与其他
+  实体的实际相交；schema 1 默认封闭结构的 GEM、layout 和 resolved 几何保持不变。有侧口的几何
+  拥有独立身份，不复用封闭 PA 资格。
+- `simion/bare_three_zone_component.py` 的 `resolve_bare_three_zone_component` 和
+  `render_bare_three_zone_electrode_body` 复用已有 `sectioned_accelerator.render_accelerator_local_geometry`。
+  schema 1 的 `orthogonal_accelerator_bare_three_zone_requirements` 完整声明方／圆截面、屏蔽、
+  侧口、实心 repeller、grid1／intermediate2／exit、环尺寸及显式环位置，不选隐藏尺寸或工作电压。
+  提供者输出真实首区腔体 `first_gap_bounds_mm` 与零厚理想栅面；不伪造二区支撑框，也不要求实际
+  sectioned 环必须等间距。输入仍使用器件局部坐标，由消费者冻结正规刚体装配。
+- 同源裸导引消费者已分别编译二区五模式、三区六模式 PA+：两项杆响应与三个／四个加速电位端点。
+  这是集成的运行表示，不改变两种器件几何，也不等同旧含额外入口硬件的八模式整机结构。
+  零厚理想栅只表达求场电位面与理想透过，不承诺实体丝网透过率。完整 100 粒子源、真实 MR 装配、
+  占据／脉冲、孔前后诊断及独立默认 Fly 对照由
+  [局部集成工作流](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md#同源八极导引接入与二区三区复用)
+  拥有；二区／三区局部 N=100 及各自保存文件的完整默认重放均已闭合。集成结果不授予独立器件或 MR 资格，
+  不能用旧封闭组件的 100% 传输替代同源多极杆接入后的实际传输。
+
 - 组件分析使用公共分块文件身份函数，保持既有小写摘要及 receipt、cache 的身份合同。
 
 - 领域源码、活动消费者和依赖清单已从 oa-TOF 与原公共层迁入；仪器适配器负责参数投影和装配。

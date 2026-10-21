@@ -19,7 +19,7 @@ import stat
 from typing import Any, Mapping, Sequence
 
 from common.contracts.file_identity import file_sha256
-from common.simion.cache_generation import _flush_writable_source
+from common.simion.cache_generation import _flush_writable_source, verify_immutable_payload_record
 
 
 SCHEMA_VERSION = 1
@@ -286,10 +286,11 @@ def _verify_generation_file(
         raise StandalonePaResponseSetError(f"{role} is not exactly covered by manifest")
     if inventory_is_verified:
         return manifest_record
-    actual = _file_record(root / name)
-    if actual != dict(expected):
-        raise StandalonePaResponseSetError(f"{role} bytes differ from receipt")
-    return actual
+    try:
+        verify_immutable_payload_record(root, expected)
+    except ValueError as exc:
+        raise StandalonePaResponseSetError(f"{role} bytes differ from receipt") from exc
+    return manifest_record
 
 
 def validate_standalone_pa_response_set(

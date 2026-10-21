@@ -16,6 +16,7 @@ from unittest import mock
 from common.contracts.capacity_protection import create_capacity_protection_lease
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from common.contracts.run_capacity_lifecycle import register_writing, seal_checkpoint
+from common.contracts.write_run_manifest import file_record
 from common.contracts.solver_review_retirement import (
     LEGACY_INITIALIZATION_SUMMARY,
     RetirementError,
@@ -1625,6 +1626,73 @@ function Exit-HostExecutionLease { param($Lease) }
                 self.artifacts, self.repo, self.target, self.replacement,
                 "all configured input members remain bound", self.compatibility_roles,
             )
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_configured_file_record_binds_verified_input_identity(self, _scan: mock.Mock) -> None:
+        configured = file_record(self.target / "candidate.json")
+        configured["sha256"] = configured["sha256"].lower()
+        self._add_config_inputs(self.target, {"frozen_record": configured})
+        self.assertEqual(self._owner_plan()["status"], "eligible")
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_configured_file_record_binds_generated_output_with_source_metadata(self, _scan: mock.Mock) -> None:
+        frozen = self.target / "inputs/finalization.py"
+        frozen.parent.mkdir(exist_ok=True)
+        frozen.write_bytes(b"# frozen loader used at finalization\n")
+        configured = file_record(frozen)
+        configured["source_path"] = str(self.root / "changed-or-missing-live-source.py")
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["outputs"].append(file_record(frozen, "lightweight_optional"))
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self._add_config_inputs(self.target, {"generated_records": {"group": [configured]}})
+        plan = self._owner_plan()
+        self.assertEqual(plan["status"], "eligible")
+        self.assertTrue(any(item["path"] == "inputs/finalization.py" for item in plan["preserved_files"]))
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_configured_file_record_identity_must_match_verified_record(self, _scan: mock.Mock) -> None:
+        configured = file_record(self.target / "candidate.json")
+        for change in ({"sha256": "0" * 64}, {"bytes": configured["bytes"] + 1}):
+            with self.subTest(change=change):
+                self._add_config_inputs(self.target, {"frozen_record": {**configured, **change}})
+                with self.assertRaisesRegex(RetirementError, "file record identity differs"):
+                    self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_configured_file_record_requires_manifest_bound_file(self, _scan: mock.Mock) -> None:
+        unbound = self.target / "unrecorded-input.json"
+        unbound.write_bytes(b"valid file bytes are insufficient without a seal")
+        self._add_config_inputs(self.target, {"frozen_record": file_record(unbound)})
+        with self.assertRaisesRegex(RetirementError, "does not bind configured input file record"):
+            self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_configured_file_record_rejects_incomplete_or_extra_metadata_shapes(self, _scan: mock.Mock) -> None:
+        configured = file_record(self.target / "candidate.json")
+        invalid = [
+            {key: value for key, value in configured.items() if key != "bytes"},
+            {**configured, "exists": False}, {**configured, "exists": 1},
+            {**configured, "bytes": True}, {**configured, "bytes": -1},
+            {**configured, "sha256": "x" * 64}, {**configured, "path": 1},
+            {**configured, "source_path": {"unbound": "hidden.json"}},
+            {**configured, "extra_dependency": "unbound.json"},
+        ]
+        for value in invalid:
+            with self.subTest(value=value):
+                self._add_config_inputs(self.target, {"frozen_record": value})
+                with self.assertRaisesRegex(RetirementError, "file record has an invalid shape"):
+                    self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_plain_configured_dictionary_retains_strict_collection_validation(self, _scan: mock.Mock) -> None:
+        self._add_config_inputs(self.target, {"grouped_inputs": {"bound": str(self.target / "candidate.json")}})
+        self.assertEqual(self._owner_plan()["status"], "eligible")
+        for member, message in ((str(self.target / "unbound.json"), "input collection"), (False, "invalid shape")):
+            with self.subTest(member=member):
+                self._add_config_inputs(self.target, {"grouped_inputs": {"bound": member}})
+                with self.assertRaisesRegex(RetirementError, message):
+                    self._owner_plan()
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_short_alias_suffix_mismatch_is_rejected(self, _scan: mock.Mock) -> None:

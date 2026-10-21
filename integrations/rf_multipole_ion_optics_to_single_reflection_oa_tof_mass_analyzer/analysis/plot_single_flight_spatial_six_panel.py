@@ -29,6 +29,8 @@ GEOMETRY_TARGET_TICK_INTERVALS = 9
 # gap trend at the 90-degree bend.
 _CHECKPOINT_AXIAL_AXIS = {
     "source_release": "x",
+    "local_aperture_pre": "y",
+    "local_aperture_post": "y",
     "multipole_handoff": "x",
     "pre_pulse_state": "x",
     "accelerator_grid1_forward": "x",
@@ -195,10 +197,64 @@ def _phase_space_fit_diagnostics(
     }
 
 
-def _checkpoint_distribution_summary(rows: pd.DataFrame, event: str) -> dict[str, Any]:
+def _population_moments(values: np.ndarray) -> dict[str, float]:
+    """Keep signed means and population SD separate from legacy sample SD."""
+    return {"signed_mean": float(np.mean(values)), "population_std": float(np.std(values, ddof=0))}
+
+
+def _integration_component_diagnostics(
+    rows: pd.DataFrame, position: np.ndarray, velocity: np.ndarray | None, axis: str,
+    *, frame_id: str = "oatof_global_cartesian",
+) -> dict[str, Any]:
+    """Describe integration-global components; no MR frame mapping is implied."""
+    result: dict[str, Any] = {
+        "frame": frame_id, "mr_frame_mapping": "native_mr_frame" if frame_id == "mrtof_global_cartesian" else "not_bound",
+        "standard_deviation_ddof": 0,
+        "space_population_sigma_mm": {
+            name: float(np.std(position[:, i], ddof=0)) for i, name in enumerate("xyz")
+        },
+        "theta_x_deg": None, "theta_y_deg": None,
+        "angle_unavailable_reason": "checkpoint_propagation_axis_is_not_z_or_velocity_unavailable",
+    }
+    # Named local components prevent incoming +y angles being confused with
+    # outgoing OA -z angles. The existing z aliases remain unchanged.
+    result["local_transverse_angles_deg"] = None
+    result["local_angle_definition"] = f"atan2(v_component, abs(v_{axis})); signed degrees"
+    if velocity is not None:
+        axial = "xyz".index(axis)
+        if np.any(np.abs(velocity[:, axial]) <= 1.0e-12):
+            result["angle_unavailable_reason"] = "zero_axial_velocity_present"
+        else:
+            result["local_transverse_angles_deg"] = {
+                f"theta_{name}_{axis}": _population_moments(
+                    np.degrees(np.arctan2(velocity[:, i], np.abs(velocity[:, axial])))
+                ) for i, name in enumerate("xyz") if name != axis
+            }
+            if axis == "z":
+                for name in ("x", "y"):
+                    result[f"theta_{name}_deg"] = result["local_transverse_angles_deg"][f"theta_{name}_z"]
+                result["angle_unavailable_reason"] = None
+    for field, label in (("instrument_time_us", "instrument_time_us"), ("kinetic_energy_eV", "kinetic_energy_eV")):
+        result[label] = None
+        result[label + "_unavailable_reason"] = "canonical_column_missing"
+        if field in rows:
+            values = pd.to_numeric(rows[field], errors="coerce").to_numpy(dtype=float)
+            if not np.isfinite(values).all():
+                raise ValueError(f"checkpoint contains non-finite {field}")
+            result[label] = _population_moments(values)
+            result[label + "_unavailable_reason"] = None
+    return result
+
+
+def _checkpoint_distribution_summary(
+    rows: pd.DataFrame, event: str, *, frame_id: str = "oatof_global_cartesian",
+    propagation_axis: str | None = None,
+) -> dict[str, Any]:
     """Summarize one detector-blind checkpoint using its local propagation axis."""
 
-    axis = _CHECKPOINT_AXIAL_AXIS.get(event)
+    axis = propagation_axis or _CHECKPOINT_AXIAL_AXIS.get(event)
+    if axis not in {"x", "y", "z"}:
+        raise ValueError("checkpoint propagation axis is invalid")
     if axis is None:
         raise ValueError(f"checkpoint axis is not registered: {event}")
     position_fields = ("x_mm", "y_mm", "z_mm")
@@ -245,6 +301,7 @@ def _checkpoint_distribution_summary(rows: pd.DataFrame, event: str) -> dict[str
         }
     return {
         "event": event,
+        "integration_frame_components": _integration_component_diagnostics(rows, position, velocity, axis, frame_id=frame_id),
         "particle_count": int(len(rows)),
         "local_propagation_axis": axis,
         "space_mm": {name: _quantiles(position[:, index]) for index, name in enumerate(("x", "y", "z"))},
@@ -1230,15 +1287,17 @@ def write_accelerator_phase_space_outputs(
 
 def write_checkpoint_evolution_outputs(
     checkpoints_path: Path, figure_path: Path, metadata_path: Path, data_path: Path,
+    *, frame_id: str = "oatof_global_cartesian", checkpoint_axes: dict[str, str] | None = None,
 ) -> None:
-    """Write the default detector-blind checkpoint-evolution diagnostic bundle."""
+    """Write detector-blind diagnostics in the explicitly declared native frame."""
 
     checkpoints = pd.read_csv(checkpoints_path)
     summaries = []
     for event in _CHECKPOINT_AXIAL_AXIS:
         rows = checkpoints.loc[checkpoints["event"].eq(event)]
         if not rows.empty:
-            summaries.append(_checkpoint_distribution_summary(rows, event))
+            summaries.append(_checkpoint_distribution_summary(
+                rows, event, frame_id=frame_id, propagation_axis=(checkpoint_axes or {}).get(event)))
     if not summaries:
         raise ValueError("checkpoint evolution requires at least one registered checkpoint")
 
@@ -1275,7 +1334,27 @@ def write_checkpoint_evolution_outputs(
             "z_vz_cubic_random_residual_rms_m_per_s": [fit_value(item, "cubic_random_residual", "rms_m_per_s") for item in summaries],
         }
     )
-    figure, axes = plt.subplots(2, 2, figsize=(13.5, 8.0), constrained_layout=True)
+    for component in ("x", "y"):
+        for moment in ("signed_mean", "population_std"):
+            table[f"theta_{component}_{moment}_deg"] = [
+                None if item["integration_frame_components"][f"theta_{component}_deg"] is None
+                else item["integration_frame_components"][f"theta_{component}_deg"][moment]
+                for item in summaries
+            ]
+    for component in ("x", "z"):
+        for moment in ("signed_mean", "population_std"):
+            table[f"theta_{component}_y_{moment}_deg"] = [
+                None if item["local_propagation_axis"] != "y" or item["integration_frame_components"]["local_transverse_angles_deg"] is None
+                else item["integration_frame_components"]["local_transverse_angles_deg"][f"theta_{component}_y"][moment]
+                for item in summaries
+            ]
+    for component in "xyz":
+        table[f"sigma_{component}_mm"] = [item["integration_frame_components"]["space_population_sigma_mm"][component] for item in summaries]
+    for key in ("instrument_time_us", "kinetic_energy_eV"):
+        for moment in ("signed_mean", "population_std"):
+            table[f"{key}_{moment}"] = [None if item["integration_frame_components"][key] is None else item["integration_frame_components"][key][moment] for item in summaries]
+    table["sigma_t_ns"] = 1000.0 * pd.to_numeric(table["instrument_time_us_population_std"], errors="coerce")
+    figure, axes = plt.subplots(4, 2, figsize=(13.5, 14.0), constrained_layout=True)
     x = np.arange(len(table))
     labels = table["event"].str.replace("_", "\n", regex=False)
     series = (
@@ -1290,6 +1369,35 @@ def write_checkpoint_evolution_outputs(
         axis.set(ylabel=ylabel, xticks=x, xticklabels=labels)
         axis.tick_params(axis="x", labelsize=7)
         axis.grid(alpha=0.18)
+    exit_rows = checkpoints.loc[checkpoints["event"].eq("local_accelerator_exit")]
+    exit_summary = next((item for item in summaries if item["event"] == "local_accelerator_exit"), None)
+    for ax, component in zip(axes[2], ("x", "y"), strict=True):
+        available = exit_summary is not None and exit_summary["integration_frame_components"][f"theta_{component}_deg"] is not None
+        if available:
+            angles = np.degrees(np.arctan2(exit_rows[f"v{component}_mm_per_us"].to_numpy(dtype=float), np.abs(exit_rows["vz_mm_per_us"].to_numpy(dtype=float))))
+            ax.scatter(exit_rows[f"{component}_mm"], angles, s=marker_area(len(exit_rows)), color="#0072B2", marker="o")
+        else:
+            ax.text(0.5, 0.5, "Exit component angle unavailable", ha="center", va="center", transform=ax.transAxes)
+        ax.set(xlabel=f"{frame_id}: {component} (mm)" if frame_id != "oatof_global_cartesian" else f"Integration global {component} (mm)", ylabel=f"Signed theta_{component} (deg)", title=f"OA exit: all observed IDs, N={len(exit_rows)}; " + ("native MR coordinates" if frame_id == "mrtof_global_cartesian" else "MR mapping pending"))
+        ax.grid(alpha=0.16)
+    time_axis, arrival_axis = axes[3]
+    time_axis.plot(x, table["sigma_t_ns"], marker="s", linewidth=1.4, color="#D55E00")
+    time_axis.set(ylabel="Arrival-time sigma (ns, ddof=0)", xticks=x, xticklabels=labels,
+                  title="Each checkpoint's observed population; counts shown above")
+    time_axis.tick_params(axis="x", labelsize=7)
+    time_axis.grid(alpha=0.16)
+    arrival = None if exit_summary is None else exit_summary["integration_frame_components"]["instrument_time_us"]
+    if arrival is not None:
+        # ECDF retains every exit, including tails, without bins or a Gaussian fit.
+        delta_t_ns = 1000.0 * (np.sort(exit_rows["instrument_time_us"].to_numpy(dtype=float)) - arrival["signed_mean"])
+        cumulative_fraction = np.arange(1, len(delta_t_ns) + 1) / len(delta_t_ns)
+        arrival_axis.step(delta_t_ns, cumulative_fraction, where="post", color="#0072B2", linewidth=1.4)
+        arrival_axis.scatter(delta_t_ns, cumulative_fraction, s=marker_area(len(delta_t_ns)), color="#0072B2")
+        arrival_axis.set_title(f"OA exit: N={len(delta_t_ns)}; sigma_t={1000.0 * arrival['population_std']:.6g} ns")
+    else:
+        arrival_axis.text(.5, .5, "Exit arrival times unavailable", ha="center", va="center", transform=arrival_axis.transAxes)
+    arrival_axis.set(xlabel="Exit arrival time minus exit mean (ns)", ylabel="Cumulative fraction of observed exits", ylim=(0, 1.02))
+    arrival_axis.grid(alpha=0.16)
     figure.suptitle(
         "Detector-blind accelerator/checkpoint phase-space evolution\n"
         f"capability={PHASE_SPACE_CAPABILITY_ID}", fontsize=12,
@@ -1307,11 +1415,54 @@ def write_checkpoint_evolution_outputs(
                 "status": "success",
                 "selection_uses_detector_outcome": False,
                 "checkpoints": summaries,
+                "exit_phase_portrait": {"event": "local_accelerator_exit", "particle_ids": exit_rows["particle_id"].tolist(), "population_basis": "all_observed_exit_ids_not_detector_selected", "frame": frame_id, "mr_frame_mapping": "native_mr_frame" if frame_id == "mrtof_global_cartesian" else "not_bound", "angle_definition": "atan2(v_component, abs(v_z)); signed degrees"},
+                "time_panels": {"checkpoint_sigma_column": "sigma_t_ns", "standard_deviation_ddof": 0,
+                    "checkpoint_population_basis": "each_checkpoint_observed_ids; not a paired cohort",
+                    "exit_distribution": "ECDF of all observed exits; no filtering, bins, smoothing or Gaussian fit",
+                    "exit_time_transform": "1000 * (instrument_time_us - exit_population_mean_us)",
+                    "exit_mean_time_us": None if arrival is None else arrival["signed_mean"],
+                    "exit_particle_ids": exit_rows["particle_id"].tolist(),
+                    "scope": "Recorded plane-crossing times; not a simultaneous cloud, downstream time focus or MR resolution"},
                 "data": str(data_path.resolve()),
                 "figure": str(figure_path.resolve()),
             }, indent=2,
         ) + "\n", encoding="utf-8", newline="\n",
     )
+
+
+def build_local_shared_time_figure(
+    active_rows: pd.DataFrame, status_counts: list[dict[str, Any]], *, frame_id: str,
+) -> tuple[plt.Figure, np.ndarray]:
+    """Display only actual active states; lifecycle counts come from analysis.
+
+    This is a coordinate scatter, not a field or trajectory interpolation.
+    Its caller declares the observer frame and any display-time subset.
+    """
+    if not frame_id or not status_counts:
+        raise ValueError("shared-time figure requires a frame and declared time panels")
+    figure, axes = plt.subplots(2, len(status_counts), figsize=(3.5 * len(status_counts), 6.2),
+                                squeeze=False, sharex=True, sharey="row", constrained_layout=True)
+    for column, counts in enumerate(status_counts):
+        time = float(counts["instrument_time_us"])
+        # Census validates the actual clock against this declared target; retain
+        # the native clock and state while grouping by its requested observation.
+        rows = active_rows.loc[active_rows["requested_time_us"].eq(time)]
+        if len(rows) != counts["active"]:
+            raise ValueError("shared-time plotted population differs from the census")
+        for ax, transverse in zip(axes[:, column], ("x", "y"), strict=True):
+            if len(rows):
+                ax.scatter(rows["z_mm"], rows[f"{transverse}_mm"], s=marker_area(len(rows)),
+                           color="#0072B2", marker="o")
+            else:
+                ax.text(.5, .5, "No active particles", transform=ax.transAxes, ha="center")
+            ax.set(xlabel=f"{frame_id}: z (mm)", ylabel=f"{frame_id}: {transverse} (mm)")
+            ax.set_aspect("auto")
+            ax.grid(alpha=.15)
+        axes[0, column].set_title(f"t = {time:.6g} us; active N={counts['active']}\n"
+            f"Not born {counts['not_born']}; exited {counts['already_exit']}\n"
+            f"Lost {counts['already_loss']}; unsupported {counts['numerical_unsupported']}", fontsize=9)
+    figure.suptitle("Actual shared-clock active distributions; common axis limits\nDisplay aspect ratio only; terminal positions are not carried forward")
+    return figure, axes
 
 
 def main() -> int:

@@ -1543,6 +1543,64 @@ def _workspace_record(
     return path
 
 
+def _prepare_single_flight_particle_source(
+    *, root: Path, workspace: Path, record: dict[str, Any], prepared_root: Path,
+) -> Path:
+    """Validate a complete source table and freeze explicit workspace input bytes.
+
+    Repository records retain their existing text-identity boundary. Only an
+    authored ``artifacts/`` path selects workspace raw-file identity; this does
+    not change the RF provider's project or design evidence.
+    """
+    external = record["path"].startswith("artifacts/")
+    source = (
+        _workspace_record(workspace, record, "single-flight particle source")
+        if external else _repo_record(root, record, "single-flight particle source")
+    )
+    if external and record["sampling_mode"] != "continuous_injection_full_population":
+        raise ContractError("workspace single-flight source requires the full population")
+    with source.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    columns = [
+        "particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm",
+        "vx_m_s", "vy_m_s", "vz_m_s", "mass_amu", "charge_state",
+    ]
+    if not rows or list(rows[0]) != columns:
+        raise ContractError("single-flight particle source columns differ")
+    if len(rows) != int(record["particle_count"]):
+        raise ContractError("single-flight particle source count differs")
+    if [int(row["particle_id"]) for row in rows] != list(range(1, len(rows) + 1)):
+        raise ContractError("single-flight particle source IDs must be contiguous")
+    if not external:
+        return source
+    for row in rows:
+        try:
+            values = {name: float(row[name]) for name in columns}
+        except (ValueError, TypeError) as exc:
+            raise ContractError("workspace single-flight source contains invalid numbers") from exc
+        if not all(math.isfinite(value) for value in values.values()):
+            raise ContractError("workspace single-flight source requires finite numbers")
+        charge = values["charge_state"]
+        if values["mass_amu"] <= 0 or charge == 0 or not charge.is_integer():
+            raise ContractError("workspace single-flight source mass or charge is invalid")
+    frozen = prepared_root / "inputs" / "single_flight_particle_source.csv"
+    frozen.parent.mkdir(parents=True, exist_ok=True)
+    if frozen.exists() and file_sha256(frozen) != record["sha256"]:
+        raise ContractError("prepared single-flight particle source identity conflicts")
+    if not frozen.exists():
+        shutil.copyfile(source, frozen)
+    if file_sha256(source) != record["sha256"] or file_sha256(frozen) != record["sha256"]:
+        raise ContractError("workspace single-flight particle source changed while freezing")
+    _write_json(frozen.with_name("single_flight_particle_source_identity.json"), {
+        "source": {"path": record["path"], "bytes": source.stat().st_size, "sha256": record["sha256"]},
+        "frozen": {"path": "inputs/" + frozen.name, "bytes": frozen.stat().st_size, "sha256": file_sha256(frozen)},
+        "particle_count": len(rows),
+        "sampling_mode": record["sampling_mode"],
+        "scope": "Raw workspace source bytes; RF provider identity is unchanged",
+    })
+    return frozen
+
+
 def _workspace_relative(path: Path, workspace: Path) -> str:
     try:
         return path.resolve().relative_to(workspace.resolve()).as_posix()
@@ -3632,21 +3690,10 @@ def prepare_family_source_closure(
     if single_flight_source is not None:
         if execution_strategy != "simion_single_flight":
             raise ContractError("single-flight particle-source overrides require SIMION single flight")
-        single_flight_source_path = _repo_record(
-            root, single_flight_source, "single-flight particle source"
+        single_flight_source_path = _prepare_single_flight_particle_source(
+            root=root, workspace=workspace, record=single_flight_source,
+            prepared_root=plan_output.parent,
         )
-        with single_flight_source_path.open(encoding="utf-8-sig", newline="") as handle:
-            source_rows = list(csv.DictReader(handle))
-        expected_columns = [
-            "particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm",
-            "vx_m_s", "vy_m_s", "vz_m_s", "mass_amu", "charge_state",
-        ]
-        if not source_rows or list(source_rows[0]) != expected_columns:
-            raise ContractError("single-flight particle source columns differ")
-        if len(source_rows) != int(single_flight_source["particle_count"]):
-            raise ContractError("single-flight particle source count differs")
-        if [int(row["particle_id"]) for row in source_rows] != list(range(1, len(source_rows) + 1)):
-            raise ContractError("single-flight particle source IDs must be contiguous")
         if single_flight_source["sampling_mode"] == "pulse_eligible_conditional":
             receipt = single_flight_source.get("selection_receipt")
             if receipt is None:
@@ -3656,8 +3703,8 @@ def prepare_family_source_closure(
             )
             selection_receipt = _load(receipt_path)
             if (
-                selection_receipt.get("selected_count") != len(source_rows)
-                or selection_receipt.get("candidate_eligible_count", 0) < len(source_rows)
+                selection_receipt.get("selected_count") != single_flight_source["particle_count"]
+                or selection_receipt.get("candidate_eligible_count", 0) < single_flight_source["particle_count"]
                 or selection_receipt.get("candidate_launched_count", 0)
                 < selection_receipt.get("candidate_eligible_count", 0)
             ):
@@ -5071,7 +5118,9 @@ def prepare_family_source_closure(
                 f"single_flight_particle_source_path={single_flight_source['path']}",
                 f"single_flight_particle_source_sha256={single_flight_source['sha256']}",
                 f"single_flight_particle_source_count={single_flight_source['particle_count']}",
-            ]) + ([] if source_materialization_profile is None else [
+            ] + ([] if not single_flight_source["path"].startswith("artifacts/") else [
+                "single_flight_particle_source_filename=inputs/single_flight_particle_source.csv",
+            ])) + ([] if source_materialization_profile is None else [
                 "single_flight_source_materialization_profile_id="
                 + source_materialization_profile_id,
             ]) + ([] if source_materialization_profile is None or

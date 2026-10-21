@@ -23,10 +23,14 @@
 
 项目间连接的矩形开孔统一调用[`aperture.py`](aperture.py)：机械宽、高任一小于一个cell时失败关闭；
 非整数cell倍数或孔边缘未落在网格节点时保留机械尺寸并输出机器可读离散警告；GEM减材固定使用
-`exclude_shape_inside_or_on_v1`，不得用隐藏epsilon扩大机械孔。编译或缓存PA后，所有生产消费者还必须
+`exclude_shape_inside_or_on_v1`，不得用隐藏epsilon扩大机械孔。提供者已有的 `notin_inside` 电极边缘合同则
+显式标为 `exclude_shape_inside_only_v1`，保留边缘节点，不冒称两种切口相同。编译或缓存PA后，所有生产消费者还必须
 通过[`aperture_topology_support.ps1`](aperture_topology_support.ps1)调用
 [`verify_aperture_topology.lua`](verify_aperture_topology.lua)，确认法兰厚度方向至少有一条贯通非电极节点列，
-并确认孔外四侧接地guard在法兰内部厚度节点仍存在（两端面连接相邻真空域，不作为侧壁判据）；FAIL禁止Fly。该入口面向仓库内所有未来SIMION项目连接，不绑定多极杆、
+并确认孔外四侧接地guard在法兰内部厚度节点仍存在（两端面连接相邻真空域，不作为侧壁判据）；FAIL禁止Fly。
+调用方显式声明真实世界坐标的法兰法向 `NormalAxis=x|y|z`、厚度范围及三维孔中心；宽、高分别沿剩余轴的
+x/y/z顺序取值（法向y时为x/z）。验证器只置换PA节点索引，既不旋转PA，也不借其他轴字段代称坐标。
+该入口面向仓库内所有未来SIMION项目连接，不绑定多极杆、
 oaTOF、single-flight或具体电极编号。
 
 `surface=fractional`只提高非对齐表面的场与边界表达精度，不保证连续几何精确，也不能替代真实PA拓扑审计
@@ -58,6 +62,8 @@ successor并原子推进pointer；显式冻结的旧generation在物化或subset
 current已指向别代则绝不回退pointer，返回值必须把predecessor与repair receipt写入本次运行证据。
 普通 current 命中先走封存 metadata 快路（manifest、精确文件名、大小、只读状态和 parity 结构）；发现长度、可写位、
 指针或结构异常时才回退到逐字节验证与修复，不把正常命中变成整套 PA 重读。
+完整 family 校验与 standalone response 选择共用 `cache_generation.verify_immutable_payload_record`：正常只读一次；
+异常读取沿既有连续匹配／Windows 持久快照核验收敛，持续字节不匹配仍拒绝，且不修改发布源。
 原生family只走确定的`<root>/.transactions/<cache-key>/transaction.json`事务；common同时拥有同目录内的
 `payload`和scratch。状态只有`building / prepared / published / retired`，错误只写`last_error`而不增加状态。
 位于仓库`artifacts/`下的 PA family 禁止调用旧的`publish_pa_family_cache`直发 helper：它只保留给非受管的
