@@ -92,6 +92,7 @@ single_reflection_oa_tof_mass_analyzer/
 <details>
 <summary>展开已冻结实验、迁移与故障证据</summary>
 
+- [OA-TOF N100 原生离子追踪受控对照](docs/history/20261021__oatof-cpt-performance-controlled-comparison.md)
 - [论文阶段状态与文档整治前沿革](docs/history/20260911__publication-status-consolidation.md)
 
 
