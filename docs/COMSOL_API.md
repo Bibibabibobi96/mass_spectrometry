@@ -40,6 +40,23 @@ model.sol('sol1').attach('std1');
 验收不能只运行`model.sol(...).runAll`。保存并重新打开MPH后，必须确认Study的GUI Compute会
 使用预期Solver和物理激活状态并产生等效结果。
 
+### Time 节点的活动步策略
+
+先读取 `odesolvertype`，再读取对应的活动积分器；不能因某个属性存在就认定它生效。
+COMSOL 6.4 的 [Time API 表 6-74](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.51.html)
+给出的对应关系如下（查阅日期：2026-10-21）：
+
+| 活动配置 | 步策略属性 |
+|---|---|
+| `implicit`，`timemethod=genalpha` | `tstepsgenalpha` |
+| `implicit`，`timemethod=bdf` | `tstepsbdf` |
+| `explicit`，`timemethodexp=rk`，`rkmethod=dopri5` | `tstepsdopri5` |
+
+`free` 允许积分器依据误差控制选择内部步；`strict` 要求内部步包含输出时刻，仍可插入其他内部步。
+`tout=tlist` 控制在请求时刻插值保存，和活动步策略是两个设置。写入后、保存重开后及 Study Compute 后
+都应核对活动键与 `tout`；检查闲置 BDF 键不能证明 GA 或 DP5 的设置正确。未知组合应显式拒绝，
+不可依赖闲置属性的默认值。属性保存重开验证本身不证明轨迹收敛或性能收益。
+
 ## 参数、表达式与单位
 
 ```matlab

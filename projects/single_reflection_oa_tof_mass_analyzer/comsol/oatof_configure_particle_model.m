@@ -201,98 +201,10 @@ std2 = model.study.create('std2');
 std2.label(sprintf('Time-dependent: oa-TOF ring-stack %s', label));
 tstep = std2.create('time1', 'Transient');
 tstep.label('Transient solver');
-% !!! Post-pulse grid coarsened 10x (50ns->500ns): with L_flight
-% extended 10x, Tsim is also ~10x longer, so the OLD 50ns step would
-% store ~10x more time points per particle than before -- combined with
-% a large particle count, this is exactly the kind of avoidable data
-% volume that caused the N=50000 mphparticle() OOM crash. The fine 5ns
-% grid during the pulse (0-1us) is kept as-is since that resolution is
-% needed for solver accuracy on the fast pulse rise/fall, not just
-% output sampling.
-% !!! Reverted to the memory-efficient coarsened OUTPUT tlist now that
-% 'tstepsbdf'='free' (see below) lets the solver internally integrate
-% with as fine a step as accuracy demands, independent of this output
-% grid -- the earlier bug was 'strict' forcing the SOLVER's own internal
-% steps to match this coarse grid, not the output density itself.
-% !!! FIXED root cause of the compact-design resolution failure: the
-% reflectron TRANSIT (entry, decelerate, turnaround, re-accelerate, exit
-% -- all within the short 10-90mm reflectron) happens in only a few us
-% for this compact design (one-way flight ~t_flight_oneway), much faster
-% than the OLD 3000mm design's slow transit. The previous 500ns-post-1us
-% coarsening was fine for the old design but FAR too coarse here --
-% verified (N=5, uniform 5ns tlist) that it silently made ions overshoot
-% into the backplate (integration error, not a real physics/field issue:
-% z_max=409mm/backplate at 500ns resolution vs z_max=362mm matching
-% theory at 5ns resolution). Fix: keep 5ns resolution through a window
-% safely bracketing the reflectron transit (0 to 3*t_flight_oneway,
-% covering approach+transit+return-start), coarsen only AFTER that
-% (500ns), where motion is simple field-free drift needing no fine
-% resolution. This avoids both the integration-accuracy bug AND the
-% N=50000-scale OOM risk from fine-sampling the WHOLE round trip.
-% !!! N=10000 mphparticle() OOM (GPU test: CPT solve succeeded in 351s,
-% but retrieving the full qx+qy+qz trajectory ran out of SERVER memory
-% during serialization) is now fixed differently: instead of risking
-% accuracy by further coarsening this validated tlist (an attempted
-% coarse-fine-coarse rework WRECKED accuracy, R dropped 1033.7->266.8 at
-% N=20, because 1us steps couldn't resolve the accelerator's own fast
-% 0.545us transit even with tstepsbdf='free') -- the fix is instead to
-% reduce what's PULLED from the server: fetch only 'qz' (not qx,qy,qz)
-% for the full statistics population, which cuts the transferred data
-% volume 3x on its own (see the mphparticle call below). Reverted to
-% this original, validated tlist (fine 5ns through 3*t_flight_oneway,
-% covering the full round trip incl. accelerator + reflectron transit
-% with margin; coarse 500ns after).
-% !!! Set to 1ns per explicit request after the ring-center-alignment
-% fix (see doc §7.33/7.34): confirms whether the fix's effect is real
-% physics or just changes how much is masked by 5ns quantization noise.
-% !!! Speed optimization: the OLD tlist kept 1ns resolution across the
-% ENTIRE 0-to-3*t_flight_oneway window (~53us), including the "boring"
-% constant-velocity drift from the accelerator exit (t~0.5us) out to the
-% reflectron entrance (t~8-9us) -- a stretch where the ion feels NO
-% force at all, so fine resolution there buys nothing but cost. New
-% 4-segment tlist: fine(1ns) only for 0-2us (covers the accelerator's
-% own fast ~0.545us transit with margin) and 6-33us (covers the
-% reflectron approach/transit/return/detection, with generous margin
-% around the measured ~29.7us mean detection time); coarse(500ns)
-% elsewhere, where the ion is just drifting at constant velocity with
-% no field. This roughly HALVES the total stored timesteps (~53580 ->
-% ~27500) without touching resolution anywhere the ion is actually
-% under a force -- validated by confirming R is unchanged vs the old
-% uniform-1ns tlist (see doc §7.37).
-% !!! Fine window extended from 33us to 39us (doc §7.49): L_flight
-% extended by 100mm (500->600mm) adds ~3.2us to the round-trip time
-% (estimated from the extra 200mm total drift / v_push_speed), pushing
-% the expected mean detection time to ~33-34us -- the old 33us cutoff
-% would now clip the actual detection event. 39us keeps a healthy margin.
-% !!! Speed optimization ATTEMPTED ("fix B", per explicit request) and
-% REVERTED: tried narrowing this fine 1ns window adaptively (fine_start=
-% 0.5*t_flight_oneway, fine_end=2.5*t_flight_oneway, ~24us instead of
-% 33us) on the theory that 'tstepsbdf'='free' fully decouples solver
-% accuracy from the OUTPUT tlist's density, so a shorter requested-output
-% window should only cut solve time, not accuracy. Measured result
-% CONTRADICTED that theory: CPT solve time did drop (128.4s->98.1s,
-% ~24%), but R dropped too (14988.6->9099.5, detTime std nearly doubled
-% 0.66ns->1.09ns) -- a real, reproducible accuracy regression, NOT
-% sampling noise (particle release is deterministically seeded here, two
-% separate unmodified re-runs gave bit-identical R/detTimes). The exact
-% mechanism isn't fully understood (mean detection time sat >10us inside
-% the new window's fine_end, nowhere near the boundary, so simple
-% edge-clipping doesn't explain it -- 'free' tstepsbdf evidently does NOT
-% fully insulate result precision from the output tlist's shape the way
-% the existing doc comments assumed). Given the explicit "must not affect
-% resolution" requirement, this trade was rejected and the window
-% reverted to the original, previously-validated 6us/39us literals.
-% Speeding up the CPT solve itself needs a different lever than shrinking
-% this output window -- left as a genuinely open problem, do not retry
-% this exact approach without first understanding why 'free' didn't
-% decouple accuracy from tlist density here.
-% Production segmented output policy. All physics/numerical settings are
-% persisted as GUI-visible Global Parameters and Study Output times. Event
-% predictions follow mass, voltage and geometry parameters; fine-window
-% boundaries are outward-rounded to one global fine-step lattice. N=20 and
-% N=100 fixed-particle convergence tests proved 50 ns field-free output to
-% be numerically identical to the high-precision reference while reducing
-% the particle solve by 2.89x and 1.77x (relative to the 1 ns segmented run).
+% Output windows follow the resolved numerical contract. They control stored
+% data; the active algorithm's free/strict policy is configured below.
+% Earlier BDF-only comments did not describe the saved GA/Strict solver.
+% Controlled evidence and historical window changes are in project history.
 timing = configure_oatof_segmented_output( ...
     model, mass_amu, fine_tstep_ns, drift_tstep_ns, contract);
 expected_tof = timing.expected_tof_s;
@@ -323,21 +235,10 @@ model.sol('sol2').feature('v1').set('notsol', es_sol_tag);
 % Attach the configured solver so the Study's GUI Compute reuses sol2
 % instead of creating a default zero-field CPT solver.
 model.sol('sol2').attach('std2');
-% !!! FIXED root cause of the compact-design resolution failure: 'strict'
-% forces the BDF solver to use EXACTLY the tlist steps as its OWN
-% internal integration steps (not just for output) -- with the old
-% 3000mm design's slow, gentle dynamics this was fine even at 500ns
-% steps, but the new compact design's fast reflectron transit (full
-% deceleration+turnaround over ~10-90mm in a few us) needs much finer
-% resolution to integrate accurately. 'strict' at 500ns silently
-% produced wrong (too-deep) turnaround points, causing many ions to
-% overshoot into the backplate. 'free' lets the solver adaptively
-% refine its internal steps for accuracy while still only OUTPUTTING at
-% the requested tlist points -- verified (N=5) to fix the turnaround
-% (z_max=362mm matching theory almost exactly, was 409mm/backplate) and
-% recover R=75.6 (was 14.7) with 100% detection (was 80.7%).
-model.sol('sol2').feature('t1').set('tstepsbdf', 'free');
-model.sol('sol2').feature('t1').set('tout', 'tlist');
+% Strict requires internal steps to include requested output times, while
+% Free permits adaptive intermediate steps. Select the ACTIVE algorithm key,
+% consume the author policy, and verify the native readback before Compute.
+oatof_cpt_solver_policy(model.sol('sol2').feature('t1'),runtime,'apply');
 % !!! FIX for the N>=20 crash ("NaN or Inf found when solving linear
 % system using GMRES", t=6.38us, deterministic regardless of N):
 % inspection showed the Time-Dependent solver's FullyCoupled nonlinear

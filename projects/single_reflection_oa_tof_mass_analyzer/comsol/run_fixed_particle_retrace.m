@@ -38,6 +38,11 @@ comsolDir = fileparts(mfilename('fullpath'));
 projectDir = fileparts(comsolDir);
 addpath(projectDir);
 addpath(fullfile(projectDir, 'comsol'));
+contractPath = getenv('OATOF_CONTRACT_PATH');
+if isempty(contractPath)
+    contractPath = fullfile(projectDir,'config','resolved_geometry.json');
+end
+contract = load_oatof_contract(contractPath);
 paths = oatof_paths();
 import com.comsol.model.util.*
 if isempty(sourceModelPath)
@@ -139,7 +144,7 @@ try
         assert(chargeState == 1, ...
             'Segmented-output formulas currently support singly charged ions only.');
         configure_oatof_segmented_output( ...
-            model, massAmu, fineStepNs, driftStepNs);
+            model, massAmu, fineStepNs, driftStepNs, contract);
     elseif isfinite(fineStepNs)
         oldFineToken = regexp(oldTlist, ...
             'range\(0,([^,]+),2e-6\)', 'tokens', 'once');
@@ -152,8 +157,7 @@ try
         timeStudy.set('tlist', newTlist);
     end
     solverTime = model.sol('sol2').feature('t1');
-    solverTime.set('tstepsbdf', 'free');
-    solverTime.set('tout', 'tlist');
+    solverPolicy = oatof_cpt_solver_policy(solverTime,contract.comsol_runtime,'apply');
     cpt = model.component('comp1').physics('cpt');
     cpt.prop('StoreExtra').set('StoreExtra', false);
     cpt.prop('StoreParticleStatusData').set( ...
@@ -162,7 +166,8 @@ try
     fprintf(fid, 'GUI_STUDY_OUTPUT_TIMES_AFTER=%s\n', ...
         char(timeStudy.getString('tlist')));
     fprintf(fid, 'GUI_SOLVER_STEPS_TAKEN=%s\n', ...
-        char(solverTime.getString('tstepsbdf')));
+        solverPolicy.solver_steps);
+    fprintf(fid, 'GUI_SOLVER_ACTIVE_STEP_PROPERTY=%s\n',solverPolicy.step_property);
     fprintf(fid, 'GUI_SOLVER_TIMES_TO_STORE=%s\n', ...
         char(solverTime.getString('tout')));
     fprintf(fid, 'GUI_CPT_STORE_EXTRA_WALL_TIMES=%d\n', ...

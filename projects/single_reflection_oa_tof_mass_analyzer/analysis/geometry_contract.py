@@ -50,6 +50,11 @@ def _validate_layers(baseline: dict[str, Any], science: dict[str, Any], numerics
         raise ValueError("unsupported formal solver numerics contract")
     if not isinstance(science.get("particle"), dict) or not isinstance(numerics.get("comsol"), dict) or not isinstance(numerics.get("simion"), dict):
         raise ValueError("formal contracts are missing required science or solver sections")
+    runtime = numerics["comsol"]
+    if runtime.get("solver_steps") not in ("free", "intermediate", "strict"):
+        raise ValueError("comsol.solver_steps must be free, intermediate or strict")
+    if runtime.get("times_to_store") != "tlist":
+        raise ValueError("comsol.times_to_store must be tlist for OA-TOF detector sampling")
 
 
 def resolve_contract(

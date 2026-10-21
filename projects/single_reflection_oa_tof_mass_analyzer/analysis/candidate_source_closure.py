@@ -63,6 +63,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_model_core.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_reflectron_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_configure_particle_model.m",
+    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_cpt_solver_policy.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_create_result_nodes.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_extract_detector_arrivals.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_export_detector_events.m",

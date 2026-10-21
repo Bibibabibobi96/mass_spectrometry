@@ -15,9 +15,42 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_cont
     render_resolved_lua,
 )
 from common.contracts.machine_contracts import sha256
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import (
+    NUMERICS_PATH,
+    resolve_contract,
+)
 
 
 class SyncGeometryContractTests(unittest.TestCase):
+    def test_resolved_runtime_preserves_the_author_time_step_policy(self) -> None:
+        numerics = json.loads(NUMERICS_PATH.read_text(encoding="utf-8"))
+        numerics["comsol"]["solver_steps"] = "strict"
+        numerics["comsol"]["times_to_store"] = "tlist"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "numerics.json"
+            path.write_text(json.dumps(numerics), encoding="utf-8")
+            actual = resolve_contract(numerics_path=path)["comsol_runtime"]
+        self.assertEqual(actual["solver_steps"], "strict")
+        self.assertEqual(actual["times_to_store"], "tlist")
+
+    def test_invalid_or_missing_time_step_policy_is_rejected_before_resolution(self) -> None:
+        for field, value in (
+            ("solver_steps", None), ("solver_steps", "unknown"),
+            ("solver_steps", "manual"), ("solver_steps", ["free"]),
+            ("times_to_store", None), ("times_to_store", "unknown"),
+            ("times_to_store", "tsteps"), ("times_to_store", "tstepsclosest"),
+        ):
+            with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as directory:
+                numerics = json.loads(NUMERICS_PATH.read_text(encoding="utf-8"))
+                if value is None:
+                    del numerics["comsol"][field]
+                else:
+                    numerics["comsol"][field] = value
+                path = Path(directory) / "numerics.json"
+                path.write_text(json.dumps(numerics), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, field):
+                    resolve_contract(numerics_path=path)
+
     def test_grid_policy_names_the_official_zero_width_one_row_model(self) -> None:
         contract = load_contract()
         expected = (

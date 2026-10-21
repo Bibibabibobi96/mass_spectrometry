@@ -5,7 +5,8 @@ testSupportDir = fileparts(mfilename('fullpath'));
 testDir = fileparts(testSupportDir);
 detectorSuite = testsuite(fullfile(testDir, 'OaTofDetectorArrivalTest.m'));
 fieldSuite = testsuite(fullfile(testDir, 'OaTofFieldIdealizationTest.m'));
-suite = [detectorSuite(:).', fieldSuite(:).'];
+solverSuite = testsuite(fullfile(testDir, 'OaTofSolverPolicyTest.m'));
+suite = [detectorSuite(:).', fieldSuite(:).', solverSuite(:).'];
 results = run(suite);
 
 fid = fopen(reportPath, 'w');
