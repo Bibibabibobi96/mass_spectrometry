@@ -4,6 +4,8 @@
 
 ## 公共机制与执行资源
 
+- [2026-10-21 全仓时间精度需求、分辨率预算与数值陷阱审查](history/20261021__project-timing-precision-budget-review.md)
+
 - [2026-10-21 COMSOL网格、收敛与原生离子追踪性能调研](history/20261021__comsol-mesh-and-particle-performance-research.md)
 
 - [2026-10-17 全仓精简第三轮：验证净收益与发布工作复用](history/20261017__repository-simplification-wave-three.md)

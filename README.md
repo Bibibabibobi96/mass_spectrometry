@@ -45,7 +45,7 @@
 | 准备环境、启动工具、执行验证、提交 | [操作指南](docs/OPERATIONS.md) |
 | 编码、配置分层、合同、进程和测试 | [开发标准](docs/DEVELOPMENT_STANDARDS.md) |
 | 维护仓库门禁或文档检查器 | [分层门禁](docs/OPERATIONS.md#分层门禁)、[文档检查与验收](docs/OPERATIONS.md#文档结构检查)，再查对应实现与邻近测试 |
-| 粒子样本、收敛、统计和跨求解器比较 | [验证方法](docs/VALIDATION_METHODS.md) |
+| 粒子样本、收敛、统计和跨求解器比较 | [验证方法](docs/VALIDATION_METHODS.md)、[分辨率与时间精度查表/计算](docs/TOF_ERROR_BUDGET.md) |
 | 科学绘图与图形证据 | [绘图标准](docs/PLOTTING_STANDARDS.md) |
 | COMSOL API与故障定位 | [API参考](docs/COMSOL_API.md)、[排错](docs/COMSOL_DEBUGGING.md)、[官方资料](official_docs/README.md) |
 | 本机COMSOL网格、高精度收敛与原生离子追踪提速 | [官方资料与仓库案例调研](docs/history/20261021__comsol-mesh-and-particle-performance-research.md)、[OA-TOF 现有模型受控对照](projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-performance-controlled-comparison.md) |

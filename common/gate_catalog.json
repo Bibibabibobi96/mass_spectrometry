@@ -64,6 +64,19 @@
       }
     },
     {
+      "stage": "tof_error_budget_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "fast",
+      "matches": [
+        { "exact": "common/analysis/tof_error_budget.py", "reason": "tof_error_budget_changed" },
+        { "exact": "common/analysis/test_tof_error_budget.py", "reason": "tof_error_budget_tests_changed" }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": ["-m", "unittest", "common.analysis.test_tof_error_budget"]
+      }
+    },
+    {
       "stage": "documentation_link_tests",
       "dependency_profile": "stdlib",
       "repository_integration_group": "fast",
