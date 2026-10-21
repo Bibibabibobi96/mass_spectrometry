@@ -4,6 +4,8 @@
 
 ## 公共机制与执行资源
 
+- [2026-10-21 COMSOL网格、收敛与原生离子追踪性能调研](history/20261021__comsol-mesh-and-particle-performance-research.md)
+
 - [2026-10-17 全仓精简第三轮：验证净收益与发布工作复用](history/20261017__repository-simplification-wave-three.md)
 
 - [2026-10-17 全仓精简第二轮：重复验证、哈希与物化收口](history/20261017__repository-simplification-wave-two.md)
