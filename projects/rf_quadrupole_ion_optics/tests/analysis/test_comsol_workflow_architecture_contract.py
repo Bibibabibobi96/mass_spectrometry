@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from common.contracts.capacity_ledger import initialize_capacity_ledger
 from projects.rf_quadrupole_ion_optics.analysis.validate_release_construction_gate import (
     _expected_release_state,
 )
@@ -52,7 +53,6 @@ SHARED_SOLVER = (
 NUMERICS_SUPPORT = PROJECT_ROOT / "runtime" / "comsol_solver_numerics.ps1"
 RUN_ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
 SHARED_LIVELINK_LAUNCHER = REPO_ROOT / "common" / "comsol" / "run_comsol_r2025b.ps1"
-ARTIFACT_ROOT = REPO_ROOT.parent / "artifacts" / "projects" / "rf_quadrupole_ion_optics"
 RUN_PYTHON = Path(sys.executable).resolve()
 OFFICIAL_ION11 = PROJECT_ROOT / "config" / "particles" / "official_fixed_100.ion"
 
@@ -898,6 +898,23 @@ class ComsolSolverNumericsFailureTests(unittest.TestCase):
     def test_precommercial_contract_failure_produces_verified_failed_triplet(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            artifact_workspace = root / "artifacts"
+            artifact_root = artifact_workspace / "projects" / "rf_quadrupole_ion_optics"
+            artifact_root.mkdir(parents=True)
+            initialize_capacity_ledger(artifact_workspace, objects=[])
+            # Redirect only the runner's roots; exercise its real preflight and
+            # failed publication without touching a checkout's artifact ledger.
+            runner_source = _read(RUNNER)
+            for original, replacement in (
+                ("$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)",
+                 "$projectRoot = $env:RF_PROJECT_ROOT"),
+                ("$artifactRoot = Join-Path $workspaceRoot 'artifacts\\projects\\rf_quadrupole_ion_optics'",
+                 "$artifactRoot = $env:RF_ARTIFACT_ROOT"),
+            ):
+                self.assertEqual(runner_source.count(original), 1)
+                runner_source = runner_source.replace(original, replacement)
+            fixture_runner = root / "run_comsol_fixture.ps1"
+            fixture_runner.write_text(runner_source, encoding="utf-8")
             invalid = self.baseline()
             invalid["profiles"][0]["mesh"]["global_auto_level"] = 2  # type: ignore[index]
             invalid["logical_sha256"] = _logical_sha256(invalid)
@@ -907,13 +924,13 @@ class ComsolSolverNumericsFailureTests(unittest.TestCase):
                 "20260725_120000__test__comsol__numerics-preflight"
                 f"__p{os.getpid()}"
             )
-            run_dir = ARTIFACT_ROOT / "runs" / run_id
-            if run_dir.exists():
-                shutil.rmtree(run_dir)
+            run_dir = artifact_root / "runs" / run_id
             environment = os.environ.copy()
             environment.update(
                 {
-                    "RF_COMSOL_RUNNER": str(RUNNER),
+                    "RF_COMSOL_RUNNER": str(fixture_runner),
+                    "RF_PROJECT_ROOT": str(PROJECT_ROOT),
+                    "RF_ARTIFACT_ROOT": str(artifact_root),
                     "RF_REPO_ROOT": str(REPO_ROOT),
                     "RF_INVALID_NUMERICS": str(invalid_path),
                     "RF_RUN_ID": run_id,
