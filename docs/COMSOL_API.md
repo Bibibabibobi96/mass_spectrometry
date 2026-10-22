@@ -289,6 +289,16 @@ model.sol('sol2').attach('std2');
 用同一点在稳态和粒子数据集上的场值交叉检查。`notsolnum`、`notstudy`、`notsollist`等猜测
 属性已确认无效。
 
+不要把 `mphxmeshinfo` 的字段／DOF 库存直接当成“本步求解的变量”。官方
+[Variables](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.57.html)
+会自动维护已求解与未求解变量的 Field；实际是否求解须检查 `Field.solvefor` 及 Study。
+[Xmesh](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_functionality.7.36.html)
+的 `dofs.nameinds` 与 `solvectorinds` 均使用零基映射。比较静电场时保留原始全量差异，另外核对
+全部电势系数、DOF 坐标／节点映射、网格与有限元阶次，不能以少数场探针相等替代场身份。
+坐标单位须独立核对：[XmeshInfoDofs](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/api/com/comsol/model/XmeshInfoDofs.html)
+区分模型长度单位 `coords()` 与几何长度单位 `gCoords()`；不能仅凭 `geom.lengthUnit()` 给扩展网格数组标单位。
+解析比较应保留原坐标、显式换算，并用带单位的 `x/y/z` 回读核验；网格顶点与扩展网格 DOF 也不可默认同单位。
+
 ### 稳态CG-AMG与电势阶次
 
 COMSOL 6.4的自动稳态序列可在`Stationary`下保留默认direct节点，同时把`FullyCoupled`的活动
