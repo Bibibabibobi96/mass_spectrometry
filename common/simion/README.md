@@ -248,10 +248,11 @@ surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SI
 | `Protect-ImmutablePaSource ...` / `Unprotect-*` | 为确需直接只读消费的 immutable 源建立进程期 `FileShare.Read` 保护；大 PA 首次直接无缓冲读取并核对 manifest，不建立额外 PA 探针，同一进程后续复用同一保护。只有已经确认不在 Fast Adjust 后执行 `wb:save()` 等写操作的加载／飞行路径，才可把受护源直接交给 SIMION；存在明确写入路径时仍使用一次性私有副本。 |
 | `Remove-ShortPaCopyDirectory -Path <directory>` | 仅清理系统临时目录下匹配前缀的已登记独立副本并释放源句柄；默认前缀为 `simion_pa_links_` |
 
-`Get-ImmutablePaSourceVerificationSha256` 的大文件路径在源保护句柄持续持有期间，从仓库根通过
-`.venv` 的 `python -m common.contracts.file_identity --unbuffered <path>` 调用公共
+`Get-ImmutablePaSourceVerificationSha256` 的大文件路径在源保护句柄持续持有期间，从运行源码根通过
+`python -m common.contracts.file_identity --unbuffered <path>` 调用公共
 `file_sha256_unbuffered`。这消除了每次验证额外的整件 `/J` 探针复制与临时 PA 空间；真正需要的运行副本
 仍走原有 `/J` 复制及目标校验。无缓冲读取失败直接失败关闭，不回退普通缓冲读取；小文件行为不变。
+无缓冲身份校验优先使用既有 `SIMULATION_PYTHON_EXE`，未设置时使用运行源码根的 `.venv`；显式路径无效时失败，不回退。
 
 短副本恢复为可写，但“改名”不能证明来源于 family 的响应已经失去 `.paN` 语义。已发布 cache 中的
 family 成员即使完整物化到私有目录也不得再次交给供应商进程；`r66` 证明复制后的成员仍可能导致原 cache

@@ -114,7 +114,9 @@ function Get-ImmutablePaSourceVerificationSha256 {
   # handling; no temporary PA projection or buffered fallback is needed.
   if(-not$Stream.CanRead-or$Stream.Length-ne$Length){throw 'Immutable PA source stream length differs.'}
   $identityRepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-  $identityPython=Join-Path $identityRepoRoot '.venv\Scripts\python.exe'
+  $identityPython=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{
+    Join-Path $identityRepoRoot '.venv\Scripts\python.exe'
+  }
   if(-not(Test-Path -LiteralPath $identityPython -PathType Leaf)){throw "Repository Python is unavailable: $identityPython"}
   Push-Location -LiteralPath $identityRepoRoot
   try{

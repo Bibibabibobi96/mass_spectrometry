@@ -18,6 +18,60 @@ HELPER = Path(__file__).with_name("short_pa_path_support.ps1")
 
 @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell test")
 class ShortPaPathSupportTest(unittest.TestCase):
+    def test_frozen_unbuffered_identity_uses_explicit_python_and_invalid_override_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            frozen = root / "snapshot"
+            frozen_helper = frozen / "common/simion/short_pa_path_support.ps1"
+            frozen_helper.parent.mkdir(parents=True)
+            shutil.copyfile(HELPER, frozen_helper)
+            identity_module = frozen / "common/contracts/file_identity.py"
+            identity_module.parent.mkdir()
+            shutil.copyfile(HELPER.parents[1] / "contracts/file_identity.py", identity_module)
+            source = root / "source.pa"
+            payload = b"frozen-identity\0" * ((8 * 1024 * 1024) // 16)
+            payload += b"\0" * (8 * 1024 * 1024 - len(payload))
+            source.write_bytes(payload)
+            self.assertFalse((frozen / ".venv").exists())
+            script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+if($global:MassSpectrometryShortPaUnbufferedThresholdBytes-ne8MB){throw 'Production threshold changed'}
+function Get-OpenPaStreamSha256 {throw 'Buffered fallback forbidden'}
+$before=(Get-Location).Path
+$stream=[IO.File]::Open($env:PA_SOURCE,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try{
+  $digest=Get-ImmutablePaSourceVerificationSha256 -Stream $stream -Length $stream.Length
+  if(-not$stream.CanRead){throw 'Caller-owned source handle was closed'}
+}finally{$stream.Dispose()}
+if((Get-Location).Path-ne$before){throw 'Verification leaked the working directory'}
+[pscustomobject]@{sha=$digest;length=(Get-Item -LiteralPath $env:PA_SOURCE).Length}|ConvertTo-Json -Compress
+"""
+            common_env = {**os.environ, "PA_SOURCE": str(source)}
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**common_env, "PA_HELPER": str(frozen_helper), "SIMULATION_PYTHON_EXE": sys.executable},
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(result["sha"], hashlib.sha256(payload).hexdigest().upper())
+            self.assertEqual(result["length"], 8 * 1024 * 1024)
+            # The real helper has a valid repo .venv fallback; an explicit bad
+            # override must fail rather than silently selecting that runtime.
+            invalid = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**common_env, "PA_HELPER": str(HELPER),
+                     "SIMULATION_PYTHON_EXE": str(root / "missing/python.exe")},
+                timeout=30,
+            )
+            self.assertNotEqual(invalid.returncode, 0)
+            self.assertIn("Repository Python is unavailable", invalid.stdout + invalid.stderr)
+            self.assertIn(str(root / "missing/python.exe"), invalid.stdout + invalid.stderr)
+
     def test_immutable_source_guard_blocks_write_delete_and_replace_until_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
