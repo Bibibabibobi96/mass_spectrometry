@@ -27,6 +27,8 @@
 |---|---|---|
 | Time 的控制来源、活动积分器属性与输出存储 | [Time，表6-74](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.51.html) | 通用属性默认值不等于物理接口自动生成序列的实际设置 |
 | 粒子数据集、表达式、指定 t 与返回字段 | [mphparticle，表6-34/6-35](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.51.html) | 官方函数语义不证明具体查询位置、速度或事件满足项目精度 |
+| 壁面重赋值与原生事件记录 | [Wall](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.04.html)、[辅助变量](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_modeling.05.15.html) | 支持重置不保证任意积分器和查询时刻的终态回读正确，实证查 OA 项目 |
+| 粒子数值评价与轨迹平面交点 | [Particle Evaluation，表7-106](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_results.52.119.html)、[IntersectionPoint3D](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_results.52.083.html) | 数量选择不是 ID；求交行数不等于唯一事件或完整目标身份 |
 | 所选几何范围是否已建网 | [Mesh Status](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_mesh.49.031.html) | selection 范围须与物理域一致；完整建网不等于收敛 |
 | 启动参数 | [COMSOL Commands on Windows，表22-2](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html) | `memoptassem` 的页面枚举与本机解析器存在差异，实际边界见公共启动器说明 |
 

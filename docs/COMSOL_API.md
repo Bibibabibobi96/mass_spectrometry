@@ -355,6 +355,15 @@ pd = mphparticle(model, 'dataset', 'pdset1');
 - 显式指定目标时间或事件，不用`outersolnum='end'`假定只取最后时间步。
 - NaN按粒子终止语义单独统计，不能简单删除后宣称全部通过。
 - 用粒子ID配对，不依赖返回顺序。
+- `mphparticle` 的 `evaluate` 不能当作任意粒子 ID 列表。本机 6.4 小模型中，正整数表示抽取数量，
+  `evaluate=1` 返回的并非 ID 1，向量 `[59 1]` 被拒；先回读 `cpt.pidx` 和初值再判断身份。
+  [官方 Particle Evaluation 表](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_results.52.119.html)
+  同样区分 all／fraction／number，number 为数量；不能据此构造未经验证的逐 ID 分块优化。
+- 本机 6.4 的 `solnum='all'` 可以成功返回全部表达式数组，却不带 `t`，显式 `times='on'` 也未补上。
+  数值 `solnum=1:n` 的实测表达式与之相同，并返回时间与索引；`n` 必须来自实际解库存。
+  保留返回字段、维度和粒子身份，不把包装器访问缺失 `t` 的异常记成求解失败。
+- `mphparticle(...,'expr',cell)` 与原生数值节点不是相同的参数合同：本机
+  `model.result.numerical.create(tag,'Particle')` 的 `expr` 只接受单字符串，多表达式须逐条读取并核对身份。
 - 不猜`cpt.Ep`、`cpt.KE`等变量；先查变量表。末态动能可由质量和速度计算并与能量守恒交叉
   检查。
 

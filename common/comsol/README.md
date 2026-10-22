@@ -142,6 +142,11 @@ Study/Solver 执行；GUI Compute 指 Desktop 重开后操作，二者不能互�
 另验证了普通时刻库存、实际停止时刻查询，以及 Counter 的求解前／后创建与输出敏感性；
 其中稀疏 Counter 两案为 failed。它补充接口证据，不授予生产检测器资格。
 
+[后续原因隔离与原生事件候选](../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261022__sparse-counter-cause-and-native-event-reader.md)
+区分了保存状态、Counter、原生 st 查询与辅助变量记录：GA／Newtonian 稀疏终态候选通过两真实壁面及重复，
+DP5 晚期辅助表和交点身份路径保留失败。evaluate 数量抽样、all-solnum 缺 t、Particle expr 单字符串等
+接口实证见[数值提取](../../docs/COMSOL_API.md#数值提取)。这仍不是第二个仪器项目或整机性能验证。
+
 [api-field]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_102831__test__comsol__field-and-cpt-followup__r02/results/field_followup_summary.json
 [api-output]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/output_controls_summary.json
 [api-interpolation]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/interpolation_summary.json

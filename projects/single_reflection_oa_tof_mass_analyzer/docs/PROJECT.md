@@ -184,9 +184,11 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
   两次求解耗时也有波动，单次配对不能证明稳定的整体提速，未将诊断配置推广为 Formal。
   首轮旧算法、手动缩放及稀疏输出未通过 1 ps 门槛；本次两臂均通过参考门，但逐值／纯序列化一致性诊断未通过。
   原生停止时间的小模型验证不替换现有整机事件定义，稀疏坐标查询的负结果保留。
-  后续小模型已确认 StoreExtra 可影响事件时刻的位置查询，而普通时刻库存未增加；Counter 在稀疏输出下
-  漏计，创建时机不能解释，密输出对照通过。该读取链尚未取得整机资格，具体范围见
-  [原生回读与 Counter 验证](history/20261022__native-event-readback-and-counter-validation.md)。
+  后续小模型确认输出表影响保存状态与 Counter 归属；单插到达窗后时刻恢复计数，不能把准确 st 视为 Counter 完整。
+  GA／Newtonian 的五辅助变量终态读取已通过原稀疏输出、真实两壁面 50/50 和一次同配置重复，终态 CSV 字节相同；
+  DP5 稀疏晚期辅助零值、未闭合身份的交点路径均保留负结果。具体方法、完整成本与范围见
+  [原生事件读取候选](history/20261022__sparse-counter-cause-and-native-event-reader.md)；StoreExtra 与旧创建时机对照见
+  [五案记录](history/20261022__native-event-readback-and-counter-validation.md)。新候选未接入生产提取器，未授予整机资格。
   修复后的参考、完整流程、原生事件与复现见[完成记录](history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md)；
   首轮配置与失败边界见[原受控对照](history/20261021__oatof-cpt-performance-controlled-comparison.md)。
 - COMSOL 6.4当前模型在极小求解粒子数路径存在非单调原生不稳定；日常使用N=100，逻辑小样本仅在

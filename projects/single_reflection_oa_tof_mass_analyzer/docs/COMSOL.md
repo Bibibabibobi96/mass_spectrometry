@@ -90,11 +90,48 @@ canonical 峰形／FWHM，并分别检查共同漂移、全部粒子和状态指
 4. 若读取固定 t 的 XYZ，再使用已有提取器检查连续数据、合法接近段和平台／穿越；无法支持事件时保留拒绝原因，不能扩大近面容差补命中。
 5. 比较原生时刻、坐标估计、目标事件集合和独立参考。两种方法一致只说明这一事件／读取链，不能替代场与积分收敛。
 
-已知恒速平面小模型的[后续验证](history/20261022__native-event-readback-and-counter-validation.md)区分了
-三条路径：普通时刻库存、固定 t 坐标、实际停止时刻的位置查询。开启 StoreExtra 后，后者已在 N100
-解析例中通过；前两者未自动增加碰壁时刻或修复稀疏平台。稀疏 Counter 不论求解前后创建均漏计，
-仅改变输出表的密档通过；因此 Counter 也要独立验证输出敏感性，不能直接用来补齐拒绝事件。
-该诊断的 N×N 时刻／粒子查询仅用于小样本，不是可无条件扩大粒子数的高效生产实现。
+同源 N100 后续受控对照已排除两个简单修复：改用真实 `st` 或 `solnum=end` 查询，稀疏解的
+Counter 仍为 58/0；直接读取全局 Nsel／alpha 也相同。按实际 `st` 配对的 XYZ 和
+`bndenv(cpt.pcnt_det.Ob)` 却分别通过平面位置门、全部 100 个目标边界身份核验。
+同一解的读取前后完整末次 U 不变，因此不能把这 42 个漏计解释为真实碰壁漏检。
+
+仅在原 16 个输出时刻中插入 20.5 ns，Counter 即恢复为 100/0，晚期坐标也到达平面，
+原生停止时间和事件时刻坐标保持不变。但两次运行保存的末次 U 不同；目前定位的是
+输出表影响保存状态及边界归属的链，尚未识别 Counter 内部公式。单点控制用于诊断，
+不构成任意到达窗都只需一插点的规则，也不允许用密输出掩盖未验证的事件读取。
+
+### 原生辅助变量记录候选
+
+[Wall 重赋值](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.04.html)
+和[辅助变量](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_modeling.05.15.html)是官方支持路径。
+在 CPT 下创建五个 `AuxiliaryField`，采用 `R='0'`、`Integrate='WithRespectToTime'`、
+`DependentVariableQuantity='dimensionless'`，释放初值均为零；仅目标 Wall 启用重赋值：
+
+| 节点／字段 | 目标壁面新值 |
+|---|---|
+| aux1／impact_hit | `1` |
+| aux2／impact_time_s | `t/1[s]` |
+| aux3／impact_x_mm | `qx/1[mm]` |
+| aux4／impact_y_mm | `qy/1[mm]` |
+| aux5／impact_z_mm | `qz/1[mm]` |
+
+例如 `release.set('aux0_aux1','0')` 初始化第一字段，
+`wall.set('caux_aux1',true)`、`wall.set('daux_aux1','1')` 在该壁面记录标记；
+其余字段依同样命名规则设置。另一壁面须独立核对选择集及未启用的重赋值项。
+终态一次 `mphparticle` 合并读取 pidx、五字段、`cpt.st` 和 `cpt.fs`，先恢复初始粒子身份，
+再按 impact_hit 分类；其他壁面的停止时间不能冒充目标到达。
+
+GA／Newtonian、free、原稀疏输出的 N100 组合已验证终态记录；DP5／NewtonianFirstOrder 对照
+仅在准确的原生停止时刻读到正确辅助记录，晚期查询却全零。停止时刻后 1 ULP 的标记已略小于 1，
+不能随意取整判命中，也不能解释为 Freeze 根本不执行重赋值。两种组合同时改变积分器与方程形式，
+尚未单独归因于某一项。此候选不改变生产提取器或 Formal，仍须按实际物理、目标边界和精度门验收。
+单时刻固定字段的返回量为 O(N)，不是已证明求解 CPU 或完整流程随 N 线性增长。
+
+该候选另已通过目标／其他真实 Freeze 面的 50/50 对照与同配置重复，全部终态 CSV 字节相同，
+非目标五字段全零。两次完整诊断为 87.24／86.18 s，外层采样峰约 3.21／3.25 GiB；
+三坐标局部读取约快 2.51／2.87 倍，不能当整机加速比。
+详见[原因隔离、原始负结果与复现](history/20261022__sparse-counter-cause-and-native-event-reader.md)；
+普通时刻库存与 StoreExtra 的先前验证查[五案记录](history/20261022__native-event-readback-and-counter-validation.md)。
 
 ## GUI与验收
 

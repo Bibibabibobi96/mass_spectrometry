@@ -56,8 +56,9 @@ PROJECT，数值只认其具名合同；下表中的历史案例只证明其冻�
 
 - 原生粒子事件：先查[OA 实施说明](../projects/single_reflection_oa_tof_mass_analyzer/docs/COMSOL.md)，
   区分输出时刻、保存的解时刻、原生停止状态和目标检测事件。Freeze 后保留的速度不能单独否定冻结。
-  [五案小模型](../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261022__native-event-readback-and-counter-validation.md)
-  已闭合本例的 StoreExtra 查询作用与 Counter 输出敏感性；明确保留稀疏 Counter 漏计，不能直接推广整机。
+  [原生事件候选](../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261022__sparse-counter-cause-and-native-event-reader.md)
+  已定位输出保存／Counter 归属链，并验证 GA／Newtonian 的辅助变量终态读取、两壁面 50/50 和重复。
+  保留 DP5 稀疏零值与交点身份失败；局部读取收益不等于完整流程或整机提速。
 - 关键 API 与验证成熟度：查[API 参考](COMSOL_API.md)和[共享测试](../common/comsol/README.md)。
   官方语义、属性可设置、真实 Compute、保存重开、GUI Compute、仪器功能是不同证据层。
 - 已知失败的第一检查动作：查[案例定位](COMSOL_DEBUGGING.md#仓库案例定位)，再进入对应项目证据。
@@ -67,7 +68,7 @@ PROJECT，数值只认其具名合同；下表中的历史案例只证明其冻�
 
 | 问题 | 可以怎样推进 | 当前不能宣布的结论 |
 |---|---|---|
-| 其他物理／壁面下的原生事件读取 | 复用已验证查询思路，另验目标边界身份、重复穿越及输出敏感性 | 本次平面小模型通过就保证曲面、多壁面、脉冲、碰撞或任意读取路径准确 |
+| 其他物理／壁面下的原生事件读取 | 复用已验证查询思路，另验目标边界身份、重复穿越及输出敏感性 | 本次两平面 Freeze 小模型通过就保证曲面、重复碰壁、脉冲、碰撞或任意读取路径准确 |
 | 替代 release 是否保留身份、物种、逐粒子时刻／相位 | 最小源语义对照，再与既有 RF 状态门比较；旧负结果保留 | 向量化释放已经等价或更快 |
 | 内部拒步／场评价是否为 OA 主要根因 | 固定精度与场的分段受控诊断；需把计数与实际耗时对应 | 九成在 std2 就等于九成在 FEM 点定位 |
 | 线程、GPU、装配模式是否减少仪器总成本 | 先核对当前版本支持及小模型语义，再按真实目标模型预登记匹配重复 | 小模型接口通过就代表大型模型更快、内存更低 |
