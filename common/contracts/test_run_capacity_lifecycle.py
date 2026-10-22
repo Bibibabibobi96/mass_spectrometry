@@ -184,6 +184,46 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "cannot become light_evidence"):
                 finalize_ready(root, config)
 
+    def test_retirement_reseal_reconciles_signed_old_accounting_drift_once(self) -> None:
+        for drift in (-2000, 2000):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                initialize_capacity_ledger(root, objects=[])
+                run, config = self.retired_failed_fixture(root, retained_evidence=True)
+                before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
+                receipt = json.loads((run / RECEIPT_NAME).read_text())
+                original_bytes = sum(row["bytes"] for row in receipt["original_file_inventory"])
+                ledger = load_capacity_ledger(root)
+                self.assertEqual(ledger["objects"][0]["bytes"], original_bytes)
+                ledger["objects"][0]["bytes"] += drift
+                ledger["resident_bytes"] += drift
+                capacity_ledger.resolve_ledger_path(root).write_text(json.dumps(ledger))
+                old_entry = dict(ledger["objects"][0])
+                command = [sys.executable, "-m", "common.contracts.run_capacity_lifecycle",
+                    "--action", "seal-stopped-payload", "--artifact-root", str(root),
+                    "--run-config", str(config), "--owner", "p", "--confirm-writing-stopped",
+                    "--retention-reason", "retain failed preparation evidence"]
+                def invoke():
+                    completed = subprocess.run(command, capture_output=True, text=True, check=True,
+                        cwd=Path(__file__).resolve().parents[2], timeout=30)
+                    return json.loads(completed.stdout)
+                result = invoke()
+                self.assertEqual(result["accounting_reconciliation"], dict(
+                    old_registered_bytes=original_bytes+drift,
+                    original_inventory_bytes=original_bytes, accounting_drift_bytes=drift))
+                expected = sum(map(len, before.values()))
+                current = load_capacity_ledger(root)
+                self.assertEqual(current["resident_bytes"], expected)
+                self.assertEqual(current["objects"][0], {**old_entry, "bytes": expected})
+                # An administrative correction is reported only when applied.
+                # Reentry neither repeats the correction nor subtracts retired bytes.
+                replay = invoke()
+                self.assertEqual(replay, {key: value for key, value in result.items()
+                                          if key != "accounting_reconciliation"})
+                self.assertNotIn("accounting_reconciliation", replay)
+                self.assertEqual(load_capacity_ledger(root), current)
+                self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()})
+
     def test_prepared_gui_retirement_remainder_preserves_checkpoint_and_owner_duties(self) -> None:
         self._check_prepared_gui_retirement_remainder(owner_exit=False)
 
@@ -237,8 +277,8 @@ class RunCapacityLifecycleTests(unittest.TestCase):
         self.assertEqual(before, {str(path.relative_to(run)): path.read_bytes() for path in run.rglob("*") if path.is_file()})
     def test_retired_payload_remainder_rejects_unexplained_or_unverified_changes(self) -> None:
         cases = ("missing_receipt", "pending_receipt", "owner", "manifest", "preserved_content",
-                 "extra_file", "missing_evidence", "original_inventory", "removed_bytes", "ledger_bytes",
-                 "unconfirmed", "lease")
+                 "extra_file", "missing_evidence", "original_inventory", "removed_bytes",
+                 "unconfirmed", "lease", "actor_owner", "pin", "retention_reason")
         for case in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -246,6 +286,12 @@ class RunCapacityLifecycleTests(unittest.TestCase):
                 run, config = self.retired_failed_fixture(root, retained_evidence=True)
                 receipt_path = run / RECEIPT_NAME
                 receipt = json.loads(receipt_path.read_text())
+                # A legitimate historical accounting drift does not bypass any
+                # actor, content or exact-inventory protection below.
+                ledger = load_capacity_ledger(root)
+                ledger["objects"][0]["bytes"] -= 2000
+                ledger["resident_bytes"] -= 2000
+                capacity_ledger.resolve_ledger_path(root).write_text(json.dumps(ledger))
                 kwargs = dict(owner="p", writing_stopped=True, retain_payload=True,
                               retention_reason="retain failed preparation evidence")
                 if case == "missing_receipt":
@@ -268,10 +314,14 @@ class RunCapacityLifecycleTests(unittest.TestCase):
                     receipt["original_file_inventory"] = receipt["original_file_inventory"][:-1]
                 elif case == "removed_bytes":
                     receipt["removed_bytes"] += 1
-                elif case == "ledger_bytes":
+                elif case == "actor_owner":
+                    kwargs["owner"] = "other"
+                elif case == "retention_reason":
+                    kwargs["retention_reason"] = "different owner decision"
+                elif case == "pin":
                     ledger = load_capacity_ledger(root)
-                    ledger["objects"][0]["bytes"] += 1
-                    ledger["resident_bytes"] += 1
+                    ledger["objects"][0]["pin"] = False
+                    ledger["objects"][0].pop("pin_reason", None)
                     capacity_ledger.resolve_ledger_path(root).write_text(json.dumps(ledger))
                 elif case == "unconfirmed":
                     kwargs["writing_stopped"] = False

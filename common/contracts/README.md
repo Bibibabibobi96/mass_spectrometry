@@ -172,10 +172,14 @@ owner 必须先确认本次写入进程及子进程已结束，并承诺续算�
 不代表科学成功，也不授权删除；后续消费可沿既有保护机制登记，原 run 不得重新 register-writing。
 相同 owner 决定可幂等重放；已有 ready 范围的 resident 大小变化必须由 owner 排查，不静默重计。
 若同一 owner 的完整 `solver_review` 退役收据已通过原验证器（具名 owner completion 或未飞行 prepared GUI supersession），
-且原库存恰好分成已删除与保留两组，
-原 ready 字节数等于退役前完整库存、现库存恰为保留文件加退役收据自身，则可沿同一
+且原库存恰好分成互斥的已删除与保留两组、删除字节数精确一致，
+现库存恰为保留文件加退役收据自身，则可沿同一
 `seal-stopped-payload` 动作重新登记剩余占用，调用时须沿用原保留理由。它保留原 `ready/pinned`、owner、保留理由和复核期限；
-按实际剩余总量计入收据新增字节，重复调用不再次扣减。不受 light-evidence 预算约束，也不将剩余 CSV
+锁内按实际剩余总量减原登记字节更新 resident，计入收据新增字节，不直接扣 removed_bytes。
+若旧登记总量偏离退役前完整库存，首次修正的CLI收据额外报告 `accounting_reconciliation`：
+`old_registered_bytes`、`original_inventory_bytes` 和 `accounting_drift_bytes`（旧登记减原库存，可正可负）。
+这只纠正已完整核验范围的会计漂移，不设置容差；重入不再返回该修正字段，也不再次扣减，普通无漂移路径返回不变。
+不受 light-evidence 预算约束，也不将剩余 CSV
 改称轻量证据。未完成、身份不符或不能精确解释差额的收据仍拒绝；不重做删除、不改原科学三件套。
 
 同一 owner 的 completed-experiment 退役可用重复 `--selected-heavy-path <run-relative-path>`

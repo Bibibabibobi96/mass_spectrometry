@@ -258,8 +258,8 @@ def finalize_ready(artifact_root: Path, run_config: Path) -> dict[str, Any]:
 def _verify_retired_payload_remainder(
     run_dir: Path, config: dict[str, Any], owner: str,
     entry: dict[str, Any], records: list[dict[str, Any]],
-) -> None:
-    """Explain a sealed range's size change solely by its completed retirement.
+) -> dict[str, int] | None:
+    """Verify the complete retired range independently of its old accounting.
 
     The new receipt itself occupies bytes. Retain the original owner decision
     and compare complete before/after inventories, rather than subtracting the
@@ -309,13 +309,18 @@ def _verify_retired_payload_remainder(
     removed_bytes = sum(size for size, _ in removed.values())
     if (not removed or removed.keys() & preserved.keys()
             or original != {**removed, **preserved}
-            or receipt.get("removed_bytes") != removed_bytes
-            or int(entry["bytes"]) != sum(size for size, _ in original.values())):
+            or receipt.get("removed_bytes") != removed_bytes):
         raise ValueError("sealed stopped payload size change is not exactly covered by retirement")
     expected = {path: size for path, (size, _) in preserved.items()}
     expected[RECEIPT_NAME] = receipt_path.stat().st_size
     if {item["path"]: item["bytes"] for item in records} != expected:
         raise ValueError("retirement remainder differs from the preserved inventory and receipt")
+    original_bytes = sum(size for size, _ in original.values())
+    old_bytes = int(entry["bytes"])
+    if old_bytes != original_bytes:
+        return dict(old_registered_bytes=old_bytes, original_inventory_bytes=original_bytes,
+                    accounting_drift_bytes=old_bytes - original_bytes)
+    return None
 
 
 def seal_checkpoint(
@@ -344,6 +349,7 @@ def seal_checkpoint(
             raise ValueError("payload retention reason is not valid for light checkpoint sealing")
         reason = SEALED_CHECKPOINT_REASON
     relative = run_dir.relative_to(root).as_posix()
+    accounting_reconciliation = None
     with capacity_protection.capacity_decision_lock(root):
         ledger = capacity_ledger.load_capacity_ledger(root)
         if ledger is None:
@@ -389,7 +395,7 @@ def seal_checkpoint(
         if retain_payload and entry["status"] == "ready" and total != int(entry["bytes"]):
             if not (run_dir / RECEIPT_NAME).is_file():
                 raise ValueError("sealed stopped payload resident bytes changed; owner must investigate")
-            _verify_retired_payload_remainder(run_dir, config, owner, entry, records)
+            accounting_reconciliation = _verify_retired_payload_remainder(run_dir, config, owner, entry, records)
         if not retain_payload and (total > budget or any(
             classify_file(run_dir / item["path"], bytes_count=item["bytes"]) in HEAVY_RETENTION_ROLES
             for item in records
@@ -420,6 +426,7 @@ def seal_checkpoint(
         "status": "ready", "run_status": manifest["status"],
         "run_directory": str(run_dir), "bytes": total, "file_count": len(records),
         "continuation": "new_run_required", "ledger_entry": entry,
+        **({"accounting_reconciliation": accounting_reconciliation} if accounting_reconciliation is not None else {}),
     }
 
 
