@@ -167,6 +167,8 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 工作电压提供，构建器只做同一点电势叠加，不推导电压或增加响应身份。
 构建器第五参数选择边界模式，第六参数可传有限正数的 Refine convergence（V）；省略时仍使用
 安装版本默认值。调用方负责从唯一数值配置派生、冻结并记录该值；公共实现不选择项目精度。
+第七参数可在已给convergence时传 `0`／`1`，显式转发官方 `pa:refine` 的 `skipped_point`；
+省略则不传该选项，保留安装默认。回归中的模拟PA只验证参数转发和默认行为，不证明原生求场收敛或提速。
 写入五面／六面后只调用一次官方 Refine，不改变电极电压、镜像面或源 PA。
 局部活动实体必须与父basis使用同一激励归一化；构建器从父PA的非零实体节点读取并交叉核对该值，不假定
 `1 V`或`10000 V`。[`measure_pa_basis_voltage.lua`](measure_pa_basis_voltage.lua)则用raw PA的电极ID把真实
@@ -181,6 +183,14 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 六面Dirichlet边界，把调用方明确给出的局部电极电压写入同源raw局部几何并只Refine一个工作点。它用于局部
 响应文件不能由SIMION原生Fast Adjust电极计数安全表达的情况；不推导电压、区域、原点、网格或Workbench
 优先级，也不把父场与局部场相加。
+第七参数可显式指定有限正数的 Refine convergence（V）；省略时保留官方安装默认值，日志分别记录
+实际声明值或 `installed_default`。这是求场停止条件，不是局部场误差上限；比较前需确认安装默认值，
+不能仅凭指定了某个数值便称其更严格。
+第三参数也可显式为 `zero_dirichlet`，用于没有父场的完整计算域；此时不打开父PA，六面边界取0 V。
+求解后仅恢复raw PA#中原本非物理的外边界标志，保留求得电势和真实金属，避免将数值边界当作碰撞电极。
+这是项目对官方 `point`／`refine` API的边界组装，不是新的场求解算法；2026-10-22核对的SIMION 2020
+本机依据为 `examples/field_emission/refinelib.lua`、`fe_geom.lua` 与 `examples/misc/pa_move_electrode.lua`。
+计算域大小、零远边界适用性、透明理想网格和实际飞行验证仍由调用项目负责。
 [`voltageize_pa0.lua`](voltageize_pa0.lua)使用SIMION原生PA-family Fast Adjust，把调用方明确给出的
 `ID=V`稀疏电压表另存为临时工作点PA0；它不Refine、不覆盖源family，也不拥有电极分组或电压选择。
 该入口只适用于新建、可写、一次性的 build staging family，禁止对已发布 cache 或其物化副本执行。

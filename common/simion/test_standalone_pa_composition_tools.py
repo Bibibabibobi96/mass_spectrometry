@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -13,6 +14,132 @@ COMPOSER = ROOT / "compose_standalone_pa.lua"
 DIRICHLET_OPERATING_PATCH = ROOT / "build_dirichlet_patch_operating_pa.lua"
 SIMION = Path(os.environ.get("SIMION_EXE", r"C:\Program Files\SIMION-2020\simion.exe"))
 SOLVER_AUTHORIZED = os.environ.get("SIMION_SOLVER_TEST_AUTHORIZED") == "1"
+LUA = Path(shutil.which("lua") or r"C:\Program Files\SIMION-2020\lua.exe")
+
+
+@unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
+class OperatingPatchStoppingTest(unittest.TestCase):
+    """Exercise the real Lua helper with a PA double; never invoke SIMION."""
+
+    def run_helper(self, *options: str) -> subprocess.CompletedProcess[str]:
+        harness = r'''
+local helper=arg[1]
+local options={}
+for i=2,#arg do options[#options+1]=arg[i] end
+local calls=0
+local source={dx_mm=1,dy_mm=1,dz_mm=1}
+function source:inside_vc() return true end
+function source:potential_vc() return 7 end
+function source:close() end
+local target={nx=3,ny=3,nz=3,dx_mm=1,dy_mm=1,dz_mm=1}
+function target:point(x,y,z,value,metal)
+  if value==nil then return 1,x==1 and y==1 and z==1 end
+  if x==1 and y==1 and z==1 then assert(value==11 and metal) end
+end
+function target:save() end
+function target:close() end
+function target:refine(options)
+  calls=calls+1
+  if options==nil then print('REFINE_CALL=default')
+  else assert(options.convergence==1e-5);print('REFINE_CALL=explicit') end
+end
+simion={pas={}}
+function simion.pas:close() end
+function simion.pas:open(path)
+  print('OPEN_CALLED')
+  return path=='parent.pa' and source or target
+end
+arg={'raw.pa#','patch.pa0','parent.pa','0,0,0','0,0,0','11'}
+for _,value in ipairs(options) do arg[#arg+1]=value end
+dofile(helper)
+assert(calls==1,'one and only one Refine call required')
+'''
+        with tempfile.TemporaryDirectory(prefix="operating-patch-lua-") as directory:
+            path = Path(directory) / "harness.lua"
+            path.write_text(harness, encoding="utf-8")
+            return subprocess.run(
+                [str(LUA), str(path), str(DIRICHLET_OPERATING_PATCH), *options],
+                cwd=directory, capture_output=True, text=True, encoding="utf-8",
+                check=False, timeout=30,
+            )
+
+    def test_default_stopping_preserves_no_argument_refine(self) -> None:
+        result = self.run_helper()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("REFINE_CALL=default", result.stdout)
+        self.assertIn("refine_convergence=installed_default", result.stdout)
+
+    def test_explicit_stopping_is_forwarded_once(self) -> None:
+        result = self.run_helper("1e-5")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("REFINE_CALL=explicit", result.stdout)
+        self.assertIn("refine_convergence=1e-05", result.stdout.lower())
+
+    def test_invalid_stopping_and_extra_argument_fail_before_pa_open(self) -> None:
+        for options in (("0",), ("-1",), ("nan",), ("inf",), ("junk",), ("1e-5", "extra")):
+            with self.subTest(options=options):
+                result = self.run_helper(*options)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("OPEN_CALLED", result.stdout)
+                self.assertIn("argument 8" if len(options) == 2 else "convergence", result.stderr)
+
+    def test_zero_far_boundary_needs_no_parent_and_restores_only_synthetic_flags(self) -> None:
+        harness = r'''
+local helper=arg[1]
+local function key(x,y,z) return x..','..y..','..z end
+local function physical(x,y,z) return (x==1 and y==1 and z==1) or (x==0 and y==1 and z==1) end
+local raw={}
+function raw:point(x,y,z) return x==1 and y==1 and z==1 and 1 or 0,physical(x,y,z) end
+function raw:close() end
+local values,flags,solved_values={},{},{}
+local target={nx=4,ny=4,nz=4,dx_mm=.2,dy_mm=.2,dz_mm=.2}
+function target:point(x,y,z,value,metal)
+ local k=key(x,y,z)
+ if value==nil then
+  if values[k]~=nil then return values[k],flags[k] end
+  return raw:point(x,y,z)
+ end
+ values[k],flags[k]=value,metal
+end
+function target:save() end
+function target:close() end
+function target:refine(options)
+ assert(options.convergence==1e-5)
+ assert(values[key(1,1,1)]==11 and values[key(0,1,1)]==0)
+ for z=0,3 do for y=0,3 do for x=0,3 do
+  local k=key(x,y,z)
+  local boundary=x==0 or y==0 or z==0 or x==3 or y==3 or z==3
+  if boundary then assert(flags[k] and values[k]==0,'six zero Dirichlet faces required') end
+  if not physical(x,y,z) then values[k]=7+x/10+y/100+z/1000 end
+  solved_values[k]=values[k]
+ end end end
+end
+local raw_opens=0
+simion={pas={}}
+function simion.pas:close() end
+function simion.pas:open(path)
+ if path=='raw.pa#' then raw_opens=raw_opens+1;return raw_opens==1 and target or raw end
+ assert(path=='patch.pa0','zero boundary must not open a parent PA')
+ return target
+end
+arg={'raw.pa#','patch.pa0','zero_dirichlet','0,0,0','0,0,0','11','1e-5'}
+dofile(helper)
+assert(raw_opens==2)
+for z=0,3 do for y=0,3 do for x=0,3 do
+ local k=key(x,y,z)
+ assert(flags[k]==physical(x,y,z),'original physical mask must be restored exactly')
+ assert(values[k]==solved_values[k],'mask restoration must preserve every solved potential')
+end end end
+print('ZERO_BOUNDARY_MASK=PASS')
+'''
+        with tempfile.TemporaryDirectory(prefix="zero-boundary-lua-") as directory:
+            path = Path(directory) / "harness.lua"
+            path.write_text(harness, encoding="utf-8")
+            result = subprocess.run([str(LUA), str(path), str(DIRICHLET_OPERATING_PATCH)],
+                                    cwd=directory, capture_output=True, text=True, encoding="utf-8",
+                                    check=False, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ZERO_BOUNDARY_MASK=PASS", result.stdout)
 
 
 class StandalonePaToolStaticContractTest(unittest.TestCase):

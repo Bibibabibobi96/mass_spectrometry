@@ -2,15 +2,26 @@
 -- Geometry, voltage grouping, origins, and mesh remain caller-owned.
 -- Usage: ... RAW_LOCAL_PA# OUTPUT_LOCAL_PA0 SOURCE_OPERATING_PA_OR_PA0
 --   SOURCE_ORIGIN_X,Y,Z PATCH_ORIGIN_X,Y,Z LOCAL_V1,...,LOCAL_VN
+--   [REFINE_CONVERGENCE_V]
+-- SOURCE_OPERATING_PA_OR_PA0 may explicitly be zero_dirichlet for a full
+-- domain with zero far-boundary potentials. No parent PA is opened in that
+-- case; synthetic boundary flags are removed after solving, preserving metal.
 local raw_path=assert(arg[1],'raw local PA# required')
 local output_path=assert(arg[2],'output local PA0 required')
 local source_path=assert(arg[3],'solved parent operating PA or PA0 required')
+local zero_dirichlet=source_path=='zero_dirichlet'
 local source_origin_text=assert(arg[4],'source project origin required')
 local patch_origin_text=assert(arg[5],'patch project origin required')
 local voltage_text=assert(arg[6],'local electrode voltages required')
-assert(arg[7]==nil,'unexpected argument 7')
+local convergence
+if arg[7]~=nil then
+  convergence=assert(tonumber(arg[7]),'Refine convergence must be a number')
+  assert(convergence==convergence and convergence>0 and convergence<math.huge,
+    'Refine convergence must be finite and positive')
+end
+assert(arg[8]==nil,'unexpected argument 8')
 assert(raw_path:match('%.pa#$') and output_path:match('%.pa0$')
-  and (source_path:match('%.pa0$') or source_path:match('%.pa$')),
+  and (zero_dirichlet or source_path:match('%.pa0$') or source_path:match('%.pa$')),
   'raw/output/source suffixes must be PA#/PA0/(PA or PA0)')
 local function numbers(text,label)
   local values={}
@@ -26,9 +37,10 @@ for index,value in ipairs(voltages) do
   assert(value==value and math.abs(value)<math.huge,'local voltage '..index..' must be finite')
 end
 simion.pas:close()
-local source=assert(simion.pas:open(source_path),'cannot open solved parent operating PA')
+local source
+if not zero_dirichlet then source=assert(simion.pas:open(source_path),'cannot open solved parent operating PA') end
 local target=assert(simion.pas:open(raw_path),'cannot open raw local PA')
-assert(source.dx_mm>0 and source.dy_mm>0 and source.dz_mm>0
+assert((zero_dirichlet or (source.dx_mm>0 and source.dy_mm>0 and source.dz_mm>0))
   and target.dx_mm>0 and target.dy_mm>0 and target.dz_mm>0,'PA mesh spacing must be positive')
 local physical_count,boundary_count=0,0
 for z=0,target.nz-1 do for y=0,target.ny-1 do for x=0,target.nx-1 do
@@ -40,6 +52,9 @@ for z=0,target.nz-1 do for y=0,target.ny-1 do for x=0,target.nx-1 do
     target:point(x,y,z,identifier==0 and 0 or voltages[identifier],true)
     physical_count=physical_count+1
   elseif boundary then
+    if zero_dirichlet then
+      target:point(x,y,z,0,true)
+    else
     local px=patch_origin[1]+x*target.dx_mm
     local py=patch_origin[2]+y*target.dy_mm
     local pz=patch_origin[3]+z*target.dz_mm
@@ -48,14 +63,37 @@ for z=0,target.nz-1 do for y=0,target.ny-1 do for x=0,target.nx-1 do
     local sz=(pz-source_origin[3])/source.dz_mm
     assert(source:inside_vc(sx,sy,sz),'local boundary lies outside the parent operating PA')
     target:point(x,y,z,source:potential_vc(sx,sy,sz),true)
+    end
     boundary_count=boundary_count+1
   else
     target:point(x,y,z,0,false)
   end
 end end end
-target:save(output_path);target:close();source:close()
+target:save(output_path);target:close();if source then source:close() end
 local solved=assert(simion.pas:open(output_path),'cannot reopen local operating PA')
-solved:refine()
+if convergence then solved:refine{convergence=convergence} else solved:refine() end
+if zero_dirichlet then
+  -- The raw file has never been saved over. Only its six faces are needed to
+  -- recover the physical collision mask; potentials remain exactly as solved.
+  local raw=assert(simion.pas:open(raw_path),'cannot reopen physical boundary mask')
+  local function restore(x,y,z)
+    local _,physical=raw:point(x,y,z)
+    if not physical then
+      local potential=solved:point(x,y,z)
+      solved:point(x,y,z,potential,false)
+    end
+  end
+  for z=0,solved.nz-1 do for y=0,solved.ny-1 do
+    restore(0,y,z);restore(solved.nx-1,y,z)
+  end end
+  for z=0,solved.nz-1 do for x=1,solved.nx-2 do
+    restore(x,0,z);restore(x,solved.ny-1,z)
+  end end
+  for y=1,solved.ny-2 do for x=1,solved.nx-2 do
+    restore(x,y,0);restore(x,y,solved.nz-1)
+  end end
+  raw:close()
+end
 solved:save(output_path);solved:close()
-print(string.format('DIRICHLET_PATCH_OPERATING_PA=PASS physical_points=%d boundary_points=%d output=%s',
-  physical_count,boundary_count,output_path))
+print(string.format('DIRICHLET_PATCH_OPERATING_PA=PASS physical_points=%d boundary_points=%d refine_convergence=%s output=%s',
+  physical_count,boundary_count,convergence and tostring(convergence) or 'installed_default',output_path))

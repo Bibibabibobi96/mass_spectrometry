@@ -7,7 +7,7 @@
 -- simion --nogui lua build_dirichlet_patch_basis.lua PREBIASED_PA
 --   SOURCE_PA_PATHS_OR_PATH_COEFFICIENTS_PIPE_SEPARATED SOURCE_PROJECT_ORIGIN_X,Y,Z
 --   PATCH_PROJECT_ORIGIN_X,Y,Z
---   [BOUNDARY_MODE [REFINE_CONVERGENCE_V]]
+--   [BOUNDARY_MODE [REFINE_CONVERGENCE_V [REFINE_SKIPPED_POINT_0_OR_1]]]
 
 local output_path=assert(arg[1], 'pre-biased local PA required')
 local source_text=assert(arg[2], 'coarse response PA path list required')
@@ -21,7 +21,13 @@ if arg[6]~=nil then
   assert(convergence==convergence and convergence>0 and convergence<math.huge,
     'Refine convergence must be finite and positive')
 end
-assert(arg[7]==nil, 'unexpected extra argument')
+local skipped_point
+if arg[7]~=nil then
+  assert(convergence~=nil, 'explicit skipped point policy requires convergence')
+  assert(arg[7]=='0' or arg[7]=='1', 'Refine skipped point must be 0 or 1')
+  skipped_point=arg[7]=='1'
+end
+assert(arg[8]==nil, 'unexpected extra argument')
 
 local function split(text, separator_pattern)
   local values={}
@@ -96,8 +102,11 @@ for y=1,target.ny-2 do for x=open_x_start,target.nx-2 do
 end end
 target:save(output_path)
 for _,source in ipairs(sources) do source.pa:close() end
-if convergence then target:refine{convergence=convergence} else target:refine() end
+-- Official SIMION pa:refine skipped_point option; omission retains installed defaults.
+if skipped_point~=nil then target:refine{convergence=convergence,skipped_point=skipped_point}
+elseif convergence then target:refine{convergence=convergence} else target:refine() end
 target:save(output_path)
 target:close()
-print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_boundary_points=%d boundary_mode=%s native_basis_voltage=10000 refine_convergence=%s output=%s',
-  boundary_count,physical_count,boundary_mode,convergence and tostring(convergence) or 'installed_default',output_path))
+print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_boundary_points=%d boundary_mode=%s native_basis_voltage=10000 refine_convergence=%s refine_skipped_point=%s output=%s',
+  boundary_count,physical_count,boundary_mode,convergence and tostring(convergence) or 'installed_default',
+  skipped_point~=nil and tostring(skipped_point) or 'installed_default',output_path))
