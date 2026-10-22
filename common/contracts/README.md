@@ -348,6 +348,8 @@ apply会重新执行同一分类。
 `corrupt_run_config_reference_unavailable`审计项，并继续检查manifest自身的结构化引用；身份仍匹配而仅解析失败时，
 仍按`run_config_unreadable_reference_uncertain`失败关闭。这样损坏的旧引用不会锁死所有target，真正不可判定的配置仍不会被忽略。
 只删除`solver_native_binary`和`dense_trajectory`，不删除轻量IOB、报告或三件套。
+已通过完整身份核验并绑定为input的外部来源manifest，包括冻结到本run `inputs/`的副本，
+仅作为provenance保留，不继承其引用的载荷。相同路径若也绑定为output，仍执行严格的本地child身份与owner校验。
 
 已明确停止写入、被更新 GUI 准备包取代的未飞行 `solver_review` checkpoint 可在同一
 `solver_review_retirement.py` plan/apply 入口显式提供 `--prepared-gui-checkpoint

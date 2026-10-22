@@ -1123,6 +1123,57 @@ function Exit-HostExecutionLease { param($Lease) }
         with self.assertRaises(RetirementError):
             self._owner_plan()
 
+    def _bind_frozen_input_manifest(self) -> Path:
+        outside = self._bind_external_input_manifest()
+        frozen = self.target / "inputs/reference_parent/run_manifest.json"
+        frozen.parent.mkdir(parents=True)
+        frozen.write_bytes(outside.read_bytes())
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["inputs"]["upstream_manifest"] = str(frozen)
+        config_path.write_text(json.dumps(config))
+        parent_path = self.target / "run_manifest.json"
+        parent = json.loads(parent_path.read_text())
+        parent["run_config"].update(bytes=config_path.stat().st_size, sha256=_sha(config_path))
+        parent["inputs"]["upstream_manifest"].update(path=str(frozen))
+        parent_path.write_text(json.dumps(parent))
+        return frozen
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_frozen_input_manifest_preserved_without_payload_inheritance(self, _scan: mock.Mock) -> None:
+        frozen = self._bind_frozen_input_manifest()
+        original = frozen.read_bytes()
+        outside = {str(p.relative_to(self.replacement)): p.read_bytes()
+                   for p in self.replacement.rglob("*") if p.is_file()}
+        self.assertFalse((frozen.parent / "run_config.json").exists())
+        plan = self._owner_plan()
+        self.assertNotIn(frozen.relative_to(self.target).as_posix(),
+                         [item["path"] for item in plan["removed_files"]])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual(frozen.read_bytes(), original)
+        self.assertEqual(outside, {str(p.relative_to(self.replacement)): p.read_bytes()
+                                  for p in self.replacement.rglob("*") if p.is_file()})
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_frozen_input_manifest_identity_drift_rejected(self, _scan: mock.Mock) -> None:
+        frozen = self._bind_frozen_input_manifest()
+        frozen.write_text(frozen.read_text() + " ")
+        with self.assertRaises(RetirementError):
+            self._owner_plan()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_frozen_manifest_input_cannot_bypass_child_output_contract(self, _scan: mock.Mock) -> None:
+        frozen = self._bind_frozen_input_manifest()
+        parent_path = self.target / "run_manifest.json"
+        parent = json.loads(parent_path.read_text())
+        parent["outputs"].append(dict(parent["inputs"]["upstream_manifest"]))
+        parent_path.write_text(json.dumps(parent))
+        with self.assertRaisesRegex(RetirementError, "unreadable JSON.*run_config"):
+            self._owner_plan()
+        self.assertTrue(frozen.is_file())
+
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_owner_external_manifest_input_cannot_authorize_output(self, _scan: mock.Mock) -> None:
         outside = self._bind_external_input_manifest()
