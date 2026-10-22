@@ -266,8 +266,8 @@ function Exit-ArtifactWorkflowCapacitySession {
 
 function Write-RunJson {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][object]$Value,[Parameter(Mandatory)][string]$Path,[int]$Depth=8)
-  $Value | ConvertTo-Json -Depth $Depth | Set-Content -LiteralPath $Path -Encoding UTF8
+  param([Parameter(Mandatory)][AllowEmptyCollection()][object]$Value,[Parameter(Mandatory)][string]$Path,[int]$Depth=8)
+  ConvertTo-Json -InputObject $Value -Depth $Depth | Set-Content -LiteralPath $Path -Encoding UTF8
 }
 
 function Write-RunManifest {

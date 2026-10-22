@@ -18,6 +18,32 @@ REPO_ROOT = Path(__file__).parents[2]
 
 
 class ManifestOutputListTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_public_json_writer_preserves_array_shape_for_all_cardinalities(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "json_shapes.ps1"
+            script.write_text('''param($Repo,$Output)
+$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+Write-RunJson -Value @() -Path (Join-Path $Output 'empty.json')
+Write-RunJson -Value @('single') -Path (Join-Path $Output 'single.json')
+Write-RunJson -Value @('first','second') -Path (Join-Path $Output 'multiple.json')
+Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'object.json')
+''', encoding="utf-8")
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(script), str(REPO_ROOT), str(root)],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for name, expected in (
+                ("empty", []), ("single", ["single"]),
+                ("multiple", ["first", "second"]),
+                ("object", {"logs": ["single"], "count": 1}),
+            ):
+                with self.subTest(name=name):
+                    self.assertEqual(json.loads((root / f"{name}.json").read_text(encoding="utf-8-sig")), expected)
+
     def config(self, root):
         path = root / "run_config.json"
         path.write_text(json.dumps(dict(

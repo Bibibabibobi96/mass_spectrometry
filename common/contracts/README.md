@@ -12,6 +12,8 @@
 `artifact_project.py`统一artifact项目根索引，`particle_state.py`统一SIMION/COMSOL适配后的粒子事件字段、
 身份、三维位置/速度、全局时间和RF相位校验；`run_artifact_support.ps1`统一PowerShell运行器创建目录、
 冻结输入、失败收尾和三件套manifest。它们不得内置器件参数，项目包装器只允许保留兼容入口。
+其中`Write-RunJson`保持调用方的JSON类型：空数组和单元素数组仍写作数组，不经PowerShell管道解包，
+以免单批日志路径被下游误读为字符串。
 `Copy-VerifiedRunInput`默认保持单次严格复制；对数百MB至GB级solver数组，调用方可显式设置
 `-VerificationAttempts 3`，每次都要求复制前源、复制后源和目标SHA-256三方完全一致；首轮普通复制
 失败后，后续轮次使用8-MiB显式流、write-through和磁盘flush。该选项只容忍可重试的本机大文件复制
