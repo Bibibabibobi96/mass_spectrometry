@@ -14,9 +14,9 @@
 3. 修改时间聚焦、场强、电压或轴向长度时，读[`docs/theory/README.md`](docs/theory/README.md)。
 4. 评估论文主张、证据边界或JASMS/Analytical Chemistry分工时，读
    [`docs/publication/README.md`](docs/publication/README.md)。
-5. 操作COMSOL、SIMION或CAD时，只读相应的
-   [`docs/COMSOL.md`](docs/COMSOL.md)、[`docs/SIMION.md`](docs/SIMION.md)或
-   [`docs/CAD.md`](docs/CAD.md)。
+5. 涉及COMSOL实现、事件读取或数值审查时，按[`docs/COMSOL.md`](docs/COMSOL.md)开头的任务表选章节；
+   通用API、排错与误差预算从[COMSOL阅读入口](../../docs/COMSOL_GUIDE.md)选择，不作为无关任务的前置阅读。
+   SIMION或CAD任务只进入相应[`docs/SIMION.md`](docs/SIMION.md)或[`docs/CAD.md`](docs/CAD.md)。
 6. 只有追溯旧结论、run ID或失败链时才进入[`docs/history/`](docs/history/)。
 
 ## 机器权威
@@ -92,6 +92,7 @@ single_reflection_oa_tof_mass_analyzer/
 <details>
 <summary>展开已冻结实验、迁移与故障证据</summary>
 
+- [原生事件积分器／方程形式隔离与曲面几何阶次收敛](docs/history/20261022__curved-events-and-formulation-isolation.md)
 - [稀疏 Counter 原因隔离、原生辅助事件读取与重复验证](docs/history/20261022__sparse-counter-cause-and-native-event-reader.md)
 - [原生事件回读、额外碰壁数据与 Counter 小模型验证](docs/history/20261022__native-event-readback-and-counter-validation.md)
 - [OA-TOF 活动步策略修复、可重复参考与完整流程对照](docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md)
