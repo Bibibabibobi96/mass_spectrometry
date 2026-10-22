@@ -2,11 +2,21 @@
 
 本文件汇集 COMSOL 6.4 Model Object API 与 MATLAB LiveLink 的调用参考；代码片段展示对象关系，
 不是可独立运行的项目脚本。适用范围限于本仓库已记录环境，升级后须重新核验相关调用。
-通用排错见[`COMSOL_DEBUGGING.md`](COMSOL_DEBUGGING.md)，网格、统计和跨求解器闭合见
-[`VALIDATION_METHODS.md`](VALIDATION_METHODS.md)。器件几何、物理组合、具体参数和运行结论
-写入对应项目文档。
+本页只维护调用写法和接口边界；任务分流返回[COMSOL 阅读入口](COMSOL_GUIDE.md)。
+器件几何、物理组合、具体参数和运行结论写入对应项目文档。
 
 本文件用于按API名或语义标题搜索，不要求人或AI线性通读。跨文档引用使用标题，不使用章节数字。
+
+## 按专题定位
+
+| 需要的接口 | 章节 |
+|---|---|
+| 创建连接、Study 关系与活动步策略 | [执行入口](#执行入口与会话生命周期)、[节点管理](#gui对等与节点管理)、[Time 活动键](#time-节点的活动步策略) |
+| 几何实体与作用范围 | [参数与单位](#参数表达式与单位)、[几何](#几何)、[选择集](#选择集)、[材料](#材料) |
+| 物理场与粒子节点 | [静电](#静电场)、[磁场与线圈](#磁场与线圈)、[粒子追踪](#带电粒子追踪) |
+| 网格、局部表达式与稳态求解 | [网格](#网格)、[SizeExpression 单位](#sizeexpression-的显式长度单位)、[初值与场复用](#studysolver与初值复用)、[CG-AMG](#稳态cg-amg与电势阶次) |
+| 输出、插值数据与读取 | [数据集](#数据集绘图和导出)、[更新插值数据](#更新已嵌入模型的插值数据)、[数值提取](#数值提取) |
+| 错误调用、来源和已验证层级 | [无效调用](#已确认无效或危险的调用)、[官方查证顺序](#官方资料与验证顺序)、[证据范围](#关键能力的证据索引) |
 
 ## 执行入口与会话生命周期
 
@@ -97,6 +107,11 @@ geom.run;
 info = mphgeominfo(model, 'geom1');
 ```
 
+组件的几何表示阶次通过 `comp.sorder('quadratic')` 设置、`comp.sorder()` 回读；它与电势形函数阶次、
+单元尺寸及时间容差分别记录。[官方曲面网格说明](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_modeling.05.10.html)
+明确粒子碰撞采用边界网格表示，因此曲面命中精度还须独立检查几何表示，不能仅加严时间积分。
+高阶值的实际适用性从项目验收读取，不设置全仓默认阶次。
+
 ## 选择集
 
 物理场优先引用命名选择，不依赖几何改变后可能漂移的裸实体编号。
@@ -153,7 +168,8 @@ coil.set('CoilType', 'Numeric');
 ```
 
 Numeric Coil通常需要正确的线圈材料、端子/方向信息和`CoilCurrentCalculation` Study步骤。
-`StationarySourceSweep`用于多源扫描，不是单线圈的通用替代。CPT磁力特征名是
+`CoilGeometryAnalysis`不是本环境的有效 Study 类型；`StationarySourceSweep`用于多源扫描，
+不是单线圈的通用替代。CPT磁力特征名是
 `MagneticForce`，不是`LorentzForce`；力特征必须显式选择粒子域。
 
 ## 网格
@@ -194,6 +210,26 @@ selectedTetCount = meshStats.getNumElem('tet');
 - 网格成功后仍要检查单元数、最小质量、目标域覆盖和空网格。
 - 理想边界附近的几何间隙与局部`hmax`共同设计；任意极小间隙可能导致顶点约束失败。
 - 网格收敛改变受控网格变量，并比较项目规定的场量、轨迹量和统计指标。
+
+### SizeExpression 的显式长度单位
+
+COMSOL 6.4 Build 293、R2025b 的真实小立方体建网对照确认：毫米几何并不使无单位
+`sizeexpr='0.0625'`自动成为0.0625 mm。必须在表达式结果上显式携带长度单位，例如
+`'0.0625[mm]'`或`'(无量纲毫米数值表达式)*1[mm]'`；空间条件也显式使用`x/(1[mm])`等。
+同一1-mm立方体、0.25-mm全局hmax及0.04-mm hmin下，无单位表达式与基线均为969个四面体；
+显式mm后为68645个，单元最长边中位数0.06546 mm，与普通Size同目标的68653个相符。
+显式selection.all或importData没有进一步改变该结果；不要靠增加无关API调用修复单位问题。
+官方[SizeExpression API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_mesh.49.101.html)
+说明默认selection覆盖全部实体，importData用于更新后的重新求值；尺寸表达式还受到实体hmin限制。
+2026-10-02的本机对照是接口语义验证，不授予任何仪器网格收敛资格。局部加密须检查实际单元尺寸，
+不能只依据表达式文本声明成功。
+
+同时检查最小尺寸：只修改全局hmax不会自动把既有hmin降低到局部表达式以下。
+官方[Size Expression说明](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_mesh.24.86.html)
+指出实体hmin会截断表达式的局部尺寸。2026-10-04同一20-mm双块的两例mesh-only对照中，
+hmax=2.5 mm、局部表达式1.25 mm不变，仅hmin从11.9改为0.25 mm：目标区最长边中位数
+2.4604降至1.4594 mm，远区2.6337至2.6374 mm。需要局部加密时显式设置相容的hmin并检查
+实际网格；这不要求改变所有既有模型的默认值，也不是仪器电场或轨迹收敛证据。
 
 ## 带电粒子追踪
 
@@ -281,26 +317,6 @@ stationary.feature('fc1').set('linsolver', 'i1');
 详细日志表头包含`LinIt`和`LinRes`；需要证明实际迭代执行时，应保留原生日志并要求正`LinIt`与有限
 `LinRes`，不能用求解器节点存在或Study成功代替。
 
-### SizeExpression 的显式长度单位
-
-COMSOL 6.4 Build 293、R2025b 的真实小立方体建网对照确认：毫米几何并不使无单位
-`sizeexpr='0.0625'`自动成为0.0625 mm。必须在表达式结果上显式携带长度单位，例如
-`'0.0625[mm]'`或`'(无量纲毫米数值表达式)*1[mm]'`；空间条件也显式使用`x/(1[mm])`等。
-同一1-mm立方体、0.25-mm全局hmax及0.04-mm hmin下，无单位表达式与基线均为969个四面体；
-显式mm后为68645个，单元最长边中位数0.06546 mm，与普通Size同目标的68653个相符。
-显式selection.all或importData没有进一步改变该结果；不要靠增加无关API调用修复单位问题。
-官方[SizeExpression API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_mesh.49.101.html)
-说明默认selection覆盖全部实体，importData用于更新后的重新求值；尺寸表达式还受到实体hmin限制。
-2026-10-02的本机对照是接口语义验证，不授予任何仪器网格收敛资格。局部加密须检查实际单元尺寸，
-不能只依据表达式文本声明成功。
-
-同时检查最小尺寸：只修改全局hmax不会自动把既有hmin降低到局部表达式以下。
-官方[Size Expression说明](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_mesh.24.86.html)
-指出实体hmin会截断表达式的局部尺寸。2026-10-04同一20-mm双块的两例mesh-only对照中，
-hmax=2.5 mm、局部表达式1.25 mm不变，仅hmin从11.9改为0.25 mm：目标区最长边中位数
-2.4604降至1.4594 mm，远区2.6337至2.6374 mm。需要局部加密时显式设置相容的hmin并检查
-实际网格；这不要求改变所有既有模型的默认值，也不是仪器电场或轨迹收敛证据。
-
 ## GPU求解器
 
 cuDSS不是默认加速开关。是否启用必须用相同模型、网格和容差比较CPU/GPU总耗时、峰值内存和
@@ -369,30 +385,17 @@ pd = mphparticle(model, 'dataset', 'pdset1');
 
 ## 已确认无效或危险的调用
 
-|调用或做法|问题|正确方向|
-|---|---|---|
-|`model.multiphysics.create(...,'ElectricForce',...)`|对象层级错误|在CPT下创建`ElectricForce`|
-|`geom.getNEdge(tag)`|方法不存在|使用`mphgeominfo`|
-|`comp.physics.create('mf','MagneticFields',...)`|当前环境类型名无效|用GUI录制或已验证类型|
-|`cpt.create(...,'LorentzForce',...)`|特征名无效|使用`MagneticForce`|
-|`std.create(...,'CoilGeometryAnalysis')`|Study类型错误|使用当前版本支持的Coil步骤|
-|`StationarySourceSweep`用于单线圈|无source可扫|使用单线圈Study|
-|`cpt.Ep`、`cpt.KE`等猜测变量|可能未定义|检查变量表或由速度计算|
-|`mpheval`读取粒子坐标|语义错误|使用`mphparticle`|
-|`outersolnum='end'`取末态|可能返回全部时间×粒子|显式时间或事件|
-|`notsolnum`、`notstudy`等|Unknown property|使用已验证的`notsolmethod`/`notsol`|
-|只设置默认Size后直接网格|复杂几何可能产生空网格|显式FreeTet并检查统计|
-|力、材料或边界不设selection|可能静默作用错误或处处为零|显式命名选择并验空|
-|`Inlet.v0`给标量|需要三维向量|设置三个分量|
-|把自定义物理tag作为变量前缀|Undefined variable|检查自动变量命名空间|
+错误调用及其替代写法已放在相应接口旁：对象层级和 Feature 名见物理场章节，空网格与选择见
+网格／选择章节，解复用属性见 Study 章节，粒子／FEM 数据语义见数值提取。不要把这些已知负结果
+当作新候选在仪器模型中重试。
 
 ## 官方资料与验证顺序
 
 查证顺序：当前版本GUI Record Code → Programming Reference Manual → 对应Module User’s Guide →
 最小脚本 → 生成MPH的GUI Compute验收。
 
-离线文件与按问题定位见[官方资料索引](../official_docs/README.md)。以下手册名是检索入口，
-本页尚未给出每项调用对应的页码和独立验证运行，不能把整页视为逐项已认证的 API 清单。
+离线文件与按问题定位见[官方资料索引](../official_docs/README.md)。手册索引记录本机版本与问题对应的原始章节。
+本页未给出每项调用的独立验证运行，不能把整页视为逐项已认证的 API 清单。
 优先按证据索引区分接口语义、真实求解、保存重开和项目验收；没有登记的层级表示本索引未建立证据，
 不表示该层级必然失败，也不由源码或 MPH 文件存在推定通过。
 
@@ -401,11 +404,5 @@ pd = mphparticle(model, 'dataset', 'pdset1');
 关键调用的实测矩阵集中在[共享测试的证据索引](../common/comsol/README.md#关键能力的证据索引)：
 分别列出官方接口语义、真实 Study/Solver 执行、保存重开、GUI Compute 与项目验收的已知范围。
 共享测试目录中的源码覆盖不等于已运行结果；接口事实不自动授予仪器收敛或性能资格。
-
-- `COMSOL_ProgrammingReferenceManual.pdf`：Model Object API、feature类型、属性和合法值；
-- `LiveLinkForMATLABUsersGuide.pdf`：`mph*`函数和MATLAB连接；
-- `ParticleTracingModuleUsersGuide.pdf`：Release、Inlet、Wall、Force和碰撞；
-- `ACDCModuleUsersGuide.pdf`：静电、磁场和Coil；
-- `ApplicationProgrammingGuide.pdf`：Application Builder，仅在构建Desktop应用时使用。
 
 官方文档证明接口语义，不能替代最小脚本和正式MPH的GUI验收。

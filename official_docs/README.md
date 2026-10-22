@@ -1,10 +1,10 @@
 # COMSOL 官方离线资料
 
-本目录是本机官方 PDF 原始资料的位置；PDF 被 Git 忽略，干净 checkout 不携带这些手册。表中给出本机文件名，缺失时从已安装 COMSOL 帮助或官方文档获取与目标版本相符的资料。日常任务先查[API 参考](../docs/COMSOL_API.md)、
-[排错指南](../docs/COMSOL_DEBUGGING.md)或项目入口；查接口名称、合法值或物理模型时按下表定位。
-手册用于查证语义，不能替代当前环境的最小测试、项目证据或 GUI 验收。
-关键调用的已登记证据见[API 验证索引](../docs/COMSOL_API.md#关键能力的证据索引)，共享测试设计与运行
-证据的区别见[公共测试说明](../common/comsol/README.md#源码覆盖与运行证据)。
+本页只定位供应商原始资料，不维护项目结论或运行证据。任务分流返回
+[COMSOL 阅读入口](../docs/COMSOL_GUIDE.md)。查接口名称、合法值或物理定义时，只进入下表对应章节。
+
+PDF 被 Git 忽略，干净 checkout 不携带手册；缺失时从已安装帮助或官方文档获取与目标版本相符的
+资料。手册用于查证语义，不能替代当前环境的最小测试、项目证据或 GUI 验收。
 
 | 问题 | 本机文件 | PDF 内声明版本 | 总页数 |
 |---|---|---|---:|
@@ -30,6 +30,8 @@
 | 壁面重赋值与原生事件记录 | [Wall](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.04.html)、[辅助变量](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_modeling.05.15.html) | 支持重置不保证任意积分器和查询时刻的终态回读正确，实证查 OA 项目 |
 | 粒子数值评价与轨迹平面交点 | [Particle Evaluation，表7-106](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_results.52.119.html)、[IntersectionPoint3D](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_results.52.083.html) | 数量选择不是 ID；求交行数不等于唯一事件或完整目标身份 |
 | 所选几何范围是否已建网 | [Mesh Status](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_mesh.49.031.html) | selection 范围须与物理域一致；完整建网不等于收敛 |
+| 曲面碰撞与几何表示阶次 | [Geometry and Mesh Settings](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_modeling.05.10.html)、[组件 API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.23.html) | 边界网格表示与精确 CAD 曲面有差异；不以时间容差替代几何表示收敛 |
+| 求解器日志能计量什么 | [The Log Window](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_solver.36.113.html)、[Advanced](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.17.html) | 总阶段时间和 Res／Tfail 等计数不提供 CPT 各内部机制的独立秒数 |
 | 启动参数 | [COMSOL Commands on Windows，表22-2](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html) | `memoptassem` 的页面枚举与本机解析器存在差异，实际边界见公共启动器说明 |
 
 新增或替换原始资料时记录官方来源、版本和定位信息；不要将手册全文或大段摘录复制到经验文档。

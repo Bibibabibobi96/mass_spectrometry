@@ -1,78 +1,82 @@
-# COMSOL 路线、精度与成本选择指南
+# COMSOL 按任务阅读指南
 
-本页按实际任务导航已有实现和证据，不定义第二套参数、项目资格或验收阈值。项目当前状态只认各
-PROJECT，数值只认其具名合同；下表中的历史案例只证明其冻结范围。先判断路线，再分配功能预算，
-最后比较达到同一精度的完整成本。
+本页是 COMSOL 专项的阅读入口，不定义参数、项目资格或验收阈值。不涉及 COMSOL 的任务无需
+读取本页及其分支；涉及已有结果解释或数值审查时，即使不启动软件，也应读取对应专题。
+项目任务先按根入口读项目 README 与 PROJECT，再只进入本次需要的实施章节。
+
+## 阅读路径
+
+```text
+仓库 README
+└─ 本页：判断任务
+   ├─ 通用方法：VALIDATION_METHODS / TOF_ERROR_BUDGET
+   ├─ 接口实现：COMSOL_API
+   ├─ 异常定位：COMSOL_DEBUGGING
+   ├─ 启动与组件测试：common/comsol/README
+   ├─ 官方语义查证：official_docs/README
+   └─ 项目 README
+      ├─ PROJECT：当前结论、资格、限制与开放任务
+      ├─ COMSOL：活动实现、节点及独立验证
+      └─ history：仅在追溯实验、负结果或复现时读取
+```
+
+各分支按问题选择，不顺序通读。接口事实、项目结论和原始证据分别在其所属正文维护；
+从专题链接到所依据的合同或证据是查证路径，不是要求遍历全部链接。
+
+| 本次要回答的问题 | 读取正文 | 何时继续读取 |
+|---|---|---|
+| 哪些网格、积分误差需要分别控制，怎样判断收敛 | [网格与时间误差预算](VALIDATION_METHODS.md#网格时间步与误差预算)、[局部网格与计算量](VALIDATION_METHODS.md#网格建设与计算量控制) | 选实际网格档位时进入项目数值合同与实施说明 |
+| 1、10、100 ps 是否足够，怎样按分辨率计算预算 | [TOF 查表与唯一计算入口](TOF_ERROR_BUDGET.md) | 参考峰非高斯、多个峰或有截断时，使用项目直接 FWHM 与配对粒子指标 |
+| 如何创建节点、设置活动属性、读数据 | [API 按专题定位](COMSOL_API.md#按专题定位) | 不确定类型、合法值或物理含义时查官方语义；采用前核对已有验证层级 |
+| 设置不生效、无场、异常停止、崩溃或漏计 | [快速分诊与案例](COMSOL_DEBUGGING.md#快速分诊) | 先确定失败阶段，再读该故障专题及对应项目证据 |
+| 怎样启动、限制资源、选择组件测试 | [共享启动器与测试](../common/comsol/README.md) | 实际执行前读取操作指南的工具链与资源规则；源码存在不等于测试已运行 |
+| 需要核对供应商原始定义 | [官方资料定位](../official_docs/README.md) | 只读问题对应的目标版本章节，不通读全部 PDF |
+| 某项目现在通过了什么、还缺什么 | 下表的项目入口 → PROJECT | 改 COMSOL 实现再读 COMSOL；追溯完整过程再读项目 History 索引 |
 
 ## 先选实际计算路线
 
-| 对象 | 在仓库中如何使用 COMSOL | 应进入的实现与状态入口 | 不可直接套用的经验 |
-|---|---|---|---|
-| 单反射 OA-TOF | 静电 FEM、保存场、原生 CPT、检测事件导出，再由 Python 分析 | [项目入口](../projects/single_reflection_oa_tof_mass_analyzer/README.md)、[当前边界](../projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md#已知兼容边界) | 同一 FEM 上的时间参考一致性不能授予电场网格收敛；诊断 DP5 配置不自动成为 Formal |
-| MR-TOF | 完整装配独立静电 FEM，导出标量电势为规则 PA，再由 SIMION 求导、插值和追踪 | [项目入口](../projects/parallel_mirror_dual_stripe_mr_tof/README.md)、[电场表示](../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#电场表示与数值资格) | 此路线的场求解、转换或返回失败不能归因于 COMSOL 原生 CPT |
-| RF 四／六／八极杆 | 有限三维场与原生粒子传输；不同科学 workflow 分别与独立 SIMION 比较 | [公共入口](../common/multipole/README.md)、[四极](../projects/rf_quadrupole_ion_optics/README.md)、[六极](../projects/rf_hexapole_ion_optics/README.md)、[八极](../projects/rf_octupole_ion_optics/README.md) | 功能传输、连续相空间等价、质量过滤及下游 TOF 资格不能互相替代 |
-| Ion Processor | 当前生产为 SIMION 场、动态 RF/DC/脉冲及 HS1 碰撞；COMSOL 对照尚未建立 | [项目入口](../projects/dual_pressure_rectilinear_ion_processor/README.md)、[当前范围](../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md) | 不能将 OA 的无碰撞时间门或原生 CPT 配置当成已验证的 IP 方法 |
+下表仅帮助选择项目，不维护各项目当前数值、资格或待办副本。项目路线改变时以 PROJECT 和机器
+合同为准。共享小模型不能替代某一仪器的独立验证。
 
-表中只列本轮重点项目。其他器件从[项目导航](../README.md#项目导航)进入，不根据文件名或软件目录
-存在推断物理能力。共享最小测试也不是某一仪器的独立模型资格。
+| 对象 | 路线与阅读入口 | 首要区别 |
+|---|---|---|
+| 单反射 OA-TOF | [OA 项目](../projects/single_reflection_oa_tof_mass_analyzer/README.md)：静电 FEM、原生 CPT、事件导出和 Python 分析 | 固定 FEM 上的时间一致性不能授予电场空间收敛；诊断配置不自动成为 Formal |
+| MR-TOF | [MR 项目](../projects/parallel_mirror_dual_stripe_mr_tof/README.md)：独立静电 FEM → 标量电势导出／PA → SIMION 追踪 | 场求解、转换、返回链的失败不能直接归因于 COMSOL 原生 CPT |
+| RF 四／六／八极杆 | [四极](../projects/rf_quadrupole_ion_optics/README.md)、[六极](../projects/rf_hexapole_ion_optics/README.md)、[八极](../projects/rf_octupole_ion_optics/README.md)：有限三维场与粒子传输 | 传输功能、连续相空间等价、过滤及下游 TOF 是不同资格 |
+| Ion Processor | [IP 项目](../projects/dual_pressure_rectilinear_ion_processor/README.md)：按项目状态确认 SIMION RF/DC／脉冲／碰撞链与 COMSOL 对照范围 | 不从 OA 无碰撞时间门推导 IP 的数值配置或已验证能力 |
+
+其他器件从根 README 的项目导航进入，不根据软件目录是否存在推断物理能力。
 
 ## 把功能要求变成配置选择
 
-精度有四个不同层次：目标功能、可观测量的允许误差、实际数值设置、验证结果。能够自动计算的是
-给定假设下的误差分配；`rtol`、最大内部步长和局部网格仍须通过受控比较选择。通用方法只引用
-[验证方法](VALIDATION_METHODS.md#网格时间步与误差预算)和[TOF 查表与计算](TOF_ERROR_BUDGET.md)。
+先找到需求，再分配允许的观测误差，最后通过受控比较选择数值设置。计算器能计算声明假设下的
+预算，不能自动从分辨率推导合格的 `rtol`、内部步长或局部网格。
 
-| 使用情形 | 先找到什么要求 | 比较什么结果 | 本仓库实例与缺口 |
-|---|---|---|---|
-| TOF 分辨率／质量偏差 | 有效 T、参考峰与其来源、最低 R、外标质量偏差限、未计入展宽 | 同一粒子事件集合、直接 FWHM、峰形、共同漂移、逐粒子差及参考重复差 | OA 已有 N100 时间参考和重复；仍需功能预算。[OA 选型实例](../projects/single_reflection_oa_tof_mass_analyzer/docs/COMSOL.md#精度与数值配置的使用顺序)区分规划和验收 |
-| MR 长程返回 | 正确返回分支、目标圈数、孔径裕量及束团接受度，再分配计时预算 | 全程事件身份、损失位置、共同与相对时间、实际检测峰 | [MR 状态](../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#电场表示与数值资格)中的约 0.2 ns 为总体初始工程预算，不是场、导出或积分单项误差界 |
-| RF 部件出口传输／相空间 | 具名下游孔径、观察面、允许半径／发散／能量／相位及最小有效改善 | handoff 共同 ID、全部损失、连续位置／速度／能量及其传播后影响 | [六极接受合同](../projects/rf_hexapole_ion_optics/config/qualification/dispersion_acceptance.json)明确缺少物理／下游预算；不得从功能 PASS 推出连续量合格 |
-| IP 储存、冷却与脉冲引出 | 捕获／引出事件、能量和接受度、气体／碰撞模型及统计要求 | 传输、束斑、发射度、尾部、碰撞与电场作用；保持全部粒子 | [IP 当前边界](../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md)尚无 COMSOL 对照，不能填写已验证的 COMSOL 数值档 |
+| 任务 | 先声明的功能要求 | 实际比较 |
+|---|---|---|
+| TOF | 有效飞行时间、参考峰来源、最低分辨率、外标质量偏差及未计入展宽 | 相同事件集合、直接 FWHM／峰形、共同漂移、逐粒子差与参考重复差 |
+| MR 返回 | 正确分支、目标圈数、孔径裕量、束团接受度及计时预算 | 全程事件身份、损失位置、共同与相对时间及检测峰 |
+| RF 传输 | 下游孔径／观察面、半径、发散、能量、相位和最小有效改善 | 共同粒子 ID、全部损失、连续量及其下游影响 |
+| IP 捕获／冷却／引出 | 事件、能量、接受度、气体与碰撞模型、统计目标 | 传输、束斑、发射度、尾部、碰撞和电场作用 |
 
-实际选档记录应能回答：哪一项需求产生阈值、哪一份源／场／几何被固定、哪一个数值因素被改变、
-参考自身是否稳定、指标是否达标、成本是否在预算内。缺少需求时可以发布差异与成本，不能输出
-“自动推荐合格配置”。机器参数继续写在原有项目配置，不在本页建立另一套默认值。
+每次选档记录需求来源、冻结输入、唯一改动、参考稳定性、精度结果和完整成本。缺少需求时发布
+差异与成本，不发布“自动推荐合格配置”；项目数值继续维护在原有机器合同。
 
 ## 先定位慢在哪一阶段
 
-“COMSOL 比 SIMION 慢”必须绑定同一物理、精度、源、终止条件及统计目标。下列案例来自不同
-工作流，不能按秒数互相排序，也不能据此推导两软件固有速度比。
+COMSOL 与 SIMION 的性能比较须统一物理、源、精度、终止条件和统计目标。先分开几何／释放
+构造、建网／场求解、粒子求解、读取／分析，以及排队／启动／封存；完整流程计时与各阶段计时
+都要保留。资源不足、构造中断、求解失败和提取失败分别记录，不能互相替代。
 
-| 阶段 | 已有案例支持什么 | 首个决策 |
-|---|---|---|
-| 几何／选择／释放构造 | [RF 四极释放记录](../projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md)的 N1000 预算中断发生在 release 构造，尚未开始粒子 Study；单节点向量化也未通过等价门 | 查已建节点数、源与物种／相位映射；不能靠改积分器解决构造阶段成本 |
-| 建网／装配／静电求解 | RF 加速空间档曾触资源帽；[MR 场案例](../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#电场表示与数值资格)是大型独立 FEM 成本 | 先查失败阶段、实际网格／阶次／DOF 和资源记录；预算受限不是物理 FAIL，不自动重跑更细全局网格 |
-| 原生粒子求解 | [OA 完整流程](../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md)中 std2 占本次完整流程约九成，原生日志还能定位积分活动的时间区间 | 应继续隔离力、场评价、拒步或事件成本；这些计数尚不能证明某一内部机制是主要耗时根因 |
-| 数据读取／指标／输出 | 同一 OA 案例的合并读取减少 API 成本，但整体收益远小于局部读取比值 | 保持字段、采样及事件不变；报告完整流程，不能把 API 比值称为生产总加速比 |
-| 排队／启动／恢复／封存 | OA 某些参考运行包含资源排队或容量恢复，与普通成功臂计时口径不同 | 先统一起止点、资源干扰与是否重算，再决定能否进入性能排序 |
+粒子求解占比高只定位到阶段，不能证明内部场评价、拒步或事件处理的各自耗时。计数不是计时；
+内部计时不可直接取得时，报告受控对照的净变化、伴随变化和无法分离的部分。局部读取倍率也不能
+称为整机加速比。内存必须注明进程范围、采样周期和统计方法。
 
-该 OA 配对的冻结观测为：主链 API 59.4113→21.5030 s，完整流程 1780.9614→1730.6505 s；
-全流程进程族采样峰值 5.4782→5.2370 GiB。两臂均通过原参考门；本次整体缩短约 2.82%，
-但求解自身也波动，只有一对运行，不能宣称稳定整体收益。内存为每个受管进程
-`max(working_set, private)` 求和的采样峰值，含包装／观察进程，不是连续峰值或唯一物理页。
-原数据、精确口径、失败候选和复现步骤统一查上述完成记录，本页不另维护计时合同。
+实际 OA 配对、原生事件候选、RF 释放负结果、MR 场成本及尚未闭合的问题，统一从上述项目入口
+查 PROJECT，再按需要读取 COMSOL 实施说明和 History 索引。本页不再复制运行数字和开放任务。
 
-## 事件、接口和故障证据从哪里查
+## 追溯已有调研
 
-- 原生粒子事件：先查[OA 实施说明](../projects/single_reflection_oa_tof_mass_analyzer/docs/COMSOL.md)，
-  区分输出时刻、保存的解时刻、原生停止状态和目标检测事件。Freeze 后保留的速度不能单独否定冻结。
-  [原生事件候选](../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261022__sparse-counter-cause-and-native-event-reader.md)
-  已定位输出保存／Counter 归属链，并验证 GA／Newtonian 的辅助变量终态读取、两壁面 50/50 和重复。
-  保留 DP5 稀疏零值与交点身份失败；局部读取收益不等于完整流程或整机提速。
-- 关键 API 与验证成熟度：查[API 参考](COMSOL_API.md)和[共享测试](../common/comsol/README.md)。
-  官方语义、属性可设置、真实 Compute、保存重开、GUI Compute、仪器功能是不同证据层。
-- 已知失败的第一检查动作：查[案例定位](COMSOL_DEBUGGING.md#仓库案例定位)，再进入对应项目证据。
-- 旧调研与失败日志按归档日期理解；当前配置／资格仍从项目入口读取，不能执行已删除的历史 scratch 路径。
-
-## 哪些结论仍需要新证据
-
-| 问题 | 可以怎样推进 | 当前不能宣布的结论 |
-|---|---|---|
-| 其他物理／壁面下的原生事件读取 | 复用已验证查询思路，另验目标边界身份、重复穿越及输出敏感性 | 本次两平面 Freeze 小模型通过就保证曲面、重复碰壁、脉冲、碰撞或任意读取路径准确 |
-| 替代 release 是否保留身份、物种、逐粒子时刻／相位 | 最小源语义对照，再与既有 RF 状态门比较；旧负结果保留 | 向量化释放已经等价或更快 |
-| 内部拒步／场评价是否为 OA 主要根因 | 固定精度与场的分段受控诊断；需把计数与实际耗时对应 | 九成在 std2 就等于九成在 FEM 点定位 |
-| 线程、GPU、装配模式是否减少仪器总成本 | 先核对当前版本支持及小模型语义，再按真实目标模型预登记匹配重复 | 小模型接口通过就代表大型模型更快、内存更低 |
-| 哪一档网格／积分配置满足生产要求 | 绑定项目功能预算，完成各自空间／时间收敛、目标样本与适用 GUI 验收 | 1 ps 参考通过就意味着电场和整机绝对误差小于 1 ps |
-
-这里没有默认授权大型求解。小模型验证能够关闭接口语义问题；真实三维长程场误差、碰撞统计、
-目标样本扩展和稳定整体性能收益仍需对应项目的独立证据。
+跨项目原始来源与历史案例汇总保存在[网格与粒子性能调研](history/20261021__comsol-mesh-and-particle-performance-research.md)。
+它是冻结证据，不是当前执行步骤；项目实验与负结果从各项目 README 的 History 索引进入。
+旧 scratch 路径不能作为现存执行入口，旧配置也不能覆盖当前机器合同。

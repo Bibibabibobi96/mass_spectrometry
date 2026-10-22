@@ -15,6 +15,8 @@
 
 判断目录和知识归属时查[仓库架构](docs/REPOSITORY_ARCHITECTURE.md)。日常项目任务无需通读愿景、
 路线图及全部软件文档；它们也不能替代机器输入与冻结证据。
+任务不涉及 COMSOL 时无需读取其专项文档；涉及其结果解释、数值审查或实现时，即使不启动软件，
+也按下面的 COMSOL 入口选择所需专题，不把全部手册和历史作为前置阅读。
 
 ## 项目导航
 
@@ -47,8 +49,7 @@
 | 维护仓库门禁或文档检查器 | [分层门禁](docs/OPERATIONS.md#分层门禁)、[文档检查与验收](docs/OPERATIONS.md#文档结构检查)，再查对应实现与邻近测试 |
 | 粒子样本、收敛、统计和跨求解器比较 | [验证方法](docs/VALIDATION_METHODS.md)、[分辨率与时间精度查表/计算](docs/TOF_ERROR_BUDGET.md) |
 | 科学绘图与图形证据 | [绘图标准](docs/PLOTTING_STANDARDS.md) |
-| COMSOL API与故障定位 | [API参考](docs/COMSOL_API.md)、[排错](docs/COMSOL_DEBUGGING.md)、[官方资料](official_docs/README.md) |
-| 本机COMSOL网格、高精度收敛与原生离子追踪提速 | 先读[路线、精度与成本选择](docs/COMSOL_GUIDE.md)；追溯见[官方资料与仓库案例调研](docs/history/20261021__comsol-mesh-and-particle-performance-research.md)、[OA 原始对照](projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-performance-controlled-comparison.md)、[修复后参考与完整流程](projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md) |
+| COMSOL路线、网格收敛、原生追踪、API与故障定位 | [COMSOL按任务阅读入口](docs/COMSOL_GUIDE.md)：只进入本次需要的专题；项目结果从项目README进入，历史仅用于追溯 |
 | SIMION及长PA输入 | [SIMION参考](docs/SIMION_REFERENCE.md)、[公共实现](common/simion/README.md) |
 | 多极杆解析理论 | [理论入口](docs/multipoles/index.md) |
 | 端口、连接器与联合模拟 | [连接架构](docs/COMPONENT_CONNECTION_ARCHITECTURE.md) |
