@@ -1,5 +1,13 @@
 # RF六极杆离子光学项目状态
 
+## 统一组装迁移任务
+
+按[统一组装计划](../../../docs/ROADMAP.md#统一组装迁移计划)登记提供方任务，当前仅规范批准，未切换入口。
+本项目保留机械base、typed电气模式与独立证据；待将已有六极杆端口、实际几何和RF驱动绑定到统一配方。
+关闭条件是原oaTOF连接的冻结投影、完整源／handoff与时钟对照成立，既有屏蔽电位约束不被隐式放开；
+新IP接入单独验收，不继承oaTOF资格。本轮不改配置、代码或运行，接口语义只按
+[组装规范](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。
+
 ## 当前结论
 
 本项目当前只承认由 `mechanical_base + operating_modes + design_profiles` 编译的三种模式：

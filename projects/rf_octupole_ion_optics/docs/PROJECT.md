@@ -5,6 +5,14 @@
 [RF多极杆→oaTOF integration](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/README.md)
 拥有。
 
+## 统一组装迁移任务
+
+按[统一组装计划](../../../docs/ROADMAP.md#统一组装迁移计划)登记提供方任务，当前仅规范批准，未切换入口。
+待将本项目机械base、端口、RF及源合同映射到统一配方；本项目八极杆与IP提供的裸导引须保留不同来源
+身份，不能因同为八根杆而互换几何、驱动或粒子母群。关闭条件是原oaTOF消费者在冻结输入下完成投影、
+handoff及绝对时钟对照；真实IP上游接入另补物理验证。本轮不改配置、代码或运行，既有资格保持。
+接口语义只按[组装规范](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。
+
 ## 当前结论
 
 - 三个规范模式由同一机械base和typed operating-mode registry编译，只改变电气模式；当前N=100

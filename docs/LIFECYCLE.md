@@ -81,6 +81,34 @@ SIMION IOB 可能嵌入 PA 的绝对路径，移动工作区后必须重新打�
 `formal/asset_manifest.json`则统一冻结来源run、验证合同以及模型、SIMION、CAD和结果清单的身份。
 三者必须分开并用相对路径和SHA-256关联，不复制大结果制造第二份权威数据。
 
+### 统一组装产物归属
+
+本节对应[统一组装目标](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)，是待实施的产物归属合同。
+只有目标运行器、身份Schema、路径解析器、容量／保留门禁和测试完成迁移后，才允许新入口使用下列归属；
+文档批准不注册新artifact根，也不改变当前运行的任何路径或身份。
+
+| 对象 | 归属与发布边界 |
+|---|---|
+| 配方、实验作者输入、实现和规范 | Git内固定组装目录及既有公共／项目权威；不保存生成模型或结果 |
+| 组件独立构建与验证 | 原`artifacts/projects/<provider_project_id>/runs/<run_id>/`，由提供者负责发布 |
+| 目标跨项目组装、联合飞行与联合分析 | `artifacts/projects/instrument_assembly/runs/<run_id>/`，以`integration_id=instrument_assembly`归属；不为每份配方新增artifact根 |
+| 冻结装配、来源与执行计划 | 该组装run的`inputs/`及三件套；绑定recipe、workflow、实验行、组件实例、接口与实际依赖身份 |
+| PA、MPH、STEP、IOB、粒子表、图与日志 | 同一owner的run内部既有角色目录；保留类别仍由本页run合同决定，不能因组装用途扩大保留 |
+| 共享PA与其他已登记缓存 | 既有公共owner及内容身份，不因源码迁移复制、重命名或接管缓存 |
+| 既有run、Formal、GUI交付与历史证据 | 保持原owner、路径、manifest和资格，新的组装run通过已核验引用消费 |
+
+路径沿用`artifacts/projects/`并不把integration变成硬件project。机器身份须区分集成owner、组件
+project和组件instance；配方ID用于选择，冻结内容身份用于判定实际装配，不能仅凭配方名复用结果。
+父组装run引用组件子run的manifest，不把子run复制成另一份发布权威；重型资产仍只有一个生命周期owner。
+
+多配方正式发布须先实现能区分配方、workflow和实际装配身份的asset manifest及路径校验，按下文多变体
+Formal规则验收；不得用固定同名模型覆盖另一配方，或把统一目录本身当成Formal发布。组件与仪器原有
+Formal继续归原项目，联合发布不自动授予或替换它们的资格。当前未实现该发布合同，不创建空formal。
+
+迁移仅对完成切换后的新run生效。旧运行不改写`integration_id`、`project_id`、run ID或冻结SHA；
+来源路径映射用于追溯，不作为运行器搜索旧根的fallback。停止、恢复、保留和删除继续使用本页既有机制，
+不得因目标目录确定而清理在途输入、消费者需要的PA或GUI资产。
+
 ### artifact标识与文件命名
 
 目录标识采用“时间优先、受控词汇、人工可读”的统一合同：

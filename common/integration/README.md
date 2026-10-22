@@ -4,6 +4,9 @@
 `integrations/<connection-family>/`拥有具体profile、连接几何、adapter和联合证据；本目录只负责
 解析显式五元组、失败关闭兼容性冲突并冻结`resolved connection + composition plan`。
 
+已批准的多组件目标见[统一组装规范](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。
+本目录当前仍是上述端口连接解析层；多实例装配、统一配方入口与新身份尚未实施，本页API和既有调用不变。
+
 ## Python API
 
 公共 Python API 为：

@@ -4,6 +4,14 @@
 [`common/multipole/README.md`](../../../common/multipole/README.md)；完整旧运行表和故障链只查
 [`history/`](history/)。
 
+## 统一组装迁移任务
+
+按[统一组装计划](../../../docs/ROADMAP.md#统一组装迁移计划)登记提供方任务，当前仅规范批准，未切换入口。
+本项目保留机械base、RF/DC模式、源与资格；待补齐组件输出和provided port到统一配方的绑定，明确
+圆柱家族与`official_transport`的适用域。关闭条件是冻结输入下几何、驱动、handoff身份／母群／时钟
+对照成立，连接器不反写机械base；接入IP须另有接受端口及物理验证。本轮不改配置、代码或运行。
+接口语义只按[组装规范](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。
+
 ## 当前结论
 
 - 当前圆柱家族机械base上的三个规范模式均完成COMSOL与SIMION N=100 baseline，两个求解器均

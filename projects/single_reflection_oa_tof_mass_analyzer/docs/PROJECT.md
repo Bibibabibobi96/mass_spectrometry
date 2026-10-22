@@ -5,6 +5,17 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
 [`CAD.md`](CAD.md)。2026-07-28以前的完整状态和时间线冻结在
 [`history/20260728__pre-document-consolidation-project.md`](history/20260728__pre-document-consolidation-project.md)。
 
+## 统一组装迁移任务
+
+状态为规范已批准、实现待迁移，依赖[统一组装计划M1/M3/M4](../../../docs/ROADMAP.md#统一组装迁移计划)；
+职责见[组装规范](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。本轮不改变生产入口、
+在途求解、Formal合同或资产身份。
+
+本项目保留反射器、仪器布局约束、加速器—反射器联合聚焦、检测与自身验收；继续提供required port、
+resolved几何及分析器接口。待办是在统一配方中明确分析器与OA实例边界，避免重复装入加速器，并将跨项目
+适配与连接编排随现有integration迁移。关闭条件是原分段／连续整机工作流的冻结输入、端口、驱动、事件、
+母群和时钟经相称对照一致，调用与身份同步切换；独立器件或局部前端通过不授予整机或Formal资格。
+
 ## 当前状态
 
 - Candidate 准备直接把三份 SIMION 文本登记到现有 run_config 输入身份，不再生成或重写第二份

@@ -52,7 +52,7 @@
 | COMSOL路线、网格收敛、原生追踪、API与故障定位 | [COMSOL按任务阅读入口](docs/COMSOL_GUIDE.md)：只进入本次需要的专题；项目结果从项目README进入，历史仅用于追溯 |
 | SIMION及长PA输入 | [SIMION参考](docs/SIMION_REFERENCE.md)、[公共实现](common/simion/README.md) |
 | 多极杆解析理论 | [理论入口](docs/multipoles/index.md) |
-| 端口、连接器与联合模拟 | [连接架构](docs/COMPONENT_CONNECTION_ARCHITECTURE.md) |
+| 端口、连接器与联合模拟；已批准的统一组装目标 | [连接架构](docs/COMPONENT_CONNECTION_ARCHITECTURE.md)、[迁移计划](docs/ROADMAP.md#统一组装迁移计划)；目标尚未切换执行入口 |
 | 长期目标与跨项目阶段 | [愿景](docs/VISION.md)、[路线图](docs/ROADMAP.md) |
 | 已完成全仓审计 | [历史索引](docs/AUDITS.md) |
 

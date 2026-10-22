@@ -48,6 +48,35 @@
 [整治快照](history/20260911__reference-documentation-consolidation.md#原-roadmap-台账)。
 归档不等于关闭：未来重启这些专项时须先核对当前消费者与行为证据，不沿用历史计数。
 
+## 统一组装迁移计划
+
+2026-10-22批准固定`integrations/`直属入口与声明式配方路线，取消无独立职责的`instrument_assembly/`源码层。规范正文见
+[统一组装目标](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)，产物规则见
+[生命周期](LIFECYCLE.md#统一组装产物归属)。本轮仅更新文档，不建立目标子目录、机器格式或执行入口，
+不改变在途仿真，也不恢复已暂停的物理研究；以下阶段不是运行授权或已实现能力。
+
+| 阶段 | 依赖与工作范围 | 关闭条件 |
+|---|---|---|
+| M0 规范冻结 | 明确目录、配方、工作流、组件接口、产物与参与方任务 | 唯一权威可检索，各侧登记任务；不宣称代码迁移 |
+| M1 接口与装配合同 | 盘点OA、IP及仪器真实消费者；扩展现有port／composition合同及薄适配 | 多实例、电极、驱动、坐标／时钟和连接模式有无求解器回归；不复制器件拓扑 |
+| M2 首条消费迁移 | M1后先迁现有局部多极杆→OA；冷却前端保持独立workflow | 冻结输入下几何、驱动、母群、时钟、默认回放及相称真实行为对照成立，当前在途依赖不受影响 |
+| M3 第二消费者与整机覆盖 | 用IP→MR验证同一组装机制，并逐项覆盖OA→MR及原多极杆→单反射整机流程 | 保留各链物理模式和限制；共享机制不含器件专属决策，差异由配方／提供者表达 |
+| M4 入口与身份切换 | 对已完成验证且依赖允许切换的workflow分别实施 | 调用、注册、门禁、产物解析和文档同步切换；无在途依赖后退出旧生产副本，历史身份保持 |
+
+M2/M3按workflow闭合后可分别进入M4，不等待无关物理优化；未完成的流程继续原入口。真实上游多极杆
+接入IP属于待贯通的物理能力，须先补提供／接受端口与相称验证，不以目录迁移关闭。公共机制的提升
+仍须满足实际复用条件，不将MR专属几何调整、匹配或工作点闭合整体搬入common。
+
+参与方任务入口：[OA](../projects/orthogonal_accelerator/docs/PROJECT.md#统一组装迁移任务)、
+[IP](../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md#统一组装迁移任务)、
+[MR](../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#统一组装迁移任务)、
+[单反射TOF](../projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md#统一组装迁移任务)、
+[现有集成](../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md#统一组装迁移任务)。
+真实多极杆提供方：[四极杆](../projects/rf_quadrupole_ion_optics/docs/PROJECT.md#统一组装迁移任务)、
+[六极杆](../projects/rf_hexapole_ion_optics/docs/PROJECT.md#统一组装迁移任务)、
+[八极杆](../projects/rf_octupole_ion_optics/docs/PROJECT.md#统一组装迁移任务)。本页维护阶段依赖，局部事实与
+关闭证据只回写上述状态页，不在路线图复制运行结果。
+
 ## 设计族与未来项目
 
 | 设计族 | 边界与后续方向 |

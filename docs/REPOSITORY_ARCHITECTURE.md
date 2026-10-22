@@ -43,8 +43,9 @@
 |新信息|权威写入位置|不得写入|
 |---|---|---|
 |项目统一几何、粒子源、指标定义、正式状态、跨软件结论、下一步|`projects/<project>/docs/PROJECT.md`|单个软件文档或历史日志|
-|跨组件链路当前状态、整体资格和开放任务|`integrations/<integration>/docs/INTEGRATION.md`|单一组件PROJECT或根ROADMAP|
+|跨组件链路当前状态、整体资格和开放任务|当前各既有integration的`docs/INTEGRATION.md`；统一入口切换后归`integrations/docs/INTEGRATION.md`|单一组件PROJECT或根ROADMAP|
 |集成连接语义、接口权威与运行操作|对应integration的ARCHITECTURE、RUNNING及机器合同|组件软件文档中的第二套链路规则|
+|跨项目统一组装的目标目录、配方、组件接口与切换合同|[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)；跨项目阶段归Roadmap，局部任务归参与方PROJECT／INTEGRATION|新建同义组装标准、把迁移目标写成当前执行能力|
 |某项目的 COMSOL 节点、网格、求解、GUI 操作和独立错误|项目 `docs/COMSOL.md`|根通用文档，除非已跨项目验证|
 |某项目的 SIMION PA/GEM、Program、Fly2、网格、GUI 和独立错误|项目 `docs/SIMION.md`|COMSOL/CAD 文档|
 |某项目的 STEP、SolidWorks 零件/装配、坐标和保存验证|项目 `docs/CAD.md`|SIMION/COMSOL 文档|
@@ -92,6 +93,10 @@ simulation_repo/
 ```
 
 项目测试留在各项目内；只有出现真正跨项目的仓库级门禁时才创建根 `tests/`，不预建空目录。
+
+跨项目组装已批准收敛到仓库根`integrations/`的直属布局，组合以配方而非新项目表达；
+目录与职责的唯一合同见[统一组装目标](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。这是待实施
+迁移，不改变现有活动路径。器件／仪器的物理设计与自身资格仍归项目，跨组件编排和联合证据归integration。
 
 源码目标目录深度不超过 5 级（文件可处于第 6 段）。新目录只有在承载明确职责时才创建；不建立
 `components/`、`project/components/`、`docs/software/` 或只有一个子目录的重复分类层。
