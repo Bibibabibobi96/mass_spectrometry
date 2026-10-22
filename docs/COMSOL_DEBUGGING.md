@@ -28,6 +28,30 @@
 每轮只改变一个假设，并记录输入、失败阶段和结果。若问题已经从“实现是否正确”转为“两个正确
 模型是否等价”，停止在本文件继续试错，转入validation流程。
 
+### 仓库案例定位
+
+下表是已记录案例的检索入口，不是所有项目共享的故障结论。先核对模型路线、失败阶段和版本，
+再进入对应证据；历史中的默认值、预算和临时脚本不作为新运行输入。项目当前资格仍查其 PROJECT。
+
+| 症状或容易误判的情形 | 第一个检查动作 | 案例入口与结论边界 |
+|---|---|---|
+| 写入 `free` 后仍像 Strict，或设置回读通过但实际算法未变 | 读取活动积分算法及其对应步策略键；分别在 Study Compute 前后核对，不能只查闲置 BDF 属性 | [OA 活动步策略修复][oa-policy-case]已定位闲置键假阳性；属性保存重开不等于轨迹精度通过。通用属性映射查 [API](COMSOL_API.md#time-节点的活动步策略)。 |
+| 停止时间正常，坐标平台却在检测面前；冻结后速度仍非零 | 分开查询原生状态、停止时间、所用输出时刻和坐标；确认停止边界是否为目标检测器 | [OA 恒速平面小模型][oa-event-case]记录了固定时刻查询的负结果；不能直接把查询坐标当撞壁位置，也不能把所有边界停止时间都当检测器到达。 |
+| 全零／近零平台被算成命中，或真实窗口大量事件被拒 | 检查接近段、连续有效 XYZ、真实穿越方向及外推区间；空间近面容差不能兼任静止判据 | [OA 提取器与真实窗口回归][oa-extractor-case]分别保留伪事件修复和错误下界修复；实现回归通过不等于绝对时间误差已受控。 |
+| N 增大后长时间无轨迹，但静电场已经完成 | 先查最后完成的阶段、release 节点数及粒子 Study 是否真正启动 | [四极杆释放案例][rf-release-case]的中断发生在逐粒子构造阶段；单节点向量化候选也未通过等价门禁，不能作为已验证提速方案。 |
+| 网格已生成，随后内存超限或运行被资源观察器终止 | 对照最后阶段标记、进程树峰值、系统可用内存和预登记停止原因 | [四极杆资源案例][rf-release-case]与[八极杆当前边界][octupole-state]保留资源受限结论；不把中断当物理 FAIL，也不据此放宽精度或自动抬高资源帽。 |
+| 更少粒子反而发生原生崩溃 | 先区分启动、solution-mesh 初始化、Compute 和提取阶段，保留原生崩溃日志 | [OA 极小 N 调查][oa-small-n-case]是项目特定兼容案例；N100 承载前缀仅适用于无粒子间耦合的已验证路径，不是 COMSOL 通用最小粒子数规则。 |
+| MR 场对照失败被描述为“COMSOL 原生追踪慢／不收敛” | 先确认轨迹实际由谁积分，以及 FEM→电势导出→PA→事件各环节的身份和误差 | [MR 电场表示与数值资格][mr-field-route]区分独立求场和 SIMION 消费；不能用 OA CPT 的求解器设置解释这条路线，也不能由跨来源差异指定真值。 |
+| 求解已有结果，轨迹图片导出卡死或服务端崩溃 | 先检查数值数据和已保存解；核对失败是否在 Plot/Export，而非 Study | 见[批处理粒子轨迹图片](#批处理粒子轨迹图片)；软件渲染开关曾伴随原生崩溃，不作为默认修复，环境升级后须重新验证。 |
+
+[oa-policy-case]: ../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#1-本次修复了什么
+[oa-event-case]: ../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261022__native-event-readback-and-counter-validation.md#已关闭的问题
+[oa-extractor-case]: ../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#真实窗口暴露的第二个下界缺陷与修复
+[rf-release-case]: ../projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md#comsol-数值与物理边界
+[octupole-state]: ../projects/rf_octupole_ion_optics/docs/PROJECT.md#当前结论
+[oa-small-n-case]: ../projects/single_reflection_oa_tof_mass_analyzer/docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md
+[mr-field-route]: ../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#电场表示与数值资格
+
 ## 属性和Feature发现
 
 不确定属性或合法取值时，优先顺序是：

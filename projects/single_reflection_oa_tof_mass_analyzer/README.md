@@ -92,6 +92,7 @@ single_reflection_oa_tof_mass_analyzer/
 <details>
 <summary>展开已冻结实验、迁移与故障证据</summary>
 
+- [原生事件回读、额外碰壁数据与 Counter 小模型验证](docs/history/20261022__native-event-readback-and-counter-validation.md)
 - [OA-TOF 活动步策略修复、可重复参考与完整流程对照](docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md)
 - [OA-TOF N100 原生离子追踪受控对照](docs/history/20261021__oatof-cpt-performance-controlled-comparison.md)
 - [论文阶段状态与文档整治前沿革](docs/history/20260911__publication-status-consolidation.md)

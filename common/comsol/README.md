@@ -51,8 +51,14 @@ COMSOL自带`tbbmalloc.dll`，可用`-Allocator native`绕过TBB scalable alloca
 并非供应商枚举值。显式模式传递官方`-memoptassem <mode>`，分别控制关闭、仅矩阵装配、仅向量装配和
 全部装配的内存可扩展性优化。调用方须冻结该执行选项；它不改变入口的资源准入、精度、重试或退出判据。
 依据：[COMSOL 6.4 Commands on Windows](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)，
-COMSOL官方，查阅日期2026-10-07。采用受支持的命令行接口，仅完成替身参数传递回归，尚未真实商业验证；
-不能据此声称修复矩阵装配断言、提高性能或获得数值收敛资格。
+COMSOL官方，2026-10-22复核。这里列的是当前 wrapper 接受的值；本机6.4.0.293原生解析器在真实启动中
+拒绝 `on`，错误日志列出 `off/matrix/vector/all`，与该官方页面存在差异。当前 wrapper 不接受 `all`，
+不能用它替代 `on` 后绕开入口。`auto` 与 `matrix` 已经通过公共入口完成真实小模型，
+见[冻结配置及两份原始拒绝日志的输入绑定][assembly-evidence]；`off/vector` 本索引未登记真实运行。
+替身参数传递测试、成功启动和小模型 Compute 分别只证明各自范围，不能据此声称修复 MR 矩阵装配断言、
+降低大型模型内存峰值、提高性能或获得数值收敛资格。
+
+[assembly-evidence]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/run_config.json
 
 ### 主机资源阶段
 
@@ -98,6 +104,49 @@ launcher 启动后立即登记 PID；等待报告和 Compute 期间只检查进�
 
 这些文件是组件验证基线，不是生产脚本，也不代表任一正式仪器已经完成。新的共享测试必须有
 明确理论对照或开启/关闭对照，生成GUI可检查的MPH节点，并说明适用边界。
+
+### 源码覆盖与运行证据
+
+上表描述测试设计覆盖，不是逐文件最近一次 PASS 清单。本索引未建立全部组件测试的独立 run 与
+GUI 验收映射；选择测试时须读取其判据，并核对对应冻结输入、summary 和 manifest，不能由名称、
+注释中的“验证”或现存 MPH 推定实际运行。关键调用的现有小模型证据在
+[关键能力证据索引](#关键能力的证据索引)集中定位，不在这里复制数值结论。
+
+| 要查的层级 | 现有入口 | 证据的含义 |
+|---|---|---|
+| 替身／纯逻辑 | `test_livelink_resource_stages.py`、`test_livelink_failure_classification.ps1`、`test_livelink_environment.ps1` | 分别检查调度与清理、重试分类、环境预检；运行结果须另存，不证明真实 COMSOL 求解 |
+| 真实连接 | `test_livelink_connection.m` | 只连接与读版本；不能替代模型创建或 Compute |
+| 真实组件 Compute | [关键能力证据索引](#关键能力的证据索引)中的场／CPT／插值记录 | 核对模型、唯一变量、解析或对照判据；有负结果时保留，不将整组改称 PASS |
+| 保存重开 | 同一索引中的 Time 属性检查 | 当前证据是空模型属性持久化；不是求解精度，也不是 GUI 点击 Compute |
+| 项目功能与 GUI Compute | 根 [项目导航](../../README.md#项目导航)→目标项目 README→PROJECT／验证合同 | 必须绑定具体资产、输入与验收；不从共享组件测试继承项目资格 |
+
+### 关键能力的证据索引
+
+本表只索引已保留证据的范围，不发布新的通用数值设置或仪器资格。真实 Compute 指脚本中的
+Study/Solver 执行；GUI Compute 指 Desktop 重开后操作，二者不能互换。项目参数、功能精度和资格
+仍由各项目 README 导向其 PROJECT 与机器合同。
+
+| 能力 | 官方语义与本地实现入口 | 已登记验证 | 尚不能证明 |
+|---|---|---|---|
+| 活动 Time 步策略 | [Time API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.51.html)；[活动键映射](../../docs/COMSOL_API.md#time-节点的活动步策略) | [OA 修复记录第 2 节](../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#2-已完成的实现验证及其边界)：GA/BDF/DP5 空模型写入、保存重开、回读；DP5/GA 小模型另有真实 Study.run 前后回读 | 空模型不是轨迹求解；诊断配置未完成正式资产保存重开与 GUI Compute 晋升 |
+| 固定网格的代数停止误差 | [CG-AMG](../../docs/COMSOL_API.md#稳态cg-amg与电势阶次)；[场探针冻结结果][api-field] | 同一 4,879 四面体、7,292 DOF 的线性电势模型，真实 CG 默认/加严及 PARDISO 参考三案，保存活动引用与采样误差 | 未做仪器空间收敛；不能据此规定全仓 stol 或直接法 |
+| 原生粒子读取 | [mphparticle 官方参考](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.51.html)；[数值提取](../../docs/COMSOL_API.md#数值提取) | [输出双通道小模型][api-output]核对默认 p/v 与显式坐标/速度；[OA README](../../projects/single_reflection_oa_tof_mass_analyzer/README.md)导航到真实 N100 配对与事件回归 | 数组有限不代表数值准确；固定 t 查询不能自动获得精确壁面位置或停止时间 |
+| 原生插值函数驱动 CPT | [函数 API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.34.html)；[小模型结果][api-interpolation] | 规则线性表、显式单位、范围外行为和解析轨迹的真实 Compute | 非均匀三维仪器场的采样收敛、能量一致性及整体提速仍未验证 |
+| 平面 Freeze 与停止时间 | [粒子状态](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.02.html)、[Freeze](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.38.html) | [平面常速小模型][api-wall]核对全部 N100 的解析停止时间；OA 新一轮稀疏固定 t 查询保留负结果，见该项目 README 的完成记录 | 不能直接替换整机检测器；曲面、多壁面与目标边界身份须另验 |
+| 装配内存选项 | [Windows 命令](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)；[共享入口边界](#正式启动入口) | [冻结启动与恢复配置][api-assembly]：本机拒绝 on，auto/matrix 已完成真实小模型；原始拒绝日志已绑定 | 官方页和当前 wrapper 枚举不等于本机均可启动；没有大型装配峰值或 MR 断言修复结论 |
+
+上述场、插值和输出小模型由 OA 容器承载，仅用于组件诊断；不能算作第二个仪器项目验证。
+共享组件测试的源码分组见[测试分组](#测试分组)。
+
+后续[原生回读与 Counter 五案](../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261022__native-event-readback-and-counter-validation.md)
+另验证了普通时刻库存、实际停止时刻查询，以及 Counter 的求解前／后创建与输出敏感性；
+其中稀疏 Counter 两案为 failed。它补充接口证据，不授予生产检测器资格。
+
+[api-field]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_102831__test__comsol__field-and-cpt-followup__r02/results/field_followup_summary.json
+[api-output]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/output_controls_summary.json
+[api-interpolation]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/interpolation_summary.json
+[api-wall]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r04/summary.json
+[api-assembly]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/run_config.json
 
 ### 组件测试的输出上下文
 

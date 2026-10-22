@@ -220,6 +220,11 @@ ef.selection.set(vacuumDomains);
 粒子间库仑作用使用`ParticleParticleInteraction`，当前验证属性为
 `InteractionForce='Coulomb'`。
 
+[Particle Counter](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_modeling.05.20.html)
+的 `<tag>.rL` 是选中区域的后处理入选逻辑，不是通用的最后停止边界编号。官方允许后加变量并调用
+`model.sol('sol1').updateSolution()`，但不重算成功不保证某个采样／读取路径的计数正确；实测范围查
+[共享证据索引](../common/comsol/README.md#关键能力的证据索引)。
+
 ## Study、Solver与初值复用
 
 典型流程先求静电/磁场稳态，再用时间相关粒子Study复用已存场：
@@ -379,6 +384,14 @@ pd = mphparticle(model, 'dataset', 'pdset1');
 
 离线文件与按问题定位见[官方资料索引](../official_docs/README.md)。以下手册名是检索入口，
 本页尚未给出每项调用对应的页码和独立验证运行，不能把整页视为逐项已认证的 API 清单。
+优先按证据索引区分接口语义、真实求解、保存重开和项目验收；没有登记的层级表示本索引未建立证据，
+不表示该层级必然失败，也不由源码或 MPH 文件存在推定通过。
+
+### 关键能力的证据索引
+
+关键调用的实测矩阵集中在[共享测试的证据索引](../common/comsol/README.md#关键能力的证据索引)：
+分别列出官方接口语义、真实 Study/Solver 执行、保存重开、GUI Compute 与项目验收的已知范围。
+共享测试目录中的源码覆盖不等于已运行结果；接口事实不自动授予仪器收敛或性能资格。
 
 - `COMSOL_ProgrammingReferenceManual.pdf`：Model Object API、feature类型、属性和合法值；
 - `LiveLinkForMATLABUsersGuide.pdf`：`mph*`函数和MATLAB连接；
