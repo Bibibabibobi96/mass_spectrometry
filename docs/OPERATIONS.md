@@ -50,6 +50,8 @@ integration新增公开门禁时必须注册，目录与文件系统不一致即
 仓库只保留
 `common/verify_changed.ps1`这一个L1入口，不提供旧名称兼容脚本。`.github/workflows/lightweight-gate.yml`
 在push只运行L1；L2仅可由`workflow_dispatch`人工启动，不对pull request自动运行全仓回归。
+L1可能包含完整integration回归，CI预算须覆盖环境安装和整轮门禁，不能只按单个Core检查的耗时估计；
+当前执行预算读取[GitHub工作流](../.github/workflows/lightweight-gate.yml)。门禁超时不等同于科学求解失败。
 
 L1的`-PlanOnly`使用同一目录先给出`stdlib`或`locked`依赖等级；GitHub对只需标准库的文档和门禁
 合同范围跳过完整科学Python环境安装，任何未明确分类、项目注册表、Python lint、项目/集成、依赖声明或
