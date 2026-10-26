@@ -416,13 +416,15 @@ class ProjectCacheApprovalTest(unittest.TestCase):
         from unittest.mock import Mock
         owner = "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
         relative = "projects/"+owner+"/cache/simion_single_flight_accelerator_main/"+"a"*64
-        for scenario in ("valid", "owner", "consumer", "ancestor", "namespace", "pin"):
+        for scenario in ("valid", "basis_valid", "basis_owner", "owner", "consumer", "ancestor", "namespace", "pin"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
-                target = root / relative
+                target_relative = relative.replace("simion_single_flight_accelerator_main", "simion_pa_basis") if scenario.startswith("basis_") else relative
+                target = root / target_relative
                 target.mkdir(parents=True)
-                entry = dict(path=relative, **{"class":"published_cache"}, bytes=7,
-                             status="ready", pin=scenario=="pin", identity="b"*64, owner=owner)
+                entry = dict(path=target_relative, **{"class":"published_cache"}, bytes=7,
+                             status="ready", pin=scenario=="pin", identity="b"*64,
+                             owner="other" if scenario=="basis_owner" else owner)
                 if scenario=="pin":
                     entry["pin_reason"]="retained"
                 entries=[entry]
@@ -440,7 +442,7 @@ class ProjectCacheApprovalTest(unittest.TestCase):
                     expected_project_owner=owner if scenario!="owner" else "other",commit_owner_retirement=callback)
                 if scenario=="namespace":
                     arguments["path"]=root/"unregistered"
-                if scenario!="valid":
+                if scenario not in {"valid", "basis_valid"}:
                     with self.assertRaises(ValueError):
                         capacity_ledger.approve_published_cache_retirement(root,**arguments)
                     callback.assert_not_called()

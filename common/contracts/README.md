@@ -111,6 +111,7 @@ audit须为同项目规范run、`mode=owned_payload_view_repair`、solver_review
 `projects/<actual-owner>/cache/<registered-integration-role>/<SHA256-key>`下未设置manager、未pin且无消费者的
 完整ready缓存。owner必须在同一锁内回调核对库存并先封存实际匹配的重建输入；默认PA-manager路径不变。
 批准仍由公共维护执行已封存disposition，owner入口本身不删除，也不将旧项目缓存冒充公共PA-family缓存。
+`simion_pa_basis`项目基场缓存沿同一入口执行相同的owner、pin、消费者和库存检查，不另设退役协议。
 
 `artifact_retention.json`和`artifact_retention.py`实现[生命周期](../../docs/LIFECYCLE.md)的run产物保留合同。迁移到manifest v2的
 入口必须显式启用公共生命周期retention，启用后的默认类是`compact`；`qualification/solver_review`

@@ -1066,7 +1066,8 @@ def approve_published_cache_retirement(
         from common.contracts.verify_artifact_layout import INTEGRATION_CACHE_ROLES
         parts = Path(relative).parts
         if (len(parts) != 5 or parts[:3] != ("projects", expected_project_owner, "cache")
-                or parts[3] not in INTEGRATION_CACHE_ROLES or SHA256.fullmatch(parts[4]) is None):
+                or parts[3] not in {*INTEGRATION_CACHE_ROLES, "simion_pa_basis"}
+                or SHA256.fullmatch(parts[4]) is None):
             raise ValueError("project cache retirement requires its registered exact owner namespace")
     destination = resolve_ledger_path(root, ledger_path)
     with protection.capacity_decision_lock(root):
