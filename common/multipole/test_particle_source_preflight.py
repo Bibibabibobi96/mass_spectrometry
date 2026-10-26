@@ -5,6 +5,10 @@ import csv
 import hashlib
 import json
 import math
+import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +23,8 @@ from common.multipole.compile_design_request import compile_design_request
 from common.multipole.particle_source_preflight import (
     COLUMNS,
     load_validated_source,
+    load_release_spec,
+    materialize_source_release,
     validate_source,
 )
 from common.multipole.simion_particle_source import render_canonical_source
@@ -26,12 +32,34 @@ from common.ion_release.release import materialize_release_from_file as material
 from common.multipole.test_compile_design_request import design_request
 
 
+def planar_release_spec(resolved: dict, *, count: int = 100) -> dict:
+    """A new authored source, sharing the established family sampler only."""
+    return dict(
+        schema_version=1,
+        role="repository_ion_release",
+        frame_id=resolved["coordinate"]["coordinate_id"],
+        particle_count=count,
+        mother_particle_count=count,
+        geometry=dict(
+            shape="disk",
+            center_mm=[0.0, 0.0, resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"]],
+            radius_mm=0.5,
+        ),
+        species=dict(mass_amu=524.0, charge_state=resolved["particle_source"]["charge_state"]),
+        sampling=dict(
+            strategy="mt19937_uniform_disk_filled_cone_rf_phase_v1",
+            seed=2026072801,
+            rf_frequency_hz=resolved["drive"]["frequency_Hz"],
+            kinetic_energy_ev=2.0,
+            cone_half_angle_deg=5.0,
+        ),
+    )
+
+
 class ParticleSourcePreflightTest(unittest.TestCase):
     def setUp(self) -> None:
         request = design_request(segmentation={"strategy": "off"})
-        self.resolved = compile_design_request(
-            request, expected_identity=request["identity"]
-        )
+        self.resolved = compile_design_request(request, expected_identity=request["identity"])
         self.mass = 100.0
         energy = self.resolved["particle_source"]["energy_model"]["kinetic_energy_eV"]
         self.speed = math.sqrt(2 * energy * E_CHARGE_C / (self.mass * AMU_KG))
@@ -67,6 +95,113 @@ class ParticleSourcePreflightTest(unittest.TestCase):
             writer.writeheader()
             writer.writerows(rows)
         return path
+
+    def test_release_materializes_once_and_full_and_batch_projection_keep_frozen_states(self) -> None:
+        from common.ion_release import mt19937_disk_cone_rf_phase as sampler
+
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            spec = directory / "release.json"
+            spec.write_text(json.dumps(planar_release_spec(self.resolved)), encoding="utf-8")
+            source, receipt = directory / "source.csv", directory / "receipt.json"
+            resolved_path = directory / "resolved.json"
+            resolved_path.write_text(json.dumps(self.resolved), encoding="utf-8")
+            with patch.object(
+                sampler,
+                "generate_mt19937_disk_cone_rf_phase_states",
+                wraps=sampler.generate_mt19937_disk_cone_rf_phase_states,
+            ) as generate:
+                load_release_spec(spec, self.resolved)
+                self.assertEqual(generate.call_count, 0)
+                materialize_source_release(spec, source, receipt, self.resolved)
+                original = source.read_bytes()
+                options = dict(release_spec_path=spec, release_receipt_path=receipt)
+                metadata, rows = load_validated_source(source, self.resolved, **options)
+                self.assertEqual((metadata["mass_amu"], metadata["particle_count"]), (524.0, 100))
+                fly, states, count = render_canonical_source(source, resolved_path, **options)
+                self.assertEqual(count, 100)
+                self.assertIn("mass=524", fly)
+                for first, last in [(1, 40), (41, 100)]:
+                    part, _, n = render_canonical_source(
+                        source, resolved_path, **options, particle_id_min=first, particle_id_max=last
+                    )
+                    self.assertEqual(n, last - first + 1)
+                    self.assertEqual(part.count("standard_beam"), n)
+                self.assertIn(format(float(rows[0]["birth_time_s"]) * 1e6, ".12g"), states)
+                self.assertEqual(generate.call_count, 1)
+                self.assertEqual(source.read_bytes(), original)
+                with self.assertRaisesRegex(ValueError, "overwrite"):
+                    materialize_source_release(spec, source, receipt, self.resolved)
+                with self.assertRaisesRegex(ValueError, "another source"):
+                    load_validated_source(source, self.resolved, **options, expected_kinetic_energy_ev=2.0)
+                for field in ("frame_id", "species", "sampling"):
+                    changed = planar_release_spec(self.resolved)
+                    if field == "frame_id":
+                        changed[field] = "another_frame"
+                    elif field == "species":
+                        changed[field]["charge_state"] = 2
+                    else:
+                        changed[field]["rf_frequency_hz"] *= 2
+                    spec.write_text(json.dumps(changed), encoding="utf-8")
+                    with self.assertRaises(ValueError):
+                        load_validated_source(source, self.resolved, **options)
+                spec.write_text(json.dumps(planar_release_spec(self.resolved)), encoding="utf-8")
+                source.write_bytes(original.replace(b"524.0", b"100.0", 1))
+                with self.assertRaisesRegex(ValueError, "receipt"):
+                    load_validated_source(source, self.resolved, **options)
+
+    def test_release_cli_and_projection_execute_from_detached_frozen_code(self) -> None:
+        repo = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as temporary:
+            frozen = Path(temporary) / "snapshot"
+            for area in ("contracts", "multipole", "simion", "ion_release"):
+                shutil.copytree(
+                    repo / "common" / area,
+                    frozen / "common" / area,
+                    ignore=lambda directory, names: [
+                        name
+                        for name in names
+                        if name == "__pycache__"
+                        or ((Path(directory) / name).is_file() and Path(name).suffix not in {".py", ".json"})
+                    ],
+                )
+            inputs = frozen / "inputs"
+            inputs.mkdir()
+            (inputs / "spec.json").write_text(json.dumps(planar_release_spec(self.resolved)), encoding="utf-8")
+            (inputs / "resolved.json").write_text(json.dumps(self.resolved), encoding="utf-8")
+            code = r"""
+import sys
+from pathlib import Path
+from unittest.mock import patch
+from common.multipole import particle_source_preflight as preflight
+from common.multipole.simion_particle_source import render_canonical_source
+from common.ion_release import mt19937_disk_cone_rf_phase as sampler
+assert Path(preflight.__file__).resolve().is_relative_to(Path.cwd())
+source,receipt,spec,resolved=[Path('inputs')/n for n in ('source.csv','receipt.json','spec.json','resolved.json')]
+sys.argv=['preflight','--source',str(source),'--resolved-design',str(resolved),'--output','inputs/metadata.json',
+          '--release-spec',str(spec),'--release-receipt',str(receipt),'--materialize-release']
+with patch.object(sampler,'generate_mt19937_disk_cone_rf_phase_states',wraps=sampler.generate_mt19937_disk_cone_rf_phase_states) as generate:
+ preflight.main()
+ for first,last in [(None,None),(1,40),(41,100)]:
+  fly,states,count=render_canonical_source(source,resolved,release_spec_path=spec,release_receipt_path=receipt,
+                                        particle_id_min=first,particle_id_max=last)
+  assert 'mass=524' in fly
+  assert count==(100 if first is None else last-first+1)
+ assert generate.call_count==1
+print('DETACHED_RELEASE=PASS SAMPLES=1')
+"""
+            result = subprocess.run(
+                [sys.executable, "-B", "-c", code],
+                cwd=frozen,
+                env={**os.environ, "PYTHONPATH": str(frozen)},
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("DETACHED_RELEASE=PASS SAMPLES=1", result.stdout)
 
     def test_valid_source_binds_hash_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -120,7 +255,8 @@ class ParticleSourcePreflightTest(unittest.TestCase):
                 resolved.write_text(json.dumps(self.resolved), encoding="utf-8")
                 with self.assertRaises(ValueError):
                     render_canonical_source(
-                        self.write_source(directory, mutate=mutation), resolved,
+                        self.write_source(directory, mutate=mutation),
+                        resolved,
                     )
 
     def test_nonstandard_positive_count_remains_a_valid_canonical_source(self) -> None:
@@ -139,14 +275,19 @@ class ParticleSourcePreflightTest(unittest.TestCase):
             "seed": 7,
             "snapshot_time_s": 0.0,
             "geometry_mm": {
-                "center_x_mm": 0.0, "center_y_mm": 0.0,
-                "center_z_mm": -1.5, "radius_mm": 0.5,
+                "center_x_mm": 0.0,
+                "center_y_mm": 0.0,
+                "center_z_mm": -1.5,
+                "radius_mm": 0.5,
                 "axial_length_mm": 2.2,
             },
             "velocity_distribution": {
-                "mean_vx_m_s": 0.0, "mean_vy_m_s": 0.0,
-                "mean_vz_m_s": 1964.668136, "sigma_vx_m_s": 35.0,
-                "sigma_vy_m_s": 35.0, "sigma_vz_m_s": 50.0,
+                "mean_vx_m_s": 0.0,
+                "mean_vy_m_s": 0.0,
+                "mean_vz_m_s": 1964.668136,
+                "sigma_vx_m_s": 35.0,
+                "sigma_vy_m_s": 35.0,
+                "sigma_vz_m_s": 50.0,
                 "minimum_vz_m_s": 1500.0,
             },
             "ion": {"mass_amu": 100.0, "charge_state": 1},
@@ -209,8 +350,9 @@ class ParticleSourcePreflightTest(unittest.TestCase):
         def outside(rows: list[dict[str, object]]) -> None:
             rows[0]["vz_m_s"] = self.speed * math.sqrt(2.21 / 2.0)
 
-        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(
-            ValueError, "outside the resolved closed interval"
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            self.assertRaisesRegex(ValueError, "outside the resolved closed interval"),
         ):
             validate_source(self.write_source(directory, mutate=outside), bounded)
 
@@ -241,9 +383,7 @@ class ParticleSourcePreflightTest(unittest.TestCase):
                 source_family_path=family_path,
                 operating_point_id="five_ev",
             )
-        self.assertEqual(
-            result["operating_point_binding"]["operating_point_id"], "five_ev"
-        )
+        self.assertEqual(result["operating_point_binding"]["operating_point_id"], "five_ev")
 
     def test_campaign_energy_override_validates_derived_5ev_source(self) -> None:
         def five_ev(rows: list[dict[str, object]]) -> None:
@@ -332,9 +472,7 @@ class ParticleSourcePreflightTest(unittest.TestCase):
                 }
                 family_path = Path(directory) / "family.json"
                 family_path.write_text(json.dumps(family), encoding="utf-8")
-                with self.assertRaisesRegex(
-                    ValueError, "must be finite|bounds must be finite"
-                ):
+                with self.assertRaisesRegex(ValueError, "must be finite|bounds must be finite"):
                     validate_source(
                         source,
                         self.resolved,
@@ -385,9 +523,7 @@ class ParticleSourcePreflightTest(unittest.TestCase):
                 self.resolved,
                 source_family_path=drifting_family,  # type: ignore[arg-type]
                 operating_point_id="two_ev",
-                expected_source_family_sha256=hashlib.sha256(
-                    first_bytes
-                ).hexdigest(),
+                expected_source_family_sha256=hashlib.sha256(first_bytes).hexdigest(),
             )
         self.assertEqual(drifting_family.read_count, 1)
         self.assertEqual(

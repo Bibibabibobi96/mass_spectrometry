@@ -10,7 +10,10 @@ function Invoke-ResourceBudgetedGateAction {
     $lease = Enter-HostResourceStage -Role GATE -Stage $Name -Budget $budget
     $limitRuffThreads = $Name -in @('ruff_all', 'ruff_changed_python')
     $originalRayonThreads = [Environment]::GetEnvironmentVariable('RAYON_NUM_THREADS', 'Process')
+    $originalOutputEncoding = [Console]::OutputEncoding
     try {
+        # Child PowerShell processes inherit this code page through Python.
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
         # Ruff's registered one-core budget must also bound its native workers.
         if ($limitRuffThreads) { $env:RAYON_NUM_THREADS = '1' }
         & $Operation
@@ -18,6 +21,7 @@ function Invoke-ResourceBudgetedGateAction {
         try {
             Exit-HostResourceStage -Lease $lease
         } finally {
+            [Console]::OutputEncoding = $originalOutputEncoding
             if ($limitRuffThreads) {
                 [Environment]::SetEnvironmentVariable('RAYON_NUM_THREADS', $originalRayonThreads, 'Process')
             }
@@ -73,19 +77,21 @@ function Invoke-LoggedGateStage {
         $env:MPLCONFIGDIR = Join-Path (Split-Path -Parent $LogPath) ("mpl_$Name")
         New-Item -ItemType Directory -Path $env:MPLCONFIGDIR -Force | Out-Null
     }
-    $lines = [Collections.Generic.List[string]]::new()
+    $writer = [IO.StreamWriter]::new(
+        $LogPath, $false, [Text.UTF8Encoding]::new($false)
+    )
+    $writer.AutoFlush = $true
     $succeeded = $true
     try {
         & $Action *>&1 | ForEach-Object {
-            $lines.Add(($_ | Out-String -Width 4096).TrimEnd())
+            $writer.WriteLine(($_ | Out-String -Width 4096).TrimEnd())
         }
     } catch {
         $succeeded = $false
-        $lines.Add(($_ | Out-String -Width 4096).TrimEnd())
+        $writer.WriteLine(($_ | Out-String -Width 4096).TrimEnd())
+    } finally {
+        $writer.Dispose()
     }
-    [IO.File]::WriteAllLines(
-        $LogPath, $lines, [Text.UTF8Encoding]::new($false)
-    )
     return $succeeded
 }
 
@@ -209,7 +215,7 @@ function Invoke-IndependentGateStageGroup {
                 Process = $process
                 StartedAt = [DateTime]::UtcNow
             }
-            Write-Output "GATE_PROCESS=START NAME=$($item.Name) PID=$($process.Id)"
+            Write-Output "GATE_PROCESS=START NAME=$($item.Name) PID=$($process.Id) LOG_PATH=$logPath"
         }
         while (@($records.Values | Where-Object {
             -not $_.Process.HasExited
@@ -268,12 +274,12 @@ function Invoke-IndependentGateStageGroup {
             throw "$FailureMessage`: $($failed -join ', ')"
         }
     } finally {
-        # These are exclusively the processes launched by this group. Do not
-        # release their work/log directory while an interrupted child is alive.
+        # Do not release the work/log directory while a child is alive. An
+        # unwind stops future launches but preserves an already-running stage's
+        # natural terminal evidence.
         foreach ($record in @($records.Values)) {
             if (-not $record.Process.HasExited) {
-                Write-Output "GATE_PROCESS=STOP PID=$($record.Process.Id) REASON=group_unwinding"
-                $record.Process.Kill($true)
+                Write-Output "GATE_PROCESS=WAIT PID=$($record.Process.Id) REASON=group_unwinding"
                 $record.Process.WaitForExit()
                 if (Test-Path -LiteralPath $record.LogPath -PathType Leaf) {
                     Get-Content -LiteralPath $record.LogPath -Encoding UTF8

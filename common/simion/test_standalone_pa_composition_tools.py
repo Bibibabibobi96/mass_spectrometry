@@ -75,6 +75,88 @@ assert(calls==1,'one and only one Refine call required')
         self.assertIn("REFINE_CALL=explicit", result.stdout)
         self.assertIn("refine_convergence=1e-05", result.stdout.lower())
 
+    def test_parent_patch_restores_only_synthetic_faces_and_keeps_sampled_potentials(self) -> None:
+        harness = r'''
+local helper=arg[1]
+local function key(x,y,z) return x..','..y..','..z end
+local function physical(x,y,z)
+ return (x==1 and y==1 and z==1) or (x==0 and y==1 and z==1)
+   or (x==3 and y==2 and z==2)
+end
+local function raw_value(x,y,z)
+ if x==0 then return 2 elseif x==3 then return 0 else return 1 end
+end
+local raw={}
+function raw:point(x,y,z) return raw_value(x,y,z),physical(x,y,z) end
+function raw:close() end
+local values,flags,solved_values={},{},{}
+local target={nx=4,ny=4,nz=4,dx_mm=.5,dy_mm=.25,dz_mm=.75}
+function target:point(x,y,z,value,metal)
+ local k=key(x,y,z)
+ if value==nil then
+  if values[k]~=nil then return values[k],flags[k] end
+  return raw:point(x,y,z)
+ end
+ values[k],flags[k]=value,metal
+end
+function target:save() end
+function target:close() end
+local samples,refines=0,0
+local parent={dx_mm=2,dy_mm=4,dz_mm=.5}
+function parent:inside_vc(x,y,z)
+ -- (patch_origin + local_gu * patch_pitch - source_origin)/source_pitch.
+ assert(x>=4 and x<=4.75 and y>=4 and y<=4.1875 and z>=48 and z<=52.5)
+ return true
+end
+function parent:potential_vc(x,y,z)
+ samples=samples+1
+ return x+2*y+3*z
+end
+function parent:close() end
+function parent:save() error('parent must remain unchanged') end
+function target:refine(options)
+ refines=refines+1;assert(options.convergence==1e-5)
+ for z=0,3 do for y=0,3 do for x=0,3 do
+  local k=key(x,y,z)
+  local boundary=x==0 or y==0 or z==0 or x==3 or y==3 or z==3
+  if physical(x,y,z) then
+   assert(flags[k] and values[k]==(x==0 and -17 or x==3 and 0 or 11))
+  elseif boundary then
+   assert(flags[k] and values[k]==(4+x*.25)+2*(4+y*.0625)+3*(48+z*1.5),
+     'parent boundary voltage or coordinate mapping changed')
+  else
+   assert(not flags[k]);values[k]=9+x/10+y/100+z/1000
+  end
+  solved_values[k]=values[k]
+ end end end
+end
+local raw_opens,parent_opens=0,0
+simion={pas={}}
+function simion.pas:close() end
+function simion.pas:open(path)
+ if path=='parent.pa' then parent_opens=parent_opens+1;return parent end
+ if path=='raw.pa#' then raw_opens=raw_opens+1;return raw_opens==1 and target or raw end
+ assert(path=='patch.pa0');return target
+end
+arg={'raw.pa#','patch.pa0','parent.pa','2,4,6','10,20,30','11,-17','1e-5'}
+dofile(helper)
+assert(refines==1 and parent_opens==1 and raw_opens==2 and samples==54)
+for z=0,3 do for y=0,3 do for x=0,3 do
+ local k=key(x,y,z)
+ assert(flags[k]==physical(x,y,z),'synthetic faces must not remain collision electrodes')
+ assert(values[k]==solved_values[k],'mask restoration changed a solved potential')
+end end end
+print('PARENT_BOUNDARY_MASK=PASS')
+'''
+        with tempfile.TemporaryDirectory(prefix="parent-boundary-lua-") as directory:
+            path = Path(directory) / "harness.lua"
+            path.write_text(harness, encoding="utf-8", newline="\n")
+            result = subprocess.run([str(LUA), str(path), str(DIRICHLET_OPERATING_PATCH)],
+                                    cwd=directory, capture_output=True, text=True, encoding="utf-8",
+                                    check=False, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PARENT_BOUNDARY_MASK=PASS", result.stdout)
+
     def test_invalid_stopping_and_extra_argument_fail_before_pa_open(self) -> None:
         for options in (("0",), ("-1",), ("nan",), ("inf",), ("junk",), ("1e-5", "extra")):
             with self.subTest(options=options):
@@ -140,6 +222,51 @@ print('ZERO_BOUNDARY_MASK=PASS')
                                     check=False, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("ZERO_BOUNDARY_MASK=PASS", result.stdout)
+
+
+    def test_native_neumann_keeps_open_edges_and_physical_mask_with_one_refine(self) -> None:
+        harness = r'''
+local helper=arg[1]
+local function key(x,y,z) return x..','..y..','..z end
+local function metal(x,y,z) return y==1 and z==1 and (x==0 or x==1) end
+local values,flags={},{},{}
+local target={nx=3,ny=3,nz=3,dx_mm=.2,dy_mm=.3,dz_mm=.4}
+function target:point(x,y,z,value,physical)
+ local k=key(x,y,z)
+ if value==nil then return values[k] or (x==0 and 2 or 1),metal(x,y,z) end
+ values[k],flags[k]=value,physical
+end
+function target:save() end
+function target:close() end
+local calls=0
+function target:refine(options)
+ calls=calls+1;assert(options.convergence==1e-5)
+ for z=0,2 do for y=0,2 do for x=0,2 do
+  local k=key(x,y,z)
+  assert(flags[k]==metal(x,y,z),'native open edges may not become electrodes')
+  if metal(x,y,z) then assert(values[k]==(x==0 and -17 or 11))
+  else assert(values[k]==0) end
+ end end end
+end
+simion={pas={}}
+function simion.pas:close() end
+function simion.pas:open(path)
+ assert(path=='raw.pa#' or path=='patch.pa0','no parent PA may be opened')
+ return target
+end
+arg={'raw.pa#','patch.pa0','zero_neumann','0,0,0','0,0,0','11,-17','1e-5'}
+dofile(helper)
+assert(calls==1)
+print('NATIVE_NEUMANN_MASK=PASS')
+'''
+        with tempfile.TemporaryDirectory(prefix="neumann-lua-") as directory:
+            path = Path(directory) / "harness.lua"
+            path.write_text(harness, encoding="utf-8", newline="\n")
+            result = subprocess.run([str(LUA), str(path), str(DIRICHLET_OPERATING_PATCH)],
+                                    cwd=directory, capture_output=True, text=True, encoding="utf-8",
+                                    check=False, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("NATIVE_NEUMANN_MASK=PASS", result.stdout)
 
 
 class StandalonePaToolStaticContractTest(unittest.TestCase):

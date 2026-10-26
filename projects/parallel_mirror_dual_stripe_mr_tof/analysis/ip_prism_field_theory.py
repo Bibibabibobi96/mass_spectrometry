@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
+from common.analysis.population_moments import population_pair_moments
 from common.contracts.particle_physics import charge_to_mass_c_per_kg, kinetic_energy_ev
 from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_local_diagnostics as local
@@ -28,7 +29,7 @@ def linear_optics(rows: list[dict]) -> list[dict]:
     for axis in "xy":
         x = np.array([r[f"{axis}_mm"] for r in rows], float)
         slope = np.array([r[f"v{axis}_mm_us"] / -r["vz_mm_us"] for r in rows], float)
-        moments = local._moments_pair(x, slope)
+        moments = population_pair_moments(x, slope)
         variance_x, variance_s = moments["variance_first"], moments["variance_second"]
         covariance = moments["covariance"]
         k = covariance / variance_x if variance_x else None
@@ -36,7 +37,7 @@ def linear_optics(rows: list[dict]) -> list[dict]:
         epsilon = math.sqrt(max(0., variance_x*variance_s-covariance**2)) if rows else None
         residual = math.sqrt(max(0., variance_s-covariance**2/variance_x)) if variance_x else None
         angle = np.arctan(slope)
-        angle_moments = local._moments_pair(x, angle)
+        angle_moments = population_pair_moments(x, angle)
         angle_k = angle_moments["covariance"]/variance_x if variance_x else None
         result.append(dict(axis=axis, count=len(rows), sigma_position_mm=float(np.std(x)) if rows else None,
                            sigma_slope=float(np.std(slope)) if rows else None,
@@ -125,7 +126,7 @@ def plane_covariances(states: list[dict], planes: list[dict]) -> list[dict]:
         rows = projection["crossings"]
         for i, first in enumerate(keys):
             for second in keys[i:]:
-                moments = local._moments_pair(np.array([r[first] for r in rows]), np.array([r[second] for r in rows]))
+                moments = population_pair_moments(np.array([r[first] for r in rows]), np.array([r[second] for r in rows]))
                 result.append(dict(plane_name=plane["name"], z_mm=plane["z_mm"], count=len(rows),
                                    source_count=len(states), complete_source=len(rows) == len(states),
                                    first_quantity=first, second_quantity=second,

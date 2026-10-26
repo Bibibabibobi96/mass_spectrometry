@@ -44,7 +44,10 @@ L3 才核验商业求解、GUI/CAD、冻结输入、manifest 和物理证据链�
 
 
 `common/gate_catalog.json`是L1路径路由、依赖等级、阶段前置关系和L2成员身份的唯一机器目录；项目或
-integration新增公开门禁时必须注册，目录与文件系统不一致即失败。仓库只保留
+integration新增公开门禁时必须注册，目录与文件系统不一致即失败。集成route通过
+`runtime_dependencies_path`引用已有运行依赖库存；公共catalog读取器将其`source_repo_path`展开为精确匹配，
+新增依赖不再手抄第二份路由表。缺失库存、未知版本／身份或缺失来源文件在规划时失败。
+仓库只保留
 `common/verify_changed.ps1`这一个L1入口，不提供旧名称兼容脚本。`.github/workflows/lightweight-gate.yml`
 在push只运行L1；L2仅可由`workflow_dispatch`人工启动，不对pull request自动运行全仓回归。
 
@@ -52,20 +55,43 @@ L1的`-PlanOnly`使用同一目录先给出`stdlib`或`locked`依赖等级；Git
 合同范围跳过完整科学Python环境安装，任何未明确分类、项目注册表、Python lint、项目/集成、依赖声明或
 FullScope均失败关闭为`locked`。本地并发默认为`min(8, logical_processors)`，可用
 `-MaxConcurrency 1..32`显式覆盖；GitHub托管runner固定为2。这是门禁组内的并发上限，实际阶段还须通过
-下述机器级资源准入；提高该值不会绕过预算。并行阶段即时报告进程启动与完成，随后按
-稳定顺序回放完整日志。历史耗时测量见[门禁审计](history/20260802__gate-system-audit.md)；
+下述机器级资源准入；提高该值不会绕过预算。并行阶段即时报告进程启动与完成，启动行的`LOG_PATH`
+指向执行中逐行刷新、可直接读取的阶段日志；完成后仍按稳定顺序回放完整日志，不在内存缓存整个阶段。
+历史耗时测量见[门禁审计](history/20260802__gate-system-audit.md)；
 L2用于显式全仓审计，纯文档提交不默认运行L2。
 L1/L2共用命令调用器直接绑定函数脚本块；仅冻结每项路由参数，不对调用器本身建立动态闭包，
 避免其捕获旧的`LASTEXITCODE`而把失败报告为成功。公共回归实际执行成功及非零退出探针。
+公共预算阶段执行期间将控制台输出编码设为UTF-8，退出时恢复原编码，嵌套阶段同样遵守；
+避免隐藏Windows宿主的CP936经Python传给子PowerShell，导致中文错误日志解码失败并掩盖原始错误。
+
+改动范围Ruff检查沿锁定版本的[官方参数文件](https://docs.astral.sh/ruff/configuration/#argfile-support)
+传递原文件集合，保持逐文件范围及非零退出语义；阶段结束时清理临时参数文件。
+这样避免大量绝对路径超过[Windows CreateProcessW的32,767字符上限](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)，
+不另建分批启动器，也不以缩短路径或修改UTF-8日志语义规避进程限制。
 
 ### 主机资源调度
 
+粒子拆批与默认并发遵循[开发标准](DEVELOPMENT_STANDARDS.md#独立粒子与耦合求解的调度)，
+随机重复运行的验收遵循[验证方法](VALIDATION_METHODS.md#随机碰撞与重复运行)。
+PA等昂贵阶段复用及中断恢复遵循[统一复用与恢复规则](DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)。
+
 本机门禁与SIMION/COMSOL运行通过[`host_execution_lease.ps1`](../common/host_execution_lease.ps1)
-进入同一[`主机调度器`](../common/host_resource_scheduler.py)。默认账本为
-`%ProgramData%/MassSpectrometry/host_resources.sqlite3`；不同工作树必须使用同一个机器级账本，不能
-各建一份而重复分配资源。`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`只用于显式受控部署或隔离测试，
-生产调用不得用它绕过正在运行的申请。资源配置、已分类阶段及测量依据只维护在
+进入同一[`主机调度器`](../common/host_resource_scheduler.py)。当前默认账本位于工作区同级产物根的
+`artifacts/common/host_resources.sqlite3`；同一父目录中的工作树共用该默认值，跨父目录不能假定自动共用。
+准入和status按显式绝对路径、`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`、默认路径的顺序选择；
+不同工作树必须显式部署到同一绝对账本，不能各建一份而重复分配资源。环境路径只用于受控部署或隔离测试，
+生产调用不得用它绕过正在运行的申请。切换部署路径前必须等待原账本的owner、后代和等待者全部结束，
+不能复制活跃SQLite或让两个账本并行准入。资源配置、已分类阶段及测量依据只维护在
 [`host_resource_policy.json`](../common/host_resource_policy.json)，不在项目脚本复制容量阈值。
+
+CIM不可用时，原生观测每轮只用一次
+[Toolhelp进程快照](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-createtoolhelp32snapshot)
+建立父PID表，循环查表，不跨事务缓存。
+[PROCESSENTRY32W](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/ns-tlhelp32-processentry32w)
+只有PID／父PID，不提供创建身份；创建时间继续由.NET或
+[GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes)
+读取。抓表后才创建的同PID身份不能绑定旧父关系，进入既有unknown处理；缺少父项仍按原parent=0语义。
+这是基于Windows官方API的仓库实现，资料核验日期2026-10-25；不把进程名当身份或console豁免依据。
 
 阶段通过`Enter-HostResourceStage`申请CPU核数、内存字节、批量I/O槽位及具名独占资源，取得许可后
 才能启动工作；相同独占资源名不能同时授予两个活动阶段。预算是准入声明，不是操作系统强制限额，
@@ -104,7 +130,10 @@ SIMION公共执行器在原生refine/fly启动或进入内部飞行批次调度�
 PID与创建时间继续识别后代，确认相关进程退出才回收。状态可通过`Get-HostResourceStatus`查询。
 调度器不杀进程；排查无用占用须结合命令、归属、日志和实际进展，不能仅凭低CPU利用率终止
 可能正在I/O、等待许可证或保存结果的工作。观测失败不清空既有预约。
-并发事务使采样过期时，入口退避后重新采样并报告等待；正常竞争不算工作失败，陈旧观测不能用于准入。
+并发事务使准入或阶段切换的采样过期时，入口退避后重新采样并报告等待；正常竞争不算工作失败，陈旧观测不能用于准入。
+释放不申请新资源：若当前账本与传入快照都确认该租约没有非owner、非系统console的存活后代，
+且owner创建身份有效、相关身份观测完整，公共事务只释放该租约，不推进全局观测水位、不重新准入
+或回收其他租约。这样无关排队轮询不能让较慢的正常释放无限饥饿；任一观测仍有后代或身份未知时继续保留。
 唯一的子进程例外是可执行路径精确匹配 Windows 系统映像的`conhost.exe`：它不阻止阶段切换或显式
 释放，实际内存仍进入系统观测，活动预约期间仍记录其身份与内存。普通工作后代不享有此例外。
 
@@ -154,9 +183,10 @@ ledger-only日常startup/maintenance。首次校准或台账失准时，必须�
 但已注册的公共 SIMION PA-family cache 会对其当前 generation 的完整 payload 做字节级验证。因此它适合
 每次产物整理后运行，但不放进不具备本机artifacts的GitHub Workflow。命名合同单元测试仍属于轻量门禁。
 
-公共 PA-family generation 是发布介质，不是求解器工作目录。SIMION 不得直接接收 generation 路径、
-Junction、硬链接或原生 `.paN` 的物化副本；运行时只消费按 manifest `bytes + SHA-256` 建立的独立
-standalone 私有副本。公共 `New-ShortPaCopy` 对父目录含 `cache_manifest.json` 的来源强制要求这两项身份，
+公共 PA-family generation 是不可变发布介质，不是求解器可写工作目录。原生 family 成员及其物化副本
+不能交给供应商进程；已发布 ordinary standalone PA 的受护直接只读消费与必要独立副本，统一遵循
+[长PA输入路径](SIMION_REFERENCE.md#长pa输入路径)。不得用Junction或硬链接替代该隔离边界。
+公共 `New-ShortPaCopy` 对父目录含 `cache_manifest.json` 的来源强制要求manifest `bytes + SHA-256`，
 缺少任一项即失败。Windows 大 PA 若普通缓冲读取与 `/J` 持久读取分叉，不得对发布源 ReadWrite/Flush；
 应先用 manifest-bound `/J` 快照验证，并把旧文件对象隔离后以同字节的新对象原子替换，禁止原位修补。
 

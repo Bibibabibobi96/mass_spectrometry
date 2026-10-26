@@ -54,7 +54,8 @@
           "properties": {
             "design_variables_sha256": {"$ref": "#/$defs/sha256"},
             "optimization_envelope_sha256": {"$ref": "#/$defs/sha256"},
-            "design_request_file_sha256": {"$ref": "#/$defs/sha256"}
+            "design_request_file_sha256": {"$ref": "#/$defs/sha256"},
+            "enclosure_model": {"$ref": "multipole_design_request.schema.json#/$defs/enclosure/oneOf/0/properties/model"}
           }
         }
       ]
@@ -413,7 +414,7 @@
           ],
           "properties": {
             "role": {"const": "full_length_grounded_shield"},
-            "model": {"const": "cylindrical_grounded_shield_v1"},
+            "model": {"enum": ["cylindrical_grounded_shield_v1", "cylindrical_grounded_shield_through_exit_v1", "cylindrical_grounded_shield_through_entrance_exit_v1"]},
             "working_region_radius_mm": {"type": "number", "exclusiveMinimum": 0},
             "vacuum_z_min_mm": {"type": "number"},
             "vacuum_z_max_mm": {"type": "number"},

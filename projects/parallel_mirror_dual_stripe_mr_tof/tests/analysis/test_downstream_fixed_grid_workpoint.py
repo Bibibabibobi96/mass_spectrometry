@@ -780,8 +780,8 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
             path.write_text(json.dumps(content), encoding="utf-8")
             return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": file_sha256(path)}
         manifest = {
-            "status": "success", "project": "parallel_mirror_dual_stripe_mr_tof",
-            "mode": "finite_3d_two_prism_voltage_trial",
+            "status": "success", "project": "instrument_assembly",
+            "mode": "oa_mr",
             "run_config": record("run_config.json", {"parameters": {}}),
             "outputs": [record("two_prism_trial_observation.json", observation),
                         record("two_prism_trial_materialization.json", materialization),
@@ -1002,7 +1002,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                 _trial(manifest)
 
     def test_native_history_uses_bound_small_evidence_not_retired_payload(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, verify_joint_asset_records
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _collision_geometry_projection
 
         baseline, _, _ = self._fixture()
@@ -1017,13 +1017,19 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
             values = [0.] * 20
             values[10:14] = [-25., -25., 50., 50.]
             values[15:17] = [190., -190.]
-            authority = {"analyzer_electrode_voltages_v": values}
+            authority = {"analyzer_electrode_voltages_v": values,
+                         "assembly": {"accelerator_iob_origin_mm": [0, 0, 0], "detector": {"box": {}},
+                           "accelerator_resolved_electrodes": {"local_to_pa_translation_mm": [0, 0, 0],
+                             "grounded_enclosure": {"outer_box_mm": {"z_min_mm": 0}},
+                             "repeller": {"solid_box_mm": {"z_min_mm": 1}}, "grid_supports": [], "rings": []}}}
             geometry = {key: [] for key in ("mirror_electrodes", "mirror_slot", "mirror_inner_shield_slot",
                 "mirror_ground_shields", "mirror_e_closures", "stripe_electrodes", "stripe_slot",
                 "central_ground_electrodes", "central_ground_slots", "prism_electrodes", "prism_ground_shields")}
+            geometry["detector"] = {"box": {}}
             grid = dict(origin_mm=[0, -2, -2], pitch_mm=[.5, 1., 1.], dimensions=[5, 5, 5], symmetry="x")
             plan = dict(box_mm=[0, -2, -2, 2, 2, 2], pitch_mm=grid["pitch_mm"], dimensions=grid["dimensions"],
-                        boundary_mode="grounded_enclosure")
+                        boundary_mode="grounded_enclosure", mirror_axes=["x"], surface="fractional",
+                        ordinary_static_pa=True)
             records = {name: record(owner / (name + ".json"), value) for name, value in (
                 ("voltage_authority", authority), ("geometry_authority", geometry), ("numerical_plan", plan))}
             # The flight sealed these identities before their owner retired the PA.
@@ -1124,8 +1130,12 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                 _trial(trial_path)
             manifest["run_config"] = record(trial_path.parent / "run_config.json", config)
             trial_path.write_text(json.dumps(manifest), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "missing or changed size"):
-                load_binding(binding_path)
+            # Metadata stays usable after retirement; actual field consumption
+            # still rejects the missing sealed PA at the public payload boundary.
+            loaded = load_binding(binding_path)
+            self.assertEqual(loaded["grid"], grid)
+            with self.assertRaisesRegex(AssertionError, r"live joint field asset is missing: .*field\.pa"):
+                verify_joint_asset_records(loaded)
             # A binding not sealed by the flight is never trusted.
             manifest["inputs"] = {}
             trial_path.write_text(json.dumps(manifest), encoding="utf-8")

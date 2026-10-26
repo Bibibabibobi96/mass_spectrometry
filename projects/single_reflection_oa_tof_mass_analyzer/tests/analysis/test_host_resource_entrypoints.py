@@ -206,7 +206,7 @@ foreach($nested in @($false,$true)) {
         builder = (PROJECT / "simion/workbench/build_formal_delivery.ps1").read_text(encoding="utf-8")
         for name in ("build_two_zone_pa.lua", "build_reflectron_variant.lua",
                      "build_flight_tube_variant.lua", "build_detector_variant.lua"):
-            line = next(line for line in builder.splitlines() if "Invoke-SimionLua" in line and name in line)
+            line = next(line for line in builder.splitlines() if "Invoke-SimionLua -Refines" in line and name in line)
             self.assertIn("-Refines", line)
         iob_line = next(line for line in builder.splitlines() if "Invoke-SimionLua" in line and "build_formal_iob.lua" in line)
         self.assertNotIn("-Refines", iob_line)
@@ -222,9 +222,19 @@ foreach($nested in @($false,$true)) {
             verify_candidate_source_closure(closure)
             self.assertTrue((code / "common/host_resource_scheduler.py").is_file())
             self.assertTrue((code / "common/host_resource_policy.json").is_file())
+            self.assertTrue((code / "common/multipole/resource_budget_support.ps1").is_file())
             script = """
 $ErrorActionPreference='Stop'
 . ./common/host_execution_lease.ps1
+. ./common/multipole/resource_budget_support.ps1
+$observationSource=(Get-Command New-RepositoryProcessObservation).ScriptBlock.File
+if($observationSource -ne [IO.Path]::GetFullPath('./common/multipole/resource_budget_support.ps1')){
+  throw 'Process observation did not load from the frozen closure'
+}
+$observation=New-RepositoryProcessObservation
+if($null -ne $observation.usage -or $observation.usage_path -or $observation.run_dir){
+  throw 'Unbudgeted frozen observation unexpectedly requires usage output'
+}
 function Get-CimInstance {
   param($ClassName, $ErrorAction)
   switch($ClassName) {

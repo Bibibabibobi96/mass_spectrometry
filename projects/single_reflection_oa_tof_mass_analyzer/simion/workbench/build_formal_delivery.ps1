@@ -157,22 +157,11 @@ function Assert-CompleteRefinedReflectronSet([int]$MaxElectrode) {
   }
 }
 
-function Invoke-ReflectronFastAdjust([int]$MaxElectrode) {
-  $assignments = @('1=0')
-  foreach ($ringIndex in 1..([int]$contract.rings.stage1_count)) {
-    $assignments += "$(1+$ringIndex)=$($voltage.midgrid*$ringIndex/([int]$contract.rings.stage1_count+1))"
-  }
-  $midgridElectrode = 2 + [int]$contract.rings.stage1_count
-  $assignments += "$midgridElectrode=$($voltage.midgrid)"
-  foreach ($ringIndex in 1..([int]$contract.rings.stage2_count)) {
-    $electrode = $midgridElectrode + $ringIndex
-    $ringVoltage = $voltage.midgrid + ($voltage.backplate-$voltage.midgrid)*$ringIndex/([int]$contract.rings.stage2_count+1)
-    $assignments += "$electrode=$ringVoltage"
-  }
-  $assignments += "$(3+[int]$contract.rings.stage1_count+[int]$contract.rings.stage2_count)=$($voltage.backplate)"
-  $assignments += "$MaxElectrode=0"
-  & $SimionExe --nogui --noprompt fastadj (Join-Path $outputFull 'reflectron.pa0') ($assignments -join ',')
-  if ($LASTEXITCODE -ne 0) { throw "Reflectron fast-adjust failed with exit code ${LASTEXITCODE}." }
+function Invoke-ReflectronFastAdjust {
+  Invoke-SimionLua (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
+    (Join-Path $projectRoot 'simion\reflectron\oatof_reflectron_ideal_10_5.gem'),
+    (Join-Path $outputFull 'reflectron.pa#'), (Join-Path $textDir 'oatof_resolved.lua'), 'adjust-only'
+  )
 }
 
 function Invoke-SegmentedReflectronRefine([int]$MaxElectrode) {
@@ -216,7 +205,7 @@ if ($ResumeRefinedReflectron) {
   }
   Assert-CompleteRefinedReflectronSet $maxReflectronElectrode
   Invoke-SegmentedReflectronRefine $maxReflectronElectrode
-  Invoke-ReflectronFastAdjust $maxReflectronElectrode
+  Invoke-ReflectronFastAdjust
 }
 elseif ($reuseComponentNames -contains 'reflectron') {
   Copy-ReusablePaSet 'reflectron'
@@ -224,17 +213,12 @@ elseif ($reuseComponentNames -contains 'reflectron') {
 else {
   Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
   (Join-Path $projectRoot 'simion\reflectron\oatof_reflectron_ideal_10_5.gem'), $reflectronStem,
-  $build.reflectron.cell_axial_mm, $build.reflectron.cell_radial_mm,
-  $build.reflectron.max_gib, $geometry.flight_tube_r, $geometry.flight_tube_wall,
-  $geometry.L_reflectron, $geometry.ring_thickness, $geometry.shield_axial_gap,
-  $geometry.shield_endcap_thickness, $geometry.L_stage1, $geometry.L_stage2,
-  $geometry.bore_r, $geometry.ring_outer_r, $contract.rings.stage1_count,
-  $contract.rings.stage2_count, $voltage.midgrid, $voltage.backplate,
+  (Join-Path $textDir 'oatof_resolved.lua'),
   'initialize-only'
   )
   Assert-CompleteRefinedReflectronSet $maxReflectronElectrode
   Invoke-SegmentedReflectronRefine $maxReflectronElectrode
-  Invoke-ReflectronFastAdjust $maxReflectronElectrode
+  Invoke-ReflectronFastAdjust
 }
 
 $flightTubeStem = Join-Path $outputFull 'flight_tube_ground.pa#'
@@ -244,9 +228,7 @@ if ($reuseComponentNames -contains 'flight_tube') {
 else {
   Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\workbench\build_flight_tube_variant.lua') @(
   (Join-Path $projectRoot 'simion\workbench\oatof_flight_tube_ground.gem'), $flightTubeStem,
-  $build.flight_tube.cell_axial_mm, $build.flight_tube.cell_radial_mm,
-  $build.flight_tube.max_gib, $geometry.flight_tube_r, $geometry.flight_tube_wall,
-  $geometry.shield_endcap_thickness, $geometry.shield_outer_z_min, $geometry.L_flight
+  (Join-Path $textDir 'oatof_resolved.lua')
   )
 }
 
@@ -257,9 +239,7 @@ if ($reuseComponentNames -contains 'detector') {
 else {
   Invoke-SimionLua -Refines (Join-Path $projectRoot 'simion\workbench\build_detector_variant.lua') @(
   (Join-Path $projectRoot 'simion\workbench\oatof_detector_ground.gem'), $detectorStem,
-  $detector.cell_xy_mm, $detector.cell_z_mm, $detector.active_radius_mm,
-  $detector.absorber_thickness_mm, $detector.front_margin_z_mm,
-  $detector.back_margin_z_mm, $build.detector.margin_xy_mm, $build.detector.max_mib
+  (Join-Path $textDir 'oatof_resolved.lua')
   )
 }
 

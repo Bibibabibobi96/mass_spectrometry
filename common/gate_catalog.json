@@ -7,17 +7,43 @@
       "dependency_profile": "locked",
       "repository_integration_group": "fast",
       "matches": [
-        { "exact": "common/host_resource_scheduler.py", "reason": "host_scheduler_changed" },
-        { "exact": "common/host_resource_policy.json", "reason": "host_policy_changed" },
-        { "exact": "common/test_host_resource_scheduler.py", "reason": "host_scheduler_tests_changed" },
-        { "exact": "common/host_resource_python.py", "reason": "host_python_bridge_changed" },
-        { "exact": "common/host_resource_python.ps1", "reason": "host_python_bridge_changed" },
-        { "exact": "common/test_host_resource_python.py", "reason": "host_python_bridge_tests_changed" },
-        { "exact": "common/host_execution_lease.ps1", "reason": "host_adapter_changed" }
+        {
+          "exact": "common/host_resource_scheduler.py",
+          "reason": "host_scheduler_changed"
+        },
+        {
+          "exact": "common/host_resource_policy.json",
+          "reason": "host_policy_changed"
+        },
+        {
+          "exact": "common/test_host_resource_scheduler.py",
+          "reason": "host_scheduler_tests_changed"
+        },
+        {
+          "exact": "common/host_resource_python.py",
+          "reason": "host_python_bridge_changed"
+        },
+        {
+          "exact": "common/host_resource_python.ps1",
+          "reason": "host_python_bridge_changed"
+        },
+        {
+          "exact": "common/test_host_resource_python.py",
+          "reason": "host_python_bridge_tests_changed"
+        },
+        {
+          "exact": "common/host_execution_lease.ps1",
+          "reason": "host_adapter_changed"
+        }
       ],
       "command": {
         "runner": "python",
-        "arguments": ["-m", "unittest", "common.test_host_resource_scheduler", "common.test_host_resource_python"]
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.test_host_resource_scheduler",
+          "common.test_host_resource_python"
+        ]
       }
     },
     {
@@ -25,15 +51,29 @@
       "dependency_profile": "stdlib",
       "repository_integration_group": "fast",
       "matches": [
-        { "exact": "common/host_resource_scheduler.py", "reason": "host_scheduler_changed" },
-        { "exact": "common/host_resource_policy.json", "reason": "host_policy_changed" },
-        { "exact": "common/host_execution_lease.ps1", "reason": "host_adapter_changed" },
-        { "exact": "common/test_host_execution_lease.ps1", "reason": "host_adapter_tests_changed" }
+        {
+          "exact": "common/host_resource_scheduler.py",
+          "reason": "host_scheduler_changed"
+        },
+        {
+          "exact": "common/host_resource_policy.json",
+          "reason": "host_policy_changed"
+        },
+        {
+          "exact": "common/host_execution_lease.ps1",
+          "reason": "host_adapter_changed"
+        },
+        {
+          "exact": "common/test_host_execution_lease.ps1",
+          "reason": "host_adapter_tests_changed"
+        }
       ],
       "command": {
         "runner": "powershell",
         "script": "common/test_host_execution_lease.ps1",
-        "parameters": { "PythonExe": "{python}" }
+        "parameters": {
+          "PythonExe": "{python}"
+        }
       }
     },
     {
@@ -41,13 +81,26 @@
       "dependency_profile": "stdlib",
       "repository_integration_group": "fast",
       "matches": [
-        { "exact": "common/comsol/run_comsol_r2025b.ps1", "reason": "livelink_launcher_changed" },
-        { "exact": "common/comsol/test_livelink_resource_stages.py", "reason": "livelink_resource_tests_changed" },
-        { "exact": "common/host_execution_lease.ps1", "reason": "host_adapter_changed" }
+        {
+          "exact": "common/comsol/run_comsol_r2025b.ps1",
+          "reason": "livelink_launcher_changed"
+        },
+        {
+          "exact": "common/comsol/test_livelink_resource_stages.py",
+          "reason": "livelink_resource_tests_changed"
+        },
+        {
+          "exact": "common/host_execution_lease.ps1",
+          "reason": "host_adapter_changed"
+        }
       ],
       "command": {
         "runner": "python",
-        "arguments": ["-m", "unittest", "common.comsol.test_livelink_resource_stages"]
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.comsol.test_livelink_resource_stages"
+        ]
       }
     },
     {
@@ -55,12 +108,68 @@
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
-        { "exact": "common/analysis/longitudinal_fit.py", "reason": "longitudinal_fit_changed" },
-        { "exact": "common/analysis/test_longitudinal_fit.py", "reason": "longitudinal_fit_tests_changed" }
+        {
+          "exact": "common/analysis/longitudinal_fit.py",
+          "reason": "longitudinal_fit_changed"
+        },
+        {
+          "exact": "common/analysis/test_longitudinal_fit.py",
+          "reason": "longitudinal_fit_tests_changed"
+        }
       ],
       "command": {
         "runner": "python",
-        "arguments": ["-m", "unittest", "common.analysis.test_longitudinal_fit"]
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.analysis.test_longitudinal_fit"
+        ]
+      }
+    },
+    {
+      "stage": "population_moments_tests",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "matches": [
+        {
+          "exact": "common/analysis/population_moments.py",
+          "reason": "population_moments_changed"
+        },
+        {
+          "exact": "common/analysis/test_population_moments.py",
+          "reason": "population_moments_tests_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.analysis.test_population_moments"
+        ]
+      }
+    },
+    {
+      "stage": "particle_events_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "regression",
+      "matches": [
+        {
+          "exact": "common/analysis/particle_events.py",
+          "reason": "particle_events_changed"
+        },
+        {
+          "exact": "common/analysis/test_particle_events.py",
+          "reason": "particle_events_tests_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.analysis.test_particle_events"
+        ]
       }
     },
     {
@@ -68,12 +177,22 @@
       "dependency_profile": "stdlib",
       "repository_integration_group": "fast",
       "matches": [
-        { "exact": "common/analysis/tof_error_budget.py", "reason": "tof_error_budget_changed" },
-        { "exact": "common/analysis/test_tof_error_budget.py", "reason": "tof_error_budget_tests_changed" }
+        {
+          "exact": "common/analysis/tof_error_budget.py",
+          "reason": "tof_error_budget_changed"
+        },
+        {
+          "exact": "common/analysis/test_tof_error_budget.py",
+          "reason": "tof_error_budget_tests_changed"
+        }
       ],
       "command": {
         "runner": "python",
-        "arguments": ["-m", "unittest", "common.analysis.test_tof_error_budget"]
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.analysis.test_tof_error_budget"
+        ]
       }
     },
     {
@@ -81,13 +200,26 @@
       "dependency_profile": "stdlib",
       "repository_integration_group": "fast",
       "matches": [
-        { "exact": "common/documentation_links.py", "reason": "documentation_links_changed" },
-        { "exact": "common/test_documentation_links.py", "reason": "documentation_link_tests_changed" },
-        { "exact": "common/verify_documentation.ps1", "reason": "documentation_gate_changed" }
+        {
+          "exact": "common/documentation_links.py",
+          "reason": "documentation_links_changed"
+        },
+        {
+          "exact": "common/test_documentation_links.py",
+          "reason": "documentation_link_tests_changed"
+        },
+        {
+          "exact": "common/verify_documentation.ps1",
+          "reason": "documentation_gate_changed"
+        }
       ],
       "command": {
         "runner": "python",
-        "arguments": ["-m", "unittest", "common.test_documentation_links"]
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.test_documentation_links"
+        ]
       }
     },
     {
@@ -215,12 +347,22 @@
       "run_on_full_scope": false,
       "full_scope_coverage_stage": "common_contracts",
       "matches": [
-        { "exact": "common/contracts/expected_values.py", "reason": "expected_values_changed" },
-        { "exact": "common/contracts/test_expected_values.py", "reason": "expected_values_tests_changed" }
+        {
+          "exact": "common/contracts/expected_values.py",
+          "reason": "expected_values_changed"
+        },
+        {
+          "exact": "common/contracts/test_expected_values.py",
+          "reason": "expected_values_tests_changed"
+        }
       ],
       "command": {
         "runner": "python",
-        "arguments": ["-m", "unittest", "common.contracts.test_expected_values"]
+        "arguments": [
+          "-m",
+          "unittest",
+          "common.contracts.test_expected_values"
+        ]
       }
     },
     {
@@ -430,15 +572,19 @@
           "reason": "integration_schema_changed"
         },
         {
+          "exact": "common/contracts/schemas/assembly_recipe.schema.json",
+          "reason": "integration_schema_changed"
+        },
+        {
+          "exact": "common/contracts/schemas/component_geometry_interface.schema.json",
+          "reason": "integration_schema_changed"
+        },
+        {
           "exact": "common/contracts/schemas/connection_profile.schema.json",
           "reason": "integration_schema_changed"
         },
         {
           "exact": "common/contracts/schemas/connection_profile_registry.schema.json",
-          "reason": "integration_schema_changed"
-        },
-        {
-          "exact": "common/contracts/schemas/execution_adapter_registry.schema.json",
           "reason": "integration_schema_changed"
         },
         {
@@ -468,55 +614,59 @@
       }
     },
     {
-      "stage": "rf_multipole_to_single_reflection_oatof_integration",
+      "stage": "instrument_assembly_integration",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
-        { "exact": "common/analysis/longitudinal_fit.py", "reason": "longitudinal_fit_dependency_changed" },
         {
-          "prefix": "projects/orthogonal_accelerator/",
-          "reason": "orthogonal_accelerator_direct_dependency_changed"
+          "regex": "^projects/parallel_mirror_dual_stripe_mr_tof/analysis/(?!test_)[^/]+\\.py$",
+          "reason": "prepared_joint_provider_changed"
         },
         {
-          "regex": "^projects/rf_quadrupole_ion_optics/analysis/(derive_shared_centroid_pulse_time|plot_shared_pulse_geometry_snapshot|audit_pulse_capture_pulse_chain|build_pulse_capture_local_exit_component_state|analyze_analyzer_transport|validate_oatof_formal_analyzer_release)\\.py$",
-          "reason": "integration_analysis_ownership_changed"
+          "exact": "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_matching_request.json",
+          "reason": "accelerator_interface_inputs_changed"
+        },
+        {
+          "prefix": "common/ion_release/",
+          "reason": "source_release_dependency_changed"
+        },
+        {
+          "regex": "^integrations/(?:runtime/|analysis/|workflows/|tests/|config/|recipes/|docs/|README\\.md$|registry\\.json$|verify_integration\\.ps1$)",
+          "reason": "instrument_assembly_changed"
+        },
+        {
+          "prefix": "projects/orthogonal_accelerator/",
+          "reason": "accelerator_provider_changed"
+        },
+        {
+          "prefix": "projects/dual_pressure_rectilinear_ion_processor/",
+          "reason": "guide_provider_changed"
         },
         {
           "prefix": "common/integration/",
-          "reason": "common_integration_changed"
-        },
-        {
-          "prefix": "integrations/",
-          "reason": "integration_instance_changed"
-        },
-        {
-          "regex": "^projects/[^/]+/config/interfaces/",
-          "reason": "component_port_changed"
-        },
-        {
-          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_multipole_direct_dependency_changed"
+          "reason": "assembly_compiler_changed"
         },
         {
           "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "^common/comsol/(?!README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
-          "reason": "common_comsol_direct_dependency_changed"
-        },
-        {
           "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
+          "reason": "common_multipole_direct_dependency_changed"
         }
       ],
       "command": {
         "runner": "powershell",
-        "script": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/verify_integration.ps1",
+        "script": "integrations/verify_integration.ps1",
         "parameters": {
           "PythonExe": "{python}"
         }
-      }
+      },
+      "runtime_dependencies_path": "integrations/config/runtime_dependencies.json"
     },
     {
       "stage": "solidworks_common",
@@ -547,16 +697,33 @@
       "repository_integration_group": "regression",
       "project_id": "orthogonal_accelerator",
       "matches": [
-        { "exact": "common/contracts/expected_values.py", "reason": "reference_comparison_dependency_changed" },
-        {"prefix": "projects/orthogonal_accelerator/", "reason": "orthogonal_accelerator_changed"},
-        {"exact": "common/simion/gem_primitives.py", "reason": "accelerator_geometry_dependency_changed"},
-        {"exact": "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json", "reason": "accelerator_consumer_contract_changed"},
-        {"exact": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_dependency.json", "reason": "accelerator_consumer_contract_changed"}
+        {
+          "exact": "common/contracts/expected_values.py",
+          "reason": "reference_comparison_dependency_changed"
+        },
+        {
+          "prefix": "projects/orthogonal_accelerator/",
+          "reason": "orthogonal_accelerator_changed"
+        },
+        {
+          "exact": "common/simion/gem_primitives.py",
+          "reason": "accelerator_geometry_dependency_changed"
+        },
+        {
+          "exact": "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
+          "reason": "accelerator_consumer_contract_changed"
+        },
+        {
+          "exact": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_dependency.json",
+          "reason": "accelerator_consumer_contract_changed"
+        }
       ],
       "command": {
         "runner": "powershell",
         "script": "projects/orthogonal_accelerator/verify_project.ps1",
-        "parameters": {"PythonExe": "{python}"}
+        "parameters": {
+          "PythonExe": "{python}"
+        }
       }
     },
     {
@@ -572,6 +739,10 @@
         {
           "prefix": "projects/orthogonal_accelerator/",
           "reason": "orthogonal_accelerator_dependency_changed"
+        },
+        {
+          "exact": "common/analysis/population_moments.py",
+          "reason": "shared_population_moments_changed"
         }
       ],
       "command": {
@@ -597,7 +768,14 @@
       "repository_integration_group": "regression",
       "project_id": "single_reflection_oa_tof_mass_analyzer",
       "matches": [
-        { "exact": "common/analysis/longitudinal_fit.py", "reason": "longitudinal_fit_dependency_changed" },
+        {
+          "exact": "common/analysis/longitudinal_fit.py",
+          "reason": "longitudinal_fit_dependency_changed"
+        },
+        {
+          "exact": "common/analysis/field_comparison.py",
+          "reason": "field_comparison_dependency_changed"
+        },
         {
           "prefix": "projects/single_reflection_oa_tof_mass_analyzer/",
           "reason": "single_reflection_oa_tof_mass_analyzer_path_changed"
@@ -767,6 +945,10 @@
         {
           "exact": "common/multipole/simion_rf_drive.lua",
           "reason": "shared_rf_drive_changed"
+        },
+        {
+          "exact": "common/analysis/population_moments.py",
+          "reason": "shared_population_moments_changed"
         }
       ],
       "command": {

@@ -21,9 +21,9 @@ from common.contracts.write_run_manifest import file_record, require_completed_t
 from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import (
     to_local_position, to_project_position, to_project_vector, transform_from_config,
 )
+from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import frozen_release_states
 
 PROJECT = "dual_pressure_rectilinear_ion_processor"
-TARGET = "parallel_mirror_dual_stripe_mr_tof"
 EVENT_VALUES = ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
 
 
@@ -67,19 +67,31 @@ def _bound_records(run: Path, manifest: dict[str, Any]) -> dict[str, dict[str, A
 def _load_source(run: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     require_completed_terminal_publication(run / "run_manifest.json")
     manifest = _json(run / "run_manifest.json")
-    if manifest.get("status") != "success" or manifest.get("project") != PROJECT or manifest.get("run_id") != run.name:
+    if manifest.get("status") not in {"success", "failed"} or manifest.get("project") != PROJECT or manifest.get("run_id") != run.name:
         raise ValueError("source run identity/status differs")
     records = _bound_records(run, manifest)
-    consumed = ("run_config.json", "summary.json", "inputs/resolved_model.json", "inputs/source.json",
-                "inputs/release.csv", "inputs/release_receipt.json", "inputs/clock_authority.json",
-                "inputs/instrument_epoch.json", "simion/events.csv")
+    injected = "injected_source" in _json(run/"inputs/resolved_model.json")
+    consumed = ("run_config.json", "summary.json", "inputs/resolved_model.json", "inputs/clock_authority.json",
+                "inputs/instrument_epoch.json", "simion/events.csv", "results/batch_merge_receipt.json",
+                "results/simion_batch_resource_usage.json") + (
+                ("inputs/injected_source.json", "inputs/injected_states.csv", "inputs/upstream_mother_census.json", "inputs/upstream_mother_fates.csv")
+                if injected else ("inputs/source.json", "inputs/release.csv", "inputs/release_receipt.json"))
     for name in consumed:
         if name not in records:
             raise ValueError(f"consumed file is not manifest-bound: {name}")
         verify_record(name, records[name], base_dir=run)
     config, summary = _json(run / "run_config.json"), _json(run / "summary.json")
-    if config.get("run_id") != run.name or config.get("project") != PROJECT or config.get("mode") != manifest.get("mode") or summary.get("status") != "success":
+    if (config.get("run_id") != run.name or config.get("project") != PROJECT
+            or config.get("mode") != manifest.get("mode")
+            or summary.get("role") != "ion_processor_functional_summary"
+            or summary.get("status") != manifest["status"]):
         raise ValueError("source run config/summary identity differs")
+    checks = summary.get("checks")
+    if (not isinstance(checks, dict) or not checks or any(type(value) is not bool for value in checks.values())
+            or summary["status"] != ("success" if all(checks.values()) else "failed")
+            or not isinstance(summary.get("functional_status"), str) or not summary["functional_status"]
+            or not isinstance(summary.get("qualification"), str) or not summary["qualification"]):
+        raise ValueError("source lacks its measured functional acceptance result")
     retirement = run / "solver_review_retirement_receipt.json"
     lifecycle = verify_retirement(run) if retirement.exists() else {
         "status": "PASS", "role": "consumed_manifest_projection", "native_fields_consumed": False,
@@ -134,7 +146,8 @@ def _validate_events(events: list[dict[str, str]], releases: dict[int, dict[str,
             raise ValueError("invalid source species/identity")
         if mass != model["source"]["species"]["mass_amu"] or charge != model["source"]["species"]["charge_state"]:
             raise ValueError("release species differs from frozen source")
-        expected = [birth, *to_project_position(model, [_finite(release[f"{axis}_mm"]) for axis in "xyz"]),
+        arrival = _finite(release["arrival_time_us"]) if "injected_source" in model else birth
+        expected = [arrival, *to_project_position(model, [_finite(release[f"{axis}_mm"]) for axis in "xyz"]),
                     *(value / 1000 for value in to_project_vector(model, [_finite(release[f"v{axis}_m_s"]) for axis in "xyz"]))]
         if not all(_same(_finite(stages["source"][key]), value) for key, value in zip(EVENT_VALUES, expected)):
             raise ValueError("source event differs from release identity")
@@ -159,15 +172,22 @@ def _validate_events(events: list[dict[str, str]], releases: dict[int, dict[str,
     return grouped
 
 
-def export_component_exit(source_run: Path, output_directory: Path) -> dict[str, Any]:
+def export_component_exit(source_run: Path, output_directory: Path, *,
+                          source_instance_id: str, target_instance_id: str) -> dict[str, Any]:
     """Export immutable recorded states and full mother census; return receipt.
 
-    Reads a successful manifest-bound IP run (including governed retired-field
-    runs). Writes only a new output directory and refuses overwrite. Invalid
+    Reads complete manifest-bound IP data, retaining its acceptance result
+    (including failed thresholds and governed retired-field runs).
+    Writes only a new output directory and refuses overwrite. Invalid
     identity, clocks, closure, species, or stop states raise before publication.
+    Caller binds explicit assembly instances; producer project provenance stays separate.
     Coordinates stay in the producer frame, mm; velocities convert mm/us to m/s;
     absolute time is authority epoch plus solver elapsed time exactly once.
     """
+    if (not isinstance(source_instance_id, str) or not source_instance_id
+            or not isinstance(target_instance_id, str) or not target_instance_id
+            or source_instance_id == target_instance_id):
+        raise ValueError("distinct explicit source and target instance identities required")
     run, output = Path(source_run).resolve(), Path(output_directory).resolve()
     if output.exists():
         raise FileExistsError(f"component export destination already exists: {output}")
@@ -175,26 +195,42 @@ def export_component_exit(source_run: Path, output_directory: Path) -> dict[str,
         raise ValueError("component export must not modify its frozen source run")
     summary, inputs, lifecycle = _load_source(run)
     model = _json(run / "inputs/resolved_model.json")
-    source = _json(run / "inputs/source.json")
-    release_receipt = _json(run / "inputs/release_receipt.json")
-    if source != model["source"] or release_receipt.get("release_spec") != source or release_receipt.get("status") != "materialized":
-        raise ValueError("frozen source/resolved/release receipt differ")
-    for name, key in (("release.csv", "state_table"), ("source.json", "source_spec")):
-        record = release_receipt[key]
-        if record_path(record, base_dir=run) != run / "inputs" / name:
-            raise ValueError("release receipt path identity differs")
-        verified = inputs["inputs/" + name]
-        if record.get("bytes") != verified["bytes"] or str(record.get("sha256", "")).upper() != verified["sha256"]:
-            raise ValueError("release receipt content identity differs")
+    injected = "injected_source" in model
+    source = model["source"] if injected else _json(run / "inputs/source.json")
+    if not injected:
+        release_receipt = _json(run / "inputs/release_receipt.json")
+        if source != model["source"] or release_receipt.get("release_spec") != source or release_receipt.get("status") != "materialized":
+            raise ValueError("frozen source/resolved/release receipt differ")
+        for name, key in (("release.csv", "state_table"), ("source.json", "source_spec")):
+            record = release_receipt[key]
+            if record_path(record, base_dir=run) != run / "inputs" / name:
+                raise ValueError("release receipt path identity differs")
+            verified = inputs["inputs/" + name]
+            if record.get("bytes") != verified["bytes"] or str(record.get("sha256", "")).upper() != verified["sha256"]:
+                raise ValueError("release receipt content identity differs")
     clock = _json(run / "inputs/clock_authority.json")
     validate_clock_authority(run / "inputs/clock_authority.json", run)
     epoch = _finite(_json(run / "inputs/instrument_epoch.json")["instrument_time_us"])
     if clock["authority"]["path"].replace("\\", "/") != "inputs/instrument_epoch.json" or epoch != model["baseline"]["clock"]["epoch_us"]:
         raise ValueError("instrument epoch authority differs")
-    raw_release = _read_csv(run / "inputs/release.csv")
+    raw_release = frozen_release_states(run, model) if injected else _read_csv(run / "inputs/release.csv")
     releases = {_integer(row["particle_id"]): row for row in raw_release}
-    if not releases or len(releases) != len(raw_release) or len(releases) != source["particle_count"] or len(releases) != summary["actual_particle_count"] or len(releases) != release_receipt["particle_count"]:
+    if not releases or len(releases) != len(raw_release) or len(releases) != source["particle_count"] or len(releases) != summary["actual_particle_count"] or (not injected and len(releases) != release_receipt["particle_count"]):
         raise ValueError("source cohort count/identity differs")
+    native = _json(run / "results/simion_batch_resource_usage.json")
+    merge = _json(run / "results/batch_merge_receipt.json")
+    # The public observer never promotes a failed native process to completed.
+    # Acceptance thresholds are separate from these execution/cohort receipts.
+    if (native.get("schema_version") != 2 or native.get("role") != "multipole_resource_usage"
+            or native.get("status") != "completed" or native.get("failure_class") is not None
+            or native.get("limit_name") is not None
+            or merge.get("schema_version") != 1 or merge.get("role") != "ion_processor_batch_merge"
+            or merge.get("all_ids_closed") is not True
+            or merge.get("particle_count") != len(releases)
+            or type(merge.get("batch_count")) is not int or merge["batch_count"] <= 0
+            or native.get("execution_wave", {}).get("process_count") != merge["batch_count"]
+            or merge.get("rng_policy") != model["numerics"]["collision_rng_policy"]):
+        raise ValueError("source native execution or batch merge is incomplete")
     grouped = _validate_events(_read_csv(run / "simion/events.csv"), releases, model, epoch)
     frame = transform_from_config(model).to_frame_id
     normal = list(to_project_vector(model, [0, 1, 0]))
@@ -216,10 +252,10 @@ def export_component_exit(source_run: Path, output_directory: Path) -> dict[str,
         velocity = [_finite(terminal[f"v{axis}_mm_us"]) * 1000 for axis in "xyz"]
         species_id = f"ion_m{mass:.17g}_q{charge}".replace(".", "_").replace("+", "p").replace("-", "n")
         row = dict(particle_id=particle_id, parent_particle_id="", generation=0, species_id=species_id,
-                   particle_weight=1, source_component_id=PROJECT, target_component_id=TARGET,
+                   particle_weight=1, source_component_id=source_instance_id, target_component_id=target_instance_id,
                    state_event="extraction_exit", frame_id=frame, clock_epoch_id=clock["clock_epoch_id"],
                    instrument_time_us=time, lineage_age_us=time-birth, particle_age_us=time-birth,
-                   last_component_elapsed_time_us=time-birth, lineage_birth_time_us=birth,
+                   last_component_elapsed_time_us=time-(_finite(release["arrival_time_us"]) if injected else birth), lineage_birth_time_us=birth,
                    particle_birth_time_us=birth, mass_to_charge_Th=mass_to_charge_th(mass, charge),
                    mass_amu=mass, charge_state=charge, kinetic_energy_eV=kinetic_energy_ev(mass, *velocity),
                    phase_reference_id="", phase_rad="")
@@ -229,6 +265,18 @@ def export_component_exit(source_run: Path, output_directory: Path) -> dict[str,
     reasons = dict(Counter(item["terminal_reason"] for item in census))
     if reasons != summary["terminal_reasons"] or len(rows) != summary["metrics"]["extraction_exit"]["count"]:
         raise ValueError("summary terminal/extraction census differs")
+    if injected:
+        for fate in _read_csv(run/"inputs/upstream_mother_fates.csv"):
+            particle_id = _integer(fate["particle_id"])
+            if particle_id in releases:
+                continue
+            birth, time = _finite(fate["particle_birth_time_us"]), _finite(fate["terminal_instrument_time_us"])
+            census.append(dict(particle_id=particle_id, transfer_status="not_transferred", terminal_reason=fate["terminal_reason"],
+                instrument_time_us=time, particle_birth_time_us=birth, particle_age_us=time-birth))
+        census.sort(key=lambda row: row["particle_id"])
+        upstream = _json(run/"inputs/upstream_mother_census.json")
+        if [row["particle_id"] for row in census] != sorted(upstream["mother_particle_ids"]):
+            raise ValueError("IP export does not close the original upstream mother cohort")
     if not rows:
         raise ValueError("no transferable extraction states")
     output.mkdir(parents=True, exist_ok=False)
@@ -239,11 +287,14 @@ def export_component_exit(source_run: Path, output_directory: Path) -> dict[str,
         writer.writeheader()
         writer.writerows(census)
     center = to_project_position(model, [model["baseline"]["geometry"]["lp_center_mm"], model["baseline"]["geometry"]["extraction_end_y_mm"], 0])
-    receipt = dict(schema_version=1, role="ion_processor_component_exit_export", status="prepared",
+    receipt = dict(schema_version=2, role="ion_processor_component_exit_export", status="prepared",
                    source_run_id=run.name, source_project=PROJECT, source_run=str(run), inputs=inputs,
+                   source_instance_id=source_instance_id, target_instance_id=target_instance_id,
+                   producer_result=dict(source_scientific_status=summary["status"], checks=dict(summary["checks"]),
+                                        functional_status=summary["functional_status"], qualification=summary["qualification"]),
                    outputs=dict(component_states=file_record(state_path), mother_census=file_record(census_path)),
-                   counts=dict(source=len(releases), transferred=len(rows), not_transferred=len(releases)-len(rows)),
-                   transferred_particle_ids=transferred, lost_particle_ids=sorted(set(releases)-set(transferred)),
+                   counts=dict(source=len(census), transferred=len(rows), not_transferred=len(census)-len(rows)),
+                   transferred_particle_ids=transferred, lost_particle_ids=sorted({row["particle_id"] for row in census}-set(transferred)),
                    frame_id=frame, clock_epoch_id=clock["clock_epoch_id"],
                    units=dict(position="mm", velocity="m/s", time="us", energy="eV", mass="u"),
                    clock_semantics="instrument_epoch_plus_recorded_solver_elapsed_once; ages_from_per_id_release_birth",

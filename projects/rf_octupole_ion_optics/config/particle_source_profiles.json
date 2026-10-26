@@ -15,6 +15,9 @@
       "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_5000.csv",
       "sha256": "131C63A4DA0BD8A5BC2E5133432B8E4B77EAA5F1B94188E3B1393B8E36DC61CA"
     },
+    "family_complete_mother_n100": {
+      "release_spec": "config/sources/family_complete_mother_n100.json"
+    },
     "continuous_axial_volume_snapshot_v1_n100": {
       "path": "common/multipole/sources/rf_octupole_continuous_axial_volume_snapshot_v1_100.csv",
       "sha256": "64580DDACB86B09104DC97C3446FF90FAF027978169B7CE0943600FE4270F09D",
@@ -32,6 +35,9 @@
     "paper1_prospective_mother_sample_v1_n5000": {
       "path": "common/multipole/sources/rf_multipole_paper1_prospective_mother_sample_v1_5000.csv",
       "sha256": "38BF87E06C210A05BFFB21EE4997EF39343CE17B8924AFF606CEAEC79A2335C6"
+    },
+    "planar_524da_2ev_n100": {
+      "release_spec": "config/sources/planar_524da_2ev_n100.json"
     }
   }
 }

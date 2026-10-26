@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -10,10 +12,14 @@ from pathlib import Path
 
 from common.multipole.round_rod_geometry import build_rod_array
 from common.multipole.simion_geometry import (
+    physical_electrode_view,
     render_axis_mapped_segmented_rod_array_gem,
     render_gem,
+    render_physical_gem,
     render_grouped_rod_array_gem,
 )
+from common.multipole.compile_design_request import compile_design_request
+from common.multipole.test_compile_design_request import design_request
 
 
 def resolved_design(
@@ -93,10 +99,240 @@ def resolved_design(
             "axial_acceleration": None,
             "segmented_rod_array": None,
         },
+        "drive": {
+            "common_mode_offset_V": 0.0,
+            "dc_amplitude_V_per_group": 0.0,
+        },
+        "static_electrodes_V": {
+            "role": "cylindrical_shield_static_electrodes",
+            "shield_entrance_outer_endcap_aperture_plate_connector_V": 0.0,
+            "exit_outer_endcap_aperture_plate_connector_V": 0.0,
+        },
     }
 
 
 class SimionGeometryTests(unittest.TestCase):
+    @staticmethod
+    def _compiled_segmented_cylindrical_provider() -> dict:
+        request = design_request(
+            "rf_hexapole_ion_optics",
+            segmentation={
+                "strategy": "uniform",
+                "segment_count": 3,
+                "intersegment_gap_mm": 0.4,
+                "entrance_common_mode_V": 0.0,
+                "exit_common_mode_V": -3.0,
+                "output_reference_V": -3.0,
+            },
+        )
+        return compile_design_request(request, expected_identity=request["identity"])
+
+    def test_physical_electrode_view_exposes_compiled_provider_groups_without_drive_copies(self):
+        view = physical_electrode_view(self._compiled_segmented_cylindrical_provider())
+        self.assertEqual([row["native_electrode_id"] for row in view], list(range(1, 9)))
+        rods = [row for row in view if row["roles"] == ["rod"]]
+        self.assertEqual(len(rods), 6)
+        self.assertEqual(
+            [(row["scientific_id"], row["voltage_source"]["rf_group"])
+             for row in rods],
+            [(f"rod_group_{native_id}", 1 if native_id % 2 else 2)
+             for native_id in range(1, 7)],
+        )
+        self.assertTrue(all("common_mode_v" not in row["voltage_source"] for row in view))
+        self.assertTrue(all(
+            row["voltage_source"]["dc_amplitude_pointer"]
+            == "/drive/dc_amplitude_V_per_group"
+            for row in rods
+        ))
+        physical_roles = {
+            role
+            for row in view
+            for role in row["roles"]
+            if role != "rod"
+        }
+        self.assertEqual(
+            physical_roles,
+            {
+                "shield", "entrance_outer_endcap", "entrance_aperture_plate",
+                "entrance_connector", "exit_outer_endcap", "exit_aperture_plate",
+                "exit_connector",
+            },
+        )
+        self.assertNotIn("numerical_census_marker", physical_roles)
+
+    def test_physical_electrode_view_rejects_missing_duplicate_and_conflicting_groups(self):
+        compiled = self._compiled_segmented_cylindrical_provider()
+        for mutation in (
+            lambda rows: rows.pop(),
+            lambda rows: rows.append(copy.deepcopy(rows[0])),
+        ):
+            with self.subTest(mutation=mutation):
+                source = copy.deepcopy(compiled)
+                mutation(source["segmentation"]["segmented_rod_array"]["electrodes"])
+                with self.assertRaisesRegex(ValueError, "missing or duplicates"):
+                    physical_electrode_view(source)
+        conflicting_drive = copy.deepcopy(compiled)
+        conflicting_drive["segmentation"]["segmented_rod_array"]["electrodes"][2]["common_mode_V"] = 1.0
+        with self.assertRaisesRegex(ValueError, "conflicting resolved drive source"):
+            physical_electrode_view(conflicting_drive)
+        request = design_request("rf_hexapole_ion_optics")
+        conflicting = compile_design_request(request, expected_identity=request["identity"])
+        conflicting["static_electrodes_V"]["exit_outer_endcap_aperture_plate_connector_V"] = 1.0
+        with self.assertRaisesRegex(ValueError, "conflicting resolved potentials"):
+            physical_electrode_view(conflicting)
+
+    def test_physical_electrode_view_requires_each_static_source_voltage(self):
+        for key in (
+            "shield_entrance_outer_endcap_aperture_plate_connector_V",
+            "exit_outer_endcap_aperture_plate_connector_V",
+        ):
+            with self.subTest(static_key=key):
+                source = resolved_design("cylindrical_bore", 0.0)
+                source["static_electrodes_V"].pop(key)
+                with self.assertRaisesRegex(ValueError, "static potential must be finite"):
+                    physical_electrode_view(source)
+
+        source = resolved_design("cylindrical_bore", 0.0)
+        source["axial_dc"] = {"entrance_reference_sleeve": {}}
+        with self.assertRaisesRegex(ValueError, "static potential must be finite"):
+            physical_electrode_view(source)
+
+    def test_standalone_gem_bytes_are_unchanged_by_physical_body_extraction(self):
+        # Captured from the public renderer immediately before extracting its
+        # physical export. These are small GEM text identities, never PA hashes.
+        expected = {
+            ("cylindrical_bore", 0.): "8f5e4befc6c6669f6c42109c16053f720e28f4db85ee073a1fff2ead36bfdcb7",
+            ("cylindrical_bore", 2.): "e7626c158c10fd2e60f109f0fe0186dbf1bca3863c3cd49e2b1258000af930f4",
+            ("rectangular_bore", 0.): "8f5e4befc6c6669f6c42109c16053f720e28f4db85ee073a1fff2ead36bfdcb7",
+            ("rectangular_bore", 2.): "f742beafd3dcf5685f4fbc3fd4317600ca01454865786638bc2dc5de63f8b0ff",
+        }
+        for (shape, length), sha in expected.items():
+            with self.subTest(shape=shape, length=length):
+                gem = render_gem(resolved_design(shape, length), .2)
+                self.assertEqual(hashlib.sha256(gem.encode()).hexdigest(), sha)
+        rectangular = resolved_design("cylindrical_bore", 0., enclosure_model="rectangular_reference_enclosure_v1")
+        self.assertEqual(hashlib.sha256(render_gem(rectangular, .2).encode()).hexdigest(),
+                         "68d67e30b94976115a3ec3d9b5e3f4cfe66b0a7f48eb3bb7815c98bd6022e61e")
+        through = resolved_design("cylindrical_bore", 0.)
+        through["geometry_mm"]["enclosure"].update(model="cylindrical_grounded_shield_through_exit_v1", vacuum_z_max_mm=20.4)
+        self.assertEqual(hashlib.sha256(render_gem(through, .2).encode()).hexdigest(),
+                         "15681ac9b1063bfefe5a0e03a173b8da9c68d27e317220c3eafa1b4cc84edc3b")
+
+    def test_physical_export_keeps_true_cap_bore_connector_sleeve_and_maps_ids_once(self):
+        source = resolved_design("cylindrical_bore", 2.)
+        source["geometry_mm"]["enclosure"].update(model="cylindrical_grounded_shield_through_exit_v1", vacuum_z_max_mm=20.4)
+        source["axial_dc"] = dict(entrance_reference_sleeve=dict(
+            upstream_face_z_mm=.6, downstream_face_z_mm=.9,
+            outer_radius_mm=2., inner_radius_mm=1.5, minimum_insulation_gap_mm=.1,
+            potential_V=0.0))
+        before = copy.deepcopy(source)
+        body = render_physical_gem(source, .2, electrode_ids={1: 11, 3: 13, 5: 15, 6: 16})
+        self.assertEqual(source, before)
+        self.assertNotIn("pa_define", body)
+        self.assertNotIn("locate(10,10", body)
+        self.assertNotIn("absorber", body)
+        self.assertNotIn("e(4)", body)
+        self.assertIn("e(11) { fill { within { cylinder(4,0,15,1,,13)", body)
+        self.assertIn("e(13)", body)
+        self.assertIn("e(15)", body)
+        self.assertIn("e(16)", body)
+        self.assertIn("within { cylinder(0,0,20,10,,0.5) }", body)
+        self.assertIn("notin_inside { cylinder(0,0,20.2,1.2,,0.9) }", body)
+        self.assertIn("within { cylinder(0,0,0.9,2,,0.3) }", body)
+        self.assertIn("connector_shape=cylindrical_bore", body)
+        # The native body has no standalone-domain guard or PA origin.
+        source["geometry_mm"]["enclosure"]["vacuum_z_max_mm"] = 20.
+        self.assertEqual(render_physical_gem(source, .2, electrode_ids={1: 11, 3: 13, 5: 15, 6: 16}), body)
+
+    def test_segmented_physical_export_preserves_each_native_electrode(self):
+        source = resolved_design("rectangular_bore", 2.)
+        base = source["geometry_mm"]["rod_array"]["rods"][0]
+        source["segmentation"]["segmented_rod_array"] = dict(segment_count=2, electrodes=[
+            {**base, "electrode_id": i, "electrode_group": 1 if i % 2 else 2,
+             "common_mode_V": 0.0, "z_min_mm": low, "z_max_mm": high}
+            for i, low, high in ((1, 2., 7.), (2, 2., 7.), (3, 8., 15.), (4, 8., 15.))])
+        body = render_physical_gem(source, .2, electrode_ids={i: 20+i for i in range(1, 7)})
+        for i in range(1, 7):
+            self.assertIn(f"e({20+i})", body)
+        self.assertIn("cylinder(4,0,7,1,,5)", body)
+        self.assertIn("cylinder(4,0,15,1,,7)", body)
+        self.assertIn("connector_shape=rectangular_bore", body)
+        self.assertNotIn("e(27)", body)  # no numerical census electrode
+
+    def test_physical_export_rejects_ambiguous_models_and_incomplete_or_merged_ids(self):
+        source = resolved_design("cylindrical_bore", 0.)
+        for ids in ({1: 11}, {1: 11, 3: 11}, {1: 11, 3: 13, 4: 14}, {1: 0, 3: 13}):
+            with self.subTest(ids=ids), self.assertRaisesRegex(ValueError, "every physical native electrode"):
+                render_physical_gem(source, .2, electrode_ids=ids)
+        source["downstream_terminal"] = {"owner": "downstream"}
+        with self.assertRaisesRegex(ValueError, "composed terminal"):
+            render_physical_gem(source, .2)
+        source.pop("downstream_terminal")
+        source["geometry_mm"]["enclosure"]["vacuum_z_max_mm"] = 21.
+        with self.assertRaisesRegex(ValueError, "tied to the standalone PA domain"):
+            render_physical_gem(source, .2)
+
+    def test_physical_export_retains_asymmetric_ellipse_and_electrical_identity(self):
+        source = resolved_design("cylindrical_bore", 0.)
+        rod = source["geometry_mm"]["rod_array"]["rods"][0]
+        rod.pop("radius_mm")
+        rod.update(center_x_mm=2., center_y_mm=3., semi_major_axis_mm=1.5,
+                   semi_minor_axis_mm=.5, major_axis_angle_rad=math.pi/4)
+        body = render_physical_gem(source, .2, electrode_ids={1: 101, 3: 103})
+        self.assertIn("e(101)", body)
+        self.assertIn("locate(2,3,15) { rotate_z(45) { cylinder(0,0,0,1.5,0.5,13)", body)
+        self.assertNotIn("rotate_y", body)  # placement belongs to the assembly
+
+    def test_official_single_locate_order_matches_full_recipe_pose_for_asymmetric_states(self):
+        # SIMION 2020 CHM, GEM locate: rt(X), el(Z), az(Y), scale, offset.
+        # This is a reference-vector check, not a native GEM rasterization.
+        from common.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
+        pose = RigidTransform("native", "assembly", ((0,0,1),(1,0,0),(0,1,0)), (7,11,13))
+        rotate_z90 = lambda p: (-p[1], p[0], p[2])
+        rotate_y90 = lambda p: (p[2], p[1], -p[0])
+        for point in ((1,0,0), (0,1,0), (0,0,1), (2,3,5)):
+            rotated = rotate_y90(rotate_z90(point))
+            self.assertEqual(pose.transform_vector(FramedVector("native", point)).components, rotated)
+            self.assertEqual(pose.transform_position(FramedPosition("native", point)).coordinates_mm,
+                             tuple(v+t for v,t in zip(rotated, (7,11,13))))
+        self.assertEqual(rotate_y90(rotate_z90((2,3,5))), (5,2,3))
+        self.assertNotEqual(rotate_y90((2,3,5)), (5,2,3))
+
+    def test_through_exit_bores_outer_cap_and_leaves_guard_to_native_program(self):
+        resolved = resolved_design("cylindrical_bore", 0.)
+        enclosure = resolved["geometry_mm"]["enclosure"]
+        enclosure.update(model="cylindrical_grounded_shield_through_exit_v1", vacuum_z_max_mm=20.4)
+        gem = render_gem(resolved, .2)
+        self.assertIn("notin_inside { cylinder(0,0,20.2,1.2,,0.9) }", gem)
+        self.assertNotIn("numerical absorber", gem)
+        self.assertIn("within { cylinder(0,0,20,10,,20) }", gem)
+        self.assertNotIn("cylinder(0,0,19.2,1.2,,0.2)", gem)
+        enclosure["vacuum_z_max_mm"] = 20.
+        with self.assertRaisesRegex(ValueError, "two axial cells"):
+            render_gem(resolved, .2)
+
+    def test_dual_through_model_bores_both_real_outer_endcaps(self):
+        resolved = resolved_design("cylindrical_bore", 0.)
+        enclosure = resolved["geometry_mm"]["enclosure"]
+        enclosure.update(
+            model="cylindrical_grounded_shield_through_entrance_exit_v1",
+            vacuum_z_max_mm=20.4,
+        )
+        gem = render_gem(resolved, .2)
+        self.assertIn("notin_inside { cylinder(0,0,0.7,1.2,,0.9) }", gem)
+        self.assertIn("notin_inside { cylinder(0,0,20.2,1.2,,0.9) }", gem)
+        self.assertLess(
+            gem.index("cylinder(0,0,0.7,1.2,,0.9)"),
+            gem.index("cylinder(0,0,1.5,10,,0.5)"),
+        )
+        self.assertNotIn("numerical absorber", gem)
+        enclosure["vacuum_z_max_mm"] = 30.4
+        expanded_guard = render_gem(resolved, .2)
+        self.assertIn("pa_define(101,101,153,planar", expanded_guard)
+        self.assertIn("within { cylinder(0,0,20,10,,20) }", expanded_guard)
+        self.assertNotIn("within { cylinder(0,0,30.4,10", expanded_guard)
+
+
     def test_grouped_ellipse_uses_two_radii_rotation_and_remapped_electrodes(self) -> None:
         array = build_rod_array(
             radial_order_n=2,
@@ -423,10 +659,10 @@ class SimionGeometryTests(unittest.TestCase):
             "segmented_rod_array": {
                 "segment_count": 2,
                 "electrodes": [
-                    {**base, "electrode_id": 1, "z_min_mm": 2.0, "z_max_mm": 7.0},
-                    {**base, "electrode_id": 2, "z_min_mm": 2.0, "z_max_mm": 7.0},
-                    {**base, "electrode_id": 3, "z_min_mm": 8.0, "z_max_mm": 15.0},
-                    {**base, "electrode_id": 4, "z_min_mm": 8.0, "z_max_mm": 15.0},
+                    {**base, "electrode_id": 1, "electrode_group": 1, "common_mode_V": 0.0, "z_min_mm": 2.0, "z_max_mm": 7.0},
+                    {**base, "electrode_id": 2, "electrode_group": 2, "common_mode_V": 0.0, "z_min_mm": 2.0, "z_max_mm": 7.0},
+                    {**base, "electrode_id": 3, "electrode_group": 1, "common_mode_V": 0.0, "z_min_mm": 8.0, "z_max_mm": 15.0},
+                    {**base, "electrode_id": 4, "electrode_group": 2, "common_mode_V": 0.0, "z_min_mm": 8.0, "z_max_mm": 15.0},
                 ],
             },
         }
@@ -445,7 +681,9 @@ class SimionGeometryTests(unittest.TestCase):
             "segmented_rod_array": {
                 "segment_count": 5,
                 "electrodes": [
-                    {**copy.deepcopy(base), "electrode_id": electrode_id}
+                    {**copy.deepcopy(base), "electrode_id": electrode_id,
+                     "electrode_group": 1 if electrode_id % 2 else 2,
+                     "common_mode_V": 0.0}
                     for electrode_id in range(1, 11)
                 ],
             },

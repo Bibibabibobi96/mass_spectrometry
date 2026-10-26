@@ -4,6 +4,7 @@ simion.workbench_program()
 sim_segment_global = 1
 
 local program_path = debug.getinfo(1, 'S').source:sub(2)
+local waveforms = assert(loadfile(program_path:gsub('%.lua$', '.voltage_waveforms.lua')))()
 local operating_point_path = assert(program_path:gsub('%.lua$', '.operating_point.lua'))
 local operating_point = assert(loadfile(operating_point_path), 'missing run-local operating-point sidecar: '..operating_point_path)()
 local accelerator_provider = operating_point.accelerator_provider or 'orthogonal_accelerator'
@@ -102,15 +103,6 @@ for index, expected_role in ipairs(expected_roles) do
   native_corridor_instances[expected_role] = index
 end
 local native_corridor_voltage_groups = native_corridor_roles.corridor_voltage_groups
-if not measured_mode then
-  assert(type(native_corridor_voltage_groups) == 'table'
-      and #native_corridor_voltage_groups == 8,
-    'native-corridor priority sidecar requires exactly eight voltage groups')
-  for local_id, physical_ids in ipairs(native_corridor_voltage_groups) do
-    assert(type(physical_ids) == 'table' and #physical_ids > 0,
-      'native-corridor voltage group is empty for local ID '..local_id)
-  end
-end
 local applied_native_corridor_values, applied_accelerator_values
 local voltage_map_path = program_path:gsub('%.lua$', '.voltage_map.lua')
 local voltage_map
@@ -299,20 +291,6 @@ end
 
 local function maximum_instance_number()
   return #native_corridor_roles.instances
-end
-
-local function native_corridor_values(analyser_values)
-  local values = {}
-  for local_id,physical_ids in ipairs(native_corridor_voltage_groups) do
-    local value = assert(analyser_values[physical_ids[1]],
-      'missing physical voltage for native corridor local ID '..local_id)
-    for _,physical_id in ipairs(physical_ids) do
-      assert(analyser_values[physical_id] == value,
-        'physical voltages differ within native corridor local ID '..local_id)
-    end
-    values[local_id] = value
-  end
-  return values
 end
 
 
@@ -525,7 +503,7 @@ function segment.fast_adjust()
     return
   end
   local current_mirror_voltages = {0,V_mirror_B,V_mirror_C,V_mirror_D,V_mirror_E}
-  local values=voltage_map(current_mirror_voltages,{V_stripe_1,V_stripe_2},{V_prism_1,V_prism_2},
+  local values=voltage_map.physical_voltages(current_mirror_voltages,{V_stripe_1,V_stripe_2},{V_prism_1,V_prism_2},
     {V_repeller,V_grid1,V_grid2},accelerator_ring_voltages,V_nonaccelerator_scale)
   if static_field then
     assert(accelerator_pulse_mode == 'static', 'static field forbids OA pulse')
@@ -539,7 +517,7 @@ function segment.fast_adjust()
     end
     return -- Collision arrays are never Fast Adjusted or written.
   end
-  local requested = native_corridor_values(values.analyser)
+  local requested = voltage_map.corridor_voltages(values.analyser,native_corridor_voltage_groups)
   local corridor_changed = applied_native_corridor_values == nil
   for local_id = 1,8 do
     if corridor_changed or requested[local_id] ~= applied_native_corridor_values[local_id] then corridor_changed = true; break end
@@ -597,8 +575,8 @@ function segment.tstep_adjust()
   ion_time_step = math.min(ion_time_step, maximum_step_us)
   if accelerator_pulse_mode == 'fixed_global_time'
       and instrument_time_us() < accelerator_pulse_off_time_us then
-    local remaining_us = accelerator_pulse_off_time_us - instrument_time_us()
-    if remaining_us > 0 then ion_time_step = math.min(ion_time_step, remaining_us) end
+    ion_time_step = waveforms.cap_before_edge(instrument_time_us(), ion_time_step,
+      accelerator_pulse_off_time_us)
   end
 end
 

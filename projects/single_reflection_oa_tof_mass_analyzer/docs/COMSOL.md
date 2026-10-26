@@ -29,12 +29,45 @@
 `../config/formal_solver_numerics.json`是网格、分段时间输出和solver设置的唯一权威。Candidate
 `ContractPath`必须贯穿顶层入口、底层构建器和时间窗口，不能由理论默认值覆盖。
 
+冻结源码执行可显式传`ArtifactRoot`，其含义为run_config生命周期声明的全局`artifacts`根。
+`oatof_paths`通过公共`workspace_paths`消费该上下文；源码目录仍从实际源码位置解析，
+不从`OutputModelPath`反推产物根。未传时保持原工作区布局。普通输出仍只允许本项目的
+`runs`或`scratch`，显式上下文不开放Formal或根目录外写入。
+Candidate冻结器保持`oatof_paths.m`和公共`workspace_paths.m`原始字节，不再替换MATLAB源码中的
+`workspaceRoot`。现有COMSOL／CAD task从已校验runtime上下文运输同一产物根，CAD入口及STEP导出
+继续传递该显式上下文，使冻结执行的Formal保护指向实际产物根。对应CAD纯Unit只验证在原生打开前
+拒绝未授权Formal写入，不代表CAD实体导出或GUI验收。
+
+`GeometryOnly=true`要求显式`ContractPath`和`OutputModelPath`，拒绝与`FieldDesignOnly`、
+`FixedParticleTable`或`CartesianRelease`同时声明。它复用同一提供者、参数和完整几何构建，
+在`geom1.run`完成后保存并返回，尚未创建选择集、材料、物理、网格或Study。
+返回只含`model_path`、`build_scope=geometry_only`及`geometry_domain_count`；
+该停止点供几何／CAD准备使用，不表示场、粒子或Candidate接受，仍须由受管owner冻结依赖和发布证据。
+
+`FieldDesignOnly=true`执行几何、网格及一次静态ES求解，配置`comp1/cpt/rel1`、`std2/sol2`并保存MPH，
+随后在任何CPT求解及短时间窗fallback前返回。ES失败直接传播，不以该模式自动改参数或重求。
+`CartesianRelease`只用于此源模型配置，与既有`FixedParticleTable`互斥；完整原ID的CPT census由集成
+重追踪入口消费。两者共用`oatof_read_cartesian_release`，按固定列顺序校验ID、species、数量和有限值，
+直接读取mm坐标及m/s三分量速度，不把Cartesian CSV解释为ION角度／能量表。CSV保持原ID和行序；
+原birth、绝对epoch、脉冲时刻和宽度由上层冻结证据绑定，不另建一套状态坐标或逐粒子RF相位。
+
+实体检测器位置直接读取resolved的`coordinate_convention.detector_x`与`geometry_mm.detector_z`；
+二者必须为有限标量。理论`accelerator_focus_z`仍按派生关系核验，但不替换显式实体检测器位置。
+
 模型树按加速器、反射器、检测器、漂移区、栅网、网格、粒子物理和结果节点分责。影响结果的参数、
 选择集、材料、网格、物理、Study/Solver、数据集和图必须持久化到MPH并可由Desktop查看与Compute。
 
 ## 当前实现边界
 
 - 当前批准几何为闭合加速器屏蔽，没有RF注入侧孔；`interfacePort`只用于隔离候选，不属于Formal。
+- 新三区候选从现有几何／电气投影及机械`SideOpening`进入同一个具名入口，器件builder共用实体与
+  零厚栅构造；三区平面、显式环位／电压和真空Union已接线，尚待真实几何／选择集与保存重开验证。
+  当前CPT仍消费静态ON场，不能用于声明与有限宽脉冲对等；完整状态和退出项只见PROJECT。
+- `FieldDesignOnly`、Cartesian读表、直接检测器坐标及冻结源码的显式产物上下文已通过纯MATLAB回归，
+  匹配新整机的MPH尚未完成原生构建；不能由这些检查推定网格、ES、保存重开或GUI已通过。
+  上层参数回读的32ULP余量只处理mm/V表达式的binary64舍入，不是场、轨迹或跨求解器物理容差。
+- 公开Static门禁现检查检测器直接resolved接线并拒绝旧镜像／理论焦点替换；其源码检查只证明接线，
+  不作为已求解几何或保存重开的实证。完整门禁结果与保留的失败原因见PROJECT当前状态。
 - 加速器局部尺寸与参考档读取数值合同；这两个字段本身不证明空间收敛。局部网格必须检查实际
   选择、操作顺序、阶次和单元／DOF，不进行无目标反射器全域加密。
 - 粒子曲面边界还需独立验证组件几何表示阶次（`comp.sorder()`），不以电势阶次、单元数或 `rtol`
@@ -53,6 +86,28 @@
 - 可组合理想场替换只用于原因隔离，不形成Formal性能声明。
 
 ## 精度与数值配置的使用顺序
+
+### 有限脉冲微型回归
+
+`../tests/comsol/test_finite_pulse_field_superposition.m`用于核验有限脉冲的数值实现；已通过工况与证据边界见
+[PROJECT当前状态](PROJECT.md#当前状态)。
+通过公共COMSOL入口冻结并执行该脚本及`../comsol/oatof_cpt_solver_policy.m`，保留二者相对目录；
+不加载或改写仪器Formal模型。固定立方体中的静态横向场始终存在，另一路场仅在声明脉冲区间开启。
+脚本对两档容差检查解析位置／速度、关断后加速度及保存重开后的默认Compute；strict设置必须回读实际活动算法。
+详细证据写入bootstrap报告同目录的`finite_pulse_field_superposition.log`，bootstrap状态文件由公共入口独占。
+该回归通过只能证明其声明工况，不能代替仪器几何、网格或跨求解器验收。
+
+COMSOL 6.4官方API核查（2026-10-24）：
+[mphsolutioninfo](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.67.html)
+支持参数过滤和实际Study／solution信息；
+[粒子数据读取](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_functionality.7.13.html)
+定义时间×粒子×维度的数组；
+[文件释放](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.27.html)
+使用从零开始的列号；
+[Study API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.58.html)
+支持默认Compute与求解序列归属。项目仍须实际核验重算后的解标签和策略，不能由API存在推定保持成功。
+
+### 数值配置选择
 
 先从 [PROJECT](PROJECT.md) 确认用途：重现已有 Formal 时消费其冻结身份；新的精度／性能研究则
 冻结新的输入与判据，不覆盖正式 MPH。网格与输出的实际值从数值合同读取，不将下表诊断配置写成默认值。

@@ -10,6 +10,8 @@ import math
 
 import numpy as np
 
+from common.analysis.population_moments import population_pair_moments
+
 COHORTS = ("all_available_alive", "own_extracted_ids", "common_extracted_ids")
 
 
@@ -30,15 +32,16 @@ def _decomposition(rows: list[dict], axis: str) -> dict:
         return dict(result,reason="empty_or_missing_state_or_zero_vz")
     position = values[:,0]-values[:,0].mean()
     angles = np.degrees(np.arctan2(values[:,1],np.abs(values[:,2])))
+    moments = population_pair_moments(values[:,0], angles)
     angles -= angles.mean()
-    variance, angle_variance = float(position.var()),float(angles.var())
-    covariance = float(np.mean(position*angles))
+    variance, angle_variance = moments["variance_first"], moments["variance_second"]
+    covariance = moments["covariance"]
     beta = covariance/variance if variance>0 else None
     correlated = np.zeros(len(rows)) if beta is None else beta*position
     residual = angles-correlated
     result.update(sigma_total_deg=math.sqrt(angle_variance),sigma_linear_correlated_deg=float(correlated.std()),
                   sigma_residual_deg=float(residual.std()),beta_deg_per_mm=beta,
-                  rho=covariance/math.sqrt(variance*angle_variance) if variance>0 and angle_variance>0 else None,
+                  rho=moments["correlation"],
                   epsilon_mm_mrad=float(position.std()*np.radians(residual.std())*1000),
                   variance_identity_residual_deg2=float(angle_variance-correlated.var()-residual.var()),
                   reason="constant_position_no_unique_slope" if beta is None else "available")
@@ -56,13 +59,14 @@ def _free_prediction(rows: list[dict], coordinate: str, reference_z_mm: float) -
         return dict(result,reason="empty_or_missing_state_or_not_all_forward_minus_z")
     position = values[:,0]-values[:,0].mean()
     slope = 1/np.abs(values[:,-1]) if coordinate == "time" else values[:,1]/np.abs(values[:,-1])
+    moments = population_pair_moments(values[:,0], slope)
     slope -= slope.mean()
     scale = 1000 if coordinate == "time" else 1
     result["sigma_at_reference"] = float(position.std()*scale)
-    variance = float(slope.var())
+    variance = moments["variance_second"]
     if variance == 0:
         return dict(result,reason="constant_slope_no_unique_waist")
-    length = -float(np.mean(position*slope))/variance
+    length = -moments["covariance"]/variance
     downstream = max(0.,length)
     result.update(L_star_mm=length,z_focus_mm=reference_z_mm-length,
                   sigma_at_prediction=float((position+length*slope).std()*scale),
@@ -235,10 +239,7 @@ def _time_correlations(rows: list[dict]) -> dict:
         rho = None
         if len(pairs)>1:
             array = np.asarray(pairs)
-            centered = array-array.mean(axis=0)
-            variance = np.mean(centered**2,axis=0)
-            if np.all(variance>0):
-                rho = float(np.mean(centered[:,0]*centered[:,1])/np.sqrt(variance.prod()))
+            rho = population_pair_moments(array[:,0], array[:,1])["correlation"]
         result[f"rho_t_{label}"] = rho
         result[f"rho_t_{label}_matched_count"] = len(pairs)
     return result
@@ -257,7 +258,8 @@ def _time_drift_rows(rows: list[dict], lengths: list[float]) -> tuple[dict,list[
         centered = (values[:,0]-values[:,0].mean())*1000
         inverse_speed = 1000/np.abs(values[:,1])  # ns/mm; vz input is mm/us.
         centered_inverse = inverse_speed-inverse_speed.mean()
-        a,b,c = float(centered.var()),float(2*np.mean(centered*centered_inverse)),float(centered_inverse.var())
+        moments = population_pair_moments(centered, centered_inverse)
+        a,b,c = moments["variance_first"],2*moments["covariance"],moments["variance_second"]
         length = -b/(2*c) if c>0 else None
         downstream = max(0.,length) if length is not None else 0.
         coefficients.update(variance_a_ns2=a,variance_b_ns2_per_mm=b,variance_c_ns2_per_mm2=c,
@@ -301,8 +303,9 @@ def _time_interval_variances(group: list[dict], lookup: dict) -> list[dict]:
                 raise ValueError("paired arrival times contradict downstream plane order")
             delta = (b-a)*1000
             ac,bc,dc = (a-a.mean())*1000,(b-b.mean())*1000,delta-delta.mean()
-            va,vd,vb = float(ac.var()),float(dc.var()),float(bc.var())
-            cross = float(2*np.mean(ac*dc))
+            moments = population_pair_moments(ac, dc)
+            va,vd,vb = moments["variance_first"],moments["variance_second"],float(bc.var())
+            cross = 2*moments["covariance"]
             row.update(var_t_before_ns2=va,var_delta_t_ns2=vd,twice_cov_t_before_delta_ns2=cross,
                 var_t_after_ns2=vb,variance_change_ns2=vb-va,closure_residual_ns2=vb-va-vd-cross,
                 mean_delta_t_ns=float(delta.mean()))

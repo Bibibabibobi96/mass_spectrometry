@@ -1,4 +1,3 @@
-import ast
 import csv
 from pathlib import Path
 import tempfile
@@ -72,53 +71,3 @@ class ExportedAxisFieldIntegratorTests(unittest.TestCase):
                 ])
             with self.assertRaisesRegex(ValueError, "conflicting Ez"):
                 load_total_axis_field(path)
-
-    def test_c3_export_is_top_level_and_reproduces_post_pulse_fast_adjust(self) -> None:
-        builder = Path(__file__).resolve().parents[4] / (
-            "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
-            "runtime/build_single_flight_program.py"
-        )
-        source = builder.read_text(encoding="utf-8")
-        self.assertIn("include_total_axis_field_exporter", source)
-        self.assertIn("--total-axis-field-exporter-output", source)
-        self.assertIn("simion.command('", source)
-        self.assertIn("frontend.apply_at(pulse_time_us", source)
-        self.assertIn("Do not also call PA ``fast_adjust`` here", source)
-        self.assertNotIn("ai.pa:fast_adjust(ai_values)", source)
-        self.assertNotIn(
-            "simion.wb.instances[overlay.instance_index].pa:fast_adjust(oi_values)",
-            source,
-        )
-        self.assertIn("ai.pa:load(frontend_pa)", source)
-        self.assertIn("local ai_values=pa_adjustments(", source)
-        self.assertIn("local oi_values=pa_adjustments(", source)
-        self.assertIn("values=(instance_number==3) and ai_values or oi_values", source)
-        self.assertIn("instance:potential_wc(x,y,z,values)", source)
-        self.assertIn("instance:field_wc(x,y,z,values)", source)
-        self.assertIn("TOTAL_AXIS_FIELD_SAMPLE", source)
-        self.assertIn("for _,overlay in ipairs(overlay_specs) do", source)
-        builder_function = next(
-            node for node in ast.parse(source).body
-            if isinstance(node, ast.FunctionDef) and node.name == "build_successor_program"
-        )
-        exporter_assignments = [
-            node for node in builder_function.body
-            if isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "exporter"
-                    for target in node.targets)
-        ]
-        self.assertEqual(len(exporter_assignments), 1)
-        self.assertIsInstance(exporter_assignments[0].value, ast.JoinedStr)
-        # Later Program builders may legitimately declare their own workbench.
-        exporter_source = ast.get_source_segment(source, exporter_assignments[0].value)
-        self.assertIsNotNone(exporter_source)
-        self.assertNotIn("simion.workbench_program()", exporter_source)
-        self.assertIn("analyzer.initialize_workbench", source)
-        self.assertIn("ai.x,ai.y,ai.z={_lua_number(origin['x'])}", exporter_source)
-        self.assertIn("oi.x,oi.y,oi.z=overlay.origin_mm.x", exporter_source)
-        self.assertIn("oi.az,oi.el,oi.rt,oi.scale=0,0,0,1", exporter_source)
-        self.assertIn("TOTAL_AXIS_FIELD_ACCELERATOR_POSTPLACEMENT", exporter_source)
-        self.assertIn("TOTAL_AXIS_FIELD_OVERLAY_POSTPLACEMENT", exporter_source)
-        self.assertIn("local z_start=", source)
-        self.assertIn("(index==count) and z_end", source)
-        self.assertNotIn("single_flight_export_total_axis_field_if_requested", source)

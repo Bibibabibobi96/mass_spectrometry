@@ -229,6 +229,11 @@ class RadialCompactionCampaignTests(unittest.TestCase):
                 self.baseline, candidate, allow_ring_counts=False
             )
 
+    def test_simion_flights_use_elapsed_warnings_not_process_timeouts(self) -> None:
+        source = inspect.getsource(radial._fly)
+        self.assertIn("warning_seconds=1800", source)
+        self.assertNotIn("timeout_seconds=1800", source)
+
     def test_builder_supports_component_reuse_without_separate_shield_values(self) -> None:
         builder = (
             PROJECT_ROOT / "simion" / "workbench" / "build_formal_delivery.ps1"

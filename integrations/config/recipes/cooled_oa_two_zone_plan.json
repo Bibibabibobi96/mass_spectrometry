@@ -1,0 +1,401 @@
+{
+  "schema_version": 3,
+  "role": "integration_composition_plan_do_not_edit",
+  "integration_id": "instrument_assembly",
+  "recipe_id": "cooled_two_zone_field_seed",
+  "stage": "layout_only",
+  "assembly_frame_id": "mrtof_global_cartesian",
+  "recipe": {
+    "schema_version": 1,
+    "role": "assembly_recipe",
+    "integration_id": "instrument_assembly",
+    "recipe_id": "cooled_two_zone_field_seed",
+    "assembly_frame_id": "mrtof_global_cartesian",
+    "position_tolerance_mm": 1e-09,
+    "angular_tolerance_rad": 1e-12,
+    "instances": [
+      {
+        "instance_id": "cooler",
+        "project_id": "dual_pressure_rectilinear_ion_processor",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "dual_pressure_ion_processor_local_v1",
+          "to_frame_id": "mrtof_global_cartesian",
+          "rotation": [
+            [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          ],
+          "translation_mm": [
+            0.0,
+            -97.0,
+            32.0
+          ]
+        }
+      },
+      {
+        "instance_id": "accelerator",
+        "project_id": "orthogonal_accelerator",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "accelerator_centered_transverse_local_z_mm",
+          "to_frame_id": "mrtof_global_cartesian",
+          "rotation": [
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "translation_mm": [
+            0,
+            51.5,
+            -6.0
+          ]
+        }
+      }
+    ],
+    "connections": [
+      {
+        "connection_id": "cooler_to_oa",
+        "upstream": {
+          "instance_id": "cooler",
+          "port_id": "exit_gate_outer_face"
+        },
+        "downstream": {
+          "instance_id": "accelerator",
+          "port_id": "side_entry"
+        },
+        "gap_mm": 1.0,
+        "coupling_mode": "monolithic_joint_solve"
+      }
+    ]
+  },
+  "components": {
+    "cooler": {
+      "schema_version": 1,
+      "role": "component_geometry_interface",
+      "project_id": "dual_pressure_rectilinear_ion_processor",
+      "variant_id": "hp_end_cooler",
+      "geometry_profile_id": null,
+      "local_frame_id": "dual_pressure_ion_processor_local_v1",
+      "length_unit": "mm",
+      "ports": {
+        "entrance_gate_outer_face": {
+          "surface_kind": "aperture_outer_face",
+          "center_mm": [
+            29.5,
+            0,
+            0
+          ],
+          "outward_normal": [
+            -1,
+            0,
+            0
+          ],
+          "wall_thickness_mm": 0.5,
+          "cross_section": {
+            "shape": "circle",
+            "radius_mm": 1.0
+          }
+        },
+        "exit_gate_outer_face": {
+          "surface_kind": "aperture_outer_face",
+          "center_mm": [
+            130.5,
+            0,
+            0
+          ],
+          "outward_normal": [
+            1,
+            0,
+            0
+          ],
+          "wall_thickness_mm": 0.5,
+          "cross_section": {
+            "shape": "circle",
+            "radius_mm": 1.0
+          }
+        }
+      },
+      "component_electrodes": [
+        {
+          "component_electrode_id": 1,
+          "role": "guide_rod",
+          "electrical_group_id": 1
+        },
+        {
+          "component_electrode_id": 2,
+          "role": "guide_rod",
+          "electrical_group_id": 2
+        },
+        {
+          "component_electrode_id": 3,
+          "role": "guide_rod",
+          "electrical_group_id": 1
+        },
+        {
+          "component_electrode_id": 4,
+          "role": "guide_rod",
+          "electrical_group_id": 2
+        },
+        {
+          "component_electrode_id": 5,
+          "role": "guide_rod",
+          "electrical_group_id": 1
+        },
+        {
+          "component_electrode_id": 6,
+          "role": "guide_rod",
+          "electrical_group_id": 2
+        },
+        {
+          "component_electrode_id": 7,
+          "role": "guide_rod",
+          "electrical_group_id": 1
+        },
+        {
+          "component_electrode_id": 8,
+          "role": "guide_rod",
+          "electrical_group_id": 2
+        },
+        {
+          "component_electrode_id": 40,
+          "role": "hp_rf_a"
+        },
+        {
+          "component_electrode_id": 41,
+          "role": "hp_rf_b"
+        },
+        {
+          "component_electrode_id": 42,
+          "role": "hp_auxiliary"
+        },
+        {
+          "component_electrode_id": 43,
+          "role": "entrance_gate"
+        },
+        {
+          "component_electrode_id": 44,
+          "role": "hp_shield"
+        },
+        {
+          "component_electrode_id": 45,
+          "role": "end_inner_auxiliary"
+        },
+        {
+          "component_electrode_id": 46,
+          "role": "exit_gate"
+        }
+      ]
+    },
+    "accelerator": {
+      "schema_version": 1,
+      "role": "component_geometry_interface",
+      "project_id": "orthogonal_accelerator",
+      "variant_id": "two_zone",
+      "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+      "local_frame_id": "accelerator_centered_transverse_local_z_mm",
+      "length_unit": "mm",
+      "ports": {
+        "axial_exit": {
+          "surface_kind": "aperture_outer_face",
+          "center_mm": [
+            0.0,
+            0.0,
+            6.0
+          ],
+          "outward_normal": [
+            0,
+            0,
+            -1
+          ],
+          "wall_thickness_mm": 1.0,
+          "cross_section": {
+            "shape": "rectangle",
+            "width_mm": 25.0,
+            "height_mm": 26.0,
+            "width_axis": [
+              1,
+              0,
+              0
+            ],
+            "height_axis": [
+              0,
+              1,
+              0
+            ]
+          }
+        },
+        "side_entry": {
+          "surface_kind": "aperture_outer_face",
+          "center_mm": [
+            0.0,
+            -17.0,
+            38.0
+          ],
+          "outward_normal": [
+            0,
+            -1,
+            0
+          ],
+          "wall_thickness_mm": 1.0,
+          "cross_section": {
+            "shape": "rectangle",
+            "width_mm": 3.0,
+            "height_mm": 2.8,
+            "width_axis": [
+              1,
+              0,
+              0
+            ],
+            "height_axis": [
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      },
+      "component_electrodes": [
+        {
+          "component_electrode_id": 15,
+          "role": "grounded_shield"
+        },
+        {
+          "component_electrode_id": 22,
+          "role": "repeller"
+        },
+        {
+          "component_electrode_id": 23,
+          "role": "grid1"
+        },
+        {
+          "component_electrode_id": 24,
+          "role": "exit_grid"
+        },
+        {
+          "component_electrode_id": 26,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 27,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 28,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 29,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 30,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 31,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 32,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 33,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 34,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 35,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 36,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 37,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 38,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 39,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 40,
+          "role": "ring"
+        }
+      ]
+    }
+  },
+  "connection_checks": [
+    {
+      "connection_id": "cooler_to_oa",
+      "upstream_center_mm": [
+        0.0,
+        33.5,
+        32.0
+      ],
+      "downstream_center_mm": [
+        0.0,
+        34.5,
+        32.0
+      ],
+      "upstream_outward_normal": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "downstream_outward_normal": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "gap_mm": 1.0
+    }
+  ],
+  "scope": {
+    "kind": "full",
+    "instance_ids": [
+      "cooler",
+      "accelerator"
+    ],
+    "connection_ids": [
+      "cooler_to_oa"
+    ],
+    "boundary_connection_ids": []
+  }
+}

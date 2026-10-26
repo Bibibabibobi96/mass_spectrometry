@@ -384,6 +384,7 @@ $hostExecutionOutcome='success'
             "$n=Get-Content $env:RF_NUMERICS_JSON -Raw|ConvertFrom-Json; "
             "$steps=40; "
             "$quality=10; "
+            "$mechanical=@{}; "
         )
         suffix = (
             "$core=New-RfSimionCoreRunConfig -ResolvedDesign $r "
@@ -394,12 +395,36 @@ $hostExecutionOutcome='success'
             "-Fly2Path C:\\tmp\\a.fly2 -SourceStatesLua C:\\tmp\\s.lua "
             "-ParticleStateCsv C:\\tmp\\p.csv -TrajectoryCsv C:\\tmp\\t.csv "
             "-SummaryJson C:\\tmp\\q.json; "
+            "foreach($key in $mechanical.Keys){$core[$key]=$mechanical[$key]}; "
             "ConvertTo-RfSimionLuaConfig -CoreConfig $core "
             "-SharedProgramPath $env:RF_SHARED_LUA|Out-Null; "
             "Write-Output \"$($core.rf_steps_per_period)|$($core.trajectory_quality)\""
         )
         cases = (
             ("", True, ""),
+            (
+                "$mechanical=@{mechanical_exit_csv='C:\\tmp\\exit.csv'; "
+                "mechanical_exit_plane_mm=82.1; mechanical_exit_aperture_radius_mm=3.6; "
+                "mechanical_exit_guard_mm=82.4}; ",
+                True,
+                "",
+            ),
+            *(
+                (
+                    "$mechanical=@{mechanical_exit_csv='C:\\tmp\\exit.csv'; "
+                    "mechanical_exit_plane_mm=82.1; mechanical_exit_aperture_radius_mm=3.6; "
+                    "mechanical_exit_guard_mm=82.4}; "
+                    f"$mechanical.Remove('{field}'); ",
+                    False,
+                    field,
+                )
+                for field in (
+                    "mechanical_exit_csv",
+                    "mechanical_exit_plane_mm",
+                    "mechanical_exit_aperture_radius_mm",
+                    "mechanical_exit_guard_mm",
+                )
+            ),
             (
                 "$r.PSObject.Properties.Remove('resolved_sha256'); ",
                 False,

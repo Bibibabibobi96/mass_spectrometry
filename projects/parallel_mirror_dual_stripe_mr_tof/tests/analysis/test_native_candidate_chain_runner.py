@@ -266,8 +266,8 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
                     manifest = flight / "run_manifest.json"
                     manifest.write_text(json.dumps({
                         "status": "failed" if case == "failed" else "success",
-                        "project": "parallel_mirror_dual_stripe_mr_tof",
-                        "mode": "finite_3d_two_prism_voltage_trial", "outputs": outputs,
+                        "project": "instrument_assembly",
+                        "mode": "oa_mr", "outputs": outputs,
                     }), encoding="utf-8")
                     quote = lambda value: "'" + str(value).replace("'", "''") + "'"
                     script = (

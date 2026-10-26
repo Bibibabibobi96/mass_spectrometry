@@ -1,4 +1,4 @@
-function paths = oatof_paths()
+function paths = oatof_paths(artifactRoot)
 %OATOF_PATHS Resolve oa-TOF source and artifact paths from this file.
 %
 % Keep this function free of machine-specific absolute paths.  Entry
@@ -7,10 +7,12 @@ function paths = oatof_paths()
 
     projectRoot = fileparts(mfilename('fullpath'));
     repoRoot = fileparts(fileparts(projectRoot));
-    workspaceRoot = fileparts(repoRoot);
+    if nargin<1, artifactRoot=""; end
+    addpath(fullfile(repoRoot,'common','paths'));
+    workspace=workspace_paths('single_reflection_oa_tof_mass_analyzer',ArtifactRoot=string(artifactRoot));
 
     paths = struct();
-    paths.workspaceRoot = workspaceRoot;
+    paths.workspaceRoot = workspace.workspaceRoot;
     paths.repoRoot = repoRoot;
     paths.commonComsolDir = fullfile(repoRoot, 'common', 'comsol');
     paths.commonPathsDir = fullfile(repoRoot, 'common', 'paths');
@@ -20,7 +22,7 @@ function paths = oatof_paths()
     paths.cadDir = fullfile(projectRoot, 'cad');
     paths.testsDir = fullfile(projectRoot, 'tests');
 
-    paths.artifactRoot = fullfile(workspaceRoot, 'artifacts', 'projects', 'single_reflection_oa_tof_mass_analyzer');
+    paths.artifactRoot = char(workspace.projectArtifactRoot);
     paths.formalRoot = fullfile(paths.artifactRoot, 'formal');
     paths.runsRoot = fullfile(paths.artifactRoot, 'runs');
     paths.archiveRoot = fullfile(paths.artifactRoot, 'archive');

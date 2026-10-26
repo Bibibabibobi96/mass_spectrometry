@@ -6,10 +6,13 @@
 -- SOURCE_OPERATING_PA_OR_PA0 may explicitly be zero_dirichlet for a full
 -- domain with zero far-boundary potentials. No parent PA is opened in that
 -- case; synthetic boundary flags are removed after solving, preserving metal.
+-- zero_neumann instead leaves all nonmetal edges open, using SIMION native
+-- Neumann boundaries (SIMION 2020 CHM refine.html / accuracy.html).
 local raw_path=assert(arg[1],'raw local PA# required')
 local output_path=assert(arg[2],'output local PA0 required')
 local source_path=assert(arg[3],'solved parent operating PA or PA0 required')
 local zero_dirichlet=source_path=='zero_dirichlet'
+local zero_neumann=source_path=='zero_neumann'
 local source_origin_text=assert(arg[4],'source project origin required')
 local patch_origin_text=assert(arg[5],'patch project origin required')
 local voltage_text=assert(arg[6],'local electrode voltages required')
@@ -21,7 +24,7 @@ if arg[7]~=nil then
 end
 assert(arg[8]==nil,'unexpected argument 8')
 assert(raw_path:match('%.pa#$') and output_path:match('%.pa0$')
-  and (zero_dirichlet or source_path:match('%.pa0$') or source_path:match('%.pa$')),
+  and (zero_dirichlet or zero_neumann or source_path:match('%.pa0$') or source_path:match('%.pa$')),
   'raw/output/source suffixes must be PA#/PA0/(PA or PA0)')
 local function numbers(text,label)
   local values={}
@@ -38,9 +41,9 @@ for index,value in ipairs(voltages) do
 end
 simion.pas:close()
 local source
-if not zero_dirichlet then source=assert(simion.pas:open(source_path),'cannot open solved parent operating PA') end
+if not zero_dirichlet and not zero_neumann then source=assert(simion.pas:open(source_path),'cannot open solved parent operating PA') end
 local target=assert(simion.pas:open(raw_path),'cannot open raw local PA')
-assert((zero_dirichlet or (source.dx_mm>0 and source.dy_mm>0 and source.dz_mm>0))
+assert((zero_dirichlet or zero_neumann or (source.dx_mm>0 and source.dy_mm>0 and source.dz_mm>0))
   and target.dx_mm>0 and target.dy_mm>0 and target.dz_mm>0,'PA mesh spacing must be positive')
 local physical_count,boundary_count=0,0
 for z=0,target.nz-1 do for y=0,target.ny-1 do for x=0,target.nx-1 do
@@ -51,7 +54,7 @@ for z=0,target.nz-1 do for y=0,target.ny-1 do for x=0,target.nx-1 do
     assert(identifier>=0 and identifier<=#voltages,'raw local PA contains an undeclared electrode ID')
     target:point(x,y,z,identifier==0 and 0 or voltages[identifier],true)
     physical_count=physical_count+1
-  elseif boundary then
+  elseif boundary and not zero_neumann then
     if zero_dirichlet then
       target:point(x,y,z,0,true)
     else
@@ -72,9 +75,10 @@ end end end
 target:save(output_path);target:close();if source then source:close() end
 local solved=assert(simion.pas:open(output_path),'cannot reopen local operating PA')
 if convergence then solved:refine{convergence=convergence} else solved:refine() end
-if zero_dirichlet then
+if not zero_neumann then
   -- The raw file has never been saved over. Only its six faces are needed to
-  -- recover the physical collision mask; potentials remain exactly as solved.
+  -- recover the physical collision mask after either Dirichlet solve;
+  -- potentials remain exactly as solved (official point/electrode PA API).
   local raw=assert(simion.pas:open(raw_path),'cannot reopen physical boundary mask')
   local function restore(x,y,z)
     local _,physical=raw:point(x,y,z)

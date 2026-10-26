@@ -166,6 +166,29 @@ def _required_scope(
     )
 
 
+
+def _writing_overlaps_current_inputs(
+    item: dict[str, Any], root: Path, paths: tuple[Path, ...], keys: set[str],
+) -> bool:
+    """Match registered input ranges without reading payloads or cache manifests."""
+
+    relative = Path(item["path"])
+    if protection.path_is_protected(root / relative, paths):
+        return True
+    parts = relative.parts
+    if parts[:3] == ("common", "simion", "pa_family_cache"):
+        tail = parts[3:]
+    elif len(parts) >= 5 and parts[0] == "projects" and parts[2] == "cache":
+        tail = parts[4:]
+    else:
+        return False
+    # Keys identify cache families, not their generation SHA. Transactions
+    # and key-named staging retain the same family identity before publication.
+    if tail and tail[0] in {".transactions", ".staging"}:
+        tail = tail[1:]
+    return bool(tail and tail[0].lower() in keys)
+
+
 def _startup_capacity_gate(
     root: Path, *, target_bytes: int, minimum_free_bytes: int,
     required_paths: Iterable[Path], required_cache_keys: Iterable[str],
@@ -206,10 +229,18 @@ def _startup_capacity_gate(
         item for item in writing
         if date.fromisoformat(item["review_deadline"]) < date.today()
     ]
-    # An overdue heavy write has unknown recovery state and can invalidate the
-    # repository-wide capacity projection.  It blocks every new heavy write,
-    # not just consumers that happen to name the same path.
-    blocking_overdue_writing = list(overdue_writing)
+    # Every recorded byte remains in resident. An overdue owner recovery only
+    # blocks this workflow when its current input range is affected.
+    current_paths = tuple(Path(path).resolve(strict=False) for path in (
+        *required[0], *(current_lease or {}).get("protected_paths", ()),
+    ))
+    current_keys = set(required[1]) | set((current_lease or {}).get("protected_cache_keys", ()))
+    canonical_root = root.resolve(strict=False)
+    blocking_overdue_writing = [
+        item for item in overdue_writing
+        if _writing_overlaps_current_inputs(item, canonical_root, current_paths, current_keys)
+    ]
+    blocking_paths = {item["path"] for item in blocking_overdue_writing}
     projected = None if resident is None else resident + total_commitment
     legacy_unknown = int(leases["legacy_unknown_commitment_count"])
     scope_satisfied = current_lease is not None and not required[2] and not required[3]
@@ -256,6 +287,10 @@ def _startup_capacity_gate(
         "writing_object_count": len(writing),
         "overdue_writing_object_count": len(overdue_writing),
         "blocking_overdue_writing_object_count": len(blocking_overdue_writing),
+        "warnings": [
+            {"code": "UNRELATED_WRITING_RECOVERY_REVIEW_OVERDUE", "path": item["path"]}
+            for item in overdue_writing if item["path"] not in blocking_paths
+        ],
         "overdue_writing_objects": [
             {
                 "path": item["path"], "owner": item["owner"],

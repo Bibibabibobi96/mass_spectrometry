@@ -95,8 +95,9 @@ simulation_repo/
 项目测试留在各项目内；只有出现真正跨项目的仓库级门禁时才创建根 `tests/`，不预建空目录。
 
 跨项目组装已批准收敛到仓库根`integrations/`的直属布局，组合以配方而非新项目表达；
-目录与职责的唯一合同见[统一组装目标](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。这是待实施
-迁移，不改变现有活动路径。器件／仪器的物理设计与自身资格仍归项目，跨组件编排和联合证据归integration。
+目录与职责的唯一合同见[统一组装目标](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。实施状态见
+[集成状态](../integrations/docs/INTEGRATION.md)，各活动路径按workflow完成验收后切换。
+器件／仪器的物理设计与自身资格仍归项目，跨组件编排和联合证据归integration。
 
 源码目标目录深度不超过 5 级（文件可处于第 6 段）。新目录只有在承载明确职责时才创建；不建立
 `components/`、`project/components/`、`docs/software/` 或只有一个子目录的重复分类层。

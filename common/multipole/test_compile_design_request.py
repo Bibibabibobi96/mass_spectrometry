@@ -943,6 +943,75 @@ class MultipoleDesignCompilerTest(unittest.TestCase):
                 self.compile(request)
 
 
+class MultipoleMechanicalProfileTest(unittest.TestCase):
+    project_id = "rf_octupole_ion_optics"
+    dual_model = "cylindrical_grounded_shield_through_entrance_exit_v1"
+
+    def profile(self, name="through_entrance_exit_no_acceleration"):
+        from common.multipole.design_profile import resolve_design_profile
+
+        return resolve_design_profile(REPO_ROOT, self.project_id, name)
+
+    def test_dual_profile_compiles_original_request_and_real_ports_and_gem(self):
+        from common.multipole.component_port import build_assembly_interface
+        from common.multipole.simion_geometry import render_physical_gem
+
+        base = self.profile("through_exit_no_acceleration")
+        path = base["paths"]["design_request"]
+        original = path.read_bytes()
+        dual = self.profile()
+        resolved = dual["resolved_design"]
+        self.assertEqual(dual["paths"], base["paths"])
+        self.assertEqual(resolved["governance"]["enclosure_model"], self.dual_model)
+        expected = copy.deepcopy(base["resolved_design"])
+        expected["geometry_mm"]["enclosure"]["model"] = self.dual_model
+        for key in ("geometry_mm", "interfaces_mm", "drive", "axial_drive",
+                    "particle_source", "segmentation", "static_electrodes_V", "sources"):
+            self.assertEqual(resolved[key], expected[key], key)
+        self.assertEqual(validate_resolved_design(
+            resolved, request_path=path, source_root=REPO_ROOT,
+            expected_identity=identity(self.project_id)), resolved)
+        interface = build_assembly_interface(resolved, geometry_profile_id=dual["profile"]["design_profile_id"])
+        self.assertEqual(set(interface["ports"]), {"mechanical_entrance", "mechanical_exit"})
+        self.assertEqual(interface["ports"]["mechanical_entrance"]["center_mm"], [0., 0., -2.5])
+        self.assertEqual(interface["ports"]["mechanical_exit"]["center_mm"], [0., 0., 82.1])
+        self.assertEqual(interface["ports"]["mechanical_entrance"]["cross_section"],
+                         {"shape": "circle", "radius_mm": 3.6})
+        gem = render_physical_gem(resolved, .3)
+        self.assertTrue(gem.strip())
+        self.assertNotEqual(gem, render_physical_gem(base["resolved_design"], .3))
+        self.assertEqual(path.read_bytes(), original)
+        self.assertNotIn("enclosure_model", base["resolved_design"]["governance"])
+
+    def test_selection_is_replayed_and_tampered_provenance_is_rejected(self):
+        profile = self.profile()
+        for action in ("remove", "replace"):
+            with self.subTest(action=action):
+                resolved = copy.deepcopy(profile["resolved_design"])
+                if action == "remove":
+                    del resolved["governance"]["enclosure_model"]
+                else:
+                    resolved["governance"]["enclosure_model"] = "cylindrical_grounded_shield_v1"
+                resolved["resolved_sha256"] = resolved_design_sha256(resolved)
+                with self.assertRaisesRegex(MultipoleDesignCompileError, "deterministic request recompilation"):
+                    validate_resolved_design(resolved,
+                        request_path=profile["paths"]["design_request"], source_root=REPO_ROOT,
+                        expected_identity=identity(self.project_id))
+
+    def test_unknown_model_rejected_by_profile_schema_and_compiler(self):
+        profile = self.profile()
+        registry = json.loads(profile["profiles_path"].read_text(encoding="utf-8-sig"))
+        registry["profiles"][-1]["enclosure_model"] = "invented_model"
+        with self.assertRaises(ContractError):
+            validate_schema(registry, "design_profiles.schema.json")
+        with self.assertRaises(MultipoleDesignCompileError):
+            compile_governed_design_request_file(
+                profile["paths"]["design_request"], profile["paths"]["design_variables"],
+                profile["paths"]["optimization_envelope"],
+                expected_identity=identity(self.project_id), provenance_root=REPO_ROOT,
+                enclosure_model="invented_model")
+
+
 class MultipoleGovernanceSchemaTest(unittest.TestCase):
     def test_existing_oatof_catalog_and_envelope_remain_valid(self) -> None:
         validate_schema(

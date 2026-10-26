@@ -49,16 +49,27 @@ def render_ion11_fly2(
     particle_id_max: int | None = None,
 ) -> str:
     """Render the established eleven-column SIMION source without numeric drift."""
-    rows = _ion11_rows(
-        source, particle_id_min=particle_id_min, particle_id_max=particle_id_max
-    )
+    rows = _ion11_rows(source, particle_id_min=particle_id_min, particle_id_max=particle_id_max)
     beams = []
     for row in rows:
         tob, mass, charge, x, y, z, az, el, energy, cwf, color = row
         if axial_offset_mm != 0.0:
             x = f"{float(x) + axial_offset_mm:.12g}"
-        beams.append({"tob":tob,"mass":mass,"charge":charge,"x":x,"y":y,"z":z,
-                      "ke":energy,"az":az,"el":el,"cwf":cwf,"color":color})
+        beams.append(
+            {
+                "tob": tob,
+                "mass": mass,
+                "charge": charge,
+                "x": x,
+                "y": y,
+                "z": z,
+                "ke": energy,
+                "az": az,
+                "el": el,
+                "cwf": cwf,
+                "color": color,
+            }
+        )
     return render_standard_beams(beams)
 
 
@@ -71,9 +82,7 @@ def render_ion11_source_states(
 ) -> str:
     """Render exact pre-integration states in the established SIMION workbench frame."""
     states = []
-    rows = _ion11_rows(
-        source, particle_id_min=particle_id_min, particle_id_max=particle_id_max
-    )
+    rows = _ion11_rows(source, particle_id_min=particle_id_min, particle_id_max=particle_id_max)
     for index, row in enumerate(rows, start=1):
         tob, mass, _, axial, transverse_1, transverse_2, azimuth, elevation, energy, _, _ = map(float, row)
         speed = math.sqrt(2 * energy * ELEMENTARY_CHARGE_C / (mass * AMU_KG))
@@ -83,9 +92,19 @@ def render_ion11_source_states(
             speed * math.cos(el) * math.sin(az),
             speed * math.sin(el),
         )
-        states.append({"particle_id":index,"t":tob,"x":axial+axial_offset_mm,"y":transverse_1,
-                       "z":transverse_2,"vx":v_sim[0]/1000,"vy":v_sim[2]/1000,
-                       "vz":-v_sim[1]/1000,"ke":energy})
+        states.append(
+            {
+                "particle_id": index,
+                "t": tob,
+                "x": axial + axial_offset_mm,
+                "y": transverse_1,
+                "z": transverse_2,
+                "vx": v_sim[0] / 1000,
+                "vy": v_sim[2] / 1000,
+                "vz": -v_sim[1] / 1000,
+                "ke": energy,
+            }
+        )
     return render_source_states(states)
 
 
@@ -98,6 +117,8 @@ def render_canonical_source(
     expected_source_family_sha256: str | None = None,
     expected_kinetic_energy_ev: float | None = None,
     volume_snapshot_receipt_path: Path | None = None,
+    release_spec_path: Path | None = None,
+    release_receipt_path: Path | None = None,
     particle_id_min: int | None = None,
     particle_id_max: int | None = None,
     simion_particle_id_offset: int = 0,
@@ -112,6 +133,8 @@ def render_canonical_source(
         expected_source_family_sha256=expected_source_family_sha256,
         expected_kinetic_energy_ev=expected_kinetic_energy_ev,
         volume_snapshot_receipt_path=volume_snapshot_receipt_path,
+        release_spec_path=release_spec_path,
+        release_receipt_path=release_receipt_path,
     )
     if simion_particle_id_offset < 0:
         raise ValueError("SIMION particle ID offset must be non-negative")
@@ -122,7 +145,12 @@ def render_canonical_source(
     z_shift = 0.0 if rectangular else -float(enclosure["vacuum_z_min_mm"])
     charge = int(resolved["particle_source"]["charge_state"])
     if particle_id_min is not None or particle_id_max is not None:
-        if particle_id_min is None or particle_id_max is None or particle_id_min < 1 or particle_id_max < particle_id_min:
+        if (
+            particle_id_min is None
+            or particle_id_max is None
+            or particle_id_min < 1
+            or particle_id_max < particle_id_min
+        ):
             raise ValueError("particle ID batch interval is invalid")
         rows = [row for row in rows if particle_id_min <= int(row["particle_id"]) <= particle_id_max]
         if len(rows) != particle_id_max - particle_id_min + 1:
@@ -138,19 +166,21 @@ def render_canonical_source(
         x, y, z = pa_z, -pa_y, pa_x
         wb_vx, wb_vy, wb_vz = vz, -vy, vx
         tob = float(row["birth_time_s"]) * 1e6
-        fly.extend([
-            "  standard_beam {",
-            f"    n=1, tob={tob:.12g}, mass={mass_amu:.12g}, charge={charge}, ke={ke:.12g},",
-            f"    position=vector({x:.12g},{y:.12g},{z:.12g}),",
-            f"    direction=vector({wb_vx:.12g},{wb_vy:.12g},{wb_vz:.12g}), cwf=1, color=3",
-            "  },",
-        ])
+        fly.extend(
+            [
+                "  standard_beam {",
+                f"    n=1, tob={tob:.12g}, mass={mass_amu:.12g}, charge={charge}, ke={ke:.12g},",
+                f"    position=vector({x:.12g},{y:.12g},{z:.12g}),",
+                f"    direction=vector({wb_vx:.12g},{wb_vy:.12g},{wb_vz:.12g}), cwf=1, color=3",
+                "  },",
+            ]
+        )
         simion_particle_id = int(row["particle_id"]) - simion_particle_id_offset
         if simion_particle_id < 1:
             raise ValueError("SIMION particle ID offset exceeds the canonical source slice")
         states.append(
             f"  [{simion_particle_id}]={{t={tob:.12g},x={x:.12g},y={y:.12g},z={z:.12g},"
-            f"vx={wb_vx/1000:.12g},vy={wb_vy/1000:.12g},vz={wb_vz/1000:.12g},ke={ke:.12g}}},"
+            f"vx={wb_vx / 1000:.12g},vy={wb_vy / 1000:.12g},vz={wb_vz / 1000:.12g},ke={ke:.12g}}},"
         )
     fly.append("}\n")
     states.append("}\n")
@@ -166,6 +196,8 @@ def main() -> int:
     parser.add_argument("--expected-source-family-sha256")
     parser.add_argument("--expected-kinetic-energy-ev", type=float)
     parser.add_argument("--volume-snapshot-receipt", type=Path)
+    parser.add_argument("--release-spec", type=Path)
+    parser.add_argument("--release-receipt", type=Path)
     parser.add_argument("--particle-id-min", type=int)
     parser.add_argument("--particle-id-max", type=int)
     parser.add_argument("--simion-particle-id-offset", type=int, default=0)
@@ -182,6 +214,8 @@ def main() -> int:
         expected_source_family_sha256=args.expected_source_family_sha256,
         expected_kinetic_energy_ev=args.expected_kinetic_energy_ev,
         volume_snapshot_receipt_path=args.volume_snapshot_receipt,
+        release_spec_path=args.release_spec,
+        release_receipt_path=args.release_receipt,
         particle_id_min=args.particle_id_min,
         particle_id_max=args.particle_id_max,
         simion_particle_id_offset=args.simion_particle_id_offset,

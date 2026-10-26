@@ -17,30 +17,30 @@ if mode == 'prepare' then
   end
   write('program.lua', 'simion.workbench_program()\n')
   write('program.mirror_cycle_counter.lua', 'return {}\n')
+  write('program.voltage_waveforms.lua', 'return {transport_fixture=true}\n')
   write('source.fly2', 'particles { standard_beam { n = 1, mass = 100, charge = 1, ke = 1, position = vector(5,5,5), direction = vector(1,0,0) } }\n')
   write('operating.lua', 'return {}\n')
-  write('voltage_map.lua', [[return function()
-    local groups = {{2,7},{3,8},{4,9},{5,10},{11,12},{13,14},{16},{17}}
-    local values = {}
-    for local_id, ids in ipairs(groups) do
-      for _, id in ipairs(ids) do values[id] = 100 * local_id end
-    end
-    return {analyser=values}
-  end
+  write('priority.lua', [[return {schema_version=1,role='mrtof_native_corridor_iob_priority_contract',
+  instances={{role='global_fallback',priority_number=1},{role='native_corridor',priority_number=2},
+    {role='accelerator',priority_number=3},{role='detector',priority_number=4}},
+  corridor_voltage_groups={{2,7},{3,8},{4,9},{5,10},{11,12},{13,14},{16},{17}}}]])
+  write('voltage_map.lua', [[return {
+    physical_voltages=function() return {analyser={}} end,
+    corridor_voltages=function(analyser,groups)
+      assert(type(groups)=='table' and #groups==8)
+      return {100,200,300,400,500,600,700,800}
+    end}
 ]])
   print('NATIVE_CORRIDOR_IOB_FIXTURE_INPUT=PASS')
 elseif mode == 'inspect' then
   local wb = assert(simion.wb)
   wb:load(path('fixture.iob'))
+  assert(assert(loadfile(path('fixture.voltage_waveforms.lua')))().transport_fixture)
   assert(#wb.instances == 4, 'saved builder output must have four instances')
   local corridor = wb.instances[2].pa
-  local mapping = assert(loadfile(path('voltage_map.lua')))()({})
   local priority = assert(loadfile(path('fixture.priority.lua')))()
-  local values = {}
-  for id, physical_ids in ipairs(priority.corridor_voltage_groups) do
-    values[id] = mapping.analyser[physical_ids[1]]
-  end
-  corridor:fast_adjust(values)
+  local mapping = assert(loadfile(path('voltage_map.lua')))()
+  corridor:fast_adjust(mapping.corridor_voltages({},priority.corridor_voltage_groups))
   for id = 1, 8 do
     assert(math.abs(corridor:potential(id - 1, 0, 0) - 100 * id) < 1e-6,
       'saved IOB Fast Adjust voltage differs for local electrode ' .. id)

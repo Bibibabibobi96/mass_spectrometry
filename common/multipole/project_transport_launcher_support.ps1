@@ -79,7 +79,6 @@ function Invoke-MultipoleProjectFinite3dTransport {
       ProjectId = $ProjectId
       RuntimeProfileId = $resolvedRuntimeProfileId
       DesignProfileId = [string]$profile.design_profile_id
-      ParticleSourcePath = [string]$profile.particle_source.path
       EngineeringBudgetPath = [string]$profile.engineering_budget.path
       RunId = $RunId
       RetentionClass = $RetentionClass
@@ -87,6 +86,11 @@ function Invoke-MultipoleProjectFinite3dTransport {
       PythonExe = $python
       RfStepsPerPeriod = [int]$numerics.trajectory.rf_steps_per_period
       MaximumTimeUs = [double]$numerics.trajectory.maximum_global_time_us
+    }
+    if ($profile.particle_source.PSObject.Properties.Name -contains 'release_spec') {
+      if ($Solver -ne 'simion') { throw 'Release-spec materialization is currently implemented for SIMION only.' }
+    } else {
+      $arguments.ParticleSourcePath = [string]$profile.particle_source.path
     }
     if ($EvidenceContractPath) {
       $arguments.EvidenceContractPath = $EvidenceContractPath

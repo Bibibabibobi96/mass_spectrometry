@@ -28,22 +28,115 @@ try {
   . (Join-Path $PSScriptRoot 'contracts/run_artifact_support.ps1')
   $realTransaction=${function:Invoke-HostResourceTransaction}
   try {
+    # Capture both consumers without opening even the default live database.
+    $script:pathSelections = [Collections.Generic.List[string]]::new()
+    function Invoke-HostResourceTransaction {
+      param([hashtable]$Request, [string]$StatePath)
+      $script:pathSelections.Add($StatePath)
+      return [pscustomobject]@{token='path-selection-test';status='acquired';reason='fixture';owner=@{pid=$PID}}
+    }
+    $pathBudget = Get-HostResourceBudget -Role GATE -Stage path-selection
+    $explicitState = Join-Path $testRoot 'explicit.sqlite3'
+    $environmentState = Join-Path $testRoot 'environment.sqlite3'
+    foreach ($case in @(
+      @{explicit=$explicitState;environment='relative-env.sqlite3';expected=$explicitState},
+      @{explicit='';environment=$environmentState;expected=$environmentState},
+      @{explicit='';environment='';expected=$script:HostResourceStatePath}
+    )) {
+      $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = $case.environment
+      $stateArguments = @{}
+      if ($case.explicit) { $stateArguments.StatePath = $case.explicit }
+      $selected = Enter-HostResourceStage -Role GATE -Stage path-selection -Budget $pathBudget `
+        @stateArguments -NoEnvironment -NoWait
+      $null = Get-HostResourceStatus @stateArguments
+      $expected = [IO.Path]::GetFullPath($case.expected)
+      Assert-True ($selected.state_path -eq $expected -and
+        $script:pathSelections[-2] -eq $expected -and $script:pathSelections[-1] -eq $expected) `
+        'Admission and status selected different explicit/environment/default state paths.'
+    }
+    foreach ($relative in @('relative.sqlite3', 'C:relative.sqlite3', '\relative.sqlite3')) {
+      foreach ($case in @(
+        @{explicit=$relative;environment=$environmentState},
+        @{explicit='';environment=$relative}
+      )) {
+        $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = $case.environment
+        $stateArguments = @{}
+        if ($case.explicit) { $stateArguments.StatePath = $case.explicit }
+        $before = $script:pathSelections.Count
+        foreach ($consumer in @('admission', 'status')) {
+          $rejected = $false
+          try {
+            if ($consumer -eq 'admission') {
+              $null = Enter-HostResourceStage -Role GATE -Stage path-selection -Budget $pathBudget `
+                @stateArguments -NoEnvironment -NoWait
+            } else { $null = Get-HostResourceStatus @stateArguments }
+          } catch { $rejected = $_.Exception.Message -match 'must be absolute' }
+          Assert-True $rejected 'Relative deployment paths must fail before a scheduler transaction.'
+        }
+        Assert-True ($script:pathSelections.Count -eq $before) 'Rejected paths reached the scheduler.'
+      }
+    }
+    Write-Output 'HOST_RESOURCE_PATH_SELECTION_TEST=PASS TRANSACTIONS=MOCKED'
+  } finally {
+    Set-Item -Path function:Invoke-HostResourceTransaction -Value $realTransaction
+    $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = $statePath
+    Remove-Variable pathSelections -Scope Script
+  }
+  try {
     function Invoke-HostResourceTransaction {
       param([hashtable]$Request,[string]$StatePath)
-      return [pscustomobject]@{processes=@(
-        [pscustomobject]@{pid=4242;started='0000000000000000001'},
-        [pscustomobject]@{pid=4242;started='0000000000000000001'}
-      )}
+      return [pscustomobject]@{processes=@([pscustomobject]@{pid=4242;started='0000000000000000001'})}
     }
     $duplicateLease=[pscustomobject]@{
       state_path=$statePath;token='duplicate-registration-test';registered_work_processes=@{}
     }
     $duplicateLease=Register-HostResourceProcess -Lease $duplicateLease -ProcessId 4242
     Assert-True ($duplicateLease.registered_work_processes['4242']-eq'0000000000000000001') `
-      'Duplicate scheduler observations of one process identity must register once.'
+      'One canonical scheduler process identity must register.'
   } finally {
     Set-Item -Path function:Invoke-HostResourceTransaction -Value $realTransaction
   }
+  try {
+    function Invoke-HostResourceTransaction {
+      param([hashtable]$Request,[string]$StatePath)
+      return [pscustomobject]@{processes=@(
+        [pscustomobject]@{pid=4243;started='0639590650123456700'},
+        [pscustomobject]@{pid=4243;started='0639590650123456703'}
+      )}
+    }
+    $precisionLease=[pscustomobject]@{
+      state_path=$statePath;token='precision-registration-test';registered_work_processes=@{}
+    }
+    $rejected=$false
+    try { $null=Register-HostResourceProcess -Lease $precisionLease -ProcessId 4243 } catch { $rejected=$_.Exception.Message -match 'one exact registered' }
+    Assert-True $rejected 'Lease adapter must reject a noncanonical duplicate scheduler response.'
+  } finally {
+    Set-Item -Path function:Invoke-HostResourceTransaction -Value $realTransaction
+  }
+  $emptyParents = [Collections.Generic.Dictionary[int,int]]::new()
+  $snapshotParents = [Collections.Generic.Dictionary[int,int]]::new()
+  $snapshotParents[11] = 3; $snapshotParents[12] = 7; $snapshotParents[13] = 0
+  $parentCases = @(
+    @{parents=$emptyParents;pid=11;started='99';expected=0;name='empty-table'},
+    @{parents=$snapshotParents;pid=99;started='101';expected=0;name='missing-pid'},
+    @{parents=$snapshotParents;pid=11;started='98';expected=3;name='first-pid'},
+    @{parents=$snapshotParents;pid=12;started='98';expected=7;name='second-pid'},
+    @{parents=$snapshotParents;pid=13;started='98';expected=0;name='parent-zero'},
+    @{parents=$snapshotParents;pid=11;started='100';expected=3;name='same-tick'},
+    @{parents=$snapshotParents;pid=11;started='99';expected=3;name='earlier-identity'},
+    @{parents=$snapshotParents;pid=11;started='101';expected=$null;name='newer-identity'}
+  )
+  foreach ($case in $parentCases) {
+    $actual = Get-HostResourceSnapshotParent -Parents $case.parents -ProcessId $case.pid `
+      -Started $case.started -SnapshotStartedUtcTicks 100
+    Assert-True ($actual -eq $case.expected) "Snapshot parent lookup failed: $($case.name)"
+  }
+  Write-Output "HOST_RESOURCE_SNAPSHOT_PARENT_TEST=PASS CASES=$($parentCases.Count)"
+  $nativeParents=Get-HostResourceProcessParents
+  $nextNativeParents=Get-HostResourceProcessParents
+  Assert-True ($nativeParents.complete -and $nativeParents.parents.ContainsKey($PID)) 'Native parent table omitted the actual test process.'
+  Assert-True (-not [object]::ReferenceEquals($nativeParents.parents,$nextNativeParents.parents)) 'Native parent table was cached across observations.'
+  Assert-True ($nextNativeParents.started_at_utc_ticks -ge $nativeParents.started_at_utc_ticks) 'Native parent observations reversed their capture times.'
   $nativeTicks = Get-HostResourceNativeProcessCreationTicks -ProcessId $PID
   $managedTicks = (Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks.ToString('D19')
   Assert-True ($nativeTicks -eq $managedTicks) 'Native limited process query did not preserve the current creation identity.'
@@ -162,12 +255,22 @@ trap { [IO.File]::WriteAllText('$quotedHiddenError', `$_.Exception.ToString()); 
 . '$quotedSource'
 `$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = '$quotedState'
 Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue
+`$realTransaction = `${function:Invoke-HostResourceTransaction}
+function Invoke-HostResourceTransaction {
+  param([hashtable]`$Request,[string]`$StatePath)
+  `$watch = [Diagnostics.Stopwatch]::StartNew()
+  [IO.File]::AppendAllText('$quotedHiddenProgress', ([DateTime]::UtcNow.ToString('O') + ' transaction-start ' + `$Request.operation + "`n"))
+  try { & `$realTransaction -Request `$Request -StatePath `$StatePath }
+  finally {
+    [IO.File]::AppendAllText('$quotedHiddenProgress', ([DateTime]::UtcNow.ToString('O') + ' transaction-end ' + `$Request.operation + ' elapsed_ms=' + `$watch.ElapsedMilliseconds + "`n"))
+  }
+}
 `$real = `${function:Get-HostResourceSnapshot}
 `$script:hiddenFixtureSnapshot = `$null
 function Get-CimInstance { throw 'Forced CIM unavailability for native console snapshot regression.' }
 function Get-HostResourceSnapshot {
   if (`$null -eq `$script:hiddenFixtureSnapshot) {
-    [IO.File]::AppendAllText('$quotedHiddenProgress', "native-snapshot-start`n")
+    [IO.File]::AppendAllText('$quotedHiddenProgress', ([DateTime]::UtcNow.ToString('O') + " native-snapshot-start`n"))
     `$s = & `$real
     `$owners = @(`$s.processes | Where-Object pid -eq `$PID)
     `$consoles = @(`$s.processes | Where-Object { `$_.parent_pid -eq `$PID -and `$_.is_system_console_host })
@@ -177,7 +280,7 @@ function Get-HostResourceSnapshot {
     `$s.processes = @(`$owners) + @(`$consoles)
     `$s.unknown_process_ids = @(); `$s.definitely_exited_process_ids = @()
     `$script:hiddenFixtureSnapshot = `$s
-    [IO.File]::AppendAllText('$quotedHiddenProgress', "native-snapshot-complete`n")
+    [IO.File]::AppendAllText('$quotedHiddenProgress', ([DateTime]::UtcNow.ToString('O') + " native-snapshot-complete`n"))
   }
   `$s = `$script:hiddenFixtureSnapshot.Clone()
   foreach (`$row in `$s.processes) {
@@ -190,6 +293,7 @@ function Get-HostResourceSnapshot {
   }
   `$s.cpu_percent=0; `$s.available_memory_bytes=32GB; `$s.total_memory_bytes=64GB; `$s.logical_processors=4; `$s.io_pressure=`$false
   `$script:hiddenSnapshot = `$s
+  [IO.File]::AppendAllText('$quotedHiddenProgress', ([DateTime]::UtcNow.ToString('O') + " snapshot-return`n"))
   return `$s
 }
 `$budget = Get-HostResourceBudget -Profile measured-small-check
@@ -218,7 +322,9 @@ try {
   $hidden = Start-Process -FilePath (Get-Command pwsh).Source -WindowStyle Hidden -PassThru `
     -WorkingDirectory $testRoot -ArgumentList @('-NoProfile','-EncodedCommand',$hiddenEncoded)
   try {
-    $hiddenFinished = $hidden.WaitForExit(45000)
+    # Measured native-fallback cold snapshot took 42 s on this shared host;
+    # allow it plus the existing 45 s transaction boundary, without changing admission.
+    $hiddenFinished = $hidden.WaitForExit(90000)
     $hiddenFailure = if (Test-Path -LiteralPath $hiddenError) { Get-Content -LiteralPath $hiddenError -Raw } else { '' }
     $hiddenStages = if (Test-Path -LiteralPath $hiddenProgress) { Get-Content -LiteralPath $hiddenProgress -Raw } else { 'not-started' }
     Write-Output "HIDDEN_FIXTURE_STAGES=$hiddenStages"
@@ -234,13 +340,53 @@ try {
   $lease = Enter-HostExecutionLease -Role COMSOL -Stage solver -RunId 'test-listed-heavy'
   $quotedSource = $leaseSource.Replace("'", "''")
   $quotedState = $statePath.Replace("'", "''")
+  $childProgress = Join-Path $testRoot 'contender-progress.txt'
+  $quotedChildProgress = $childProgress.Replace("'", "''")
+  $childError = Join-Path $testRoot 'contender-error.txt'
+  $quotedChildError = $childError.Replace("'", "''")
   $childCode = @"
+trap { [IO.File]::WriteAllText('$quotedChildError', `$_.Exception.ToString()); exit 1 }
 . '$quotedSource'
+`$realTransaction = `${function:Invoke-HostResourceTransaction}
+function Invoke-HostResourceTransaction {
+  param([hashtable]`$Request,[string]`$StatePath)
+  `$watch = [Diagnostics.Stopwatch]::StartNew()
+  [IO.File]::AppendAllText('$quotedChildProgress', ([DateTime]::UtcNow.ToString('O') + ' transaction-start ' + `$Request.operation + "`n"))
+  try { & `$realTransaction -Request `$Request -StatePath `$StatePath }
+  finally {
+    [IO.File]::AppendAllText('$quotedChildProgress', ([DateTime]::UtcNow.ToString('O') + ' transaction-end ' + `$Request.operation + ' elapsed_ms=' + `$watch.ElapsedMilliseconds + "`n"))
+  }
+}
 Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue
 Remove-Item Env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID -ErrorAction SilentlyContinue
 `$real = `${function:Get-HostResourceSnapshot}
+`$script:contenderSnapshot = `$null
 function Get-HostResourceSnapshot {
-  `$s = & `$real
+  if (`$null -eq `$script:contenderSnapshot) {
+    [IO.File]::AppendAllText('$quotedChildProgress', ([DateTime]::UtcNow.ToString('O') + " process-snapshot-start`n"))
+    `$s = & `$real
+    [IO.File]::AppendAllText('$quotedChildProgress', ([DateTime]::UtcNow.ToString('O') + " process-snapshot-complete`n"))
+    # This exclusion test needs the two actual owners, not four repeated CIM
+    # scans of unrelated host processes. Keep their real console descendants.
+    `$owners = @(`$s.processes | Where-Object { `$_.pid -in @($PID, `$PID) })
+    if (`$owners.Count -ne 2) { throw 'Contender snapshot did not discover both real fixture owners.' }
+    `$s.processes = @(`$owners) + @(`$s.processes | Where-Object {
+      `$_.parent_pid -in @($PID, `$PID) -and `$_.is_system_console_host
+    })
+    `$s.unknown_process_ids = @(); `$s.definitely_exited_process_ids = @()
+    `$script:contenderSnapshot = `$s
+  }
+  `$s = `$script:contenderSnapshot.Clone()
+  foreach (`$row in `$s.processes) {
+    `$nativeStarted = Get-HostResourceNativeProcessCreationTicks -ProcessId `$row.pid
+    # CIM creation dates truncate to microseconds; use the same one-quantum
+    # identity boundary as Wait-HostResourceProcess, preserving the ledger identity.
+    if ([string]::IsNullOrWhiteSpace([string]`$nativeStarted) -or
+        [Math]::Abs([int64]`$nativeStarted - [int64]`$row.started) -ge 10) {
+      throw ("A real contender fixture process changed identity or exited: pid=" + `$row.pid +
+        ' snapshot_started=' + `$row.started + ' native_started=' + `$nativeStarted)
+    }
+  }
   `$s.cpu_percent=0; `$s.available_memory_bytes=32GB; `$s.total_memory_bytes=64GB; `$s.logical_processors=4; `$s.io_pressure=`$false
   return `$s
 }
@@ -254,8 +400,19 @@ Exit-HostResourceStage -Lease `$childLease
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childCode))
   $child = Start-Process -FilePath (Get-Command pwsh).Source -WindowStyle Hidden -PassThru `
     -ArgumentList @('-NoProfile','-EncodedCommand',$encoded)
-  Assert-True ($child.WaitForExit(30000)) 'Isolated contender did not finish.'
-  Assert-True ($child.ExitCode -eq 0) 'Isolated contender failed.'
+  try {
+    $childFinished = $child.WaitForExit(30000)
+    $childFailure = if (Test-Path -LiteralPath $childError) { Get-Content -LiteralPath $childError -Raw } else { '' }
+    $childStages = if (Test-Path -LiteralPath $childProgress) { Get-Content -LiteralPath $childProgress -Raw } else { 'not-started' }
+    Write-Output "CONTENDER_FIXTURE_STAGES=$childStages"
+    Assert-True $childFinished "Isolated contender did not finish. Stages: $childStages Error: $childFailure"
+    Assert-True ($child.ExitCode -eq 0) "Isolated contender failed: $childFailure Stages: $childStages"
+  } finally {
+    # Reap this exact fixture tree before the outer cleanup removes its ledger.
+    if (-not $child.HasExited) { $child.Kill($true) }
+    $child.WaitForExit()
+    $child.Dispose()
+  }
   Exit-HostExecutionLease -Lease $lease
   $lease = $null
   Assert-True (@((Get-HostResourceStatus -StatePath $statePath).records).Count -eq 0) 'Unknown stage leaked a reservation.'

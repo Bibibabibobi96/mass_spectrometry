@@ -1,0 +1,194 @@
+{
+  "schema_version": 3,
+  "role": "instrument_assembly_cooled_frontend_request",
+  "source": {
+    "producer_manifest": {
+      "path": "artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/20261020_104000__sim__simion__electrode-geometry-d-n100/run_manifest.json",
+      "bytes": 287707,
+      "sha256": "042FE56D8BE002F7D6D58BFA8316F21D2541F8A58D3047652BFA245E67AF59E0"
+    },
+    "resolved_model": {
+      "path": "artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/20261020_104000__sim__simion__electrode-geometry-d-n100/inputs/resolved_model.json",
+      "bytes": 68729,
+      "sha256": "385B85C1D6E863963EB088C8E76913C255E914E273FBCF736C147ECFDE939D69"
+    },
+    "source_spec": {
+      "path": "artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/20261020_104000__sim__simion__electrode-geometry-d-n100/inputs/source.json",
+      "bytes": 712,
+      "sha256": "CDEB3372BCA83D5716AEA2FCF7BDB60DA74AEE1E8A44292B1449867E44683F5C"
+    },
+    "release_csv": {
+      "path": "artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/20261020_104000__sim__simion__electrode-geometry-d-n100/inputs/release.csv",
+      "bytes": 12811,
+      "sha256": "1ADE990A5B2409E5DE9F9A8A33334D186B3B9E6879CD9ADF058236E4AE0AFEB6"
+    }
+  },
+  "accelerator_component": {
+    "schema_version": 1,
+    "role": "rf_oatof_accelerator_component",
+    "variant_id": "two_zone",
+    "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+    "requirements": {
+      "schema_version": 2,
+      "role": "orthogonal_accelerator_two_zone_requirements",
+      "variant_id": "two_zone",
+      "acceleration_direction": "-z",
+      "source_cylinder": {
+        "radius_mm": 1,
+        "height_mm": 5
+      },
+      "focus": {
+        "mode": "two_zone_time_focus",
+        "focus_plane": "mr_native_exit_z0"
+      },
+      "compaction": {
+        "axes": [
+          "y",
+          "z"
+        ],
+        "objective": "minimize_subject_to_focus"
+      },
+      "local_pa": {
+        "span_mm": [
+          64,
+          64,
+          84
+        ],
+        "mesh_mm_per_gu": [
+          0.1,
+          0.2,
+          0.1
+        ],
+        "exit_z_mm": 6,
+        "margin_z_mm": 6
+      },
+      "placement": {
+        "focus_y_mm": 51.5,
+        "global_repeller_z_mm": 34,
+        "global_exit_z_mm": 0
+      },
+      "side_entry": {
+        "face": "negative_y",
+        "half_width_x_mm": 1.5,
+        "half_width_z_mm": 1.4
+      }
+    },
+    "local_electrode_ids": {
+      "15": 9,
+      "22": 10,
+      "23": 11,
+      "24": 27,
+      "26": 12,
+      "27": 13,
+      "28": 14,
+      "29": 15,
+      "30": 16,
+      "31": 17,
+      "32": 18,
+      "33": 19,
+      "34": 20,
+      "35": 21,
+      "36": 22,
+      "37": 23,
+      "38": 24,
+      "39": 25,
+      "40": 26
+    },
+    "electrode_voltages_v": {
+      "15": 0.0,
+      "22": 4749.074377093093,
+      "23": 3994.946318498907,
+      "24": 0.0,
+      "26": 3745.2621735927255,
+      "27": 3495.578028686544,
+      "28": 3245.893883780362,
+      "29": 2996.2097388741804,
+      "30": 2746.5255939679987,
+      "31": 2496.841449061817,
+      "32": 2247.1573041556353,
+      "33": 1997.4731592494536,
+      "34": 1747.789014343272,
+      "35": 1498.1048694370902,
+      "36": 1248.4207245309085,
+      "37": 998.7365796247268,
+      "38": 749.0524347185451,
+      "39": 499.3682898123634,
+      "40": 249.6841449061817
+    },
+    "pulse_voltage_policy_id": "all_accelerator_electrodes_zero_before_pulse_v1"
+  },
+  "numerics": {
+    "cell_mm_xyz": {
+      "x": 0.2,
+      "y": 0.2,
+      "z": 0.2
+    },
+    "refine_convergence_v": 1e-05,
+    "maximum_step_us": 0.002,
+    "rf_steps_per_period": 64,
+    "maximum_flight_us": 1700,
+    "trajectory_sample_interval_us": 10.0,
+    "extraction_sample_interval_us": 0.05,
+    "trajectory_quality": 8,
+    "collision_seed": 712367,
+    "hs1_steps_per_mfp": 20
+  },
+  "pulse": {
+    "policy_id": "actual_field_reference_exit_centering_v1",
+    "target": "oa_exit_geometric_center",
+    "reference_temperature_policy": "provider_gas_temperature"
+  },
+  "diagnostics": {
+    "policy_id": "automatic_full_population_v1"
+  },
+  "conditioner": {
+    "schema_version": 1,
+    "role": "ion_processor_hp_end_buncher_request",
+    "inner_center_inset_mm": 5.0,
+    "inner_length_mm": 2.5
+  },
+  "drive": {
+    "capture_voltages_v": {
+      "hp_rf_a": -5,
+      "hp_rf_b": -5,
+      "hp_auxiliary": -2,
+      "entrance_gate": 0,
+      "hp_shield": -5,
+      "end_inner_auxiliary": -6,
+      "exit_gate": 45
+    },
+    "closed_voltages_v": {
+      "hp_rf_a": -5,
+      "hp_rf_b": -5,
+      "hp_auxiliary": -2,
+      "entrance_gate": 45,
+      "hp_shield": -5,
+      "end_inner_auxiliary": -6,
+      "exit_gate": 45
+    },
+    "release_voltages_v": {
+      "hp_rf_a": 5,
+      "hp_rf_b": 5,
+      "hp_auxiliary": 5,
+      "entrance_gate": 55,
+      "hp_shield": 5,
+      "end_inner_auxiliary": 5,
+      "exit_gate": 0
+    },
+    "entrance_close_us": 29.391891891891895,
+    "release_start_us": 1529.3918918918919
+  },
+  "pressure_scale": 1,
+  "field_source": null,
+  "common_pulse_decision": null,
+  "design_targets": {
+    "thermal_sigma_y_mm": 0.15,
+    "static_release_energy_gain_ev": 5.0
+  },
+  "composition_plan": {
+    "path": "../../recipes/cooled_oa_two_zone_plan.json",
+    "exists": true,
+    "bytes": 9155,
+    "sha256": "22D8AEEDBD26257B5C3FE8D04FE3D9B740E3986DE43898B5BDCACFE133B96C34"
+  }
+}

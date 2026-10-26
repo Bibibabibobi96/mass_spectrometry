@@ -63,6 +63,36 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual(state_at(data,3,0)["status"],"notborn")
         self.assertEqual(state_at(data,1,4)["status"],"extracted")
 
+    def test_injected_initial_state_means_admission_not_a_new_birth(self) -> None:
+        path = self.run/"inputs/resolved_model.json"
+        config = json.loads(path.read_text())
+        config["injected_source"] = dict(mother_particle_count=4)
+        path.write_text(json.dumps(config))
+        data = prepare_data(self.run)
+        self.assertEqual(state_at(data, 3, 0)["status"], "not_admitted")
+        self.assertEqual(state_at(data, 3, 0)["reason"], "not_yet_entered_IP")
+        count, _ = census(data, 0)
+        self.assertEqual(count["not_admitted"], 1)
+        self.assertNotIn("notborn", count)
+        snapshots = []
+        evolution = []
+        for label, time in data["snapshots"]:
+            count, states = census(data, time)
+            evolution.append(count)
+            snapshots.extend(dict(snapshot=label, **state) for state in states)
+        cooling = cooling_statistics(data, snapshots)
+        self.assertIn("same_ids_at_admission", cooling["stages"]["transfer"])
+        figures = build_figures(data, snapshots, evolution)
+        try:
+            energy = figures["cooling_stage_energy"]
+            self.assertIn("IP admission", energy.axes[0].get_title())
+            labels = [line.get_label() for axis in energy.axes for line in axis.lines]
+            self.assertIn("same IDs at IP admission", labels)
+            self.assertNotIn("same IDs at birth", labels)
+        finally:
+            for figure in figures.values():
+                plt.close(figure)
+
     def test_cooling_distributions_preserve_loss_and_unknown_cohorts(self) -> None:
         data=prepare_data(self.run)
         snapshots=[]

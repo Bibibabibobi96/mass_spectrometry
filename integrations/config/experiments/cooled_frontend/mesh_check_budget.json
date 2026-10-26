@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "role": "integration_resolved_engineering_budget",
+  "integration_id": "instrument_assembly",
+  "retention_class": "solver_review",
+  "particle_count": 100,
+  "stage_limits": {
+    "single_flight_transport": {
+      "solver": "simion",
+      "wall_clock_seconds": 14400,
+      "transient_run_directory_bytes": 1700000000,
+      "process_tree_working_set_bytes": 42949672960,
+      "minimum_system_available_memory_bytes": 1073741824,
+      "compact_final_retained_bytes": 1400000000,
+      "automatic_retry_count": 0
+    }
+  },
+  "workflow_id": "cooled_frontend"
+}

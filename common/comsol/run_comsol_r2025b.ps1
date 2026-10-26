@@ -15,7 +15,7 @@ param(
     [int]$StartupReportTimeoutSeconds = 120,
 
     [ValidateSet('stop', 'warn')]
-    [string]$StartupReportTimeoutAction = 'stop',
+    [string]$StartupReportTimeoutAction = 'warn',
 
     [ValidateRange(0, 64)]
     [int]$ProcessorCount = 0,
@@ -28,7 +28,10 @@ param(
 
     [hashtable]$ResourceBudgets = @{},
 
-    [string]$RunId = ''
+    [string]$RunId = '',
+    [pscustomobject]$Limits = $null,
+    [string]$RunDir = '',
+    [string]$UsagePath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -36,6 +39,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\require_powershell7.ps1')
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+. (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
 foreach ($stageName in $ResourceBudgets.Keys) {
     if ($stageName -notin @('prepare', 'solver', 'postprocess')) {
         throw "Unknown COMSOL resource stage: $stageName"
@@ -49,8 +53,8 @@ foreach ($stageName in @('prepare', 'solver', 'postprocess')) {
         Get-HostResourceBudget -Role COMSOL -Stage $stageName
     }
 }
-# The before/after server inventory is attributable only while all managed
-# LiveLink sessions hold this same lock, including completion cleanup.
+# Isolate managed LiveLink sessions; cleanup ownership still requires exact
+# process ancestry and creation identities, not this session lock.
 $solverBudget = @{}
 foreach ($entry in $stageBudgets.solver.GetEnumerator()) { $solverBudget[$entry.Key] = $entry.Value }
 $solverBudget.exclusive_resources = @(
@@ -89,14 +93,26 @@ function Get-ComsolServerProcessIds {
 }
 
 function Stop-ComsolAttemptServers {
-    param([int[]]$Before, [string]$Reason)
-    $after = @(Get-ComsolServerProcessIds)
-    $attemptIds = @(Get-ComsolAttemptServerIds -Before $Before -After $after)
+    param([int]$RootProcessId, [hashtable]$Observation, [string]$Reason)
+    try {
+        $sample = Get-ManagedSolverProcessSample -RootProcessIds @($RootProcessId) `
+            -RootProcessStartedAtUtcTicks @{([string]$RootProcessId)=$Observation.tracked_ticks[[string]$RootProcessId]} `
+            -TrackedProcessIds @($Observation.tracked_ticks.Keys | ForEach-Object {[int]$_}) `
+            -TrackedProcessStartedAtUtcTicks $Observation.tracked_ticks
+        foreach ($identity in $sample.tracked_process_started_at_utc_ticks.GetEnumerator()) {
+            if (-not $Observation.tracked_ticks.ContainsKey([string]$identity.Key)) {
+                $Observation.tracked_ticks[[string]$identity.Key]=$identity.Value
+            }
+        }
+    } catch {
+        # Existing exact identities remain usable; absent ancestry is never ownership.
+        Write-Warning "COMSOL_CLEANUP_OBSERVATION_UNAVAILABLE ERROR=$($_.Exception.Message)" -WarningAction Continue
+    }
+    $attemptIds = @(Get-ComsolServerProcessIds | Where-Object {$Observation.tracked_ticks.ContainsKey([string]$_)})
     foreach ($processId in $attemptIds) {
-        $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
-        if ($null -ne $process -and $process.ProcessName -eq 'comsolmphserver') {
-            Stop-Process -Id $processId -Force
-            $process.WaitForExit()
+        if (Test-ManagedRootProcessIsLive -ProcessId $processId `
+                -ExpectedStartedAtUtcTicks ([int64]$Observation.tracked_ticks[[string]$processId])) {
+            Stop-ManagedSolverProcesses -ProcessIds @($processId) -ExpectedStartedAtUtcTicks $Observation.tracked_ticks
             if ($Reason -eq 'task completion') {
                 Write-Verbose "Stopped completed attempt-local COMSOL server PID $processId."
             } else {
@@ -110,6 +126,7 @@ function Start-ComsolLauncherProcess {
     param([string]$FilePath, [string[]]$Arguments)
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $FilePath
+    $startInfo.WorkingDirectory = $repoRoot
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
@@ -156,9 +173,44 @@ try {
         )
         Update-HostResourceStage -Lease $resourceLease -Stage solver `
             -Budget $stageBudgets.solver -RetainedMemoryBytes 0 | Out-Null
-        $serversBeforeAttempt = @(Get-ComsolServerProcessIds)
+        $attemptObservation = New-RepositoryProcessObservation -Limits $Limits -RunDir $RunDir -UsagePath $UsagePath
         $launcherProcess = Start-ComsolLauncherProcess -FilePath $launcher `
             -Arguments $launcherArguments
+        $launcherStartedUtc = $launcherProcess.StartTime.ToUniversalTime()
+        $attemptObservation.tracked_ids = @([int]$launcherProcess.Id)
+        $attemptObservation.tracked_ticks = @{([string]$launcherProcess.Id)=$launcherStartedUtc.Ticks}
+        $attemptObservation.last_sample = $null
+        $observeAttempt = {
+            try {
+                $sample = Get-ManagedSolverProcessSample -RootProcessIds @([int]$launcherProcess.Id) `
+                    -RootProcessStartedAtUtcTicks @{([string]$launcherProcess.Id)=$launcherStartedUtc.Ticks} `
+                    -TrackedProcessIds $attemptObservation.tracked_ids -TrackedProcessStartedAtUtcTicks $attemptObservation.tracked_ticks
+                foreach ($identity in $sample.tracked_process_started_at_utc_ticks.GetEnumerator()) {
+                    if (-not $attemptObservation.tracked_ticks.ContainsKey([string]$identity.Key)) {
+                        $attemptObservation.tracked_ticks[[string]$identity.Key]=$identity.Value
+                    }
+                }
+                $attemptObservation.tracked_ids = @($attemptObservation.tracked_ticks.Keys | ForEach-Object {[int]$_})
+                $attemptObservation.last_sample = $sample
+                $observed = Update-RepositoryProcessObservation -Observation $attemptObservation -Sample $sample
+            } catch {
+                if (-not $attemptObservation.observation_warning_sent) {
+                    Write-Warning "RESOURCE_OBSERVATION_WARNING=unavailable ERROR=$($_.Exception.Message)" -WarningAction Continue
+                    $attemptObservation.observation_warning_sent = $true
+                }
+                if (-not $attemptObservation.physical_danger) {
+                    $attemptObservation.critical_since = $null
+                    return
+                }
+                $observed = @{physical_danger=$true}
+            }
+            if ($observed.physical_danger) {
+                Stop-ManagedSolverProcesses -ProcessIds $attemptObservation.tracked_ids `
+                    -ExpectedStartedAtUtcTicks $attemptObservation.tracked_ticks
+                throw 'COMSOL_PHYSICAL_MEMORY_DANGER: owned attempt stopped; Compute is not retried.'
+            }
+        }
+        try {
         try {
             Register-HostResourceProcess -Lease $resourceLease -ProcessId $launcherProcess.Id | Out-Null
         } catch {
@@ -167,7 +219,7 @@ try {
                 $launcherProcess.Kill($true)
                 $launcherProcess.WaitForExit()
             }
-            Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'resource registration failure'
+            Stop-ComsolAttemptServers -RootProcessId $launcherProcess.Id -Observation $attemptObservation -Reason 'resource registration failure'
             throw
         }
         $standardOutputRead = $launcherProcess.StandardOutput.ReadToEndAsync()
@@ -176,6 +228,7 @@ try {
         $reportTimeoutWarned = $false
         while (-not $launcherProcess.HasExited -and
                -not (Test-Path -LiteralPath $report -PathType Leaf)) {
+            & $observeAttempt
             if ([DateTime]::UtcNow -ge $reportDeadline) {
                 if ($StartupReportTimeoutAction -eq 'stop') { break }
                 if (-not $reportTimeoutWarned) {
@@ -200,6 +253,7 @@ try {
                 "$StartupReportTimeoutSeconds seconds (attempt $attempt/$StartupAttempts).")
         } else {
             while (-not $launcherProcess.HasExited) {
+                & $observeAttempt
                 [void]$launcherProcess.WaitForExit(500)
             }
             $launcherExit = $launcherProcess.ExitCode
@@ -212,12 +266,12 @@ try {
             $reportText = Get-Content -LiteralPath $report -Raw -Encoding UTF8
             $reportText
             if ($launcherExit -eq 0 -and $reportText -match '(?m)^STATUS=PASS$') {
-                Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'task completion'
+                Stop-ComsolAttemptServers -RootProcessId $launcherProcess.Id -Observation $attemptObservation -Reason 'task completion'
                 Update-HostResourceStage -Lease $resourceLease -Stage postprocess `
                     -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0 | Out-Null
                 return
             }
-            Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'task failure'
+            Stop-ComsolAttemptServers -RootProcessId $launcherProcess.Id -Observation $attemptObservation -Reason 'task failure'
             Update-HostResourceStage -Lease $resourceLease -Stage postprocess `
                 -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0 | Out-Null
             if ($attempt -lt $StartupAttempts -and
@@ -239,7 +293,7 @@ try {
         [IO.File]::WriteAllText($launcherLogStem + '.stderr.log', $launcherStandardError)
         $noReportReason = if ($startupTimedOut) { 'startup report timeout' } `
             else { 'startup without a task report' }
-        Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason $noReportReason
+        Stop-ComsolAttemptServers -RootProcessId $launcherProcess.Id -Observation $attemptObservation -Reason $noReportReason
         Update-HostResourceStage -Lease $resourceLease -Stage postprocess `
             -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0 | Out-Null
         if ($StartupReportTimeoutAction -eq 'warn') { break }
@@ -248,6 +302,36 @@ try {
                 "retrying clean startup in $StartupRetryDelaySeconds s " +
                 "(attempt $($attempt + 1)/$StartupAttempts).")
             Start-Sleep -Seconds $StartupRetryDelaySeconds
+        }
+        } finally {
+            if ($null -ne $attemptObservation.last_sample -and $null -ne $attemptObservation.usage) {
+                try {
+                    $null = Update-RepositoryProcessObservation -Observation $attemptObservation -Sample $attemptObservation.last_sample -Final
+                    if ($attemptObservation.usage.status -ne 'physical_danger') {
+                        $attemptObservation.usage.status = if ($launcherProcess.ExitCode -eq 0) { 'running' } else { 'process_failed' }
+                    }
+                    Write-ResourceUsage -Usage $attemptObservation.usage -Path $UsagePath
+                    Complete-ResourceUsage -RunDir $RunDir -UsagePath $UsagePath | Out-Null
+                } catch {
+                    Write-Warning "RESOURCE_OBSERVATION_WARNING=finalization_failed ERROR=$($_.Exception.Message)" -WarningAction Continue
+                }
+            }
+            # A JVM fatal log belongs to this launcher only after it exits and
+            # when the exact PID file was created during this process lifetime.
+            # Keep its raw bytes in the scientific owner's normal log inventory.
+            try {
+                $crashPath = Join-Path $repoRoot "hs_err_pid$($launcherProcess.Id).log"
+                if ($launcherProcess.HasExited -and (Test-Path -LiteralPath $crashPath -PathType Leaf)) {
+                    $crashFile = Get-Item -LiteralPath $crashPath
+                    if ($crashFile.CreationTimeUtc -ge $launcherStartedUtc) {
+                        [IO.File]::Move($crashPath, (Join-Path $reportDir $crashFile.Name))
+                    }
+                }
+            } catch {
+                # Retain an untransported log and the original task exception.
+                Write-Warning "COMSOL_JVM_CRASH_LOG_NOT_MOVED PID=$($launcherProcess.Id) ERROR=$($_.Exception.Message)" `
+                    -WarningAction Continue
+            }
         }
     }
 }

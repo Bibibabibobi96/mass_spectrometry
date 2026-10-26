@@ -147,6 +147,13 @@ try {
             )
             return json.loads(result.stdout)
 
+    def test_parent_failure_waits_for_admitted_formal_worker_instead_of_stopping_it(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        catch = source.split("} catch {", 1)[1].split("} finally {", 1)[0]
+        self.assertIn("awaiting natural completion", catch)
+        self.assertIn("$record.process.WaitForExit()", catch)
+        self.assertNotIn("Stop-ManagedSolverProcesses", catch)
+
     def test_single_formal_case_keeps_exact_work_item(self) -> None:
         result = self.invoke(1, 1, 1)
         self.assertEqual(result["status"], "success")

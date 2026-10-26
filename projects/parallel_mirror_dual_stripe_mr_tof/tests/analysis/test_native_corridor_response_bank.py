@@ -128,7 +128,9 @@ Write-Output 'CONTINUATION_FIXTURE=PASS'
             root = Path(temporary)
             for name in (RAW_NAME, *NATIVE_RESPONSE_NAMES, *STANDALONE_RESPONSE_NAMES):
                 (root / name).write_bytes(("fixture-" + name).encode("ascii"))
-            write_response_bank_receipt(root)
+            receipt = write_response_bank_receipt(root)
+            self.assertEqual(receipt["schema_version"], 2)
+            self.assertEqual(len(receipt["responses"]), 8)
             result = verify_response_bank_staging(root)
         self.assertEqual(result, {
             "role": "mrtof_native_corridor_response_bank_staging",

@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -27,7 +28,19 @@ class ChangedGateContractTests(unittest.TestCase):
         cls.source = CHANGED_GATE.read_text(encoding="utf-8")
         cls.parallel_source = PARALLEL_GATE_SUPPORT.read_text(encoding="utf-8")
         cls.route_contract = json.loads(ROUTE_TABLE.read_text(encoding="utf-8"))
-        cls.routes = cls.route_contract["routes"]
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            raise unittest.SkipTest("PowerShell Core is unavailable")
+        result = subprocess.run(
+            [pwsh, "-NoProfile", "-Command",
+             ". ./common/gate_catalog_support.ps1; "
+             "$routes=@(Read-GateCatalog -RepoRoot $PWD.Path); "
+             "ConvertTo-Json -Depth 32 -Compress -InputObject $routes"],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+        if result.returncode:
+            raise AssertionError(result.stdout + result.stderr)
+        cls.routes = json.loads(result.stdout)
 
     def routed_stages(self, path: str) -> dict[str, str]:
         selected: dict[str, str] = {}
@@ -87,6 +100,64 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("CATALOG_FAILURE_PROPAGATION=PASS", result.stdout)
 
+    def test_changed_ruff_argfile_handles_long_paths_and_cleans_after_failure(self) -> None:
+        """Run the actual changed-file action with native Ruff, including F821."""
+        pwsh = shutil.which("pwsh")
+        with tempfile.TemporaryDirectory(prefix="changed_ruff_argfile_") as directory:
+            root = Path(directory)
+            temporary_files = root / "temporary arguments"
+            temporary_files.mkdir()
+            valid = root / "valid # 场 path.py"
+            invalid = root / "invalid # 场 path.py"
+            valid.write_text("value = 1\n", encoding="utf-8")
+            invalid.write_text("missing_name()\n", encoding="utf-8")
+            paths = [str(valid)]
+            # Exercise more than CreateProcessW's 32,767 UTF-16 characters,
+            # without creating hundreds of redundant fixture files.
+            while sum(len(path) + 3 for path in paths) <= 32767:
+                paths += paths
+            for failed in (False, True):
+                with self.subTest(failed=failed):
+                    selected = paths + ([str(invalid)] if failed else [])
+                    path_list = root / "paths.json"
+                    path_list.write_text(json.dumps(selected), encoding="utf-8")
+                    quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+                    command = f"""
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$env:RUFF_NO_CACHE='true';$env:RAYON_NUM_THREADS='1'
+$env:TMP={quote(temporary_files)};$env:TEMP={quote(temporary_files)}
+$PythonExe={quote(sys.executable)}
+$existingPythonFiles=@(Get-Content -Raw -LiteralPath {quote(path_list)}|ConvertFrom-Json)
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile({quote(CHANGED_GATE)},[ref]$tokens,[ref]$errors)
+if($errors.Count){{throw 'Changed gate failed PowerShell parsing'}}
+$commands=@($ast.FindAll({{
+ param($node)
+ $node-is[Management.Automation.Language.CommandAst]-and
+ $node.GetCommandName()-eq'Add-ChangedStageItem'-and
+ $node.Extent.Text.Contains("'existing_python_source_changed'")
+}},$true))
+if($commands.Count-ne1){{throw 'Expected exactly one changed Ruff action'}}
+$action=$commands[0].CommandElements[-1].ScriptBlock.GetScriptBlock()
+& $action
+$nativeExitCode=$LASTEXITCODE
+if($nativeExitCode-ne{int(failed)}){{throw "Unexpected native Ruff exit $nativeExitCode"}}
+if(@(Get-ChildItem -LiteralPath {quote(temporary_files)} -Force).Count){{throw 'Ruff argument file leaked'}}
+Write-Output "CHANGED_RUFF_NATIVE_EXIT=$nativeExitCode"
+exit 0
+"""
+                    completed = subprocess.run(
+                        [pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
+                        cwd=REPO_ROOT, capture_output=True, text=True,
+                        encoding="utf-8", timeout=30, check=False,
+                    )
+                    output = completed.stdout + completed.stderr
+                    self.assertEqual(completed.returncode, 0, output)
+                    self.assertIn(f"CHANGED_RUFF_NATIVE_EXIT={int(failed)}", output)
+                    self.assertIn("F821" if failed else "All checks passed!", output)
+                    self.assertEqual(list(temporary_files.iterdir()), [])
+
     def test_documentation_only_fast_path_runs_without_project_gates(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
@@ -105,7 +176,9 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
             cwd=REPO_ROOT,
             capture_output=True,
             text=True, encoding="utf-8",
-            timeout=30,
+            # This executes all three real documentation gates under host
+            # admission; it checks routing, not a 30-second performance SLA.
+            timeout=180,
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -127,13 +200,11 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
         provider = self.routed_stages("projects/orthogonal_accelerator/analysis/accelerator_time_focus.py")
         self.assertTrue({
             "orthogonal_accelerator_static", "single_reflection_oa_tof_mass_analyzer_static",
-            "rf_multipole_to_single_reflection_oatof_integration",
-        } <= provider.keys())
+                    } <= provider.keys())
         primitives = self.routed_stages("common/simion/gem_primitives.py")
         self.assertTrue({
             "simion_common", "orthogonal_accelerator_static",
-            "rf_multipole_to_single_reflection_oatof_integration",
-        } <= primitives.keys())
+                    } <= primitives.keys())
 
     def test_extracted_mechanisms_keep_automatic_regression_routes(self) -> None:
         for implementation, stage, module in (
@@ -149,10 +220,11 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
                 self.assertIn(module, route["command"]["arguments"])
         self.assertTrue({
             "single_reflection_oa_tof_mass_analyzer_static",
-            "rf_multipole_to_single_reflection_oatof_integration",
-        } <= self.routed_stages("common/analysis/longitudinal_fit.py").keys())
+                    } <= self.routed_stages("common/analysis/longitudinal_fit.py").keys())
         self.assertIn("orthogonal_accelerator_static",
                       self.routed_stages("common/contracts/expected_values.py"))
+        self.assertTrue({"single_reflection_oa_tof_mass_analyzer_static", "instrument_assembly_integration"}
+                        <= self.routed_stages("common/analysis/field_comparison.py").keys())
 
     def test_host_scheduler_and_adapters_keep_regression_routes(self) -> None:
         for path, expected in (
@@ -169,7 +241,10 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
         stage = "host_resource_scheduler_tests"
         for path in ("common/host_resource_python.py", "common/host_resource_python.ps1",
                      "common/test_host_resource_python.py"):
-            self.assertEqual(set(self.routed_stages(path)), {stage}, path)
+            expected = {stage}
+            if path == "common/host_resource_python.py":
+                expected.add("instrument_assembly_integration")
+            self.assertEqual(set(self.routed_stages(path)), expected, path)
         routes = [route for route in self.routes if route["stage"] == stage]
         self.assertEqual(len(routes), 1)
         self.assertEqual(routes[0]["dependency_profile"], "locked")
@@ -201,9 +276,7 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
         changed_module = (
-            "integrations/"
-            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
-            "tests/test_runtime_run_local_contract.py"
+            "integrations/tests/test_repository_bindings.py"
         )
         completed = subprocess.run(
             [
@@ -224,8 +297,7 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn(
-            "GATE_STAGE=RUN NAME=rf_multipole_to_single_reflection_"
-            "oatof_integration REASON=integration_test_modules_changed",
+            "GATE_STAGE=RUN NAME=instrument_assembly_integration REASON=integration_test_modules_changed",
             completed.stdout,
         )
         self.assertNotIn("INTEGRATION_GATE=PASS", completed.stdout)
@@ -236,7 +308,6 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
             self.skipTest("PowerShell Core is unavailable")
         integration_root = (
             "integrations/"
-            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
         )
         completed = subprocess.run(
             [
@@ -247,7 +318,7 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
                 "-PythonExe",
                 sys.executable,
                 "-ChangedPath",
-                integration_root + "runtime/run_single_flight.ps1",
+                integration_root + "runtime/refresh_repository_bindings.py",
                 "-PlanOnly",
             ],
             cwd=REPO_ROOT,
@@ -258,10 +329,7 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("EXECUTION_MODE=FULL_CHANGED_SCOPE", completed.stdout)
-        self.assertIn(
-            "rf_multipole_to_single_reflection_oatof_integration",
-            completed.stdout,
-        )
+        self.assertIn("instrument_assembly_integration", completed.stdout)
 
     def test_routes_project_config_to_its_own_static_gate(self) -> None:
         project_gates = sorted(
@@ -297,8 +365,8 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
             )
         integration_gates = sorted(
             path.relative_to(REPO_ROOT).as_posix()
-            for path in (REPO_ROOT / "integrations").glob(
-                "*/verify_integration.ps1"
+            for path in (REPO_ROOT / "integrations").rglob(
+                "verify_integration.ps1"
             )
         )
         routed_integrations = sorted(
@@ -307,6 +375,127 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
             if route["command"].get("script", "").startswith("integrations/")
         )
         self.assertEqual(routed_integrations, integration_gates)
+
+    def test_direct_integration_gate_owns_only_its_tests(self) -> None:
+        for path in ("integrations/tests/test_dependencies.py",
+                     "integrations/config/runtime_dependencies.json",
+                     "integrations/verify_integration.ps1",
+                     "integrations/workflows/local_frontend/prepare.py",
+                     "integrations/runtime/dependencies.ps1",
+                     "integrations/runtime/single_flight_frontend.py",
+                     "integrations/analysis/plot_single_flight_spatial_six_panel.py"):
+            with self.subTest(path=path):
+                self.assertEqual(set(self.routed_stages(path)), {"instrument_assembly_integration"})
+
+
+    def test_direct_integration_gate_routes_its_declared_frozen_dependencies(self) -> None:
+        inventory = json.loads((REPO_ROOT / "integrations/config/runtime_dependencies.json").read_text(encoding="utf-8"))
+        for group in inventory["providers"]:
+            for dependency in group["files"]:
+                with self.subTest(dependency=dependency["id"]):
+                    self.assertIn("instrument_assembly_integration", self.routed_stages(dependency["source_repo_path"]))
+
+    def test_runtime_dependency_paths_select_the_real_integration_plan(self) -> None:
+        # These newly consumed geometry/export paths previously escaped L1 routing.
+        paths = [
+            "common/comsol/add_comsol_size_feature.m",
+            "projects/single_reflection_oa_tof_mass_analyzer/analysis/compare_vector_field_samples.py",
+            "common/analysis/field_comparison.py",
+            "projects/single_reflection_oa_tof_mass_analyzer/comsol/build_and_export_paired_accelerator_field.m",
+            "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_accelerator_geometry.m",
+            "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
+            "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_read_cartesian_release.m",
+            "projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua",
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                result = self._runtime_dependency_plan(REPO_ROOT, path)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("instrument_assembly_integration", result.stdout)
+                selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
+                self.assertIsNotNone(selected, result.stdout)
+                self.assertIn("instrument_assembly_integration", selected[1].split(","))
+
+    @staticmethod
+    def _runtime_dependency_plan(repo: Path, changed_path: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [shutil.which("pwsh"), "-NoProfile", "-File", str(repo / "common/verify_changed.ps1"),
+             "-PythonExe", sys.executable, "-PlanOnly", "-ChangedPath", changed_path],
+            cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+
+    def test_runtime_inventory_changes_route_without_editing_the_catalog(self) -> None:
+        # Copy only the real plan/parser boundary; no gate stage or solver executes.
+        with tempfile.TemporaryDirectory(prefix="gate_inventory_") as directory:
+            repo = Path(directory)
+            (repo / "common").mkdir()
+            (repo / "projects").mkdir()
+            (repo / "integrations/config").mkdir(parents=True)
+            for name in ("verify_changed.ps1", "gate_catalog_support.ps1", "parallel_gate_support.ps1",
+                         "host_execution_lease.ps1", "require_powershell7.ps1"):
+                shutil.copyfile(REPO_ROOT / "common" / name, repo / "common" / name)
+            gate = repo / "integrations/verify_integration.ps1"
+            gate.write_text("throw 'PlanOnly must not execute stages'\n", encoding="utf-8")
+            inventory_path = "integrations/config/runtime_dependencies.json"
+            route = dict(stage="instrument_assembly_integration", dependency_profile="locked",
+                         repository_integration_group="regression",
+                         matches=[dict(prefix="integrations/", reason="integration_changed")],
+                         runtime_dependencies_path=inventory_path,
+                         command=dict(runner="powershell", script="integrations/verify_integration.ps1"))
+            (repo / "common/gate_catalog.json").write_text(json.dumps(dict(
+                schema_version=2, role="repository_gate_catalog", routes=[route])), encoding="utf-8")
+            inventory = dict(schema_version=2, role="integration_runtime_dependencies", providers=[
+                dict(files=[dict(source_repo_path="common/first_dependency.py")])])
+            target = repo / inventory_path
+            first = repo / "common/first_dependency.py"
+            added = repo / "common/added_dependency.py"
+            first.write_text("", encoding="utf-8")
+            added.write_text("", encoding="utf-8")
+            target.write_text(json.dumps(inventory), encoding="utf-8")
+            result = self._runtime_dependency_plan(repo, "common/added_dependency.py")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
+            self.assertIsNotNone(selected, result.stdout)
+            self.assertNotIn("instrument_assembly_integration", selected[1].split(","))
+            inventory["providers"][0]["files"].append(dict(source_repo_path="common/added_dependency.py"))
+            target.write_text(json.dumps(inventory), encoding="utf-8")
+            result = self._runtime_dependency_plan(repo, "common/added_dependency.py")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("instrument_assembly_integration", re.search(
+                r"SELECTED_STAGES=([^\s]+)", result.stdout)[1].split(","))
+            for case in ("missing_inventory", "unknown_schema", "unknown_role", "missing_source"):
+                with self.subTest(case=case):
+                    changed = json.loads(json.dumps(inventory))
+                    if case == "missing_inventory":
+                        target.unlink()
+                    else:
+                        if case == "unknown_schema":
+                            changed["schema_version"] = 999
+                        elif case == "unknown_role":
+                            changed["role"] = "unknown_inventory"
+                        else:
+                            changed["providers"][0]["files"][0]["source_repo_path"] = "common/missing.py"
+                        target.write_text(json.dumps(changed), encoding="utf-8")
+                    result = self._runtime_dependency_plan(repo, "common/added_dependency.py")
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("dependency", result.stderr)
+                    self.assertNotIn("SELECTED_STAGES=", result.stdout)
+
+    def test_direct_integration_test_plan_selects_its_own_gate(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-File", str(CHANGED_GATE), "-PlanOnly",
+             "-PythonExe", sys.executable, "-ChangedPath", "integrations/tests/test_dependencies.py"],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
+        self.assertIsNotNone(selected, completed.stdout)
+        stages = selected.group(1).split(",")
+        self.assertIn("instrument_assembly_integration", stages)
+        self.assertNotIn("rf_multipole_to_single_reflection_oatof_integration", stages)
 
     def test_mrtof_uses_fast_changed_gate_and_complete_solver_free_l2_gate(self) -> None:
         route = next(
@@ -437,7 +626,6 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
             {
                 "multipole_common",
                 "multipole_foundation",
-                "rf_multipole_to_single_reflection_oatof_integration",
                 "rf_quadrupole_generated_publications",
                 "rf_quadrupole_ion_optics_static",
                 "rf_hexapole_ion_optics_static",
@@ -453,9 +641,8 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
             routed = self.routed_stages(shared_path)
             self.assertIn("multipole_common", routed)
             self.assertIn("multipole_foundation", routed)
-            self.assertIn(
-                "rf_multipole_to_single_reflection_oatof_integration", routed
-            )
+            if shared_path.startswith("common/simion/"):
+                self.assertIn("instrument_assembly_integration", routed)
             for project_id in (
                 "rf_quadrupole_ion_optics",
                 "rf_hexapole_ion_optics",
@@ -467,7 +654,7 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
         routed = self.routed_stages("common/contracts/machine_contracts.py")
         self.assertIn("common_contracts", routed)
         self.assertIn("rf_quadrupole_generated_publications", routed)
-        self.assertIn("rf_multipole_to_single_reflection_oatof_integration", routed)
+        self.assertIn("instrument_assembly_integration", routed)
         for project_id in (
             "single_reflection_oa_tof_mass_analyzer",
             "rf_quadrupole_ion_optics",
@@ -533,8 +720,7 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
         self.assertEqual(self.routed_stages("common/comsol/README.md"), {})
         consumers = {
             "rf_quadrupole_generated_publications", "multipole_common",
-            "multipole_foundation", "rf_multipole_to_single_reflection_oatof_integration",
-            "single_reflection_oa_tof_mass_analyzer_static", "rf_quadrupole_ion_optics_static",
+            "multipole_foundation",             "single_reflection_oa_tof_mass_analyzer_static", "rf_quadrupole_ion_optics_static",
             "rf_hexapole_ion_optics_static", "rf_octupole_ion_optics_static",
             "transverse_helical_filament_wehnelt_electron_gun_static",
         }
@@ -605,32 +791,18 @@ Write-Output 'CATALOG_FAILURE_PROPAGATION=PASS'
             set(routed),
             {
                 "integration_common",
-                "rf_multipole_to_single_reflection_oatof_integration",
+                "instrument_assembly_integration",
             },
         )
         interface_route = self.routed_stages(
             "projects/rf_hexapole_ion_optics/config/interfaces/output_port.json"
         )
-        self.assertIn(
-            "rf_multipole_to_single_reflection_oatof_integration",
-            interface_route,
-        )
+        self.assertNotIn("rf_multipole_to_single_reflection_oatof_integration", interface_route)
 
         integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
         self.assertIn("Read-GateCatalog", integration_source)
         self.assertIn("repository_integration_group -eq 'regression'", integration_source)
 
-    def test_handoff_publisher_routes_only_its_direct_integration_consumer(
-        self,
-    ) -> None:
-        routed = self.routed_stages(
-            "common/multipole/publish_three_mode_binding.py"
-        )
-        self.assertIn(
-            "rf_multipole_to_single_reflection_oatof_integration",
-            routed,
-        )
-        self.assertNotIn("single_reflection_oa_tof_mass_analyzer_static", routed)
 
     def test_gate_entrypoints_run_their_contract_tests(self) -> None:
         for path in (

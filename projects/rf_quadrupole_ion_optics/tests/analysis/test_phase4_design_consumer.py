@@ -53,17 +53,7 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             / "workflows"
             / "mass_filter_reference"
             / "evaluate_comparison.py",
-            REPO_ROOT
-            / "integrations"
-            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
-            / "analysis"
-            / "analyze_analyzer_transport.py",
             PROJECT_ROOT / "analysis" / "compare_rf_input_energy.py",
-            REPO_ROOT
-            / "integrations"
-            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
-            / "analysis"
-            / "plot_shared_pulse_geometry_snapshot.py",
         )
         for path in managed:
             source = path.read_text(encoding="utf-8")
@@ -79,9 +69,6 @@ class Phase4DesignConsumerTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             self.assertIn("frame_id", source, path.name)
             self.assertIn("clock_epoch_id", source, path.name)
-        analyzer = managed[1].read_text(encoding="utf-8")
-        self.assertIn('geometry["geometry_mm"]["detector_radius"]', analyzer)
-        self.assertNotIn('geometry["geometry_mm"]["physical_detector_radius"]', analyzer)
 
     def test_named_profiles_resolve_from_canonical_project_identity(self) -> None:
         for profile_id in (

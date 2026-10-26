@@ -53,7 +53,7 @@ def identity(plan: Mapping[str, Any], builder: Path, simion_executable: Path) ->
             "operation": f"one_native_fast_adjust_family_solutions_0_through_{electrode_count}",
             "response_bank": "new_pa_object_standalone_responses_1_through_electrode_count",
         },
-        "builder_identity": {"path": "projects/orthogonal_accelerator/simion/build_component_focus_pa.lua", "sha256": file_sha256(builder)},
+        "builder_identity": {"response_set_contract_sha256": file_sha256(Path(__file__).resolve().parents[3] / "common/simion/standalone_pa_response_set.py"), "path": "projects/orthogonal_accelerator/simion/build_component_focus_pa.lua", "sha256": file_sha256(builder)},
     }
 
 

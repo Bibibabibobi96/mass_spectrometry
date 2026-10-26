@@ -19,28 +19,57 @@ local function exact_keys(value, expected, label)
   end
 end
 
-function kernel.new(config)
-  exact_keys(config, {
-    waveform=true, frequency_hz=true, phase_rad=true, rf_amplitude_v=true,
-    rf_scale=true, common_mode_scale=true, group_dc_v=true,
-    rf_steps_per_period=true, electrodes=true,
-  }, 'RF drive config')
+local function compile_differential(config)
   assert(config.waveform == 'sine' or config.waveform == 'cosine',
     'RF drive waveform must be sine or cosine')
   local frequency_hz = finite_number(config.frequency_hz, 'RF drive frequency_hz')
   local phase_rad = finite_number(config.phase_rad, 'RF drive phase_rad')
   local rf_amplitude_v = finite_number(config.rf_amplitude_v, 'RF drive rf_amplitude_v')
   local rf_scale = finite_number(config.rf_scale, 'RF drive rf_scale')
-  local common_mode_scale = finite_number(
-    config.common_mode_scale, 'RF drive common_mode_scale')
   assert(frequency_hz > 0, 'RF drive frequency_hz must be positive')
   assert(rf_amplitude_v >= 0, 'RF drive rf_amplitude_v must be non-negative')
   assert(rf_scale >= 0, 'RF drive rf_scale must be non-negative')
-  assert(common_mode_scale >= 0, 'RF drive common_mode_scale must be non-negative')
   assert(type(config.rf_steps_per_period) == 'number' and
     config.rf_steps_per_period == math.floor(config.rf_steps_per_period) and
-    config.rf_steps_per_period > 0,
+    config.rf_steps_per_period > 0 and config.rf_steps_per_period < math.huge,
     'RF drive rf_steps_per_period must be one positive integer')
+  local omega_per_us = frequency_hz * 1e-6 * 2 * math.pi
+  local timestep_cap_us = 1e6 / frequency_hz / config.rf_steps_per_period
+  local wave = config.waveform == 'sine' and math.sin or math.cos
+
+  local function phase_at(instrument_time_us)
+    return finite_number(instrument_time_us, 'RF drive instrument_time_us') *
+      omega_per_us + phase_rad
+  end
+
+  local function differential_at(instrument_time_us)
+    return rf_scale * rf_amplitude_v * wave(phase_at(instrument_time_us))
+  end
+
+  return {phase_at=phase_at, differential_at=differential_at,
+    timestep_cap_us=timestep_cap_us}
+end
+
+-- For ordinary carriers that already contain static common-mode and DC fields.
+-- Time is supplied by the consumer in instrument microseconds.
+function kernel.new_differential(config)
+  exact_keys(config, {
+    waveform=true, frequency_hz=true, phase_rad=true, rf_amplitude_v=true,
+    rf_scale=true, rf_steps_per_period=true,
+  }, 'RF drive config')
+  return compile_differential(config)
+end
+
+function kernel.new(config)
+  exact_keys(config, {
+    waveform=true, frequency_hz=true, phase_rad=true, rf_amplitude_v=true,
+    rf_scale=true, common_mode_scale=true, group_dc_v=true,
+    rf_steps_per_period=true, electrodes=true,
+  }, 'RF drive config')
+  local differential = compile_differential(config)
+  local common_mode_scale = finite_number(
+    config.common_mode_scale, 'RF drive common_mode_scale')
+  assert(common_mode_scale >= 0, 'RF drive common_mode_scale must be non-negative')
   exact_keys(config.group_dc_v, {[1]=true, [2]=true}, 'RF drive group_dc_v')
   local group_dc_1 = finite_number(config.group_dc_v[1], 'RF drive group 1 DC')
   local group_dc_2 = finite_number(config.group_dc_v[2], 'RF drive group 2 DC')
@@ -80,19 +109,6 @@ function kernel.new(config)
   assert(array_count == #config.electrodes,
     'RF drive electrodes must be one contiguous array')
 
-  local omega_per_us = frequency_hz * 1e-6 * 2 * math.pi
-  local timestep_cap_us = 1e6 / frequency_hz / config.rf_steps_per_period
-  local wave = config.waveform == 'sine' and math.sin or math.cos
-
-  local function phase_at(instrument_time_us)
-    return finite_number(instrument_time_us, 'RF drive instrument_time_us') *
-      omega_per_us + phase_rad
-  end
-
-  local function differential_at(instrument_time_us)
-    return rf_scale * rf_amplitude_v * wave(phase_at(instrument_time_us))
-  end
-
   local function apply_static(setter)
     assert(type(setter) == 'function', 'RF drive setter must be one function')
     for index = 1, #ids do
@@ -102,10 +118,10 @@ function kernel.new(config)
 
   local function apply_at(instrument_time_us, setter)
     assert(type(setter) == 'function', 'RF drive setter must be one function')
-    local differential = differential_at(instrument_time_us)
+    local voltage = differential.differential_at(instrument_time_us)
     for index = 1, #ids do
       setter(ids[index], common_mode_scale * common_modes[index] +
-        group_dc[index] + polarities[index] * differential)
+        group_dc[index] + polarities[index] * voltage)
     end
   end
 
@@ -114,19 +130,19 @@ function kernel.new(config)
   -- callers must not combine it with an absolute-voltage update.
   local function apply_differential_at(instrument_time_us, setter)
     assert(type(setter) == 'function', 'RF drive setter must be one function')
-    local differential = differential_at(instrument_time_us)
+    local voltage = differential.differential_at(instrument_time_us)
     for index = 1, #ids do
-      setter(ids[index], polarities[index] * differential)
+      setter(ids[index], polarities[index] * voltage)
     end
   end
 
   return {
-    phase_at=phase_at,
-    differential_at=differential_at,
+    phase_at=differential.phase_at,
+    differential_at=differential.differential_at,
     apply_static=apply_static,
     apply_at=apply_at,
     apply_differential_at=apply_differential_at,
-    timestep_cap_us=timestep_cap_us,
+    timestep_cap_us=differential.timestep_cap_us,
   }
 end
 

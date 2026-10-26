@@ -223,7 +223,7 @@ $rows|ConvertTo-Json -Compress
             self.assertIsNone(basis['field_binding'])
             self.assertTrue(basis['response_basis'].endswith('response_basis.json'))
 
-    def execute(self, order, parents, crops=(), failure='', reused=()):
+    def execute(self, order, parents, crops=(), failure='', reused=(), skipped_point=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             levels = {}
@@ -247,6 +247,8 @@ $rows|ConvertTo-Json -Compress
                         window_labels=[label for label in order if label != 'parent'],
                         committed_new_bytes=10000, final_retained_estimate_bytes=9000,
                         refine_options=dict(convergence=1e-5))
+            if skipped_point is not None:
+                plan['refine_options']['skipped_point'] = skipped_point
             (root / 'plan.json').write_text(json.dumps(plan), encoding='utf-8')
             script = root / 'fixture.ps1'
             script.write_text(r'''
@@ -318,6 +320,18 @@ finally{if($parentGuard){$parentGuard.Dispose()}}
         self.assertIsNone(result['error'])
         self.assertEqual(len(result['calls']), 4)
         self.assertTrue(result['levels']['window']['completed'])
+
+    def test_explicit_skipped_point_transports_parent_cli_and_local_lua(self):
+        for flag in (False, True):
+            with self.subTest(flag=flag):
+                result = self.execute(['parent', 'window'], {'window': 'parent'}, skipped_point=flag)
+                self.assertIsNone(result['error'])
+                parent = next(call for call in result['calls'] if call[2] == 'refine')
+                local = next(call for call in result['calls'] if len(call)>3 and call[3]=='builder.lua')
+                self.assertIn('--skipped-point='+str(int(flag)), parent)
+                self.assertEqual(local[-2:], ['1E-05', str(int(flag))])
+        invalid = self.execute(['parent', 'window'], {'window': 'parent'}, skipped_point=0)
+        self.assertIn('Boolean', invalid['error'])
 
     def test_reused_parent_and_central_skip_solver_and_supply_original_boundary(self):
         result = self.execute(['parent', 'window_2', 'window_0', 'window_1'],

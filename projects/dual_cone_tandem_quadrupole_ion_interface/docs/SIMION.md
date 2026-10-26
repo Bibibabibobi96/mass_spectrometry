@@ -6,49 +6,21 @@
 本项目的离子轨迹推进权威是 SIMION。Python 只编译 GEM、校验输入、序列化粒子源和整理证据，不能
 积分离子运动。
 
-## 均匀 400 Pa 快速对照
+## 当前执行阻断
 
-这个诊断控制不依赖 COMSOL。第二锥出口 `z=3 mm` 之后直接规定为均匀 `400 Pa`、`300 K`、轴向
-载气速度 `100 m/s`，第二锥之前省略碰撞；SIMION 负责 RF/DC 轨迹，官方 `collision_sds.lua`
-负责氮气碰撞与扩散。入口离子视为已经去溶剂化。该模型只用于快速判断能否穿过几何和两段杆，
-不解释喷流、压强梯度、泵口或绝对传输率，也不是项目自然压降链的 current 物理结果。
+当前数值合同和 GEM 固定使用 fractional 表面增强。公共 standalone PA 导出暂不支持保留 `.pa-surf`；不能改为无表面增强，也不能把已发布原生 `.paN` 交给 SIMION。因此原生 C0、共享 Fly 及两种气体来源的运行 wrapper 已整体退役，SIMION transport 执行 profile 已撤下，不保留旧名或阻断 stub。COMSOL 气流、canonical 场校验和纯输入准备继续可用。公共能力验证完成后，再沿统一 PA 事务和资源调度机制建立运行入口。恢复条件及历史资格见 [PROJECT](PROJECT.md#当前资格)。
 
-```powershell
-projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\run_uniform_400pa_prototype.ps1 `
-  -RunId <timestamp>__sim__simion__dual-cone-uniform-400pa-n100
-```
+## 可执行的纯准备
 
-一条命令会复用/生成 PA、编译受控 Lua 气体场、冻结官方 SDS、构建单实例 IOB、执行真实 Fly，
-并在项目受管 `runs/<run_id>/` 中输出运行三件套、`results/prototype_run_report.json`、逐点轨迹、粒子末态和默认诊断图 `results/trajectory_rz_projection.png`。
-该图无需在合同中另行声明，固定包含全程径向轨迹、下游局部轨迹和“到达至少该轴向位置的唯一离子数”三幅子图。
-第三幅按每个离子的最大采样 `z` 计数，不把回退轨迹或密集采样重复计为多个粒子。`100 m/s` 是明确可替换的规定参数，
-不是 CFD 或实测结果。
-
-## 当前可执行链
-
-任意已校验气场的唯一 Fly 核心：
+无碰撞 C0 输入准备（不执行供应商）：
 
 ```powershell
-projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\run_gas_field_prototype.ps1 `
-  -GasFieldManifest C:\absolute\path\gas_field_manifest.json `
-  -RunId <timestamp>__sim__simion__dual-cone-field-n100
+projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\prepare.ps1 `
+  -Mode c0_gem_smoke `
+  -OutputDir ..\artifacts\projects\dual_cone_tandem_quadrupole_ion_interface\scratch\<task_id>
 ```
 
-COMSOL 成功目录使用 `run_comsol_field_prototype.ps1`，它先调用独立校验/编译器，再委托上述核心。
-均匀 `400 Pa` 对照入口也只负责生成自己的 manifest 后委托同一核心，不复制 PA、IOB、SDS 或 Fly 逻辑。
-
-无碰撞 C0 几何 smoke：
-
-```powershell
-projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\run_c0_gem_smoke.ps1 `
-  -OutputDir ..\artifacts\projects\dual_cone_tandem_quadrupole_ion_interface\runs\<run_id>
-```
-
-该入口只生成 GEM、执行 `gem2pa` 和不带 convergence 参数的 `refine`，并检查电极基组
-`0,1,2,3,11,12,21,22`，其中 `3` 是末端孔板。它不飞行粒子、不输出传输率，也不构成 Candidate 或 Formal 证据。
-入口默认申请 `prepare` 轻许可；缓存命中不申请重许可，未命中时仅在 `refine` 前切换到中央
-`pa_refine` 重阶段，退出后回到轻阶段并最终释放。嵌套调用继承父许可；父轻任务须由外层框架先处理
-重阶段权限，子入口不能自行越权升级。此接入的回归使用隔离账本和模拟求解器，不替代真实 PA 验收。
+它生成原 fractional GEM、输入副本和准备 receipt，不创建 PA 或传输率证据。
 
 COMSOL 气体场升级路径的输入准备：
 

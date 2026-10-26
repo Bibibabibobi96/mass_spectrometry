@@ -84,6 +84,14 @@ class NativeCorridorQualificationRunnerTest(unittest.TestCase):
         self.assertIn("-InternalResponseId", source)
         self.assertIn("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=''", source)
 
+    def test_response_wave_preserves_started_workers_on_parent_failure(self) -> None:
+        source = self.source
+        wave = source.split("function Invoke-NativeCorridorResponseWave", 1)[1].split("function Invoke-NativeCorridorFamilyBuild", 1)[0]
+        self.assertIn("$earlyFailures", wave)
+        self.assertIn("awaiting natural completion", wave)
+        self.assertIn("$record.process.WaitForExit()", wave)
+        self.assertNotIn(".Kill($true)", wave)
+
     def test_transaction_loop_does_not_shadow_verifier_output_path(self) -> None:
         source = self.source
         self.assertIn("$transactionVerificationEvidence=''", source)

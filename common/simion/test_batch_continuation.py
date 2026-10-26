@@ -2,26 +2,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import re
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
+from common.simion import batch_continuation
 from common.simion.batch_continuation import (
-    TraceContinuationPolicy,
     WholeUnitReplayUnit,
-    build_batch_continuation_plan,
     build_whole_unit_replay_plan,
-)
-
-
-POLICY = TraceContinuationPolicy(
-    terminal_prefix="TERMINAL ",
-    terminal_pattern=re.compile(r"TERMINAL (?P<particle_id>\d+)$"),
-    state_prefix="STATE ",
-    state_pattern=re.compile(r"STATE (?P<particle_id>\d+) (?P<sample_index>\d+)$"),
-    completion_prefix="COMPLETE",
 )
 
 
@@ -63,145 +53,10 @@ def _parent(root: Path, batches: list[list[int]], logs: list[list[str]]) -> tupl
 
 
 class BatchContinuationTests(unittest.TestCase):
-    def _build(self, run: Path, contract: str, output: Path, ids: list[int]) -> dict:
-        return build_batch_continuation_plan(
-            predecessor_run_dir=run, particle_ids=ids, expected_execution_mode="fixture",
-            contract_input_role="screening_contract", expected_contract_sha256=contract,
-            cohort_input_paths={"cohort": run / "inputs" / "cohort.csv"},
-            policy=POLICY, output_dir=output,
-        )
-
-    def test_preserves_only_a_contiguous_prefix_of_complete_batches(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            run, contract = _parent(root, [[1, 2], [3, 4], [5, 6]], [
-                ["TERMINAL 1", "TERMINAL 2", "COMPLETE"], ["TERMINAL 3"],
-                ["TERMINAL 5", "TERMINAL 6", "COMPLETE"],
-            ])
-            plan = self._build(run, contract, root / "child", list(range(1, 7)))
-        # Batch 2 did not finish; batch 3's otherwise complete raw log cannot
-        # leapfrog it into a global mother-cohort checkpoint.
-        self.assertEqual([entry["replay_particle_count"] for entry in plan["batches"]], [0, 2, 2])
-        self.assertEqual(plan["completed_particle_count"], 2)
-
-    def test_can_validate_local_ion_terminals_and_retain_complete_stdout(self) -> None:
-        policy = TraceContinuationPolicy(
-            terminal_prefix="TRACE: terminal ",
-            terminal_pattern=re.compile(r"TRACE: terminal ion=(?P<ion>\d+)$"),
-            state_prefix="TRACE: never ", state_pattern=re.compile(r"(?!)"),
-            completion_prefix="COMPLETE",
-            release_prefix="TRACE: release ",
-            release_pattern=re.compile(
-                r"TRACE: release ion=(?P<ion>\d+) particle_id=(?P<particle_id>\d+)$"
-            ),
-            allow_auxiliary_trace=True, retain_entire_log=True,
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            run, contract = _parent(root, [[3, 4]], [[
-                "solver header", "TRACE: release ion=1 particle_id=3",
-                "TRACE: auxiliary ion=1", "TRACE: terminal ion=1",
-                "TRACE: release ion=2 particle_id=4", "TRACE: terminal ion=2",
-                "COMPLETE",
-            ]])
-            plan = build_batch_continuation_plan(
-                predecessor_run_dir=run, particle_ids=[3, 4],
-                expected_execution_mode=None,
-                contract_input_role="screening_contract",
-                expected_contract_sha256=contract,
-                cohort_input_paths={"cohort": run / "inputs" / "cohort.csv"},
-                policy=policy, output_dir=root / "child",
-            )
-            imported = Path(plan["batches"][0]["imported_completed_trace"]["path"])
-            retained = imported.read_text(encoding="utf-8").splitlines()
-        self.assertEqual(plan["completed_particle_count"], 2)
-        self.assertEqual(retained, [
-            "solver header", "TRACE: release ion=1 particle_id=3",
-            "TRACE: auxiliary ion=1", "TRACE: terminal ion=1",
-            "TRACE: release ion=2 particle_id=4", "TRACE: terminal ion=2",
-            "COMPLETE",
-        ])
-
-    def test_rejects_partial_or_appended_completed_batch(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            run, contract = _parent(root, [[1, 2]], [["TERMINAL 1", "COMPLETE"]])
-            with self.assertRaisesRegex(ContractError, "completion sentinel"):
-                self._build(run, contract, root / "partial", [1, 2])
-            run, contract = _parent(root / "appended", [[1]], [["TERMINAL 1", "COMPLETE", "noise"]])
-            with self.assertRaisesRegex(ContractError, "completion sentinel"):
-                self._build(run, contract, root / "appended-child", [1])
-
-    def test_ignores_unmanifested_active_suffix_log(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            run, contract = _parent(root, [[1], [2]], [
-                ["TERMINAL 1", "COMPLETE"], ["TERMINAL 2"],
-            ])
-            manifest_path = run / "run_manifest.json"
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            # The first batch was checkpointed before the host interruption;
-            # stdout from the active second worker exists but is not bound.
-            manifest["outputs"] = manifest["outputs"][:1]
-            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-            plan = self._build(run, contract, root / "child", [1, 2])
-        self.assertEqual(plan["completed_particle_count"], 1)
-        self.assertEqual(
-            [entry["replay_particle_count"] for entry in plan["batches"]], [0, 1]
-        )
-
-    def test_replays_incomplete_unordered_batch_and_rejects_manifest_hash_drift(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            run, contract = _parent(root, [[1, 2]], [["TERMINAL 2"]])
-            result = self._build(run, contract, root / "child", [1, 2])
-            self.assertEqual(result["replay_particle_count"], 2)
-            run, contract = _parent(root / "other", [[1]], [["TERMINAL 1", "COMPLETE"]])
-            (run / "logs" / "simion__batch01.stdout.log").write_text("TERMINAL 1\nCOMPLETE\nchanged\n", encoding="utf-8")
-            with self.assertRaisesRegex(ContractError, "hash"):
-                self._build(run, contract, root / "other-child", [1])
-
-    def test_rejects_unbound_batch_plan_and_different_same_size_cohort(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            run, contract = _parent(root, [[1, 2]], [["TERMINAL 1"]])
-            plan_path = run / "inputs" / "simion_execution_batch_plan.json"
-            plan_path.write_text(json.dumps({"role": "simion_single_wave_particle_batch_plan", "batches": [
-                {"index": 1, "particle_id_min": 1, "particle_id_max": 2, "count": 2},
-            ], "tampered": True}), encoding="utf-8")
-            with self.assertRaisesRegex(ContractError, "input hash"):
-                self._build(run, contract, root / "child", [1, 2])
-            run, contract = _parent(root / "cohort", [[1]], [["TERMINAL 1", "COMPLETE"]])
-            other = root / "other_cohort.csv"
-            other.write_text("particle_id,state\n1,other\n", encoding="utf-8")
-            with self.assertRaisesRegex(ContractError, "frozen cohort"):
-                build_batch_continuation_plan(
-                    predecessor_run_dir=run, particle_ids=[1], expected_execution_mode="fixture",
-                    contract_input_role="screening_contract", expected_contract_sha256=contract,
-                    cohort_input_paths={"cohort": other}, policy=POLICY, output_dir=root / "cohort-child",
-                )
-
-    def test_accepts_manifest_bound_input_after_staging_path_relocation(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            run, contract = _parent(root, [[1]], [["TERMINAL 1", "COMPLETE"]])
-            config_path = run / "run_config.json"
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-            config["inputs"]["screening_contract"] = (
-                r"C:\\tmp\\retired\\inputs\\screening.json"
-            )
-            config_path.write_text(json.dumps(config), encoding="utf-8")
-            manifest_path = run / "run_manifest.json"
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            manifest["run_config"]["sha256"] = file_sha256(config_path)
-            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-            plan = self._build(run, contract, root / "child", [1])
-        self.assertEqual(plan["completed_particle_count"], 1)
-
     def test_checkpoint_accepts_completion_metadata_after_config_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            run, contract = _parent(root, [[1]], [["TERMINAL 1", "COMPLETE"]])
+            run, _ = _parent(root, [[1]], [["TERMINAL 1", "COMPLETE"]])
             config_path = run / "run_config.json"
             config = json.loads(config_path.read_text(encoding="utf-8"))
             config.update({"run_id": "parent", "mode": "fixture"})
@@ -214,18 +69,17 @@ class BatchContinuationTests(unittest.TestCase):
             # completed after the checkpoint was published.
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-            plan = self._build(run, contract, root / "child", [1])
+            unit = WholeUnitReplayUnit("complete", (Path("logs/simion__batch01.stdout.log"),), True)
+            plan = build_whole_unit_replay_plan(
+                predecessor_run_dir=run, output_dir=root / "child", units=(unit,),
+            )
+            (run / "inputs" / "cohort.csv").write_text("changed immutable input\n", encoding="utf-8")
+            with self.assertRaisesRegex(ContractError, "run config is unbound"):
+                build_whole_unit_replay_plan(
+                    predecessor_run_dir=run, output_dir=root / "invalid-child", units=(unit,),
+                )
 
-        self.assertEqual(plan["completed_particle_count"], 1)
-
-    def test_rejects_overwriting_a_continuation_target(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            run, contract = _parent(root, [[1]], [["TERMINAL 1", "COMPLETE"]])
-            output = root / "child"
-            self._build(run, contract, output, [1])
-            with self.assertRaisesRegex(ContractError, "already exists"):
-                self._build(run, contract, output, [1])
+        self.assertEqual(plan["reusable_unit_count"], 1)
 
     def test_whole_unit_replay_reuses_only_complete_manifest_bound_units(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -241,11 +95,47 @@ class BatchContinuationTests(unittest.TestCase):
                 predecessor_run_dir=run,
                 output_dir=root / "child",
                 units=(
-                    WholeUnitReplayUnit("stable", (Path("results/stable.json"),)),
-                    WholeUnitReplayUnit("missing", (Path("results/missing.json"),)),
+                    WholeUnitReplayUnit("stable", (Path("results/stable.json"),), True),
+                    WholeUnitReplayUnit("missing", (Path("results/missing.json"),), True),
                 ),
             )
         self.assertEqual([unit["action"] for unit in plan["units"]], ["reuse", "replay"])
+
+    def test_whole_unit_replay_replays_bound_partial_output_without_reading_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = _parent(root, [[1]], [["TERMINAL 1", "COMPLETE"]])
+            partial = run / "results" / "partial.stdout.log"
+            partial.parent.mkdir()
+            partial.write_text("partial native output\n", encoding="utf-8")
+            manifest_path = run / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["outputs"].append({"path": str(partial), "sha256": file_sha256(partial)})
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with patch.object(batch_continuation, "file_sha256", wraps=file_sha256) as hashed:
+                plan = build_whole_unit_replay_plan(
+                    predecessor_run_dir=run,
+                    output_dir=root / "child",
+                    units=(WholeUnitReplayUnit(
+                        "partial", (Path("results/partial.stdout.log"),), False,
+                    ),),
+                )
+        self.assertEqual(plan["units"][0]["action"], "replay")
+        self.assertEqual(plan["units"][0]["terminal_outputs"], [])
+        self.assertNotIn(partial.resolve(), [call.args[0] for call in hashed.call_args_list])
+
+    def test_whole_unit_replay_rejects_non_boolean_completion_fact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = _parent(root, [[1]], [["TERMINAL 1", "COMPLETE"]])
+            with self.assertRaisesRegex(ContractError, "completion fact"):
+                build_whole_unit_replay_plan(
+                    predecessor_run_dir=run,
+                    output_dir=root / "child",
+                    units=(WholeUnitReplayUnit(
+                        "invalid", (Path("results/output.json"),), 1,  # type: ignore[arg-type]
+                    ),),
+                )
 
     def test_whole_unit_replay_rejects_unbound_existing_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -257,7 +147,112 @@ class BatchContinuationTests(unittest.TestCase):
             with self.assertRaisesRegex(ContractError, "manifest-bound"):
                 build_whole_unit_replay_plan(
                     predecessor_run_dir=run, output_dir=root / "child",
-                    units=(WholeUnitReplayUnit("stale", (Path("results/stale.json"),)),),
+                    units=(WholeUnitReplayUnit("stale", (Path("results/stale.json"),), True),),
+                )
+            with self.assertRaisesRegex(ContractError, "manifest-bound"):
+                build_whole_unit_replay_plan(
+                    predecessor_run_dir=run, output_dir=root / "absolute-child",
+                    units=(WholeUnitReplayUnit("stale", (stale.resolve(),), True),),
+                )
+
+    def test_whole_unit_replay_rejects_hash_drift_for_complete_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = _parent(root, [[1]], [["TERMINAL 1", "COMPLETE"]])
+            output = run / "results" / "complete.json"
+            output.parent.mkdir()
+            output.write_text("published\n", encoding="utf-8")
+            manifest_path = run / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["outputs"].append({"path": str(output), "sha256": file_sha256(output)})
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            output.write_text("changed\n", encoding="utf-8")
+            with self.assertRaisesRegex(ContractError, "hash differs"):
+                build_whole_unit_replay_plan(
+                    predecessor_run_dir=run,
+                    output_dir=root / "child",
+                    units=(WholeUnitReplayUnit("complete", (Path("results/complete.json"),), True),),
+                )
+
+    def test_whole_unit_replay_reuses_current_parent_bound_ancestor_and_local_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ancestor, _ = _parent(root / "ancestor", [[1]], [["TERMINAL 1", "COMPLETE"]])
+            ancestor_output = ancestor / "results" / "batch01.native.log"
+            ancestor_output.parent.mkdir()
+            ancestor_output.write_text("ancestor complete\n", encoding="utf-8")
+            ancestor_manifest_path = ancestor / "run_manifest.json"
+            ancestor_manifest = json.loads(ancestor_manifest_path.read_text(encoding="utf-8"))
+            ancestor_manifest["outputs"].append({
+                "path": str(ancestor_output), "sha256": file_sha256(ancestor_output),
+            })
+            ancestor_manifest_path.write_text(json.dumps(ancestor_manifest), encoding="utf-8")
+            build_whole_unit_replay_plan(
+                predecessor_run_dir=ancestor,
+                output_dir=root / "b-plan",
+                units=(WholeUnitReplayUnit("ancestor", (Path("results/batch01.native.log"),), True),),
+            )
+
+            parent, _ = _parent(root / "parent", [[2]], [["TERMINAL 2"]])
+            parent_output = parent / "results" / "batch02.native.log"
+            parent_output.parent.mkdir()
+            parent_output.write_text("parent complete\n", encoding="utf-8")
+            parent_config_path = parent / "run_config.json"
+            parent_config = json.loads(parent_config_path.read_text(encoding="utf-8"))
+            parent_config["inputs"]["reused_ancestor_output"] = str(ancestor_output)
+            parent_config_path.write_text(json.dumps(parent_config), encoding="utf-8")
+            parent_manifest_path = parent / "run_manifest.json"
+            parent_manifest = json.loads(parent_manifest_path.read_text(encoding="utf-8"))
+            parent_manifest["run_config"]["sha256"] = file_sha256(parent_config_path)
+            parent_manifest["inputs"]["reused_ancestor_output"] = {
+                "path": str(ancestor_output), "exists": True, "sha256": file_sha256(ancestor_output),
+            }
+            parent_manifest["outputs"].append({
+                "path": str(parent_output), "sha256": file_sha256(parent_output),
+            })
+            parent_manifest_path.write_text(json.dumps(parent_manifest), encoding="utf-8")
+            ancestor_before, parent_before = ancestor_manifest_path.read_bytes(), parent_manifest_path.read_bytes()
+
+            plan = build_whole_unit_replay_plan(
+                predecessor_run_dir=parent,
+                output_dir=root / "child",
+                units=(
+                    WholeUnitReplayUnit("ancestor", (ancestor_output,), True),
+                    WholeUnitReplayUnit("parent", (Path("results/batch02.native.log"),), True),
+                ),
+            )
+
+            self.assertEqual([unit["action"] for unit in plan["units"]], ["reuse", "reuse"])
+            self.assertEqual(
+                [unit["terminal_outputs"][0]["path"] for unit in plan["units"]],
+                [str(ancestor_output.resolve()), str(parent_output.resolve())],
+            )
+            self.assertEqual(ancestor_manifest_path.read_bytes(), ancestor_before)
+            self.assertEqual(parent_manifest_path.read_bytes(), parent_before)
+            self.assertEqual(
+                list((root / "child").iterdir()),
+                [root / "child" / "simion_whole_unit_replay_plan.json"],
+            )
+
+    def test_whole_unit_replay_rejects_conflicting_current_parent_bindings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = _parent(root, [[1]], [["TERMINAL 1"]])
+            output = run / "results" / "complete.json"
+            output.parent.mkdir()
+            output.write_text("complete\n", encoding="utf-8")
+            manifest_path = run / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["inputs"]["conflicting_output"] = {
+                "path": str(output), "exists": True, "sha256": "A" * 64,
+            }
+            manifest["outputs"].append({"path": str(output), "sha256": file_sha256(output)})
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ContractError, "binding conflicts"):
+                build_whole_unit_replay_plan(
+                    predecessor_run_dir=run,
+                    output_dir=root / "child",
+                    units=(WholeUnitReplayUnit("complete", (Path("results/complete.json"),), True),),
                 )
 
 

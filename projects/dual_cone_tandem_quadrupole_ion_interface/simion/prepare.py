@@ -6,11 +6,11 @@ import argparse
 import csv
 import json
 import re
-import shutil
 from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
+from common.contracts.frozen_inputs import freeze_file
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.ion_release.release import materialize_release_from_file
 from common.simion.particle_source import render_standard_beams, render_source_states
@@ -100,20 +100,6 @@ def validate_gas_field_manifest(path: Path, interface: dict[str, Any]) -> tuple[
         if not re.search(rf"\b{name}\s*=\s*function\b|\bfunction\s+[^\n]*\b{name}\b", source):
             raise ValueError(f"gas-field runtime Lua omits required function {name}")
     return manifest, runtime
-
-
-def freeze_file(source: Path, destination: Path) -> dict[str, Any]:
-    source = source.resolve(strict=True)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, destination)
-    if file_sha256(source) != file_sha256(destination):
-        raise ValueError(f"frozen input hash differs: {source}")
-    return {
-        "source_path": str(source),
-        "frozen_path": str(destination.resolve()),
-        "sha256": file_sha256(destination),
-        "bytes": destination.stat().st_size,
-    }
 
 
 def _lua_string(value: str | Path) -> str:
@@ -301,6 +287,7 @@ def prepare(
         manifest, runtime = validated_gas
         inputs["gas_field_manifest"] = freeze_file(gas_field_manifest, frozen / "gas_field_manifest.json")
         inputs["gas_field_runtime"] = freeze_file(runtime, solver / "gas_field_runtime.lua")
+        (solver / "collision_sds").mkdir()
         inputs["simion_official_collision_sds"] = {
             name: freeze_file(validated_sds_root / name, solver / "collision_sds" / name)
             for name in SDS_FILES
@@ -354,6 +341,14 @@ def prepare(
         identity_path = frozen / "pa_cache_identity.json"
         identity_path.write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
         inputs["pa_cache_identity"] = {"path": str(identity_path), "sha256": file_sha256(identity_path)}
+
+    # The project receipt retains its existing four-field frozen-input shape.
+    # Map the shared API record here rather than maintaining a second copier.
+    frozen_records = [record for record in inputs.values() if "source_path" in record]
+    frozen_records.extend(inputs.get("simion_official_collision_sds", {}).values())
+    for record in frozen_records:
+        record["frozen_path"] = record.pop("path")
+        del record["exists"]
 
     receipt = {
         "schema_version": 1,

@@ -108,6 +108,11 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         self.assertIn("voltage compensation enabled but profile file is missing", program)
         self.assertIn("voltage profile must be monotone inside fixed endpoints", program)
 
+    def test_simion_flights_use_elapsed_warnings_not_process_timeouts(self) -> None:
+        source = inspect.getsource(compensation._run_batch)
+        self.assertIn("warning_seconds=600", source)
+        self.assertNotIn("timeout_seconds=600", source)
+
     def test_reflectron_builder_warns_but_does_not_reject_off_grid_edges(self) -> None:
         builder = (
             PROJECT_ROOT / "simion" / "reflectron" / "build_reflectron_variant.lua"

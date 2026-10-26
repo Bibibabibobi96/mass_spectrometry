@@ -318,7 +318,8 @@ function Write-VerifiedRunManifest {
     [Parameter(Mandatory)][ValidateSet('success','failed','interrupted','checkpoint','superseded')][string]$Status,
     [string[]]$Software=@(),
     [string]$Manifest='',
-    [string[]]$Outputs=@()
+    [string[]]$Outputs=@(),
+    [switch]$DeferCapacityFinalization
   )
   if([string]::IsNullOrWhiteSpace($Manifest)){
     $Manifest=Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json'
@@ -346,7 +347,7 @@ function Write-VerifiedRunManifest {
       -Status $Status -Software $Software -Manifest $candidateManifest -Outputs $Outputs -PassThru
     Move-Item -LiteralPath $candidateManifest -Destination $Manifest -Force
     $manifestPublished=$true
-    if($null-ne$capacityLifecycle){
+    if($null-ne$capacityLifecycle-and-not$DeferCapacityFinalization){
       $capacityFinal=Invoke-RunCapacityLifecycleAdapter -Python $Python -RepoRoot $RepoRoot `
         -Action finalize-ready -ArtifactRoot ([string]$capacityLifecycle.artifact_root) `
         -RunConfig $RunConfig
@@ -717,11 +718,13 @@ function Restore-RunEnvironment {
 }
 
 function Copy-VerifiedRunInput {
+  # Consumers that publish a receipt can reuse this verified copy's identity.
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Source,
     [Parameter(Mandatory)][string]$Destination,
-    [ValidateRange(1,5)][int]$VerificationAttempts=1
+    [ValidateRange(1,5)][int]$VerificationAttempts=1,
+    [ref]$VerifiedIdentity
   )
   $sourcePath=[IO.Path]::GetFullPath($Source);$destinationPath=[IO.Path]::GetFullPath($Destination)
   if(-not(Test-Path -LiteralPath $sourcePath -PathType Leaf)){throw "Run input is missing: $sourcePath"}
@@ -747,7 +750,12 @@ function Copy-VerifiedRunInput {
     }
     $sourceHashAfter=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
     $destinationHash=(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
-    if($sourceHashBefore-ceq$sourceHashAfter -and $sourceHashAfter-ceq$destinationHash){return $destinationPath}
+    if($sourceHashBefore-ceq$sourceHashAfter -and $sourceHashAfter-ceq$destinationHash){
+      if($null-ne$VerifiedIdentity){
+        $VerifiedIdentity.Value=[pscustomobject]@{path=$destinationPath;bytes=(Get-Item -LiteralPath $destinationPath).Length;sha256=$destinationHash}
+      }
+      return $destinationPath
+    }
   }
   throw "Run input changed or copied inconsistently while frozen after $VerificationAttempts attempt(s): $sourcePath"
 }
@@ -808,13 +816,29 @@ function Complete-FailedRun {
     [string[]]$AdditionalOutputs=@(),
     [string]$ResourceUsagePath='',
     [switch]$PreserveRawOutputs,
-    [string[]]$PreserveRawOutputPaths=@()
+    [string[]]$PreserveRawOutputPaths=@(),
+    [switch]$DeferCapacityFinalization
   )
   Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
   $document=Get-Content -LiteralPath $RunConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  $runDir=Split-Path -Parent $RunConfig
+  $existingManifest=Join-Path $runDir 'run_manifest.json'
+  if(Test-Path -LiteralPath $existingManifest -PathType Leaf){
+    $published=Get-Content -LiteralPath $existingManifest -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    if($published.role-cne'simulation_run_manifest'-or$published.run_id-cne$document.run_id-or
+       $published.project-cne$document.project-or$published.mode-cne$document.mode){
+      throw 'Existing run manifest identity differs; failure cleanup cannot replace it.'
+    }
+    if($published.status-in@('success','failed','interrupted','superseded')){
+      # Preserve the existing terminal before changing its config, summary or
+      # retained outputs. This small read is not another payload verification.
+      Write-Warning "Existing $($published.status) terminal retained; failure cleanup skipped for $($document.run_id)."
+      return
+    }
+    if($published.status-cne'checkpoint'){throw 'Existing run manifest status is invalid; failure cleanup cannot replace it.'}
+  }
   if(-not $document.Contains('inputs')){$document.inputs=[ordered]@{}}
   $known=@($document.inputs.Values|ForEach-Object{if($_ -is [string]){[IO.Path]::GetFullPath($_)}})
-  $runDir=Split-Path -Parent $RunConfig
   $inputDir=Join-Path $runDir 'inputs';$index=0
   if(Test-Path -LiteralPath $inputDir -PathType Container){foreach($file in Get-ChildItem -LiteralPath $inputDir -Recurse -File|Sort-Object FullName){
     if($known-notcontains$file.FullName){$index+=1;$document.inputs[("recovered_input_{0:D3}"-f$index)]=$file.FullName}
@@ -940,6 +964,7 @@ function Complete-FailedRun {
     }
   }
   Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
-    -Status $Status -Software $Software -Outputs @($outputs|Select-Object -Unique)
+    -Status $Status -Software $Software -Outputs @($outputs|Select-Object -Unique) `
+    -DeferCapacityFinalization:$DeferCapacityFinalization
   }
 }

@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json",
+  "title": "Provider-owned local mechanical interfaces and physical electrode identities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "project_id",
+    "variant_id",
+    "geometry_profile_id",
+    "local_frame_id",
+    "length_unit",
+    "ports",
+    "component_electrodes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "role": {
+      "const": "component_geometry_interface"
+    },
+    "project_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "variant_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "geometry_profile_id": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "local_frame_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "length_unit": {
+      "const": "mm"
+    },
+    "ports": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "surface_kind",
+          "center_mm",
+          "outward_normal",
+          "cross_section",
+          "wall_thickness_mm"
+        ],
+        "properties": {
+          "surface_kind": {
+            "enum": [
+              "aperture_outer_face",
+              "open_rod_exit",
+              "open_rod_entrance"
+            ]
+          },
+          "center_mm": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "number"
+            }
+          },
+          "outward_normal": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "number"
+            }
+          },
+          "cross_section": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "shape",
+                  "width_mm",
+                  "height_mm",
+                  "width_axis",
+                  "height_axis"
+                ],
+                "properties": {
+                  "shape": {
+                    "const": "rectangle"
+                  },
+                  "width_mm": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "height_mm": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "width_axis": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "height_axis": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "shape",
+                  "inscribed_radius_mm"
+                ],
+                "properties": {
+                  "shape": {
+                    "const": "open_rod_envelope"
+                  },
+                  "inscribed_radius_mm": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "shape",
+                  "radius_mm"
+                ],
+                "properties": {
+                  "shape": {
+                    "const": "circle"
+                  },
+                  "radius_mm": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                }
+              }
+            ]
+          },
+          "wall_thickness_mm": {
+            "description": "Uniform material wall thickness at this face, when defined; null for open rods or a continuous frame without one uniform wall.",
+            "oneOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "surface_kind": {
+                  "enum": [
+                    "open_rod_exit",
+                    "open_rod_entrance"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "cross_section": {
+                  "properties": {
+                    "shape": {
+                      "const": "open_rod_envelope"
+                    }
+                  }
+                },
+                "wall_thickness_mm": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "cross_section": {
+                  "properties": {
+                    "shape": {
+                      "enum": [
+                        "rectangle",
+                        "circle"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "component_electrodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "component_electrode_id",
+          "role"
+        ],
+        "properties": {
+          "component_electrode_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "role": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          },
+          "electrical_group_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

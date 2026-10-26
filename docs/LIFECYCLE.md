@@ -177,6 +177,8 @@ schema v2冻结保留类别；默认类别是`compact`。保留类别在`run_con
 初始manifest而留下。非`compact`类别才可额外保留重型或可重建输出，并须在运行合同中事先说明理由。
 
 canonical粒子状态、事件、metrics和summary属于必需证据，不因超过大文件阈值改变保留角色。
+已登记的IOB结构模板在执行快照中属于必需运行资源，不是本次求解产生的PA；compact保留冻结输入，
+实际求解场仍按其原生载荷角色处置，不能凭位于inputs目录扩大保留范围。
 `finite_3d_transport.mph`、`.pa#/.paN/.pa_/.pa-surf`、完整`trajectory_samples*`（含压缩文件）以及达到策略阈值的其他可选大文件
 属于可选重型或可重建临时输出，不是每个成功run的必需证据。`compact`运行可在求解期间生成它们，但须在
 终态manifest前由公共retention执行器移除，并用`retention_actions.json`记录精确相对路径、类型角色、字节数

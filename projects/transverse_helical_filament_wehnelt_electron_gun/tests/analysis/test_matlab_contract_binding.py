@@ -569,6 +569,37 @@ class MatlabContractBindingTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, self.build_runner)
 
+    def test_actual_common_source_table_loads_frozen_budget_observation(self) -> None:
+        start = self.build_runner.index('  $commonFrozenFiles = [ordered]@{')
+        end = self.build_runner.index('  foreach ($entry in $commonFrozenFiles.GetEnumerator())', start)
+        # Evaluate the actual owner table, never the commercial owner/task.
+        script = "$ErrorActionPreference='Stop'\n" + self.build_runner[start:end] + r'''
+foreach($relative in $commonFrozenFiles.Values){
+  $destination=Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT $relative
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination)|Out-Null
+  Copy-Item -LiteralPath (Join-Path $env:DEPENDENCY_TEST_REPO $relative) -Destination $destination
+}
+Set-Location $env:FROZEN_DEPENDENCY_TEST_ROOT
+. ./common/multipole/resource_budget_support.ps1
+if((Get-Command New-RepositoryProcessObservation).ScriptBlock.File -ne
+    (Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'common/multipole/resource_budget_support.ps1')){
+  throw 'Observation did not load from the frozen source table'
+}
+$observation=New-RepositoryProcessObservation
+if($null -ne $observation.usage){throw 'Unbudgeted observation created usage output'}
+Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
+'''
+        with tempfile.TemporaryDirectory(prefix='wehnelt_budget_closure_') as directory:
+            result = subprocess.run(
+                ['pwsh', '-NoProfile', '-NonInteractive', '-Command', script],
+                cwd=directory,
+                env=dict(os.environ, FROZEN_DEPENDENCY_TEST_ROOT=directory,
+                         DEPENDENCY_TEST_REPO=str(REPO_ROOT)),
+                capture_output=True, text=True, encoding='utf-8', timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('FROZEN_BUDGET_OBSERVATION=PASS', result.stdout)
+
     def test_frozen_gate_does_not_mutate_its_declared_input_set(self) -> None:
         if os.environ.get("WEHNELT_NESTED_FROZEN_GATE") == "1":
             return
@@ -600,6 +631,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "common/host_execution_lease.ps1",
             "common/host_resource_scheduler.py",
             "common/host_resource_policy.json",
+            "common/multipole/resource_budget_support.ps1",
             "common/contracts/run_artifact_support.ps1",
             "common/contracts/write_run_manifest.py",
             "common/contracts/recorded_file_removal.py",

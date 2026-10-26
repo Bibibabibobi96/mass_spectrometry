@@ -11,6 +11,8 @@ from pathlib import Path
 from statistics import mean, median, pstdev
 from typing import Any
 
+from common.simion.native_completion import parse_fly_completed_line
+
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
@@ -18,7 +20,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract i
 
 EVENT = re.compile(r"^MRTOF_EVENT\s+(?P<kind>\w+)\s+(?P<fields>.*)$")
 FIELD = re.compile(r"(?P<key>[A-Za-z_]+)=(?P<value>[^\s]+)")
-FLY_COMPLETED = re.compile(r"^status,Fly completed\.\s+(?P<splats>\d+) splats", re.MULTILINE)
 SOURCE_COUNT_KEYS = {
     "center_fly2": "center_particle_count",
     "candidate_bunch_fly2": "candidate_bunch_particle_count",
@@ -1662,10 +1663,11 @@ def analyze_log(log_path: Path, output_path: Path, *, input_manifest: Path, sour
     """Parse a run log and write a stable JSON Candidate result receipt."""
     source = load_particle_source(input_manifest, source_key)
     text = log_path.read_text(encoding="utf-8")
-    matches = list(FLY_COMPLETED.finditer(text))
-    reported_splat_count = int(matches[0].group("splats")) if len(matches) == 1 else None
+    completions = [completion for line in text.splitlines()
+                   if (completion := parse_fly_completed_line(line)) is not None]
+    reported_splat_count = completions[0].splats if len(completions) == 1 else None
     summary = summarize_events(parse_events(text), source["target_k"], reported_splat_count,
-                               expected_particle_ids=source["expected_particle_ids"], completion_count=len(matches),
+                               expected_particle_ids=source["expected_particle_ids"], completion_count=len(completions),
                                kinetic_energy_ev=source["axial_kinetic_energy_ev"],
                                mass_th=(float(source["species"]["mass_th"]) if source["species"] else None),
                                charge_e=(float(source["species"]["charge_e"]) if source["species"] else None))

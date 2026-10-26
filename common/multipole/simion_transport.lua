@@ -40,6 +40,8 @@ local hits = 0
 local crossings = 0
 local trajectory_file
 local particle_state_file
+local mechanical_exit_file
+local crossed_mechanical_exit = {}
 local previous_state = {}
 local next_axial_plane = {}
 local crossed_rod_exit = {}
@@ -209,15 +211,16 @@ local function divergence_deg(v_axial, v_x, v_y)
   return 90
 end
 
-local function write_particle_state(particle, event, status, terminal_reason, state)
-  if not particle_state_file then return end
+local function write_particle_state(particle, event, status, terminal_reason, state, destination)
+  local output = destination or particle_state_file
+  if not output then return end
   -- Canonical velocity components remain in mm/us here; 1 mm/us = 1000 m/s.
   local v_axial = state.vx * 1000
   local v_x = state.vy * 1000
   local v_y = state.vz * 1000
   local radial = math.sqrt(state.y^2 + state.z^2)
   local rf_phase = rf_drive.phase_at(state.t) % (2 * math.pi)
-  particle_state_file:write(string.format(
+  output:write(string.format(
     '%d,%s,%s,%s,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n',
     particle, event, status, terminal_reason, state.t,
     state.t - (birth_time[particle] or state.t), rf_phase,
@@ -253,6 +256,7 @@ function segment.initialize_run()
   next_axial_plane = {}
   crossed_rod_exit = {}
   crossed_handoff = {}
+  crossed_mechanical_exit = {}
   handoff_state = {}
   timed_out = {}
   census_counted = {}
@@ -272,6 +276,15 @@ function segment.initialize_run()
   else
     particle_state_file = nil
   end
+  mechanical_exit_file = nil
+  if run_config.mechanical_exit_csv then
+    assert(run_config.mechanical_exit_plane_mm and run_config.mechanical_exit_aperture_radius_mm
+      and run_config.mechanical_exit_guard_mm > run_config.mechanical_exit_plane_mm,
+      'explicit mechanical exit plane, bore and numerical guard required')
+    mechanical_exit_file = assert(io.open(run_config.mechanical_exit_csv, 'w'))
+    mechanical_exit_file:write('particle_id,event,status,terminal_reason,time_us,elapsed_time_us,rf_phase_rad,axial_z_mm,transverse_x_mm,transverse_y_mm,velocity_axial_m_s,velocity_x_m_s,velocity_y_m_s,kinetic_energy_eV,radial_position_mm,divergence_angle_deg,max_rod_radius_mm\n')
+  end
+
 end
 
 function segment.init_p_values()
@@ -386,6 +399,7 @@ function segment.other_actions()
       handoff_state[ion_number] = handoff
       if not accepted then
         write_particle_state(ion_number, 'terminal', 'lost', 'acceptance_aperture', handoff)
+        if mechanical_exit_file then write_particle_state(ion_number, 'terminal', 'lost', 'acceptance_aperture', handoff, mechanical_exit_file) end
         write_trajectory(ion_number, handoff)
         terminal_written[ion_number] = true
         ion_splat = -6
@@ -398,6 +412,20 @@ function segment.other_actions()
         ion_splat = -5
       end
     end
+  end
+  if mechanical_exit_file and not terminal_written[ion_number] then
+    local exit = run_config.mechanical_exit_plane_mm
+    if not crossed_mechanical_exit[ion_number] and previous.x < exit and current.x >= exit then
+      local state = interpolate_state(previous, current, exit)
+      -- The bracket is two actual native states, never a projected old handoff.
+      if state.vx > 0 and radial_mm(state) <= run_config.mechanical_exit_aperture_radius_mm then
+        write_particle_state(ion_number, 'mechanical_exit_step_before', 'alive', 'none', previous, mechanical_exit_file)
+        write_particle_state(ion_number, 'mechanical_exit_step_after', 'alive', 'none', current, mechanical_exit_file)
+        write_particle_state(ion_number, 'mechanical_exit', 'transmitted', 'none', state, mechanical_exit_file)
+        crossed_mechanical_exit[ion_number] = true
+      end
+    end
+    if current.x >= run_config.mechanical_exit_guard_mm then ion_splat = -5 end
   end
   previous_state[ion_number] = current
   if ion_time_of_flight - (birth_time[ion_number] or 0) >= transport_max_elapsed_us then
@@ -429,6 +457,12 @@ local function finalize_particle(particle, current)
   elseif terminal_state.x < backward_escape_plane_mm then reason = 'backward_escape'
   elseif radius > radial_escape_radius_mm then reason = 'radial_escape'
   end
+  if mechanical_exit_file then
+    local reached_guard = current.x >= run_config.mechanical_exit_guard_mm
+    local actual_status = timed_out[particle] and 'timeout' or reached_guard and 'transmitted' or 'lost'
+    local actual_reason = timed_out[particle] and 'timeout' or reached_guard and 'acceptance_surface' or 'unknown'
+    write_particle_state(particle, 'terminal', actual_status, actual_reason, current, mechanical_exit_file)
+  end
   write_particle_state(particle, 'terminal', status, reason, terminal_state)
   write_trajectory(particle, terminal_state)
   terminal_written[particle] = true
@@ -448,6 +482,7 @@ function segment.terminate_run()
   end
   if trajectory_file then trajectory_file:close() end
   if particle_state_file then particle_state_file:close() end
+  if mechanical_exit_file then mechanical_exit_file:close() end
   local summary_path = assert(run_config.summary_json, 'run config summary_json is missing')
   local summary = assert(io.open(summary_path, 'w'))
   summary:write(string.format(

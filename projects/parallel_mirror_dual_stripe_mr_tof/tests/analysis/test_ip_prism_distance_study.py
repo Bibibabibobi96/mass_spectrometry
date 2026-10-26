@@ -72,7 +72,7 @@ class ContourPreparationTests(unittest.TestCase):
         numerical = DistanceContractTests()
         numerical.setUp()
         old = numerical.contract
-        return dict(schema_version=5, role="ip_prism_contour_focus_experiment",field_sources={"B_field":{"action":"build"}},
+        return dict(schema_version=6, electrode_collision_model="canonical_lens_first_contact", role="ip_prism_contour_focus_experiment",field_sources={"B_field":{"action":"build"}},
                     references={"geometry": {}, "voltages": {}},
                     source_registration=dict(translation_mm=[0, -225, 0], from_frame_id="IP-world", to_frame_id="test_frame"),
                     cases=[dict(case_id="B", label="B formed", source_run="source_B", distance_mm=10,
@@ -115,7 +115,7 @@ class ContourPreparationTests(unittest.TestCase):
 
     def test_recorded_v2_author_is_readonly_and_not_an_active_prepare_contract(self):
         contract=dict(self.contract(), schema_version=2, limits={"transient_run_directory_bytes":1000})
-        contract.pop("field_sources")
+        contract.pop("field_sources"); contract.pop("electrode_collision_model")
         for row in contract["cases"]:
             row.pop("lens_elements")
         validate_contour_contract(contract, recorded_author=True)
@@ -124,16 +124,34 @@ class ContourPreparationTests(unittest.TestCase):
         del contract["limits"]
         with self.assertRaises(ValueError):
             validate_contour_contract(contract, recorded_author=True)
-        third=self.contract();third["schema_version"]=3;third.pop("field_sources")
+        third=self.contract();third["schema_version"]=3;third.pop("field_sources"); third.pop("electrode_collision_model")
         for row in third["cases"]:
             row.pop("lens_elements")
         validate_contour_contract(third,recorded_author=True)
         with self.assertRaises(ValueError):
             validate_contour_contract(third)
 
+    def test_explicit_collision_model_and_recorded_v5(self):
+        for model in ("native_pa", "canonical_lens_first_contact"):
+            contract = self.contract()
+            contract["electrode_collision_model"] = model
+            validate_contour_contract(contract)
+        for model in (None, "nearest_node", ""):
+            contract = self.contract()
+            contract["electrode_collision_model"] = model
+            with self.assertRaises(ValueError):
+                validate_contour_contract(contract)
+        old = self.contract()
+        old["schema_version"] = 5
+        old.pop("electrode_collision_model")
+        validate_contour_contract(old, recorded_author=True)
+        with self.assertRaises(ValueError):
+            validate_contour_contract(old)
+
     def test_recorded_v4_is_readonly_and_retains_original_fields(self):
         fourth = self.contract()
         fourth["schema_version"] = 4
+        fourth.pop("electrode_collision_model")
         for row in fourth["cases"]:
             row.pop("lens_elements")
         validate_contour_contract(fourth, recorded_author=True)
@@ -301,15 +319,33 @@ class ContourPreparationTests(unittest.TestCase):
                     _contour_geometry_and_voltage(case, self.contract()["source_registration"], fixture(), source_inputs, root/"lua.exe", root)
                 projection.assert_not_called()
 
+    def test_current_waveforms_mismatch_fails_before_plain_lua(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); inputs = root/'inputs'; (inputs/'simion').mkdir(parents=True)
+            native = root/'projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua'
+            native.parent.mkdir(parents=True); native.write_text('return {}')
+            (inputs/'simion/native_drive.lua').write_text('return {}')
+            (root/'common/simion').mkdir(parents=True)
+            (root/'common/simion/voltage_waveforms.lua').write_text('return {changed=true}')
+            (inputs/'simion/voltage_waveforms.lua').write_text('return {producer=731}')
+            case = dict(config=dict(coordinate_transform=dict(from_frame_id='native',to_frame_id='IP-world'),
+                native_projection=dict(frame_id='native')))
+            helper = 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation.project_provider_voltages'
+            with patch(helper) as projection, self.assertRaisesRegex(ValueError, 'voltage_waveforms'):
+                _contour_geometry_and_voltage(case, self.contract()['source_registration'], fixture(), inputs, root/'lua.exe', root)
+            projection.assert_not_called()
+
     def test_failed_source_freezes_verified_small_projection_without_relabeling(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);source=root/"native";source.mkdir();(source/"inputs").mkdir();(source/"simion").mkdir()
             (source/"inputs/resolved_model.json").write_text("{}")
             (source/"simion/native_drive.lua").write_text("return {}")
+            (source/"simion/voltage_waveforms.lua").write_text("return {producer=731}")
+            waveform=file_record(source/"simion/voltage_waveforms.lua")
             record=file_record(source/"inputs/resolved_model.json")
             schedule=file_record(source/"simion/native_drive.lua")
             manifest=dict(status="failed",role="simulation_run_manifest",run_id=source.name,
-                          project="dual_pressure_rectilinear_ion_processor",inputs={"model":record},outputs=[schedule])
+                          project="dual_pressure_rectilinear_ion_processor",inputs={"model":record},outputs=[schedule,waveform])
             (source/"run_manifest.json").write_text(json.dumps(manifest))
             original=(source/"run_manifest.json").read_bytes()
             case=dict(source_records=[record], terminals={1: {}, 2: {}})
@@ -324,10 +360,10 @@ class ContourPreparationTests(unittest.TestCase):
             self.assertEqual(binding["source_manifest"]["sha256"],binding["producer_manifest"]["sha256"])
             self.assertEqual((source/"run_manifest.json").read_bytes(),original)
             self.assertEqual((root/"frozen/inputs/resolved_model.json").read_bytes(),b"{}")
-            self.assertEqual(binding["records"][-1]["frozen"]["sha256"],schedule["sha256"])
+            self.assertEqual(binding["records"][-2]["frozen"]["sha256"],schedule["sha256"])
             with patch(loader, return_value=case):
                 # The schedule may be an input instead of an output; ownership remains IP.
-                manifest["inputs"]["drive"]=schedule;manifest["outputs"]=[]
+                manifest["inputs"]["drive"]=schedule;manifest["inputs"]["waveforms"]=waveform;manifest["outputs"]=[]
                 (source/"run_manifest.json").write_text(json.dumps(manifest))
                 _freeze_recorded_contour_source(source,"B",root/"input_bound")
                 (source/"simion/native_drive.lua").write_text("return []")
@@ -375,6 +411,9 @@ class ContourPreparationTests(unittest.TestCase):
             native=root/"projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua"
             native.parent.mkdir(parents=True);native.write_text("return {}")
             (inputs/"simion/native_drive.lua").write_text("return {}")
+            (root/"common/simion").mkdir(parents=True)
+            (root/"common/simion/voltage_waveforms.lua").write_text("return {}")
+            (inputs/"simion/voltage_waveforms.lua").write_text("return {}")
             dependency=root/"projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json"
             dependency.parent.mkdir(parents=True);dependency.write_text("{}")
             shape=dict(shape="convex_polyhedron", vertices_mm=[[0,0,0],[2,0,0],[0,3,0],[0,0,4]])
@@ -522,7 +561,7 @@ class RecordedContourAnalysisTests(unittest.TestCase):
             native_contract=dict(ContourPreparationTests().contract(), schema_version=2,
                                  limits={"transient_run_directory_bytes":34359738368,
                                          "transient_run_directory_sample_interval_seconds":30})
-            native_contract.pop("field_sources")
+            native_contract.pop("field_sources"); native_contract.pop("electrode_collision_model")
             for row in native_contract["cases"]:
                 row.pop("lens_elements")
             study.write_text(json.dumps(dict(role="resolved_ip_prism_contour_focus_study",cases=[case],contract=native_contract)))
@@ -692,7 +731,7 @@ class ReplayPackageTests(unittest.TestCase):
                   pitch_mm=[.1,.1,.1],maximum_step_us=.01,field_case_id="B-field")
         numerics=ContourPreparationTests().contract()["numerics"]
         (inputs/"resolved_study.json").write_text(json.dumps(dict(role="resolved_ip_prism_contour_focus_study",cases=[case],numerics=numerics,
-              contract=dict(observation_planes=[dict(name="p1_exit",z_mm=-60)]))))
+              contract=dict(schema_version=5, observation_planes=[dict(name="p1_exit",z_mm=-60)]))))
         (source/"summary.json").write_text(json.dumps(dict(status="success")))
         config=source/"run_config.json";config.write_text(json.dumps(dict(inputs={})))
         manifest=dict(project="parallel_mirror_dual_stripe_mr_tof",status="success",run_config=file_record(config),inputs={},

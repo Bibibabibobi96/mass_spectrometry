@@ -26,6 +26,7 @@
         "properties": {
           "design_profile_id": {"$ref": "#/$defs/identifier"},
           "mode_id": {"$ref": "#/$defs/identifier"},
+          "enclosure_model": {"$ref": "multipole_design_request.schema.json#/$defs/enclosure/oneOf/0/properties/model"},
           "design_request": {"$ref": "#/$defs/path"},
           "design_variables": {"$ref": "#/$defs/path"},
           "optimization_envelope": {"$ref": "#/$defs/path"},

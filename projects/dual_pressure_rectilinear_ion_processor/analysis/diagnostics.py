@@ -29,6 +29,12 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.post_extraction_d
 PRODUCER_SOURCE_SHA256 = file_sha256(Path(__file__))
 
 STATES = ("alive", "extracted", "lost", "notborn", "unknown")
+
+
+def _states(data: dict) -> tuple[str, ...]:
+    """An upstream particle exists before it enters this component."""
+    return tuple("not_admitted" if state == "notborn" and "injected_source" in data["config"] else state
+                 for state in STATES)
 VALUES = ("x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
 
 
@@ -162,7 +168,7 @@ def prepare_data(run: Path) -> dict[str, Any]:
         death = terminals.get(particle, {}).get("t_us", math.inf)
         rows = [row for time, row in sorted(table.items()) if time <= death]
         if any(row["t_us"] < sources[particle]["t_us"] for row in rows):
-            raise ValueError("recorded state precedes particle birth")
+            raise ValueError("recorded state precedes IP admission" if "injected_source" in c else "recorded state precedes particle birth")
         ordered[particle] = rows
     b = c["baseline"]
     snapshots = []
@@ -188,6 +194,8 @@ def state_at(data: dict, particle: int, time: float) -> dict:
     source = data["sources"][particle]
     base = dict(particle_id=particle, t_us=time, status="unknown", reason="missing_bracket", electrode_id="unknown", bracket_start_us=None, bracket_end_us=None, bracket_gap_us=None, **{key: None for key in (*VALUES, "kinetic_energy_ev")})
     if time < source["t_us"]:
+        if "injected_source" in data["config"]:
+            return {**base, "status": "not_admitted", "reason": "not_yet_entered_IP"}
         return {**base, "status": "notborn", "reason": "not_yet_born"}
     terminal = data["terminals"].get(particle)
     if terminal and time >= terminal["t_us"]:
@@ -225,7 +233,7 @@ def lp_members(data: dict, rows: list[dict]) -> list[dict] | None:
 
 def census(data: dict, time: float) -> tuple[dict, list[dict]]:
     rows = [state_at(data, particle, time) for particle in sorted(data["sources"])]
-    counts = {state: sum(row["status"] == state for row in rows) for state in STATES}
+    counts = {state: sum(row["status"] == state for row in rows) for state in _states(data)}
     if sum(counts.values()) != len(data["sources"]):
         raise AssertionError("diagnostic census does not close")
     alive = [row for row in rows if row["status"] == "alive"]
@@ -289,7 +297,7 @@ def _shared_legend(figure, axis) -> None:
 
 def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], *, include_projected_geometry: bool = True) -> dict:
     """Render full-cohort views plus explicitly conditional LP/cooling panels."""
-    styles = prepare_visual_style_map(list(STATES))
+    styles = prepare_visual_style_map(list(_states(data)))
     projection = project_geometry(data["config"])
     slow, fast, transverse = coordinate_axes(data)
     figures = {}
@@ -319,7 +327,7 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], 
             for state in ("alive", "lost", "extracted"):
                 selected = [row for row in rows if row["status"] == state]
                 axis.scatter([row[slow+"_mm"] for row in selected], [row[fast+"_mm"] for row in selected], color=styles[state]["color"], marker=styles[state]["marker"], s=12, label=state if state == "alive" else state+" last")
-            counts = {state: sum(row["status"] == state for row in rows) for state in STATES}
+            counts = {state: sum(row["status"] == state for row in rows) for state in _states(data)}
             snapshot_spec = next(item for item in data["contract"]["snapshots"] if item["label"] == label)
             anchor_label = {"extraction_start_us":"requested_quench" if "native_timing" in data["config"] else "legacy_quench", "primary_quench_us":"quench_start", "pulse_start_us":"pulse_start"}.get(snapshot_spec["anchor"])
             display_label = f"{anchor_label}{snapshot_spec['offset_us']:+g} us" if anchor_label else label
@@ -373,7 +381,8 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], 
         axes[1,index].set(xlabel=f"{slow} (mm)", ylabel=f"v{slow} (m/s)")
     _shared_legend(figure,axes[0,0])
     figures["stage_phase_space"] = figure
-    cooling_stages = [("source (individual birth)", [dict(particle_id=p, **row) for p,row in sorted(data["sources"].items())])]
+    initial_event = "IP admission" if "injected_source" in data["config"] else "birth"
+    cooling_stages = [(f"source (individual {initial_event})", [dict(particle_id=p, **row) for p,row in sorted(data["sources"].items())])]
     cooling_stages.extend((label, [row for row in snapshot_rows if row["snapshot"]==label and row["status"]=="alive"]) for label in labels)
     figure, axes = plt.subplots(3,len(cooling_stages),figsize=(16,10),squeeze=False,constrained_layout=True)
     mass = data["config"]["source"]["species"]["mass_amu"]
@@ -389,7 +398,7 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], 
         if energy:
             distribution.step(energy,np.arange(1,len(energy)+1)/len(energy),where="post",color="#0072B2",label="stage alive")
             matched = sorted(data["sources"][row["particle_id"]]["kinetic_energy_ev"] for row in rows)
-            distribution.step(matched,np.arange(1,len(matched)+1)/len(matched),where="post",color="#D55E00",linestyle="--",label="same IDs at birth")
+            distribution.step(matched,np.arange(1,len(matched)+1)/len(matched),where="post",color="#D55E00",linestyle="--",label=f"same IDs at {initial_event}")
         distribution.set(xlabel="Total kinetic energy (eV)",ylabel="Conditional empirical CDF")
         distribution.legend(fontsize=7)
         component = axes[2,column]
@@ -411,7 +420,7 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], 
         axes[0,1].plot([row["t_us"] for row in rows], [row[slow+"_mm"] for row in rows], linewidth=.6)
     axes[0,0].set(xlabel="Instrument time (us)", ylabel="Kinetic energy (eV)", title="All recorded IDs; lines join recorded samples")
     axes[0,1].set(xlabel="Instrument time (us)", ylabel=f"{slow} (mm)")
-    for state in STATES:
+    for state in _states(data):
         axes[0,2].plot([row["t_us"] for row in evolution], [row[state] for row in evolution], color=styles[state]["color"], marker=styles[state]["marker"], markevery=max(1,len(evolution)//12), markersize=3, label=state)
     axes[0,2].set(xlabel="Instrument time (us)", ylabel="Particle count (full source denominator)")
     axes[0,2].legend(fontsize=7)
@@ -435,7 +444,7 @@ def build_figures(data: dict, snapshot_rows: list[dict], evolution: list[dict], 
 
 
 def cooling_statistics(data: dict, snapshots: list[dict]) -> dict:
-    """Keep full-source and matched-birth cohorts beside each stage distribution."""
+    """Keep full-source and matched initial cohorts beside each stage distribution."""
     mass = data["config"]["source"]["species"]["mass_amu"]
     def describe(rows):
         distributions = {"total": [row["kinetic_energy_ev"] for row in rows]}
@@ -448,9 +457,10 @@ def cooling_statistics(data: dict, snapshots: list[dict]) -> dict:
     for label in data["contract"]["stage_labels"]:
         rows = [row for row in snapshots if row["snapshot"]==label]
         alive = [row for row in rows if row["status"]=="alive"]
-        stages[label] = dict(census={state:sum(row["status"]==state for row in rows) for state in STATES},
+        matched_key = "same_ids_at_admission" if "injected_source" in data["config"] else "same_ids_at_birth"
+        stages[label] = dict(census={state:sum(row["status"]==state for row in rows) for state in _states(data)},
                              alive_particle_ids=[row["particle_id"] for row in alive],
-                             alive=describe(alive),same_ids_at_birth=describe([data["sources"][row["particle_id"]] for row in alive]))
+                             alive=describe(alive), **{matched_key:describe([data["sources"][row["particle_id"]] for row in alive])})
     return dict(schema_version=1,role="ion_processor_cooling_distributions",source_count=len(data["sources"]),
                 source=describe(list(data["sources"].values())),stages=stages,
                 interpretation="Instantaneous kinetic energies include drift and RF micromotion, not equilibrium temperatures. Alive distributions are conditional; matched initial IDs and full census disclose survivor selection. No no-collision counterfactual is implied.",
@@ -500,6 +510,11 @@ def export_diagnostics(run: Path, output_directory: Path | None = None) -> dict:
     if context_path.is_file():
         source_paths.append(context_path)
     metadata = dict(schema_version=1, role="ion_processor_diagnostic_figure", source_run=str(run), source_profile=data["config"].get("source_profile"), source_particle_count=len(data["sources"]), displayed_particle_ids=sorted(data["sources"]), source_records=[dict(path=str(path),sha256=file_sha256(path),bytes=path.stat().st_size) for path in source_paths], git=git, code_sha256=PRODUCER_SOURCE_SHA256, frame_id=data["config"].get("coordinate_transform", {}).get("to_frame_id",data["config"]["baseline"]["clock"]["frame_id"]), coordinate_transform=data["config"].get("coordinate_transform"), sigma_csv_compatibility="new frames use sigma_slow_mm/lp_sigma_slow_mm with explicit sigma_axis; sigma_x aliases exist only for legacy local-axis runs", units=dict(position="mm",velocity="mm/us in CSV; m/s phase-space display",time="instrument absolute us",energy="eV"), selection="full-range views preserve all source IDs; explicitly conditional LP zoom and per-stage alive energy details accompany full-cohort views; no KDE, smoothing, fitting or subsampling", display_bounds=display_bounds(data), interpolation="display only; linear between adjacent recorded positions/velocities within frozen bracket limit; energy recomputed from interpolated velocity", maximum_used_interpolation_gap_us=maximum_used_gap, pulse_timing=pulse_timing_context(data), snapshot_census=[dict(label=label,**census(data,time)[0]) for label,time in data["snapshots"]], lp_conditioning="alive with guide_length+hp_length < slow_coordinate < guide_length+hp_length+lp_length; slow=project y for transformed runs, local x for legacy; no detector-outcome selection; global sigma includes HP-retained ions", geometry_provenance="statistical panels contain no projected electrode boxes; separate section panels consume frozen CSG solids/cutouts and declare any projected E9 footprints explicitly", geometry_sha256=file_sha256(run/"inputs/resolved_model.json"), display_claim="all recorded trajectories and bounded display interpolation, not every integration step; lost/extracted points are last positions, never alive clouds", uncertainty="none; N10 exploration or N100 functional only", numerical_or_GUI_qualification=False)
+    if "injected_source" in data["config"]:
+        metadata.update(initial_state_semantics="actual IP admission, not original particle birth",
+            population_scope="IP-admitted cohort; original upstream mother fates remain in frozen inputs and component export",
+            upstream_mother_particle_count=data["config"]["injected_source"]["mother_particle_count"],
+            uncertainty="single upstream cohort; no statistical or numerical qualification")
     figures = build_figures(data,snapshots,census_rows,include_projected_geometry=False)
     output_roles = []
     for role,figure in figures.items():

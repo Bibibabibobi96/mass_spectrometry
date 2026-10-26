@@ -23,6 +23,13 @@ GIB = 1024**3
 
 
 class ResourceSchedulerTests(unittest.TestCase):
+    def test_physical_danger_limits_are_frozen_from_shared_host_policy(self) -> None:
+        policy = json.loads(Path(__file__).resolve().parents[1].joinpath("host_resource_policy.json").read_text())
+        plan = plan_simion_dispatch(self.request(), [], available_memory_bytes=10 * GIB,
+                                   total_physical_memory_bytes=20 * GIB, logical_processors=4)
+        for name in ("memory_critical_reserve_bytes", "memory_critical_seconds"):
+            self.assertEqual(plan["limits"][name], policy[name])
+
     @staticmethod
     def request(particle_count: int = 5000, **extra: object) -> dict[str, object]:
         value: dict[str, object] = {

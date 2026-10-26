@@ -38,8 +38,9 @@ try{
 
   $failureStage='verify_source'
   $sourceManifestData=Get-Content -LiteralPath $sourceManifest -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-  if($sourceManifestData.status-ne'success'-or$sourceManifestData.project-ne$projectId-or
-    $sourceManifestData.mode-ne'finite_3d_two_prism_voltage_trial'){
+  if($sourceManifestData.status-ne'success'-or-not(
+    ($sourceManifestData.project-eq$projectId-and$sourceManifestData.mode-eq'finite_3d_two_prism_voltage_trial')-or
+    ($sourceManifestData.project-eq'instrument_assembly'-and$sourceManifestData.mode-eq'oa_mr'))){
     throw 'Flight source manifest has the wrong status, project, or mode.'
   }
   $sourceObservation=Get-Content -LiteralPath (Join-Path $sourceRun 'results\two_prism_trial_observation.json') `

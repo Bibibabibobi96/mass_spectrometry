@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import CENTRAL_GROUND_ELECTRODE_ID
+
 
 def _number(value: float) -> str:
     return f"{value:.12g}"
@@ -82,14 +84,14 @@ def _mirror_ground_shield_lines(resolved: dict[str, object]) -> list[str]:
     if resolved.get("mirror_convergence_transform") is not None:
         lines = []
         for shield in resolved["mirror_ground_shields"]:
-            lines.extend(_mirror_polygon_lines(shield, 15))
+            lines.extend(_mirror_polygon_lines(shield, CENTRAL_GROUND_ELECTRODE_ID))
         for closure in resolved["mirror_e_closures"]:
             lines.extend(_mirror_polygon_lines(closure, closure["id"]))
         return lines
     inner_slot = _box(resolved["mirror_inner_shield_slot"])
     lines = [
         "  ; CAD inner end plates: Stripe-facing 5-mm shields have 4-mm slots.",
-        "  e(15) {",
+        f"  e({CENTRAL_GROUND_ELECTRODE_ID}) {{",
     ]
     for shield in resolved["mirror_ground_shields"]:
         lines.append(f"    {_box(shield['box'])}")
@@ -121,7 +123,7 @@ def _stripe_lines(resolved: dict[str, object]) -> list[str]:
 def _central_ground_lines(resolved: dict[str, object]) -> list[str]:
     """Emit one whole native Foil-2 body minus its two rectangular windows."""
     lines = ["  ; Whole Ion-Foil-2 with native short cubic and planar end features; no added bridges.",
-             "  e(15) {"]
+             f"  e({CENTRAL_GROUND_ELECTRODE_ID}) {{"]
     for body in resolved["central_ground_electrodes"]:
         lines.extend(f"    {term}" for term in _extrude_polygon_bands(body["x"], body["polygon_yz_mm"]))
     lines.extend(f"    notin_inside {{ {_box(slot)} }}" for slot in resolved["central_ground_slots"])

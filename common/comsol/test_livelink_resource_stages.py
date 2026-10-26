@@ -71,6 +71,7 @@ function Start-ComsolLauncherProcess {
     }
     $process = [pscustomobject]@{
         Id=999999
+        StartTime=[DateTime]::Now
         HasExited=($env:STAGE_SCENARIO -notin @('registration_failure','running_then_pass') -and $env:STAGE_SCENARIO -notlike 'timeout_*')
         ExitCode=$(if ($env:STAGE_SCENARIO -eq 'running_without_terminal') { 3 } else { 0 })
         StandardOutput=$reader
@@ -106,7 +107,7 @@ function Start-ComsolLauncherProcess {
     return $process
 }
 function Stop-ComsolAttemptServers {
-    param($Before,$Reason)
+    param($RootProcessId,$Observation,$Reason)
     Write-Event "server_cleanup:$Reason"
     if ($env:STAGE_SCENARIO -eq 'cleanup_failure') { throw 'server cleanup failed' }
     $global:FakeServerLive=$false
@@ -122,13 +123,19 @@ class LiveLinkResourceStageTests(unittest.TestCase):
 
     def run_scenario(
         self, scenario: str, *, supplied_budget: int = 0, assembly_mode: str | None = None,
+        crash_scenario: str | None = None, observation_scenario: str | None = None,
     ) -> tuple[int, list[str], str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             comsol = root / "common" / "comsol"
             comsol.mkdir(parents=True)
             (root / "common" / "require_powershell7.ps1").write_text("", encoding="utf-8")
-            (root / "common" / "host_execution_lease.ps1").write_text(SCHEDULER, encoding="utf-8")
+            (root / "common" / "host_execution_lease.ps1").write_text(
+                (ROOT / "common/host_execution_lease.ps1").read_text(encoding="utf-8") + SCHEDULER,
+                encoding="utf-8")
+            shutil.copy2(ROOT / "common/host_resource_policy.json", root / "common")
+            (root / "common/multipole").mkdir()
+            shutil.copy2(ROOT / "common/multipole/resource_budget_support.ps1", root / "common/multipole")
             (comsol / "resolve_comsol_64.ps1").write_text(
                 "function Get-Comsol64Launcher { return $env:FAKE_LAUNCHER }", encoding="utf-8"
             )
@@ -141,6 +148,33 @@ class LiveLinkResourceStageTests(unittest.TestCase):
             (root / "launcher.exe").write_bytes(b"test double; never executed")
             (root / "task.m").write_text("% not executed", encoding="utf-8")
             (root / "launcher_double.ps1").write_text(LAUNCHER, encoding="utf-8")
+            if crash_scenario:
+                (root / "controlled_child.ps1").write_text(r'''
+# TEST_ONLY: controlled file transport fixture, not a JVM/solver crash.
+$bytes=[Text.Encoding]::UTF8.GetBytes("TEST_ONLY owned log`r`n") + [byte[]](0..255)
+$name="hs_err_pid$PID.log"
+$source=Join-Path (Get-Location).Path $name
+[IO.File]::WriteAllBytes($source,$bytes)
+if ($env:CRASH_SCENARIO -eq 'old') {
+    [IO.File]::SetCreationTimeUtc($source,[DateTime]::UtcNow.AddMinutes(-1))
+}
+if ($env:CRASH_SCENARIO -eq 'conflict') {
+    [IO.File]::WriteAllText((Join-Path (Split-Path -Parent $env:COMSOL_BOOTSTRAP_REPORT) $name),'TEST_ONLY existing destination')
+}
+@{pid=$PID;working_directory=(Get-Location).Path}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path (Get-Location).Path 'child_facts.json')
+if ($env:OBSERVATION_SCENARIO) {
+    # TEST_ONLY native ancestry, never a commercial model or solver.
+    $seconds=if($env:OBSERVATION_SCENARIO-eq'critical'){20}else{3}
+    $worker=Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-Command',"Start-Sleep -Seconds $seconds")
+    [IO.File]::WriteAllText((Join-Path (Get-Location).Path 'worker_pid.txt'),[string]$worker.Id)
+    Start-Sleep -Seconds $seconds
+}
+if ($env:CRASH_SCENARIO -ne 'no_report') {
+    $status=if($env:CRASH_SCENARIO -eq 'success'){'PASS'}else{'FAIL'}
+    [IO.File]::WriteAllText($env:COMSOL_BOOTSTRAP_REPORT,"STATUS=$status`nERROR=TEST_ONLY task result`n")
+}
+if($env:CRASH_SCENARIO -eq 'success'){exit 0}else{exit 7}
+''', encoding="utf-8")
             events = root / "events.txt"
             wrapper = root / "exercise.ps1"
             wrapper.write_text(r'''
@@ -156,19 +190,68 @@ $ast=[Management.Automation.Language.Parser]::ParseInput($text,[ref]$tokens,[ref
 if ($errors.Count) { throw ($errors | Out-String) }
 $function=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Start-ComsolLauncherProcess'},$true)
 $double=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'launcher_double.ps1'))
+if ($env:CRASH_SCENARIO) {
+    # Exercise the actual ProcessStartInfo factory with a real pwsh child;
+    # replace only vendor arguments and vendor server cleanup.
+    $double=$function.Extent.Text.Replace('function Start-ComsolLauncherProcess','function Start-ControlledChildProcess') + @'
+
+function Start-ComsolLauncherProcess {
+    param($FilePath,$Arguments)
+    Write-Event 'launch'
+    $global:FakeServerLive=$true
+    $global:FakeLauncherProcess=Start-ControlledChildProcess -FilePath $FilePath -Arguments @('-NoProfile','-File',(Join-Path $repoRoot 'controlled_child.ps1'))
+    return $global:FakeLauncherProcess
+}
+function Stop-ComsolAttemptServers {
+    param($RootProcessId,$Observation,$Reason)
+    Write-Event "server_cleanup:$Reason"
+    $global:FakeServerLive=$false
+}
+'@
+}
 $text=$text.Substring(0,$function.Extent.StartOffset)+$double+$text.Substring($function.Extent.EndOffset)
-$ast=[Management.Automation.Language.Parser]::ParseInput($text,[ref]$tokens,[ref]$errors)
-$function=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-ComsolServerProcessIds'},$true)
-$text=$text.Substring(0,$function.Extent.StartOffset)+'function Get-ComsolServerProcessIds { Write-Event "servers_snapshot"; return @() }'+$text.Substring($function.Extent.EndOffset)
 if ($env:STAGE_SCENARIO -like 'timeout_*') {
     $text=$text.Replace('$reportDeadline = [DateTime]::UtcNow.AddSeconds($StartupReportTimeoutSeconds)', '$reportDeadline = [DateTime]::UtcNow.AddSeconds(-1)')
+}
+if ($env:OBSERVATION_SCENARIO) {
+    $observeFixture=@'
+function Get-CimInstance { throw 'TEST_ONLY forced CIM denial' }
+$script:observationClock=[datetimeoffset]::UtcNow
+$script:memorySamples=0
+function Get-RepositoryUtcNow {
+ if($env:OBSERVATION_SCENARIO-in@('critical','transient')){$script:observationClock=$script:observationClock.AddSeconds(8);return $script:observationClock}
+ return [datetimeoffset]::UtcNow
+}
+function Get-RepositoryAvailableMemoryBytes {
+ $script:memorySamples++
+ if($env:OBSERVATION_SCENARIO-eq'critical'-or($env:OBSERVATION_SCENARIO-eq'transient'-and$script:memorySamples%2-eq1)){return [int64](100MB)}
+ return [int64](8GB)
+}
+if($env:OBSERVATION_SCENARIO-eq'metric_failure'){
+ function Write-ResourceUsage {param($Usage,$Path);throw 'TEST_ONLY metrics write failure'}
+}
+$script:realObserve=${function:Update-RepositoryProcessObservation}
+function Update-RepositoryProcessObservation {
+ param($Observation,$Sample,[switch]$Final)
+ $result=& $script:realObserve @PSBoundParameters
+ Write-Event "observation:known=$($result.observation_known):danger=$($result.physical_danger):timer=$($Observation.critical_since)"
+ return $result
+}
+'@
+    $anchor=". (Join-Path `$repoRoot 'common\multipole\resource_budget_support.ps1')"
+    if(-not$text.Contains($anchor)){throw 'Observation import anchor missing'}
+    $text=$text.Replace($anchor,$anchor+"`n"+$observeFixture)
 }
 [IO.File]::WriteAllText($path,$text)
 $global:FakeLaunchCount=0
 $global:FakeServerLive=$false
-$arguments=@{TaskScript=(Join-Path $PSScriptRoot 'task.m');ReportPath=(Join-Path $PSScriptRoot 'report.txt');StartupRetryDelaySeconds=1;RunId='test-resource-stages'}
+$arguments=@{TaskScript=(Join-Path $PSScriptRoot 'task.m');ReportPath=(Join-Path $PSScriptRoot 'logs/report.txt');StartupRetryDelaySeconds=1;RunId='test-resource-stages'}
+if($env:OBSERVATION_SCENARIO-in@('ordinary','metric_failure')){
+ $arguments.Limits=[pscustomobject]@{wall_clock_seconds=1;process_tree_working_set_bytes=1;transient_run_directory_bytes=1;minimum_system_available_memory_bytes=1;compact_final_retained_bytes=1}
+ $arguments.RunDir=$PSScriptRoot;$arguments.UsagePath=Join-Path $PSScriptRoot 'logs/usage.json'
+}
 if ($env:STAGE_SCENARIO -like 'timeout_warn_*') { $arguments.StartupReportTimeoutAction='warn' }
-if ($env:STAGE_SCENARIO -eq 'timeout_stop') { $arguments.StartupAttempts=1 }
+if ($env:STAGE_SCENARIO -eq 'timeout_stop') { $arguments.StartupReportTimeoutAction='stop'; $arguments.StartupAttempts=1 }
 if ($env:STAGE_ASSEMBLY_MODE -ne '') { $arguments.AssemblyScalabilityMode=$env:STAGE_ASSEMBLY_MODE }
 if ($env:STAGE_ASSEMBLY_MODE -eq 'matrix') {
     $arguments.ProcessorCount=8
@@ -178,12 +261,24 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
     $resources=if ($env:STAGE_SUPPLIED_BUDGET -eq '2') { @('project-extra') } else { @() }
     $arguments.ResourceBudgets=@{solver=@{schema_version=1;unknown_peak=$false;cpu_cores=[int]$env:STAGE_SUPPLIED_BUDGET;memory_bytes=1024;io_slots=0;exclusive_resources=@($resources)}}
 }
-& $path @arguments
+$sentinel=$null
+if($env:OBSERVATION_SCENARIO-eq'critical'){
+ $sentinel=Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 60')
+}
+try { & $path @arguments } finally {
+ if($null-ne$sentinel){
+  if($sentinel.HasExited){throw 'Physical-danger cleanup stopped an unrelated sibling'}
+  Stop-Process -Id $sentinel.Id -Force;$sentinel.WaitForExit()
+ }
+}
 ''', encoding="utf-8")
             environment = dict(os.environ, STAGE_SCENARIO=scenario, STAGE_EVENTS=str(events),
                                FAKE_LAUNCHER=str(root / "launcher.exe"), MATLAB_R2025B_ROOT=str(root),
                                STAGE_SUPPLIED_BUDGET=str(int(supplied_budget)),
-                               STAGE_ASSEMBLY_MODE=assembly_mode or '')
+                               STAGE_ASSEMBLY_MODE=assembly_mode or '',
+                               CRASH_SCENARIO=crash_scenario or '', OBSERVATION_SCENARIO=observation_scenario or '')
+            if crash_scenario:
+                environment["FAKE_LAUNCHER"] = str(shutil.which("pwsh"))
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-File", str(wrapper)], cwd=root, env=environment,
                 capture_output=True, creationflags=self.creation_flags, timeout=30,
@@ -195,7 +290,128 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
             self.assertIn(probe, completed.stdout, output)
             self.assertIn(probe, completed.stderr, output)
             entries = events.read_text(encoding="utf-8-sig").splitlines() if events.exists() else []
+            if observation_scenario:
+                output += "\nOBSERVATION_EVENTS=" + repr(entries)
+            if observation_scenario:
+                worker_pid = int((root / "worker_pid.txt").read_text())
+                # The owned worker must have finished or been stopped with its launcher.
+                probe = subprocess.run(["pwsh", "-NoProfile", "-Command",
+                    f"if(Get-Process -Id {worker_pid} -ErrorAction SilentlyContinue){{exit 1}}"],
+                    cwd=root, capture_output=True, timeout=15, check=False)
+                self.assertEqual(probe.returncode, 0, output)
+                self.assertEqual((root / "logs/usage.json").exists(), observation_scenario == "ordinary")
+            if crash_scenario:
+                facts = json.loads((root / "child_facts.json").read_text(encoding="utf-8-sig"))
+                self.assertEqual(Path(facts["working_directory"]).resolve(), root.resolve())
+                name = f"hs_err_pid{facts['pid']}.log"
+                source, destination = root / name, root / "logs" / name
+                expected = b"TEST_ONLY owned log\r\n" + bytes(range(256))
+                if crash_scenario in {"old", "conflict"}:
+                    self.assertEqual(source.read_bytes(), expected)
+                    if crash_scenario == "conflict":
+                        self.assertEqual(destination.read_bytes(), b"TEST_ONLY existing destination")
+                    else:
+                        self.assertFalse(destination.exists())
+                else:
+                    self.assertFalse(source.exists())
+                    self.assertEqual(destination.read_bytes(), expected)
             return completed.returncode, entries, output
+
+    def test_actual_server_cleanup_requires_owned_ancestry_and_retained_creation(self) -> None:
+        """Role candidates are inert pwsh PIDs; ancestry and stop operations are real."""
+        for scenario in ("owned", "stale_identity", "orphan", "observation_failure"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                launcher = root / "TEST_ONLY_launcher.ps1"
+                facts, release = root / "worker.json", root / "release"
+                launcher.write_text(f"""
+$worker=Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 30')
+@{{pid=$worker.Id;started=$worker.StartTime.ToUniversalTime().Ticks}}|ConvertTo-Json|Set-Content -LiteralPath '{facts}'
+$deadline=[DateTime]::UtcNow.AddSeconds(20)
+while(-not(Test-Path -LiteralPath '{release}')){{if([DateTime]::UtcNow-ge$deadline){{throw 'TEST_ONLY launcher release timed out'}};Start-Sleep -Milliseconds 20}}
+""", encoding="utf-8")
+                script = f"""
+$ErrorActionPreference='Stop'
+. '{ROOT / 'common/multipole/resource_budget_support.ps1'}'
+function Get-CimInstance {{throw 'TEST_ONLY forced CIM denial'}}
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile('{ROOT / 'common/comsol/run_comsol_r2025b.ps1'}',[ref]$tokens,[ref]$errors)
+$definition=$ast.Find({{param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Stop-ComsolAttemptServers'}},$true)
+. ([scriptblock]::Create($definition.Extent.Text))
+$exe=(Get-Process -Id $PID).Path
+$ownedLauncher=Start-Process -FilePath $exe -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-File','{launcher}')
+$sibling=Start-Process -FilePath $exe -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 30')
+$worker=$null
+try{{
+ $deadline=[DateTime]::UtcNow.AddSeconds(10)
+ while(-not(Test-Path -LiteralPath '{facts}')){{if([DateTime]::UtcNow-ge$deadline){{throw 'TEST_ONLY worker facts missing'}};Start-Sleep -Milliseconds 20}}
+ $workerFact=Get-Content -LiteralPath '{facts}' -Raw|ConvertFrom-Json
+ $worker=Get-Process -Id $workerFact.pid
+ $script:serverRoleCandidates=@($worker.Id,$sibling.Id)
+ function Get-ComsolServerProcessIds {{$script:serverRoleCandidates}}
+ $observation=@{{tracked_ticks=@{{([string]$ownedLauncher.Id)=$ownedLauncher.StartTime.ToUniversalTime().Ticks}}}}
+ if('{scenario}'-ne'owned'){{$observation.tracked_ticks[[string]$worker.Id]=[int64]$workerFact.started}}
+ if('{scenario}'-eq'stale_identity'){{$observation.tracked_ticks[[string]$worker.Id]=[int64]$workerFact.started-1}}
+ if('{scenario}'-eq'orphan'){{Set-Content -LiteralPath '{release}' -Value release;$ownedLauncher.WaitForExit();if($worker.HasExited){{throw 'Worker did not outlive its launcher'}}}}
+ if('{scenario}'-eq'observation_failure'){{function Get-ManagedSolverProcessSample {{throw 'TEST_ONLY ancestry observation unavailable'}}}}
+ if('{scenario}'-eq'observation_failure'){{
+  try{{try{{throw 'TEST_ONLY original scientific failure'}}finally{{Stop-ComsolAttemptServers -RootProcessId $ownedLauncher.Id -Observation $observation -Reason 'task failure'}}}}
+  catch{{if($_.Exception.Message-ne'TEST_ONLY original scientific failure'){{throw}}}}
+ }}else{{Stop-ComsolAttemptServers -RootProcessId $ownedLauncher.Id -Observation $observation -Reason 'task completion'}}
+ if($sibling.HasExited){{throw 'Unrelated same-role candidate was stopped'}}
+ if('{scenario}'-eq'stale_identity'){{
+  if($worker.HasExited-or$observation.tracked_ticks[[string]$worker.Id]-ne([int64]$workerFact.started-1)){{throw 'Stale creation identity was overwritten or stopped'}}
+ }}elseif(-not$worker.HasExited){{throw 'Verified owned server candidate remains alive'}}
+ 'TEST_ONLY_SERVER_CLEANUP=PASS'
+}}finally{{
+ foreach($process in @($ownedLauncher,$worker,$sibling)){{if($null-ne$process-and-not$process.HasExited){{$process.Kill($true);$process.WaitForExit()}}}}
+}}
+"""
+                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                    cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    timeout=30, check=False, creationflags=self.creation_flags)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("TEST_ONLY_SERVER_CLEANUP=PASS", result.stdout)
+
+    def test_owned_jvm_log_moves_raw_bytes_after_success_failure_and_no_report(self) -> None:
+        for scenario in ("success", "failure", "no_report"):
+            with self.subTest(scenario=scenario):
+                code, events, output = self.run_scenario("success", crash_scenario=scenario)
+                self.assertEqual(code == 0, scenario == "success", output)
+                self.assertEqual(events[-1], "exit")
+                if scenario == "failure":
+                    self.assertIn("R2025b LiveLink task failed", output)
+
+    def test_owned_native_observation_warns_or_stops_only_sustained_danger(self) -> None:
+        for observation in ("ordinary", "transient", "critical"):
+            with self.subTest(observation=observation):
+                code, events, output = self.run_scenario("success", crash_scenario="success",
+                                                       observation_scenario=observation)
+                self.assertEqual(code == 0, observation != "critical", output)
+                self.assertEqual(events.count("launch"), 1)
+                if observation == "critical":
+                    self.assertIn("COMSOL_PHYSICAL_MEMORY_DANGER", output)
+                    self.assertFalse(any(e.startswith("server_cleanup:") for e in events))
+                if observation == "ordinary":
+                    self.assertIn("RESOURCE_BUDGET_WARNING=wall_clock_seconds", output)
+                    self.assertIn("RESOURCE_BUDGET_WARNING=process_tree_working_set_bytes", output)
+
+    def test_metrics_failure_keeps_native_scientific_failure(self) -> None:
+        code, events, output = self.run_scenario("success", crash_scenario="failure",
+                                               observation_scenario="metric_failure")
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("R2025b LiveLink task failed", output)
+        self.assertIn("RESOURCE_OBSERVATION_WARNING", output)
+        self.assertEqual(events.count("launch"), 1)
+
+    def test_unowned_or_conflicting_jvm_log_preserves_source_and_task_failure(self) -> None:
+        for scenario in ("old", "conflict"):
+            with self.subTest(scenario=scenario):
+                code, events, output = self.run_scenario("success", crash_scenario=scenario)
+                self.assertNotEqual(code, 0, output)
+                self.assertIn("R2025b LiveLink task failed", output)
+                self.assertEqual(events[-1], "exit")
+                self.assertEqual("COMSOL_JVM_CRASH_LOG_NOT_MOVED" in output, scenario == "conflict")
 
     def test_default_assembly_mode_does_not_override_comsol(self) -> None:
         for mode in (None, 'auto'):
@@ -231,7 +447,7 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
         code, events, output = self.run_scenario("success")
         self.assertEqual(code, 0, output)
         self.assertEqual(events, ["enter:prepare:unknown=True", "solver_locks:comsol-server-session",
-                                  "update:solver:unknown=True", "servers_snapshot", "launch",
+                                  "update:solver:unknown=True", "launch",
                                   "register:999999", "receive", "server_cleanup:task completion",
                                   "update:postprocess:unknown=True", "exit"])
 
@@ -242,8 +458,7 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
                 self.assertEqual(code, 0, output)
                 self.assertIn("update:solver:unknown=False", events)
                 self.assertIn("solver_locks:" + locks, events)
-                self.assertLess(events.index("update:solver:unknown=False"), events.index("servers_snapshot"))
-                self.assertLess(events.index("servers_snapshot"), events.index("launch"))
+                self.assertLess(events.index("update:solver:unknown=False"), events.index("launch"))
 
     def test_registration_failure_stops_only_started_launcher_and_releases(self) -> None:
         code, events, _ = self.run_scenario("registration_failure")
@@ -301,7 +516,7 @@ if ($env:STAGE_SUPPLIED_BUDGET -ne '0') {
         self.assertEqual(events.count("launch"), 1)
         self.assertIn("server_cleanup:task failure", events)
 
-    def test_default_timeout_stops_launcher(self) -> None:
+    def test_explicit_stop_timeout_stops_launcher(self) -> None:
         code, events, _ = self.run_scenario("timeout_stop")
         self.assertNotEqual(code, 0)
         self.assertIn("kill", events)

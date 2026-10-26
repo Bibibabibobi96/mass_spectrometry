@@ -32,8 +32,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
+from common.simion.native_completion import parse_fly_completed_line
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    FLY_COMPLETED,
     _fwhm,
     peak_time_metrics,
     collision_diagnostics,
@@ -46,7 +46,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial
 
 
 _PROJECT = "parallel_mirror_dual_stripe_mr_tof"
-_MODE = "finite_3d_two_prism_voltage_trial"
+_MODE = "oa_mr"
 _CHAIN = (
     ("target_k", "target_k_phase_sample"),
     ("return_p2_entry", "return_p2_entry"),
@@ -1008,8 +1008,9 @@ def _load_selected_events(
     evidence: list[dict[str, Any]] = []
     for path, offset, count in batches:
         text = path.read_text(encoding="utf-8-sig")
-        completions = list(FLY_COMPLETED.finditer(text))
-        if len(completions) != 1 or int(completions[0].group("splats")) != count:
+        completions = [completion for line in text.splitlines()
+                       if (completion := parse_fly_completed_line(line)) is not None]
+        if len(completions) != 1 or completions[0].splats != count:
             raise CandidateContractError(f"native log completion differs from its batch plan: {path}")
         for event in parse_events(text):
             local_id = int(event.get("ion", -1))
@@ -1941,8 +1942,9 @@ def analyze_controlled_aberration_first_batch(
 ) -> dict[str, Any]:
     """Analyze the frozen centre and controlled pairs as soon as batch 1 completes."""
     text = first_batch_log.read_text(encoding="utf-8-sig")
-    completions = list(FLY_COMPLETED.finditer(text))
-    if len(completions) != 1 or int(completions[0].group("splats")) != 10:
+    completions = [completion for line in text.splitlines()
+                   if (completion := parse_fly_completed_line(line)) is not None]
+    if len(completions) != 1 or completions[0].splats != 10:
         raise CandidateContractError(
             "controlled aberration early report requires one completed 10-particle first batch"
         )
@@ -2072,7 +2074,10 @@ def analyze_source_z_energy_timing(run_dir: Path) -> dict[str, Any]:
     manifest_path = run_dir / "run_manifest.json"
     manifest = _load_object(manifest_path, "flight run manifest")
     if (
-        manifest.get("project") != _PROJECT or manifest.get("mode") != _MODE
+        (manifest.get("project"), manifest.get("mode")) not in {
+            ("instrument_assembly", _MODE),
+            (_PROJECT, "finite_3d_two_prism_voltage_trial"),
+        }
         or manifest.get("status") != "success"
     ):
         raise CandidateContractError("input is not a successful complete MR-TOF flight run")

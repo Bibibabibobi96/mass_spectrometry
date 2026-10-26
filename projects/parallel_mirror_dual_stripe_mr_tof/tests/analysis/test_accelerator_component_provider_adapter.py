@@ -23,17 +23,6 @@ class AcceleratorComponentProviderAdapterTests(unittest.TestCase):
         self.assertEqual(result["pa_plan"]["geometry_profile_id"], "closed_two_zone_compact_mr_axial_r3_gap1_4mm")
         self.assertEqual(result["pa_plan"]["layout"]["source_cylinder"], {"radius_mm": 1.0, "height_mm": 1.0})
 
-    def test_mr_runner_only_delegates_to_the_provider_workflow(self) -> None:
-        runner = (self.project / "simion" / "run_accelerator_component_provider.ps1").read_text(encoding="utf-8")
-
-        self.assertIn("run_component_focus_workflow.ps1", runner)
-        self.assertIn("& $provider @arguments", runner)
-        self.assertIn("ReleaseSpecPath=(Resolve-Path -LiteralPath $ReleaseSpecPath).Path", runner)
-        self.assertIn("$arguments.RuntimeCheckpointPath=", runner)
-        self.assertNotIn("@providerArgs", runner)
-        self.assertIn("RequestPath=(Resolve-Path -LiteralPath $RequestPath).Path", runner)
-        self.assertIn("ReleaseSpecPath=(Resolve-Path -LiteralPath $ReleaseSpecPath).Path", runner)
-
 
 if __name__ == "__main__":
     unittest.main()

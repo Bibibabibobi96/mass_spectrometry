@@ -79,6 +79,7 @@
   "qualification_policy": "Independent component evidence only; no inheritance of instrument Formal qualification or sharing of evidence between structural variants.",
   "implementation_modules": [
     "analysis/component_contract.py",
+    "analysis/assembly_interface.py",
     "analysis/accelerator_time_focus.py",
     "analysis/two_zone_theory.py",
     "analysis/three_zone_ideal_theory.py",

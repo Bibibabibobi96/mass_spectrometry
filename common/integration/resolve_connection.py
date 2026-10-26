@@ -592,15 +592,61 @@ def write_resolved_and_plan(
     return resolved_path, plan_path
 
 
+def resolve_assembly_recipe(
+    recipe_path: str | Path, components_path: str | Path, repo_root: str | Path,
+    *, local_scope_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Load explicit recipe/provider files and bind their content identities."""
+    from common.integration.resolve_assembly import compile_assembly_layout
+
+    root = Path(repo_root).resolve()
+    sources = {name: _managed_file(root, path) for name, path in (
+        ("recipe", recipe_path), ("components", components_path),
+    )}
+    if local_scope_path is not None:
+        sources["local_scope"] = _managed_file(root, local_scope_path)
+    plan = compile_assembly_layout(
+        load_json(sources["recipe"].path), load_json(sources["components"].path),
+        local_scope=load_json(sources["local_scope"].path) if "local_scope" in sources else None,
+    )
+    plan["input_files"] = {
+        name: {"path": source.portable_path, "sha256": _managed_sha256(source)}
+        for name, source in sources.items()
+    }
+    validate_schema(plan, "composition_plan.schema.json")
+    return plan
+
+
+def _verify_assembly_plan(plan: dict[str, Any], repo_root: str | Path) -> None:
+    """Rebuild the layout from frozen inputs and, when present, recheck files."""
+    from common.integration.resolve_assembly import compile_assembly_layout
+
+    expected = compile_assembly_layout(
+        plan["recipe"], plan["components"], local_scope=plan.get("local_scope"),
+    )
+    if "input_files" in plan:
+        for name, record in plan["input_files"].items():
+            source = _managed_file(Path(repo_root), record["path"])
+            if _managed_sha256(source) != record["sha256"] or load_json(source.path) != plan[name]:
+                raise ContractError(f"assembly {name} source identity is stale")
+        expected["input_files"] = plan["input_files"]
+    if plan != expected:
+        raise ContractError("assembly plan differs from its frozen direct inputs")
+
 def verify_composition_plan(
     plan_path: str | Path,
-    resolved_path: str | Path,
+    resolved_path: str | Path | None = None,
     repo_root: str | Path = REPO_ROOT,
 ) -> None:
     plan = load_json(Path(plan_path))
+    validate_schema(plan, "composition_plan.schema.json")
+    if plan["schema_version"] == 3:
+        _verify_assembly_plan(plan, repo_root)
+        return
+    if resolved_path is None:
+        raise ContractError("pair composition plan verification requires resolved_path")
     resolved_file = Path(resolved_path)
     resolved = load_json(resolved_file)
-    validate_schema(plan, "composition_plan.schema.json")
     validate_schema(resolved, "resolved_connection.schema.json")
     if plan["resolved_connection"]["sha256"] != sha256(resolved_file):
         raise ContractError("composition plan resolved_connection SHA-256 is stale")
@@ -629,6 +675,9 @@ def verify_composition_plan(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--registry", type=Path)
+    parser.add_argument("--recipe", type=Path)
+    parser.add_argument("--components", type=Path)
+    parser.add_argument("--local-scope", type=Path)
     parser.add_argument("--profile-id")
     parser.add_argument("--resolved-output", type=Path)
     parser.add_argument("--plan-output", type=Path)
@@ -637,9 +686,27 @@ def main() -> None:
     parser.add_argument("--resolved", type=Path)
     parser.add_argument("--verify-repo-root", type=Path, default=REPO_ROOT)
     args = parser.parse_args()
+    if args.recipe is not None:
+        if args.plan_output is None or args.components is None or any(
+            value is not None for value in (
+                args.registry, args.profile_id, args.resolved_output,
+                args.verify_plan, args.resolved,
+            )
+        ):
+            parser.error("--recipe requires --components and --plan-output and excludes pair/verification inputs")
+        plan = resolve_assembly_recipe(
+            args.recipe, args.components, args.repo_root, local_scope_path=args.local_scope,
+        )
+        args.plan_output.parent.mkdir(parents=True, exist_ok=True)
+        args.plan_output.write_text(
+            json.dumps(plan, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8", newline="\n",
+        )
+        print(f"ASSEMBLY_LAYOUT=PASS PLAN={args.plan_output}")
+        return
+    if args.local_scope is not None:
+        parser.error("--local-scope requires --recipe")
     if args.verify_plan is not None:
-        if args.resolved is None:
-            parser.error("--verify-plan requires --resolved")
         verify_composition_plan(
             args.verify_plan, args.resolved, repo_root=args.verify_repo_root
         )

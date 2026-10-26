@@ -5,7 +5,7 @@
   "arm_id": "axial_source_all_ideal",
   "claim_scope": "analytic_closure_not_a_simion_or_comsol_solver_result",
   "resolved_geometry_path": "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
-  "layout_profile_registry_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/single_flight_layout_profiles.json",
+  "layout_profile_registry_path": "projects/single_reflection_oa_tof_mass_analyzer/config/single_flight_layout_profiles.json",
   "layout_profile_id": "symmetric_10ev_injection_diagnostic",
   "source": {
     "model": "on_axis_longitudinal_uniform_position_grid",

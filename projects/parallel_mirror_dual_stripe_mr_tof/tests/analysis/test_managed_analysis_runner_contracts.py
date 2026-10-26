@@ -98,20 +98,6 @@ CASES = {
         ),
         "forbidden": ("[double]$K", "25.5"),
     },
-    "recover_bunch": {
-        "path": "analysis/run_recover_completed_bunch_flight.ps1",
-        "session": True,
-        "required": (
-            "Enter-ArtifactWorkflowCapacitySession",
-            "Update-ArtifactWorkflowCapacitySession",
-            "Exit-ArtifactWorkflowCapacitySession",
-        ),
-        "forbidden": (
-            "CapacityTargetGiB",
-            "CapacityMinimumFreeGiB",
-            "Invoke-ArtifactCapacityGate",
-        ),
-    },
 }
 
 
@@ -150,10 +136,16 @@ class ManagedAnalysisRunnerContractTests(unittest.TestCase):
         }
         with TemporaryDirectory() as temporary:
             manifest = Path(temporary) / "run_manifest.json"
-            for field in (None, "status", "project", "mode"):
+            for field in (None, "new", "mixed_owner", "mixed_mode", "status", "project", "mode"):
                 with self.subTest(changed_field=field):
                     document = dict(valid)
-                    if field is not None:
+                    if field == "new":
+                        document.update(project="instrument_assembly", mode="oa_mr")
+                    elif field == "mixed_owner":
+                        document["project"] = "instrument_assembly"
+                    elif field == "mixed_mode":
+                        document["mode"] = "oa_mr"
+                    elif field is not None:
                         document[field] = "wrong_identity"
                     manifest.write_text(json.dumps(document), encoding="utf-8")
                     script = (
@@ -173,7 +165,7 @@ class ManagedAnalysisRunnerContractTests(unittest.TestCase):
                         timeout=30,
                         check=False,
                     )
-                    if field is None:
+                    if field in (None, "new"):
                         self.assertEqual(result.returncode, 0, result.stdout)
                         self.assertEqual(result.stdout.strip(), "IDENTITY_ACCEPTED")
                     else:

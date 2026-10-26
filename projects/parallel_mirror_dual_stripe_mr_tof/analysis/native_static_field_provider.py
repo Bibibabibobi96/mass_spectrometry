@@ -37,11 +37,15 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan i
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import (
     _native_active_box,
     _record,
+    _sealed_record,
+    verify_joint_asset_records,
     _load_operator_ancestry,
     load_binding,
     load_native_response_basis,
     native_response_operator,
     native_numerics_match,
+    native_refine_options,
+    native_refine_identity_matches,
     resolve_native_refine_numerics,
     validate_native_consumer_view,
     validate_ip_fine_response_reuse,
@@ -705,7 +709,7 @@ def _compile_ip_fine_extension(request: dict[str, Any]) -> dict[str, Any]:
     fine["gem"], fine["geometry_report"] = _static_gem(plan["resolved_geometry"], plan["candidate_authority"],
         fine, boundary_mode="x_mirror_five_faces")
     pa_bytes = ordinary_pa_file_bytes(fine["dimensions"], fine["pitch_mm"])
-    surface_allowance = math.ceil(Path(fine_source["sources"]["surface"]).stat().st_size
+    surface_allowance = math.ceil(fine_source["records"]["surface"]["bytes"]
                                   * fine_grid["dimensions"][2] / fine_source["grid"]["dimensions"][2])
     committed = math.ceil(pa_bytes*1.05 + surface_allowance*1.1) + 16*1024**2
     fine.update(committed_new_bytes=committed, final_retained_estimate_bytes=committed,
@@ -806,6 +810,41 @@ def collision_pa_header(path: Path) -> PaHeader:
     return header
 
 
+def verify_collision_overlay_support(source: dict[str, Any], plan: dict[str, Any]) -> None:
+    """Check real carrier coverage only inside the caller's payload read guards."""
+    box = plan["box_mm"]
+    carrier_bounds = {}
+    def bounds(instance):
+        key = (instance["pa_path"], tuple(instance["origin_mm"]))
+        if key in carrier_bounds:
+            return carrier_bounds[key]
+        header = collision_pa_header(Path(instance["pa_path"]))
+        if header.symmetry != 1 or header.raw_mirror & 7 not in (0, 1):
+            raise ValueError("collision overlay requires planar independent collision instances")
+        origin = instance["origin_mm"]
+        extent = [(n-1)*d for n, d in zip((header.nx, header.ny, header.nz),
+                  (header.dx_mm, header.dy_mm, header.dz_mm), strict=True)]
+        carrier_bounds[key] = [origin[0]-extent[0] if header.raw_mirror & 1 else origin[0], *origin[1:],
+                               *[origin[a]+extent[a] for a in range(3)]]
+        return carrier_bounds[key]
+    effective = [-box[3], box[1], box[2], *box[3:]]
+    corridor = bounds(source["instances"][1])
+    if any(effective[a] < corridor[a] or effective[a+3] > corridor[a+3] for a in range(3)):
+        raise ValueError("collision overlay must remain inside the original corridor")
+    for instance in source["instances"][2:]:
+        other = bounds(instance)
+        if all(effective[a] <= other[a+3] and other[a] <= effective[a+3] for a in range(3)):
+            raise ValueError("collision overlay cannot mask the IP or detector PA volume")
+    for probe in plan["priority_probes"]:
+        point = probe["point_mm"]
+        if not all(corridor[a] <= point[a] <= corridor[a+3] for a in range(3)):
+            raise ValueError("collision overlay probe lies outside the original corridor")
+        for instance in source["instances"][2:]:
+            other = bounds(instance)
+            if all(other[a] <= point[a] <= other[a+3] for a in range(3)):
+                raise ValueError("collision overlay exterior probe is masked by another instance")
+
+
 def collision_overlay_plan(source: dict[str, Any], update: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
     """Compile same-CSG occupancy; its vacuum replaces the coarse PA too."""
     from .ion_processor_assembly import ordinary_pa_file_bytes
@@ -823,23 +862,7 @@ def collision_overlay_plan(source: dict[str, Any], update: dict[str, Any], contr
     dimensions = _grid_shape(box, pitch)
     if min(dimensions) < 3:
         raise ValueError("collision overlay requires at least three nodes on every axis")
-    def bounds(instance):
-        header = collision_pa_header(Path(instance["pa_path"]))
-        if header.symmetry != 1 or header.raw_mirror & 7 not in (0, 1):
-            raise ValueError("collision overlay requires planar independent collision instances")
-        origin = instance["origin_mm"]
-        extent = [(n-1)*d for n, d in zip((header.nx, header.ny, header.nz),
-                  (header.dx_mm, header.dy_mm, header.dz_mm), strict=True)]
-        return [origin[0]-extent[0] if header.raw_mirror & 1 else origin[0], *origin[1:],
-                *[origin[a]+extent[a] for a in range(3)]]
     effective = [-box[3], box[1], box[2], *box[3:]]
-    corridor = bounds(source["instances"][1])
-    if any(effective[a] < corridor[a] or effective[a+3] > corridor[a+3] for a in range(3)):
-        raise ValueError("collision overlay must remain inside the original corridor")
-    for instance in source["instances"][2:]:
-        other = bounds(instance)
-        if all(effective[a] <= other[a+3] and other[a] <= effective[a+3] for a in range(3)):
-            raise ValueError("collision overlay cannot mask the IP or detector PA volume")
     probes = update["priority_probes"]
     if not isinstance(probes, list) or not probes:
         raise ValueError("collision overlay requires declared metal, vacuum and exterior priority probes")
@@ -855,12 +878,8 @@ def collision_overlay_plan(source: dict[str, Any], update: dict[str, Any], contr
                 or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in point)):
             raise ValueError("collision overlay probe requires finite project coordinates")
         inside = all(effective[a] <= point[a] <= effective[a+3] for a in range(3))
-        if inside != (probe["expected_instance"] == 5) or not all(corridor[a] <= point[a] <= corridor[a+3] for a in range(3)):
+        if inside != (probe["expected_instance"] == 5):
             raise ValueError("collision overlay probe instance contradicts its declared box")
-        for instance in source["instances"][2:]:
-            other = bounds(instance)
-            if all(other[a] <= point[a] <= other[a+3] for a in range(3)):
-                raise ValueError("collision overlay exterior probe is masked by another instance")
         labels.add(probe["label"])
         categories.add((inside, probe["expected_electrode"]))
     if not {(True, True), (True, False)} <= categories or not any(not inside for inside, _ in categories):
@@ -1251,7 +1270,7 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
         if original.get("resource_limits", {}).get("automatic_retry_count") != 0:
             raise ValueError("native provider requires no automatic retry")
         pa_bytes = math.prod(grid["dimensions"]) * 8 + 56
-        surface_bytes = Path(level["sources"]["surface"]).stat().st_size
+        surface_bytes = level["records"]["surface"]["bytes"]
         committed_bytes = math.ceil(pa_bytes * 1.05 + surface_bytes * 1.1) + 16 * 1024**2
         levels[label] = dict(
             grid,
@@ -1423,7 +1442,7 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
         "committed_new_bytes": peak,
         "final_retained_estimate_bytes": retained,
         **numerics,
-        "refine_options": {"convergence": numerics["convergence_v"]},
+        "refine_options": native_refine_options(numerics),
         "grid_generation": {"spacing_quantum_mm": quantum},
         "automatic_retry_count": 0,
         "qualification_passed": False,
@@ -1438,9 +1457,10 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
             {
                 "url": "https://simion.com/info/refine.html",
                 "title": "SIMION Refine",
-                "consulted": "2026-10-10",
-                "installed_version": "SIMION 2020",
-                "method": "ordinary Refine with contract-owned convergence; all other options installed defaults",
+                "consulted": "2026-10-19",
+                "installed_version": "SIMION 2020 / 8.2.0.11",
+                "local_document": "docs/simion.chm::/lua_simion.pas.html (pa:refine)",
+                "method": "ordinary Refine with contract-owned convergence and optional Boolean skipped_point; other options installed defaults",
             },
         ],
     }
@@ -1540,7 +1560,7 @@ def prepare_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
             raise ValueError("compiled geometry differs from frozen geometry contract")
     numerics = resolve_native_refine_numerics(numerical_contract)
     if plan.get("operation") == "compose":
-        if any(plan.get(key) != value for key, value in numerics.items()):
+        if not native_refine_identity_matches(plan, numerics):
             raise ValueError("composition stopping differs from frozen operator")
         return _prepare_composition(plan, run_directory)
     layout = (_ip_source_layout(load_binding(inputs / "source_binding.json")) if _ip_metadata(plan) else
@@ -1570,9 +1590,10 @@ def prepare_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
         if plan.get("grid_generation") != {"spacing_quantum_mm": quantum}:
             raise ValueError("compiled native grid policy differs from its frozen numerical contract")
     if (
-        any(plan.get(key) != value for key, value in numerics.items())
-        or plan.get("refine_options") != {"convergence": numerics["convergence_v"]}
-        or any(any(level.get(key) != value for key, value in numerics.items()) for level in plan["levels"].values())
+        not native_refine_identity_matches(plan, numerics)
+        or plan.get("refine_options") != native_refine_options(numerics)
+        or plan.get("refine_options", {}).get("skipped_point") is not numerics.get("refine_skipped_point")
+        or any(not native_refine_identity_matches(level, numerics) for level in plan["levels"].values())
     ):
         raise ValueError("compiled native stopping differs from its frozen numerical contract")
     write_json(inputs / "frozen_input.json", plan["candidate_authority"])
@@ -1661,21 +1682,21 @@ def _prepare_replacement_run(plan: dict[str, Any], run_directory: Path) -> dict[
     ):
         raise ValueError("replacement frozen geometry or preparation scope differs")
     numerics = resolve_native_refine_numerics(read(inputs / "numerical_contract.json"))
-    if any(plan.get(key) != value for key, value in numerics.items()):
+    if (not native_refine_identity_matches(plan, numerics)
+            or plan.get("refine_options") != native_refine_options(numerics)
+            or plan.get("refine_options", {}).get("skipped_point") is not numerics.get("refine_skipped_point")):
         raise ValueError("replacement Refine stopping differs from frozen numerical contract")
     write_json(inputs / "frozen_input.json", plan["candidate_authority"])
     write_json(inputs / "resolved_geometry.json", plan["resolved_geometry"])
     manifest = str((run_directory / "run_manifest.json").resolve())
     for label in plan["execution_order"]:
         level = copy.deepcopy(plan["levels"][label])
-        if level["dimensions"] != _grid_shape(level["box_mm"], level["pitch_mm"]) or any(
-            level.get(key) != value for key, value in numerics.items()
-        ):
+        if (level["dimensions"] != _grid_shape(level["box_mm"], level["pitch_mm"])
+                or not native_refine_identity_matches(level, numerics)):
             raise ValueError("replacement level grid or stopping differs")
         validate_generation_grid_pitch(read(inputs / "numerical_contract.json"), level["pitch_mm"])
         level.update(
             numerical_contract_path=str((inputs / "numerical_contract.json").resolve()),
-            **({"ip_source_binding_path": str((inputs / "source_binding.json").resolve())} if _ip_metadata(plan) else {}),
             frozen_input=str((inputs / "frozen_input.json").resolve()),
             resolved_geometry=str((inputs / "resolved_geometry.json").resolve()),
         )
@@ -1747,12 +1768,60 @@ def _prepare_composition(plan: dict[str, Any], run_directory: Path) -> dict[str,
     return plan
 
 
+def native_input_binding(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
+    """Select only sealed payloads this execution reads, without opening them."""
+    levels: list[dict[str, Any]] = []
+    instances: list[dict[str, Any]] = []
+    if plan.get("operation") == "collision_overlay":
+        source = load_binding(run_directory / "inputs/source_binding.json")
+        instances = source["instances"][1:]
+    elif plan.get("operation") == "compose":
+        base = load_binding(Path(plan["combination_base_binding"]))
+        bindings = [base, *[load_native_response_basis(Path(path), base)
+                           for path in plan["response_basis_paths"].values()]]
+        available = {Path(level["sources"]["scalar_pa"]).resolve(): level
+                     for binding in bindings for level in [binding, *binding["refinement_windows"]]}
+        for label in plan["execution_order"]:
+            composition = plan["levels"][label]["composition"]
+            for path in [composition["base_pa"], *[item["path"] for item in composition["responses"]]]:
+                level = available[Path(path).resolve()]
+                levels.append(dict(sources=dict(scalar_pa=path), records=dict(scalar_pa=level["records"]["scalar_pa"])))
+    else:
+        for level in plan["levels"].values():
+            source = level.get("reuse_source", level.get("consumer_view_source"))
+            if source is None:
+                continue
+            owner, path = Path(source["manifest"]), Path(source["pa_path"])
+            sources, records = dict(scalar_pa=str(path)), dict(scalar_pa=_sealed_record(owner, path))
+            if source.get("surface_path"):
+                surface = Path(source["surface_path"])
+                sources["surface"], records["surface"] = str(surface), _sealed_record(owner, surface)
+            levels.append(dict(sources=sources, records=records))
+    for instance in instances:
+        owner = Path(instance["manifest"])
+        surface = Path(str(instance["pa_path"]) + "-surf").resolve()
+        manifest = read(owner)
+        if any(Path(record["path"]).resolve() == surface
+               for record in [*manifest.get("outputs", []), *manifest.get("inputs", {}).values()]):
+            levels.append(dict(sources=dict(surface=str(surface)), records=dict(surface=_sealed_record(owner, surface))))
+    return dict(sources={}, records={}, instances=instances, refinement_windows=levels)
+
+
+def verify_native_provider_inputs(plan: dict[str, Any], run_directory: Path) -> None:
+    """Verify selected inputs after their workflow guards and before native reads."""
+    verify_joint_asset_records(native_input_binding(plan, run_directory))
+    if plan.get("operation") == "collision_overlay":
+        source = load_binding(run_directory / "inputs/source_binding.json")
+        verify_collision_overlay_support(source, plan["analyzer_collision_patch_build"])
+
+
 def compose_run(plan: dict[str, Any], run_directory: Path) -> None:
     """Write one candidate set in bounded blocks; the caller owns leases/sealing."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import compose_standalone_pa
 
     if plan.get("operation") != "compose" or plan.get("refine_performed") is not False:
         raise ValueError("compose requires a prepared no-Refine composition plan")
+    verify_native_provider_inputs(plan, run_directory)
     for label in plan["execution_order"]:
         level = plan["levels"][label]
         output = run_directory / "simion" / label / ("c0_static.pa" if label == "parent" else "c0_local.pa")
@@ -1762,6 +1831,27 @@ def compose_run(plan: dict[str, Any], run_directory: Path) -> None:
             [(Path(r["path"]), r["coefficient"]) for r in level["composition"]["responses"]],
         )
         write_json(Path(plan["materialization"]["receipts"][label]), receipt)
+
+
+def validate_refined_field_payloads(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
+    """Fail publication on invalid new Refine output; never reread reused PAs.
+
+    Affine compositions already validate all consumed/written blocks in their
+    own receipt. Collision-only arrays use their separate occupancy boundary.
+    """
+    from .standalone_pa_composition import validate_standalone_pa_payload
+
+    if plan.get("operation") != "refine":
+        raise ValueError("new Refine payload validation requires a refine plan")
+    validated, reused = {}, []
+    for label in plan["execution_order"]:
+        if "reuse_source" in plan["levels"][label]:
+            reused.append(label)
+            continue
+        path = run_directory / "simion" / label / ("c0_static.pa" if label == "parent" else "c0_local.pa")
+        validated[label] = validate_standalone_pa_payload(path)
+    return dict(schema_version=1, role="mrtof_native_refined_field_payload_validation", status="PASS",
+                scope="new_ordinary_scalar_field_levels_only", levels=validated, reused_levels=reused)
 
 
 def binding_spec(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
@@ -1916,6 +2006,9 @@ def main() -> None:
         elif args.compose:
             compose_run(plan, args.run_directory)
         else:
+            if plan.get("operation") == "refine":
+                write_json(args.run_directory / "results/pa_payload_validation.json",
+                           validate_refined_field_payloads(plan, args.run_directory))
             path = (
                 args.run_directory
                 / "results"

@@ -11,7 +11,7 @@ local function vector(values,count,label)
   assert(type(values)=='table' and #values==count,label..' has the wrong size')
   for index=1,count do finite(values[index],label..'['..index..']') end
 end
-return function(mirrors,stripes,prisms,endpoints,rings,scale)
+local function physical_voltages(mirrors,stripes,prisms,endpoints,rings,scale)
   vector(mirrors,5,'mirror voltages')
   vector(stripes,2,'Stripe voltages')
   vector(prisms,2,'prism voltages')
@@ -40,3 +40,30 @@ return function(mirrors,stripes,prisms,endpoints,rings,scale)
   for index,voltage in ipairs(rings) do accelerator[4+index]=voltage end
   return {analyser=analyser,accelerator=accelerator}
 end
+
+local function corridor_voltages(analyser,groups)
+  assert(type(analyser)=='table','physical analyser voltages must be a table')
+  assert(type(groups)=='table' and #groups==8,
+    'native corridor requires exactly eight voltage groups')
+  local corridor={}
+  for local_id=1,8 do
+    local physical_ids=groups[local_id]
+    assert(type(physical_ids)=='table' and #physical_ids>0,
+      'native corridor voltage group is empty for local ID '..local_id)
+    local value
+    for _,physical_id in ipairs(physical_ids) do
+      assert(type(physical_id)=='number' and physical_id==math.floor(physical_id)
+          and physical_id>=1,
+        'native corridor voltage group contains an invalid physical electrode ID')
+      local voltage=finite(analyser[physical_id],
+        'physical voltage for corridor local ID '..local_id)
+      assert(value==nil or voltage==value,
+        'physical voltages differ within native corridor local ID '..local_id)
+      value=voltage
+    end
+    corridor[local_id]=finite(value,'corridor voltage for local ID '..local_id)
+  end
+  return corridor
+end
+
+return {physical_voltages=physical_voltages,corridor_voltages=corridor_voltages}

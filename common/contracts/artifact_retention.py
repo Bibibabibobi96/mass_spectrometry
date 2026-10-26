@@ -83,6 +83,12 @@ def classify_file(
     policy = policy or load_policy()
     name = path.name.lower()
     suffix = path.suffix.lower()
+    # IOB slot templates are executable inputs frozen with the code, not solved
+    # fields. Every slot must survive, including multi-instance workbenches.
+    if path.parent.as_posix().endswith(
+        "runtime_snapshot/common/simion/assets/iob_instance_seeds"
+    ) and fnmatch.fnmatch(name, "iob_seed_placeholder_[0-9][0-9].pa0"):
+        return "required_evidence"
     if any(
         fnmatch.fnmatch(name, pattern.lower())
         for pattern in policy["dense_trajectory_globs"]

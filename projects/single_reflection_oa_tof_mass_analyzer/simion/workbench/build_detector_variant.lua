@@ -1,20 +1,17 @@
 -- Build a size-guarded anisotropic detector-position marker PA.
 -- Usage:
 --   simion.exe --nogui lua build_detector_variant.lua source.gem output.pa#
---     xy_mm z_mm radius_mm absorber_thickness_mm
---     front_margin_z_mm back_margin_z_mm margin_xy_mm max_MiB
+--     frozen_oatof_resolved.lua
 
 local source = assert(arg[1], 'missing source GEM')
 local output = assert(arg[2], 'missing output PA#')
-assert(arg[10], 'all detector geometry and mesh arguments are required')
-local mmgu_xy = assert(tonumber(arg[3]), 'invalid xy cell size')
-local mmgu_z = assert(tonumber(arg[4]), 'invalid z cell size')
-local radius = assert(tonumber(arg[5]), 'invalid detector radius')
-local absorber_thickness = assert(tonumber(arg[6]), 'invalid absorber thickness')
-local front_margin_z = assert(tonumber(arg[7]), 'invalid front margin')
-local back_margin_z = assert(tonumber(arg[8]), 'invalid back margin')
-local margin_xy = assert(tonumber(arg[9]), 'invalid xy margin')
-local max_mib = assert(tonumber(arg[10]), 'invalid memory limit')
+local contract = dofile(assert(arg[3], 'missing frozen resolved Lua'))
+local marker = assert(contract.physical_geometry, 'missing provider physical geometry').simion.detector_marker
+local mesh = contract.simion_geometry_build.detector
+local mmgu_xy, mmgu_z = marker.cell_xy_mm, marker.cell_z_mm
+local radius, absorber_thickness = marker.active_radius_mm, marker.absorber_thickness_mm
+local front_margin_z, back_margin_z = marker.front_margin_z_mm, marker.back_margin_z_mm
+local margin_xy, max_mib = mesh.margin_xy_mm, mesh.max_mib
 
 assert(source:match('^%a:[/\\]') or source:match('^/'),
   'source GEM path must be absolute')

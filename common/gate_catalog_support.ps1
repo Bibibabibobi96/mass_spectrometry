@@ -53,6 +53,44 @@ function Read-GateCatalog {
             )) {
             throw "Gate catalog repository integration group is invalid: $stage"
         }
+        if ($null -ne $route.PSObject.Properties['runtime_dependencies_path']) {
+            $inventoryPath = Join-Path $RepoRoot ([string]$route.runtime_dependencies_path)
+            if (-not (Test-Path -LiteralPath $inventoryPath -PathType Leaf)) {
+                throw "Gate runtime dependency inventory missing: $inventoryPath"
+            }
+            $inventory = Get-Content -Raw -LiteralPath $inventoryPath |
+                ConvertFrom-Json -Depth 32
+            if ($inventory.schema_version -ne 2 -or
+                $inventory.role -ne 'integration_runtime_dependencies' -or
+                @($inventory.providers).Count -eq 0) {
+                throw "Unsupported gate runtime dependency inventory: $inventoryPath"
+            }
+            $dependencyPaths = @(
+                [string]$route.runtime_dependencies_path
+                foreach ($provider in $inventory.providers) {
+                    if (@($provider.files).Count -eq 0) {
+                        throw "Gate runtime dependency provider has no files: $inventoryPath"
+                    }
+                    foreach ($file in $provider.files) {
+                        $sourcePath = [string]$file.source_repo_path
+                        if (-not $sourcePath -or -not (Test-Path -LiteralPath (
+                                    Join-Path $RepoRoot $sourcePath
+                                ) -PathType Leaf)) {
+                            throw "Gate runtime dependency source missing: $sourcePath"
+                        }
+                        $sourcePath
+                    }
+                }
+            ) | Sort-Object -Unique
+            $route.matches = @($route.matches) + @(
+                foreach ($sourcePath in $dependencyPaths) {
+                    [pscustomobject]@{
+                        exact = $sourcePath
+                        reason = 'declared_runtime_dependency_changed'
+                    }
+                }
+            )
+        }
         if (@($route.matches).Count -eq 0) {
             throw "Gate catalog route has no path matches: $stage"
         }

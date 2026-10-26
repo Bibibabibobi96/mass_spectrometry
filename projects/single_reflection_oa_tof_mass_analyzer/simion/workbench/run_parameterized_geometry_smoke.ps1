@@ -119,11 +119,7 @@ $failureStage = 'reflectron_build'
 Invoke-Builder (Join-Path $projectRoot 'simion\reflectron\build_reflectron_variant.lua') @(
   (Join-Path $projectRoot 'simion\reflectron\oatof_reflectron_ideal_10_5.gem'),
   (Join-Path $outputFull 'reflectron.pa#'),
-  $reflectronBuild.cell_axial_mm, $reflectronBuild.cell_radial_mm, $reflectronBuild.max_gib, $geometry.flight_tube_r, $geometry.flight_tube_wall,
-  $geometry.L_reflectron, $geometry.ring_thickness, $geometry.shield_axial_gap,
-  $geometry.shield_endcap_thickness, $geometry.L_stage1, $geometry.L_stage2,
-  $geometry.bore_r, $geometry.ring_outer_r, $contract.rings.stage1_count,
-  $contract.rings.stage2_count, $voltage.midgrid, $voltage.backplate
+  (Join-Path $projectRoot 'simion\workbench\formal\oatof_resolved.lua'), 'refine-all'
 ) 'reflectron_builder'
 
 $expectedAcceleratorElectrodes = 4 + [int]$contract.rings.accelerator_count

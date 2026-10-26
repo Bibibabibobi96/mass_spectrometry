@@ -36,7 +36,7 @@
 
 RF多极杆集成的第3槽可以替换为combined frontend，但那是run-local integration候选，不是本项目独立
 Formal包。其电极映射和PA重构只查
-[integration当前文档](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
+[integration当前文档](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20261024__legacy-family-retirement.md)。
 
 ## GUI复核步骤
 

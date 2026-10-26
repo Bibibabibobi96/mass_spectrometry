@@ -140,9 +140,9 @@ class NativeCorridorPlanTest(unittest.TestCase):
         self.assertIn("4_instance_seed%.iob", source)
         self.assertIn('local role_instances = {}', source)
         self.assertIn('priority.corridor_voltage_groups', source)
-        self.assertIn('assert_complete_local_voltage_table(corridor_values)', source)
+        self.assertIn('voltage_map.physical_voltages(operating.mirror_voltages_v', source)
         self.assertNotIn(':fast_adjust(', source)
-        self.assertLess(source.index('assert_complete_local_voltage_table(corridor_values)'), source.index('wb:save(output)'))
+        self.assertLess(source.index('voltage_map.physical_voltages(operating.mirror_voltages_v'), source.index('wb:save(output)'))
         self.assertLess(source.index('wb:save(output)'), source.index('wb:load(output)'))
         self.assertIn('overlap_probe', source)
         self.assertIn('wb:find_at', source)
@@ -168,15 +168,11 @@ class NativeCorridorPlanTest(unittest.TestCase):
         self.assertIn("adjustable V_mirror_B = mirror_voltages[2]", source)
         self.assertIn("adjustable V_mirror_E = mirror_voltages[5]", source)
         self.assertIn("simion.wb.instances[role_instance('native_corridor')].pa", source)
-        self.assertIn('local requested = native_corridor_values(values.analyser)', source)
+        self.assertIn('local requested = voltage_map.corridor_voltages(values.analyser,native_corridor_voltage_groups)', source)
         self.assertIn(".pa:fast_adjust(requested)", source)
         self.assertIn('local accelerator_instance = accelerator_instance_number()', source)
         self.assertIn('local maximum_instance = maximum_instance_number()', source)
         self.assertNotIn('local accelerator_instance = local_refinement.enabled and 7 or 2', source)
-        contract = (PROJECT / 'simion' / 'native_corridor_priority_contract.lua').read_text(encoding='utf-8-sig')
-        self.assertIn('corridor_voltage_groups = {', contract)
-        for group in ('{2, 7}', '{3, 8}', '{4, 9}', '{5, 10}', '{11, 12}', '{13, 14}', '{16}', '{17}'):
-            self.assertIn(group, contract)
 
     def test_corridor_controller_and_verifier_require_exact_full_inventory(self) -> None:
         creator = (PROJECT.parents[1] / 'common' / 'simion' / 'assemble_native_fast_adjust_family.lua').read_text(encoding='utf-8-sig')

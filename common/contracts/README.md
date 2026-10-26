@@ -11,7 +11,7 @@
 
 `artifact_project.py`统一artifact项目根索引，`particle_state.py`统一SIMION/COMSOL适配后的粒子事件字段、
 身份、三维位置/速度、全局时间和RF相位校验；`run_artifact_support.ps1`统一PowerShell运行器创建目录、
-冻结输入、失败收尾和三件套manifest。它们不得内置器件参数，项目包装器只允许保留兼容入口。
+冻结输入、失败收尾和三件套manifest。它们不得内置器件参数；项目入口保留科学与结果语义，复用公共运行机制。
 其中`Write-RunJson`保持调用方的JSON类型：空数组和单元素数组仍写作数组，不经PowerShell管道解包，
 以免单批日志路径被下游误读为字符串。
 `Copy-VerifiedRunInput`默认保持单次严格复制；对数百MB至GB级solver数组，调用方可显式设置
@@ -19,7 +19,7 @@
 失败后，后续轮次使用8-MiB显式流、write-through和磁盘flush。该选项只容忍可重试的本机大文件复制
 抖动，不会把持续变化的源或坏副本降级为成功。
 需要规避 Windows 路径深度的外部运行器可在`New-RunPackage`显式选择`-UseShortExecutionPath`。公共层会从
-`MASS_SPECTROMETRY_EXECUTION_ROOT`（未设置时`C:\tmp\ms`）创建一次性短 junction 指向最终
+`MASS_SPECTROMETRY_EXECUTION_ROOT`（未设置时使用工作区的`artifacts/common/execution_aliases/`）创建一次性短 junction 指向最终
 `artifacts/.../runs/<run_id>`；运行器把短路径仅作为进程工作路径，并在终态后调用
 `Remove-RunPackageExecutionAlias`清理它。实际文件从未搬离最终run，Python manifest解析 junction 后记录真实
 artifact路径，因此run ID、输入/输出身份、SHA和历史引用不变。不能以复制后回迁或只缩短某个求解器子目录
@@ -27,13 +27,26 @@ artifact路径，因此run ID、输入/输出身份、SHA和历史引用不变�
 `Write-RunManifest`通过UTF-8标准输入向`write_run_manifest.py --output-list-json -`传递输出路径，
 避免大量文件路径超过Windows进程命令行长度；列表严格为字符串数组，不再落盘临时运输文件。
 原Python入口的重复`--output`仍可使用，两种输入共同进入同一manifest校验和身份计算。
+保留原生载荷的owner可对`Write-VerifiedRunManifest`／`Complete-FailedRun`显式使用
+`-DeferCapacityFinalization`：仍验证保留合同并原子发布manifest，随后由owner释放其保护租约、调用公共
+`seal-stopped-payload`完成容量交接。此选项只延后容量收尾，不跳过输入、输出或终态验证；普通小证据入口
+继续默认`finalize-ready`。封存后出现的容量错误不得重写已经发布的科学终态。
+`Complete-FailedRun`在修改配置、摘要或保留文件前读取同run的manifest身份与状态；已有终态时告警并保留，
+不把这次小文件检查称为重新核验全部产物。未发布或checkpoint仍沿原失败收尾；调用者继续报告原始异常。
 
 运行初始化统一使用`New-RunPackage`；原仅由测试调用的初始化包装和无调用的依赖复制包装已移除。
 writer与verifier共用保留策略入口，独立消费时仍重新验证完整内容，不维护两份同义导入逻辑。
+冻结执行快照中的公共IOB占位模板属于必需输入，所有已引用槽位均须保留；该分类不适用于运行目录中
+同名的普通求解PA。它们的来源与用途见[模板说明](../simion/assets/iob_instance_seeds/README.md)。
 
 `file_identity.py`是SHA-256身份的唯一共享实现，固定返回大写十六进制。`file_sha256`按原始字节标识
 manifest、正式资产和外部artifact；`repository_text_sha256`只用于Git治理的文本依赖，先把行尾规范为
 LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍负责路径范围、字节数和证据资格。
+
+[`frozen_inputs.freeze_file(source, destination)`](frozen_inputs.py)冻结显式选定的小配置、源码或观测文件：
+以源文件的原始字节记录核验副本，返回目的文件record及`source_path`；缺源、目的已存在或副本身份不符均失败。
+每次只读取一次源身份和一次目的身份；调用方负责输入选择、目的目录与命名。IP和MR准备入口直接消费此API，
+沿原有源码闭包冻结公共模块；PA／MPH等求解器载荷继续使用各自owner机制。
 
 manifest writer 与 verifier 分别只在本次调用内复用重复文件的 `(bytes, SHA)`；复用键绑定解析后的实际路径、
 真实读取函数、大小与修改时间，普通读取和大 PA 无缓冲读取不能混用。每条声明仍独立检查路径、字节数、
@@ -47,8 +60,9 @@ SHA 和保留角色；虚拟终态文档不进入磁盘身份复用。`file_reco
 已经完成且无活动映射写入者；不同视图的哈希不一致仍是身份失败，不能选一个能匹配旧清单的值当成功。
 这只绕过Windows系统数据缓存，不保证硬件缓存已持久化，也不把无缓冲结果自动升级为发布资格。
 
-manifest的`file_record`对Windows上已声明为`solver_native_binary`且至少8 MiB的载荷，
-直接使用上述无缓冲读取一次；writer与verifier复用同一入口，不在失败后切换读法。
+manifest的`file_record`对Windows上读取角色为`solver_native_binary`且至少8 MiB的载荷，
+直接使用上述无缓冲读取一次。Windows上至少8 MiB且未显式声明`retention_role`的真实文件通过既有`classify_file`确定读取角色，
+因此PA输入和输出采用同一策略；此分类不向输入record添加保留元数据。小文件和非Windows读取不引入分类策略依赖。writer与verifier复用同一入口，不在失败后切换读法。
 8 MiB沿用既有大PA库存读取档位，仅区分I/O路径，不是科学参数。小文件、普通记录和非Windows
 保持普通读取，SHA仍标识原始完整字节；API失败或与原记录不匹配继续失败关闭。
 producer须在发布前关闭写入和映射，不通过这项读取选择刷新或修改已经封存的输入。
@@ -72,6 +86,18 @@ producer关闭载荷后，writer CLI计算全部身份并检查保留合同，�
 约束，并把每个实际消费路径唯一绑定到manifest记录后核对字节数和SHA-256。投影不得用于发布或宣称整个
 上游run仍完整有效；消费run必须在自己的run config记录投影ID、记录名、路径以及未断言其余记录。选择器
 缺少投影ID、空投影、路径不一致、重复记录或消费记录漂移均失败关闭。
+
+普通owner通过`solver_review_retirement.py`精确选择重型文件后，可在后续需求结束时继续退役另一个不相交子集。
+首份`solver_review_retirement_receipt.json`保持原字节；后续使用`solver_review_retirement_receipt_0002.json`等
+顺序收据，绑定上一份收据身份、同一原manifest及owner。上一批须完成并通过`seal-stopped-payload`精确收尾后
+才允许新批次；pending只能恢复原选择，不创建下一批。planner、apply、verifier和容量reseal共用同一收据选择器。
+验证按收据链核对历次合法移除与当前剩余文件；容量只在公共锁内按实际剩余库存（含全部收据）更新一次。
+原manifest、科学终态及旧收据不改写；runtime、prepared GUI和supersession退役仍使用原单批合同。
+
+历史元数据消费者可调用同一`verify_retirement(run_dir, consumed_paths=[...])`，显式列出仍保留的规范run-relative路径。
+投影仍检查收据链、owner、终态、准确退役成员及其不存在事实，只核验实际消费的保留文件字节，
+结果标记`scope=consumer_projection`；省略参数仍执行完整验证。空、重复、非规范或已退役路径拒绝。
+该投影不证明其他保留载荷完整，不能授权已退役场重新使用；当前实际加载的PA及surface仍须沿其封存记录核验。
 
 `recorded_file_removal.py`只负责已预检清单的逐文件身份重验、删除及可刷新落盘的JSON记录，不扫描或
 选择待删对象。容量、run retention和solver-review退休各自决定准入并先发布pending；迭代器每删除一项
@@ -213,8 +239,8 @@ PA cache 的锁、build-lock 与 staging 目录则是可复用 runtime state：P
 
 台账只使用三类对象：`light_evidence`保留必要证据，`published_cache`保存公共可复用重型资产，
 `rebuildable_payload`保存可重建载荷。对象状态只使用`writing/ready/retirement_pending/retired`；pin必须说明理由，
-发布缓存必须绑定SHA-256代际。`writing`必须登记`owner/recovery_reason/review_deadline`，可列出消费者；到期后
-startup失败关闭并报告精确对象，不能自动删除，也不能无限期成为未知垃圾。完整台账不允许未分类对象。
+发布缓存必须绑定SHA-256代际。`writing`必须登记`owner/recovery_reason/review_deadline`，可列出消费者；到期后按下文startup规则判断：影响当前输入或使容量不可判定时失败关闭，无关对象保留占用并报告精确路径warning；
+不能自动删除，也不能无限期成为未知垃圾。完整台账不允许未分类对象。
 
 所有生产`New-RunPackage`调用都必须启用`CapacityLedgerLifecycleEnabled`：创建时登记精确run目录为
 `rebuildable_payload/writing`；终态retention完成后，只有不含求解器原生二进制、稠密轨迹或大型可选文件且不超过
@@ -429,6 +455,9 @@ clock epoch ID、species ID和phase reference ID是开放的受控标识，不�
 `phase_reference_id`与`phase_rad`必须同时为空或同时有值；因此无周期驱动器件不必伪造RF相位。
 所有新生产者统一调用`write_component_particle_state_csv`按Schema列序写出并立即校验；生产者仍负责
 事件选择、坐标变换和状态构造，不得在项目内复制canonical CSV序列化规则。
+需要消费状态的入口调用[`load_component_particle_state_csv`](component_particle_state.py)，一次读取、解析和校验后
+返回按原行序的typed `rows`及原有`report`；整数、实数与可空字段按Schema解析，标识字符串不转数值。
+`validate_component_particle_state_csv`复用同一入口并仅返回报告；读取不会重写输入字节。
 
 `mass_amu`、`charge_state`和三维速度是物理主字段；`mass_to_charge_Th`与`kinetic_energy_eV`只是便于
 交换和审计的派生字段。validator使用`particle_physics.kinetic_energy_ev`中的唯一非相对论公式和冻结容差
@@ -450,6 +479,7 @@ axial向量都显式标记种类，并在当前仅允许`det(R)=+1`的旋转下�
 `PlaneSurface`统一接口面的中心、单位法向和正向穿越语义，`PhaseSpaceState`统一粒子位置、速度和共享
 仪器时间。空间标量与时间保持不变，所有变换都禁止隐式单位换算。`RigidTransform.then`表示先执行
 当前变换、再执行参数变换；`relative_transform`只从两个指向同一参考frame的组件pose派生相对变换。
+两个完整pose相同时直接返回该局部frame的精确单位变换，不做矩阵往返，避免给原本已在目标frame的源引入舍入位移。
 
 `spatial_registration.py`把项目提供的版本化组件pose和定向面编译成唯一resolved发布，固定记录输入文件
 SHA-256、组件到仪器frame的pose、唯一source-to-target相对变换，以及每个面的声明frame和仪器frame

@@ -1,11 +1,12 @@
 # 集成历史索引
 
-- [2026-08-31 硬限制审计（就地冻结，旧行号非当前定位）](HARD_LIMIT_AUDIT.md)
+- [2026-08-31 硬限制审计（就地冻结，旧行号非当前定位）](history/20261024__legacy-family-retirement/HARD_LIMIT_AUDIT.md.txt)
 
-本目录保存 RF 多极杆到单反射 oaTOF 集成的历史记录。历史结论只按其记录日期解释；活动合同、
-`INTEGRATION.md` 和已授权 campaign 是当前执行权威。
+本目录保存 RF 多极杆到单反射 oaTOF 集成的历史记录。历史结论只按其记录日期解释；本目录的活动合同与运行器已退役。新的执行权威见[统一集成入口](../../README.md)。
 
 ## 归档条目
+
+- [旧 N1 family 活动源码退役与原始当前文档](history/20261024__legacy-family-retirement.md)
 
 - [同源裸八极杆接二区／三区 OA 的 N=100 与默认加载闭合](history/20261021__same-source-local-multipole-oa-n100.md)
 - [单飞集成收口与失效对照快照](history/20260911__single-flight-documentation-and-invalidated-comparisons.md)

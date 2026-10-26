@@ -88,7 +88,8 @@ def producer(root: Path, physical: bool, shape: str = "circle", extra_z: bool = 
     if not extra_z:
         planes = planes[-1:]
     resolved = dict(role="resolved_ip_prism_contour_focus_study", cases=[spec], prism_voltage_v=100.,
-        numerics=dict(convergence_v=1e-5), contract=dict(observation_planes=planes,
+        numerics=dict(convergence_v=1e-5), contract=dict(schema_version=6, electrode_collision_model="native_pa",
+            observation_planes=planes,
             source_registration=dict(translation_mm=[0., 0., 0.], from_frame_id="IP", to_frame_id="test")))
     (inputs/"resolved_study.json").write_text(json.dumps(resolved))
     reseal(root)
@@ -174,7 +175,7 @@ class ApertureDiagnosticsTests(unittest.TestCase):
                 path.write_text(json.dumps(data))
                 reseal(self.physical)
                 with self.assertRaisesRegex(ValueError, "differ beyond aperture"):
-                    d.prepare_aperture_comparison(self.run, self.author)
+                    d.prepare_aperture_comparison(self.root/f"rejected_{field}", self.author)
                 path.write_text(original)
                 reseal(self.physical)
         path = self.physical/"simion/case_01/geometry.json"
@@ -190,7 +191,7 @@ class ApertureDiagnosticsTests(unittest.TestCase):
         original = path.read_bytes()
         path.write_bytes(original+b"changed")
         with self.assertRaises(AssertionError):
-            d.prepare_aperture_comparison(self.run, self.author)
+            d.prepare_aperture_comparison(self.root/"rejected_tampered_source", self.author)
         path.write_bytes(original)
         d.prepare_aperture_comparison(self.run, self.author)
         private = self.run/"inputs/sources/source_02/events.csv"

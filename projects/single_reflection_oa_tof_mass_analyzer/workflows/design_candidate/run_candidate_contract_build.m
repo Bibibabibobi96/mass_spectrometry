@@ -3,6 +3,8 @@ reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 contractPath = getenv('OATOF_CANDIDATE_CONTRACT_PATH');
 modelPath = getenv('OATOF_CANDIDATE_MODEL_PATH');
 runConfigPath = getenv('OATOF_CANDIDATE_RUN_CONFIG_PATH');
+artifactRoot = string(getenv('OATOF_CANDIDATE_ARTIFACT_ROOT'));
+assert(strlength(artifactRoot)>0,'Candidate lifecycle ArtifactRoot is required.');
 assert(~isempty(reportPath), 'COMSOL_BOOTSTRAP_REPORT is required.');
 assert(isfile(contractPath), 'Candidate contract is missing: %s', contractPath);
 assert(~isempty(modelPath), 'OATOF_CANDIDATE_MODEL_PATH is required.');
@@ -33,6 +35,7 @@ try
         Label="ContractCandidate", ...
         ParticleCount=runConfig.run_instance.particle_count, ...
         FixedParticleTable=string(ionPath), ...
+        ArtifactRoot=artifactRoot, ...
         OutputModelPath=string(modelPath), ContractPath=string(contractPath));
     assert(result.nP == 100 && result.nDet == 100, ...
         'Candidate detected only %d/%d particles.', result.nDet, result.nP);

@@ -364,8 +364,8 @@ def _fixture(
     )
     manifest = run / "run_manifest.json"
     _write_json(manifest, {
-        "project": "parallel_mirror_dual_stripe_mr_tof",
-        "mode": "finite_3d_two_prism_voltage_trial", "status": "success",
+        "project": "instrument_assembly",
+        "mode": "oa_mr", "status": "success",
         "run_config": _record(run_config),
         "inputs": {
             "bunch_source_receipt": _record(receipt_copy),

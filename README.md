@@ -35,7 +35,6 @@
 | 双锥串联四极杆离子传输接口 | [双锥接口](projects/dual_cone_tandem_quadrupole_ion_interface/README.md) |
 | 开孔长管电子轰击离子源 | [EI离子源](projects/apertured_tube_electron_impact_ion_source/README.md) |
 | 横置螺旋灯丝Wehnelt电子枪 | [电子枪](projects/transverse_helical_filament_wehnelt_electron_gun/README.md) |
-| RF多极杆到oa-TOF的集成 | [连接与单飞工作流](integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/README.md) |
 
 ## 按问题查阅
 
@@ -52,7 +51,7 @@
 | COMSOL路线、网格收敛、原生追踪、API与故障定位 | [COMSOL按任务阅读入口](docs/COMSOL_GUIDE.md)：只进入本次需要的专题；项目结果从项目README进入，历史仅用于追溯 |
 | SIMION及长PA输入 | [SIMION参考](docs/SIMION_REFERENCE.md)、[公共实现](common/simion/README.md) |
 | 多极杆解析理论 | [理论入口](docs/multipoles/index.md) |
-| 端口、连接器与联合模拟；已批准的统一组装目标 | [连接架构](docs/COMPONENT_CONNECTION_ARCHITECTURE.md)、[迁移计划](docs/ROADMAP.md#统一组装迁移计划)；目标尚未切换执行入口 |
+| 端口、连接器与联合模拟；统一组装迁移 | [统一入口](integrations/README.md)、[连接架构](docs/COMPONENT_CONNECTION_ARCHITECTURE.md)、[迁移计划](docs/ROADMAP.md#统一组装迁移计划) |
 | 长期目标与跨项目阶段 | [愿景](docs/VISION.md)、[路线图](docs/ROADMAP.md) |
 | 已完成全仓审计 | [历史索引](docs/AUDITS.md) |
 

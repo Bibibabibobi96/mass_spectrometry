@@ -4,6 +4,10 @@
 项目 `runs/<run_id>` 或 `scratch/<task_id>`，并只创建该上下文下的 `comsol/`、`results/`。
 已经发布终态 manifest 的上下文不能复用。目录职责以[生命周期](../../docs/LIFECYCLE.md)为准。
 
+冻结源码在快照中执行时，`workspace_paths(projectName,ArtifactRoot=...)`可显式接收绝对的全局产物根；
+源码路径仍从实际函数位置解析。调用者从受管run配置传递该上下文，不从模型输出路径反推许可根；
+提供者入口仍负责run／scratch边界及Formal写保护。
+
 轻量静态回归：从仓库根运行
 `python -m unittest common.paths.test_common_artifact_paths_contract`，检查组件调用没有省略上下文；
 不限制消费者数量、参数变量名或路径实现的源码写法。

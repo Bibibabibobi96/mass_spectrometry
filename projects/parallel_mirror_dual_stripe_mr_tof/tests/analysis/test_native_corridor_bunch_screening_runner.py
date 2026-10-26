@@ -16,6 +16,40 @@ RUNNER = Path(__file__).resolve().parents[2] / "analysis" / "run_native_corridor
 
 
 class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_new_child_is_strict_but_read_only_evidence_accepts_complete_identity_pairs(self):
+        source = RUNNER.read_text(encoding="utf-8")
+        start = source.index("function Assert-VerifiedManifest {")
+        helper = source[start:source.index("\nfunction ", start + 1)]
+        old = ("parallel_mirror_dual_stripe_mr_tof", "finite_3d_two_prism_voltage_trial")
+        new = ("instrument_assembly", "oa_mr")
+        with TemporaryDirectory() as directory:
+            manifest = Path(directory) / "manifest.json"
+            for owner, mode, historical, accepted in (
+                (*old, True, True), (*new, True, True), (*new, False, True),
+                (*old, False, False), (old[0], new[1], True, False),
+                (new[0], old[1], True, False),
+            ):
+                with self.subTest(owner=owner, mode=mode, historical=historical):
+                    manifest.write_text(json.dumps({"project": owner, "mode": mode}), encoding="utf-8")
+                    script = (
+                        "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
+                        "$repoRoot='repo';$python='Invoke-IdentityVerifier';"
+                        + helper + "\n"
+                        + "function Invoke-IdentityVerifier {"
+                        + "$d=Get-Content -LiteralPath $args[1] -Raw|ConvertFrom-Json;"
+                        + "$p=$args[[array]::IndexOf($args,'--require-project')+1];"
+                        + "$m=$args[[array]::IndexOf($args,'--require-mode')+1];"
+                        + "$global:LASTEXITCODE=[int]($p-ne$d.project-or$m-ne$d.mode)};"
+                        + f"Assert-VerifiedManifest -ManifestPath '{str(manifest).replace(chr(39), chr(39)*2)}' "
+                        + "-Status success -Mode oa_mr -Owner instrument_assembly "
+                        + f"-ReadOnlyFlightEvidence:${str(historical).lower()}"
+                    )
+                    result = subprocess.run(["pwsh", "-NoProfile", "-Command", script],
+                                            cwd=REPO_ROOT, capture_output=True, text=True,
+                                            encoding="utf-8", timeout=30)
+                    self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
+
     def test_screening_runs_one_static_cohort_from_checkpointed_family(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         for token in (
@@ -183,7 +217,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
             quote = lambda path: str(path).replace("'", "''")
             script = (
                 "Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'\n" + helper
-                + "function Assert-VerifiedManifest {param($ManifestPath,$Status,$Mode,$ConsumedOutput)}\n"
+                + "function Assert-VerifiedManifest {param($ManifestPath,$Status,$Mode,$Owner,$ConsumedOutput,[switch]$ReadOnlyFlightEvidence)}\n"
                 + "function Get-VerifiedManifestOutput {param($ManifestPath,$Name) return (Join-Path (Split-Path -Parent $ManifestPath) ('results/'+$Name))}\n"
                 + f"$handoff=Get-Content '{quote(handoff)}' -Raw|ConvertFrom-Json -AsHashtable;"
                 + "$caught='';$selected=$null;"
@@ -225,7 +259,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
             "$nativeSystemRuntimeBundlePath='';$bankRun='';$capacitySession=@{};"
             "$sourceReceipt='source';$CohortParticleCount=13;$workpointContract='contract';"
             "$voltages=@(-27,54,191,-190);$trajectoryStepScale=$null;$cohortRunId='cohort';$python='fixture';"
-            "$staticFieldMode=$true;$FieldBindingPath='selected-actual-field';$providerReceipt='oa';\n"
+            "$staticFieldMode=$true;$FieldBindingPath='selected-actual-field';$providerReceipt='oa';$CompositionPlanPath='parent-plan';$LocalScopePath='';\n"
             + source[start:end]
             + "$cohortArguments|ConvertTo-Json -Depth 5 -Compress"
         )
@@ -236,6 +270,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
         self.assertEqual(arguments["FieldBindingPath"], "selected-actual-field")
         self.assertEqual(arguments["BunchSourceReceiptPath"], "source")
         self.assertEqual(arguments["AcceleratorProviderReceiptPath"], "oa")
+        self.assertEqual(arguments["CompositionPlanPath"], "parent-plan")
         self.assertNotIn("NativeCorridorBankRunPath", arguments)
         self.assertNotIn("NativeSystemRuntimeBundlePath", arguments)
 

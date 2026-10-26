@@ -10,10 +10,12 @@ import re
 import shutil
 import subprocess
 import unittest
+from unittest.mock import patch
 
 from common.contracts.canonical_clock_authority import validate_clock_authority
 from common.contracts.component_particle_state import write_component_particle_state_csv
 from common.contracts.file_identity import file_sha256
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis import measured_component_source as source_module
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
     materialize_measured_source, materialize_measured_source_slice, materialize_centroid_probe,
     author_measured_centroid_prism_target,
@@ -125,9 +127,11 @@ class MeasuredComponentSourceTests(unittest.TestCase):
             "handoff_policy": "preserve_instrument_time_us_and_clock_epoch_id", "legacy_new_campaign_allowed": False,
         })
         self.fixture.receipt["source_run"] = str(self.root)
-        self.fixture.receipt["inputs"] = {"inputs/clock_authority.json": self._identity(self.clock),
+        self.fixture.receipt["inputs"] = {"inputs/resolved_model.json": self._identity(self.fixture.model),
+                                          "inputs/clock_authority.json": self._identity(self.clock),
                                           "inputs/instrument_epoch.json": self._identity(self.epoch)}
         self._write(self.fixture.receipt_path, self.fixture.receipt)
+        self.fixture.rename_instances()
         self.fixture._prepare()
         self.handoff = self.fixture.output / "handoff_receipt.json"
 
@@ -138,6 +142,21 @@ class MeasuredComponentSourceTests(unittest.TestCase):
     @staticmethod
     def _identity(path: Path) -> dict:
         return {"path": str(path), "bytes": path.stat().st_size, "sha256": file_sha256(path)}
+
+    def test_old_or_missing_handoff_connection_is_explicitly_unsupported(self) -> None:
+        original = json.loads(self.handoff.read_text())
+        for scenario in ("version", "connection"):
+            with self.subTest(scenario=scenario):
+                changed = dict(original)
+                if scenario == "version":
+                    changed["schema_version"] = 1
+                else:
+                    changed.pop("connection")
+                self._write(self.handoff, changed)
+                with self.assertRaisesRegex(ValueError, "Unsupported|instances differ"):
+                    self._materialize()
+                self.assertFalse(self.output.exists())
+        self._write(self.handoff, original)
 
     def _materialize(self) -> dict:
         return materialize_measured_source(self.handoff, self.output)
@@ -203,6 +222,33 @@ class MeasuredComponentSourceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             materialize_measured_source_slice(self.output, self.root / "tampered_batch", 1, 1)
 
+    def test_materialization_reuses_typed_rows_clock_binding_and_one_projection(self) -> None:
+        # Captured from the same fixture before removing duplicate work.
+        expected = {
+            "source_states.lua": "2cc8ad12f0afc127714dc30a0d560d0d194843a32fad071e4df989d7aedbffb3",
+            "source_runtime.lua": "251daa47d2fe1aa219c1bc6c24a5f2e464f3db4335298507ade475fb072a4343",
+            "source_projection.lua": "ef16c44767b92aa33665833cef907793d9a89b26db51d7d0bc35e5bdac4ac281",
+            "source_census.csv": "ae48592bfdaa6502969b09de70a5cc593b688660dea88f3d0299728009aff5df",
+            "ordinal_source_map.csv": "4a31bf63cce2bb5f4f3d58e112fc2b241e41dcad6c0426a779cee5f2fd53062c",
+        }
+        with patch.object(source_module, "_project_rows", wraps=source_module._project_rows) as project, \
+                patch.object(source_module, "load_component_particle_state_csv", wraps=source_module.load_component_particle_state_csv) as read_rows, \
+                patch.object(source_module, "_bound", wraps=source_module._bound) as bind, \
+                patch.object(source_module, "file_sha256", wraps=source_module.file_sha256) as digest:
+            report = self._materialize()
+        self.assertEqual(project.call_count, 1)
+        canonical = self.fixture.output / "component_particle_state.csv"
+        self.assertEqual(sum(Path(call.args[0]).resolve() == canonical.resolve() for call in read_rows.call_args_list), 1)
+        for path in (self.clock, self.epoch):
+            self.assertEqual(sum(Path(call.args[0]["path"]).resolve() == path.resolve() for call in bind.call_args_list), 1)
+        self.assertEqual(sum(Path(call.args[0]).resolve() == self.clock.resolve() for call in digest.call_args_list), 1)
+        self.assertEqual(report["inputs"]["upstream_clock"], self._identity(self.clock))
+        self.assertEqual(report["counts"], {"source": 3, "transferred": 2, "not_transferred": 1})
+        self.assertEqual(report["birth_offsets_us"], [0.0, 0.05999999999949068])
+        for name, sha in expected.items():
+            self.assertEqual(file_sha256(self.output / name), sha.upper(), name)
+        self.assertEqual((self.output / "component_particle_state.csv").read_bytes(), canonical.read_bytes())
+
     def test_irregular_ids_birth_offsets_and_exact_six_dimensions(self) -> None:
         report = self._materialize()
         self.assertEqual(report["counts"], {"source": 3, "transferred": 2, "not_transferred": 1})
@@ -265,6 +311,13 @@ local pure_environment=setmetatable({}, {
 setfenv(chunk,pure_environment)
 local runtime=chunk().load(directory)
 local point=assert(loadfile(directory..'/source_projection.lua'))()
+local beams
+local fly=assert(loadfile(directory..'/source.fly2'))
+setfenv(fly,{particles=function(value) beams=value end,
+  standard_beam=function(value) return value end,vector=function(...) return {...} end})
+fly()
+local states=assert(loadfile(directory..'/source_states.lua'))()
+assert(#beams==#point.mapping,'FLY2 population differs from ordinal map')
 for ordinal,mapping in ipairs(point.mapping) do
   local engine_t=mapping.solver_birth_time_us -- FLY2-owned clock in the native callback.
   local state=runtime.initialize(ordinal)
@@ -272,6 +325,13 @@ for ordinal,mapping in ipairs(point.mapping) do
   assert(state.mass==mapping.mass_amu and state.charge==mapping.charge_state)
   assert(runtime.instrument_time_us(engine_t)==mapping.instrument_time_us)
   assert(runtime.source_id(ordinal)==mapping.particle_id)
+  local beam=beams[ordinal]
+  assert(beam.n==1 and beam.tob==state.t and beam.mass==state.mass and beam.charge==state.charge)
+  assert(beam.ke==states[ordinal].ke)
+  for axis,index in pairs({x=1,y=2,z=3}) do
+    assert(beam.position[index]==state[axis],'FLY2 position differs from exact state')
+    assert(beam.direction[index]==state['v'..axis],'FLY2 velocity differs from exact state')
+  end
 end
 print('READ_ONLY_TOF=PASS')
 ''', encoding="utf-8", newline="\n")
@@ -279,6 +339,27 @@ print('READ_ONLY_TOF=PASS')
                                 capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("READ_ONLY_TOF=PASS", result.stdout)
+
+    def test_rehashed_numeric_lexemes_are_equal_but_string_identity_is_not(self) -> None:
+        path = self.fixture.output / "component_particle_state.csv"
+        with path.open(newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        rows[0]["mass_amu"] = format(float(rows[0]["mass_amu"]), ".3f")
+        with path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0]), lineterminator="\n")
+            writer.writeheader(); writer.writerows(rows)
+        self._refresh_handoff_output("component_particle_state", path)
+        before = path.read_bytes()
+        self._materialize()
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual((self.output / "component_particle_state.csv").read_bytes(), before)
+        rows[0]["species_id"] += ".0"
+        with path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0]), lineterminator="\n")
+            writer.writeheader(); writer.writerows(rows)
+        self._refresh_handoff_output("component_particle_state", path)
+        with self.assertRaisesRegex(ValueError, "6D/identity/clock"):
+            materialize_measured_source(self.handoff, self.root / "different_identity")
 
     def test_rehashed_velocity_change_still_rejected_against_producer(self) -> None:
         path = self.fixture.output / "component_particle_state.csv"

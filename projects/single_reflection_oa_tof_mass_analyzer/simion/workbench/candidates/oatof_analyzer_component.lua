@@ -80,11 +80,12 @@ local function filename_matches(value, expected, role)
 end
 
 function component.new(config)
-  exact_keys(config, {instance_roles=true, instance_filenames=true,
+  local config_keys = {instance_roles=true, instance_filenames=true,
     geometry=true, field_modes=true, accelerator_topology_id=true,
     voltages=true, accelerator_ring_count=true, electrode_ids=true,
-    reflectron_stage1_ring_count=true, reflectron_stage2_ring_count=true,
-    detector=true, diagnostics=true, domain_split=true}, 'config')
+    detector=true, diagnostics=true, domain_split=true}
+  if config.provider_placements ~= nil then config_keys.provider_placements=true end
+  exact_keys(config,config_keys,'config')
   assert(config.domain_split == true or config.domain_split == false,
     'domain_split must be boolean')
   exact_keys(config.instance_roles, {flight_tube=true, reflectron=true,
@@ -94,7 +95,9 @@ function component.new(config)
   -- The frontend compiler publishes the electrode-topology identity derived
   -- from the resolved three-zone accelerator contract; do not translate it
   -- into a private workbench-only alias here.
-  local three_zone = config.accelerator_topology_id == 'three_zone_frontend_v1' or
+  local native_frontend = config.accelerator_topology_id == 'three_zone_linear_ring_segmented_through_exit_pa_plus_v1' or
+    (config.accelerator_topology_id == 'three_zone_frontend_contract_derived_v1' and config.provider_placements ~= nil)
+  local three_zone = native_frontend or config.accelerator_topology_id == 'three_zone_frontend_v1' or
     config.accelerator_topology_id == 'three_zone_frontend_contract_derived_v1'
   assert(three_zone or config.accelerator_topology_id == 'two_zone_frontend_v1',
     'accelerator_topology_id is not published')
@@ -140,6 +143,16 @@ function component.new(config)
       'instance roles must be unique positive integers')
     role_seen[value] = true
   end
+  if native_frontend then
+    exact_keys(config.provider_placements,{flight_tube=true,reflectron=true,accelerator=true,detector=true},'provider_placements')
+    for role,placement in pairs(config.provider_placements) do
+      exact_keys(placement,{x_mm=true,y_mm=true,z_mm=true,az_deg=true,el_deg=true,rt_deg=true,scale=true},'provider placement '..role)
+      for key,value in pairs(placement) do finite(value,'provider placement '..role..'.'..key) end
+      assert(placement.scale==1,'provider PA placement requires unit scale')
+    end
+  else
+    assert(config.provider_placements==nil,'legacy analyzer does not accept native provider placements')
+  end
   local g, modes, volts = config.geometry, config.field_modes, config.voltages
   for name, value in pairs(g) do
     if name ~= 'accelerator_ring_z_mm' then finite(value, 'geometry.' .. name) end
@@ -151,12 +164,6 @@ function component.new(config)
   local ring_count = integer(config.accelerator_ring_count,
     'accelerator_ring_count')
   assert(ring_count > 0, 'accelerator_ring_count must be positive')
-  local reflectron_stage1_count = integer(config.reflectron_stage1_ring_count,
-    'reflectron_stage1_ring_count')
-  local reflectron_stage2_count = integer(config.reflectron_stage2_ring_count,
-    'reflectron_stage2_ring_count')
-  assert(reflectron_stage1_count > 0 and reflectron_stage2_count > 0,
-    'reflectron ring counts must be positive')
   local ids = validate_electrode_ids(config.electrode_ids, ring_count, three_zone)
   if three_zone then
     assert(type(g.accelerator_ring_z_mm) == 'table' and
@@ -180,8 +187,12 @@ function component.new(config)
     'detector.marker_absorber_thickness_mm')
   assert(detector.capture_depth_mm < detector.marker_absorber_thickness_mm,
     'detector capture depth must lie inside the numerical absorber')
-  positive(config.diagnostics.post_pulse_observation_window_us,
-    'diagnostics.post_pulse_observation_window_us')
+  local observation_window = config.diagnostics.post_pulse_observation_window_us
+  -- A workflow with its own explicit particle-age limit disables this
+  -- legacy pulse-relative observation stop; state observation stays active.
+  if observation_window ~= false then
+    positive(observation_window, 'diagnostics.post_pulse_observation_window_us')
+  end
   local log_stride = integer(config.diagnostics.log_stride,
     'diagnostics.log_stride')
   assert(log_stride > 0, 'diagnostics.log_stride must be positive')
@@ -244,74 +255,6 @@ function component.new(config)
     return plan
   end
 
-  local function static_electrode_plans(reflectron_profile)
-    if reflectron_profile ~= nil then
-      exact_keys(reflectron_profile, {stage1_ring_voltages_v=true,
-        stage2_ring_voltages_v=true}, 'reflectron_profile')
-    end
-    local pulse_voltages={pre_all_v=0,
-      repeller_v=volts.repeller_v, grid1_v=volts.grid1_v}
-    if three_zone then
-      pulse_voltages.intermediate2_v=volts.intermediate2_v
-      pulse_voltages.exit_v=volts.exit_v
-    end
-    local accelerator = accelerator_plan('on', pulse_voltages)
-    local legacy_accelerator = {}
-    if not three_zone then
-      for index, item in ipairs(accelerator) do
-        legacy_accelerator[index] = {electrode_id=index, voltage_v=item.voltage_v}
-      end
-      legacy_accelerator[#legacy_accelerator + 1] = {
-        electrode_id=ring_count + 4, voltage_v=0}
-    end
-    local reflectron = {{electrode_id=1, voltage_v=0}}
-    local stage1_count = reflectron_stage1_count
-    local stage2_count = reflectron_stage2_count
-    local stage1 = reflectron_profile and
-      reflectron_profile.stage1_ring_voltages_v or nil
-    local stage2 = reflectron_profile and
-      reflectron_profile.stage2_ring_voltages_v or nil
-    if stage1 then assert(#stage1 == stage1_count,
-      'reflectron stage1 profile ring count mismatch') end
-    if stage2 then assert(#stage2 == stage2_count,
-      'reflectron stage2 profile ring count mismatch') end
-    local previous = 0
-    for index=1,stage1_count do
-      local voltage = stage1 and stage1[index] or
-        volts.mid_v * index / (stage1_count + 1)
-      finite(voltage, 'reflectron stage1 voltage')
-      assert(voltage + 1e-9 >= previous and voltage >= -1e-9 and
-        voltage <= volts.mid_v + 1e-9, 'reflectron stage1 profile must be monotone')
-      reflectron[#reflectron + 1] = {electrode_id=1 + index,
-        voltage_v=voltage}
-      previous = voltage
-    end
-    local middle_id = 2 + stage1_count
-    reflectron[#reflectron + 1] = {electrode_id=middle_id,
-      voltage_v=volts.mid_v}
-    previous = volts.mid_v
-    for index=1,stage2_count do
-      local voltage = stage2 and stage2[index] or volts.mid_v +
-        (volts.backplate_v - volts.mid_v) * index / (stage2_count + 1)
-      finite(voltage, 'reflectron stage2 voltage')
-      assert(voltage + 1e-9 >= previous and voltage >= volts.mid_v - 1e-9 and
-        voltage <= volts.backplate_v + 1e-9,
-        'reflectron stage2 profile must be monotone')
-      reflectron[#reflectron + 1] = {electrode_id=middle_id + index,
-        voltage_v=voltage}
-      previous = voltage
-    end
-    reflectron[#reflectron + 1] = {electrode_id=middle_id + stage2_count + 1,
-      voltage_v=volts.backplate_v}
-    reflectron[#reflectron + 1] = {electrode_id=middle_id + stage2_count + 2,
-      voltage_v=0}
-    return {accelerator=accelerator,
-      legacy_accelerator_characterization=legacy_accelerator,
-      reflectron=reflectron,
-      flight_tube={{electrode_id=1, voltage_v=0}},
-      detector={{electrode_id=1, voltage_v=0}}}
-  end
-
   local function initialize_workbench(state)
     local active_scope = state.active_scope or 'full_flight'
     if active_scope == 'full_flight' then
@@ -347,7 +290,7 @@ function component.new(config)
         y_mm=g.accelerator_axis_y_mm - half_y,
         z_mm=g.accelerator_instance_z_mm,
         az_deg=0, el_deg=0, rt_deg=0, scale=accelerator.scale,
-      }}, static_electrode_plans=static_electrode_plans(nil),
+      }},
         active_scope=active_scope}
     end
     local max_role = math.max(roles.flight_tube, roles.reflectron,
@@ -391,6 +334,9 @@ function component.new(config)
     assert(reflectron_axial_span + 1e-9 >=
       g.flight_tube_far_outer_z_mm - g.reflectron_entgrid_z_mm,
       'reflectron PA does not contain the far shield end cap')
+    if native_frontend then
+      return {placements=config.provider_placements}
+    end
     return {placements={
       accelerator={x_mm=g.accelerator_axis_x_mm - accelerator_half_x,
         y_mm=g.accelerator_axis_y_mm - accelerator_half_y,
@@ -404,7 +350,7 @@ function component.new(config)
         z_mm=g.detector_z_mm - g.detector_marker_back_margin_z_mm -
           g.detector_marker_absorber_thickness_mm, az_deg=0, el_deg=0, rt_deg=0,
           scale=detector_instance.scale},
-    }, static_electrode_plans=static_electrode_plans(nil)}
+    }}
   end
 
   local function efield_adjust(state)
@@ -500,10 +446,13 @@ function component.new(config)
     end
     record.last_elapsed_us, record.last_x_mm, record.last_y_mm, record.last_z_mm =
       state.elapsed_us, state.x_mm, state.y_mm, state.z_mm
-    local pulse_elapsed_us = finite(state.pulse_elapsed_us,
-      'action_state.pulse_elapsed_us')
-    local splat = pulse_elapsed_us >=
-      config.diagnostics.post_pulse_observation_window_us
+    local pulse_elapsed_us = state.pulse_elapsed_us
+    if pulse_elapsed_us == false then
+      assert(observation_window == false, 'missing pulse elapsed requires disabled observation window')
+    else
+      pulse_elapsed_us = finite(pulse_elapsed_us, 'action_state.pulse_elapsed_us')
+    end
+    local splat = observation_window ~= false and pulse_elapsed_us >= observation_window
     if splat then record.timed_out = true end
     return {splat=splat, events=events}
   end
@@ -548,7 +497,6 @@ function component.new(config)
   end
 
   return {initialize_workbench=initialize_workbench,
-    static_electrode_plans=static_electrode_plans,
     accelerator_electrode_write_plan=accelerator_plan,
     efield_adjust=efield_adjust, initialize_particle=initialize_particle,
     tstep_adjust=tstep_adjust, other_actions=other_actions,

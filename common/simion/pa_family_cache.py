@@ -27,6 +27,7 @@ from uuid import uuid4
 from common.contracts import capacity_ledger, capacity_protection
 from common.contracts.file_identity import canonical_json_sha256, file_sha256, file_sha256_unbuffered
 from common.contracts.recorded_file_removal import remove_recorded_files
+from common.contracts.verify_run_manifest import verify_record
 from common.simion.cache_generation import (
     PAYLOAD_VERIFICATION_RETRY_DELAY_S,
     _flush_writable_source,
@@ -70,6 +71,21 @@ CACHE_KEY_FIELDS = (
     "simion_identity",
     "refine_policy",
     "builder_identity",
+)
+WORKING_FIELD_CACHE_KEY_FIELDS = (
+    "geometry",
+    "gem",
+    "working_points",
+    "mesh",
+    "grid_phase",
+    "surface",
+    "boundary_policy",
+    "rf_reference_voltage_v",
+    "simion_identity",
+    "builder_identity",
+)
+NON_RF_WORKING_FIELD_CACHE_KEY_FIELDS = tuple(
+    field for field in WORKING_FIELD_CACHE_KEY_FIELDS if field != "rf_reference_voltage_v"
 )
 SHA256 = re.compile(r"^[0-9A-F]{64}$")
 REDUNDANCY_CREATION_MAX_ATTEMPTS = 3
@@ -174,11 +190,21 @@ def _seal_generation_files(directory: Path, manifest: Mapping[str, Any]) -> None
 
 
 def _canonical_identity(identity: Mapping[str, Any]) -> dict[str, Any]:
-    if not isinstance(identity, Mapping) or set(identity) != set(CACHE_KEY_FIELDS):
+    fields = next((candidate for candidate in (CACHE_KEY_FIELDS, WORKING_FIELD_CACHE_KEY_FIELDS, NON_RF_WORKING_FIELD_CACHE_KEY_FIELDS)
+                   if isinstance(identity, Mapping) and set(identity) == set(candidate)), None)
+    if fields is None:
         raise PAFamilyCacheError(
-            "PA cache identity fields must be exactly " + ", ".join(CACHE_KEY_FIELDS)
+            "PA cache identity fields must be exactly the basis set (" + ", ".join(CACHE_KEY_FIELDS)
+            + ") or the working-field set (" + ", ".join(WORKING_FIELD_CACHE_KEY_FIELDS)
+            + ") with RF reference present only for an RF working field"
         )
-    document = {field: identity[field] for field in CACHE_KEY_FIELDS}
+    document = {field: identity[field] for field in fields}
+    if fields in (WORKING_FIELD_CACHE_KEY_FIELDS, NON_RF_WORKING_FIELD_CACHE_KEY_FIELDS):
+        points = document["working_points"]
+        has_rf = isinstance(points, list) and any(isinstance(point, dict) and point.get("kind") == "rf_reference"
+                                                  for point in points)
+        if has_rf != ("rf_reference_voltage_v" in document):
+            raise PAFamilyCacheError("PA cache identity fields must declare RF reference exactly when RF is consumed")
     # canonical_json_sha256 supplies the finite-JSON, stable-serialization gate.
     try:
         canonical_json_sha256(document)
@@ -578,8 +604,15 @@ def validate_pa_family_cache_generation(
     expected_cache_key: str | None = None,
     expected_filenames: Sequence[str] | None = None,
     verify_payload: bool = True,
+    require_publication_pin: bool = False,
 ) -> dict[str, Any]:
-    """Fail closed unless a generation's manifest and exact payload inventory agree."""
+    """Fail closed unless a generation's manifest and exact payload inventory agree.
+
+    ``require_publication_pin`` additionally requires the governed published
+    transaction and capacity ledger to agree on the generation's owner and pin.
+    It is for durable consumers that must keep a generation available after the
+    immediate run; ordinary immutable-field consumers do not require it.
+    """
 
     root = Path(generation_directory)
     manifest_path = root / MANIFEST_NAME
@@ -638,6 +671,8 @@ def validate_pa_family_cache_generation(
         raise PAFamilyCacheError("PA cache generation identity differs")
     if manifest["schema_version"] == SCHEMA_VERSION:
         _validate_redundancy_metadata(root, manifest, verify_payload=verify_payload)
+    if require_publication_pin:
+        _require_published_generation_pin(root, manifest)
     return manifest
 
 
@@ -1279,6 +1314,61 @@ def _artifact_ledger_binding(
     )
 
 
+def _require_published_generation_pin(
+    generation_directory: Path, manifest: Mapping[str, Any]
+) -> None:
+    """Require the existing governed owner records to retain one generation."""
+
+    cache_key = str(manifest["cache_key"])
+    generation = str(manifest["generation_sha256"])
+    if (
+        generation_directory.name != generation
+        or generation_directory.parent.name != "generations"
+        or generation_directory.parent.parent.name != cache_key
+    ):
+        raise PAFamilyCacheError("PA cache generation path differs from manifest identity")
+    cache_root = generation_directory.parent.parent.parent
+    binding = _artifact_ledger_binding(cache_root, cache_key, required=True)
+    if binding is None:
+        raise PAFamilyCacheError("PA cache publication pin requires a governed artifact ledger")
+    try:
+        transaction = _load_transaction_by_key(
+            cache_root / TRANSACTION_DIRECTORY / cache_key / TRANSACTION_NAME,
+            cache_key,
+        )
+        reason = transaction.get("published_pin_reason")
+        owner = transaction.get("owner")
+        if (
+            transaction.get("status") != "published"
+            or transaction.get("generation_sha256") != generation
+            or not isinstance(owner, str)
+            or not owner.strip()
+            or not isinstance(reason, str)
+            or not reason.strip()
+        ):
+            raise ValueError("PA transaction does not retain this published generation")
+        ledger = capacity_ledger.load_capacity_ledger(binding.artifact_root)
+        if ledger is None:
+            raise ValueError("capacity ledger is missing or invalid")
+        _, key_relative = capacity_ledger.capacity_object_path(
+            binding.artifact_root, binding.key_root
+        )
+        entry = next((item for item in ledger["objects"] if item.get("path") == key_relative), None)
+        if (
+            not isinstance(entry, dict)
+            or entry.get("class") != "published_cache"
+            or entry.get("status") != "ready"
+            or entry.get("identity") != generation
+            or entry.get("manager") != capacity_ledger.PA_CACHE_MANAGER
+            or entry.get("owner") != owner
+            or entry.get("pin") is not True
+            or entry.get("pin_reason") != reason
+        ):
+            raise ValueError("PA capacity ledger pin binding differs")
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise PAFamilyCacheError(f"managed PA publication pin binding is invalid: {exc}") from exc
+
+
 def _key_root_bytes(key_root: Path) -> int:
     """Measure one governed key-root using metadata only, never payload hashes."""
 
@@ -1808,6 +1898,15 @@ def _write_transaction(path: Path, document: Mapping[str, Any]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _validate_producer_record(producer: object) -> None:
+    if (not isinstance(producer, dict)
+            or set(producer) != {"run_config_path", "run_config_sha256"}
+            or not isinstance(producer["run_config_path"], str)
+            or not Path(producer["run_config_path"]).is_absolute()
+            or SHA256.fullmatch(str(producer["run_config_sha256"])) is None):
+        raise PAFamilyCacheError("PA transaction producer provenance differs")
+
+
 def _load_transaction(
     path: Path, *, cache_key: str, identity: Mapping[str, Any], filenames: Sequence[str]
 ) -> dict[str, Any]:
@@ -1821,7 +1920,7 @@ def _load_transaction(
         "generation_sha256", "published_pin_reason", "retirement", "last_error",
     }
     if (not isinstance(document, dict) or not required <= set(document)
-            or set(document) - required - {"producer", "member_recovery", "response_receipt", "retained_inventory_recovery", "publication_metadata_correction", "abandonment", "pin_release"}):
+            or set(document) - required - {"producer", "member_recovery", "response_receipt", "retained_inventory_recovery", "publication_metadata_correction", "abandonment", "pin_release", "producer_handoff"}):
         raise PAFamilyCacheError("PA cache transaction fields differ")
     if (
             document["schema_version"] != 1
@@ -1850,15 +1949,7 @@ def _load_transaction(
     if document["inventory_sha256"] != digest:
         raise PAFamilyCacheError("PA cache transaction inventory digest differs")
     if "producer" in document:
-        producer = document["producer"]
-        if (
-            not isinstance(producer, dict)
-            or set(producer) != {"run_config_path", "run_config_sha256"}
-            or not isinstance(producer["run_config_path"], str)
-            or not Path(producer["run_config_path"]).is_absolute()
-            or SHA256.fullmatch(str(producer["run_config_sha256"])) is None
-        ):
-            raise PAFamilyCacheError("PA transaction producer provenance differs")
+        _validate_producer_record(document["producer"])
     generation = document["generation_sha256"]
     if generation is not None and (
         not isinstance(generation, str) or SHA256.fullmatch(generation) is None
@@ -1874,6 +1965,17 @@ def _load_transaction(
             raise PAFamilyCacheError("PA cache transaction retirement identity differs")
     elif retirement is not None:
         raise PAFamilyCacheError("active PA cache transaction declares retirement")
+    if "producer_handoff" in document:
+        journal = document["producer_handoff"]
+        if (not isinstance(journal, dict) or set(journal) != {
+                "request", "prior_owner", "prior_producer", "new_owner", "new_producer"}
+                or not isinstance(journal["prior_owner"], str) or not journal["prior_owner"]
+                or journal["prior_owner"] == journal["new_owner"]
+                or document["owner"] != journal["new_owner"]
+                or document.get("producer") != journal["new_producer"]):
+            raise PAFamilyCacheError("PA producer handoff journal differs")
+        _validate_producer_record(journal["prior_producer"])
+        _validate_producer_handoff_request(journal["request"])
     if "pin_release" in document:
         release = document["pin_release"]
         if (not isinstance(release, dict) or set(release) != {
@@ -2629,8 +2731,9 @@ def _advance_retained_inventory_recovery(
 def _normalize_response_receipt(spec: Mapping[str, Any], names: Sequence[str]) -> dict[str, Any]:
     """Validate a receipt recipe, never accepting caller-provided PA hashes."""
     if (not isinstance(spec, Mapping)
-            or set(spec) != {"schema_version", "receipt_name", "exporter_path", "exports"}
-            or type(spec["schema_version"]) is not int or spec["schema_version"] != 1
+            or set(spec) != {"schema_version", "receipt_name", "exporter_path", "exports", "source_location"}
+            or type(spec["schema_version"]) is not int or spec["schema_version"] != 2
+            or spec["source_location"] not in ("payload", "build_scratch")
             or not isinstance(spec["exports"], list)
             or not isinstance(spec["exporter_path"], str) or not spec["exporter_path"]):
         raise PAFamilyCacheError("PA response receipt specification fields differ")
@@ -2641,10 +2744,14 @@ def _normalize_response_receipt(spec: Mapping[str, Any], names: Sequence[str]) -
         exports = _normalize_exports([ResponseExport(**item) for item in spec["exports"]])
     except (TypeError, ValueError) as exc:
         raise PAFamilyCacheError("PA response receipt exports are invalid") from exc
-    if any(item.source_name not in names or item.standalone_name not in names for item in exports):
+    if any(item.standalone_name not in names
+           or (spec["source_location"] == "payload" and item.source_name not in names)
+           or (spec["source_location"] == "build_scratch" and item.source_name in names)
+           for item in exports):
         raise PAFamilyCacheError("PA response receipt export is outside the family")
     return {
-        "schema_version": 1, "receipt_name": receipt_name,
+        "schema_version": 2, "receipt_name": receipt_name,
+        "source_location": spec["source_location"],
         "exporter_path": str(Path(spec["exporter_path"]).resolve()),
         "exports": [dict(response_id=item.response_id, source_name=item.source_name,
                          standalone_name=item.standalone_name) for item in exports],
@@ -2652,13 +2759,18 @@ def _normalize_response_receipt(spec: Mapping[str, Any], names: Sequence[str]) -
 
 
 def _inventory_with_response_receipt(
-    payload: Path, names: Sequence[str], spec: Mapping[str, Any],
+    payload: Path, build_scratch: Path, names: Sequence[str], spec: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     """Seal data once and derive the small receipt from that same byte inventory."""
     if not Path(spec["exporter_path"]).is_file():
         raise PAFamilyCacheError("PA response receipt exporter is missing")
     data_names = [name for name in names if name != spec["receipt_name"]]
     records = _inventory_transaction_payload(payload, data_names)
+    source_root = build_scratch if spec["source_location"] == "build_scratch" else payload
+    sources = (_inventory_transaction_payload(source_root, [item["source_name"] for item in spec["exports"]])
+               if source_root == build_scratch else [])
+    for record in sources:
+        _set_file_read_only(source_root / record["name"])
     for record in records:
         _set_file_read_only(payload / record["name"])
     destination = payload / spec["receipt_name"]
@@ -2669,7 +2781,7 @@ def _inventory_with_response_receipt(
         destination.unlink()
     write_standalone_pa_response_set(
         payload, spec["exporter_path"], [ResponseExport(**item) for item in spec["exports"]],
-        destination, _owner_inventory=records,
+        destination, source_directory=source_root, _owner_inventory=[*records, *sources],
     )
     _flush_writable_source(destination)
     return validate_direct_inventory([*records, *inventory_named_files(payload, [destination.name])])
@@ -2729,7 +2841,11 @@ def _validate_publication_correction_journal(document: Mapping[str, Any]) -> Non
         raise PAFamilyCacheError("publication metadata correction transaction binding differs")
 
 
-def _correction_consumers(root: Path, key: str, request: Mapping[str, Any], operation_lease: str | None) -> None:
+def _require_exclusive_cache_lease(
+    root: Path, key: str, request: Mapping[str, Any], operation_lease: str | None, *,
+    label: str = "publication metadata correction", extra_paths: Sequence[Path] = (),
+    workflow_run: Path | None = None,
+) -> None:
     artifact_root = _artifact_root_for_cache(root)
     if artifact_root is None:
         return
@@ -2739,16 +2855,22 @@ def _correction_consumers(root: Path, key: str, request: Mapping[str, Any], oper
     for lease in active:
         if lease["status"] != "active" or lease["lease_id"] == operation_lease:
             continue
-        covers = (key.lower() in lease["protected_cache_keys"] or capacity_protection.path_is_protected(
-            (root / key).absolute(), [Path(item) for item in lease["protected_paths"]]))
+        paths = [Path(item) for item in lease["protected_paths"]]
+        covers = (key.lower() in lease["protected_cache_keys"] or any(
+            capacity_protection.path_is_protected(path.absolute(), paths)
+            for path in (root / key, *extra_paths)))
         if lease["lease_id"] == selected:
-            if lease["owner"] != request.get("capacity_lease_owner") or not covers:
-                raise PAFamilyCacheError("publication metadata correction workflow lease differs")
+            if (lease["owner"] != request.get("capacity_lease_owner") or not covers
+                    or (workflow_run is not None and not capacity_protection.path_is_protected(workflow_run, paths))):
+                raise PAFamilyCacheError(f"{label} workflow lease differs")
             found = True
         elif covers:
-            raise PAFamilyCacheError("publication metadata correction has another active consumer")
+            raise PAFamilyCacheError(
+                f"{label} has another active consumer: "
+                f"lease_id={lease['lease_id']} owner={lease['owner']} cache_key={key}"
+            )
     if not found:
-        raise PAFamilyCacheError("publication metadata correction workflow lease is not active")
+        raise PAFamilyCacheError(f"{label} workflow lease is not active")
 
 
 def _correction_metadata(directory: Path, names: Sequence[str]) -> list[dict[str, Any]]:
@@ -2800,7 +2922,7 @@ def _advance_publication_metadata_correction(
             "cache_key": key, "generation_sha256": normalized["generation_sha256"]
         }:
             raise PAFamilyCacheError("publication metadata correction pointer advanced")
-        _correction_consumers(root, key, request or {}, operation_lease)
+        _require_exclusive_cache_lease(root, key, request or {}, operation_lease)
         manifest = _validate_sealed_generation_metadata(old, expected_cache_key=key, expected_filenames=document["filenames"])
         if manifest["files"] != document["files"] or evidence_root.exists():
             raise PAFamilyCacheError("publication metadata correction source evidence differs")
@@ -2818,7 +2940,7 @@ def _advance_publication_metadata_correction(
                    "successor_manifest": _manifest(key, document["identity"], corrected, manifest.get("redundancy"), normalized["generation_sha256"]),
                    "member_metadata": metadata, "persisted_sha256": digest, "complete": False}
         _validate_publication_correction_journal({**document, "publication_metadata_correction": journal})
-        _correction_consumers(root, key, request or {}, operation_lease)
+        _require_exclusive_cache_lease(root, key, request or {}, operation_lease)
         document["publication_metadata_correction"] = journal
         _write_transaction(transaction_path, document)
     _validate_publication_correction_journal(document)
@@ -2832,7 +2954,7 @@ def _advance_publication_metadata_correction(
         }:
             raise PAFamilyCacheError("publication metadata correction completed pointer differs")
         return True
-    _correction_consumers(root, key, request or {}, operation_lease)
+    _require_exclusive_cache_lease(root, key, request or {}, operation_lease)
     _validate_verification_evidence(journal["prior_verification"], cache_key=key, inventory_sha256=normalized["inventory_sha256"])
     old = key_root / "generations" / normalized["generation_sha256"]
     successor_manifest = journal["successor_manifest"]
@@ -2856,7 +2978,7 @@ def _advance_publication_metadata_correction(
     decision_lock = (capacity_protection.capacity_decision_lock(binding.artifact_root)
                      if binding is not None else nullcontext())
     with decision_lock:
-        _correction_consumers(root, key, request or {}, operation_lease)
+        _require_exclusive_cache_lease(root, key, request or {}, operation_lease)
         if pointer.exists():
             pointer.unlink()
         if location == old:
@@ -2891,6 +3013,105 @@ def _advance_publication_metadata_correction(
     document["last_error"] = None
     _write_transaction(transaction_path, document)
     return True
+
+
+def _validate_producer_handoff_request(request: Mapping[str, Any]) -> None:
+    """Validate the frozen owner records and selected workflow lease format."""
+    fields = {"schema_version", "transaction_record", "predecessor_manifest", "stopped_receipt",
+              "capacity_lease_id", "capacity_lease_owner"}
+    if (not isinstance(request, Mapping) or set(request) != fields or request["schema_version"] != 1
+            or any(not isinstance(request[name], str) or not request[name].strip()
+                   for name in ("capacity_lease_id", "capacity_lease_owner"))):
+        raise PAFamilyCacheError("PA producer handoff request fields differ")
+    for name in ("transaction_record", "predecessor_manifest", "stopped_receipt"):
+        record = request[name]
+        if (not isinstance(record, dict) or not isinstance(record.get("path"), str)
+                or type(record.get("bytes")) is not int or record["bytes"] < 0
+                or SHA256.fullmatch(str(record.get("sha256", ""))) is None):
+            raise PAFamilyCacheError(f"PA producer handoff {name} record differs")
+
+
+def _producer_handoff_evidence(request: Mapping[str, Any], run_directory: Path) -> dict[str, dict[str, Any]]:
+    """Read only the three frozen owner records; never inspect PA bytes."""
+    _validate_producer_handoff_request(request)
+    documents = {}
+    for name in ("transaction_record", "predecessor_manifest", "stopped_receipt"):
+        record = request[name]
+        path = Path(record["path"]).resolve(strict=True)
+        if not path.is_relative_to(run_directory / "inputs"):
+            raise PAFamilyCacheError(f"PA producer handoff {name} must be frozen run input")
+        verify_record(f"PA producer handoff {name}", record)
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(value, dict):
+            raise PAFamilyCacheError(f"PA producer handoff {name} must be an object")
+        documents[name] = value
+    return documents
+
+
+def _advance_producer_handoff(
+    root: Path, document: dict[str, Any], transaction_path: Path, request: Mapping[str, Any] | None,
+    *, owner: str | None, producer_run_config: str | Path | None, operation_lease: str | None,
+) -> None:
+    """Atomically hand an unsealed build to its new governed producer.
+
+    The ordinary building branch records the new ledger owner before returning
+    build. A crash after this metadata commit replays that same branch.
+    """
+    if request is None:
+        return
+    prior_handoff = document.get("producer_handoff")
+    if prior_handoff is not None and request == prior_handoff["request"]:
+        if (owner != document["owner"] or producer_run_config is None
+                or Path(producer_run_config).resolve() != Path(document["producer"]["run_config_path"])):
+            raise PAFamilyCacheError("PA producer handoff replay producer differs")
+        return
+    if (document["status"] != "building" or document["files"]
+            or any(document[key] is not None for key in ("inventory_sha256", "verification", "generation_sha256"))
+            or "producer" not in document or not owner or owner == document["owner"]
+            or producer_run_config is None):
+        raise PAFamilyCacheError("PA producer handoff requires an unsealed building transaction and new producer")
+    artifact_root = _artifact_root_for_cache(root)
+    if artifact_root is None:
+        raise PAFamilyCacheError("PA producer handoff requires a governed artifact cache")
+    producer = _governed_producer_provenance(artifact_root, Path(producer_run_config))
+    run_directory = Path(producer["run_config_path"]).parent
+    evidence = _producer_handoff_evidence(request, run_directory)
+    if evidence["transaction_record"] != document:
+        raise PAFamilyCacheError("PA producer handoff frozen transaction differs")
+    predecessor = Path(document["producer"]["run_config_path"]).resolve().parent
+    if predecessor == run_directory:
+        raise PAFamilyCacheError("PA producer handoff requires a new run identity")
+    manifest, stopped = evidence["predecessor_manifest"], evidence["stopped_receipt"]
+    project = predecessor.parent.parent.name
+    if (manifest.get("role") != "simulation_run_manifest" or manifest.get("status") not in {"checkpoint", "failed", "interrupted"}
+            or manifest.get("project") != project or manifest.get("run_id") != predecessor.name
+            or Path(str(manifest.get("run_config", {}).get("path", ""))).resolve() != predecessor / "run_config.json"):
+        raise PAFamilyCacheError("PA producer handoff predecessor manifest differs")
+    if (stopped.get("schema_version") != 1 or stopped.get("role") != "run_capacity_lifecycle_receipt"
+            or stopped.get("action") != "seal_stopped_payload" or stopped.get("status") != "ready"
+            or stopped.get("continuation") != "new_run_required" or stopped.get("run_status") != manifest["status"]
+            or Path(str(stopped.get("run_directory", ""))).resolve() != predecessor):
+        raise PAFamilyCacheError("PA producer handoff public stopped receipt differs")
+    stopped_config = stopped.get("run_config", {})
+    if (not isinstance(stopped_config, dict)
+            or Path(str(stopped_config.get("path", ""))).resolve() != predecessor / "run_config.json"):
+        raise PAFamilyCacheError("PA producer handoff stopped run config path differs from original producer")
+    verify_record("PA producer handoff stopped run config", stopped_config)
+    ledger = capacity_ledger.load_capacity_ledger(artifact_root)
+    _, previous_relative = capacity_ledger.capacity_object_path(artifact_root, predecessor)
+    previous_entry = next((item for item in (ledger or {}).get("objects", []) if item["path"] == previous_relative), {})
+    sealed_entry = stopped.get("ledger_entry", {})
+    if (previous_entry.get("status") != "ready" or previous_entry.get("class") != "rebuildable_payload"
+            or previous_entry.get("owner") != project or previous_entry.get("pin") is not True
+            or any(previous_entry.get(key) != sealed_entry.get(key)
+                   for key in ("path", "owner", "status", "class", "pin", "bytes", "retention_reason"))):
+        raise PAFamilyCacheError("PA producer handoff stopped owner ledger differs")
+    _require_exclusive_cache_lease(root, document["cache_key"], request, operation_lease,
+        label="PA producer handoff", extra_paths=(transaction_path.parent, predecessor), workflow_run=run_directory)
+    document["producer_handoff"] = dict(request=dict(request), prior_owner=document["owner"],
+        prior_producer=document["producer"], new_owner=owner, new_producer=producer)
+    document.update(owner=owner, producer=producer)
+    _write_transaction(transaction_path, document)
 
 
 def _validate_abandonment_producer(request: Mapping[str, Any], document: Mapping[str, Any]) -> None:
@@ -3121,29 +3342,42 @@ def advance_pa_family_cache_transaction(
     lock_timeout_s: float = 30.0,
     recovery_policy: str = "xor",
     published_pin_reason: str | None = None,
+    published_pin_generation_sha256: str | None = None,
     member_recovery: Mapping[str, Any] | None = None,
     response_receipt: Mapping[str, Any] | None = None,
     retained_inventory_recovery: Mapping[str, Any] | None = None,
     publication_metadata_correction: Mapping[str, Any] | None = None,
     abandon_empty_transaction: Mapping[str, Any] | None = None,
     cancel_unpublished_transaction: Mapping[str, Any] | None = None,
+    producer_handoff: Mapping[str, Any] | None = None,
+    record_stage_only: bool = False,
 ) -> TransactionAdvance:
     """Advance one deterministic build/verify/publish transaction idempotently."""
 
+    if type(record_stage_only) is not bool:
+        raise PAFamilyCacheError("record_stage_only must be boolean")
+    if record_stage_only and any(value is not None for value in (
+            verification_evidence, member_recovery, response_receipt, retained_inventory_recovery,
+            publication_metadata_correction, abandon_empty_transaction, cancel_unpublished_transaction, producer_handoff)):
+        raise PAFamilyCacheError("stage accounting cannot accompany transaction advancement or recovery")
     if abandon_empty_transaction is not None:
         if any(value is not None for value in (verification_evidence, member_recovery, response_receipt,
-                                               retained_inventory_recovery, publication_metadata_correction)):
+                                               retained_inventory_recovery, publication_metadata_correction, producer_handoff)):
             raise PAFamilyCacheError("empty transaction abandonment cannot accompany build or recovery")
         return _abandon_empty_transaction(
             Path(cache_root), identity, filenames, abandon_empty_transaction, lock_timeout_s
         )
     if cancel_unpublished_transaction is not None:
         if any(value is not None for value in (verification_evidence, member_recovery, response_receipt,
-                                               retained_inventory_recovery, publication_metadata_correction)):
+                                               retained_inventory_recovery, publication_metadata_correction, producer_handoff)):
             raise PAFamilyCacheError("transaction cancellation cannot accompany build or recovery")
         return _cancel_unpublished_transaction(
             Path(cache_root), identity, filenames, cancel_unpublished_transaction, lock_timeout_s
         )
+    if producer_handoff is not None and any(value is not None for value in (
+            verification_evidence, member_recovery, response_receipt, retained_inventory_recovery,
+            publication_metadata_correction)):
+        raise PAFamilyCacheError("PA producer handoff cannot accompany verification or payload recovery")
     if owner is not None and (
         not isinstance(owner, str) or not owner.strip() or len(owner.strip()) > 256
     ):
@@ -3163,6 +3397,15 @@ def advance_pa_family_cache_transaction(
         if not isinstance(published_pin_reason, str) or not published_pin_reason.strip():
             raise PAFamilyCacheError("PA cache published pin reason must be nonempty")
         published_pin_reason = published_pin_reason.strip()
+    if published_pin_generation_sha256 is not None:
+        if (
+            published_pin_reason is None
+            or not isinstance(published_pin_generation_sha256, str)
+            or SHA256.fullmatch(published_pin_generation_sha256) is None
+        ):
+            raise PAFamilyCacheError(
+                "PA cache published pin generation requires a pin reason and SHA-256"
+            )
     cache_key = canonical_pa_family_cache_key(identity)
     names = _family_names(filenames)
     receipt_spec = None if response_receipt is None else _normalize_response_receipt(response_receipt, names)
@@ -3172,12 +3415,18 @@ def advance_pa_family_cache_transaction(
     # therefore identify the owner before that directory is exposed.  Local
     # and fixture caches retain the small compatibility API because they are
     # outside the governed artifact root.
+    if record_stage_only and not root.is_dir():
+        raise PAFamilyCacheError("stage accounting requires an existing transaction")
     root.mkdir(parents=True, exist_ok=True)
     transaction = root / TRANSACTION_DIRECTORY / cache_key
     transaction_path = transaction / TRANSACTION_NAME
+    if record_stage_only and (owner is None or producer_run_config is None or not transaction_path.is_file()):
+        raise PAFamilyCacheError("stage accounting requires an existing owner-bound producer transaction")
     governed_new_transaction = (
         _artifact_root_for_cache(root) is not None and not transaction_path.exists()
     )
+    if producer_handoff is not None and not transaction_path.exists():
+        raise PAFamilyCacheError("PA producer handoff requires an existing transaction")
     if governed_new_transaction and owner is None:
         raise PAFamilyCacheError(
             "artifact PA transaction requires an explicit nonempty owner"
@@ -3196,6 +3445,16 @@ def advance_pa_family_cache_transaction(
     ledger_binding = _transaction_ledger_binding(root, cache_key, transaction)
 
     with _protected_key_lock(root, cache_key, lock_timeout_s) as operation_lease:
+        if record_stage_only:
+            document = _load_transaction(transaction_path, cache_key=cache_key, identity=identity, filenames=names)
+            if (ledger_binding is None or document["status"] != "building" or document["owner"] != owner
+                    or "producer" not in document
+                    or Path(document["producer"]["run_config_path"]).resolve() != Path(producer_run_config).resolve()):
+                raise PAFamilyCacheError("stage accounting requires the same building transaction owner and producer")
+            _governed_producer_provenance(ledger_binding[0], Path(producer_run_config))
+            _record_transaction_stage(ledger_binding, owner=document["owner"])
+            return _transaction_progress(document, transaction, payload, build_scratch,
+                action_required="verify" if document["files"] else "build")
         transaction.mkdir(parents=True, exist_ok=True)
         transaction_path.with_name(f".{transaction_path.name}.tmp").unlink(
             missing_ok=True
@@ -3220,6 +3479,11 @@ def advance_pa_family_cache_transaction(
             document = _load_transaction(
                 transaction_path, cache_key=cache_key, identity=identity, filenames=names
             )
+            if producer_handoff is not None and (document["published_pin_reason"] != published_pin_reason
+                                                or published_pin_generation_sha256 is not None):
+                raise PAFamilyCacheError("PA producer handoff published pin policy differs")
+            _advance_producer_handoff(root, document, transaction_path, producer_handoff,
+                owner=owner, producer_run_config=producer_run_config, operation_lease=operation_lease)
             if owner is not None and document["owner"] != owner:
                 raise PAFamilyCacheError("PA transaction owner differs")
         else:
@@ -3273,9 +3537,91 @@ def advance_pa_family_cache_transaction(
                 published_pin_reason=published_pin_reason,
             )
         elif document["published_pin_reason"] != published_pin_reason:
-            raise PAFamilyCacheError(
-                "PA cache transaction published pin policy differs"
+            if (
+                document["status"] != "published"
+                or document["published_pin_reason"] is not None
+                or owner is None
+                or published_pin_generation_sha256 != document["generation_sha256"]
+            ):
+                raise PAFamilyCacheError(
+                    "PA cache transaction published pin policy differs"
+                )
+            generation = root / cache_key / "generations" / published_pin_generation_sha256
+            _validate_sealed_generation_metadata(
+                generation, expected_cache_key=cache_key, expected_filenames=names
             )
+            if ledger_binding is None:
+                raise PAFamilyCacheError("PA cache published pin requires a governed artifact ledger")
+            artifact_root, _, key_root = ledger_binding
+            ledger = capacity_ledger.load_capacity_ledger(artifact_root)
+            _, key_relative = capacity_ledger.capacity_object_path(artifact_root, key_root)
+            entry = next(
+                (item for item in (ledger or {}).get("objects", []) if item.get("path") == key_relative),
+                None,
+            )
+            if (
+                not isinstance(entry, dict)
+                or entry.get("class") != "published_cache"
+                or entry.get("status") != "ready"
+                or entry.get("identity") != published_pin_generation_sha256
+                or entry.get("owner") != owner
+                or entry.get("pin") is not False
+                or entry.get("pin_reason") is not None
+            ):
+                raise PAFamilyCacheError("PA cache published pin owner or ledger identity differs")
+            document["published_pin_reason"] = published_pin_reason
+            _write_transaction(transaction_path, document)
+            _record_artifact_cache_state(
+                _ArtifactLedgerBinding(artifact_root=artifact_root, key_root=key_root),
+                published_pin_generation_sha256,
+                "ready",
+                published_pin_reason=published_pin_reason,
+            )
+        elif (
+            published_pin_generation_sha256 is not None
+            and published_pin_generation_sha256 != document["generation_sha256"]
+        ):
+            raise PAFamilyCacheError("PA cache published pin generation differs")
+        elif published_pin_generation_sha256 is not None:
+            # A prior pin backfill writes the immutable transaction before its
+            # governed-ledger update.  Replay the same exact request if that
+            # second write was interrupted; no new transaction state is needed.
+            if (
+                document["status"] != "published"
+                or owner is None
+                or document["published_pin_reason"] != published_pin_reason
+            ):
+                raise PAFamilyCacheError("PA cache transaction published pin policy differs")
+            generation = root / cache_key / "generations" / published_pin_generation_sha256
+            _validate_sealed_generation_metadata(
+                generation, expected_cache_key=cache_key, expected_filenames=names
+            )
+            if ledger_binding is None:
+                raise PAFamilyCacheError("PA cache published pin requires a governed artifact ledger")
+            artifact_root, _, key_root = ledger_binding
+            ledger = capacity_ledger.load_capacity_ledger(artifact_root)
+            _, key_relative = capacity_ledger.capacity_object_path(artifact_root, key_root)
+            entry = next(
+                (item for item in (ledger or {}).get("objects", []) if item.get("path") == key_relative),
+                None,
+            )
+            if (
+                not isinstance(entry, dict)
+                or entry.get("class") != "published_cache"
+                or entry.get("status") != "ready"
+                or entry.get("identity") != published_pin_generation_sha256
+                or entry.get("owner") != owner
+            ):
+                raise PAFamilyCacheError("PA cache published pin owner or ledger identity differs")
+            if entry.get("pin") is False and entry.get("pin_reason") is None:
+                _record_artifact_cache_state(
+                    _ArtifactLedgerBinding(artifact_root=artifact_root, key_root=key_root),
+                    published_pin_generation_sha256,
+                    "ready",
+                    published_pin_reason=published_pin_reason,
+                )
+            elif entry.get("pin") is not True or entry.get("pin_reason") != published_pin_reason:
+                raise PAFamilyCacheError("PA cache published pin owner or ledger identity differs")
 
         try:
             if _advance_publication_metadata_correction(root, document, transaction_path, publication_metadata_correction, operation_lease):
@@ -3308,20 +3654,21 @@ def advance_pa_family_cache_transaction(
                         )
                     missing = [name for name in names if name not in actual
                                and (receipt_spec is None or name != receipt_spec["receipt_name"])]
+                    if receipt_spec is not None and receipt_spec["source_location"] == "build_scratch":
+                        missing.extend(item["source_name"] for item in receipt_spec["exports"]
+                                       if not (build_scratch / item["source_name"]).is_file())
                     if missing:
                         _record_transaction_stage(ledger_binding, owner=str(document["owner"]))
                         return _transaction_progress(
                             document, transaction, payload, build_scratch,
                             action_required="build", missing_files=missing,
                         )
-                    if build_scratch.exists():
-                        _remove_tree_writable(build_scratch)
                     if receipt_spec is None:
                         for name in names:
                             _set_file_writable(payload / name)
                         records = _inventory_transaction_payload(payload, names)
                     else:
-                        records = _inventory_with_response_receipt(payload, names, receipt_spec)
+                        records = _inventory_with_response_receipt(payload, build_scratch, names, receipt_spec)
                     try:
                         for record in records:
                             _set_file_read_only(payload / record["name"])
@@ -3334,6 +3681,10 @@ def advance_pa_family_cache_transaction(
                             _set_file_writable(payload / record["name"])
                         raise
 
+                # The saved inventory and provenance receipt are now the authority.
+                # Keep sources through any interrupted receipt/seal attempt.
+                if build_scratch.exists():
+                    _remove_tree_writable(build_scratch)
                 if verification_evidence is None:
                     _record_transaction_stage(ledger_binding, owner=str(document["owner"]))
                     return _transaction_progress(
@@ -3959,6 +4310,8 @@ def main(arguments: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--verification-evidence", type=Path)
     parser.add_argument("--member-recovery", type=Path)
+    parser.add_argument("--producer-handoff", type=Path)
+    parser.add_argument("--record-stage-only", action="store_true")
     parser.add_argument("--response-receipt", type=Path)
     parser.add_argument("--retained-inventory-recovery", type=Path)
     parser.add_argument("--publication-metadata-correction", type=Path)
@@ -3967,6 +4320,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     parser.add_argument("--destination-directory", type=Path)
     parser.add_argument("--recovery-policy", choices=("xor", "none"), default="xor")
     parser.add_argument("--published-pin-reason")
+    parser.add_argument("--published-pin-generation-sha256")
     parser.add_argument("--owner")
     parser.add_argument("--producer-run-config", type=Path)
     parser.add_argument("--capacity-lease-id")
@@ -3977,6 +4331,12 @@ def main(arguments: Sequence[str] | None = None) -> int:
     filenames = _cli_filenames(args.filenames)
     if args.action != "advance-transaction" and args.published_pin_reason is not None:
         parser.error("published pin reason is accepted only by advance-transaction")
+    if args.action != "advance-transaction" and args.published_pin_generation_sha256 is not None:
+        parser.error("published pin generation is accepted only by advance-transaction")
+    if args.action != "advance-transaction" and args.record_stage_only:
+        parser.error("stage accounting is accepted only by advance-transaction")
+    if args.action != "advance-transaction" and args.producer_handoff is not None:
+        parser.error("producer handoff is accepted only by advance-transaction")
     if args.action != "advance-transaction" and args.member_recovery is not None:
         parser.error("member recovery is accepted only by advance-transaction")
     if args.action != "advance-transaction" and args.response_receipt is not None:
@@ -4055,10 +4415,14 @@ def main(arguments: Sequence[str] | None = None) -> int:
             verification_evidence=evidence,
             owner=args.owner,
             producer_run_config=args.producer_run_config,
+            record_stage_only=args.record_stage_only,
             lock_timeout_s=args.lock_timeout_s,
             recovery_policy=args.recovery_policy,
             published_pin_reason=args.published_pin_reason,
+            published_pin_generation_sha256=args.published_pin_generation_sha256,
             member_recovery=member_recovery,
+            producer_handoff=(json.loads(args.producer_handoff.read_text(encoding="utf-8-sig"))
+                              if args.producer_handoff is not None else None),
             response_receipt=response_receipt,
             retained_inventory_recovery=retained_inventory_recovery,
             publication_metadata_correction=correction,

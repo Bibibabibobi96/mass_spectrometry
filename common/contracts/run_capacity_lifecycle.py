@@ -24,7 +24,7 @@ from common.contracts.file_identity import canonical_json_sha256
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
 from common.contracts.solver_review_retirement import (
-    RECEIPT_NAME, _assert_runtime_retirement_unprotected, verify_retirement,
+    RECEIPT_NAME, _assert_runtime_retirement_unprotected, verify_retirement, select_retirement_receipt,
 )
 
 
@@ -186,7 +186,7 @@ def assert_retention_complete(artifact_root: Path, run_config: Path) -> dict[str
         if not isinstance(retention, dict) or retention.get("class") != "solver_review":
             raise ValueError("retirement receipt requires the frozen solver_review contract")
         verify_retirement(run_dir)
-        receipt_path = run_dir / RECEIPT_NAME
+        receipt_path, _, _ = select_retirement_receipt(run_dir)
     else:
         receipt = _load_json(receipt_path, "retention receipt")
         if receipt.get("role") != "artifact_retention_actions" or receipt.get("status") != "complete":
@@ -267,7 +267,7 @@ def _verify_retired_payload_remainder(
     """
     if config.get("artifact_retention", {}).get("class") != "solver_review" or entry.get("pin") is not True:
         raise ValueError("retirement remainder requires a pinned solver_review owner range")
-    receipt_path = run_dir / RECEIPT_NAME
+    receipt_path, _, _ = select_retirement_receipt(run_dir)
     receipt = _load_json(receipt_path, "retirement receipt")
     owner_completion = (receipt.get("retirement_mode") == "completed_experiment"
                         and receipt.get("owner") == owner)
@@ -293,7 +293,7 @@ def _verify_retired_payload_remainder(
             size, digest = item.get("bytes"), item.get("sha256")
             if (not isinstance(relative, str) or not relative
                     or Path(relative).is_absolute() or Path(relative).as_posix() != relative
-                    or ".." in Path(relative).parts or relative == RECEIPT_NAME
+                    or ".." in Path(relative).parts or relative == receipt_path.name
                     or relative in result or isinstance(size, bool) or not isinstance(size, int) or size < 0
                     or not isinstance(digest, str) or len(digest) != 64
                     or any(character not in "0123456789abcdefABCDEF" for character in digest)):
@@ -312,7 +312,7 @@ def _verify_retired_payload_remainder(
             or receipt.get("removed_bytes") != removed_bytes):
         raise ValueError("sealed stopped payload size change is not exactly covered by retirement")
     expected = {path: size for path, (size, _) in preserved.items()}
-    expected[RECEIPT_NAME] = receipt_path.stat().st_size
+    expected[receipt_path.name] = receipt_path.stat().st_size
     if {item["path"]: item["bytes"] for item in records} != expected:
         raise ValueError("retirement remainder differs from the preserved inventory and receipt")
     original_bytes = sum(size for size, _ in original.values())
@@ -391,6 +391,7 @@ def seal_checkpoint(
             raise ValueError("stopped payload requires exact run/project identity and a stopped manifest state")
         if not retain_payload and manifest.get("status") != "checkpoint":
             raise ValueError("checkpoint sealing requires a checkpoint manifest")
+        stopped_run_config = file_record(run_dir / "run_config.json") if retain_payload else None
         total, records = _inventory(run_dir)
         if retain_payload and entry["status"] == "ready" and total != int(entry["bytes"]):
             if not (run_dir / RECEIPT_NAME).is_file():
@@ -426,6 +427,7 @@ def seal_checkpoint(
         "status": "ready", "run_status": manifest["status"],
         "run_directory": str(run_dir), "bytes": total, "file_count": len(records),
         "continuation": "new_run_required", "ledger_entry": entry,
+        **({"run_config": stopped_run_config} if retain_payload else {}),
         **({"accounting_reconciliation": accounting_reconciliation} if accounting_reconciliation is not None else {}),
     }
 

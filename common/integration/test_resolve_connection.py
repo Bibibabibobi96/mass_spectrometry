@@ -752,32 +752,11 @@ class ResolveConnectionTests(unittest.TestCase):
         )
         validate_schema(
             {
-                "schema_version": 1,
-                "integration_id": "upstream_to_downstream",
+                "schema_version": 2,
+                "integration_id": "instrument_assembly",
+                "workflow_id": "local_frontend",
                 "run_id": "20260728_120000__test__cross__connection",
-                "selection": {
-                    "upstream_project_id": "upstream",
-                    "upstream_port_id": "exit",
-                    "downstream_project_id": "downstream",
-                    "downstream_port_id": "entry",
-                    "connection_profile_id": "grounded_tube",
-                },
-                "composition_plan": {
-                    "path": "composition_plan.json",
-                    "sha256": "A" * 64,
-                },
-                "source_projects": [
-                    {
-                        "project_id": "upstream",
-                        "port_id": "exit",
-                        "descriptor_sha256": "B" * 64,
-                    },
-                    {
-                        "project_id": "downstream",
-                        "port_id": "entry",
-                        "descriptor_sha256": "C" * 64,
-                    },
-                ],
+                "composition_plan": {"path": "composition_plan.json", "sha256": "A" * 64},
             },
             "integration_artifact_identity.schema.json",
         )

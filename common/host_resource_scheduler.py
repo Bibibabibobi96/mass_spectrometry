@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import closing
+import copy
 import json
 import math
 from pathlib import Path
@@ -164,8 +165,20 @@ def _refresh(record: dict[str, Any], processes: dict[int, dict[str, Any]]) -> bo
             live.add(pid)
             parent_birth[pid] = str(process["started"])
             changed = True
+    # A snapshot can supply the native 100-ns creation tick for a process
+    # already recorded with CIM's microsecond tick.  They are one identity
+    # under _same_creation_time, so replace the older spelling with the
+    # observed one instead of retaining two (pid, started) tuples.
+    normalized_roots = set(roots)
+    for pid in live:
+        observed_started = str(processes[pid]["started"])
+        matching = {(root_pid, root_started) for root_pid, root_started in normalized_roots
+                    if root_pid == pid and _same_creation_time(root_started, observed_started)}
+        if matching:
+            normalized_roots.difference_update(matching)
+        normalized_roots.add((pid, observed_started))
     record["processes"] = [{"pid": pid, "started": started} for pid, started in sorted(
-        roots | {_identity(processes[pid]) for pid in live})]
+        normalized_roots)]
     record["resident_bytes"] = sum(int(processes[pid].get("memory_bytes", 0)) for pid in live)
     record["live_process_ids"] = sorted(live)
     # Console hosts stay in identity and managed-memory accounting. Only a
@@ -269,6 +282,32 @@ def _admit(records: list[dict[str, Any]], snapshot: dict[str, Any], policy: dict
                     barred_classes.add(heavy)
 
 
+def _release_stale_snapshot(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, Any],
+                            processes: dict[int, dict[str, Any]]) -> dict[str, Any]:
+    """Release only an owner proven child-free by both observations; never admit."""
+    token = request.get("token")
+    record = next((item for item in state["records"] if item["token"] == token), None)
+    _completed_work_identities(request, record, processes)
+    if record is None:
+        return {"status": "released", "token": token}
+    owner = request.get("owner")
+    if not isinstance(owner, dict) or not _same_process(owner, record["owner"]):
+        raise ValueError("stale release requires the reservation owner creation identity")
+    unknown = set(snapshot.get("unknown_process_ids", [])) - _definitely_exited_process_ids(snapshot, processes)
+    if unknown.intersection(process["pid"] for process in record["processes"]):
+        raise StaleSnapshotError("reserved process identity unavailable; recollect before release")
+    if not _same_process(owner, processes.get(int(owner["pid"]), {"pid": 0, "started": ""})):
+        raise ValueError("stale release requires the live reservation owner creation identity")
+    observed = copy.deepcopy(record)
+    _refresh(observed, processes)
+    for observation in (record, observed):
+        children = set(observation["live_process_ids"]) - set(observation["console_host_process_ids"]) - {int(owner["pid"])}
+        if children:
+            raise StaleSnapshotError("a release observation retains live descendants; recollect before release")
+    state["records"].remove(record)
+    return {"status": "released", "token": token}
+
+
 def transact(path: Path, request: dict[str, Any], snapshot: dict[str, Any], policy: dict[str, Any] | None = None) -> dict[str, Any]:
     """Apply one atomic operation; errors roll back, never erase other grants."""
     policy = load_policy() if policy is None else policy
@@ -282,9 +321,12 @@ def transact(path: Path, request: dict[str, Any], snapshot: dict[str, Any], poli
         if state["schema_version"] != 1:
             raise ValueError("unsupported scheduler state; refusing to reset live reservations")
         if snapshot["observed_at_ticks"] <= state.get("observed_at_ticks", 0):
-            raise StaleSnapshotError("telemetry predates the last committed observation; recollect before retry")
-        result = _apply(state, request, snapshot, processes, policy)
-        state["observed_at_ticks"] = snapshot["observed_at_ticks"]
+            if request["operation"] != "release":
+                raise StaleSnapshotError("telemetry predates the last committed observation; recollect before retry")
+            result = _release_stale_snapshot(state, request, snapshot, processes)
+        else:
+            result = _apply(state, request, snapshot, processes, policy)
+            state["observed_at_ticks"] = snapshot["observed_at_ticks"]
         connection.execute("INSERT OR REPLACE INTO state VALUES (1, ?)", (json.dumps(state),))
         return result
 
@@ -366,8 +408,9 @@ def _apply(state: dict[str, Any], request: dict[str, Any], snapshot: dict[str, A
         process = processes.get(int(request["process_id"]))
         if process is None or int(process["pid"]) not in record["live_process_ids"]:
             raise ValueError("registered process must be a live descendant of the owner")
-        record["processes"].append({"pid": process["pid"], "started": process["started"]})
         work_identity = {"pid": process["pid"], "started": process["started"]}
+        if not any(_same_process(work_identity, item) for item in record["processes"]):
+            record["processes"].append(work_identity)
         if not any(_same_process(work_identity, p) for p in record["work_roots"]):
             record["work_roots"].append(work_identity)
     elif operation == "inherit":

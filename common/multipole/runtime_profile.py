@@ -26,6 +26,7 @@ from common.multipole.downstream_terminal import (
     select_downstream_terminal_profile,
 )
 from common.multipole.simion_numerics import normalize_simion_solver_numerics
+from common.multipole.particle_source_preflight import load_release_spec
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -40,9 +41,7 @@ def _require_keys(value: dict[str, Any], expected: set[str], label: str) -> None
         raise ValueError(f"{label} keys differ: {sorted(value)}")
 
 
-def resolve_runtime_profile(
-    repo_root: Path, project_id: str, runtime_profile_id: str
-) -> dict[str, Any]:
+def resolve_runtime_profile(repo_root: Path, project_id: str, runtime_profile_id: str) -> dict[str, Any]:
     project_root = repo_root / "projects" / project_id
     registry_path = project_root / "config" / "runtime_profiles.json"
     registry = _load(registry_path)
@@ -51,9 +50,7 @@ def resolve_runtime_profile(
         "solver_numerics_registry_paths",
         "engineering_budget_path",
     }
-    if not registry_keys.issubset(registry) or set(registry) - (
-        registry_keys | optional_registry_keys
-    ):
+    if not registry_keys.issubset(registry) or set(registry) - (registry_keys | optional_registry_keys):
         raise ValueError(f"runtime profile registry keys differ: {sorted(registry)}")
     if (
         registry["schema_version"] != 2
@@ -83,13 +80,15 @@ def resolve_runtime_profile(
     design = resolve_design_profile(repo_root, project_id, profile["design_profile_id"])
     design_serializable = _serializable_design(design)
     source = _resolve_particle_source(
-        repo_root, project_root, project_id, profile["particle_source_profile_id"]
+        repo_root,
+        project_root,
+        project_id,
+        profile["particle_source_profile_id"],
+        resolved=design["resolved_design"],
     )
     registry_paths, _, _ = _solver_registry_paths(project_root, project_id, registry)
     numerics = {
-        solver: _resolve_solver_profile(
-            path, project_id, solver, profile[f"{solver}_solver_numerics_profile_id"]
-        )
+        solver: _resolve_solver_profile(path, project_id, solver, profile[f"{solver}_solver_numerics_profile_id"])
         for solver, path in registry_paths.items()
     }
 
@@ -117,9 +116,7 @@ def resolve_runtime_profile(
         "design_profile_resolution": design_serializable,
         "particle_source": source,
         "solver_numerics": numerics,
-        "solver_numerics_registry_paths": {
-            solver: str(path) for solver, path in registry_paths.items()
-        },
+        "solver_numerics_registry_paths": {solver: str(path) for solver, path in registry_paths.items()},
         "engineering_budget": {
             "path": str(budget_path),
             "sha256": _sha256(budget_path),
@@ -150,9 +147,7 @@ def _campaign_file(repo_root: Path, path: Path) -> Path:
     return candidate
 
 
-def _resolve_downstream_terminal_profile(
-    repo_root: Path, binding: dict[str, Any]
-) -> dict[str, Any]:
+def _resolve_downstream_terminal_profile(repo_root: Path, binding: dict[str, Any]) -> dict[str, Any]:
     """Resolve one integration-owned terminal profile without project copies."""
 
     _require_keys(
@@ -160,20 +155,26 @@ def _resolve_downstream_terminal_profile(
         {"integration_id", "terminal_profile_id", "registry_sha256"},
         "downstream-terminal campaign binding",
     )
+    repo_root = repo_root.resolve()
     discovery_path = repo_root / "integrations" / "registry.json"
     discovery = _load(discovery_path)
     validate_schema(discovery, "integration_registry.schema.json")
-    matches = [
-        item
-        for item in discovery["integrations"]
-        if item["integration_id"] == binding["integration_id"]
-    ]
+    matches = [item for item in discovery["integrations"] if item["integration_id"] == binding["integration_id"]]
     if len(matches) != 1:
         raise ValueError("downstream-terminal integration identity is not unique")
-    relative = matches[0].get("downstream_terminal_profile_registry")
+    entry = matches[0]
+    relative = entry.get("downstream_terminal_profile_registry")
     if not isinstance(relative, str) or not relative:
         raise ValueError("integration omits its downstream-terminal profile registry")
-    registry_path = (repo_root / relative).resolve()
+    source_root = (repo_root / entry["root"]).resolve()
+    if not source_root.is_relative_to(repo_root):
+        raise ValueError("integration source root escapes the repository")
+    declared = Path(relative)
+    if declared.parent != Path(entry["root"]) / "config":
+        raise ValueError("integration downstream_terminal_profile_registry differs from its declared root")
+    registry_path = (repo_root / declared).resolve()
+    if not registry_path.is_relative_to(source_root):
+        raise ValueError("integration downstream_terminal_profile_registry escapes its declared root")
     if not registry_path.is_relative_to(repo_root) or not registry_path.is_file():
         raise ValueError("downstream-terminal profile registry is missing or escapes the repository")
     registry_sha256 = _sha256(registry_path)
@@ -186,11 +187,7 @@ def _resolve_downstream_terminal_profile(
         or registry["compatible_upstream_family_id"] != "rf_multipole_ion_optics"
     ):
         raise ValueError("downstream-terminal profile registry identity differs")
-    selected = [
-        item
-        for item in registry["profiles"]
-        if item["terminal_profile_id"] == binding["terminal_profile_id"]
-    ]
+    selected = [item for item in registry["profiles"] if item["terminal_profile_id"] == binding["terminal_profile_id"]]
     if len(selected) != 1:
         raise ValueError("downstream-terminal profile identity is not unique")
     return {
@@ -220,6 +217,8 @@ def _resolve_particle_source(
     project_root: Path,
     project_id: str,
     source_id: str,
+    *,
+    resolved: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     registry_path = project_root / "config" / "particle_source_profiles.json"
     registry = _load(registry_path)
@@ -237,6 +236,20 @@ def _resolve_particle_source(
     selected = registry["profiles"].get(source_id)
     if not isinstance(selected, dict):
         raise ValueError(f"unknown particle-source profile: {source_id}")
+    if set(selected) == {"release_spec"}:
+        if resolved is None:
+            raise ValueError(
+                "release-spec sources require a direct runtime profile; campaign transforms are not supported"
+            )
+        spec_path = _project_file(project_root, selected["release_spec"], "release spec")
+        spec, record = load_release_spec(spec_path, resolved)
+        return {
+            "profile_id": source_id,
+            "release_spec": record,
+            "particle_count": spec["particle_count"],
+            "registry_path": str(registry_path.resolve()),
+            "registry_sha256": _sha256(registry_path),
+        }
     if set(selected) not in (
         {"path", "sha256"},
         {"path", "sha256", "volume_snapshot_receipt"},
@@ -301,9 +314,7 @@ def _solver_registry_paths(
     return paths, runtime_registry, runtime_registry_path
 
 
-def _resolve_solver_profile(
-    path: Path, project_id: str, solver: str, profile_id: str
-) -> dict[str, Any]:
+def _resolve_solver_profile(path: Path, project_id: str, solver: str, profile_id: str) -> dict[str, Any]:
     registry = _load(path)
     _require_keys(
         registry,
@@ -364,9 +375,7 @@ def _set_pointer(document: dict[str, Any], pointer: str, value: int | float) -> 
     parent[leaf] = value
 
 
-def _resolve_execution_profile(
-    project_root: Path, project_id: str, execution_profile_id: str
-) -> dict[str, Any]:
+def _resolve_execution_profile(project_root: Path, project_id: str, execution_profile_id: str) -> dict[str, Any]:
     path = project_root / "config" / "execution_profiles.json"
     registry = _load(path)
     try:
@@ -375,9 +384,7 @@ def _resolve_execution_profile(
         raise ValueError(f"invalid execution-profile registry: {error}") from error
     if registry["project_id"] != project_id:
         raise ValueError("execution-profile registry project identity differs")
-    selected = [
-        item for item in registry["profiles"] if item["profile_id"] == execution_profile_id
-    ]
+    selected = [item for item in registry["profiles"] if item["profile_id"] == execution_profile_id]
     if len(selected) != 1:
         raise ValueError(f"execution profile is not unique: {execution_profile_id}")
     profile = selected[0]
@@ -386,17 +393,13 @@ def _resolve_execution_profile(
         profile["mode"] != "finite_3d_no_collision"
         or profile["evidence_levels"] != ["plan"]
         or set(profile["required_bindings"]) != {"campaign_path", "experiment_id"}
-        or not {"simulation_results", "simion_model", "interface_state"}.issubset(
-            profile["deliverable_outputs"]
-        )
+        or not {"simulation_results", "simion_model", "interface_state"}.issubset(profile["deliverable_outputs"])
         or len(run_steps) != 1
-        or not run_steps[0]["entrypoint"].replace("\\", "/").endswith(
-            "common/multipole/run_simion_transport_campaign.ps1"
-        )
+        or not run_steps[0]["entrypoint"]
+        .replace("\\", "/")
+        .endswith("common/multipole/run_simion_transport_campaign.ps1")
     ):
-        raise ValueError(
-            "execution profile is not the governed SIMION campaign engineering workflow"
-        )
+        raise ValueError("execution profile is not the governed SIMION campaign engineering workflow")
     return {
         "profile_id": execution_profile_id,
         "path": path.resolve(),
@@ -416,18 +419,12 @@ def _resolve_phase_policy(
     """Bind phase-matched source derivation without materializing run artifacts."""
 
     policy = campaign["particle_source_phase_policy"]
-    authority_relationship = policy.get(
-        "n1000_authority_relationship", "same_as_reference"
-    )
-    if authority_relationship not in {
-        "same_as_reference", "source_model_comparison_with_same_particle_ids"
-    }:
+    authority_relationship = policy.get("n1000_authority_relationship", "same_as_reference")
+    if authority_relationship not in {"same_as_reference", "source_model_comparison_with_same_particle_ids"}:
         raise ValueError("phase-policy N=1000 authority relationship is invalid")
     baseline_frequency = float(policy["baseline_frequency_Hz"])
     candidate_frequency = float(design["resolved_design"]["drive"]["frequency_Hz"])
-    declared_frequency = float(
-        experiment["design_variable_values"][policy["frequency_variable_id"]]
-    )
+    declared_frequency = float(experiment["design_variable_values"][policy["frequency_variable_id"]])
     if not math.isclose(candidate_frequency, declared_frequency, rel_tol=0, abs_tol=0):
         raise ValueError("candidate RF frequency differs from the campaign row")
     authority = _resolve_particle_source(
@@ -487,9 +484,7 @@ def _resolve_source_transform_policy(
     if not math.isclose(frequency, design_frequency, rel_tol=0, abs_tol=0):
         raise ValueError("source-transform RF frequency differs from the resolved design")
     target_energy = float(experiment["source_kinetic_energy_eV"])
-    authority = _resolve_particle_source(
-        repo_root, project_root, project_id, experiment["particle_source_profile_id"]
-    )
+    authority = _resolve_particle_source(repo_root, project_root, project_id, experiment["particle_source_profile_id"])
     reference = _resolve_particle_source(
         repo_root,
         project_root,
@@ -516,10 +511,7 @@ def _resolve_source_transform_policy(
         "authority_source": authority,
         "authority_particle_count": authority_count,
         "n1000_reference_source": reference,
-        "formula": (
-            "preserve birth_time, position and velocity direction; scale velocity "
-            "to source_kinetic_energy_eV"
-        ),
+        "formula": ("preserve birth_time, position and velocity direction; scale velocity to source_kinetic_energy_eV"),
     }
 
 
@@ -551,14 +543,10 @@ def _compile_campaign_design_candidate(
     limits = authorization["variable_limits"]
     limit_ids = [item["variable_id"] for item in limits]
     if len(limit_ids) != len(set(limit_ids)) or set(limit_ids) != set(allowed_ids):
-        raise ValueError(
-            "campaign variable limits must identify every allowed variable exactly once"
-        )
+        raise ValueError("campaign variable limits must identify every allowed variable exactly once")
     limit_by_id = {item["variable_id"]: item for item in limits}
     for item in limits:
-        if not math.isfinite(float(item["minimum"])) or not math.isfinite(
-            float(item["maximum"])
-        ):
+        if not math.isfinite(float(item["minimum"])) or not math.isfinite(float(item["maximum"])):
             raise ValueError("campaign design-variable limits must be finite")
         if float(item["minimum"]) > float(item["maximum"]):
             raise ValueError("campaign design-variable minimum exceeds maximum")
@@ -584,9 +572,7 @@ def _compile_campaign_design_candidate(
         raise ValueError("design-variable authority identity differs")
     if envelope["status"] == "retired":
         raise ValueError("retired optimization envelope cannot authorize a campaign")
-    if envelope["reference"]["design_request_sha256"] != _sha256(
-        design["paths"]["design_request"]
-    ):
+    if envelope["reference"]["design_request_sha256"] != _sha256(design["paths"]["design_request"]):
         raise ValueError("optimization envelope base request SHA-256 differs")
 
     catalog_items = {item["variable_id"]: item for item in catalog["variables"]}
@@ -604,23 +590,16 @@ def _compile_campaign_design_candidate(
         if item is None:
             raise ValueError(f"campaign authorizes unknown design variable: {variable_id}")
         if item["json_pointer"] not in bounded_pointers:
-            raise ValueError(
-                f"campaign design variable is outside the optimization envelope: {variable_id}"
-            )
+            raise ValueError(f"campaign design variable is outside the optimization envelope: {variable_id}")
         if variable_id not in supported:
-            raise ValueError(
-                f"execution profile does not support design variable: {variable_id}"
-            )
+            raise ValueError(f"execution profile does not support design variable: {variable_id}")
         campaign_limit = limit_by_id[variable_id]
         if campaign_limit["unit"] != item["unit"]:
             raise ValueError(f"campaign design-variable unit differs: {variable_id}")
-        if (
-            float(campaign_limit["minimum"]) < float(item["minimum"])
-            or float(campaign_limit["maximum"]) > float(item["maximum"])
+        if float(campaign_limit["minimum"]) < float(item["minimum"]) or float(campaign_limit["maximum"]) > float(
+            item["maximum"]
         ):
-            raise ValueError(
-                f"campaign design-variable range exceeds catalog bounds: {variable_id}"
-            )
+            raise ValueError(f"campaign design-variable range exceeds catalog bounds: {variable_id}")
 
     values = experiment["design_variable_values"]
     missing = set(allowed_ids) - set(values)
@@ -633,21 +612,15 @@ def _compile_campaign_design_candidate(
     request = _typed_base_request(design)
     applied: dict[str, dict[str, Any]] = {}
     for variable_id, value in values.items():
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(
-            float(value)
-        ):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
             raise ValueError(f"campaign design-variable value must be finite: {variable_id}")
         catalog_item = catalog_items[variable_id]
         if catalog_item["kind"] == "integer" and not isinstance(value, int):
             raise ValueError(f"campaign integer design variable is not integer: {variable_id}")
         campaign_limit = limit_by_id[variable_id]
-        if not float(campaign_limit["minimum"]) <= float(value) <= float(
-            campaign_limit["maximum"]
-        ):
+        if not float(campaign_limit["minimum"]) <= float(value) <= float(campaign_limit["maximum"]):
             raise ValueError(f"campaign design-variable value is outside its narrow range: {variable_id}")
-        if not float(catalog_item["minimum"]) <= float(value) <= float(
-            catalog_item["maximum"]
-        ):
+        if not float(catalog_item["minimum"]) <= float(value) <= float(catalog_item["maximum"]):
             raise ValueError(f"campaign design-variable value is outside catalog bounds: {variable_id}")
         _set_pointer(request, catalog_item["json_pointer"], value)
         applied[variable_id] = {
@@ -670,9 +643,7 @@ def _compile_campaign_design_candidate(
     }
     mode_id = design["profile"].get("mode_id")
     if mode_id is not None:
-        source_files[operating_mode_source_label(mode_id)] = design["paths"][
-            "operating_mode_registry"
-        ]
+        source_files[operating_mode_source_label(mode_id)] = design["paths"]["operating_mode_registry"]
     try:
         resolved = compile_design_request(
             request,
@@ -692,9 +663,7 @@ def _compile_campaign_design_candidate(
         "execution_profile_registry_path": str(execution["path"]),
         "execution_profile_registry_sha256": execution["sha256"],
         "catalog_sha256": _sha256(design["paths"]["design_variables"]),
-        "optimization_envelope_sha256": _sha256(
-            design["paths"]["optimization_envelope"]
-        ),
+        "optimization_envelope_sha256": _sha256(design["paths"]["optimization_envelope"]),
         "allowed_variable_ids": copy.deepcopy(allowed_ids),
         "variable_limits": copy.deepcopy(limits),
         "applied_values": applied,
@@ -716,9 +685,7 @@ def resolve_campaign_experiment(
     campaign = _load(path)
     try:
         json.dumps(campaign, allow_nan=False)
-        validate_schema(
-            campaign, "multipole_transport_experiment_campaign.schema.json"
-        )
+        validate_schema(campaign, "multipole_transport_experiment_campaign.schema.json")
     except (ContractError, TypeError, ValueError) as error:
         raise ValueError(f"invalid multipole transport campaign: {error}") from error
     if campaign["family_id"] != "rf_multipole_ion_optics":
@@ -726,9 +693,7 @@ def resolve_campaign_experiment(
     identifiers = [item["experiment_id"] for item in campaign["experiments"]]
     if len(identifiers) != len(set(identifiers)):
         raise ValueError("campaign experiment_id values must be unique")
-    matches = [
-        item for item in campaign["experiments"] if item["experiment_id"] == experiment_id
-    ]
+    matches = [item for item in campaign["experiments"] if item["experiment_id"] == experiment_id]
     if len(matches) != 1:
         raise ValueError(f"unknown campaign experiment: {experiment_id}")
     experiment = matches[0]
@@ -737,13 +702,9 @@ def resolve_campaign_experiment(
 
     downstream_terminal = None
     if campaign["schema_version"] in (2, 3, 4, 5, 6):
-        downstream_terminal = _resolve_downstream_terminal_profile(
-            repo_root, campaign["downstream_terminal_profile"]
-        )
+        downstream_terminal = _resolve_downstream_terminal_profile(repo_root, campaign["downstream_terminal_profile"])
 
-    design = resolve_design_profile(
-        repo_root, project_id, experiment["design_profile_id"]
-    )
+    design = resolve_design_profile(repo_root, project_id, experiment["design_profile_id"])
     if campaign["schema_version"] in (3, 4, 6):
         design = _compile_campaign_design_candidate(
             repo_root,
@@ -758,9 +719,7 @@ def resolve_campaign_experiment(
             downstream_terminal["terminal_profile_id"],
             upstream_project_id=project_id,
         )
-        design["resolved_design"] = compose_downstream_terminal(
-            design["resolved_design"], terminal_profile
-        )
+        design["resolved_design"] = compose_downstream_terminal(design["resolved_design"], terminal_profile)
     source = _resolve_particle_source(
         repo_root,
         project_root,
@@ -791,9 +750,7 @@ def resolve_campaign_experiment(
         )
         if source_derivation["authority_source"]["sha256"] != source["sha256"]:
             raise ValueError("source-transform authority differs from the selected source")
-    registry_paths, _, runtime_registry_path = _solver_registry_paths(
-        project_root, project_id
-    )
+    registry_paths, _, runtime_registry_path = _solver_registry_paths(project_root, project_id)
     comsol = _resolve_solver_profile(
         registry_paths["comsol"],
         project_id,
@@ -893,23 +850,15 @@ def resolve_campaign_experiment(
         )
         result["particle_source_phase_derivation"] = phase_derivation
         if "simion_pa_basis_policy" in campaign:
-            result["simion_pa_basis_policy"] = copy.deepcopy(
-                campaign["simion_pa_basis_policy"]
-            )
-            result["campaign"]["simion_pa_basis_policy_sha256"] = canonical_sha256(
-                campaign["simion_pa_basis_policy"]
-            )
+            result["simion_pa_basis_policy"] = copy.deepcopy(campaign["simion_pa_basis_policy"])
+            result["campaign"]["simion_pa_basis_policy_sha256"] = canonical_sha256(campaign["simion_pa_basis_policy"])
     if campaign["schema_version"] in (5, 6):
         result["campaign"]["particle_source_transform_policy_sha256"] = canonical_sha256(
             campaign["particle_source_transform_policy"]
         )
         result["particle_source_derivation"] = source_derivation
-        result["simion_pa_basis_policy"] = copy.deepcopy(
-            campaign["simion_pa_basis_policy"]
-        )
-        result["campaign"]["simion_pa_basis_policy_sha256"] = canonical_sha256(
-            campaign["simion_pa_basis_policy"]
-        )
+        result["simion_pa_basis_policy"] = copy.deepcopy(campaign["simion_pa_basis_policy"])
+        result["campaign"]["simion_pa_basis_policy_sha256"] = canonical_sha256(campaign["simion_pa_basis_policy"])
     if downstream_terminal is not None:
         result["downstream_terminal_profile"] = downstream_terminal
     return result
@@ -928,16 +877,12 @@ def resolve_runtime_selection(
     legacy = runtime_profile_id is not None
     campaign = campaign_path is not None or experiment_id is not None
     if legacy == campaign:
-        raise ValueError(
-            "select exactly one runtime_profile_id or campaign_path + experiment_id"
-        )
+        raise ValueError("select exactly one runtime_profile_id or campaign_path + experiment_id")
     if legacy:
         return resolve_runtime_profile(repo_root, project_id, runtime_profile_id)
     if campaign_path is None or experiment_id is None:
         raise ValueError("campaign_path and experiment_id must be provided together")
-    return resolve_campaign_experiment(
-        repo_root, project_id, campaign_path, experiment_id
-    )
+    return resolve_campaign_experiment(repo_root, project_id, campaign_path, experiment_id)
 
 
 def _semantic_diff_category(path: tuple[str, ...]) -> str:
@@ -961,24 +906,22 @@ def _semantic_diff_category(path: tuple[str, ...]) -> str:
     return "declared_configuration"
 
 
-def _semantic_diff_values(
-    before: object, after: object, path: tuple[str, ...] = ()
-) -> list[dict[str, Any]]:
+def _semantic_diff_values(before: object, after: object, path: tuple[str, ...] = ()) -> list[dict[str, Any]]:
     if isinstance(before, dict) and isinstance(after, dict):
         changes: list[dict[str, Any]] = []
         for key in sorted(set(before) | set(after)):
-            changes.extend(
-                _semantic_diff_values(before.get(key), after.get(key), path + (key,))
-            )
+            changes.extend(_semantic_diff_values(before.get(key), after.get(key), path + (key,)))
         return changes
     if before == after:
         return []
-    return [{
-        "path": ".".join(path),
-        "category": _semantic_diff_category(path),
-        "before": before,
-        "after": after,
-    }]
+    return [
+        {
+            "path": ".".join(path),
+            "category": _semantic_diff_category(path),
+            "before": before,
+            "after": after,
+        }
+    ]
 
 
 def semantic_diff_campaign_experiments(
@@ -995,12 +938,8 @@ def semantic_diff_campaign_experiments(
         after_row = rows_by_id[after_experiment_id]
     except KeyError as error:
         raise ValueError(f"unknown campaign experiment: {error.args[0]}") from error
-    before = resolve_campaign_experiment(
-        repo_root, before_row["project_id"], campaign_path, before_experiment_id
-    )
-    after = resolve_campaign_experiment(
-        repo_root, after_row["project_id"], campaign_path, after_experiment_id
-    )
+    before = resolve_campaign_experiment(repo_root, before_row["project_id"], campaign_path, before_experiment_id)
+    after = resolve_campaign_experiment(repo_root, after_row["project_id"], campaign_path, after_experiment_id)
     changes = _semantic_diff_values(before, after)
     return {
         "role": "multipole_campaign_resolved_semantic_diff",
@@ -1020,20 +959,14 @@ def main() -> int:
     parser.add_argument("--runtime-profile-id")
     parser.add_argument("--campaign-path", type=Path)
     parser.add_argument("--experiment-id")
-    parser.add_argument(
-        "--semantic-diff-experiment-ids", nargs=2, metavar=("BEFORE", "AFTER")
-    )
+    parser.add_argument("--semantic-diff-experiment-ids", nargs=2, metavar=("BEFORE", "AFTER"))
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.semantic_diff_experiment_ids:
         if args.runtime_profile_id or not args.campaign_path or args.experiment_id:
-            parser.error(
-                "--semantic-diff-experiment-ids requires --campaign-path only"
-            )
+            parser.error("--semantic-diff-experiment-ids requires --campaign-path only")
         before_id, after_id = args.semantic_diff_experiment_ids
-        result = semantic_diff_campaign_experiments(
-            args.repo_root.resolve(), args.campaign_path, before_id, after_id
-        )
+        result = semantic_diff_campaign_experiments(args.repo_root.resolve(), args.campaign_path, before_id, after_id)
         print(json.dumps(result, indent=2))
         return 0
     if not args.project_id or args.output is None:
@@ -1047,10 +980,7 @@ def main() -> int:
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print(
-        "MULTIPOLE_RUNTIME_PROFILE=PASS "
-        f"PROJECT={args.project_id} PROFILE={result['runtime_profile_id']}"
-    )
+    print(f"MULTIPOLE_RUNTIME_PROFILE=PASS PROJECT={args.project_id} PROFILE={result['runtime_profile_id']}")
     return 0
 
 

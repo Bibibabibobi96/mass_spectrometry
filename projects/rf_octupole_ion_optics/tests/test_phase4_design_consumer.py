@@ -398,8 +398,36 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
         profiles = load("config/design_profiles.json")["profiles"]
         self.assertEqual(
             {profile["design_profile_id"] for profile in profiles},
-            set(MODE_IDS),
+            set(MODE_IDS) | {"through_exit_no_acceleration", "through_entrance_exit_no_acceleration"},
         )
+        self.assertEqual({profile["mode_id"] for profile in profiles}, set(MODE_IDS))
+
+    def test_through_exit_runtime_consumers_bind_the_explicit_topology_and_independent_sources(self) -> None:
+        sources = load("config/particle_source_profiles.json")["profiles"]
+        for runtime_id, source_id in (
+            ("through_exit_no_acceleration_n100", "family_mother_sample_v1_n100"),
+            ("through_exit_no_acceleration_524da_n100", "planar_524da_2ev_n100"),
+        ):
+            with self.subTest(runtime_id=runtime_id):
+                runtime = resolve_runtime_profile(REPO_ROOT, "rf_octupole_ion_optics", runtime_id)
+                self.assertEqual(runtime["design_profile_id"], "through_exit_no_acceleration")
+                design = runtime["design_profile_resolution"]
+                self.assertEqual(design["profile"]["mode_id"], MODE_IDS[0])
+                self.assertEqual(design["profile"]["design_request"], "config/requests/through_exit.json")
+                self.assertEqual(design["profile"]["optimization_envelope"], "config/through_exit_optimization_envelope.json")
+                source = runtime["particle_source"]
+                self.assertEqual(source["profile_id"], source_id)
+                if source_id == "family_mother_sample_v1_n100":
+                    self.assertEqual(Path(source["path"]), REPO_ROOT / sources[source_id]["path"])
+                    self.assertEqual(source["sha256"], sources[source_id]["sha256"])
+                    self.assertNotIn("release_spec", source)
+                else:
+                    spec_path = PROJECT_ROOT / sources[source_id]["release_spec"]
+                    self.assertEqual(Path(source["release_spec"]["path"]), spec_path)
+                    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+                    self.assertEqual(spec["species"], dict(mass_amu=524., charge_state=1))
+                    self.assertEqual((spec["particle_count"], spec["mother_particle_count"]), (100,100))
+                    self.assertNotIn("path", source)
 
     def test_wrappers_delegate_registered_runtime_profile_resolution(self) -> None:
         runtime_ids = set(load("config/runtime_profiles.json")["profiles"])

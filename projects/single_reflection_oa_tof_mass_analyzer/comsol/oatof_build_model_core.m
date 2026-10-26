@@ -1,4 +1,4 @@
-function result = oatof_build_model_core(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1, accel_bore_half_mm, fixed_particle_table, fine_tstep_ns, mesh_hmax_accel_mm, drift_tstep_ns, output_model_path, contract_path, allow_particle_loss)
+function result = oatof_build_model_core(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1, accel_bore_half_mm, fixed_particle_table, fine_tstep_ns, mesh_hmax_accel_mm, drift_tstep_ns, output_model_path, contract_path, allow_particle_loss, acceleratorGeometry, acceleratorElectrical, sideOpening, fieldDesignOnly,cartesianRelease,artifactRoot,geometryOnly)
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 repositoryRoot = fileparts(fileparts(projectRoot));
 addpath(projectRoot, fullfile(repositoryRoot, 'common', 'comsol'));
@@ -10,6 +10,30 @@ reflectronDesign = contract.geometry_derivation.reflectron;
 sourceDesign = contract.particle_source;
 voltageV = contract.electrodes_V;
 ringDesign = contract.rings;
+if nargin<20, acceleratorGeometry=struct(); end
+if nargin<21, acceleratorElectrical=struct(); end
+if nargin<22, sideOpening=struct(); end
+if nargin<23, fieldDesignOnly=false; end
+if nargin<24, cartesianRelease=''; end
+if nargin<25, artifactRoot=''; end
+hasGeometry=~isempty(fieldnames(acceleratorGeometry));
+hasElectrical=~isempty(fieldnames(acceleratorElectrical));
+assert(hasGeometry==hasElectrical,'oatof:AcceleratorProjection', ...
+    'AcceleratorGeometry and AcceleratorElectricalDesign must be supplied together.');
+threeZone=isfield(contract,'accelerator_topology');
+assert(~threeZone || hasGeometry,'oatof:AcceleratorProjection', ...
+    'Three-zone COMSOL requires the existing provider geometry and electrical projections.');
+assert(isempty(fieldnames(sideOpening)) || hasGeometry,'oatof:SideOpening', ...
+    'Mechanical SideOpening requires explicit provider geometry and electrical projections.');
+if isfield(acceleratorDesign,'realization_id')
+    assert(strcmp(acceleratorDesign.realization_id,'square_3d'),'oatof:AcceleratorCrossSection', ...
+        'COMSOL supports square accelerator realization only.');
+end
+if hasGeometry
+    validate_accelerator_projection(acceleratorGeometry,acceleratorElectrical,contract);
+    assert(~threeZone || ~isempty(fieldnames(sideOpening)),'oatof:SideOpening', ...
+        'The three-zone side opening must be supplied explicitly from its frozen mechanical request.');
+end
 % !!! d1_mm (doc §7.49, per explicit request -- corrected from an
 % earlier d2-scan plan to a d1 scan): optional 5th argument, the
 % reflectron's stage1 physical depth in mm (default 120, matching the
@@ -145,62 +169,12 @@ reflectron_stage2_min_mm = ...
 fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=%.4fV, d2_min=%.2fmm, d2(adaptive,+%.0f%%)=%.2fmm\n', ...
     d1_mm, reflectron_midgrid_voltage_v, reflectron_stage1_field_vpm, reflectron_stage2_field_vpm, ...
     reflectron_backplate_voltage_v, reflectron_stage2_min_mm, d2_margin_fraction*100, d2_mm);
-% oa-TOF two-stage ring-stack reflectron analyzer: orthogonal accelerator (pusher)
-% + TOF flight tube + a REALISTIC ring-stack reflectron + appropriately-
-% sized detector.
-%
-% !!! REBUILT to represent every GRID as an idealized fine wire mesh,
-% not a solid plate with one big hole. A real grid is many closely-spaced
-% (~0.5mm pitch) very thin (~0.02mm) wires -- electrically it behaves
-% almost like a solid conducting sheet (minimal field distortion) while
-% being >99% open to the ion. Modeling it as "solid disk minus one large
-% circular aperture" is a fundamentally different (and much worse)
-% physical object: a big hole in a plate lets the field "leak"/soften
-% badly near the hole's center (classic aperture-lens effect), which was
-% the root cause of a whole chain of field-leakage and divergence
-% problems traced through this project (see doc §7.28 for the full
-% history). The correct representation, validated with a standalone test
-% (compare_ideal_vs_real style check + a dedicated interior-boundary
-% test model): a ZERO-THICKNESS INTERIOR BOUNDARY, embedded inside a
-% single continuous vacuum domain, carrying a fixed ElectricPotential
-% condition (so electrostatics sees an unbroken sheet, matching a fine
-% mesh's shielding) but NOT a material/domain boundary (so ChargedParti-
-% cleTracing does not treat it as a wall -- the ion passes straight
-% through, at any (x,y) position, since there's no hole to speak of).
-% Practical upshot: since the ion can pass through ANYWHERE on these
-% grids, they no longer need any aperture sizing tradeoff at all -- each
-% grid is simply built as a FULL 800x800mm sheet (matching the vacuum
-% cross-section), eliminating the whole aperture-lens problem rather than
-% trying to balance it. This also makes `grid2` (which existed ONLY to
-% give the ion's wider return-path drift a big enough hole to avoid being
-% blocked by grid1's small aperture) and the shielding `sleeve` (an
-% attempted patch for leakage through a hole that no longer exists)
-% unnecessary -- both removed.
-%
-% !!! IMPORTANT COMSOL GOTCHA uncovered while building this (see doc
-% §7.28/§1 for the permanent record): Box/Cylinder selections using the
-% 'intersects' condition can silently grab OTHER boundaries that merely
-% pass through the selection region (e.g. a thin z-slab meant to isolate
-% one flat cap can also catch a side wall that spans the full z-range).
-% If two ElectricPotential features end up sharing the same boundary ID
-% this way, COMSOL does NOT raise an error -- one of them just silently
-% ends up with ZERO effect (its own selection.entities() reports 0, and
-% the boundary's actual potential is whatever the OTHER feature set).
-% Always use Box selections with 'allvertices' (not 'intersects') and a
-% FULLY specified x/y/z range for isolating a specific flat face.
-%
-% Reflectron: built from a stack of annular ("washer"-shaped, hollow-
-% centered) electrodes held at a two-stage graded sequence of potentials
-% (0 near the entrance, stepping through V_mid, up to V_mirror at the
-% back) -- entrance grid -> stage1 rings -> middle grid -> stage2 rings
-% -> solid backplate (no grid needed there; ions never reach it).
-
-% !!! Per-phase timing instrumentation (per explicit request to profile
-% where wall-clock time actually goes, ahead of a speed-optimization
-% pass): a running struct of tic/toc pairs, printed as a summary table at
-% the very end. Does not affect any physics/accuracy, purely diagnostic.
+% The accelerator uses the provider's actual ring/sheet geometry. Ideal
+% sheets remain interior boundaries; only physical solids become walls.
+% Named solid selections and planar allvertices selections prevent unrelated
+% intersecting walls from receiving an electrode's potential.
 t_total_start = tic;
-paths = oatof_paths();
+paths = oatof_paths(artifactRoot);
 import com.comsol.model.*
 import com.comsol.model.util.*
 
@@ -243,55 +217,10 @@ geom1.lengthUnit('mm');
 p = model.param;
 p.set('KE_in_eV', sprintf('%.12g[V]', contract.validation_target.initial_energy_mean_ev), ...
     'Ion energy entering the pusher, from baseline.json');
-% 3-electrode accelerator: repeller (V_repeller) -> intermediate grid
-% (V_accelmid, absorbs most of the drop) -> exit grid (0V, always
-% grounded, matches the field-free region). Both repeller and accelmid
-% pulse together; the exit grid never pulses.
-% !!! REDESIGNED per the three-grid accelerator total-length derivation's exact
-% first-order time-focusing solution: the three-grid accelerator
-% (repeller=grid1_doc, my grid1=grid2_doc, my grid2=grid3_doc/grounded)
-% can be designed so the ion focuses (dT/du=0) EXACTLY at the field-free
-% boundary (D=0), using: E1=2*dKE/dx0, U1=KE0+dKE*d1/dx0,
-% U2=KE0-dKE*d1/dx0, rho*=v3/(v3-v2), E2=E1/rho*, d2=U2/E2*. With
-% KE0=2000eV, dKE=80eV, dx0=1mm, d1=3mm (all per explicit request):
-% U1=2240V, U2=1760V, d2=16.83mm, L_accel=d1+d2=19.83mm (D=0, no extra
-% drift needed -- this is the key fix for the "upstream transit time"
-% problem found earlier: the accelerator ITSELF now compensates for the
-% z0-dependent timing spread, before the ion even reaches the field-free
-% region).
+% Baseline two-zone parameters retain their original values; explicit
+% provider projections below add the selected topology without rederivation.
 p.set('V_repeller', sprintf('%.12g[V]', voltageV.repeller), ...
     'Accelerator repeller voltage from baseline.json');
-% !!! Attempted a Wiley-McLaren "space focusing" scan (per explicit
-% request to reduce the z-direction KE spread WITHOUT changing the
-% release volume): the accelerator's own two-stage split (repeller->
-% accelmid->grid1) is structurally the classic 2-field ion source, so
-% tuning the field-strength ratio between the two stages should be able
-% to make ions starting at different z0 arrive at the same time (to
-% first order) -- this is the standard real-TOF-MS technique for this
-% problem, instead of shrinking the source volume. A small-N scan
-% (N=50, then N=200) appeared to find an improvement around 3700V
-% (R=26.7 vs ~17 at 3500V) -- but a large-N (10000) confirmation showed
-% NO real difference (3700V: R=18.9, 3500V: R=19.7, statistically the
-% same). The apparent "improvement" was sampling noise from
-% SamplingFromDistribution='Random' re-drawing different random
-% particles each run, not a genuine physical effect (see doc §7.29 for
-% the full account) -- reverted to the simpler round value since 3700V
-% provides no real benefit.
-% !!! MAJOR SIMPLIFICATION per explicit request: accelmid removed
-% entirely. New accelerator has only 3 electrodes: repeller (z=0) ->
-% grid1 (z=3mm) -> grid2 (z=L_accel=6mm, grounded, marks the field-free
-% interface). Ion releases BETWEEN repeller and grid1 (release cube
-% z0 in [1,2]mm, unchanged). repeller+grid1 together form a WEAK,
-% uniform "bracket" field (same role as the old gridA/gridB pair) --
-% grid1's voltage is NOT arbitrary, it's derived from the DESIRED
-% initial KE and KE spread: choosing E_bracket=22.7 V/mm over the 3mm
-% gap gives the SAME +-11.35eV half-range spread as the old gridA/gridB
-% design (comparable basis for before/after comparison), so
-% V_grid1 = V_repeller - 22.7*3 = 4500-68.1 = 4431.9V. grid1 and grid2
-% have NO direct relationship (just need to be spatially separated) --
-% grid1-to-grid2 gap is ALSO set to 3mm per explicit request, giving
-% L_accel=6mm total. K0 (nominal, release cube center z0=1.5mm) =
-% V_repeller - 22.7*1.5 = 4465.95V.
 p.set('V_grid1', sprintf('%.12g[V]', voltageV.grid1), ...
     'Accelerator first-grid voltage from baseline.json');
 % !!! Quick V_mirror scan (N=30 each) found 1.4x gave the best timing
@@ -344,18 +273,15 @@ p.set('V_grid1', sprintf('%.12g[V]', voltageV.grid1), ...
 % Now recomputed dynamically at the top of this function from d1_mm
 % (see the d1-scan block above) instead of a fixed literal, to support
 % scanning different d1 values (doc §7.49).
-p.set('V_mirror', sprintf('%.4f[V]', reflectron_backplate_voltage_v), ...
+p.set('V_mirror', sprintf('%.17g[V]', reflectron_backplate_voltage_v), ...
     'Reflectron backplate derived from the baseline dual-stage design');
-% !!! L_accel now derived from the three-grid focusing solution:
-% d1+d2=3+16.83=19.83mm, with D=0 (no extra drift needed for
-% first-order time focus -- ion focuses exactly at grid2/field-free
-% boundary).
+% d2_mm denotes the full grid1-to-exit span for both supported topologies.
 p.set('z_accel_origin', sprintf('%.17g[mm]', geometryMm.accelerator_repeller_z), ...
     'Canonical global repeller front from baseline.json');
 p.set('accel_stage1_length', sprintf('%.17g[mm]', acceleratorDesign.d1_mm), ...
     'Accelerator repeller-to-grid1 length from baseline.json');
 p.set('accel_stage2_length', sprintf('%.17g[mm]', acceleratorDesign.d2_mm), ...
-    'Accelerator grid1-to-grid2 length from baseline.json');
+    'Accelerator grid1-to-exit total length from resolved geometry');
 p.set('L_accel', 'accel_stage1_length+accel_stage2_length', ...
     'Derived accelerator total length');
 p.set('z_accel_grid1', 'z_accel_origin+accel_stage1_length', ...
@@ -445,7 +371,8 @@ p.set('L_flight', 'detector_z+flight_length_from_detector', ...
 % the detector moved (exactly what happened during the §7.41 L1/L2
 % asymmetry test). Both the geometry and the detection logic now read
 % this SAME parameter, so they can never drift apart again.
-p.set('detector_z', 'z_accel_grid2+accel_focus_drift', 'Detector active plane is the exact derived first-order time-focus plane and canonical z=0 datum');
+p.set('detector_z', sprintf('%.17g[mm]', geometryMm.detector_z), ...
+    'Detector active plane from the resolved physical layout');
 p.set('L_refl', sprintf('%.12g[mm]', d1_mm+d2_mm), 'Ring-stack reflectron total length (physics-derived d1+d2, rounded to the shared 0.0001mm engineering precision in baseline.json)');
 p.set('L_stage1', sprintf('%g[mm]', d1_mm), 'Stage 1 length (entrance grid to middle grid) = d1, from the d1_mm function argument (doc §7.49, was fixed 200mm)');
 % !!! CORRECTED: the first attempt used K0=V_repeller=4500eV, but the
@@ -467,7 +394,7 @@ p.set('L_stage1', sprintf('%g[mm]', d1_mm), 'Stage 1 length (entrance grid to mi
 % k1 leaves 1375eV of margin before the ion would fail to clear stage1
 % (vs the earlier fragile design's 13eV margin), directly satisfying the
 % "V_mid <= 0.8*K0" safety constraint with room to spare.
-p.set('V_mid', sprintf('%.4f[V]', reflectron_midgrid_voltage_v), ...
+p.set('V_mid', sprintf('%.17g[V]', reflectron_midgrid_voltage_v), ...
     'Dual-stage reflectron midgrid voltage derived from baseline physical inputs');
 % !!! Ring count reduced from 15 to 5 per stage, per explicit request.
 % !!! Tested 15 rings vs 5: field deviation and R were essentially
@@ -636,40 +563,11 @@ p.set('shield_axial_gap', sprintf('%.12g[mm]', geometryMm.shield_axial_gap), ...
 % re-derived iteratively for a self-consistent fixed point).
 p.set('x_accel_center', sprintf('%.17g[mm]', contract.coordinate_convention.accelerator_axis_x), ...
     'Accelerator global x-axis from baseline.json');
-p.set('detector_x', '-x_accel_center', 'Detector x-center linked as the mirror image of the accelerator axis; moving the accelerator cannot leave the detector behind');
+p.set('detector_x', sprintf('%.17g[mm]', contract.coordinate_convention.detector_x), ...
+    'Detector x-center from the resolved physical layout');
 p.set('detector_radius', sprintf('%.12g[mm]', geometryMm.detector_radius), ...
     'Physical detector radius from baseline.json');
-% !!! TRIED (doc §7.47) shrinking grid1/grid2/entgrid away from their
-% shield's own bore, matching the accel_ring_gap discipline used for
-% real solid conductors -- but idealized zero-thickness grids MUST span
-% the FULL cross-section of the vacuum they divide (§7.37/§7.38), so
-% this broke the field-free region (residual jumped to -8V/m). Reverted;
-% see the gridspecs comment below for the full explanation. Parameter
-% removed as unused (would only be reintroduced if a genuinely different
-% construction, e.g. a solid physical grid frame, were modeled later).
-% !!! t_trig/t_pulse_width removed: no longer needed since the
-% accelerator's field is now always-on (static), not pulsed -- see the
-% "es" solve section for the reasoning.
-% !!! Corrected an earlier over-broad fix: grid1/grid2 (the
-% ACCELERATOR's own idealized grids) do NOT need to span the whole
-% simulation domain width (previously enlarged to 1600x1600mm purely to
-% chase the REFLECTRON's ring_outer_r scan). A first shield-tube attempt
-% used a CYLINDRICAL shield + graded rings (mimicking the reflectron's
-% ring-stack) and hit unresolved geometry issues (boundary-count
-% anomalies, residual field leakage). Isolated in a standalone minimal
-% test model (test_square_shield_accel.m), a SQUARE shield + square
-% annular ring electrodes instead gave clean results: selb_g1/selb_g2
-% boundary count=1 (no overlap), on-axis field deviation only +-0.03%
-% (vs ~4% for the cylindrical attempt) -- squares suit this short/wide
-% (16.83mm gap vs 35mm half-width) geometry much better than cylinders,
-% since the accelerator's own repeller is already square (no diagonal
-% "corner overshoot" concern the way a circular shield had vs the square
-% repeller). Integrated below: a square shield tube (accel_shield_half=
-% 35mm) around grid1-grid2, with 5 intermediate graded square ring
-% electrodes maintaining field linearity in that gap (the bracket region,
-% repeller-grid1, doesn't need rings -- its 3mm gap vs 35mm half-width
-% ratio already gave clean uniformity even in the failed cylindrical
-% attempt).
+% Accelerator dimensions and rear clearance come from the resolved provider.
 p.set('accel_ring_width', sprintf('%.12g[mm]', geometryMm.accelerator_ring_width), ...
     'Accelerator square-ring width from baseline.json');
 p.set('accel_shield_wall', sprintf('%.12g[mm]', geometryMm.accelerator_shield_wall), ...
@@ -684,43 +582,48 @@ p.set('accel_ring_bore_half', sprintf('%.12g[mm]', accel_bore_half_mm), 'Acceler
 p.set('mesh_hmax_accel', sprintf('%.12g[mm]', mesh_hmax_accel_mm), ...
     'Maximum tetrahedral element size in the whole accelerator region');
 p.set('accel_shield_half', 'accel_ring_bore_half+accel_ring_width+accel_ring_gap', 'Derived grounded-shield inner half-width');
-% !!! Added for the flight-tube end-cap redesign (doc §7.42, simplified
-% per follow-up request): the flight tube (accelflightbox, a cylinder)
-% has TWO ends -- the reflectron side (z=L_flight, separated by the
-% grounded entgrid, unchanged) and the OTHER end, OPPOSITE the direction
-% of acceleration (behind the repeller, NOT on the ion's forward path).
-% That other end is now a SOLID CLOSED FULL DISK (grounded, no hole at
-% all) -- achieved by first EXTENDING the accelerator's own shield
-% (accelshieldO/H) further back to fully wrap the repeller (was flush
-% with the repeller's own back face at z=-1, extended by
-% accel_shield_back_extra=10mm to z=-11mm), then placing the flight
-% tube's end cap even further back still (endcap_gap=3mm past the
-% shield's own new back edge) -- since the (now-longer) accelerator
-% shield tube ends BEFORE reaching the end cap, nothing needs to pass
-% through it, so it can be a plain full disk instead of the earlier,
-% more complex annular-plate-with-a-hole design (which was ALSO in the
-% wrong place, at z=L_accel, squarely on the ion's forward path --
-% corrected here to the true "other end" at the back). L1/L2 (source-
-% and detector-side field-free lengths) are entirely unaffected: this
-% only adds vacuum/structure BEHIND the accelerator, nothing forward of
-% z=0 changes.
 p.set('accel_shield_back_extra', sprintf('%.12g[mm]', geometryMm.accelerator_rear_clearance), ...
     'Repeller rear-face clearance from baseline.json');
-% !!! Widened from 3mm to 20mm (doc §7.50, per explicit request).
 p.set('endcap_gap', sprintf('%.12g[mm]', geometryMm.shield_near_endcap_gap), ...
     'Accelerator shield to near flight-tube end-cap clearance from baseline.json');
 
-accelringtags = oatof_build_accelerator_geometry( ...
-    geom1,ringDesign.accelerator_count);
+if hasGeometry
+    electrical=acceleratorElectrical.operating_voltages_v;
+    for name={'repeller','grid1','grid2'}
+        role=name{1}; p.set(['V_' role],sprintf('%.17g[V]',electrical.(role)));
+    end
+    for k=1:ringDesign.accelerator_count
+        p.set(sprintf('V_accelring_%d',k),sprintf('%.17g[V]',electrical.rings(k)));
+    end
+    if threeZone
+        p.set('z_accel_intermediate2',sprintf('%.17g[mm]',acceleratorElectrical.planes_z_mm.intermediate2));
+        p.set('accel_zone2_length',sprintf('%.17g[mm]',acceleratorDesign.zone2_length_mm));
+        p.set('accel_zone3_length',sprintf('%.17g[mm]',acceleratorDesign.zone3_length_mm));
+        p.set('V_intermediate2',sprintf('%.17g[V]',electrical.intermediate2));
+    end
+end
+if hasGeometry
+    accelringtags=oatof_build_accelerator_geometry(geom1,ringDesign.accelerator_count,sideOpening,acceleratorGeometry);
+else
+    accelringtags=oatof_build_accelerator_geometry(geom1,ringDesign.accelerator_count);
+end
 [ringtags,z_mid_expr] = oatof_build_reflectron_geometry(geom1,n_rings1,n_rings2);
 oatof_build_detector_geometry(geom1,geometryMm);
 oatof_build_drift_geometry(geom1,sourceDesign,ringtags,accelringtags);
-oatof_build_grid_geometry(geom1,z_mid_expr);
+oatof_build_grid_geometry(geom1,z_mid_expr,acceleratorGeometry);
 geom1.run;
 gi = mphgeominfo(model, 'geom1');
 fprintf('Geometry built. Ndomains=%d\n', gi.Ndomains);
 t_geom = toc(t_geom_start);
 fprintf('[TIMING] geometry (param setup + feature creation + geom1.run): %.2fs\n', t_geom);
+
+if geometryOnly
+    modelPath=save_run_model(model,output_model_path,paths);
+    result=struct('model_path',modelPath,'build_scope','geometry_only', ...
+        'geometry_domain_count',gi.Ndomains);
+    fprintf('[%s] GEOMETRY_ONLY=PASS MODEL=%s\n',label,modelPath);
+    return
+end
 
 t_sel_start = tic;
 %% Selections
@@ -751,54 +654,27 @@ for t = soliddoms
     comp1.selection(tagb).set('input', {sprintf('geom1_%s_dom', t{1})});
 end
 
-% !!! SIMPLIFIED: gridA/gridB/accelmid removed, only grid1 (z=3mm) and
-% grid2 (z=L_accel=6mm) remain in the accelerator. They're 3mm apart,
-% so the standard +-1mm window below gives clean, non-overlapping
-% [2,4]mm / [5,7]mm windows -- no need for the old tight +-0.1mm
-% special-case table.
-% Idealized-grid interior boundaries: Box+'allvertices', NOT
-% Cylinder/Box+'intersects' (which can silently grab an unrelated
-% boundary that merely passes through the thin selection slab -- see the
-% header comment for the exact bug this caused).
-% !!! grid1 needs a TIGHTER window (+-0.5mm instead of the standard
-% +-1mm): grid1 is at z=3mm, but relvol's own upper boundary sits at
-% z=2mm -- a +-1mm window ([2,4]mm) would overlap that edge exactly,
-% silently grabbing relvol's boundary too (confirmed: selb_grid1 showed
-% boundary count=2 instead of 1, and the "bracket region" field readings
-% were garbage/inconsistent as a result). +-0.5mm gives [2.5,3.5]mm,
-% safely clear of z=2mm.
-% !!! selb_grid2 narrowed from +-1mm to +-0.2mm: after moving the
-% detector's near face to L_accel+0.3mm (to align the Mamyrin theory's
-% L2 with the field-free boundary, per user request), the old +-1mm
-% window ([L_accel-1,L_accel+1]=[18.83,20.83]mm) overlapped the
-% detector's near face (20.13mm) -- confirmed via "selb_grid2 boundary
-% count: 2" (should be 1). Benign in this case since both grid2 and the
-% detector are grounded (0V), so no conflicting potentials resulted, but
-% narrowed anyway for structural correctness (same overlap pattern as
-% the earlier grid1/relvol bug).
-% !!! grid1 xy half-width matched to accel_shield_half (35mm), same as
-% its WorkPlane size above. grid2 REVERTED (doc §7.42) to match its own
-% small square WorkPlane size (accel_shield_half+accel_shield_wall+
-% endcap_gap), now that it only seals the accelerator's own aperture,
-% not the whole flight tube. entgrid still uses flight_tube_r+10mm
-% (unchanged, still the reflectron-side large shared grid). midgrid's
-% selection box half-width is left at flight_tube_r (comfortably larger
-% than midgrid's own circular radius, now ring_outer_r -- see the
-% gridspecs comment above -- so 'allvertices' still isolates only
-% midgrid's own boundary, same as before this radius change).
-% !!! Added an explicit x-center column (doc §7.50): grid1/grid2's
-% selection boxes were still centered at x=0, but the grids THEMSELVES
-% moved to x_accel_center when the whole accelerator assembly was
-% shifted off-axis -- without this, the boxes no longer contained the
-% (now off-center) grids at all (confirmed: boundary count dropped to 0
-% for both, and the accelerator field went completely wrong as a
-% result, since the ElectricPotential condition had nothing to act on).
+% Legacy two-zone sheet selectors retain their previous windows. Explicit
+% projections select the actual zero-thickness sheet planes below.
 gridsel = {
     'selb_grid1',     'z_accel_grid1'    '0.5[mm]'    'accel_shield_half'                                       'x_accel_center'
     'selb_grid2',     'z_accel_grid2'    '0.05[mm]'   'accel_shield_half+0.01[mm]'    'x_accel_center'
     'selb_entgrid',   'L_flight'         '1[mm]'      'flight_tube_r+10[mm]'                                     '0'
     'selb_midgrid',   z_mid_expr         '1[mm]'      'flight_tube_r'                                            '0'
 };
+if hasGeometry
+    roles={'grid1','grid2'};
+    if threeZone, roles={'grid1','intermediate2','grid2'}; end
+    acceleratorSelections=cell(numel(roles),5);
+    for k=1:numel(roles)
+        role=roles{k}; width=acceleratorGeometry.electrode_width_mm;
+        if strcmp(role,'grid2'), width=acceleratorGeometry.shield_inner_width_mm; end
+        acceleratorSelections(k,:)={['selb_' role], ...
+            sprintf('%.17g[mm]',acceleratorGeometry.([role '_z_mm'])),'0[mm]', ...
+            sprintf('%.17g[mm]',width/2),sprintf('%.17g[mm]',acceleratorGeometry.axis_x_mm)};
+    end
+    gridsel=[acceleratorSelections;gridsel(3:end,:)];
+end
 % !!! selb_backplate is NOT listed here: backplate is a real solid again
 % (see the geometry feature above), so its boundary selection is created
 % automatically by the soliddoms loop below (comp1.selection.create(
@@ -843,24 +719,9 @@ comp1.selection('selb_outerwall').label('Outer walls (grounded, both physics)');
 comp1.selection('selb_outerwall').geom('geom1', 2);
 comp1.selection('selb_outerwall').set(outerwall_ents);
 
-%% Electrostatics
-% es: reflectron field only (entrance grid 0V, middle grid V_mid, stage1/
-% stage2 rings graded, backplate V_mirror; repeller/detector/accelmid/
-% grid1 grounded in this solve)
-es = comp1.physics.create('es', 'Electrostatics', 'geom1');
-es.label('Electrostatics: two-stage ring-stack reflectron (graded field)');
-es.selection.named('sel_vac');
-% !!! Simplified per explicit request: no time-varying/pulsed field
-% needed. The accelerator's electrodes (repeller/grid1) are ALWAYS ON at
-% their real target voltages, just like the reflectron's own rings/
-% grids -- the ion is released somewhere within this already-static
-% parallel field and naturally accelerates from wherever it starts, with
-% no "off then suddenly on" timing needed. This is safe for the
-% RETURNING ion too: the detector sits just past grid2 (z=L_accel=6mm)
-% on the FIELD-FREE FLIGHT-TUBE side -- the ion never needs to re-enter
-% the accelerator's field zone (z<L_accel) to reach it, so a static
-% (always-on) accelerator field can't trap/decelerate the returning ion
-% before detection.
+%% Static ON electrostatics
+% This builds the selected geometry at its declared ON operating point.
+% It is not a finite-width pulse model or a transient-field equivalence claim.
 DCmap0 = struct('repeller','V_repeller','detector','0','accelshield','0','flighttubewall','0');
 for t = {'repeller','detector','accelshield','flighttubewall'}
     tagb = sprintf('selb_%s', t{1});
@@ -869,29 +730,33 @@ for t = {'repeller','detector','accelshield','flighttubewall'}
     potk.selection.named(tagb);
     potk.set('V0', DCmap0.(t{1}));
 end
-% !!! SIMPLIFIED: gridA/gridB/accelmid removed. grid1 (z=3mm) now forms
-% the weak bracket field with repeller directly; grid2 (z=L_accel=6mm)
-% is the new name for the old "grid1" (accelerator exit, grounded,
-% marks the field-free interface).
+% Bind every declared ideal sheet to its actual provider voltage.
 gridDC0 = struct('grid1','V_grid1','grid2','0','entgrid','0','midgrid','V_mid','backplate','V_mirror');
-for t = {'grid1','grid2','entgrid','midgrid','backplate'}
+gridRoles={'grid1','grid2','entgrid','midgrid','backplate'};
+if hasGeometry, gridDC0.grid2='V_grid2'; end
+if threeZone
+    gridDC0.intermediate2='V_intermediate2';
+    gridRoles={'grid1','intermediate2','grid2','entgrid','midgrid','backplate'};
+end
+for t = gridRoles
     tagb = sprintf('selb_%s', t{1});
     potk = es.create(sprintf('pot_%s', t{1}), 'ElectricPotential', 2);
     potk.label(sprintf('%s DC potential (reflectron solve)', t{1}));
     potk.selection.named(tagb);
     potk.set('V0', gridDC0.(t{1}));
 end
-% !!! Intermediate accelerator rings (grid1-grid2 gap), linearly graded
-% The resolved accelerator ring count controls the same closed-form
-% geometry and voltage spacing.
+% Explicit ring voltages are consumed without replacing their positions or divider values.
 for k = 1:ringDesign.accelerator_count
     tagk = sprintf('accelring_%d', k);
     tagb = sprintf('selb_%s', tagk);
     potk = es.create(sprintf('pot_%s', tagk), 'ElectricPotential', 2);
     potk.label(sprintf('Accelerator ring %d graded potential', k));
     potk.selection.named(tagb);
-    potk.set('V0', sprintf('V_grid1*(1-%d/%d)', ...
-        k,ringDesign.accelerator_count+1));
+    if hasGeometry
+        potk.set('V0',sprintf('V_accelring_%d',k));
+    else
+        potk.set('V0', sprintf('V_grid1*(1-%d/%d)', k,ringDesign.accelerator_count+1));
+    end
 end
 for k = 1:n_rings1
     tagk = sprintf('ring1_%d', k);
@@ -995,13 +860,21 @@ fprintf('[TIMING] field diagnostic queries (mphinterp x18): %.2fs\n', t_diag);
 
 particle = oatof_configure_particle_model(model,comp1,p,paths,contract,mass_amu,label, ...
     use_fixed_particle_table,fixed_particle_table,n_particles,field_mode, ...
-    fine_tstep_ns,drift_tstep_ns,solver_mode);
+    fine_tstep_ns,drift_tstep_ns,solver_mode,cartesianRelease);
 rel1 = particle.rel1; tstep = particle.tstep;
 Ez_accel_ideal = particle.Ez_accel_ideal; Ez_drift_ideal = particle.Ez_drift_ideal;
 Ez_stage1_ideal = particle.Ez_stage1_ideal; Ez_stage2_ideal = particle.Ez_stage2_ideal;
 Tsim = particle.Tsim; Tsim_full = particle.Tsim_full; timing = particle.timing;
 expected_tof = particle.expected_tof; fine_tstep = particle.fine_tstep;
 fine_end = particle.fine_end; t_cptsetup = particle.t_cptsetup;
+if fieldDesignOnly
+    modelPath=save_run_model(model,output_model_path,paths);
+    result=struct('model_path',modelPath,'field_design_only',true, ...
+        'electrostatics_solved',true,'particle_model_configured',true, ...
+        'particle_solve_performed',false,'nP',n_particles);
+    fprintf('[%s] FIELD_DESIGN_ONLY=PASS ES_SOLVED=True CPT_CONFIGURED=True CPT_SOLVED=False MODEL=%s\n',label,modelPath);
+    return
+end
 t_cpt_start = tic;
 model.sol('sol2').runAll;
 t_cpt = toc(t_cpt_start);
@@ -1326,18 +1199,7 @@ col_time.set('colorlegend', 'on');
 % losing an otherwise-valid, already-computed result. Model is now saved
 % FIRST (guaranteeing the result survives even if the plot rendering
 % crashes), and the plot is attempted afterward as a best-effort step.
-if isempty(output_model_path)
-    error(['OutputModelPath is required for every run; ordinary model builds ' ...
-        'cannot select or overwrite Formal assets.']);
-end
-modelPath = char(output_model_path);
-modelsDir = fileparts(modelPath);
-formalRoot = string(java.io.File(paths.comsolFormalDir).getCanonicalPath());
-resolvedModelPath = string(java.io.File(modelPath).getCanonicalPath());
-assert(~startsWith(lower(resolvedModelPath),lower(formalRoot+filesep)), ...
-    'Ordinary COMSOL builds cannot write Formal; use the promotion transaction.');
-if ~exist(modelsDir, 'dir'), mkdir(modelsDir); end
-model.save(modelPath);
+modelPath = save_run_model(model,output_model_path,paths);
 result.model_path = modelPath;
 t_save1 = toc(t_save1_start);
 fprintf('[%s] SUCCESS: model saved.\n', label);
@@ -1365,4 +1227,52 @@ end
 fprintf('  %-45s %8.2fs\n', 'SUM OF PHASES', sum(phase_times));
 fprintf('  %-45s %8.2fs\n', 'TOTAL (t_total_start to here)', t_total);
 fprintf('=====================================================\n');
+end
+
+function modelPath=save_run_model(model,output_model_path,paths)
+assert(~isempty(output_model_path),'OutputModelPath is required for every ordinary model build.');
+modelPath=char(output_model_path);
+formalRoot=string(java.io.File(paths.comsolFormalDir).getCanonicalPath());
+resolvedModelPath=string(java.io.File(modelPath).getCanonicalPath());
+assert(~startsWith(lower(resolvedModelPath),lower(formalRoot+filesep)), ...
+    'Ordinary COMSOL builds cannot write Formal; use the promotion transaction.');
+modelsDir=fileparts(modelPath);
+if ~exist(modelsDir,'dir'), mkdir(modelsDir); end
+model.save(modelPath);
+end
+
+function validate_accelerator_projection(g,e,contract)
+% These are existing provider projections, not an alternative design compiler.
+assert(strcmp(g.cross_section,'square') && g.axis_y_mm==0, ...
+    'oatof:AcceleratorCrossSection','Only the current square, y-centered accelerator is supported.');
+assert(e.schema_version==1 && strcmp(e.role,'oatof_accelerator_electrical_design') && ...
+    strcmp(e.frame_id,'oatof_global'),'oatof:AcceleratorProjection','Provider electrical identity differs.');
+roles={'repeller','grid1','grid2'};
+expectedVariant='two_zone_square';
+if isfield(contract,'accelerator_topology')
+    roles={'repeller','grid1','intermediate2','grid2'};
+    expectedVariant='three_zone_square';
+    assert(abs(g.intermediate2_z_mm-contract.accelerator_topology.planes_global_z_mm.intermediate2)<=1e-10, ...
+        'oatof:AcceleratorProjection','Intermediate sheet differs from the resolved topology.');
+    assert(numel(contract.rings.accelerator_placement.ring_z_mm)==g.ring_count && ...
+        all(abs(g.ring_z_mm(:)-contract.rings.accelerator_placement.ring_z_mm(:))<=1e-10), ...
+        'oatof:AcceleratorProjection','Ring positions differ from the resolved provider placement.');
+end
+assert(strcmp(e.variant_id,expectedVariant),'oatof:AcceleratorProjection','Electrical variant differs from topology.');
+assert(g.ring_count==contract.rings.accelerator_count && numel(g.ring_z_mm)==g.ring_count && ...
+    numel(e.ring_z_mm)==g.ring_count && numel(e.operating_voltages_v.rings)==g.ring_count && ...
+    all(isfinite(g.ring_z_mm)) && all(isfinite(e.operating_voltages_v.rings)) && ...
+    all(abs(g.ring_z_mm(:)-e.ring_z_mm(:))<=1e-10), ...
+    'oatof:AcceleratorProjection','Explicit provider ring positions/voltages differ.');
+for name=roles
+    role=name{1}; key=[role '_z_mm'];
+    if strcmp(role,'repeller'), key='repeller_front_z_mm'; end
+    assert(abs(g.(key)-e.planes_z_mm.(role))<=1e-10 && ...
+        e.operating_voltages_v.(role)==contract.electrodes_V.(role), ...
+        'oatof:AcceleratorProjection','Provider plane or voltage differs: %s',role);
+end
+assert(abs(g.repeller_front_z_mm-contract.geometry_mm.accelerator_repeller_z)<=1e-10 && ...
+    abs(g.grid1_z_mm-contract.geometry_mm.accelerator_grid1_z)<=1e-10 && ...
+    abs(g.grid2_z_mm-contract.geometry_mm.accelerator_grid2_z)<=1e-10, ...
+    'oatof:AcceleratorProjection','Geometry projection belongs to another resolved instrument.');
 end

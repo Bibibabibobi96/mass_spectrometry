@@ -17,7 +17,7 @@ Set-StrictMode -Version Latest
 $errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
-foreach($name in @('Enter-IonProcessorNativeFlightGuards','Complete-IonProcessorNativeFlightGuards')){
+foreach($name in @('Enter-IonProcessorNativeFlightGuards','Complete-IonProcessorNativeFlightGuards','Wait-IonProcessorExistingFormalProcesses')){
  $node=$ast.Find({param($a) $a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq$name},$true)
  Invoke-Expression $node.Extent.Text
 }
@@ -68,6 +68,32 @@ if($global:MassSpectrometryImmutablePaSourceGuards.Count){throw 'owned file guar
 'GUARD_FIXTURE_PASS'
 '''
 
+HEALTHY_FORMAL_FAILURE_HARNESS = r'''param($Runner,$Directory)
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version Latest
+$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$wait=$ast.Find({param($a) $a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Wait-IonProcessorExistingFormalProcesses'},$true)
+if($null-eq$wait){throw 'missing healthy-formal completion helper'}
+if($wait.Extent.Text-match'Stop-ManagedSolverProcesses'){throw 'healthy-formal completion helper must not stop the solver'}
+Invoke-Expression $wait.Extent.Text
+$dispatchTry=@($ast.FindAll({param($a) $a-is[Management.Automation.Language.TryStatementAst]-and$a.Body.Extent.Text-match'Invoke-ResourceBudgetedProcesses'},$true)|Sort-Object { $_.Extent.EndOffset-$_.Extent.StartOffset }|Select-Object -First 1)
+$catch=$(if($null-ne$dispatchTry){$dispatchTry.CatchClauses[0]}else{$null})
+if($null-eq$catch-or$catch.Extent.Text-notmatch'Wait-IonProcessorExistingFormalProcesses'){throw 'dispatch failure must wait for the formal worker'}
+if($catch.Extent.Text-match'Stop-ManagedSolverProcesses'){throw 'dispatch failure must not stop the formal worker'}
+$marker=Join-Path $Directory 'natural_terminal.marker'
+$pwsh=(Get-Command pwsh -ErrorAction Stop).Source
+$child=Start-Process -FilePath $pwsh -ArgumentList @('-NoLogo','-NoProfile','-Command',"Start-Sleep -Milliseconds 300; Set-Content -LiteralPath '$marker' -Value natural") -PassThru
+$record=[pscustomobject]@{active=$true;completed=$false;pressure_terminated=$false;exit_code=$null;process=$child}
+$caught=$false
+try {throw 'unrelated post-formal failure'} catch {Wait-IonProcessorExistingFormalProcesses -ProcessRecords @($record);$caught=$true}
+if(-not$caught-or-not$record.completed-or$record.active){throw 'healthy formal worker was not awaited to terminal'}
+if(-not(Test-Path -LiteralPath $marker)){throw 'healthy formal worker did not naturally publish its marker'}
+if($record.exit_code-ne0){throw 'healthy formal worker exit was not preserved'}
+'HEALTHY_FORMAL_FAILURE_PASS'
+'''
+
 
 class NativeGuardTests(unittest.TestCase):
     def check_mode(self, mode: str) -> None:
@@ -109,3 +135,20 @@ class NativeGuardTests(unittest.TestCase):
 
     def test_partial_acquisition_failure_releases_owned_guards(self) -> None:
         self.check_mode("acquisition")
+
+    def test_post_formal_failure_waits_for_healthy_worker_without_stopping_it(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 required for real healthy-worker failure fixture")
+        with tempfile.TemporaryDirectory(prefix="healthy_formal_failure_") as temporary:
+            directory = Path(temporary)
+            script = directory / "fixture.ps1"
+            script.write_text(HEALTHY_FORMAL_FAILURE_HARNESS, encoding="utf-8")
+            result = subprocess.run(
+                [pwsh, "-NoLogo", "-NoProfile", "-File", str(script),
+                 str(PROJECT / "simion/run_functional.ps1"), str(directory)],
+                cwd=REPO, timeout=30, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("HEALTHY_FORMAL_FAILURE_PASS", result.stdout)

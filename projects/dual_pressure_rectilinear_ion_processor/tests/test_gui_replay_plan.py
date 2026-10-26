@@ -78,7 +78,7 @@ class GuiReplayPlanTests(unittest.TestCase):
             (base / "run_config.json").write_text('{"inputs":{}}', encoding="utf-8")
         for suffix in ["#", *map(str, range(16)), "-surf"]:
             (self.baseline / "simion" / ("processor.pa" + suffix)).write_bytes(b"synthetic-test-not-a-real-pa")
-        for name in ("frozen_config.lua", "collision_hs1.lua", "source_states.lua", "native_drive.lua", "simion_rf_drive.lua", "processor.fly2", "processor.lua", "processor.gem", "probe_native_field.lua"):
+        for name in ("frozen_config.lua", "collision_hs1.lua", "source_states.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "processor.fly2", "processor.lua", "processor.gem", "probe_native_field.lua"):
             (self.baseline / "simion" / name).write_text("-- synthetic frozen input", encoding="utf-8")
         shutil.copyfile(Path(__file__).resolve().parents[1] / "simion/build_workbench.lua", self.baseline / "simion/build_workbench.lua")
         config = {"source_profile": "functional", "native_projection": {"origin_mm": [-1, -4, -4], "electrode_ids": list(range(1, 16))}, "numerics": {"seed": 42, "trajectory_quality": 0}}
@@ -291,6 +291,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.assertNotIn("wb:save('processor.iob')", builder)
         self.assertIn("wb:save(directory..'processor.iob')", builder)
         self.assertIn("wb:load_particles(directory..'processor.fly2')", builder)
+        self.assertEqual((self.run / "simion/voltage_waveforms.lua").read_bytes(), (self.baseline / "simion/voltage_waveforms.lua").read_bytes())
         self.assertEqual((self.run / "simion/source_states.lua").read_bytes(), (self.baseline / "simion/source_states.lua").read_bytes())
         self.assertEqual((self.baseline / "simion/processor.pa0").read_bytes(), original)
         self.assertEqual((self.run / "simion/processor.lua").read_bytes(), (self.baseline / "simion/processor.lua").read_bytes())

@@ -20,6 +20,8 @@ resolver 的规范 JSON 身份复用 `common/contracts/file_identity.py`；项�
 与消息。生成的 resolved 合同和身份不变，build-only 输入冻结已包含该公共依赖；此迁移不构成新的商业求解证据。
 build-only 入口同时冻结公共主机调度适配器、核心和策略，并传递既定 Python 路径。隔离冻结 Static
 回归包含 manifest writer 的 `recorded_file_removal.py` 直接依赖；该闭包通过不构成真实 COMSOL 复验。
+公共COMSOL入口新增的预算支持脚本已纳入同一冻结表；与双锥气流入口的6项focused回归包含实际冻结加载及
+无Limits不生成usage检查，未启动商业软件，不改变本项目build-only资格。
 实心阴极与轴向线圈源码已冻结到
 [`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
 

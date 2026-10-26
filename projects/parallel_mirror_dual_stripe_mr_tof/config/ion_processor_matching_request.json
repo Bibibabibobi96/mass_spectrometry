@@ -1,20 +1,47 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "role": "mrtof_ion_processor_matching_request",
   "provider_project_id": "dual_pressure_rectilinear_ion_processor",
   "consumer_project_id": "parallel_mirror_dual_stripe_mr_tof",
   "target_source": {
-    "axial_energy": "frozen_mr_provider_projection",
-    "pose": "frozen_mr_trajectory"
+    "axial_energy": "frozen_mr_provider_projection"
   },
   "design_variables": [
-    {"contract": "native_operating_point.json", "json_pointer": "/lift_v", "purpose": "Adjust measured exit axial energy to the MR target; voltage is not equated to kinetic energy."},
-    {"contract": "native_operating_point.json", "json_pointer": "/extraction_push_relative_v", "purpose": "Adjust extraction and time response together with pull and split side electrodes."},
-    {"contract": "native_operating_point.json", "json_pointer": "/extraction_pull_relative_v", "purpose": "Adjust extraction and time response while preserving a physical electrode solution."},
-    {"contract": "native_operating_point.json", "json_pointer": "/extraction_shield_relative_v", "purpose": "Keep shield and extraction-field boundary consistent with the chosen operating point."},
-    {"contract": "baseline.json", "json_pointer": "/geometry", "purpose": "Permit extraction gap/slit and source-to-focus geometry changes when required by MR acceptance; rebuild fields after changes."},
-    {"contract": "baseline.json", "json_pointer": "/native_geometry", "purpose": "Permit solid electrode and grounded-shield placement changes; reassess assembly clearances and field boundaries."},
-    {"contract": "baseline.json", "json_pointer": "/schedule", "purpose": "Permit a new physical extraction schedule; preserve instrument time and recompile native timing rather than resetting arrivals."}
+    {
+      "contract": "native_operating_point.json",
+      "json_pointer": "/lift_v",
+      "purpose": "Adjust measured exit axial energy to the MR target; voltage is not equated to kinetic energy."
+    },
+    {
+      "contract": "native_operating_point.json",
+      "json_pointer": "/extraction_push_relative_v",
+      "purpose": "Adjust extraction and time response together with pull and split side electrodes."
+    },
+    {
+      "contract": "native_operating_point.json",
+      "json_pointer": "/extraction_pull_relative_v",
+      "purpose": "Adjust extraction and time response while preserving a physical electrode solution."
+    },
+    {
+      "contract": "native_operating_point.json",
+      "json_pointer": "/extraction_shield_relative_v",
+      "purpose": "Keep shield and extraction-field boundary consistent with the chosen operating point."
+    },
+    {
+      "contract": "baseline.json",
+      "json_pointer": "/geometry",
+      "purpose": "Permit extraction gap/slit and source-to-focus geometry changes when required by MR acceptance; rebuild fields after changes."
+    },
+    {
+      "contract": "baseline.json",
+      "json_pointer": "/native_geometry",
+      "purpose": "Permit solid electrode and grounded-shield placement changes; reassess assembly clearances and field boundaries."
+    },
+    {
+      "contract": "baseline.json",
+      "json_pointer": "/schedule",
+      "purpose": "Permit a new physical extraction schedule; preserve instrument time and recompile native timing rather than resetting arrivals."
+    }
   ],
   "policies": {
     "execution": "prepare_only",
@@ -29,5 +56,8 @@
     "spatial_reference": "z0_observation_not_proven_time_focus",
     "beam_quality": "characterize_before_setting_acceptance",
     "field_assembly": "replace_old_oa_and_rebuild_affected_boundaries"
+  },
+  "composition_plan": {
+    "path": "../../../integrations/config/recipes/ip_mr_y_minus55_plan.json"
   }
 }

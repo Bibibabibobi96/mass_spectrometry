@@ -62,21 +62,6 @@ for index, role in ipairs(expected_roles) do
   assert(role_instances[role] == nil, 'duplicate native corridor instance role: ' .. role)
   role_instances[role] = index
 end
-if not measured_mode then
-local groups = assert(priority.corridor_voltage_groups,
-  'native corridor priority contract has no voltage groups')
-assert(type(groups) == 'table' and #groups == 8,
-  'native corridor priority contract requires exactly eight voltage groups')
-for local_id, physical_ids in ipairs(groups) do
-  assert(type(physical_ids) == 'table' and #physical_ids > 0,
-    'native corridor voltage group is empty for local ID ' .. local_id)
-  for _, physical_id in ipairs(physical_ids) do
-    assert(type(physical_id) == 'number' and physical_id == math.floor(physical_id)
-        and physical_id >= 1,
-      'native corridor voltage group contains an invalid physical electrode ID')
-  end
-end
-end
 local operating = assert(loadfile(operating_path), 'operating point sidecar missing')()
 if measured_mode then
   assert(operating.accelerator_provider == 'dual_pressure_rectilinear_ion_processor'
@@ -101,37 +86,13 @@ else
   assert(paths[2]:match('%.pa0$'), 'corridor must be a native .pa0 family controller')
 end
 if not measured_mode then
-local groups = priority.corridor_voltage_groups
 local voltage_map = assert(loadfile(voltage_map_path), 'voltage map sidecar missing')()
-local voltages = voltage_map(operating.mirror_voltages_v, operating.stripe_biases_v,
+local values=voltage_map.physical_voltages(operating.mirror_voltages_v, operating.stripe_biases_v,
   operating.prism_voltages_v, operating.accelerator_voltages_v,
   operating.accelerator_ring_voltages_v, operating.nonaccelerator_scale)
-local corridor_values = {}
-for local_id, physical_ids in ipairs(groups) do
-  local value = voltages.analyser[physical_ids[1]]
-  assert(value ~= nil, 'missing physical voltage for corridor local ID ' .. local_id)
-  for _, physical_id in ipairs(physical_ids) do
-    assert(voltages.analyser[physical_id] == value, 'physical voltage group is not equal for local ID ' .. local_id)
-  end
-  corridor_values[local_id] = value
+if not operating.static_field then
+  voltage_map.corridor_voltages(values.analyser, priority.corridor_voltage_groups)
 end
-local function assert_complete_local_voltage_table(values)
-  local count = 0
-  for key, value in pairs(values) do
-    assert(type(key) == 'number' and key == math.floor(key) and key >= 1 and key <= 8,
-      'corridor Fast Adjust voltage table contains an unknown local electrode ID: ' .. tostring(key))
-    assert(type(value) == 'number' and value == value and math.abs(value) < math.huge,
-      'corridor Fast Adjust voltage is not finite for local ID ' .. key)
-    count = count + 1
-  end
-  assert(count == 8, 'corridor Fast Adjust requires exactly local electrode IDs 1..8')
-  for local_id = 1, 8 do
-    assert(values[local_id] ~= nil,
-      'corridor Fast Adjust voltage is missing for local ID ' .. local_id)
-  end
-  return values
-end
-assert_complete_local_voltage_table(corridor_values)
 end
 local wb = assert(simion.wb, 'SIMION Workbench API unavailable')
 assert(wb.load and wb.save and wb.find_at, 'SIMION Workbench load/save/find_at API unavailable')
@@ -261,6 +222,8 @@ copy(operating_path, output:gsub('%.iob$', '.operating_point.lua'))
 if not measured_mode then copy(voltage_map_path, output:gsub('%.iob$', '.voltage_map.lua')) end
 copy(program:gsub('%.lua$', '.mirror_cycle_counter.lua'),
   output:gsub('%.iob$', '.mirror_cycle_counter.lua'))
+copy(program:gsub('%.lua$', '.voltage_waveforms.lua'),
+  output:gsub('%.iob$', '.voltage_waveforms.lua'))
 local scalar_module = program:gsub('%.lua$', '.scalar_field_adapter.lua')
 local scalar_file = io.open(scalar_module, 'rb')
 if scalar_file then
@@ -272,6 +235,8 @@ if measured_mode then
 end
 if measured_mode then
   print('MRTOF_NATIVE_CORRIDOR_IOB_BUILD=PASS instances='..#paths..' static_measured_source=true pa_save=false refine=false priority=probe_verified')
+elseif operating.static_field then
+  print('MRTOF_NATIVE_CORRIDOR_IOB_BUILD=PASS instances=4 static_field=true fast_adjust=false pa_save=false refine=false priority=probe_verified')
 else
   print('MRTOF_NATIVE_CORRIDOR_IOB_BUILD=PASS instances=4 corridor_voltage_table_ids=1..8 fast_adjust=flight pa_save=false refine=false priority=probe_verified')
 end

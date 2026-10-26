@@ -48,6 +48,28 @@ class ParticleBatchingTests(unittest.TestCase):
         })
         self.assertEqual([item["count"] for item in plan["batches"]], [500, 1500, 1500, 1500])
 
+    def test_merge_selects_id_by_name_and_preserves_original_column_and_row_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second, output = root / "a.csv", root / "b.csv", root / "out.csv"
+            first.write_text("event,particle_id,time_us\nsource,1,0\nterminal,1,2\n", encoding="utf-8")
+            second.write_text("event,particle_id,time_us\nsource,1,3\nterminal,1,5\n", encoding="utf-8")
+            merge_rebased_particle_csvs([(first, 0), (second, 7)], output)
+            self.assertEqual(output.read_text(encoding="utf-8").splitlines(), [
+                "event,particle_id,time_us", "source,1,0", "terminal,1,2",
+                "source,8,3", "terminal,8,5",
+            ])
+
+    def test_merge_rejects_missing_or_ambiguous_particle_id_column(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for header in ("event,id", "particle_id,event,particle_id"):
+                with self.subTest(header=header):
+                    source = root / "source.csv"
+                    source.write_text(header + "\n", encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "exactly one particle_id"):
+                        merge_rebased_particle_csvs([(source, 0)], root / "output.csv")
+
     def test_python_merges_rebased_data_and_summaries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

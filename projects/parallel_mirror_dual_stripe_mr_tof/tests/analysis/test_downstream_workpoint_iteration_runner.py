@@ -388,6 +388,7 @@ foreach($name in @('New-CenterTrialArguments','Invoke-CenterTrial','New-StagedCo
 }
 $script:preparedStagedMode=$true;$script:PreparedFieldBuildMode='refine'
 $repoRoot=$Root;$artifactRoot=$Root;$RunId='parent';$project='parallel_mirror_dual_stripe_mr_tof';$python='mock-python'
+$trialArtifactRoot=$artifactRoot
 $package=@{input_dir=(Join-Path $Root 'inputs')};New-Item -ItemType Directory -Path $package.input_dir|Out-Null
 $staticFieldMode=$true;$staticBinding=@{authority=@{analyzer_electrode_voltages_v=@(0,0,0,0,0,0,0,0,0,0,-27,-27,0,0,0,343,-186,0,0,0)}}
 $fieldProviderRequest=@{schema_version=1;role='mrtof_native_static_field_provider_request';source_binding_path='sealed-IP-baseline';source_field_manifest='sealed-IP-manifest'}
@@ -502,6 +503,7 @@ foreach($name in @('Invoke-PreparedOriginalStagedWorkflow','New-CenterTrialArgum
  Invoke-Expression $node.Extent.Text
 }
 $repoRoot=$Root;$artifactRoot=$Root;$artifactWorkspaceRoot=$Root;$project='parallel_mirror_dual_stripe_mr_tof'
+$trialArtifactRoot=$artifactRoot
 $inputFile=Join-Path $Root 'input.json';'{}'|Set-Content $inputFile
 $PreparedJointWorkbenchRunPath=$Root;$PreparedPrism1ResponseBasisPath=$inputFile;$PreparedPrism2ResponseBasisPath=$inputFile
 $PreparedInitialProposalPath=$inputFile;$PreparedTargetAuthorityPath=$inputFile;$PreparedSeedTrialManifest=$inputFile
@@ -577,6 +579,7 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-PreparedWorkpointAcquisition'},$true)
 Invoke-Expression $node.Extent.Text
 $repoRoot=$Root;$artifactRoot=Join-Path $Root 'artifacts';$artifactWorkspaceRoot=$artifactRoot;$project='parallel_mirror_dual_stripe_mr_tof'
+$trialArtifactRoot=$artifactRoot
 $python='mock-python';$RunId='test-parent';$SimionExe='';$PSScriptRoot=Join-Path $Root 'analysis'
 New-Item -ItemType Directory -Path $PSScriptRoot,(Join-Path $Root 'simion')|Out-Null
 $input=Join-Path $Root 'input.json';'{}'|Set-Content $input
@@ -802,6 +805,7 @@ $seedManifest=Join-Path $Root 'seed.json';'{}'|Set-Content $seedManifest
 $policyPath=Join-Path $Root 'old-policy.json';'{"trusted_advance_multiplier":0.5}'|Set-Content $policyPath
 $futurePolicy=Join-Path $Root 'future-policy.json';'{"trusted_advance_multiplier":1.0}'|Set-Content $futurePolicy
 $artifactRoot=$Root;$repoRoot=$Root;$RunId='new';$python='Invoke-IdentityFixture'
+$trialArtifactRoot=$artifactRoot
 $PrismHandoffReplayManifest='';$PriorPrismDecisionManifest='';$stripeSeedColumns=@{}
 $package=@{result_dir=$Root};$frozenContract=Join-Path $Root 'contract.json'
 @{downstream_fixed_grid_workpoint_profile=@{active_stripe_axes=@('stripe_1_voltage_v','stripe_2_voltage_v');automatic_iteration=@{maximum_iterations=8;minimum_relative_improvement=.1;maximum_consecutive_non_improving_iterations=3};jacobian_relative_step_tiers=@{coarse=.01;medium=.0025;fine=.0005}}}|ConvertTo-Json -Depth 10|Set-Content $frozenContract
@@ -1232,6 +1236,7 @@ $fixture=Get-Content (Join-Path $Root 'fixture.json') -Raw|ConvertFrom-Json -AsH
 $script:preparedStagedMode=[bool]$fixture.measured
 $script:PreparedFieldBuildMode=if($fixture.explicit_refine){$fixture.operation}else{'composition'}
 $RunId='parent';$project='parallel_mirror_dual_stripe_mr_tof';$artifactRoot=$Root;$artifactWorkspaceRoot=$Root;$repoRoot=$Root;$python='mock'
+$trialArtifactRoot=$artifactRoot
 $staticFieldMode=$true;$staticBindingMode='native_static_pa'
 $package=@{input_dir=(Join-Path $Root 'inputs');result_dir=(Join-Path $Root 'results');artifact_run_dir=(Join-Path $Root 'runs/parent')}
 foreach($path in @($package.input_dir,$package.result_dir,$package.artifact_run_dir)){$null=New-Item -ItemType Directory -Path $path -Force}
@@ -1797,6 +1802,7 @@ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitio
 Invoke-Expression $node.Extent.Text
 $fixture=Get-Content (Join-Path $Root 'fixture.json') -Raw|ConvertFrom-Json -AsHashtable
 $repoRoot=$Root;$artifactRoot=$Root;$package=@{input_dir=$Root};$capacitySession=@{}
+$trialArtifactRoot=$artifactRoot
 $staticFieldMode=$true;$python='Invoke-MockPython';$script:flights=@();$script:providerCalls=0;$script:bindingChecks=0
 $ResponseFieldBindingPath='declared.json';$CompletedFieldProviderManifest=if($fixture.completed){Join-Path $Root 'completed.json'}else{''}
 $responseDeclaration=@{schema_version=2;role='mrtof_static_comsol_field_binding';baseline_binding='base.json';voltage_responses=@{s1=@{binding='s1.json'};s2=@{binding='s2.json'}};target_ps_voltages_v=@{s1=-27.;s2=54.;p1=189.;p2=-190.}}
@@ -2045,6 +2051,7 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Publish-StagedPrismModel'},$true)
 Invoke-Expression $node.Extent.Text
 $python='python';$repoRoot=$Root;$artifactRoot=$Root;$artifactWorkspaceRoot=$Root
+$trialArtifactRoot=$artifactRoot
 $project='parallel_mirror_dual_stripe_mr_tof';$frozenContract='frozen-contract.json';$controllerSource='frozen-controller.py'
 $script:statuses=@();$script:retentions=0
 function New-RunPackage {
@@ -2118,6 +2125,7 @@ $fieldProviderRequest=@{}
 if($fixture.prepared_build_mode-eq'composition'){$fieldProviderRequest['response_basis_paths']=@{p1='p1';p2='p2'}}
 $script:queue=@($fixture.decisions);$script:requests=@();$script:flights=@();$script:saves=@();$script:models=@()
 $repoRoot=$Root;$artifactRoot=$Root;$RunId='stage';$python='Invoke-MockController'
+$trialArtifactRoot=$artifactRoot
 $package=@{result_dir=$Root};$seedManifest=Join-Path $Root 'seed.json';'{}'|Set-Content $seedManifest
 $PrismHandoffReplayManifest=[string]$fixture.replay_manifest
 $PriorPrismDecisionManifest=[string]$fixture.initial_model
@@ -2996,6 +3004,7 @@ foreach($name in @('Find-ContinuationTransportSeed','Invoke-CenterTrial')){
 }
 $staticFieldMode=$false;$stagedBootstrap=$false
 $RunId='auto';$RetainBaselineGuiWorkbench=$false;$artifactRoot=$Root;$script:flights=@()
+$trialArtifactRoot=$artifactRoot
 function New-CenterTrialArguments {param($PrismVoltages,$ChildRunId)@{PrismVoltages=$PrismVoltages;ChildRunId=$ChildRunId}}
 function Invoke-MockTrial {param($PrismVoltages,$ChildRunId)$script:flights+=,@($PrismVoltages);$d=Join-Path $artifactRoot ('runs/'+$ChildRunId);New-Item -ItemType Directory -Path $d -Force|Out-Null;@{stripe_biases_v=@(-25.,50.);prism_voltages_v=@($PrismVoltages)}|ConvertTo-Json|Set-Content (Join-Path $d 'm.json')}
 function Get-ManifestOutputPath {param($ManifestPath,$FileName)Join-Path (Split-Path $ManifestPath) 'm.json'}
@@ -3180,7 +3189,13 @@ $repoRoot=$Root;$project='fixture';$python='Invoke-MockPython';$frozenContract='
 $staticFieldMode=$false
 $capacitySession=@{lease_id='owner'};$nativeRuntimeSession=@{checkpoint_path=(Join-Path $Root 'family.json')}
 [IO.File]::WriteAllText($nativeRuntimeSession.checkpoint_path,'{}')
-function Invoke-MockPython {$global:LASTEXITCODE=0}
+function Invoke-MockPython {
+  if($args[3]-ne'success'-or$args[4]-ne'--require-project'-or$args[5]-ne'instrument_assembly'-or
+     $args[6]-ne'--require-mode'-or$args[7]-ne'oa_mr'){
+    throw 'Ordinary MR bootstrap used a foreign run identity'
+  }
+  $global:LASTEXITCODE=0
+}
 function Get-ManifestOutputPath {param($ManifestPath,$FileName) return (Join-Path (Split-Path $ManifestPath) $FileName)}
 function Write-RunJson {param($Path,$Depth,$Value) $Value|ConvertTo-Json -Depth 30|Set-Content -LiteralPath $Path}
 function Save-NativeWorkflowCheckpoint {param($Reason,$WorkflowOutcome) $script:checkpoints++}
@@ -3211,6 +3226,7 @@ function Invoke-MockAudit {param($BaselineManifest,$Stripe1PerturbationManifest,
 $trialRunner='Invoke-MockTrial';$auditRunner='Invoke-MockAudit'
 foreach($script:scenario in @('reverse_success','reverse_failure','resume','baseline_failure','wrong_voltage')){
   $artifactRoot=Join-Path $Root $script:scenario;New-Item -ItemType Directory -Path $artifactRoot|Out-Null
+$trialArtifactRoot=$artifactRoot
   $RunId='new-parent';$script:flights=@();$script:audits=0;$script:checkpoints=0
   $bootstrap=[ordered]@{schema_version=1;seed_voltages_v=@(1.,2.,3.,4.);forward_steps_v=@(.1,.1,.1,.1);children=@()}
   if($script:scenario-eq'resume'){
@@ -3260,6 +3276,7 @@ foreach($name in @('Invoke-WorkpointStencil','Save-WorkpointBootstrap','Save-Nat
 }
 $staticFieldMode=$false
 $RunId='new-parent';$artifactRoot=$Root;$repoRoot=$Root;$project='fixture';$python='Invoke-MockPython'
+$trialArtifactRoot=$artifactRoot
 $frozenContract='frozen';$capacitySession=[pscustomobject]@{lease_id='new-lease'}
 $script:flights=@();$script:audit=0;$script:checks=0;$script:events=@()
 function Invoke-MockPython {$script:checks++;$global:LASTEXITCODE=0}
@@ -3369,6 +3386,25 @@ Write-Output 'SEED_PROJECTION=PASS'
             good = subprocess.run(command, cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", check=False, timeout=40)
             self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
             self.assertIn("SEED_PROJECTION=PASS", good.stdout)
+            document = json.loads(manifest.read_text())
+            old_owner, old_mode = document["project"], document["mode"]
+            for owner, mode, accepted in (
+                ("instrument_assembly", "oa_mr", True),
+                (old_owner, "oa_mr", False),
+                ("instrument_assembly", old_mode, False),
+            ):
+                with self.subTest(owner=owner, mode=mode):
+                    config.write_text(json.dumps({"schema_version": 1, "project": owner, "mode": mode}))
+                    document.update(project=owner, mode=mode, run_config=record(config))
+                    manifest.write_text(json.dumps(document))
+                    checked = subprocess.run(command, cwd=PROJECT, capture_output=True,
+                                             text=True, encoding="utf-8", timeout=40)
+                    self.assertEqual(checked.returncode == 0, accepted, checked.stdout + checked.stderr)
+                    if not accepted:
+                        self.assertIn("unsupported flight owner/mode pair", checked.stderr)
+            config.write_text(json.dumps({"schema_version": 1, "project": old_owner, "mode": old_mode}))
+            document.update(project=old_owner, mode=old_mode, run_config=record(config))
+            manifest.write_text(json.dumps(document))
             receipt.write_text("{}")
             bad = subprocess.run(
                 command,
@@ -3405,11 +3441,13 @@ $NativeCorridorBankRunPath='native-bank'
 $SimionExe='simion';$PulseAcceleratorUntilInitialExit=$true;$AcceleratorPulseSchedulePath=''
 $TrajectoryProfileId='center_screening'
 $artifactRoot=$Root;$RunId='auto';$frozenContract='frozen.json'
+$trialArtifactRoot=$artifactRoot
+$CompositionPlanPath='parent-plan';$LocalScopePath=''
 $script:flights=@();$script:audits=0;$script:failAt=0
 function Write-RunJson {param($Path,$Depth,$Value)}
 function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages) return @{passed=$true;reasons=@();observation_sha256='A';materialization_sha256='B';child_manifest_sha256='C';child_manifest=$Manifest}}
 function Invoke-MockTrial {
-  param($GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$Prism1VoltageV,$Prism2VoltageV,$Stripe1VoltageV,$Stripe2VoltageV,$NativeSystemRuntimeBundlePath,$TrajectoryStepScale,$AcceleratorSourceYOffsetMm,$RunId,$PythonExe,$CapacityWorkflowSession,$NativeCorridorBankRunPath,$NativeCorridorRuntimeSession,$SimionExe,[switch]$PulseAcceleratorUntilInitialExit,$TrajectoryProfileId)
+  param($GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$Prism1VoltageV,$Prism2VoltageV,$Stripe1VoltageV,$Stripe2VoltageV,$NativeSystemRuntimeBundlePath,$TrajectoryStepScale,$AcceleratorSourceYOffsetMm,$RunId,$PythonExe,$CapacityWorkflowSession,$NativeCorridorBankRunPath,$NativeCorridorRuntimeSession,$SimionExe,[switch]$PulseAcceleratorUntilInitialExit,$TrajectoryProfileId,$CompositionPlanPath,$LocalScopePath)
   if($NativeCorridorBankRunPath-ne'native-bank'-or$NativeSystemRuntimeBundlePath-ne'native-system-bundle.json'-or$CapacityWorkflowSession.lease_id-ne'owner'){throw 'Lost field, native-system, or owner binding'}
   $script:flights+=,@($Stripe1VoltageV,$Stripe2VoltageV,$Prism1VoltageV,$Prism2VoltageV)
   if($script:failAt-eq$script:flights.Count){throw 'injected solver failure'}

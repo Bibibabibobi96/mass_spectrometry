@@ -19,6 +19,8 @@ param(
   [Parameter(Mandatory)][string]$MirrorRunPath,
   [Parameter(Mandatory)][string]$StripeRunPath,
   [Parameter(Mandatory)][string]$AcceleratorProviderReceiptPath,
+  [Parameter(Mandatory)][string]$CompositionPlanPath,
+  [string]$LocalScopePath='',
   [string]$NativeCorridorBankRunPath='',
   [string]$NativeSystemRuntimeBundlePath='',
   [string]$FieldProviderRequestPath='',
@@ -94,9 +96,9 @@ if($staticFieldMode){
 }
 
 function Assert-Manifest {
-  param([Parameter(Mandatory)][string]$RunPath,[Parameter(Mandatory)][string]$Status,[Parameter(Mandatory)][string]$Mode,[switch]$StaticCenterSourceProjection)
+  param([Parameter(Mandatory)][string]$RunPath,[Parameter(Mandatory)][string]$Status,[Parameter(Mandatory)][string]$Mode,[string]$Owner=$project,[switch]$StaticCenterSourceProjection)
   $manifest=Join-Path $RunPath 'run_manifest.json'
-  $arguments=@($manifest,'--require-status',$Status,'--require-project',$project,'--require-mode',$Mode)
+  $arguments=@($manifest,'--require-status',$Status,'--require-project',$Owner,'--require-mode',$Mode)
   if($StaticCenterSourceProjection){
     $document=Get-Content -LiteralPath $manifest -Raw|ConvertFrom-Json -AsHashtable
     $arguments+=@('--consumer-projection-id','mrtof_static_screening_center_v1')
@@ -745,8 +747,8 @@ function Invoke-Diagnostic {
   param([Parameter(Mandatory)][string]$Stage,[Parameter(Mandatory)][string]$FlightManifest)
   $flightRun=Split-Path -Parent $FlightManifest
   $manifestData=Get-Content -LiteralPath $FlightManifest -Raw|ConvertFrom-Json -Depth 100
-  if($manifestData.status-ne'success'-or$manifestData.project-ne$project-or
-    $manifestData.mode-ne'finite_3d_two_prism_voltage_trial'){
+  if($manifestData.status-ne'success'-or$manifestData.project-ne'instrument_assembly'-or
+    $manifestData.mode-ne'oa_mr'){
     throw 'Source diagnostic requires a successful MRTOF flight manifest.'
   }
   $standardName='source_z_energy_timing_diagnostic.json'
@@ -1086,6 +1088,9 @@ try{
   $failureStage='freeze_inputs'
   $sourceDefinition=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $SourceDefinitionPath).Path `
     -Destination (Join-Path $package.input_dir 'bunch_source_definition.json')
+  $compositionPlan=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $CompositionPlanPath).Path `
+    -Destination (Join-Path $package.input_dir 'oa_mr_composition_plan.json')
+  $localScope=if([string]::IsNullOrWhiteSpace($LocalScopePath)){$null}else{Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $LocalScopePath).Path -Destination (Join-Path $package.input_dir 'oa_mr_local_scope.json')}
   $sourceDefinitionData=Get-Content -LiteralPath $sourceDefinition -Raw|ConvertFrom-Json -AsHashtable
   $providerReceipt=(Resolve-Path -LiteralPath $AcceleratorProviderReceiptPath).Path
   $providerData=Get-Content -LiteralPath $providerReceipt -Raw|ConvertFrom-Json -AsHashtable
@@ -1105,7 +1110,8 @@ try{
   $sourceDefinitionData.source_y_offset_mm=$sourceYOffsetMm
   Write-RunJson -Path $sourceDefinition -Depth 30 -Value $sourceDefinitionData
   $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
-  $config.inputs=[ordered]@{bunch_source_definition=$sourceDefinition}
+  $config.inputs=[ordered]@{bunch_source_definition=$sourceDefinition;composition_plan=$compositionPlan}
+  if($null-ne$localScope){$config.inputs.local_scope=$localScope}
   if($staticFieldMode){
     $FieldProviderRequestPath=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $FieldProviderRequestPath).Path `
       -Destination (Join-Path $package.input_dir 'initial_field_provider_request.json')
@@ -1145,11 +1151,13 @@ try{
       NativeCorridorBankRunPath=$NativeCorridorBankRunPath;GeometryReviewRunPath=$GeometryReviewRunPath
       MirrorRunPath=$MirrorRunPath;StripeRunPath=$StripeRunPath
       AcceleratorProviderReceiptPath=$AcceleratorProviderReceiptPath
+      CompositionPlanPath=$compositionPlan
       NativeSystemRuntimeBundlePath=$NativeSystemRuntimeBundlePath
       AcceleratorYAnchorMm=$AcceleratorYAnchorMm;AcceleratorSourceYOffsetMm=$sourceYOffsetMm
       RetainBaselineGuiWorkbench=$true
       RunId=$workpointId;PythonExe=$python
     }
+    if($null-ne$localScope){$arguments.LocalScopePath=$localScope}
     if($ContractPath){$arguments.ContractPath=$ContractPath}
     if($null-ne$TrajectoryStepScaleOverride){$arguments.TrajectoryStepScale=[double]$TrajectoryStepScaleOverride}
     if($NativeRuntimeCheckpoint){$arguments.NativeRuntimeCheckpoint=$NativeRuntimeCheckpoint}
@@ -1205,7 +1213,7 @@ try{
   # the final P/S correction that actually met every tolerance.
   $seedManifestPath=$qualifiedCenterSeedManifest
   $seedRun=Split-Path -Parent $seedManifestPath
-  $null=Assert-Manifest -RunPath $seedRun -Status success -Mode finite_3d_two_prism_voltage_trial -StaticCenterSourceProjection:$staticFieldMode
+  $null=Assert-Manifest -RunPath $seedRun -Status success -Mode oa_mr -Owner instrument_assembly -StaticCenterSourceProjection:$staticFieldMode
   $seedManifest=Get-Content -LiteralPath $seedManifestPath -Raw|ConvertFrom-Json -AsHashtable
   $sourceObservations=@($seedManifest.outputs|Where-Object{[IO.Path]::GetFileName([string]$_.path)-eq'two_prism_trial_observation.json'})
   if($sourceObservations.Count-ne1){throw 'N=1 workpoint seed must bind one source-state observation.'}

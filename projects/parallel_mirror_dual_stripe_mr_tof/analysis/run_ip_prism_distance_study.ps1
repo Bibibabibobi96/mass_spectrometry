@@ -157,7 +157,14 @@ try {
  $succeeded=$true
  Write-Output "IP_PRISM_DISTANCE_STUDY=PASS RUN=$run GUI=False FULL_ANALYZER=False"
 } catch {
- foreach($record in $existing){if($record.active-and-not$record.process.HasExited){Stop-ManagedSolverProcesses -ProcessIds @([int]$record.root_process_id)}}
+ # A parent-stage failure does not make an already admitted solver unsafe.
+ # Stop launching new work by leaving the dispatch path, then retain its natural terminal evidence.
+ foreach($record in @($existing)){
+  if($record.active-and-not$record.process.HasExited){
+   Write-Warning "IP/Prism formal worker $($record.root_process_id) has not reported a native failure; awaiting natural completion."
+   $record.process.WaitForExit()
+  }
+ }
  if($null-ne$package){Write-RunJson -Path $package.summary -Value @{schema_version=1;role='ip_prism_distance_study_summary';status='failed';stage=$stage;reason=$_.Exception.Message;gui_executed=$false;full_analyzer_flight_executed=$false}}
  throw
 } finally {

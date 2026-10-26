@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import csv
+import json
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from common.contracts.component_particle_state import write_component_particle_state_csv
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import analyze_measured_component
+from common.contracts.write_run_manifest import file_record
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import _load_source, analyze_measured_component, _prepare_detector_peak, _save_detector_peak, validate_measured_peak_source_reference
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_measured_source
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_measured_component_source as fixtures
 
@@ -38,6 +41,108 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
 
     def _analyze(self) -> dict:
         return analyze_measured_component(self.log, self.source / "source_receipt.json", self.output)
+
+    def _peak_contract(self, pulse: float = 7500.0) -> dict:
+        timing = self.root / "native_timing.json"
+        timing.write_text(json.dumps(dict(schema_version=1, role="native_electrode_timing", pulse_start_us=pulse)))
+        source = json.loads((self.source / "source_receipt.json").read_text())
+        from common.analysis.peak_metrics import AnalysisSettings
+        return dict(method_id="common_gaussian_kde_time_v1", resolution_definition="mean_tof_us/(2*direct_fwhm_tof_us)",
+                    time_basis="instrument_arrival_minus_common_extraction_pulse_us",
+                    settings={key: value for key, value in vars(AnalysisSettings()).items()},
+                    common_time_reference=dict(clock_epoch_id=source["clock_epoch_id"], timing=file_record(timing), field="pulse_start_us"))
+
+    def test_analysis_reads_canonical_source_once(self) -> None:
+        canonical = self.source / "component_particle_state.csv"
+        open_file, reads = Path.open, []
+
+        def track(path, *args, **kwargs):
+            if path == canonical and (not args or args[0] == "r"):
+                reads.append(path)
+            return open_file(path, *args, **kwargs)
+
+        with patch.object(Path, "open", track):
+            _, states, _, _ = _load_source(self.source / "source_receipt.json")
+        self.assertEqual(len(reads), 1)
+        self.assertIs(type(states[1]["mass_amu"]), float)
+        self.assertIs(type(states[1]["charge_state"]), int)
+
+    def test_declared_peak_auto_exports_with_two_hits_unavailable(self) -> None:
+        report = analyze_measured_component(self.log, self.source / "source_receipt.json", self.output,
+                                            peak_analysis_contract=self._peak_contract())
+        peak = report["detector_peak"]
+        self.assertEqual(peak["status"], "unavailable_fewer_than_three_hits")
+        self.assertIsNone(peak["time_equivalent_resolution"])
+        for name in ("detector_peak_samples.csv", "detector_peak.png", "detector_peak.svg", "detector_peak.metadata.json"):
+            self.assertTrue((self.output / name).is_file())
+        with (self.output / "detector_peak_samples.csv").open(newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertAlmostEqual(float(rows[1]["tof_from_common_pulse_us"])-float(rows[0]["tof_from_common_pulse_us"]), .06)
+
+    def test_common_peak_algorithm_and_time_translation_preserve_exit_spread(self) -> None:
+        from common.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics
+        source = json.loads((self.source / "source_receipt.json").read_text())
+        offsets = [.01, .02, .05, .08, .11]
+        states = {i: dict(mass_amu=524.0, charge_state=1, instrument_time_us=7500+offset)
+                  for i, offset in enumerate(offsets, 1)}
+        # Every particle flies the same elapsed time; actual exit spread must survive.
+        detectors = {i: {"t_us": float(row["instrument_time_us"])+100} for i, row in states.items()}
+        contract = self._peak_contract()
+        peak, _ = _prepare_detector_peak(contract, self.root, source, states, detectors)
+        expected, _ = compute_peak_metrics([100+offset for offset in offsets], 524, AnalysisSettings())
+        self.assertEqual(peak["status"], "evaluated")
+        self.assertAlmostEqual(peak["fwhm_us"]*1000, expected["direct_fwhm_tof_ns"], places=8)
+        self.assertAlmostEqual(peak["time_equivalent_resolution"], expected["time_equivalent_resolution"], places=5)
+        peak, spectra = _prepare_detector_peak(contract, self.root, source, states, detectors)
+        self.output.mkdir()
+        _save_detector_peak(self.output, peak, spectra, states, detectors,
+                            dict(counts=dict(detected=5, mother_source=8, downstream_released=6)))
+        with (self.output / "detector_peak_spectrum.csv").open(newline="") as handle:
+            self.assertEqual(len(list(csv.DictReader(handle))), 4001)
+        metadata = json.loads((self.output / "detector_peak.metadata.json").read_text())
+        self.assertEqual(metadata["peak_analysis"]["detected_particle_ids"], [1, 2, 3, 4, 5])
+        self.assertTrue((self.output / "detector_peak.png").read_bytes().startswith(b"\x89PNG"))
+        shift = 10000
+        shifted_states = {i: dict(row, instrument_time_us=float(row["instrument_time_us"])+shift) for i, row in states.items()}
+        shifted_detectors = {i: {"t_us": row["t_us"]+shift} for i, row in detectors.items()}
+        translated, _ = _prepare_detector_peak(self._peak_contract(7500+shift), self.root, source, shifted_states, shifted_detectors)
+        self.assertAlmostEqual(peak["fwhm_us"], translated["fwhm_us"], places=9)
+        self.assertAlmostEqual(peak["time_equivalent_resolution"], translated["time_equivalent_resolution"], places=4)
+
+    def test_peak_empty_few_and_zero_variance_are_unavailable(self) -> None:
+        source = json.loads((self.source / "source_receipt.json").read_text())
+        states = {i: dict(mass_amu=524.0, charge_state=1, instrument_time_us=7500.1) for i in range(1, 4)}
+        for times, status in (([], "unavailable_fewer_than_three_hits"), ([7600], "unavailable_fewer_than_three_hits"),
+                              ([7600, 7601], "unavailable_fewer_than_three_hits"), ([7600]*3, "unavailable_zero_variance")):
+            with self.subTest(times=times):
+                peak, spectra = _prepare_detector_peak(self._peak_contract(), self.root, source, states,
+                                                        {i: {"t_us": time} for i, time in enumerate(times, 1)})
+                self.assertEqual(peak["status"], status)
+                self.assertIsNone(spectra)
+                self.assertIsNone(peak["fwhm_us"])
+
+    def test_single_centroid_source_can_validate_without_width_analysis(self) -> None:
+        source = json.loads((self.source / "source_receipt.json").read_text())
+        states = {1: dict(mass_amu=524.0, charge_state=1, instrument_time_us=7500.1)}
+        contract = self._peak_contract()
+        self.assertEqual(validate_measured_peak_source_reference(contract, self.root, source, states), 7500)
+        peak, _ = _prepare_detector_peak(contract, self.root, source, states, {})
+        self.assertEqual(peak["status"], "unavailable_fewer_than_three_hits")
+
+    def test_peak_clock_source_and_invalid_reference_fail_before_output(self) -> None:
+        for change in ("epoch", "hash", "field", "late", "nan"):
+            with self.subTest(change=change):
+                contract = self._peak_contract(7601 if change == "late" else (float("nan") if change == "nan" else 7500))
+                if change == "epoch":
+                    contract["common_time_reference"]["clock_epoch_id"] = "wrong"
+                elif change == "hash":
+                    contract["common_time_reference"]["timing"]["sha256"] = "0"*64
+                elif change == "field":
+                    contract["common_time_reference"]["field"] = "primary_quench_us"
+                with self.assertRaises((ValueError, AssertionError)):
+                    analyze_measured_component(self.log, self.source / "source_receipt.json", self.output,
+                                               peak_analysis_contract=contract)
+                self.assertFalse(self.output.exists())
 
     def test_noncontiguous_ids_absolute_width_and_upstream_loss_preserved(self) -> None:
         report = self._analyze()
@@ -72,7 +177,7 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
                                       "mother_census": fixture._identity(fixture.census)}
         fixture._write(fixture.receipt_path, fixture.receipt)
         handoff = self.root / "handoff_100"
-        prepare_handoff(fixture.receipt_path, fixture.trajectory, fixture.provider, fixture.request, handoff)
+        fixture._prepare(handoff)
         source = self.root / "source_100"
         materialize_measured_source(handoff / "handoff_receipt.json", source)
         events = []

@@ -163,6 +163,7 @@ class ComponentFocusWorkflowTests(unittest.TestCase):
                 tuple(ResponseExport(i, native_names[i], standalone_names[i - 1])
                       for i in range(1, len(voltages) + 1)),
                 generation / receipt_name,
+                source_directory=generation,
             )
             names.append(receipt_name)
             cache = {"schema_version": 3, "files": [

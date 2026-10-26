@@ -263,6 +263,14 @@ SIMION的`adjustable`具有独立作用域；不能用普通Lua全局赋值推�
 
 ## 自动分批与单工作台重放
 
+同几何纯调压使用 `run_functional.ps1 -ConfigurationDirectory <完整配置目录> -NativeFieldRun <已封存来源run>`。
+原生 Refine 已建立15个可调电极的单位响应；`runtime.lua`的`segment.fast_adjust`每次按冻结
+`native_drive.voltages`写入全部`adj_elect`，包含RF、抬升、脉冲和E10／E11相对偏置。
+电势按单位响应线性叠加，轨迹、碰撞与束团状态仍需每组重新计算。
+既有prepare核对原生几何投影、网格／Refine精度、GEM身份、Refine完成日志及18个PA族成员的
+路径／字节／SHA；不一致失败关闭。成功后引用只读来源，runner跳过GEM／Refine，飞行前后保护并核验原生场族。
+改变实体、网格或求场设置则重新建场；GUI独立工作台的准备与手动验收继续使用其原合同。
+
 `run_functional.ps1 -ConfigurationDirectory <directory>`支持MR匹配候选的完整科学／数值配置目录；
 未指定时仍消费本项目`config/`。显式目录要求自身包含坐标合同，冻结全部实际消费配置及可选的
 `component_matching_derivation.json`，不回退到封存基线拼接缺项。准备、资源调度、求场与自动诊断复用原入口。
@@ -272,6 +280,8 @@ SIMION的`adjustable`具有独立作用域；不能用普通Lua全局赋值推�
 `common.simion.resource_scheduler`、`common.simion.particle_batching`及
 `Invoke-ResourceBudgetedProcesses`决定。未知资源身份先保留首正式批，观测峰值后重规划；
 不在项目固定并发路数或以PA磁盘大小代替进程峰值。
+观测后的准备或调度错误会停止新worker启动，但不会中止仍健康的首正式worker；运行器等待其自然终态，
+保留其原生日志和输出后才将本次运行发布为失败。
 worker控制文件和输出各自隔离，根`simion`目录始终保留完整母群的master工作台，供后续GUI准备复制。
 
 SIMION官方程序流程图规定先创建全部离子并调用各自`initialize`，随后才逐离子积分。

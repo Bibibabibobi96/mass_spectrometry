@@ -160,8 +160,7 @@ class DailyCapacityReconcileTest(unittest.TestCase):
         self.assertEqual(policy["light_evidence_budget_bytes"], 26_214_400)
         self.assertEqual(capacity._capacity_policy(), policy)
 
-    def test_formal_policy_is_exactly_600_gib_and_legacy_v1_ledger_fails_closed(self) -> None:
-        self.assertEqual(capacity._capacity_policy()["target_gib"], 600)
+    def test_legacy_v1_ledger_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             legacy = {
@@ -377,6 +376,61 @@ for name in (
             self.assertEqual(receipt["writing_object_count"], 1)
             self.assertEqual(receipt["overdue_writing_object_count"], 1)
             self.assertEqual(receipt["overdue_writing_objects"][0]["owner"], "workflow-a")
+
+    def test_overdue_admission_uses_current_lease_input_overlap_and_cache_family(self) -> None:
+        key, generation, other_key = "a" * 64, "b" * 64, "c" * 64
+        cases = [
+            ("ancestor", "projects/p/runs/old", ["projects/p/runs/old/input.json"], [], True),
+            ("descendant", "projects/p/runs/old/input.json", ["projects/p/runs/old"], [], True),
+            ("other_lease", "projects/p/runs/old", ["projects/current"], [], False),
+            ("generation", f"common/simion/pa_family_cache/{key}/generations/{generation}", [], [key], True),
+            ("transaction", f"common/simion/pa_family_cache/.transactions/{key}/build-scratch", [], [key], True),
+            ("staging", f"projects/p/cache/simion_pa_basis/.staging/{key}/pending", [], [key], True),
+            ("project_generation", f"projects/p/cache/simion_pa_basis/{key}/generations/{generation}", [], [key], True),
+            ("different_key", f"common/simion/pa_family_cache/{other_key}/generations/{generation}", [], [key], False),
+            ("generation_is_not_key", f"common/simion/pa_family_cache/{key}/generations/{generation}", [], [generation], False),
+            ("ordinary_sha_path", f"projects/p/runs/{key}/results", [], [key], False),
+        ]
+        for name, relative, current_paths, current_keys, blocked in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                item = {
+                    "path": relative, "class": "rebuildable_payload", "bytes": 7,
+                    "status": "writing", "pin": False, **WRITING_DUTIES,
+                    "review_deadline": "2000-01-01",
+                }
+                if name == "generation_is_not_key":
+                    item.update({"class": "published_cache", "identity": generation})
+                capacity_ledger.initialize_capacity_ledger(root, objects=[item])
+                create_capacity_protection_lease(
+                    root, lease_id="other", owner="other", ttl_seconds=3600,
+                    protected_paths=[root / relative], protected_cache_keys=[key], committed_new_bytes=3,
+                )
+                create_capacity_protection_lease(
+                    root, lease_id="current", owner="current", ttl_seconds=3600,
+                    protected_paths=[root / value for value in current_paths],
+                    protected_cache_keys=current_keys, committed_new_bytes=2,
+                )
+                ledger_path = root / "common/capacity_ledger.json"
+                original = ledger_path.read_bytes()
+                # No explicit required arguments: the current lease itself is
+                # still the declared input scope, while other leases are not.
+                receipt = capacity.plan(root, target_bytes=100, minimum_free_bytes=0,
+                                        capacity_protection_lease_id="current")
+                self.assertEqual(receipt["satisfied"], not blocked)
+                self.assertEqual(receipt["blocking_overdue_writing_object_count"], int(blocked))
+                self.assertEqual(receipt["blocking_reason"], "WRITING_RECOVERY_REVIEW_OVERDUE" if blocked else None)
+                self.assertEqual(receipt["resident_bytes"], 7)
+                self.assertEqual(receipt["total_active_lease_committed_new_bytes"], 5)
+                self.assertEqual(receipt["projected_bytes"], 12)
+                self.assertEqual(len(receipt["warnings"]), int(not blocked))
+                if not blocked:
+                    self.assertEqual(receipt["warnings"][0]["path"], relative)
+                    over_capacity = capacity.plan(root, target_bytes=11, minimum_free_bytes=0,
+                                                  capacity_protection_lease_id="current")
+                    self.assertFalse(over_capacity["satisfied"])
+                    self.assertEqual(over_capacity["blocking_reason"], "TARGET_CAPACITY_EXCEEDED")
+                self.assertEqual(ledger_path.read_bytes(), original)
 
     def test_normal_api_and_cli_do_not_accept_duplicate_budget_estimates(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

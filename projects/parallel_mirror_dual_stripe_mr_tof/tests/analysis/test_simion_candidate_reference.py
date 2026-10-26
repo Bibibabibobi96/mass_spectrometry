@@ -8,15 +8,18 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from common.contracts.rigid_transform import RigidTransform
+from common.integration.resolve_assembly import compile_assembly_layout
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError, build_simion_gem, derive_mirror_voltage_bounds,
     derive_operating_energy_envelope, derive_two_zone_focus, derive_two_zone_placement,
     load_contract, resolve_trajectory_profile, write_gem,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
-    build_analyzer_gem, resolve_accelerator_iob_origin,
+    build_analyzer_gem, resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose,
     resolve_static_iob_origins,
 )
+from projects.orthogonal_accelerator.analysis.component_focus_pa_plan import derive as derive_oa_provider_plan
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import derive_shielded_rectangular_enclosure
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     compile_dual_stripe_edge_evaluators,
@@ -61,6 +64,16 @@ from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_even
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+
+
+def reframe_oa_mr_plan(plan, rotation):
+    """Recompile the same component layout in a different parent frame."""
+    recipe = copy.deepcopy(plan["recipe"])
+    movement = RigidTransform(plan["assembly_frame_id"], "instrument.assembly", rotation, (32., -16., 8.))
+    recipe["assembly_frame_id"] = movement.to_frame_id
+    for instance in recipe["instances"]:
+        instance["transform"] = RigidTransform.from_contract(instance["transform"]).then(movement).to_contract()
+    return compile_assembly_layout(recipe, plan["components"])
 
 
 class TrajectoryProfileTest(unittest.TestCase):
@@ -283,13 +296,13 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             inherited["two_prism_low_field_reference_section"],
             resolve_geometry(authority)["two_prism_low_field_reference_section"],
         )
-        with TemporaryDirectory() as directory:
-            reviewed_path = Path(directory) / "reviewed.json"
-            reviewed_path.write_text(json.dumps(reviewed), encoding="utf-8")
-            origins = resolve_static_iob_origins(
-                reviewed_path,
-                inherited_dual_stripe_topology_contract=authority,
-            )
+        with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry.resolve_geometry",
+                   side_effect=AssertionError("already resolved geometry must not be compiled again")):
+            origins = resolve_static_iob_origins(reviewed, resolved_geometry=inherited)
+        detector_box = inherited["detector"]["box"]
+        detector_span = reviewed["simion"]["detector_pa_span_mm"]
+        self.assertEqual(origins["detector"], tuple(
+            (detector_box[i] + detector_box[i + 3] - detector_span[i]) / 2 for i in range(3)))
         self.assertEqual(set(origins), {"analyzer", "detector"})
         incompatible = copy.deepcopy(reviewed)
         incompatible["dual_stripe"]["theory_profile"]["path_length_mapping"][
@@ -319,94 +332,51 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             resolve_geometry(contract)
 
-    def test_provider_local_accelerator_pose_uses_mr_prism_anchor_without_overlap(self) -> None:
+    def test_provider_local_accelerator_pose_uses_frozen_oa_mr_parent(self) -> None:
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
-        plan = {
-            "schema_version": 1,
-            "role": "orthogonal_accelerator_component_focus_pa_plan",
-            "status": "derived",
-            "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
-            "numerical_domain": {
-                "span_mm": [44.5, 34.5, 50.0],
-                "stored_span_mm": [22.25, 34.5, 50.0],
-                "mirror_axes": ["x"],
-                "iob_origin_mm": [0.0, -17.25, 0.0],
-                "local_exit_z_mm": 6.0,
-            },
-            "requirements": {"placement": {"focus_y_mm": 0.0, "global_exit_z_mm": 0.0}},
-            "layout": {
-                "geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
-                "static_minimum_y_extent_mm": 34.0,
-            },
-        }
-        origin = resolve_accelerator_iob_origin(contract, plan)
-        self.assertEqual(origin, (0.0, -67.25, -6.0))
-        focus_y = contract["accelerator"]["focus_y_anchor"]["project_y_mm"]
-        accelerator_y_max = focus_y + 17.0
+        provider_plan = derive_oa_provider_plan(
+            PROJECT.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json"
+        )
+        composition_plan = json.loads((
+            PROJECT.parent.parent / "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json"
+        ).read_text(encoding="utf-8"))
+        origin = resolve_accelerator_iob_origin(contract, provider_plan, composition_plan)
+        self.assertEqual(origin, (0.0, -72.25, -6.0))
         resolved = resolve_geometry(contract)
-        prism2 = next(
-            item for item in resolved["prism_ground_shields"]
-            if item["station"] == "central_ground_left"
-        )
-        prism2_y_min = min(point[0] for point in prism2["outer_polygon_yz_mm"])
-        self.assertAlmostEqual(prism2_y_min - accelerator_y_max, 1.0)
-        stripe_y_min = min(
-            point[0] for stripe in resolved["stripe_electrodes"]
-            for point in stripe["polygon_yz_mm"]
-        )
-        self.assertLess(accelerator_y_max, prism2_y_min)
-        self.assertLess(accelerator_y_max, stripe_y_min)
+        prism2 = next(item for item in resolved["prism_ground_shields"] if item["station"] == "central_ground_left")
+        self.assertGreaterEqual(min(point[0] for point in prism2["outer_polygon_yz_mm"]) - (-55.0 + 17.0), contract["accelerator"]["minimum_clearance_to_central_prism_ground_shield_y_mm"])
 
-        extended = copy.deepcopy(contract)
-        extended["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"] = {
-            "clearance_mm": 1.0,
-        }
-        assembly = {
-            "accelerator_resolved_electrodes": {
-                "acceleration_direction": "-z",
-                "local_to_pa_translation_mm": [0.0, 0.0, 0.0],
-                "grid_supports": [{
-                    "component_electrode_id": 4,
-                    "frame_outer_box_mm": {"z_min_mm": 0.0},
-                }],
-            },
-            "accelerator_iob_origin_mm": [0.0, 0.0, 0.0],
-        }
-        frozen = resolve_geometry(extended, accelerator_assembly=assembly)
-        with self.assertRaisesRegex(CandidateContractError, "frozen accelerator assembly"):
-            resolve_accelerator_iob_origin(extended, plan)
-        with patch(
-            "projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry.resolve_geometry",
-            side_effect=AssertionError("the frozen geometry must not be re-resolved"),
-        ):
-            self.assertEqual(
-                resolve_accelerator_iob_origin(extended, plan, resolved_geometry=frozen), origin,
-            )
-            invalid = copy.deepcopy(frozen)
-            invalid["metadata"]["accelerator_component_geometry_profile_id"] = "wrong"
-            with self.assertRaisesRegex(CandidateContractError, "profile differs"):
-                resolve_accelerator_iob_origin(extended, plan, resolved_geometry=invalid)
-            invalid = copy.deepcopy(frozen)
-            shield = next(item for item in invalid["prism_ground_shields"]
-                          if item["station"] == "central_ground_left")
-            shield["outer_polygon_yz_mm"] = [[accelerator_y_max, 0.0]]
-            with self.assertRaisesRegex(CandidateContractError, "Prism2 shield too closely"):
-                resolve_accelerator_iob_origin(extended, plan, resolved_geometry=invalid)
+        frozen = json.dumps(composition_plan, sort_keys=True)
+        direct = resolve_oa_mr_direct_pose(provider_plan, composition_plan)
+        self.assertEqual(direct["oa_translation_mm"], (0., -55., -6.))
+        self.assertEqual(direct["exit_project_mm"], (0., -55., 0.))
+        for rotation in (((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+                         ((0, -1, 0), (1, 0, 0), (0, 0, 1)),
+                         ((math.cos(.37), -math.sin(.37), 0), (math.sin(.37), math.cos(.37), 0), (0, 0, 1))):
+            with self.subTest(rotation=rotation):
+                moved = reframe_oa_mr_plan(composition_plan, rotation)
+                before = json.dumps(moved, sort_keys=True)
+                moved_direct = resolve_oa_mr_direct_pose(provider_plan, moved)
+                actual = resolve_accelerator_iob_origin(contract, provider_plan, moved)
+                if rotation[0][0] in (0, 1):
+                    self.assertEqual(actual, origin)
+                    self.assertEqual(moved_direct["exit_project_mm"], direct["exit_project_mm"])
+                else:
+                    for a, b in zip(actual, origin, strict=True):
+                        self.assertTrue(math.isclose(a, b, rel_tol=0, abs_tol=1e-12))
+                self.assertEqual(json.dumps(moved, sort_keys=True), before)
+        self.assertEqual(json.dumps(composition_plan, sort_keys=True), frozen)
 
-        wrong_profile = copy.deepcopy(plan)
-        wrong_profile["layout"]["geometry_profile_id"] = "wrong"
-        with self.assertRaisesRegex(CandidateContractError, "profile differs"):
-            resolve_accelerator_iob_origin(contract, wrong_profile)
+        rotated_recipe = copy.deepcopy(composition_plan["recipe"])
+        rotated_recipe["instances"][0]["transform"]["rotation"] = [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]
+        rotated = compile_assembly_layout(rotated_recipe, composition_plan["components"])
+        with self.assertRaisesRegex(CandidateContractError, "identity relative rotation"):
+            resolve_accelerator_iob_origin(contract, provider_plan, rotated)
 
-        wrong_symmetry = copy.deepcopy(plan)
-        wrong_symmetry["numerical_domain"]["mirror_axes"] = []
-        with self.assertRaisesRegex(CandidateContractError, "pose fields are incomplete"):
-            resolve_accelerator_iob_origin(contract, wrong_symmetry)
-
-        wrong_stored_span = copy.deepcopy(plan)
-        wrong_stored_span["numerical_domain"]["stored_span_mm"][0] = 44.5
-        with self.assertRaisesRegex(CandidateContractError, "origin rule differs"):
-            resolve_accelerator_iob_origin(contract, wrong_stored_span)
+        drifted_exit = copy.deepcopy(composition_plan)
+        drifted_exit["components"]["oa_two_zone"]["ports"]["axial_exit"]["cross_section"]["width_mm"] += 1
+        with self.assertRaisesRegex(CandidateContractError, "interfaces differ"):
+            resolve_accelerator_iob_origin(contract, provider_plan, drifted_exit)
 
 
 

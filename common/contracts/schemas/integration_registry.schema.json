@@ -15,23 +15,45 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["integration_id", "root", "profile_registry"],
+        "required": ["integration_id", "root"],
         "properties": {
           "integration_id": {"$ref": "#/$defs/identifier"},
-          "root": {"type": "string", "pattern": "^integrations/[a-z][a-z0-9_]*$"},
-          "profile_registry": {
+          "profile_registry": {},
+          "downstream_terminal_profile_registry": {},
+          "root": {
             "type": "string",
-            "pattern": "^integrations/[a-z][a-z0-9_]*/config/[A-Za-z0-9._-]+\\.json$"
-          },
-          "downstream_terminal_profile_registry": {
-            "type": "string",
-            "pattern": "^integrations/[a-z][a-z0-9_]*/config/[A-Za-z0-9._-]+\\.json$"
+            "pattern": "^integrations(?:/[a-z][a-z0-9_]*)?$",
+            "description": "Source root; integration_id remains the explicit owner identity."
           }
-        }
+        },
+        "allOf": [{
+          "if": {"properties": {"root": {"const": "integrations"}}},
+          "then": {
+            "properties": {
+              "profile_registry": {"$ref": "#/$defs/direct_registry_path"},
+              "downstream_terminal_profile_registry": {"$ref": "#/$defs/direct_registry_path"}
+            }
+          },
+          "else": {
+            "properties": {
+              "profile_registry": {"$ref": "#/$defs/family_registry_path"},
+              "downstream_terminal_profile_registry": {"$ref": "#/$defs/family_registry_path"}
+            }
+          }
+        }]
       }
     }
   },
   "$defs": {
-    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"}
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "direct_registry_path": {
+      "type": "string",
+      "pattern": "^integrations/config/[A-Za-z0-9._-]+\\.json$"
+    },
+    "family_registry_path": {
+      "type": "string",
+      "pattern": "^integrations/[a-z][a-z0-9_]*/config/[A-Za-z0-9._-]+\\.json$",
+      "description": "Consumers must also verify that the path belongs to the declared root."
+    }
   }
 }

@@ -50,6 +50,13 @@ class PreparedJointBatchTests(unittest.TestCase):
         root, prepared = fixture.root, fixture.root / "prepared"
         source = prepared / "results/joint_workbench/measured_source"
         source.parent.mkdir(parents=True)
+        (prepared / "inputs").mkdir()
+        for name, original_input in (("composition_plan", upstream.recipe_path), ("accelerator_request", upstream.request)):
+            shutil.copyfile(original_input, prepared / "inputs" / (name + ".json"))
+        assembly_plan = json.loads((prepared / "inputs/composition_plan.json").read_text())
+        poses = {item["instance_id"]: item["transform"] for item in assembly_plan["recipe"]["instances"]}
+        ip_id = assembly_plan["recipe"]["connections"][0]["upstream"]["instance_id"]
+        (prepared / "run_manifest.json").write_text("{}")
         shutil.copytree(fixture.output, source)
         reference = root / "reference"
         (reference / "results").mkdir(parents=True)
@@ -65,17 +72,32 @@ class PreparedJointBatchTests(unittest.TestCase):
                                     trajectory_profiles=dict(center_screening=dict(trajectory_quality=3,maximum_step_us=.004,
                                                                                   purpose="synthetic prepared integration")),
                                     full_path_timeout_axial_path_multiplier=2,
-                                    numerical_profiles=dict(native_static_field=dict(target_layout=dict(windows=[])))),
+                                    numerical_profiles=dict(native_static_field=dict(refine=dict(convergence_v=1e-6), target_layout=dict(windows=[])))),
                         source=dict(energy_eV=5), target=dict(y_mm=360),
                         downstream_fixed_grid_workpoint_profile=dict(automatic_iteration=dict(
                             maximum_iterations=5, advance_multiplier=1.0, damping_factor=.5)))
+        from common.analysis.peak_metrics import AnalysisSettings
+        timing_authority = root / "native_timing.json"
+        timing_authority.write_text(json.dumps(dict(schema_version=1, role="native_electrode_timing", pulse_start_us=7500)))
+        source_receipt = json.loads((source / "source_receipt.json").read_text())
+        original["peak_analysis"] = dict(method_id="common_gaussian_kde_time_v1",
+            resolution_definition="mean_tof_us/(2*direct_fwhm_tof_us)",
+            time_basis="instrument_arrival_minus_common_extraction_pulse_us", settings=vars(AnalysisSettings()),
+            common_time_reference=dict(clock_epoch_id=source_receipt["clock_epoch_id"],
+                                       field="pulse_start_us", timing=file_record(timing_authority)))
         original_path = root / "reference_contract.json"
         original_path.write_text(json.dumps(original))
+        prepared_materialization = prepared / "results/joint_workbench/reference_materialization.json"
+        shutil.copyfile(reference / "results/two_prism_trial_materialization.json", prepared_materialization)
         parent = dict(selected_provider="dual_pressure_rectilinear_ion_processor",
                       status="workbench_ready_no_joint_flight",
                       joint_workbench_binding=dict(field_assembly_verified=True, measured_source_matches_workpoint=True,
+                                                   reference_materialization=file_record(prepared_materialization),
+                                                   numerics=dict(trajectory_quality=3,maximum_step_us=.004,full_path_timeout_us=100),
                                                    field_run=str(root / "fields"), source_run=str(root / "source")),
-                      inputs=dict(reference_trajectory=file_record(original_path), reference_manifest=file_record(manifest)))
+                      inputs=dict(reference_trajectory=file_record(original_path), reference_manifest=file_record(manifest),
+                                  composition_plan=file_record(prepared / "inputs/composition_plan.json"),
+                                  accelerator_request=file_record(prepared / "inputs/accelerator_request.json")))
         (prepared / "results/accelerator_interface_preparation.json").write_text(json.dumps(parent))
         (source.parent / "static_field_binding.json").write_text("{}")
         runtime = source.parent / "runtime"
@@ -85,8 +107,9 @@ class PreparedJointBatchTests(unittest.TestCase):
             "return {trajectory_quality=3,maximum_step_us=.004,full_path_timeout_us=100}")
         binding = dict(accelerator_provider="dual_pressure_rectilinear_ion_processor", refinement_windows=[],
                        manifest=str(root/"fields/run_manifest.json"),
-                       geometry={}, grid=dict(origin_mm=[0,0,0],pitch_mm=[.1, .1, .1],dimensions=[2,2,2]),
-                       authority=dict(analyzer_electrode_voltages_v=[0.0]*20),
+                       geometry=dict(frame_id=assembly_plan["assembly_frame_id"]), grid=dict(origin_mm=[0,0,0],pitch_mm=[.1, .1, .1],dimensions=[2,2,2]),
+                       authority=dict(analyzer_electrode_voltages_v=[0.0]*20,
+                                      assembly=dict(ion_processor_registration=poses[ip_id])),
                        sources=dict(scalar_pa="synthetic_pa_not_opened.pa"),
                        instances=[dict(role=role,pa_path=role+".pa",origin_mm=[0,0,0],manifest=str(root/"fields/run_manifest.json"))
                                   for role in ("global_fallback","native_corridor","ion_processor_collision","detector")],
@@ -95,10 +118,11 @@ class PreparedJointBatchTests(unittest.TestCase):
         module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
         frozen_original = original_path.read_bytes()
         for name in ("unchanged", "observation", "budget", "budget_and_observation", "selected_step", "budget_and_selected_step",
-                     "energy", "step", "advance", "smaller_budget", "quality", "mixed_physics", "mixed_timeout", "selector"):
+                     "energy", "step", "advance", "smaller_budget", "quality", "mixed_physics", "mixed_timeout", "selector",
+                     "peak_valid", "peak_wrong_epoch", "peak_late_pulse", "legacy_peak"):
             with self.subTest(name=name):
                 contract = copy.deepcopy(original)
-                if name not in ("unchanged", "observation", "selected_step"):
+                if name not in ("unchanged", "observation", "selected_step") and not name.startswith("peak_"):
                     contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]["maximum_iterations"] = 30
                 if name in ("observation", "budget_and_observation"):
                     contract["simion"]["trajectory_recording"]["interval_us"] = .2
@@ -121,10 +145,33 @@ class PreparedJointBatchTests(unittest.TestCase):
                     contract["simion"]["default_trajectory_profile_id"] = "other"
                 if name in ("selected_step", "budget_and_selected_step", "mixed_physics", "mixed_timeout"):
                     contract["simion"]["trajectory_profiles"]["center_screening"]["maximum_step_us"] = .002
+                if name.startswith("peak_"):
+                    timing = root / (name + "_timing.json")
+                    timing.write_text(json.dumps(dict(schema_version=1, role="native_electrode_timing",
+                                                      pulse_start_us=7600 if name == "peak_late_pulse" else 7500)))
+                    source_receipt = json.loads((source / "source_receipt.json").read_text())
+                    contract["peak_analysis"].update(time_basis="instrument_arrival_minus_common_extraction_pulse_us",
+                        common_time_reference=dict(clock_epoch_id="wrong" if name == "peak_wrong_epoch" else source_receipt["clock_epoch_id"],
+                                                   field="pulse_start_us", timing=file_record(timing)))
+                if name == "legacy_peak":
+                    contract["peak_analysis"]["time_basis"] = "instrument_arrival_us_from_common_zero_birth"
+                    contract["peak_analysis"].pop("common_time_reference")
+                    original_path.write_text(json.dumps(contract))
+                    parent["inputs"]["reference_trajectory"] = file_record(original_path)
+                    (prepared / "results/accelerator_interface_preparation.json").write_text(json.dumps(parent))
                 path, output = root / f"{name}.json", root / name
                 path.write_text(json.dumps(contract))
-                with patch(module + ".verified_reference", side_effect=lambda run, relative: run / relative), \
-                     patch(module + ".load_binding", return_value=binding):
+                with patch(module + ".verified_preparation_reference", side_effect=lambda run, relative, **kwargs: run / relative), \
+                     patch(module + ".load_binding", return_value=binding) as load:
+                    if name in ("peak_wrong_epoch", "peak_late_pulse", "legacy_peak"):
+                        with self.assertRaisesRegex(ValueError, "clock authority|pulse time|Unsupported measured detector peak"):
+                            prepare_trial(prepared, path, output)
+                        load.assert_not_called()
+                        if name == "legacy_peak":
+                            original_path.write_bytes(frozen_original)
+                            parent["inputs"]["reference_trajectory"] = file_record(original_path)
+                            (prepared / "results/accelerator_interface_preparation.json").write_text(json.dumps(parent))
+                        continue
                     if name in ("energy", "step", "advance", "smaller_budget", "quality", "mixed_physics", "mixed_timeout", "selector"):
                         with self.assertRaises(ValueError):
                             prepare_trial(prepared, path, output)
@@ -133,11 +180,19 @@ class PreparedJointBatchTests(unittest.TestCase):
                     result = prepare_trial(prepared, path, output)
                 published = json.loads((output / "results/prepared_joint_trial.json").read_text())
                 self.assertEqual(result, published)
+                self.assertEqual(result["assembly_scope"], assembly_plan["scope"])
+                self.assertEqual(Path(result["parent_composition_plan"]["path"]).read_bytes(),
+                                 (prepared / "inputs/composition_plan.json").read_bytes())
+                self.assertFalse((output / "inputs/composition_plan.json").exists())
                 provenance = result["controller_contract_provenance"]
                 self.assertEqual(provenance["prepared_reference_trajectory_contract"], file_record(original_path))
                 consumed = file_record(output / "inputs/trajectory_contract.json")
                 self.assertEqual(provenance["consumed_execution_contract"], consumed)
                 self.assertEqual(result["trajectory_contract"], consumed)
+                if name == "peak_valid":
+                    self.assertEqual(provenance["analysis_change"]["current"], contract["peak_analysis"])
+                else:
+                    self.assertIsNone(provenance["analysis_change"])
                 self.assertEqual((output / "inputs/trajectory_contract.json").read_bytes(), path.read_bytes())
                 self.assertEqual(result["expected_particle_ids"], selected_ids)
                 self.assertEqual(result["mother_particle_count"], 100)
@@ -171,13 +226,130 @@ class PreparedJointBatchTests(unittest.TestCase):
                     lua = shutil.which("lua") or "C:/Program Files/SIMION-2020/lua.exe"
                     if Path(lua).is_file():
                         script = output/"check_sidecar.lua"
-                        script.write_text("local t=assert(loadfile(arg[1]))();assert(t.maximum_step_us==.002 and t.trajectory_quality==3 and t.full_path_timeout_us==100);print('CONTRACT_STEP_PROPAGATED')")
+                        script.write_text("local t=assert(loadfile(arg[1]))();assert(t.maximum_step_us==.002 and t.trajectory_quality==3 and t.full_path_timeout_us==100);"
+                            "assert(t.static_field.scalar_pa=='synthetic_pa_not_opened.pa');"
+                            "assert(t.static_field.collision_pa_path=='native_corridor.pa');"
+                            "assert(#t.static_field.collision_geometry_pa_paths==2);"
+                            "assert(t.static_field.collision_geometry_pa_paths[1]=='ion_processor_collision.pa');"
+                            "assert(t.static_field.collision_geometry_pa_paths[2]=='detector.pa');"
+                            "print('CONTRACT_STEP_PROPAGATED')")
                         for sidecar in (Path(result["operating_point"]["path"]),batch_directory/"joint.operating_point.lua"):
                             actual = subprocess.run([lua,str(script),str(sidecar)],capture_output=True,text=True,
                                                     cwd=root,encoding="utf-8",timeout=30,check=False)
                             self.assertEqual(actual.returncode,0,actual.stdout+actual.stderr)
                             self.assertIn("CONTRACT_STEP_PROPAGATED",actual.stdout)
         self.assertEqual(original_path.read_bytes(), frozen_original)
+        from common.integration.resolve_assembly import compile_assembly_layout
+        plan_path = prepared / "inputs/composition_plan.json"
+        request_path = prepared / "inputs/accelerator_request.json"
+        plan_bytes, request_bytes = plan_path.read_bytes(), request_path.read_bytes()
+        original_parent = copy.deepcopy(parent)
+
+        def publish_assembly(plan, request):
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+            parent["inputs"].update(composition_plan=file_record(plan_path), accelerator_request=file_record(request_path))
+            (prepared / "results/accelerator_interface_preparation.json").write_text(json.dumps(parent))
+
+        # A different parent expression does not move the already MR-local
+        # measured source, fields, collision layout, or absolute instrument clock.
+        from common.contracts.rigid_transform import RigidTransform
+        for index, rotation in enumerate(([[1,0,0],[0,1,0],[0,0,1]], [[0,-1,0],[1,0,0],[0,0,1]])):
+            recipe = copy.deepcopy(assembly_plan["recipe"])
+            movement = RigidTransform.from_contract(dict(schema_version=1, role="rigid_transform",
+                from_frame_id=recipe["assembly_frame_id"], to_frame_id="instrument.assembly",
+                rotation=rotation, translation_mm=[32,-16,8]))
+            recipe["assembly_frame_id"] = movement.to_frame_id
+            for item in recipe["instances"]:
+                item["transform"] = RigidTransform.from_contract(item["transform"]).then(movement).to_contract()
+            moved = compile_assembly_layout(recipe, assembly_plan["components"])
+            publish_assembly(moved, json.loads(request_bytes))
+            with patch(module+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
+                 patch(module+".load_binding",return_value=binding):
+                inherited = prepare_trial(prepared,original_path,root/f"parent_motion_{index}")
+            self.assertEqual(inherited["expected_particle_ids"], selected_ids)
+            self.assertEqual(inherited["solver_epoch_instrument_time_us"], result["solver_epoch_instrument_time_us"])
+            self.assertEqual(inherited["field_binding"], result["field_binding"])
+            for filename in ("component_particle_state.csv", "source.fly2", "source_states.lua", "source_projection.lua",
+                             "source_census.csv", "clock_authority.json", "instrument_epoch.json"):
+                self.assertEqual((Path(inherited["measured_source_directory"])/filename).read_bytes(), (source/filename).read_bytes())
+        publish_assembly(assembly_plan, json.loads(request_bytes))
+
+        for count in (3, 4):
+            with self.subTest(parent_instance_count=count):
+                recipe, components = copy.deepcopy(assembly_plan["recipe"]), copy.deepcopy(assembly_plan["components"])
+                for index in range(count - 2):
+                    extra = copy.deepcopy(next(item for item in recipe["instances"] if item["instance_id"] == ip_id))
+                    extra["instance_id"] = f"spare_{index}"
+                    extra["transform"]["translation_mm"][1] -= 1000 * (index + 1)
+                    recipe["instances"].append(extra)
+                    components[extra["instance_id"]] = copy.deepcopy(components[ip_id])
+                recipe["instances"].reverse()
+                grown = compile_assembly_layout(recipe, components)
+                grown["input_files"] = {key: dict(path="unavailable_" + key + ".json", sha256="A" * 64)
+                                        for key in ("recipe", "components")}
+                request = json.loads(request_bytes)
+                request["composition_plan"]["path"] = "author_source_no_longer_exists.json"
+                request["local_scope"] = dict(instance_ids=assembly_plan["scope"]["instance_ids"],
+                    research_scope="existing prepared IP to MR flight",
+                    boundary_assumptions="unselected components do not participate in these frozen fields")
+                publish_assembly(grown, request)
+                with patch(module+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
+                     patch(module+".load_binding",return_value=binding):
+                    inherited = prepare_trial(prepared,original_path,root/f"grown_{count}")
+                    self.assertEqual(inherited["assembly_scope"]["kind"], "local")
+                    self.assertEqual(set(inherited["assembly_scope"]["instance_ids"]), set(assembly_plan["scope"]["instance_ids"]))
+                    self.assertEqual(inherited["expected_particle_ids"], selected_ids)
+                    self.assertEqual(inherited["mother_particle_count"],100)
+                    self.assertEqual(inherited["guard_paths"],result["guard_paths"])
+                    self.assertEqual(inherited["field_binding"],result["field_binding"])
+                    for filename in ("component_particle_state.csv","source.fly2","source_states.lua","source_projection.lua",
+                                     "source_census.csv","clock_authority.json","instrument_epoch.json"):
+                        self.assertEqual((Path(inherited["measured_source_directory"])/filename).read_bytes(),(source/filename).read_bytes())
+                    del request["local_scope"]
+                    publish_assembly(grown, request)
+                    with self.assertRaisesRegex(ValueError,"selected scope requires"):
+                        prepare_trial(prepared,original_path,root/f"unsupported_full_{count}")
+
+        for defect in ("missing_parent", "old_request", "old_plan", "wrong_path", "wrong_ip_pose", "wrong_mr_pose", "wrong_field_frame", "wrong_source_instance"):
+            with self.subTest(assembly_defect=defect):
+                parent = copy.deepcopy(original_parent)
+                plan, request = json.loads(plan_bytes), json.loads(request_bytes)
+                selected_binding = copy.deepcopy(binding)
+                if defect == "old_request":
+                    request["schema_version"] = 1
+                elif defect == "old_plan":
+                    plan["schema_version"] = 2
+                elif defect == "wrong_ip_pose":
+                    selected_binding["authority"]["assembly"]["ion_processor_registration"]["translation_mm"][0] += 1
+                elif defect == "wrong_mr_pose":
+                    for item in plan["recipe"]["instances"]:
+                        item["transform"]["translation_mm"][0] += 1
+                    selected_binding["authority"]["assembly"]["ion_processor_registration"]["translation_mm"][0] += 1
+                    plan = compile_assembly_layout(plan["recipe"],plan["components"])
+                elif defect == "wrong_field_frame":
+                    selected_binding["geometry"]["frame_id"] = "unrelated_field_frame"
+                elif defect == "wrong_source_instance":
+                    new_id = "different_ip"
+                    for item in plan["recipe"]["instances"]:
+                        if item["instance_id"] == ip_id:
+                            item["instance_id"] = new_id
+                    plan["recipe"]["connections"][0]["upstream"]["instance_id"] = new_id
+                    plan["components"][new_id] = plan["components"].pop(ip_id)
+                    plan = compile_assembly_layout(plan["recipe"],plan["components"])
+                publish_assembly(plan, request)
+                if defect == "missing_parent":
+                    del parent["inputs"]["composition_plan"]
+                elif defect == "wrong_path":
+                    parent["inputs"]["composition_plan"]["path"] = str(upstream.recipe_path)
+                (prepared / "results/accelerator_interface_preparation.json").write_text(json.dumps(parent))
+                with patch(module+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
+                     patch(module+".load_binding",return_value=selected_binding), self.assertRaises(ValueError):
+                    prepare_trial(prepared,original_path,root/("reject_"+defect))
+        plan_path.write_bytes(plan_bytes)
+        request_path.write_bytes(request_bytes)
+        parent = original_parent
+        (prepared / "results/accelerator_interface_preparation.json").write_text(json.dumps(parent))
         overlay = copy.deepcopy(binding)
         overlay["source_descriptor_path"] = str(root/"overlay_source.json")
         overlay["collision_overlay"] = dict(schema_version=1,role="mrtof_analyzer_collision_overlay",
@@ -189,7 +361,7 @@ class PreparedJointBatchTests(unittest.TestCase):
         overlay_path.write_text('{}')
         def overlay_loader(path):
             return overlay if Path(path)==overlay_path else binding
-        with patch(module+".verified_reference",side_effect=lambda run,relative:run/relative), \
+        with patch(module+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
              patch(module+".load_binding",side_effect=overlay_loader), \
              patch(module+".native_response_operator",return_value={}):
             patched = prepare_trial(prepared,original_path,root/"five_role_prepared",field_binding_path=overlay_path)
@@ -207,24 +379,40 @@ class PreparedJointBatchTests(unittest.TestCase):
         self.assertIn("fine_patch.pa",(root/"five_role_batch/joint.workbench_build.lua").read_text())
         # Pure finalization -> ordinary preparation: generated effective reference
         # must carry the selected contract rather than inherit the old .004 Lua.
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import bind_joint_workbench
+        from integrations.workflows.accelerator_interface.prepare import bind_joint_workbench
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import validate_execution_contract
         final = root / "finalized"
         (final / "results").mkdir(parents=True)
+        (final / "run_manifest.json").write_text("{}")
         design, actual, fields = [root/name for name in ("design_final", "actual_final", "fields_final")]
         for folder in (design/"inputs", design/"results/joint_flight", actual/"inputs", fields/"results"):
             folder.mkdir(parents=True)
+        (design / "run_manifest.json").write_text("{}")
         configs = {name: dict(identity=name) for name in ("baseline","native_operating_point","numerics","source","coordinate_transform")}
+        configs["source"]["species"] = dict(mass_amu=524, charge_state=1)
+        configs["baseline"]["electric"] = dict(lift_v=4480)
         paths = {}
         for name, value in configs.items():
             path = design/"inputs"/(name+".json")
             path.write_text(json.dumps(value))
             paths[name] = str(path)
+        for name in ("composition_plan", "accelerator_request"):
+            shutil.copyfile(prepared/"inputs"/(name+".json"), design/"inputs"/(name+".json"))
+        matching_path = design/"inputs/matching_assembly_request.json"
+        projection = dict(values_v15=list(range(15)), basis="post_extraction_pulse_held_rf_zero",
+            evaluated_native_operating_point=configs["native_operating_point"], evaluated_baseline_lift_v=4480)
+        matching_path.write_text(json.dumps(dict(field_assembly_reference=dict(provider_voltage_projection=projection))))
         geometry = design/"inputs/geometry.json"
-        geometry.write_text('{}')
+        geometry.write_text(json.dumps(binding["geometry"]))
         (actual/"inputs/resolved_model.json").write_text(json.dumps(configs))
+        design_materialization = design/"inputs/reference_materialization.json"
+        shutil.copyfile(prepared_materialization, design_materialization)
         (design/"results/joint_flight/joint_preparation_receipt.json").write_text(json.dumps(dict(
-            assembly=dict(source_config_paths=paths, assembly_geometry_path=str(geometry)))))
+            reference_materialization=file_record(design_materialization),
+            numerics=dict(trajectory_quality=3,maximum_step_us=.004,full_path_timeout_us=100),
+            assembly=dict(source_config_paths=paths, assembly_geometry_path=str(geometry),
+                          composition_plan=assembly_plan, assembly_coordinate_transform=poses[ip_id],
+                          input_identities=[file_record(matching_path)]))))
         (design/"inputs/reference_operating_point.lua").write_text(
             "return {trajectory_quality=3,maximum_step_us=.004,full_path_timeout_us=100}")
         # Deliberately noncanonical whitespace/key order: exact descriptor bytes
@@ -232,16 +420,19 @@ class PreparedJointBatchTests(unittest.TestCase):
         descriptor = fields/"results/field_binding.json"
         descriptor.write_bytes(b'{  "z": 1, "a":2}\r\n')
         bound_field = copy.deepcopy(binding)
-        bound_field.update(geometry={}, grid=dict(origin_mm=[0,0,0],pitch_mm=[.1,.1,.1],dimensions=[2,2,2]),
+        bound_field.update(geometry=copy.deepcopy(binding["geometry"]), grid=dict(origin_mm=[0,0,0],pitch_mm=[.1,.1,.1],dimensions=[2,2,2]),
             instances=[dict(role=role,pa_path=role+".pa",origin_mm=[0,0,0],manifest=str(root/(role+"_owner")/"run_manifest.json")) for role in
                        ("global_fallback","native_corridor","ion_processor_collision","detector")])
+        bound_field["authority"]["component_voltages_v"] = [dict(component_namespace="ion_processor", component_electrode_id=i+1, voltage_v=i) for i in range(15)] + [dict(component_namespace="detector", component_electrode_id=25, voltage_v=0)]
+        bound_field["authority"]["assembly"].update(post_extraction_state="pulse_held_rf_zero", native_operating_point=configs["native_operating_point"])
         bound_field["source_descriptor_path"] = overlay["source_descriptor_path"]
         bound_field["collision_overlay"] = copy.deepcopy(overlay["collision_overlay"])
         bound_field["instances"].append(copy.deepcopy(overlay["instances"][4]))
         component = root/"final_component.json"
         component.write_text(json.dumps(dict(source_run=str(actual))))
         handoff = root/"final_handoff.json"
-        handoff.write_text(json.dumps(dict(inputs=dict(component_receipt=file_record(component)))))
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection
+        handoff.write_text(json.dumps(dict(connection=resolve_ip_mr_connection(assembly_plan), inputs=dict(component_receipt=file_record(component)))))
         selected = copy.deepcopy(original)
         selected["simion"]["trajectory_profiles"]["center_screening"]["maximum_step_us"] = .002
         selected_path = final/"selected_contract.json"
@@ -249,8 +440,8 @@ class PreparedJointBatchTests(unittest.TestCase):
         def source_projection(_handoff, output):
             shutil.copytree(source, output)
             return dict(counts=dict(source=100,transferred=97,not_transferred=3))
-        compiler = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation"
-        with patch(compiler+".verified_reference",side_effect=lambda run,relative:run/relative), \
+        compiler = "integrations.workflows.accelerator_interface.prepare"
+        with patch(compiler+".verified_reference",side_effect=lambda run,relative,**kwargs:run/relative), patch(compiler+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
              patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",return_value=bound_field), \
              patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source.materialize_measured_source",side_effect=source_projection), \
              patch(compiler+".prepare_interface_field_audit",return_value={}):
@@ -259,14 +450,45 @@ class PreparedJointBatchTests(unittest.TestCase):
                     centroid_match_accepted=None,inputs=dict(component_receipt=file_record(component))),
                 output_directory=final/"results/joint_workbench",
                 execution_contract=validate_execution_contract(original,selected))
+        # The finalizer checks the same provider-local physical registration,
+        # even when the frozen design parent is expressed elsewhere.
+        compiler_module = __import__(compiler, fromlist=["_joint_binding_inputs"])
+        design_plan_path = design / "inputs/composition_plan.json"
+        design_receipt_path = design / "results/joint_flight/joint_preparation_receipt.json"
+        old_design_plan, old_design_receipt = design_plan_path.read_bytes(), design_receipt_path.read_bytes()
+        for rotation in ([[1,0,0],[0,1,0],[0,0,1]], [[0,-1,0],[1,0,0],[0,0,1]]):
+            recipe = copy.deepcopy(assembly_plan["recipe"])
+            movement = RigidTransform.from_contract(dict(schema_version=1, role="rigid_transform",
+                from_frame_id=recipe["assembly_frame_id"], to_frame_id="instrument.assembly",
+                rotation=rotation, translation_mm=[32,-16,8]))
+            recipe["assembly_frame_id"] = movement.to_frame_id
+            for item in recipe["instances"]:
+                item["transform"] = RigidTransform.from_contract(item["transform"]).then(movement).to_contract()
+            moved = compile_assembly_layout(recipe, assembly_plan["components"])
+            design_plan_path.write_text(json.dumps(moved))
+            design_receipt = json.loads(old_design_receipt)
+            design_receipt["assembly"]["composition_plan"] = moved
+            design_receipt_path.write_text(json.dumps(design_receipt))
+            with patch(compiler+".verified_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
+                 patch(compiler+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
+                 patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",return_value=bound_field):
+                verified = compiler_module._joint_binding_inputs(design_run=design,field_run=fields,source_run=actual)
+            self.assertEqual(verified["binding"], bound_field)
+        design_plan_path.write_bytes(old_design_plan)
+        design_receipt_path.write_bytes(old_design_receipt)
         self.assertEqual((final/"results/joint_workbench/static_field_binding.json").read_bytes(),descriptor.read_bytes())
         final_parent = copy.deepcopy(parent)
+        (final / "inputs").mkdir(exist_ok=True)
+        for name in ("composition_plan", "accelerator_request"):
+            destination = final / "inputs" / (name + ".json")
+            shutil.copyfile(prepared / "inputs" / (name + ".json"), destination)
+            final_parent["inputs"][name] = file_record(destination)
         final_parent["inputs"]["reference_trajectory"] = file_record(selected_path)
         final_parent["joint_workbench_binding"].update(finalized)
         # Public IOB builder normally commits this no-Fly readiness state; this
         # fixture exercises Python preparation only and claims no IOB execution.
         (final/"results/accelerator_interface_preparation.json").write_text(json.dumps(final_parent))
-        with patch(module+".verified_reference",side_effect=lambda run,relative:run/relative), \
+        with patch(module+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
              patch(module+".load_binding",return_value=bound_field):
             replay = prepare_trial(final,selected_path,root/"finalized_replay")
         self.assertIn("five_instances",replay["dispatch_request"]["workload_topology_id"])
@@ -285,11 +507,30 @@ class PreparedJointBatchTests(unittest.TestCase):
             for sidecar in (final/"results/joint_workbench/runtime/joint.operating_point.lua",Path(replay["operating_point"]["path"])):
                 actual_lua = subprocess.run([lua,str(check),str(sidecar)],cwd=root,capture_output=True,text=True,timeout=30)
                 self.assertEqual(actual_lua.returncode,0,actual_lua.stdout+actual_lua.stderr)
-        (runtime/"mr_reference.operating_point.lua").write_text("return {trajectory_quality=3,maximum_step_us=.01,full_path_timeout_us=100}")
-        with patch(module+".verified_reference",side_effect=lambda run,relative:run/relative), \
+        # Numerical authority is the frozen JSON, not incidental Lua text or
+        # availability of the original reference run.
+        shutil.rmtree(reference)
+        (runtime/"joint.operating_point.lua").unlink()
+        (runtime/"joint.priority.lua").write_text("obsolete priority must not be read")
+        def inherited_reference(owner, relative, **kwargs):
+            if Path(relative).parent.name == "runtime":
+                self.assertNotIn(Path(relative).name, {"joint.operating_point.lua", "joint.lua",
+                    "joint.source_runtime.lua", "joint.scalar_field_adapter.lua", "joint.priority.lua"})
+            return owner/relative
+        (runtime/"mr_reference.operating_point.lua").write_text("return {trajectory_quality=99,maximum_step_us=99,full_path_timeout_us=99}")
+        with patch(module+".verified_preparation_reference",side_effect=inherited_reference), \
              patch(module+".load_binding",return_value=binding):
-            with self.assertRaisesRegex(ValueError,"runtime numerics differ"):
-                prepare_trial(prepared,original_path,root/"inconsistent_default_runtime")
+            detached = prepare_trial(prepared,original_path,root/"detached_reference")
+            self.assertEqual(detached["numerics"],dict(trajectory_quality=3,maximum_step_us=.004,full_path_timeout_us=100))
+            if Path(lua).is_file():
+                # Independently assert all three frozen JSON values.
+                check.write_text("local t=dofile(arg[1]);assert(t.maximum_step_us==.004 and t.trajectory_quality==3 and t.full_path_timeout_us==100)")
+                actual_lua = subprocess.run([lua,str(check),detached["operating_point"]["path"]],cwd=root,capture_output=True,text=True,timeout=30)
+                self.assertEqual(actual_lua.returncode,0,actual_lua.stdout+actual_lua.stderr)
+            parent["joint_workbench_binding"]["numerics"]["maximum_step_us"] = .01
+            (prepared / "results/accelerator_interface_preparation.json").write_text(json.dumps(parent))
+            with self.assertRaisesRegex(ValueError,"JSON numerics differ"):
+                prepare_trial(prepared,original_path,root/"inconsistent_json_numerics")
 
     def test_staged_adapter_reuses_json_phase_space_and_rejects_changed_evidence(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import (
@@ -407,8 +648,8 @@ class PreparedJointBatchTests(unittest.TestCase):
         )
         manifest=root/"run_manifest.json"
         projection=root/"analysis/controller_projection.json"
-        manifest.write_text(json.dumps(dict(status="success",mode="two_prism_joint_measured_trial",
-            project="parallel_mirror_dual_stripe_mr_tof",outputs=[file_record(projection)])))
+        manifest.write_text(json.dumps(dict(status="success",mode="prepared_joint",
+            project="instrument_assembly",outputs=[file_record(projection)])))
         target=dict(target_positive_mirror_turn_y_mm=0,target_low_field_tangent_ratio_vy_over_vz=.035,
             target_slow_turn_y_mm=360,target_k=24.5,prism_handoff_target=None,
             inputs=dict(mother_source_receipt=file_record(fixture.output/"source_receipt.json"),
@@ -417,7 +658,11 @@ class PreparedJointBatchTests(unittest.TestCase):
         adapter="projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
         with patch(adapter+".load_measured_centroid_closure_target",return_value=target),\
              patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",side_effect=AssertionError("retired PA opened")):
-            trial=load_prepared_centroid_trial(manifest,reference,reference)
+            from common.contracts.component_particle_state import load_component_particle_state_csv
+            with patch("common.contracts.component_particle_state.load_component_particle_state_csv",
+                       wraps=load_component_particle_state_csv) as canonical_reader:
+                trial=load_prepared_centroid_trial(manifest,reference,reference)
+                canonical_reader.assert_called_once_with(probe/"component_particle_state.csv")
             self.assertEqual(trial["observation"]["status"],"measured_centroid_observation_incomplete")
             self.assertEqual(trial["observation"]["termination_diagnostic"]["status"],"ambiguous")
             self.assertIn("center_particle_stripe_stage_validation",trial["observation"])
@@ -648,125 +893,6 @@ print('LOCAL_BATCH_LAUNCH_MAPPING_PASS')
                                 capture_output=True,text=True,encoding="utf-8",errors="replace",check=False)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn("LOCAL_BATCH_LAUNCH_MAPPING_PASS",result.stdout)
-
-    def test_existing_public_runner_replans_and_dispatches_local_batch_files(self):
-        powershell = shutil.which("pwsh")
-        if not powershell:
-            self.skipTest("PowerShell 7 is unavailable")
-        runner = Path(__file__).resolve().parents[2] / "simion/run_two_prism_trial.ps1"
-        with tempfile.TemporaryDirectory() as directory:
-            script = Path(directory) / "mock.ps1"
-            script.write_text(r'''param($Runner,$TestRoot,$PythonRuntime,$Repository,$Scenario)
-$ErrorActionPreference='Stop'
-$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
-$function=$ast.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-PreparedJointTrial'},$true)
-$code=$function.Extent.Text -replace '(?m)^  \. \(Join-Path[^\r\n]+',''
-Invoke-Expression $code
-$repoRoot=Split-Path -Parent $Runner;$workspaceRoot=$TestRoot;$projectId='mock'
-'{}'|Set-Content (Join-Path $TestRoot 'run_manifest.json')
-$env:PYTHONPATH=$Repository
-$PreparedJointWorkbenchRunPath=$TestRoot;$ContractPath=$Runner;$RunId='mockrun';$python='mock';$simion='mock'
-$script:adapted=$false;$script:observed=$false;$script:dispatched=$false;$script:analyzed=$false
-function Write-RunJson {param($Path,$Depth,$Value) $Value|ConvertTo-Json -Depth 60|Set-Content $Path}
-function New-RunPackage {
- param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled)
- $r=Join-Path $TestRoot 'run';$results=Join-Path $r 'results';$logs=Join-Path $r 'logs'
- New-Item -ItemType Directory -Path $results,$logs|Out-Null
- $config=Join-Path $r 'run_config.json';'{"run_id":"20261016_200000__sim__simion__fixture","project":"mock"}'|Set-Content $config
- return @{artifact_run_dir=$r;result_dir=$results;log_dir=$logs;run_config=$config;summary=(Join-Path $r 'summary.json')}
-}
-function Enter-ArtifactWorkflowCapacitySession {return @{status='active'}}
-function Update-ArtifactWorkflowCapacitySession {return @{session=@{status='active'}}}
-function Exit-ArtifactWorkflowCapacitySession {}
-function Write-VerifiedRunManifest {
- param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs)
- & $PythonRuntime -m common.contracts.write_run_manifest --run-config $RunConfig --status $Status
- if($LASTEXITCODE-ne0){throw 'Actual public manifest writer rejected runner inputs'}
- $m=Get-Content (Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json') -Raw|ConvertFrom-Json
- if($m.inputs.PSObject.Properties.Value.exists-contains$false){throw 'Actual manifest has an unbound input'}
-}
-function Write-RunManifest {
- param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs)
- $arguments=@('-m','common.contracts.write_run_manifest','--run-config',$RunConfig,'--status',$Status)
- foreach($output in $Outputs){$arguments+=@('--output',$output)}
- & $PythonRuntime @arguments
- if($LASTEXITCODE-ne0){throw 'Actual terminal manifest writer rejected runner inputs'}
-}
-function Complete-FailedRun {throw 'Unexpected light-evidence finalizer used'}
-function Enter-HostResourceStage {return @{test=$true}}
-function Get-HostResourceBudget {return @{test=$true}}
-function Exit-HostResourceStage {}
-function Complete-ResourceUsage {}
-function Apply-RunArtifactRetention {$r=Join-Path $TestRoot 'run/retention_actions.json';'{}'|Set-Content $r;return $r}
-function Invoke-ProjectPython {
- param($Arguments)
- $command=$Arguments[2]
- function Value($key){return $Arguments[[array]::IndexOf($Arguments,$key)+1]}
- if($command-eq'recording-config'){return '{"mode":"fixed_interval","interval_us":0.1,"reason":"test","output_budget_bytes":10000}'}
- if($command-eq'prepare'){
-  $r=Value '--run-directory';$results=Join-Path $r 'results'
-  Write-RunJson (Join-Path $results 'prepared_joint_trial.json') 60 @{protected_paths=@();guard_paths=@();launched_particle_count=2;mother_particle_count=3;expected_particle_ids=@(1,7);trajectory_contract=@{path=$Runner};launcher='mock_launcher.lua';trajectory_equivalence_reference=@{reference_log='frozen'}}
-  '{}'|Set-Content (Join-Path $results 'simion_dispatch_request.json')
- }elseif($command-eq'discover'){'{}'|Set-Content (Value '--output')
- }elseif($Arguments[1]-eq'common.simion.resource_scheduler'){
-  if($Arguments-contains'--observed-formal-peak-bytes'){$script:adapted=$true}
-  $kind=if($script:adapted){'observed'}else{'formal_first_batch_observation'}
-  Write-RunJson (Value '--output') 20 @{estimation=@{kind=$kind}}
- }elseif($Arguments[1]-eq'common.simion.particle_batching'){
-  $batches=@(@{index=1;particle_id_min=1;particle_id_max=1;count=1})
-  if($script:adapted){$batches+=@{index=2;particle_id_min=2;particle_id_max=2;count=1}}
-  Write-RunJson (Value '--output') 20 @{batches=$batches}
- }elseif($command-eq'materialize-joint'){
-  $d=Value '--output';New-Item -ItemType Directory -Path $d|Out-Null
-  '{}'|Set-Content (Join-Path $d 'batch_receipt.json');'local'|Set-Content (Join-Path $d 'joint.fly2')
- }elseif($command-eq'merge-joint'){
-  if(@($Arguments|Where-Object{$_-eq'--batch-log'}).Count-ne2){throw 'Replanned second batch was not merged'}
- }elseif($Arguments[1]-eq'common.contracts.verify_run_manifest'){
-  & $PythonRuntime @Arguments
-  if($LASTEXITCODE-ne0){throw 'Actual public verifier failed'}
- }elseif($Arguments[1]-eq'common.contracts.run_capacity_lifecycle'){
-  if($Arguments-notcontains'seal-stopped-payload'){throw 'Wrong finalizer'}
-  $script:sealed=$true
-  if($Scenario-eq'seal_failure'){throw 'Synthetic stopped payload seal failure'}
- }elseif($command-eq'compare-joint'){$script:compared=$true
- }elseif($command-eq'analyze-joint'){$script:analyzed=$true;if($Scenario-eq'analysis_failure'){throw 'Synthetic diagnostics failure'}}
- else{throw ('Unexpected Python command '+($Arguments-join' '))}
-}
-function Assert-LocalSpecification($Specification){
- if($Specification.argument_list[-1]-notlike'*joint.fly2'){throw 'Missing explicit local Fly2'}
- if($Specification.argument_list[-2]-notlike'*joint.iob'){throw 'Missing batch IOB'}
- if((Split-Path -Parent $Specification.argument_list[-1])-ne$Specification.working_directory){throw 'Fly2/IOB batch mismatch'}
- 'status,Fly completed. 1 splats'|Set-Content $Specification.stdout
-}
-function Start-ObservedFormalProcess {
- param($DispatchPlanPath,$ProcessSpecification)
- Assert-LocalSpecification $ProcessSpecification;$script:observed=$true
- return @{resource_budget_exceeded=$false;completed_naturally=$true;exit_code=0;process_record=@{completed=$true};observed_peak_process_tree_working_set_bytes=100;observed_process_cpu_percent=10;observed_background_cpu_percent=0;available_memory_bytes=10000;total_physical_memory_bytes=20000}
-}
-function Invoke-ResourceBudgetedProcesses {
- param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords)
- if(@($ProcessSpecifications).Count-ne1-or$ProcessSpecifications[0].scheduler_batch.index-ne2){throw 'Wrong adaptive wave'}
- Assert-LocalSpecification $ProcessSpecifications[0];$script:dispatched=$true
- return @{resource_budget_exceeded=$false;processes=@(@{exit_code=0})}
-}
-try{Invoke-PreparedJointTrial;if($Scenario-ne'success'){throw 'Expected scenario failure did not happen'}}catch{if($Scenario-eq'success'){throw}}
-$manifest=Get-Content (Join-Path $TestRoot 'run/run_manifest.json') -Raw|ConvertFrom-Json
-$expectedStatus=if($Scenario-eq'analysis_failure'){'failed'}else{'success'}
-if($manifest.status-ne$expectedStatus){throw 'Scientific manifest was incorrectly rewritten'}
-if(-not($script:observed-and$script:adapted-and$script:dispatched-and$script:analyzed-and$script:sealed)){throw 'Missing public workflow stage'}
-if($Scenario-ne'analysis_failure'-and-not$script:compared){throw 'Trajectory equivalence gate was skipped'}
-'PUBLIC_PREPARED_RUNNER_MOCK_PASS'
-''', encoding="utf-8")
-            for scenario in ("success", "seal_failure", "analysis_failure"):
-                with self.subTest(scenario=scenario):
-                    case_root = Path(directory) / scenario
-                    case_root.mkdir()
-                    result = subprocess.run([powershell,"-NoProfile","-File",str(script),str(runner),str(case_root),
-                                             sys.executable,str(runner.parents[3]),scenario],
-                                            cwd=Path(__file__).resolve().parents[4],timeout=60,
-                                            capture_output=True,text=True,encoding="utf-8",errors="replace",check=False)
-                    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-                    self.assertIn("PUBLIC_PREPARED_RUNNER_MOCK_PASS",result.stdout)
 
     def test_public_manifest_and_stopped_payload_seal_above_light_budget(self):
         from common.contracts.artifact_retention import apply_retention

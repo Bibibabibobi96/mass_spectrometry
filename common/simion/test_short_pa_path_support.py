@@ -948,10 +948,6 @@ $after=[IO.File]::GetAttributes($env:PA_SOURCE)
             self.assertEqual(result["payload"], "verified-pa-payload")
             self.assertTrue(result["directory_removed"])
             self.assertTrue(result["attributes_unchanged"])
-            helper_source = HELPER.read_text(encoding="utf-8")
-            self.assertIn("function New-ShortPaHardLink", helper_source)
-            self.assertIn("New-ShortPaCopy -Source $Source -Destination $Destination", helper_source)
-            self.assertIn("function Remove-ShortPaHardLinkDirectory", helper_source)
         finally:
             if source_pa.exists():
                 source_pa.chmod(stat.S_IWRITE | stat.S_IREAD)

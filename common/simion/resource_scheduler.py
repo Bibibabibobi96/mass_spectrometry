@@ -34,15 +34,15 @@ CPU_DEMAND_SAFETY_FACTOR = 1.05
 # SIMION memory is an observed concurrency constraint, not a single-worker veto.
 MEMORY_ADMISSION_RESERVE_BYTES = 0
 MEMORY_POLICY = "warn_single_worker"
-MEMORY_CRITICAL_RESERVE_BYTES = 512 * 1024**2
-MEMORY_CRITICAL_SECONDS = 15
+MEMORY_CRITICAL_RESERVE_BYTES = int(_HOST_RESOURCE_POLICY["memory_critical_reserve_bytes"])
+MEMORY_CRITICAL_SECONDS = int(_HOST_RESOURCE_POLICY["memory_critical_seconds"])
 LAUNCH_STAGGER_SECONDS = 5
-# Legacy reserve-and-terminate plans require a full mature recovery
+# Recovery after sustained host-memory danger requires a full stable
 # window before restoring one lane.  This prevents a delayed SIMION working-set
 # expansion from turning a brief initial underestimate into repeated churn.
 MEMORY_RECOVERY_STABLE_SECONDS = 45
 MAXIMUM_MEMORY_RECOVERY_ATTEMPTS = 2
-# Legacy plans respond gradually: remove the newest worker, observe
+# The executor responds gradually: remove the newest worker, observe
 # again, and permit at most one further newest-worker removal.  If memory still
 # remains critically low after those two measured attempts, the executor must
 # fail closed rather than repeatedly churn workers until Windows becomes

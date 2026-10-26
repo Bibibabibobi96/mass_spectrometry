@@ -11,9 +11,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_ideal_acce
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_ideal_acceptance_aperture_full_flight import (
     _polynomial_metrics as full_flight_metrics,
 )
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.compare_single_flight_apertures import (
-    _polynomial_fit_diagnostics as integration_metrics,
-)
+
 
 
 class LongitudinalFitTests(unittest.TestCase):
@@ -31,10 +29,10 @@ class LongitudinalFitTests(unittest.TestCase):
             self.assertAlmostEqual(fit.metrics['residual_rms_mm_per_us'], np.sqrt(70/5)/8)
             self.assertAlmostEqual(fit.metrics['residual_max_abs_mm_per_us'], 6/8)
 
-    def test_consumers_keep_units_named_terms_and_integration_only_percentile(self):
+    def test_consumers_keep_units_named_terms(self):
         z = np.arange(-2.0, 3.0)
         velocity = 2*z**3 - 3*z**2 + 4*z + 5 + np.array([1., -4., 6., -4., 1.])/8
-        for consumer in (campaign_metrics, full_flight_metrics, integration_metrics):
+        for consumer in (campaign_metrics, full_flight_metrics):
             metrics = consumer(z, velocity, degree=3)
             self.assertEqual(metrics['coefficient_units_descending_power'],
                              ['mm_per_us_per_mm3', 'mm_per_us_per_mm2', 'mm_per_us_per_mm', 'mm_per_us'])
@@ -42,10 +40,7 @@ class LongitudinalFitTests(unittest.TestCase):
                                    ('quadratic_coefficient_per_mm_us', -3),
                                    ('cubic_coefficient_per_mm2_us', 2)]:
                 self.assertAlmostEqual(metrics[name], expected)
-            if consumer is integration_metrics:
-                self.assertAlmostEqual(metrics['residual_abs_p95_mm_per_us'], .7)
-            else:
-                self.assertNotIn('residual_abs_p95_mm_per_us', metrics)
+            self.assertNotIn('residual_abs_p95_mm_per_us', metrics)
 
     def test_input_samples_are_not_mutated(self):
         z, velocity = np.arange(5.), np.array([1., 3., 6., 7., 10.])

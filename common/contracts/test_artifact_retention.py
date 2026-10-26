@@ -49,6 +49,24 @@ class ArtifactRetentionTests(unittest.TestCase):
     def test_default_class_is_compact(self) -> None:
         self.assertEqual(load_policy()["default_class"], "compact")
 
+    def test_frozen_iob_template_survives_compact_but_solved_pa_does_not(self) -> None:
+        self.write_config("compact", None)
+        seeds = [self.run / f"inputs/runtime_snapshot/common/simion/assets/iob_instance_seeds/iob_seed_placeholder_{slot:02d}.pa0"
+                 for slot in range(1, 6)]
+        solved = self.run / "simion/processor.pa0"
+        lookalike = self.run / "simion/iob_seed_placeholder_02.pa0"
+        for path in (*seeds, solved, lookalike):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"fixture")
+        for seed in seeds:
+            self.assertEqual(classify_file(seed), "required_evidence")
+        self.assertEqual(classify_file(solved), "solver_native_binary")
+        self.assertEqual(classify_file(lookalike), "solver_native_binary")
+        apply_retention(self.config)
+        self.assertTrue(all(seed.is_file() for seed in seeds))
+        self.assertFalse(solved.exists())
+        self.assertFalse(lookalike.exists())
+
     def test_noncompact_class_requires_reason(self) -> None:
         with self.assertRaisesRegex(ValueError, "requires a reason"):
             validate_retention(

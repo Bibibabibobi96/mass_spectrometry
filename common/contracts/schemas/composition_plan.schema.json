@@ -2,42 +2,384 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mass-spectrometry.local/schemas/composition_plan.schema.json",
   "title": "Frozen integration composition plan",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schema_version", "role", "integration_id", "selection",
-    "resolved_connection", "coupling_mode", "execution_steps"
-  ],
-  "properties": {
-    "schema_version": {"const": 1},
-    "role": {"const": "integration_composition_plan_do_not_edit"},
-    "integration_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
-    "selection": {
-      "$ref": "https://mass-spectrometry.local/schemas/resolved_connection.schema.json#/properties/selection"
-    },
-    "resolved_connection": {
+  "oneOf": [
+    {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "sha256"],
+      "required": [
+        "schema_version",
+        "role",
+        "integration_id",
+        "selection",
+        "resolved_connection",
+        "coupling_mode",
+        "execution_steps"
+      ],
       "properties": {
-        "path": {"type": "string", "minLength": 1},
-        "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"}
-      }
-    },
-    "coupling_mode": {"enum": ["state_handoff", "field_overlap", "monolithic_joint_solve"]},
-    "execution_steps": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["step_id", "adapter", "entrypoint", "arguments"],
-        "properties": {
-          "step_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
-          "adapter": {"enum": ["python", "powershell", "comsol", "simion"]},
-          "entrypoint": {"type": "string", "minLength": 1},
-          "arguments": {"type": "array", "items": {"type": "string"}}
+        "schema_version": {
+          "const": 1
+        },
+        "role": {
+          "const": "integration_composition_plan_do_not_edit"
+        },
+        "integration_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+        },
+        "selection": {
+          "$ref": "https://mass-spectrometry.local/schemas/resolved_connection.schema.json#/properties/selection"
+        },
+        "resolved_connection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[A-F0-9]{64}$"
+            }
+          }
+        },
+        "coupling_mode": {
+          "enum": [
+            "state_handoff",
+            "field_overlap",
+            "monolithic_joint_solve"
+          ]
+        },
+        "execution_steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "step_id",
+              "adapter",
+              "entrypoint",
+              "arguments"
+            ],
+            "properties": {
+              "step_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+              },
+              "adapter": {
+                "enum": [
+                  "python",
+                  "powershell",
+                  "comsol",
+                  "simion"
+                ]
+              },
+              "entrypoint": {
+                "type": "string",
+                "minLength": 1
+              },
+              "arguments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "role",
+        "integration_id",
+        "recipe_id",
+        "stage",
+        "assembly_frame_id",
+        "recipe",
+        "components",
+        "connection_checks",
+        "scope"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "role": {
+          "const": "integration_composition_plan_do_not_edit"
+        },
+        "integration_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+        },
+        "recipe_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+        },
+        "stage": {
+          "const": "layout_only"
+        },
+        "assembly_frame_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recipe": {
+          "$ref": "https://mass-spectrometry.local/schemas/assembly_recipe.schema.json"
+        },
+        "components": {
+          "type": "object",
+          "minProperties": 2,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          },
+          "additionalProperties": {
+            "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json"
+          }
+        },
+        "connection_checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "connection_id",
+              "upstream_center_mm",
+              "downstream_center_mm",
+              "upstream_outward_normal",
+              "downstream_outward_normal",
+              "gap_mm"
+            ],
+            "properties": {
+              "connection_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+              },
+              "upstream_center_mm": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                }
+              },
+              "downstream_center_mm": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                }
+              },
+              "upstream_outward_normal": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                }
+              },
+              "downstream_outward_normal": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                }
+              },
+              "gap_mm": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "input_files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "recipe",
+            "components"
+          ],
+          "properties": {
+            "recipe": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[A-F0-9]{64}$"
+                }
+              }
+            },
+            "components": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[A-F0-9]{64}$"
+                }
+              }
+            },
+            "local_scope": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[A-F0-9]{64}$"
+                }
+              }
+            }
+          }
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "instance_ids",
+            "connection_ids",
+            "boundary_connection_ids"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "full",
+                "local"
+              ]
+            },
+            "instance_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+              },
+              "minItems": 1
+            },
+            "connection_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+              }
+            },
+            "boundary_connection_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+              }
+            }
+          }
+        },
+        "local_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "instance_ids",
+            "research_scope",
+            "boundary_assumptions"
+          ],
+          "properties": {
+            "instance_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+              },
+              "minItems": 1
+            },
+            "research_scope": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "boundary_assumptions": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "properties": {
+                  "kind": {
+                    "const": "local"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "local_scope"
+            ],
+            "properties": {
+              "input_files": {
+                "required": [
+                  "local_scope"
+                ]
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "local_scope"
+              ]
+            },
+            "properties": {
+              "input_files": {
+                "not": {
+                  "required": [
+                    "local_scope"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
     }
-  }
+  ]
 }

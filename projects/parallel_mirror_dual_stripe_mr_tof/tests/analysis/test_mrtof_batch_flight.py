@@ -137,6 +137,17 @@ class MrtofBatchFlightTest(unittest.TestCase):
             self.assertEqual(text.count("status,Fly completed."), 1)
             self.assertTrue(result["all_batch_losses_retained"])
 
+    def test_merge_rejects_a_bare_completion_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            batch = root / "batch.log"
+            batch.write_text("status,Fly completed.\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "completion differs"):
+                merge_rebased_event_logs(
+                    batches=[(batch, 0, 1)], particle_count=1,
+                    output_path=root / "merged.log", receipt_path=root / "receipt.json",
+                )
+
     def test_merge_can_preserve_a_non_one_based_diagnostic_interval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

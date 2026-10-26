@@ -159,10 +159,7 @@ $hasDocumentationChange = $FullScope -or (Test-AnyPath {
 $isDocumentationOnly = -not $FullScope -and $changedPaths.Count -gt 0 -and -not (Test-AnyPath {
     -not (Test-DocumentationPath $_)
 })
-$integrationTestModulePattern = (
-    '^integrations/rf_multipole_ion_optics_to_single_reflection_' +
-    'oa_tof_mass_analyzer/tests/test_[^/]+\.py$'
-)
+$integrationTestModulePattern = '^integrations/tests/test_[^/]+\.py$'
 $changedIntegrationTestModules = @(
     $changedPaths | Where-Object { $_ -match $integrationTestModulePattern }
 )
@@ -227,7 +224,18 @@ if ($FullScope) {
 } elseif ($existingPythonFiles.Count -gt 0) {
     Add-ChangedStageItem 'ruff_changed_python' $true `
         'existing_python_source_changed' 'locked' {
-        & $PythonExe -m ruff check -- @existingPythonFiles
+        # Ruff's official argfile avoids CreateProcessW's command-line limit.
+        # https://docs.astral.sh/ruff/configuration/#argfile-support
+        $ruffArgumentFile = [IO.Path]::GetTempFileName()
+        try {
+            [IO.File]::WriteAllLines(
+                $ruffArgumentFile, [string[]]$existingPythonFiles,
+                [Text.UTF8Encoding]::new($false)
+            )
+            & $PythonExe -m ruff check -- ('@' + $ruffArgumentFile)
+        } finally {
+            Remove-Item -LiteralPath $ruffArgumentFile
+        }
     }
 } elseif ($changedPython.Count -gt 0) {
     Add-ChangedStageItem 'ruff_changed_python' $false `
@@ -261,10 +269,16 @@ foreach ($route in $routes) {
     }
     if ($reason) {
         $command = $route.command
-        if ($name -eq 'rf_multipole_to_single_reflection_oatof_integration' -and
-            $integrationTestsOnly -and
+        $testModules = @()
+        if ($integrationTestsOnly -and $command.runner -eq 'powershell' -and
+            ([string]$command.script).Replace('\', '/') -match '^integrations/(?:[^/]+/)?verify_integration\.ps1$') {
+            $testDirectory = Join-Path $repoRoot (Join-Path (Split-Path -Parent $command.script) 'tests')
+            $testModules = @($existingIntegrationTestModules | Where-Object {
+                (Split-Path -Parent $_) -eq $testDirectory
+            })
+        }
+        if ($integrationTestsOnly -and $testModules.Count -gt 0 -and
             $existingIntegrationTestModules.Count -eq $changedIntegrationTestModules.Count) {
-            $testModules = @($existingIntegrationTestModules)
             Add-ChangedStageItem $name $true 'integration_test_modules_changed' `
                 ([string]$route.dependency_profile) {
                 & $PythonExe -m unittest @testModules

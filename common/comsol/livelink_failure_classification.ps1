@@ -12,11 +12,3 @@ function Test-ComsolRetryableStartupReport {
         ($ReportText -match '(?i)\bmphload\b') -and
         ($ReportText -match '(?i)\bmphopen\b')
 }
-
-function Get-ComsolAttemptServerIds {
-    param(
-        [int[]]$Before = @(),
-        [int[]]$After = @()
-    )
-    return @($After | Where-Object { $Before -notcontains $_ } | Sort-Object -Unique)
-}

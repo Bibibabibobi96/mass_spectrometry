@@ -50,6 +50,10 @@ INTERFACE_SOURCE_CLI = (
 
 DEDICATED_RUNNERS = (INTERFACE_RUNNER, MASS_FILTER_RUNNER)
 CONDITIONAL_LUA_FIELDS = {
+    "mechanical_exit_csv",
+    "mechanical_exit_plane_mm",
+    "mechanical_exit_aperture_radius_mm",
+    "mechanical_exit_guard_mm",
     "ground_electrode_id",
     "ground_reference_v",
     "output_electrode_id",

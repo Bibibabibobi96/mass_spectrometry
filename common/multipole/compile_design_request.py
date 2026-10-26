@@ -221,7 +221,8 @@ def _validate_enclosure(
 
     model = enclosure["model"]
     role = enclosure["role"]
-    if model == "cylindrical_grounded_shield_v1":
+    if model in {"cylindrical_grounded_shield_v1", "cylindrical_grounded_shield_through_exit_v1",
+                 "cylindrical_grounded_shield_through_entrance_exit_v1"}:
         if role != "full_length_grounded_shield":
             raise MultipoleDesignCompileError("cylindrical enclosure role differs")
         inner = float(enclosure["shield_inner_radius_mm"])
@@ -370,7 +371,8 @@ def _static_reference_voltages(
     if model == "rectangular_reference_enclosure_v1":
         source = float(static["entrance_aperture_plate_and_connector_V"])
         output = float(static["exit_outer_enclosure_and_connector_V"])
-    elif model == "cylindrical_grounded_shield_v1":
+    elif model in {"cylindrical_grounded_shield_v1", "cylindrical_grounded_shield_through_exit_v1",
+                   "cylindrical_grounded_shield_through_entrance_exit_v1"}:
         source = float(
             static["shield_entrance_outer_endcap_aperture_plate_connector_V"]
         )
@@ -758,9 +760,10 @@ def compile_governed_design_request_file(
     provenance_root: Path,
     operating_mode_registry_path: Path | None = None,
     mode_id: str | None = None,
+    enclosure_model: str | None = None,
     repository_text_sources: bool | None = None,
 ) -> dict[str, Any]:
-    """Validate a governed base and compile it or one typed in-memory mode."""
+    """Compile a governed base with explicit mechanical and typed electrical choices."""
     request_path = Path(request_path)
     variables_path = Path(design_variables_path)
     envelope_path = Path(optimization_envelope_path)
@@ -777,6 +780,8 @@ def compile_governed_design_request_file(
         mode_registry = json.loads(mode_path.read_text(encoding="utf-8-sig"))
         request = apply_typed_operating_mode(base_request, mode_registry, mode_id)
         mode_sources[operating_mode_source_label(mode_id)] = mode_path
+    if enclosure_model is not None:
+        request["geometry_mm"]["enclosure"]["model"] = enclosure_model
     variables = json.loads(variables_path.read_text(encoding="utf-8-sig"))
     envelope = json.loads(envelope_path.read_text(encoding="utf-8-sig"))
     use_repository_text = _repository_text_source_policy(
@@ -848,6 +853,8 @@ def compile_governed_design_request_file(
         "optimization_envelope_sha256": source_sha256(envelope_path),
         "design_request_file_sha256": source_sha256(request_path),
     }
+    if enclosure_model is not None:
+        resolved["governance"]["enclosure_model"] = enclosure_model
     resolved["resolved_sha256"] = resolved_design_sha256(resolved)
     validate_schema(resolved, RESOLVED_SCHEMA)
     return resolved
@@ -945,6 +952,7 @@ def validate_resolved_design(
             provenance_root=source_root,
             operating_mode_registry_path=mode_registry_path,
             mode_id=mode_id,
+            enclosure_model=document["governance"].get("enclosure_model"),
             repository_text_sources=use_repository_text,
         )
     if document != rebuilt:

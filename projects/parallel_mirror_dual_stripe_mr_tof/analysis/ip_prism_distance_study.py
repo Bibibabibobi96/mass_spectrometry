@@ -139,7 +139,7 @@ def freeze_code(repo: Path, inputs: Path) -> None:
 
 
 def validate_contour_contract(contract: dict, *, recorded_author: bool = False) -> None:
-    """Validate active v5 authors, or explicitly read frozen v2/v3/v4 selectors.
+    """Validate active v6 authors, or explicitly read frozen v2/v3/v4/v5 selectors.
 
     The historical v2 limits were inert metadata. They remain immutable when
     consuming an already recorded run; new preparation never accepts them.
@@ -151,12 +151,16 @@ def validate_contour_contract(contract: dict, *, recorded_author: bool = False) 
         required.add("limits")
     elif recorded_author and version == 3:
         pass
-    elif version == 5 or (recorded_author and version == 4):
+    elif version == 6:
+        required.update({"field_sources", "electrode_collision_model"})
+    elif recorded_author and version in (4, 5):
         required.add("field_sources")
     else:
         raise ValueError("unsupported contour focus experiment contract")
     if set(contract) != required or contract["role"] != "ip_prism_contour_focus_experiment":
         raise ValueError("unsupported contour focus experiment contract")
+    if version == 6 and contract["electrode_collision_model"] not in {"native_pa", "canonical_lens_first_contact"}:
+        raise ValueError("explicit native_pa/canonical_lens_first_contact collision model required")
     if set(contract["references"]) != {"geometry", "voltages"}:
         raise ValueError("contour study requires geometry and voltage references")
     _validate_local_controls(contract["numerics"], contract["observation_planes"], contract["committed_new_bytes"])
@@ -177,12 +181,12 @@ def validate_contour_contract(contract: dict, *, recorded_author: bool = False) 
     if not isinstance(cases, list) or not cases:
         raise ValueError("nonempty contour case table required")
     fields = {"case_id", "label", "source_run", "distance_mm", "pitch_mm", "maximum_step_us", "field_case_id", "physical_aperture"}
-    if version == 5:
+    if version in (5, 6):
         fields.add("lens_elements")
     if any(set(row) != fields for row in cases) or len({row["case_id"] for row in cases}) != len(cases):
         raise ValueError("complete unique contour cases required")
     for row in cases:
-        if version == 5 and (not isinstance(row["lens_elements"], list) or
+        if version in (5, 6) and (not isinstance(row["lens_elements"], list) or
                              any(not isinstance(element, dict) for element in row["lens_elements"])):
             raise ValueError("lens_elements requires an explicit list of electrode specifications")
         if row["physical_aperture"] is not None and not isinstance(row["physical_aperture"], dict):
@@ -198,7 +202,7 @@ def validate_contour_contract(contract: dict, *, recorded_author: bool = False) 
         if (not isinstance(row["pitch_mm"], list) or len(row["pitch_mm"]) != 3 or
                 any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0 for v in row["pitch_mm"])):
             raise ValueError("positive finite case pitch xyz required")
-    if version in (4, 5):
+    if version in (4, 5, 6):
         sources = contract["field_sources"]
         if not isinstance(sources, dict) or set(sources) != {row["field_case_id"] for row in cases}:
             raise ValueError("field_sources must exactly cover every unique field_case_id")
@@ -256,7 +260,7 @@ def _freeze_recorded_contour_source(run: Path, label: str, destination: Path) ->
         raise ValueError("frozen producer manifest differs")
     # Bind the exact source voltage schedule as well as its resolved configuration.
     manifest = read_json(run / "run_manifest.json")
-    for relative in ("simion/native_drive.lua",):
+    for relative in ("simion/native_drive.lua", "simion/voltage_waveforms.lua"):
         original = (run / relative).resolve()
         matches = [record for record in [*manifest["inputs"].values(), *manifest["outputs"]]
                    if record_path(record, base_dir=run) == original]
@@ -346,10 +350,11 @@ def _contour_geometry_and_voltage(case: dict, registration: dict, geometry: dict
         raise ValueError("IP and registration source frames differ")
     if model["native_projection"]["frame_id"] != transform["from_frame_id"]:
         raise ValueError("native projection and coordinate transform source frames differ")
-    source_drive = inputs / "simion/native_drive.lua"
-    current_drive = repo / "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua"
-    if file_record(source_drive)["sha256"] != file_record(current_drive)["sha256"]:
-        raise ValueError("current native voltage schedule differs from frozen source schedule")
+    for source_relative, current_relative in (
+            ("simion/native_drive.lua", "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua"),
+            ("simion/voltage_waveforms.lua", "common/simion/voltage_waveforms.lua")):
+        if file_record(inputs / source_relative)["sha256"] != file_record(repo / current_relative)["sha256"]:
+            raise ValueError("current native voltage schedule differs from frozen source schedule: " + source_relative)
     shutil.copyfile(repo / "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json",
                     inputs / "accelerator_dependency.json")
     mass = model["source"]["species"]["mass_amu"]
@@ -370,6 +375,19 @@ def _contour_geometry_and_voltage(case: dict, registration: dict, geometry: dict
                                             cutouts=[transform_shape(s, transform["rotation"], translation) for s in e["cutouts"]])
                                          for e in model["native_projection"]["electrodes"]]
     return local, projection
+
+
+def _collision_config(contract: dict, geometry: dict) -> dict:
+    """Derive absorption numerics and rods from the same frozen author/CSG.
+
+    Frozen pre-v6 contour authors and the distance workflow used native PA
+    absorption; this explicit historical interpretation is never a new-author
+    fallback. Active v6 authors must choose their collision representation.
+    """
+    model = (contract["electrode_collision_model"] if contract["schema_version"] == 6
+             else "native_pa")
+    return dict(electrode_collision_model=model,
+                lens_electrodes=geometry.get("geometry", geometry).get("lens_electrodes", []))
 
 
 def _materialize_contour_case(run: Path, repo: Path, index: int, row: dict, prepared: dict,
@@ -398,13 +416,14 @@ def _materialize_contour_case(run: Path, repo: Path, index: int, row: dict, prep
     config = dict(numerics, case_id=row["case_id"], distance_mm=row["distance_mm"], source_epoch_us=epoch, source=states,
                   workbench_seed_path=str((run/"inputs/workbench_seed.iob").resolve()),
                   observation_planes=contract["observation_planes"], nominal_y_mm=prepared["geometry_checks"]["nominal_y_mm"],
-                  exit_z_mm=prepared["exit_z_mm"], field_case_id=row["field_case_id"], field_path=str(field_path))
+                  exit_z_mm=prepared["exit_z_mm"], field_case_id=row["field_case_id"], field_path=str(field_path),
+                  **_collision_config(contract, prepared))
     (folder/"case_config.lua").write_text("return "+lua_literal(config)+"\n", encoding="utf-8", newline="\n")
     (folder/"field.gem").write_text(prepared.pop("gem"), encoding="utf-8", newline="\n")
     write_json(folder/"geometry.json", prepared)
     write_json(folder/"source_states.json", states)
     (folder/"local.fly2").write_text(render_standard_beams(beams), encoding="utf-8", newline="\n")
-    for original, target in (("ip_prism_local.lua", "local.lua"), ("run_ip_prism_local_case.lua", "run_case.lua")):
+    for original, target in (("ip_prism_local.lua", "local.lua"), ("run_ip_prism_local_case.lua", "run_case.lua"), ("ip_prism_lens_contact.lua", "lens_contact.lua")):
         shutil.copyfile(repo/"projects/parallel_mirror_dual_stripe_mr_tof/simion"/original, folder/target)
     return dict(row, directory=str(folder), script=str(folder/"run_case.lua"), exit_z_mm=prepared["exit_z_mm"],
                 delta_z_mm=prepared["delta_z_mm"], gap_mm=prepared["gap_mm"], source_count=len(source), mother_count=len(census),
@@ -727,13 +746,14 @@ def prepare(run: Path, contract_path: Path) -> dict:
                               direction=[state[k] for k in ("vx_mm_us","vy_mm_us","vz_mm_us")],cwf=1,color=1))
         config=dict(case_id=f"distance_{distance:g}mm",distance_mm=distance,source_epoch_us=epoch,source=states,
                     workbench_seed_path=str((inputs/"workbench_seed.iob").resolve()),observation_planes=contract["observation_planes"],
-                    nominal_y_mm=prepared["geometry_checks"]["nominal_y_mm"],exit_z_mm=prepared["exit_z_mm"],**contract["numerics"])
+                    nominal_y_mm=prepared["geometry_checks"]["nominal_y_mm"],exit_z_mm=prepared["exit_z_mm"],
+                    **contract["numerics"], **_collision_config(contract, prepared))
         (folder/"case_config.lua").write_text("return "+lua_literal(config)+"\n",encoding="utf-8")
         (folder/"field.gem").write_text(prepared.pop("gem"),encoding="utf-8")
         write_json(folder/"geometry.json",prepared)
         write_json(folder/"source_states.json",states)
         (folder/"local.fly2").write_text(render_standard_beams(beams),encoding="utf-8")
-        for original,target in (("ip_prism_local.lua","local.lua"),("run_ip_prism_local_case.lua","run_case.lua")):
+        for original,target in (("ip_prism_local.lua","local.lua"),("run_ip_prism_local_case.lua","run_case.lua"),("ip_prism_lens_contact.lua","lens_contact.lua")):
             shutil.copyfile(repo/"projects/parallel_mirror_dual_stripe_mr_tof/simion"/original,folder/target)
         cases.append(dict(case_id=config["case_id"],distance_mm=distance,directory=str(folder),script=str(folder/"run_case.lua"),
                           exit_z_mm=prepared["exit_z_mm"],delta_z_mm=prepared["delta_z_mm"],gap_mm=prepared["gap_mm"]))
@@ -884,7 +904,7 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
         folder.mkdir(parents=True)
         for name in ("geometry.json", "source_states.json", "local.fly2"):
             shutil.copyfile(directory/name, folder/name)
-        for original, target in (("ip_prism_local.lua", "local.lua"), ("run_ip_prism_local_case.lua", "run_case.lua")):
+        for original, target in (("ip_prism_local.lua", "local.lua"), ("run_ip_prism_local_case.lua", "run_case.lua"), ("ip_prism_lens_contact.lua", "lens_contact.lua")):
             shutil.copyfile(repo/"projects/parallel_mirror_dual_stripe_mr_tof/simion"/original, folder/target)
         private_field = folder/"field"/field.name
         geometry = read_json(folder/"geometry.json")
@@ -892,7 +912,8 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
                       case_id=case["case_id"], distance_mm=case["distance_mm"], source_epoch_us=case["source_epoch_us"], source=states,
                       workbench_seed_path=str(inputs/"workbench_seed.iob"), observation_planes=resolved["contract"]["observation_planes"],
                       nominal_y_mm=geometry["geometry_checks"]["nominal_y_mm"], exit_z_mm=case["exit_z_mm"],
-                      field_case_id=case["field_case_id"], field_path=str(private_field), frontend=contract["frontend"])
+                      field_case_id=case["field_case_id"], field_path=str(private_field), frontend=contract["frontend"],
+                      **_collision_config(resolved["contract"], geometry))
         (folder/"case_config.lua").write_text("return "+lua_literal(config)+"\n", encoding="utf-8", newline="\n")
         cases.append(dict(case, directory=str(folder), script=str(folder/"run_case.lua"), field_path=str(private_field),
                           source_run=str(directory.parent.parent), source_case_directory=str(directory),

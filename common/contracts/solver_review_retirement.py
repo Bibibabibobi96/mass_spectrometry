@@ -40,6 +40,96 @@ class RetirementError(ValueError):
     """One retirement precondition or verification condition failed."""
 
 
+def select_retirement_receipt(
+    run_dir: Path, *, next_batch: bool = False,
+) -> tuple[Path, dict[str, Any] | None, list[tuple[Path, dict[str, Any]]]]:
+    """Select the existing transaction or append one ordinary owner batch.
+
+    The original receipt remains batch one. Only small receipt identities are
+    read here; payload validation stays at the existing plan/verify boundaries.
+    """
+    first = run_dir / RECEIPT_NAME
+    numbered = sorted(run_dir.glob("solver_review_retirement_receipt_*.json"))
+    if numbered and not first.is_file():
+        raise RetirementError("retirement receipt chain lacks its first receipt")
+    paths = ([first] if first.exists() else []) + numbered
+    history = []
+    for sequence, path in enumerate(paths, 1):
+        expected = RECEIPT_NAME if sequence == 1 else f"solver_review_retirement_receipt_{sequence:04d}.json"
+        if path.name != expected or path.is_symlink():
+            raise RetirementError("retirement receipt sequence differs")
+        receipt = _json(path)
+        if receipt.get("role") != "solver_review_retirement_receipt":
+            raise RetirementError("retirement receipt role differs")
+        if history:
+            previous_path, previous = history[-1]
+            if (previous.get("lifecycle_status") != "completed_experiment_payload_retired"
+                    or any(item.get("retirement_mode") != "completed_experiment"
+                           or item.get("selected_heavy_paths") is None
+                           or item.get("stopped_checkpoint_runtime") is not None
+                           or _prepared_gui_scope(item) for item in (previous, receipt))):
+                raise RetirementError("later retirement batches require ordinary owner selected heavy scope")
+            binding = {"sequence": sequence, "previous_receipt": {
+                "path": previous_path.name, "bytes": previous_path.stat().st_size,
+                "sha256": file_sha256(previous_path),
+            }}
+            if (receipt.get("retirement_batch") != binding
+                    or any(receipt.get(key) != previous.get(key) for key in (
+                        "target_run_id", "target_run_path", "target_manifest", "owner",
+                        "target_terminal_status"))):
+                raise RetirementError("retirement batch identity differs")
+        elif receipt.get("retirement_batch") is not None:
+            raise RetirementError("first retirement receipt cannot name a previous batch")
+        history.append((path, receipt))
+    if not history:
+        return first, None, history
+    path, receipt = history[-1]
+    if not next_batch or receipt.get("lifecycle_status") == "retirement_pending":
+        return path, receipt.get("retirement_batch"), history
+    if (receipt.get("lifecycle_status") != "completed_experiment_payload_retired"
+            or receipt.get("retirement_mode") != "completed_experiment"
+            or receipt.get("selected_heavy_paths") is None
+            or receipt.get("stopped_checkpoint_runtime") is not None
+            or _prepared_gui_scope(receipt)):
+        raise RetirementError("target already has a completed retirement receipt")
+    sequence = len(history) + 1
+    return run_dir / f"solver_review_retirement_receipt_{sequence:04d}.json", {
+        "sequence": sequence, "previous_receipt": {
+            "path": path.name, "bytes": path.stat().st_size, "sha256": file_sha256(path),
+        },
+    }, history
+
+
+def _prior_retired_paths(history: list[tuple[Path, dict[str, Any]]], target: Path) -> list[Path]:
+    return [_under(target / item["path"], target) for _, receipt in history
+            if receipt.get("lifecycle_status") != "retirement_pending"
+            for item in receipt["removed_files"]]
+
+
+def _assert_previous_batch_sealed(
+    artifact_root: Path, target: Path, history: list[tuple[Path, dict[str, Any]]],
+) -> None:
+    if not history or history[-1][1].get("lifecycle_status") == "retirement_pending":
+        return
+    from common.contracts.capacity_ledger import load_capacity_ledger
+
+    ledger = load_capacity_ledger(artifact_root)
+    relative = target.relative_to(artifact_root).as_posix()
+    entry = next((item for item in ledger["objects"] if item["path"] == relative), None) if ledger else None
+    expected = sum(item["bytes"] for item in history[-1][1]["preserved_files"])
+    expected += history[-1][0].stat().st_size
+    previous = history[-1][1]
+    manifest_path = target / "run_manifest.json"
+    if (previous.get("target_run_id") != target.name
+            or previous.get("target_run_path") != str(target)
+            or previous.get("target_manifest") != {
+                "bytes": manifest_path.stat().st_size, "sha256": file_sha256(manifest_path)}):
+        raise RetirementError("previous retirement manifest identity differs")
+    if (entry is None or entry.get("status") != "ready" or entry.get("pin") is not True
+            or entry.get("owner") != history[-1][1].get("owner") or entry.get("bytes") != expected):
+        raise RetirementError("previous retirement batch requires public capacity reseal")
+
+
 def _json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -346,9 +436,12 @@ def _downstream_references(
 def _manifest_records(
     run: dict[str, Any], *, retired_paths: Iterable[Path] = (),
     inherit_heavy_identity: bool = False,
+    _identity_cache: dict | None = None,
+    consumed_paths: set[Path] | None = None,
 ) -> dict[Path, dict[str, Any]]:
-    """Verify every recorded identity, except receipt-bound partial removals."""
+    """Index sealed identities and verify the requested scope plus run identity."""
     result: dict[Path, dict[str, Any]] = {}
+    identity_cache = {} if _identity_cache is None else _identity_cache
     retired = set(retired_paths)
     manifest = run["manifest"]
     entries: list[tuple[str, dict[str, Any]]] = [("run_config", manifest.get("run_config", {}))]
@@ -359,7 +452,8 @@ def _manifest_records(
             raise RetirementError(f"invalid manifest record: {role}")
         try:
             path = record_path(record, base_dir=run["dir"])
-            if path not in retired:
+            if path not in retired and (consumed_paths is None or path in consumed_paths
+                                        or role == "run_config" or path == run["dir"] / "summary.json"):
                 local_heavy = (
                     inherit_heavy_identity and path.is_relative_to(run["dir"])
                     and classify_file(path, bytes_count=record.get("bytes", 0)) in HEAVY_ROLES
@@ -370,7 +464,7 @@ def _manifest_records(
                             or len(str(record.get("sha256", ""))) != 64):
                         raise RetirementError(f"sealed heavy record differs: {path}")
                 else:
-                    verify_record(role, record, base_dir=run["dir"])
+                    verify_record(role, record, base_dir=run["dir"], _identity_cache=identity_cache)
         except (AssertionError, KeyError, OSError) as exc:
             raise RetirementError(f"run evidence identity differs: {role}: {exc}") from exc
         identity = {"manifest_role": role, "bytes": record.get("bytes"), "sha256": record.get("sha256")}
@@ -476,7 +570,7 @@ def _manifest_records(
                     or child["manifest"].get("project") != run["manifest"].get("project")):
                 raise RetirementError(f"child manifest owner differs: {path}")
             for member, identity in _manifest_records(
-                child, retired_paths=retired, inherit_heavy_identity=True,
+                child, retired_paths=retired, inherit_heavy_identity=True, _identity_cache=identity_cache,
             ).items():
                 if member in result and any(result[member][key] != identity[key] for key in ("bytes", "sha256")):
                     raise RetirementError(f"conflicting sealed records: {member}")
@@ -649,6 +743,7 @@ def _file_inventory(
     run: dict[str, Any], *, retired_paths: Iterable[Path] = (),
     inherit_heavy_identity: bool = False,
     runtime_checkpoint_path: Path | None = None,
+    receipt_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     root: Path = run["dir"]
     records = _manifest_records(
@@ -658,7 +753,7 @@ def _file_inventory(
         records.update(_runtime_checkpoint_members(run, runtime_checkpoint_path, records, retired_paths))
     inventory: list[dict[str, Any]] = []
     for path in sorted((item for item in root.rglob("*") if item.is_file()), key=lambda item: item.as_posix()):
-        if path.name == RECEIPT_NAME:
+        if path == (receipt_path or root / RECEIPT_NAME):
             continue
         record = records.get(path.resolve())
         bytes_count = path.stat().st_size
@@ -829,10 +924,16 @@ def plan_retirement(
         raise RetirementError("target and replacement must differ")
     approved_consumers = _freeze_stopped_consumers(
         approved_stopped_consumers, artifact_root, target_run, owner.strip())
+    receipt_path, batch, history = select_retirement_receipt(target_run, next_batch=True)
+    prior_retired = _prior_retired_paths(history, target_run)
+    if batch is not None:
+        if not owner_mode or selected is None or runtime_mode or gui_mode:
+            raise RetirementError("later retirement batches require ordinary owner selected heavy scope")
+        _assert_previous_batch_sealed(artifact_root, target_run, history)
     prior_pending_sha: str | None = None
     prior_removed_missing: list[dict[str, Any]] = []
-    if (target_run / RECEIPT_NAME).exists():
-        prior = _json(target_run / RECEIPT_NAME)
+    if receipt_path.exists():
+        prior = _json(receipt_path)
         if prior.get("lifecycle_status") != "retirement_pending":
             raise RetirementError("target already has a completed retirement receipt")
         prior_removed_missing = [
@@ -840,7 +941,7 @@ def plan_retirement(
             for item in prior.get("removed_files", [])
             if not (target_run / item["path"]).is_file()
         ]
-        prior_pending_sha = file_sha256(target_run / RECEIPT_NAME)
+        prior_pending_sha = file_sha256(receipt_path)
         prior_runtime = _runtime_scope_path(prior, target_run)
         requested_runtime = _under(runtime_checkpoint_path, target_run) if runtime_mode else None
         if prior_runtime != requested_runtime:
@@ -898,10 +999,16 @@ def plan_retirement(
         prepared_gui_checkpoint=gui_mode,
     ) if replacement else None
     inventory = _file_inventory(
-        target, retired_paths=[_under(target_run / item["path"], target_run) for item in prior_removed_missing],
+        target, retired_paths=prior_retired + [_under(target_run / item["path"], target_run) for item in prior_removed_missing],
         inherit_heavy_identity=owner_mode or gui_mode,
-        runtime_checkpoint_path=runtime_checkpoint_path,
+        runtime_checkpoint_path=runtime_checkpoint_path, receipt_path=receipt_path,
     )
+    if batch is not None and not prior_pending_sha:
+        previous_path, previous = history[-1]
+        expected = {item["path"]: (item["bytes"], item["sha256"]) for item in previous["preserved_files"]}
+        expected[previous_path.name] = (previous_path.stat().st_size, file_sha256(previous_path))
+        if {item["path"]: (item["bytes"], item["sha256"]) for item in inventory} != expected:
+            raise RetirementError("previous retirement remainder differs from its preserved inventory")
     if gui_mode:
         _prepared_gui_inventory(target, _manifest_records(target,
             retired_paths=[_under(target_run / item["path"], target_run) for item in prior_removed_missing],
@@ -935,6 +1042,7 @@ def plan_retirement(
         "status": "eligible",
         "target_run_id": target_run.name,
         "target_run_path": str(target_run),
+        **({"retirement_batch": batch} if batch is not None else {}),
         **({"selected_heavy_paths": selected} if selected is not None else {}),
         **({"prepared_gui_checkpoint": {"writing_stopped": True}} if gui_mode else {}),
         **({"retirement_mode": "completed_experiment", "owner": owner.strip(),
@@ -958,7 +1066,7 @@ def plan_retirement(
         ],
         "target_manifest": {"bytes": (target_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(target_run / "run_manifest.json")},
         "replacement_manifest": {"bytes": (replacement_run / "run_manifest.json").stat().st_size, "sha256": file_sha256(replacement_run / "run_manifest.json")} if replacement_run else None,
-        "original_file_inventory": inventory,
+        "original_file_inventory": prior["original_file_inventory"] if prior_pending_sha else inventory,
         "removed_files": removed,
         "preserved_files": preserved,
         "bytes_to_release": sum(item["bytes"] for item in removed_current),
@@ -982,10 +1090,17 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
     except (KeyError, TypeError, ValueError) as exc:
         raise RetirementError("retirement plan lacks governed root identity") from exc
     target = _under(Path(plan["target_run_path"]), artifact_root)
-    receipt_path = target / RECEIPT_NAME
     with protection.capacity_decision_lock(artifact_root):
+        receipt_path, batch, history = select_retirement_receipt(target, next_batch=True)
+        if batch != plan.get("retirement_batch"):
+            raise RetirementError("retirement batch head changed before apply")
+        if batch is not None:
+            _assert_previous_batch_sealed(artifact_root, target, history)
         runtime_checkpoint_path = _runtime_scope_path(plan, target)
         gui_mode = _prepared_gui_scope(plan)
+        if batch is not None and (plan.get("retirement_mode") != "completed_experiment"
+                or plan.get("selected_heavy_paths") is None or runtime_checkpoint_path is not None or gui_mode):
+            raise RetirementError("later retirement batches require ordinary owner selected heavy scope")
         if (_selected_heavy_paths(plan.get("selected_heavy_paths")) is not None
                 and (plan.get("retirement_mode") != "completed_experiment" or runtime_checkpoint_path is not None or gui_mode)):
             raise RetirementError("selected heavy scope requires ordinary owner completion")
@@ -1018,6 +1133,7 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
                 and marker.get("target_manifest") == plan.get("target_manifest")
                 and marker.get("replacement_manifest") == plan.get("replacement_manifest")
                 and marker.get("selected_heavy_paths") == plan.get("selected_heavy_paths")
+                and marker.get("retirement_batch") == plan.get("retirement_batch")
             ):
                 raise RetirementError("target already has another retirement marker")
         else:
@@ -1129,13 +1245,16 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         )
     if runtime_mode or gui_mode:
         _assert_runtime_retirement_unprotected(artifact_root, target)
+    receipt_path, batch, history = select_retirement_receipt(target, next_batch=True)
+    if batch != plan.get("retirement_batch"):
+        raise RetirementError("retirement batch head changed before deletion")
     inventory = _file_inventory(
-        target_state, retired_paths=[
+        target_state, retired_paths=_prior_retired_paths(history, target) + [
             _under(target / item["path"], target)
             for item in plan["removed_files"] if item.get("already_removed_before_resume")
         ],
         inherit_heavy_identity=owner_mode or gui_mode,
-        runtime_checkpoint_path=runtime_checkpoint_path,
+        runtime_checkpoint_path=runtime_checkpoint_path, receipt_path=receipt_path,
     )
     if owner_mode or gui_mode:
         planned_inventory = [
@@ -1157,7 +1276,6 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
             item for item in inventory if item not in expected_removed
         ]:
             raise RetirementError("completed experiment removal scope differs from inventory")
-    receipt_path = target / RECEIPT_NAME
     pending = {
         **plan,
         "role": "solver_review_retirement_receipt",
@@ -1483,8 +1601,11 @@ def repair_preserved_native_file(
         return journal
 
 
-def verify_retirement(run_dir: Path) -> dict[str, Any]:
-    receipt = _json(run_dir / RECEIPT_NAME)
+def _verify_retirement_receipt(
+    run_dir: Path, receipt: dict[str, Any], *, retired_paths: set[Path],
+    removed_records: list[dict[str, Any]],
+    consumed_paths: set[Path] | None = None,
+) -> dict[str, Any]:
     owner_mode = receipt.get("retirement_mode") == "completed_experiment"
     expected_status = "completed_experiment_payload_retired" if owner_mode else "superseded_payload_retired"
     if receipt.get("role") != "solver_review_retirement_receipt" or receipt.get("lifecycle_status") != expected_status:
@@ -1544,16 +1665,18 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
         if file_sha256(replacement / "run_manifest.json") != receipt["replacement_manifest"]["sha256"]:
             raise RetirementError("replacement run manifest changed")
     _verify_stopped_consumers(receipt, run_dir)
+    records = {}
     if gui_mode:
         state = _load_run(run_dir, allowed_statuses=("checkpoint",), prepared_gui_checkpoint=True)
         records = _manifest_records(state,
             retired_paths={_under(run_dir / item["path"], run_dir) for item in receipt["removed_files"]},
-            inherit_heavy_identity=True)
+            inherit_heavy_identity=True, consumed_paths=consumed_paths)
         _prepared_gui_inventory(state, records)
     if runtime_mode:
         state = _load_run(run_dir, allowed_statuses=("checkpoint",), stopped_checkpoint_runtime=True)
         retired_paths = {_under(run_dir / item["path"], run_dir) for item in receipt["removed_files"]}
-        records = _manifest_records(state, retired_paths=retired_paths, inherit_heavy_identity=True)
+        records = _manifest_records(state, retired_paths=retired_paths, inherit_heavy_identity=True,
+                                    consumed_paths=consumed_paths)
         members = _runtime_checkpoint_members(state, runtime_checkpoint_path, records, retired_paths)
         if retired_paths != set(members) or any(
             item.get("bytes") != members[_under(run_dir / item["path"], run_dir)]["bytes"]
@@ -1567,18 +1690,29 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
         if sorted(item["path"] for item in receipt["removed_files"]) != selected:
             raise RetirementError("retired payload differs from selected heavy scope")
         state = _load_run(run_dir, allowed_statuses=allowed_statuses)
-        retired_paths = {_under(run_dir / path, run_dir) for path in selected}
-        records = _manifest_records(state, retired_paths=retired_paths, inherit_heavy_identity=True)
-        for item in receipt["removed_files"]:
+        records = _manifest_records(state, retired_paths=retired_paths, inherit_heavy_identity=True,
+                                    consumed_paths=consumed_paths)
+        for item in removed_records:
             record = records.get(_under(run_dir / item["path"], run_dir))
             if not record or item["bytes"] != record["bytes"] or item["sha256"].upper() != record["sha256"].upper():
                 raise RetirementError("selected retired payload differs from sealed manifest")
-    for item in receipt["removed_files"]:
+    elif consumed_paths is not None and not records:
+        state = _load_run(run_dir, allowed_statuses=allowed_statuses,
+                          allow_legacy_initialization_summary=legacy_initialization_summary)
+        records = _manifest_records(state, retired_paths=retired_paths, inherit_heavy_identity=True,
+                                    consumed_paths=consumed_paths)
+    for item in removed_records:
         if (run_dir / item["path"]).exists():
             raise RetirementError(f"retired heavy payload reappeared: {item['path']}")
     for item in receipt["preserved_files"]:
         path = run_dir / item["path"]
-        if not path.is_file() or path.stat().st_size != item["bytes"] or file_sha256(path) != item["sha256"]:
+        if consumed_paths is not None and path.resolve() not in consumed_paths:
+            continue
+        bound = records.get(path.resolve())
+        verified = bound is not None and classify_file(path, bytes_count=item["bytes"]) not in HEAVY_ROLES
+        if (not path.is_file() or path.stat().st_size != item["bytes"]
+                or (verified and (bound["bytes"], bound["sha256"]) != (item["bytes"], item["sha256"]))
+                or (not verified and file_sha256(path) != item["sha256"])):
             raise RetirementError(f"preserved evidence identity differs: {item['path']}")
     return {
         "schema_version": 1,
@@ -1589,6 +1723,59 @@ def verify_retirement(run_dir: Path) -> dict[str, Any]:
         "replacement_run_id": receipt["replacement_run_id"],
         "removed_bytes": receipt["removed_bytes"],
     }
+
+
+def verify_retirement(run_dir: Path, *, consumed_paths: Iterable[str] | None = None) -> dict[str, Any]:
+    """Verify complete retirement, or an explicit preserved-file consumption scope."""
+    _, _, history = select_retirement_receipt(run_dir)
+    if not history:
+        raise RetirementError("retirement receipt is missing")
+    consumed = None
+    if consumed_paths is not None:
+        names = list(consumed_paths)
+        preserved = {row["path"] for row in history[-1][1]["preserved_files"]}
+        if (not names or any(not isinstance(name, str) or not name or "\\" in name or ":" in name
+                             or name.startswith("/") or ".." in name.split("/")
+                             or posixpath.normpath(name) != name for name in names)
+                or len(set(names)) != len(names) or not set(names).issubset(preserved)):
+            raise RetirementError("retirement consumption requires unique canonical preserved paths")
+        consumed = {_under(run_dir / name, run_dir) for name in names}
+    retired = set(_prior_retired_paths(history, run_dir))
+    previous = None
+    removed_records = []
+    for path, receipt in history:
+        if previous is not None:
+            previous_path, previous_receipt = previous
+            expected = {item["path"]: (item["bytes"], item["sha256"])
+                        for item in previous_receipt["preserved_files"]}
+            expected[previous_path.name] = (previous_path.stat().st_size, file_sha256(previous_path))
+            if {item["path"]: (item["bytes"], item["sha256"])
+                    for item in receipt["original_file_inventory"]} != expected:
+                raise RetirementError("retirement batch inventory differs from previous remainder")
+        if len(history) > 1:
+            selected = _selected_heavy_paths(receipt.get("selected_heavy_paths"))
+            _selected_heavy_records(receipt["removed_files"], selected)
+            original = {item["path"]: (item["bytes"], item["sha256"])
+                        for item in receipt["original_file_inventory"]}
+            removed = {item["path"]: (item["bytes"], item["sha256"])
+                       for item in receipt["removed_files"]}
+            preserved = {item["path"]: (item["bytes"], item["sha256"])
+                         for item in receipt["preserved_files"]}
+            if (receipt.get("lifecycle_status") != "completed_experiment_payload_retired"
+                    or len(original) != len(receipt["original_file_inventory"])
+                    or removed.keys() & preserved.keys() or original != {**removed, **preserved}
+                    or receipt.get("removed_bytes") != sum(item["bytes"] for item in receipt["removed_files"])):
+                raise RetirementError("retirement batch inventory partition differs")
+        removed_records.extend(receipt["removed_files"])
+        previous = (path, receipt)
+    result = _verify_retirement_receipt(
+        run_dir, history[-1][1], retired_paths=retired, removed_records=removed_records, consumed_paths=consumed)
+    if consumed is not None:
+        result.update(scope="consumer_projection", consumed_paths=sorted(names))
+    if len(history) > 1:
+        result.update(retirement_batches=len(history),
+                      removed_bytes=sum(receipt["removed_bytes"] for _, receipt in history))
+    return result
 
 
 def main(argv: Iterable[str] | None = None) -> int:

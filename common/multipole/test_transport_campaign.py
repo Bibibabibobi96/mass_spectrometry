@@ -534,16 +534,23 @@ class TransportCampaignTests(unittest.TestCase):
         )
         self.assertTrue(all("solver_numerics" in profile for profile in plan["experiments"]))
 
-    def test_checked_in_source_comparison_dry_run_preserves_declared_case_sets(self) -> None:
+    def test_current_source_comparison_dry_run_preserves_declared_case_sets(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
         campaign = CAMPAIGN_ROOT / "20260829__oct_planar_vs_volume_source_n1000.json"
         document = json.loads(campaign.read_text(encoding="utf-8"))
+        # This exercises a new author, not analysis of historical producer runs
+        # whose immutable campaign identity predates the terminal-owner move.
+        document["campaign_id"] = "source_comparison_current_author_fixture"
+        for index, row in enumerate(document["experiments"]):
+            row["authorized_run_id"] = f"20260829_2300{index:02d}__sim__simion__source-comparison-fixture-{index}__n1000"
+        for index, request in enumerate(document["analysis_requests"]):
+            request["analysis_run_id"] = f"20260829_2310{index:02d}__analysis__cross__source-comparison-fixture-{index}__n1000"
         # The maintained source comparison declares its arms explicitly; only
         # campaigns without case_set use the launcher's implicit control pair.
         declared = {row["experiment_id"]: row["case_set"] for row in document["experiments"]}
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, written_campaign(document) as campaign:
             plan_path = Path(directory) / "resolved_execution_plan.json"
             completed = subprocess.run(
                 [
@@ -556,8 +563,8 @@ class TransportCampaignTests(unittest.TestCase):
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=120, check=False,
             )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             plan = json.loads(plan_path.read_text(encoding="utf-8"))
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertEqual(
             [item["runtime_profile_id"] for item in plan["experiments"]],
             ["oct_planar_source_control_n1000", "oct_volume_source_n1000"],

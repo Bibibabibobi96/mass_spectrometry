@@ -69,6 +69,7 @@ $names = @(
   'OATOF_CANDIDATE_CONTRACT_PATH',
   'OATOF_CANDIDATE_MODEL_PATH',
   'OATOF_CANDIDATE_RUN_CONFIG_PATH',
+  'OATOF_CANDIDATE_ARTIFACT_ROOT',
   'OATOF_CANDIDATE_ION_PATH',
   'OATOF_RESULTS_DIR',
   'OATOF_RUNTIME_DIR'
@@ -78,6 +79,7 @@ try {
   $env:OATOF_CANDIDATE_CONTRACT_PATH = $frozen.resolved_geometry
   $env:OATOF_CANDIDATE_MODEL_PATH = $model
   $env:OATOF_CANDIDATE_RUN_CONFIG_PATH = $package.run_config
+  $env:OATOF_CANDIDATE_ARTIFACT_ROOT = [string]$config.capacity_ledger_lifecycle.artifact_root
   $env:OATOF_CANDIDATE_ION_PATH = $frozen.particle_table
   $env:OATOF_RESULTS_DIR = $package.result_dir
   $env:OATOF_RUNTIME_DIR = Join-Path $package.run_dir 'comsol'

@@ -1,4 +1,7 @@
-function state = oatof_configure_particle_model(model,comp1,p,paths,contract,mass_amu,label,use_fixed_particle_table,fixed_particle_table,n_particles,field_mode,fine_tstep_ns,drift_tstep_ns,solver_mode)
+function state = oatof_configure_particle_model(model,comp1,p,paths,contract,mass_amu,label,use_fixed_particle_table,fixed_particle_table,n_particles,field_mode,fine_tstep_ns,drift_tstep_ns,solver_mode,cartesianRelease)
+if nargin<15, cartesianRelease=''; end
+assert(~use_fixed_particle_table || isempty(cartesianRelease), ...
+    'oatof:ParticleSource','FixedParticleTable and CartesianRelease are mutually exclusive.');
 t_cptsetup_start = tic;
 %% CPT
 m_kg = mass_amu*1.66054e-27;
@@ -33,7 +36,26 @@ wall_det.set('WallCondition', 'Freeze');
 
 v_in = sqrt(2*5*1.602176e-19/m_kg);
 fprintf('\n5eV entrance speed (x-direction): %.4e m/s\n', v_in);
-if use_fixed_particle_table
+if ~isempty(cartesianRelease)
+    [~,releaseData]=oatof_read_cartesian_release(cartesianRelease,mass_amu,n_particles);
+    releaseDir=getenv('OATOF_RUNTIME_DIR');
+    assert(~isempty(releaseDir),'OATOF_RUNTIME_DIR is required for Cartesian run evidence.');
+    if ~exist(releaseDir,'dir'), mkdir(releaseDir); end
+    releasePath=fullfile(releaseDir,sprintf('%s_cartesian_release.txt',strrep(label,' ','_')));
+    writematrix(releaseData,releasePath,'Delimiter','tab');
+    serialized=readmatrix(releasePath,'FileType','text');
+    assert(isequal(size(serialized),size(releaseData)) && ...
+        max(abs(serialized(:,4:6)-releaseData(:,4:6)),[],'all')<1e-6, ...
+        'oatof:CartesianSerialization','Cartesian velocity serialization changed.');
+    rel1=cpt.create('rel1','ReleaseFromDataFile',-1);
+    rel1.label(sprintf('Release from global Cartesian states (N=%d)',n_particles));
+    rel1.set('Filename',releasePath);
+    rel1.set('icolp','0');
+    rel1.set('VelocitySpecification','SpecifyVelocity');
+    rel1.set('InitialVelocity','FromFile');
+    rel1.set('icolv','3');
+    rel1.importData();
+elseif use_fixed_particle_table
     assert(isfile(fixed_particle_table), 'Fixed particle table not found: %s', fixed_particle_table);
     fixed_particles = readmatrix(fixed_particle_table, 'FileType', 'text', 'Delimiter', ',');
     assert(size(fixed_particles,2) >= 9 && size(fixed_particles,1) == n_particles, ...
@@ -110,12 +132,8 @@ rel1.set('InitialPosition', 'Density');
 rel1.set('N', num2str(n_particles));
 end
 
-% !!! Simplified per explicit request: no pulsing needed anymore -- ALL
-% electrodes (reflectron rings/grids AND the accelerator's repeller/
-% accelmid/gridA/gridB) are now combined into the SINGLE static 'es'
-% solve, each at its own real, always-on voltage. The CPT force is just
-% a direct reference to this one field, no unit-field scaling or sigmoid
-% time-gating required.
+% This force consumes the static ON field and the declared diagnostic mask.
+% Finite pulse timing is outside this builder's current physical scope.
 ef1 = cpt.create('ef1', 'ElectricForce', 3);
 ef1.label('Electric Force: combined static field (reflectron + accelerator, all electrodes always on)');
 ef1.selection.named('sel_vac');
@@ -133,6 +151,11 @@ ef1.set('E_src', 'userdef');
 % region has V INCREASING with z (entgrid 0 -> backplate high) as the
 % ion decelerates, so Ez=-dV/dz is NEGATIVE there.
 Ez_accel_ideal = 'if(z<z_accel_grid1,(V_repeller-V_grid1)/accel_stage1_length,V_grid1/accel_stage2_length)';
+if isfield(contract,'accelerator_topology')
+    Ez_accel_ideal=['if(z<z_accel_grid1,(V_repeller-V_grid1)/accel_stage1_length,' ...
+        'if(z<z_accel_intermediate2,(V_grid1-V_intermediate2)/accel_zone2_length,' ...
+        '(V_intermediate2-V_grid2)/accel_zone3_length))'];
+end
 Ez_drift_ideal = '0';
 Ez_stage1_ideal = '-V_mid/L_stage1';
 Ez_stage2_ideal = '-(V_mirror-V_mid)/(L_refl-L_stage1)';

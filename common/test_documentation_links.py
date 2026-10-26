@@ -1,11 +1,83 @@
 """Focused regressions for documentation navigation and frozen history boundaries."""
 
 from pathlib import Path
+import json
+import os
 import subprocess
 import tempfile
 import unittest
 
 from common.documentation_links import anchors, inspect_repository, is_history, links, table_diagnostics
+
+
+class PowerShellHistoryScopeTests(unittest.TestCase):
+    """Exercise the production history block on small isolated directories."""
+
+    @classmethod
+    def setUpClass(cls):
+        source = Path(__file__).with_name('verify_documentation.ps1').read_text(encoding='utf-8')
+        start = source.index('$historyFiles = ')
+        end = source.index("foreach ($required in @('AGENTS.md'", start)
+        cls.script = (
+            "$ErrorActionPreference='Stop'; Set-StrictMode -Version Latest\n"
+            "$repoRoot=$env:DOC_HISTORY_TEST_ROOT\n"
+            "$utf8=[Text.UTF8Encoding]::new($false,$true)\n"
+            "$errors=[Collections.Generic.List[string]]::new()\n"
+            "function Add-DocError { param([string]$Message) $errors.Add($Message) }\n"
+            + source[start:end]
+            + "\nConvertTo-Json -InputObject @($errors) -Compress\n"
+        )
+
+    def check_history(self, root):
+        result = subprocess.run(
+            ['pwsh', '-NoProfile', '-NonInteractive', '-Command', self.script],
+            cwd=root,
+            env={**os.environ, 'DOC_HISTORY_TEST_ROOT': str(root)},
+            check=True, capture_output=True, text=True, encoding='utf-8', timeout=30,
+        )
+        return json.loads(result.stdout)
+
+    def prepare_root(self, directory):
+        root = Path(directory)
+        (root / 'docs/history').mkdir(parents=True)
+        (root / 'projects').mkdir()
+        (root / 'integrations/docs/history').mkdir(parents=True)
+        return root
+
+    def test_root_and_existing_history_scopes_share_checks(self):
+        with tempfile.TemporaryDirectory(prefix='documentation_history_test_') as directory:
+            root = self.prepare_root(directory)
+            scopes = (
+                ('docs/history', 'docs/AUDITS.md', 'history/'),
+                ('integrations/docs/history', 'integrations/README.md', 'docs/history/'),
+                ('projects/p/docs/history', 'projects/p/README.md', 'docs/history/'),
+                ('integrations/legacy/docs/history', 'integrations/legacy/docs/HISTORY.md', 'history/'),
+            )
+            for history, index, prefix in scopes:
+                folder = root / history
+                folder.mkdir(parents=True, exist_ok=True)
+                (folder / 'snapshot.md').write_text('DOC_STATUS: ARCHIVED_READ_ONLY\n', encoding='utf-8')
+                (root / index).write_text(prefix + 'snapshot.md\n', encoding='utf-8')
+            self.assertEqual(self.check_history(root), [])
+            for _, index, prefix in scopes:
+                with self.subTest(index=index):
+                    (root / index).write_text('', encoding='utf-8')
+                    errors = self.check_history(root)
+                    self.assertEqual(len(errors), 1)
+                    self.assertIn(f"does not index '{prefix}snapshot.md'", errors[0])
+                    (root / index).write_text(prefix + 'snapshot.md\n', encoding='utf-8')
+
+    def test_root_integration_history_rejects_missing_banner_index_and_loose_payload(self):
+        with tempfile.TemporaryDirectory(prefix='documentation_history_test_') as directory:
+            root = self.prepare_root(directory)
+            history = root / 'integrations/docs/history'
+            (history / 'snapshot.md').write_text('# Snapshot\n', encoding='utf-8')
+            (history / 'loose.json').write_text('{}\n', encoding='utf-8')
+            errors = self.check_history(root)
+            self.assertEqual(len(errors), 3)
+            self.assertTrue(any('missing read-only archive banner' in item for item in errors))
+            self.assertTrue(any("integrations/README.md does not index 'docs/history/snapshot.md'" in item for item in errors))
+            self.assertTrue(any('history payload must be inside a same-name manifest directory' in item for item in errors))
 
 
 class MarkdownNavigationTests(unittest.TestCase):

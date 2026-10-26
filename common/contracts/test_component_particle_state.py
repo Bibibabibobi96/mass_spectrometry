@@ -3,11 +3,13 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from common.contracts.component_particle_state import (
     SCHEMA_VERSION,
     csv_columns,
     load_schema,
+    load_component_particle_state_csv,
     validate_component_particle_state_csv,
     write_component_particle_state_csv,
 )
@@ -75,6 +77,44 @@ class ComponentParticleStateTests(unittest.TestCase):
         self.assertEqual(report["particles"], 2)
         self.assertEqual(report["frame_ids"], ["instrument_global"])
         self.assertEqual(report["clock_epoch_ids"], ["instrument_clock_epoch.v1"])
+
+    def test_loader_reads_once_returns_typed_rows_and_preserves_order(self) -> None:
+        rows = [valid_row(9), valid_row(2)]
+        rows[0].update(phase_reference_id="", phase_rad="")
+        self.write(rows)
+        original = self.path.read_bytes()
+        open_file, reads = Path.open, []
+
+        def track(path, *args, **kwargs):
+            if path == self.path:
+                reads.append(path)
+            return open_file(path, *args, **kwargs)
+
+        with patch.object(Path, "open", track):
+            table = load_component_particle_state_csv(self.path)
+        self.assertEqual(len(reads), 1)
+        self.assertEqual([row["particle_id"] for row in table.rows], [9, 2])
+        self.assertIs(type(table.rows[0]["charge_state"]), int)
+        self.assertIs(type(table.rows[0]["mass_amu"]), float)
+        self.assertIsNone(table.rows[0]["parent_particle_id"])
+        self.assertIsNone(table.rows[0]["phase_rad"])
+        self.assertIsNone(table.rows[0]["phase_reference_id"])
+        self.assertEqual(table.rows[1]["species_id"], "ion_100amu_q1")
+        self.assertEqual(table.report, validate_component_particle_state_csv(self.path))
+        self.assertEqual(self.path.read_bytes(), original)
+
+    def test_numeric_lexemes_compare_equal_without_coercing_string_identity(self) -> None:
+        row = valid_row()
+        row.update(mass_amu="100", species_id="ion100")
+        self.write([row])
+        original = load_component_particle_state_csv(self.path).rows
+        row["mass_amu"] = "100.0"
+        self.write([row])
+        self.assertEqual(load_component_particle_state_csv(self.path).rows, original)
+        row["species_id"] = "ion100.0"
+        self.write([row])
+        self.assertNotEqual(load_component_particle_state_csv(self.path).rows, original)
+        self.assertEqual(load_component_particle_state_csv(self.path).rows[0]["species_id"], "ion100.0")
 
     def test_writer_uses_schema_order_and_validates_output(self) -> None:
         report = write_component_particle_state_csv(

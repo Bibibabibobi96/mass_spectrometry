@@ -4,6 +4,8 @@ param(
   [Parameter(Mandatory)][string]$ContextPath,
   [Parameter(Mandatory)][string]$RunId,
   [string]$ProviderReusePath='',
+  [Parameter(Mandatory)][string]$CompositionPlanPath,
+  [string]$LocalScopePath='',
   [string]$StripeReuseRunManifest='',
   [string]$ContinuationReuseRunManifest='',
   [string]$CandidateReuseRunManifest='',
@@ -415,6 +417,8 @@ try{
     $safeExitArgs=@{
       GeometryReviewRunPath=$geometryRun;MirrorRunPath=$mirrorRun;StripeRunPath=$stripeRun
       AcceleratorProviderReceiptPath=$acceleratorReceipt;NativeCorridorBankRunPath=$nativeBank
+      CompositionPlanPath=$CompositionPlanPath
+      LocalScopePath=$LocalScopePath
       NativeSystemRuntimeBundlePath=$nativeBundle
       Prism1VoltageV=[double]$context.accelerator_safe_exit.prism_1_placeholder_v
       Prism2VoltageV=[double]$context.accelerator_safe_exit.prism_2_placeholder_v
@@ -423,8 +427,8 @@ try{
     }
     if($nativeRuntimeCheckpoint){$safeExitArgs.NativeRuntimeCheckpoint=$nativeRuntimeCheckpoint}
     if($PythonExe){$safeExitArgs.PythonExe=$PythonExe};if($SimionExe){$safeExitArgs.SimionExe=$SimionExe}
-    & (Join-Path $PSScriptRoot '..\simion\run_two_prism_trial.ps1') @safeExitArgs|Out-Host
-    $safeExitManifest=Get-RunManifest -ChildRunId $safeExitId
+    & (Join-Path $repoRoot 'integrations/workflows/oa_mr/execute.ps1') @safeExitArgs|Out-Host
+    $safeExitManifest=Join-Path (Split-Path -Parent $repoRoot) "artifacts/projects/instrument_assembly/runs/$safeExitId/run_manifest.json"
 
     $failureStage='pair_specific_coverage'
     $coverageId=$stamp+'__analysis__python__mrtof-condition-prism-coverage'
@@ -508,6 +512,7 @@ try{
       NativeCorridorBankRunPath=$nativeBank
       GeometryReviewRunPath=$geometryRun;MirrorRunPath=$mirrorRun;StripeRunPath=$stripeRun
       AcceleratorProviderReceiptPath=$acceleratorReceipt;NativeSystemRuntimeBundlePath=$nativeBundle
+      CompositionPlanPath=$CompositionPlanPath;LocalScopePath=$LocalScopePath
       AcceleratorSourceYOffsetMm=$sourceYOffset;AcceleratorYAnchorMm=$acceleratorY
       RetainBaselineGuiWorkbench=$true;ContractPath=$conditionContract;RunId=$workpointId
       }

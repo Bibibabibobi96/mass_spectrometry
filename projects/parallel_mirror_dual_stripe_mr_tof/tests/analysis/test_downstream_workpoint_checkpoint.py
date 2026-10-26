@@ -142,7 +142,7 @@ class CheckpointFixture:
         outputs = [{"path": str(path), "sha256": sha(path), "bytes": path.stat().st_size} for path in (obs, mat, identity, protection, baseline)]
         manifest = write_json(child / "run_manifest.json", {
             "schema_version": 2, "role": "simulation_run_manifest", "run_id": child.name,
-            "project": "parallel_mirror_dual_stripe_mr_tof", "mode": "finite_3d_two_prism_voltage_trial",
+            "project": "instrument_assembly", "mode": "oa_mr",
             "status": "success", "outputs": outputs,
         })
         write_json(child / "run_config.json", {"parameters": {
@@ -313,8 +313,8 @@ class DownstreamWorkpointCheckpointTests(unittest.TestCase):
             "schema_version": 2,
             "role": "simulation_run_manifest",
             "run_id": failed_run.name,
-            "project": "parallel_mirror_dual_stripe_mr_tof",
-            "mode": "finite_3d_two_prism_voltage_trial",
+            "project": "instrument_assembly",
+            "mode": "oa_mr",
             "status": "failed",
             "outputs": [],
         })

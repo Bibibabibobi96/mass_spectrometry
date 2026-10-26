@@ -122,8 +122,8 @@ try {
 
   $failureStage = 'verify_inputs'
   $exit = Get-Content -LiteralPath $exitManifest -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-  if($exit.schema_version-ne2-or$exit.project-ne$projectId-or$exit.status-ne'success'-or
-    $exit.mode-ne'finite_3d_two_prism_voltage_trial'){
+  if($exit.schema_version-ne2-or$exit.project-ne'instrument_assembly'-or$exit.status-ne'success'-or
+    $exit.mode-ne'oa_mr'){
     throw 'Accelerator-exit parent must be one successful finite-3D two-prism trial.'
   }
   $observationRecords = @($exit.outputs | Where-Object { [IO.Path]::GetFileName([string]$_.path) -in @('accelerator_exit_observation.json','two_prism_trial_observation.json') })

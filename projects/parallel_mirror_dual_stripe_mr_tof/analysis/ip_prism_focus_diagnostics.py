@@ -77,7 +77,7 @@ def _aperture_frame(contract: dict) -> str:
     aperture = contract["aperture_comparison"]
     if version == 1:
         return "reference_normal"
-    if version not in {2, 3, 4, 5} or aperture.get("frame") not in {"global_z", "reference_normal"}:
+    if version not in {2, 3, 4, 5, 6} or aperture.get("frame") not in {"global_z", "reference_normal"}:
         raise ValueError("Contour aperture comparison requires explicit global_z/reference_normal frame")
     return aperture["frame"]
 
@@ -190,8 +190,9 @@ def _load_case_events(run: Path, spec: dict, planes: list[dict]) -> dict:
             serial = 8*np.finfo(float).eps*max(1., abs(p["z_mm"]))
             if row["vz_mm_us"] >= 0 or abs(row["z_mm"]-p["z_mm"]) > serial:
                 raise ValueError("Global plane coordinate/direction mismatch")
-    if any(r["reason"] not in {"reached_exit", "solver_stop", "timeout"} for r in terminals.values()):
+    if any(r["reason"] not in {"reached_exit", "solver_stop", "timeout", "lens_contact"} for r in terminals.values()):
         raise ValueError("Unknown terminal reason")
+    local._validate_lens_contacts(directory, terminals)
     if set(by_plane["p1_exit"]) != {i for i, r in terminals.items() if r["reason"] == "reached_exit"}:
         raise ValueError("Exit/terminal disagreement")
     for row in events:
@@ -309,6 +310,8 @@ def _comparison_identity(run: Path, resolved: dict, spec: dict) -> dict:
                     source_registration=resolved["contract"]["source_registration"],
                     physical_aperture=spec.get("physical_aperture"), geometry=geometry,
                     prism_voltage_v=resolved["prism_voltage_v"],
+                    electrode_collision_model=(resolved["contract"]["electrode_collision_model"]
+                        if resolved["contract"]["schema_version"] == 6 else "native_pa"),
                     held_ip_voltage={key: projection[key] for key in ("values_v15", "evaluation_time_us", "basis")})
     return identity
 

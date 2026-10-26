@@ -16,6 +16,7 @@ import csv
 import json
 import math
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -184,8 +185,16 @@ def _validate_derived_quantities(row: dict[str, Any], row_number: int) -> None:
         )
 
 
-def validate_component_particle_state_csv(path: Path) -> dict[str, Any]:
-    """Validate one CSV and return a compact identity report.
+@dataclass(frozen=True)
+class ComponentParticleStateTable:
+    """Validated rows in CSV order, with parsed scalar types and identity report."""
+
+    rows: list[dict[str, Any]]
+    report: dict[str, Any]
+
+
+def load_component_particle_state_csv(path: Path) -> ComponentParticleStateTable:
+    """Read and validate once, returning typed rows and a compact identity report.
 
     Version 1 is a transfer-state table: each particle ID appears exactly once.
     Device-specific event details belong in separate tables joined by
@@ -194,6 +203,10 @@ def validate_component_particle_state_csv(path: Path) -> dict[str, Any]:
     schema = load_schema()
     expected_columns = list(schema["x-csv-column-order"])
     validator = Draft202012Validator(schema)
+    rows: list[dict[str, Any]] = []
+    particle_ids: set[int] = set()
+    frames: set[str] = set()
+    epochs: set[str] = set()
     with path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames != expected_columns:
@@ -201,46 +214,48 @@ def validate_component_particle_state_csv(path: Path) -> dict[str, Any]:
                 f"component particle-state columns differ: {reader.fieldnames}; "
                 f"expected {expected_columns}"
             )
-        raw_rows = list(reader)
-    if not raw_rows:
+        for row_number, raw_row in enumerate(reader, start=2):
+            row = _parse_row(raw_row, row_number)
+            errors = sorted(validator.iter_errors(row), key=lambda item: list(item.path))
+            if errors:
+                location = ".".join(str(item) for item in errors[0].path)
+                raise ValueError(
+                    f"row {row_number} field {location or '<row>'}: {errors[0].message}"
+                )
+            particle_id = row["particle_id"]
+            if particle_id in particle_ids:
+                raise ValueError(f"duplicate particle_id: {particle_id}")
+            particle_ids.add(particle_id)
+            _validate_lineage(row, row_number)
+            _validate_clock(row, row_number)
+            _validate_derived_quantities(row, row_number)
+            PhaseSpaceState(
+                frame_id=row["frame_id"],
+                position_mm=tuple(row[f"position_{axis}_mm"] for axis in "xyz"),
+                velocity_m_s=tuple(row[f"velocity_{axis}_m_s"] for axis in "xyz"),
+                instrument_time_us=row["instrument_time_us"],
+            )
+            frames.add(row["frame_id"])
+            epochs.add(row["clock_epoch_id"])
+            rows.append(row)
+    if not rows:
         raise ValueError("component particle-state CSV must contain at least one row")
 
-    particle_ids: set[int] = set()
-    frames: set[str] = set()
-    epochs: set[str] = set()
-    for row_number, raw_row in enumerate(raw_rows, start=2):
-        row = _parse_row(raw_row, row_number)
-        errors = sorted(validator.iter_errors(row), key=lambda item: list(item.path))
-        if errors:
-            location = ".".join(str(item) for item in errors[0].path)
-            raise ValueError(
-                f"row {row_number} field {location or '<row>'}: {errors[0].message}"
-            )
-        particle_id = row["particle_id"]
-        if particle_id in particle_ids:
-            raise ValueError(f"duplicate particle_id: {particle_id}")
-        particle_ids.add(particle_id)
-        _validate_lineage(row, row_number)
-        _validate_clock(row, row_number)
-        _validate_derived_quantities(row, row_number)
-        PhaseSpaceState(
-            frame_id=row["frame_id"],
-            position_mm=tuple(row[f"position_{axis}_mm"] for axis in "xyz"),
-            velocity_m_s=tuple(row[f"velocity_{axis}_m_s"] for axis in "xyz"),
-            instrument_time_us=row["instrument_time_us"],
-        )
-        frames.add(row["frame_id"])
-        epochs.add(row["clock_epoch_id"])
-
-    return {
+    report = {
         "schema_version": SCHEMA_VERSION,
         "role": "component_particle_state_validation",
         "status": "PASS",
-        "rows": len(raw_rows),
+        "rows": len(rows),
         "particles": len(particle_ids),
         "frame_ids": sorted(frames),
         "clock_epoch_ids": sorted(epochs),
     }
+    return ComponentParticleStateTable(rows=rows, report=report)
+
+
+def validate_component_particle_state_csv(path: Path) -> dict[str, Any]:
+    """Validate one CSV and return its compact identity report."""
+    return load_component_particle_state_csv(path).report
 
 
 def write_component_particle_state_csv(

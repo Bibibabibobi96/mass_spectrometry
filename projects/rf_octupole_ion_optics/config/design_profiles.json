@@ -74,6 +74,53 @@
         "segmentation_strategy": "uniform",
         "axial_drive_topology": "exit_aperture_plate_potential_step"
       }
+    },
+    {
+      "design_profile_id": "through_exit_no_acceleration",
+      "mode_id": "no_acceleration_full_length",
+      "design_request": "config/requests/through_exit.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/through_exit_optimization_envelope.json",
+      "sha256": {
+        "design_request": "AC7C861C4E626CB6BFFB38EC6DFB13FCF0E5D62D61FF109EB6F54C3DF2339F5C",
+        "design_variables": "EF0B9DD3B5ED8FE4A2A2B9453EAA9221B986F5B97FDB56281D66F9D5307236C6",
+        "optimization_envelope": "49052489DFE6699EA23E40A4C1298852A4398326CBE2D5A2C4A796077A3CEB8C"
+      },
+      "identity": {
+        "project_id": "rf_octupole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 4,
+        "electrode_count": 8
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "none"
+      }
+    },
+    {
+      "design_profile_id": "through_entrance_exit_no_acceleration",
+      "mode_id": "no_acceleration_full_length",
+      "design_request": "config/requests/through_exit.json",
+      "design_variables": "config/design_variables.json",
+      "optimization_envelope": "config/through_exit_optimization_envelope.json",
+      "sha256": {
+        "design_request": "AC7C861C4E626CB6BFFB38EC6DFB13FCF0E5D62D61FF109EB6F54C3DF2339F5C",
+        "design_variables": "EF0B9DD3B5ED8FE4A2A2B9453EAA9221B986F5B97FDB56281D66F9D5307236C6",
+        "optimization_envelope": "49052489DFE6699EA23E40A4C1298852A4398326CBE2D5A2C4A796077A3CEB8C"
+      },
+      "identity": {
+        "project_id": "rf_octupole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 4,
+        "electrode_count": 8
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "none"
+      },
+      "enclosure_model": "cylindrical_grounded_shield_through_entrance_exit_v1"
     }
   ]
 }

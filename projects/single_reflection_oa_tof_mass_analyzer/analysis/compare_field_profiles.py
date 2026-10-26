@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.field_comparison_contract import (
+from common.analysis.field_comparison import (
     merge_complete_samples,
     normalized_rms_difference_pct,
 )
@@ -57,8 +57,8 @@ def main() -> None:
     contract = json.loads(args.contract.read_text(encoding="utf-8"))
     geometry = contract["geometry_mm"]
 
-    comsol = pd.read_csv(args.comsol)
-    simion = pd.read_csv(args.simion)
+    comsol = pd.read_csv(args.comsol, float_precision="round_trip")
+    simion = pd.read_csv(args.simion, float_precision="round_trip")
     required = {"region", "sample_index", "x_mm", "y_mm", "z_mm", "Ez_V_per_m"}
     for label, frame in (("COMSOL", comsol), ("SIMION", simion)):
         missing = required - set(frame.columns)

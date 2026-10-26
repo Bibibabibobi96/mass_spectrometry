@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 import re
 import unittest
+from unittest.mock import patch
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection, render_gem
 
@@ -200,7 +201,9 @@ class NativeGeometryTests(unittest.TestCase):
         self.assertEqual(self.p["gas_model"], "prescribed_pressure_not_gas_flow_solution")
 
     def test_gem_serializes_solids_subtractions_and_grounded_faces(self) -> None:
-        gem = render_gem(self.baseline, self.numerics)
+        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry.native_projection",
+                   side_effect=AssertionError("renderer must consume the resolved geometry")):
+            gem = render_gem(self.p)
         self.assertEqual(set(map(int, re.findall(r"\be\((\d+)\)", gem))), set(range(16)))
         nx, ny, nz = self.p["shape_gu"]
         grid = format(self.numerics["native_grid_mm"], ".12g")

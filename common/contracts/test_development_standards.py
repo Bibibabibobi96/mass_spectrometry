@@ -89,7 +89,7 @@ class DevelopmentStandardsCoverageTests(unittest.TestCase):
     def test_repository_entrypoints_do_not_repair_import_paths_at_runtime(self):
         for relative_path in (
             "projects/apertured_tube_electron_impact_ion_source/analysis/resolve_contract.py",
-            "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/refresh_family_repository_bindings.py",
+            "integrations/runtime/refresh_repository_bindings.py",
         ):
             source = (standards.REPO_ROOT / relative_path).read_text(encoding="utf-8")
             tree = ast.parse(source)

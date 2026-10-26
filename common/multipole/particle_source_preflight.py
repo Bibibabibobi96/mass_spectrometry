@@ -29,14 +29,51 @@ COLUMNS = [
 ENERGY_BOUND_TOLERANCE_EV = 2e-9
 
 
+def load_release_spec(path: Path, resolved: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate a complete planar release authority without generating states."""
+    from common.ion_release.release import validate_release_spec
+    from common.ion_release.mt19937_disk_cone_rf_phase import STRATEGY
+
+    data = path.read_bytes()
+    spec = json.loads(data.decode("utf-8-sig"))
+    validate_release_spec(spec)
+    if spec["geometry"]["shape"] != "disk" or spec["sampling"]["strategy"] != STRATEGY:
+        raise ValueError("multipole release requires the registered filled-cone disk/RF strategy")
+    if spec["particle_count"] != spec["mother_particle_count"]:
+        raise ValueError("multipole release must declare its complete mother population")
+    if resolved is not None:
+        if spec["frame_id"] != resolved["coordinate"]["coordinate_id"]:
+            raise ValueError("release frame differs from the native multipole coordinate frame")
+        if spec["geometry"]["center_mm"][2] != resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"]:
+            raise ValueError("release plane differs from resolved design")
+        if spec["species"]["charge_state"] != resolved["particle_source"]["charge_state"]:
+            raise ValueError("release charge differs from resolved design")
+        if spec["sampling"]["rf_frequency_hz"] != resolved["drive"]["frequency_Hz"]:
+            raise ValueError("release RF phase frequency differs from resolved design")
+        _validate_energy(
+            0, spec["sampling"]["kinetic_energy_ev"], resolved["particle_source"]["energy_model"], operating_point=False
+        )
+    return spec, {"path": str(path.resolve()), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest().upper()}
+
+
+def materialize_source_release(
+    spec_path: Path, source_path: Path, receipt_path: Path, resolved: dict[str, Any]
+) -> None:
+    """Generate once from the frozen authority; never overwrite a run input."""
+    from common.ion_release.release import materialize_release
+
+    if source_path.exists() or receipt_path.exists():
+        raise ValueError("refuse to overwrite a materialized source release")
+    spec, record = load_release_spec(spec_path, resolved)
+    materialize_release(spec, source_path, receipt_path, spec_record=record)
+
+
 def _load_operating_point(
     source_family_path: Path | None,
     operating_point_id: str | None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, str | None]:
     if (source_family_path is None) != (operating_point_id is None):
-        raise ValueError(
-            "source-family operating-point binding requires both path and point ID"
-        )
+        raise ValueError("source-family operating-point binding requires both path and point ID")
     if source_family_path is None:
         return None, None, None
     family_bytes = source_family_path.read_bytes()
@@ -67,54 +104,31 @@ def _validate_energy(
         if distribution == "fixed":
             expected_energy = float(energy_model["value"])
             if not math.isfinite(expected_energy) or expected_energy < 0:
-                raise ValueError(
-                    "source-family fixed energy must be finite and nonnegative"
-                )
-            if not math.isclose(
-                energy_ev, expected_energy, rel_tol=1e-9, abs_tol=1e-12
-            ):
-                raise ValueError(
-                    f"particle {particle_id} kinetic energy differs from operating point"
-                )
+                raise ValueError("source-family fixed energy must be finite and nonnegative")
+            if not math.isclose(energy_ev, expected_energy, rel_tol=1e-9, abs_tol=1e-12):
+                raise ValueError(f"particle {particle_id} kinetic energy differs from operating point")
             return
         if distribution == "uniform":
             minimum = float(energy_model["min"])
             maximum = float(energy_model["max"])
-            if (
-                not math.isfinite(minimum)
-                or not math.isfinite(maximum)
-                or minimum < 0
-                or maximum < minimum
-            ):
-                raise ValueError(
-                    "source-family uniform energy bounds must be finite, "
-                    "nonnegative, and ordered"
-                )
+            if not math.isfinite(minimum) or not math.isfinite(maximum) or minimum < 0 or maximum < minimum:
+                raise ValueError("source-family uniform energy bounds must be finite, nonnegative, and ordered")
         else:
             raise ValueError("source-family operating-point energy model is unsupported")
     elif energy_model["kind"] == "monoenergetic":
         expected_energy = float(energy_model["kinetic_energy_eV"])
-        if not math.isclose(
-            energy_ev, expected_energy, rel_tol=1e-9, abs_tol=1e-12
-        ):
-            raise ValueError(
-                f"particle {particle_id} kinetic energy differs from resolved design"
-            )
+        if not math.isclose(energy_ev, expected_energy, rel_tol=1e-9, abs_tol=1e-12):
+            raise ValueError(f"particle {particle_id} kinetic energy differs from resolved design")
         return
     else:
         minimum = float(energy_model["minimum_energy_eV"])
         maximum = float(energy_model["maximum_energy_eV"])
-    if (
-        energy_ev < minimum - ENERGY_BOUND_TOLERANCE_EV
-        or energy_ev > maximum + ENERGY_BOUND_TOLERANCE_EV
-    ):
+    if energy_ev < minimum - ENERGY_BOUND_TOLERANCE_EV or energy_ev > maximum + ENERGY_BOUND_TOLERANCE_EV:
         authority = "operating point" if operating_point else "resolved closed interval"
         raise ValueError(f"particle {particle_id} kinetic energy is outside the {authority}")
 
 
-def _load_volume_snapshot_receipt(
-    path: Path | None, source_sha256: str
-) -> dict[str, Any] | None:
+def _load_volume_snapshot_receipt(path: Path | None, source_sha256: str) -> dict[str, Any] | None:
     """Validate the immutable authority for a non-planar ion-source snapshot.
 
     The legacy source contract is intentionally plane/mono-energy only.  A
@@ -175,20 +189,50 @@ def load_validated_source(
     expected_source_family_sha256: str | None = None,
     expected_kinetic_energy_ev: float | None = None,
     volume_snapshot_receipt_path: Path | None = None,
+    release_spec_path: Path | None = None,
+    release_receipt_path: Path | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     """Read one canonical source and return its validated metadata and CSV rows."""
     if resolved.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("particle source requires a multipole resolved design")
+    if (release_spec_path is None) != (release_receipt_path is None):
+        raise ValueError("release source requires both frozen spec and receipt")
+    release = None
+    if release_spec_path is not None:
+        if any(
+            value is not None
+            for value in (
+                source_family_path,
+                operating_point_id,
+                expected_source_family_sha256,
+                expected_kinetic_energy_ev,
+                volume_snapshot_receipt_path,
+            )
+        ):
+            raise ValueError("release spec cannot be combined with another source authority or transform")
+        release, spec_record = load_release_spec(release_spec_path, resolved)
     source_bytes = path.read_bytes()
     source_sha256 = hashlib.sha256(source_bytes).hexdigest().upper()
+    if release is not None:
+        receipt = json.loads(release_receipt_path.read_text(encoding="utf-8-sig"))
+        table = receipt.get("state_table", {})
+        if (
+            receipt.get("schema_version") != 1
+            or receipt.get("role") != "repository_ion_release"
+            or receipt.get("status") != "materialized"
+            or receipt.get("release_spec") != release
+            or receipt.get("source_spec") != spec_record
+            or Path(str(table.get("path", ""))).resolve() != path.resolve()
+            or table.get("sha256") != source_sha256
+            or table.get("bytes") != len(source_bytes)
+            or table.get("columns") != COLUMNS
+            or receipt.get("particle_count") != release["particle_count"]
+        ):
+            raise ValueError("release receipt does not bind the frozen spec and actual source CSV")
     volume_receipt = _load_volume_snapshot_receipt(volume_snapshot_receipt_path, source_sha256)
-    if volume_receipt is not None and (
-        source_family_path is not None or expected_kinetic_energy_ev is not None
-    ):
+    if volume_receipt is not None and (source_family_path is not None or expected_kinetic_energy_ev is not None):
         raise ValueError("volume-source receipt cannot be combined with an energy override")
-    _, operating_point, source_family_sha256 = _load_operating_point(
-        source_family_path, operating_point_id
-    )
+    _, operating_point, source_family_sha256 = _load_operating_point(source_family_path, operating_point_id)
     if expected_source_family_sha256 is not None:
         if source_family_sha256 is None:
             raise ValueError("expected source-family SHA-256 requires a source family")
@@ -214,6 +258,8 @@ def load_validated_source(
     expected_mass = (
         float(operating_point["mass_amu"])
         if operating_point is not None
+        else float(release["species"]["mass_amu"])
+        if release is not None
         else None
     )
     if operating_point is not None and int(operating_point["charge_state"]) != expected_charge:
@@ -246,7 +292,8 @@ def load_validated_source(
             raise ValueError(f"particle {particle_id} has invalid mass or charge")
         if expected_mass is not None and mass != expected_mass:
             raise ValueError(
-                f"particle {particle_id} mass differs from operating point"
+                f"particle {particle_id} mass differs from "
+                + ("release spec" if release is not None else "operating point")
             )
         if charge != expected_charge:
             raise ValueError(f"particle {particle_id} charge differs from resolved design")
@@ -285,6 +332,8 @@ def load_validated_source(
             raise ValueError(f"particle {particle_id} energy differs from the authorized source volume")
         energies.append(energy_ev)
         masses.add(mass)
+    if release is not None and len(rows) != release["particle_count"]:
+        raise ValueError("materialized source population differs from frozen release spec")
     if len(masses) != 1:
         raise ValueError("canonical particle source contains multiple masses")
     if particle_ids != set(range(1, len(rows) + 1)):
@@ -299,11 +348,11 @@ def load_validated_source(
         "charge_state": expected_charge,
         "source_plane_z_mm": source_plane if volume_receipt is None else None,
         "source_volume_snapshot": volume_receipt is not None,
-        "energy_model": (
-            energy_model if volume_receipt is None else volume_receipt["velocity_distribution"]
-        ),
+        "energy_model": (energy_model if volume_receipt is None else volume_receipt["velocity_distribution"]),
         "energy_model_authority": (
-            "continuous_axial_volume_source_receipt" if volume_receipt is not None else "campaign_particle_source_derivation"
+            "continuous_axial_volume_source_receipt"
+            if volume_receipt is not None
+            else "campaign_particle_source_derivation"
             if expected_kinetic_energy_ev is not None
             else "resolved_design_or_operating_point"
         ),
@@ -342,9 +391,27 @@ def main() -> int:
     parser.add_argument("--expected-source-family-sha256")
     parser.add_argument("--expected-kinetic-energy-ev", type=float)
     parser.add_argument("--volume-snapshot-receipt", type=Path)
+    parser.add_argument("--release-spec", type=Path)
+    parser.add_argument("--release-receipt", type=Path)
+    parser.add_argument("--materialize-release", action="store_true")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     resolved = json.loads(args.resolved_design.read_text(encoding="utf-8-sig"))
+    if args.materialize_release:
+        if args.release_spec is None or args.release_receipt is None:
+            parser.error("materialize-release requires the frozen release spec and output receipt")
+        if any(
+            value is not None
+            for value in (
+                args.source_family,
+                args.operating_point,
+                args.expected_source_family_sha256,
+                args.expected_kinetic_energy_ev,
+                args.volume_snapshot_receipt,
+            )
+        ):
+            parser.error("release spec cannot be combined with another source authority or transform")
+        materialize_source_release(args.release_spec, args.source, args.release_receipt, resolved)
     metadata = validate_source(
         args.source,
         resolved,
@@ -353,13 +420,12 @@ def main() -> int:
         expected_source_family_sha256=args.expected_source_family_sha256,
         expected_kinetic_energy_ev=args.expected_kinetic_energy_ev,
         volume_snapshot_receipt_path=args.volume_snapshot_receipt,
+        release_spec_path=args.release_spec,
+        release_receipt_path=args.release_receipt,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-    print(
-        "MULTIPOLE_CANONICAL_SOURCE=PASS "
-        f"PARTICLES={metadata['particle_count']} SHA256={metadata['source_sha256']}"
-    )
+    print(f"MULTIPOLE_CANONICAL_SOURCE=PASS PARTICLES={metadata['particle_count']} SHA256={metadata['source_sha256']}")
     return 0
 
 

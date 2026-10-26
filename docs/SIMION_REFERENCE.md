@@ -69,14 +69,16 @@ SIMION 实例分别飞行不同粒子子集，再合并输出；本节是仓库�
 
 | 消费方式 | 必须使用的输入表示 | 完整性检查 |
 |---|---|---|
-| 真正 standalone 的只读 PA（不含从 family 抽出的响应成员） | 公共入口持有禁止写入/删除源文件的共享句柄，并以 `WriteThrough` 流式生成可写、可丢弃的短名普通 `.pa` 副本 | 复制前后源及目标大小／SHA-256一致；进程退出后在同一源句柄上复核 |
+| 路径受限或求解器需要写入的真正 standalone PA（不含从 family 抽出的响应成员） | 公共短副本入口持有禁止写入/删除源文件的共享句柄，建立字节独立的短名普通 PA；大文件采用公共非缓冲复制实现 | 沿公共入口核对冻结大小／SHA-256及源保护，不另建复制／哈希协议 |
+| 路径可直接加载、全过程只读的 immutable standalone PA | 公共 `Protect-ImmutablePaSource` 入口持有禁止写入/删除源文件的共享句柄；确认没有 Fast Adjust 后保存等写入路径才可直接消费 | 公共入口核对冻结身份并保持保护；只读属性本身不足以授权直接加载 |
 | 新 family 的构建、Refine 与响应生成 | 仅在一次性、可写的 build staging 中创建原生 family；发布前把每个响应复制到全新 PA 对象并保存为 standalone `.pa` | 新对象逐节点保留势、电极标志及网格元数据；独立进程重开和延迟哈希稳定 |
 | 已发布 cache 的 `.paN` 成员 | **禁止供应商进程再次打开**；运行时只消费同 generation 内已发布的 standalone 响应 | manifest 同时覆盖原生 family 和 standalone 响应；运行后完整 cache probe |
 
 统一复用 [short_pa_path_support.ps1](../common/simion/short_pa_path_support.ps1)。禁止用
 junction、symlink 或 hard link 把不可变缓存暴露给 SIMION，禁止项目私有短路径实现。文件只读属性
-不能代替写隔离；所有路径都不能只核对 `.pa#` 哨兵。短名副本在供应商退出后清理，不改变规范 artifact
-目录、科学输入身份或 manifest 路径。完整 family 的内容缺失或损坏不能误判为 `MAX_PATH` 问题。
+不能代替写隔离；所有路径都不能只核对 `.pa#` 哨兵。临时短名副本在供应商退出后清理；需作为保存IOB依赖保留的
+独立副本由公共 `Publish-ShortPaCopyDestination` 封存为run自有只读产物，并绑定manifest，不能清理后留下失效IOB。
+运输路径不改变科学输入身份。完整 family 的内容缺失或损坏不能误判为 `MAX_PATH` 问题。
 把 `.paN` 单个复制、改名，甚至把已发布 family 完整复制到私有目录，都不能证明其 family 关联已解除：
 `r59` 与 `r66` 分别捕获了单成员路径和完整复制路径之后的延迟源哈希漂移。因此公共短副本入口拒绝
 `.paN`，生产运行器只接受在 family 初次构建时由**全新 PA 对象**生成并受同一 cache manifest 约束的

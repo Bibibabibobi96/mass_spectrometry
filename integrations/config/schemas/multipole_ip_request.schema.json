@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/integrations/multipole_ip_request.schema.json",
+  "title": "Real multipole mechanical exit to native IP state handoff preparation",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "role", "source", "receiver", "species_id", "particle_weight", "composition_plan"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "role": {"const": "multipole_ip_preparation_request"},
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["manifest", "run_id", "project_id", "case_id"],
+      "properties": {
+        "manifest": {"$ref": "#/$defs/record"},
+        "run_id": {"type": "string", "minLength": 1},
+        "project_id": {"type": "string", "minLength": 1},
+        "case_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+      }
+    },
+    "receiver": {
+      "type": "object", "additionalProperties": false,
+      "required": ["manifest", "run_id", "project_id"],
+      "properties": {
+        "manifest": {"$ref": "#/$defs/record"},
+        "run_id": {"type": "string", "minLength": 1},
+        "project_id": {"const": "dual_pressure_rectilinear_ion_processor"}
+      }
+    },
+    "species_id": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"},
+    "particle_weight": {"type": "number", "exclusiveMinimum": 0},
+    "composition_plan": {"$ref": "#/$defs/record"},
+    "local_scope": {"$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/local_scope"}
+  },
+  "$defs": {
+    "record": {
+      "type": "object", "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    }
+  }
+}

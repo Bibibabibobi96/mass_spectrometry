@@ -4,14 +4,15 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
 import re
 import shutil
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from common.contracts.write_run_manifest import file_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
     materialize_measured_source, materialize_measured_source_slice,
 )
@@ -39,7 +40,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         producer.receipt["inputs"]["run_manifest.json"] = file_record(self.manifest)
         producer._write(producer.receipt_path, producer.receipt)
         handoff = self.root / "diagnostic_handoff"
-        prepare_handoff(producer.receipt_path, producer.trajectory, producer.provider, producer.request, handoff)
+        producer._prepare(handoff)
         self.source = self.root / "measured_source"
         materialize_measured_source(handoff / "handoff_receipt.json", self.source)
         policy = dict(schema_version=1, mode="fixed_interval", interval_us=.1,
@@ -72,6 +73,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         binding_mock = patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics.load_binding",
                              return_value=dict(geometry=geometry, refinement_windows=[]))
         binding_mock.start()
+        self.binding_mock = binding_mock
         self.addCleanup(binding_mock.stop)
         producer._write(self.preparation, self.prepared)
         self.log = self.root / "merged.log"
@@ -94,6 +96,109 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         self.original_lines.append("status,Fly completed. 2 splats")
         self.log.write_text("\n".join(self.original_lines)+"\n", encoding="utf-8")
         self.output = self.root / "diagnostics"
+
+    @unittest.skipUnless(os.environ.get("SIMULATION_VERIFY_REAL_JOINT_ANALYSIS") == "1",
+                         "explicit retained native-97 post-hoc verification")
+    def test_retained_native_97_results_analyze_when_exact_pa_paths_are_unavailable(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, verify_joint_asset_records
+        self.binding_mock.stop()
+        retained = Path(__file__).resolve().parents[5] / "artifacts/projects/instrument_assembly/runs/20261025_093701__sim__simion__ip-mr-joint-841cccc2"
+        preparation = retained / "results/prepared_joint_trial.json"
+        if not preparation.is_file():
+            self.skipTest("explicit retained native-97 run is unavailable")
+        prepared = json.loads(preparation.read_text())
+        binding = load_binding(Path(prepared["field_binding"]["path"]))
+        payloads = {str(Path(level["sources"][name]).resolve()).casefold()
+                    for level in [binding, *binding["refinement_windows"]]
+                    for name in ("scalar_pa", "surface") if level["sources"].get(name)}
+        for instance in binding["instances"]:
+            payloads.add(str(Path(instance["pa_path"]).resolve()).casefold())
+            payloads.add(str(Path(str(instance["pa_path"])+"-surf").resolve()).casefold())
+        original_open, original_stat = Path.open, Path.stat
+        retained_root = str(retained.resolve()).casefold()
+        def unavailable_stat(path, *args, **kwargs):
+            if str(path).casefold() in payloads:
+                raise FileNotFoundError("Exact PA availability fault injection: " + str(path))
+            return original_stat(path, *args, **kwargs)
+        def readonly_inputs(path, mode="r", *args, **kwargs):
+            if str(path).casefold() in payloads:
+                raise FileNotFoundError("Exact PA availability fault injection: " + str(path))
+            if str(path).casefold().startswith(retained_root) and any(flag in mode for flag in "wax+"):
+                raise AssertionError("Retained native results must stay read-only")
+            return original_open(path, mode, *args, **kwargs)
+        prior = json.loads((retained / "results/diagnostics/diagnostics_receipt.json").read_text())
+        output = self.root / "retained_97_analysis_without_fields"
+        with patch.object(Path, "stat", unavailable_stat), patch.object(Path, "open", readonly_inputs):
+            result = analyze_prepared_joint_flight(preparation, retained / "logs/native_two_prism_flight.log", output)
+            with self.assertRaises((ValueError, AssertionError, FileNotFoundError)):
+                verify_joint_asset_records(binding)
+        self.assertEqual(result["counts"], prior["counts"])
+        for name in ("prism_phase_space.csv", "timed_spatial_clouds.csv"):
+            self.assertEqual((output / name).read_bytes(), (retained / "results/diagnostics" / name).read_bytes())
+
+    def test_actual_sealed_native_metadata_analyzes_without_pa_and_native_use_refuses(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, verify_joint_asset_records
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import PaHeader
+        self.binding_mock.stop()
+        fields = self.root / "tiny_fields"
+        fields.mkdir()
+        helper = IonProcessorNativeBindingTest()
+        descriptor, binding_path, owner = helper.fixture(fields, detector_box=[0,0,0,1,1,1])
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
+        # Real complete provider solids support the actual loss classifier. Only
+        # this synthetic binding's frame label and IP placeholder are test-owned;
+        # the tiny fields do not claim a solve of this full physical analyzer.
+        geometry = resolve_geometry(load_contract(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
+        geometry.pop("accelerator_component_layout", None)
+        geometry.update(frame_id="mr_frame.v2", ion_processor_electrodes=[])
+        (fields / "assembly_geometry.json").write_text(json.dumps(geometry))
+        receipt_path = fields / "replacement.json"
+        receipt = json.loads(receipt_path.read_text())
+        receipt["assembly_coordinate_transform"]["to_frame_id"] = "mr_frame.v2"
+        receipt_path.write_text(json.dumps(receipt))
+        replacement = helper.record(receipt_path)
+        design_owner = fields / "design_manifest.json"
+        design_owner.write_text(json.dumps(dict(status="success", outputs=[helper.record(path) for path in
+            (receipt_path, fields / "point.json", fields / "assembly_geometry.json")])))
+        for level in [descriptor["parent"], *descriptor["refinement_windows"]]:
+            Path(level["geometry_authority_path"]).write_text(json.dumps(geometry))
+            authority_path = Path(level["voltage_authority_path"])
+            authority = json.loads(authority_path.read_text())
+            authority["assembly"].update(ion_processor_registration=receipt["assembly_coordinate_transform"],
+                detector=geometry["detector"], replacement_assembly=replacement,
+                replacement_assembly_manifest=helper.record(design_owner))
+            authority_path.write_text(json.dumps(authority))
+            grid = level["grid"]
+            header = PaHeader(-2,1,100000,*grid["dimensions"],1,*grid["pitch_mm"])
+            Path(level["pa_path"]).write_bytes(header.pack()+b"\0"*(header.node_count*8))
+        for instance in descriptor["instances"][1:]:
+            header = PaHeader(-2,1,100000,3,3,3,1,1,1,1)
+            Path(instance["pa_path"]).write_bytes(header.pack()+b"\0"*(header.node_count*8))
+        descriptor["replacement_assembly"] = replacement
+        binding_path.write_text(json.dumps(descriptor))
+        helper.seal(fields, owner)
+        self.prepared["field_binding"] = file_record(binding_path)
+        self.preparation.write_text(json.dumps(self.prepared))
+        metadata = load_binding(binding_path)
+        verify_joint_asset_records(metadata)
+        before = self.log.read_bytes()
+        expected = analyze_prepared_joint_flight(self.preparation, self.log, self.output)
+        scientific = {name: (self.output / name).read_bytes() for name in ("prism_phase_space.csv", "timed_spatial_clouds.csv")}
+        payloads = [path for path in fields.rglob("*") if path.is_file() and path.name.endswith((".pa", ".pa-surf"))]
+        for path in payloads:
+            path.rename(path.with_name(path.name+".unavailable"))
+        metadata_after = load_binding(binding_path)
+        self.assertEqual(metadata_after, metadata)
+        actual_dir = self.root / "analysis_without_fields"
+        actual = analyze_prepared_joint_flight(self.preparation, self.log, actual_dir)
+        self.assertEqual(actual["counts"], expected["counts"])
+        for name, content in scientific.items():
+            self.assertEqual((actual_dir / name).read_bytes(), content)
+        self.assertEqual(self.log.read_bytes(), before)
+        with self.assertRaises((ValueError, AssertionError)):
+            verify_joint_asset_records(metadata_after)
 
     def test_full_pipeline_preserves_mother_raw_branches_losses_and_figures(self) -> None:
         before = self.log.read_bytes()
@@ -146,6 +251,87 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                 with self.assertRaises((KeyError, ValueError, AssertionError)):
                     analyze_prepared_joint_flight(self.preparation, self.log, output)
                 self.assertFalse(output.exists())
+
+    def test_posthoc_contract_changes_only_peak_and_keeps_native_inputs(self) -> None:
+        import copy
+        from common.analysis.peak_metrics import AnalysisSettings
+        from types import SimpleNamespace
+        contract_path = self.root / "contract.json"
+        original = json.loads(contract_path.read_text())
+        original["simion"].update(default_trajectory_profile_id="fixture",
+            trajectory_profiles=dict(fixture=dict(trajectory_quality=3, maximum_step_us=.002, purpose="fixture")))
+        original["peak_analysis"] = dict(method_id="common_gaussian_kde_time_v1",
+            resolution_definition="mean_tof_us/(2*direct_fwhm_tof_us)",
+            time_basis="instrument_arrival_us_from_common_zero_birth", settings=vars(AnalysisSettings()))
+        contract_path.write_text(json.dumps(original))
+        self.prepared["trajectory_contract"] = file_record(contract_path)
+        self.preparation.write_text(json.dumps(self.prepared))
+        before = {p: p.read_bytes() for p in (self.log, self.preparation, contract_path)}
+        with self.assertRaisesRegex(ValueError, "Unsupported measured detector peak"):
+            analyze_prepared_joint_flight(self.preparation, self.log, self.output)
+        self.assertFalse(self.output.exists())
+        source = json.loads((self.source / "source_receipt.json").read_text())
+        timing = self.root / "native_timing.json"
+        timing.write_text(json.dumps(dict(schema_version=1, role="native_electrode_timing", pulse_start_us=7500)))
+        replacement = copy.deepcopy(original)
+        replacement["peak_analysis"].update(time_basis="instrument_arrival_minus_common_extraction_pulse_us",
+            common_time_reference=dict(clock_epoch_id=source["clock_epoch_id"], timing=file_record(timing), field="pulse_start_us"))
+        authored = self.root / "analysis_contract.json"
+        for mode in ("physics", "recording", "settings", "timing_identity"):
+            changed = copy.deepcopy(replacement)
+            if mode == "physics":
+                changed["coordinate_system"]["frame_id"] = "wrong"
+            elif mode == "recording":
+                changed["simion"]["trajectory_recording"]["interval_us"] *= 2
+            elif mode == "settings":
+                changed["peak_analysis"]["settings"]["grid_points"] += 2
+            else:
+                changed["peak_analysis"]["common_time_reference"]["timing"]["sha256"] = "0" * 64
+            authored.write_text(json.dumps(changed))
+            with self.subTest(mode=mode), self.assertRaises((ValueError, AssertionError)):
+                analyze_prepared_joint_flight(self.preparation, self.log, self.output, analysis_contract=authored)
+            self.assertFalse(self.output.exists())
+        authored.write_text(json.dumps(replacement))
+        # Existing figure metadata records Git when allowed; this fixture needs
+        # no Git process and exercises only recorded scientific inputs.
+        with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics.subprocess.run",
+                   return_value=SimpleNamespace(returncode=0, stdout="fixture")):
+            result = analyze_prepared_joint_flight(self.preparation, self.log, self.output, analysis_contract=authored)
+        self.assertEqual(result["counts"]["mother_source"], 3)
+        self.assertEqual(result["analysis_contract_provenance"]["contract"], file_record(authored))
+        self.assertEqual(result["analysis_contract_provenance"]["original_trajectory_contract"], self.prepared["trajectory_contract"])
+        self.assertEqual(result["detector_peak"]["common_time_reference"]["resolved_pulse_start_us"], 7500)
+        self.assertTrue(all(p.read_bytes() == content for p, content in before.items()))
+
+    def test_cli_forwards_explicit_analysis_contract_to_same_analyzer(self) -> None:
+        override = self.root / "analysis.json"
+        output = self.root / "output"
+        with patch.object(sys, "argv", ["mrtof_batch_flight", "analyze-joint", "--preparation", str(self.preparation),
+                 "--log", str(self.log), "--output", str(output), "--analysis-contract", str(override)]), \
+             patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics.analyze_prepared_joint_flight") as analyze:
+            self.assertEqual(main(), 0)
+        analyze.assert_called_once_with(self.preparation, self.log, output,
+            merge_receipt=self.preparation.parent / "batch_log_merge_receipt.json", analysis_contract=override)
+
+    def test_default_pipeline_transports_declared_peak_contract(self) -> None:
+        from common.analysis.peak_metrics import AnalysisSettings
+        contract_path = self.root / "contract.json"
+        contract = json.loads(contract_path.read_text())
+        timing = self.root / "timing.json"
+        timing.write_text(json.dumps(dict(schema_version=1, role="native_electrode_timing", pulse_start_us=7500)))
+        source = json.loads((self.source / "source_receipt.json").read_text())
+        contract["peak_analysis"] = dict(method_id="common_gaussian_kde_time_v1",
+            resolution_definition="mean_tof_us/(2*direct_fwhm_tof_us)",
+            time_basis="instrument_arrival_minus_common_extraction_pulse_us", settings=vars(AnalysisSettings()),
+            common_time_reference=dict(clock_epoch_id=source["clock_epoch_id"], timing=file_record(timing), field="pulse_start_us"))
+        contract_path.write_text(json.dumps(contract))
+        self.prepared["trajectory_contract"] = file_record(contract_path)
+        self.preparation.write_text(json.dumps(self.prepared))
+        result = analyze_prepared_joint_flight(self.preparation, self.log, self.output)
+        self.assertEqual(result["detector_peak"]["status"], "unavailable_fewer_than_three_hits")
+        self.assertEqual(result["detector_peak"]["common_time_reference"]["resolved_pulse_start_us"], 7500)
+        self.assertTrue((self.output / "population/detector_peak.png").is_file())
+        self.assertTrue((self.output / "population/detector_peak_samples.csv").is_file())
 
     def test_default_cli_transports_real_batches_without_mutating_preparation(self) -> None:
         epoch = self.prepared["solver_epoch_instrument_time_us"]

@@ -41,8 +41,7 @@ local function config()
       ideal_reflectron_stage2_axial=false},
     voltages={repeller_v=2240, grid1_v=1760, mid_v=1628.8001,
       backplate_v=2531.1999},
-    accelerator_ring_count=5, reflectron_stage1_ring_count=10,
-    reflectron_stage2_ring_count=5,
+    accelerator_ring_count=5,
     electrode_ids={repeller=10, grid1=11, rings={12,13,14,15,16},
       grid2=17},
     detector={tstep_enabled=true, capture_arm_distance_mm=100,
@@ -70,22 +69,6 @@ near(on[8].voltage_v, 0, 'grid2 voltage')
 local off = analyzer.accelerator_electrode_write_plan('off',
   {pre_all_v=7, repeller_v=2240, grid1_v=1760})
 for index=1,#off do near(off[index].voltage_v, 7, 'off voltage ' .. index) end
-
-local plans = analyzer.static_electrode_plans(nil)
-assert(#plans.accelerator == 8, 'combined static accelerator plan changed')
-assert(#plans.legacy_accelerator_characterization == 9,
-  'legacy accelerator characterization plan changed')
-for index=1,8 do
-  assert(plans.legacy_accelerator_characterization[index].electrode_id == index,
-    'legacy accelerator local electrode mapping changed')
-  near(plans.legacy_accelerator_characterization[index].voltage_v,
-    plans.accelerator[index].voltage_v,
-    'legacy accelerator characterization voltage ' .. index)
-end
-assert(plans.legacy_accelerator_characterization[9].electrode_id == 9,
-  'legacy accelerator local reference-ground mapping changed')
-near(plans.legacy_accelerator_characterization[9].voltage_v, 0,
-  'legacy accelerator reference-ground voltage')
 
 local three_zone_config = config()
 three_zone_config.accelerator_topology_id='three_zone_frontend_v1'
@@ -122,14 +105,6 @@ local three_off = three_zone.accelerator_electrode_write_plan('off',
 for index=1,#three_off do
   near(three_off[index].voltage_v, 7, 'three-zone off voltage ' .. index)
 end
-assert(#three_zone.static_electrode_plans(nil).legacy_accelerator_characterization == 0,
-  'three-zone must disable the legacy sequential characterization plan')
-assert(#plans.reflectron == 19, 'static reflectron plan changed')
-near(plans.reflectron[1].voltage_v, 0, 'reflectron entrance voltage')
-near(plans.reflectron[12].voltage_v, 1628.8001, 'reflectron middle-grid voltage')
-near(plans.reflectron[18].voltage_v, 2531.1999, 'reflectron backplate voltage')
-near(plans.reflectron[19].voltage_v, 0, 'reflectron shield voltage')
-
 local workbench = analyzer.initialize_workbench({instances={
   {filename='flight_tube_ground.pa0',nx=1001,ny=501,nz=2,dx_mm=1,
     dy_mm=1,dz_mm=1,scale=1},
@@ -250,6 +225,24 @@ local timeout = epoch_independent.terminate({particle_id=1,instance_id=1,
   vz_mm_per_us=-2,detector_cell_dx_mm=1})
 assert(timeout.kind == 'timeout_splat', 'timeout terminal was not classified')
 
+-- The workflow owns the age deadline. Disabling the old observation stop
+-- must still record the native collision's final accepted step for terminate.
+local age_config = config()
+age_config.diagnostics.post_pulse_observation_window_us = false
+local age_owned = component.new(age_config)
+age_owned.initialize_particle({particle_id=42,elapsed_us=0,x_mm=48.8,y_mm=0,z_mm=1})
+age_owned.other_actions({particle_id=42,elapsed_us=199,pulse_elapsed_us=false,
+  x_mm=48.8,y_mm=0,z_mm=700,vz_mm_per_us=2})
+local final_step = age_owned.other_actions({particle_id=42,elapsed_us=200,pulse_elapsed_us=false,
+  x_mm=48.8,y_mm=0,z_mm=-0.01,vz_mm_per_us=-2})
+assert(final_step.splat == false and #final_step.events == 1,
+  'disabled observation stop suppressed the final step or invented a timeout')
+local deadline_hit = age_owned.terminate({particle_id=42,instance_id=4,elapsed_us=200,
+  x_mm=48.8,y_mm=0,z_mm=-0.01,vx_mm_per_us=0,vy_mm_per_us=0,
+  vz_mm_per_us=-2,detector_cell_dx_mm=1})
+assert(deadline_hit.kind == 'detector_crossing' and deadline_hit.max_z_mm == 700,
+  'native deadline collision lost its detector identity or accepted history')
+
 local function rejects(mutator, expected)
   local value = config()
   mutator(value)
@@ -263,5 +256,41 @@ rejects(function(value) value.electrode_ids.grid2 = 12 end,
 rejects(function(value) value.instance_roles.detector = 3 end,
   'instance roles must be unique')
 rejects(function(value) value.unofficial = true end, 'unknown field')
+rejects(function(value) value.diagnostics.post_pulse_observation_window_us = true end,
+  'diagnostics.post_pulse_observation_window_us')
+rejects(function(value) value.diagnostics.post_pulse_observation_window_us = 0 end,
+  'diagnostics.post_pulse_observation_window_us')
+rejects(function(value) value.diagnostics.post_pulse_observation_window_us = 0/0 end,
+  'diagnostics.post_pulse_observation_window_us')
 
+
+
+local finite_window = component.new(config())
+finite_window.initialize_particle({particle_id=99,elapsed_us=0,x_mm=48.8,y_mm=0,z_mm=1})
+local ok, err = pcall(finite_window.other_actions, {particle_id=99,elapsed_us=1,pulse_elapsed_us=false,
+  x_mm=48.8,y_mm=0,z_mm=1,vz_mm_per_us=-2})
+assert(not ok and tostring(err):find('disabled observation window'), 'finite observation accepted missing pulse clock')
+
+
+
+-- OA-only assembly uses the real derived three-zone topology and explicit
+-- provider placements; no segmented-rod model is invented for this view.
+local oa_config={}
+for key,value in pairs(three_zone_config) do oa_config[key]=value end
+oa_config.accelerator_topology_id='three_zone_frontend_contract_derived_v1'
+oa_config.provider_placements={}
+for _,role in ipairs({'flight_tube','reflectron','accelerator','detector'}) do
+ oa_config.provider_placements[role]={x_mm=7,y_mm=-9,z_mm=11,az_deg=0,el_deg=0,rt_deg=0,scale=1}
+end
+local oa=component.new(oa_config)
+local oa_state={instances={
+ {filename='flight_tube_ground.pa0',nx=1001,ny=501,nz=2,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+ {filename='reflectron.pa0',nx=401,ny=501,nz=2,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+ {filename='accelerator.pa0',nx=101,ny=101,nz=101,dx_mm=.25,dy_mm=.25,dz_mm=.05,scale=1},
+ {filename='detector_ground.pa0',nx=3,ny=3,nz=8,dx_mm=1,dy_mm=1,dz_mm=.05,scale=1}}}
+local initialized=oa.initialize_workbench(oa_state)
+assert(initialized.placements==oa_config.provider_placements,'OA-only provider placement was recomputed')
+assert(initialized.placements.accelerator.x_mm==7 and initialized.placements.detector.y_mm==-9)
+oa_config.provider_placements.accelerator.scale=2
+assert(not pcall(component.new,oa_config),'invalid OA-only provider placement accepted')
 print('OATOF_ANALYZER_COMPONENT_TEST=PASS')

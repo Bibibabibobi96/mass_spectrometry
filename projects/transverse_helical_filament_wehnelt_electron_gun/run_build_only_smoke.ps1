@@ -304,6 +304,7 @@ try {
     host_resource_adapter = 'common\host_execution_lease.ps1'
     host_resource_scheduler = 'common\host_resource_scheduler.py'
     host_resource_policy = 'common\host_resource_policy.json'
+    resource_budget_support = 'common\multipole\resource_budget_support.ps1'
     artifact_support = 'common\contracts\run_artifact_support.ps1'
     manifest_writer = 'common\contracts\write_run_manifest.py'
     recorded_file_removal = 'common\contracts\recorded_file_removal.py'

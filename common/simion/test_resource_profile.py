@@ -82,6 +82,39 @@ class ResourceProfileTests(unittest.TestCase):
         self.assertEqual(profile["per_batch_peak_working_set_bytes"], 250)
         self.assertEqual(profile["per_batch_cpu_percent"], 6.2)
 
+    def test_profile_keeps_peak_and_count_from_the_same_measured_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run = self.write_bootstrap_run(Path(directory))
+            plan_path = run / "inputs/simion_repository_dispatch_plan.json"
+            plan = json.loads(plan_path.read_text())
+            plan["waves"] = [{"kind": "scheduled", "batch_count": 2,
+                              "batches": [{"count": 10}, {"count": 7}]}]
+            plan_path.write_text(json.dumps(plan))
+            usage_path = run / "results/resource_usage.json"
+            usage = {
+                "role": "multipole_resource_usage", "status": "completed",
+                "peak_process_tree_managed_memory_bytes": 1000000,
+                "first_formal_observation": {"peak_managed_memory_bytes": 100,
+                                             "process_cpu_percent": 0.0},
+                "per_process_memory_observation": {
+                    "process": "TEST_ONLY_batch_two", "work_units": 7,
+                    "root_process_id": 123, "root_process_started_at_utc_ticks": 456,
+                },
+            }
+            for worker_peak, expected_peak, expected_count in ((250, 250, 7), (80, 100, 10), (100, 100, 10)):
+                with self.subTest(worker_peak=worker_peak):
+                    usage["per_process_memory_observation"]["peak_managed_memory_bytes"] = worker_peak
+                    usage_path.write_text(json.dumps(usage))
+                    profile = publish_resource_profile(run_id="run", resource_usage_path=usage_path,
+                                                       dispatch_plan_path=plan_path)
+                    self.assertEqual(profile["per_batch_peak_working_set_bytes"], expected_peak)
+                    self.assertEqual(profile["observed_batch_work_units"], expected_count)
+                    self.assertEqual("per_batch_cpu_percent" in profile, worker_peak <= 100)
+            usage["per_process_memory_observation"]["work_units"] = 0
+            usage_path.write_text(json.dumps(usage))
+            with self.assertRaisesRegex(ValueError, "worker work-unit count"):
+                publish_resource_profile(run_id="run", resource_usage_path=usage_path, dispatch_plan_path=plan_path)
+
     def test_historical_missing_loading_policy_remains_unspecified(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

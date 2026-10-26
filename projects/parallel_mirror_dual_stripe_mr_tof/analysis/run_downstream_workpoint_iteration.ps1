@@ -21,6 +21,8 @@ param(
   [Parameter(Mandatory,ParameterSetName='Legacy')][string]$MirrorRunPath,
   [Parameter(Mandatory,ParameterSetName='Legacy')][string]$StripeRunPath,
   [Parameter(Mandatory,ParameterSetName='Legacy')][string]$AcceleratorProviderReceiptPath,
+  [Parameter(Mandatory,ParameterSetName='Legacy')][string]$CompositionPlanPath,
+  [string]$LocalScopePath='',
   [string]$NativeSystemRuntimeBundlePath = '',
   [string]$BunchSourceReceiptPath = '',
   [string]$FieldProviderRequestPath = '',
@@ -65,11 +67,14 @@ $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Pat
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json' }
 $frozenPrismControllerPolicyPath=''
 if($PrismControllerPolicyPath){$PrismControllerPolicyPath=(Resolve-Path -LiteralPath $PrismControllerPolicyPath).Path}
-$trialRunner = Join-Path $PSScriptRoot '..\simion\run_two_prism_trial.ps1'
+$trialRunner = if($PSCmdlet.ParameterSetName-eq'Prepared'){
+  Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1'
+}else{Join-Path $repoRoot 'integrations/workflows/oa_mr/execute.ps1'}
 $auditRunner = Join-Path $PSScriptRoot 'run_downstream_fixed_grid_workpoint.ps1'
 $bunchScreeningRunner = Join-Path $PSScriptRoot 'run_native_corridor_bunch_screening.ps1'
 $artifactRoot = Join-Path (Split-Path -Parent $repoRoot) "artifacts\projects\$project"
 $artifactWorkspaceRoot = Join-Path (Split-Path -Parent $repoRoot) 'artifacts'
+$trialArtifactRoot = Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly'
 $preparedCallerParameters=@($PSBoundParameters.Keys)
 $preparedProviderRunner=Join-Path $PSScriptRoot '../simion/run_native_static_field_provider.ps1'
 $preparedStagedMode=$PSCmdlet.ParameterSetName-eq'Prepared'-and-not[string]::IsNullOrWhiteSpace($PreparedTargetAuthorityPath)
@@ -110,7 +115,7 @@ function Invoke-PreparedWorkpointAcquisition {
       ContractPath=$physics;RunId=$childId;PythonExe=$python}
     if($SimionExe){$arguments.SimionExe=$SimionExe}
     & $trialRunner @arguments | Out-Host
-    $child=Join-Path $artifactRoot "runs/$childId"
+    $child=Join-Path $trialArtifactRoot "runs/$childId"
     $projection=Join-Path $child 'results/diagnostics/controller_projection.json'
     if(-not(Test-Path -LiteralPath $projection)){throw 'Acquisition child did not publish its real N1 observation projection.'}
     $observed=Get-Content -LiteralPath $projection -Raw|ConvertFrom-Json -Depth 100
@@ -425,6 +430,8 @@ function New-CenterTrialArguments {
   if($Voltages){$arguments.Stripe1VoltageV=$Voltages[0];$arguments.Stripe2VoltageV=$Voltages[1]}
   if(Get-Variable -Name contract -Scope Script -ErrorAction SilentlyContinue){$arguments.ContractPath=$script:contract}
   $arguments.AcceleratorProviderReceiptPath=$AcceleratorProviderReceiptPath
+  $arguments.CompositionPlanPath=$CompositionPlanPath
+  if($LocalScopePath){$arguments.LocalScopePath=$LocalScopePath}
   if($staticFieldMode){
     $arguments.BunchSourceReceiptPath=$CenterSourceReceiptPath
     $arguments.BunchParticleIdMin=1;$arguments.BunchParticleIdMax=1
@@ -673,7 +680,7 @@ function Find-ContinuationTransportSeed {
     $arguments=New-CenterTrialArguments -PrismVoltages $prisms -ChildRunId $childRunId
     if($index-eq0-and$RetainBaselineGuiWorkbench){$arguments.RetainGuiWorkbench=$true}
     Invoke-CenterTrial -Arguments $arguments | Out-Host
-    $manifest=Join-Path $artifactRoot "runs\$childRunId\run_manifest.json"
+    $manifest=Join-Path $trialArtifactRoot "runs\$childRunId\run_manifest.json"
     $materialization=Get-ManifestOutputPath -ManifestPath $manifest -FileName 'two_prism_trial_materialization.json'
     $receipt=Get-Content -LiteralPath $materialization -Raw|ConvertFrom-Json
     $voltages=@(@($receipt.stripe_biases_v)+@($receipt.prism_voltages_v)|ForEach-Object{[double]$_})
@@ -689,10 +696,8 @@ function Find-ContinuationTransportSeed {
 
 function Get-WorkpointBootstrapEvidence {
   param([string]$Manifest,[double[]]$Voltages)
-  $measured=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-  $mode=if($measured-and$measured.Value){'two_prism_joint_measured_trial'}else{'finite_3d_two_prism_voltage_trial'}
   & $python (Join-Path $repoRoot 'common/contracts/verify_run_manifest.py') $Manifest --require-status success `
-    --require-project $project --require-mode $mode | Out-Host
+    --require-project instrument_assembly --require-mode oa_mr | Out-Host
   if($LASTEXITCODE-ne0){throw 'Centre trial manifest is not verified success.'}
   $materialization=Get-ManifestOutputPath -ManifestPath $Manifest -FileName 'two_prism_trial_materialization.json'
   $observationPath=Get-ManifestOutputPath -ManifestPath $Manifest -FileName 'two_prism_trial_observation.json'
@@ -787,7 +792,7 @@ function Invoke-WorkpointStencil {
         $arguments=New-CenterTrialArguments -Voltages $voltages -ChildRunId $bootstrapId
         if($axis-lt0-and$RetainBaselineGuiWorkbench){$arguments.RetainGuiWorkbench=$true}
         Invoke-CenterTrial -Arguments $arguments | Out-Host
-        $manifest=Join-Path $artifactRoot "runs\$bootstrapId\run_manifest.json"
+        $manifest=Join-Path $trialArtifactRoot "runs\$bootstrapId\run_manifest.json"
       }
       $evidence=Get-WorkpointBootstrapEvidence -Manifest $manifest -Voltages $voltages
       if($recorded.Count){
@@ -1448,7 +1453,7 @@ function Invoke-StagedWorkpointBootstrap {
       if(-not$success){
         if($pending.child_run_id-eq($RunId+('-stage-{0:D3}'-f$state.flight_count))){throw 'Unfinished stage trial requires a new parent RunId.'}
         $pending.child_run_id=$RunId+('-stage-{0:D3}'-f$state.flight_count)
-        $pending.child_manifest=Join-Path $artifactRoot ('runs/'+$pending.child_run_id+'/run_manifest.json')
+        $pending.child_manifest=Join-Path $trialArtifactRoot ('runs/'+$pending.child_run_id+'/run_manifest.json')
         Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
         $arguments=New-CenterTrialArguments -Voltages ([double[]]$pending.voltages_v) -ChildRunId $pending.child_run_id
         Invoke-CenterTrial -Arguments $arguments -StagedPending $pending -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath | Out-Host
@@ -1554,7 +1559,7 @@ function Invoke-StagedWorkpointBootstrap {
     $childId=$RunId+('-stage-{0:D3}'-f$state.flight_count)
     $script:failureStage='stage_'+$state.stage
     $selectedStep=if($decision.status-eq'needs_stencil'){$selected}else{$null}
-    $state['pending_trial']=[ordered]@{child_run_id=$childId;child_manifest=(Join-Path $artifactRoot "runs/$childId/run_manifest.json");voltages_v=@($voltages);anchor_manifest=$state.anchor_manifest;stage=$state.stage;decision=$decision;selected=$selectedStep}
+    $state['pending_trial']=[ordered]@{child_run_id=$childId;child_manifest=(Join-Path $trialArtifactRoot "runs/$childId/run_manifest.json");voltages_v=@($voltages);anchor_manifest=$state.anchor_manifest;stage=$state.stage;decision=$decision;selected=$selectedStep}
     Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
     $arguments=New-CenterTrialArguments -Voltages $voltages -ChildRunId $childId
     Invoke-CenterTrial -Arguments $arguments -StagedPending $state.pending_trial -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath | Out-Host
@@ -1875,7 +1880,7 @@ function Invoke-SLocalModelRecovery {
       try{
         $arguments=New-CenterTrialArguments -Voltages $trial -ChildRunId $probeId
         Invoke-CenterTrial -Arguments $arguments | Out-Host
-        $manifest=Join-Path $artifactRoot "runs\$probeId\run_manifest.json"
+        $manifest=Join-Path $trialArtifactRoot "runs\$probeId\run_manifest.json"
         $evidence=Get-CenterTrialPhysicalEvidence -Manifest $manifest -Voltages $trial
         foreach($key in $evidence.Keys){$probe[$key]=$evidence[$key]}
         $probe.status=if($evidence.passed){'accepted_physical_probe'}else{'rejected_physical_probe'}
@@ -2617,6 +2622,11 @@ try {
     }
   }elseif($SeedTrialManifest){
     $seedManifest=(Resolve-Path -LiteralPath $SeedTrialManifest).Path
+    $seedIdentity=Get-Content -LiteralPath $seedManifest -Raw|ConvertFrom-Json -AsHashtable
+    if(-not(($seedIdentity.project-eq'instrument_assembly'-and$seedIdentity.mode-eq'oa_mr')-or
+      ($seedIdentity.project-eq$project-and$seedIdentity.mode-eq'finite_3d_two_prism_voltage_trial'))){
+      throw 'Voltage seed has an unsupported flight owner/mode pair.'
+    }
     $seedMaterialization=Get-ManifestOutputPath -ManifestPath $seedManifest -FileName 'two_prism_trial_materialization.json'
     $seedProjection=[ordered]@{
       projection_id='mrtof_downstream_voltage_seed_v1';manifest=$seedManifest
@@ -2624,7 +2634,7 @@ try {
       assertion_scope='run_config_and_voltage_materialization_only__other_historical_records_not_asserted'
     }
     & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $seedManifest `
-      --require-status success --require-project $project --require-mode finite_3d_two_prism_voltage_trial `
+      --require-status success --require-project $seedIdentity.project --require-mode $seedIdentity.mode `
       --consumer-projection-id $seedProjection.projection_id --consumed-output $seedMaterialization
     if($LASTEXITCODE-ne0){throw 'Bootstrap voltage seed manifest is invalid.'}
     $seed=Get-Content -LiteralPath $seedMaterialization -Raw|ConvertFrom-Json
@@ -2778,7 +2788,7 @@ try {
   if ($ResumeSuccessfulChildManifest) {
     $resumeChildManifest = (Resolve-Path -LiteralPath $ResumeSuccessfulChildManifest).Path
     & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $resumeChildManifest `
-      --require-status success --require-project $project --require-mode finite_3d_two_prism_voltage_trial
+      --require-status success --require-project instrument_assembly --require-mode oa_mr
     if ($LASTEXITCODE -ne 0) { throw 'Resume child manifest is not verified success.' }
     $frozenResumeChildManifest = Copy-VerifiedRunInput -Source $resumeChildManifest `
       -Destination (Join-Path $package.input_dir 'resume_successful_child_manifest.json')
@@ -2836,7 +2846,7 @@ try {
     execution='real_single_center_child_flights'
     corridor_field='native_full_corridor_at_0p25_mm'
     field_update='native_fast_adjust'
-    child_runner='projects/parallel_mirror_dual_stripe_mr_tof/simion/run_two_prism_trial.ps1'
+    child_runner='integrations/workflows/oa_mr/execute.ps1'
     stopping_authority='contract.downstream_fixed_grid_workpoint_profile.automatic_iteration'
   }
   if($staticFieldMode){
@@ -2893,7 +2903,7 @@ try {
       & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_checkpoint `
         --old-parent-run $resumeParentRun --latest-child-manifest $checkpointLatestChild `
         --current-initial-manifest $frozenInitialManifest --current-proposal $frozenProposal `
-        --current-contract $frozenContract --artifact-project-runs (Join-Path $artifactRoot 'runs') `
+        --current-contract $frozenContract --artifact-project-runs (Join-Path $trialArtifactRoot 'runs') `
         --output $checkpointPath
       if ($LASTEXITCODE -ne 0) { throw 'Previous automatic-workpoint checkpoint reconstruction failed.' }
     }
@@ -2989,7 +2999,7 @@ try {
       if ([string]::IsNullOrWhiteSpace($childRunId)) { throw 'Resume child manifest lacks run_id.' }
     } else {
       $childRunId = '{0}-iter-{1:D2}' -f $RunId,$iteration
-      $childRunDir = Join-Path $artifactRoot "runs\$childRunId"
+      $childRunDir = Join-Path $trialArtifactRoot "runs\$childRunId"
       $childManifest = Join-Path $childRunDir 'run_manifest.json'
     }
     $finalCacheKey = $null
@@ -3044,8 +3054,8 @@ try {
     # already performed its own full publication validation, so rehashing every
     # child PA here would only repeat multi-GiB reads without strengthening this
     # controller's evidence binding.
-    $childProjectionArgs=@($childManifest,'--require-status','success','--require-project',$project,
-      '--require-mode','finite_3d_two_prism_voltage_trial','--consumer-projection-id','mrtof_downstream_iteration_child_v1',
+    $childProjectionArgs=@($childManifest,'--require-status','success','--require-project','instrument_assembly',
+      '--require-mode','oa_mr','--consumer-projection-id','mrtof_downstream_iteration_child_v1',
       '--consumed-output',$observation,'--consumed-output',$materialization,
       '--consumed-output',$cacheIdentity,'--consumed-output',$childProtectionPath)
     & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') @childProjectionArgs
@@ -3243,6 +3253,7 @@ try {
         WorkpointRunPath=$package.artifact_run_dir
         NativeCorridorBankRunPath=$NativeCorridorBankRunPath
         BunchSourceReceiptPath=$BunchSourceReceiptPath
+        CompositionPlanPath=$CompositionPlanPath
         RunId=$RunId+'-bunch'
         PythonExe=$python
       }

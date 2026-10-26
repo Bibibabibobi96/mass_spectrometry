@@ -9,15 +9,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.field_comparison_contract import merge_complete_samples
+from common.analysis.field_comparison import merge_complete_samples
 
 
 KEY_COLUMNS = ["region", "sample_index", "x_mm", "y_mm", "z_mm"]
 
 
 def analyze_axis_profiles(comsol_path: Path, simion_path: Path) -> dict[str, dict]:
-    comsol = pd.read_csv(comsol_path)
-    simion = pd.read_csv(simion_path)
+    comsol = pd.read_csv(comsol_path, float_precision="round_trip")
+    simion = pd.read_csv(simion_path, float_precision="round_trip")
     required_comsol = set(KEY_COLUMNS + ["potential_V", "Ez_V_per_m"])
     required_simion = set(KEY_COLUMNS + ["Ez_V_per_m"])
     if not required_comsol.issubset(comsol.columns):

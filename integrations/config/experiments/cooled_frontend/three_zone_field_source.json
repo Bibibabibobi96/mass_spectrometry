@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_cooled_frontend_field_source",
+  "field_stage_receipt_record": {
+    "path": "artifacts/projects/instrument_assembly/runs/20261024_214842__migration__simion__cooled-seven-field-cache/inputs/cooled_frontend_field_stage_receipt.json",
+    "exists": true,
+    "bytes": 5669,
+    "sha256": "342889F7A08855024723968539B3EC11A78198277866D351688C910B32A2BB1D"
+  },
+  "source_owner_manifest_record": {
+    "path": "artifacts/projects/instrument_assembly/runs/20261024_214842__migration__simion__cooled-seven-field-cache/run_manifest.json",
+    "exists": true,
+    "bytes": 147127,
+    "sha256": "7B648A5B47AD343AEE7EAD653AA09DE38644AA3F0876BA2C57834C13DDB228EE"
+  }
+}

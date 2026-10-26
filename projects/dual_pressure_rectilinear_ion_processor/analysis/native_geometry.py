@@ -230,18 +230,14 @@ def _primitive(shape: dict) -> str:
             f"{f(shape['radius_mm'])},,{f(shape['x_max_mm']-shape['x_min_mm'])}) }}")
 
 
-def render_gem(baseline: dict, numerics: dict) -> str:
-    """Render legacy GEM from the native semantic projection; no Refine or I/O."""
-    p = native_projection(baseline, numerics)
-    f = format_number
-    nx, ny, nz = p["shape_gu"]
-    grid = f(p["grid_mm"])
-    origin = p["origin_mm"]
-    lines = ["; Simplified native electrodes; Refine required; no analytical field override.",
-             ("; Auxiliary surfaces: " + p["auxiliary_surface_model"] + ".") if "electrode_contours" in baseline else "; Auxiliary surfaces are midpoint-sampled staircase discretizations.",
-             f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{grid},{grid},{grid},surface=fractional)",
-             f"locate({f(-origin[0])},{f(-origin[1])},{f(-origin[2])}) {{"]
-    for electrode in p["electrodes"]:
+def render_projection_electrodes(projection: dict) -> str:
+    """Render semantic native CSG electrodes only, without PA/domain or pose.
+
+    The caller owns assembly, numbering and rigid placement. This shares the
+    exact primitive/cutout semantics used by the independent IP workbench.
+    """
+    lines = []
+    for electrode in projection["electrodes"]:
         lines.append(f"  e({electrode['electrode_id']}) {{ ; {electrode['name']}")
         for shape in electrode["solids"]:
             lines.append("    fill {")
@@ -250,6 +246,21 @@ def render_gem(baseline: dict, numerics: dict) -> str:
                 lines.append("      notin_inside { " + _primitive(cutout) + " }")
             lines.append("    }")
         lines.append("  }")
+    return "\n".join(lines)
+
+
+def render_gem(projection: dict) -> str:
+    """Render legacy GEM from the native semantic projection; no Refine or I/O."""
+    p = projection
+    f = format_number
+    nx, ny, nz = p["shape_gu"]
+    grid = f(p["grid_mm"])
+    origin = p["origin_mm"]
+    lines = ["; Simplified native electrodes; Refine required; no analytical field override.",
+             ("; Auxiliary surfaces: " + p["auxiliary_surface_model"] + ".") if "electrode_contours" in p else "; Auxiliary surfaces are midpoint-sampled staircase discretizations.",
+             f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{grid},{grid},{grid},surface=fractional)",
+             f"locate({f(-origin[0])},{f(-origin[1])},{f(-origin[2])}) {{"]
+    lines.extend(render_projection_electrodes(p).splitlines())
     # These sheets explicitly define the numerical boundary condition, rather
     # than silently assuming that an unelectroded PA boundary is grounded.
     lines.append("  e(0) { ; numerical Dirichlet faces, not physical housing")

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
+import warnings
 from pathlib import Path
 from typing import Any, Callable
 
@@ -24,7 +26,10 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_c
 
 
 StageExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
-STAGE_PROCESS_TIMEOUT_S = 4 * 60 * 60
+# A long candidate stage is evidence to inspect, never proof that a healthy
+# external solver should be killed.  The runner records one warning and waits
+# for its admitted child to complete naturally.
+STAGE_PROCESS_WARNING_S = 4 * 60 * 60
 CAD_PYTHON_PREFLIGHT_TIMEOUT_S = 30
 REUSABLE_STAGES = ("comsol_candidate", "simion_candidate", "cad_candidate")
 STAGE_SOURCE_PREFIXES = {
@@ -96,20 +101,35 @@ def _run_command(command: list[str], log_path: Path, environment: dict[str, str]
     env = os.environ.copy()
     env.update(environment or {})
     with log_path.open("w", encoding="utf-8", newline="\n") as log:
+        process = subprocess.Popen(
+            command,
+            cwd=REPO_ROOT,
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
+        started = time.monotonic()
+        warned = False
         try:
-            result = subprocess.run(
-                command,
-                cwd=REPO_ROOT,
-                env=env,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                check=False,
-                timeout=STAGE_PROCESS_TIMEOUT_S,
-            )
-        except subprocess.TimeoutExpired as error:
-            raise StageTimedOut(f"command exceeded {STAGE_PROCESS_TIMEOUT_S}s; log={log_path}") from error
-    if result.returncode != 0:
-        raise RuntimeError(f"command failed with exit code {result.returncode}; log={log_path}")
+            while process.poll() is None:
+                elapsed = time.monotonic() - started
+                if not warned and elapsed > STAGE_PROCESS_WARNING_S:
+                    message = (
+                        f"CANDIDATE_STAGE_WARNING elapsed_seconds={elapsed:.3f} "
+                        f"warning_seconds={STAGE_PROCESS_WARNING_S}; continuing pid={process.pid}"
+                    )
+                    print(message, file=log, flush=True)
+                    warnings.warn(message, RuntimeWarning, stacklevel=2)
+                    warned = True
+                time.sleep(1)
+        except KeyboardInterrupt:
+            # The user may cancel the Python coordinator, but its already
+            # admitted solver remains a healthy process until it ends itself.
+            print("CANDIDATE_STAGE_WAITING_FOR_NATURAL_COMPLETION", file=log, flush=True)
+            process.wait()
+            raise
+    if process.returncode != 0:
+        raise RuntimeError(f"command failed with exit code {process.returncode}; log={log_path}")
 
 
 def _ps_arguments(values: dict[str, Any]) -> list[str]:
@@ -241,6 +261,9 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
             raise RuntimeError("candidate source closure is required")
         _verify_frozen_cad_python(closure, logs / "cad_python_preflight.log")
         environment = {key: str(value) for key, value in stage["environment"].items()}
+        environment["OATOF_CANDIDATE_ARTIFACT_ROOT"] = str(
+            Path(closure["runtime"]["candidate_artifact_root"]).resolve().parents[1]
+        )
         build_report = Path(stage["report_path"])
         build_command = _powershell(
             frozen_source_path(closure, "common/comsol/run_comsol_r2025b.ps1"),
@@ -409,6 +432,9 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         environment = {
             "OATOF_CANDIDATE_MODEL_PATH": stage["model_path"],
             "OATOF_CANDIDATE_CAD_DIR": stage["output_dir"],
+            "OATOF_CANDIDATE_ARTIFACT_ROOT": str(
+                Path(closure["runtime"]["candidate_artifact_root"]).resolve().parents[1]
+            ),
             "OATOF_CANDIDATE_PYTHON_EXECUTABLE": str(
                 Path(closure["runtime"]["python_executable"]).resolve()
             ),

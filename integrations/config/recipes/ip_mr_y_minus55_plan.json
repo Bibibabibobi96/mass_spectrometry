@@ -1,0 +1,394 @@
+{
+  "schema_version": 3,
+  "role": "integration_composition_plan_do_not_edit",
+  "integration_id": "instrument_assembly",
+  "recipe_id": "ip_extraction_shield_to_mr_entry_frame",
+  "stage": "layout_only",
+  "assembly_frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+  "recipe": {
+    "schema_version": 1,
+    "role": "assembly_recipe",
+    "integration_id": "instrument_assembly",
+    "recipe_id": "ip_extraction_shield_to_mr_entry_frame",
+    "assembly_frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+    "position_tolerance_mm": 1e-09,
+    "angular_tolerance_rad": 1e-12,
+    "instances": [
+      {
+        "instance_id": "ip_exit_shield",
+        "project_id": "dual_pressure_rectilinear_ion_processor",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "dual_pressure_ion_processor_local_v1",
+          "to_frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+          "rotation": [
+            [
+              0.0,
+              0.0,
+              -1.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          ],
+          "translation_mm": [
+            0.0,
+            -225.0,
+            9.8
+          ]
+        }
+      },
+      {
+        "instance_id": "mr_entry_frame",
+        "project_id": "parallel_mirror_dual_stripe_mr_tof",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+          "to_frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+          "rotation": [
+            [
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "translation_mm": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    ],
+    "connections": [
+      {
+        "connection_id": "ip_to_mr",
+        "upstream": {
+          "instance_id": "ip_exit_shield",
+          "port_id": "extraction_exit"
+        },
+        "downstream": {
+          "instance_id": "mr_entry_frame",
+          "port_id": "accelerator_entry"
+        },
+        "gap_mm": 1.0,
+        "coupling_mode": "monolithic_joint_solve"
+      }
+    ]
+  },
+  "components": {
+    "ip_exit_shield": {
+      "schema_version": 1,
+      "role": "component_geometry_interface",
+      "project_id": "dual_pressure_rectilinear_ion_processor",
+      "variant_id": "native_ion_processor",
+      "geometry_profile_id": null,
+      "local_frame_id": "dual_pressure_ion_processor_local_v1",
+      "length_unit": "mm",
+      "ports": {
+        "guide_inlet": {
+          "surface_kind": "open_rod_entrance",
+          "center_mm": [
+            0,
+            0.0,
+            0.0
+          ],
+          "outward_normal": [
+            -1,
+            0,
+            0
+          ],
+          "wall_thickness_mm": null,
+          "cross_section": {
+            "shape": "open_rod_envelope",
+            "inscribed_radius_mm": 2.0
+          }
+        },
+        "extraction_exit": {
+          "surface_kind": "aperture_outer_face",
+          "center_mm": [
+            170.0,
+            3.5,
+            0.0
+          ],
+          "outward_normal": [
+            0,
+            1,
+            0
+          ],
+          "wall_thickness_mm": 0.5,
+          "cross_section": {
+            "shape": "rectangle",
+            "width_mm": 0.8,
+            "height_mm": 8.0,
+            "width_axis": [
+              0,
+              0,
+              -1
+            ],
+            "height_axis": [
+              1,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "component_electrodes": [
+        {
+          "component_electrode_id": 1,
+          "role": "guide_positive",
+          "electrical_group_id": 1
+        },
+        {
+          "component_electrode_id": 2,
+          "role": "guide_negative",
+          "electrical_group_id": 2
+        },
+        {
+          "component_electrode_id": 3,
+          "role": "hp_y_rf",
+          "electrical_group_id": 3
+        },
+        {
+          "component_electrode_id": 4,
+          "role": "hp_z_rf",
+          "electrical_group_id": 4
+        },
+        {
+          "component_electrode_id": 5,
+          "role": "lp_pull",
+          "electrical_group_id": 5
+        },
+        {
+          "component_electrode_id": 6,
+          "role": "lp_push",
+          "electrical_group_id": 6
+        },
+        {
+          "component_electrode_id": 7,
+          "role": "lp_side_upper",
+          "electrical_group_id": 7
+        },
+        {
+          "component_electrode_id": 8,
+          "role": "lp_side_lower",
+          "electrical_group_id": 8
+        },
+        {
+          "component_electrode_id": 9,
+          "role": "hp_corner_auxiliary",
+          "electrical_group_id": 9
+        },
+        {
+          "component_electrode_id": 10,
+          "role": "lp_outer_auxiliary",
+          "electrical_group_id": 10
+        },
+        {
+          "component_electrode_id": 11,
+          "role": "lp_inner_auxiliary",
+          "electrical_group_id": 11
+        },
+        {
+          "component_electrode_id": 12,
+          "role": "entrance_lens",
+          "electrical_group_id": 12
+        },
+        {
+          "component_electrode_id": 13,
+          "role": "exit_lens",
+          "electrical_group_id": 13
+        },
+        {
+          "component_electrode_id": 14,
+          "role": "lp_commonmode_shield",
+          "electrical_group_id": 14
+        },
+        {
+          "component_electrode_id": 15,
+          "role": "hp_commonmode_shield",
+          "electrical_group_id": 15
+        }
+      ]
+    },
+    "mr_entry_frame": {
+      "schema_version": 1,
+      "role": "component_geometry_interface",
+      "project_id": "parallel_mirror_dual_stripe_mr_tof",
+      "variant_id": "complete_mr_analyzer",
+      "geometry_profile_id": null,
+      "local_frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+      "length_unit": "mm",
+      "ports": {
+        "accelerator_entry": {
+          "surface_kind": "aperture_outer_face",
+          "center_mm": [
+            0.0,
+            -55.0,
+            5.300000000000001
+          ],
+          "outward_normal": [
+            0,
+            0,
+            1
+          ],
+          "wall_thickness_mm": null,
+          "cross_section": {
+            "shape": "rectangle",
+            "width_mm": 4.0,
+            "height_mm": 40.0,
+            "width_axis": [
+              1,
+              0,
+              0
+            ],
+            "height_axis": [
+              0,
+              1,
+              0
+            ]
+          }
+        }
+      },
+      "component_electrodes": [
+        {
+          "component_electrode_id": 1,
+          "role": "mirror"
+        },
+        {
+          "component_electrode_id": 2,
+          "role": "mirror"
+        },
+        {
+          "component_electrode_id": 3,
+          "role": "mirror"
+        },
+        {
+          "component_electrode_id": 4,
+          "role": "mirror"
+        },
+        {
+          "component_electrode_id": 5,
+          "role": "mirror"
+        },
+        {
+          "component_electrode_id": 6,
+          "role": "mirror"
+        },
+        {
+          "component_electrode_id": 7,
+          "role": "mirror"
+        },
+        {
+          "component_electrode_id": 8,
+          "role": "mirror"
+        },
+        {
+          "component_electrode_id": 9,
+          "role": "mirror"
+        },
+        {
+          "component_electrode_id": 10,
+          "role": "mirror"
+        },
+        {
+          "component_electrode_id": 11,
+          "role": "stripe"
+        },
+        {
+          "component_electrode_id": 12,
+          "role": "stripe"
+        },
+        {
+          "component_electrode_id": 13,
+          "role": "stripe"
+        },
+        {
+          "component_electrode_id": 14,
+          "role": "stripe"
+        },
+        {
+          "component_electrode_id": 15,
+          "role": "central_ground"
+        },
+        {
+          "component_electrode_id": 16,
+          "role": "prism"
+        },
+        {
+          "component_electrode_id": 17,
+          "role": "prism"
+        },
+        {
+          "component_electrode_id": 18,
+          "role": "prism_ground_shield"
+        },
+        {
+          "component_electrode_id": 20,
+          "role": "prism_ground_shield"
+        },
+        {
+          "component_electrode_id": 25,
+          "role": "detector"
+        }
+      ]
+    }
+  },
+  "connection_checks": [
+    {
+      "connection_id": "ip_to_mr",
+      "upstream_center_mm": [
+        0.0,
+        -55.0,
+        6.300000000000001
+      ],
+      "downstream_center_mm": [
+        0.0,
+        -55.0,
+        5.300000000000001
+      ],
+      "upstream_outward_normal": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "downstream_outward_normal": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "gap_mm": 1.0
+    }
+  ],
+  "scope": {
+    "kind": "full",
+    "instance_ids": [
+      "ip_exit_shield",
+      "mr_entry_frame"
+    ],
+    "connection_ids": [
+      "ip_to_mr"
+    ],
+    "boundary_connection_ids": []
+  }
+}

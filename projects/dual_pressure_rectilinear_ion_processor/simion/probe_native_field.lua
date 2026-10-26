@@ -1,7 +1,8 @@
 -- Read-only native potential audit; coordinates and voltages share Fly inputs.
 local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])'))
 local c=assert(loadfile(directory..'frozen_config.lua'))()
-local drive=assert(loadfile(directory..'native_drive.lua'))()
+local waveforms=assert(loadfile(directory..'voltage_waveforms.lua'))()
+local drive=assert(loadfile(directory..'native_drive.lua'))(waveforms)
 local kernel=assert(loadfile(directory..'simion_rf_drive.lua'))()
 local b=c.baseline
 local timing=assert(c.native_timing,'frozen native timing required')

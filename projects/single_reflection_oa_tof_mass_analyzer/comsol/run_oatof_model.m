@@ -2,6 +2,8 @@ function result = run_oatof_model(options)
 %RUN_OATOF_MODEL Stable named-parameter entry for the oa-TOF COMSOL model.
 % The legacy positional production builder remains internal so existing
 % validated tests keep their exact call behavior.
+% GeometryOnly saves the same completed geometry before selections, materials,
+% physics, mesh or studies; its result has no particle or field qualification.
 
 arguments
     options.MassAmu (1,1) double = NaN
@@ -17,21 +19,41 @@ arguments
     options.ReflectronStage1RingCount (1,1) double = NaN
     options.AcceleratorBoreHalfMm (1,1) double = NaN
     options.FixedParticleTable (1,1) string = ""
+    options.CartesianRelease (1,1) string = ""
     options.FineTimestepNs (1,1) double = NaN
     options.AcceleratorMeshHmaxMm (1,1) double = NaN
     options.DriftTimestepNs (1,1) double = NaN
     options.OutputModelPath (1,1) string = ""
+    options.ArtifactRoot (1,1) string = ""
     options.ContractPath (1,1) string = ""
     options.AllowParticleLoss (1,1) logical = false
+    options.AcceleratorGeometry (1,1) struct = struct()
+    options.AcceleratorElectricalDesign (1,1) struct = struct()
+    options.SideOpening (1,1) struct = struct()
+    options.FieldDesignOnly (1,1) logical = false
+    options.GeometryOnly (1,1) logical = false
 end
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(projectRoot);
 contractPath = options.ContractPath;
+if options.GeometryOnly
+    assert(strlength(contractPath)>0 && strlength(options.OutputModelPath)>0, ...
+        'oatof:GeometryOnlyPaths', ...
+        'GeometryOnly requires explicit ContractPath and OutputModelPath.');
+    assert(~options.FieldDesignOnly && strlength(options.FixedParticleTable)==0 && ...
+        strlength(options.CartesianRelease)==0, 'oatof:GeometryOnlyScope', ...
+        'GeometryOnly cannot configure fields or particle sources.');
+end
 if strlength(contractPath) == 0
     contractPath = string(fullfile(projectRoot, 'config', 'resolved_geometry.json'));
 end
 contract = load_oatof_contract(contractPath);
+assert(strlength(options.FixedParticleTable)==0 || strlength(options.CartesianRelease)==0, ...
+    'oatof:ParticleSource','FixedParticleTable and CartesianRelease are mutually exclusive.');
+assert(strlength(options.CartesianRelease)==0 || options.FieldDesignOnly, ...
+    'oatof:CartesianBuildScope', ...
+    'CartesianRelease configures a FieldDesignOnly source model; use the retrace runner for original-ID CPT census.');
 options = apply_defaults(options, contract);
 positiveNames = ["MassAmu","ReflectronStage1Mm","ReflectronMeshHmaxMm", ...
     "BoreRadiusMm","RingThicknessMm","ParticleCount", ...
@@ -48,7 +70,7 @@ if strlength(options.Label) == 0
     options.Label = compose("%gamu", options.MassAmu);
 end
 if strlength(options.OutputModelPath) > 0
-    paths = oatof_paths();
+    paths = oatof_paths(options.ArtifactRoot);
     outputPath = string(java.io.File(char(options.OutputModelPath)).getCanonicalPath());
     allowedRoots = string({paths.runsRoot, paths.scratchRoot});
     allowed = false;
@@ -56,7 +78,7 @@ if strlength(options.OutputModelPath) > 0
         canonicalRoot = string(java.io.File(char(root)).getCanonicalPath());
         allowed = allowed || startsWith(lower(outputPath), lower(canonicalRoot + filesep));
     end
-    assert(allowed, ...
+    assert(allowed, 'oatof:OutputModelPath', ...
         'Normal COMSOL runs may write only under runs or scratch; Formal requires promotion.');
     [~,~,extension] = fileparts(outputPath);
     assert(strcmpi(extension, '.mph'), 'OutputModelPath must end in .mph.');
@@ -71,7 +93,9 @@ result = oatof_build_model_core( ...
     options.ReflectronStage1RingCount, options.AcceleratorBoreHalfMm, ...
     char(options.FixedParticleTable), options.FineTimestepNs, ...
     options.AcceleratorMeshHmaxMm, options.DriftTimestepNs, ...
-    char(options.OutputModelPath), char(contractPath), options.AllowParticleLoss);
+    char(options.OutputModelPath), char(contractPath), options.AllowParticleLoss, ...
+    options.AcceleratorGeometry,options.AcceleratorElectricalDesign,options.SideOpening, ...
+    options.FieldDesignOnly,char(options.CartesianRelease),char(options.ArtifactRoot),options.GeometryOnly);
 end
 
 function options = apply_defaults(options, contract)

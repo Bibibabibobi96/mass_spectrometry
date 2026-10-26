@@ -29,6 +29,34 @@ def _state(pid: int, time: float, event: str, reason: str, z: float) -> dict:
 
 
 class LocalPrismDiagnosticsTests(unittest.TestCase):
+    def test_table_snapshot_reads_once_and_preserves_raw_byte_provenance(self) -> None:
+        import hashlib
+
+        fields = ["particle_id", *diagnostics.STATE_FIELDS]
+        values = ["7", "7500.125", "1", "2", "3", "4", "5", "-6", "0"]
+        read_bytes = Path.read_bytes
+        for ending in (b"\n", b"\r\n"):
+            for bom in (b"", b"\xef\xbb\xbf"):
+                with self.subTest(ending=ending, bom=bom):
+                    raw_line = ",".join(values).encode() + ending
+                    payload = bom + ",".join(fields).encode() + ending + raw_line
+                    path = self.run / "snapshot.csv"
+                    path.write_bytes(payload)
+                    with patch.object(Path, "read_bytes", autospec=True, side_effect=read_bytes) as read, \
+                         patch.object(Path, "read_text", side_effect=AssertionError("table reread")), \
+                         patch.object(diagnostics, "file_sha256", side_effect=AssertionError("table rehashed from disk")):
+                        rows = diagnostics._load_rows(path, states=True)
+                    read.assert_called_once_with(path)
+                    self.assertEqual(len(rows), 1)
+                    row = rows[0]
+                    self.assertEqual(row["particle_id"], 7)
+                    self.assertEqual([row[key] for key in diagnostics.STATE_FIELDS], list(map(float, values[1:])))
+                    self.assertEqual(row["raw_sha256"], hashlib.sha256(payload).hexdigest().upper())
+                    self.assertEqual(row["raw_line_sha256"], hashlib.sha256(raw_line).hexdigest())
+                    self.assertEqual(row["raw_line_number"], 2)
+                    self.assertEqual(row["raw_line"], ",".join(values))
+                    self.assertEqual(row["raw_path"], str(path.resolve()))
+
     def test_zero_field_projection_preserves_individual_birth_clock_and_noncommon_z(self) -> None:
         rows = [_state(1, 7.5, "birth", "measured_exit", 2.), _state(2, 8., "birth", "measured_exit", 0.)]
         rows[0].update(x_mm=3., y_mm=4., vx_mm_us=1., vy_mm_us=2., vz_mm_us=-2., potential_v=12.)
@@ -270,6 +298,35 @@ class LocalPrismDiagnosticsTests(unittest.TestCase):
         self.assertEqual(before, after)
         from matplotlib import pyplot as plt
         plt.close(figure)
+
+
+class LensContactWitnessTests(unittest.TestCase):
+    def test_witness_preserves_component_native_flag_and_bracket(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            terminal = _state(3, 10.5, "terminal", "lens_contact", -.6)
+            row = {key: value for key, value in terminal.items() if key in diagnostics.STATE_FIELDS[:-1]}
+            row.update(particle_id=3, electrode_id=1007, component_name="Q2_y_positive",
+                       face="cap_end", fraction=.5, native_splat_before=0)
+            for key in diagnostics.STATE_FIELDS[:-1]:
+                stem, unit = key.split("_", 1)
+                row[f"{stem}0_{unit}"] = row[key] - .5
+                row[f"{stem}1_{unit}"] = row[key] + .5
+            (root/"geometry.json").write_text(json.dumps(dict(geometry=dict(lens_electrodes=[
+                dict(electrode_id=1007, name="Q2_y_positive")]))))
+            path = root/"lens_contacts.csv"
+            _write_csv(path, [row])
+            self.assertEqual(len(diagnostics._validate_lens_contacts(root, {3: terminal})), 1)
+            for changes in (dict(native_splat_before=-4), dict(component_name="wrong"),
+                            dict(fraction=2), dict(t0_us=11), dict(x1_mm=99)):
+                with self.subTest(changes=changes):
+                    _write_csv(path, [dict(row, **changes)])
+                    with self.assertRaises(ValueError):
+                        diagnostics._validate_lens_contacts(root, {3: terminal})
+            path.unlink()
+            with self.assertRaises(ValueError):
+                diagnostics._validate_lens_contacts(root, {3: terminal})
+            self.assertEqual(diagnostics._validate_lens_contacts(root, {}), [])
 
 
 if __name__ == "__main__":

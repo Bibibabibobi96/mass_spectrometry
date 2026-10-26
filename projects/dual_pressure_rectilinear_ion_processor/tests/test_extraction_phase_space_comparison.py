@@ -5,6 +5,8 @@ import copy
 import csv
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,7 +16,7 @@ from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import
 from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
 
 from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import (
-    analyze_registered_study, export_comparison, build_comparison_figures, build_spatial_figures, factorial_effects, prepare_statistics, prepare_velocity_changes, validate_controlled_cases, prepare_spatial_crossings,
+    analyze_registered_study, export_comparison, build_comparison_figures, build_spatial_figures, factorial_effects, prepare_statistics, prepare_velocity_changes, validate_controlled_cases, prepare_spatial_crossings, prepare_spatial_crossings_from_samples,
 )
 
 
@@ -240,6 +242,121 @@ class ExtractionPhaseSpaceComparisonTests(unittest.TestCase):
         finally:
             for fig in figures.values():
                 plt.close(fig)
+
+
+def sample(pid: int, time: float, z: float, **updates: float) -> dict:
+    return dict(particle_id=pid, t_us=time, x_mm=2.0, y_mm=5.0, z_mm=z,
+                vx_mm_us=0.0, vy_mm_us=0.0, vz_mm_us=-1.0) | updates
+
+
+def case_fixture() -> dict:
+    return dict(
+        label="bounded-crossing",
+        config=dict(native_timing=dict(pulse_start_us=10.0),
+                    diagnostics=dict(max_extraction_bracket_us=0.5),
+                    source=dict(species=dict(mass_amu=524.0))),
+        sources={1: {}, 2: {}, 3: {}}, exits={},
+        terminals={1: {"reason": "acceptance_surface"},
+                   2: {"reason": "solver_stop"}, 3: {"reason": "timeout"}},
+    )
+
+
+class SpatialCrossingSamplesTests(unittest.TestCase):
+    def test_pure_module_import_does_not_load_workflow_or_plotting(self):
+        code = (
+            "import sys; "
+            "from projects.dual_pressure_rectilinear_ion_processor.analysis.spatial_crossings "
+            "import prepare_spatial_crossings_from_samples; "
+            "assert callable(prepare_spatial_crossings_from_samples); "
+            "assert 'projects.dual_pressure_rectilinear_ion_processor.analysis.functional' not in sys.modules; "
+            "assert 'matplotlib.pyplot' not in sys.modules"
+        )
+        subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[3],
+                       check=True, capture_output=True, text=True, timeout=30)
+
+    def test_file_wrapper_equals_pure_rows_without_mutating_inputs(self):
+        case = case_fixture()
+        rows = [sample(1, 9.75, 6), sample(1, 10, 4),
+                sample(2, 10, 4), sample(1, 10.5, 2, x_mm=6, vx_mm_us=2)]
+        case["exits"][1] = sample(1, 11, 0, x_mm=10, vx_mm_us=4)
+        planes = [5.0, 4.0, 3.0, 2.0, 1.0, 0.0]
+        before = copy.deepcopy((case, rows))
+        pure = prepare_spatial_crossings_from_samples(case, planes, enumerate(rows, start=2))
+        self.assertEqual((case, rows), before)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "simion" / "samples.csv"
+            path.parent.mkdir()
+            with path.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+            file_case = case | {"run": temporary, "source_records": [{"path": str(path)}]}
+            self.assertEqual(prepare_spatial_crossings(file_case, planes), pure)
+
+        middle = next(row for row in pure if row["particle_id"] == 1 and row["plane_z_mm"] == 3)
+        self.assertEqual((middle["t_us"], middle["x_mm"], middle["vx_mm_us"]), (10.25, 4, 1))
+        self.assertEqual((middle["lower_sample_line"], middle["upper_sample_line"]), (3, 5))
+        self.assertEqual(middle["theta_x_deg"], 45)
+        tail = next(row for row in pure if row["particle_id"] == 1 and row["plane_z_mm"] == 1)
+        self.assertEqual((tail["t_us"], tail["x_mm"]), (10.75, 8))
+        self.assertEqual(tail["method"], "bounded_sample_to_exit_event_crossing")
+        self.assertEqual(tail["lower_sample_line"], 5)
+        self.assertIsNone(tail["upper_sample_line"])
+        zero = next(row for row in pure if row["particle_id"] == 1 and row["plane_z_mm"] == 0)
+        self.assertEqual(zero["method"], "recorded_extraction_exit_event")
+        self.assertEqual((zero["t_us"], zero["vx_mm_us"]), (11, 4))
+        self.assertIsNone(zero["interpolation_alpha"])
+
+    def test_endpoints_are_inclusive_and_first_crossing_is_preserved(self):
+        rows = [(11, sample(1, 10, 4)), (17, sample(1, 10.5, 2)),
+                (23, sample(1, 10.75, 4, vz_mm_us=1)),
+                (29, sample(1, 11, 4)), (35, sample(1, 11.5, 2))]
+        result = prepare_spatial_crossings_from_samples(case_fixture(), [4, 2], iter(rows))
+        observed = [row for row in result if row["particle_id"] == 1]
+        self.assertEqual([row["interpolation_alpha"] for row in observed], [0, 1])
+        self.assertEqual([row["t_us"] for row in observed], [10, 10.5])
+        self.assertTrue(all((row["lower_sample_line"], row["upper_sample_line"]) == (11, 17)
+                            for row in observed))
+
+    def test_no_extrapolation_and_every_missing_mother_id_remains_explicit(self):
+        case = case_fixture()
+        rows = [(2, sample(1, 9.75, 6)), (3, sample(1, 10, 4)),
+                (4, sample(1, 10.5, 2)), (5, sample(2, 10, 4))]
+        result = prepare_spatial_crossings_from_samples(case, [5, 3, 1, 0], rows)
+        self.assertEqual([(row["plane_z_mm"], row["particle_id"]) for row in result],
+                         [(z, pid) for z in [5, 3, 1, 0] for pid in [1, 2, 3]])
+        self.assertEqual(sum(row["status"] == "alive" for row in result), 1)
+        empty = prepare_spatial_crossings_from_samples(case, [1, 0], iter(()))
+        self.assertEqual(len(empty), 6)
+        self.assertTrue(all(row["status"] == "unknown" for row in empty))
+        for row in result:
+            if row["status"] == "unknown":
+                self.assertEqual(row["reason"], "no_valid_recorded_crossing")
+                self.assertEqual(row["terminal_reason"], case["terminals"][row["particle_id"]]["reason"])
+                for key in ("t_us", "x_mm", "z_mm", "vz_mm_us", "method", "theta_x_deg", "total_energy_eV"):
+                    self.assertIsNone(row[key])
+
+    def test_long_gap_or_nonforward_endpoint_does_not_make_a_crossing(self):
+        for time, before_vz, after_vz in ((10.75, -1, -1), (10.5, 0, -1), (10.5, -1, 1)):
+            with self.subTest(time=time, before_vz=before_vz, after_vz=after_vz):
+                rows = [(2, sample(1, 10, 4, vz_mm_us=before_vz)),
+                        (3, sample(1, time, 2, vz_mm_us=after_vz))]
+                result = prepare_spatial_crossings_from_samples(case_fixture(), [3], rows)
+                self.assertTrue(all(row["status"] == "unknown" for row in result))
+
+    def test_equal_or_decreasing_per_particle_time_fails_despite_interleaving(self):
+        for time in (10.0, 10.25):
+            with self.subTest(time=time):
+                rows = [(2, sample(1, 10.25, 4)), (3, sample(2, 10.5, 4)),
+                        (4, sample(1, time, 2))]
+                with self.assertRaisesRegex(ValueError, "time not increasing for particle"):
+                    prepare_spatial_crossings_from_samples(case_fixture(), [3], rows)
+
+    def test_source_line_numbers_must_be_positive_integers(self):
+        for line in (0, -1, True, 2.0):
+            with self.subTest(line=line):
+                with self.assertRaisesRegex(ValueError, "source row number must be a positive integer"):
+                    prepare_spatial_crossings_from_samples(case_fixture(), [3], [(line, sample(1, 10, 4))])
 
 
 if __name__ == "__main__":

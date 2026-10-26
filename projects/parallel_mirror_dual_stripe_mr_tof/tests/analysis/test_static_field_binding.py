@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import (
-    ideal_sheet_projection, load_binding, validate_voltages,
+    ideal_sheet_projection, load_binding, validate_voltages, verify_joint_asset_records,
     _resolve_voltage_responses, validate_response_candidate, compile_sampling_request,
     compile_composition_plan, _load_materialized_response, _load_export,
     main as binding_main,
@@ -28,6 +28,40 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 class RecordLookupScopeTest(unittest.TestCase):
+    def test_actual_joint_payloads_are_verified_once_and_conflicts_or_drift_rejected(self):
+        from common.contracts.write_run_manifest import file_record
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import verify_joint_asset_records
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scalar, collision = root / "scalar.pa", root / "collision.pa"
+            surface = Path(str(collision) + "-surf")
+            for path in (scalar, collision, surface):
+                path.write_bytes(b"inert actual payload")
+            owner = root / "run_manifest.json"
+            owner.write_text(json.dumps(dict(status="success", outputs=[file_record(path) for path in (scalar, collision, surface)])))
+            level = dict(sources=dict(scalar_pa=str(scalar)), records=dict(scalar_pa=file_record(scalar), surface=None))
+            binding = dict(level, refinement_windows=[copy.deepcopy(level)], instances=[
+                dict(pa_path=str(scalar), manifest=str(owner), record=file_record(scalar)),
+                dict(pa_path=str(collision), manifest=str(owner), record=file_record(collision))])
+            binding["refinement_windows"].append(dict(sources=dict(surface=str(surface)),
+                records=dict(surface=file_record(surface))))
+            from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as module
+            with patch.object(module, "verify_record", wraps=module.verify_record) as verify:
+                verify_joint_asset_records(binding)
+            self.assertEqual(verify.call_count, 3)
+            self.assertEqual({Path(call.args[1]["path"]) for call in verify.call_args_list}, {scalar, collision, surface})
+            changed = copy.deepcopy(binding)
+            changed["instances"][0]["record"]["sha256"] = "F" * 64
+            with self.assertRaisesRegex(ValueError, "conflicting sealed identities"):
+                verify_joint_asset_records(changed)
+            changed = copy.deepcopy(binding)
+            changed["instances"][1]["pa_path"] = str(root / "foreign.pa")
+            with self.assertRaisesRegex(ValueError, "record path differs"):
+                verify_joint_asset_records(changed)
+            collision.write_bytes(b"INERT actual payload")
+            with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
+                verify_joint_asset_records(binding)
+
     def test_nested_load_indexes_manifest_once_and_rechecks_asset_size(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as module
         with tempfile.TemporaryDirectory() as directory:
@@ -94,6 +128,31 @@ class RecordLookupScopeTest(unittest.TestCase):
 
 class NativeAxisMaterializationTest(unittest.TestCase):
     """Real tiny ordinary PA blocks; no SIMION or PA-sized fixture allocations."""
+
+    def test_unretired_unused_response_pa_is_not_required_by_materialized_metadata(self):
+        from common.contracts.solver_review_retirement import RECEIPT_NAME
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider, _ = self.setup_bank(root)
+            path, plan = self.materialize(root, provider, self.base_path,
+                dict(p1=0., p2=0., s1=.1, s2=0.), "completed_materialization")
+            before = load_binding(path)
+            raw_basis = json.loads(Path(self.bases["s1"]).read_text())
+            unused_pa = Path(raw_basis["parent"]["pa_path"])
+            unused_pa.rename(unused_pa.with_name(unused_pa.name+".unavailable"))
+            self.assertFalse((unused_pa.parent / RECEIPT_NAME).exists())
+            self.assertEqual(load_binding(path), before)
+            # The live result is valid; selecting that missing basis for a new
+            # actual composition retains the original strict public boundary.
+            verify_joint_asset_records(load_binding(path))
+            with self.assertRaises((ValueError, AssertionError)):
+                load_native_response_basis(Path(self.bases["s1"]), load_binding(self.base_path))
+            output_payload = Path(before["sources"]["scalar_pa"])
+            original = output_payload.read_bytes()
+            with self.assertRaises((ValueError, AssertionError)):
+                provider.compose_run(plan, path.parents[1])
+            self.assertEqual(output_payload.read_bytes(), original)
 
     def test_center_storage_view_roundtrip_and_composition_preserve_collision(self):
         import numpy as np
@@ -644,6 +703,29 @@ class NativeAxisMaterializationTest(unittest.TestCase):
 
 
 class NativeStaticBindingTest(unittest.TestCase):
+    def test_skipped_point_is_explicit_boolean_identity_and_cannot_reuse_other_strategy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            contract_path = Path(directory)/"numerical.json"
+            for flag in (None, False, True):
+                refine = dict(convergence_v=1e-5)
+                if flag is not None:
+                    refine["skipped_point"] = flag
+                contract = {"simion": {"numerical_profiles": {"native_static_field": {"refine": refine}}}}
+                expected = resolve_native_refine_numerics(contract)
+                self.assertEqual("refine_skipped_point" in expected, flag is not None)
+                contract_path.write_text(json.dumps(contract))
+                for actual in (None, False, True, 0):
+                    numerics = dict(refine_stopping="contract_convergence", convergence_v=1e-5)
+                    if actual is not None:
+                        numerics["refine_skipped_point"] = actual
+                    binding = dict(mode="native_static_pa", native_solver_numerics=numerics,
+                                   refinement_windows=[dict(native_solver_numerics=numerics)])
+                    self.assertEqual(native_numerics_match(binding, contract_path), actual is flag)
+            for invalid in (None, 0, 1, "false", [], {}):
+                contract["simion"]["numerical_profiles"]["native_static_field"]["refine"]["skipped_point"] = invalid
+                with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "Boolean"):
+                    resolve_native_refine_numerics(contract)
+
     def test_contract_stopping_loads_and_matches_all_levels_without_weakening_guards(self):
         for mutation in (None, "local_default", "value", "unsealed", "digest", "extra"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
@@ -741,8 +823,9 @@ class NativeStaticBindingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'sealed surface record'):
                 _load_native_level(spec)
             spec['surface_path'] = str(sidecar)
-            with self.assertRaisesRegex(ValueError, 'missing or changed size'):
-                _load_native_level(spec)
+            metadata = _load_native_level(spec)
+            with self.assertRaises((ValueError, AssertionError)):
+                verify_joint_asset_records(metadata)
             seal(summary)
             spec['surface_path'] = None
             (root/'summary.json').write_text('{}', encoding='utf-8')
@@ -838,8 +921,9 @@ class NativeStaticBindingTest(unittest.TestCase):
             seal()
             self.assertEqual(_load_native_level(spec)['sources']['surface'], str(sidecar.resolve()))
             sidecar.unlink()
-            with self.assertRaisesRegex(ValueError, 'missing or changed size'):
-                _load_native_level(spec)
+            metadata = _load_native_level(spec)
+            with self.assertRaises((ValueError, AssertionError)):
+                verify_joint_asset_records(metadata)
 
     def test_native_factories_reuse_matching_open_pa_container_userdata(self):
         lua = Path(os.environ.get("ProgramFiles", "C:/Program Files"))/"SIMION-2020/lua.exe"
@@ -1113,7 +1197,7 @@ print('NATIVE_STATIC_QUERY_PASS')
                      "geometry.json": json.dumps(geometry).encode(), "plan.json": json.dumps(plan).encode()}
             for filename, content in files.items():
                 (directory/filename).write_bytes(content)
-            records = [{"path": str(directory/f), "bytes": len(content), "sha256": "sealed"}
+            records = [{"path": str(directory/f), "bytes": len(content), "sha256": hashlib.sha256(content).hexdigest().upper()}
                        for f, content in files.items()]
             manifest = directory/"run_manifest.json"
             manifest.write_text(json.dumps({"status": "success", "outputs": records}))
@@ -1256,7 +1340,12 @@ print('NATIVE_STATIC_QUERY_PASS')
                         if record["path"] == str(p): record["bytes"] = p.stat().st_size
                     manifest.write_text(json.dumps(records))
                 path = root/"binding.json"; path.write_text(json.dumps(d))
-                with self.assertRaises(ValueError): load_binding(path)
+                if mutation == "surface":
+                    metadata = load_binding(path)
+                    with self.assertRaises((ValueError, AssertionError)):
+                        verify_joint_asset_records(metadata)
+                else:
+                    with self.assertRaises(ValueError): load_binding(path)
 
 
 class NativeCollisionReferenceTest(unittest.TestCase):
@@ -2735,7 +2824,7 @@ print('SHEET_MARKER_FIXTURE_PASS')
             self.assertIn("SHEET_MARKER_FIXTURE_PASS", completed.stdout)
 
     def test_static_runner_has_no_capacity_warning_override(self) -> None:
-        runner = Path(__file__).resolve().parents[2] / "simion" / "run_two_prism_trial.ps1"
+        runner = REPO_ROOT / "integrations/workflows/oa_mr/execute.ps1"
         self.assertNotIn("CapacityThresholdAction", runner.read_text(encoding="utf-8"))
 
     def setUp(self) -> None:
@@ -2789,12 +2878,91 @@ print('SHEET_MARKER_FIXTURE_PASS')
 class IonProcessorNativeBindingTest(unittest.TestCase):
     """Small sealed field/receipt fixtures; no native solver qualification."""
 
+    def frozen_unused_hint(self, root):
+        descriptor, path, owner = self.fixture(root)
+        inputs = owner.parent / "inputs"
+        inputs.mkdir(exist_ok=True)
+        hint = inputs / "source_binding.json"
+        parent_plan = Path(descriptor["parent"]["numerical_plan_path"])
+        plan = json.loads(parent_plan.read_text())
+        plan["ip_source_binding_path"] = str(hint)
+        parent_plan.write_text(json.dumps(plan), encoding="utf-8")
+        assembly = json.loads(Path(descriptor["parent"]["voltage_authority_path"]).read_text())["assembly"]
+        request = dict(schema_version=1, role="mrtof_native_static_field_provider_request", run_id=owner.parent.name,
+            replacement_assembly_path=descriptor["replacement_assembly"]["path"],
+            replacement_assembly_manifest=assembly["replacement_assembly_manifest"]["path"],
+            numerical_contract_path=str(root / "numerical.json"), ion_processor_local_grid={},
+            surface_allowance_bytes_per_level=1024)
+        full = dict(schema_version=1, role="mrtof_native_static_field_provider_plan", run_id=owner.parent.name,
+            project="parallel_mirror_dual_stripe_mr_tof", operation="refine",
+            inputs=dict(replacement_assembly=request["replacement_assembly_path"]),
+            levels=dict(parent={}), **{key: descriptor[key] for key in
+                ("accelerator_provider", "assembly_scope", "replacement_assembly")})
+        for name, value in (("request", request), ("plan", full)):
+            (inputs / (name + ".json")).write_text(json.dumps(value), encoding="utf-8")
+        self.seal(root, owner)
+        return descriptor, path, owner, hint
+
+    def test_sealed_full_fresh_unused_hint_does_not_require_a_nonconsumed_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            descriptor, path, owner, hint = self.frozen_unused_hint(root)
+            before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            binding = load_binding(path)
+            self.assertFalse(hint.exists())
+            self.assertEqual(binding["manifest"], str(owner))
+            self.assertEqual([(item["role"], item["pa_path"], item["origin_mm"]) for item in binding["instances"]],
+                             [(item["role"], item["pa_path"], item["origin_mm"]) for item in descriptor["instances"]])
+            self.assertEqual(before, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
+    def test_unused_hint_recovery_requires_sealed_fresh_origin_and_never_ignores_a_real_source(self):
+        cases = ("missing_origin", "unsealed_request", "changed_request", "changed_plan", "derived", "response",
+                 "reuse", "materialized", "false_refine", "source_input", "source_record", "foreign_hint",
+                 "source_exists", "source_sealed_missing", "wrong_run", "wrong_scope", "assembly", "assembly_owner")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                descriptor, path, owner, hint = self.frozen_unused_hint(root)
+                request_path, full_path = owner.parent / "inputs/request.json", owner.parent / "inputs/plan.json"
+                request, full = json.loads(request_path.read_text()), json.loads(full_path.read_text())
+                if case == "derived": full["operation"] = "compose"
+                elif case == "response": full["response_basis"] = {}
+                elif case == "reuse": full["levels"]["parent"]["reuse_source"] = {}
+                elif case == "materialized": full["materialization_manifest"] = "other.json"
+                elif case == "false_refine": full["levels"]["parent"]["refine_performed"] = False
+                elif case == "source_input": full["inputs"]["source_binding"] = str(hint)
+                elif case == "source_record": full["source_binding_record"] = {}
+                elif case == "wrong_run": request["run_id"] = full["run_id"] = "other"
+                elif case == "wrong_scope": full["assembly_scope"] = "other"
+                elif case == "assembly": request["replacement_assembly_path"] = "other.json"
+                elif case == "assembly_owner": request["replacement_assembly_manifest"] = "other.json"
+                elif case == "foreign_hint":
+                    target = Path(descriptor["parent"]["numerical_plan_path"])
+                    value = json.loads(target.read_text()); value["ip_source_binding_path"] = str(root / "foreign.json")
+                    target.write_text(json.dumps(value), encoding="utf-8")
+                elif case in {"source_exists", "source_sealed_missing"}: hint.write_bytes(b"{}")
+                request_path.write_text(json.dumps(request), encoding="utf-8")
+                full_path.write_text(json.dumps(full), encoding="utf-8")
+                self.seal(root, owner)
+                if case == "missing_origin": request_path.unlink()
+                elif case == "source_sealed_missing": hint.unlink()
+                elif case in {"changed_request", "changed_plan"}:
+                    target = request_path if case == "changed_request" else full_path
+                    target.write_bytes(target.read_bytes() + b" ")
+                elif case == "unsealed_request":
+                    manifest = json.loads(owner.read_text())
+                    manifest["outputs"] = [r for r in manifest["outputs"] if Path(r["path"]) != request_path]
+                    owner.write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaises((ValueError, AssertionError, KeyError)):
+                    load_binding(path)
+
     def fixture(self, root, *, detector_box=None):
         descriptor = NativeStaticBindingTest().fixture(root)
         parent, fine = descriptor["parent"], descriptor["refinement_windows"][0]
         owner = Path(parent["manifest"])
         fine.update(name="ion_processor_local", manifest=str(owner), parent_manifest=str(owner))
-        geometry = {"frame_id":"mr_test", "detector":{"box":[] if detector_box is None else detector_box}, "ion_processor_electrodes":[]}
+        geometry = {"frame_id":"mr_test", "detector":{"box":[] if detector_box is None else detector_box},
+                    "ion_processor_electrodes":[]}
         registration = {"to_frame_id":"mr_test", "rotation":[[0,0,-1],[1,0,0],[0,-1,0]], "translation_mm":[0,-225,9.8]}
         point = {"lift_v":4480.0}
         point_path = root/"point.json";point_path.write_text(json.dumps(point))
@@ -2812,7 +2980,8 @@ class IonProcessorNativeBindingTest(unittest.TestCase):
         design_owner.write_text(json.dumps(dict(status="success",outputs=[self.record(p) for p in (receipt_path,point_path,geometry_path)])))
         provider="dual_pressure_rectilinear_ion_processor";scope="full_c0_ion_processor_replacement"
         assembly = dict(accelerator_provider=provider,assembly_scope=scope,detector=geometry["detector"],
-            ion_processor_registration=registration,ion_processor_electrodes=[],post_extraction_state="pulse_held_rf_zero",
+            ion_processor_registration=registration,
+            ion_processor_electrodes=[],post_extraction_state="pulse_held_rf_zero",
             replacement_assembly=receipt_record,replacement_assembly_manifest=self.record(design_owner),native_operating_point=point)
         authority=dict(analyzer_electrode_voltages_v=[0.]*20,assembly=assembly,
             component_voltages_v=[dict(component_namespace="ion_processor",component_electrode_id=i+1,voltage_v=i) for i in range(15)]+[dict(component_namespace="detector",component_electrode_id=25,voltage_v=0)])
@@ -2859,6 +3028,16 @@ class IonProcessorNativeBindingTest(unittest.TestCase):
                 else:descriptor["instances"][2]["manifest"]=descriptor["refinement_windows"][0]["numerical_plan_path"]
                 path.write_text(json.dumps(descriptor))
                 with self.assertRaises((ValueError,KeyError)):load_binding(path)
+
+    def test_sealed_ip_physics_does_not_require_consumer_instance_or_parent_plan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, path, _ = self.fixture(root)
+            self.assertNotIn("composition_plan", json.loads((root / "replacement.json").read_text()))
+            loaded = load_binding(path)
+            self.assertNotIn("ion_processor_instance_id", loaded["geometry"])
+            self.assertNotIn("ion_processor_instance_id", loaded["authority"]["assembly"])
+            self.assertEqual(loaded["authority"]["assembly"]["ion_processor_registration"]["translation_mm"], [0, -225, 9.8])
 
     def test_ip_metadata_identity_frame_and_voltage_fail_closed(self):
         for mutation in ("unsealed_receipt","frame","voltage","old_oa","geometry","point"):
@@ -2945,12 +3124,15 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
             helper, banks, extended, request = fixture.chain(root)
         return fixture, helper, banks, extended, request
 
-    def retire(self, root):
+    def retire(self, root, name="source", *, full_owner=False):
         from common.contracts.solver_review_retirement import RECEIPT_NAME, verify_retirement
         from common.contracts.artifact_retention import classify_file
-        source = root / "source"
+        source = root / name
         owner = source / "run_manifest.json"
-        descriptor = json.loads((source / "results/field_binding.json").read_text())
+        declaration = source / "results/field_binding.json"
+        if not declaration.exists():
+            declaration = source / "results/response_basis.json"
+        descriptor = json.loads(declaration.read_text())
         manifest = json.loads(owner.read_text())
         targets = {Path(level[key]).resolve() for level in [descriptor["parent"], *descriptor["refinement_windows"]]
                    for key in ("pa_path", "surface_path")}
@@ -2967,7 +3149,9 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
             owner_abandonment_reason="Superseded scalar operator; retain occupied geometry and all small evidence.",
             replacement_run_id=None, target_manifest=IonProcessorNativeBindingTest.record(owner),
             removed_files=removed, preserved_files=preserved, removed_bytes=sum(r["bytes"] for r in removed),
-            selected_heavy_paths=sorted(r["path"] for r in removed), original_file_inventory=removed + preserved)
+            selected_heavy_paths=None if full_owner else sorted(r["path"] for r in removed), original_file_inventory=removed + preserved)
+        if full_owner:
+            receipt.pop("selected_heavy_paths")
         receipt_path = source / RECEIPT_NAME
         receipt_path.write_text(json.dumps(receipt))
         for path in targets:
@@ -2997,13 +3181,17 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
             with self.assertRaises((ValueError, AssertionError)):
                 load_binding(extended)
             frozen.write_bytes(frozen_bytes)
-            with self.assertRaises(ValueError):
-                load_binding(root / "source/results/field_binding.json")
-            with self.assertRaises(ValueError):
-                provider.compile_request(dict(schema_version=1, role=provider.ROLE, response_axis="p1",
-                    source_binding_path=str(root / "source/results/field_binding.json"),
-                    source_field_manifest=str(root / "source/run_manifest.json"),
-                    numerical_contract_path=request["numerical_contract_path"]))
+            # Retired payloads do not invalidate their frozen metadata or a
+            # fresh rebuild plan; actual native use still requires the files.
+            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import verify_joint_asset_records
+            retired_source = load_binding(root / "source/results/field_binding.json")
+            with self.assertRaisesRegex(AssertionError, "missing"):
+                verify_joint_asset_records(retired_source)
+            rebuild = provider.compile_request(dict(schema_version=1, role=provider.ROLE, response_axis="p1",
+                source_binding_path=str(root / "source/results/field_binding.json"),
+                source_field_manifest=str(root / "source/run_manifest.json"),
+                numerical_contract_path=request["numerical_contract_path"]))
+            self.assertEqual(rebuild["operation"], "refine")
             new_banks = {}
             for axis in ("p1", "p2"):
                 plan = provider.compile_request(dict(schema_version=1, role=provider.ROLE, response_axis=axis,
@@ -3032,16 +3220,88 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
             current = Path(source["sources"]["scalar_pa"])
             content = current.read_bytes()
             current.unlink()
-            with self.assertRaises(ValueError):
-                load_binding(extended)
+            self.assertEqual(load_binding(extended)["authority"], source["authority"])
+            with self.assertRaisesRegex(AssertionError, "missing"):
+                provider.compose_run(plan, output)
             current.write_bytes(content)
             current.write_bytes(content + b"changed")
-            with self.assertRaises(ValueError):
-                load_binding(extended)
+            self.assertEqual(load_binding(extended)["authority"], source["authority"])
+            with self.assertRaisesRegex(AssertionError, "byte count changed"):
+                provider.compose_run(plan, output)
             current.write_bytes(content)
             receipt_path.write_text(receipt_path.read_text() + " ")
             with self.assertRaises((ValueError, AssertionError)):
                 load_binding(path)
+
+    def test_materialized_field_reads_retired_mixed_owner_and_pure_response_ancestry_only(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_native_response_basis
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_native_static_field_provider as fixtures
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import (
+            IonProcessorNativeBindingTest as FixtureBindingTest,
+        )
+        # Discovery imports this test as a flat module; the provider fixture
+        # creates its helper through the qualified import. Patch that owner.
+        original_seal = FixtureBindingTest.seal
+
+        def historical_seal(helper, root, owner):
+            # Freeze normal terminal metadata before downstream children bind it.
+            retention = dict(policy_version=1, **{"class": "solver_review"}, reason="Tiny lineage fixture")
+            (root / "run_config.json").write_text(json.dumps(dict(run_id=root.name,
+                project="parallel_mirror_dual_stripe_mr_tof", formal_gate_passed=False, artifact_retention=retention)))
+            (root / "summary.json").write_text(json.dumps(dict(status="success")))
+            original_seal(helper, root, owner)
+            manifest = json.loads(owner.read_text())
+            for record in manifest["outputs"]:
+                record["exists"] = True
+            manifest.update(run_id=root.name, formal_eligible=False, artifact_retention=retention,
+                run_config=dict(helper.record(root / "run_config.json"), exists=True))
+            owner.write_text(json.dumps(manifest))
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                FixtureBindingTest, "seal", historical_seal):
+            root = Path(directory)
+            fixture, helper, banks, extended, request = self.chain(root)
+            source = load_binding(extended)
+            responses = {}
+            for axis in ("p1", "p2"):
+                plan = provider.compile_request(dict(schema_version=1, role=provider.ROLE, response_axis=axis,
+                    source_binding_path=str(extended), source_field_manifest=source["descriptor_owner"],
+                    numerical_contract_path=request["numerical_contract_path"],
+                    reuse_source_levels=["parent", "window_1", "window_2", "window_3"],
+                    reuse_response_basis_path=str(banks[axis])))
+                responses[axis] = str(fixture.full_fields(root / ("extended_" + axis), plan, helper))
+            plan = provider.compile_request(dict(schema_version=1, role=provider.ROLE,
+                source_binding_path=str(extended), source_field_manifest=source["descriptor_owner"],
+                numerical_contract_path=request["numerical_contract_path"],
+                candidate_voltages_v=dict(s1=0., s2=0., p1=350., p2=-5.), response_basis_paths=responses))
+            output = root / "live_final"
+            fixtures.IonProcessorResponseProviderTest.freeze(self, output, plan)
+            provider.compose_run(plan, output)
+            live = fixtures.IonProcessorResponseProviderTest.publish(self, helper, output, plan)
+            self.bind_original_inputs(output, plan, helper)
+            before = load_binding(live)
+            self.retire(root, "candidate", full_owner=True)
+            self.retire(root, "p1", full_owner=True)
+            after = load_binding(live)
+            self.assertEqual(after["authority"], before["authority"])
+            self.assertEqual(after["sources"], before["sources"])
+            self.assertEqual(len(after["operator_ancestry_projections"]), 2)
+            self.assertTrue(all(not p["usable_as_field_source"] for p in after["operator_ancestry_projections"]))
+            retired_metadata = load_binding(root / "candidate/results/field_binding.json")
+            with self.assertRaises((ValueError, AssertionError)):
+                verify_joint_asset_records(retired_metadata)
+            # A basis retaining four retired PA levels cannot be used to compose
+            # another field, even though its metadata proves an existing result.
+            with self.assertRaises(ValueError):
+                load_native_response_basis(Path(responses["p1"]), source)
+            with self.assertRaises(ValueError):
+                load_native_response_basis(banks["p1"], source)
+            payload = Path(after["sources"]["scalar_pa"])
+            payload.unlink()
+            metadata = load_binding(live)
+            with self.assertRaises((ValueError, AssertionError)):
+                verify_joint_asset_records(metadata)
 
     def test_resealed_semantically_changed_copy_and_unowned_clone_are_rejected(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import _load_operator_ancestry
@@ -3080,7 +3340,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
             _, _, _, extended, _ = self.chain(root)
             receipt_path, receipt = self.retire(root)
             mutations = ("incomplete", "wrong_target", "wrong_manifest", "wrong_manifest_bytes", "wrong_bytes",
-                         "wrong_sha", "extra_path", "unpaired", "missing_selection")
+                         "wrong_sha", "extra_path", "unpaired", "wrong_selection")
             for mutation in mutations:
                 changed = copy.deepcopy(receipt)
                 if mutation == "incomplete":
@@ -3097,8 +3357,8 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
                     changed["removed_files"][0]["sha256"] = "0" * 64
                 elif mutation == "extra_path":
                     changed["removed_files"].append(dict(changed["removed_files"][0], path="unrelated.pa"))
-                elif mutation == "missing_selection":
-                    changed.pop("selected_heavy_paths")
+                elif mutation == "wrong_selection":
+                    changed["selected_heavy_paths"] = ["unrelated.pa"]
                 else:
                     changed["removed_files"].pop()
                 receipt_path.write_text(json.dumps(changed))
@@ -3109,6 +3369,35 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
             small.write_text(small.read_text() + " ")
             with self.assertRaises((ValueError, AssertionError, RetirementError)):
                 load_binding(extended)
+
+    def test_retired_metadata_does_not_consume_unrelated_preserved_native_payload(self):
+        from common.contracts.write_run_manifest import file_record
+        from common.contracts.solver_review_retirement import RetirementError, verify_retirement
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, _, _, extended, _ = self.chain(root)
+            unrelated = root / "source/unrelated.pa"
+            unrelated.write_bytes(b"unrelated historical retained payload")
+            owner = root / "source/run_manifest.json"
+            manifest = json.loads(owner.read_text())
+            manifest["outputs"].append(file_record(unrelated))
+            owner.write_text(json.dumps(manifest))
+            self.retire(root)
+            unrelated.write_bytes(b"drifted historical retained payload")
+            with self.assertRaises(RetirementError):
+                verify_retirement(root / "source")
+            result = load_binding(extended)
+            self.assertEqual(result["mode"], "native_static_pa")
+            consumed = result["operator_ancestry_projections"][0]["consumed_records"]
+            self.assertNotIn(str(unrelated.resolve()), consumed)
+            live = Path(next(item["pa_path"] for item in result["instances"] if item["role"] == "native_corridor"))
+            original = live.read_bytes()
+            live.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+            # Metadata parsing is not a second payload authorization boundary.
+            parsed = load_binding(extended)
+            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import verify_joint_asset_records
+            with self.assertRaisesRegex(AssertionError, "live joint field asset SHA-256 changed"):
+                verify_joint_asset_records(parsed)
 
 
 if __name__ == "__main__":

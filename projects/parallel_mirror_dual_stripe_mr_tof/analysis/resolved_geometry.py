@@ -28,6 +28,9 @@ from projects.orthogonal_accelerator.simion.two_zone_candidate import (
 )
 
 
+CENTRAL_GROUND_ELECTRODE_ID = 15
+
+
 @dataclass(frozen=True)
 class Box:
     """Axis-aligned physical box in the documented project frame, in mm."""
@@ -1464,7 +1467,7 @@ def geometry_receipt(contract: dict[str, Any]) -> dict[str, Any]:
         "electrode_ids": {
             "mirrors": mirror_ids,
             "stripes": stripe_ids,
-            "central_ground": [15],
+            "central_ground": [CENTRAL_GROUND_ELECTRODE_ID],
             "prisms": [16, 17],
             "prism_ground_shields": [18, 20],
             "detector": [25],

@@ -84,7 +84,10 @@ try{
 }catch{
     $failure=$_.Exception.Message;throw
 }finally{
-    if($process -and -not $process.HasExited){$process.Kill($true);$process.WaitForExit()}
+    if($process -and -not $process.HasExited){
+        Write-Warning 'Field provider has not reported a native failure after parent exit; awaiting natural completion before finalization.'
+        $process.WaitForExit()
+    }
     $watch.Stop()
     @{outcome=$outcome;failure_message=$failure;wall_seconds=$watch.Elapsed.TotalSeconds;peak_managed_memory_bytes=$peak;resource_threshold_action='warn';resource_warnings=$warnings} |
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $inputs 'provider_usage.json') -Encoding utf8

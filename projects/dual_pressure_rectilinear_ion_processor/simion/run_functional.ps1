@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$RunId,[string]$SimionExe='',[string]$NativeFieldRun='',
- [string]$ConfigurationDirectory='',
+ [string]$ConfigurationDirectory='',[string]$InjectedSource='',
  [ValidateSet('functional','exploration')][string]$SourceProfile='functional')
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -61,6 +61,20 @@ function Complete-IonProcessorNativeFlightGuards {
  }
  if($errors.Count){throw ($errors -join '; ')}
 }
+function Wait-IonProcessorExistingFormalProcesses {
+ param([object[]]$ProcessRecords)
+ # An error after the observation window must not turn a healthy first formal
+ # worker into an interrupted run.  It owns its native output and finishes
+ # naturally; this runner merely waits before it publishes the enclosing
+ # failed run.
+ foreach($record in $ProcessRecords){
+  if(-not$record.active){continue}
+  $record.process.WaitForExit()
+  $record.active=$false;$record.completed=$true
+  $record.exit_code=$(if($record.pressure_terminated){$null}else{[int]$record.process.ExitCode})
+  $record.process.Dispose()
+ }
+}
 $projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
@@ -89,13 +103,14 @@ $capacity=$null;$package=$null;$lease=$null;$finished=$false;$runSucceeded=$fals
 $savedPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$repoRoot
 Push-Location $repoRoot
 try {
- $protected=@($configurationRoot);if($NativeFieldRun){$NativeFieldRun=(Resolve-Path -LiteralPath $NativeFieldRun).Path;$protected+=@($NativeFieldRun)}
+ $protected=@($configurationRoot);if($InjectedSource){$InjectedSource=(Resolve-Path -LiteralPath $InjectedSource).Path;$protected+=@(Split-Path -Parent $InjectedSource)};if($NativeFieldRun){$NativeFieldRun=(Resolve-Path -LiteralPath $NativeFieldRun).Path;$protected+=@($NativeFieldRun)}
  $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifacts -RunDirectory (Join-Path $projectArtifacts "runs/$RunId") -CommittedNewBytes $committedNewBytes -ProtectedPaths $protected
  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts -RunId $RunId -Project dual_pressure_rectilinear_ion_processor -Mode native_electrode_functional -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass $profile.retention_class -RetentionReason $profile.retention_reason -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion')
  $run=$package.run_dir;$solver=Join-Path $run 'simion'
  $prepareArguments=@('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','prepare','--run',$run,'--simion-dir',(Split-Path -Parent $SimionExe),'--source-profile',$SourceProfile)
  if($ConfigurationDirectory){$prepareArguments+=@('--configuration-directory',$configurationRoot)}
  if($NativeFieldRun){$prepareArguments+=@('--native-field-run',$NativeFieldRun)}
+ if($InjectedSource){$prepareArguments+=@('--injected-source',$InjectedSource)}
  & $python @prepareArguments
  if($LASTEXITCODE-ne0){throw 'Input preparation failed'}
  Copy-VerifiedRunInput (Join-Path $projectRoot 'config/execution_profiles.json') (Join-Path $package.input_dir 'execution_profiles.json')|Out-Null
@@ -103,6 +118,14 @@ try {
  $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
  $config.inputs.execution_profiles=Join-Path $package.input_dir 'execution_profiles.json'
  Write-RunJson -Path $package.run_config -Value $config
+ $resolvedSource=(Get-Content (Join-Path $package.input_dir 'resolved_model.json') -Raw|ConvertFrom-Json).source
+ if($InjectedSource-and$resolvedSource.particle_count-eq0){
+  & $python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional analyze --run $run
+  if($LASTEXITCODE-ne0){throw 'Empty upstream admission publication failed'}
+  $finished=$true;$runSucceeded=$true
+  Write-Output "ION_PROCESSOR_RESULT=empty_upstream_admission RUN=$run SOLVER_EXECUTED=false"
+  return
+ }
  $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare
  $numerics=Get-Content (Join-Path $package.input_dir 'numerics.json') -Raw|ConvertFrom-Json
  $commands=@(
@@ -191,7 +214,7 @@ try {
    $wave=Invoke-ResourceBudgetedProcesses -DispatchPlanPath $dispatchPath -RunDir $run -UsagePath $usagePath -ProcessSpecifications $pending -ExistingProcessRecords $existingRecords
    if($wave.resource_budget_exceeded-or@($wave.processes|Where-Object{[int]$_.exit_code-ne0}).Count){throw 'Native particle dispatch failed or exceeded public resources'}
   } catch {
-   foreach($record in $existingRecords){if($record.active-and-not$record.process.HasExited){Stop-ManagedSolverProcesses -ProcessIds @([int]$record.root_process_id)}}
+   Wait-IonProcessorExistingFormalProcesses -ProcessRecords $existingRecords
    throw
   }
   Complete-ResourceUsage -RunDir $run -UsagePath $usagePath|Out-Null

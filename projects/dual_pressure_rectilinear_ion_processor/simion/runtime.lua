@@ -2,6 +2,7 @@
 simion.workbench_program()
 local program_file=debug.getinfo(1,'S').source:sub(2)
 local directory=program_file:match('^(.*[/\\])') or './'
+local waveforms=assert(loadfile(directory..'voltage_waveforms.lua'))()
 local c=assert(loadfile(directory..'frozen_config.lua'))()
 local b,n,g=c.baseline,c.numerics,c.baseline.geometry
 local timing=assert(c.native_timing,'frozen native timing required')
@@ -35,6 +36,13 @@ local source=assert(loadfile(directory..'source_states.lua'))()
 assert(n.collision_rng_policy=='per_global_particle_seed_v1','unsupported collision RNG policy')
 local batch=c.execution_batch
 local id_offset=batch and batch.particle_id_offset or 0
+local original_ids=c.injected_source and (batch and batch.global_particle_ids or c.injected_source.particle_ids)
+local function global_particle_id(local_id)
+ return original_ids and assert(original_ids[local_id],'missing original upstream ID') or id_offset+local_id
+end
+local function output_particle_id(local_id)
+ return original_ids and global_particle_id(local_id) or local_id
+end
 assert(type(id_offset)=='number' and id_offset>=0 and id_offset==math.floor(id_offset),'invalid particle ID offset')
 assert(id_offset+#source<=c.source.particle_count,'batch exceeds canonical population')
 if batch then
@@ -45,7 +53,13 @@ else assert(#source==c.source.particle_count,'master source must contain the ful
 -- Conservative project integer contract, not a claimed vendor RNG limit.
 assert(type(n.seed)=='number' and n.seed==math.floor(n.seed) and n.seed>=1 and
  n.seed+c.source.particle_count-1<=2147483646,'invalid per-particle seed range')
-local drive=assert(loadfile(directory..'native_drive.lua'))()
+if original_ids then
+ assert(#original_ids==#source,'upstream identity map differs from actual source')
+ for _,id in ipairs(original_ids) do
+  assert(id>=1 and id==math.floor(id) and n.seed+id-1<=2147483646,'invalid original upstream particle seed')
+ end
+end
+local drive=assert(loadfile(directory..'native_drive.lua'))(waveforms)
 local force_module=assert(loadfile(directory..'extraction_force_audit.lua'))()
 local rf=assert(loadfile(directory..'simion_rf_drive.lua'))().new{
  waveform='cosine',frequency_hz=b.electric.rf_frequency_hz,
@@ -146,7 +160,7 @@ end
 local function write_state(event,reason,state)
  state=world_state(state)
  events:write(string.format('%s,%d,%s,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n',
-  event,ion_number,reason or 'none',state.t,state.x,state.y,state.z,state.vx,state.vy,state.vz))
+  event,output_particle_id(ion_number),reason or 'none',state.t,state.x,state.y,state.z,state.vx,state.vy,state.vz))
 end
 local function now()
  local x,y,z=local_position(ion_px_mm,ion_py_mm,ion_pz_mm)
@@ -210,10 +224,10 @@ local function activate_collision_particle()
  -- First integration callback: source creation and all initialize callbacks
  -- have finished. Reset HS1 private state, then seed AFTER its own init seeding.
  reset_collision_module(false)
- local global_id=id_offset+ion_number
+ local global_id=global_particle_id(ion_number)
  local particle_seed=n.seed+global_id-1
  seed(particle_seed)
- rng_audit:write(string.format('%d,%d,%d\n',ion_number,global_id,particle_seed))
+ rng_audit:write(string.format('%d,%d,%d\n',output_particle_id(ion_number),global_id,particle_seed))
  active_particle=ion_number
 end
 function segment.fast_adjust()
@@ -235,21 +249,21 @@ function segment.tstep_adjust()
  end
  local t=ion_time_of_flight
  for _,point in ipairs(checkpoints) do
-  if point[1]>t then ion_time_step=math.min(ion_time_step,point[1]-t) end
+  if point[1]>t then ion_time_step=waveforms.cap_before_edge(t,ion_time_step,point[1]) end
  end
  if b.schedule.lift_end_us>t then
-  ion_time_step=math.min(ion_time_step,b.schedule.lift_end_us-t)
+  ion_time_step=waveforms.cap_before_edge(t,ion_time_step,b.schedule.lift_end_us)
  end
  local pulse_start=drive.pulse_start_us(c)
- if pulse_start>t then ion_time_step=math.min(ion_time_step,pulse_start-t) end
+ if pulse_start>t then ion_time_step=waveforms.cap_before_edge(t,ion_time_step,pulse_start) end
  if b.schedule.terminal_us>t then
-  ion_time_step=math.min(ion_time_step,b.schedule.terminal_us-t)
+  ion_time_step=waveforms.cap_before_edge(t,ion_time_step,b.schedule.terminal_us)
  end
 end
 function segment.other_actions()
  local id=ion_number
  if not seen[id] then
-  emit('source',assert(source[id]));previous[id]=now();next_sample[id]=0
+  emit('source',assert(source[id]));previous[id]=now();next_sample[id]=source[id].t
  end
  if done[id] then return end
  activate_collision_particle()
@@ -259,14 +273,14 @@ function segment.other_actions()
  end
  hs.segment.other_actions()
  local s=now()
- if force_pre then force_audit:observe(id,force_pre,world_state(s),force_pressure) end
+ if force_pre then force_audit:observe(output_particle_id(id),force_pre,world_state(s),force_pressure) end
  if s.t>=timing.primary_quench_us and not extraction_trace[id] then
   extraction_trace[id]=true
   next_sample[id]=math.min(next_sample[id],timing.primary_quench_us)
  end
  if s.t>=next_sample[id] then
   local output=world_state(s)
-  trace:write(string.format('%d,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n',id,output.t,output.x,output.y,output.z,output.vx,output.vy,output.vz))
+  trace:write(string.format('%d,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n',output_particle_id(id),output.t,output.x,output.y,output.z,output.vx,output.vy,output.vz))
   local interval=extraction_trace[id] and n.extraction_sample_interval_us or n.sample_interval_us
   next_sample[id]=s.t+interval
  end

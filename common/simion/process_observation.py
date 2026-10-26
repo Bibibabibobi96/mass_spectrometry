@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import ctypes
 import os
+import signal
 import subprocess
 import time
+import warnings
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Literal, Mapping, Sequence
+
+
+HardDeadlineAction = Literal["terminate_process_tree"]
 
 
 def process_working_set_bytes(process_id: int) -> int | None:
@@ -43,37 +48,88 @@ def process_working_set_bytes(process_id: int) -> int | None:
         ctypes.windll.kernel32.CloseHandle(process)
 
 
+def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
+    """Stop an explicitly abandoned observed process and every child it owns."""
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/pid", str(process.pid), "/t", "/f"],
+            cwd=Path(__file__).resolve().parent,
+            timeout=None,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    os.killpg(process.pid, signal.SIGKILL)
+
+
 def run_observed_process(
     command: Sequence[str], *, cwd: Path, stdout: Path, stderr: Path,
-    environment: Mapping[str, str] | None = None, timeout_seconds: float,
+    environment: Mapping[str, str] | None = None,
+    warning_seconds: float | None = None,
+    hard_deadline_seconds: float | None = None,
+    hard_deadline_action: HardDeadlineAction | None = None,
     sample_interval_seconds: float = 0.1,
 ) -> tuple[subprocess.CompletedProcess[None], int | None]:
     """Run a command and return its exit result plus observed root-process peak.
 
-    This is deliberately a process observation primitive, not a scheduler or
-    resource-budget enforcer.  A ``None`` peak means that the host cannot expose
-    Windows working-set information; callers must then use the scheduler's
-    conservative unknown-profile route.
+    Observation is warning-only by default: exceeding ``warning_seconds`` records
+    one warning and lets a healthy process complete naturally.  Termination is
+    available only when a caller deliberately supplies both an explicit hard
+    deadline and ``hard_deadline_action='terminate_process_tree'``.  That action
+    stops the observed process tree, rather than leaving SIMION child processes
+    behind.  This helper does not diagnose solver health or enforce budgets.
+
+    A ``None`` peak means that the host cannot expose Windows working-set
+    information; callers must then use the scheduler's conservative
+    unknown-profile route.
     """
     if not command:
         raise ValueError("observed process command cannot be empty")
-    if timeout_seconds <= 0 or sample_interval_seconds <= 0:
-        raise ValueError("observation timeout and sampling interval must be positive")
+    if sample_interval_seconds <= 0:
+        raise ValueError("sampling interval must be positive")
+    if warning_seconds is not None and warning_seconds <= 0:
+        raise ValueError("warning_seconds must be positive when specified")
+    if (hard_deadline_seconds is None) != (hard_deadline_action is None):
+        raise ValueError(
+            "hard_deadline_seconds and hard_deadline_action must be specified together"
+        )
+    if hard_deadline_seconds is not None and hard_deadline_seconds <= 0:
+        raise ValueError("hard_deadline_seconds must be positive when specified")
+    if hard_deadline_action not in (None, "terminate_process_tree"):
+        raise ValueError("unsupported hard_deadline_action")
+
     stdout.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     peak: int | None = None
+    warned = False
+    popen_options: dict[str, object] = {}
+    if os.name == "nt":
+        popen_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_options["start_new_session"] = True
     with stdout.open("wb") as out, stderr.open("wb") as err:
         process = subprocess.Popen(
-            list(command), cwd=cwd, stdout=out, stderr=err, env=environment
+            list(command), cwd=cwd, stdout=out, stderr=err, env=environment,
+            **popen_options,
         )
         while process.poll() is None:
             observed = process_working_set_bytes(process.pid)
             if observed is not None:
                 peak = observed if peak is None else max(peak, observed)
-            if time.monotonic() - started > timeout_seconds:
-                process.kill()
+            elapsed = time.monotonic() - started
+            if not warned and warning_seconds is not None and elapsed > warning_seconds:
+                warnings.warn(
+                    f"OBSERVED_PROCESS_WARNING elapsed_seconds={elapsed:.3f} "
+                    f"warning_seconds={warning_seconds:.3f} pid={process.pid}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                warned = True
+            if hard_deadline_seconds is not None and elapsed > hard_deadline_seconds:
+                _terminate_process_tree(process)
                 process.wait()
-                raise subprocess.TimeoutExpired(command, timeout_seconds)
+                raise subprocess.TimeoutExpired(command, hard_deadline_seconds)
             time.sleep(sample_interval_seconds)
         observed = process_working_set_bytes(process.pid)
         if observed is not None:

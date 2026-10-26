@@ -14,6 +14,8 @@ from typing import Any
 
 import numpy as np
 
+from common.analysis.population_moments import population_pair_moments
+
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 
@@ -23,13 +25,14 @@ PLANES = ("p1_near", "p1_far", "p1_exit")
 
 
 def _load_rows(path: Path, *, states: bool = False) -> list[dict[str, Any]]:
-    lines = path.read_bytes().splitlines(keepends=True)
-    text = path.read_text(encoding="utf-8-sig").splitlines()
+    payload = path.read_bytes()
+    lines = payload.splitlines(keepends=True)
+    text = payload.decode("utf-8-sig").splitlines()
     reader = csv.DictReader(text)
     required = {"particle_id", *(STATE_FIELDS if states else ())}
     if not required.issubset(reader.fieldnames or ()):
         raise ValueError(f"Missing columns in {path}: {sorted(required)}")
-    identity = file_sha256(path)
+    identity = hashlib.sha256(payload).hexdigest().upper()
     raw_path = str(path.resolve())
     result = []
     for number, row in enumerate(reader, 2):
@@ -91,8 +94,8 @@ def compute_plane_statistics(rows: list[dict[str, Any]], mass_u: float) -> dict[
             continue
         position = values[f"{axis}_mm"]
         angle = np.radians(values[f"theta_{axis}_deg"]) * 1000
-        covariance = float(np.mean((position - position.mean()) * (angle - angle.mean())))
-        determinant = float(np.var(position) * np.var(angle) - covariance**2)
+        moments = population_pair_moments(position, angle)
+        determinant = moments["variance_first"] * moments["variance_second"] - moments["covariance"]**2
         result[f"emittance_{axis}_mm_mrad"] = math.sqrt(max(0.0, determinant))
     return result
 
@@ -150,6 +153,53 @@ def project_field_free_births(rows: list[dict[str, Any]], z_plane_mm: float) -> 
                 scope="Zero-field constant-velocity counterfactual from exact individual birth states and clocks; unconstrained by conductors, collisions or actual terminals; invalid/missing input and unreachable reference decisions are not physical losses; no real-field focus claim")
 
 
+def _validate_lens_contacts(directory: Path, terminals: dict[int, dict]) -> list[dict]:
+    """Bind geometry-stop terminals to their exact native-step witnesses.
+
+    The Lua kernel owns intersection geometry. This reader checks identity,
+    first-contact interpolation and unmodified incoming native splat flags;
+    it does not reinterpret a nearest PA node as a continuous collision.
+    """
+    path = directory / "lens_contacts.csv"
+    expected = {pid for pid, row in terminals.items() if row["reason"] == "lens_contact"}
+    if not path.is_file():
+        if expected:
+            raise ValueError("lens_contact terminal lacks its step-bracket evidence")
+        return []
+    contacts = _unique(_load_rows(path), "lens contact witnesses")
+    if contacts.keys() != expected:
+        raise ValueError("lens contact witnesses/terminals disagree")
+    if not contacts:
+        return []
+    prepared = json.loads((directory / "geometry.json").read_text(encoding="utf-8-sig"))
+    rods = {int(rod["electrode_id"]): rod for rod in prepared["geometry"]["lens_electrodes"]}
+    for pid, row in contacts.items():
+        electrode = int(row["electrode_id"])
+        if electrode not in rods or row["component_name"] != rods[electrode]["name"]:
+            raise ValueError("lens contact component is not in the canonical geometry")
+        if int(row["native_splat_before"]) != 0 or row["face"] not in {"side", "cap_start", "cap_end", "initial_inside"}:
+            raise ValueError("invalid geometry-stop face or overwritten native splat")
+        fraction = float(row["fraction"])
+        if not math.isfinite(fraction) or not 0 <= fraction <= 1:
+            raise ValueError("invalid contact step fraction")
+        for key in STATE_FIELDS[:-1]:
+            value = float(row[key])
+            if not math.isfinite(value) or value != terminals[pid][key]:
+                raise ValueError("contact state differs from terminal")
+        if not float(row["t0_us"]) <= float(row["t_us"]) <= float(row["t1_us"]):
+            raise ValueError("contact time outside its native step")
+        for key in STATE_FIELDS[:-1]:
+            stem, unit = (key.split("_", 1))
+            first = float(row[f"{stem}0_{unit}"])
+            last = float(row[f"{stem}1_{unit}"])
+            value = float(row[key])
+            expected_value = first + fraction*(last-first)
+            serial = 32*np.finfo(float).eps*max(1., abs(first), abs(last), abs(value))
+            if not all(math.isfinite(v) for v in (first, last)) or abs(value-expected_value) > serial:
+                raise ValueError("contact state is not the declared native-step interpolation")
+    return list(contacts.values())
+
+
 def _load_case(run: Path, case: dict[str, Any], source_count: int, maximum_step_us: float) -> dict[str, Any]:
     directory = run / case["directory"]
     events = _load_rows(directory / "events.csv", states=True)
@@ -160,8 +210,9 @@ def _load_case(run: Path, case: dict[str, Any], source_count: int, maximum_step_
     terminals = _unique([row for row in events if row["event"] == "terminal"], "terminals")
     if len(births) != source_count or births.keys() != terminals.keys():
         raise ValueError(f"Incomplete birth/terminal cohort in {directory}")
-    if any(row["reason"] not in {"reached_exit", "solver_stop", "timeout"} for row in terminals.values()):
+    if any(row["reason"] not in {"reached_exit", "solver_stop", "timeout", "lens_contact"} for row in terminals.values()):
         raise ValueError(f"Unknown terminal reason in {directory}")
+    _validate_lens_contacts(directory, terminals)
     planes = {plane: _unique([row for row in events if row["event"] == "plane" and row["reason"] == plane], plane)
               for plane in PLANES}
     if any(row["reason"] not in PLANES for row in events if row["event"] == "plane"):
@@ -287,16 +338,6 @@ def _save_figure(figure: Any, path: Path) -> None:
     plt.close(figure)
 
 
-def _moments_pair(first: np.ndarray, second: np.ndarray) -> dict[str, float | None]:
-    if not len(first):
-        return {key: None for key in ("variance_first", "variance_second", "covariance", "correlation")}
-    variance_first, variance_second = float(np.var(first)), float(np.var(second))
-    covariance = float(np.mean((first - first.mean()) * (second - second.mean())))
-    denominator = math.sqrt(variance_first * variance_second)
-    return dict(variance_first=variance_first, variance_second=variance_second,
-                covariance=covariance, correlation=covariance / denominator if denominator else None)
-
-
 def compute_longitudinal_chirp(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Compute s=-z, u=-vz covariance and unconstrained free-drift waist.
 
@@ -305,7 +346,7 @@ def compute_longitudinal_chirp(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """
     s = np.array([-row["z_mm"] for row in rows], dtype=float)
     u = np.array([-row["vz_mm_us"] for row in rows], dtype=float)
-    moments = _moments_pair(s, u)
+    moments = population_pair_moments(s, u)
     vs, vu, cov = (moments[key] for key in ("variance_first", "variance_second", "covariance"))
     tau = -cov / vu if vu else None
     slope = cov / vs if vs else None
@@ -334,11 +375,11 @@ def compute_arrival_time_energy_correlations(rows: list[dict[str, Any]], mass_u:
         raise ValueError("Arrival drift estimate requires downstream negative vz")
     inverse_u = 1 / u
     time = values["t_us"]
-    moments = _moments_pair(time, inverse_u)
+    moments = population_pair_moments(time, inverse_u)
     variance = moments["variance_second"]
     covariance = moments["covariance"]
     distance = -covariance / variance if variance else None
-    energy_moments = _moments_pair(time, values["kinetic_energy_ev"])
+    energy_moments = population_pair_moments(time, values["kinetic_energy_ev"])
     return {"count": len(rows), "correlation_arrival_t_total_k": energy_moments["correlation"],
             "correlation_arrival_t_inverse_u": moments["correlation"],
             "covariance_t_inverse_u_us2_mm": covariance,

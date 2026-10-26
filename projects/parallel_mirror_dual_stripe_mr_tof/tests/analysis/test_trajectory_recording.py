@@ -140,7 +140,7 @@ assert(ion_px_mm==1 and ion_py_mm==2 and ion_pz_mm==3 and ion_vx_mm==4 and ion_v
             result = subprocess.run([sys.executable, "-m", "projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial", "recording-config", "--contract", str(contract)], cwd=PROJECT.parents[1], capture_output=True, text=True, encoding="utf-8", timeout=20)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIsNone(json.loads(result.stdout))
-        runner = (PROJECT / "simion/run_two_prism_trial.ps1").read_text(encoding="utf-8")
+        runner = (PROJECT.parents[1] / "integrations/workflows/oa_mr/execute.ps1").read_text(encoding="utf-8")
         self.assertIn("-RetentionClass $trajectoryRetentionClass -RetentionReason $trajectoryRetentionReason", runner)
         self.assertIn("$manifestOutputs+=@($trajectorySamples,$trajectorySampleReceipt)", runner)
         self.assertIn("'extract-trajectory','--log',$rawLog", runner)
@@ -149,18 +149,19 @@ assert(ion_px_mm==1 and ion_py_mm==2 and ion_pz_mm==3 and ion_vx_mm==4 and ion_v
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_complete_entry_status_waits_for_payload_seal(self):
-        runner = (PROJECT / "simion/run_two_prism_trial.ps1").read_text(encoding="utf-8")
-        start = runner.rindex("  if($trajectoryPayloadNeedsSeal){")
+        runner = (PROJECT.parents[1] / "integrations/workflows/oa_mr/execute.ps1").read_text(encoding="utf-8")
+        start = runner.rindex("  try{\n  if($trajectoryPayloadNeedsSeal){")
         block = runner[start:runner.rindex("\n}")]
         for fail in (False, True):
             with self.subTest(fail=fail):
                 command = """$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$trajectoryPayloadNeedsSeal=$true;$deferredHostCompletionNotification=$true
+$trajectoryPayloadNeedsSeal=$true;$deferredHostCompletionNotification=$true;$terminalStatus='success'
 $artifactRoot='root';$package=@{artifact_run_dir='run'};$projectId='mr';$trajectoryRetentionReason='review'
 $RunId='fixture';$observed=@{status='bunch_observed'};$hostOutcome='failed'
 $calls=[Collections.Generic.List[string]]::new()
 function Write-Host {param($Object);$calls.Add([string]$Object)}
 function Invoke-HostExecutionCompletionNotification {param($Outcome,$RunId);$calls.Add('notify:'+ $Outcome)}
+function Remove-RunPackageExecutionAlias {param($Package);$calls.Add('alias_removed')}
 """
                 command += "function Invoke-ProjectPython {param($Arguments);$calls.Add('seal');"
                 command += "throw 'seal fixture failure'" if fail else "return"
@@ -172,7 +173,8 @@ function Invoke-HostExecutionCompletionNotification {param($Outcome,$RunId);$cal
                 self.assertEqual(observed["calls"][0], "seal")
                 self.assertEqual(observed["caught"], fail)
                 self.assertEqual(observed["outcome"], "failed" if fail else "success")
-                self.assertEqual(observed["calls"][-1], "notify:failed" if fail else "notify:success")
+                self.assertEqual(observed["calls"][-2], "notify:failed" if fail else "notify:success")
+                self.assertEqual(observed["calls"][-1], "alias_removed")
                 self.assertIn("TRIAL=FAIL" if fail else "TRIAL=PASS", observed["calls"][1])
 
 

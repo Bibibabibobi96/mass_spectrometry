@@ -10,14 +10,12 @@ from typing import Any
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import verify_record
 from common.contracts.write_run_manifest import file_record
+from common.simion.native_completion import parse_fly_completed_line
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
     resolve_bunch_source_interval,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    FLY_COMPLETED,
-    parse_events,
-)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
 
 _ION_FIELD = re.compile(r"(?<![A-Za-z_])(ion=)(\d+)(?=\s|$)")
 
@@ -55,15 +53,16 @@ def merge_rebased_event_logs(
         if offset < 0 or count < 1:
             raise ValueError("batch offset/count is invalid")
         text = path.read_text(encoding="utf-8-sig")
-        completions = list(FLY_COMPLETED.finditer(text))
-        if len(completions) != 1 or int(completions[0].group("splats")) != count:
+        completions = [completion for line in text.splitlines()
+                       if (completion := parse_fly_completed_line(line)) is not None]
+        if len(completions) != 1 or completions[0].splats != count:
             raise ValueError(f"batch completion differs from its plan: {path}")
         for event in parse_events(text):
             local_id = int(event["ion"])
             if not 1 <= local_id <= count:
                 raise ValueError(f"batch event particle ID is outside its local interval: {path}")
         for line in text.splitlines():
-            if FLY_COMPLETED.match(line):
+            if parse_fly_completed_line(line) is not None:
                 continue
             merged_lines.append(_ION_FIELD.sub(
                 lambda match: f"{match.group(1)}{int(match.group(2)) + offset}", line,
@@ -95,6 +94,42 @@ def merge_rebased_event_logs(
     return receipt
 
 
+def validate_measured_batch_terminal(*, log_path: Path, batch_receipt_path: Path,
+                                    preparation: dict[str, Any]) -> tuple[list[int], dict[str, Any], Path]:
+    """Validate one complete measured-source batch without materializing its log."""
+    batch = json.loads(batch_receipt_path.read_text(encoding="utf-8-sig"))
+    ids = batch["original_particle_ids"]
+    count = batch["count"]
+    if (batch.get("schema_version") != 1 or batch.get("role") != "mrtof_measured_source_batch"
+            or count < 1 or len(ids) != count or len(set(ids)) != count):
+        raise ValueError("Measured batch IDs do not close")
+    if batch["solver_epoch_instrument_time_us"] != preparation["solver_epoch_instrument_time_us"]:
+        raise ValueError("Measured batch epoch differs from full source")
+    fly_path = batch_receipt_path.parent / "joint.fly2"
+    verify_record("actual launched batch FLY2", dict(batch["outputs"]["source"], path=str(fly_path.resolve())),
+                  base_dir=batch_receipt_path.parent)
+    completions, terminal_ids = 0, set()
+    with log_path.open(encoding="utf-8-sig") as source:
+        for line in source:
+            completion = parse_fly_completed_line(line)
+            if completion:
+                completions += 1
+                if completion.splats != count:
+                    raise ValueError("Measured batch completion differs from its plan")
+                continue
+            if line.startswith(("MRTOF_EVENT ", "MRTOF_TRAJECTORY ")):
+                match = _ION_FIELD.search(line)
+                if match is None or int(match[2]) not in ids:
+                    raise ValueError("Measured event ID is outside its original-ID batch")
+                if line.startswith("MRTOF_EVENT terminal "):
+                    if int(match[2]) in terminal_ids:
+                        raise ValueError("Duplicate measured terminal event")
+                    terminal_ids.add(int(match[2]))
+    if completions != 1 or terminal_ids != set(ids):
+        raise ValueError("Measured batch lacks exact terminal coverage")
+    return ids, batch, fly_path
+
+
 def merge_measured_event_logs(*, batches: list[tuple[Path, Path]], preparation_path: Path,
                               output_path: Path, receipt_path: Path) -> dict[str, Any]:
     """Stream original-ID events/trajectory samples; never ordinal-rebase measured IDs."""
@@ -105,39 +140,13 @@ def merge_measured_event_logs(*, batches: list[tuple[Path, Path]], preparation_p
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="\n") as output:
         for path, batch_receipt_path in batches:
-            batch = json.loads(batch_receipt_path.read_text(encoding="utf-8-sig"))
-            ids = batch["original_particle_ids"]
-            count = batch["count"]
-            if (batch.get("schema_version") != 1 or batch.get("role") != "mrtof_measured_source_batch"
-                    or count < 1 or len(ids) != count or len(set(ids)) != count):
-                raise ValueError("Measured batch IDs do not close")
-            if batch["solver_epoch_instrument_time_us"] != preparation["solver_epoch_instrument_time_us"]:
-                raise ValueError("Measured batch epoch differs from full source")
-            # The runtime launches this copy, not the source materializer's path.
-            # Recovery may retain the copy after the original path is retired.
-            fly_path = batch_receipt_path.parent / "joint.fly2"
-            verify_record("actual launched batch FLY2", dict(batch["outputs"]["source"], path=str(fly_path.resolve())),
-                          base_dir=batch_receipt_path.parent)
-            completions, terminal_ids = 0, set()
+            ids, batch, fly_path = validate_measured_batch_terminal(
+                log_path=path, batch_receipt_path=batch_receipt_path, preparation=preparation,
+            )
             with path.open(encoding="utf-8-sig") as source:
                 for line in source:
-                    completion = FLY_COMPLETED.match(line)
-                    if completion:
-                        completions += 1
-                        if int(completion.group("splats")) != count:
-                            raise ValueError("Measured batch completion differs from its plan")
-                        continue
-                    if line.startswith(("MRTOF_EVENT ", "MRTOF_TRAJECTORY ")):
-                        match = _ION_FIELD.search(line)
-                        if match is None or int(match[2]) not in ids:
-                            raise ValueError("Measured event ID is outside its original-ID batch")
-                        if line.startswith("MRTOF_EVENT terminal "):
-                            if int(match[2]) in terminal_ids:
-                                raise ValueError("Duplicate measured terminal event")
-                            terminal_ids.add(int(match[2]))
-                    output.write(line)
-            if completions != 1 or terminal_ids != set(ids):
-                raise ValueError("Measured batch lacks exact terminal coverage")
+                    if parse_fly_completed_line(line) is None:
+                        output.write(line)
             covered.extend(ids)
             records.append(dict(log=file_record(path), batch_receipt=file_record(batch_receipt_path),
                                 fly2=file_record(fly_path)))
@@ -187,6 +196,7 @@ def main() -> int:
     analyze_joint.add_argument("--preparation", required=True, type=Path)
     analyze_joint.add_argument("--log", required=True, type=Path)
     analyze_joint.add_argument("--output", required=True, type=Path)
+    analyze_joint.add_argument("--analysis-contract", type=Path)
     compare_joint = sub.add_parser("compare-joint")
     compare_joint.add_argument("--preparation", required=True, type=Path)
     compare_joint.add_argument("--log", required=True, type=Path)
@@ -208,7 +218,8 @@ def main() -> int:
     elif args.command == "analyze-joint":
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_diagnostics import analyze_prepared_joint_flight
         analyze_prepared_joint_flight(args.preparation, args.log, args.output,
-                                     merge_receipt=args.preparation.parent / "batch_log_merge_receipt.json")
+                                     merge_receipt=args.preparation.parent / "batch_log_merge_receipt.json",
+                                     analysis_contract=args.analysis_contract)
         print("PREPARED_JOINT_DIAGNOSTICS=PASS")
     elif args.command == "compare-joint":
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import compare_trajectory_representation

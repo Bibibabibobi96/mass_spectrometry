@@ -254,6 +254,14 @@ $historyScopes = @(
         IndexLabel = 'docs/AUDITS.md'
         IndexPrefix = 'history/'
     }
+    if (Test-Path -LiteralPath (Join-Path $repoRoot 'integrations\docs\history') -PathType Container) {
+        [pscustomobject]@{
+            Directory = Get-Item -LiteralPath (Join-Path $repoRoot 'integrations\docs\history')
+            IndexPath = Join-Path $repoRoot 'integrations\README.md'
+            IndexLabel = 'integrations/README.md'
+            IndexPrefix = 'docs/history/'
+        }
+    }
 ) + @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory | ForEach-Object {
     $candidate = Join-Path $_.FullName 'docs\history'
     if (-not (Test-Path -LiteralPath $candidate -PathType Container)) { return }

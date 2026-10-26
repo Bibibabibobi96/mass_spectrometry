@@ -157,7 +157,7 @@ class PrismRunnerContractMatrixTests(unittest.TestCase):
     def test_downstream_iteration_is_bounded_resumable_and_reuses_one_session(self) -> None:
         source = (ANALYSIS / "run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
         for token in (
-            "run_two_prism_trial.ps1", "NativeCorridorBankRunPath is required",
+            "integrations/workflows/oa_mr/execute.ps1", "NativeCorridorBankRunPath is required",
             "NativeCorridorBankRunPath requires NativeSystemRuntimeBundlePath.",
             "NativeCorridorRuntimeSession=$nativeRuntimeSession",
             "Stripe1VoltageV=$Voltages[0]", "Prism1VoltageV=$prisms[0]",

@@ -668,6 +668,14 @@ class RefinementWindowProviderTest(unittest.TestCase):
             self.assertEqual(self.publish(run)["status"], "failed")
             self.assertFalse((run / "inputs/field_binding.json").exists())
 
+    def test_parent_exit_waits_for_healthy_provider_before_finalization(self):
+        repo = Path(__file__).resolve().parents[4]
+        runner = (repo / "projects/parallel_mirror_dual_stripe_mr_tof/comsol/run_corridor_field_provider.ps1").read_text(encoding="utf-8-sig")
+        finalizer = runner.split("}finally{", 1)[1]
+        self.assertIn("awaiting natural completion", finalizer)
+        self.assertIn("$process.WaitForExit()", finalizer)
+        self.assertNotIn("$process.Kill($true)", finalizer)
+
     def test_warning_artifact_observation_includes_nested_window_payload(self):
         repo = Path(__file__).resolve().parents[4]
         runner = (repo / "projects/parallel_mirror_dual_stripe_mr_tof/comsol/run_corridor_field_provider.ps1").read_text(encoding="utf-8-sig")

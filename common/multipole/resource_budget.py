@@ -80,7 +80,7 @@ def validate_pilot_budget(
     solver: str,
     runtime_profile_id: str,
     design_profile_id: str,
-    particle_source_path: Path,
+    particle_source_path: Path | None = None,
     retention_class: str,
     run_id: str | None = None,
 ) -> dict[str, Any]:
@@ -96,9 +96,7 @@ def validate_pilot_budget(
         )
         budget = runtime["engineering_budget"]["inline_contract"]
     else:
-        runtime = resolve_runtime_profile(
-            repo_root.resolve(), project_id, runtime_profile_id
-        )
+        runtime = resolve_runtime_profile(repo_root.resolve(), project_id, runtime_profile_id)
         budget = budget_source
     stop_stage = runtime.get("stop_stage")
     if stop_stage not in {"transport", "mesh_build", "field_solve"}:
@@ -149,10 +147,13 @@ def validate_pilot_budget(
         "stop_stage": stop_stage,
         "design_profile_id": design_profile_id,
         "particle_source_profile_id": runtime["particle_source"]["profile_id"],
-        "particle_count": _particle_count(Path(runtime["particle_source"]["path"])),
+        "particle_count": (
+            runtime["particle_source"]["particle_count"]
+            if "release_spec" in runtime["particle_source"]
+            else _particle_count(Path(runtime["particle_source"]["path"]))
+        ),
         "solver_numerics_profile_ids": {
-            name: runtime["solver_numerics"][name]["profile_id"]
-            for name in ("comsol", "simion")
+            name: runtime["solver_numerics"][name]["profile_id"] for name in ("comsol", "simion")
         },
         "allowed_solvers": allowed_solvers,
         "retention_class": retention_class,
@@ -164,12 +165,8 @@ def validate_pilot_budget(
             or len(expected_run_hash) != 64
             or any(character not in "0123456789ABCDEF" for character in expected_run_hash)
         ):
-            raise ValueError(
-                "expected_run_parent_resolved_design_sha256 must be uppercase SHA-256"
-            )
-        expected_scope["expected_run_parent_resolved_design_sha256"] = (
-            expected_run_hash
-        )
+            raise ValueError("expected_run_parent_resolved_design_sha256 must be uppercase SHA-256")
+        expected_scope["expected_run_parent_resolved_design_sha256"] = expected_run_hash
     authorized_run_id = scope.get("authorized_run_id")
     if authorized_run_id is not None:
         if (
@@ -185,34 +182,34 @@ def validate_pilot_budget(
         raise ValueError("explicit run ID differs from authorized_run_id")
     if solver not in scope["allowed_solvers"]:
         raise ValueError(f"solver is not authorized: {solver}")
-    if Path(runtime["particle_source"]["path"]).resolve() != particle_source_path.resolve():
+    if "release_spec" in runtime["particle_source"]:
+        if particle_source_path is not None:
+            raise ValueError("release-spec runtime does not accept an external particle source")
+        if solver != "simion":
+            raise ValueError("release-spec materialization is currently implemented for SIMION only")
+    elif (
+        particle_source_path is None
+        or Path(runtime["particle_source"]["path"]).resolve() != particle_source_path.resolve()
+    ):
         raise ValueError("particle source differs from authorized runtime profile")
     if "maximum_mesh_cells" in limits:
         mesh = runtime["solver_numerics"][solver]["values"].get("mesh", {})
-        if (
-            solver != "comsol"
-            or mesh.get("strategy") != "physical_segment_hybrid_swept_tetra_v1"
-        ):
-            raise ValueError(
-                "maximum_mesh_cells requires a COMSOL physical-segment hybrid mesh profile"
-            )
+        if solver != "comsol" or mesh.get("strategy") != "physical_segment_hybrid_swept_tetra_v1":
+            raise ValueError("maximum_mesh_cells requires a COMSOL physical-segment hybrid mesh profile")
     if "maximum_pa_grid_points" in limits and solver != "simion":
         raise ValueError("maximum_pa_grid_points is only valid for SIMION")
     wall_clock = limits["wall_clock_seconds_by_solver"]
     if set(wall_clock) != {"comsol", "simion"}:
         raise ValueError("wall-clock solver keys differ")
-    positive_limits = (
-        list(wall_clock.values())
-        + [
-            limits[name]
-            for name in (
-                "transient_run_directory_bytes",
-                "process_tree_working_set_bytes",
-                "minimum_system_available_memory_bytes",
-                "compact_final_retained_bytes",
-            )
-        ]
-    )
+    positive_limits = list(wall_clock.values()) + [
+        limits[name]
+        for name in (
+            "transient_run_directory_bytes",
+            "process_tree_working_set_bytes",
+            "minimum_system_available_memory_bytes",
+            "compact_final_retained_bytes",
+        )
+    ]
     if "maximum_mesh_cells" in limits:
         positive_limits.append(limits["maximum_mesh_cells"])
     if "maximum_pa_grid_points" in limits:
@@ -246,6 +243,7 @@ def validate_pilot_budget(
         "expected_run_parent_resolved_design_sha256": expected_run_hash,
         "limits": {**limits, "wall_clock_seconds": wall_clock[solver]},
         "budget_path": str(expected_budget),
+        **({"particle_source": runtime["particle_source"]} if "release_spec" in runtime["particle_source"] else {}),
     }
 
 
@@ -257,7 +255,7 @@ def main() -> int:
     parser.add_argument("--solver", required=True, choices=("comsol", "simion"))
     parser.add_argument("--runtime-profile-id", required=True)
     parser.add_argument("--design-profile-id", required=True)
-    parser.add_argument("--particle-source", required=True, type=Path)
+    parser.add_argument("--particle-source", type=Path)
     parser.add_argument("--retention-class", required=True)
     parser.add_argument("--run-id")
     parser.add_argument("--output", required=True, type=Path)

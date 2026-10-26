@@ -36,6 +36,82 @@ def _short_windows_path(path: Path) -> Path:
 
 class SimionRunnerContractTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_scientific_evidence_failure_publishes_complete_negative_result(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        evaluation = source[source.index("  $scientificStatus='success'"):
+                            source.index("  # Invoke-TransportCase performs")]
+        summary = source[source.index("  [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_summary'"):
+                         source.index("  $retentionActions=Apply-RunArtifactRetention", source.index("  $scientificStatus="))]
+        publication = source[source.index("  Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot", source.index("  $outputs+=$retentionActions")):
+                             source.index("}catch{", source.index("  $outputs+=$retentionActions"))]
+        failure = source[source.rindex("}catch{")+len("}catch{"):source.rindex("}finally{")]
+        terminal = source[source.rindex("\nif($hostExecutionOutcome-eq'failed')"):]
+        for scenario in ("pass", "scientific_fail", "evaluation_error"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                metrics = dict(primary_case_id="rf_on", control_case_id="rf_off",
+                               cases=dict(rf_on=dict(transmission_fraction=.95 if scenario=="pass" else .5),
+                                          rf_off=dict(transmission_fraction=.1)))
+                contract = dict(schema_version=1, role="multipole_transport_evidence_contract",
+                    project_id="wrong" if scenario=="evaluation_error" else "rf_octupole_ion_optics",
+                    design_profile_id="fixture", evaluation="rf_vs_zero_rf",
+                    thresholds=dict(minimum_primary_transmission=.9, minimum_transmission_improvement=.2))
+                (root / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+                (root / "evidence.json").write_text(json.dumps(contract), encoding="utf-8")
+                (root / "mechanical.csv").write_text("INERT_ALREADY_VALIDATED_STATE_FIXTURE", encoding="utf-8")
+                script = root / "scientific_publication.ps1"
+                escaped_repo = str(REPO_ROOT.resolve()).replace("'", "''")
+                escaped_python = sys.executable.replace("'", "''")
+                script.write_text(f"""$ErrorActionPreference='Stop'
+Set-StrictMode -Version Latest
+$codeRoot='{escaped_repo}';$python='{escaped_python}';$manifestRepoRoot=$codeRoot
+$resultDir=$PWD.Path;$runConfig='unused';$resourceBudgetExceeded=$false;$hostExecutionOutcome='failed'
+$ProjectId='rf_octupole_ion_optics';$DesignProfileId='fixture';$RunId='fixture'
+$resolvedHash='fixture';$primaryTransmission=0.5;$controlTransmission=0.1;$CaseSet='paired'
+$metrics=Join-Path $resultDir 'metrics.json';$evidence=Join-Path $resultDir 'evidence.json'
+$summary=Join-Path $resultDir 'summary.json'
+$outputs=@($summary,$metrics,(Join-Path $resultDir 'mechanical.csv'),(Join-Path $resultDir 'evidence_evaluation.json'))
+function Write-VerifiedRunManifest {{
+ param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs)
+ @{{status=$Status;outputs=@($Outputs)}}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $resultDir 'publication.json') -Encoding utf8
+}}
+function Complete-FailedRun {{
+ param($Python,$RepoRoot,$RunConfig,$Summary,$SummaryRole,$Reason,$Software,$Status,$FailureClass,$ResourceUsagePath)
+ @{{schema_version=1;role=$SummaryRole;status=$Status;reason=$Reason}}|ConvertTo-Json|Set-Content -LiteralPath $Summary -Encoding utf8
+}}
+try {{
+""" + evaluation + summary + publication + """
+ $published=Get-Content (Join-Path $resultDir 'publication.json') -Raw|ConvertFrom-Json
+ $result=Get-Content $summary -Raw|ConvertFrom-Json
+ @{published=$true;manifest=$published;summary=$result;outcome=$hostExecutionOutcome}|ConvertTo-Json -Depth 10 -Compress
+}catch{
+""" + failure + """
+}finally{
+ Set-Content -LiteralPath (Join-Path $resultDir 'grant_released.txt') -Value 'released'
+}
+""" + terminal, encoding="utf-8", newline="\n")
+                result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-File", str(script)],
+                    cwd=root, capture_output=True, text=True, encoding="utf-8", check=False, timeout=60)
+                self.assertEqual(result.returncode, 0 if scenario=="pass" else 1, result.stderr)
+                self.assertTrue((root / "grant_released.txt").is_file())
+                if scenario == "evaluation_error":
+                    self.assertFalse((root / "publication.json").exists())
+                    interrupted = json.loads((root / "summary.json").read_text(encoding="utf-8-sig"))
+                    self.assertEqual(interrupted["status"], "failed")
+                    self.assertNotIn("native_execution_complete", interrupted)
+                else:
+                    decision = json.loads(result.stdout.splitlines()[-1])
+                    expected = "success" if scenario=="pass" else "failed"
+                    self.assertTrue(decision["published"])
+                    self.assertEqual(decision["manifest"]["status"], expected)
+                    self.assertEqual(decision["summary"]["status"], expected)
+                    self.assertEqual(decision["outcome"], expected)
+                    self.assertTrue(decision["summary"]["native_execution_complete"])
+                    self.assertEqual(decision["summary"]["checks"]["minimum_primary_transmission"], scenario=="pass")
+                    self.assertEqual(set(decision["manifest"]["outputs"]), {str(p) for p in (
+                        root/"summary.json",root/"metrics.json",root/"mechanical.csv",root/"evidence_evaluation.json")})
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_control_receipt_cannot_replace_primary_observation(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         block = source[source.index("    $resourceUsage=if($name-eq$primaryName)"):
@@ -230,9 +306,9 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
                 source,
             )
             self.assertIn("$hostExecutionOutcome='failed'", source)
-            self.assertEqual(
-                source.count("$hostExecutionOutcome='success'"), successful_manifests,
-            )
+            terminal_outcome = ("$hostExecutionOutcome=$scientificStatus" if role == "SIMION"
+                                else "$hostExecutionOutcome='success'")
+            self.assertEqual(source.count(terminal_outcome), successful_manifests)
             self.assertIn(
                 "$hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}",
                 source,
@@ -249,10 +325,10 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
             self.assertEqual(source.count("Write-VerifiedRunManifest"), successful_manifests)
             self.assertLess(
                 source.rindex("Write-VerifiedRunManifest"),
-                source.rindex("$hostExecutionOutcome='success'"),
+                source.rindex(terminal_outcome),
             )
             self.assertLess(
-                source.rindex("$hostExecutionOutcome='success'"),
+                source.rindex(terminal_outcome),
                 source.rindex("Exit-HostExecutionLease"),
             )
 
@@ -457,6 +533,28 @@ if($scenario-eq'inherited_light'){
         self.assertIn("$design.segmentation.segmented_rod_array", runner)
         self.assertIn("zero_axial_drop_rf_on", runner)
         self.assertNotIn("--segmented-rods", runner)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_through_exit_excludes_removed_absorber_from_runtime_and_basis(self) -> None:
+        runner = RUNNER.read_text(encoding="utf-8")
+        block = runner[runner.index("  $segmentedLua=''"):runner.index("  $normalizedGem=")]
+        for through_exit in (True, False):
+            script = r"""
+$ErrorActionPreference='Stop'
+$rectangular=$false;$hasDownstreamTerminal=$false;$segmentedRodGeometry=$true
+$entranceVoltage=0;$exitVoltage=0
+$design=[pscustomobject]@{segmentation=[pscustomobject]@{segmented_rod_array=[pscustomobject]@{
+ segment_count=4;electrodes=@(1..8|ForEach-Object{[pscustomobject]@{
+ electrode_id=$_;electrode_group=(($_-1)%2+1);common_mode_V=0}})}}}
+""" + "$throughExit=$" + str(through_exit).lower() + "\n" + block + r"""
+@{physical_detector_electrode_id=$physicalDetectorElectrodeId;basis=$paBasisElectrodeIds}|ConvertTo-Json -Compress
+"""
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                                    cwd=REPO_ROOT, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            binding = json.loads(result.stdout)
+            self.assertEqual(binding["physical_detector_electrode_id"], 0 if through_exit else 11)
+            self.assertEqual(11 in binding["basis"], not through_exit)
 
     def test_segmented_rf_program_collapses_shared_pa_electrodes(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
@@ -839,6 +937,39 @@ if($scenario-eq'inherited_light'){
             comsol,
         )
 
+    def test_dual_through_outer_caps_reuse_the_existing_apertured_plate_builder(self) -> None:
+        comsol = (RUNNER.parent / "solve_finite_3d_transport.m").read_text(
+            encoding="utf-8"
+        )
+        plate_builder = (REPO_ROOT / "common" / "comsol" / "create_comsol_apertured_plate.m").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "cylindrical_grounded_shield_through_entrance_exit_v1", comsol
+        )
+        geometry_start = comsol.index("create_comsol_cylindrical_shell")
+        entrance_start = comsol.index("if throughEntrance", geometry_start)
+        exit_start = comsol.index("if throughExit", entrance_start)
+        entrance_branch = comsol[entrance_start:exit_start]
+        self.assertIn("create_comsol_apertured_plate(geom,'outerIn'", entrance_branch)
+        exit_branch = comsol[
+            exit_start:comsol.index("create_comsol_apertured_plate(geom, 'capIn'", exit_start)
+        ]
+        self.assertIn("create_comsol_apertured_plate(geom,'outerOut'", exit_branch)
+        self.assertIn("geom.feature.create(tag,'Difference')", plate_builder)
+        shell_contract = comsol[
+            comsol.index("physicalShieldZMin = d.vacuum_z_min;"):
+            comsol.index("if throughEntrance", comsol.index("physicalShieldZMin = d.vacuum_z_min;"))
+        ]
+        self.assertIn(
+            "physicalShieldZMax = enclosure.exit_outer_endcap_downstream_face_z_mm;",
+            shell_contract,
+        )
+        self.assertIn(
+            "shieldOuter,physicalShieldZMax-physicalShieldZMin,physicalShieldZMin",
+            comsol,
+        )
+
     def test_metrics_are_unqualified_without_explicit_evidence(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         self.assertIn("$qualification='UNQUALIFIED'", source)
@@ -1065,7 +1196,6 @@ if($scenario-eq'inherited_light'){
             runner,
         )
         self.assertNotIn("Add-Content -LiteralPath $caseState", runner)
-        self.assertIn("Get-ProcessTreeWorkingSetBytes", support)
         self.assertIn("execution_wave", support)
         self.assertIn("$control=$null;$controlName=$null", runner)
         self.assertIn(

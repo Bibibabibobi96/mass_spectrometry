@@ -21,7 +21,7 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
         stages = [
             "run_dual_stripe_operating_seed.ps1",
             "run_component_focus_workflow.ps1",
-            "run_two_prism_trial.ps1",
+            "integrations/workflows/oa_mr/execute.ps1",
             "run_two_prism_segmented_coverage.ps1",
             "run_two_prism_segmented_continuation.ps1",
             "run_downstream_workpoint_iteration.ps1",
@@ -154,7 +154,7 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
 
     def test_new_provider_rebinds_only_the_accelerator_before_any_mr_flight(self) -> None:
         rebind = self.source.index("native_system_runtime rebind-accelerator")
-        safe_exit = self.source.index("run_two_prism_trial.ps1")
+        safe_exit = self.source.index("integrations/workflows/oa_mr/execute.ps1")
         workpoint = self.source.index("run_downstream_workpoint_iteration.ps1")
         candidate = self.source.index("run_native_candidate_chain.ps1")
         self.assertLess(rebind, safe_exit)

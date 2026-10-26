@@ -202,6 +202,7 @@ class FieldDiagnosticsTests(unittest.TestCase):
             for name in ("native_drive.lua","probe_native_field.lua"):
                 shutil.copyfile(PROJECT/"simion"/name,folder/name)
             shutil.copyfile(REPOSITORY/"common/multipole/simion_rf_drive.lua",folder/"simion_rf_drive.lua")
+            shutil.copyfile(REPOSITORY/"common/simion/voltage_waveforms.lua",folder/"voltage_waveforms.lua")
             (folder/"frozen_config.lua").write_text("return "+lua_literal(config),encoding="utf-8")
             harness=r'''
 local pa={}

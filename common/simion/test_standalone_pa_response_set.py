@@ -50,6 +50,7 @@ class StandalonePaResponseSetTests(unittest.TestCase):
             self.exporter,
             self.exports,
             self.root / self.receipt_name,
+            source_directory=self.root,
         )
 
     def _manifest(self) -> dict:
@@ -85,7 +86,7 @@ class StandalonePaResponseSetTests(unittest.TestCase):
                 self.assertEqual(record['sha256'], file_sha256(self.root / record['name']))
                 self.assertTrue((self.root / record['name']).read_bytes().endswith(b'-persisted'))
 
-    def test_two_stage_receipt_and_manifest_cover_native_and_standalone_files(self) -> None:
+    def test_two_stage_receipt_binds_provenance_and_retained_outputs(self) -> None:
         self._write_receipt()
         receipt = json.loads((self.root / self.receipt_name).read_text())
         self.assertNotIn(self.receipt_name, json.dumps(receipt))
@@ -97,6 +98,57 @@ class StandalonePaResponseSetTests(unittest.TestCase):
             expected_response_ids=(36, 37),
         )
         self.assertEqual([record.response_id for record in selected], [36, 37])
+
+    def test_retired_native_sources_are_provenance_not_runtime_inputs(self) -> None:
+        self._write_receipt()
+        manifest = self._manifest()
+        manifest["files"] = [row for row in manifest["files"]
+                             if row["name"] not in {export.source_name for export in self.exports}]
+        for export in self.exports:
+            (self.root / export.source_name).unlink()
+        selected = select_standalone_pa_records(self.root, manifest, self.receipt_name)
+        self.assertEqual([record.response_id for record in selected], [36, 37])
+        receipt_path = self.root / self.receipt_name
+        receipt = json.loads(receipt_path.read_text())
+        receipt["responses"][0]["source"]["sha256"] = "A" * 64
+        receipt_path.write_text(json.dumps(receipt))
+        with self.assertRaisesRegex(StandalonePaResponseSetError, "receipt bytes differ"):
+            select_standalone_pa_records(self.root, manifest, self.receipt_name)
+
+    def test_retained_native_source_metadata_conflict_is_rejected_without_payload_reads(self) -> None:
+        self._write_receipt()
+        for field, value in (("name", "FIELD.pa36"), ("bytes", 999), ("sha256", "A" * 64)):
+            manifest = self._manifest()
+            source = next(row for row in manifest["files"] if row["name"] == "field.pa36")
+            source[field] = value
+            with (self.subTest(field=field),
+                  patch("common.simion.standalone_pa_response_set._file_record",
+                        side_effect=AssertionError("metadata check must not read PA")),
+                  self.assertRaisesRegex(StandalonePaResponseSetError, "retained native response source identity differs")):
+                validate_standalone_pa_response_set(self.root, manifest, self.receipt_name,
+                                                     inventory_is_verified=True)
+
+    def test_writer_uses_explicit_separate_native_source_directory(self) -> None:
+        sources = self.root / "sources"
+        sources.mkdir()
+        for export in self.exports:
+            (self.root / export.source_name).rename(sources / export.source_name)
+        receipt = write_standalone_pa_response_set(
+            self.root, self.exporter, self.exports, self.root / self.receipt_name,
+            source_directory=sources,
+        )
+        self.assertEqual(receipt["schema_version"], 2)
+        for item in receipt["responses"]:
+            self.assertEqual(item["source"]["sha256"], file_sha256(sources / item["source"]["name"]))
+
+    def test_old_receipt_schema_is_rejected(self) -> None:
+        self._write_receipt()
+        receipt_path = self.root / self.receipt_name
+        receipt = json.loads(receipt_path.read_text())
+        receipt["schema_version"] = 1
+        receipt_path.write_text(json.dumps(receipt))
+        with self.assertRaisesRegex(StandalonePaResponseSetError, "identity differs"):
+            select_standalone_pa_records(self.root, self._manifest(), self.receipt_name)
 
     def test_verified_inventory_binds_receipt_without_rehashing_payload(self) -> None:
         self._write_receipt()
@@ -141,10 +193,10 @@ class StandalonePaResponseSetTests(unittest.TestCase):
         )
         self.assertTrue(all(record.name.endswith(".pa") for record in selected))
 
-    def test_selector_recovers_transient_native_and_standalone_reads(self) -> None:
+    def test_selector_recovers_transient_standalone_reads(self) -> None:
         self._write_receipt()
         manifest = self._manifest()
-        for name in ("field.pa36", "field.response_36.pa"):
+        for name in ("field.response_36.pa",):
             target = self.root / name
             reads = 0
 
@@ -167,25 +219,25 @@ class StandalonePaResponseSetTests(unittest.TestCase):
                 self.assertEqual([record.response_id for record in selected], [36, 37])
                 self.assertEqual(reads, 3)
 
-    def test_selector_rejects_persistent_same_size_native_hash_drift(self) -> None:
+    def test_selector_rejects_persistent_same_size_standalone_hash_drift(self) -> None:
         self._write_receipt()
         manifest = self._manifest()
-        target = self.root / "field.pa36"
+        target = self.root / "field.response_36.pa"
         target.write_bytes(b"x" * target.stat().st_size)
         with patch.object(cache_generation, "PAYLOAD_VERIFICATION_RETRY_DELAY_S", 0):
             with self.assertRaisesRegex(
-                StandalonePaResponseSetError, "native response 36 bytes differ"
+                StandalonePaResponseSetError, "standalone response 36 bytes differ"
             ) as caught:
                 select_standalone_pa_records(self.root, manifest, self.receipt_name)
         self.assertIsInstance(caught.exception.__cause__, ValueError)
-        self.assertIn("field.pa36", str(caught.exception.__cause__))
+        self.assertIn("field.response_36.pa", str(caught.exception.__cause__))
         self.assertEqual(str(caught.exception.__cause__).count("attempt="), 3)
 
     @unittest.skipUnless(cache_generation.os.name == "nt", "Windows PA snapshot recovery")
     def test_selector_recovers_only_manifest_matching_persisted_snapshot(self) -> None:
         self._write_receipt()
         manifest = self._manifest()
-        target = self.root / "field.pa36"
+        target = self.root / "field.response_36.pa"
         original = target.read_bytes()
 
         def stale_digest(path: Path) -> str:
@@ -236,6 +288,7 @@ class StandalonePaResponseSetTests(unittest.TestCase):
                     self.exporter,
                     exports,
                     self.root / f"invalid_{index}.json",
+                    source_directory=self.root,
                 )
 
     def test_validation_rejects_missing_manifest_coverage_and_byte_drift(self) -> None:

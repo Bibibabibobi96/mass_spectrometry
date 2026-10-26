@@ -38,7 +38,7 @@ class BatchingTests(unittest.TestCase):
         self.manifest=self.field/"run_manifest.json"
         functional.write_json(self.manifest,dict(inputs={},outputs=[dict(path=str(self.field/"processor.pa0"),sha256="A"*64)]))
         self.config["native_field"]=dict(directory=str(self.field),source_manifest=str(self.manifest))
-        for name in ("processor.lua","collision_hs1.lua","native_drive.lua","simion_rf_drive.lua","extraction_force_audit.lua","processor.iob"):
+        for name in ("processor.lua","collision_hs1.lua","native_drive.lua","simion_rf_drive.lua","voltage_waveforms.lua","extraction_force_audit.lua","processor.iob"):
             (self.run/"simion"/name).write_bytes(b"inert frozen control "+name.encode())
         self.save_config()
         functional.write_json(self.run/"inputs/execution_profiles.json",functional.read_json(PROJECT/"config/execution_profiles.json"))
@@ -157,6 +157,8 @@ class BatchingTests(unittest.TestCase):
         initial, _ = self.planning()
         before=batching.prepare_request(self.run)
         self.materialize(initial)
+        self.assertEqual((self.run/"simion_batch_0001/voltage_waveforms.lua").read_bytes(),
+                         (self.run/"simion/voltage_waveforms.lua").read_bytes())
         text=(self.run/"simion_batch_0001/frozen_config.lua").read_text()
         self.assertIn('["retain_trajectories"]=false', text)
         self.assertIn('["native_timing"]='+functional.lua_literal(self.config["native_timing"]),text)
@@ -166,6 +168,11 @@ class BatchingTests(unittest.TestCase):
         after=batching.prepare_request(self.run)
         self.assertNotEqual(before["case_input_sha256"],after["case_input_sha256"])
         self.assertNotEqual(before["field_loading_policy_id"],after["field_loading_policy_id"])
+
+    def test_waveform_dependency_is_part_of_whole_unit_identity(self) -> None:
+        before = batching.prepare_request(self.run)["case_input_sha256"]
+        (self.run/"simion/voltage_waveforms.lua").write_bytes(b"changed frozen arithmetic")
+        self.assertNotEqual(before, batching.prepare_request(self.run)["case_input_sha256"])
 
     def test_local_native_field_requires_preflight_vendor_templates(self) -> None:
         self.config["native_field"]=dict(directory=str(self.run/"simion"),source_manifest=None)
@@ -251,11 +258,23 @@ class BatchingTests(unittest.TestCase):
             batching._csv(folder/"extraction_impulses.csv", list(IMPULSE_COLUMNS), [])
             batching._csv(folder/"collision_rng_seeds.csv",["particle_id","global_particle_id","seed"],seeds)
             batching._csv(folder/"hs1_bound_parameters.csv",["phase",*expected],[dict(phase=phase,**expected) for phase in ("before_init","after_init")])
-            (self.run/f"logs/flight_batch_{batch['index']:04d}.log").write_text("INERT FIXTURE\nION_PROCESSOR_END\n",encoding="utf-8")
+            (self.run/f"logs/flight_batch_{batch['index']:04d}.log").write_text(f"INERT FIXTURE\nION_PROCESSOR_END\nstatus,Fly completed. {batch['count']} splats, 2.19 seconds\n",encoding="utf-8")
 
     def test_public_merge_restores_full_ids_and_seed_audit(self) -> None:
         _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
-        result=batching.merge_batches(self.run,self.run/"results/batches.json")
+        real_open = Path.open
+        writes = []
+        def track_open(path, *args, **kwargs):
+            mode = args[0] if args else kwargs.get("mode", "r")
+            if any(flag in mode for flag in ("w", "a", "x")):
+                self.assertNotEqual(path.name, "events_id_first.csv")
+                if path == self.run/"simion/events.csv":
+                    writes.append(path)
+            return real_open(path, *args, **kwargs)
+        with patch.object(Path, "open", track_open):
+            result=batching.merge_batches(self.run,self.run/"results/batches.json")
+        self.assertEqual(writes, [self.run/"simion/events.csv"])
+        self.assertFalse(list(self.run.rglob("events_id_first.csv")))
         self.assertEqual(result["particle_count"],100)
         fields,events=batching._rows(self.run/"simion/events.csv")
         self.assertEqual(fields[0],"event")
@@ -263,6 +282,51 @@ class BatchingTests(unittest.TestCase):
         _,seeds=batching._rows(self.run/"simion/collision_rng_seeds.csv")
         self.assertEqual([int(r["global_particle_id"]) for r in seeds],list(range(1,101)))
         self.assertEqual(len(batching._rows(self.run/"simion/hs1_bound_parameters.csv")[1]),2)
+
+    def test_injected_merge_preserves_original_sparse_ids_and_seeds_without_rebasing(self) -> None:
+        _, complete = self.planning()
+        plan = self.materialize(complete)
+        self.populate(plan)
+        original = [2+3*index for index in range(100)]
+        self.config["injected_source"] = dict(particle_ids=original, mother_particle_count=120)
+        self.save_config()
+        for batch in plan["batches"]:
+            folder = self.run/f"simion_batch_{batch['index']:04d}"
+            for name in ("events.csv", "samples.csv", "collision_rng_seeds.csv"):
+                fields, rows = batching._rows(folder/name)
+                for row in rows:
+                    pid = original[batch["simion_particle_id_offset"] + int(row["particle_id"]) - 1]
+                    row["particle_id"] = pid
+                    if name == "collision_rng_seeds.csv":
+                        row.update(global_particle_id=pid, seed=self.config["numerics"]["seed"]+pid-1)
+                batching._csv(folder/name, fields, rows)
+        result = batching.merge_batches(self.run, self.run/"results/batches.json")
+        self.assertEqual(result["particle_count"], 100)
+        _, events = batching._rows(self.run/"simion/events.csv")
+        self.assertEqual([int(row["particle_id"]) for row in events if row["event"] == "terminal"], original)
+        _, seeds = batching._rows(self.run/"simion/collision_rng_seeds.csv")
+        self.assertEqual([int(row["global_particle_id"]) for row in seeds], original)
+
+    def test_merge_requires_unique_native_completion_and_matching_count(self) -> None:
+        _, complete = self.planning()
+        plan = self.materialize(complete)
+        first = plan["batches"][0]
+        count = first["count"]
+        fact = f"status,Fly completed. {count} splats, 2.19 seconds\n"
+        cases = [
+            ("ION_PROCESSOR_END\n", "exactly one"),
+            ("ION_PROCESSOR_END\n" + fact + fact, "exactly one"),
+            (f"ION_PROCESSOR_END\nstatus,Fly completed. {count+1} splats, 2.19 seconds\n", "splats differ"),
+            (fact, "completion sentinel"),
+        ]
+        for text, error in cases:
+            with self.subTest(error=error, text=text):
+                self.populate(plan)
+                log = self.run/f"logs/flight_batch_{first['index']:04d}.log"
+                log.write_text(text, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, error):
+                    batching.merge_batches(self.run, self.run/"results/batches.json")
+                self.assertFalse((self.run/"results/batch_merge_receipt.json").exists())
 
     def test_merge_rejects_missing_terminal_and_wrong_global_seed(self) -> None:
         _,complete=self.planning();plan=self.materialize(complete);self.populate(plan)
@@ -329,11 +393,8 @@ class BatchingTests(unittest.TestCase):
             # Keep an explicit rejected/lost particle as well as every timeout.
             events[-1]["reason"] = "electrode_splat"
             batching._csv(folder/"events.csv", fields, events)
-            expected = Path(self.temp.name)/"expected_id_first.csv"
-            batching._csv(expected, ["particle_id", *[field for field in fields if field != "particle_id"]], events)
             for name in ("events.csv", "samples.csv", "extraction_steps.csv", "extraction_impulses.csv"):
                 originals[(folder/name).relative_to(self.run).as_posix()] = (folder/name).read_bytes()
-            originals[(folder/"events_id_first.csv").relative_to(self.run).as_posix()] = expected.read_bytes()
         batching.merge_batches(self.run,self.run/"results/batches.json")
         found = {}
         archives = list((self.run/"results").glob("merged_worker_csv_batch_*.zip"))
@@ -383,7 +444,7 @@ class BatchingTests(unittest.TestCase):
         batching.merge_batches(self.run,self.run/"results/batches.json")
         self.assertFalse(list((self.run/"results").glob("merged_worker_csv_batch_*.zip")))
         for batch in plan["batches"]:
-            for name in ("events.csv", "samples.csv", "events_id_first.csv"):
+            for name in ("events.csv", "samples.csv"):
                 self.assertTrue((self.run/f"simion_batch_{batch['index']:04d}"/name).is_file())
 
     def test_worker_archive_removal_failure_preserves_archive_and_progress(self) -> None:

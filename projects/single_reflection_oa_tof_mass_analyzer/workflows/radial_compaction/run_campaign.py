@@ -296,7 +296,7 @@ def _fly(case: dict[str, Any], mode: str, simion_exe: Path, particle_count: int,
         started = time.perf_counter()
         completed, peak_working_set_bytes = run_observed_process(
             command, cwd=case["simion_dir"], stdout=log, stderr=error,
-            timeout_seconds=1800,
+            warning_seconds=1800,
         )
         elapsed = time.perf_counter() - started
         if completed.returncode != 0:

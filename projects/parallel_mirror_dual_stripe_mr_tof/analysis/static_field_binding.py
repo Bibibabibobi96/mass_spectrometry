@@ -79,15 +79,25 @@ def _record(manifest_path: Path, path: Path) -> dict[str, Any]:
 
 
 def _native_payload_record(manifest: Path, path: Path) -> dict[str, Any]:
-    """Use retired identities only inside the named non-live ancestry loader."""
+    """Resolve native payload identity without requiring its bytes for metadata use."""
     allowed = _retired_operator_records.get() or {}
     identity = (manifest.resolve(), path.resolve())
-    if identity not in allowed:
-        return _record(manifest, path)
     record = _sealed_record(manifest, path)
-    if record != allowed[identity]:
+    if identity in allowed and record != allowed[identity]:
         raise ValueError("retired operator payload differs from its approved original seal")
     return record
+
+
+def _require_native_payload_presence(binding: dict[str, Any]) -> None:
+    """Keep the existing strict COMSOL/response boundary, including approved ancestry."""
+    items = [(Path(level["manifest"]), Path(level["sources"][name]))
+             for level in [binding, *binding.get("refinement_windows", [])]
+             for name in ("scalar_pa", "surface") if level["sources"].get(name)]
+    items += [(Path(item["manifest"]), Path(item["pa_path"])) for item in binding.get("instances", [])]
+    allowed = _retired_operator_records.get() or {}
+    for owner, path in items:
+        if (owner.resolve(), path.resolve()) not in allowed:
+            _record(owner, path)
 
 
 def _validate_operator_consumption(plan: dict, owner: Path) -> None:
@@ -123,27 +133,32 @@ def _validate_operator_consumption(plan: dict, owner: Path) -> None:
             verify_record("frozen_operator_ancestry_input", record)
 
 
-@_within_record_lookup
-def _load_operator_ancestry(path: Path, *, copy_owner: Path | None = None,
-                            frozen_copy: Path | None = None) -> dict[str, Any]:
-    """Validate historical operator metadata, never a usable scalar-field source.
+def _approve_retired_operator_owner(owner: Path) -> dict:
+    """Authorize exactly a public receipt's complete five scalar/surface pairs.
 
-    Only a completed public retirement of all five IP scalar/surface pairs
-    permits absent payloads. All current loads retain the ordinary strict path.
+    Historical composition and pure-response declarations are metadata here;
+    their own physical, numerical and composition checks still execute normally.
     """
     from common.contracts.solver_review_retirement import RECEIPT_NAME, verify_retirement
     from common.contracts.file_identity import file_sha256
 
-    descriptor = _read(path)
-    owner = Path(descriptor["parent"]["manifest"]).resolve()
     receipt_path = owner.parent / RECEIPT_NAME
-    if not receipt_path.is_file():
-        return load_binding(path)
-    if (descriptor.get("role") != "mrtof_native_static_field_binding"
+    receipt = _read(receipt_path)
+    target_record = dict(path=str(owner), bytes=owner.stat().st_size, sha256=file_sha256(owner))
+    if any(receipt.get("target_manifest", {}).get(k) != target_record[k] for k in ("bytes", "sha256")):
+        raise ValueError("retired operator target manifest differs from its public receipt")
+    candidates = [p for p in (owner.parent / "results/field_binding.json",
+                              owner.parent / "results/response_basis.json") if p.is_file()]
+    if len(candidates) != 1:
+        raise ValueError("retired operator requires one canonical field or pure-response declaration")
+    canonical = candidates[0]
+    verify_record("operator_ancestry_binding", _record(owner, canonical))
+    descriptor = _read(canonical)
+    if (descriptor.get("role") not in {"mrtof_native_static_field_binding", "mrtof_native_static_field_response_basis"}
             or descriptor.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor"
-            or any(key in descriptor for key in ("materialization", "local_domain_update", "response_level_reuse", "consumer_view"))
+            or any(key in descriptor for key in ("local_domain_update", "response_level_reuse", "consumer_view"))
             or len(descriptor.get("refinement_windows", [])) != 4):
-        raise ValueError("retired operator ancestry requires the original full five-level ordinary IP binding")
+        raise ValueError("retired operator requires the original full five-level IP declaration")
     expected = {}
     for level in (descriptor["parent"], *descriptor["refinement_windows"]):
         if Path(level["manifest"]).resolve() != owner or not level.get("surface_path"):
@@ -155,31 +170,56 @@ def _load_operator_ancestry(path: Path, *, copy_owner: Path | None = None,
             expected[payload] = _sealed_record(owner, payload)
     if len(expected) != 10:
         raise ValueError("retired operator requires ten distinct scalar/surface records")
-    receipt = _read(receipt_path)
-    target_record = dict(path=str(owner), bytes=owner.stat().st_size, sha256=file_sha256(owner))
-    if any(receipt.get("target_manifest", {}).get(k) != target_record[k] for k in ("bytes", "sha256")):
-        raise ValueError("retired operator target manifest differs from its public receipt")
     removed = receipt.get("removed_files", [])
     actual = {owner.parent / row["path"]: row for row in removed}
     if (len(actual) != 10 or len(removed) != 10 or set(actual) != set(expected)
-            or receipt.get("selected_heavy_paths") != sorted(p.relative_to(owner.parent).as_posix() for p in expected)
+            or receipt.get("selected_heavy_paths") not in (None, sorted(p.relative_to(owner.parent).as_posix() for p in expected))
             or any(any(actual[p].get(k) != r.get(k) for k in ("bytes", "sha256")) for p, r in expected.items())):
         raise ValueError("retired operator receipt must remove exactly the original five scalar/surface pairs")
     projections = _operator_projections.get()
     key = str(owner)
     receipt_record = dict(path=str(receipt_path), bytes=receipt_path.stat().st_size, sha256=file_sha256(receipt_path))
     if key not in projections:
-        verify_retirement(owner.parent)
+        verify_retirement(owner.parent, consumed_paths=[canonical.relative_to(owner.parent).as_posix()])
         projections[key] = dict(schema_version=1, role="mrtof_native_operator_ancestry_projection",
             consumer_projection_id="ip-retired-scalar-operator-ancestry", usable_as_field_source=False,
-            target_manifest=target_record,
-            retirement_receipt=receipt_record, consumed_records={})
+            target_manifest=target_record, retirement_receipt=receipt_record,
+            consumed_records={str(canonical.resolve()): _record(owner, canonical)})
     elif (projections[key]["retirement_receipt"] != receipt_record
           or projections[key]["target_manifest"] != target_record):
         raise ValueError("operator retirement receipt changed during recursive load")
-    canonical = owner.parent / "results/field_binding.json"
-    sealed = _record(owner, canonical)
-    verify_record("operator_ancestry_binding", sealed)
+    return {(owner, p): r for p, r in expected.items()}
+
+
+@_within_record_lookup
+def _load_operator_ancestry(path: Path, *, copy_owner: Path | None = None,
+                            frozen_copy: Path | None = None, baseline: dict | None = None) -> dict[str, Any]:
+    """Read sealed non-live operator lineage, including mixed-owner extensions.
+
+    Only this recursive ancestry boundary can consult retired scalar identities.
+    Public response selection remains strict; native metadata is not PA authorization.
+    """
+    from common.contracts.solver_review_retirement import RECEIPT_NAME
+    from common.contracts.file_identity import file_sha256
+
+    descriptor = _read(path)
+    is_response = baseline is not None
+    loader = (lambda: _load_native_response_metadata(path, baseline)) if is_response else (lambda: load_binding(path))
+    if "parent" not in descriptor:
+        # An overlay is a live wrapper, not a retired five-level declaration;
+        # its public loader validates its owner and the enclosed live fields.
+        return loader()
+    levels = [descriptor["parent"], *descriptor["refinement_windows"]]
+    retired = {Path(level["manifest"]).resolve() for level in levels
+               if (Path(level["manifest"]).parent / RECEIPT_NAME).is_file()}
+    if not retired:
+        return loader()
+    # A fine extension/reused response belongs to its first, newly written
+    # window, even though its parent scalar belongs to an older retired run.
+    owner = Path((levels[1] if "local_domain_update" in descriptor or "response_level_reuse" in descriptor
+                  or is_response else levels[0])["manifest"]).resolve()
+    canonical = owner.parent / ("results/response_basis.json" if is_response else "results/field_binding.json")
+    verify_record("operator_ancestry_binding", _record(owner, canonical))
     if descriptor != _read(canonical):
         raise ValueError("operator ancestry descriptor differs from the complete original declaration")
     if copy_owner is not None:
@@ -188,33 +228,102 @@ def _load_operator_ancestry(path: Path, *, copy_owner: Path | None = None,
         verify_record("operator_ancestry_binding_copy", copy_record, base_dir=copy_owner.parent)
         if _read(copy_path) != descriptor:
             raise ValueError("operator ancestry locator differs from its consumer-owned frozen declaration")
-        projections[key]["consumed_records"].update({str(copy_path.resolve()): copy_record,
-            str(copy_owner.resolve()): dict(path=str(copy_owner.resolve()), bytes=copy_owner.stat().st_size,
-                                           sha256=file_sha256(copy_owner))})
     elif path.resolve() != canonical.resolve() or frozen_copy is not None:
         raise ValueError("operator ancestry copy requires its explicit sealed consumer owner")
-    token = _retired_operator_records.set({**(_retired_operator_records.get() or {}),
-        **{(owner, p): r for p, r in expected.items()}})
+    approved = {}
+    for retired_owner in retired:
+        approved.update(_approve_retired_operator_owner(retired_owner))
+        if copy_owner is not None:
+            _operator_projections.get()[str(retired_owner)]["consumed_records"].update({
+                str(copy_path.resolve()): copy_record,
+                str(copy_owner.resolve()): dict(path=str(copy_owner.resolve()), bytes=copy_owner.stat().st_size,
+                                               sha256=file_sha256(copy_owner))})
+    token = _retired_operator_records.set({**(_retired_operator_records.get() or {}), **approved})
     try:
-        result = load_binding(path)
+        result = loader()
     finally:
         _retired_operator_records.reset(token)
     result["usable_as_field_source"] = False
     return result
 
 
+def verify_joint_asset_records(binding: dict[str, Any]) -> None:
+    """Verify actual guarded native payloads once, including overlay headers, excluding lineage."""
+    records = {}
+    def add(record, path):
+        actual = Path(record["path"]).resolve()
+        if actual != Path(path).resolve():
+            raise ValueError("Joint asset record path differs from actual binding")
+        if actual in records and any(records[actual][key] != record[key] for key in ("bytes", "sha256")):
+            raise ValueError("Joint asset has conflicting sealed identities")
+        records[actual] = record
+
+    for level in [binding, *binding.get("refinement_windows", [])]:
+        if "scalar_pa" in level["records"]:
+            add(level["records"]["scalar_pa"], level["sources"]["scalar_pa"])
+        if level["records"].get("surface") is not None:
+            add(level["records"]["surface"], level["sources"]["surface"])
+    for instance in binding.get("instances", []):
+        add(instance["record"], instance["pa_path"])
+        owner = Path(instance["manifest"])
+        surface = Path(str(instance["pa_path"]) + "-surf").resolve()
+        manifest = _read(owner)
+        if any(Path(record["path"]).resolve() == surface
+               for record in [*manifest.get("outputs", []), *manifest.get("inputs", {}).values()]):
+            add(_sealed_record(owner, surface), surface)
+    for record in records.values():
+        verify_record("live joint field asset", record)
+    overlay = binding.get("collision_overlay")
+    if overlay is not None:
+        from .native_static_field_provider import (
+            collision_pa_header, verify_collision_overlay_support, COLLISION_NOTREFINABLE_FLAG,
+        )
+        plan = _read(Path(overlay["patch_plan_path"]))
+        source = load_binding(Path(binding["source_descriptor_path"]))
+        verify_collision_overlay_support(source, plan)
+        patch = binding["instances"][-1]
+        header = collision_pa_header(Path(patch["pa_path"]))
+        if (header.symmetry != 1 or header.raw_mirror & 7 != 1
+                or not header.raw_mirror & COLLISION_NOTREFINABLE_FLAG
+                or [header.nx, header.ny, header.nz] != plan["dimensions"]
+                or [header.dx_mm, header.dy_mm, header.dz_mm] != plan["pitch_mm"]):
+            raise ValueError("collision overlay PA grid/symmetry differs")
+
+
 def resolve_native_refine_numerics(contract: Mapping[str, Any]) -> dict[str, Any]:
-    """Resolve the sole contract-owned native Refine stopping value, in volts."""
+    """Resolve contract-owned convergence and an explicitly declared skipped-point policy."""
     try:
         refine = contract["simion"]["numerical_profiles"]["native_static_field"]["refine"]
     except (KeyError, TypeError) as exc:
         raise ValueError("native field requires its numerical contract Refine profile") from exc
-    if not isinstance(refine, Mapping) or set(refine) != {"convergence_v"}:
-        raise ValueError("native Refine profile requires only convergence_v")
+    if (not isinstance(refine, Mapping) or "convergence_v" not in refine
+            or set(refine) - {"convergence_v", "skipped_point"}):
+        raise ValueError("native Refine profile requires convergence_v and optional skipped_point")
     value = refine["convergence_v"]
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
         raise ValueError("native convergence_v must be finite and positive")
-    return dict(refine_stopping="contract_convergence", convergence_v=float(value))
+    result = dict(refine_stopping="contract_convergence", convergence_v=float(value))
+    if "skipped_point" in refine:
+        if type(refine["skipped_point"]) is not bool:
+            raise ValueError("native Refine skipped_point must be Boolean")
+        result["refine_skipped_point"] = refine["skipped_point"]
+    return result
+
+
+def native_refine_options(numerics: Mapping[str, Any]) -> dict[str, Any]:
+    """Translate frozen numerical identity to the official pa:refine option names."""
+    result = dict(convergence=numerics["convergence_v"])
+    if "refine_skipped_point" in numerics:
+        if type(numerics["refine_skipped_point"]) is not bool:
+            raise ValueError("native Refine skipped_point must be Boolean")
+        result["skipped_point"] = numerics["refine_skipped_point"]
+    return result
+
+
+def native_refine_identity_matches(actual: Mapping[str, Any], expected: Mapping[str, Any]) -> bool:
+    """Keep an explicit Boolean strategy distinct from either another value or an undeclared default."""
+    return (all(actual.get(key) == value for key, value in expected.items())
+            and actual.get("refine_skipped_point") is expected.get("refine_skipped_point"))
 
 
 def native_refine_numerics(plan: Mapping[str, Any], manifest: Path) -> dict[str, Any]:
@@ -227,6 +336,8 @@ def native_refine_numerics(plan: Mapping[str, Any], manifest: Path) -> dict[str,
         contract_path = Path(path)
         verify_record("numerical_contract", _record(manifest, contract_path), base_dir=manifest.parent)
         numerics = resolve_native_refine_numerics(_read(contract_path))
+        if "refine_skipped_point" in remaining and type(remaining["refine_skipped_point"]) is not bool:
+            raise ValueError("native plan refine_skipped_point must be Boolean")
         if isinstance(remaining.get("convergence_v"), bool):
             raise ValueError("native plan convergence_v must be numeric, not Boolean")
         if any(remaining.pop(key, None) != value for key, value in numerics.items()):
@@ -238,7 +349,8 @@ def native_refine_numerics(plan: Mapping[str, Any], manifest: Path) -> dict[str,
 
     def has_convergence(value: Any) -> bool:
         if isinstance(value, Mapping):
-            return any("convergence" in key.lower() or has_convergence(item) for key, item in value.items())
+            return any("convergence" in key.lower() or key in {"refine_skipped_point", "skipped_point"}
+                       or has_convergence(item) for key, item in value.items())
         return isinstance(value, list) and any(has_convergence(item) for item in value)
 
     if has_convergence(remaining):
@@ -251,7 +363,7 @@ def native_numerics_match(binding: Mapping[str, Any], numerical_contract_path: s
     expected = resolve_native_refine_numerics(_read(Path(numerical_contract_path)))
     if binding.get("mode") != "native_static_pa":
         raise ValueError("native numerical matching requires a loaded native binding")
-    return all(all(level["native_solver_numerics"].get(key) == value for key, value in expected.items())
+    return all(native_refine_identity_matches(level["native_solver_numerics"], expected)
                for level in (binding, *binding["refinement_windows"]))
 
 
@@ -405,8 +517,8 @@ def _validate_native_surface_absence(manifest: Path, pa: Path) -> None:
         if source_manifest.resolve() == manifest.resolve() or source_pa.resolve() == pa.resolve():
             raise ValueError("native crop must preserve a distinct original successful source")
         verify_record("crop_source_manifest", _record(manifest, source_manifest), base_dir=manifest.parent)
-        original = _record(source_manifest, source_pa)
-        inherited = _record(manifest, source_pa)
+        original = _native_payload_record(source_manifest, source_pa)
+        inherited = _native_payload_record(manifest, source_pa)
         if any(original.get(key) != inherited.get(key) for key in ("bytes", "sha256")):
             raise ValueError("native crop source PA identity differs from its original seal")
         source_plan_path = source_manifest.parent / "inputs" / "plan.json"
@@ -683,7 +795,7 @@ def _validate_ip_fine_extension(binding: dict, base: dict, windows: list, instan
     source_descriptor = _read(source_path)
     if source_descriptor.get("local_domain_update") or source_descriptor.get("consumer_view"):
         raise ValueError("IP fine extension source must be an ordinary unextended field")
-    source = load_binding(source_path)
+    source = _load_operator_ancestry(source_path, copy_owner=owner)
     verify_record("IP fine extension source manifest", lineage["source_manifest"])
     if (Path(lineage["source_manifest"]["path"]).resolve() != Path(source["manifest"]).resolve()
             or source["accelerator_provider"] != binding["accelerator_provider"]
@@ -770,14 +882,14 @@ def _validate_ip_response_level_reuse(binding: dict, base: dict, windows: list, 
         raise ValueError("IP response reuse requires the original complete pure response")
     old_source = _load_operator_ancestry(Path(old_descriptor["source_binding_path"]),
         copy_owner=Path(old_descriptor["refinement_windows"][0]["manifest"]))
-    old = load_native_response_basis(old_path, old_source)
+    old = _load_operator_ancestry(old_path, baseline=old_source)
     if Path(lineage["source_basis_manifest"]["path"]).resolve() != Path(old["refinement_windows"][0]["manifest"]).resolve():
         raise ValueError("IP reused response manifest differs")
     fine = windows[0]
     fine_plan = _read(Path(fine["numerical_plan_path"]))
     source_path = Path(fine_plan["ip_source_binding_path"])
     verify_record("IP response ordinary source", _record(owner, source_path), base_dir=owner.parent)
-    source = load_binding(source_path)
+    source = _load_operator_ancestry(source_path, copy_owner=owner)
     validate_ip_fine_response_reuse(old, source, lineage["axis"])
     if (binding["parent"] != old_descriptor["parent"]
             or binding["refinement_windows"][1:] != old_descriptor["refinement_windows"][1:]
@@ -791,6 +903,53 @@ def _validate_ip_response_level_reuse(binding: dict, base: dict, windows: list, 
             or instances[0]["pa_path"] != base["sources"]["scalar_pa"]
             or instances[1:] != source["instances"][1:]):
         raise ValueError("IP response reuse changes fields, pure excitation, parent, route or collision ancestry")
+
+
+def _sealed_fresh_ip_origin(owner: Path, source_path: Path, binding: dict[str, Any],
+                            assembly: dict[str, Any], *, pure_response: bool) -> bool:
+    """Recover an unused hint in an already frozen full-fresh replacement run.
+
+    The old fresh emitter wrote a source locator without consuming an asset.
+    Only its sealed closed request and full plan can establish that distinction;
+    a real or sealed source, response or derived operator retains strict ancestry.
+    New emitters omit this hint, so new runs do not need this recovery branch.
+    """
+    hint = owner.parent / "inputs/source_binding.json"
+    if pure_response or source_path.resolve() != hint.resolve() or source_path.exists():
+        return False
+    manifest = _read(owner)
+    records = [*manifest.get("inputs", {}).values(), *manifest["outputs"]]
+    if any(isinstance(record, dict) and Path(record.get("path", "")).resolve() == hint.resolve()
+           for record in records):
+        return False
+    documents = []
+    for name in ("request", "plan"):
+        path = owner.parent / "inputs" / (name + ".json")
+        verify_record("sealed fresh IP " + name, _record(owner, path), base_dir=owner.parent)
+        documents.append(_read(path))
+    request, plan = documents
+    keys = {"schema_version", "role", "run_id", "replacement_assembly_path", "replacement_assembly_manifest",
+            "numerical_contract_path", "ion_processor_local_grid", "surface_allowance_bytes_per_level"}
+    forbidden = {"source_binding_record", "source_binding_path", "source_authority", "response_basis",
+                 "reuse_source", "source_solve_manifest", "source_solve_plan_path", "materialization_manifest"}
+    levels = plan.get("levels", {})
+    if (set(request) != keys or request.get("schema_version") != 1
+            or request.get("role") != "mrtof_native_static_field_provider_request"
+            or plan.get("schema_version") != 1 or plan.get("role") != "mrtof_native_static_field_provider_plan"
+            or request.get("run_id") != plan.get("run_id") or plan.get("run_id") != owner.parent.name
+            or plan.get("project") != "parallel_mirror_dual_stripe_mr_tof" or plan.get("operation") != "refine"
+            or any(plan.get(key) != binding.get(key) for key in ("accelerator_provider", "assembly_scope", "replacement_assembly"))
+            or not isinstance(levels, dict) or not levels
+            or any(forbidden.intersection(value) or value.get("refine_performed") is False
+                   for value in (plan, *levels.values()))
+            or {"source_binding", "source_response_basis"}.intersection(plan.get("inputs", {}))
+            or Path(request["replacement_assembly_path"]).resolve() != Path(binding["replacement_assembly"]["path"]).resolve()
+            or Path(plan.get("inputs", {}).get("replacement_assembly", "")).resolve()
+            != Path(request["replacement_assembly_path"]).resolve()
+            or Path(request["replacement_assembly_manifest"]).resolve()
+            != Path(assembly["replacement_assembly_manifest"]["path"]).resolve()):
+        raise ValueError("missing IP source hint is not justified by a sealed full-fresh replacement origin")
+    return True
 
 
 def _validate_ip_replacement(binding: dict[str, Any], base: dict[str, Any],
@@ -861,7 +1020,8 @@ def _validate_ip_replacement(binding: dict[str, Any], base: dict[str, Any],
     parent_plan = _read(Path(base["numerical_plan_path"]))
     source_path = parent_plan.get("ip_source_binding_path")
     source = None
-    if source_path is not None:
+    if source_path is not None and not _sealed_fresh_ip_origin(
+            owner, Path(source_path), binding, assembly, pure_response=pure_response):
         source_path = Path(source_path)
         verify_record("IP unchanged source binding", _record(owner, source_path), base_dir=owner.parent)
         source_descriptor = _read(source_path)
@@ -931,8 +1091,8 @@ def native_response_operator(binding: dict[str, Any], authority: dict[str, Any])
 
 
 @_within_record_lookup
-def load_native_response_basis(path: Path, baseline: dict[str, Any]) -> dict[str, Any]:
-    """Validate a successful pure response; never authorize it as a Fly workpoint."""
+def _load_native_response_metadata(path: Path, baseline: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the unique sealed pure-response math and operator, without PA access."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import (
         PS_GROUPS, RESPONSE_NORMALIZATION_V, TE1_AXIS, _response_authority, _te1_basis_metadata,
     )
@@ -1002,6 +1162,14 @@ def load_native_response_basis(path: Path, baseline: dict[str, Any]) -> dict[str
     return result
 
 
+@_within_record_lookup
+def load_native_response_basis(path: Path, baseline: dict[str, Any]) -> dict[str, Any]:
+    """Validate a live pure response, preserving its strict PA presence boundary."""
+    result = _load_native_response_metadata(path, baseline)
+    _require_native_payload_presence(result)
+    return result
+
+
 def _load_native_materialized(descriptor: dict[str, Any], path: Path) -> dict[str, Any]:
     """Verify composition lineage/receipts, then reuse the ordinary native loader."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import compile_response_coefficients, TE1_AXIS
@@ -1026,7 +1194,8 @@ def _load_native_materialized(descriptor: dict[str, Any], path: Path) -> dict[st
         raise ValueError("native materialization lineage differs from its frozen plan")
     base = _load_operator_ancestry(Path(metadata["base_binding"]), copy_owner=owner,
         frozen_copy=owner.parent / "inputs/combination_base_binding.json")
-    bases = {axis: load_native_response_basis(Path(value), base) for axis, value in metadata["response_basis_paths"].items()}
+    bases = {axis: _load_operator_ancestry(Path(value), baseline=base)
+             for axis, value in metadata["response_basis_paths"].items()}
     if any(value["response_basis"]["axis"] != axis for axis, value in bases.items()):
         raise ValueError("materialization response axis differs from its map")
     if (TE1_AXIS in bases) != ("target_mirror_voltages_v" in metadata):
@@ -1077,7 +1246,7 @@ def _load_native_materialized(descriptor: dict[str, Any], path: Path) -> dict[st
 
 def _load_collision_overlay(binding: dict[str, Any], path: Path) -> dict[str, Any]:
     """Preserve the source operator seal and independently verify new occupancy."""
-    from .native_static_field_provider import collision_overlay_plan, collision_pa_header, COLLISION_NOTREFINABLE_FLAG
+    from .native_static_field_provider import collision_overlay_plan
     required = {"schema_version", "role", "manifest", "source_binding", "source_binding_copy",
                 "patch_plan_path", "patch_pa_path", "patch_surface_path"}
     if set(binding) != required or binding["schema_version"] != 1:
@@ -1132,13 +1301,8 @@ def _load_collision_overlay(binding: dict[str, Any], path: Path) -> dict[str, An
         raise ValueError("collision overlay PA and surface must belong to its owner")
     pa_record = _native_payload_record(owner, pa_path)
     surface_record = _native_payload_record(owner, surface_path)
-    header = collision_pa_header(pa_path)
-    if (header.symmetry != 1 or header.raw_mirror & 7 != 1
-            or not header.raw_mirror & COLLISION_NOTREFINABLE_FLAG
-            or [header.nx, header.ny, header.nz] != plan["dimensions"]
-            or [header.dx_mm, header.dy_mm, header.dz_mm] != plan["pitch_mm"]
-            or pa_record["bytes"] != plan["pa_bytes"] or surface_record["bytes"] <= 0):
-        raise ValueError("collision overlay PA grid/symmetry/surface differs")
+    if pa_record["bytes"] != plan["pa_bytes"] or surface_record["bytes"] <= 0:
+        raise ValueError("collision overlay declared PA/surface size differs")
     result = copy.deepcopy(source)
     result["instances"].append(dict(role="analyzer_collision_patch", manifest=str(owner),
         pa_path=str(pa_path.resolve()), origin_mm=plan["origin_mm"], record=pa_record))
@@ -1151,7 +1315,10 @@ def _load_collision_overlay(binding: dict[str, Any], path: Path) -> dict[str, An
 
 @_within_record_lookup
 def load_binding(path: Path, *, _allow_responses: bool = True) -> dict[str, Any]:
-    """Resolve the base and ordered local scalar fields; unknown support never falls back."""
+    """Resolve frozen native metadata; actual PA consumption requires explicit validation.
+
+    COMSOL and response declarations retain their existing strict payload boundary.
+    """
     binding = _read(path)
     if binding.get("role") == "mrtof_native_collision_overlay_binding":
         return _load_collision_overlay(binding, path)
@@ -1199,6 +1366,7 @@ def load_binding(path: Path, *, _allow_responses: bool = True) -> dict[str, Any]
         if _read(source_path).get("role") != "mrtof_native_static_field_binding":
             raise ValueError("collision reference must be a sealed native binding")
         native = load_binding(source_path, _allow_responses=False)
+        _require_native_payload_presence(native)
         if native["geometry"] != geometry or native["authority"] != authority:
             raise ValueError("native collision geometry or full voltage authority differs from COMSOL")
         binding.update(

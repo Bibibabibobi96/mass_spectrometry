@@ -367,6 +367,7 @@ $ResponseFieldBindingPath=''
 $GeometryReviewRunPath='geometry';$MirrorRunPath='mirror';$StripeRunPath='stripe'
 $TrajectoryStepScale=.25;$AcceleratorSourceYOffsetMm=0
 $python='python';$capacitySession=$null;$AcceleratorProviderReceiptPath='oa-receipt'
+$CompositionPlanPath='composition-plan';$LocalScopePath=''
 $PulseAcceleratorUntilInitialExit=$false;$AcceleratorPulseSchedulePath=''
 $TrajectoryProfileId='center_screening';$SimionExe=''
 Invoke-Expression $freeze[0].Extent.Text

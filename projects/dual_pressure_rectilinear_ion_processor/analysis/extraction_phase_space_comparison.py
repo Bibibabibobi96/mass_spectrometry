@@ -17,14 +17,18 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 import numpy as np
 
+from common.analysis.population_moments import population_pair_moments
+
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import derive_numerical_boundaries
 from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from projects.dual_pressure_rectilinear_ion_processor.analysis.spatial_crossings import (
+    VALUES, prepare_spatial_crossings_from_samples,
+)
 
 PROJECT = "dual_pressure_rectilinear_ion_processor"
-VALUES = ("x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
 COLORS = ("#0072B2", "#E69F00", "#009E73", "#D55E00")
 MARKERS = ("o", "s", "^", "D")
 
@@ -185,14 +189,15 @@ def prepare_statistics(cases: list[dict], *, allow_empty_common: bool = False) -
                 for status in ("alive", "extracted", "lost", "notborn", "unknown"):
                     base[status + "_count"] = sum(r["status"] == status for r in all_rows)
                 x = np.array([r["x_mm"] for r in alive]); vx = np.array([r["vx_mm_us"] * 1000 for r in alive])
-                covariance = float(np.mean((x-x.mean()) * (vx-vx.mean()))) if len(x) else None
+                moments = population_pair_moments(x, vx)
+                covariance = moments["covariance"]
                 base.update(sigma_x_mm=float(x.std()) if len(x) else None, sigma_vx_m_s=float(vx.std()) if len(x) else None,
                             mean_Ex_eV=float(np.mean([r["Ex_eV"] for r in alive])) if len(x) else None,
                             cov_x_vx_mm_m_s=covariance,
                             mean_total_energy_eV=float(np.mean([r["total_energy_eV"] for r in alive])) if len(x) else None,
                             sigma_Ez_eV=float(np.std([r["Ez_eV"] for r in alive])) if len(x) else None,
-                            rms_emittance_x_vx_mm_m_s=math.sqrt(max(0, float(x.var()*vx.var()-covariance**2))) if len(x) else None)
-                base["r_x_vx"] = covariance/float(x.std()*vx.std()) if len(x) and x.std()>0 and vx.std()>0 else None
+                            rms_emittance_x_vx_mm_m_s=math.sqrt(max(0, moments["variance_first"]*moments["variance_second"]-covariance**2)) if len(x) else None)
+                base["r_x_vx"] = moments["correlation"]
                 for axis in "xy":
                     angles = [r[f"theta_{axis}_deg"] for r in alive if r[f"theta_{axis}_deg"] is not None]
                     base[f"angle_{axis}_count"] = len(angles)
@@ -200,10 +205,11 @@ def prepare_statistics(cases: list[dict], *, allow_empty_common: bool = False) -
                 directed = [r for r in alive if r["theta_x_deg"] is not None]
                 angle_x = np.array([r["x_mm"] for r in directed])
                 angle = np.array([math.radians(r["theta_x_deg"])*1000 for r in directed])
-                angle_cov = float(np.mean((angle_x-angle_x.mean())*(angle-angle.mean()))) if directed else None
+                angle_moments = population_pair_moments(angle_x, angle)
+                angle_cov = angle_moments["covariance"]
                 base.update(cov_x_theta_x_mm_mrad=angle_cov,
-                            r_x_theta_x=angle_cov/float(angle_x.std()*angle.std()) if directed and angle_x.std()>0 and angle.std()>0 else None,
-                            rms_emittance_x_theta_mm_mrad=math.sqrt(max(0,float(angle_x.var()*angle.var()-angle_cov**2))) if directed else None)
+                            r_x_theta_x=angle_moments["correlation"],
+                            rms_emittance_x_theta_mm_mrad=math.sqrt(max(0,angle_moments["variance_first"]*angle_moments["variance_second"]-angle_cov**2)) if directed else None)
                 statistics.append(base)
                 current = {r["particle_id"]: r for r in alive}
                 if previous is not None:
@@ -211,7 +217,7 @@ def prepare_statistics(cases: list[dict], *, allow_empty_common: bool = False) -
                     shared = sorted(set(before) & set(current))
                     a = np.array([before[p]["vx_mm_us"] * 1000 for p in shared]); b = np.array([current[p]["vx_mm_us"] * 1000 for p in shared]); delta = b-a
                     if shared:
-                        cross = float(2 * np.mean((a-a.mean())*(delta-delta.mean())))
+                        cross = 2 * population_pair_moments(a, delta)["covariance"]
                         intervals.append(dict(case=case["label"], cohort=cohort, from_stage=before_stage, to_stage=stage, count=len(shared),
                                               sigma_vx_before_m_s=float(a.std()), sigma_vx_after_m_s=float(b.std()),
                                               variance_change_m2_s2=float(b.var()-a.var()), twice_cov_before_delta_m2_s2=cross,
@@ -276,14 +282,7 @@ def prepare_velocity_changes(cases: list[dict], common: list[int]) -> tuple[list
 
 
 def prepare_spatial_crossings(case: dict, planes: list[float]) -> list[dict]:
-    """First bounded -z crossings after pulse, without extrapolating terminal states."""
-    if not planes or len(set(planes)) != len(planes) or any(not math.isfinite(z) or z < 0 for z in planes) or planes != sorted(planes, reverse=True):
-        raise ValueError("spatial planes must be unique finite nonnegative descending z")
-    config = case["config"]
-    pulse = config["native_timing"]["pulse_start_us"]
-    limit = config["diagnostics"]["max_extraction_bracket_us"]
-    mass = config["source"]["species"]["mass_amu"]
-    previous, crossed = {}, {}
+    """Read manifest-bound samples and reconstruct bounded post-pulse crossings."""
     path = Path(case["run"]) / "simion/samples.csv"
     if not any(Path(record["path"]).resolve() == path.resolve() for record in case["source_records"]):
         raise ValueError("spatial sample table is not a verified consumed record")
@@ -291,71 +290,7 @@ def prepare_spatial_crossings(case: dict, planes: list[float]) -> list[dict]:
         reader = csv.DictReader(stream)
         if not {"particle_id", "t_us", *VALUES} <= set(reader.fieldnames or []):
             raise ValueError("spatial sample columns missing")
-        for line, raw in enumerate(reader, start=2):
-            t = float(raw["t_us"])
-            if t < pulse:
-                continue
-            pid = int(raw["particle_id"])
-            if pid not in case["sources"]:
-                raise ValueError("spatial sample contains unknown particle")
-            current = dict(t_us=t, **{key:float(raw[key]) for key in VALUES}, line=line)
-            if any(not math.isfinite(current[key]) for key in ("t_us", *VALUES)):
-                raise ValueError("nonfinite spatial sample")
-            before = previous.get(pid)
-            previous[pid] = current
-            if before is None:
-                continue
-            gap = t-before["t_us"]
-            if gap <= 0:
-                raise ValueError("spatial sample time not increasing for particle")
-            if gap > limit+1e-12 or before["vz_mm_us"] >= 0 or current["vz_mm_us"] >= 0:
-                continue
-            for z in planes:
-                if z == 0 or (pid,z) in crossed or not before["z_mm"] >= z >= current["z_mm"] or before["z_mm"] == current["z_mm"]:
-                    continue
-                alpha = (z-before["z_mm"])/(current["z_mm"]-before["z_mm"])
-                state = {key:before[key]+alpha*(current[key]-before[key]) for key in ("t_us", *VALUES)}
-                state["z_mm"] = z
-                crossed[pid,z] = dict(**state, bracket_start_us=before["t_us"], bracket_end_us=t, bracket_gap_us=gap,
-                                      lower_sample_line=before["line"], upper_sample_line=line, interpolation_alpha=alpha, method="bounded_linear_sample_crossing")
-    for pid, raw in case["exits"].items():
-        state = {key:float(raw[key]) for key in ("t_us", *VALUES)}
-        if any(not math.isfinite(value) for value in state.values()) or state["t_us"] < pulse or state["vz_mm_us"] >= 0 or abs(state["z_mm"]) > 1e-10:
-            raise ValueError("recorded exit violates spatial crossing contract")
-        before = previous.get(pid)
-        # The actual exit is a measured upper anchor when sampling stops at z>0.
-        # Preserve the same temporal bound; never extrapolate or invent a CSV line.
-        if before is not None:
-            gap = state["t_us"]-before["t_us"]
-            if 0 < gap <= limit+1e-12 and before["vz_mm_us"] < 0 and before["z_mm"] > 0:
-                for z in planes:
-                    if z == 0 or (pid,z) in crossed or not before["z_mm"] >= z > 0:
-                        continue
-                    alpha = (z-before["z_mm"])/(state["z_mm"]-before["z_mm"])
-                    interpolated = {key:before[key]+alpha*(state[key]-before[key]) for key in ("t_us", *VALUES)}
-                    interpolated["z_mm"] = z
-                    crossed[pid,z] = dict(**interpolated, bracket_start_us=before["t_us"], bracket_end_us=state["t_us"], bracket_gap_us=gap,
-                                          lower_sample_line=before["line"], upper_sample_line=None, interpolation_alpha=alpha,
-                                          method="bounded_sample_to_exit_event_crossing")
-        if 0 in planes:
-            crossed[pid,0] = dict(**state, bracket_start_us=None, bracket_end_us=None, bracket_gap_us=None,
-                                  lower_sample_line=None, upper_sample_line=None, interpolation_alpha=None, method="recorded_extraction_exit_event")
-    rows = []
-    for z in planes:
-        for pid in sorted(case["sources"]):
-            state = crossed.get((pid,z))
-            row = dict(case=case["label"], stage=f"z_{z:g}_mm", plane_z_mm=z, particle_id=pid, status="alive" if state else "unknown",
-                       reason="first_negative_z_crossing" if state else "no_valid_recorded_crossing", terminal_reason=case["terminals"][pid]["reason"])
-            columns = ("t_us", *VALUES, "bracket_start_us", "bracket_end_us", "bracket_gap_us", "lower_sample_line", "upper_sample_line", "interpolation_alpha", "method")
-            row.update({key:state[key] if state else None for key in columns})
-            row["time_after_pulse_us"] = state["t_us"]-pulse if state else None
-            row["Ex_eV"] = kinetic_energy_ev(mass,state["vx_mm_us"]*1000,0,0) if state else None
-            row["Ez_eV"] = kinetic_energy_ev(mass,0,0,state["vz_mm_us"]*1000) if state else None
-            row["total_energy_eV"] = kinetic_energy_ev(mass,*(state[f"v{axis}_mm_us"]*1000 for axis in "xyz")) if state else None
-            for axis in "xy":
-                row[f"theta_{axis}_deg"] = math.degrees(math.atan2(state[f"v{axis}_mm_us"],abs(state["vz_mm_us"]))) if state else None
-            rows.append(row)
-    return rows
+        return prepare_spatial_crossings_from_samples(case, planes, enumerate(reader, start=2))
 
 
 def build_spatial_figures(cases: list[dict], statistics: list[dict], planes: list[float]) -> dict:

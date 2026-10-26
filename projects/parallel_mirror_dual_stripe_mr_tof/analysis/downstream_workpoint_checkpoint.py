@@ -20,7 +20,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 )
 
 PROJECT = "parallel_mirror_dual_stripe_mr_tof"
-CHILD_MODE = "finite_3d_two_prism_voltage_trial"
+CHILD_MODE = "oa_mr"
 PARENT_MODE = "downstream_fixed_grid_workpoint_iteration"
 
 
@@ -65,7 +65,7 @@ def _child_manifest_ok(path: Path) -> dict[str, Any]:
     if (
         value.get("schema_version") != 2
         or value.get("role") != "simulation_run_manifest"
-        or value.get("project") != PROJECT
+        or value.get("project") != "instrument_assembly"
         or value.get("mode") != CHILD_MODE
         or value.get("status") != "success"
     ):

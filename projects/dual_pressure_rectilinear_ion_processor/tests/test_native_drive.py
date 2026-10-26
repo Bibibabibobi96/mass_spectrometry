@@ -39,7 +39,8 @@ class NativeDriveTests(unittest.TestCase):
         ]
         c = {"baseline": baseline, "native_operating_point": point, "native_timing":derive_native_timing(baseline)}
         program = "local c=" + lua_literal(c) + "\n"
-        program += "local drive=assert(loadfile(" + json.dumps(str(PROJECT / "simion/native_drive.lua").replace("\\", "/")) + "))()\n"
+        program += "local waveforms=assert(loadfile(" + json.dumps(str(REPO / "common/simion/voltage_waveforms.lua").replace("\\", "/")) + "))()\n"
+        program += "local drive=assert(loadfile(" + json.dumps(str(PROJECT / "simion/native_drive.lua").replace("\\", "/")) + "))(waveforms)\n"
         program += "local rfmodule=assert(loadfile(" + json.dumps(str(REPO / "common/multipole/simion_rf_drive.lua").replace("\\", "/")) + "))()\n"
         program += "local rf=rfmodule.new" + lua_literal({"waveform": "cosine", "frequency_hz": baseline["electric"]["rf_frequency_hz"], "phase_rad": 0, "rf_amplitude_v": baseline["electric"]["rf_peak_to_peak_v"] / 2, "rf_scale": 1, "common_mode_scale": 1, "group_dc_v": [0, 0], "rf_steps_per_period": numerics["rf_steps_per_period"], "electrodes": [{"electrode_id": 1, "electrode_group": 1, "polarity": 1, "common_mode_v": 0}]}) + "\n"
         for time, expected in cases:

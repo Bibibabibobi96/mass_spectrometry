@@ -574,12 +574,29 @@ class CandidateDesignTests(unittest.TestCase):
             inputs = self.candidate_run_inputs(root_path)
             artifact_root = root_path / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
             run_id = "20260720_120000__build__cross__design-candidate__zero-change"
-            plan = prepare_candidate_run(
-                *inputs, run_id, artifact_root, particle_source_seed=20260713
-            )
+            with mock.patch(
+                "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers.prepare",
+                side_effect=AssertionError("live compiler must not execute"),
+            ):
+                plan = prepare_candidate_run(
+                    *inputs, run_id, artifact_root, particle_source_seed=20260713
+                )
             expected_run_root = artifact_root / "runs" / run_id
             run_root = Path(plan["run_root"])
             planning_root = Path(plan["planning_root"])
+            code_root = Path(plan["execution_source_closure"]["code_root"])
+            compiler = code_root / "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/prepare_candidate_consumers.py"
+            compiler_log = planning_root / "logs/prepare_consumers.stdout.log"
+            self.assertIn(f"SOURCE={compiler}", compiler_log.read_text(encoding="utf-8"))
+            frozen_resolved = json.loads((planning_root / "inputs/candidate_resolved_geometry.json").read_text())
+            from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import (
+                render_fly2, render_program, render_resolved_lua,
+            )
+            expected = {"oatof_resolved.lua": render_resolved_lua(frozen_resolved),
+                        "oatof_ideal_grounded.lua": render_program(frozen_resolved),
+                        "oatof_ideal_grounded.fly2": render_fly2(frozen_resolved, particle_source_seed=20260713)}
+            for name, text in expected.items():
+                self.assertEqual((planning_root / "inputs/prepared_consumers/simion" / name).read_text(), text)
             # GitHub Windows runners may expose the same temporary directory
             # through long and 8.3 path aliases.  Compare the existing project
             # root by file identity, then verify the not-yet-created suffix.
@@ -632,8 +649,8 @@ class CandidateDesignTests(unittest.TestCase):
                 "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
                 "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
                 "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
-                "projects/orthogonal_accelerator/comsol/build_two_zone_geometry.m",
-                "projects/orthogonal_accelerator/comsol/build_two_zone_grids.m",
+                "projects/orthogonal_accelerator/comsol/build_sectioned_geometry.m",
+                "projects/orthogonal_accelerator/comsol/build_accelerator_grids.m",
                 "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
                 "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
             }.issubset(source_ids))
@@ -651,6 +668,14 @@ class CandidateDesignTests(unittest.TestCase):
                 if "python_runtime_binding" in item["transformations"]
             }
             self.assertEqual(transformed, PYTHON_BOUND_SOURCES)
+            for source_id in (
+                "common/paths/workspace_paths.m",
+                "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m",
+            ):
+                record = next(item for item in closure["sources"] if item["source_id"] == source_id)
+                self.assertEqual(record["transformations"], [])
+                self.assertEqual(record["source_sha256"], record["sha256"])
+                self.assertEqual((code_root / source_id).read_bytes(), (REPO_ROOT / source_id).read_bytes())
             live_root = str(REPO_ROOT.resolve()).encode()
             runtime_path = closure["runtime"]["python_executable"].encode()
             for item in closure["sources"]:
@@ -942,6 +967,28 @@ class CandidateDesignTests(unittest.TestCase):
             self.assertEqual(stage["template_input"]["role"], "oa_tof_candidate_simion_layout_template")
             self.assertTrue(Path(stage["template_input"]["files"]["iob"]["path"]).is_file())
             self.assertTrue(Path(stage["template_input"]["files"]["con"]["path"]).is_file())
+            from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
+            observe = preparation.run_observed_process
+            payload = b"discarded compiler header\n" + b"x" * 6000 + "\nRuntimeError: 实际编译失败\n".encode()
+
+            def fail_compiler(_command, **kwargs):
+                # Exercise the same public observer and real stderr transport;
+                # this deliberate Python failure is not a solver result.
+                return observe([sys.executable, "-c",
+                    f"import sys;sys.stderr.buffer.write({payload!r});sys.exit(17)"], **kwargs)
+
+            with mock.patch.object(preparation, "run_observed_process", side_effect=fail_compiler):
+                with self.assertRaises(ValueError) as failed:
+                    prepare_candidate_run(*inputs,
+                        "20260726_121001__build__cross__design-candidate__compiler-failure", artifact_root,
+                        particle_source_seed=20260713, simion_template_run=registration)
+            message = str(failed.exception)
+            self.assertIn("exit_code=17", message)
+            self.assertIn("prepare_consumers.stderr.log", message)
+            detail = message.split("stderr_tail=\n", 1)[1]
+            self.assertEqual(detail, payload[-4096:].decode("utf-8"))
+            self.assertNotIn("discarded compiler header", detail)
+            self.assertIn("RuntimeError: 实际编译失败", detail)
 
     def test_candidate_workflow_rejects_missing_template_before_run_start(self):
         with tempfile.TemporaryDirectory() as root:
@@ -1385,21 +1432,13 @@ class CandidateDesignTests(unittest.TestCase):
         self.assertTrue(required.issubset(set(RELATIVE_PATHS)))
         self.assertIn("projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1", PYTHON_BOUND_SOURCES)
 
-    def test_functional_solver_test_runners_use_short_lived_execution_aliases(self):
-        for relative in (
-            "tests/comsol/run_n100_candidate_functional.ps1",
-            "tests/simion/run_n100_source_build_and_track.ps1",
-        ):
-            runner = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
-            self.assertIn("-UseShortExecutionPath", runner, relative)
-            self.assertIn(
-                "Remove-RunPackageExecutionAlias -Package $package",
-                runner,
-                relative,
-            )
-            self.assertIn("-CapacityLedgerLifecycleEnabled", runner, relative)
-            self.assertIn("Apply-RunArtifactRetention", runner, relative)
-            self.assertIn("Write-VerifiedRunManifest", runner, relative)
+    def test_functional_comsol_runner_uses_short_lived_execution_alias(self):
+        runner = (PROJECT_ROOT / "tests/comsol/run_n100_candidate_functional.ps1").read_text(encoding="utf-8")
+        self.assertIn("-UseShortExecutionPath", runner)
+        self.assertIn("Remove-RunPackageExecutionAlias -Package $package", runner)
+        self.assertIn("-CapacityLedgerLifecycleEnabled", runner)
+        self.assertIn("Apply-RunArtifactRetention", runner)
+        self.assertIn("Write-VerifiedRunManifest", runner)
 
     def test_simion_candidate_requires_explicit_nonformal_frozen_template_before_builder(self):
         with tempfile.TemporaryDirectory() as root:
@@ -1442,7 +1481,6 @@ class CandidateDesignTests(unittest.TestCase):
         scripts = [
             PROJECT_ROOT / "workflows" / "formal_reference" / "verify_geometry_contract.ps1",
             PROJECT_ROOT / "workflows" / "mass_spectrum_candidate" / "run_mass_spectrum_candidate.ps1",
-            PROJECT_ROOT / "tests" / "simion" / "run_n100_source_build_and_track.ps1",
         ]
         for script in scripts:
             text = script.read_text(encoding="utf-8")
@@ -1553,9 +1591,11 @@ class CandidateDesignTests(unittest.TestCase):
                 if item["stage_id"] == "comsol_candidate"
             )
             observed = []
+            environments = []
 
             def fake_run(command, _log_path, _environment=None):
                 observed.append(command)
+                environments.append(_environment)
                 if "-ReportPath" in command:
                     report = Path(command[command.index("-ReportPath") + 1])
                     report.parent.mkdir(parents=True, exist_ok=True)
@@ -1586,6 +1626,7 @@ class CandidateDesignTests(unittest.TestCase):
 
             code_root = Path(plan["execution_source_closure"]["code_root"])
             self.assertEqual(len(observed), 3)
+            self.assertEqual(environments[0]["OATOF_CANDIDATE_ARTIFACT_ROOT"], str(artifact_root.parents[1]))
             commercial_commands = [command for command in observed if "-TaskScript" in command]
             self.assertEqual(len(commercial_commands), 2)
             for command in commercial_commands:
@@ -1606,6 +1647,29 @@ class CandidateDesignTests(unittest.TestCase):
                 },
             )
             self.assertTrue(artifact_root.is_dir())
+
+    def test_cad_stage_passes_the_same_verified_runtime_artifact_context(self):
+        with tempfile.TemporaryDirectory() as root:
+            artifact_root, plan_path = self.prepared_workflow_plan(Path(root), "20260720_145001")
+            plan = load_json(plan_path)
+            stage = next(item for item in plan["stages"] if item["stage_id"] == "cad_candidate")
+            environments = []
+
+            def fake_run(command, _log_path, environment):
+                environments.append(environment)
+                report = Path(command[command.index("-ReportPath") + 1])
+                report.parent.mkdir(parents=True, exist_ok=True)
+                report.write_text("STATUS=PASS\n", encoding="utf-8")
+                output = Path(stage["output_dir"])
+                output.mkdir(parents=True, exist_ok=True)
+                (output / "oaTOF_solidworks_export_report.json").write_text("{}", encoding="utf-8")
+
+            with mock.patch(
+                "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow._run_command",
+                side_effect=fake_run,
+            ):
+                execute_stage(stage, plan, "unused")
+            self.assertEqual(environments[0]["OATOF_CANDIDATE_ARTIFACT_ROOT"], str(artifact_root.parents[1]))
 
     def test_cad_python_preflight_blocks_comsol_before_commercial_launcher(self):
         with tempfile.TemporaryDirectory() as root:
@@ -1644,13 +1708,30 @@ class CandidateDesignTests(unittest.TestCase):
     def test_command_runner_merges_environment_without_name_error(self):
         with tempfile.TemporaryDirectory() as root:
             log_path = Path(root) / "command.log"
-            completed = subprocess.CompletedProcess(["unused"], 0)
+            process = mock.Mock()
+            process.poll.return_value = 0
+            process.returncode = 0
             with mock.patch(
-                "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow.subprocess.run",
-                return_value=completed,
+                "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow.subprocess.Popen",
+                return_value=process,
             ) as command:
                 _run_command(["unused"], log_path, {"OATOF_TEST_ENVIRONMENT": "present"})
             self.assertEqual(command.call_args.kwargs["env"]["OATOF_TEST_ENVIRONMENT"], "present")
+
+    def test_command_runner_warns_without_terminating_a_long_running_stage(self):
+        with tempfile.TemporaryDirectory() as root:
+            log_path = Path(root) / "command.log"
+            process = mock.Mock(pid=12345, returncode=0)
+            process.poll.side_effect = (None, 0)
+            module = "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow"
+            with mock.patch(f"{module}.subprocess.Popen", return_value=process), \
+                 mock.patch(f"{module}.time.monotonic", side_effect=(0, 4 * 60 * 60 + 1)), \
+                 mock.patch(f"{module}.time.sleep"), \
+                 mock.patch(f"{module}.warnings.warn") as warned:
+                _run_command(["unused"], log_path)
+            warned.assert_called_once()
+            process.wait.assert_not_called()
+            self.assertIn("CANDIDATE_STAGE_WARNING", log_path.read_text(encoding="utf-8"))
 
     def native_workflow_plan(self, root_path, stamp, *, particle_source_seed=20260720):
         artifact_root = root_path / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"

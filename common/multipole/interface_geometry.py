@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from collections.abc import Mapping
+
+from common.contracts.machine_contracts import ContractError
 
 
 class InterfaceGeometryError(ValueError):
@@ -87,3 +90,72 @@ def build_axial_interface_layout(
     if "connector_shape" in exit_interface:
         layout["exit"]["connector_shape"] = exit_interface["connector_shape"]
     return layout
+
+
+def through_exit_geometry(resolved_design: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolve the explicitly open cylindrical exit; closed or composed models fail."""
+    geometry = resolved_design["geometry_mm"]
+    enclosure = geometry["enclosure"]
+    if enclosure["model"] not in {
+        "cylindrical_grounded_shield_through_exit_v1",
+        "cylindrical_grounded_shield_through_entrance_exit_v1",
+    }:
+        raise ContractError("mechanical exit requires the explicit through-exit enclosure model")
+    if "downstream_terminal" in resolved_design:
+        raise ContractError("through-exit mechanical interface does not support composed downstream terminals")
+    interface = resolved_design["interfaces_mm"]["exit"]
+    cap_start = float(enclosure["exit_outer_endcap_upstream_face_z_mm"])
+    cap_end = float(enclosure["exit_outer_endcap_downstream_face_z_mm"])
+    length = float(interface["connector_length_mm"])
+    connector_start = float(interface["aperture_plate_downstream_face_z_mm"])
+    connector_end = connector_start + length
+    if length and (interface["connector_shape"] != "cylindrical_bore" or connector_start > cap_start):
+        raise ContractError("through-exit connector must be a continuous coaxial cylindrical bore")
+    return dict(surface_z_mm=max(cap_end, connector_end), aperture_radius_mm=float(interface["aperture_radius_mm"]),
+                outer_endcap_z_min_mm=cap_start, outer_endcap_z_max_mm=cap_end,
+                wall_thickness_mm=cap_end-cap_start if connector_end <= cap_end else None)
+
+
+def through_entrance_geometry(resolved_design: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolve the explicit outer entrance bore, never the internal release plane."""
+    geometry = resolved_design["geometry_mm"]
+    enclosure = geometry["enclosure"]
+    if enclosure["model"] != "cylindrical_grounded_shield_through_entrance_exit_v1":
+        raise ContractError("mechanical entrance requires the explicit through-entrance-exit enclosure model")
+    if "downstream_terminal" in resolved_design:
+        raise ContractError("through-entrance mechanical interface does not support composed downstream terminals")
+    interface = resolved_design["interfaces_mm"]["entrance"]
+    cap_start = float(enclosure["entrance_outer_endcap_upstream_face_z_mm"])
+    cap_end = float(enclosure["entrance_outer_endcap_downstream_face_z_mm"])
+    length = float(interface["connector_length_mm"])
+    connector_start = float(interface["connector_upstream_face_z_mm"])
+    connector_end = float(interface["connector_downstream_face_z_mm"])
+    if length and (interface["connector_shape"] != "cylindrical_bore" or connector_end < cap_end):
+        raise ContractError("through-entrance connector must be a continuous coaxial cylindrical bore")
+    return dict(surface_z_mm=min(cap_start, connector_start), aperture_radius_mm=float(interface["aperture_radius_mm"]),
+                outer_endcap_z_min_mm=cap_start, outer_endcap_z_max_mm=cap_end,
+                wall_thickness_mm=cap_end-cap_start if connector_start >= cap_start else None)
+
+
+def through_shield_geometry(resolved_design: Mapping[str, Any]) -> dict[str, float]:
+    """Return the physical cylindrical side-shell span for an open exit model.
+
+    The numerical vacuum may deliberately extend past the real exit for an
+    observation guard.  It is never a material-shell dimension.  The older
+    exit-only model retains its existing upstream shell origin; the explicit
+    dual-through model starts at the real entrance outer endcap.
+    """
+    enclosure = resolved_design["geometry_mm"]["enclosure"]
+    model = enclosure["model"]
+    if model not in {
+        "cylindrical_grounded_shield_through_exit_v1",
+        "cylindrical_grounded_shield_through_entrance_exit_v1",
+    }:
+        raise ContractError("physical side shell requires an explicit through-exit enclosure model")
+    z_min = float(enclosure["vacuum_z_min_mm"])
+    if model == "cylindrical_grounded_shield_through_entrance_exit_v1":
+        z_min = float(enclosure["entrance_outer_endcap_upstream_face_z_mm"])
+    z_max = float(enclosure["exit_outer_endcap_downstream_face_z_mm"])
+    if z_max <= z_min:
+        raise ContractError("through side-shell span must be increasing")
+    return dict(z_min_mm=z_min, z_max_mm=z_max)

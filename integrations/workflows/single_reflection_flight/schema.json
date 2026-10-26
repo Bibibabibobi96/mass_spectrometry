@@ -1,0 +1,458 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/integrations/single_reflection_flight/request.schema.json",
+  "title": "Explicit resolved-provider single reflection flight request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "composition_plan",
+    "providers",
+    "source",
+    "pulse_voltage_policy_id",
+    "numerics"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 9
+    },
+    "role": {
+      "const": "instrument_assembly_single_reflection_preparation_request"
+    },
+    "flight": {
+      "type": "object",
+      "description": "Explicit author flight inputs: pulse is timed (time_us/width_us), held_off (no timing fields), or discover (width_us and nonempty strictly increasing finite absolute candidate_times_us, including negative times). Discovery is an author declaration; native execution consumes a derived held_off or timed pulse. maximum_flight_us, maximum_step_us and trajectory_quality are required; rf_steps_per_period is required only when the selected field design includes RF. validate_native_flight with allow_discovery=True owns exact fields and numeric checks. Required by WorkbenchOnly and Fly."
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["predecessor_run_manifest"],
+      "properties": {
+        "predecessor_run_manifest": {
+          "$ref": "#/$defs/record",
+          "description": "Explicit stopped parent manifest for field-producer handoff or whole-batch recovery; no discovery or latest-run lookup is performed."
+        },
+        "stopped_receipt": {"$ref": "#/$defs/record"},
+        "frontend_field_transactions": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["domain_id", "member_id", "transaction_record"],
+            "properties": {
+              "domain_id": {"enum": ["parent", "entrance_refinement"]},
+              "member_id": {"type": "string", "minLength": 1},
+              "transaction_record": {"$ref": "#/$defs/record"}
+            }
+          }
+        }
+      },
+      "dependentRequired": {
+        "stopped_receipt": ["frontend_field_transactions"],
+        "frontend_field_transactions": ["stopped_receipt"]
+      }
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instances"
+      ],
+      "properties": {
+        "frontend_fields": {
+          "$ref": "#/$defs/record",
+          "description": "Explicit successful frontend working-field receipt from a terminal managed producer run: current schema 3 or read-only historical schema 2 source projection. Scientific inputs remain this request."
+        },
+        "frontend_field_reuse_members": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "description": "Optional explicit subset of current physical working-point members eligible for reuse from providers.frontend_fields. Omission selects every current member; undeclared members are built under the current request."
+        },
+        "downstream_fields": {
+          "$ref": "#/$defs/record",
+          "description": "Explicit successful downstream publication at its canonical producer/simion/downstream_fields/downstream_field_preparation.json; scientific inputs remain this request."
+        },
+        "instances": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resolved_design",
+              "electrode_bindings"
+            ],
+            "properties": {
+              "resolved_design": {
+                "$ref": "#/$defs/record"
+              },
+              "electrode_bindings": {
+                "type": "object",
+                "minProperties": 1
+              },
+              "geometry": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "accelerator_variant"
+                ],
+                "properties": {
+                  "accelerator_variant": {
+                    "enum": [
+                      "two_zone_square",
+                      "three_zone_square"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "instance_id",
+            "frame_id",
+            "particle_source",
+            "metadata",
+            "clock_authority",
+            "instrument_epoch"
+          ],
+          "properties": {
+            "instance_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "frame_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "particle_source": {
+              "$ref": "#/$defs/record"
+            },
+            "metadata": {
+              "$ref": "#/$defs/record"
+            },
+            "clock_authority": {
+              "$ref": "#/$defs/record"
+            },
+            "instrument_epoch": {
+              "$ref": "#/$defs/record"
+            },
+            "kind": {
+              "const": "recorded_birth"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "instance_id",
+            "release_spec",
+            "clock_authority",
+            "instrument_epoch"
+          ],
+          "properties": {
+            "kind": {
+              "const": "release_spec"
+            },
+            "instance_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clock_authority": {
+              "$ref": "#/$defs/record"
+            },
+            "instrument_epoch": {
+              "$ref": "#/$defs/record"
+            },
+            "release_spec": {
+              "$ref": "#/$defs/record"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "instance_id",
+            "frame_id",
+            "pre_pulse_collection",
+            "producer_manifest",
+            "clock_authority",
+            "instrument_epoch"
+          ],
+          "properties": {
+            "kind": {
+              "const": "recorded_pre_pulse_state"
+            },
+            "instance_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "frame_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pre_pulse_collection": {
+              "$ref": "#/$defs/record"
+            },
+            "pulse_decision": {
+              "$ref": "#/$defs/record"
+            },
+            "producer_manifest": {
+              "$ref": "#/$defs/record"
+            },
+            "clock_authority": {
+              "$ref": "#/$defs/record"
+            },
+            "instrument_epoch": {
+              "$ref": "#/$defs/record"
+            }
+          }
+        }
+      ]
+    },
+    "pulse_voltage_policy_id": {
+      "const": "all_accelerator_electrodes_zero_before_pulse_v1"
+    },
+    "numerics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundary_policy",
+        "frontend_domains"
+      ],
+      "properties": {
+        "boundary_policy": {
+          "const": "native_zero_neumann"
+        },
+        "rf_reference_voltage_v": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "frontend_domains": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "parent"
+          ],
+          "properties": {
+            "parent": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cell_mm_xyz",
+                "pa_bounds_mm",
+                "refine_convergence_v"
+              ],
+              "properties": {
+                "cell_mm_xyz": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "y": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "z": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                },
+                "pa_bounds_mm": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x_min",
+                    "x_max",
+                    "y_min",
+                    "y_max",
+                    "z_min",
+                    "z_max"
+                  ],
+                  "properties": {
+                    "x_min": {
+                      "type": "number"
+                    },
+                    "x_max": {
+                      "type": "number"
+                    },
+                    "y_min": {
+                      "type": "number"
+                    },
+                    "y_max": {
+                      "type": "number"
+                    },
+                    "z_min": {
+                      "type": "number"
+                    },
+                    "z_max": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "refine_convergence_v": {
+                  "$ref": "#/$defs/refine_convergence"
+                }
+              }
+            },
+            "entrance_refinement": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cell_mm_xyz",
+                "pa_bounds_mm",
+                "refine_convergence_v",
+                "guard_cells"
+              ],
+              "properties": {
+                "cell_mm_xyz": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "y": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "z": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                },
+                "pa_bounds_mm": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x_min",
+                    "x_max",
+                    "y_min",
+                    "y_max",
+                    "z_min",
+                    "z_max"
+                  ],
+                  "properties": {
+                    "x_min": {
+                      "type": "number"
+                    },
+                    "x_max": {
+                      "type": "number"
+                    },
+                    "y_min": {
+                      "type": "number"
+                    },
+                    "y_max": {
+                      "type": "number"
+                    },
+                    "z_min": {
+                      "type": "number"
+                    },
+                    "z_max": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "refine_convergence_v": {
+                  "$ref": "#/$defs/refine_convergence"
+                },
+                "guard_cells": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "local_scope": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/local_scope"
+    },
+    "composition_plan": {
+      "$ref": "#/$defs/record"
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "required": [
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        }
+      }
+    },
+    "refine_convergence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_off",
+        "pulse_delta"
+      ],
+      "properties": {
+        "carrier_off": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "rf_reference": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pulse_delta": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  }
+}

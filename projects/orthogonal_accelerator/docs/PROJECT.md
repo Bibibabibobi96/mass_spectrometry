@@ -4,11 +4,12 @@
 
 ## 统一组装迁移任务
 
-状态为规范已批准、实现待迁移，依赖[统一组装计划M1/M2](../../../docs/ROADMAP.md#统一组装迁移计划)；
-接口与职责只按[组装规范](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。本轮不改提供者代码、
-请求、PA、运行入口或资格。当前消费者继续使用既有接口。
+本地机械装配接口已由直属装配工作流消费，完整组件接口收敛与适用真实验收仍在进行，依赖[统一组装计划M1/M2](../../../docs/ROADMAP.md#统一组装迁移计划)；
+接口与职责只按[组装规范](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。当前消费者继续使用
+既有请求与渲染入口；在途输入、PA、运行身份和资格不因新增机械接口而切换。
 
-待办是将二区／三区现有输出适配到同一组件语义，分别保留拓扑、局部frame、侧口和理想零厚面的身份；
+二区／三区已发布同一机械侧口和物理电极身份视图；待办是由装配消费者绑定该视图与同一冻结请求的真实几何，
+分别保留拓扑、局部frame、侧口和理想零厚面的身份；
 具名电极与驱动绑定独立于局部PA编号。提供者继续独占内部几何派生，消费者不重画电极，孤立器件工作点
 不自动成为装配后的聚焦保证。关闭条件是两种变体的冻结请求、几何／驱动投影和相称真实行为／默认回放
 对照成立，并由现有局部集成及MR消费者核验；不得以一种变体通过替代另一种。
@@ -21,6 +22,32 @@
 
 ## 当前能力
 
+- COMSOL实体与零厚栅分别统一由`comsol/build_sectioned_geometry.m`和
+  `comsol/build_accelerator_grids.m`构造，旧二区专名文件及转发别名已删除。oaTOF实际入口可显式传入
+  现有几何／电气投影和独立机械侧孔，消费三区平面、非等间距环位置及真实ON电压；没有第二份几何Schema。
+  当前只支持方形截面，缺少三区投影时明确拒绝，机械孔不消费SIMION数值carve尺寸。
+  相关39项纯回归包含canonical数值与MATLAB静态接线；尚未执行新的COMSOL几何、选择集或保存重开验收，
+  静态ON场也不等价于有限宽脉冲。接口采用COMSOL 6.4官方
+  [WorkPlane](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.143.html)与
+  [Boolean几何](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.070.html)
+  （2026-10-24核对），官方API支持不授予具体器件的几何或物理资格。
+
+- [`analysis/assembly_interface.py`](../analysis/assembly_interface.py) 的
+  `resolve_assembly_interface(requirements, geometry_profile_id=...)` 返回 schema 1
+  `component_geometry_interface`：项目／变体／profile、局部frame、毫米单位、全部真实机械端口和
+  `component_electrodes`。二区显式选择已有具名profile；三区完整几何请求无具名profile时显式传 `None`，
+  profile标签不能替代冻结输入身份。接口直接复用两种现有几何编译器，不创建第二份CSG或修改请求。
+  侧口中心在真实外壁面，区别于原生输出的壁厚中面；矩形 `cross_section` 保留宽／高及局部轴，
+  并发布外法向和真实壁厚。二区一次编译同时发布`axial_exit`及实际存在的`side_entry`；
+  没有侧口的封闭二区只发布真实轴向口，不凭空增加孔。三区保留已证实的侧口，不把理想出口sheet或数值bounds当机械法兰。
+  电极以提供者 `component_electrode_id` 和角色标识，环保留各自物理ID；不导出局部PA号为全局号。
+  接口不声明孔内整面静态电位、时钟、源或粒子交接资格。渲染继续调用原provider，零厚栅面的语义不变。
+  无求解器回归覆盖两变体外壁／孔／电极身份、偏轴侧口、MR刚体参考向量及既有几何／GEM不变；
+  这些检查不替代真实装配场、飞行、默认回放或独立器件资格。
+  二区轴向出口端面、开口矩形、壁厚和电极身份直接来自同一次`resolved_electrodes`，不混入PA origin或全局placement。
+  原轴向专用接口已删除，MR直接使用同一完整组件接口；当前冷却二区配方已重新编译，原端面、连接、几何与源输入保持。
+  完整接口及直接消费者回归已由公共GATE完成，10项2.099 s通过并正常释放租约；
+  这证明接口与准备消费，不能称为新原生场或飞行验收，链路证据归统一集成状态。
 - 二区 requirements schema 2 增加显式 `side_entry`：选择负 y 侧面及 x/z 半宽，入口中心由提供者
   派生在首区中心，保持实心 repeller、接地后盖和负 z 出口拓扑。切口仅贯穿接地侧壁，并检查与其他
   实体的实际相交；schema 1 默认封闭结构的 GEM、layout 和 resolved 几何保持不变。有侧口的几何
@@ -35,7 +62,7 @@
   这是集成的运行表示，不改变两种器件几何，也不等同旧含额外入口硬件的八模式整机结构。
   零厚理想栅只表达求场电位面与理想透过，不承诺实体丝网透过率。完整 100 粒子源、真实 MR 装配、
   占据／脉冲、孔前后诊断及独立默认 Fly 对照由
-  [局部集成工作流](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md#同源八极导引接入与二区三区复用)
+  [局部集成工作流](../../../integrations/docs/INTEGRATION.md#局部前端执行与复核)
   拥有；二区／三区局部 N=100 及各自保存文件的完整默认重放均已闭合。集成结果不授予独立器件或 MR 资格，
   不能用旧封闭组件的 100% 传输替代同源多极杆接入后的实际传输。
 
@@ -95,6 +122,11 @@
   `20261003_153100__sim__simion__mrtof-oa-private-runtime-safe-exit-n100` 复用同一 OA runtime 与既有 corridor
   checkpoint，100/100 到达实际几何出口 `z=0`，最大残差为
   `4.092797e-6/0.0230745/0.0403388 V/q`，三轴均通过 `0.05 V/q`；该短程证据不计算探测器收集率或分辨率。
+  PA 缓存已接入[公共事务 API](../../../common/simion/README.md#pa-缓存与工作点)，但 PA runner 初次
+  `advance-transaction` 只接受 `build`；正常构建后的 `verify/complete` 是顺序发布步骤，尚未接通未发布事务的
+  跨 run 重入。已有 cache HIT／显式 runtime checkpoint 复用不代表中断恢复已全覆盖。
+  后续按[统一复用与恢复标准](../../../docs/DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)补齐新 run 与原资产 owner 的显式绑定，
+  由公共事务决定缺失工作；关闭条件是中断构建、待验证和待发布工况均可恢复，已完成响应不重复 Refine，且原 owner／证据身份不改。
   `analysis/component_focus_analysis.py` 只验证共享层产生的 canonical
   particle-state 与 SIMION 事件日志的身份、全粒子终态、负 z 穿越、传输和纵向时间聚焦。原生场未通过时，OA 自动在同一 PA、release、电压和数值设置上追加“仅一区理想化、仅二区理想化、全理想化”三臂，以各臂峰峰展宽直接定位有限场贡献；理想化只在 runtime efield 回调替换对应区域，绝不改变 PA。它不产生源；运行器只读已发布 `.pa0` 并执行内存 Fast Adjust，不复制、Refine、重建或发布 PA，也不把组件证据扩展为系统分辨率资格。
 - 对负 z 封闭二区，组件以出口为坐标原点，但理论的首区位置从 repeller 向出口计量。编译器把半径 1 mm、高 1 mm 圆柱的中点派生为出口上游 `gap_2 + gap_1/2`；SIMION 投影在物化共享 release 前以 provider plan 验证整个 cohort 位于 grid1 与 repeller 之间。它只影响 run-local release/FLY2，不改变已发布 PA 的几何、缓存或 Fast Adjust family。

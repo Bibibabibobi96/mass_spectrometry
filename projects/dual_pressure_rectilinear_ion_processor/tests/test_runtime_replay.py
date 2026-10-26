@@ -132,6 +132,31 @@ local function contents(path)
   local handle=assert(io.open(path,'r'))
   local value=handle:read('*a');handle:close();return value
 end
+if arg[2]=='injected' then
+  segment.initialize_run()
+  for id=1,sim_ions_count do
+    local s=sources[id]
+    local original=config.injected_source.particle_ids[id]
+    ion_number=id;ion_splat=0;ion_time_of_flight=s.t
+    put_local(s.x,s.y,s.z,s.vx,s.vy,s.vz)
+    segment.initialize();ion_time_step=1;segment.tstep_adjust()
+    assert(random_state==config.numerics.seed+original-1,'upstream RNG must use original sparse ID')
+    segment.fast_adjust();segment.other_actions()
+    ion_time_of_flight=s.t+1
+    segment.terminate()
+  end
+  segment.terminate_run()
+  local events=contents(directory..'events.csv')
+  local seeds_csv=contents(directory..'collision_rng_seeds.csv')
+  for id,s in ipairs(sources) do
+    local original=config.injected_source.particle_ids[id]
+    assert(events:match('source,'..original..',none,'..tostring(s.t)),
+      'source event must preserve original ID and absolute arrival')
+    assert(seeds_csv:match(string.format('%d,%d,%d',original,original,config.numerics.seed+original-1)),
+      'seed receipt must retain original identity without batch rebasing')
+  end
+  print('RUNTIME_INJECTED_ID_ARRIVAL_PASS');return
+end
 if arg[2]=='upstream-source' then
   segment.initialize_run()
   assert(force_queries>=15,'all native response bases must be observed before Fly')
@@ -240,6 +265,11 @@ local function fly_again(preinitialize)
           ion_time_of_flight=boundary-0.001;ion_time_step=1
           segment.tstep_adjust()
           assert(math.abs(ion_time_step-0.001)<1e-9,'timestep must land at lift/quench/pulse boundary')
+          for _,offset in ipairs({0,0.001}) do
+            ion_time_of_flight=boundary+offset;ion_time_step=1
+            segment.tstep_adjust()
+            assert(ion_time_step>0,'exact/past timing edges must not request a zero step')
+          end
         end
         ion_time_of_flight=t
       end
@@ -370,6 +400,8 @@ class RuntimeReplayTests(unittest.TestCase):
             # A distinct lower bound detects a hardcoded replacement for zero.
             config["baseline"]["native_geometry"]["domain_start_x_mm"] = -3.7
         config["source"]["particle_count"] = 2
+        if mode == "injected":
+            config["injected_source"] = dict(particle_ids=[2, 42])
         if mode in {"offset", "csv-batch"}:
             config["source"]["particle_count"] = 100
             config["execution_batch"] = {"particle_id_offset": 50, "particle_id_min": 51, "particle_id_max": 52, "retain_trajectories": mode != "csv-batch"}
@@ -388,9 +420,14 @@ class RuntimeReplayTests(unittest.TestCase):
                     shutil.copyfile(PROJECT / "simion" / name, folder / name)
             shutil.copyfile(REPOSITORY / "common/multipole/simion_rf_drive.lua",
                             folder / "simion_rf_drive.lua")
+            shutil.copyfile(REPOSITORY / "common/simion/voltage_waveforms.lua",
+                            folder / "voltage_waveforms.lua")
             (folder / "frozen_config.lua").write_text("return " + lua_literal(config), encoding="utf-8")
             sources = [{"particle_id": index, "t": 0, "x": 1, "y": index * 0.01,
                         "z": 0, "vx": 1, "vy": 0, "vz": 0, "ke": 5} for index in (1, 2)]
+            if mode == "injected":
+                for index, state in enumerate(sources):
+                    state["t"] = 43.02 + index*.4
             if mode == "upstream-source":
                 for state in sources:
                     state["x"] = config["native_projection"]["origin_mm"][0] + 0.5
@@ -403,6 +440,9 @@ class RuntimeReplayTests(unittest.TestCase):
                                     check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result.stdout
+
+    def test_injected_sparse_identity_and_absolute_arrival(self) -> None:
+        self.assertIn("RUNTIME_INJECTED_ID_ARRIVAL_PASS", self.run_runtime_fixture("injected"))
 
     def test_repeated_initialize_run_resets_state_and_draws_numerical_outline(self) -> None:
         self.assertIn("RUNTIME_REPLAY_PASS", self.run_runtime_fixture("replay"))

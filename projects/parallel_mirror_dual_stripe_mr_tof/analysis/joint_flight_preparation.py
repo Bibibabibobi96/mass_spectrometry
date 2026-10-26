@@ -7,17 +7,17 @@ import copy
 import csv
 from pathlib import Path
 import re
-import shutil
 import subprocess
 from typing import Any
 
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
 
-from common.contracts.verify_run_manifest import verify_record
+from common.contracts.frozen_inputs import freeze_file
+from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
-    REPO, freeze_file, verified_reference,
+    REPO, verified_reference,
 )
 
 
@@ -69,7 +69,8 @@ if r.role=='mrtof_event_field_query' then
 end
 local c=assert(loadfile(r.config))()
 local b=c.baseline
-local drive=assert(loadfile(r.drive))()
+local waveforms=assert(loadfile(r.waveforms))()
+local drive=assert(loadfile(r.drive))(waveforms)
 local rf=assert(loadfile(r.kernel))().new{
  waveform='cosine',frequency_hz=b.electric.rf_frequency_hz,
  phase_rad=b.clock.rf_phase_rad,rf_amplitude_v=b.electric.rf_peak_to_peak_v/2,
@@ -173,18 +174,75 @@ def prepare_interface_field_audit(*, source_run: Path, handoff: dict, source_dir
     coverage = audit_field_coverage(points, binding["refinement_windows"])
     level = native["refinement_windows"][coverage["first_match_rank_zero_based"]]
     manifest = _read(source_run / "run_manifest.json")
-    records = {Path(record["path"]).resolve(): record for record in manifest["outputs"] if record.get("exists")}
+    records = {}
+    for record in [*manifest.get("inputs", {}).values(), *manifest["outputs"]]:
+        if not record.get("exists"):
+            continue
+        path = record_path(record, base_dir=source_run)
+        if path in records and (records[path]["bytes"] != record["bytes"]
+                or str(records[path]["sha256"]).upper() != str(record["sha256"]).upper()):
+            raise ValueError("conflicting source interface manifest identity: " + str(path))
+        records[path] = {**record, "path": str(path)}
+    field_directory = (source_run / "simion").resolve()
+    basis_records = records
+    field_authority = {}
+    declaration = model.get("native_field")
+    if declaration is not None:
+        if declaration.get("source_manifest") is None:
+            if Path(declaration["directory"]).resolve() != field_directory:
+                raise ValueError("fresh native field directory differs from source run")
+        else:
+            consumption_path = (source_run / "inputs/native_field_consumption.json").resolve()
+            if consumption_path not in records:
+                raise ValueError("native field consumption is not manifest-bound: " + str(consumption_path))
+            consumption_record = records[consumption_path]
+            verify_record("native field consumption", consumption_record)
+            consumption = _read(consumption_path)
+            if ({key: value for key, value in consumption.items() if key != "verification"} != declaration
+                    or declaration.get("consumer_projection_id") != "ion_processor_native_field_v1"
+                    or "RUN_MANIFEST_VERIFY=PASS" not in consumption.get("verification", "")
+                    or "PROJECTION=ion_processor_native_field_v1" not in consumption.get("verification", "")):
+                raise ValueError("native field consumption differs from resolved declaration or verified projection")
+            field_manifest_path = Path(declaration["source_manifest"]).resolve()
+            if field_manifest_path not in records:
+                raise ValueError("native field source manifest is not bound by source run: " + str(field_manifest_path))
+            field_manifest_record = records[field_manifest_path]
+            if str(field_manifest_record["sha256"]).upper() != str(declaration["source_manifest_sha256"]).upper():
+                raise ValueError("native field source manifest identity differs from consumption")
+            verify_record("native field source manifest", field_manifest_record)
+            field_manifest = _read(field_manifest_path)
+            if (field_manifest.get("project") != "dual_pressure_rectilinear_ion_processor"
+                    or field_manifest.get("status") not in {"success", "failed"}):
+                raise ValueError("native field source must be an explicit terminal IP run")
+            field_directory = Path(declaration["directory"]).resolve()
+            if field_directory != field_manifest_path.parent / "simion":
+                raise ValueError("native field directory differs from declared producer")
+            basis_records = {}
+            for record in field_manifest["outputs"]:
+                path = record_path(record, base_dir=field_manifest_path.parent)
+                if path in basis_records:
+                    raise ValueError("native field producer repeats published PA identity: " + str(path))
+                basis_records[path] = {**record, "path": str(path)}
+            field_authority = dict(consumption=consumption_record, producer_manifest=field_manifest_record)
     audit = output / "interface_audit"
     audit.mkdir()
     frozen = {}
-    for name in ("frozen_config.lua", "native_drive.lua", "simion_rf_drive.lua"):
+    for name in ("frozen_config.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua"):
         original = source_run / "simion" / name
-        verify_record("source interface field control", records[original.resolve()])
+        if original.resolve() not in records:
+            raise ValueError("source interface field control is not manifest-bound: " + name)
+        verify_record("source interface field control", records[original.resolve()], base_dir=source_run)
         frozen[name] = freeze_file(original, audit / name)
     basis = []
     for index in range(16):
-        path = (source_run / "simion" / f"processor.pa{index}").resolve()
-        record = records[path]
+        path = field_directory / f"processor.pa{index}"
+        if path not in basis_records or not basis_records[path].get("exists"):
+            raise ValueError("source PA basis is not manifest-bound: " + str(path))
+        record = basis_records[path]
+        if declaration is not None and declaration.get("source_manifest") is not None:
+            if (path not in records or records[path].get("bytes") != record.get("bytes")
+                    or str(records[path].get("sha256")).upper() != str(record.get("sha256")).upper()):
+                raise ValueError("consumed PA basis differs from declared producer: " + str(path))
         if not path.is_file() or path.stat().st_size != record["bytes"]:
             raise ValueError("source PA basis is missing or changed in size")
         basis.append(record)
@@ -192,14 +250,14 @@ def prepare_interface_field_audit(*, source_run: Path, handoff: dict, source_dir
                    mass_amu=mass, charge_state=charge, local_to_mr=local_to_mr.to_contract(), coverage=coverage,
                    centroid_definition="mean_crossing_position_velocity_and_absolute_time__not_a_simultaneous_bunch",
                    joint_level=level, inputs=dict(source_manifest=freeze_file(source_run / "run_manifest.json", audit / "source_manifest.json"),
-                       audit_implementation=freeze_file(Path(__file__), audit / "joint_flight_preparation.py"),
                        source_states=file_record(canonical), source_resolved_model=file_record(source_run / "inputs/resolved_model.json"),
-                       source_controls=frozen, source_basis=basis, joint_binding=file_record(output / "static_field_binding.json"),
+                       source_controls=frozen, source_basis=basis, source_field_authority=field_authority,
+                       joint_binding=file_record(output / "static_field_binding.json"),
                        joint_scalar_adapter=file_record(runtime / "mrtof_candidate.scalar_field_adapter.lua")),
                    source_basis_identity_check="sealed_manifest_identity_and_current_size__read_only_handles_during_query")
     _write(audit / "request.json", request)
     execution = dict(points=points, config=frozen["frozen_config.lua"]["path"], drive=frozen["native_drive.lua"]["path"],
-                     kernel=frozen["simion_rf_drive.lua"]["path"], source_pa0=basis[0]["path"], joint_level=level,
+                     kernel=frozen["simion_rf_drive.lua"]["path"], waveforms=frozen["voltage_waveforms.lua"]["path"], source_pa0=basis[0]["path"], joint_level=level,
                      adapter=str(runtime / "mrtof_candidate.scalar_field_adapter.lua"), output=str(audit / "raw_field_samples.csv"))
     (audit / "request.lua").write_text("return " + _lua(execution) + "\n", encoding="utf-8", newline="\n")
     (audit / "query.lua").write_text(INTERFACE_AUDIT_LUA, encoding="utf-8", newline="\n")
@@ -439,7 +497,7 @@ def collision_workbench_layout(binding: dict[str, Any]) -> dict[str, Any]:
         seed=str(REPO / f"common/simion/assets/iob_instance_seeds/{len(roles)}_instance_seed.iob"))
 
 
-def render_measured_operating_point(reference_path: Path, source_directory: Path, native_field: dict, *,
+def render_measured_operating_point(reference_path: Path, source_directory: Path, native_field: dict, *, numerics: dict[str, float],
                                     field_assets_verified: bool = False, source_identity_verified: bool = False) -> str:
     """Retain the MR core operating point, removing every OA launch-only field."""
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provider import PS_GROUPS
@@ -453,6 +511,8 @@ def render_measured_operating_point(reference_path: Path, source_directory: Path
         "local t=assert(loadfile(" + _lua(str(reference_path)) + "))()\n"
         "t.accelerator_provider='dual_pressure_rectilinear_ion_processor'\n"
         "t.measured_source_directory=" + _lua(str(source_directory)) + "\n"
+        + "".join("t." + name + "=" + _lua(numerics[name]) + "\n"
+                  for name in ("trajectory_quality", "maximum_step_us", "full_path_timeout_us")) +
         "t.field_assembly_verified=" + _lua(field_assets_verified) + ";t.measured_source_matches_workpoint=" + _lua(source_identity_verified) + "\n"
         "t.accelerator_voltages_v=nil;t.accelerator_ring_voltages_v=nil\n"
         "t.accelerator_exit_plane_project_z_mm=nil\n"
@@ -466,10 +526,33 @@ def render_measured_operating_point(reference_path: Path, source_directory: Path
     )
 
 
-def freeze_field_reference(reference_run: Path, inputs: Path) -> dict[str, Any]:
+def freeze_field_reference(reference_run: Path, inputs: Path, *, compiler_contract: dict[str, Any]) -> dict[str, Any]:
     """Bind only original field geometry/voltage/grid authors; never open old PA."""
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import resolve_trajectory_profile
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.drift_phase_contract import resolve_drift_phase_contract
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _full_path_timeout_us
+
+    materialization_path = verified_reference(reference_run, "results/two_prism_trial_materialization.json")
+    materialization_record = freeze_file(materialization_path, inputs / "reference_materialization.json")
+    materialization = _read(Path(materialization_record["path"]))
+    if materialization["inputs"]["contract_sha256"].upper() != compiler_contract["sha256"].upper():
+        raise ValueError("MR materialization does not bind its compiler contract")
+    contract = _read(Path(compiler_contract["path"]))
+    profile = resolve_trajectory_profile(contract)
+    if any(materialization["trajectory_profile"][name] != profile[name]
+           for name in ("trajectory_quality", "maximum_step_us")):
+        raise ValueError("MR materialization numerics differ from its reference trajectory profile")
+    phase = resolve_drift_phase_contract(contract)
+    if materialization["target_drift_period_ratio"] != phase.target_period_ratio:
+        raise ValueError("MR materialization drift phase differs from its compiler contract")
+    timeout = _full_path_timeout_us(contract, contract["particle_source"], phase.target_period_ratio)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("MR compiler contract must derive a positive finite full path timeout")
     binding_path = verified_reference(reference_run, "simion/static_field_binding.json")
-    frozen = {"binding": freeze_file(binding_path, inputs / "reference_field_binding.json")}
+    frozen = {"binding": freeze_file(binding_path, inputs / "reference_field_binding.json"),
+              "reference_materialization": materialization_record,
+              "numerics": dict(trajectory_quality=profile["trajectory_quality"],
+                               maximum_step_us=profile["maximum_step_us"], full_path_timeout_us=timeout)}
     binding = _read(binding_path)
     operating = verified_reference(reference_run, "simion/mrtof_three_component_candidate.operating_point.lua")
     operating_record = freeze_file(operating, inputs / "reference_operating_point.lua")
@@ -525,10 +608,15 @@ def project_provider_voltages(source: dict, request: dict, inputs: Path, lua_exe
         raise ValueError("provider voltage schedule must belong to the selected IP component")
     schedule = freeze_file(schedule_source,
                            inputs / "provider_native_drive.lua")
+    waveforms_source = (REPO / dependency["provider_voltage_waveforms"]).resolve()
+    if waveforms_source != (REPO / "common/simion/voltage_waveforms.lua").resolve():
+        raise ValueError("provider voltage waveforms must be the declared common module")
+    waveforms = freeze_file(waveforms_source, inputs / "provider_voltage_waveforms.lua")
     when = max(baseline["schedule"]["lift_end_us"], source["native_timing"]["pulse_start_us"])
     config = dict(baseline=baseline, native_operating_point=point, native_timing=source["native_timing"])
     program = inputs / "provider_voltage_evaluation.lua"
-    program.write_text("local d=assert(loadfile(" + _lua(schedule["path"]) + "))()\n"
+    program.write_text("local waveforms=assert(loadfile(" + _lua(waveforms["path"]) + "))()\n"
+                       "local d=assert(loadfile(" + _lua(schedule["path"]) + "))(waveforms)\n"
                        "local v=d.voltages(" + _lua(config) + "," + _lua(when) + ",0)\n"
                        "local out={} for i=1,15 do out[i]=string.format('%.17g',assert(v[i])) end\n"
                        "assert(#v==15);print(table.concat(out,','))\n", encoding="utf-8", newline="\n")
@@ -537,276 +625,8 @@ def project_provider_voltages(source: dict, request: dict, inputs: Path, lua_exe
     values = [float(token) for token in evaluation.stdout.strip().split(",")]
     if len(values) != 15 or not all(math.isfinite(v) for v in values):
         raise ValueError("provider native schedule did not return 15 finite electrode voltages")
-    result = dict(values_v15=values, source_native_drive=schedule, evaluation_time_us=when,
+    result = dict(values_v15=values, source_native_drive=schedule, source_voltage_waveforms=waveforms, evaluation_time_us=when,
                   basis="post_extraction_pulse_held_rf_zero", evaluated_native_operating_point=point,
                   evaluated_baseline_lift_v=baseline["electric"]["lift_v"], plain_lua=file_record(lua_executable))
     _write(inputs / "provider_voltage_projection.json", result)
     return result
-
-
-def prepare_joint_flight(*, source_run: Path, reference_run: Path,
-                        interface_results: Path, frozen_inputs: Path, lua_executable: Path) -> dict[str, Any]:
-    """Materialize source/runtime/geometry plans, retaining all unverified boundaries."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import prepare_ion_processor_assembly
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_measured_source
-
-    output = interface_results / "joint_flight"
-    output.mkdir(exist_ok=False)
-    references = freeze_field_reference(reference_run, frozen_inputs)
-    resolved = _read(interface_results / "mrtof_handoff/matching_request_resolved.json")
-    resolved["field_assembly_reference"] = references
-    source_model = source_run / "inputs/resolved_model.json"
-    references["provider_voltage_projection"] = project_provider_voltages(_read(source_model), resolved, frozen_inputs, lua_executable)
-    assembly_request = frozen_inputs / "matching_assembly_request.json"
-    _write(assembly_request, resolved)
-    assembly = prepare_ion_processor_assembly(
-        source_resolved_model=source_model,
-        reference_trajectory=frozen_inputs / "reference_trajectory.json",
-        matching_request_resolved=assembly_request,
-        output_directory=output / "assembly")
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import validate_configs, derive_native_timing
-    seed_config = {name: _read(Path(path)) for name, path in assembly["source_config_paths"].items()}
-    seed_config["source_profile"] = "functional"
-    seed_config["native_timing"] = derive_native_timing(seed_config["baseline"])
-    validate_configs(seed_config)
-    seed_directory = Path(assembly["source_config_paths"]["baseline"]).parent
-    _write(seed_directory / "component_matching_derivation.json", {
-        "schema_version": 1, "role": "ion_processor_mrtof_matching_derivation",
-        "source_model": file_record(source_model), "matching_request": file_record(assembly_request),
-        "energy_seed": assembly["energy_seed"], "geometry_changes": assembly["geometry_changes"],
-        "qualification": "configuration_validated_only_not_flight_or_energy_match",
-    })
-    _write(output / "provider_execution_recipe.json", {
-        "schema_version": 1, "role": "ion_processor_standalone_candidate_execution_recipe",
-        "entrypoint": str(REPO / "projects/dual_pressure_rectilinear_ion_processor/simion/run_functional.ps1"),
-        "configuration_directory": str(seed_directory), "source_profile": "functional",
-        "requires_new_run_id": True, "reuse_old_native_field": False,
-        "configuration_validation": "PASS", "execution_performed": False,
-        "execution_scope": "fresh standalone IP Refine and N100 flight before later joint replay",
-        "dispatch": "existing_repository_resource_scheduler_automatic_concurrency",
-    })
-    source = materialize_measured_source(
-        interface_results / "mrtof_handoff/handoff_receipt.json", output / "measured_source")
-    runtime = output / "runtime"
-    runtime.mkdir()
-    project = REPO / "projects/parallel_mirror_dual_stripe_mr_tof"
-    for name, target in {
-        "mrtof_candidate.lua": "joint.lua",
-        "mirror_cycle_counter.lua": "joint.mirror_cycle_counter.lua",
-        "scalar_field_adapter.lua": "joint.scalar_field_adapter.lua",
-        "build_native_corridor_iob.lua": "build_workbench.lua",
-    }.items():
-        freeze_file(project / "simion" / name, runtime / target)
-    shutil.copyfile(output / "measured_source/source_runtime.lua", runtime / "joint.source_runtime.lua")
-    plan_path = Path(assembly["field_plan_path"])
-    plan = _read(plan_path)
-    priority = {
-        "schema_version": 1, "role": "mrtof_native_corridor_iob_priority_contract",
-        "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
-        "instances": [{"role": role, "priority_number": index}
-                      for index, role in enumerate(("global_fallback", "native_corridor", "detector"), 1)],
-    }
-    (runtime / "joint.priority.lua").write_text("return " + _lua(priority) + "\n", encoding="utf-8", newline="\n")
-    # These are future field files, not old field substitutions. No IOB is built here.
-    fields = output / "fields"
-    grid = _read(Path(references["numerical_plan"]["path"]))
-    native = {
-        "mode": "native_static_pa", "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
-        "assembly_scope": "full_c0_ion_processor_replacement",
-        "scalar_pa": str(fields / "parent.pa"), "origin_mm": grid["box_mm"][:3],
-        "pitch_mm": grid["pitch_mm"], "dimensions": grid["dimensions"], "symmetry": "x",
-        "collision_pa_path": str(fields / "collision.pa"),
-        "analyzer_voltages_v": references["analyzer_electrode_voltages_v"],
-        "refinement_windows": [],
-    }
-    # Field author returns each new level with its own grid. Wire those concrete
-    # plans after their generation; no old PA path survives this projection.
-    for level in plan["fields"]:
-        if level["name"] == "parent":
-            continue
-        local_grid = _read(Path(level["numerical_plan_path"]))
-        reference_window = next(window for window in references["refinement_windows"] if window["name"] == level["name"])
-        native["refinement_windows"].append({
-            "name": level["name"], "active_box_mm": reference_window["active_box_mm"], "mode": "native_static_pa",
-            "scalar_pa": str(fields / (level["name"] + ".pa")), "origin_mm": local_grid["box_mm"][:3],
-            "pitch_mm": local_grid["pitch_mm"], "dimensions": local_grid["dimensions"], "symmetry": "x",
-        })
-    wrapper = render_measured_operating_point(frozen_inputs / "reference_operating_point.lua", output / "measured_source", native)
-    (runtime / "joint.operating_point.lua").write_text(wrapper, encoding="utf-8", newline="\n")
-    shutil.copyfile(output / "measured_source/source.fly2", runtime / "joint.fly2")
-    _write(runtime / "new_field_binding_template.json", native)
-    build = {
-        "schema_version": 1, "role": "mrtof_measured_source_workbench_build",
-        "seed": str(REPO / "common/simion/assets/iob_instance_seeds/3_instance_seed.iob"),
-        "paths": [str(fields / name) for name in ("parent.pa", "collision.pa", "detector.pa")],
-        "origins": [grid["box_mm"][:3], assembly["runtime_geometry"]["collision"]["origin_mm"],
-                    assembly["runtime_geometry"]["detector"]["origin_mm"]],
-        "output": str(runtime / "joint.iob"), "program": str(runtime / "joint.lua"),
-        "fly2": str(runtime / "joint.fly2"), "operating": str(runtime / "joint.operating_point.lua"),
-        "priority": str(runtime / "joint.priority.lua"),
-    }
-    (runtime / "workbench_build.lua").write_text("return " + _lua(build) + "\n", encoding="utf-8", newline="\n")
-    receipt = {
-        "schema_version": 1, "role": "mrtof_joint_flight_preparation", "status": "prepared_not_flight_validated",
-        "accelerator_provider": "dual_pressure_rectilinear_ion_processor", "coupling_mode": "state_handoff",
-        "source_adapter_materialized": True, "runtime_adapter_materialized": True,
-        "field_assembly_materialized": True, "field_solution_exists": False,
-        "source_matches_new_workpoint": False, "fly_authorized": False, "solver_executed": False,
-        "event_particle_identity": "original_source_particle_id_no_batch_offset",
-        "analysis_consumer": "projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis.analyze_measured_component",
-        "assembly": assembly, "measured_source": source,
-        "field_plan": file_record(plan_path), "workbench_build_contract": build,
-        "future_workbench_build_arguments": ["--measured-source", str(runtime / "workbench_build.lua")],
-        "required_before_flight": [
-            "Run the new standalone IP operating point and verify measured exit energy and time focus.",
-            "Replace historical handoff states with the newly measured source; do not rescale the existing CSV.",
-            "Build/refine every new parent/local/collision field and seal identities, then bind those assets.",
-            "Verify geometry clearances, field support/transition, actual IOB priorities and source initialization.",
-        ],
-    }
-    _write(output / "joint_preparation_receipt.json", receipt)
-    return receipt
-
-
-def verify_joint_asset_records(records: dict[str, Any], *, assembly_sha256: str,
-                              expected_levels: set[str]) -> None:
-    """Fail closed before future IOB creation; old OA field identities are invalid."""
-    if (records.get("schema_version") != 1 or records.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor"
-            or records.get("assembly_sha256") != assembly_sha256):
-        raise ValueError("Joint field assets do not bind the new IP assembly")
-    if (set(records.get("levels", {})) != expected_levels or "parent" not in expected_levels
-            or not records.get("collision") or not records.get("detector")):
-        raise ValueError("New field, collision and detector assets are required")
-    for record in [*records["levels"].values(), records["collision"], records["detector"]]:
-        verify_record("new joint field asset", record)
-
-
-def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
-                         handoff_receipt: Path, energy_comparison: dict[str, Any],
-                         output_directory: Path, execution_contract: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Bind newly measured states and freshly sealed replacement fields, without Fly.
-
-    Readiness means asset/configuration identity only. Energy acceptance, full
-    phase-space matching and time focus remain explicitly unqualified.
-    """
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import materialize_measured_source
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
-
-    if output_directory.exists():
-        raise FileExistsError(output_directory)
-    design_path = verified_reference(design_run, "results/joint_flight/joint_preparation_receipt.json")
-    design = _read(design_path)
-    assembly = design["assembly"]
-    assembly_path = Path(assembly["assembly_geometry_path"])
-    verified_reference(design_run, assembly_path.relative_to(design_run).as_posix())
-    actual_path = source_run / "inputs/resolved_model.json"
-    actual = _read(actual_path)
-    # The new actual run must be the design that was built, not the historical
-    # source and not a second automatically derived lift-voltage proposal.
-    for name in ("baseline", "native_operating_point", "numerics", "source", "coordinate_transform"):
-        expected_path = Path(assembly["source_config_paths"][name])
-        verified_reference(design_run, expected_path.relative_to(design_run).as_posix())
-        if actual[name] != _read(expected_path):
-            raise ValueError("measured IP run differs from prepared design: " + name)
-    binding_path = verified_reference(field_run, "results/field_binding.json")
-    binding = load_binding(binding_path)
-    layout = collision_workbench_layout(binding)
-    if (binding.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor"
-            or binding["geometry"] != _read(assembly_path)):
-        raise ValueError("new fields do not bind the prepared IP replacement geometry")
-    handoff = _read(handoff_receipt)
-    component_path = Path(handoff["inputs"]["component_receipt"]["path"])
-    if Path(_read(component_path)["source_run"]).resolve() != source_run.resolve():
-        raise ValueError("new handoff does not originate from selected measured IP run")
-    comparison_component = energy_comparison["inputs"]["component_receipt"]
-    verify_record("energy comparison measured component", comparison_component)
-    if Path(comparison_component["path"]).resolve() != component_path.resolve():
-        raise ValueError("energy comparison refers to a different measured source")
-    if (energy_comparison.get("role") != "mrtof_measured_exit_energy_comparison"
-            or energy_comparison.get("centroid_match_accepted") is not None):
-        raise ValueError("binding requires characterized energy without invented acceptance")
-    output_directory.mkdir(parents=True)
-    source = materialize_measured_source(handoff_receipt, output_directory / "measured_source")
-    runtime = output_directory / "runtime"
-    runtime.mkdir()
-    # Keep pristine Program/FLY2 inputs distinct from IOB output companions:
-    # Workbench save may write same-basename companions before the final copy.
-    for source_name, target_name in {
-        "mrtof_candidate.lua": "mrtof_candidate.lua", "mirror_cycle_counter.lua": "mrtof_candidate.mirror_cycle_counter.lua",
-        "scalar_field_adapter.lua": "mrtof_candidate.scalar_field_adapter.lua", "build_native_corridor_iob.lua": "build_workbench.lua",
-    }.items():
-        freeze_file(REPO / "projects/parallel_mirror_dual_stripe_mr_tof/simion" / source_name, runtime / target_name)
-    shutil.copyfile(output_directory / "measured_source/source_runtime.lua", runtime / "mrtof_candidate.source_runtime.lua")
-    reference_path = design_run / "inputs/reference_operating_point.lua"
-    verified_reference(design_run, reference_path.relative_to(design_run).as_posix())
-    reference = runtime / "mr_reference.operating_point.lua"
-    if execution_contract is None:
-        freeze_file(reference_path, reference)
-    else:
-        historical = runtime / "historical_mr_reference.operating_point.lua"
-        freeze_file(reference_path, historical)
-        text = historical.read_text(encoding="utf-8-sig")
-        for name in ("trajectory_quality", "maximum_step_us"):
-            match = re.search(r"\b" + name + r"\s*=\s*([-+0-9.eE]+)", text)
-            if match is None or float(match[1]) != execution_contract["reference_profile"][name]:
-                raise ValueError("Prepared runtime numerics differ from its reference trajectory profile")
-        timeout = re.search(r"\bfull_path_timeout_us\s*=\s*([-+0-9.eE]+)", text)
-        if timeout is None or not math.isfinite(float(timeout[1])) or float(timeout[1]) <= 0:
-            raise ValueError("Prepared runtime lacks its positive frozen full path timeout")
-        profile = execution_contract["selected_profile"]
-        reference.write_text("local t=assert(loadfile(" + _lua(str(historical)) + "))()\n"
-            "t.trajectory_quality=" + _lua(profile["trajectory_quality"]) + "\n"
-            "t.maximum_step_us=" + _lua(profile["maximum_step_us"]) + "\n"
-            "t.full_path_timeout_us=" + _lua(float(timeout[1])) + "\n"
-            "return t\n", encoding="utf-8", newline="\n")
-    def field_projection(level: dict[str, Any]) -> dict[str, Any]:
-        grid = level["grid"]
-        return dict(mode="native_static_pa", scalar_pa=level["sources"]["scalar_pa"],
-                    origin_mm=grid["origin_mm"], pitch_mm=grid["pitch_mm"], dimensions=grid["dimensions"], symmetry="x")
-    native = field_projection(binding)
-    native.update(accelerator_provider="dual_pressure_rectilinear_ion_processor",
-                  assembly_scope="full_c0_ion_processor_replacement",
-                  analyzer_voltages_v=binding["authority"]["analyzer_electrode_voltages_v"],
-                  collision_pa_path=binding["instances"][1]["pa_path"], refinement_windows=[])
-    for level in binding["refinement_windows"]:
-        native["refinement_windows"].append(dict(field_projection(level), name=level["name"], active_box_mm=level["active_box_mm"]))
-    if "collision_overlay" in layout["priority"]:
-        native["collision_overlay"] = layout["priority"]["collision_overlay"]
-    (runtime / "joint.operating_point.lua").write_text(render_measured_operating_point(
-        reference, output_directory / "measured_source", native, field_assets_verified=True,
-        source_identity_verified=True), encoding="utf-8", newline="\n")
-    priority = layout["priority"]
-    (runtime / "joint.priority.lua").write_text("return " + _lua(priority) + "\n", encoding="utf-8", newline="\n")
-    build = dict(schema_version=1, role="mrtof_measured_source_workbench_build",
-                 seed=layout["seed"],
-                 paths=[item["pa_path"] for item in binding["instances"]],
-                 origins=[item["origin_mm"] for item in binding["instances"]],
-                 output=str(runtime / "joint.iob"), program=str(runtime / "mrtof_candidate.lua"),
-                 fly2=str(output_directory / "measured_source/source.fly2"), operating=str(runtime / "joint.operating_point.lua"),
-                 priority=str(runtime / "joint.priority.lua"))
-    (runtime / "workbench_build.lua").write_text("return " + _lua(build) + "\n", encoding="utf-8", newline="\n")
-    _write(output_directory / "energy_comparison.json", energy_comparison)
-    freeze_file(binding_path, output_directory / "static_field_binding.json")
-    interface_audit = prepare_interface_field_audit(source_run=source_run, handoff=handoff,
-        source_directory=output_directory / "measured_source", binding=binding, native=native,
-        runtime=runtime, output=output_directory)
-    receipt = dict(schema_version=1, role="mrtof_joint_workbench_binding", status="assets_bound_iob_pending",
-                   accelerator_provider="dual_pressure_rectilinear_ion_processor",
-                   field_assembly_verified=True, measured_source_matches_workpoint=True,
-                   source_workpoint_check="prepared_and_measured_provider_configuration_identity",
-                   energy_target_acceptance="not_declared", six_dimensional_match_qualified=False,
-                   time_focus_qualified=False, joint_simulation_executed=False, gui_executed=False,
-                   field_run=str(field_run.resolve()), source_run=str(source_run.resolve()),
-                   measured_source=source, workbench_build_contract=build,
-                   guard_paths=sorted({item["pa_path"] for item in binding["instances"]}
-                       | {level["sources"]["scalar_pa"] for level in [binding,*binding["refinement_windows"]]}),
-                   interface_field_audit=interface_audit,
-                   execution_contract_provenance=execution_contract,
-                   inputs={"design_receipt": file_record(design_path), "field_binding": file_record(binding_path),
-                           "source_resolved_model": file_record(actual_path), "handoff_receipt": file_record(handoff_receipt),
-                           "effective_reference_operating_point": file_record(reference),
-                           "historical_reference_operating_point": file_record(
-                               reference if execution_contract is None else historical)},
-                   builder_arguments=["--measured-source", str(runtime / "workbench_build.lua")])
-    _write(output_directory / "joint_binding_receipt.json", receipt)
-    return receipt

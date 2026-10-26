@@ -1,62 +1,14 @@
-; oa-TOF two-stage reflectron, ideal-grid baseline for SIMION 8.2.
-; Coordinate system: x=axial depth from entgrid [mm], y=radius [mm].
-; Array scale is parameterized for mesh-convergence diagnostics.  The
-; default remains 1 mm/gu.  This is intentionally 2D cylindrical; the
-; orthogonal accelerator is built separately.
-; Save/compile as oatof_reflectron_ideal_10_5.pa# then Refine.
-
-# local var = _G.var or {}
-# local mmgu_axial = var.mmgu_axial or var.mmgu or 1
-# local mmgu_radial = var.mmgu_radial or var.mmgu or mmgu_axial
-# local inner_radius = var.inner_radius or 350
-# local wall = var.wall or 10
-# local backplate_front = var.backplate_front or 206.8328
-# local backplate_thickness = var.backplate_thickness or 5
-# local far_clearance = var.far_clearance or 50
-# local far_cap_thickness = var.far_cap_thickness or 10
-# local stage1_length = var.stage1_length or 120
-# local stage2_length = var.stage2_length or (backplate_front-stage1_length)
-# local bore_radius = var.bore_radius or 250
-# local ring_outer_radius = var.ring_outer_radius or 300
-# local ring_thickness = backplate_thickness
-# local stage1_ring_count = var.stage1_ring_count or 10
-# local stage2_ring_count = var.stage2_ring_count or 5
-# local stage1_pitch = stage1_length/(stage1_ring_count+1)
-# local stage2_pitch = stage2_length/(stage2_ring_count+1)
-# local bore_end = backplate_front+backplate_thickness+far_clearance
-# local outer_end = bore_end+far_cap_thickness
-# local outer_radius = inner_radius+wall
-# local nx = math.ceil(outer_end/mmgu_axial) + 1
-# local ny = math.ceil(outer_radius/mmgu_radial) + 1
+; Native cylindrical projection of the provider's resolved physical electrodes.
+# local var = assert(_G.var, 'provider projection required')
+# local component = assert(var.component, 'reflectron projection required')
+# local nx = math.ceil(component.axial_span_mm/var.mmgu_axial)+1
+# local ny = math.ceil(component.outer_radius_mm/var.mmgu_radial)+1
 pa_define($(nx),$(ny),1,cylindrical,y,electrostatic,,
-          $(mmgu_axial),$(mmgu_radial),$(mmgu_radial),surface=none)
-
-; SIMION official ideal-grid construction: a zero-GU-thick sheet becomes one
-; raw-PA electrode-point row and provides native 100% particle transmission.
-; e1: entgrid, 0 V.
-e(1) { fill{within{box(0,0,0,$(inner_radius))}} }
-
-; Stage-1 rings are centered at equal pitch and share one thickness/radius family.
-# for ring_index=1,stage1_ring_count do
-e($(1+ring_index)) { fill{within{box($(ring_index*stage1_pitch-ring_thickness/2),$(bore_radius),$(ring_index*stage1_pitch+ring_thickness/2),$(ring_outer_radius))}} }
+          $(var.mmgu_axial),$(var.mmgu_radial),$(var.mmgu_radial),surface=none)
+# for _, electrode in ipairs(component.electrodes) do
+e($(electrode.local_electrode_id)) {
+# for _, region in ipairs(electrode.regions) do
+  fill{within{box($(region.axial_mm[1]),$(region.radius_mm[1]),$(region.axial_mm[2]),$(region.radius_mm[2]))}}
 # end
-
-; Midgrid uses the same official zero-GU-thick, one-row native construction.
-; Its electrode number follows stage-1 ring count.
-e($(2+stage1_ring_count)) { fill{within{box($(stage1_length),0,$(stage1_length),$(ring_outer_radius))}} }
-
-; Stage-2 rings use the same construction and are linked to stage-2 length.
-# for ring_index=1,stage2_ring_count do
-e($(2+stage1_ring_count+ring_index)) { fill{within{box($(stage1_length+ring_index*stage2_pitch-ring_thickness/2),$(bore_radius),$(stage1_length+ring_index*stage2_pitch+ring_thickness/2),$(ring_outer_radius))}} }
-# end
-
-; Backplate front is the exact derived reflectron length.
-e($(3+stage1_ring_count+stage2_ring_count)) { fill{within{box($(backplate_front),0,$(backplate_front+backplate_thickness),$(ring_outer_radius))}} }
-
-; Grounded side wall plus the full far end cap use an independent electrode.
-; The side wall starts at the reflectron entrance and joins the matching
-; field-free shield PA without an axial gap.
-e($(4+stage1_ring_count+stage2_ring_count)) {
-  fill{within{box(0,$(inner_radius),$(bore_end),$(outer_radius))}}
-  fill{within{box($(bore_end),0,$(outer_end),$(outer_radius))}}
 }
+# end

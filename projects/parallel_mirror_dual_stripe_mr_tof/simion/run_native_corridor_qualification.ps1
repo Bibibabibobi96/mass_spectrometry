@@ -285,6 +285,12 @@ function Invoke-NativeCorridorResponseWave {
           MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE=''
         } -PassThru
       $records+=,[pscustomobject]@{id=$id;process=$process;stdout=$stdout;stderr=$stderr}
+      # A worker can fail before the next launch. Preserve already-started workers
+      # and do not add further work once that failure is observable.
+      $earlyFailures=@($records|Where-Object{$_.process.HasExited-and[int]$_.process.ExitCode-ne0})
+      if($earlyFailures.Count){
+        throw ('Native-corridor response workers failed before dispatch completed: '+(@($earlyFailures|ForEach-Object{"pa$($_.id)=$($_.process.ExitCode)"})-join', '))
+      }
     }
     foreach($record in $records){$record.process.WaitForExit()}
     $failed=@($records|Where-Object{[int]$_.process.ExitCode-ne0})
@@ -293,7 +299,10 @@ function Invoke-NativeCorridorResponseWave {
     }
   }finally{
     foreach($record in $records){
-      if(-not$record.process.HasExited){$record.process.Kill($true);$record.process.WaitForExit()}
+      if(-not$record.process.HasExited){
+        Write-Warning "Native-corridor response worker pa$($record.id) has not reported a native failure; awaiting natural completion."
+        $record.process.WaitForExit()
+      }
       $record.process.Dispose()
       $script:nativeCorridorDispatchArtifacts+=@($record.stdout,$record.stderr)
     }

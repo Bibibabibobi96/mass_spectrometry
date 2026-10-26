@@ -3,24 +3,12 @@
   "role": "ion_processor_component_preparation_dependency",
   "consumer_project_id": "parallel_mirror_dual_stripe_mr_tof",
   "provider_project_id": "dual_pressure_rectilinear_ion_processor",
-  "api_version": 1,
+  "api_version": 2,
   "provider_module": "projects/dual_pressure_rectilinear_ion_processor/analysis/component_exit.py",
   "provider_callable": "export_component_exit",
   "provider_voltage_schedule": "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua",
-  "provider_support_modules": [
-    "projects/dual_pressure_rectilinear_ion_processor/analysis/coordinates.py",
-    "projects/dual_pressure_rectilinear_ion_processor/analysis/native_geometry.py",
-    "projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py",
-    "projects/dual_pressure_rectilinear_ion_processor/analysis/extraction_phase_space_comparison.py",
-    "projects/dual_pressure_rectilinear_ion_processor/analysis/convex_geometry.py"
-  ],
-  "consumer_preparation_modules": [
-    "projects/parallel_mirror_dual_stripe_mr_tof/analysis/joint_flight_preparation.py",
-    "projects/parallel_mirror_dual_stripe_mr_tof/analysis/measured_component_source.py",
-    "projects/parallel_mirror_dual_stripe_mr_tof/analysis/ion_processor_assembly.py",
-    "projects/parallel_mirror_dual_stripe_mr_tof/analysis/measured_component_analysis.py"
-  ],
+  "provider_voltage_waveforms": "common/simion/voltage_waveforms.lua",
   "state_schema": "common/contracts/schemas/component_particle_state.schema.json",
   "execution_scope": "prepare_only_no_solver",
-  "ownership": "IP owns electrode geometry, fields, cooling and extraction. MR owns the target energy definition, pose, downstream matching and acceptance. A historical OA receipt supplies reference requirements only; its field is not a new IP assembly."
+  "ownership": "IP owns electrode geometry, fields, cooling and extraction. MR owns the target energy definition, downstream matching physics and acceptance. The integration recipe owns instance identities, direct poses and connection routing. A historical OA receipt supplies reference requirements only; its field is not a new IP assembly."
 }

@@ -33,35 +33,47 @@ if overlay then
       and #collisions == 1, 'collision patch preload requires the verified IP overlay projection')
   collisions[2] = overlay.pa_path
 end
+-- The prepared IP binding names its additional collision/detector carriers.
+-- Transport only: these paths do not select or modify the callback's E field.
+for _, path in ipairs(operating.static_field and operating.static_field.collision_geometry_pa_paths or {}) do
+  assert(type(path) == 'string' and path:lower():match('%.pa$'),
+    'collision geometry preload requires standalone PA paths')
+  collisions[#collisions+1] = path
+end
 local preload_option = ''
+local preloaded = {}
 for _, collision in ipairs(collisions) do
-  -- Official SIMION field_array examples use refinable=false to prevent IOB
-  -- load auto-Refine. This PA supplies collisions only; the callback owns E.
-  -- A same-process IOB builder may already own this PA. The official integer
-  -- inventory exposes full pa.path (pa.filename is only the basename).
-  -- Reopening the resident object would create two
-  -- matching PAs and make Fly --remove-pas=0 reject the IOB before any ions.
-  -- Use the same slash/case normalization as scalar_field_adapter.lua.
-  local function same_path(path)
-    return type(path)=='string' and path:gsub('\\','/'):lower()==collision:gsub('\\','/'):lower()
-  end
-  local pa
-  for index=1,#simion.pas do
-    local candidate=simion.pas[index]
-    local matching=same_path(candidate.path)
-    print('MRTOF_COLLISION_PA_INVENTORY index='..index..' filename='..tostring(candidate.filename)
-      ..' path='..tostring(candidate.path)..' exact_match='..tostring(matching))
-    if matching then
-      assert(pa==nil, 'ambiguous collision PA inventory: '..collision)
-      pa=candidate
+  local normalized = collision:gsub('\\','/'):lower()
+  if not preloaded[normalized] then
+    -- Official SIMION field_array examples use refinable=false to prevent IOB
+    -- load auto-Refine. This PA supplies collisions only; the callback owns E.
+    -- A same-process IOB builder may already own this PA. The official integer
+    -- inventory exposes full pa.path (pa.filename is only the basename).
+    -- Reopening the resident object would create two
+    -- matching PAs and make Fly --remove-pas=0 reject the IOB before any ions.
+    -- Use the same slash/case normalization as scalar_field_adapter.lua.
+    local function same_path(path)
+      return type(path)=='string' and path:gsub('\\','/'):lower()==collision:gsub('\\','/'):lower()
     end
+    local pa
+    for index=1,#simion.pas do
+      local candidate=simion.pas[index]
+      local matching=same_path(candidate.path)
+      print('MRTOF_COLLISION_PA_INVENTORY index='..index..' filename='..tostring(candidate.filename)
+        ..' path='..tostring(candidate.path)..' exact_match='..tostring(matching))
+      if matching then
+        assert(pa==nil, 'ambiguous collision PA inventory: '..collision)
+        pa=candidate
+      end
+    end
+    local reused=pa~=nil
+    pa=pa or assert(simion.pas:open(collision), 'collision PA preload failed')
+    pa.refinable = false
+    print('MRTOF_COLLISION_PA_PRELOAD existing_pa_reused='..tostring(reused)..' path='..collision)
+    -- Keep the RAM-only flag on IOB load; never save or claim this PA was solved.
+    preload_option = ' --remove-pas=0'
+    preloaded[normalized] = true
   end
-  local reused=pa~=nil
-  pa=pa or assert(simion.pas:open(collision), 'collision PA preload failed')
-  pa.refinable = false
-  print('MRTOF_COLLISION_PA_PRELOAD existing_pa_reused='..tostring(reused)..' path='..collision)
-  -- Keep the RAM-only flag on IOB load; never save or claim this PA was solved.
-  preload_option = ' --remove-pas=0'
 end
 simion.command('fly --retain-trajectories=0'..preload_option..particle_option..' "'..iob..'"')
 print('IOB_FLIGHT: PASS iob='..iob)

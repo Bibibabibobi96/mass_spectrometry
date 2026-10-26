@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import RESOLVED_PATH, resolve_contract, serialized
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import RESOLVED_PATH, resolve_contract, resolve_physical_geometry, serialized
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -126,7 +126,9 @@ def lua_value(value: object, indent: int = 0) -> str:
 
 
 def render_resolved_lua(contract: dict) -> str:
-    return "-- Generated from config/resolved_geometry.json; do not edit.\nreturn " + lua_value(contract) + "\n"
+    # Derive only after the final candidate has frozen all science parameters.
+    transported = dict(contract, physical_geometry=resolve_physical_geometry(contract))
+    return "-- Generated from config/resolved_geometry.json; do not edit.\nreturn " + lua_value(transported) + "\n"
 
 
 def generated_adjustables(contract: dict) -> str:

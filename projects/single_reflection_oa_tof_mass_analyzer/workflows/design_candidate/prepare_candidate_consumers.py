@@ -75,7 +75,7 @@ def main() -> None:
         args.output_dir.resolve(),
         particle_source_seed=args.particle_source_seed,
     )
-    print("CANDIDATE_CONSUMER_PREPARE=STATIC_INPUTS_READY")
+    print(f"CANDIDATE_CONSUMER_PREPARE=STATIC_INPUTS_READY SOURCE={Path(__file__).resolve()}")
 
 
 if __name__ == "__main__":

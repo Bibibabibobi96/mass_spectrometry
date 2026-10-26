@@ -280,7 +280,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
             patch.object(write_run_manifest, "file_sha256_unbuffered", return_value="A" * 64) as direct,
         ):
             for _ in range(2):
-                ordinary = write_run_manifest.file_record(self.payload, _identity_cache=cache)
+                ordinary = write_run_manifest.file_record(self.payload, "diagnostic_data", _identity_cache=cache)
                 native = write_run_manifest.file_record(self.payload, "solver_native_binary", _identity_cache=cache)
             self.assertEqual((ordinary["sha256"], native["sha256"]), ("B" * 64, "A" * 64))
             buffered.assert_called_once_with(self.payload)
@@ -306,14 +306,21 @@ class ManifestPayloadReadTests(unittest.TestCase):
         self.assertNotEqual(reused["inputs"]["first"]["sha256"], expected["sha256"])
 
     def test_writer_and_verifier_share_one_unbuffered_selection(self) -> None:
+        self.payload = self.payload.rename(self.payload.with_suffix(".pa15"))
         with (
             patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
             patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
             patch.object(write_run_manifest, "file_sha256", return_value="B" * 64) as buffered,
             patch.object(write_run_manifest, "file_sha256_unbuffered", return_value="A" * 64) as direct,
         ):
-            item = write_run_manifest.file_record(self.payload, "solver_native_binary")
-            verify_run_manifest.verify_record("output", item)
+            cache = {}
+            item = write_run_manifest.file_record(self.payload, _identity_cache=cache)
+            output = write_run_manifest.file_record(
+                self.payload, "solver_native_binary", _identity_cache=cache)
+            self.assertNotIn("retention_role", item)
+            self.assertEqual(item["sha256"], output["sha256"])
+            self.assertEqual(direct.call_count, 1)
+            verify_run_manifest.verify_record("input", item)
             self.assertEqual(item["sha256"], "A" * 64)
             self.assertEqual(direct.call_count, 2)
             for call in direct.call_args_list:
@@ -323,9 +330,10 @@ class ManifestPayloadReadTests(unittest.TestCase):
     def test_small_ordinary_and_non_windows_records_keep_buffered_reads(self) -> None:
         cases = (
             ("nt", "solver_native_binary", 9),
-            ("nt", None, 8),
+            ("nt", None, 9),
             ("nt", "diagnostic_data", 8),
             ("posix", "solver_native_binary", 8),
+            ("posix", None, 8),
         )
         for platform_name, role, threshold in cases:
             with (
@@ -334,6 +342,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
                 patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", threshold),
                 patch.object(write_run_manifest, "file_sha256", return_value="A" * 64) as buffered,
                 patch.object(write_run_manifest, "file_sha256_unbuffered") as direct,
+                patch.object(write_run_manifest, "retention_api", side_effect=AssertionError("unneeded policy read")),
             ):
                 item = write_run_manifest.file_record(self.payload, role)
                 verify_run_manifest.verify_record("output", item)
@@ -341,8 +350,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
                 direct.assert_not_called()
 
     def test_unbuffered_failure_propagates_without_retry_or_fallback(self) -> None:
-        item = dict(path=str(self.payload), bytes=8, sha256="A" * 64,
-                    retention_role="solver_native_binary")
+        item = dict(path=str(self.payload), bytes=8, sha256="A" * 64)
         with (
             patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
             patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),
@@ -350,7 +358,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
             patch.object(write_run_manifest, "file_sha256_unbuffered", side_effect=OSError("read failed")) as direct,
         ):
             with self.assertRaisesRegex(OSError, "read failed"):
-                write_run_manifest.file_record(self.payload, "solver_native_binary")
+                write_run_manifest.file_record(self.payload)
             direct.assert_called_once_with(self.payload)
             direct.reset_mock()
             with self.assertRaisesRegex(OSError, "read failed"):
@@ -359,8 +367,7 @@ class ManifestPayloadReadTests(unittest.TestCase):
             buffered.assert_not_called()
 
     def test_mismatching_unbuffered_bytes_fail_existing_identity(self) -> None:
-        item = dict(path=str(self.payload), bytes=8, sha256="A" * 64,
-                    retention_role="solver_native_binary")
+        item = dict(path=str(self.payload), bytes=8, sha256="A" * 64)
         with (
             patch.object(write_run_manifest, "os", SimpleNamespace(name="nt")),
             patch.object(write_run_manifest, "_UNBUFFERED_SOLVER_PAYLOAD_BYTES", 8),

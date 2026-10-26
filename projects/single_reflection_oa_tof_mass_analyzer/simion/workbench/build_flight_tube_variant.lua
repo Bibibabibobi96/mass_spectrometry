@@ -1,23 +1,20 @@
 -- Build the authoritative near-cap + field-free shield PA.
 -- Usage:
 --   simion.exe --nogui lua build_flight_tube_variant.lua source.gem output.pa#
---     axial_mm_per_gu radial_mm_per_gu max_GiB
---     inner_radius_mm wall_mm near_cap_mm
---     near_outer_z_mm reflectron_interface_z_mm
+--     frozen_oatof_resolved.lua
 
 local source = assert(arg[1], 'missing source GEM')
 local output = assert(arg[2], 'missing output PA#')
-assert(arg[10], 'all flight-tube geometry and mesh arguments are required')
-local mmgu_axial = assert(tonumber(arg[3]), 'invalid axial cell size')
-local mmgu_radial = assert(tonumber(arg[4]), 'invalid radial cell size')
-local max_gib = assert(tonumber(arg[5]), 'invalid memory limit')
-local inner_radius = assert(tonumber(arg[6]), 'invalid inner radius')
-local wall = assert(tonumber(arg[7]), 'invalid wall thickness')
-local near_cap_thickness = assert(tonumber(arg[8]), 'invalid near-cap thickness')
-local near_outer_z = assert(tonumber(arg[9]), 'invalid near outer z')
-local reflectron_interface_z = assert(tonumber(arg[10]), 'invalid reflectron interface z')
-local outer_radius = inner_radius+wall
-local axial_span = reflectron_interface_z-near_outer_z
+local contract = dofile(assert(arg[3], 'missing frozen resolved Lua'))
+local component = assert(contract.physical_geometry, 'missing provider physical geometry').simion.flight_tube
+local mesh = contract.simion_geometry_build.flight_tube
+local mmgu_axial, mmgu_radial, max_gib = mesh.cell_axial_mm, mesh.cell_radial_mm, mesh.max_gib
+local axial_span, outer_radius = component.axial_span_mm, component.outer_radius_mm
+local near_cap_thickness = component.electrodes[1].regions[1].axial_mm[2]
+local inner_radius = component.electrodes[1].regions[2].radius_mm[1]
+local wall = outer_radius-inner_radius
+local near_outer_z = contract.geometry_mm.shield_outer_z_min
+local reflectron_interface_z = contract.geometry_mm.L_flight
 
 assert(source:match('^%a:[/\\]') or source:match('^/'),
   'source GEM path must be absolute')
@@ -51,12 +48,8 @@ input:close()
 local staged=assert(io.open(staged_source,'wb'))
 staged:write(content)
 staged:close()
-_G.var={
-  mmgu_axial=mmgu_axial,mmgu_radial=mmgu_radial,
-  inner_radius=inner_radius,wall=wall,
-  near_cap_thickness=near_cap_thickness,near_outer_z=near_outer_z,
-  reflectron_interface_z=reflectron_interface_z
-}
+_G.var={mmgu_axial=mmgu_axial, mmgu_radial=mmgu_radial,
+  component=component}
 simion.command(string.format('gem2pa %q %q',staged_source,output))
 _G.var=nil
 os.remove(staged_source)

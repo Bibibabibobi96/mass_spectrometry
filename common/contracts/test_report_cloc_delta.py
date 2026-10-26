@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import json
 import os
 import subprocess
 import tempfile
@@ -28,6 +29,42 @@ def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 class ClocDeltaReportTests(unittest.TestCase):
+    def test_fixture_filename_in_test_boundary_preserves_production_priority(self) -> None:
+        # Execute the real classifier functions without running CLOC/snapshots.
+        profile = REPO_ROOT / 'projects/rf_octupole_ion_optics/config/execution_profiles.json'
+        fixture = 'integrations/tests/frontend_fixtures.py'
+        self.assertTrue((REPO_ROOT / fixture).is_file())
+        command = f"""
+$tokens=$null; $errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile('{REPORT_SCRIPT.as_posix()}',[ref]$tokens,[ref]$errors)
+if($errors.Count){{throw ($errors|Out-String)}}
+foreach($name in @('Get-ExecutionProfileEntrypoints','Get-PathClassification')){{
+  $node=$ast.Find({{param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name-eq$name}},$true)
+  . ([scriptblock]::Create($node.Extent.Text))
+}}
+$selected=@([pscustomobject]@{{relative='projects/rf_octupole_ion_optics/config/execution_profiles.json';full='{profile.as_posix()}'}})
+$active=Get-ExecutionProfileEntrypoints -Root '{REPO_ROOT.as_posix()}' -SelectedFiles $selected
+$paths=@('{fixture}','project/test/other_fixtures.py','project/src/other_fixtures.py',
+  'project/tests/helper.py','project/tests/support/helper.py',
+  'common/comsol/run_comsol_r2025b.ps1','projects/orthogonal_accelerator/verify_project.ps1',
+  'common/multipole/run_simion_transport_campaign.ps1')
+$results=@($paths|ForEach-Object{{Get-PathClassification -RelativePath $_ -ActiveEntrypoints $active}})
+# A registered entrypoint overrides even an otherwise explicit fixture name.
+$null=$active.Add('{fixture}')
+$results+=Get-PathClassification -RelativePath '{fixture}' -ActiveEntrypoints $active
+ConvertTo-Json -InputObject $results -Compress
+"""
+        completed = _run(['pwsh', '-NoProfile', '-Command', command], REPO_ROOT)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        results = json.loads(completed.stdout)
+        self.assertEqual([(item['category'], item['reason']) for item in results], [
+            ('tests', 'test_filename'), ('tests', 'test_filename'),
+            ('production', 'non_test_source'), ('unclassified', 'tests_path_without_stable_rule'),
+            ('production', 'tests_support_mechanism'),
+            ('production', 'active_powershell_entrypoint'), ('production', 'active_powershell_entrypoint'),
+            ('production', 'execution_profile_entrypoint'), ('production', 'execution_profile_entrypoint'),
+        ])
+
     def test_default_resolution_prefers_the_workspace_pinned_cloc(self) -> None:
         source = REPORT_SCRIPT.read_text(encoding="utf-8-sig")
         pinned = source.index(".tools\\cloc\\2.10\\cloc.exe")

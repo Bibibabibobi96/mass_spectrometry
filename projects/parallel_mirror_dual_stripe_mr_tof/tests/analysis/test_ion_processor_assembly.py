@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from functools import lru_cache
 import json
 from pathlib import Path
 import tempfile
@@ -10,10 +11,22 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.write_run_manifest import file_record
+from common.integration.resolve_assembly import compile_assembly_layout
+from integrations.workflows.accelerator_interface import geometry as assembly_geometry
+from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection
+from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ion_processor_assembly as assembly
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import load_contract
 
 ROOT = Path(__file__).resolve().parents[4]
 IP_CONFIG = ROOT / "projects/dual_pressure_rectilinear_ion_processor/config"
+
+
+@lru_cache(maxsize=1)
+def complete_mr_geometry():
+    return resolve_geometry(load_contract(ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json"))
 
 
 class AssemblyTests(unittest.TestCase):
@@ -35,9 +48,10 @@ class AssemblyTests(unittest.TestCase):
             )
         }
         self.source["baseline"]["electric"]["lift_v"] = self.source["native_operating_point"]["lift_v"]
+        self.source["native_projection"] = native_projection(self.source["baseline"], self.source["numerics"])
         self.trajectory = {
             "simion": {"detector_pa_span_mm": [64, 64, 8], "component_mesh_mm_per_gu": {"detector": [1, 1, 1]}},
-            "coordinate_system": {"frame_id": "mr"},
+            "coordinate_system": {"frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2"},
             "prisms": {"ground_shields": [{"extension_to_accelerator_exit": {"clearance_mm": 1}}]},
         }
 
@@ -46,6 +60,8 @@ class AssemblyTests(unittest.TestCase):
             return {
                 "id": id,
                 "station": station,
+                "topology": "single_continuous_frame_with_rectangular_slots",
+                "mechanical_component": "grounded_1_single_frame",
                 "x": [-12, 12],
                 "outer_polygon_yz_mm": polygon,
                 "body_sections": [{"x": [-12, 12], "polygon_yz_mm": copy.deepcopy(polygon)}],
@@ -53,16 +69,18 @@ class AssemblyTests(unittest.TestCase):
                 "rectangular_slots_mm": [[-2, -28, -40, 2, -4, 40]] if id == 20 else [[-2, -75, -100, 2, -35, -1.5]],
             }
 
-        self.geometry = {
-            "frame_id": "mr",
+        # Keep the real analyzer electrode population. Only these test-controlled
+        # interface faces/detector bounds differ; prepare() deliberately stubs
+        # analyzer GEM emission, so this fixture is not frozen-field evidence.
+        self.geometry = copy.deepcopy(complete_mr_geometry())
+        self.geometry.update({
             "accelerator_component_layout": {"old_oa": True},
             "prism_ground_shields": [
                 shield(18, "accelerator_exit", -77, -33, -100, -1.5),
                 shield(20, "central_ground_left", -32, -3, -97, 97),
             ],
             "detector": {"id": 25, "box": [-1, 5, 101, 1, 7, 102]},
-            "mirror_electrodes": [{"id": 2, "keep": "exact"}],
-        }
+        })
         self.plan = {"box_mm": [0, -242, -425, 162.5, 558, 425], "pitch_mm": [0.5, 1, 1], "convergence_v": 1e-5}
         authority = {
             "boundary_contract": {"box_mm": self.plan["box_mm"]},
@@ -112,17 +130,24 @@ class AssemblyTests(unittest.TestCase):
         )
         self.request = {
             "policies": {"energy_adjustment": "provider_voltage_and_geometry"},
-            "target": {"axial_energy_per_charge_v": 4372.010347796, "frame_id": "mr"},
+            "target": {"axial_energy_per_charge_v": 4372.010347796, "frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2"},
             "current_measured_baseline": {"directional_energy": {"z": {"mean": 3891.9665569516114}}},
             "requirements": {"energy_definition": "exit_axial_kinetic_energy_per_charge"},
-            "rigid_transform": {
-                "rotation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-                "from_frame_id": self.source["coordinate_transform"]["to_frame_id"],
-                "to_frame_id": "mr",
-                "translation_mm": [0, -225, 0],
-            },
+            "composition_plan": json.loads((ROOT / "integrations/config/recipes/ip_mr_y_minus55_plan.json").read_text()),
             "field_assembly_reference": refs,
         }
+        self.rebuild_parent()
+
+    def rebuild_parent(self):
+        recipe = self.request['composition_plan']['recipe']
+        edge = recipe['connections'][0]
+        source_id, target_id = edge['upstream']['instance_id'], edge['downstream']['instance_id']
+        coordinate = next(item['transform'] for item in recipe['instances'] if item['instance_id']==source_id)
+        design = assembly_geometry.resolve_ion_processor_design(self.source, self.trajectory, self.request,
+            self.geometry, coordinate, extraction_gap_mm=edge['gap_mm'])
+        self.request['composition_plan'] = compile_assembly_layout(recipe, {
+            source_id: assembly_geometry.ip_interface(design['projection']),
+            target_id: assembly_geometry.mr_interface(design['geometry'])})
 
     def write(self, name, value):
         path = self.root / name
@@ -135,7 +160,9 @@ class AssemblyTests(unittest.TestCase):
             for name, value in (("source", self.source), ("trajectory", self.trajectory), ("request", self.request))
         ]
         with patch.object(assembly, "_analyzer_geometry_lines", return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
-            return assembly.prepare_ion_processor_assembly(*paths, self.root / "output")
+            return prepare_ion_processor_assembly(self.source, self.trajectory, self.request,
+                connection=resolve_ip_mr_connection(self.request["composition_plan"]),
+                input_paths=paths, output_directory=self.root / "output")["report"]
 
     def test_seed_target_geometry_and_oa_removed(self):
         report = self.prepare()
@@ -206,6 +233,45 @@ class AssemblyTests(unittest.TestCase):
         config["source_profile"] = "functional"
         config["native_timing"] = derive_native_timing(config["baseline"])
         validate_configs(config)
+
+    def test_resolved_aperture_authors_explicit_seed_without_changing_source_csg(self):
+        for width, historical in ((0.8, True), (1.2, False)):
+            with self.subTest(width=width, historical=historical):
+                fixture = AssemblyTests("test_seed_target_geometry_and_oa_removed")
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                baseline = fixture.source["baseline"]
+                baseline["native_geometry"]["shield_extraction_slit_width_mm"] = width
+                fixture.source["native_projection"] = native_projection(baseline, fixture.source["numerics"])
+                if historical:
+                    del baseline["native_geometry"]["shield_extraction_slit_width_mm"]
+                original = copy.deepcopy(fixture.source)
+                fixture.rebuild_parent()
+                report = fixture.prepare()
+                self.assertEqual((fixture.root / "source.json").read_bytes(), json.dumps(original).encode("utf-8"))
+                config = {name: json.loads(Path(path).read_text())
+                          for name, path in report["source_config_paths"].items()}
+                from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import (
+                    derive_native_timing, validate_configs,
+                )
+                config["source_profile"] = "functional"
+                config["native_timing"] = derive_native_timing(config["baseline"])
+                validate_configs(config)
+                seed = config["baseline"]
+                self.assertEqual(seed["native_geometry"]["shield_extraction_slit_width_mm"], width)
+                # Reverse only the workflow's separately declared LP/lift changes:
+                # explicit aperture authoring must preserve every original CSG primitive.
+                seed["geometry"]["lp_length_mm"] = baseline["geometry"]["lp_length_mm"]
+                seed["electric"]["lift_v"] = baseline["electric"]["lift_v"]
+                self.assertEqual(native_projection(seed, fixture.source["numerics"]),
+                                 original["native_projection"])
+                self.assertEqual(report["geometry_changes"]["shield_extraction_slit_width_mm"], width)
+
+    def test_conflicting_explicit_aperture_rejected_at_source_boundary(self):
+        self.source["baseline"]["native_geometry"]["shield_extraction_slit_width_mm"] = 1.2
+        with self.assertRaisesRegex(ValueError, "source baseline shield aperture differs"):
+            self.prepare()
+        self.assertFalse((self.root / "output").exists())
 
     def test_box_and_circular_hole_pose(self):
         r = [[0, 0, -1], [1, 0, 0], [0, -1, 0]]
@@ -300,6 +366,8 @@ class AssemblyTests(unittest.TestCase):
         with patch.object(assembly, "_analyzer_geometry_lines", return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
             plan = provider.compile_request(request)
         self.assertEqual(plan["window_labels"], ["ion_processor_local"])
+        self.assertNotIn("ion_processor_instance_id", plan["resolved_geometry"])
+        self.assertNotIn("ion_processor_instance_id", plan["candidate_authority"]["assembly"])
         self.assertNotIn("reuse_source", plan["levels"]["parent"])
         fine = plan["levels"]["ion_processor_local"]
         self.assertEqual(fine["pitch_mm"], [0.05, 0.1, 0.05])
@@ -317,6 +385,8 @@ class AssemblyTests(unittest.TestCase):
         for key, value in plan["inputs"].items():
             shutil.copyfile(value, run / "inputs" / (key + Path(value).suffix))
         provider.prepare_run(plan, run)
+        for label in plan["levels"]:
+            self.assertNotIn("ip_source_binding_path", json.loads((run / "inputs" / (label + "_plan.json")).read_text()))
         self.assertTrue((run / "simion/ip_collision/ip_collision.gem").is_file())
         self.assertTrue((run / "simion/detector/detector.gem").is_file())
         binding = provider.binding_spec(plan, run)
@@ -330,6 +400,31 @@ class AssemblyTests(unittest.TestCase):
     def test_ordinary_pa_header_forecast_distinguishes_unit_pitch(self):
         self.assertEqual(assembly.ordinary_pa_file_bytes([65, 65, 9], [1, 1, 1]), 304232)
         self.assertEqual(assembly.ordinary_pa_file_bytes([65, 65, 9], [1, 1, 0.5]), 304256)
+
+    def test_materializable_explicit_skipped_point_keeps_geometry_and_freezes_identity(self):
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
+        import shutil
+        request = self.materializable_request()
+        numerical = Path(request["numerical_contract_path"])
+        contract = json.loads(numerical.read_text())
+        with patch.object(assembly, "_analyzer_geometry_lines", return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
+            baseline = provider.compile_request(request)
+            contract["simion"]["numerical_profiles"]["native_static_field"]["refine"]["skipped_point"] = False
+            numerical = self.root / "new_numerical_strategy.json"
+            numerical.write_text(json.dumps(contract))
+            request["numerical_contract_path"] = str(numerical)
+            plan = provider.compile_request(request)
+        self.assertEqual(plan["resolved_geometry"], baseline["resolved_geometry"])
+        self.assertEqual(plan["candidate_authority"], baseline["candidate_authority"])
+        self.assertEqual(plan["refine_options"], dict(convergence=1e-5, skipped_point=False))
+        self.assertTrue(all(level["refine_skipped_point"] is False for level in plan["levels"].values()))
+        run = self.root / "explicit_strategy"
+        (run / "inputs").mkdir(parents=True)
+        for key, value in plan["inputs"].items():
+            shutil.copyfile(value, run / "inputs" / (key+Path(value).suffix))
+        provider.prepare_run(plan, run)
+        for label in plan["levels"]:
+            self.assertIs(json.loads((run / "inputs" / (label+"_plan.json")).read_text())["refine_skipped_point"], False)
 
     def test_materializable_rejects_missing_thin_auxiliary_resolution(self):
         request = self.materializable_request()

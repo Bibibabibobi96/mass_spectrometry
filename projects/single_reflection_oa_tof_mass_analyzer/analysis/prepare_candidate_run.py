@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -13,7 +14,7 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 WORKSPACE_ROOT = REPO_ROOT.parent
 from common.contracts.artifact_naming import validate_run_id, validate_task_id
 from common.contracts.machine_contracts import load_json, sha256, validate_schema
-from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import prepare as prepare_consumers
+from common.simion.process_observation import run_observed_process
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
     freeze_candidate_source_closure,
     frozen_source_path,
@@ -306,10 +307,31 @@ def prepare_candidate_run(
         frozen["candidate_simion_template_registration_manifest"] = manifest_target
 
     prepared_dir = inputs_dir / "prepared_consumers"
-    generated = prepare_consumers(
-        frozen["candidate_resolved_geometry.json"], prepared_dir,
-        particle_source_seed=particle_source_seed,
-    )
+    compiler_logs = planning_root / "logs"
+    compiler_logs.mkdir(exist_ok=True)
+    stdout, stderr = compiler_logs / "prepare_consumers.stdout.log", compiler_logs / "prepare_consumers.stderr.log"
+    process, _ = run_observed_process([
+        source_closure["runtime"]["python_executable"], "-B", "-m",
+        "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers",
+        "--contract", str(frozen["candidate_resolved_geometry.json"]), "--output-dir", str(prepared_dir),
+        "--particle-source-seed", str(particle_source_seed),
+    ], cwd=frozen_code_root, stdout=stdout, stderr=stderr,
+        environment={key: value for key, value in os.environ.items() if key != "PYTHONPATH"},
+        warning_seconds=30)
+    if process.returncode != 0:
+        # Keep the actual final diagnostic after a temporary planning tree exits,
+        # with the same 4 KiB bound used for public failure diagnostics.
+        with stderr.open("rb") as stream:
+            stream.seek(0, 2)
+            stream.seek(max(0, stream.tell() - 4096))
+            detail = stream.read().decode("utf-8", errors="replace")
+        raise ValueError(
+            f"frozen Candidate consumer compiler failed; exit_code={process.returncode}; "
+            f"stderr={stderr}; stderr_tail=\n{detail}"
+        )
+    generated = {"resolved_lua": prepared_dir / "simion/oatof_resolved.lua",
+                 "program": prepared_dir / "simion/oatof_ideal_grounded.lua",
+                 "fly2": prepared_dir / "simion/oatof_ideal_grounded.fly2"}
     frozen.update({f"candidate_simion_{key}": path for key, path in generated.items()})
     resolved_contract = load_json(frozen["candidate_resolved_geometry.json"])
     source = resolved_contract["particle_source"]

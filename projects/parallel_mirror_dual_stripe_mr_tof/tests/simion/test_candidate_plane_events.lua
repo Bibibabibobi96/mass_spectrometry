@@ -7,6 +7,10 @@ io.flush=function() flush_count=flush_count+1; return original_flush() end
 local program_file=assert(io.open(directory..'mrtof_candidate.lua','rb'))
 local program=program_file:read('*a'); program_file:close()
 local map=assert(loadfile(directory..'candidate_voltage_map.lua'))()
+local priority={schema_version=1,role='mrtof_native_corridor_iob_priority_contract',
+  instances={{role='global_fallback',priority_number=1},{role='native_corridor',priority_number=2},
+    {role='accelerator',priority_number=3},{role='detector',priority_number=4}},
+  corridor_voltage_groups={{2,7},{3,8},{4,9},{5,10},{11,12},{13,14},{16},{17}}}
 local point={mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   prism_voltages_v={141.3329402510257,0},
   accelerator_voltages_v={40,30,0},accelerator_ring_voltages_v={25,20,15,10,5},
@@ -20,13 +24,14 @@ local point={mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   target_drift_period_ratio=25.5,target_half_oscillation_count=51,trajectory_quality=8,maximum_step_us=0.002,
   full_path_timeout_us=1000}
 loadfile=function(path)
+  if path=='virtual/source.voltage_waveforms.lua' then return original_loadfile(repo..'/common/simion/voltage_waveforms.lua') end
   if path=='virtual/source.operating_point.lua' then return function() return point end end
   if path=='virtual/source.voltage_map.lua' then return function() return map end end
   if path=='virtual/source.mirror_cycle_counter.lua' then
     return assert(original_loadfile(directory..'mirror_cycle_counter.lua'))
   end
   if path=='virtual/source.priority.lua' then
-    return assert(original_loadfile(directory..'native_corridor_priority_contract.lua'))
+    return function() return priority end
   end
   return original_loadfile(path)
 end
@@ -198,7 +203,7 @@ assert(not switched_ok)
 local fallback_loadfile=loadfile
 loadfile=function(path)
   if path=='virtual/source.priority.lua' then
-    return assert(original_loadfile(directory..'native_corridor_priority_contract.lua'))
+    return function() return priority end
   end
   return fallback_loadfile(path)
 end

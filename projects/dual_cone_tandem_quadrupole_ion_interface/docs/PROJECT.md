@@ -46,13 +46,13 @@
 
 ## 当前权威物理链
 
-当前路线由两个独立 workflow 组成：
+物理路线由以下两种职责组成；当前 SIMION 原生执行器已退役，保留科学准备：
 
 1. COMSOL 使用 [`gas_flow_science.json`](../config/gas_flow_science.json) 与
    [`comsol_solver_numerics.json`](../config/comsol_solver_numerics.json) 建立轴对称可压缩气流筛选。
    当前模型只覆盖无杆、无偏置泵口的空包络轴对称近似；它的声明边界是
    `prototype_axisymmetric_empty_enclosure_gas_flow`。
-2. SIMION 几何编译器从同一 resolved 几何生成电极表示；Fly runner 只消费由成功 COMSOL run 导出、复制进本次 run 且
+2. SIMION 几何编译器从同一 resolved 几何生成电极表示；气体场准备只消费由成功 COMSOL run 导出、复制进本次准备目录且
    通过 SHA-256 和 frame/单位检查的 canonical `r-z` 气体场。气体场至少包含压力、温度、径向与轴向
    气速以及有效域和插值边界语义。
 
@@ -60,9 +60,7 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 不得表述为跨求解器轨迹等价。若未来需要独立闭合，必须另建 COMSOL charged-particle workflow，并使
 两个轨迹求解器分别消费同一冻结气体场、源、电极和事件合同。
 
-当前已有项目级 COMSOL 求解、场编译和复用同一核心的真实 SIMION Fly 入口；execution profile 已登记
-COMSOL 空包络气流与 COMSOL 场驱动 SIMION 的计划级受管 runner。均匀 `400 Pa` runner 仅作为显式
-对照入口保留，不是登记的主物理链。只有 COMSOL 最终 `400 Pa`、合同明确记录的终态参数解通过独立场校验，并由下游运行冻结全部
+项目保留 COMSOL 求解、场编译、SIMION 科学输入准备及 Fly Lua。当前只有 COMSOL 空包络气流登记为可执行 profile；SIMION 新运行因 fractional PA 公共隔离能力缺口而阻断，原生运行器及均匀 `400 Pa`／COMSOL 场运行 wrapper 已退役。只有 COMSOL 最终 `400 Pa`、合同明确记录的终态参数解通过独立场校验，并由下游运行冻结全部
 来源哈希后，才可形成 Prototype 证据；任意中间 continuation 解或裸 CSV 都不是可执行证据入口。
 
 ## 已退役模型
@@ -75,17 +73,17 @@ COMSOL 空包络气流与 COMSOL 场驱动 SIMION 的计划级受管 runner。�
 
 ## 当前资格
 
-2026-10-03 静态回归修正：C0宿主阶段测试的cache替身改为响应生产入口实际调用的`ensure`，
-原`probe`替身导致在GEM前缺少`disposition`而失败。直接运行项目门禁已确认原有测试退出码检查会返回非零；
-新增失败传播回归，未增加重复检查或改变调度、容量、物理合同。本项不新增真实SIMION资格。
+2026-10-24 缓存边界审查：当前 GEM 使用 `surface=fractional`，而公共 standalone 响应导出明确拒绝 `.pa-surf`。原冷启动分支使用已退出公共 CLI 的 `ensure/publish`，不能发布受管资产；原命中分支把原生 `.paN` 交给供应商，不能满足缓存写隔离。因此整体退役四个不可执行原生入口（C0、共享输运及两个气场 wrapper）和专属死测试，撤下 SIMION transport 执行 profile，不保留旧名转发、阻断 stub 或不可达执行体。纯准备、GEM 编译、源、RF、fractional 数值合同与 COMSOL 气流入口保留；历史成功 run 身份及科学结果不变。
+
+重新开放 SIMION 新执行前，必须在公共 PA 机制中验证保留 fractional 表面信息的导出与私有 Fast Adjust 重建路径，并支持真实电极集合 `1,2,3,11,12,21,22`；随后接入公共事务的 build/verify/complete 重入与受管保护，用小模型验证源 generation 不被供应商修改、HIT 与中断重入不重复 Refine。本次仅完成入口退役、纯编译及能力发现回归，未进行真实 SIMION 验证，不能称 PA 复用已接通。
 
 | 层级 | 状态 |
 |---|---|
 | 几何与合同 Static | 可执行 |
 | COMSOL 轴对称空包络气流 | 受管 run `20260914_154800__sim__comsol__dual-cone-gas-flow` success，bootstrap、项目报告、独立字段验证及full manifest均PASS；仍仅为无杆、无孔板、无泵口的Prototype |
 | canonical COMSOL→SIMION 气体场 | 上述成功run已由下游按full manifest、字段SHA-256和冻结三份源合同消费；未提升为Candidate/Formal资产 |
-| SIMION 几何编译 | Prototype；本机 `gem2pa/refine` 已通过 |
-| SIMION 气体辅助轨迹 | COMSOL场受管run `20260914_162400__sim__simion__dual-cone-comsol-field-n100` success且full manifest PASS，N=100中58个到达末端；均匀400 Pa控制run为0/100，但不是自然压降模型 |
+| SIMION 几何编译 | 纯 GEM 编译可执行；历史 `gem2pa/refine` Prototype 证据保留，新原生执行因 fractional 缓存隔离阻断 |
+| SIMION 气体辅助轨迹 | 当前新执行 BLOCKED；历史 COMSOL场受管run `20260914_162400__sim__simion__dual-cone-comsol-field-n100` success且full manifest PASS，N=100中58个到达末端；均匀400 Pa控制run为0/100，但不是自然压降模型 |
 | 独立轨迹跨求解器闭合 | 未建立 |
 | CAD / GUI / Candidate / Formal | BLOCKED |
 
@@ -121,6 +119,14 @@ COMSOL 空包络气流与 COMSOL 场驱动 SIMION 的计划级受管 runner。�
 相容，但样本太小，仍不能给出精确传输率或实机定量结论。
 
 ## 代码精简审查
+
+COMSOL气流入口沿原源表冻结新增的公共预算支持依赖，未增加复制或运行机制。
+与Wehnelt入口的6项focused回归包含实际冻结加载及无Limits不生成usage检查；未重新运行气流或改变原型资格。
+
+SIMION纯准备入口直接使用[公共小文件冻结API](../../../common/contracts/frozen_inputs.py)，私有复制函数已删除。
+准备receipt在构造时保留既有`source_path/frozen_path/sha256/bytes`四字段，SDS伴随文件仍按原清单选择。
+C0及气体辅助两种模式已在仓库外源码快照的新Python进程中完成纯准备回归，缺源、已有目的及副本身份漂移均拒绝；
+该验证不解除上述fractional PA新执行阻断，也不授予新的原生或GUI资格。
 
 2026-10-17：均匀场入口直接调用既有Python编译器后委托同一Fly核心，删除仅有该单一消费者的
 PowerShell编译转发脚本。COMSOL场编译／校验复用公共流式文件身份实现，保持既有小写哈希合同。

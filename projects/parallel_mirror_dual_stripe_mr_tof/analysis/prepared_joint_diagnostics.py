@@ -24,7 +24,7 @@ from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import (
-    _load_source, _log_roundoff_us, analyze_measured_component,
+    _load_source, _log_roundoff_us, analyze_measured_component, validate_measured_peak_source_reference,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.loss_acceptance_diagnostics import (
     build_loss_acceptance_figure, prepare_loss_rows, prepare_mirror_domain_rows, summarize_loss_acceptance,
@@ -509,7 +509,8 @@ def _loss_evidence(merged_log: Path, destination: Path, census: list[dict], sour
 
 
 def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, output_directory: Path,
-                                  *, merge_receipt: Path | None = None) -> dict[str, Any]:
+                                  *, merge_receipt: Path | None = None,
+                                  analysis_contract: Path | None = None) -> dict[str, Any]:
     """Automatically publish full-census Prism, time-cloud and loss diagnostics.
 
     Inputs must be frozen measured-source trial/clock identities and a complete
@@ -519,6 +520,23 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     if output_directory.exists():
         raise FileExistsError(output_directory)
     prepared, source_path, source, states, mother, contract = _inputs(preparation_receipt)
+    contract_base = _bound(prepared["trajectory_contract"], preparation_receipt.parent).parent
+    analysis_provenance = None
+    if analysis_contract is not None:
+        replacement = _read(analysis_contract)
+        if ({key: value for key, value in replacement.items() if key != "peak_analysis"}
+                != {key: value for key, value in contract.items() if key != "peak_analysis"}):
+            raise ValueError("Post-hoc analysis contract may change only peak_analysis")
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import validate_execution_contract
+        execution = validate_execution_contract(contract, replacement)
+        analysis_provenance = dict(contract=file_record(analysis_contract),
+            original_trajectory_contract=prepared["trajectory_contract"],
+            change=execution["analysis_change"], qualification="explicit_post_hoc_analysis_only__native_flight_unchanged")
+        contract, contract_base = replacement, analysis_contract.parent
+    if contract.get("peak_analysis") is not None:
+        validate_measured_peak_source_reference(contract["peak_analysis"], contract_base, source, states)
+    elif analysis_contract is not None:
+        raise ValueError("Post-hoc analysis contract requires an explicit measured peak declaration")
     binding_path = _bound(prepared["field_binding"], preparation_receipt.parent)
     binding = load_binding(binding_path)
     if binding["geometry"]["frame_id"] != source["frame_id"]:
@@ -557,7 +575,9 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     output_directory.mkdir(parents=True)
     event_log = output_directory / "events.log"
     _project_events(merged_log, event_log)
-    population = analyze_measured_component(event_log, source_path, output_directory / "population")
+    population = analyze_measured_component(event_log, source_path, output_directory / "population",
+        peak_analysis_contract=contract.get("peak_analysis"),
+        contract_base_directory=contract_base)
     events = _read(output_directory / "population/parsed_events.json")
     census = _rows(output_directory / "population/particle_census.csv")
     trajectory = extract_trajectory_samples(log_path=merged_log, output_path=output_directory / "trajectory_samples.csv",
@@ -626,6 +646,9 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
                     loss_acceptance=acceptance,
                     potential_correction="not evaluated; terminal ion_volts is not used as scalar-field potential; raw K differences are not conservation residuals",
                     qualification="diagnostic_only_no_physics_GUI_or_Formal_pass")
+    if analysis_provenance is not None:
+        metadata["inputs"]["analysis_contract"] = analysis_provenance["contract"]
+        metadata["analysis_contract_provenance"] = analysis_provenance
     if merge_receipt is not None:
         metadata["inputs"]["batch_log_merge_receipt"] = file_record(merge_receipt)
     with plt.rc_context({"font.size": 9, "axes.titlesize": 9}):
@@ -636,8 +659,9 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
             figure, _ = builder(*args)
             _save_figure(figure, output_directory / role, metadata)
     result = dict(schema_version=1, role="mrtof_prepared_joint_diagnostics", status="complete_recorded_diagnostics",
-                  inputs=metadata["inputs"],
+                  inputs=metadata["inputs"], analysis_contract_provenance=analysis_provenance,
                   counts=population["counts"], figure_roles=["prism_phase_space", "timed_spatial_clouds", "population_and_losses", "loss_acceptance"],
+                  detector_peak=population["detector_peak"],
                   snapshot_count=len(times), maximum_interpolation_gap_us=gap, trajectory=trajectory,
                   birth_clock_projection=birth_projection,
                   prism_phase_space_reference=standard, signed_angle_definition="atan2(vy,vz), full quadrant; zero yz speed undefined",

@@ -80,14 +80,16 @@ def resolve_design_profile(
         modes = json.loads(modes_path.read_text(encoding="utf-8-sig"))
         request = apply_typed_operating_mode(request, modes, mode_id)
         paths["operating_mode_registry"] = modes_path
+    if mode_id is not None or profile.get("enclosure_model") is not None:
         resolved_design = compile_governed_design_request_file(
             paths["design_request"],
             paths["design_variables"],
             paths["optimization_envelope"],
             expected_identity=profile["identity"],
             provenance_root=repo_root,
-            operating_mode_registry_path=modes_path,
+            operating_mode_registry_path=paths.get("operating_mode_registry"),
             mode_id=mode_id,
+            enclosure_model=profile.get("enclosure_model"),
             repository_text_sources=True,
         )
     if request["identity"] != profile["identity"]:

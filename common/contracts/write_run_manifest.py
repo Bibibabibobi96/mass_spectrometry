@@ -75,7 +75,7 @@ def file_record(
 ) -> dict[str, Any]:
     """Record exact bytes with the shared read policy for closed payloads.
 
-    Large Windows solver-native outputs use the existing unbuffered reader;
+    Large Windows solver-native files use the existing unbuffered reader;
     producers must already have stopped writing. Read failures never retry or
     fall back to another view. Virtual documents retain their exact JSON hash.
     The optional private cache belongs to one closed-payload build/verify call;
@@ -89,9 +89,12 @@ def file_record(
     elif path.is_file():
         metadata = path.stat()
         size = metadata.st_size
+        large_windows_file = os.name == "nt" and size >= _UNBUFFERED_SOLVER_PAYLOAD_BYTES
+        read_role = retention_role
+        if large_windows_file and read_role is None:
+            read_role = retention_api()[0](path, bytes_count=size)
         hash_file = file_sha256_unbuffered if (
-            os.name == "nt" and retention_role == "solver_native_binary"
-            and size >= _UNBUFFERED_SOLVER_PAYLOAD_BYTES
+            large_windows_file and read_role == "solver_native_binary"
         ) else file_sha256
         key = (path.resolve(), hash_file, size, metadata.st_mtime_ns) if _identity_cache is not None else None
         identity = _identity_cache.get(key) if _identity_cache is not None else None

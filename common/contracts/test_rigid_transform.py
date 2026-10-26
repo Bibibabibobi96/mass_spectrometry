@@ -110,6 +110,21 @@ class RigidTransformOperationTests(unittest.TestCase):
         self.assertEqual(target.velocity_m_s, (0, 100, 0))
         self.assertEqual(target.instrument_time_us, source.instrument_time_us)
 
+    def test_source_in_target_local_frame_is_unchanged_by_parent_pose(self) -> None:
+        cosine, sine = math.cos(0.08), math.sin(0.08)
+        pose = RigidTransform(
+            "oa_native", "assembly",
+            ((cosine, -sine, 0), (sine, cosine, 0), (0, 0, 1)),
+            (123.456, 78.9, -0.1),
+        )
+        source = PhaseSpaceState(
+            "oa_native", (7.2, -13.4, 0.00001), (0.031, -12.7, 4.3), 51.2,
+        )
+        # Independent copies of the same declared pose still describe one frame.
+        relative = relative_transform(pose, RigidTransform.from_contract(pose.to_contract()))
+        self.assertEqual(relative, RigidTransform.identity("oa_native"))
+        self.assertEqual(relative.transform_state(source), source)
+
     def test_vector_kinds_share_proper_rotation_and_preserve_norm(self) -> None:
         transform = RigidTransform(
             "source", "target", ROTATE_Z_90, (10, 20, 30)

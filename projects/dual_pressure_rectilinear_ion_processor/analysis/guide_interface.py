@@ -177,3 +177,41 @@ def export_guide_contract(resolved_model: dict[str, Any], input_identities: dict
         "numerical_boundary_semantics": "not_exported_as_mechanical_metal__consumer_must_declare_new_domain",
         "claim": "same_eight_continuous_rods_and_drive__new_assembly_fields_require_solving",
     }
+
+
+def export_guide_assembly_interface(guide: dict[str, Any]) -> dict[str, Any]:
+    """Publish mechanical registration and rod identities from a guide contract.
+
+    Input must be the provider's already verified export_guide_contract output.
+    No files, particle states, voltages or clocks are produced. The exit's open
+    rod envelope is a geometry scale, not a plate aperture or acceptance cut.
+    """
+    if guide.get("schema_version") != 1 or guide.get("role") != "ion_processor_bare_guide_interface":
+        raise ValueError("guide assembly interface requires the native bare-guide contract")
+    rods = guide["rod_array"]["rods"]
+    identities = [rod["physical_electrode_id"] for rod in rods]
+    if len(identities) != len(set(identities)) or not identities:
+        raise ValueError("guide assembly interface requires distinct physical rod identities")
+    radius = _number(guide["rod_array"]["inscribed_radius_r0"], "rod clear envelope", positive=True)
+    return {
+        "schema_version": 1,
+        "role": "component_geometry_interface",
+        "project_id": guide["provider_project_id"],
+        "variant_id": "continuous_bare_octupole_guide",
+        "geometry_profile_id": None,
+        "local_frame_id": guide["frame_id"],
+        "length_unit": "mm",
+        "ports": {"guide_exit": {
+            "surface_kind": "open_rod_exit",
+            "center_mm": list(guide["guide_exit_surface"]["center_mm"]),
+            "outward_normal": list(guide["guide_exit_surface"]["normal"]),
+            "cross_section": {"shape": "open_rod_envelope", "inscribed_radius_mm": radius},
+            "wall_thickness_mm": None,
+        }},
+        "component_electrodes": [
+            {"component_electrode_id": rod["physical_electrode_id"],
+             "role": f"guide_rod_{rod['physical_electrode_id']}",
+             "electrical_group_id": rod["source_electrode_id"]}
+            for rod in rods
+        ],
+    }

@@ -1,4 +1,9 @@
-"""Prepare fresh IP scientific seeds and full MR CSG; never build PA or fly ions."""
+"""MR-native CSG, field-plan, and numerical helpers for a registered IP replacement.
+
+Cross-project composition and run-local seed materialization belong to the
+instrument-assembly workflow; this module remains the MR provider's reusable
+static-field and diagnostic mechanism.
+"""
 
 from __future__ import annotations
 
@@ -11,10 +16,8 @@ import struct
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import verify_record
 from common.simion.gem_primitives import centered_box3d, format_number
-from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection, render_gem
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import _analyzer_geometry_lines
 
 
@@ -241,359 +244,6 @@ def derive_lift_seed(source: dict, request: dict) -> float:
     return result
 
 
-def prepare_ion_processor_assembly(
-    source_resolved_model: Path, reference_trajectory: Path, matching_request_resolved: Path, output_directory: Path
-) -> dict:
-    """Write new editable seeds and concrete C0/local GEM inputs without solving."""
-    if output_directory.exists():
-        raise FileExistsError(output_directory)
-    source, trajectory, request = map(_read, (source_resolved_model, reference_trajectory, matching_request_resolved))
-    target = _finite(request["target"]["axial_energy_per_charge_v"])
-    measured = _finite(request["current_measured_baseline"]["directional_energy"]["z"]["mean"])
-    if (
-        target <= 0
-        or measured <= 0
-        or request["requirements"]["energy_definition"] != "exit_axial_kinetic_energy_per_charge"
-    ):
-        raise ValueError("positive measured and target axial energy per charge required")
-    references = request["field_assembly_reference"]
-    authorities = {}
-    for name in ("geometry_authority", "voltage_authority", "numerical_plan"):
-        verify_record("MR field assembly reference " + name, references[name])
-        authorities[name] = _read(Path(references[name]["path"]))
-    geometry, authority, old_plan = [
-        copy.deepcopy(authorities[n]) for n in ("geometry_authority", "voltage_authority", "numerical_plan")
-    ]
-    if (
-        geometry["frame_id"] != request["target"]["frame_id"]
-        or trajectory["coordinate_system"]["frame_id"] != geometry["frame_id"]
-    ):
-        raise ValueError("MR assembly reference frame differs")
-    baseline, numerics = copy.deepcopy(source["baseline"]), copy.deepcopy(source["numerics"])
-    # Historical source evidence stays immutable; author only the current native seed.
-    for section, names in {
-        "geometry": ("interface_halfwidth_mm", "guide_blend_halfwidth_mm"),
-        "electric": ("hp_axial_curvature_v_per_mm2", "lp_axial_curvature_v_per_mm2",
-                     "lp_capture_offset_v", "hp_transfer_offset_v", "extraction_gradient_v_per_mm",
-                     "hp_transfer_gradient_v_per_mm", "lp_transfer_axial_curvature_v_per_mm2"),
-    }.items():
-        for name in names:
-            baseline[section].pop(name, None)
-    point = copy.deepcopy(source["native_operating_point"])
-    old_lift = _finite(point["lift_v"])
-    if baseline["electric"]["lift_v"] != old_lift:
-        raise ValueError("provider native and baseline lift bindings differ")
-    point["lift_v"] = derive_lift_seed(source, request)
-    if point["lift_v"] <= 0:
-        raise ValueError("derived lift seed must remain positive")
-    baseline["electric"]["lift_v"] = point["lift_v"]
-    transform = source["coordinate_transform"]
-    rigid = request["rigid_transform"]
-    if rigid["rotation"] != [[1, 0, 0], [0, 1, 0], [0, 0, 1]] or transform["to_frame_id"] != rigid["from_frame_id"]:
-        raise ValueError("IP world registration must preserve the current matched axes")
-    rotation = transform["rotation"]
-    translation = [a + b for a, b in zip(transform["translation_mm"], rigid["translation_mm"])]
-    coordinate = {**copy.deepcopy(transform), "to_frame_id": rigid["to_frame_id"], "translation_mm": translation}
-    before = _transform_projection(native_projection(baseline, numerics), rotation, translation)
-    central = next(s for s in geometry["prism_ground_shields"] if s["station"] == "central_ground_left")
-    p1 = next(s for s in geometry["prism_ground_shields"] if s["station"] == "accelerator_exit")
-    clearance = _finite(trajectory["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"]["clearance_mm"])
-    if clearance <= 0 or rotation != [[0, 0, -1], [1, 0, 0], [0, -1, 0]]:
-        raise ValueError("positive existing P1 clearance and current IP native orientation required")
-    central_min_y = min(p[0] for p in central["outer_polygon_yz_mm"])
-    old_length = baseline["geometry"]["lp_length_mm"]
-    permitted_end = central_min_y - clearance - translation[1] - baseline["native_geometry"]["lens_thickness_mm"]
-    g = baseline["geometry"]
-    g["lp_length_mm"] = min(old_length, permitted_end - g["guide_length_mm"] - g["hp_length_mm"])
-    end = g["guide_length_mm"] + g["hp_length_mm"] + g["lp_length_mm"]
-    if (
-        end - baseline["native_geometry"]["lp_aux_axial_inset_mm"]
-        <= g["lp_center_mm"] + g["extraction_slit_length_mm"] / 2
-    ):
-        raise ValueError("MR clearance leaves insufficient LP extraction geometry")
-    projection = native_projection(baseline, numerics)
-    electrodes = _transform_projection(projection, rotation, translation)
-    # Replace the old OA-dependent extension using the actual IP shield exit face.
-    exit_face = min(_bounds(s)[2] for e in electrodes if e["electrode_id"] == 14 for s in e["solids"])
-    old_end = max(p[1] for p in p1["outer_polygon_yz_mm"])
-    new_end = exit_face - clearance
-    for polygon in [p1["outer_polygon_yz_mm"], *[s["polygon_yz_mm"] for s in p1["body_sections"]]]:
-        for p in polygon:
-            if p[1] == old_end:
-                p[1] = new_end
-    for slot in p1["rectangular_slots_mm"]:
-        if slot[5] == old_end:
-            slot[5] = new_end
-    p1["extension_to_accelerator_exit"] = {
-        "provider": "ion_processor",
-        "clearance_mm": clearance,
-        "exit_support_downstream_z_mm": exit_face,
-        "resolved_end_z_mm": new_end,
-    }
-    geometry.pop("accelerator_component_layout", None)
-    geometry["ion_processor_electrodes"] = electrodes
-    voltage_projection = references["provider_voltage_projection"]
-    verify_record("unique provider native drive", voltage_projection["source_native_drive"])
-    if (
-        voltage_projection["basis"] != "post_extraction_pulse_held_rf_zero"
-        or voltage_projection["evaluated_native_operating_point"] != point
-        or voltage_projection["evaluated_baseline_lift_v"] != baseline["electric"]["lift_v"]
-        or _finite(voltage_projection["evaluation_time_us"]) < source["native_timing"]["pulse_start_us"]
-    ):
-        raise ValueError("provider voltage projection differs from prepared seed or pulse phase")
-    volts = [_finite(v) for v in voltage_projection["values_v15"]]
-    if len(volts) != 15:
-        raise ValueError("complete 15-electrode native provider projection required")
-    parent = _grid_plan(old_plan["box_mm"], old_plan["pitch_mm"], "grounded_enclosure", old_plan["convergence_v"])
-    if authority["boundary_contract"]["box_mm"] != parent["box_mm"]:
-        raise ValueError("parent numerical and voltage boundary differ")
-    full = [-parent["box_mm"][3], *parent["box_mm"][1:]]
-    bounds = [_bounds(s) for e in electrodes for s in e["solids"]]
-    fit = all(full[a] <= b[a] and b[a + 3] <= full[a + 3] for b in bounds for a in range(3))
-    if not fit:
-        raise ValueError("registered IP conductors do not fit MR C0")
-
-    def evidence(items: list) -> list:
-        hits = []
-        for e in items:
-            for s in e["solids"]:
-                if s["shape"] != "box":
-                    continue
-                b = _bounds(s)
-                for p in itertools.product(
-                    *[[b[a] + (b[a + 3] - b[a]) * u for u in (0.25, 0.5, 0.75)] for a in range(3)]
-                ):
-                    p = list(p)
-                    if any(_inside_body(p, h) for h in e["cutouts"]):
-                        continue
-                    for shield in (central, p1):
-                        if _shield_contains(p, shield):
-                            hits.append(
-                                {"ip_electrode_id": e["electrode_id"], "mr_electrode_id": shield["id"], "point_mm": p}
-                            )
-                            break
-        return hits
-
-    before_hits, after_hits = evidence(before), evidence(electrodes)
-    if after_hits:
-        raise ValueError("prepared IP still intersects MR shield CSG samples")
-    output_directory.mkdir(parents=True)
-    seed = output_directory / "ion_processor_seed"
-    seed.mkdir()
-    configs = {k: source[k] for k in ("source", "acceptance", "diagnostics", "field_diagnostics")}
-    configs.update(
-        baseline=baseline,
-        numerics=numerics,
-        native_operating_point=point,
-        coordinate_transform=copy.deepcopy(source["coordinate_transform"]),
-    )
-    for key, value in configs.items():
-        _write(seed / (key + ".json"), value)
-    (seed / "processor.gem").write_text(render_gem(baseline, numerics), encoding="utf-8", newline="\n")
-    _write(output_directory / "assembly_geometry.json", geometry)
-    detector_voltage = next(
-        v["voltage_v"] for v in authority["component_voltages_v"] if v["component_namespace"] == "detector"
-    )
-    fields = []
-    plans = [("parent", parent)]
-    for window in references["refinement_windows"]:
-        verify_record("MR refinement numerical reference", window["numerical_plan"])
-        old = _read(Path(window["numerical_plan"]["path"]))
-        if "crop" in old:
-            verify_record("MR full solve numerical reference", window["full_solve_numerical_plan"])
-            old = _read(Path(window["full_solve_numerical_plan"]["path"]))
-        plans.append(
-            (
-                window["name"],
-                _grid_plan(old["box_mm"], old["pitch_mm"], "x_mirror_five_faces", old_plan["convergence_v"]),
-            )
-        )
-    central_names = [
-        name for name, plan in plans if name != "parent" and plan["box_mm"][1] <= min(b[1] for b in bounds)
-    ]
-    # If the original central window starts downstream of the IP tail, it still
-    # owns the MR corridor and provides all five mirror boundary faces.
-    if not central_names and len(plans) > 1:
-        central_names = [max(plans[1:], key=lambda item: item[1]["box_mm"][3])[0]]
-    central_name = central_names[0] if central_names else "parent"
-    for name, plan in plans:
-        if name not in ("parent", central_name):
-            plan["parent_label"] = central_name
-        directory = output_directory / name
-        directory.mkdir()
-        _write(directory / "numerical_plan.json", plan)
-        (directory / "assembly.gem").write_text(
-            _gem(geometry, electrodes, volts, references["analyzer_electrode_voltages_v"], detector_voltage, plan),
-            encoding="utf-8",
-            newline="\n",
-        )
-        fields.append(
-            {
-                "name": name,
-                "gem_path": str((directory / "assembly.gem").resolve()),
-                "numerical_plan_path": str((directory / "numerical_plan.json").resolve()),
-                "reuse_old_pa": False,
-                "grid": {k: plan[k] for k in ("box_mm", "pitch_mm", "dimensions")},
-                "active_box_mm": next(
-                    (w["active_box_mm"] for w in references["refinement_windows"] if w["name"] == name), None
-                ),
-                "boundary_parent": plan["parent_label"],
-                "boundary_values": "new_parent_dirichlet_required"
-                if name != "parent"
-                else "five_faces_grounded_x_mirror",
-            }
-        )
-    collision_path = output_directory / "collision.gem"
-    collision_path.write_text(
-        _gem(
-            geometry,
-            electrodes,
-            volts,
-            references["analyzer_electrode_voltages_v"],
-            detector_voltage,
-            parent,
-            occupancy=True,
-        ),
-        encoding="utf-8",
-        newline="\n",
-    )
-    detector = geometry["detector"]["box"]
-    span = trajectory["simion"]["detector_pa_span_mm"]
-    detector_pitch = trajectory["simion"]["component_mesh_mm_per_gu"]["detector"]
-    detector_origin = [(detector[a] + detector[a + 3] - span[a]) / 2 for a in range(3)]
-    detector_dimensions = [round(span[a] / detector_pitch[a]) + 1 for a in range(3)]
-    if any(abs((detector_dimensions[a] - 1) * detector_pitch[a] - span[a]) > 1e-8 for a in range(3)):
-        raise ValueError("detector extent not aligned to declared mesh")
-    detector_gem = (
-        "pa_define("
-        + ",".join(map(str, detector_dimensions))
-        + ",planar,none,electrostatic,,"
-        + ",".join(map(format_number, detector_pitch))
-        + ",surface=fractional)\nlocate("
-        + ",".join(format_number(-v) for v in detector_origin)
-        + ") { e(1) { "
-        + _primitive({"shape": "box", "min_mm": detector[:3], "max_mm": detector[3:]})
-        + " } }\n"
-    )
-    detector_path = output_directory / "detector.gem"
-    detector_path.write_text(detector_gem, encoding="utf-8", newline="\n")
-    runtime_geometry = {
-        "collision": {
-            "gem_path": str(collision_path.resolve()),
-            "origin_mm": parent["box_mm"][:3],
-            "grid": parent,
-            "mirror_axes": ["x"],
-            "numerical_boundary_faces_included": False,
-            "all_metal_electrode_value": 1,
-        },
-        "detector": {
-            "gem_path": str(detector_path.resolve()),
-            "origin_mm": detector_origin,
-            "pitch_mm": detector_pitch,
-            "dimensions": detector_dimensions,
-            "physical_box_mm": detector,
-            "mirror_axes": [],
-            "all_metal_electrode_value": 1,
-        },
-    }
-    report = {
-        "schema_version": 1,
-        "role": "mrtof_ion_processor_assembly_preparation",
-        "status": "prepared_unvalidated_seed",
-        "solver_executed": False,
-        "joint_simulation_executed": False,
-        "field_qualified": False,
-        "old_oa_removed": True,
-        "old_oa_field_reuse_allowed": False,
-        "historical_exit_state_matches_new_seed": False,
-        "source_config_paths": {k: str((seed / (k + ".json")).resolve()) for k in configs},
-        "assembly_geometry_path": str((output_directory / "assembly_geometry.json").resolve()),
-        "field_plan_path": str((output_directory / "field_assembly_plan.json").resolve()),
-        "parent_gem_path": str((output_directory / "parent/assembly.gem").resolve()),
-        "assembly_coordinate_transform": coordinate,
-        "runtime_geometry": runtime_geometry,
-        "energy_seed": {
-            "policy": request["policies"]["energy_adjustment"],
-            "formula": ("lift_seed = lift_baseline" if request["policies"]["energy_adjustment"] == "preserve_measured_workpoint"
-                        else "lift_seed = lift_baseline + target_Ez_per_q - measured_baseline_mean_Ez_per_q"),
-            "baseline_lift_v": old_lift,
-            "target_ez_per_q_v": target,
-            "measured_baseline_ez_per_q_v": measured,
-            "new_lift_v": point["lift_v"],
-            "measured_minus_target_ez_per_q_v": measured - target,
-            "qualification": ("measured_workpoint_preserved__target_difference_reported_without_acceptance"
-                              if request["policies"]["energy_adjustment"] == "preserve_measured_workpoint"
-                              else "first_order_seed_only_requires_fresh_IP_flight_no_velocity_scaling"),
-        },
-        "geometry_changes": {
-            "lp_length_before_mm": old_length,
-            "lp_length_after_mm": g["lp_length_mm"],
-            "clearance_mm": clearance,
-            "clearance_basis": "/prisms/ground_shields/0/extension_to_accelerator_exit/clearance_mm",
-            "clearance_reuse": "MR existing accelerator-to-shield minimum gap applied to the new accelerator end face",
-            "central_shield_min_y_mm": central_min_y,
-            "ip_exit_lens_max_y_mm": end + baseline["native_geometry"]["lens_thickness_mm"] + translation[1],
-            "p1_extension_end_before_z_mm": old_end,
-            "p1_extension_end_after_z_mm": new_end,
-            "ip_shield_min_z_mm": exit_face,
-        },
-        "geometry_checks": {
-            "c0_domain_fit": fit,
-            "before_shield_csg_interior_witnesses": before_hits,
-            "after_shield_csg_interior_witnesses": after_hits,
-            "scope": "Finite interior witnesses against actual polygon/box slot CSG, not exhaustive clearance or CAD qualification",
-        },
-        "namespace_map": [
-            {
-                "provider_electrode_id": e["electrode_id"],
-                "assembly_id": e["assembly_id"],
-                "name": e["name"],
-                "voltage_v": v,
-            }
-            for e, v in zip(electrodes, volts)
-        ],
-        "input_identities": [
-            {"path": str(p.resolve()), "bytes": p.stat().st_size, "sha256": file_sha256(p)}
-            for p in (source_resolved_model, reference_trajectory, matching_request_resolved)
-        ],
-        "required_before_joint_flight": [
-            ("Verify prepared IP configuration matches the measured source; retain measured states and complete census"
-             if request["policies"]["energy_adjustment"] == "preserve_measured_workpoint"
-             else "Fresh IP GEM build/Refine and N100 flight with seed voltage and shortened LP; export actual states preserving full census"),
-            "Rebuild C0 and every local field from this assembly; inherit boundaries only from the new parent",
-            "Verify field handover guards, collisions, state transfer and instrument clock before joint flight",
-            "Match downstream spatial/time response; old OA working point is an initial seed only",
-        ],
-    }
-    _write(
-        output_directory / "field_assembly_plan.json",
-        {
-            "schema_version": 1,
-            "role": "mrtof_new_ip_field_assembly_plan",
-            "execution_scope": "prepare_only_no_solver",
-            "post_extraction_state": "pulse_held_rf_zero",
-            "fields": fields,
-            "execution_order": ["parent"]
-            + ([central_name] if central_name != "parent" else [])
-            + [f["name"] for f in fields if f["name"] not in ("parent", central_name)],
-            "field_priority": "local windows in frozen reference order then new parent",
-            "collision_authority": "assembly_geometry.json physical CSG; numerical faces are not metal",
-            "old_oa_pa_or_boundary_reuse": False,
-            "source_config_paths": report["source_config_paths"],
-            "runtime_geometry": runtime_geometry,
-            "official_reference": {
-                "title": "SIMION GEM Geometry File: cylinder3d and CSG",
-                "url": "https://simion.com/info/gem_geometry_file.html",
-                "accessed": "2026-10-16",
-                "compatibility": "cylinder3d supported since 8.2EA-20170324; target SIMION 2020",
-                "usage": "Project CSG input preparation only, no vendor execution or qualification",
-            },
-        },
-    )
-    _write(output_directory / "assembly_preparation.json", report)
-    return report
-
-
 def ordinary_pa_file_bytes(dimensions: list[int], pitch_mm: list[float]) -> int:
     """Forecast SIMION's ordinary GEM-save header and double node payload.
 
@@ -620,6 +270,7 @@ def compile_materializable_fields(request: dict) -> dict:
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import (
         _native_active_box,
         resolve_native_refine_numerics,
+        native_refine_options,
     )
 
     allowed = {
@@ -865,11 +516,17 @@ def compile_materializable_fields(request: dict) -> dict:
         "committed_new_bytes": retained,
         "final_retained_estimate_bytes": retained,
         **numerics,
-        "refine_options": {"convergence": numerics["convergence_v"]},
+        "refine_options": native_refine_options(numerics),
         "automatic_retry_count": 0,
         "fly_authorized": False,
         "qualification_passed": False,
         "grid_generation": {"spacing_quantum_mm": 0.01},
-        "official_sources": authored_plan["official_reference"],
+        "official_sources": [*authored_plan["official_reference"], {
+            "url": "https://simion.com/info/lua_simion.pas.html",
+            "title": "SIMION pa:refine API (full installed Supplemental Documentation)",
+            "local_document": "docs/simion.chm::/lua_simion.pas.html (pa:refine)",
+            "consulted": "2026-10-19", "installed_version": "SIMION 2020 / 8.2.0.11",
+            "method": "contract-owned convergence and optional Boolean skipped_point; omission retains installed defaults",
+        }],
         "field_priority": window_labels,
     }

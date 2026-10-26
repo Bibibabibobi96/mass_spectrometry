@@ -18,14 +18,15 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.recorded_file_removal import remove_recorded_files
 from common.contracts.write_run_manifest import build_run_manifest, resolve_path, write_json_atomic
 from common.contracts.verify_run_manifest import record_path
-from common.ion_release.release import generate_release_states
 from common.contracts.particle_physics import kinetic_energy_ev
+from common.simion.native_completion import require_one_fly_completion
 from common.simion.particle_batching import merge_rebased_particle_csvs
 # Import public dependencies before prepare freezes the loaded source closure.
 from common.simion import resource_profile as resource_profile
 from common.simion import resource_scheduler
 from common.simion.particle_source import render_standard_beams, render_source_states
 from projects.dual_pressure_rectilinear_ion_processor.analysis.coordinates import to_project_position, to_project_vector
+from projects.dual_pressure_rectilinear_ion_processor.analysis.upstream_admission import frozen_release_states
 
 
 def _read(path: Path) -> dict:
@@ -81,7 +82,9 @@ def prepare_request(run: Path) -> dict:
     if "coordinate_transform" in c:
         identity["coordinate_transform"] = c["coordinate_transform"]
     identity["native_timing"] = c["native_timing"]
-    identity["programs"] = {name:file_sha256(run/"simion"/name) for name in ("processor.lua", "collision_hs1.lua", "native_drive.lua", "simion_rf_drive.lua", "extraction_force_audit.lua")}
+    if "injected_source" in c:
+        identity["injected_source"] = _read(run/"inputs/injected_source.json")["source_states"]
+    identity["programs"] = {name:file_sha256(run/"simion"/name) for name in ("processor.lua", "collision_hs1.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua")}
     identity["retain_batch_trajectories"] = retain
     request = dict(solver="SIMION", field_kind="rf", particle_count=c["source"]["particle_count"], independent_particles=True,
                    rf_steps_per_period=c["numerics"]["rf_steps_per_period"], trajectory_quality=c["numerics"]["trajectory_quality"],
@@ -122,10 +125,10 @@ def materialize_batches(run: Path, batch_plan: Path) -> dict:
     if not isinstance(retain, bool):
         raise ValueError("retain_batch_trajectories must be boolean")
     plan = _read(batch_plan)
-    mother = generate_release_states(c["source"])
+    mother = frozen_release_states(run, c)
     if plan["particle_count"] != len(mother):
         raise ValueError("batch plan population differs from frozen mother cohort")
-    controls = ("processor.lua", "collision_hs1.lua", "native_drive.lua", "simion_rf_drive.lua", "extraction_force_audit.lua", "processor.iob")
+    controls = ("processor.lua", "collision_hs1.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "extraction_force_audit.lua", "processor.iob")
     workers = []
     for batch in plan["batches"]:
         first, last, offset = (batch[k] for k in ("particle_id_min", "particle_id_max", "simion_particle_id_offset"))
@@ -166,18 +169,21 @@ def materialize_batches(run: Path, batch_plan: Path) -> dict:
                 shutil.copyfile(run/"simion"/name, folder/name)
             worker_config = copy.deepcopy(c)
             worker_config["execution_batch"] = dict(particle_id_offset=offset, particle_id_min=first, particle_id_max=last, retain_trajectories=retain)
+            if "injected_source" in c:
+                worker_config["execution_batch"]["global_particle_ids"] = [r["particle_id"] for r in mother[first-1:last]]
             beams, companions = [], []
             for local_id, row in enumerate(mother[first-1:last], 1):
                 v = [row[k] for k in ("vx_m_s", "vy_m_s", "vz_m_s")]
                 energy = kinetic_energy_ev(row["mass_amu"], *v)
                 xyz = [row[k] for k in ("x_mm", "y_mm", "z_mm")]
                 world = to_project_position(c, xyz)
-                companions.append(dict(particle_id=local_id,t=0,x=xyz[0],y=xyz[1],z=xyz[2],vx=v[0]/1000,vy=v[1]/1000,vz=v[2]/1000,ke=energy))
-                beams.append(dict(tob=0,mass=row["mass_amu"],charge=row["charge_state"],x=world[0],y=world[1],z=world[2],direction=to_project_vector(c,v),ke=energy,cwf=1,color=1))
+                arrival = row["arrival_time_us"] if "injected_source" in c else 0
+                companions.append(dict(particle_id=local_id,t=arrival,x=xyz[0],y=xyz[1],z=xyz[2],vx=v[0]/1000,vy=v[1]/1000,vz=v[2]/1000,ke=energy))
+                beams.append(dict(tob=arrival,mass=row["mass_amu"],charge=row["charge_state"],x=world[0],y=world[1],z=world[2],direction=to_project_vector(c,v),ke=energy,cwf=1,color=1))
             (folder/"processor.fly2").write_text(render_standard_beams(beams),encoding="utf-8")
             (folder/"source_states.lua").write_text(render_source_states(companions),encoding="utf-8")
             (folder/"frozen_config.lua").write_text("return "+lua_literal(worker_config)+"\n",encoding="utf-8")
-            _write(receipt,dict(batch=batch,source_global_ids=list(range(first,last+1)),iob_policy=("vendor_saved_absolute_PA_reference_template" if is_template else "byte_exact_sibling_copy_same_relative_PA_resolution"),native_field_directory=c["native_field"]["directory"]))
+            _write(receipt,dict(batch=batch,source_global_ids=[r["particle_id"] for r in mother[first-1:last]],iob_policy=("vendor_saved_absolute_PA_reference_template" if is_template else "byte_exact_sibling_copy_same_relative_PA_resolution"),native_field_directory=c["native_field"]["directory"]))
         workers.append(dict(batch=batch,directory=str(folder)))
     config = _read(run/"run_config.json")
     for worker in workers:
@@ -237,7 +243,7 @@ def _archive_merged_worker_csv(run: Path, batch: dict) -> dict:
     if any(path.exists() for path in (archive, plan_path, receipt_path)):
         raise ValueError("worker CSV archive outputs already exist; use a new run")
     records = []
-    for name in ("events.csv", "samples.csv", "events_id_first.csv", "extraction_steps.csv", "extraction_impulses.csv"):
+    for name in ("events.csv", "samples.csv", "extraction_steps.csv", "extraction_impulses.csv"):
         path = run/f"simion_batch_{batch['index']:04d}"/name
         if path.resolve() != path or not path.is_file() or path.is_symlink():
             raise ValueError("worker CSV archive source is not an exact same-run regular file")
@@ -279,6 +285,7 @@ def merge_batches(run: Path, batch_plan: Path) -> dict:
     """Validate full native batch closure, then use public offset rebasing once."""
     archive_workers = _archive_policy(run)
     c, plan = _read(run/"inputs/resolved_model.json"), _read(batch_plan)
+    original_ids = c["injected_source"]["particle_ids"] if "injected_source" in c else None
     events, samples, seeds, audits, log_parts = [], [], [], [], []
     from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
     force_headers = {"extraction_steps.csv":STEP_COLUMNS, "extraction_impulses.csv":IMPULSE_COLUMNS}
@@ -286,25 +293,27 @@ def merge_batches(run: Path, batch_plan: Path) -> dict:
     original_fields = None
     for batch in plan["batches"]:
         folder=run/f"simion_batch_{batch['index']:04d}"
-        offset=batch["simion_particle_id_offset"]
+        offset=0 if original_ids is not None else batch["simion_particle_id_offset"]
         log=run/f"logs/flight_batch_{batch['index']:04d}.log"
-        if "ION_PROCESSOR_END" not in log.read_text(encoding="utf-8-sig"):
+        log_text = log.read_text(encoding="utf-8-sig")
+        if "ION_PROCESSOR_END" not in log_text:
             raise ValueError("batch lacks native completion sentinel")
+        completion = require_one_fly_completion(log_text.splitlines())
+        if completion.splats != batch["count"]:
+            raise ValueError("batch native Fly splats differ from the declared particle count")
         fields, rows=_rows(folder/"events.csv")
         if original_fields is None:original_fields=fields
         if fields!=original_fields:raise ValueError("batch event columns differ")
-        expected=list(range(1,batch["count"]+1))
+        expected=(original_ids[batch["particle_id_min"]-1:batch["particle_id_max"]]
+                  if original_ids is not None else list(range(1,batch["count"]+1)))
         for event in ("source","terminal"):
             if sorted(int(row["particle_id"]) for row in rows if row["event"]==event)!=expected:
                 raise ValueError("batch source/terminal IDs do not close")
         if any(int(row["particle_id"]) not in expected for row in rows):raise ValueError("foreign batch ID")
-        # Transparent column projection only: the public helper requires ID first.
-        reordered=folder/"events_id_first.csv"
-        _csv(reordered,["particle_id",*[field for field in fields if field!="particle_id"]],rows)
         _, sample_rows = _rows(folder/"samples.csv")
         if any(int(row["particle_id"]) not in expected for row in sample_rows):
             raise ValueError("foreign batch sample ID")
-        events.append((reordered,offset));samples.append((folder/"samples.csv",offset))
+        events.append((folder/"events.csv",offset));samples.append((folder/"samples.csv",offset))
         for name in force_sources:
             force_fields, force_rows = _rows(folder/name)
             if tuple(force_fields) != force_headers[name]:
@@ -316,10 +325,8 @@ def merge_batches(run: Path, batch_plan: Path) -> dict:
         audit_fields,audit=_rows(folder/"hs1_bound_parameters.csv")
         if len(audit)!=2 or {row["phase"] for row in audit}!={"before_init","after_init"}:raise ValueError("batch lacks HS1 audit phases")
         audits.append((audit_fields,audit))
-        log_parts.append(f"BATCH_LOG index={batch['index']} offset={offset}\n"+log.read_text(encoding="utf-8-sig"))
-    merged=run/"simion/events_id_first.csv"
-    merge_rebased_particle_csvs(events,merged)
-    _,rows=_rows(merged);_csv(run/"simion/events.csv",original_fields,rows)
+        log_parts.append(f"BATCH_LOG index={batch['index']} offset={offset}\n"+log_text)
+    merge_rebased_particle_csvs(events,run/"simion/events.csv")
     merge_rebased_particle_csvs(seeds,run/"simion/collision_rng_seeds.csv")
     _,seed_rows=_rows(run/"simion/collision_rng_seeds.csv")
     ids=[]
@@ -327,7 +334,7 @@ def merge_batches(run: Path, batch_plan: Path) -> dict:
         particle=int(row["particle_id"]);ids.append(particle)
         if int(row["global_particle_id"])!=particle or int(row["seed"])!=c["numerics"]["seed"]+particle-1:
             raise ValueError("collision RNG does not match canonical per-particle policy")
-    if ids!=list(range(1,c["source"]["particle_count"]+1)):raise ValueError("seed receipt does not cover full mother cohort")
+    if ids!=(original_ids if original_ids is not None else list(range(1,c["source"]["particle_count"]+1))):raise ValueError("seed receipt does not cover full admitted cohort")
     expected_audit = dict(gas_mass_amu=c["baseline"]["gas"]["mass_amu"],temperature_k=c["baseline"]["gas"]["temperature_k"],pressure_pa=0,
                           sigma_m2=c["baseline"]["gas"]["cross_section_m2"],mean_free_path_mm=c["baseline"]["gas"]["mean_free_path_mm"],
                           steps_per_mfp=c["numerics"]["hs1_steps_per_mfp"],random_seed=c["numerics"]["seed"]+1,mark_collisions=0,trace_level=0)

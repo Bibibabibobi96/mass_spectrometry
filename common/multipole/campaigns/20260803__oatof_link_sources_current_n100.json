@@ -5,9 +5,9 @@
   "campaign_id": "20260803__oatof_link_sources_current_n100",
   "preregistered_before_run": true,
   "downstream_terminal_profile": {
-    "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+    "integration_id": "instrument_assembly",
     "terminal_profile_id": "oatof_shield_terminal",
-    "registry_sha256": "45659F6BE130394CCF1CEEEA1077C080C248135F9D4F10C468235B40CA3905FF"
+    "registry_sha256": "BC54B95FD4112622501868174FB2A50CD6C290CE7C20526E04F07A638611E89F"
   },
   "particle_source_transform_policy": {
     "kind": "preserve_phase_position_direction_and_scale_energy",

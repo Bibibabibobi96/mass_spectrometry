@@ -153,6 +153,9 @@ class FocusDiagnosticsTests(unittest.TestCase):
         self.assertEqual(reference_minimum["count"], 2)
 
     def _identity_inputs(self, fixture) -> None:
+        fixture.contract["contract"].update(schema_version=6, electrode_collision_model="native_pa")
+        if "aperture_comparison" in fixture.contract["contract"]:
+            fixture.contract["contract"]["aperture_comparison"]["frame"] = "reference_normal"
         fixture.contract["prism_voltage_v"] = 0.  # Explicit synthetic static field.
         fixture.contract["contract"]["source_registration"] = dict(
             translation_mm=[0., 0., 0.], from_frame_id="fixture_source", to_frame_id="fixture_mr")
@@ -177,6 +180,13 @@ class FocusDiagnosticsTests(unittest.TestCase):
         self.addCleanup(fixture.doCleanups)
         self._identity_inputs(fixture)
         return fixture, fixture.contract, [dict(case=spec) for spec in fixture.contract["cases"]]
+
+    def test_collision_model_is_an_explicit_comparison_identity(self) -> None:
+        fixture, resolved, cases = self._comparison_fixture()
+        native = d._comparison_identity(fixture.run, resolved, cases[0]["case"])
+        resolved["contract"]["electrode_collision_model"] = "canonical_lens_first_contact"
+        contact = d._comparison_identity(fixture.run, resolved, cases[0]["case"])
+        self.assertNotEqual(native, contact)
 
     def test_numerical_pairs_exclude_same_label_physical_aperture_changes(self) -> None:
         fixture, resolved, cases = self._comparison_fixture()

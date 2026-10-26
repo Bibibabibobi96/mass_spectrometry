@@ -8,10 +8,10 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-import shutil
 
 import numpy as np
 
+from common.contracts.frozen_inputs import freeze_file
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import verified_reference
@@ -63,16 +63,6 @@ def validate_aperture_contract(contract: dict) -> None:
                 raise ValueError("explicit producer and case identity required")
 
 
-def _freeze_file(source: Path, target: Path, records: list) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    before = file_record(source)
-    shutil.copyfile(source, target)
-    frozen = file_record(target)
-    if any(before[k] != frozen[k] for k in ("sha256", "bytes")):
-        raise ValueError("private observation copy differs from producer")
-    records.append(dict(source=before, frozen=frozen))
-
-
 def _locate_case(selection: dict) -> tuple[Path, dict, dict, dict]:
     """Locate one original producer case without merging source ordinals."""
     owner = Path(selection["producer_run"]).resolve()
@@ -107,7 +97,11 @@ def _freeze_case(selection: dict, destination: Path) -> dict:
             verified_reference(owner, path.relative_to(owner).as_posix())
         target = {"producer_manifest_json": "producer_manifest.json", "producer_resolved_study_json": "producer_resolved_study.json",
                   "producer_run_config_json": "producer_run_config.json"}.get(name, name)
-        _freeze_file(path, destination/target, records)
+        target_path = destination/target
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        frozen = freeze_file(path, target_path)
+        source_path = frozen.pop("source_path")
+        records.append(dict(source={**frozen, "path": source_path}, frozen=frozen))
     identity = focus._comparison_identity(owner, resolved, spec)
     spec.update(directory=str(destination), source_csv=str(destination/"source.csv"), source_census_csv=str(destination/"source_census.csv"))
     geometry = _read(destination/"geometry.json")["geometry"]
@@ -172,7 +166,7 @@ def prepare_aperture_comparison(run: Path, contract_path: Path) -> dict:
     inputs.mkdir(parents=True, exist_ok=True)
     frozen_contract = inputs/"experiment_contract.json"
     if contract_path.resolve() != frozen_contract:
-        shutil.copyfile(contract_path, frozen_contract)
+        freeze_file(contract_path, frozen_contract)
     comparisons, cache = [], {}
     for row in contract["comparisons"]:
         cases = {}

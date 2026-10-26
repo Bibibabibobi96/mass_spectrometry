@@ -50,7 +50,7 @@ try {
       'analysis\export_simion_gas_runtime.py',
       'analysis\export_uniform_rear_gas_runtime.py',
       'simion\geometry.py',
-      'workflows\gas_assisted_transport\run_uniform_400pa_prototype.ps1'
+      'workflows\gas_assisted_transport\prepare.ps1'
     )
     foreach ($relativePath in $requiredProjectFiles) {
       $requiredPath = Join-Path $projectRoot $relativePath

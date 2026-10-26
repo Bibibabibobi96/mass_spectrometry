@@ -139,7 +139,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_ad
     native_stripe_geometry_projection_sha256,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
-    resolve_accelerator_iob_origin,
+    resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose, resolve_static_iob_origins,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
@@ -153,16 +153,15 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding i
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
     derive_mirror_voltage_bounds,
-    derive_two_zone_placement,
     load_contract,
     mirror_power_supply_limits,
     resolve_trajectory_profile,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
-    FLY_COMPLETED,
     parse_events,
     summarize_events,
 )
+from common.simion.native_completion import parse_fly_completed_line
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
     ProjectPhaseSpaceState,
     observation_from_simion_events,
@@ -403,17 +402,16 @@ def _accelerator_geometric_exit_reference(
     *, contract: dict[str, Any], provider_plan: dict[str, Any],
     resolved_campaign: dict[str, Any], bunch_source: dict[str, Any] | None,
     bunch_selection: dict[str, Any] | None, mass_th: float, charge_state: int,
-    slow_energy_per_charge_v: float, focus_y_mm: float, release_z_mm: float,
-    source_y_offset_mm: float,
-    validated_provider_origin: tuple[float, float, float] | None = None,
+    slow_energy_per_charge_v: float, source_origin_project_mm: tuple[float, float, float],
+    composition_plan: dict[str, Any], local_scope: dict[str, Any] | None,
+    direct_pose: dict[str, Any], validated_provider_origin: tuple[float, float, float] | None = None,
 ) -> dict[str, Any]:
     """Project the OA provider's per-particle geometric-exit targets into MR coordinates."""
-    provider_origin = (resolve_accelerator_iob_origin(contract, provider_plan)
+    provider_origin = (resolve_accelerator_iob_origin(contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose)
                        if validated_provider_origin is None else validated_provider_origin)
     domain = provider_plan["numerical_domain"]
-    placement = provider_plan["requirements"]["placement"]
     local_exit_z_mm = _finite(domain.get("local_exit_z_mm"), "provider local exit z")
-    global_exit_z_mm = _finite(placement.get("global_exit_z_mm"), "provider global exit z")
+    global_exit_z_mm = _finite(direct_pose["exit_project_mm"][2], "composition OA exit z")
     if not math.isclose(
         provider_origin[2] + local_exit_z_mm,
         global_exit_z_mm,
@@ -474,7 +472,7 @@ def _accelerator_geometric_exit_reference(
             "mass_th": mass_th,
             "charge_e": charge_state,
             "kinetic_energy_ev": slow_energy_per_charge_v * abs(charge_state),
-            "position_workbench_mm": [0.0, focus_y_mm + source_y_offset_mm, release_z_mm],
+            "position_workbench_mm": list(source_origin_project_mm),
             "direction_workbench": [0.0, 1.0, 0.0],
         }]
     rows: list[dict[str, Any]] = []
@@ -497,7 +495,7 @@ def _accelerator_geometric_exit_reference(
         speed_m_s = math.sqrt(2.0 * kinetic_energy * ELEMENTARY_CHARGE_C / (row_mass * AMU_KG))
         velocity = [speed_m_s * component for component in direction]
         source_provider = [
-            position[0], position[1] - focus_y_mm, position[2] - global_exit_z_mm,
+            position[0] - float(direct_pose["exit_project_mm"][0]), position[1] - float(direct_pose["exit_project_mm"][1]), position[2] - global_exit_z_mm,
         ]
         source_energy = {
             name: _component_energy_per_charge_v(row_mass, row_charge, velocity[index])
@@ -528,7 +526,7 @@ def _accelerator_geometric_exit_reference(
         "event_kind": "accelerator_geometric_exit",
         "scope": "all_source_particles__not_detector_survivors",
         "source_frame": resolved_campaign["release_spec"]["frame_id"],
-        "source_frame_origin_project_mm": [0.0, focus_y_mm, global_exit_z_mm],
+        "source_frame_origin_project_mm": list(direct_pose["exit_project_mm"]),
         "exit_plane_project_z_mm": global_exit_z_mm,
         "exit_plane_tolerance_mm": plane_tolerance_mm,
         "expected_particle_ids": expected_ids,
@@ -1773,6 +1771,45 @@ def _static_field_receipt(binding: dict[str, Any], path: Path) -> dict[str, Any]
     return result
 
 
+
+def native_corridor_priority_lua(cache_manifest: dict[str, Any] | None) -> str:
+    """Render the existing role contract using only this frozen bank's channels."""
+    groups = ""
+    if cache_manifest is not None:
+        try:
+            recipes = cache_manifest["identity"]["basis_namespace"]["response_recipe"]["response_recipes"]
+        except (KeyError, TypeError) as exc:
+            raise CandidateContractError("native bank manifest has no response recipes") from exc
+        if not isinstance(recipes, list) or len(recipes) != 8:
+            raise CandidateContractError("native bank must declare eight response recipes")
+        by_id, used = {}, set()
+        for entry in recipes:
+            if not isinstance(entry, dict):
+                raise CandidateContractError("native bank response recipe must be an object")
+            local_id, physical = entry.get("local_id"), entry.get("physical_ids")
+            if (type(local_id) is not int or not 1 <= local_id <= 8 or local_id in by_id
+                    or not isinstance(physical, list) or not physical
+                    or any(type(value) is not int or not 1 <= value <= 20 for value in physical)
+                    or len(set(physical)) != len(physical) or used.intersection(physical)):
+                raise CandidateContractError("native bank response local IDs or physical groups are invalid or ambiguous")
+            by_id[local_id] = physical
+            used.update(physical)
+        groups = "  corridor_voltage_groups = { " + ", ".join(_lua_vector(by_id[index]) for index in range(1, 9)) + " },\n"
+    return (
+        "-- Generated run-local Workbench priority contract; do not edit.\n"
+        "return {\n  schema_version = 1,\n"
+        "  role = 'mrtof_native_corridor_iob_priority_contract',\n"
+        "  priority_rule = 'slot_order_is_only_a_build_contract; persisted_priority_is_accepted_only_after_wb_find_at_overlap_probes',\n"
+        "  api_note = 'SIMION 2020 has no documented instance.priority setter in the supported Lua API; builder probes candidate fields and otherwise verifies actual winners with wb.find_at',\n"
+        "  instances = {\n"
+        "    { role = 'global_fallback', priority_number = 1 },\n"
+        "    { role = 'native_corridor', priority_number = 2 },\n"
+        "    { role = 'accelerator', priority_number = 3 },\n"
+        "    { role = 'detector', priority_number = 4 },\n"
+        "  },\n" + groups + "}\n"
+    )
+
+
 def materialize_trial(
     *,
     contract_path: Path,
@@ -1801,9 +1838,12 @@ def materialize_trial(
     accelerator_instance: int = 3,
     trajectory_step_scale: float = 1.0,
     source_y_offset_mm: float = 0.0,
-    accelerator_provider_plan_path: Path | None = None,
+    accelerator_provider_plan_path: Path,
+    composition_plan_path: Path,
+    local_scope_path: Path | None = None,
     accelerator_resolved_campaign_path: Path | None = None,
     field_binding_path: Path | None = None,
+    native_corridor_cache_manifest_path: Path | None = None,
 ) -> dict[str, Any]:
     if accelerator_instance != 3:
         raise CandidateContractError("workbench accelerator instance must be 3")
@@ -1826,6 +1866,10 @@ def materialize_trial(
     mirror = _load(mirror_summary_path)
     stripe = _load(stripe_summary_path)
     accelerator = _load(accelerator_receipt_path)
+    provider_plan = _load(accelerator_provider_plan_path)
+    composition_plan = _load(composition_plan_path)
+    local_scope = _load(local_scope_path) if local_scope_path is not None else None
+    direct_pose = resolve_oa_mr_direct_pose(provider_plan, composition_plan, local_scope=local_scope)
     provider_geometry: dict[str, Any] | None = None
     provider_exit_energy_contract: dict[str, Any] | None = None
     if accelerator.get("role") == "orthogonal_accelerator_mrtof_runtime_receipt":
@@ -1895,6 +1939,12 @@ def materialize_trial(
             "provider target slow energy and trial release slow energy differ"
         )
     field_binding = load_binding(field_binding_path) if field_binding_path is not None else None
+    if field_binding is None and native_corridor_cache_manifest_path is None:
+        raise CandidateContractError("native flight requires an explicit frozen native corridor cache manifest")
+    if field_binding is not None and native_corridor_cache_manifest_path is not None:
+        raise CandidateContractError("static field must not declare an unused native corridor cache manifest")
+    priority_lua = native_corridor_priority_lua(
+        _load(native_corridor_cache_manifest_path) if native_corridor_cache_manifest_path is not None else None)
     stripe_biases = _vector(seed.get("stripe_biases_v"), 2, "Stripe biases")
     seed_stripe_biases = tuple(stripe_biases)
     if stripe_biases_override_v is None and field_binding is not None:
@@ -1975,51 +2025,27 @@ def materialize_trial(
         raise CandidateContractError("bunch source species differs from the MR-TOF contract")
     if mass <= 0 or charge == 0 or slow_energy <= 0:
         raise CandidateContractError("P1/P2 source mass, charge, and slow energy must be physical")
-    # The analyzer geometry review and the standalone accelerator are separate
-    # authorities.  Resolve the release centre from the exact accelerator
-    # contract that produced the consumed operating PA; an older analyzer
-    # assembly must not translate a newer accelerator source.  Particle spread
-    # remains a run input and therefore does not participate in either PA cache
-    # identity.
-    if provider_geometry is None:
-        placement = derive_two_zone_placement(accelerator_geometry_contract)
-        release = _finite(
-            accelerator_geometry_contract["accelerator"].get(
-                "release_position_in_gap_1_mm"
-            ),
-            "accelerator release",
-        )
-        aperture_height_y = _finite(
-            accelerator_geometry_contract["accelerator"].get("aperture_height_y_mm"),
-            "accelerator aperture height y",
-        )
-        release_z = placement.repeller_z_mm - release
-    else:
-        if provider_geometry.get("acceleration_direction") != "-z":
-            raise CandidateContractError("provider accelerator must accelerate along -z")
-        # The active MR contract owns the configurable Workbench y pose.  The
-        # provider owns local z dimensions and exit-origin placement; the
-        # historical analyzer review must not be required to carry a newer
-        # assembly-only pose variable.
-        placement = derive_two_zone_placement(contract)
-        release = _finite(provider_geometry.get("release_position_in_gap_1_mm"), "provider accelerator release")
-        repeller_to_exit = _finite(provider_geometry.get("repeller_to_exit_mm"), "provider repeller-to-exit distance")
-        aperture_height_y = _finite(provider_geometry.get("aperture_height_y_mm"), "provider accelerator aperture height y")
-        release_z = repeller_to_exit - release
+    if provider_geometry is None or provider_geometry.get("acceleration_direction") != "-z":
+        raise CandidateContractError("provider accelerator must publish negative-z geometry")
+    release = _finite(provider_geometry.get("release_position_in_gap_1_mm"), "provider accelerator release")
+    repeller_to_exit = _finite(provider_geometry.get("repeller_to_exit_mm"), "provider repeller-to-exit distance")
+    aperture_height_y = _finite(provider_geometry.get("aperture_height_y_mm"), "provider accelerator aperture height y")
     source_y_offset = _finite(source_y_offset_mm, "accelerator source y offset")
     aperture_half_y = aperture_height_y / 2.0
     if abs(source_y_offset) >= aperture_half_y:
         raise CandidateContractError("accelerator source y offset must remain inside its aperture")
     if bunch_source is not None and source_y_offset != 0.0:
-        raise CandidateContractError(
-            "a frozen bunch source already owns its centre; do not apply a second y offset"
-        )
+        raise CandidateContractError("a frozen bunch source already owns its centre; do not apply a second y offset")
+    exit_project = direct_pose["exit_project_mm"]
+    release_from_exit_z = repeller_to_exit - release
+    source_origin_project = (
+        float(exit_project[0]), float(exit_project[1]) + source_y_offset,
+        float(exit_project[2]) + release_from_exit_z,
+    )
     center_fly2 = _single_center_source_fly2(
-        mass_th=mass,
-        charge_state=charge,
+        mass_th=mass, charge_state=charge,
         source_slow_energy_per_charge_v=slow_energy,
-        focus_y_mm=placement.focus_y_mm + source_y_offset,
-        release_z_mm=release_z,
+        focus_y_mm=source_origin_project[1], release_z_mm=source_origin_project[2],
     )
     fly2 = (
         bunch_selection["fly2"] if bunch_selection is not None
@@ -2055,20 +2081,50 @@ def materialize_trial(
         accelerator_assembly=(field_binding["authority"].get("assembly") if field_binding is not None else None),
     )
     actual_oa_origin = None
-    provider_plan = _load(accelerator_provider_plan_path) if accelerator_provider_plan_path is not None else None
+    resolved_iob_pose = None
     if field_binding is not None:
         if field_binding.get("consumer_view"):
             _validate_center_view_source(bunch_source, bunch_selection)
-        if accelerator_provider_plan_path is None:
+        if provider_plan is None:
             raise CandidateContractError("static field binding requires the frozen OA provider pose")
-        # Physical geometry belongs to the solved field; trajectory observations
-        # keep their existing current-contract definitions.
+        # Solved geometry owns static placement and the corresponding clearance checks.
         resolved.update(copy.deepcopy(field_binding["geometry"]))
         actual_oa_origin = resolve_accelerator_iob_origin(
-            contract, provider_plan, resolved_geometry=resolved,
+            contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose, resolved_geometry=resolved,
         )
         if list(actual_oa_origin) != field_binding["instances"][2]["origin_mm"]:
             raise CandidateContractError("requested OA placement differs from the static field")
+    if provider_plan is not None:
+        if field_binding is not None:
+            origins = {name: list(field_binding["instances"][index]["origin_mm"])
+                       for name, index in (("analyzer", 0), ("accelerator", 2), ("detector", 3))}
+            analyzer_authority = field_binding["mode"] + "_frozen_resolved_geometry"
+        else:
+            # These are distinct authorities: trial geometry uses the accelerator
+            # geometry contract; the saved detector uses the active trajectory pose.
+            iob_geometry = resolved
+            if any(accelerator_geometry_contract["accelerator"][key] != trajectory_contract["accelerator"][key]
+                   for key in ("component_source_cylinder", "focus_y_anchor")):
+                iob_geometry = _resolve_trial_geometry(reviewed_contract, trajectory_contract, trajectory_contract)
+            origins = resolve_static_iob_origins(reviewed_contract, resolved_geometry=iob_geometry)
+            actual_oa_origin = resolve_accelerator_iob_origin(
+                contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose,
+                resolved_geometry=(resolved if contract == reviewed_contract == accelerator_geometry_contract == trajectory_contract else None),
+            )
+            origins["accelerator"] = (actual_oa_origin if contract == trajectory_contract else
+                                     resolve_accelerator_iob_origin(trajectory_contract, provider_plan, composition_plan, local_scope=local_scope, direct_pose=direct_pose))
+            analyzer_authority = "reviewed_analyzer_contract"
+        resolved_iob_pose = {
+            "origins_mm": {key: list(value) for key, value in origins.items()},
+            "mesh_mm_per_gu": {
+                "analyzer": trajectory_contract["simion"]["component_mesh_mm_per_gu"]["analyzer"],
+                "accelerator": provider_plan["numerical_domain"]["mesh_mm_per_gu"],
+                "detector": trajectory_contract["simion"]["component_mesh_mm_per_gu"]["detector"],
+            },
+            "analyzer_geometry_authority": analyzer_authority,
+            "accelerator_geometry_authority": "oa_provider_plan__mr_configurable_clearance_gated_y_pose",
+            "detector_return_policy_authority": "current_trajectory_contract",
+        }
     detector = resolved["detector"]
     prism_target = resolve_converging_prism_target(trajectory_contract, resolved)
     if prism_target is not None and (field_binding is None or stripe_biases[1] != 0.0):
@@ -2117,37 +2173,37 @@ def materialize_trial(
         f"accelerator_pulse_off_time_us = {fixed_pulse_off_time:.17g}, "
         if fixed_pulse_off_time is not None else ""
     )
-    if (accelerator_provider_plan_path is None) != (accelerator_resolved_campaign_path is None):
+    if accelerator_resolved_campaign_path is None:
         raise CandidateContractError(
             "accelerator provider plan and resolved campaign must be supplied together"
         )
     accelerator_geometric_exit_reference = None
-    if accelerator_provider_plan_path is not None:
-        exit_source_selection = bunch_selection
-        if bunch_source is not None and exit_source_selection is None:
-            if bunch_source_receipt_path is None:
-                raise CandidateContractError(
-                    "full bunch exit reference requires its frozen source receipt"
-                )
-            exit_source_selection = resolve_bunch_source_interval(
-                receipt_path=bunch_source_receipt_path,
-                particle_id_min=1,
-                particle_id_max=int(bunch_source["particle_count"]),
+    exit_source_selection = bunch_selection
+    if bunch_source is not None and exit_source_selection is None:
+        if bunch_source_receipt_path is None:
+            raise CandidateContractError(
+                "full bunch exit reference requires its frozen source receipt"
             )
-        accelerator_geometric_exit_reference = _accelerator_geometric_exit_reference(
-            contract=contract,
-            provider_plan=provider_plan,
-            resolved_campaign=_load(accelerator_resolved_campaign_path),
-            bunch_source=bunch_source,
-            bunch_selection=exit_source_selection,
-            mass_th=mass,
-            charge_state=charge,
-            slow_energy_per_charge_v=slow_energy,
-            focus_y_mm=placement.focus_y_mm,
-            release_z_mm=release_z,
-            source_y_offset_mm=source_y_offset,
-            validated_provider_origin=actual_oa_origin,
+        exit_source_selection = resolve_bunch_source_interval(
+            receipt_path=bunch_source_receipt_path,
+            particle_id_min=1,
+            particle_id_max=int(bunch_source["particle_count"]),
         )
+    accelerator_geometric_exit_reference = _accelerator_geometric_exit_reference(
+        contract=contract,
+        provider_plan=provider_plan,
+        resolved_campaign=_load(accelerator_resolved_campaign_path),
+        bunch_source=bunch_source,
+        bunch_selection=exit_source_selection,
+        mass_th=mass,
+        charge_state=charge,
+        slow_energy_per_charge_v=slow_energy,
+        source_origin_project_mm=source_origin_project,
+        composition_plan=composition_plan,
+        local_scope=local_scope,
+        direct_pose=direct_pose,
+        validated_provider_origin=actual_oa_origin,
+    )
     exit_plane_lua = (
         "accelerator_exit_plane_project_z_mm = "
         f"{accelerator_geometric_exit_reference['exit_plane_project_z_mm']:.17g}, "
@@ -2206,11 +2262,8 @@ def materialize_trial(
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
     fly2_path.write_text(fly2, encoding="utf-8", newline="\n")
     sidecar_path.write_text(sidecar, encoding="utf-8", newline="\n")
-    analyzer_values = (
-        mirror_voltages
-        + mirror_voltages
-        + [stripe_biases[0], stripe_biases[0], stripe_biases[1], stripe_biases[1], 0.0, p1, p2, 0.0, 0.0, 0.0]
-    )
+    priority_path = sidecar_path.parent / "native_corridor_priority_contract.lua"
+    priority_path.write_text(priority_lua, encoding="utf-8", newline="\n")
     if field_binding is not None:
         analyzer_values = list(field_binding['authority']['analyzer_electrode_voltages_v'])
     source_transverse_reference = _source_transverse_reference(
@@ -2235,7 +2288,7 @@ def materialize_trial(
         "source_slow_kinetic_energy_per_charge_v": slow_energy,
         "source_position_project_mm": (
             None if bunch_source is not None else [
-                0.0, placement.focus_y_mm + source_y_offset, release_z,
+                *source_origin_project,
             ]
         ),
         "source_y_offset_from_accelerator_axis_mm": (
@@ -2298,6 +2351,7 @@ def materialize_trial(
         "accelerator_exit_energy_contract": provider_exit_energy_contract,
         "accelerator_geometric_exit_reference": accelerator_geometric_exit_reference,
         "analyzer_electrode_voltages_v": analyzer_values,
+        **({"resolved_iob_pose": resolved_iob_pose} if resolved_iob_pose is not None else {}),
         "field_binding": None if field_binding is None else _static_field_receipt(field_binding, field_binding_path),
         "target_positive_mirror_turn_y_mm": target_turn_y,
         "prism_handoff_target": prism_target,
@@ -2354,7 +2408,16 @@ def materialize_trial(
             simion["component_mesh_mm_per_gu"]["analyzer"]
         ),
         "collision_geometry": _collision_geometry_projection(resolved),
+        "native_corridor_priority_contract": {
+            "path": str(priority_path.resolve()), "bytes": priority_path.stat().st_size,
+            "sha256": file_sha256(priority_path).lower(),
+        },
         "inputs": {
+            **({"native_corridor_cache_manifest": {
+                "path": str(native_corridor_cache_manifest_path.resolve()),
+                "bytes": native_corridor_cache_manifest_path.stat().st_size,
+                "sha256": file_sha256(native_corridor_cache_manifest_path).lower(),
+            }} if native_corridor_cache_manifest_path is not None else {}),
             "contract_sha256": file_sha256(contract_path).lower(),
             "accelerator_geometry_contract_sha256": file_sha256(
                 accelerator_geometry_contract_path
@@ -2546,9 +2609,10 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
             raise CandidateContractError(
                 "bunch trial receipt lacks one complete contiguous ordered particle cohort"
             )
-        completion_matches = list(FLY_COMPLETED.finditer(log_text))
+        completion_matches = [completion for line in log_text.splitlines()
+                              if (completion := parse_fly_completed_line(line)) is not None]
         reported_splats = (
-            int(completion_matches[0].group("splats"))
+            completion_matches[0].splats
             if len(completion_matches) == 1 else None
         )
         exit_energy_contract = trial.get("accelerator_exit_energy_contract")
@@ -2927,6 +2991,8 @@ def main() -> int:
     materialize.add_argument("--mirror-voltage-variation", type=Path)
     materialize.add_argument("--accelerator-receipt", required=True, type=Path)
     materialize.add_argument("--accelerator-provider-plan", required=True, type=Path)
+    materialize.add_argument("--composition-plan", required=True, type=Path)
+    materialize.add_argument("--local-scope", type=Path)
     materialize.add_argument("--accelerator-resolved-campaign", required=True, type=Path)
     materialize.add_argument("--prism-1-v", required=True, type=float)
     materialize.add_argument("--prism-2-v", required=True, type=float)
@@ -2947,6 +3013,7 @@ def main() -> int:
     materialize.add_argument("--sidecar", required=True, type=Path)
     materialize.add_argument("--receipt", required=True, type=Path)
     materialize.add_argument("--field-binding", type=Path)
+    materialize.add_argument("--native-corridor-cache-manifest", type=Path)
     analyze = sub.add_parser("analyze")
     analyze.add_argument("--log", required=True, type=Path)
     analyze.add_argument("--trial-receipt", required=True, type=Path)
@@ -2976,6 +3043,8 @@ def main() -> int:
             mirror_voltage_variation_path=args.mirror_voltage_variation,
             accelerator_receipt_path=args.accelerator_receipt,
             accelerator_provider_plan_path=args.accelerator_provider_plan,
+            composition_plan_path=args.composition_plan,
+            local_scope_path=args.local_scope,
             accelerator_resolved_campaign_path=args.accelerator_resolved_campaign,
             prism_1_v=args.prism_1_v,
             prism_2_v=args.prism_2_v,
@@ -2995,6 +3064,7 @@ def main() -> int:
             sidecar_path=args.sidecar,
             receipt_path=args.receipt,
             field_binding_path=args.field_binding,
+            native_corridor_cache_manifest_path=args.native_corridor_cache_manifest,
         )
         print(f"MRTOF_TWO_PRISM_TRIAL_MATERIALIZE=PASS P1={result['prism_voltages_v'][0]:.12g} P2={result['prism_voltages_v'][1]:.12g}")
     elif args.command == "analyze":

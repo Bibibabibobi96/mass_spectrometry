@@ -63,10 +63,19 @@ local function particle(index,kind)
  invoke('initialize')
  invoke('tstep_adjust');assert(env.ion_time_step==.005)
  local before=request_count
- if kind=='native' then
-  env.ion_time_of_flight=.2
+ if kind=='native' or kind=='native_exit' or kind=='native_timeout' then
+  env.ion_time_of_flight=(kind=='native_timeout' and 2 or .2)
   env.ion_px_mm=.3;env.ion_py_mm=.4;env.ion_pz_mm=-.2
   splat=-4 -- vendor termination, not a user-program write
+  if kind=='native' then invoke('other_actions') end
+  if kind=='native_exit' then env.ion_pz_mm=-2;invoke('other_actions') end
+  if kind=='native_timeout' then invoke('other_actions') end
+ elseif kind=='contact' then
+  env.ion_time_of_flight=.3
+  env.ion_px_mm=.25;env.ion_py_mm=-.5;env.ion_pz_mm=-1.2
+  invoke('other_actions')
+  assert(splat==1 and request_count==before+1,'contact must stop in other_actions')
+  assert(math.abs(env.ion_pz_mm+.6)<1e-12,'GUI trajectory must stop at first cap')
  elseif kind=='exit' then
   env.ion_time_of_flight=.5
   env.ion_px_mm=1.25;env.ion_py_mm=.5;env.ion_pz_mm=-2
@@ -79,7 +88,7 @@ local function particle(index,kind)
   assert(splat==1 and request_count==before+1,'timeout must request splat in other_actions')
  else error('unknown fixture mode') end
  invoke('terminate');invoke('terminate') -- duplicate callback must not duplicate terminal
- if kind=='native' then
+ if kind=='native' or kind=='native_exit' or kind=='native_timeout' then
   assert(splat==-4 and request_count==before,'native splat code must remain untouched')
  else assert(request_count==before+1,'terminate may not request another splat') end
 end
@@ -98,16 +107,20 @@ print('RUN_SETTINGS=PASS Q='..settings.sim_trajectory_quality..' image='..settin
 
 @unittest.skipUnless(Path(LUA).is_file(), "Plain Lua 5.1 interpreter required; never starts SIMION")
 class LocalCallbackPermissionsTests(unittest.TestCase):
-    def execute(self, mode: str, *, gui: bool = False) -> tuple[list[dict], list[dict], str]:
+    def execute(self, mode: str, *, gui: bool = False, collision_model: str = "native_pa") -> tuple[list[dict], list[dict], str]:
         with tempfile.TemporaryDirectory(prefix="ip_callback_permissions_") as directory:
             root = Path(directory)
             program = root/"local.lua"
             shutil.copyfile(PROGRAM, program)
+            shutil.copyfile(PROGRAM.with_name("ip_prism_lens_contact.lua"), root/"lens_contact.lua")
             ids = [91, 7, 203] if mode == "mixed" else [91]
             sources = ",".join("{particle_id=%d,mass_amu=524,charge_state=1,t_us=100,x_mm=.25,y_mm=-.5,z_mm=0,vx_mm_us=1,vy_mm_us=2,vz_mm_us=-4}" % pid for pid in ids)
             (root/"case_config.lua").write_text("return {case_id='permissions',trajectory_quality=8,source_epoch_us=100,"
                 "pitch_mm={.1,.2,.1},box_mm={0,-2,-3,2,2,1},source={"+sources+"},sample_interval_us=.01,"
                 "maximum_step_us=.005,maximum_flight_us=1,observation_planes={{name='p1_exit',z_mm=-1}}"
+                + ",electrode_collision_model='"+collision_model+"',lens_electrodes={"
+                + ("{namespace='quadrupole_lens',electrode_id=1000,name='Q1_y_positive',solids={{shape='cylinder3d',endpoints_mm={{.25,-.5,-.8},{.25,-.5,-.6}},radius_mm=.2}}}" if mode == "contact" else "")
+                + "}"
                 + (",frontend={schema_version=1,role='ip_prism_local_frontend',trajectory_image_control=0}" if gui else "")
                 + "}\n", encoding="utf-8")
             harness = root/"harness.lua"
@@ -149,6 +162,26 @@ class LocalCallbackPermissionsTests(unittest.TestCase):
             self.assertEqual(float(terminal[0][key]), expected)
             self.assertEqual(terminal[0][key], planes[0][key])
         self.assertEqual(float(samples[-1]["t_us"]), 100.5)
+        self.assertIn("CALLBACK_PERMISSIONS=PASS requests=1", output)
+
+    def test_native_stop_precedes_simultaneous_exit_or_timeout(self) -> None:
+        for mode in ("native_exit", "native_timeout"):
+            with self.subTest(mode=mode):
+                events, _, output = self.execute(mode)
+                terminal = [r for r in events if r["event"] == "terminal"]
+                self.assertEqual([r["reason"] for r in terminal], ["solver_stop"])
+                self.assertFalse([r for r in events if r["event"] == "plane"])
+                self.assertIn("CALLBACK_PERMISSIONS=PASS requests=0", output)
+
+    def test_canonical_contact_precedes_exit_and_keeps_interpolated_event_clock(self) -> None:
+        events, samples, output = self.execute("contact", collision_model="canonical_lens_first_contact")
+        terminal = [r for r in events if r["event"] == "terminal"]
+        self.assertEqual(len(terminal), 1)
+        self.assertEqual(terminal[0]["reason"], "lens_contact")
+        self.assertFalse([r for r in events if r["event"] == "plane"])
+        self.assertAlmostEqual(float(terminal[0]["t_us"]), 100.15)
+        self.assertAlmostEqual(float(terminal[0]["z_mm"]), -.6)
+        self.assertEqual(terminal[0]["t_us"], samples[-1]["t_us"])
         self.assertIn("CALLBACK_PERMISSIONS=PASS requests=1", output)
 
     def test_timeout_requests_stop_only_in_other_actions(self) -> None:

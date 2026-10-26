@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/ip/ip_injected_source.schema.json",
+  "title": "Frozen IP injected source in provider native coordinates",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "frame_id", "target_component_id", "clock_authority", "source_states", "mother_census", "mother_fates", "producer_manifest", "producer_case_id"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "ip_injected_source"},
+    "frame_id": {"const": "dual_pressure_ion_processor_local_v1"},
+    "target_component_id": {"type": "string", "minLength": 1},
+    "clock_authority": {"$ref": "#/$defs/record"},
+    "source_states": {"oneOf": [{"$ref": "#/$defs/record"}, {"type": "null"}]},
+    "mother_census": {"$ref": "#/$defs/record"},
+    "mother_fates": {"$ref": "#/$defs/record"},
+    "producer_manifest": {"$ref": "#/$defs/record"},
+    "producer_case_id": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "record": {
+      "type": "object", "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    }
+  }
+}

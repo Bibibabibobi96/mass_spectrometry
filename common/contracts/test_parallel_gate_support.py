@@ -9,10 +9,12 @@ from __future__ import annotations
 import os
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -136,6 +138,62 @@ $script:acquired = 0
 $script:released = 0
 """
 
+    def test_logged_stage_flushes_while_alive_and_closes_after_success_or_error(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="parallel_gate_stream_") as directory:
+            root = Path(directory)
+            emitter = root / "emitter.py"
+            emitter.write_text(
+                "import sys\nprint('LATER_STDOUT', flush=True)\n"
+                "print('NATIVE_STDERR', file=sys.stderr, flush=True)\n",
+                encoding="utf-8", newline="\n",
+            )
+            for failed in (False, True):
+                with self.subTest(failed=failed):
+                    log = root / f"stage_{failed}.log"
+                    release = root / f"release_{failed}"
+                    script = root / f"stage_{failed}.ps1"
+                    script.write_text(f"""
+. {quote(SUPPORT)}
+$okay = Invoke-LoggedGateStage -Name fixture -LogPath {quote(log)} -Action {{
+    Write-Output 'FIRST_LINE'
+    while (-not (Test-Path -LiteralPath {quote(release)})) {{ Start-Sleep -Milliseconds 20 }}
+    & {quote(sys.executable)} {quote(emitter)}
+    if ($LASTEXITCODE -ne 0) {{ throw 'native emitter failed' }}
+    {"throw 'EXPECTED_STAGE_ERROR'" if failed else "Write-Output 'FINAL_LINE'"}
+}}
+if ($okay -ne ${str(not failed).lower()}) {{ throw 'stage success result changed' }}
+$exclusive = [IO.File]::Open({quote(log)}, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+$exclusive.Dispose()
+Write-Output "STAGE_RESULT=$okay"
+exit 0
+""", encoding="utf-8", newline="\n")
+                    process = subprocess.Popen(
+                        [shutil.which("pwsh"), "-NoProfile", "-File", str(script)],
+                        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        text=True, encoding="utf-8", errors="replace",
+                    )
+                    try:
+                        deadline = time.monotonic() + 15
+                        text = ""
+                        while process.poll() is None and time.monotonic() < deadline:
+                            if log.exists():
+                                text = log.read_text(encoding="utf-8")
+                                if "FIRST_LINE" in text:
+                                    break
+                            time.sleep(0.025)
+                        self.assertIn("FIRST_LINE", text)
+                        self.assertIsNone(process.poll(), "stage exited before live log observation")
+                        self.assertNotIn("LATER_STDOUT", text)
+                    finally:
+                        release.touch()
+                        stdout, stderr = process.communicate(timeout=20)
+                    self.assertEqual(process.returncode, 0, stdout + stderr)
+                    text = log.read_text(encoding="utf-8")
+                    self.assertLess(text.index("FIRST_LINE"), text.index("LATER_STDOUT"))
+                    self.assertIn("NATIVE_STDERR", text)
+                    self.assertIn("EXPECTED_STAGE_ERROR" if failed else "FINAL_LINE", text)
+                    self.assertNotIn("FIRST_LINE", stdout, "live stage output bypassed stable replay")
+
     def test_action_releases_on_success_and_failure(self) -> None:
         self.run_script(self.prelude() + """
 function Invoke-TestStage {
@@ -171,13 +229,76 @@ Invoke-ResourceBudgetedGateAction -Name 'ruff_all' -Action {
 if ($env:RAYON_NUM_THREADS) { throw 'unset worker environment not restored' }
 """)
 
-    def test_group_unwinding_terminates_its_child_before_cleanup(self) -> None:
+    @unittest.skipUnless(os.name == "nt", "Windows console code-page inheritance contract")
+    def test_stage_utf8_reaches_python_child_powershell_and_restores_cp936(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="parallel_gate_encoding_") as directory:
+            root = Path(directory)
+            child = root / "child.ps1"
+            child.write_text(
+                "[Console]::Out.WriteLine('中文标准输出')\n"
+                "[Console]::Error.WriteLine('中文错误输出')\nexit 7\n",
+                encoding="utf-8", newline="\n",
+            )
+            probe = root / "probe.py"
+            probe.write_text("""import subprocess, sys
+result = subprocess.run([sys.argv[1], '-NoProfile', '-File', sys.argv[2]],
+    cwd=sys.argv[3], capture_output=True, timeout=15, check=False)
+assert result.returncode == 7
+stdout, stderr = result.stdout, result.stderr
+if sys.argv[4] == 'before':
+    assert stdout.decode('cp936').strip() == '中文标准输出'
+    assert stderr.decode('cp936').strip() == '中文错误输出'
+    try:
+        stderr.decode('utf-8')
+    except UnicodeDecodeError:
+        pass
+    else:
+        raise AssertionError('CP936 reproduction did not reach the child')
+else:
+    assert stdout == '中文标准输出\\r\\n'.encode('utf-8')
+    assert stderr == '中文错误输出\\r\\n'.encode('utf-8')
+print('ENCODING_PROBE=' + sys.argv[4])
+""", encoding="utf-8", newline="\n")
+            completed = self.run_script(self.prelude() + f"""
+$prior = [Console]::OutputEncoding
+try {{
+    [Console]::OutputEncoding = [Text.Encoding]::GetEncoding(936)
+    & {quote(sys.executable)} {quote(probe)} {quote(shutil.which('pwsh'))} {quote(child)} {quote(root)} before
+    if ($LASTEXITCODE -ne 0) {{ throw 'CP936 reproduction failed' }}
+    foreach ($failed in @($false, $true)) {{
+        try {{
+            Invoke-ResourceBudgetedGateAction -Name outer -Action {{
+                if ([Console]::OutputEncoding.CodePage -ne 65001) {{ throw 'outer is not UTF8' }}
+                try {{
+                    Invoke-ResourceBudgetedGateAction -Name nested -Action {{
+                        & {quote(sys.executable)} {quote(probe)} {quote(shutil.which('pwsh'))} {quote(child)} {quote(root)} stage
+                        if ($LASTEXITCODE -ne 0) {{ throw 'UTF8 transport failed' }}
+                        if ($failed) {{ throw 'expected encoding fixture failure' }}
+                    }}
+                }} finally {{
+                    if ([Console]::OutputEncoding.CodePage -ne 65001) {{ throw 'nested restore failed' }}
+                }}
+            }}
+            if ($failed) {{ throw 'failure was swallowed' }}
+        }} catch {{
+            if (-not $failed -or $_.Exception.Message -ne 'expected encoding fixture failure') {{ throw }}
+        }}
+        if ([Console]::OutputEncoding.CodePage -ne 936) {{ throw 'outer restore failed' }}
+    }}
+    if ($script:acquired -ne 4 -or $script:released -ne 4) {{ throw 'encoding fixture lease leaked' }}
+}} finally {{ [Console]::OutputEncoding = $prior }}
+""")
+            self.assertEqual(completed.stdout.count("ENCODING_PROBE=before"), 1)
+            self.assertEqual(completed.stdout.count("ENCODING_PROBE=stage"), 2)
+
+    def test_group_unwinding_waits_for_its_child_before_cleanup(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_fixture_") as directory:
             child = Path(directory) / "child.ps1"
             child.write_text(
-                "param($InternalStage, $InternalLogPath)\nStart-Sleep -Seconds 60\n",
+                "param($InternalStage, $InternalLogPath)\nStart-Sleep -Seconds 1\n",
                 encoding="utf-8",
             )
+            started = time.monotonic()
             self.run_script(self.prelude() + f"""
 $script:started = $null
 function Start-Process {{
@@ -199,9 +320,10 @@ try {{
     if ($_.Exception.Message -ne 'injected second launch failure') {{ throw }}
 }}
 if ($null -eq $script:started) {{ throw 'first child never started' }}
-# The Process object has been disposed; query the recorded process identity.
+# The Process object has been disposed; natural completion precedes cleanup.
 if (Get-Process -Id $script:childId -ErrorAction SilentlyContinue) {{ throw 'child survived' }}
 """)
+            self.assertGreaterEqual(time.monotonic() - started, 0.8)
 
     def test_nested_group_serializes_inherited_reservation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="parallel_gate_fixture_") as directory:
@@ -209,7 +331,7 @@ if (Get-Process -Id $script:childId -ErrorAction SilentlyContinue) {{ throw 'chi
             child.write_text(
                 "param($InternalStage, $InternalLogPath)\n"
                 "Start-Sleep -Milliseconds 100\n"
-                "Set-Content -LiteralPath $InternalLogPath -Value $InternalStage\n",
+                'Set-Content -LiteralPath $InternalLogPath -Value @($InternalStage, "RECEIVED_LOG_PATH=$InternalLogPath")\n',
                 encoding="utf-8",
             )
             completed = self.run_script(self.prelude() + f"""
@@ -222,6 +344,13 @@ Invoke-IndependentGateStageGroup -Items $items -MaxConcurrency 2 `
     -InvokeSkipStage {{ throw 'unexpected skip' }}
 """)
             self.assertIn("REASON=inherited_resource_reservation", completed.stdout)
+            reported_logs = re.findall(
+                r"^GATE_PROCESS=START NAME=(\w+) PID=\d+ LOG_PATH=(.+)$",
+                completed.stdout, re.MULTILINE,
+            )
+            self.assertEqual([name for name, _ in reported_logs], ["first", "second"])
+            for _, log_path in reported_logs:
+                self.assertIn(f"RECEIVED_LOG_PATH={log_path}", completed.stdout)
             self.assertLess(
                 completed.stdout.index("COMPLETE NAME=first"),
                 completed.stdout.index("START NAME=second"),

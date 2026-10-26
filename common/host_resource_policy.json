@@ -3,6 +3,8 @@
   "policy_id": "host-stage-admission",
   "cpu_admission_percent": 95.0,
   "memory_admission_reserve_bytes": 1073741824,
+  "memory_critical_reserve_bytes": 536870912,
+  "memory_critical_seconds": 15,
   "io_slots": 0,
   "io_pressure_queue_length_threshold": 2,
   "maximum_queue_bypasses": 8,

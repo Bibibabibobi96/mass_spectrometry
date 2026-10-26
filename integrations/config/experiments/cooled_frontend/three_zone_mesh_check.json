@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_cooled_frontend_mesh_check_request",
+  "source_request_record": {
+    "path": "simulation_repo/integrations/config/experiments/cooled_frontend/three_zone_field_seed.json",
+    "exists": true,
+    "bytes": 5632,
+    "sha256": "694997CD11C047CE342F5220AA7E0BF4D09B5C730444F22A335FCCAB1996CEB5"
+  },
+  "field_source_record": {
+    "path": "simulation_repo/integrations/config/experiments/cooled_frontend/three_zone_field_source.json",
+    "exists": true,
+    "bytes": 705,
+    "sha256": "CA46D39C9E809AAA5F81C7C505F3E89B307BDE2A1F549B8B500216DBEE7FFB65"
+  },
+  "patch_bounds_mm": {
+    "x_min": -6.0,
+    "x_max": 6.0,
+    "y_min": -70.0,
+    "y_max": 38.0,
+    "z_min": 26.0,
+    "z_max": 38.0
+  },
+  "cell_mm_xyz": {
+    "x": 0.1,
+    "y": 0.1,
+    "z": 0.1
+  },
+  "refine_convergence_v": 1e-05,
+  "native_sampling": {
+    "axis_step_mm": 0.1,
+    "stencil_offsets_mm": [
+      -0.2,
+      -0.1,
+      0.0,
+      0.1,
+      0.2
+    ],
+    "stencil_centers_y_mm": [
+      28.0,
+      27.645
+    ]
+  }
+}

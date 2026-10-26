@@ -33,8 +33,8 @@ COMSOL 或其他求解器是否已有可执行入口，以 PROJECT 的当前说�
 现候选保留额外接地线性Stripe实体，不能视为原论文几何或已复现论文性能。
 二区／三区正交加速器的局部理论、几何与复用实现由独立
 [正交加速器项目](../orthogonal_accelerator/README.md)拥有。MR 通过
-[provider adapter](simion/run_accelerator_component_provider.ps1)提交组件请求和 repository-common
-release 规格；本项目负责 MR 专属输入、装配、棱镜、镜组及整机飞行，不复制另一仪器的 PA 或
+[正交加速器组件工作流](../orthogonal_accelerator/simion/run_component_focus_workflow.ps1)直接提交现有
+component request 和 repository-common release 规格；本项目负责 MR 专属输入、装配、棱镜、镜组及整机飞行，不复制另一仪器的 PA 或
 Formal/integration 运行产物作为自身资格。
 
 知识权威与单向几何链见[仓库架构](../../docs/REPOSITORY_ARCHITECTURE.md)，原始 CAD 只提供已审计

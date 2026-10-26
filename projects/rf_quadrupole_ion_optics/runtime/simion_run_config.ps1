@@ -49,6 +49,13 @@ function Assert-RfSimionLuaConfigContract {
         throw "Shared SIMION program is missing: $SharedProgramPath"
     }
     $program = Get-Content -LiteralPath $SharedProgramPath -Raw -Encoding UTF8
+    # The shared Program opens this observation stream only when its CSV is bound.
+    $mechanicalExitFields = @(
+        'mechanical_exit_csv'
+        'mechanical_exit_plane_mm'
+        'mechanical_exit_aperture_radius_mm'
+        'mechanical_exit_guard_mm'
+    )
     $required = @(
         [regex]::Matches(
             $program,
@@ -70,6 +77,10 @@ function Assert-RfSimionLuaConfigContract {
             '(?m)(?:^|,)\s*([A-Za-z_][A-Za-z0-9_]*)\s*='
         ) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
     )
+    $required = @($required | Where-Object { $_ -cnotin $mechanicalExitFields })
+    if (@($mechanicalExitFields | Where-Object { $_ -cin $provided }).Count -gt 0) {
+        $required += $mechanicalExitFields
+    }
     $missing = @($required | Where-Object { $_ -cnotin $provided })
     if ($missing.Count -gt 0) {
         throw "Generated SIMION run config lacks required fields: $($missing -join ', ')."

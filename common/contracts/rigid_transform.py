@@ -566,4 +566,7 @@ def relative_transform(
 
     if source_to_reference.to_frame_id != target_to_reference.to_frame_id:
         raise ValueError("component poses do not share the same reference frame")
+    # Already in the target local frame: a matrix round trip would add rounding.
+    if source_to_reference == target_to_reference:
+        return RigidTransform.identity(source_to_reference.from_frame_id)
     return source_to_reference.then(target_to_reference.inverse())

@@ -32,7 +32,7 @@ class ElectrodeContourTests(unittest.TestCase):
         for a,b in zip(p["electrodes"],self.old["electrodes"]):
             if a["electrode_id"] not in {5,6,7,8}:
                 self.assertEqual(a,b)
-        self.assertIn("half_space(",render_gem(self.b,self.n))
+        self.assertIn("half_space(",render_gem(native_projection(self.b,self.n)))
 
     def test_near_slit_and_outlet_lip_are_distinct_real_cutouts(self) -> None:
         p = native_projection(self.b,self.n)
@@ -129,7 +129,7 @@ class ElectrodeContourTests(unittest.TestCase):
             self.assertEqual(vertices,{(340-x,y,z) for x,y,z in vertices})
             self.assertFalse(occupied(after["electrodes"][9],[140,0,2]))
             self.assertTrue(occupied(after["electrodes"][9],[150.5,0,1.851]))
-            self.assertIn("half_space(",render_gem(self.b,self.n))
+            self.assertIn("half_space(",render_gem(native_projection(self.b,self.n)))
             del self.c["outer_axial_bounds_mm"]
 
     def test_invalid_outer_bounds_fail_before_solver(self) -> None:

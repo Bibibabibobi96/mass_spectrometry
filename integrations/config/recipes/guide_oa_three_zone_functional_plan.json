@@ -1,0 +1,326 @@
+{
+  "schema_version": 3,
+  "role": "integration_composition_plan_do_not_edit",
+  "integration_id": "instrument_assembly",
+  "recipe_id": "guide_oa_three_zone_functional",
+  "stage": "layout_only",
+  "assembly_frame_id": "mrtof_global_cartesian",
+  "recipe": {
+    "schema_version": 1,
+    "role": "assembly_recipe",
+    "integration_id": "instrument_assembly",
+    "recipe_id": "guide_oa_three_zone_functional",
+    "assembly_frame_id": "mrtof_global_cartesian",
+    "position_tolerance_mm": 1e-09,
+    "angular_tolerance_rad": 1e-12,
+    "instances": [
+      {
+        "instance_id": "guide",
+        "project_id": "dual_pressure_rectilinear_ion_processor",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "multipole_cartesian_z_axis_v1",
+          "to_frame_id": "mrtof_global_cartesian",
+          "rotation": [
+            [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              -1.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "translation_mm": [
+            0.0,
+            -97.0,
+            32.0
+          ]
+        }
+      },
+      {
+        "instance_id": "accelerator",
+        "project_id": "orthogonal_accelerator",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "sectioned_accelerator_cartesian",
+          "to_frame_id": "mrtof_global_cartesian",
+          "rotation": [
+            [
+              0,
+              1,
+              0
+            ],
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              -1
+            ]
+          ],
+          "translation_mm": [
+            0,
+            -50,
+            34
+          ]
+        }
+      }
+    ],
+    "connections": [
+      {
+        "connection_id": "guide_to_oa",
+        "upstream": {
+          "instance_id": "guide",
+          "port_id": "guide_exit"
+        },
+        "downstream": {
+          "instance_id": "accelerator",
+          "port_id": "side_entry"
+        },
+        "gap_mm": 1,
+        "coupling_mode": "monolithic_joint_solve"
+      }
+    ]
+  },
+  "components": {
+    "guide": {
+      "schema_version": 1,
+      "role": "component_geometry_interface",
+      "project_id": "dual_pressure_rectilinear_ion_processor",
+      "variant_id": "continuous_bare_octupole_guide",
+      "geometry_profile_id": null,
+      "local_frame_id": "multipole_cartesian_z_axis_v1",
+      "length_unit": "mm",
+      "ports": {
+        "guide_exit": {
+          "surface_kind": "open_rod_exit",
+          "center_mm": [
+            0.0,
+            0.0,
+            29
+          ],
+          "outward_normal": [
+            0,
+            0,
+            1
+          ],
+          "cross_section": {
+            "shape": "open_rod_envelope",
+            "inscribed_radius_mm": 2.0
+          },
+          "wall_thickness_mm": null
+        }
+      },
+      "component_electrodes": [
+        {
+          "component_electrode_id": 1,
+          "role": "guide_rod_1",
+          "electrical_group_id": 1
+        },
+        {
+          "component_electrode_id": 2,
+          "role": "guide_rod_2",
+          "electrical_group_id": 2
+        },
+        {
+          "component_electrode_id": 3,
+          "role": "guide_rod_3",
+          "electrical_group_id": 1
+        },
+        {
+          "component_electrode_id": 4,
+          "role": "guide_rod_4",
+          "electrical_group_id": 2
+        },
+        {
+          "component_electrode_id": 5,
+          "role": "guide_rod_5",
+          "electrical_group_id": 1
+        },
+        {
+          "component_electrode_id": 6,
+          "role": "guide_rod_6",
+          "electrical_group_id": 2
+        },
+        {
+          "component_electrode_id": 7,
+          "role": "guide_rod_7",
+          "electrical_group_id": 1
+        },
+        {
+          "component_electrode_id": 8,
+          "role": "guide_rod_8",
+          "electrical_group_id": 2
+        }
+      ]
+    },
+    "accelerator": {
+      "schema_version": 1,
+      "role": "component_geometry_interface",
+      "project_id": "orthogonal_accelerator",
+      "variant_id": "three_zone",
+      "geometry_profile_id": "explicit_functional_sectioned_square_4_15_15_bare_three_zone_v1",
+      "local_frame_id": "sectioned_accelerator_cartesian",
+      "length_unit": "mm",
+      "ports": {
+        "side_entry": {
+          "surface_kind": "aperture_outer_face",
+          "center_mm": [
+            -17.0,
+            0.0,
+            2.0
+          ],
+          "outward_normal": [
+            -1,
+            0,
+            0
+          ],
+          "wall_thickness_mm": 1.0,
+          "cross_section": {
+            "shape": "rectangle",
+            "width_mm": 3.0,
+            "height_mm": 2.8,
+            "width_axis": [
+              0,
+              1,
+              0
+            ],
+            "height_axis": [
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      },
+      "component_electrodes": [
+        {
+          "component_electrode_id": 1,
+          "role": "grounded_shield"
+        },
+        {
+          "component_electrode_id": 2,
+          "role": "repeller"
+        },
+        {
+          "component_electrode_id": 3,
+          "role": "grid1"
+        },
+        {
+          "component_electrode_id": 4,
+          "role": "intermediate2"
+        },
+        {
+          "component_electrode_id": 5,
+          "role": "exit_grid"
+        },
+        {
+          "component_electrode_id": 6,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 7,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 8,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 9,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 10,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 11,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 12,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 13,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 14,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 15,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 16,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 17,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 18,
+          "role": "ring"
+        },
+        {
+          "component_electrode_id": 19,
+          "role": "ring"
+        }
+      ]
+    }
+  },
+  "connection_checks": [
+    {
+      "connection_id": "guide_to_oa",
+      "upstream_center_mm": [
+        0.0,
+        -68.0,
+        32.0
+      ],
+      "downstream_center_mm": [
+        0.0,
+        -67.0,
+        32.0
+      ],
+      "upstream_outward_normal": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "downstream_outward_normal": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "gap_mm": 1.0
+    }
+  ],
+  "scope": {
+    "kind": "full",
+    "instance_ids": [
+      "guide",
+      "accelerator"
+    ],
+    "connection_ids": [
+      "guide_to_oa"
+    ],
+    "boundary_connection_ids": []
+  }
+}

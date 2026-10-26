@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from common.contracts.particle_count_policy import validate_prefix_particle_sources
 from common.multipole.sources.generate_rf_multipole_family_mother_sample import (
-    build,
-    build_steady_batches,
     generate_rows,
     sha256,
 )
@@ -26,31 +26,26 @@ PAPER1_PROSPECTIVE_METADATA_PATH = SOURCE_ROOT / "rf_multipole_paper1_prospectiv
 
 
 class RfMultipoleFamilyMotherSampleTests(unittest.TestCase):
-    def test_independent_candidate_pool_is_deterministic_and_contiguous(self) -> None:
+    def test_independent_seed_is_deterministic_and_contiguous(self) -> None:
         first = generate_rows(2026081001, 12)
         second = generate_rows(2026081001, 12)
         self.assertEqual(first, second)
         self.assertEqual([row["particle_id"] for row in first], list(range(1, 13)))
         self.assertNotEqual(first, generate_rows(2026081002, 12))
 
-    def test_candidate_batches_preserve_independence_and_local_ids(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            paths = build_steady_batches(Path(directory))
-            self.assertEqual(len(paths), 4)
-            with paths[0].open(encoding="utf-8", newline="") as handle:
-                first = list(csv.DictReader(handle))
-            with paths[1].open(encoding="utf-8", newline="") as handle:
-                second = list(csv.DictReader(handle))
-        self.assertEqual(len(first), 500)
-        self.assertEqual([int(row["particle_id"]) for row in first], list(range(1, 501)))
-        self.assertNotEqual(first, second)
-
-    def test_committed_sample_is_rebuilt_byte_for_byte(self) -> None:
+    def test_family_cli_rebuilds_committed_samples_byte_for_byte(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             rebuilt_n100 = Path(directory) / N100_PATH.name
             rebuilt_n1000 = Path(directory) / N1000_PATH.name
             rebuilt_n5000 = Path(directory) / N5000_PATH.name
-            build(rebuilt_n100, rebuilt_n1000, rebuilt_n5000)
+            actual = subprocess.run(
+                [sys.executable, "-B", "-m", "common.multipole.sources.generate_rf_multipole_family_mother_sample",
+                 "--output-n100", str(rebuilt_n100), "--output-n1000", str(rebuilt_n1000),
+                 "--output-n5000", str(rebuilt_n5000)],
+                cwd=SOURCE_ROOT.parents[2], capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+            self.assertIn("RF_MULTIPOLE_FAMILY_MOTHER_SAMPLE=PASS", actual.stdout)
             self.assertEqual(rebuilt_n100.read_bytes(), N100_PATH.read_bytes())
             self.assertEqual(rebuilt_n1000.read_bytes(), N1000_PATH.read_bytes())
             self.assertEqual(rebuilt_n5000.read_bytes(), N5000_PATH.read_bytes())
@@ -77,9 +72,20 @@ class RfMultipoleFamilyMotherSampleTests(unittest.TestCase):
         self.assertEqual(n5000_rows[:1000], n1000_rows)
         self.assertEqual([int(row["particle_id"]) for row in n5000_rows], list(range(1, 5001)))
 
-    def test_paper1_prospective_sample_is_independent_and_hash_bound(self) -> None:
+    def test_independent_cli_rebuilds_paper1_sample_and_keeps_its_identity(self) -> None:
         metadata = json.loads(PAPER1_PROSPECTIVE_METADATA_PATH.read_text(encoding="utf-8"))
         generated = generate_rows(metadata["generator"]["seed"], 5000)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "independent.csv"
+            actual = subprocess.run(
+                [sys.executable, "-B", "-m", "common.multipole.sources.generate_rf_multipole_family_mother_sample",
+                 "--output-sample", str(output), "--sample-count", "5000",
+                 "--seed", str(metadata["generator"]["seed"])],
+                cwd=SOURCE_ROOT.parents[2], capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
+            self.assertIn("RF_MULTIPOLE_INDEPENDENT_MOTHER_SAMPLE=PASS", actual.stdout)
+            self.assertEqual(output.read_bytes(), PAPER1_PROSPECTIVE_PATH.read_bytes())
         with PAPER1_PROSPECTIVE_PATH.open(encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
         with PAPER1_PROSPECTIVE_N1000_PATH.open(encoding="utf-8", newline="") as handle:

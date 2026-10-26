@@ -52,6 +52,7 @@ try{
     host_resource_support='common\host_execution_lease.ps1'
     host_resource_scheduler='common\host_resource_scheduler.py'
     host_resource_policy='common\host_resource_policy.json'
+    resource_budget_support='common\multipole\resource_budget_support.ps1'
     comsol_launcher='common\comsol\run_comsol_r2025b.ps1'
     comsol_bootstrap='common\comsol\livelink_r2025b\comsolstartup.m'
     comsol_failure_classifier='common\comsol\livelink_failure_classification.ps1'

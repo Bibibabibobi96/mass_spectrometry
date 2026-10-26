@@ -1,0 +1,2985 @@
+{
+  "schema_version": 2,
+  "role": "integration_runtime_dependencies",
+  "owner_id": "instrument_assembly",
+  "consumer_ids": [
+    "local_frontend",
+    "prepared_joint",
+    "accelerator_interface",
+    "cooled_frontend",
+    "oa_mr",
+    "multipole_ip",
+    "single_reflection_flight",
+    "paired_accelerator_static_field",
+    "paired_accelerator_pulse"
+  ],
+  "providers": [
+    {
+      "provider_scope": "repository_common",
+      "provider_project": "common",
+      "files": [
+        {
+          "id": "common_simion_collision_hs1",
+          "source_repo_path": "common/simion/collision_hs1.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "common_simion_voltage_waveforms",
+          "source_repo_path": "common/simion/voltage_waveforms.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_canonical_clock_authority",
+          "source_repo_path": "common/contracts/canonical_clock_authority.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "canonical_clock_authority_schema",
+          "source_repo_path": "common/contracts/schemas/canonical_clock_authority.schema.json",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_simion_gem_primitives",
+          "source_repo_path": "common/simion/gem_primitives.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_simion_aperture_discretization_schema",
+          "source_repo_path": "common/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_simion_aperture_discretizer",
+          "source_repo_path": "common/simion/aperture.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_simion_aperture_topology_support",
+          "source_repo_path": "common/simion/aperture_topology_support.ps1",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "common_simion_aperture_topology_verifier",
+          "source_repo_path": "common/simion/verify_aperture_topology.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "common_grounded_shield_connector",
+          "source_repo_path": "common/multipole/grounded_shield.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_multipole_simion_geometry",
+          "source_repo_path": "common/multipole/simion_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_multipole_simion_rf_drive_kernel",
+          "source_repo_path": "common/multipole/simion_rf_drive.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "common_machine_contracts",
+          "source_repo_path": "common/contracts/machine_contracts.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_particle_count_policy",
+          "source_repo_path": "common/contracts/particle_count_policy.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_rigid_transform",
+          "source_repo_path": "common/contracts/rigid_transform.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_particle_physics",
+          "source_repo_path": "common/contracts/particle_physics.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_file_identity",
+          "source_repo_path": "common/contracts/file_identity.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_artifact_retention",
+          "source_repo_path": "common/contracts/artifact_retention.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_recorded_file_removal",
+          "source_repo_path": "common/contracts/recorded_file_removal.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_artifact_retention_policy",
+          "source_repo_path": "common/contracts/artifact_retention.json",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_resource_budget_support",
+          "source_repo_path": "common/multipole/resource_budget_support.ps1",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_verify_run_manifest",
+          "source_repo_path": "common/contracts/verify_run_manifest.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_artifact_naming",
+          "source_repo_path": "common/contracts/artifact_naming.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_write_run_manifest",
+          "source_repo_path": "common/contracts/write_run_manifest.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_run_artifact_support",
+          "source_repo_path": "common/contracts/run_artifact_support.ps1",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_require_powershell7",
+          "source_repo_path": "common/require_powershell7.ps1",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_artifact_capacity_policy_json",
+          "source_repo_path": "common/contracts/artifact_capacity_policy.json",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_artifact_identity_archive_py",
+          "source_repo_path": "common/contracts/artifact_identity_archive.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_capacity_ledger_py",
+          "source_repo_path": "common/contracts/capacity_ledger.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_capacity_protection_py",
+          "source_repo_path": "common/contracts/capacity_protection.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_execution_aliases_py",
+          "source_repo_path": "common/contracts/execution_aliases.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_expected_values_py",
+          "source_repo_path": "common/contracts/expected_values.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_historical_source_scratch_retirement_py",
+          "source_repo_path": "common/contracts/historical_source_scratch_retirement.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_legacy_owner_disposition_py",
+          "source_repo_path": "common/contracts/legacy_owner_disposition.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_particle_count_policy_json",
+          "source_repo_path": "common/contracts/particle_count_policy.json",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_reconcile_artifact_capacity_py",
+          "source_repo_path": "common/contracts/reconcile_artifact_capacity.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_run_capacity_lifecycle_py",
+          "source_repo_path": "common/contracts/run_capacity_lifecycle.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_solver_review_retirement_py",
+          "source_repo_path": "common/contracts/solver_review_retirement.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_validate_design_request_py",
+          "source_repo_path": "common/contracts/validate_design_request.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "local_frontend_common_contracts_verify_artifact_layout_py",
+          "source_repo_path": "common/contracts/verify_artifact_layout.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_common_host_execution_lease_ps1",
+          "source_repo_path": "common/host_execution_lease.ps1",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_host_resource_policy_json",
+          "source_repo_path": "common/host_resource_policy.json",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_host_resource_scheduler_py",
+          "source_repo_path": "common/host_resource_scheduler.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_ion_release_continuous_axial_volume_py",
+          "source_repo_path": "common/ion_release/continuous_axial_volume.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_ion_release_cylinder_py",
+          "source_repo_path": "common/ion_release/cylinder.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_ion_release_mt19937_disk_cone_rf_phase_py",
+          "source_repo_path": "common/ion_release/mt19937_disk_cone_rf_phase.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_ion_release_release_py",
+          "source_repo_path": "common/ion_release/release.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_multipole_axial_acceleration_py",
+          "source_repo_path": "common/multipole/axial_acceleration.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_common_multipole_connector_geometry_py",
+          "source_repo_path": "common/multipole/connector_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_common_multipole_round_rod_geometry_py",
+          "source_repo_path": "common/multipole/round_rod_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_common_multipole_simion_numerics_py",
+          "source_repo_path": "common/multipole/simion_numerics.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_assets_iob_instance_seeds_1_instance_seed_iob",
+          "source_repo_path": "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_01_pa0",
+          "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "oa_mr",
+            "accelerator_interface",
+            "single_reflection_flight",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_cache_generation_py",
+          "source_repo_path": "common/simion/cache_generation.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_compose_standalone_pa_lua",
+          "source_repo_path": "common/simion/compose_standalone_pa.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_export_standalone_pa_lua",
+          "source_repo_path": "common/simion/export_standalone_pa.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_immutable_pa_parity_py",
+          "source_repo_path": "common/simion/immutable_pa_parity.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_pa_family_cache_py",
+          "source_repo_path": "common/simion/pa_family_cache.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_particle_batching_py",
+          "source_repo_path": "common/simion/particle_batching.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_resource_profile_py",
+          "source_repo_path": "common/simion/resource_profile.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_resource_scheduler_py",
+          "source_repo_path": "common/simion/resource_scheduler.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_short_pa_path_support_ps1",
+          "source_repo_path": "common/simion/short_pa_path_support.ps1",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_standalone_pa_response_set_py",
+          "source_repo_path": "common/simion/standalone_pa_response_set.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_assembly_layout_resolver",
+          "source_repo_path": "common/integration/resolve_assembly.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_assembly_recipe_schema",
+          "source_repo_path": "common/contracts/schemas/assembly_recipe.schema.json",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_component_geometry_interface_schema",
+          "source_repo_path": "common/contracts/schemas/component_geometry_interface.schema.json",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_composition_plan_schema",
+          "source_repo_path": "common/contracts/schemas/composition_plan.schema.json",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "integration_artifact_identity_schema",
+          "source_repo_path": "common/contracts/schemas/integration_artifact_identity.schema.json",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "prepared_joint_common_analysis_peak_metrics_py",
+          "source_repo_path": "common/analysis/peak_metrics.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_common_contracts_component_particle_state_py",
+          "source_repo_path": "common/contracts/component_particle_state.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "multipole_ip",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "prepared_joint_common_contracts_particle_state_py",
+          "source_repo_path": "common/contracts/particle_state.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "prepared_joint_common_contracts_schemas_component_particle_state_schema_json",
+          "source_repo_path": "common/contracts/schemas/component_particle_state.schema.json",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "multipole_ip",
+            "oa_mr",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "prepared_joint_common_host_resource_python_py",
+          "source_repo_path": "common/host_resource_python.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_common_multipole_exit_state_plot_py",
+          "source_repo_path": "common/multipole/exit_state_plot.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_common_simion_operating_pa_cache_py",
+          "source_repo_path": "common/simion/operating_pa_cache.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_common_simion_particle_source_py",
+          "source_repo_path": "common/simion/particle_source.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "accelerator_interface_common_simion_assets_iob_instance_seeds_3_instance_seed_iob",
+          "source_repo_path": "common/simion/assets/iob_instance_seeds/3_instance_seed.iob",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "accelerator_interface_common_simion_assets_iob_instance_seeds_4_instance_seed_iob",
+          "source_repo_path": "common/simion/assets/iob_instance_seeds/4_instance_seed.iob",
+          "consumers": [
+            "accelerator_interface",
+            "oa_mr",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "accelerator_interface_common_simion_assets_iob_instance_seeds_5_instance_seed_iob",
+          "source_repo_path": "common/simion/assets/iob_instance_seeds/5_instance_seed.iob",
+          "consumers": [
+            "accelerator_interface",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "cooled_common_simion_build_dirichlet_patch_operating_pa_lua",
+          "source_repo_path": "common/simion/build_dirichlet_patch_operating_pa.lua",
+          "consumers": [
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "cooled_common_simion_export_detached_standalone_pa_lua",
+          "source_repo_path": "common/simion/export_detached_standalone_pa.lua",
+          "consumers": [
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_simion_native_fast_adjust_runtime_support_ps1",
+          "source_repo_path": "common/simion/native_fast_adjust_runtime_support.ps1",
+          "consumers": [
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "common_simion_assemble_native_fast_adjust_family_lua",
+          "source_repo_path": "common/simion/assemble_native_fast_adjust_family.lua",
+          "consumers": [
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "common_simion_native_completion_py",
+          "source_repo_path": "common/simion/native_completion.py",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr",
+            "single_reflection_flight",
+            "accelerator_interface",
+            "cooled_frontend",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_simion_batch_continuation_py",
+          "source_repo_path": "common/simion/batch_continuation.py",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_simion_batch_continuation_schema",
+          "source_repo_path": "common/contracts/schemas/simion_batch_continuation.schema.json",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "common_multipole_interface_geometry",
+          "source_repo_path": "common/multipole/interface_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_multipole_component_port",
+          "source_repo_path": "common/multipole/component_port.py",
+          "consumers": [
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_multipole_resolved_design_schema_json",
+          "source_repo_path": "common/contracts/schemas/multipole_resolved_design.schema.json",
+          "consumers": [
+            "multipole_ip",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_component_port_schema_json",
+          "source_repo_path": "common/contracts/schemas/component_port.schema.json",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_multipole_evidence_evaluation_schema_json",
+          "source_repo_path": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "common_multipole_compile_design_request",
+          "source_repo_path": "common/multipole/compile_design_request.py",
+          "consumers": [
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_optimization_envelope_schema_json",
+          "source_repo_path": "common/contracts/schemas/optimization_envelope.schema.json",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_design_variable_catalog_schema_json",
+          "source_repo_path": "common/contracts/schemas/design_variable_catalog.schema.json",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_multipole_operating_modes_schema_json",
+          "source_repo_path": "common/contracts/schemas/multipole_operating_modes.schema.json",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_multipole_design_request_schema_json",
+          "source_repo_path": "common/contracts/schemas/multipole_design_request.schema.json",
+          "consumers": [
+            "multipole_ip",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "common_contracts_build_project_registry",
+          "source_repo_path": "common/contracts/build_project_registry.py",
+          "consumers": [
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_execution_profiles_schema_json",
+          "source_repo_path": "common/contracts/schemas/execution_profiles.schema.json",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_design_profiles_schema_json",
+          "source_repo_path": "common/contracts/schemas/design_profiles.schema.json",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_project_registry_schema_json",
+          "source_repo_path": "common/contracts/schemas/project_registry.schema.json",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "common_contracts_schemas_project_schema_json",
+          "source_repo_path": "common/contracts/schemas/project.schema.json",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "common_comsol_livelink_environment_ps1",
+          "source_repo_path": "common/comsol/livelink_environment.ps1",
+          "consumers": [
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_comsol_livelink_failure_classification_ps1",
+          "source_repo_path": "common/comsol/livelink_failure_classification.ps1",
+          "consumers": [
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_comsol_livelink_r2025b_comsolstartup_m",
+          "source_repo_path": "common/comsol/livelink_r2025b/comsolstartup.m",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_comsol_resolve_comsol_64_ps1",
+          "source_repo_path": "common/comsol/resolve_comsol_64.ps1",
+          "consumers": [
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_comsol_run_comsol_r2025b_ps1",
+          "source_repo_path": "common/comsol/run_comsol_r2025b.ps1",
+          "consumers": [
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "single_reflection_common_contracts_schemas_resolved_connection_schema_json",
+          "source_repo_path": "common/contracts/schemas/resolved_connection.schema.json",
+          "consumers": [
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "single_reflection_common_multipole_particle_source_preflight_py",
+          "source_repo_path": "common/multipole/particle_source_preflight.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_common_integration___init___py",
+          "source_repo_path": "common/integration/__init__.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_common_ion_release___init___py",
+          "source_repo_path": "common/ion_release/__init__.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_common_ion_release_numpy_box_cone_py",
+          "source_repo_path": "common/ion_release/numpy_box_cone.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_common_multipole___init___py",
+          "source_repo_path": "common/multipole/__init__.py",
+          "consumers": [
+            "single_reflection_flight",
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "assembly_common_simion___init___py",
+          "source_repo_path": "common/simion/__init__.py",
+          "consumers": [
+            "single_reflection_flight",
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "assembly_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_02_pa0",
+          "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_02.pa0",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_03_pa0",
+          "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_03.pa0",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_04_pa0",
+          "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_04.pa0",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_05_pa0",
+          "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_05.pa0",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "common_comsol_add_comsol_size_feature_m",
+          "source_repo_path": "common/comsol/add_comsol_size_feature.m",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_contracts_frozen_inputs_py",
+          "source_repo_path": "common/contracts/frozen_inputs.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_analysis_field_comparison_py",
+          "source_repo_path": "common/analysis/field_comparison.py",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_analysis_population_moments_py",
+          "source_repo_path": "common/analysis/population_moments.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "common_analysis_particle_events_py",
+          "source_repo_path": "common/analysis/particle_events.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "paired_accelerator_pulse",
+            "single_reflection_flight"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_scope": "integration",
+      "provider_project": "instrument_assembly",
+      "files": [
+        {
+          "id": "rf_single_flight_pulse_hook",
+          "source_repo_path": "integrations/runtime/single_flight_pulse_hook.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "rf_single_flight_frontend_hook",
+          "source_repo_path": "integrations/runtime/single_flight_frontend_hook.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "rf_single_flight_pure_boundary_validator",
+          "source_repo_path": "integrations/runtime/pure_boundary_validator.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "rf_single_flight_electrode_contract",
+          "source_repo_path": "integrations/runtime/single_flight_electrode_contract.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "instrument_assembly_analysis_plot_single_flight_spatial_six_panel_py",
+          "source_repo_path": "integrations/analysis/plot_single_flight_spatial_six_panel.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_runtime_build_single_flight_program_py",
+          "source_repo_path": "integrations/runtime/build_single_flight_program.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "instrument_assembly_runtime_initialize_fast_adjust_pa_basis_lua",
+          "source_repo_path": "integrations/runtime/initialize_fast_adjust_pa_basis.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_runtime_local_frontend_field_support_ps1",
+          "source_repo_path": "integrations/runtime/local_frontend_field_support.ps1",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_runtime_single_flight_frontend_py",
+          "source_repo_path": "integrations/runtime/single_flight_frontend.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "assembly_pulse_selection",
+          "source_repo_path": "integrations/runtime/pulse_selection.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "instrument_assembly_runtime_single_flight_source_py",
+          "source_repo_path": "integrations/runtime/single_flight_source.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "instrument_assembly_runtime_standalone_field_bank_py",
+          "source_repo_path": "integrations/runtime/standalone_field_bank.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "instrument_assembly_runtime_standalone_pa_family_py",
+          "source_repo_path": "integrations/runtime/standalone_pa_family.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "instrument_assembly_runtime_verify_local_frontend_fields_lua",
+          "source_repo_path": "integrations/runtime/verify_local_frontend_fields.lua",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_local_frontend_analyze_py",
+          "source_repo_path": "integrations/workflows/local_frontend/analyze.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_local_frontend_prepare_py",
+          "source_repo_path": "integrations/workflows/local_frontend/prepare.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_local_frontend_runtime_py",
+          "source_repo_path": "integrations/workflows/local_frontend/runtime.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "local_frontend_replay",
+          "source_repo_path": "integrations/workflows/local_frontend/replay.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_local_frontend_focus_py",
+          "source_repo_path": "integrations/workflows/local_frontend/focus.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_runtime_frontend_flight_support_ps1",
+          "source_repo_path": "integrations/runtime/frontend_flight_support.ps1",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "instrument_assembly_dependency_runtime",
+          "source_repo_path": "integrations/runtime/dependencies.ps1",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "integration_registry",
+          "source_repo_path": "integrations/registry.json",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "prepared_joint_integrations_workflows_prepared_joint_execute_ps1",
+          "source_repo_path": "integrations/workflows/prepared_joint/execute.ps1",
+          "consumers": [
+            "prepared_joint"
+          ]
+        },
+        {
+          "id": "prepared_joint_integrations_workflows_accelerator_interface_prepare_py",
+          "source_repo_path": "integrations/workflows/accelerator_interface/prepare.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "accelerator_interface_integrations_workflows_accelerator_interface_execute_ps1",
+          "source_repo_path": "integrations/workflows/accelerator_interface/execute.ps1",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_geometry_py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/geometry.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_verify_cooled_fields_lua",
+          "source_repo_path": "integrations/workflows/cooled_frontend/verify_cooled_fields.lua",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_prepare_py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/prepare.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_pulse_py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/pulse.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend___init___py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/__init__.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_cooled_frontend_lua",
+          "source_repo_path": "integrations/workflows/cooled_frontend/cooled_frontend.lua",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_execute_ps1",
+          "source_repo_path": "integrations/workflows/cooled_frontend/execute.ps1",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_field_design_py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/field_design.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_program_py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/program.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_runtime_py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/runtime.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_sample_field_lua",
+          "source_repo_path": "integrations/workflows/cooled_frontend/sample_field.lua",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_analyze_py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/analyze.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "instrument_assembly_workflows_cooled_frontend_plot_geometry_py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/plot_geometry.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "integrations_workflows_accelerator_interface_geometry_py",
+          "source_repo_path": "integrations/workflows/accelerator_interface/geometry.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "integrations_workflows_oa_mr_execute_ps1",
+          "source_repo_path": "integrations/workflows/oa_mr/execute.ps1",
+          "consumers": [
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "integrations_config_schemas_multipole_ip_request_schema_json",
+          "source_repo_path": "integrations/config/schemas/multipole_ip_request.schema.json",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "integrations_workflows_multipole_ip_execute_ps1",
+          "source_repo_path": "integrations/workflows/multipole_ip/execute.ps1",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "integrations_workflows_multipole_ip_prepare",
+          "source_repo_path": "integrations/workflows/multipole_ip/prepare.py",
+          "consumers": [
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "integration_engineering_budget",
+          "source_repo_path": "integrations/runtime/engineering_budget.ps1",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "integrations_analysis_build_comsol_prepulse_replay_py",
+          "source_repo_path": "integrations/analysis/build_comsol_prepulse_replay.py",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "prepared_joint_analysis",
+          "source_repo_path": "integrations/workflows/prepared_joint/analysis.py",
+          "consumers": [
+            "prepared_joint"
+          ]
+        },
+        {
+          "id": "cooled_frontend_reference_support_ps1",
+          "source_repo_path": "integrations/workflows/cooled_frontend/reference_support.ps1",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "cooled_frontend_reference_py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/reference.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "cooled_frontend_mesh_check_py",
+          "source_repo_path": "integrations/workflows/cooled_frontend/mesh_check.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "single_reflection_integrations_workflows_single_reflection_flight_execute_ps1",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/execute.ps1",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "single_reflection_integrations_workflows_single_reflection_flight_geometry_py",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/geometry.py",
+          "consumers": [
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "single_reflection_integrations_workflows_single_reflection_flight_prepare_py",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/prepare.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "single_reflection_integrations_workflows_single_reflection_flight_schema_json",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/schema.json",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_integrations_runtime_frontend_field_plan_py",
+          "source_repo_path": "integrations/runtime/frontend_field_plan.py",
+          "consumers": [
+            "single_reflection_flight",
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "assembly_integrations_workflows_single_reflection_flight_fields_py",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/fields.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_integrations_workflows_single_reflection_flight_runtime_py",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/runtime.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_integrations_workflows_single_reflection_flight_build_iob_lua",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/build_iob.lua",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_integrations_workflows_single_reflection_flight_downstream_fields_py",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/downstream_fields.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_integrations_workflows_single_reflection_flight_audit_downstream_fields_lua",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/audit_downstream_fields.lua",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_integrations_workflows_single_reflection_flight_field_stage_ps1",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/field_stage.ps1",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_integrations_workflows_single_reflection_flight_field_plan_py",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/field_plan.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_single_reflection_collection",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/collect.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_single_reflection_continuation",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/continuation.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_single_reflection_pulse",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/pulse.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_integrations_workflows_single_reflection_flight_audit_frontend_working_fields_lua",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/audit_frontend_working_fields.lua",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "single_reflection_canonical_census",
+          "source_repo_path": "integrations/workflows/single_reflection_flight/census.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "integrations_workflows_paired_accelerator_static_field_execute_ps1",
+          "source_repo_path": "integrations/workflows/paired_accelerator_static_field/execute.ps1",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "integrations_workflows_paired_accelerator_static_field_prepare_py",
+          "source_repo_path": "integrations/workflows/paired_accelerator_static_field/prepare.py",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "instrument_assembly_paired_accelerator_model",
+          "source_repo_path": "integrations/runtime/paired_accelerator_model.py",
+          "consumers": [
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "integrations_workflows_paired_accelerator_static_field_runtime_py",
+          "source_repo_path": "integrations/workflows/paired_accelerator_static_field/runtime.py",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "paired_pulse_integrations_workflows_paired_accelerator_pulse_execute_ps1",
+          "source_repo_path": "integrations/workflows/paired_accelerator_pulse/execute.ps1",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "paired_pulse_integrations_workflows_paired_accelerator_pulse_prepare_py",
+          "source_repo_path": "integrations/workflows/paired_accelerator_pulse/prepare.py",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "paired_pulse_integrations_workflows_paired_accelerator_pulse_runtime_py",
+          "source_repo_path": "integrations/workflows/paired_accelerator_pulse/runtime.py",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "integrations_analysis_compare_paired_accelerator_pulse",
+          "source_repo_path": "integrations/analysis/compare_paired_accelerator_pulse.py",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_scope": "project",
+      "provider_project": "orthogonal_accelerator",
+      "files": [
+        {
+          "id": "orthogonal_accelerator_component_contract",
+          "source_repo_path": "projects/orthogonal_accelerator/config/component_contract.json",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "orthogonal_accelerator_sectioned_simion_geometry",
+          "source_repo_path": "projects/orthogonal_accelerator/simion/sectioned_accelerator.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "orthogonal_accelerator_two_zone_theory",
+          "source_repo_path": "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "orthogonal_accelerator_two_zone_geometry",
+          "source_repo_path": "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "orthogonal_accelerator_three_zone_theory",
+          "source_repo_path": "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "local_frontend_projects_orthogonal_accelerator_simion_rectangular_accelerator_py",
+          "source_repo_path": "projects/orthogonal_accelerator/simion/rectangular_accelerator.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_projects_orthogonal_accelerator_simion_two_zone_candidate_py",
+          "source_repo_path": "projects/orthogonal_accelerator/simion/two_zone_candidate.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_bare_three_zone_component",
+          "source_repo_path": "projects/orthogonal_accelerator/simion/bare_three_zone_component.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "orthogonal_accelerator_assembly_interface",
+          "source_repo_path": "projects/orthogonal_accelerator/analysis/assembly_interface.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_orthogonal_accelerator_analysis_component_focus_analysis_py",
+          "source_repo_path": "projects/orthogonal_accelerator/analysis/component_focus_analysis.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_orthogonal_accelerator_analysis_two_zone_theory_py",
+          "source_repo_path": "projects/orthogonal_accelerator/analysis/two_zone_theory.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "projects_orthogonal_accelerator_comsol_build_accelerator_grids_m",
+          "source_repo_path": "projects/orthogonal_accelerator/comsol/build_accelerator_grids.m",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "projects_orthogonal_accelerator_comsol_build_sectioned_geometry_m",
+          "source_repo_path": "projects/orthogonal_accelerator/comsol/build_sectioned_geometry.m",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "files": [
+        {
+          "id": "oatof_candidate_design_compiler",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "oatof_finite_interval_design_compiler",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/finite_interval_design_compiler.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "oatof_accelerator_geometry",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_projects_single_reflection_oa_tof_mass_analyzer_analysis_geometry_contract_py",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_projects_single_reflection_oa_tof_mass_analyzer_analysis_oatof_oaaccelerator_coupling_py",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "local_frontend_projects_single_reflection_oa_tof_mass_analyzer_analysis_reflectron_dual_stage_solver_py",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "projects_single_reflection_oa_tof_mass_analyzer_comsol_oatof_read_cartesian_release_m",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_read_cartesian_release.m",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "single_reflection_projects_single_reflection_oa_tof_mass_analyzer_analysis_assembly_interface_py",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/assembly_interface.py",
+          "consumers": [
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_analysis_accelerator_electrical_py",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_electrical.py",
+          "consumers": [
+            "single_reflection_flight",
+            "local_frontend",
+            "cooled_frontend",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_workbench_candidates_oatof_analyzer_component_lua",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_workbench_build_flight_tube_variant_lua",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_flight_tube_variant.lua",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_workbench_oatof_flight_tube_ground_gem",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/oatof_flight_tube_ground.gem",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_workbench_build_detector_variant_lua",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_detector_variant.lua",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_workbench_oatof_detector_ground_gem",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/oatof_detector_ground.gem",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_reflectron_build_reflectron_variant_lua",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/build_reflectron_variant.lua",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_reflectron_oatof_reflectron_ideal_10_5_gem",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/oatof_reflectron_ideal_10_5.gem",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "projects_single_reflection_oa_tof_mass_analyzer_analysis_compare_vector_field_samples_py",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/compare_vector_field_samples.py",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "projects_single_reflection_oa_tof_mass_analyzer_comsol_build_and_export_paired_accelerator_field_m",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/build_and_export_paired_accelerator_field.m",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "projects_single_reflection_oa_tof_mass_analyzer_comsol_oatof_build_accelerator_geometry_m",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_accelerator_geometry.m",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "projects_single_reflection_oa_tof_mass_analyzer_comsol_oatof_build_grid_geometry_m",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "projects_single_reflection_oa_tof_mass_analyzer_simion_export_paired_accelerator_field_lua",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "paired_pulse_projects_single_reflection_oa_tof_mass_analyzer_comsol_oatof_cpt_solver_policy_m",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_cpt_solver_policy.m",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "paired_pulse_projects_single_reflection_oa_tof_mass_analyzer_comsol_run_paired_accelerator_pulse_m",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/run_paired_accelerator_pulse.m",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "paired_pulse_projects_single_reflection_oa_tof_mass_analyzer_simion_paired_accelerator_pulse_lua",
+          "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/paired_accelerator_pulse.lua",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_scope": "project",
+      "provider_project": "dual_pressure_rectilinear_ion_processor",
+      "files": [
+        {
+          "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_convex_geometry_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/convex_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_electrode_contours_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/electrode_contours.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_guide_interface_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/guide_interface.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_native_geometry_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/native_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr",
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_spatial_crossings_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/spatial_crossings.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "local_frontend_projects_dual_pressure_rectilinear_ion_processor_analysis_beam_focus_diagnostics_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/beam_focus_diagnostics.py",
+          "consumers": [
+            "local_frontend",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_aperture_acceptance_diagnostics_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/aperture_acceptance_diagnostics.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_batching_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/batching.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_coordinates_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/coordinates.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_diagnostics_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/diagnostics.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_extraction_force_budget_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/extraction_force_budget.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_extraction_phase_space_comparison_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/extraction_phase_space_comparison.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_field_diagnostics_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/field_diagnostics.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_functional_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_geometry_comparison_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/geometry_comparison.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_gui_replay_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/gui_replay.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_post_extraction_diagnostics_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/post_extraction_diagnostics.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_section_diagnostics_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/section_diagnostics.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_dual_pressure_rectilinear_ion_processor_analysis_component_exit_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/component_exit.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "accelerator_interface_projects_dual_pressure_rectilinear_ion_processor_simion_native_drive_lua",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/simion/native_drive.lua",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "cooled_projects_dual_pressure_rectilinear_ion_processor_analysis_cooled_buncher_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/cooled_buncher.py",
+          "consumers": [
+            "cooled_frontend"
+          ]
+        },
+        {
+          "id": "projects_dual_pressure_rectilinear_ion_processor_analysis_assembly_interface_py",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/assembly_interface.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "projects_dual_pressure_rectilinear_ion_processor_analysis_schemas_ip_injected_source_schema_json",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/schemas/ip_injected_source.schema.json",
+          "consumers": [
+            "multipole_ip",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "projects_dual_pressure_rectilinear_ion_processor_analysis_upstream_admission",
+          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis/upstream_admission.py",
+          "consumers": [
+            "multipole_ip",
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_scope": "project",
+      "provider_project": "parallel_mirror_dual_stripe_mr_tof",
+      "files": [
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_accelerator_component_requirements_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/accelerator_component_requirements.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_analyzer_candidate_geometry_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/analyzer_candidate_geometry.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_bunch_source_and_schedule_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/bunch_source_and_schedule.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_corridor_field_provider_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/corridor_field_provider.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_downstream_fixed_grid_workpoint_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_fixed_grid_workpoint.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_downstream_workpoint_iteration_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_workpoint_iteration.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_drift_phase_contract_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/drift_phase_contract.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_dual_stripe_l0_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/dual_stripe_l0.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_dual_stripe_operating_seed_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/dual_stripe_operating_seed.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_fixed_grid_mirror_stripe_handoff_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/fixed_grid_mirror_stripe_handoff.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_fixed_mirror_stripe_operating_point_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/fixed_mirror_stripe_operating_point.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_ion_processor_assembly_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/ion_processor_assembly.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_ion_processor_handoff_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/ion_processor_handoff.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_joint_flight_preparation_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/joint_flight_preparation.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_joint_mirror_stripe_l0_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/joint_mirror_stripe_l0.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_loss_acceptance_diagnostics_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/loss_acceptance_diagnostics.py",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_materialize_simion_prototype_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/materialize_simion_prototype.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_measured_component_analysis_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/measured_component_analysis.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_measured_component_source_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/measured_component_source.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_mirror_candidate_receipt_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/mirror_candidate_receipt.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_mirror_exact_k_operating_point_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/mirror_exact_k_operating_point.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_mirror_geometry_parameters_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/mirror_geometry_parameters.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_mirror_l0_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/mirror_l0.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_mirror_l1_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/mirror_l1.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_mrtof_batch_flight_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/mrtof_batch_flight.py",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_native_corridor_plan_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_corridor_plan.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_native_static_field_provider_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_static_field_provider.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_native_stripe_shape_adapter_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_stripe_shape_adapter.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_native_system_geometry_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_geometry.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_prepare_accelerator_interface_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepare_accelerator_interface.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_prepared_joint_diagnostics_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_diagnostics.py",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_prepared_joint_trial_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_trial.py",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_resolved_geometry_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/resolved_geometry.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_simion_candidate_reference_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/simion_candidate_reference.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_simion_event_analysis_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/simion_event_analysis.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_source_z_energy_timing_diagnostic_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/source_z_energy_timing_diagnostic.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_standalone_pa_composition_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/standalone_pa_composition.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_static_field_binding_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/static_field_binding.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_two_prism_handoff_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_handoff.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_two_prism_operating_point_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_operating_point.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_analysis_two_prism_simion_trial_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_simion_trial.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_simion_build_native_corridor_iob_lua",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/build_native_corridor_iob.lua",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_simion_mrtof_candidate_lua",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_simion_run_iob_flight_lua",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_iob_flight.lua",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_simion_scalar_field_adapter_lua",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/scalar_field_adapter.lua",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_accelerator_component_request_n100_json",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_component_request_n100.json",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_accelerator_dependency_json",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_dependency.json",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_accelerator_interfaces_json",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_interfaces.json",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_ion_processor_dependency_json",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_ion_processor_matching_request_schema_json",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_matching_request.schema.json",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_simion_mirror_cycle_counter_lua",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/mirror_cycle_counter.lua",
+          "consumers": [
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "projects_parallel_mirror_dual_stripe_mr_tof_analysis_assembly_interface_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/assembly_interface.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "projects_parallel_mirror_dual_stripe_mr_tof_analysis_native_system_runtime_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_runtime.py",
+          "consumers": [
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "projects_parallel_mirror_dual_stripe_mr_tof_analysis_mrtof_batch_continuation_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/mrtof_batch_continuation.py",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "projects_parallel_mirror_dual_stripe_mr_tof_analysis_bunch_collection_gate_py",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis/bunch_collection_gate.py",
+          "consumers": [
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "projects_parallel_mirror_dual_stripe_mr_tof_simion_native_corridor_runtime_support_ps1",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1",
+          "consumers": [
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "projects_parallel_mirror_dual_stripe_mr_tof_simion_candidate_voltage_map_lua",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/candidate_voltage_map.lua",
+          "consumers": [
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "projects_parallel_mirror_dual_stripe_mr_tof_config_simion_candidate_two_zone_json",
+          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json",
+          "consumers": [
+            "oa_mr"
+          ]
+        }
+      ]
+    }
+  ]
+}

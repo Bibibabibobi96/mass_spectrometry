@@ -13,7 +13,11 @@
 - 径向压缩与环数补偿：`../workflows/radial_compaction/run_campaign.py`，合同为
   `../config/radial_compaction_campaign.json`
 - 反射器电压场补偿：`../workflows/reflectron_voltage_compensation/run_compensation.py`
-- N=100源码构建与跟踪：`../tests/simion/run_n100_source_build_and_track.ps1`
+
+这两个历史Candidate入口对单个SIMION飞行只做耗时观测：600 s（电压补偿）或1800 s（径向紧凑化）越限
+发出一次警告，健康求解继续自然完成。它们不以墙钟时间终止SIMION；进程失败仍按非零退出失败闭合。
+- N=100源码构建与跟踪：沿[项目入口](../README.md#活动入口)的单个结构Candidate工作流，
+  使用冻结编译器、非Formal模板及共享N=100 transport；旧独立包装已退役。
 - IOB运行时合同：`../simion/workbench/verify_iob_runtime_contract.ps1`
 - 稳定资产身份：`../config/simion_stable_entry.json`
 - 重命名前的只读Formal资产：工作区`artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/`

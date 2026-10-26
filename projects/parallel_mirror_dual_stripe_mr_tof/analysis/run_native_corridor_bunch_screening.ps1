@@ -5,6 +5,8 @@ param(
   [string]$FieldBindingPath='',
   [string]$GeometryReviewRunPath='',
   [Parameter(Mandatory)][string]$BunchSourceReceiptPath,
+  [Parameter(Mandatory)][string]$CompositionPlanPath,
+  [string]$LocalScopePath='',
   [string]$MirrorVoltageVariationPath='',
   [string]$InitialCohortRunPath='',
   [string]$CohortBatchContinuationRunPath='',
@@ -78,8 +80,16 @@ function Get-DeclaredManifestOutputPath {
 }
 
 function Assert-VerifiedManifest {
-  param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$Status,[Parameter(Mandatory)][string]$Mode,[string]$ConsumedOutput='')
-  $arguments=@($ManifestPath,'--require-status',$Status,'--require-project',$projectId,'--require-mode',$Mode)
+  param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$Status,[Parameter(Mandatory)][string]$Mode,[string]$Owner=$projectId,[string]$ConsumedOutput='',[switch]$ReadOnlyFlightEvidence)
+  if($ReadOnlyFlightEvidence){
+    $identity=Get-Content -LiteralPath $ManifestPath -Raw|ConvertFrom-Json -AsHashtable
+    if(-not(($identity.project-eq'instrument_assembly'-and$identity.mode-eq'oa_mr')-or
+      ($identity.project-eq'parallel_mirror_dual_stripe_mr_tof'-and$identity.mode-eq'finite_3d_two_prism_voltage_trial'))){
+      throw 'Read-only flight evidence has an unsupported owner/mode pair.'
+    }
+    $Owner=[string]$identity.project;$Mode=[string]$identity.mode
+  }
+  $arguments=@($ManifestPath,'--require-status',$Status,'--require-project',$Owner,'--require-mode',$Mode)
   if($ConsumedOutput){$arguments+=@('--consumer-projection-id','mrtof_static_screening_center_v1','--consumed-output',$ConsumedOutput)}
   & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') @arguments|Out-Host
   if($LASTEXITCODE-ne0){throw "Manifest verification failed: $ManifestPath"}
@@ -101,7 +111,7 @@ function Read-SelectedStaticCenter {
   if($matches.Count-ne1){throw 'Static handoff does not identify one actual centre child.'}
   $manifest=[string]$matches[0].child_manifest
   $materializationPath=Get-VerifiedManifestOutput -ManifestPath $manifest -Name 'two_prism_trial_materialization.json'
-  Assert-VerifiedManifest -ManifestPath $manifest -Status success -Mode finite_3d_two_prism_voltage_trial -ConsumedOutput $materializationPath
+  Assert-VerifiedManifest -ManifestPath $manifest -Status success -Mode oa_mr -Owner instrument_assembly -ConsumedOutput $materializationPath -ReadOnlyFlightEvidence
   $materialization=Get-Content -LiteralPath $materializationPath -Raw|ConvertFrom-Json -AsHashtable
   $actual=@($materialization.stripe_biases_v)+@($materialization.prism_voltages_v)
   $expected=@($Handoff.selected_workpoint.voltages_v)
@@ -263,7 +273,7 @@ $workpointManifest=Join-Path $workpointRun 'run_manifest.json'
 $bankManifest=if($staticFieldMode){$null}else{Join-Path $bankRun 'run_manifest.json'}
 $sourceRun=Split-Path -Parent (Split-Path -Parent $sourceReceipt)
 $sourceManifest=Join-Path $sourceRun 'run_manifest.json'
-$trialRunner=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\run_two_prism_trial.ps1'
+$trialRunner=Join-Path $repoRoot 'integrations/workflows/oa_mr/execute.ps1'
 $artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'native_corridor_candidate_bunch_screening' `
@@ -394,6 +404,8 @@ try{
     $cohortArguments.FieldBindingPath=$FieldBindingPath
   }
   $cohortArguments.AcceleratorProviderReceiptPath=$providerReceipt
+  $cohortArguments.CompositionPlanPath=$CompositionPlanPath
+  if($LocalScopePath){$cohortArguments.LocalScopePath=$LocalScopePath}
   if($null-ne$mirrorVoltageVariation){$cohortArguments.MirrorVoltageVariationPath=$mirrorVoltageVariation}
   if(-not[string]::IsNullOrWhiteSpace($CohortBatchContinuationRunPath)){$cohortArguments.BatchContinuationRunPath=$CohortBatchContinuationRunPath}
   if($SimionExe){$cohortArguments.SimionExe=$SimionExe}
@@ -418,9 +430,9 @@ try{
     }
     $failureStage="cohort_n$CohortParticleCount"
     & $trialRunner @cohortArguments
-    $cohortRun=Join-Path $artifactProjectRoot "runs\$cohortRunId";$cohortManifest=Join-Path $cohortRun 'run_manifest.json'
+    $cohortRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$cohortRunId";$cohortManifest=Join-Path $cohortRun 'run_manifest.json'
   }
-  Assert-VerifiedManifest -ManifestPath $cohortManifest -Status 'success' -Mode 'finite_3d_two_prism_voltage_trial'
+  Assert-VerifiedManifest -ManifestPath $cohortManifest -Status 'success' -Mode 'oa_mr' -Owner instrument_assembly -ReadOnlyFlightEvidence:($null-ne$initialCohortRun)
   $cohortGate=Get-VerifiedManifestOutput -ManifestPath $cohortManifest -Name 'bunch_collection_gate.json'
   $cohortGateData=Get-Content -LiteralPath $cohortGate -Raw|ConvertFrom-Json -AsHashtable
   $cohortSummary=Get-Content -LiteralPath (Join-Path $cohortRun 'summary.json') -Raw|ConvertFrom-Json -AsHashtable

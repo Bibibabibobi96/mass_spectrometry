@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from common.multipole.connector_geometry import CONNECTOR_SHAPES
+from common.multipole.interface_geometry import through_exit_geometry, through_shield_geometry
 from common.multipole.axial_acceleration import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
 from common.multipole.simion_numerics import normalize_cell_mm_xyz
 
@@ -89,14 +90,193 @@ def segmented_rod_electrode_ids(segmented: dict[str, Any]) -> list[int]:
     return sorted({item["electrode_id"] for item in _segmented_rod_primitives(segmented)})
 
 
+def physical_electrode_view(resolved: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the complete cylindrical physical-electrode namespace.
+
+    This is the narrow common view for the native renderer and ordinary-field
+    consumers.  ``native_electrode_id`` is the GEM/SIMION namespace; the
+    separate ``scientific_id`` names the physical electrical group.  Voltage
+    sources point back into the resolved provider rather than copying any
+    drive value into a second authority.
+    """
+    if resolved.get("role") != "multipole_resolved_design_do_not_edit":
+        raise ValueError("physical electrode view requires a multipole resolved design")
+    if resolved.get("downstream_terminal") is not None:
+        raise ValueError("physical electrode view does not support composed terminal ownership")
+    enclosure = resolved["geometry_mm"]["enclosure"]
+    if enclosure["model"] not in {
+        "cylindrical_grounded_shield_v1",
+        "cylindrical_grounded_shield_through_exit_v1",
+        "cylindrical_grounded_shield_through_entrance_exit_v1",
+    }:
+        raise ValueError("physical electrode view requires an explicit cylindrical enclosure")
+
+    rows: dict[int, dict[str, Any]] = {}
+
+    def add(
+        native_electrode_id: int,
+        scientific_id: str,
+        role: str,
+        voltage_source: dict[str, Any],
+        *,
+        static_voltage_v: float | None = None,
+    ) -> None:
+        if (
+            isinstance(native_electrode_id, bool)
+            or not isinstance(native_electrode_id, int)
+            or not 1 <= native_electrode_id <= SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
+        ):
+            raise ValueError("physical electrode native ID is outside the SIMION namespace")
+        if voltage_source["kind"] == "static" and (
+            isinstance(static_voltage_v, bool)
+            or not isinstance(static_voltage_v, (int, float))
+            or not math.isfinite(static_voltage_v)
+        ):
+            raise ValueError("physical electrode static potential must be finite")
+        row = rows.get(native_electrode_id)
+        if row is None:
+            rows[native_electrode_id] = {
+                "native_electrode_id": native_electrode_id,
+                "scientific_id": scientific_id,
+                "roles": [role],
+                "voltage_source": voltage_source,
+                "_static_voltage_v": static_voltage_v,
+            }
+            return
+        if row["scientific_id"] != scientific_id:
+            raise ValueError("physical electrode ID merges incompatible scientific groups")
+        if row["voltage_source"]["kind"] != voltage_source["kind"]:
+            raise ValueError("physical electrode ID merges RF and static groups")
+        if row["voltage_source"]["kind"] == "rf_drive":
+            if row["voltage_source"] != voltage_source:
+                raise ValueError("physical rod electrode has conflicting resolved drive source")
+        elif row["_static_voltage_v"] != static_voltage_v:
+            raise ValueError("physical static electrode has conflicting resolved potentials")
+        if role not in row["roles"]:
+            row["roles"].append(role)
+
+    segmented = resolved["segmentation"]["segmented_rod_array"]
+    if segmented is None:
+        rods = resolved["geometry_mm"]["rod_array"]["rods"]
+        groups = sorted({int(rod["electrode_group"]) for rod in rods})
+        if not groups or any(group not in {1, 2} for group in groups):
+            raise ValueError("continuous rod group is outside the resolved RF groups")
+        for group in groups:
+            add(
+                group,
+                f"rod_group_{group}",
+                "rod",
+                {
+                    "kind": "rf_drive",
+                    "rf_group": group,
+                    "common_mode_pointer": "/drive/common_mode_offset_V",
+                    "dc_amplitude_pointer": "/drive/dc_amplitude_V_per_group",
+                },
+            )
+    else:
+        primitives = _segmented_rod_primitives(segmented)
+        grouped_sources: dict[int, list[tuple[int, dict[str, Any]]]] = {}
+        for index, source in enumerate(segmented["electrodes"]):
+            grouped_sources.setdefault(int(source["electrode_id"]), []).append((index, source))
+        expected_group_counts = {
+            group: sum(1 for rod in resolved["geometry_mm"]["rod_array"]["rods"]
+                       if int(rod["electrode_group"]) == group)
+            for group in (1, 2)
+        }
+        validate_full_table = all(
+            "segment_id" in source for source in segmented["electrodes"]
+        )
+        for native_electrode_id in sorted({int(item["electrode_id"]) for item in primitives}):
+            entries = grouped_sources[native_electrode_id]
+            position, source = entries[0]
+            rf_group = source.get("electrode_group")
+            if rf_group not in {1, 2}:
+                raise ValueError("segmented rod electrode must declare one resolved RF group")
+            common_mode = source.get("common_mode_V")
+            if (
+                isinstance(common_mode, bool)
+                or not isinstance(common_mode, (int, float))
+                or not math.isfinite(common_mode)
+            ):
+                raise ValueError("segmented rod electrode must declare finite common-mode voltage")
+            if any(
+                other.get("electrode_group") != rf_group
+                or other.get("common_mode_V") != common_mode
+                for _, other in entries[1:]
+            ):
+                raise ValueError("segmented rod electrode has conflicting resolved drive source")
+            if validate_full_table and len(entries) != expected_group_counts[rf_group]:
+                raise ValueError("segmented rod physical table is missing or duplicates a rod group")
+            add(
+                native_electrode_id,
+                f"rod_group_{native_electrode_id}",
+                "rod",
+                {
+                    "kind": "rf_drive",
+                    "rf_group": rf_group,
+                    "common_mode_pointer": (
+                        f"/segmentation/segmented_rod_array/electrodes/{position}"
+                        "/common_mode_V"
+                    ),
+                    "dc_amplitude_pointer": "/drive/dc_amplitude_V_per_group",
+                },
+            )
+
+    segment_count = segmented["segment_count"] if segmented is not None else None
+    ground_electrode = 2 * segment_count + 1 if segment_count is not None else 3
+    output_electrode = ground_electrode + 1 if segment_count is not None else ground_electrode
+    entrance_reference_electrode = output_electrode + 2
+    entrance_reference = resolved.get("axial_dc", {}).get("entrance_reference_sleeve")
+    entrance_plate_electrode = (
+        entrance_reference_electrode + 1 if entrance_reference is not None else ground_electrode
+    )
+    static = resolved.get("static_electrodes_V")
+    if not isinstance(static, dict) or static.get("role") != "cylindrical_shield_static_electrodes":
+        raise ValueError("cylindrical physical electrode view requires resolved static electrodes")
+    shield_pointer = "/static_electrodes_V/shield_entrance_outer_endcap_aperture_plate_connector_V"
+    exit_pointer = "/static_electrodes_V/exit_outer_endcap_aperture_plate_connector_V"
+    shield_voltage = static.get("shield_entrance_outer_endcap_aperture_plate_connector_V")
+    exit_voltage = static.get("exit_outer_endcap_aperture_plate_connector_V")
+    output_scientific_id = (
+        "grounded_cylindrical_enclosure"
+        if output_electrode == ground_electrode
+        else "exit_outer_endcap_aperture_plate_connector"
+    )
+    add(ground_electrode, "grounded_cylindrical_enclosure", "shield", {"kind": "static", "pointer": shield_pointer}, static_voltage_v=shield_voltage)
+    add(ground_electrode, "grounded_cylindrical_enclosure", "entrance_outer_endcap", {"kind": "static", "pointer": shield_pointer}, static_voltage_v=shield_voltage)
+    add(entrance_plate_electrode, "grounded_cylindrical_enclosure", "entrance_aperture_plate", {"kind": "static", "pointer": shield_pointer}, static_voltage_v=shield_voltage)
+    add(entrance_plate_electrode, "grounded_cylindrical_enclosure", "entrance_connector", {"kind": "static", "pointer": shield_pointer}, static_voltage_v=shield_voltage)
+    add(output_electrode, output_scientific_id, "exit_outer_endcap", {"kind": "static", "pointer": exit_pointer}, static_voltage_v=exit_voltage)
+    add(output_electrode, output_scientific_id, "exit_aperture_plate", {"kind": "static", "pointer": exit_pointer}, static_voltage_v=exit_voltage)
+    add(output_electrode, output_scientific_id, "exit_connector", {"kind": "static", "pointer": exit_pointer}, static_voltage_v=exit_voltage)
+    if entrance_reference is not None:
+        sleeve_voltage = entrance_reference.get("potential_V")
+        add(
+            entrance_reference_electrode,
+            "entrance_reference_sleeve",
+            "entrance_reference_sleeve",
+            {"kind": "static", "pointer": "/axial_dc/entrance_reference_sleeve/potential_V"},
+            static_voltage_v=sleeve_voltage,
+        )
+    view = []
+    for native_electrode_id in sorted(rows):
+        row = rows[native_electrode_id]
+        row.pop("_static_voltage_v")
+        view.append(row)
+    return view
+
+
 def _render_local_segmented_rod_array_gem(
-    segmented: dict[str, Any], *, indent: str = "  ", significant_digits: int = 12
+    segmented: dict[str, Any], *, indent: str = "  ", significant_digits: int = 12,
+    electrode_ids: dict[int, int] | None = None,
 ) -> str:
     """Render canonical rod primitives in their native local frame."""
     indent, significant_digits = _validate_render_format(indent, significant_digits)
     fmt = lambda value: format(value, f".{significant_digits}g")
     lines = []
     for item in _segmented_rod_primitives(segmented):
+        if electrode_ids is not None:
+            item = {**item, "electrode_id": electrode_ids[item["electrode_id"]]}
         if "radius_mm" in item:
             lines.append(
                 f"{indent}e({item['electrode_id']}) {{ fill {{ within {{ cylinder("
@@ -224,10 +404,13 @@ def _render_ellipse_primitive(
     )
 
 
-def _render_continuous_rod_gem(rod: dict[str, Any], *, indent: str) -> str:
+def _render_continuous_rod_gem(
+    rod: dict[str, Any], *, indent: str, electrode_id: int | None = None,
+) -> str:
+    electrode_id = rod["electrode_group"] if electrode_id is None else electrode_id
     if "radius_mm" in rod:
         return (
-            f"{indent}e({rod['electrode_group']}) {{ fill {{ within {{ cylinder("
+            f"{indent}e({electrode_id}) {{ fill {{ within {{ cylinder("
             f"{rod['center_x_mm']:.12g},{rod['center_y_mm']:.12g},"
             f"{rod['z_max_mm']:.12g},{rod['radius_mm']:.12g},,"
             f"{rod['z_max_mm']-rod['z_min_mm']:.12g}) }} }} }}"
@@ -235,7 +418,7 @@ def _render_continuous_rod_gem(rod: dict[str, Any], *, indent: str) -> str:
     semi_major, semi_minor, angle_degrees = _ellipse_rod_values(rod)
     length = float(rod["z_max_mm"]) - float(rod["z_min_mm"])
     return (
-        f"{indent}e({rod['electrode_group']}) {{ fill {{ within {{ locate("
+        f"{indent}e({electrode_id}) {{ fill {{ within {{ locate("
         f"{float(rod['center_x_mm']):.12g},{float(rod['center_y_mm']):.12g},"
         f"{float(rod['z_max_mm']):.12g}) {{ rotate_z({angle_degrees:.12g}) {{ "
         f"cylinder(0,0,0,{semi_major:.12g},{semi_minor:.12g},{length:.12g}) "
@@ -325,6 +508,46 @@ def render_gem(
     cell_mm_xyz: dict[str, float] | float,
 ) -> str:
     """Render one finite multipole directly from its authoritative resolved design."""
+    return _render_native_gem(resolved, cell_mm_xyz, standalone=True, electrode_ids=None)
+
+
+def render_physical_gem(
+    resolved: dict[str, Any], cell_mm_xyz: dict[str, float] | float,
+    *, electrode_ids: dict[int, int] | None = None,
+) -> str:
+    """Render physical electrodes in the provider's native local mm frame.
+
+    The same generator serves standalone ``render_gem``. This export contains
+    no PA definition, PA-origin translation or numerical census absorber. Cell
+    z is used only for the existing Boolean subtraction overrun beyond metal;
+    it does not move an electrode surface. The complete optional mapping maps
+    native SIMION electrode IDs to distinct assembly solver IDs, not particle
+    IDs or individual rods within one electrical group. No input is modified.
+
+    Composed terminals and rectangular reference models retain their existing
+    standalone export; their component ownership is not defined by this API.
+    A closed cylinder whose wall end depends on the PA domain is also rejected.
+    Assembly placement belongs to the consumer, applied once around this body.
+    """
+    enclosure = resolved["geometry_mm"]["enclosure"]
+    if resolved.get("downstream_terminal") is not None:
+        raise ValueError("physical GEM export does not support composed terminal ownership")
+    if enclosure["model"] not in {
+        "cylindrical_grounded_shield_v1", "cylindrical_grounded_shield_through_exit_v1",
+        "cylindrical_grounded_shield_through_entrance_exit_v1",
+    }:
+        raise ValueError("physical GEM export requires an explicit cylindrical enclosure")
+    if (enclosure["model"] == "cylindrical_grounded_shield_v1"
+            and enclosure["vacuum_z_max_mm"] != enclosure["exit_outer_endcap_downstream_face_z_mm"]):
+        raise ValueError("closed enclosure wall end is tied to the standalone PA domain")
+    return _render_native_gem(resolved, cell_mm_xyz, standalone=False, electrode_ids=electrode_ids)
+
+
+def _render_native_gem(
+    resolved: dict[str, Any], cell_mm_xyz: dict[str, float] | float,
+    *, standalone: bool, electrode_ids: dict[int, int] | None,
+) -> str:
+    """Share native physical serialization; standalone adds its numerical shell."""
     cell = normalize_cell_mm_xyz(cell_mm_xyz)
     dx, dy, dz = cell["x"], cell["y"], cell["z"]
     if resolved.get("role") != "multipole_resolved_design_do_not_edit":
@@ -375,25 +598,64 @@ def render_gem(
         segment_count = segmented_rods.get("segment_count")
         if not isinstance(segment_count, int) or segment_count < 2 or not rods:
             raise ValueError("segmented rod contract is incomplete")
-        ground_electrode = 2 * segment_count + 1
-        output_electrode = ground_electrode + 1
-    else:
-        ground_electrode = 3
-        output_electrode = 4 if source_terminal is not None else 3
-    numerical_census_marker_electrode = output_electrode + 1
-    entrance_reference_electrode = numerical_census_marker_electrode + 1
     entrance_reference = resolved.get("axial_dc", {}).get(
         "entrance_reference_sleeve"
     )
-    entrance_plate_electrode = (
-        entrance_reference_electrode + 1
-        if entrance_reference is not None
-        else ground_electrode
-    )
+    electrode_view = None
+    if source_terminal is None and downstream_terminal is None:
+        electrode_view = physical_electrode_view(resolved)
+        native_by_role = {
+            role: row["native_electrode_id"]
+            for row in electrode_view
+            for role in row["roles"]
+        }
+        ground_electrode = native_by_role["shield"]
+        output_electrode = native_by_role["exit_outer_endcap"]
+        entrance_plate_electrode = native_by_role["entrance_aperture_plate"]
+        entrance_reference_electrode = native_by_role.get("entrance_reference_sleeve")
+    else:
+        ground_electrode = 2 * segment_count + 1 if axial_mode else 3
+        output_electrode = ground_electrode + 1 if axial_mode else 4
+        entrance_reference_electrode = output_electrode + 2
+        entrance_plate_electrode = (
+            entrance_reference_electrode + 1
+            if entrance_reference is not None
+            else ground_electrode
+        )
+    numerical_census_marker_electrode = output_electrode + 1
+    if electrode_ids is not None:
+        physical_ids = {row["native_electrode_id"] for row in electrode_view} if electrode_view is not None else (
+            (set(segmented_rod_electrode_ids(segmented_rods)) if axial_mode
+             else {int(rod["electrode_group"]) for rod in rods})
+            | {ground_electrode, output_electrode, entrance_plate_electrode}
+            | ({entrance_reference_electrode} if entrance_reference is not None else set())
+        )
+        if (set(electrode_ids) != physical_ids
+                or any(type(key) is not int for key in electrode_ids)
+                or any(type(value) is not int or not 1 <= value <= SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
+                       for value in electrode_ids.values())
+                or len(set(electrode_ids.values())) != len(electrode_ids)):
+            raise ValueError("electrode_ids must map every physical native electrode to distinct valid solver IDs")
+        ground_electrode = electrode_ids[ground_electrode]
+        output_electrode = electrode_ids[output_electrode]
+        entrance_plate_electrode = electrode_ids[entrance_plate_electrode]
+        if entrance_reference is not None:
+            if entrance_reference_electrode is None:
+                raise ValueError("physical electrode view is missing the entrance reference sleeve")
+            entrance_reference_electrode = electrode_ids[entrance_reference_electrode]
     outer = float(enclosure["shield_outer_radius_mm"])
     inner = float(enclosure["shield_inner_radius_mm"])
     z_min = float(enclosure["vacuum_z_min_mm"])
     z_max = float(enclosure["vacuum_z_max_mm"])
+    through_entrance = enclosure["model"] == "cylindrical_grounded_shield_through_entrance_exit_v1"
+    through_exit = enclosure["model"] in {
+        "cylindrical_grounded_shield_through_exit_v1",
+        "cylindrical_grounded_shield_through_entrance_exit_v1",
+    }
+    exit_geometry = through_exit_geometry(resolved) if through_exit else None
+    shield_geometry = through_shield_geometry(resolved) if through_exit else None
+    if standalone and through_exit and z_max < exit_geometry["surface_z_mm"] + 2*dz - 1e-12:
+        raise ValueError("through-exit vacuum domain must extend at least two axial cells beyond the real mechanical exit")
     terminal_end_z = None
     if source_terminal is not None:
         if source_terminal["electrode_outer_shape"] != "rectangular":
@@ -407,42 +669,48 @@ def render_gem(
     else:
         census_plane_z = float(interface["census_plane_z"])
     numerical_census_marker_thickness = dz
-    if census_plane_z + numerical_census_marker_thickness > z_max + 1e-12:
+    if standalone and not through_exit and census_plane_z + numerical_census_marker_thickness > z_max + 1e-12:
         raise ValueError("numerical census marker must fit inside the cylindrical PA")
-    span = z_max - z_min
-    half_width = max(
-        outer,
-        float(source_terminal["electrode_outer_width_mm"]) / 2
-        if source_terminal is not None else outer,
-    )
-    half_height = max(
-        outer,
-        float(source_terminal["electrode_outer_height_mm"]) / 2
-        if source_terminal is not None else outer,
-    )
-    nx = math.ceil(2 * half_width / dx) + 1
-    ny = math.ceil(2 * half_height / dy) + 1
-    nz = math.ceil(span / dz) + 1
+    if standalone:
+        span = z_max - z_min
+        half_width = max(
+            outer,
+            float(source_terminal["electrode_outer_width_mm"]) / 2
+            if source_terminal is not None else outer,
+        )
+        half_height = max(
+            outer,
+            float(source_terminal["electrode_outer_height_mm"]) / 2
+            if source_terminal is not None else outer,
+        )
+        nx = math.ceil(2 * half_width / dx) + 1
+        ny = math.ceil(2 * half_height / dy) + 1
+        nz = math.ceil(span / dz) + 1
     lines = [
         "; Generated from multipole_resolved_design; do not edit.",
         f"; parent_resolved_sha256={resolved['resolved_sha256']}",
         f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{dx:.12g},{dy:.12g},{dz:.12g},surface=fractional)",
         f"locate({half_width:.12g},{half_height:.12g},{-z_min:.12g}) {{",
-    ]
+    ] if standalone else []
     if axial_mode:
         lines.extend(
             _render_local_segmented_rod_array_gem(
-                segmented_rods, indent="  ", significant_digits=12
+                segmented_rods, indent="  ", significant_digits=12, electrode_ids=electrode_ids
             ).splitlines()
         )
     else:
         for rod in rods:
-            lines.append(_render_continuous_rod_gem(rod, indent="  "))
+            mapped_id = electrode_ids[int(rod["electrode_group"])] if electrode_ids is not None else None
+            lines.append(_render_continuous_rod_gem(rod, indent="  ", electrode_id=mapped_id))
+    shield_start_z = (
+        float(shield_geometry["z_min_mm"])
+        if through_exit else z_min
+    )
     shield_end_z = (
         float(source_terminal["upstream_enclosure_end_plane_z_mm"])
-        if source_terminal is not None else z_max
+        if source_terminal is not None else float(shield_geometry["z_max_mm"]) if through_exit else z_max
     )
-    shield_span = shield_end_z - z_min
+    shield_span = shield_end_z - shield_start_z
     lines.extend([
         f"  e({ground_electrode}) {{ fill {{",
         f"    within {{ cylinder(0,0,{shield_end_z:.12g},{outer:.12g},,{shield_span:.12g}) }}",
@@ -462,6 +730,10 @@ def render_gem(
         )
         lines.append(
             f"    notin_inside {{ cylinder(0,0,{entrance_endcap_max+dz:.12g},{insulated_radius:.12g},,{entrance_endcap_max-entrance_endcap_min+2*dz:.12g}) }}"
+        )
+    if through_entrance:
+        lines.append(
+            f"    notin_inside {{ cylinder(0,0,{entrance_endcap_max+dz:.12g},{interface['entrance_aperture_radius']:.12g},,{entrance_endcap_max-entrance_endcap_min+2*dz:.12g}) }}"
         )
     lines.extend([
         "  } }",
@@ -483,15 +755,26 @@ def render_gem(
             "  } }",
         ])
     if source_terminal is None:
+        cap_end = float(enclosure["exit_outer_endcap_downstream_face_z_mm"])
+        cap_start = float(enclosure["exit_outer_endcap_upstream_face_z_mm"])
+        if through_exit:
+            lines.extend([f"  e({output_electrode}) {{ fill {{",
+                          f"    within {{ cylinder(0,0,{cap_end:.12g},{outer:.12g},,{cap_end-cap_start:.12g}) }}",
+                          f"    notin_inside {{ cylinder(0,0,{cap_end+dz:.12g},{interface['exit_aperture_radius']:.12g},,{cap_end-cap_start+2*dz:.12g}) }}",
+                          "  } }"])
+        else:
+            lines.append(f"  e({output_electrode}) {{ fill {{ within {{ cylinder(0,0,{cap_end:.12g},{outer:.12g},,{cap_end-cap_start:.12g}) }} }} }}")
         lines.extend([
-            f"  e({output_electrode}) {{ fill {{ within {{ cylinder(0,0,{float(enclosure['exit_outer_endcap_downstream_face_z_mm']):.12g},{outer:.12g},,{float(enclosure['exit_outer_endcap_downstream_face_z_mm'])-float(enclosure['exit_outer_endcap_upstream_face_z_mm']):.12g}) }} }} }}",
             f"  e({output_electrode}) {{ fill {{",
             f"    within {{ cylinder(0,0,{interface['exit_plate_z_max']:.12g},{outer:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']:.12g}) }}",
             f"    notin_inside {{ cylinder(0,0,{interface['exit_plate_z_max']+dz:.12g},{interface['exit_aperture_radius']:.12g},,{interface['exit_plate_z_max']-interface['exit_plate_z_min']+2*dz:.12g}) }}",
             "  } }",
-            "  ; GUI-visible numerical absorber: its front face is the resolved census plane.",
-            f"  e({numerical_census_marker_electrode}) {{ fill {{ within {{ cylinder(0,0,{census_plane_z+numerical_census_marker_thickness:.12g},{interface['census_radius']:.12g},,{numerical_census_marker_thickness:.12g}) }} }} }}",
         ])
+        if standalone and not through_exit:
+            lines.extend([
+                "  ; GUI-visible numerical absorber: its front face is the resolved census plane.",
+                f"  e({numerical_census_marker_electrode}) {{ fill {{ within {{ cylinder(0,0,{census_plane_z+numerical_census_marker_thickness:.12g},{interface['census_radius']:.12g},,{numerical_census_marker_thickness:.12g}) }} }} }}",
+            ])
     else:
         aperture = source_terminal["aperture"]
         surface = float(source_terminal["surface_plane_z_mm"])
@@ -558,7 +841,7 @@ def render_gem(
             exit_length,
             dz,
         )
-    lines.extend(["}", ""])
+    lines.extend(["}", ""] if standalone else [""])
     return "\n".join(lines)
 
 

@@ -3,7 +3,7 @@ param(
   [Parameter(Mandatory=$true)][string]$ProjectId,
   [Parameter(Mandatory=$true)][string]$RuntimeProfileId,
   [Parameter(Mandatory=$true)][string]$DesignProfileId,
-  [Parameter(Mandatory=$true)][string]$ParticleSourcePath,
+  [string]$ParticleSourcePath='',
   [Parameter(Mandatory=$true)][string]$EngineeringBudgetPath,
   [string]$ResolvedRuntimeProfilePath='',
   [string]$EvidenceContractPath='',
@@ -125,12 +125,13 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
-$particleSourceInput=(Resolve-Path -LiteralPath $ParticleSourcePath).Path
+$particleSourceInput=if($ParticleSourcePath){(Resolve-Path -LiteralPath $ParticleSourcePath).Path}else{$null}
 $engineeringBudgetInput=(Resolve-Path -LiteralPath $EngineeringBudgetPath).Path
 $engineeringBudgetAuthority=Get-Content -LiteralPath $engineeringBudgetInput -Raw -Encoding UTF8|ConvertFrom-Json
 $resolvedRuntimeInput=$null
 $resolvedRuntimeDocument=$null
 $resolvedRuntimeInputSha=$null
+$hasReleaseSpec=$false
 $executionBatching=$null
 $existingFormalProcessRecords=@()
 $retainedFormalBatchOutputs=@{}
@@ -142,12 +143,14 @@ if(-not[string]::IsNullOrWhiteSpace($ResolvedRuntimeProfilePath)){
   $resolvedRuntimeInput=(Resolve-Path -LiteralPath $ResolvedRuntimeProfilePath).Path
   $resolvedRuntimeInputSha=(Get-FileHash -LiteralPath $resolvedRuntimeInput -Algorithm SHA256).Hash
   $resolvedRuntimeDocument=Get-Content -LiteralPath $resolvedRuntimeInput -Raw -Encoding UTF8|ConvertFrom-Json
+  $hasReleaseSpec=$resolvedRuntimeDocument.particle_source.PSObject.Properties.Name-contains'release_spec'
   if([int]$resolvedRuntimeDocument.schema_version-ne 1-or
     [string]$resolvedRuntimeDocument.role-ne'multipole_resolved_runtime_profile'-or
     [string]$resolvedRuntimeDocument.project_id-ne$ProjectId-or
     [string]$resolvedRuntimeDocument.runtime_profile_id-ne$RuntimeProfileId-or
     [string]$resolvedRuntimeDocument.design_profile_id-ne$DesignProfileId-or
-    [string]$resolvedRuntimeDocument.particle_source.path-ne$particleSourceInput-or
+    ($hasReleaseSpec-and$null-ne$particleSourceInput)-or
+    (-not$hasReleaseSpec-and[string]$resolvedRuntimeDocument.particle_source.path-ne$particleSourceInput)-or
     [string]$resolvedRuntimeDocument.engineering_budget.path-ne$engineeringBudgetInput
   ){throw 'Resolved runtime-profile snapshot identity differs from runner arguments.'}
   if($resolvedRuntimeDocument.PSObject.Properties.Name-contains'simion_dispatch'){
@@ -160,6 +163,12 @@ if(-not[string]::IsNullOrWhiteSpace($ResolvedRuntimeProfilePath)){
       throw 'This RF multipole runner only accepts rf resource identity.'
     }
   }
+}
+if(-not$hasReleaseSpec-and$null-eq$particleSourceInput){throw 'Canonical CSV source path is required for this runtime profile.'}
+if($hasReleaseSpec-and($SourceFamilyPath-or$OperatingPointId-or
+  ($resolvedRuntimeDocument.PSObject.Properties.Name-contains'particle_source_derivation')-or
+  ($resolvedRuntimeDocument.PSObject.Properties.Name-contains'particle_source_phase_derivation'))){
+  throw 'Release spec cannot be combined with another source authority or transform.'
 }
 $campaignSelection=$null
 if([string]$engineeringBudgetAuthority.role-eq'multipole_transport_experiment_campaign'){
@@ -196,13 +205,18 @@ try{
       '--project-id',$ProjectId,'--solver','simion',
       '--runtime-profile-id',$RuntimeProfileId,
       '--design-profile-id',$DesignProfileId,
-      '--particle-source',$particleSourceInput,
       '--retention-class',$RetentionClass,'--output',$budgetPreflight)
+    if($particleSourceInput){$budgetArguments+=@('--particle-source',$particleSourceInput)}
     $budgetArguments+=@('--run-id',$RunId)
     & $python @budgetArguments
   }finally{Pop-Location}
   if($LASTEXITCODE-ne 0){throw 'SIMION resource-budget preflight failed.'}
   $resolvedBudgetPreflight=Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json
+  if($hasReleaseSpec-and(
+    ($resolvedBudgetPreflight.particle_source|ConvertTo-Json -Depth 20 -Compress)-cne
+    ($resolvedRuntimeDocument.particle_source|ConvertTo-Json -Depth 20 -Compress))){
+    throw 'Budget source authority differs from the selected runtime profile.'
+  }
   $authorizedNumerics=$resolvedBudgetPreflight.solver_numerics
   $authorizedCell=$authorizedNumerics.cell_mm_xyz
   if($null-eq$authorizedCell){
@@ -230,7 +244,7 @@ $hostRuntimeSourcePaths=@(
   'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
   'common/host_resource_policy.json','common/require_powershell7.ps1')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
-  -SourceRelativeDirectories @('common/contracts','common/multipole','common/simion') `
+  -SourceRelativeDirectories @('common/contracts','common/multipole','common/simion','common/ion_release') `
   -Extensions @('.py','.json','.ps1','.lua')
 $executionCapacityPaths+=@($hostRuntimeSourcePaths|ForEach-Object{"inputs/code/$_"})
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
@@ -251,7 +265,7 @@ $hostExecutionLease=Enter-HostResourceStage -Role SIMION -Stage prepare -RunId $
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
-  foreach($area in @('contracts','multipole','simion')){
+  foreach($area in @('contracts','multipole','simion','ion_release')){
     $sourceRoot=Join-Path $repoRoot "common\$area";$destinationRoot=Join-Path $codeRoot "common\$area"
     Get-ChildItem -LiteralPath $sourceRoot -Recurse -File|Where-Object{
       $_.Extension -in @('.py','.json','.ps1','.lua')
@@ -425,6 +439,17 @@ try{
   }
   $particleSource=Join-Path $inputDir 'particle_source.csv'
   $volumeSnapshotReceipt=$null
+  $releaseSpec=$null;$releaseReceipt=$null
+  if($hasReleaseSpec){
+    $releaseSpecIdentity=$null
+    $releaseSpec=Copy-VerifiedRunInput -Source ([string]$resolvedRuntimeDocument.particle_source.release_spec.path) `
+      -Destination (Join-Path $inputDir 'particle_source_release_spec.json') -VerifiedIdentity ([ref]$releaseSpecIdentity)
+    if([string]$releaseSpecIdentity.sha256-cne[string]$resolvedRuntimeDocument.particle_source.release_spec.sha256-or
+      [long]$releaseSpecIdentity.bytes-ne[long]$resolvedRuntimeDocument.particle_source.release_spec.bytes){
+      throw 'Frozen release spec differs from the selected source authority.'
+    }
+    $releaseReceipt=Join-Path $inputDir 'particle_source_release_receipt.json'
+  }
   $phaseDerivationMetadata=$null
   $phaseAuthoritySource=$null
   $phaseReferenceSource=$null
@@ -473,7 +498,7 @@ try{
       & $python @phaseArguments
       if($LASTEXITCODE-ne 0){throw 'Phase-matched canonical source derivation failed.'}
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-  }else{
+  }elseif(-not$hasReleaseSpec){
     Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
   }
   if($hasVolumeSnapshotReceipt){
@@ -514,10 +539,16 @@ try{
     if($volumeSnapshotReceipt){
       $preflightArguments+=@('--volume-snapshot-receipt',$volumeSnapshotReceipt)
     }
+    if($hasReleaseSpec){
+      $preflightArguments+=@('--release-spec',$releaseSpec,'--release-receipt',$releaseReceipt,'--materialize-release')
+    }
     & $python @preflightArguments
     if($LASTEXITCODE-ne 0){throw 'Canonical particle source preflight failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   $sourceMeta=Get-Content -LiteralPath $sourceMetadata -Raw -Encoding UTF8|ConvertFrom-Json
+  if($hasReleaseSpec-and[int]$sourceMeta.particle_count-ne[int]$resolvedRuntimeDocument.particle_source.particle_count){
+    throw 'Materialized source population differs from the authorized release spec.'
+  }
   if($sourceFamily){
     $binding=$sourceMeta.operating_point_binding
     if($null-eq$binding -or
@@ -634,6 +665,7 @@ try{
     if($volumeSnapshotReceipt){
       $sourceProjectionArguments+=@('--volume-snapshot-receipt',$volumeSnapshotReceipt)
     }
+    if($hasReleaseSpec){$sourceProjectionArguments+=@('--release-spec',$releaseSpec,'--release-receipt',$releaseReceipt)}
     & $python @sourceProjectionArguments
     if($LASTEXITCODE-ne 0){throw 'SIMION particle projection failed.'}
     function Set-SimionBatchesFromPlan {
@@ -692,6 +724,20 @@ try{
     -Source (Join-Path $codeRoot 'common\multipole\simion_rf_drive.lua') `
     -Destination $rfDriveKernelLua|Out-Null
 
+  $exitPreparationCode=@'
+import json,sys
+from pathlib import Path
+from common.multipole.component_port import prepare_exit_observation_inputs
+run,resolved=map(Path,sys.argv[1:3])
+print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_text(encoding='utf-8-sig')),design_profile_id=sys.argv[3],cell_z_mm=float(sys.argv[4])),allow_nan=False))
+'@
+  Push-Location $codeRoot
+  try{
+    $env:PYTHONPATH=$codeRoot
+    $exitObservation=(& $python -B -c $exitPreparationCode $runDir $resolved $DesignProfileId ([string]$resolvedCellMmZ))|ConvertFrom-Json
+    if($LASTEXITCODE-ne0){throw 'Multipole mechanical interface/clock preparation failed.'}
+  }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+  $throughExit=[bool]$exitObservation.mechanical_exit_enabled
   $drive=$design.drive;$geometry=$design.geometry_mm;$enclosure=$geometry.enclosure
   $static=$design.static_electrodes_V
   $interfaces=$design.interfaces_mm
@@ -790,6 +836,8 @@ try{
     $groundElectrodeId=2*[int]$segments.segment_count+1;$outputElectrodeId=$groundElectrodeId+1
     $physicalDetectorElectrodeId=$outputElectrodeId+1
   }
+  # The open model has no numerical census absorber in GEM or its PA basis.
+  if($throughExit){$physicalDetectorElectrodeId=0}
   $paBasisElectrodeIds=if($hasDownstreamTerminal){
     @($axialDc.rod_electrodes|ForEach-Object{[int]$_.electrode_id})
   }elseif($segmentedRodGeometry){
@@ -905,15 +953,21 @@ try{
     optimization_envelope=$envelope;operating_mode_registry=$modeRegistry;
     multipole_resolved_design=$resolved;particle_source=$particleSource;
     particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
+    particle_source_release_spec=$releaseSpec;particle_source_release_receipt=$releaseReceipt;
     solver_numerics=$numerics;simion_grid_audit=$gridAudit;code_inventory=$codeInventory;
     simion_execution_batch_plan=$batchPlan;
     evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2;
     simion_rf_drive_kernel=$rfDriveKernelLua;
+    clock_authority=(Join-Path $inputDir 'clock_authority.json');instrument_epoch=(Join-Path $inputDir 'instrument_epoch.json');
     resolved_runtime_profile=$resolvedRuntimeProfile;
     simion_layout_template_resolution=$templateResolution;
     simion_layout_template_registry=$templateRegistryInput;
     simion_layout_registration_manifest=$templateRegistrationManifest;
     simion_layout_template_iob=$templateIob;simion_layout_template_con=$templateCon}
+  if($throughExit){
+    $runInputs.mechanical_exit_interface=Join-Path $inputDir 'mechanical_exit_interface.json'
+    $runInputs.mechanical_exit_observation=Join-Path $inputDir 'mechanical_exit_observation.json'
+  }
   if($terminalRegistry){$runInputs.downstream_terminal_profiles=$terminalRegistry}
   if($paBasisCacheManifestInput){
     $runInputs.simion_pa_basis_cache_manifest=$paBasisCacheManifestInput
@@ -1001,6 +1055,7 @@ try{
   function Invoke-TransportCase([string]$name,[int]$rfScale,[int]$axialScale){
     $caseState=Join-Path $resultDir "particle_states__$name.csv"
     $caseTrajectory=Join-Path $resultDir "trajectory_samples__$name.csv"
+    $caseMechanical=Join-Path $resultDir "mechanical_exit_states__$name.csv"
     $caseSummary=Join-Path $resultDir "simion_summary__$name.json"
     # The registered Workbench transform maps GEM +z to flight +x.  Axial
     # sampling and the census-marker threshold must therefore use GEM dz.
@@ -1017,12 +1072,15 @@ try{
     foreach($batch in $simionBatches){
       $suffix=("batch_{0:D2}" -f [int]$batch.index)
       $batchState=if($simionBatches.Count-eq 1){$caseState}else{Join-Path $resultDir "particle_states__$name`__$suffix.csv"}
+      $batchMechanical=if($simionBatches.Count-eq 1){$caseMechanical}else{Join-Path $resultDir "mechanical_exit_states__$name`__$suffix.csv"}
+      $mechanicalLua=if($throughExit){"mechanical_exit_csv=[[$batchMechanical]],mechanical_exit_plane_mm=$($exitObservation.mechanical_exit_z_mm),mechanical_exit_aperture_radius_mm=$($exitObservation.aperture_radius_mm),mechanical_exit_guard_mm=$($exitObservation.numerical_guard_z_mm),"}else{''}
       $batchTrajectory=if($simionBatches.Count-eq 1){$caseTrajectory}else{Join-Path $resultDir "trajectory_samples__$name`__$suffix.csv"}
       $batchSummary=if($simionBatches.Count-eq 1){$caseSummary}else{Join-Path $resultDir "simion_summary__$name`__$suffix.json"}
       $luaConfig=if($simionBatches.Count-eq 1){Join-Path $inputDir "simion_config__$name.lua"}else{Join-Path $inputDir "simion_config__$name`__$suffix.lua"}
       @"
 return {iob=[[$(Join-Path $solverDir 'quad_monolithic.iob')]], fly2=[[$($batch.fly2)]], source_states=dofile([[$($batch.states)]]),
 trajectory_csv=[[$batchTrajectory]], particle_state_csv=[[$batchState]], summary_json=[[$batchSummary]],
+$mechanicalLua
 mode="resolved_design_transport", operating_point="$name", parent_resolved_design_sha256="$resolvedHash",
 trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod, waveform="$($drive.waveform)",
 rf_peak_v=$($drive.rf_amplitude_V_zero_to_peak_per_group), rf_scale=$rfScale, axial_scale=$axialScale,
@@ -1030,7 +1088,7 @@ scale_static_boundaries=$($exitAperturePlateStep.ToString().ToLowerInvariant()),
 dc_amplitude_v=$($drive.dc_amplitude_V_per_group), frequency_hz=$($drive.frequency_Hz), phase_rad=$($drive.phase_rad),
 axis_voltage_v=$($drive.common_mode_offset_V), entrance_voltage_v=$entranceVoltage,
 exit_voltage_v=$exitVoltage, physical_detector_voltage_v=$physicalDetectorVoltage,
-has_electrode_4=true, has_electrode_5=$($rectangular.ToString().ToLowerInvariant()),
+has_electrode_4=$((-not$throughExit).ToString().ToLowerInvariant()), has_electrode_5=$($rectangular.ToString().ToLowerInvariant()),
 $segmentedLua ground_electrode_id=$groundElectrodeId, ground_reference_v=$entranceVoltage,
 output_electrode_id=$outputElectrodeId, output_reference_v=$exitVoltage,
 physical_detector_electrode_id=$physicalDetectorElectrodeId,
@@ -1048,7 +1106,7 @@ numerical_census_marker_is_handoff=false, axial_axis="x", origin_x_mm=$zShift, o
 origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
 "@|Set-Content -LiteralPath $luaConfig -Encoding ASCII
       $batchRuns+=[pscustomobject]@{batch=$batch;state=$batchState;trajectory=$batchTrajectory;
-        summary=$batchSummary;lua_config=$luaConfig;fly2=[string]$batch.fly2}
+        summary=$batchSummary;mechanical=$batchMechanical;lua_config=$luaConfig;fly2=[string]$batch.fly2}
     }
     $flyArguments=@('--nogui','--noprompt','fly','--remove-pas=3','--trajectory-quality',
       [string]$TrajectoryQuality,'--programs','1','--retain-trajectories','0','--adjustable',
@@ -1106,7 +1164,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
         # not a disposable resource probe.
         $script:retainedFormalBatchOutputs[$name]=[pscustomobject]@{
           state=$batchRuns[0].state;trajectory=$batchRuns[0].trajectory
-          summary=$batchRuns[0].summary
+          summary=$batchRuns[0].summary;mechanical=$batchRuns[0].mechanical
         }
       }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
       return Invoke-TransportCase $name $rfScale $axialScale
@@ -1153,6 +1211,9 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
           if(-not(Test-Path -LiteralPath $source)){throw "SIMION $name retained first formal $kind output is missing."}
           Move-Item -LiteralPath $source -Destination $destination -Force
         }
+        if($throughExit){
+          Move-Item -LiteralPath ([string]$retained.mechanical) -Destination ([string]$firstBatch.mechanical) -Force
+        }
         $trajectorySource=[string]$retained.trajectory
         if(Test-Path -LiteralPath $trajectorySource){
           Move-Item -LiteralPath $trajectorySource -Destination ([string]$firstBatch.trajectory) -Force
@@ -1164,7 +1225,8 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
         $env:PYTHONPATH=$codeRoot
         foreach($merge in @(
           @{output=$caseState;property='state';required=$true},
-          @{output=$caseTrajectory;property='trajectory';required=$false}
+          @{output=$caseTrajectory;property='trajectory';required=$false},
+          @{output=$caseMechanical;property='mechanical';required=$throughExit}
         )){
           $existingBatchPaths=@($batchRuns|ForEach-Object{
             $path=[string]$_.($merge.property)
@@ -1207,6 +1269,23 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
         --solver 'SIMION 2020' --output $stateReport|Out-Null
       if($LASTEXITCODE-ne 0){throw "SIMION $name particle-state contract failed."}
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+    if($throughExit){
+      $mechanicalValidation=@'
+import json,sys
+from pathlib import Path
+from common.multipole.component_port import validate_exit_observations
+state,source,plan,output=map(Path,sys.argv[1:])
+report=validate_exit_observations(state,source,json.loads(plan.read_text(encoding='utf-8-sig')))
+output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf-8',newline='\n')
+'@
+      Push-Location $codeRoot
+      try{
+        $env:PYTHONPATH=$codeRoot
+        & $python -B -c $mechanicalValidation $caseMechanical $particleSource `
+          (Join-Path $inputDir 'mechanical_exit_observation.json') (Join-Path $resultDir "mechanical_exit_census__$name.json")
+        if($LASTEXITCODE-ne0){throw "SIMION $name real mechanical exit/cohort validation failed."}
+      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+    }
     return Get-Content -LiteralPath $caseSummary -Raw -Encoding UTF8|ConvertFrom-Json
   }
 
@@ -1305,7 +1384,8 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
       --repo-root $repoRoot
     if($LASTEXITCODE-ne 0){throw 'SIMION exit-state diagnostic plot failed.'}
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-  $qualification='UNQUALIFIED';$evaluation=Join-Path $resultDir 'evidence_evaluation.json'
+  $scientificStatus='success';$qualification='UNQUALIFIED';$scientificChecks=@{}
+  $evaluation=Join-Path $resultDir 'evidence_evaluation.json'
   if($evidence){
     Push-Location $codeRoot
     try{
@@ -1314,8 +1394,29 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
         --project-id $ProjectId --design-profile-id $DesignProfileId --output $evaluation
       $evidenceExit=$LASTEXITCODE
     }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-    if($evidenceExit-ne 0){throw 'SIMION evidence contract gate failed.'}
-    $qualification='PASS'
+    if($evidenceExit-notin@(0,1)){throw 'SIMION evidence evaluation failed before a scientific decision.'}
+    $validateEvaluation=@'
+import json,sys
+from pathlib import Path
+from common.contracts.machine_contracts import validate_schema
+result=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
+validate_schema(result,'multipole_evidence_evaluation.schema.json')
+expected='PASS' if all(result['checks'].values()) else 'FAIL'
+if (result['project_id']!=sys.argv[2] or result['design_profile_id']!=sys.argv[3]
+        or result['status']!=expected or int(sys.argv[4])!=(0 if expected=='PASS' else 1)):
+    raise ValueError('evidence result identity/checks/exit status differ')
+print(json.dumps(result,allow_nan=False))
+'@
+    Push-Location $codeRoot
+    try{
+      $env:PYTHONPATH=$codeRoot
+      $validated=& $python -B -c $validateEvaluation $evaluation $ProjectId $DesignProfileId $evidenceExit
+      if($LASTEXITCODE-ne0){throw 'SIMION evidence result contract is invalid.'}
+      $decision=$validated|ConvertFrom-Json -AsHashtable
+    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+    $qualification=[string]$decision.status
+    $scientificChecks=$decision.checks
+    if($qualification-eq'FAIL'){$scientificStatus='failed'}
   }
   # Invoke-TransportCase performs several external lifecycle operations.  Its
   # pipeline value is not a stable summary interface under StrictMode; use the
@@ -1335,7 +1436,8 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     }
     $controlTransmission=[double]$controlCaseSummary.transmission
   }
-  [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_summary';status='success';
+  [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_summary';status=$scientificStatus;
+    native_execution_complete=$true;checks=$scientificChecks;
     qualification_status=$qualification;project_id=$ProjectId;design_profile_id=$DesignProfileId;
     parent_resolved_design_sha256=$resolvedHash;primary_transmission=$primaryTransmission;
     case_set=$CaseSet;
@@ -1393,6 +1495,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
       (Join-Path $resultDir "particle_state_contract__$controlName.json")
     )
   }
+  if($throughExit){$outputs+=@(Get-ChildItem -LiteralPath $resultDir -File -Filter 'mechanical_exit*'|Select-Object -ExpandProperty FullName)}
   $outputs+=@(Get-ChildItem -LiteralPath $logDir -Recurse -File|Select-Object -ExpandProperty FullName)
   if(Test-Path -LiteralPath $evaluation){$outputs+=$evaluation}
   if($resourceProfile){$outputs+=$resourceProfile}
@@ -1400,9 +1503,10 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
   $outputs=@($outputs|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf})
   $outputs+=$retentionActions
   Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
-    -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
-  $hostExecutionOutcome='success'
-  Write-Output "MULTIPOLE_SIMION_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId PARENT_SHA256=$resolvedHash QUALIFICATION=$qualification"
+    -Status $scientificStatus -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+  $hostExecutionOutcome=$scientificStatus
+  $resultMarker=if($scientificStatus-eq'success'){'PASS'}else{'FAIL'}
+  Write-Output "MULTIPOLE_SIMION_RESOLVED=$resultMarker PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId PARENT_SHA256=$resolvedHash QUALIFICATION=$qualification"
 }catch{
   $hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}
   Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
@@ -1418,3 +1522,5 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
   }
   Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
 }
+# Preserve the public launcher's scientific-failure signal after releasing the grant.
+if($hostExecutionOutcome-eq'failed'){exit 1}

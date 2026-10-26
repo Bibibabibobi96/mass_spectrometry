@@ -102,7 +102,9 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(ledger["objects"][0]["status"], "ready")
             self.assertEqual(ledger["objects"][0]["bytes"], ready["bytes"])
 
-    def retired_failed_fixture(self, root: Path, *, retained_evidence: bool = False) -> tuple[Path, Path]:
+    def retired_failed_fixture(
+        self, root: Path, *, retained_evidence: bool = False, additional_payload: bool = False,
+    ) -> tuple[Path, Path]:
         run, config = self.fixture(root, "20260101_000000__build__simion__failed")
         document = json.loads(config.read_text())
         document.update(schema_version=2, run_id=run.name, project="p", mode="static_pilot",
@@ -115,6 +117,9 @@ class RunCapacityLifecycleTests(unittest.TestCase):
         summary.write_text(json.dumps({"run_id": run.name, "status": "failed"}))
         payload = run / "field.pa"
         payload.write_bytes(b"unrefined copy" * (4096 if retained_evidence else 1))
+        extra = run / "second.pa"
+        if additional_payload:
+            extra.write_bytes(b"second native field")
         evidence = run / "samples.csv"
         if retained_evidence:
             evidence.write_bytes(b"retained observations\n" * 256)
@@ -125,7 +130,8 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             "schema_version": 2, "run_id": run.name, "project": "p", "mode": "static_pilot",
             "status": "failed", "formal_eligible": False, "recorded_at_utc": "2026-01-01T00:00:00Z",
             "run_config": record(config), "inputs": {},
-            "outputs": [record(summary), record(payload)] + ([record(evidence)] if retained_evidence else []),
+            "outputs": [record(summary), record(payload)] + ([record(evidence)] if retained_evidence else [])
+                       + ([record(extra)] if additional_payload else []),
             "artifact_retention": document["artifact_retention"],
         }))
         register_writing(root, config)
@@ -133,7 +139,8 @@ class RunCapacityLifecycleTests(unittest.TestCase):
                         retention_reason="retain failed preparation evidence")
         with patch("common.contracts.solver_review_retirement._git_document_references", return_value=[]):
             plan = plan_retirement(root, root, run, owner="p",
-                                   owner_abandonment_reason="abandoned duplicate; original remains")
+                                   owner_abandonment_reason="abandoned duplicate; original remains",
+                                   selected_heavy_paths=["field.pa"] if additional_payload else None)
             with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
                 apply_retirement(plan)
         return run, config
@@ -183,6 +190,39 @@ class RunCapacityLifecycleTests(unittest.TestCase):
             self.assertEqual(load_capacity_ledger(root), ledger)
             with self.assertRaisesRegex(ValueError, "cannot become light_evidence"):
                 finalize_ready(root, config)
+
+    def test_second_owner_batch_reseals_exact_remaining_inventory_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize_capacity_ledger(root, objects=[])
+            run, config = self.retired_failed_fixture(root, retained_evidence=True, additional_payload=True)
+            options = dict(owner="p", writing_stopped=True, retain_payload=True,
+                           retention_reason="retain failed preparation evidence")
+            seal_checkpoint(root, config, **options)
+            before_ledger = load_capacity_ledger(root)
+            before = {name: (run / name).read_bytes() for name in (
+                RECEIPT_NAME, "run_config.json", "summary.json", "run_manifest.json")}
+            with patch("common.contracts.solver_review_retirement._git_document_references", return_value=[]):
+                plan = plan_retirement(root, root, run, owner="p",
+                    owner_abandonment_reason="second field no longer needed", selected_heavy_paths=["second.pa"])
+                with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                    apply_retirement(plan)
+            # Deletion does not subtract guessed bytes from the owner ledger.
+            self.assertEqual(load_capacity_ledger(root), before_ledger)
+            expected = sum(p.stat().st_size for p in run.rglob("*") if p.is_file())
+            result = seal_checkpoint(root, config, **options)
+            self.assertEqual(result["bytes"], expected)
+            ledger = load_capacity_ledger(root)
+            self.assertEqual(ledger["resident_bytes"], expected)
+            self.assertEqual(ledger["objects"][0], {**before_ledger["objects"][0], "bytes": expected})
+            self.assertEqual(result["run_status"], "failed")
+            self.assertEqual(before, {name: (run / name).read_bytes() for name in before})
+            self.assertEqual(seal_checkpoint(root, config, **options), result)
+            self.assertEqual(load_capacity_ledger(root), ledger)
+            (run / "unexplained.txt").write_text("unrecorded change")
+            with self.assertRaisesRegex(ValueError, "preserved inventory"):
+                seal_checkpoint(root, config, **options)
+            self.assertEqual(load_capacity_ledger(root), ledger)
 
     def test_retirement_reseal_reconciles_signed_old_accounting_drift_once(self) -> None:
         for drift in (-2000, 2000):
@@ -556,6 +596,10 @@ class RunCapacityLifecycleTests(unittest.TestCase):
                 ledger = load_capacity_ledger(root)
                 entry = ledger["objects"][0]
                 self.assertEqual(result["run_status"], status)
+                self.assertEqual(result["run_config"], {
+                    "path": str(config.resolve()), "exists": True, "bytes": len(before["run_config.json"]),
+                    "sha256": hashlib.sha256(before["run_config.json"]).hexdigest().upper(),
+                })
                 self.assertEqual((entry["class"], entry["status"], entry["pin"]),
                                  ("rebuildable_payload", "ready", True))
                 self.assertEqual(entry["pin_reason"], kwargs["retention_reason"])

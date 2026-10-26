@@ -777,8 +777,10 @@ def _trial(manifest_path: Path, freeze_dir: Path | None = None, *, require_targe
     """Read the named observation projection; do not rehash unused PA payloads."""
     manifest = _load_object(manifest_path)
     if (manifest.get("status") != "success"
-            or manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
-            or manifest.get("mode") != "finite_3d_two_prism_voltage_trial"):
+            or (manifest.get("project"), manifest.get("mode")) not in {
+                ("instrument_assembly", "oa_mr"),
+                ("parallel_mirror_dual_stripe_mr_tof", "finite_3d_two_prism_voltage_trial"),
+            }):
         raise CandidateContractError(f"not a successful downstream trial: {manifest_path}")
     records = {"run_config": manifest["run_config"]}
     for filename in ("two_prism_trial_observation.json", "two_prism_trial_materialization.json"):

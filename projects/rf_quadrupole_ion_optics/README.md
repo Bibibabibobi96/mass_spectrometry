@@ -35,13 +35,11 @@
 | 同求解器数值筛选 | — | — | `workflows/same_solver_convergence/run_comparison.ps1` |
 
 多极杆分段杆和出口带孔接口板加速使用公共入口；具体命令与共同状态见公共multipole文档。
-RF四极杆离子光学→单次反射oa-TOF物理连接属于
-`rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例。已闭合的旧四极杆S2/S3迁移入口
-退出活动树；当前四、六、八极杆同源功能闭合统一使用该integration内的
-[`workflows/family_source_closure/execute.ps1`](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/execute.ps1)；
-内部stage不构成独立公开入口。
-当前流程、电极映射和资格边界见
-[`INTEGRATION.md`](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
+跨器件装配与新整机执行从[统一集成入口](../../integrations/README.md)选择。
+旧四极杆S2/S3及N1 family运行器已退役；新整机使用
+[单反射公开入口](../../integrations/workflows/single_reflection_flight/run.ps1)。
+历史诊断证据保持原身份，不再提供旧执行fallback。
+当前流程、电极映射、保留诊断和资格边界见[统一集成状态](../../integrations/docs/INTEGRATION.md)。
 
 ## 目录职责
 

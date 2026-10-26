@@ -18,7 +18,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
+from common.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from common.ion_release.release import generate_release_states
 from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
 
@@ -216,7 +218,7 @@ class FunctionalContractTests(unittest.TestCase):
 
     def test_hs1_adapter_preserves_original_body_and_adds_only_lifetime_hook(self) -> None:
         original = HS1_SOURCE_FIXTURE
-        adapted = functional.adapt_hs1_for_repeat_fly(original)
+        adapted = adapt_hs1_for_repeat_fly(original)
         before_return, after_return = original.split("return HS1")
         marker = "-- Project lifecycle adapter: no change to collision equations or sampling."
         self.assertTrue(adapted.startswith(before_return + marker))
@@ -230,7 +232,7 @@ class FunctionalContractTests(unittest.TestCase):
             self.assertIn(statement, adapted[len(before_return):])
 
     def test_hs1_bound_getter_is_read_only_and_in_original_module_scope(self) -> None:
-        adapted = functional.adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE)
+        adapted = adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE)
         self.assertEqual(adapted.count("function HS1.bound_parameters()"), 1)
         getter = adapted.split("function HS1.bound_parameters()", 1)[1].split("\nend", 1)[0]
         expected = {
@@ -255,9 +257,9 @@ class FunctionalContractTests(unittest.TestCase):
         for name in ("_gas_mass_amu", "_temperature_k", "_pressure_pa", "_sigma_m2",
                      "_mean_free_path_mm", "_steps_per_MFP", "_random_seed", "_mark_collisions", "_trace_level"):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "bound parameter declaration missing"):
-                functional.adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE.replace("adjustable " + name, "local " + name))
+                adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE.replace("adjustable " + name, "local " + name))
         with self.assertRaisesRegex(ValueError, "already contains"):
-            functional.adapt_hs1_for_repeat_fly(functional.adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE))
+            adapt_hs1_for_repeat_fly(adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE))
 
     def test_hs1_adapter_rejects_unsupported_source_structures(self) -> None:
         declarations = ("local max_timestep", "local is_initialized", "local ke_averages",
@@ -265,11 +267,11 @@ class FunctionalContractTests(unittest.TestCase):
         for declaration in declarations:
             with self.subTest(missing=declaration):
                 with self.assertRaisesRegex(ValueError, "missing"):
-                    functional.adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE.replace(declaration, "local changed", 1))
+                    adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE.replace(declaration, "local changed", 1))
         for returns in ("", "return HS1\nreturn HS1"):
             with self.subTest(returns=returns):
                 with self.assertRaisesRegex(ValueError, "return structure"):
-                    functional.adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE.replace("return HS1", returns))
+                    adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE.replace("return HS1", returns))
 
     def test_validate_rejects_invalid_scientific_inputs(self) -> None:
         mutations = [
@@ -319,6 +321,7 @@ class FunctionalContractTests(unittest.TestCase):
             (project / "simion" / name).write_text("-- inert copy fixture\n", encoding="utf-8")
         vendor = Path(self.temporary.name) / "vendor_copy_fixture"
         fixture_paths = [repo / "common/multipole/simion_rf_drive.lua",
+                         repo / "common/simion/voltage_waveforms.lua",
                          repo / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
                          vendor / "examples/collision_hs1/collision_hs1.lua"]
         for path in fixture_paths:
@@ -352,6 +355,37 @@ class FunctionalContractTests(unittest.TestCase):
         project, vendor = self.make_prepare_fixture()
         with self.assertRaisesRegex(ValueError, "explicit coordinate"):
             functional.prepare(self.run, project, vendor, configuration_directory=project / "config")
+
+    def test_loaded_source_aliases_freeze_once_without_test_dependencies(self) -> None:
+        _, vendor = self.make_prepare_fixture()
+        with patch.dict(sys.modules, dict(
+                ip_functional_alias= functional,
+                ip_test_alias=sys.modules[__name__])):
+            # Prove prepare admits the helper before its loaded-source snapshot,
+            # even when another test has not already imported the analysis.
+            sys.modules.pop("common.analysis.population_moments", None)
+            functional.prepare(self.run, PROJECT, vendor)
+        code = self.run / 'inputs/code'
+        frozen = code / 'projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py'
+        self.assertEqual(frozen.read_bytes(), Path(functional.__file__).read_bytes())
+        self.assertTrue((code / 'common/simion/collision_hs1.py').is_file())
+        helper = code / 'common/analysis/population_moments.py'
+        self.assertEqual(helper.read_bytes(),
+                         (PROJECT.parents[1] / 'common/analysis/population_moments.py').read_bytes())
+        # -I excludes editable repository/cwd and PYTHONPATH import fallback.
+        program = (
+            "import json, pathlib, sys; "
+            "sys.path.insert(0, sys.argv[1]); "
+            "from common.analysis import population_moments as m; "
+            "assert pathlib.Path(m.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve()); "
+            "print(json.dumps(m.population_pair_moments([0., 2.], [3., 1.])))"
+        )
+        detached = subprocess.run([sys.executable, '-I', '-c', program, str(code)],
+                                  cwd=self.temporary.name, capture_output=True, text=True,
+                                  encoding='utf-8', timeout=60, check=True)
+        self.assertEqual(json.loads(detached.stdout),
+                         dict(variance_first=1., variance_second=1., covariance=-1., correlation=-1.))
+        self.assertFalse((code / 'projects/dual_pressure_rectilinear_ion_processor/tests/test_functional.py').exists())
 
     def test_prepare_preserves_source_identity_in_fly2_projection(self) -> None:
         """Synthetic source files test copying only; no vendor code is executed."""
@@ -396,7 +430,7 @@ class FunctionalContractTests(unittest.TestCase):
         self.assertEqual((self.run / "inputs/collision_hs1_original.lua").read_text(encoding="utf-8"),
                          HS1_SOURCE_FIXTURE)
         self.assertEqual((self.run / "simion/collision_hs1.lua").read_text(encoding="utf-8"),
-                         functional.adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE))
+                         adapt_hs1_for_repeat_fly(HS1_SOURCE_FIXTURE))
         adapter = functional.read_json(self.run / "inputs/collision_adapter.json")
         self.assertFalse(adapter["algorithm_changed"])
         self.assertEqual(adapter["role"], "hs1_repeat_fly_lifecycle_adapter")
@@ -474,8 +508,15 @@ class FunctionalContractTests(unittest.TestCase):
         code = ("from common.contracts import particle_count_policy as p; "
                 "print(p.POLICY_PATH.resolve()); "
                 "assert p.validate_standard_particle_count(100) == 100; "
+                "from common.contracts.frozen_inputs import freeze_file; "
+                "from pathlib import Path; "
+                "frozen = freeze_file(p.POLICY_PATH, Path('isolated_policy.json')); "
+                "assert frozen['source_path'] == str(p.POLICY_PATH.resolve()); "
                 "from common.simion import resource_scheduler, resource_profile, particle_batching; "
                 "assert resource_profile.PROFILE_ROLE == 'simion_resource_profile'; "
+                "from projects.dual_pressure_rectilinear_ion_processor.analysis import batching; "
+                "completion = batching.require_one_fly_completion(['status,Fly completed. 10 splats, 2.19 seconds']); "
+                "assert completion.splats == 10 and completion.elapsed_seconds == 2.19; "
                 "print('FROZEN_POLICY_PASS')")
         env = {**os.environ, "PYTHONPATH": str(closure), "PYTHONDONTWRITEBYTECODE": "1"}
         result = subprocess.run([sys.executable, "-B", "-c", code], cwd=self.run,
@@ -486,6 +527,7 @@ class FunctionalContractTests(unittest.TestCase):
         self.assertIn("FROZEN_POLICY_PASS", result.stdout)
         config = functional.read_json(self.run / "run_config.json")
         self.assertIn(str(frozen_policy), config["inputs"].values())
+        self.assertIn(str(closure / "common/simion/native_completion.py"), config["inputs"].values())
         resolved = functional.read_json(self.run / "inputs/resolved_model.json")
         self.assertEqual(resolved["numerical_boundaries"], {
             "schema_version": 2, "role": "native_numerical_observation_boundaries",

@@ -35,11 +35,7 @@ from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.plot_simion_tra
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-UNIFORM_RUNNER = PROJECT / "workflows" / "gas_assisted_transport" / "run_uniform_400pa_prototype.ps1"
-GAS_FIELD_RUNNER = PROJECT / "workflows" / "gas_assisted_transport" / "run_gas_field_prototype.ps1"
-COMSOL_FIELD_RUNNER = (
-    PROJECT / "workflows" / "gas_assisted_transport" / "run_comsol_field_prototype.ps1"
-)
+
 
 
 def load(path: Path) -> dict:
@@ -66,94 +62,6 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Dual-cone interface static tests failed", result.stderr)
         self.assertNotIn("PROJECT_GATE=PASS", result.stdout)
-
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
-    def test_c0_cache_and_refine_use_the_correct_host_stage(self) -> None:
-        runner = PROJECT / "workflows/gas_assisted_transport/run_c0_gem_smoke.ps1"
-        source = runner.read_text(encoding="utf-8")
-        block = source[source.index(". (Join-Path $repoRoot 'common/host_execution_lease.ps1')"):]
-        block = block.replace("(Join-Path $PSScriptRoot 'prepare.ps1')", "(Join-Path $fixtureDir 'prepare.ps1')")
-        snapshot = """
-$script:HostResourceStatePath=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
-function Get-HostResourceSnapshot {
- return @{complete=$true;unknown_process_ids=@();logical_processors=8;cpu_percent=0;
- total_memory_bytes=64GB;available_memory_bytes=32GB;io_pressure=$false;
- processes=@(@{pid=$PID;parent_pid=0;started='fixture-owner';memory_bytes=1MB})}
-}
-"""
-        block = block.replace("$hostLease=$null", snapshot + "$hostLease=$null", 1)
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "prepare.ps1").write_text("""
-param($OutputDir,$Mode,$SimionExe,$PythonExe)
-$dir=Join-Path $OutputDir 'solver/simion';New-Item -ItemType Directory -Force $dir|Out-Null
-foreach($suffix in @('#','0','1','2','3','11','12','21','22')){
- [IO.File]::WriteAllText((Join-Path $dir "dual_cone_tandem.pa$suffix"),'fixture')}
-$global:LASTEXITCODE=0
-""", encoding="utf-8")
-            (root / "python.ps1").write_text("""
-$script:HostResourceStatePath=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
-$script:HostResourcePolicyPath=Join-Path $env:C0_TEST_REPO 'common/host_resource_policy.json'
-if($args -contains 'publish'-and$env:C0_TEST_PARENT-ne'heavy'){
- if(@((Get-HostResourceStatus).records)[0].budget.heavy_stage){throw 'Publication retained refine permission'}}
-if($args -contains 'ensure'){Write-Output ('{"disposition":"'+$env:C0_TEST_CACHE+'"}')}
-$global:LASTEXITCODE=0
-""", encoding="utf-8")
-            (root / "simion.ps1").write_text("""
-$script:HostResourceStatePath=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
-$script:HostResourcePolicyPath=Join-Path $env:C0_TEST_REPO 'common/host_resource_policy.json'
-$operation=if($args -contains 'refine'){'refine'}else{'gem2pa'}
-$record=@((Get-HostResourceStatus).records)[0]
-$heavy=[bool]$record.budget.heavy_stage
-if($operation-eq'refine'){Assert-HostResourceHeavyStage}
-if($operation-eq'gem2pa'-and$heavy-and$env:C0_TEST_PARENT-ne'heavy'){throw 'gem2pa acquired heavy'}
-Add-Content -LiteralPath $env:C0_TEST_EVENTS -Value "$operation|$heavy"
-$global:LASTEXITCODE=if($operation-eq'refine'-and$env:C0_TEST_FAIL-eq'1'){1}else{0}
-""", encoding="utf-8")
-            for index, (cache, parent, fail) in enumerate((
-                ("hit", "none", False), ("miss", "none", False),
-                ("miss", "none", True), ("miss", "heavy", False),
-                ("miss", "light", False),
-            )):
-                with self.subTest(cache=cache, parent=parent, fail=fail):
-                    environment = {k: v for k, v in os.environ.items() if not k.startswith("MASS_SPECTROMETRY_HOST_")}
-                    events = root / f"events{index}.txt"
-                    environment.update({
-                        "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(root / f"state{index}.sqlite3"),
-                        "SIMULATION_PYTHON_EXE": sys.executable, "SIMULATION_COMPLETION_SOUND": "off",
-                        "C0_TEST_CACHE": cache, "C0_TEST_PARENT": parent,
-                        "C0_TEST_REPO": str(PROJECT.parents[1]),
-                        "C0_TEST_FAIL": "1" if fail else "0", "C0_TEST_EVENTS": str(events),
-                    })
-                    def quote(path: Path) -> str:
-                        return "'" + str(path).replace("'", "''") + "'"
-                    setup = (
-                        f"$ErrorActionPreference='Stop';$repoRoot={quote(PROJECT.parents[1])};$fixtureDir={quote(root)};"
-                        f"$output={quote(root / f'output{index}')};$python={quote(root / 'python.ps1')};"
-                        f"$SimionExe={quote(root / 'simion.ps1')};$cacheRoot={quote(root / 'cache')};"
-                        ". (Join-Path $repoRoot 'common/host_execution_lease.ps1');\n" + snapshot
-                        + "$parent=$null;if($env:C0_TEST_PARENT-ne'none'){$stage=if($env:C0_TEST_PARENT-eq'heavy'){'flight'}else{'prepare'};"
-                        "$parent=Enter-HostExecutionLease -Role SIMION -Stage $stage}\n$caught=$false;try{\n"
-                    )
-                    finish = """
-}catch{$caught=$true;Write-Output ('FAILURE='+$_.Exception.Message)}
-$expected=($env:C0_TEST_FAIL-eq'1'-or$env:C0_TEST_PARENT-eq'light')
-if($caught-ne$expected){throw 'Unexpected execution outcome'}
-$count=if($null-ne$parent){1}else{0}
-if(@((Get-HostResourceStatus).records).Count-ne$count){throw 'Leaked or released parent permission'}
-if($null-ne$parent){Exit-HostExecutionLease -Lease $parent}
-"""
-                    result = subprocess.run(
-                        [shutil.which("pwsh"), "-NoProfile", "-Command", setup + block + finish],
-                        cwd=PROJECT.parents[1], env=environment, capture_output=True,
-                        text=True, encoding="utf-8", errors="replace", timeout=60,
-                    )
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    lines = events.read_text(encoding="utf-8-sig").splitlines() if events.exists() else []
-                    expected = [] if cache == "hit" else [f"gem2pa|{'True' if parent == 'heavy' else 'False'}"]
-                    if cache == "miss" and parent != "light":
-                        expected.append("refine|True")
-                    self.assertEqual(lines, expected)
 
     def test_default_diagnostic_axial_reach_counts_unique_ions(self) -> None:
         tracks = {
@@ -284,52 +192,94 @@ if($null-ne$parent){Exit-HostExecutionLease -Lease $parent}
         )
         self.assertIn("trajectory_samples.csv", (PROJECT / "simion" / "prepare.py").read_text(encoding="utf-8"))
 
-    def test_gas_field_runner_reuses_common_iob_builder_and_real_simion_fly(self) -> None:
-        runner = GAS_FIELD_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("run_c0_gem_smoke.ps1", runner)
-        self.assertIn("build_simion_runtime_iob.lua", runner)
-        self.assertIn("--nogui --noprompt fly", runner)
-        self.assertIn("SDS_collision_gas_mass_amu", runner)
-        self.assertIn("common\\simion\\analyze_terminal_plane.py", runner)
-        self.assertIn("terminal_plane_metrics.json", runner)
-        self.assertIn("downstream_aperture_plate", runner)
-        self.assertIn("electric_field=$science.electric_field", runner)
-        self.assertIn("terminal_code_definitions", runner)
-        self.assertIn("left validated gas-field fluid support", runner)
-        self.assertIn("plot_simion_trajectory_projection.py", runner)
-        self.assertIn("prototype_run_report.json", runner)
-        self.assertIn("New-RunPackage", runner)
-        self.assertIn("Write-VerifiedRunManifest", runner)
-        self.assertIn("Complete-FailedRun", runner)
-        self.assertIn("Enter-HostExecutionLease -Role SIMION", runner)
-        self.assertIn("Enter-ArtifactWorkflowCapacitySession", runner)
-        self.assertIn("Update-ArtifactWorkflowCapacitySession", runner)
-        self.assertIn("Exit-ArtifactWorkflowCapacitySession", runner)
-        self.assertIn("-CapacityLedgerLifecycleEnabled", runner)
-        self.assertNotIn("Invoke-ArtifactCapacityGate", runner)
-        self.assertIn("Apply-RunArtifactRetention", runner)
-        self.assertNotIn("[string]$OutputDir", runner)
-
-    def test_field_specific_wrappers_delegate_to_one_simion_runner(self) -> None:
-        uniform = UNIFORM_RUNNER.read_text(encoding="utf-8")
-        comsol = COMSOL_FIELD_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("analysis.export_uniform_rear_gas_runtime", uniform)
-        self.assertIn("run_gas_field_prototype.ps1", uniform)
-        self.assertNotIn("--nogui --noprompt fly", uniform)
-        self.assertIn("build_gas_runtime.ps1", comsol)
-        compiler = (
-            PROJECT
-            / "workflows/gas_assisted_transport/build_gas_runtime.ps1"
-        ).read_text(encoding="utf-8")
+    def test_validated_comsol_gas_compilation_remains_available(self) -> None:
+        compiler = (PROJECT / "workflows/gas_assisted_transport/build_gas_runtime.ps1").read_text(encoding="utf-8")
         self.assertIn("verify_run_manifest.py", compiler)
         self.assertIn("--require-status success", compiler)
         self.assertIn("results\\gas_field_rz.csv", compiler)
         self.assertIn("results\\gas_field_metadata.json", compiler)
-        self.assertIn("run_gas_field_prototype.ps1", comsol)
-        self.assertNotIn("--nogui --noprompt fly", comsol)
 
 
 class GasPreparationTests(unittest.TestCase):
+    def test_c0_pure_preparation_keeps_fractional_geometry_and_no_pa_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "prepared"
+            receipt = prepare(output, mode="c0_gem_smoke")
+            self.assertEqual(receipt["mode"], "c0_gem_smoke")
+            self.assertEqual(receipt["collision_model"], "none")
+            self.assertFalse(receipt["qualified_evidence"])
+            gem = Path(receipt["inputs"]["gem"]["path"]).read_text(encoding="utf-8")
+            self.assertEqual(gem, render_gem(load(DEFAULT_RESOLVED), load(DEFAULT_NUMERICS)))
+            self.assertIn("surface=fractional", gem)
+            self.assertEqual(list(output.rglob("*.pa*")), [])
+            for name in ("resolved_geometry", "simion_solver_numerics", "ion_transport_science",
+                         "gas_field_interface", "rf_drive_kernel", "simion_program"):
+                record = receipt["inputs"][name]
+                self.assertEqual(set(record), {"source_path", "frozen_path", "sha256", "bytes"})
+                self.assertEqual(Path(record["frozen_path"]).read_bytes(), Path(record["source_path"]).read_bytes())
+            original_receipt = (output / "preparation_receipt.json").read_bytes()
+            with self.assertRaises(FileExistsError):
+                prepare(output, mode="c0_gem_smoke")
+            self.assertEqual((output / "preparation_receipt.json").read_bytes(), original_receipt)
+
+    def test_preparation_rejects_missing_selected_source_and_changed_copy(self) -> None:
+        module = "projects.dual_cone_tandem_quadrupole_ion_interface.simion.prepare"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch(module + ".PROGRAM", root / "missing.lua"):
+                with self.assertRaises(FileNotFoundError):
+                    prepare(root / "missing_source", mode="c0_gem_smoke")
+            copy_file = shutil.copyfile
+
+            def corrupt_copy(source: Path, target: Path) -> None:
+                copy_file(source, target)
+                content = target.read_bytes()
+                target.write_bytes(bytes([content[0] ^ 1]) + content[1:])
+
+            with mock.patch("common.contracts.frozen_inputs.shutil.copyfile", side_effect=corrupt_copy):
+                with self.assertRaisesRegex(AssertionError, "frozen input SHA-256 changed"):
+                    prepare(root / "changed_copy", mode="c0_gem_smoke")
+            self.assertFalse((root / "changed_copy/preparation_receipt.json").exists())
+
+    def test_preparation_executes_from_detached_sources_with_shared_freezer(self) -> None:
+        repo = PROJECT.parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory) / "snapshot"
+            for relative in ("common/contracts", "common/multipole", "common/ion_release", "common/simion",
+                             "projects/" + PROJECT.name + "/config", "projects/" + PROJECT.name + "/simion",
+                             "projects/" + PROJECT.name + "/analysis"):
+                shutil.copytree(repo / relative, snapshot / relative,
+                    ignore=lambda folder, names: [name for name in names
+                        if name == "__pycache__" or ((Path(folder)/name).is_file()
+                            and Path(name).suffix not in {".py", ".json", ".lua"})])
+            code = r"""
+from pathlib import Path
+from common.contracts import frozen_inputs
+from projects.dual_cone_tandem_quadrupole_ion_interface.simion import prepare as p
+from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.export_uniform_rear_gas_runtime import export_uniform_runtime
+assert Path(p.__file__).resolve().is_relative_to(Path.cwd())
+assert Path(frozen_inputs.__file__).resolve().is_relative_to(Path.cwd())
+c0 = p.prepare(Path('c0'), mode='c0_gem_smoke')
+export_uniform_runtime(Path('field.lua').resolve(), Path('manifest.json').resolve())
+sds = Path('sds'); sds.mkdir()
+for name in p.SDS_FILES:
+    (sds/name).write_text('inert fixture\n', encoding='utf-8')
+gas = p.prepare(Path('gas'), mode='gas_assisted_transport',
+                collision_sds_dir=sds, gas_field_manifest=Path('manifest.json'))
+for receipt in (c0, gas):
+    record = receipt['inputs']['resolved_geometry']
+    assert set(record) == {'source_path', 'frozen_path', 'sha256', 'bytes'}
+    assert Path(record['frozen_path']).read_bytes() == Path(record['source_path']).read_bytes()
+assert gas['inputs']['cylindrical_ion_source_receipt']['identity']['particle_count'] == 100
+assert not list(Path.cwd().rglob('*.pa*'))
+print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
+"""
+            result = subprocess.run([sys.executable, "-B", "-c", code], cwd=snapshot,
+                env={**os.environ, "PYTHONPATH": str(snapshot)}, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("DETACHED_DUAL_CONE_PREPARE=PASS MODES=2", result.stdout)
+
     def test_gas_assisted_mode_fails_before_creating_output_without_field(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "run"
@@ -408,6 +358,7 @@ class GasPreparationTests(unittest.TestCase):
             frozen = receipt["inputs"]["simion_official_collision_sds"]
             self.assertEqual(set(frozen), set(SDS_FILES))
             for record in frozen.values():
+                self.assertEqual(set(record), {"source_path", "frozen_path", "sha256", "bytes"})
                 self.assertEqual(file_sha256(Path(record["frozen_path"])), record["sha256"])
             source_receipt = receipt["inputs"]["cylindrical_ion_source_receipt"]["identity"]
             self.assertEqual(source_receipt["role"], "repository_ion_release")

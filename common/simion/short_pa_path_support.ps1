@@ -770,23 +770,3 @@ function Remove-IobSeedPlaceholderCompanions {
     retained_seed_iob=$true
   }
 }
-
-# Compatibility names for already-frozen project runners.  Despite the legacy
-# names these delegate to isolated copies; they never create hard links.
-function New-ShortPaHardLink {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$Source,
-    [Parameter(Mandatory)][string]$Destination
-  )
-  New-ShortPaCopy -Source $Source -Destination $Destination
-}
-
-function Remove-ShortPaHardLinkDirectory {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [string]$ExpectedNamePrefix='simion_pa_links_'
-  )
-  Remove-ShortPaCopyDirectory -Path $Path -ExpectedNamePrefix $ExpectedNamePrefix
-}

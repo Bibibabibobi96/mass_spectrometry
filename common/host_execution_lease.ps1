@@ -8,6 +8,20 @@ $script:HostResourcePolicyPath = Join-Path $PSScriptRoot 'host_resource_policy.j
 # every project workflow in the workspace.
 $script:HostResourceStatePath = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'artifacts\common\host_resources.sqlite3'
 
+function Resolve-HostResourceStatePath {
+  <# Admission and status must select the same absolute scheduler database. #>
+  param([string]$StatePath = '')
+  if (-not $StatePath) {
+    $StatePath = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) {
+      $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
+    } else { $script:HostResourceStatePath }
+  }
+  if (-not [IO.Path]::IsPathFullyQualified($StatePath)) {
+    throw 'Host resource state path must be absolute.'
+  }
+  return [IO.Path]::GetFullPath($StatePath)
+}
+
 function Get-HostResourceBudget {
   [CmdletBinding()]
   param([string]$Role = 'GATE', [string]$Stage = '', [string]$Profile = '')
@@ -95,6 +109,67 @@ namespace MassSpectrometry {
   return $null
 }
 
+function Get-HostResourceSnapshotParent {
+  <# Null means this parent table cannot bind a newer identity; zero means no recorded parent. #>
+  param(
+    [Parameter(Mandatory)][Collections.Generic.Dictionary[int,int]]$Parents,
+    [Parameter(Mandatory)][int]$ProcessId,
+    [Parameter(Mandatory)][string]$Started,
+    [Parameter(Mandatory)][long]$SnapshotStartedUtcTicks
+  )
+  [int]$parentId = 0
+  if (-not $Parents.TryGetValue($ProcessId, [ref]$parentId)) { return 0 }
+  if ([long]$Started -gt $SnapshotStartedUtcTicks) { return $null }
+  return $parentId
+}
+
+function Get-HostResourceProcessParents {
+  <# One native parent table per observation; no cross-sample process cache. #>
+    if ($null -eq ('MassSpectrometry.NativeMemoryStatus' -as [type])) {
+      Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace MassSpectrometry {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto)] public class NativeMemoryStatus {
+    public uint dwLength = (uint)Marshal.SizeOf(typeof(NativeMemoryStatus));
+    public uint dwMemoryLoad; public ulong ullTotalPhys; public ulong ullAvailPhys;
+    public ulong ullTotalPageFile; public ulong ullAvailPageFile; public ulong ullTotalVirtual;
+    public ulong ullAvailVirtual; public ulong ullAvailExtendedVirtual;
+    [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GlobalMemoryStatusEx([In, Out] NativeMemoryStatus status);
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct ProcessEntry {
+      public uint dwSize; public uint cntUsage; public uint th32ProcessID; public IntPtr th32DefaultHeapID;
+      public uint th32ModuleID; public uint cntThreads; public uint th32ParentProcessID;
+      public int pcPriClassBase; public uint dwFlags;
+      [MarshalAs(UnmanagedType.ByValTStr, SizeConst=260)] public string szExeFile;
+    }
+    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint processId);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool Process32First(IntPtr snapshot, ref ProcessEntry entry);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool Process32Next(IntPtr snapshot, ref ProcessEntry entry);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+    public static System.Collections.Generic.Dictionary<int,int> ParentProcessIds() {
+      var parents = new System.Collections.Generic.Dictionary<int,int>();
+      IntPtr snapshot=CreateToolhelp32Snapshot(0x00000002, 0);
+      if (snapshot == IntPtr.Zero || snapshot == new IntPtr(-1)) return parents;
+      try {
+        ProcessEntry entry=new ProcessEntry(); entry.dwSize=(uint)Marshal.SizeOf(typeof(ProcessEntry));
+        if (!Process32First(snapshot, ref entry)) return parents;
+        do { parents[(int)entry.th32ProcessID] = (int)entry.th32ParentProcessID; }
+        while (Process32Next(snapshot, ref entry));
+        return parents;
+      } finally { CloseHandle(snapshot); }
+    }
+  }
+}
+'@
+    }
+  $started=[DateTime]::UtcNow.Ticks
+  $parents=[MassSpectrometry.NativeMemoryStatus]::ParentProcessIds()
+  return [pscustomobject]@{
+    parents=$parents;complete=($parents.Count-gt0)
+    started_at_utc_ticks=$started
+  }
+}
+
 function Get-HostResourceSnapshot {
   <# Fresh OS observations; a missing snapshot blocks admission, never releases leases. #>
   try {
@@ -142,42 +217,9 @@ function Get-HostResourceSnapshot {
     # process and performance-counter access.  Use independent Win32/.NET
     # telemetry here; failure of either source still closes admission.
     Write-Verbose "CIM telemetry unavailable; using native fallback: $($_.Exception.Message)"
-    if ($null -eq ('MassSpectrometry.NativeMemoryStatus' -as [type])) {
-      Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-namespace MassSpectrometry {
-  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto)] public class NativeMemoryStatus {
-    public uint dwLength = (uint)Marshal.SizeOf(typeof(NativeMemoryStatus));
-    public uint dwMemoryLoad; public ulong ullTotalPhys; public ulong ullAvailPhys;
-    public ulong ullTotalPageFile; public ulong ullAvailPageFile; public ulong ullTotalVirtual;
-    public ulong ullAvailVirtual; public ulong ullAvailExtendedVirtual;
-    [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GlobalMemoryStatusEx([In, Out] NativeMemoryStatus status);
-    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct ProcessEntry {
-      public uint dwSize; public uint cntUsage; public uint th32ProcessID; public IntPtr th32DefaultHeapID;
-      public uint th32ModuleID; public uint cntThreads; public uint th32ParentProcessID;
-      public int pcPriClassBase; public uint dwFlags;
-      [MarshalAs(UnmanagedType.ByValTStr, SizeConst=260)] public string szExeFile;
-    }
-    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint processId);
-    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool Process32First(IntPtr snapshot, ref ProcessEntry entry);
-    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool Process32Next(IntPtr snapshot, ref ProcessEntry entry);
-    [DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
-    public static int ParentProcessId(int processId) {
-      IntPtr snapshot=CreateToolhelp32Snapshot(0x00000002, 0);
-      if (snapshot == IntPtr.Zero || snapshot == new IntPtr(-1)) return -1;
-      try {
-        ProcessEntry entry=new ProcessEntry(); entry.dwSize=(uint)Marshal.SizeOf(typeof(ProcessEntry));
-        if (!Process32First(snapshot, ref entry)) return -1;
-        do { if (entry.th32ProcessID == (uint)processId) return (int)entry.th32ParentProcessID; }
-        while (Process32Next(snapshot, ref entry));
-        return -1;
-      } finally { CloseHandle(snapshot); }
-    }
-  }
-}
-'@
-    }
+    $liveProcesses = [Diagnostics.Process]::GetProcesses()
+    $parentSnapshot = Get-HostResourceProcessParents
+    if(-not$parentSnapshot.complete){throw 'Native process ancestry telemetry is unavailable.'}
     $memory = [MassSpectrometry.NativeMemoryStatus]::new()
     if (-not [MassSpectrometry.NativeMemoryStatus]::GlobalMemoryStatusEx($memory)) {
       throw 'Native memory telemetry is unavailable.'
@@ -187,7 +229,9 @@ namespace MassSpectrometry {
     if (-not [double]::IsFinite($load) -or $load -lt 0 -or $load -gt 100) { throw 'Native CPU telemetry is invalid.' }
     $unknownProcessIds = [Collections.Generic.List[int]]::new()
     $definitelyExitedProcessIds = [Collections.Generic.List[int]]::new()
-    $processes = @(foreach ($process in [Diagnostics.Process]::GetProcesses()) {
+    # Capture the observed processes first, then enumerate their ancestry once.
+    # Never share this table across observations or attach it to a newer PID identity.
+    $processes = @(foreach ($process in $liveProcesses) {
       # Read the protected image independently of creation-time access. An
       # unreadable image remains ordinary work rather than a name-based exemption.
       $imagePath = $null
@@ -196,15 +240,17 @@ namespace MassSpectrometry {
       $isSystemConsoleHost = Test-HostResourceConsoleProcess -ImagePath $imagePath
       try {
         $started = $process.StartTime.ToUniversalTime().Ticks.ToString('D19')
-        $parent=[MassSpectrometry.NativeMemoryStatus]::ParentProcessId([int]$process.Id)
-        if($parent-lt0){$parent=0}
+        $parent = Get-HostResourceSnapshotParent -Parents $parentSnapshot.parents -ProcessId ([int]$process.Id) `
+          -Started $started -SnapshotStartedUtcTicks $parentSnapshot.started_at_utc_ticks
+        if ($null -eq $parent) { $unknownProcessIds.Add([int]$process.Id); continue }
         @{ pid=[int]$process.Id; parent_pid=$parent; started=$started
            memory_bytes=[int64]$process.WorkingSet64; is_system_console_host=$isSystemConsoleHost }
       } catch {
         $started=Get-HostResourceNativeProcessCreationTicks -ProcessId ([int]$process.Id)
         if($null-ne$started){
-          $parent=[MassSpectrometry.NativeMemoryStatus]::ParentProcessId([int]$process.Id)
-          if($parent-lt0){$parent=0}
+          $parent = Get-HostResourceSnapshotParent -Parents $parentSnapshot.parents -ProcessId ([int]$process.Id) `
+            -Started $started -SnapshotStartedUtcTicks $parentSnapshot.started_at_utc_ticks
+          if ($null -eq $parent) { $unknownProcessIds.Add([int]$process.Id); continue }
           @{ pid=[int]$process.Id; parent_pid=$parent; started=$started
              memory_bytes=[int64]$process.WorkingSet64; is_system_console_host=$isSystemConsoleHost }
           continue
@@ -364,11 +410,7 @@ function Enter-HostResourceStage {
   )
   $Budget = $Budget.Clone()
   $Budget.heavy_stage = (Get-HostResourceBudget -Role $Role -Stage $Stage).heavy_stage
-  if (-not $StatePath) {
-    $StatePath = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) {
-      $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH
-    } else { $script:HostResourceStatePath }
-  }
+  $StatePath = Resolve-HostResourceStatePath -StatePath $StatePath
   $inherited = -not [string]::IsNullOrWhiteSpace($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN)
   $request = if ($inherited) {
     @{operation='inherit'; token=$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN;role=$Role;budget=$Budget}
@@ -446,19 +488,10 @@ function Register-HostResourceProcess {
     operation='register';token=$Lease.token;process_id=$ProcessId
   }
   $registered=@($record.processes|Where-Object{[int]$_.pid-eq$ProcessId})
-  # A scheduler refresh may report the same live process twice while merging
-  # discovery and registration.  One (pid, started) identity remains one
-  # process; distinct or incomplete identities still fail closed.
-  $identities=[ordered]@{}
-  foreach($candidate in $registered){
-    $started=[string]$candidate.started
-    $identity="${ProcessId}:$started"
-    if(-not$identities.Contains($identity)){$identities[$identity]=$candidate}
-  }
-  if($identities.Count-ne1-or[string]::IsNullOrWhiteSpace([string](@($identities.Values)[0].started))){
+  if($registered.Count-ne1-or[string]::IsNullOrWhiteSpace([string]$registered[0].started)){
     throw 'Scheduler did not return one exact registered work-process identity.'
   }
-  $Lease.registered_work_processes[[string]$ProcessId]=[string](@($identities.Values)[0].started)
+  $Lease.registered_work_processes[[string]$ProcessId]=[string]$registered[0].started
   return $Lease
 }
 
@@ -505,7 +538,8 @@ function Exit-HostResourceStage {
 }
 
 function Get-HostResourceStatus {
-  param([string]$StatePath = $script:HostResourceStatePath)
+  param([string]$StatePath = '')
+  $StatePath = Resolve-HostResourceStatePath -StatePath $StatePath
   return Invoke-HostResourceTransaction -StatePath $StatePath -Request @{operation='status'}
 }
 

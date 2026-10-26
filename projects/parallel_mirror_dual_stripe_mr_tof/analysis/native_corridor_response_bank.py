@@ -188,6 +188,7 @@ def write_response_bank_receipt(directory: Path) -> dict[str, Any]:
             for identifier in range(1, 9)
         ],
         directory / RECEIPT_NAME,
+        source_directory=directory,
     )
 
 

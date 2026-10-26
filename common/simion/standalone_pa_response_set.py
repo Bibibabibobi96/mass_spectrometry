@@ -2,8 +2,8 @@
 
 The build stage first writes a receipt that binds each native ``.paN`` source
 to a newly exported standalone ``.pa`` object.  Cache publication then includes
-that receipt, every source, and every standalone output in its ordinary file
-inventory.  This two-stage order avoids a receipt/manifest hash cycle while
+that receipt and every standalone output in its ordinary file inventory.
+Native sources are build provenance and need not remain runtime payloads.  This two-stage order avoids a receipt/manifest hash cycle while
 still making the immutable generation manifest the byte authority for all
 runtime inputs.
 """
@@ -22,7 +22,7 @@ from common.contracts.file_identity import file_sha256
 from common.simion.cache_generation import _flush_writable_source, verify_immutable_payload_record
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ROLE = "simion_standalone_pa_response_set"
 POLICY_ID = "new_pa_object_export_surface_none_v1"
 SHA256 = re.compile(r"^[0-9A-Fa-f]{64}$")
@@ -138,6 +138,7 @@ def write_standalone_pa_response_set(
     exports: Sequence[ResponseExport],
     receipt_path: str | Path,
     *,
+    source_directory: str | Path,
     policy_id: str = POLICY_ID,
     _owner_inventory: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -152,6 +153,9 @@ def write_standalone_pa_response_set(
         raise StandalonePaResponseSetError(
             f"standalone response directory is missing: {root}"
         )
+    source_root = Path(source_directory)
+    if not source_root.is_dir():
+        raise StandalonePaResponseSetError(f"native response source directory is missing: {source_root}")
     exporter_path = Path(exporter)
     exporter_record = _file_record(exporter_path)
     destination = Path(receipt_path)
@@ -173,7 +177,7 @@ def write_standalone_pa_response_set(
         {"schema_version": 1, "files": list(_owner_inventory)}
     )
 
-    def record(name: str) -> dict[str, Any]:
+    def record(root: Path, name: str) -> dict[str, Any]:
         path = root / name
         if indexed is None:
             _flush_writable_source(path)
@@ -192,8 +196,8 @@ def write_standalone_pa_response_set(
         response_records.append(
             {
                 "response_id": export.response_id,
-                "source": record(export.source_name),
-                "standalone": record(export.standalone_name),
+                "source": record(source_root, export.source_name),
+                "standalone": record(root, export.standalone_name),
             }
         )
     receipt = {
@@ -352,6 +356,9 @@ def validate_standalone_pa_response_set(
         }:
             raise StandalonePaResponseSetError("standalone response entry fields differ")
         source = _receipt_record(value["source"], role="native response source")
+        retained_source = records.get(source["name"].lower())
+        if retained_source is not None and retained_source != source:
+            raise StandalonePaResponseSetError("retained native response source identity differs from receipt")
         standalone = _receipt_record(
             value["standalone"], role="standalone response output"
         )
@@ -376,16 +383,9 @@ def validate_standalone_pa_response_set(
     if expected_ids != tuple(export.response_id for export in normalized_exports):
         raise StandalonePaResponseSetError("standalone response ids differ from expected set")
 
-    for export, (source, standalone) in zip(
+    for export, (_, standalone) in zip(
         normalized_exports, normalized_receipt_records, strict=True
     ):
-        _verify_generation_file(
-            root,
-            records,
-            source,
-            role=f"native response {export.response_id}",
-            inventory_is_verified=inventory_is_verified,
-        )
         verified = _verify_generation_file(
             root,
             records,

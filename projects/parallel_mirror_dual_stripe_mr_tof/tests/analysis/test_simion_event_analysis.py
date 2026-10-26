@@ -929,7 +929,8 @@ class SimionEventAnalysisTest(unittest.TestCase):
             output = root / "summary.json"
             event = ("MRTOF_EVENT terminal ion=1 splat=-1 t_us=100 turns=2 x_mm=0 y_mm=0 z_mm=0 "
                      "vx_mm_us=0 vy_mm_us=0 vz_mm_us=0 central_crossings=2\n")
-            for suffix, expected_code in (("status,Fly completed. 1 splats, 1 seconds\n", 0), ("", 1)):
+            for suffix, expected_code in (("status,Fly completed. 1 splats, 1 seconds\n", 0),
+                                          ("status,Fly completed.\n", 1), ("", 1)):
                 log.write_text(event + suffix, encoding="utf-8")
                 result = subprocess.run([sys.executable, "-m",
                     "projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis",

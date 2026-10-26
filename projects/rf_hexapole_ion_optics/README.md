@@ -15,7 +15,7 @@
 项目身份见 [project.json](config/project.json)；机械、电气、源、数值和资格合同统一由
 [PROJECT](docs/PROJECT.md)导航。共享编译与运行方法见
 [公共多极杆入口](../../common/multipole/README.md)，跨器件连接见
-[RF 多极杆→oaTOF integration](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/README.md)。
+[统一装配与物理工作流](../../integrations/README.md)。
 
 ## 执行入口
 

@@ -29,7 +29,7 @@
 | SIMION 离子输运物理 | [`config/ion_transport_science.json`](config/ion_transport_science.json) |
 | N=100 圆柱离子释放 | [`config/cylindrical_ion_source.json`](config/cylindrical_ion_source.json)，由 `common.ion_release` 物化和签收 |
 | SIMION 数值 | [`config/simion_solver_numerics.json`](config/simion_solver_numerics.json) |
-| 已注册计划级执行能力 | [`config/execution_profiles.json`](config/execution_profiles.json) |
+| 已注册 COMSOL 计划级执行能力 | [`config/execution_profiles.json`](config/execution_profiles.json) |
 
 ## 工作流入口
 
@@ -37,10 +37,10 @@
 |---|---|
 | 几何新鲜度 | `python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.resolve_geometry --check` |
 | 计算气流、导出和校验 | [COMSOL 实施说明](docs/COMSOL.md#运行) |
-| 消费 COMSOL 场进行飞行 | [run_comsol_field_prototype.ps1](workflows/gas_assisted_transport/run_comsol_field_prototype.ps1) |
+| SIMION 输运当前阻断及纯准备 | [SIMION 实施说明](docs/SIMION.md#当前执行阻断) |
 | 规定均匀场对照／GEM smoke | [SIMION 实施说明](docs/SIMION.md) |
 
-两种气体来源复用同一 Fly 核心，并以显式 manifest 交接；当前注册能力与实际原型证据的区别见
+SIMION 科学准备、GEM、源和 Fly Lua 保留；fractional PA 公共隔离尚不支持新执行，因此四个旧原生运行入口及 SIMION 执行 profile 已退役。历史原型证据与当前执行边界见
 [PROJECT](docs/PROJECT.md#当前资格)。已退役 Python 压力—阻尼积分器只从历史索引追溯。
 
 ## 目录职责

@@ -263,6 +263,7 @@ class RoundRodGeometryTest(unittest.TestCase):
                     resolved["segmentation"]["segmented_rod_array"],
                     indent="  ",
                     significant_digits=12,
+                    electrode_ids=None,
                 )
                 local = simion_geometry._render_local_segmented_rod_array_gem(
                     resolved["segmentation"]["segmented_rod_array"],

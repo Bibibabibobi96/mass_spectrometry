@@ -15,6 +15,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.corridor_field_provide
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import build_static_c0_gem
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import _record, load_binding
 from common.contracts.verify_run_manifest import verify_record
+from common.contracts.write_run_manifest import file_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.standalone_pa_composition import PaHeader
 
 
@@ -37,6 +38,115 @@ class NativeStaticProviderTest(unittest.TestCase):
         return dict(schema_version=1, role=p.ROLE, numerical_contract_path=str(self.contract_path),
                     source_binding_path=str(self.root/"binding.json"), source_field_manifest=self.source["manifest"],
                     collision_overlay_update=update)
+
+    def test_real_native_input_guards_precede_validation_and_reject_missing_or_bad_headers(self):
+        import shutil
+        import subprocess
+        import sys
+        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
+        powershell = shutil.which("pwsh")
+        if powershell is None:
+            self.skipTest("PowerShell 7 required")
+        fields = self.root / "actual_fields"
+        fields.mkdir()
+        helper = IonProcessorNativeBindingTest()
+        descriptor, source_path, owner = helper.fixture(fields, detector_box=[0,0,0,1,1,1])
+        for index, instance in enumerate(descriptor["instances"][1:]):
+            header = PaHeader(-2,1,100000,*( [11,11,11] if index == 0 else [3,3,3]),1,1,1,1)
+            Path(instance["pa_path"]).write_bytes(header.pack()+b"\0"*(header.node_count*8))
+        helper.seal(fields, owner)
+        run = self.root / "guarded_overlay"
+        (run / "inputs").mkdir(parents=True)
+        (run / "inputs/source_binding.json").write_bytes(source_path.read_bytes())
+        patch_plan = dict(box_mm=[0,-1,-4,1,1,-2], priority_probes=[
+            dict(point_mm=[.5,0,-3], expected_instance=5),
+            dict(point_mm=[.5,.9,-3], expected_instance=5),
+            dict(point_mm=[.5,1.1,-3], expected_instance=2)])
+        plan = dict(operation="collision_overlay", analyzer_collision_patch_build=patch_plan)
+        plan_path = run / "inputs/plan.json"
+        p.write_json(plan_path, plan)
+        original_open = Path.open
+        def no_payload_open(path, *args, **kwargs):
+            if path.name.endswith((".pa", ".pa-surf")):
+                raise AssertionError("Native input selection read PA bytes before guards")
+            return original_open(path, *args, **kwargs)
+        # This is the real loader/owner chain, without the class's old source mocks.
+        with patch.object(p, "load_binding", wraps=load_binding), patch.object(Path, "open", no_payload_open):
+            actual_inputs = p.native_input_binding(plan, run)
+        self.assertEqual(len(actual_inputs["instances"]), 3)
+        runner = Path(__file__).resolve().parents[2] / "simion/run_native_static_field_provider.ps1"
+        text = runner.read_text()
+        start = text.index("    $nativeInputs=Invoke-RunToolRootContext")
+        block = text[start:text.index("    foreach($name in @('frozen_input','resolved_geometry'))", start)]
+        script = run / "guarded_native_inputs.ps1"
+        script.write_text(r"""
+param($python,$repo,$RunDirectory,$planPath)
+$ErrorActionPreference='Stop';$isComposition=$false
+$overlayGuards=[Collections.Generic.List[IDisposable]]::new()
+$script:calls=0
+function Invoke-RunToolRootContext {param($RepoRoot,$Operation)
+ $script:calls++
+ if($script:calls-eq2){
+  if($overlayGuards.Count-lt3){throw 'Actual validation preceded payload guards'}
+  foreach($stream in $overlayGuards){
+   $blocked=$false
+   try{$writer=[IO.File]::Open($stream.Name,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None);$writer.Dispose()}catch [IO.IOException]{$blocked=$true}
+   if(-not$blocked){throw 'Native header validation lacked a read guard'}
+  }
+ }
+ $env:PYTHONPATH=$repo
+ & $Operation
+}
+try {
+""" + block + r"""
+ 'NATIVE_VENDOR_BOUNDARY_REACHED'
+} finally {foreach($stream in $overlayGuards){$stream.Dispose()}}
+""", encoding="utf-8")
+        carrier = Path(descriptor["instances"][1]["pa_path"])
+        original = carrier.read_bytes()
+        for case in ("valid", "wrong_header", "missing"):
+            if case == "wrong_header":
+                carrier.write_bytes(b"BAD!"+original[4:])
+                helper.seal(fields, owner)
+            elif case == "missing":
+                carrier.unlink()
+            completed = subprocess.run([powershell,"-NoProfile","-File",str(script),sys.executable,
+                str(Path(__file__).resolve().parents[4]),str(run),str(plan_path)],
+                cwd=run,capture_output=True,text=True,encoding="utf-8",timeout=30,check=False)
+            output = completed.stdout + completed.stderr
+            with self.subTest(case=case):
+                if case == "valid":
+                    self.assertEqual(completed.returncode,0,output)
+                    self.assertIn("NATIVE_VENDOR_BOUNDARY_REACHED",output)
+                else:
+                    self.assertNotEqual(completed.returncode,0,output)
+                    self.assertNotIn("NATIVE_VENDOR_BOUNDARY_REACHED",output)
+            carrier.write_bytes(original)
+            helper.seal(fields, owner)
+
+    def test_overlay_plan_and_prepare_do_not_read_pa_before_actual_validation(self):
+        request = self.overlay_fixture()
+        p.write_json(Path(request["source_field_manifest"]), dict(status="success", outputs=[]))
+        original_open = Path.open
+        def no_payload_open(path, *args, **kwargs):
+            if path.suffix.lower() == ".pa" or path.name.endswith(".pa-surf"):
+                raise AssertionError("PA opened before the native input guard")
+            return original_open(path, *args, **kwargs)
+        with patch.object(Path, "open", no_payload_open):
+            plan = p.compile_request(request)
+            run = self.root / "metadata_prepare"
+            (run / "inputs").mkdir(parents=True)
+            for name, source in plan["inputs"].items():
+                (run / "inputs" / (name+Path(source).suffix)).write_bytes(Path(source).read_bytes())
+            p.prepare_run(plan, run)
+        # Header-dependent coverage is checked at actual use, never skipped.
+        carrier = Path(self.source["instances"][1]["pa_path"])
+        raw = carrier.read_bytes()
+        carrier.write_bytes(b"bad")
+        with self.assertRaises(ValueError):
+            p.verify_collision_overlay_support(self.source, plan["analyzer_collision_patch_build"])
+        carrier.write_bytes(raw)
+        p.verify_collision_overlay_support(self.source, plan["analyzer_collision_patch_build"])
 
     def test_collision_overlay_compiles_only_same_csg_occupancy_and_no_parent(self):
         request = self.overlay_fixture()
@@ -84,8 +194,14 @@ class NativeStaticProviderTest(unittest.TestCase):
                 value["collision_overlay_update"]["priority_probes"][-1]["point_mm"][1] = 5
             else:
                 value["candidate_voltages_v"] = request.get("candidate_voltages_v", {})
-            with self.subTest(mutation=mutation), patch.object(p, "load_binding", return_value=source), self.assertRaises(ValueError):
-                p.compile_request(value)
+            with self.subTest(mutation=mutation), patch.object(p, "load_binding", return_value=source):
+                if mutation == "ip_overlap":
+                    plan = p.compile_request(value)
+                    with self.assertRaises(ValueError):
+                        p.verify_collision_overlay_support(source, plan["analyzer_collision_patch_build"])
+                else:
+                    with self.assertRaises(ValueError):
+                        p.compile_request(value)
 
     def test_collision_overlay_loader_preserves_materialization_and_checks_all_new_assets(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis import static_field_binding as b
@@ -144,8 +260,15 @@ class NativeStaticProviderTest(unittest.TestCase):
             # Even a fresh overlay owner seal cannot authorize changed source bytes,
             # a new CSG expression, a Refine or the wrong actual native grid.
             seal()
-            with self.subTest(mutation=mutation), patch.object(b, "_load_native_materialized", return_value=self.source), self.assertRaises((AssertionError, ValueError)):
-                b.load_binding(path)
+            with self.subTest(mutation=mutation), patch.object(b, "_load_native_materialized", return_value=self.source):
+                if mutation in ("header", "refinable"):
+                    # Metadata parsing consumes the sealed plan, not the PA.
+                    b.load_binding(path)
+                    actual = p.collision_pa_header(pa)
+                    self.assertTrue(actual.raw_mirror & 7 != 1 or not actual.raw_mirror & p.COLLISION_NOTREFINABLE_FLAG)
+                else:
+                    with self.assertRaises((AssertionError, ValueError)):
+                        b.load_binding(path)
             target.write_bytes(before)
             seal()
 
@@ -177,6 +300,7 @@ class NativeStaticProviderTest(unittest.TestCase):
             surface.write_bytes(b"fractional")
             level = {"manifest": str(directory / "run_manifest.json"),
                      "native_solver_numerics": {"refine_stopping": "contract_convergence", "convergence_v": 1e-5},
+                     "records": {"surface": file_record(surface)},
                      "sources": {"numerical_plan": str(numerical), "surface": str(surface),
                                  "scalar_pa": str(directory / "static.pa"),
                                  "geometry_authority": str(directory / "geometry.json"),
@@ -554,6 +678,41 @@ class NativeStaticProviderTest(unittest.TestCase):
         p.write_json(self.contract_path, {"simion": {}})
         with self.assertRaisesRegex(ValueError, "Refine profile"):
             p.compile_request(self.request)
+
+    def test_explicit_skipped_point_is_compiled_frozen_and_tamper_rejected(self):
+        self.contract["simion"]["numerical_profiles"]["native_static_field"]["refine"]["skipped_point"] = False
+        p.write_json(self.contract_path, self.contract)
+        plan = p.compile_request(self.request)
+        self.assertEqual(plan["refine_options"], dict(convergence=1e-5, skipped_point=False))
+        self.assertIs(plan["refine_skipped_point"], False)
+        self.assertTrue(all(level["refine_skipped_point"] is False for level in plan["levels"].values()))
+        run = self.root / "explicit_strategy"
+        (run / "inputs").mkdir(parents=True)
+        p.write_json(run / "inputs/numerical_contract.json", self.contract)
+        p.prepare_run(plan, run)
+        for label in plan["levels"]:
+            self.assertIs(p.read(run / "inputs" / (label+"_plan.json"))["refine_skipped_point"], False)
+        for label in (None, "parent", "window", "options"):
+            altered = copy.deepcopy(plan)
+            if label == "options":
+                altered["refine_options"]["skipped_point"] = 0
+            else:
+                selected = altered if label is None else altered["levels"][label]
+                selected["refine_skipped_point"] = True
+            rejected = self.root / ("bad_strategy_"+str(label))
+            (rejected / "inputs").mkdir(parents=True)
+            p.write_json(rejected / "inputs/numerical_contract.json", self.contract)
+            with self.subTest(label=label), self.assertRaisesRegex(ValueError, "stopping"):
+                p.prepare_run(altered, rejected)
+            self.assertFalse((rejected / "simion").exists())
+
+    def test_explicit_skipped_point_disallows_old_default_pure_response(self):
+        self.contract["simion"]["numerical_profiles"]["native_static_field"]["refine"]["skipped_point"] = False
+        p.write_json(self.contract_path, self.contract)
+        request = dict(self.request, response_axis="p1")
+        request.pop("candidate_voltages_v")
+        with self.assertRaisesRegex(ValueError, "numerical|numerics|stopping"):
+            p.compile_request(request)
 
     def test_new_generation_rejects_legacy_pitch_without_rounding_or_mutating_source(self):
         path = Path(self.source["refinement_windows"][0]["sources"]["numerical_plan"])
@@ -1419,6 +1578,63 @@ class IonProcessorFineResponseReuseTest(unittest.TestCase):
             p.compose_run(plan, output)
             path = IonProcessorResponseProviderTest.publish(self, helper, output, plan)
             self.assertEqual(load_binding(path)["refinement_windows"][0]["grid"], source["refinement_windows"][0]["grid"])
+
+
+class RefinedPayloadPublicationTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        (self.root / "results").mkdir()
+        self.plan = dict(operation="refine", execution_order=["parent", "window_0"],
+                         levels=dict(parent={}, window_0={}))
+        self.header = PaHeader(-2, 1, 100., 2, 2, 2, 1, .1, .1, .1)
+        for label in self.plan["execution_order"]:
+            path = self.payload_path(label)
+            path.parent.mkdir(parents=True)
+            # Encoded negative electrode -50 V is raw150 with max_voltage100.
+            path.write_bytes(self.header.pack() + struct.pack('<8d', 0., 1., -2., 150., 0., 2., -1., 0.))
+
+    def payload_path(self, label):
+        return self.root / "simion" / label / ("c0_static.pa" if label == "parent" else "c0_local.pa")
+
+    def invoke_binding(self):
+        with patch('sys.argv', ["provider", "--plan", str(self.root / "plan.json"),
+                               "--run-directory", str(self.root), "--binding"]), patch.object(p, "read", return_value=self.plan):
+            p.main()
+
+    def test_binding_publication_records_complete_new_refine_validation(self):
+        with patch.object(p, "binding_spec", return_value={"role": "fixture_binding"}):
+            self.invoke_binding()
+        receipt = json.loads((self.root / "results/pa_payload_validation.json").read_text())
+        self.assertEqual(set(receipt["levels"]), {"parent", "window_0"})
+        self.assertTrue(all(row["finite_nodes"] == row["expected_nodes"] == 8 for row in receipt["levels"].values()))
+        self.assertTrue((self.root / "results/field_binding.json").is_file())
+
+    def test_invalid_new_refine_blocks_binding_publication(self):
+        for value in (float('nan'), float('inf'), -float('inf'), -101., 301.):
+            with self.subTest(value=value):
+                self.payload_path("window_0").write_bytes(self.header.pack() + struct.pack('<8d', *([0.]*7 + [value])))
+                with patch.object(p, "binding_spec", side_effect=AssertionError('invalid PA reached publication')):
+                    with self.assertRaisesRegex(ValueError, 'payload validation failed'):
+                        self.invoke_binding()
+                self.assertFalse((self.root / "results/field_binding.json").exists())
+                self.assertFalse((self.root / "results/pa_payload_validation.json").exists())
+
+    def test_reused_sealed_level_is_not_scanned(self):
+        self.plan["levels"]["parent"]["reuse_source"] = {"pa_path": str(self.payload_path("parent"))}
+        self.payload_path("parent").write_bytes(b"sealed source outside this new-output check")
+        receipt = p.validate_refined_field_payloads(self.plan, self.root)
+        self.assertEqual(receipt["reused_levels"], ["parent"])
+        self.assertEqual(set(receipt["levels"]), {"window_0"})
+
+    def test_composition_publication_does_not_rescan_validated_output(self):
+        self.plan["operation"] = "compose"
+        with patch.object(p, "validate_refined_field_payloads", side_effect=AssertionError('duplicate composition scan')):
+            with patch.object(p, "binding_spec", return_value={"role": "fixture_binding"}):
+                self.invoke_binding()
+        self.assertFalse((self.root / "results/pa_payload_validation.json").exists())
+        self.assertTrue((self.root / "results/field_binding.json").is_file())
 
 
 if __name__ == "__main__":

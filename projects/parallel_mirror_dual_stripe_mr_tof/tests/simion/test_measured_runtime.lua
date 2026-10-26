@@ -25,6 +25,7 @@ local priority={role='mrtof_native_corridor_iob_priority_contract',schema_versio
 local original_loadfile,original_print=loadfile,print
 local scalar_calls=0
 loadfile=function(path)
+  if path=='virtual/source.voltage_waveforms.lua' then return original_loadfile(repo..'/common/simion/voltage_waveforms.lua') end
   if path=='virtual/source.operating_point.lua' then return function() return point end end
   if path=='virtual/source.priority.lua' then return function() return priority end end
   if path=='virtual/source.scalar_field_adapter.lua' then return function() return function() return function() scalar_calls=scalar_calls+1 end end end end

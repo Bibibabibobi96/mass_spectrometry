@@ -1,4 +1,4 @@
-"""Internal compilation of a frozen measured-source trial for the existing runner."""
+"""MR physical preparation consumed by the root prepared-joint workflow."""
 from __future__ import annotations
 
 import json
@@ -11,18 +11,23 @@ import sys
 from itertools import zip_longest
 from typing import Any
 
-from common.contracts.verify_run_manifest import verify_record
+from common.contracts.frozen_inputs import freeze_file
+from common.contracts.component_particle_state import load_component_particle_state_csv
+from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record
+from common.integration.resolve_assembly import derive_assembly_scope
+from integrations.workflows.accelerator_interface.prepare import verified_preparation_reference
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import (
-    RUNTIME_LUA, _rows, materialize_measured_source_slice, materialize_centroid_probe,
+    RUNTIME_LUA, materialize_measured_source_slice, materialize_centroid_probe,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
-    ION_PROCESSOR, freeze_file, verified_reference, validate_execution_contract,
+    ION_PROCESSOR, validate_execution_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, native_response_operator
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, collision_workbench_layout
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_connection, resolve_ip_mr_transform
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, collision_workbench_layout, render_measured_operating_point
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import resolve_trajectory_recording
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import FLY_COMPLETED
+from common.simion.native_completion import parse_fly_completed_line
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -109,11 +114,32 @@ def _native_projection(binding: dict[str, Any]) -> dict[str, Any]:
     result.update(accelerator_provider=ION_PROCESSOR, assembly_scope="full_c0_ion_processor_replacement",
                   analyzer_voltages_v=binding["authority"]["analyzer_electrode_voltages_v"],
                   collision_pa_path=binding["instances"][1]["pa_path"],
+                  collision_geometry_pa_paths=[item["pa_path"] for item in binding["instances"]
+                                               if item["role"] in ("ion_processor_collision", "detector")],
                   refinement_windows=[dict(level(item), name=item["name"], active_box_mm=item["active_box_mm"])
                                       for item in binding["refinement_windows"]])
     if binding.get("collision_overlay"):
         result["collision_overlay"] = collision_workbench_layout(binding)["priority"]["collision_overlay"]
     return result
+
+
+def _prepared_assembly(prepared_run: Path, parent: dict, manifest: dict) -> tuple[dict, dict, dict]:
+    """Inherit only the current parent and range already frozen by preparation."""
+    sources = {}
+    for name in ("composition_plan", "accelerator_request"):
+        record = parent["inputs"].get(name)
+        if record is None:
+            raise ValueError("Prepared joint execution requires the current frozen parent plan and matching request")
+        path = verified_preparation_reference(prepared_run, "inputs/" + name + ".json", manifest=manifest)
+        if record_path(record, base_dir=prepared_run) != path.resolve():
+            raise ValueError("Prepared assembly input differs from its canonical frozen path: " + name)
+        sources[name] = (path, record)
+    request = _read(sources["accelerator_request"][0])
+    if request.get("schema_version") != 3 or request.get("role") != "mrtof_ion_processor_matching_request":
+        raise ValueError("Prepared joint execution requires the current schema-3 matching request")
+    plan = derive_assembly_scope(_read(sources["composition_plan"][0]), local_scope=request.get("local_scope"))
+    connection = resolve_ip_mr_connection(plan)
+    return plan, connection, sources
 
 
 def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
@@ -124,7 +150,8 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         raise ValueError("Unsupported prepared source mode")
     if source_mode == "centroid_probe" and reference_flight_run is not None:
         raise ValueError("Constructed probe is not the original population equivalence cohort")
-    receipt_path = verified_reference(prepared_run, "results/accelerator_interface_preparation.json")
+    prepared_manifest = _read(prepared_run / "run_manifest.json")
+    receipt_path = verified_preparation_reference(prepared_run, "results/accelerator_interface_preparation.json", manifest=prepared_manifest)
     parent = _read(receipt_path)
     if (parent.get("selected_provider") != ION_PROCESSOR
             or parent.get("status") != "workbench_ready_no_joint_flight"):
@@ -132,6 +159,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     joint = parent["joint_workbench_binding"]
     if not joint["field_assembly_verified"] or not joint["measured_source_matches_workpoint"]:
         raise ValueError("Joint source/field identity is unverified")
+    plan, connection, assembly_sources = _prepared_assembly(prepared_run, parent, prepared_manifest)
     expected_contract_record = parent["inputs"]["reference_trajectory"]
     verify_record("prepared trajectory contract", expected_contract_record)
     expected_contract = _read(Path(expected_contract_record["path"]))
@@ -147,18 +175,22 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     results, inputs = run_directory / "results", run_directory / "inputs"
     results.mkdir(parents=True, exist_ok=True)
     inputs.mkdir(parents=True, exist_ok=True)
+    assembly_records = {}
+    for name, (path, record) in assembly_sources.items():
+        target = inputs / ("parent_composition_plan.json" if name == "composition_plan" else "accelerator_request.json")
+        if target.exists():
+            raise FileExistsError(target)
+        shutil.copyfile(path, target)
+        verify_record("frozen prepared assembly " + name, {**record, "path": str(target)})
+        assembly_records[name] = dict(record, path=str(target.resolve()), source_path=str(path.resolve()))
     contract_copy = inputs / "trajectory_contract.json"
     freeze_file(contract_path, contract_copy)
-    reference_manifest = parent["inputs"]["reference_manifest"]
-    verify_record("prepared MR reference manifest", reference_manifest)
-    reference_manifest_document = _read(Path(reference_manifest["path"]))
-    reference_run = Path(reference_manifest_document["run_config"]["path"]).parent
-    verify_record("unchanged original MR manifest", {**reference_manifest, "path": str(reference_run / "run_manifest.json")})
-    reference_materialization = verified_reference(reference_run, "results/two_prism_trial_materialization.json")
+    reference_materialization = joint["reference_materialization"]
+    verified_preparation_reference(prepared_run, Path(reference_materialization["path"]).relative_to(prepared_run).as_posix(), manifest=prepared_manifest)
     reference_materialization_copy = inputs / "reference_materialization.json"
-    freeze_file(reference_materialization, reference_materialization_copy)
+    freeze_file(Path(reference_materialization["path"]), reference_materialization_copy)
     source = prepared_run / "results/joint_workbench/measured_source"
-    source_receipt_path = verified_reference(prepared_run, "results/joint_workbench/measured_source/source_receipt.json")
+    source_receipt_path = verified_preparation_reference(prepared_run, "results/joint_workbench/measured_source/source_receipt.json", manifest=prepared_manifest)
     source_receipt = _read(source_receipt_path)
     historical_source_receipt = inputs / "prepared_source_receipt.json"
     freeze_file(source_receipt_path, historical_source_receipt)
@@ -166,7 +198,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     source_copy.mkdir()
     for path in sorted(source.iterdir()):
         if path.is_file():
-            verified_reference(prepared_run, path.relative_to(prepared_run).as_posix())
+            verified_preparation_reference(prepared_run, path.relative_to(prepared_run).as_posix(), manifest=prepared_manifest)
             if path.name not in {"source_runtime.lua", "source_receipt.json"}:
                 freeze_file(path, source_copy / path.name)
     # Canonical CSV/clock/ordinal projection remain byte-identical; executable
@@ -185,11 +217,25 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     if source_mode == "centroid_probe":
         source_copy = results / "centroid_probe"
         source_receipt = materialize_centroid_probe(mother_source_copy, source_copy)
-    rows = _rows(source_copy / "component_particle_state.csv")
-    binding_path = verified_reference(prepared_run, "results/joint_workbench/static_field_binding.json")
+    rows = load_component_particle_state_csv(source_copy / "component_particle_state.csv").rows
+    source_id, target_id = connection["upstream"]["instance_id"], connection["downstream"]["instance_id"]
+    registration = resolve_ip_mr_transform(plan, connection).to_contract()
+    if any(row["source_component_id"] != source_id or row["target_component_id"] != target_id
+           or row["frame_id"] != registration["to_frame_id"] for row in rows):
+        raise ValueError("Prepared measured source differs from the inherited assembly connection or frame")
+    peak = contract.get("peak_analysis")
+    if peak is not None:
+        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_analysis import validate_measured_peak_source_reference
+        validate_measured_peak_source_reference(peak, contract_path.parent, source_receipt,
+                                                {int(row["particle_id"]): row for row in rows})
+    binding_path = verified_preparation_reference(prepared_run, "results/joint_workbench/static_field_binding.json", manifest=prepared_manifest)
     binding = load_binding(binding_path)
     if binding.get("accelerator_provider") != ION_PROCESSOR:
         raise ValueError("IP replacement field identity required")
+    assembly = binding["authority"].get("assembly", {})
+    if (binding["geometry"]["frame_id"] != registration["to_frame_id"]
+            or assembly.get("ion_processor_registration") != registration):
+        raise ValueError("Prepared field geometry or registration differs from the inherited assembly poses")
     if field_binding_path is not None:
         candidate = load_binding(field_binding_path)
         validate_candidate_binding(candidate, binding)
@@ -207,44 +253,34 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     frozen_runtime = inputs / "prepared_runtime"
     frozen_runtime.mkdir()
     for path in sorted(runtime.glob("joint.*")):
-        verified_reference(prepared_run, path.relative_to(prepared_run).as_posix())
-        if path.name == "joint.operating_point.lua":
-            freeze_file(path, frozen_runtime / "prepared.operating_point.lua")
-        elif path.name not in {"joint.lua", "joint.source_runtime.lua", "joint.scalar_field_adapter.lua"}:
-            freeze_file(path, frozen_runtime / path.name)
+        if path.name in {"joint.operating_point.lua", "joint.lua", "joint.source_runtime.lua",
+                         "joint.scalar_field_adapter.lua", "joint.priority.lua", "joint.voltage_waveforms.lua"}:
+            continue
+        verified_preparation_reference(prepared_run, path.relative_to(prepared_run).as_posix(), manifest=prepared_manifest)
+        freeze_file(path, frozen_runtime / path.name)
     current_program = Path(__file__).parents[1] / "simion/mrtof_candidate.lua"
-    freeze_file(current_program, frozen_runtime / "joint.lua")
-    freeze_file(source_copy / "source_runtime.lua", frozen_runtime / "joint.source_runtime.lua")
+    program_record = freeze_file(current_program, frozen_runtime / "joint.lua")
+    waveforms_record = freeze_file(Path(__file__).parents[3] / "common/simion/voltage_waveforms.lua",
+                                  frozen_runtime / "joint.voltage_waveforms.lua")
+    source_runtime_record = freeze_file(source_copy / "source_runtime.lua", frozen_runtime / "joint.source_runtime.lua")
     freeze_file(Path(__file__).parents[1] / "simion/scalar_field_adapter.lua",
                 frozen_runtime / "joint.scalar_field_adapter.lua")
     reference = runtime / "mr_reference.operating_point.lua"
-    verified_reference(prepared_run, reference.relative_to(prepared_run).as_posix())
+    verified_preparation_reference(prepared_run, reference.relative_to(prepared_run).as_posix(), manifest=prepared_manifest)
     freeze_file(reference, frozen_runtime / reference.name)
     (frozen_runtime / "joint.priority.lua").write_text("return " + _lua(layout["priority"]) + "\n",
                                                       encoding="utf-8", newline="\n")
-    reference_text = reference.read_text(encoding="utf-8-sig")
-    reference_numerics = {}
-    for name in ("trajectory_quality", "maximum_step_us", "full_path_timeout_us"):
-        match = re.search(r"\b"+name+r"\s*=\s*([-+0-9.eE]+)", reference_text)
-        if match is None:
-            raise ValueError("Prepared reference lacks "+name)
-        reference_numerics[name] = float(match[1])
+    reference_numerics = joint["numerics"]
     if any(reference_numerics[name] != reference_profile[name]
            for name in ("trajectory_quality", "maximum_step_us")):
-        raise ValueError("Prepared runtime numerics differ from its default trajectory profile")
+        raise ValueError("Prepared JSON numerics differ from its default trajectory profile")
     numerics = dict(reference_numerics, trajectory_quality=trajectory_profile["trajectory_quality"],
                     maximum_step_us=trajectory_profile["maximum_step_us"])
-    sidecar = ("local t=assert(loadfile("+json.dumps((frozen_runtime / "prepared.operating_point.lua").as_posix())+"))()\n"
-               "t.measured_source_directory="+json.dumps(source_copy.as_posix())+"\n"
-               "t.maximum_step_us="+_lua(numerics["maximum_step_us"])+"\n"
-               "t.trajectory_quality="+_lua(numerics["trajectory_quality"])+"\n"
-               + ("t.static_field="+_lua(_native_projection(binding))+"\n"
-                  "t.stripe_biases_v="+_lua([binding["authority"]["analyzer_electrode_voltages_v"][i] for i in (10,12)])+"\n"
-                  "t.prism_voltages_v="+_lua([binding["authority"]["analyzer_electrode_voltages_v"][i] for i in (15,16)])+"\n"
-                  if field_binding_path is not None else "") +
-               "local crops="+_lua(memory_crops)+"\n"
-               "for _,window in ipairs(t.static_field.refinement_windows) do\n"
-               "  window.memory_consumer_crop=crops[window.name]\nend\nreturn t\n")
+    sidecar = render_measured_operating_point(frozen_runtime / reference.name, source_copy,
+        _native_projection(binding), numerics=numerics, field_assets_verified=True, source_identity_verified=True)
+    sidecar = sidecar.replace("\nreturn t\n", "\nlocal crops="+_lua(memory_crops)+"\n"
+        "for _,window in ipairs(t.static_field.refinement_windows) do\n"
+        "  window.memory_consumer_crop=crops[window.name]\nend\nreturn t\n")
     (frozen_runtime / "joint.operating_point.lua").write_text(sidecar, encoding="utf-8", newline="\n")
     launcher = Path(__file__).parents[1] / "simion/run_iob_flight.lua"
     freeze_file(launcher, inputs / launcher.name)
@@ -267,16 +303,21 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                   controller_contract_provenance=dict(
                       prepared_reference_trajectory_contract=dict(expected_contract_record),
                       consumed_execution_contract=file_record(contract_copy), execution_budget_change=budget_change,
+                      analysis_change=execution["analysis_change"],
                       numerical_change=step_change, prepared_reference_numerics=reference_numerics,
                       selected_trajectory_profile=dict(trajectory_profile)),
                   trajectory_profile=dict(trajectory_profile),
                   reference_materialization=file_record(reference_materialization_copy),
                   source_receipt=file_record(source_copy / "source_receipt.json"),
-                  flight_program=file_record(frozen_runtime / "joint.lua"),
+                  flight_program=program_record,
+                  source_runtime=source_runtime_record,
+                  voltage_waveforms=waveforms_record,
                   field_consumer_adapter=file_record(frozen_runtime / "joint.scalar_field_adapter.lua"),
                   memory_consumer_crops=memory_crops,
                   operating_point=file_record(frozen_runtime / "joint.operating_point.lua"),
                   parent_preparation=file_record(receipt_path), field_binding=file_record(binding_path),
+                  parent_composition_plan=assembly_records["composition_plan"],
+                  assembly_request=assembly_records["accelerator_request"], assembly_scope=plan["scope"],
                   guard_paths=sorted(set(guard_paths)), protected_paths=[str(prepared_run.resolve()), joint["field_run"], joint["source_run"]],
                   numerics=numerics, frozen_runtime_directory=str(frozen_runtime.resolve()), launcher=str(effective_launcher.resolve()),
                   source_mode=source_mode, mother_source_directory=str(mother_source_copy.resolve()),
@@ -317,7 +358,23 @@ def freeze_equivalence_reference(reference_run: Path, preparation: dict[str, Any
                     str(reference_run / "run_manifest.json"), "--require-status", "interrupted"],
                    cwd=Path(__file__).resolve().parents[3], timeout=60,
                    check=True, capture_output=True, text=True, encoding="utf-8")
-    prior_path = verified_reference(reference_run, "results/prepared_joint_trial.json", required_status="interrupted")
+    manifest = _read(reference_run / "run_manifest.json")
+    # Historical MR runs remain read-only comparison evidence. New executions
+    # have exactly the assembly owner/mode; no old public execution branch exists.
+    if (manifest.get("project"), manifest.get("mode")) not in {
+        ("instrument_assembly", "prepared_joint"),
+        ("parallel_mirror_dual_stripe_mr_tof", "two_prism_joint_measured_trial"),
+    }:
+        raise ValueError("Equivalence reference owner/mode differs from a prepared joint flight")
+    outputs = {record_path(record, base_dir=reference_run): record for record in manifest["outputs"]}
+
+    def published_output(relative: str) -> Path:
+        path = (reference_run / relative).resolve()
+        if path not in outputs:
+            raise ValueError("Equivalence manifest does not bind " + relative)
+        return path  # The complete public verifier above already verified bytes.
+
+    prior_path = published_output("results/prepared_joint_trial.json")
     prior = _read(prior_path)
     for name in ("expected_particle_ids", "mother_particle_count", "launched_particle_count",
                  "solver_epoch_instrument_time_us", "numerics"):
@@ -329,16 +386,16 @@ def freeze_equivalence_reference(reference_run: Path, preparation: dict[str, Any
     for name in ("component_particle_state.csv", "source_census.csv", "source_states.lua",
                  "source_projection.lua", "source.fly2", "clock_authority.json"):
         prior_source = Path(prior["measured_source_directory"]) / name
-        verified_reference(reference_run, prior_source.relative_to(reference_run).as_posix(), required_status="interrupted")
+        published_output(prior_source.relative_to(reference_run).as_posix())
         if file_record(prior_source)["sha256"] != file_record(Path(preparation["measured_source_directory"]) / name)["sha256"]:
             raise ValueError("Equivalence reference differs in measured source "+name)
-    log = verified_reference(reference_run, "logs/joint_flight_batch_001.log", required_status="interrupted")
+    log = published_output("logs/joint_flight_batch_001.log")
     completions, terminal_ids, clean_exit = [], [], False
     with log.open(encoding="utf-8-sig") as handle:
         for line in handle:
-            completion = FLY_COMPLETED.match(line)
+            completion = parse_fly_completed_line(line)
             if completion:
-                completions.append(int(completion.group("splats")))
+                completions.append(completion.splats)
             if line.startswith("MRTOF_EVENT terminal "):
                 terminal_ids.append(int(re.search(r"\bion=(\d+)", line)[1]))
             if line.startswith("IOB_FLIGHT: PASS "):
@@ -460,13 +517,13 @@ def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_direct
     source_directory = Path(preparation["measured_source_directory"])
     for record in source_receipt["outputs"].values():
         verify_record("probe source output", record)
-    row, = _rows(source_directory / "component_particle_state.csv")
+    row, = load_component_particle_state_csv(source_directory / "component_particle_state.csv").rows
     source = ProjectPhaseSpaceState(tuple(float(row[f"position_{a}_mm"]) for a in "xyz"),
                                    tuple(float(row[f"velocity_{a}_m_s"])/1000 for a in "xyz"))
     events = parse_events(log_path.read_text(encoding="utf-8-sig"))
     terminals = [event for event in events if event["kind"] == "terminal"]
-    completions = [int(match.group("splats")) for line in log_path.read_text(encoding="utf-8-sig").splitlines()
-                   if (match := FLY_COMPLETED.match(line))]
+    completions = [completion.splats for line in log_path.read_text(encoding="utf-8-sig").splitlines()
+                   if (completion := parse_fly_completed_line(line)) is not None]
     if len(terminals) != 1 or completions != [1] or any(int(e["ion"]) != 1 for e in events):
         raise ValueError("Probe event population or natural completion does not close")
     reference = _read(Path(preparation["reference_materialization"]["path"]))
@@ -561,6 +618,11 @@ def main() -> None:
     analyze.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "prepare":
+        destination = _read(args.run_directory / "run_config.json")
+        if (destination.get("project") != "instrument_assembly"
+                or destination.get("mode") != "prepared_joint"
+                or destination.get("run_id") != args.run_directory.resolve().name):
+            raise ValueError("destination requires instrument_assembly prepared_joint identity matching its directory")
         prepare_trial(args.prepared_run,args.contract,args.run_directory,args.equivalence_reference_run,
                       field_binding_path=args.field_binding,source_mode=args.source_mode)
     else:

@@ -1,4 +1,4 @@
-function result = export_oatof_cad_step(modelPath, outputDir, executionMode)
+function result = export_oatof_cad_step(modelPath, outputDir, executionMode,options)
 %EXPORT_OATOF_CAD_STEP Export oa-TOF physical solids from an MPH to STEP.
 %
 % The source MPH is opened read-only in COMSOL server memory and is never
@@ -11,11 +11,12 @@ function result = export_oatof_cad_step(modelPath, outputDir, executionMode)
         modelPath (1,1) string {mustBeFile}
         outputDir (1,1) string
         executionMode (1,1) string {mustBeMember(executionMode, ["export", "load_only"])} = "export"
+        options.ArtifactRoot (1,1) string = ""
     end
 
     componentRoot = fileparts(fileparts(mfilename('fullpath')));
     addpath(componentRoot);
-    paths = oatof_paths();
+    paths = oatof_paths(options.ArtifactRoot);
     formalCad = string(java.io.File(paths.cadFormalDir).getCanonicalPath());
     resolvedOutput = string(java.io.File(char(outputDir)).getCanonicalPath());
     if executionMode == "export" && (strcmpi(resolvedOutput,formalCad) || ...
@@ -34,8 +35,8 @@ function result = export_oatof_cad_step(modelPath, outputDir, executionMode)
 
     model = mphload(char(modelPath), modelTag);
     geom = model.component('comp1').geom('geom1');
-    manifest = oatof_cad_export_manifest();
-    manifest = expand_reflectron_ring_manifest(manifest, geom);
+    featureTags = string(cell(geom.feature.tags()));
+    manifest = oatof_cad_export_manifest(featureTags(:));
 
     [~, modelBase, ~] = fileparts(modelPath);
     objectNames = strings(0,1);
@@ -106,49 +107,6 @@ function result = export_oatof_cad_step(modelPath, outputDir, executionMode)
         'partStepPaths', {cellstr(partStepPaths)}, ...
         'partTranslationsMm', partTranslationsMm, ...
         'excluded', {{'vacuum domains', 'grid1/grid2/entgrid/midgrid ideal internal boundaries', 'physics, mesh, studies, and results'}});
-end
-
-function manifest = expand_reflectron_ring_manifest(manifest, geom)
-    % Ring counts are parameterized in the production model. The original
-    % static manifest only represented the then-default 5/5 stack and
-    % silently omitted additional rings from CAD export. Discover exactly
-    % the completed Difference features ring1_<integer>/ring2_<integer>,
-    % natural-sort them, and place them between the flight tube and the
-    % backplate just as the fixed manifest does.
-    allTags = string(cell(geom.feature.tags()));
-    ring1Tags = natural_ring_tags(allTags, 'ring1_');
-    ring2Tags = natural_ring_tags(allTags, 'ring2_');
-    if isempty(ring1Tags) || isempty(ring2Tags)
-        error('oatofCadExport:MissingReflectronRings', ...
-            'No completed ring1/ring2 Difference features found for CAD export.');
-    end
-
-    isStageRing = startsWith(manifest.FeatureTag, 'ring1_') | startsWith(manifest.FeatureTag, 'ring2_');
-    fixedManifest = manifest(~isStageRing, :);
-    insertAt = find(fixedManifest.FeatureTag == "backplate", 1, 'first');
-    prefix = fixedManifest(1:insertAt-1, :);
-    suffix = fixedManifest(insertAt:end, :);
-    stage1 = table(ring1Tags(:), repmat("reflectron_stage1_ring", numel(ring1Tags), 1), ...
-        'VariableNames', fixedManifest.Properties.VariableNames);
-    stage2 = table(ring2Tags(:), repmat("reflectron_stage2_ring", numel(ring2Tags), 1), ...
-        'VariableNames', fixedManifest.Properties.VariableNames);
-    manifest = [prefix; stage1; stage2; suffix];
-end
-
-function tags = natural_ring_tags(allTags, prefix)
-    matches = allTags(startsWith(allTags, prefix));
-    numbers = NaN(size(matches));
-    for k = 1:numel(matches)
-        token = regexp(char(matches(k)), ['^' regexptranslate('escape', prefix) '(\d+)$'], 'tokens', 'once');
-        if ~isempty(token)
-            numbers(k) = str2double(token{1});
-        end
-    end
-    valid = ~isnan(numbers);
-    matches = matches(valid);
-    numbers = numbers(valid);
-    [~, order] = sort(numbers);
-    tags = matches(order);
 end
 
 function centerMm = export_feature_center_mm(model, geom, featureTag)

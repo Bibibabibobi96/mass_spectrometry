@@ -19,7 +19,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $projectRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer'
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("run_artifact_support_" + [guid]::NewGuid().ToString('N'))
-$executionRoot = Join-Path 'C:\tmp\ms' ("run_artifact_support_" + [guid]::NewGuid().ToString('N'))
+$executionRoot = Join-Path $testRoot 'execution_aliases'
 $originalPythonPath=[Environment]::GetEnvironmentVariable('PYTHONPATH')
 $originalNoUserSite=[Environment]::GetEnvironmentVariable('PYTHONNOUSERSITE')
 
@@ -32,6 +32,17 @@ try {
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $testRoot 'host.sqlite3'
   $env:SIMULATION_PYTHON_EXE=$python
   . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
+  & {
+    $fixturePath=Join-Path $testRoot 'named_arguments/retention_actions.json'
+    New-Item -ItemType Directory -Path (Split-Path -Parent $fixturePath) -Force|Out-Null
+    function Write-FixtureRetention {
+      Write-RunJson -Path $fixturePath -Value @{retained=$true}
+      return $fixturePath
+    }
+    $written=Write-FixtureRetention
+    Assert-Equal $written $fixturePath 'JSON helper must not capture a path as its value.'
+    Assert-Equal (Get-Content -LiteralPath $written -Raw|ConvertFrom-Json).retained $true 'JSON helper must retain named value.'
+  }
   & {
     # Exercise native Python streams/exit status, with capacity mutation stubbed.
     function Invoke-RunToolRootContext { param($RepoRoot,$Operation) & $Operation }
@@ -280,6 +291,36 @@ try {
   Assert-Equal $governedEntry[0].status 'writing' 'Governed package range must remain writing after initialization.'
   Assert-Equal $governedEntry[0].recovery_reason 'run_manifest_not_terminal' 'Initialization must replace the pre-write recovery reason.'
 
+  # Heavy evidence stays with its owner after atomic manifest publication.
+  # The owner closes the stopped range after releasing its own protection.
+  foreach($status in @('success','failed')){
+    $runId=if($status-eq'success'){'20260723_170010__test__cross__owner-seal__n1'}else{'20260723_170011__test__cross__owner-seal__n1'}
+    $heavy=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $governedProjectRoot `
+      -RunId $runId -Project fixture_project -Mode contract_test -Software @('contract test') `
+      -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Inert owner-seal regression.' `
+      -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion')
+    $pa=Join-Path $heavy.run_dir 'simion/fixture.pa'
+    'INERT_NOT_A_NATIVE_PA'|Set-Content -LiteralPath $pa -Encoding utf8
+    if($status-eq'failed'){
+      Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $heavy.run_config -Summary $heavy.summary `
+        -SummaryRole fixture_summary -Reason 'Controlled regression failure.' -Software @('contract test') `
+        -DeferCapacityFinalization|Out-Null
+    }else{
+      $null=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $heavy.run_config
+      Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $heavy.run_config -Status success `
+        -Software @('contract test') -Outputs @($heavy.summary,$pa) -DeferCapacityFinalization|Out-Null
+    }
+    Assert-Equal (Get-Content (Join-Path $heavy.run_dir 'run_manifest.json') -Raw|ConvertFrom-Json).status $status 'Deferred publication lost terminal status.'
+    & $python -m common.contracts.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $governedRoot `
+      --run-config $heavy.run_config --owner fixture_project --confirm-writing-stopped --retention-reason 'Inert owner-seal regression.'|Out-Null
+    if($LASTEXITCODE-ne0){throw 'Public owner stopped-payload seal failed.'}
+    $ledger=Get-Content (Join-Path $governedRoot 'common/capacity_ledger.json') -Raw|ConvertFrom-Json
+    $entry=@($ledger.objects|Where-Object {$_.path.EndsWith('/'+$runId)})[0]
+    Assert-Equal $entry.status 'ready' 'Owner seal did not close writing range.'
+    Assert-Equal $entry.class 'rebuildable_payload' 'Heavy evidence was incorrectly classified as light.'
+    if(-not(Test-Path -LiteralPath $pa)){throw 'Owner seal deleted retained native evidence.'}
+  }
+
   $capacityRoot=Join-Path $testRoot 'capacity_artifacts'
   New-Item -ItemType Directory -Path $capacityRoot -Force|Out-Null
   New-Item -ItemType Directory -Path (Join-Path $capacityRoot 'projects') -Force|Out-Null
@@ -473,6 +514,80 @@ try {
   $successManifest = Get-Content -LiteralPath (Join-Path $successDir 'run_manifest.json') `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-Equal $successManifest.status 'success' 'Success manifest status changed.'
+
+  & {
+    # Real public publication and failure cleanup; only the capacity handoff fails.
+    $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
+      -RunId '20260723_170020__test__cross__published-terminal-guard' -Project fixture -Mode contract_test -Software @('fixture')
+    $config=Get-Content $package.run_config -Raw|ConvertFrom-Json -AsHashtable
+    $config.capacity_ledger_lifecycle=@{enabled=$true;artifact_root=$testRoot}
+    Write-RunJson -Path $package.run_config -Value $config
+    Write-RunJson -Path $package.summary -Value @{role='fixture_summary';status='success'}
+    $payload=Join-Path $package.result_dir 'result.txt'
+    [IO.File]::WriteAllText($payload,'completed scientific output')
+    $manifest=Join-Path $package.run_dir 'run_manifest.json'
+    $before=@{}
+    foreach($path in @($package.run_config,$package.summary,$payload)){
+      $before[$path]=[Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
+    }
+    $script:terminalGuardFinalizations=0
+    function Invoke-RunCapacityLifecycleAdapter {
+      param($Python,$RepoRoot,$Action,$ArtifactRoot,$RunConfig)
+      if($Action-eq'assert-retention'){return @{}}
+      if($Action-ne'finalize-ready'){throw 'Unexpected capacity action in terminal guard fixture.'}
+      $script:terminalGuardFinalizations++
+      $before[$manifest]=[Convert]::ToBase64String([IO.File]::ReadAllBytes($manifest))
+      throw 'controlled capacity finalization failure'
+    }
+    function Apply-RunArtifactRetention {throw 'Failure cleanup must not change published retention.'}
+    $message=$null
+    try {
+      try {
+        Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+          -Status success -Outputs @($package.summary,$payload)|Out-Null
+      }catch{
+        Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+          -Summary $package.summary -SummaryRole fixture_summary -Reason $_.Exception.Message -Software @('fixture')
+        throw
+      }
+    }catch{$message=$_.Exception.Message}
+    if($message-notlike '*manifest was published, but capacity ledger finalization failed*controlled capacity finalization failure*'){
+      throw "Published terminal guard lost the original failure: $message"
+    }
+    Assert-Equal $script:terminalGuardFinalizations 1 'Failure cleanup repeated capacity finalization.'
+    foreach($path in $before.Keys){
+      Assert-Equal ([Convert]::ToBase64String([IO.File]::ReadAllBytes($path))) $before[$path] `
+        'Failure cleanup changed a published terminal file.'
+    }
+    $published=[IO.File]::ReadAllText($manifest)
+    foreach($fault in @('invalid_json','role','run_id','project','mode','status')){
+      $document=ConvertFrom-Json -InputObject $published -AsHashtable
+      if($fault-eq'invalid_json'){[IO.File]::WriteAllText($manifest,'{')}
+      else{$document[$fault]='different';Write-RunJson -Path $manifest -Value $document}
+      $faultBefore=[IO.File]::ReadAllText($manifest)
+      $rejected=$false
+      try {
+        Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+          -Summary $package.summary -SummaryRole fixture_summary -Reason fixture -Software @('fixture')
+      }catch{$rejected=$true}
+      Assert-Equal $rejected $true 'Damaged or foreign terminal manifest was accepted.'
+      Assert-Equal ([IO.File]::ReadAllText($manifest)) $faultBefore 'Rejected terminal manifest was overwritten.'
+      Assert-Equal ([Convert]::ToBase64String([IO.File]::ReadAllBytes($package.summary))) $before[$package.summary] `
+        'Rejected manifest cleanup changed the summary.'
+    }
+    [IO.File]::WriteAllText($manifest,$published)
+  }
+  foreach($publication in @('checkpoint','absent')){
+    $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
+      -RunId "20260723_170021__test__cross__failure-after-$publication" -Project fixture -Mode contract_test -Software @('fixture')
+    $manifest=Join-Path $package.run_dir 'run_manifest.json'
+    if($publication-eq'absent'){Remove-Item -LiteralPath $manifest}
+    Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config `
+      -Summary $package.summary -SummaryRole fixture_summary -Reason 'failure before terminal publication' -Software @('fixture')|Out-Null
+    Assert-Equal (Get-Content $manifest -Raw|ConvertFrom-Json).status 'failed' 'Initial failure did not publish its evidence.'
+    Assert-Equal (Get-Content $package.summary -Raw|ConvertFrom-Json).reason 'failure before terminal publication' `
+      'Initial failure reason was lost.'
+  }
 
   $budgetPackage=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
     -RunId '20260723_170003__test__cross__resource-budget__n100' `

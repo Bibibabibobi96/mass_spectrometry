@@ -4,14 +4,14 @@
 ; z margins minimize PA size while permitting a fine z cell for accurate
 ; native splat timing.  The Workbench places the incoming face at z=19.83 mm.
 
-# local var = _G.var or {}
-# local mmgu_xy = var.mmgu_xy or 0.5
-# local mmgu_z = var.mmgu_z or 0.01
-# local radius = var.radius or 40
-# local absorber_thickness = var.absorber_thickness or 0.1
-# local margin_xy = var.margin_xy or 1
-# local front_margin_z = var.front_margin_z or 0.2
-# local back_margin_z = var.back_margin_z or 0.05
+# local var = assert(_G.var, 'frozen numerical marker required')
+# local mmgu_xy = var.mmgu_xy
+# local mmgu_z = var.mmgu_z
+# local radius = var.radius
+# local absorber_thickness = var.absorber_thickness
+# local margin_xy = var.margin_xy
+# local front_margin_z = var.front_margin_z
+# local back_margin_z = var.back_margin_z
 # local xy_span = 2*(radius+margin_xy)
 # local z_span = front_margin_z+absorber_thickness+back_margin_z
 # local nx = math.floor(xy_span/mmgu_xy + 0.5) + 1

@@ -118,7 +118,7 @@ function Exit-HostExecutionLease { param($Lease); $global:calls.Add('exit') }
 param($Root, $Mode)
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $OutputEncoding = [Console]::OutputEncoding
-Write-Host 'UTF8:编码边界'
+Write-Host 'UTF8:缂栫爜杈圭晫'
 $global:calls = [Collections.Generic.List[string]]::new()
 function python {
   if ($args -contains 'common.contracts.run_capacity_lifecycle') {
@@ -157,7 +157,7 @@ exit $LASTEXITCODE
             result = subprocess.run(command,
                                     cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
             self.assertEqual(result.returncode, 1 if error else 0, result.stdout + result.stderr)
-            self.assertIn("UTF8:编码边界", result.stdout)
+            self.assertIn("UTF8:缂栫爜杈圭晫", result.stdout)
             if legacy_console:
                 self.assertIn("PARENT_CODEPAGE:936", result.stdout)
             report = json.loads(next(line[7:] for line in result.stdout.splitlines() if line.startswith("RESULT:")))
@@ -548,6 +548,7 @@ function Exit-HostExecutionLease { param($Lease) }
         self.assertTrue((self.target/"simion/accelerator.pa0").is_file())
         self.assertTrue((self.target/"simion/detector.pa#").is_file())
         self.assertEqual(verify_retirement(self.target)["status"],"PASS")
+
         receipt=self.target/"solver_review_retirement_receipt.json"
         changed=json.loads(receipt.read_text())
         from common.contracts.run_capacity_lifecycle import _verify_retired_payload_remainder
@@ -565,6 +566,27 @@ function Exit-HostExecutionLease { param($Lease) }
             verify_retirement(self.target)
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_explicit_retirement_consumption_verifies_only_selected_preserved_evidence(self, _scan):
+        plan = self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        unconsumed = self.target / "simion/detector.pa#"
+        unconsumed.write_bytes(b"changed unrelated native payload")
+        with self.assertRaises(RetirementError):
+            verify_retirement(self.target)
+        result = verify_retirement(self.target, consumed_paths=["candidate.json"])
+        self.assertEqual(result["scope"], "consumer_projection")
+        self.assertEqual(result["consumed_paths"], ["candidate.json"])
+        for paths in ([], ["candidate.json"] * 2, ["../candidate.json"], ["./candidate.json"],
+                      ["missing.json"], ["simion/analyzer.pa0"]):
+            with self.subTest(paths=paths), self.assertRaises(RetirementError):
+                verify_retirement(self.target, consumed_paths=paths)
+        candidate = self.target / "candidate.json"
+        candidate.write_text(candidate.read_text() + " ")
+        with self.assertRaises(RetirementError):
+            verify_retirement(self.target, consumed_paths=["candidate.json"])
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_selected_heavy_scope_rejects_invalid_selection_and_manual_plan_changes(self, _scan):
         for selected in ([],["../outside.pa"],["simion/analyzer.pa0"]*2,["candidate.json"],["missing.pa"]):
             with self.subTest(selected=selected),self.assertRaises(RetirementError):
@@ -580,6 +602,18 @@ function Exit-HostExecutionLease { param($Lease) }
         self.assertTrue((self.target/"simion/analyzer.pa0").is_file())
 
     @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_full_owner_consumption_still_verifies_run_config_identity(self, _scan):
+        plan = self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target, consumed_paths=["candidate.json"])["scope"],
+                         "consumer_projection")
+        config = self.target / "run_config.json"
+        config.write_text(config.read_text() + " ")
+        with self.assertRaisesRegex(RetirementError, "run evidence identity differs"):
+            verify_retirement(self.target, consumed_paths=["candidate.json"])
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
     def test_selected_heavy_pending_resume_keeps_exact_scope(self, _scan):
         selected=["simion/analyzer.pa0"]
         plan=self._owner_plan(selected_heavy_paths=selected)
@@ -592,6 +626,107 @@ function Exit-HostExecutionLease { param($Lease) }
         with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
             apply_retirement(resumed)
         self.assertEqual(verify_retirement(self.target)["status"],"PASS")
+
+    def _first_partial_batch(self, *, reseal=True):
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["capacity_ledger_lifecycle"] = dict(
+            schema_version=1, enabled=True, artifact_root=str(self.artifacts),
+            light_evidence_budget_bytes=26_214_400)
+        config_path.write_text(json.dumps(config))
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["run_config"].update(bytes=config_path.stat().st_size, sha256=_sha(config_path))
+        manifest_path.write_text(json.dumps(manifest))
+        register_writing(self.artifacts, config_path)
+        self._seal_partial_batch()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"]))
+        if reseal:
+            self._seal_partial_batch()
+        return (self.target / "solver_review_retirement_receipt.json").read_bytes(), manifest_path.read_bytes()
+
+    def _seal_partial_batch(self):
+        return seal_checkpoint(self.artifacts, self.target / "run_config.json", owner="p",
+                               writing_stopped=True, retain_payload=True, retention_reason="partial fixture")
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_second_selected_batch_preserves_original_receipt_and_manifest(self, _scan):
+        first, manifest = self._first_partial_batch()
+        with mock.patch("common.contracts.solver_review_retirement.file_sha256", wraps=_sha) as reader:
+            plan = self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
+        self.assertFalse(any(Path(call.args[0]).suffix.startswith(".pa") for call in reader.call_args_list))
+        self.assertEqual(plan["retirement_batch"]["sequence"], 2)
+        self.assertEqual(plan["retirement_batch"]["previous_receipt"]["sha256"], _sha(
+            self.target / "solver_review_retirement_receipt.json"))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        with mock.patch("common.contracts.solver_review_retirement.file_sha256", wraps=_sha) as reader:
+            result = verify_retirement(self.target)
+        self.assertEqual(sum(Path(call.args[0]).name == "detector.pa#" for call in reader.call_args_list), 1)
+        self.assertEqual((result["retirement_batches"], result["removed_bytes"]), (2, 12))
+        self.assertEqual((self.target / "solver_review_retirement_receipt.json").read_bytes(), first)
+        self.assertEqual((self.target / "run_manifest.json").read_bytes(), manifest)
+        self.assertTrue((self.target / "simion/detector.pa#").is_file())
+        with self.assertRaisesRegex(RetirementError, "reseal"):
+            self._owner_plan(selected_heavy_paths=["simion/detector.pa#"])
+        self._seal_partial_batch()
+        with self.assertRaises(RetirementError):
+            self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"])
+        self.assertEqual(self._owner_plan(selected_heavy_paths=["simion/detector.pa#"])[
+            "retirement_batch"]["sequence"], 3)
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_second_batch_requires_reseal_and_rechecks_new_lease(self, _scan):
+        self._first_partial_batch(reseal=False)
+        with self.assertRaisesRegex(RetirementError, "reseal"):
+            self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
+        self._seal_partial_batch()
+        plan = self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
+        create_capacity_protection_lease(self.artifacts, lease_id="new-consumer", owner="fixture",
+                                         ttl_seconds=60, protected_paths=[self.target])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active capacity protection"):
+                apply_retirement(plan)
+        self.assertFalse((self.target / "solver_review_retirement_receipt_0002.json").exists())
+        self.assertTrue((self.target / "simion/accelerator.pa0").is_file())
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_second_batch_pending_replays_exact_scope_without_overwriting_first(self, _scan):
+        first, _ = self._first_partial_batch()
+        selected = ["simion/accelerator.pa0", "simion/detector.pa#"]
+        plan = self._owner_plan(selected_heavy_paths=selected)
+        from common.contracts.recorded_file_removal import remove_recorded_files
+
+        def interrupted(root, records, **options):
+            yield from remove_recorded_files(root, records, **options)
+            raise OSError("after unlink")
+
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}), mock.patch(
+            "common.contracts.solver_review_retirement.remove_recorded_files", side_effect=interrupted):
+            with self.assertRaisesRegex(OSError, "after unlink"):
+                apply_retirement(plan)
+        with self.assertRaisesRegex(RetirementError, "scope changed"):
+            self._owner_plan(selected_heavy_paths=["simion/detector.pa#"])
+        resumed = self._owner_plan(selected_heavy_paths=selected)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["removed_bytes"], 18)
+        self.assertEqual((self.target / "solver_review_retirement_receipt.json").read_bytes(), first)
+        self._seal_partial_batch()
+
+    @mock.patch("common.contracts.solver_review_retirement._git_document_references", return_value=[])
+    def test_second_batch_rejects_changed_chain_and_unselected_owner_scope(self, _scan):
+        first, _ = self._first_partial_batch()
+        with self.assertRaisesRegex(RetirementError, "selected heavy scope"):
+            self._owner_plan()
+        plan = self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
+        first_path = self.target / "solver_review_retirement_receipt.json"
+        first_path.write_bytes(first + b"\n")
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "batch head changed"):
+                apply_retirement(plan)
+        self.assertFalse((self.target / "solver_review_retirement_receipt_0002.json").exists())
 
     def _prepared_gui(self, run: Path, **summary_changes: object) -> None:
         config = json.loads((run / "run_config.json").read_text())

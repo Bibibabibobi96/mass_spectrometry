@@ -7,7 +7,9 @@ from pathlib import Path
 import unittest
 
 from common.contracts.rigid_transform import PhaseSpaceState, RigidTransform
-from projects.dual_pressure_rectilinear_ion_processor.analysis.guide_interface import export_guide_contract
+from projects.dual_pressure_rectilinear_ion_processor.analysis.guide_interface import (
+    export_guide_contract, export_guide_assembly_interface,
+)
 from projects.dual_pressure_rectilinear_ion_processor.analysis.native_geometry import native_projection
 
 
@@ -49,6 +51,30 @@ class GuideInterfaceTests(unittest.TestCase):
         self.assertEqual(mapped.position_mm, (2, 3, 1))
         self.assertEqual(mapped.velocity_m_s, (5, 6, 4))
         self.assertEqual(mapped.instrument_time_us, 7)
+
+    def test_assembly_surface_is_an_open_rod_exit_and_preserves_all_physical_rods(self):
+        guide = export_guide_contract(self.model, self.identities)
+        before = copy.deepcopy(guide)
+        interface = export_guide_assembly_interface(guide)
+        self.assertEqual(guide, before)
+        port = interface["ports"]["guide_exit"]
+        self.assertEqual(port["center_mm"], [0, 0, 29])
+        self.assertEqual(port["outward_normal"], [0, 0, 1])
+        self.assertEqual(port["cross_section"], {"shape": "open_rod_envelope", "inscribed_radius_mm": 2})
+        self.assertIsNone(port["wall_thickness_mm"])
+        self.assertNotIn("potential_V", port)
+        self.assertEqual([item["component_electrode_id"] for item in interface["component_electrodes"]], list(range(1, 9)))
+        self.assertEqual([item["electrical_group_id"] for item in interface["component_electrodes"]], [1, 2] * 4)
+        guide["guide_exit_surface"]["center_mm"][0] = 100
+        self.assertEqual(port["center_mm"], [0, 0, 29])
+
+    def test_assembly_interface_rejects_duplicate_rods_and_wrong_provider_output(self):
+        guide = export_guide_contract(self.model, self.identities)
+        guide["rod_array"]["rods"][1]["physical_electrode_id"] = 1
+        with self.assertRaisesRegex(ValueError, "distinct physical rod"):
+            export_guide_assembly_interface(guide)
+        with self.assertRaisesRegex(ValueError, "requires the native bare-guide"):
+            export_guide_assembly_interface({"role": "different_contract"})
 
     def test_drive_uses_original_guide_amplitude_phase_and_offset(self):
         self.model["baseline"]["electric"]["guide_rf_peak_to_peak_v"] = 800

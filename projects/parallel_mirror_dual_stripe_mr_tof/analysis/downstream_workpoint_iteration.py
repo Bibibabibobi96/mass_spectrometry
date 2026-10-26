@@ -2390,8 +2390,8 @@ def load_prepared_centroid_trial(manifest_path: Path, target_path: Path,
                                  contract_path: Path) -> dict[str, Any]:
     """Read published N1 projection, including retired light evidence, without PA I/O."""
     manifest = _load(manifest_path,"measured joint child manifest")
-    if (manifest.get("status") != "success" or manifest.get("mode") != "two_prism_joint_measured_trial"
-            or manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"):
+    if (manifest.get("status") != "success" or manifest.get("mode") != "prepared_joint"
+            or manifest.get("project") != "instrument_assembly"):
         raise CandidateContractError("Prepared controller requires a published successful measured joint N1")
     records = [record for record in manifest["outputs"] if Path(record["path"]).name == "controller_projection.json"]
     if len(records) != 1:
@@ -2431,18 +2431,16 @@ def load_prepared_centroid_trial(manifest_path: Path, target_path: Path,
     for key,record in source["outputs"].items():
         verify_record(key,record)
     observation,materialization = copy.deepcopy(projection["observation"]),copy.deepcopy(projection["materialization"])
-    from common.contracts.component_particle_state import validate_component_particle_state_csv
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.measured_component_source import _rows
+    from common.contracts.component_particle_state import load_component_particle_state_csv
     canonical=Path(source["outputs"]["component_particle_state"]["path"])
-    validate_component_particle_state_csv(canonical)
-    rows=_rows(canonical)
-    if len(rows)!=1 or rows[0]["particle_id"]!="1" or rows[0]["state_event"]!="constructed_measured_exit_centroid":
+    rows=load_component_particle_state_csv(canonical).rows
+    if len(rows)!=1 or rows[0]["particle_id"]!=1 or rows[0]["state_event"]!="constructed_measured_exit_centroid":
         raise CandidateContractError("Prepared source is not the independent constructed centroid")
     row=rows[0]
     primary=materialization["source_center_state"]
-    if (list(primary["position_mm"]) != [float(row[f"position_{a}_mm"]) for a in "xyz"]
-            or list(primary["velocity_mm_per_us"]) != [float(row[f"velocity_{a}_m_s"])/1000 for a in "xyz"]
-            or primary["instrument_time_us"] != float(row["instrument_time_us"])
+    if (list(primary["position_mm"]) != [row[f"position_{a}_mm"] for a in "xyz"]
+            or list(primary["velocity_mm_per_us"]) != [row[f"velocity_{a}_m_s"]/1000 for a in "xyz"]
+            or primary["instrument_time_us"] != row["instrument_time_us"]
             or row["clock_epoch_id"] != source["clock_epoch_id"]):
         raise CandidateContractError("Measured stage source 6D or canonical clock differs")
     field=projection.get("field_authority_projection",{})
@@ -2593,10 +2591,11 @@ def prepare_measured_centroid_acquisition(*, prepared_run: Path, contract_path: 
                                          field_run_id: str, output_directory: Path) -> dict[str, Any]:
     """Freeze the topology-only request for the existing public provider and runner."""
     from common.contracts.write_run_manifest import file_record
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import verified_reference, freeze_file
+    from common.contracts.frozen_inputs import freeze_file
+    from integrations.workflows.accelerator_interface.prepare import verified_preparation_reference
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding, load_native_response_basis
     proposal=load_measured_centroid_initial_proposal(proposal_path)
-    binding_path=verified_reference(prepared_run,"results/joint_workbench/static_field_binding.json")
+    binding_path=verified_preparation_reference(prepared_run,"results/joint_workbench/static_field_binding.json")
     binding=load_binding(binding_path)
     if binding.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor":
         raise CandidateContractError("Acquisition requires the measured IP replacement field")

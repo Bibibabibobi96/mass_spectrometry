@@ -1,48 +1,53 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mass-spectrometry.local/schemas/integration_artifact_identity.schema.json",
-  "title": "Integration run artifact identity",
+  "title": "Integration run identity bound to its frozen assembly plan",
+  "description": "The composition plan owns recipe and component instance identities; they are not copied into a second authority.",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "integration_id", "run_id", "selection",
-    "composition_plan", "source_projects"
+    "schema_version",
+    "integration_id",
+    "workflow_id",
+    "run_id",
+    "composition_plan"
   ],
   "properties": {
-    "schema_version": {"const": 1},
-    "integration_id": {"$ref": "#/$defs/identifier"},
-    "run_id": {"type": "string", "minLength": 1},
-    "selection": {
-      "$ref": "https://mass-spectrometry.local/schemas/resolved_connection.schema.json#/properties/selection"
+    "schema_version": {
+      "const": 2
     },
-    "composition_plan": {"$ref": "#/$defs/source"},
-    "source_projects": {
-      "type": "array",
-      "minItems": 2,
-      "uniqueItems": true,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["project_id", "port_id", "descriptor_sha256"],
-        "properties": {
-          "project_id": {"$ref": "#/$defs/identifier"},
-          "port_id": {"$ref": "#/$defs/identifier"},
-          "descriptor_sha256": {"$ref": "#/$defs/sha256"}
+    "integration_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "workflow_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "composition_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "composition_plan.json"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-F0-9]{64}$"
         }
       }
     }
   },
   "$defs": {
-    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
-    "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
-    "source": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["path", "sha256"],
-      "properties": {
-        "path": {"type": "string", "minLength": 1},
-        "sha256": {"$ref": "#/$defs/sha256"}
-      }
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
     }
   }
 }

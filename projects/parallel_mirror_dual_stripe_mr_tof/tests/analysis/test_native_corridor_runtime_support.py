@@ -11,6 +11,41 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 
 class NativeCorridorRuntimeSupportTest(unittest.TestCase):
+    def test_builder_transports_frozen_waveform_with_each_program_basename(self) -> None:
+        """Execute the builder's real companion-copy section, without SIMION."""
+        lua = Path(r'C:\Program Files\SIMION-2020\lua.exe')
+        if not lua.is_file():
+            self.skipTest('standalone Lua unavailable')
+        builder = (PROJECT/'simion/build_native_corridor_iob.lua').read_text()
+        copies = builder[builder.index('local function copy(source, target)'):]
+        waveform = PROJECT.parents[1]/'common/simion/voltage_waveforms.lua'
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = root/'original'
+            original.mkdir()
+            for name in ('program.lua', 'source.fly2', 'priority.lua', 'operating.lua',
+                         'voltage_map.lua', 'program.mirror_cycle_counter.lua',
+                         'program.scalar_field_adapter.lua', 'program.source_runtime.lua'):
+                (original/name).write_text('return {}\n')
+            (original/'program.voltage_waveforms.lua').write_bytes(waveform.read_bytes())
+            for kind, measured in (('temporary', False), ('worker', True), ('gui', False)):
+                target = root/kind
+                target.mkdir()
+                output = target/'retained.iob'
+                context = dict(program=str(original/'program.lua'), fly2=str(original/'source.fly2'),
+                               priority_path=str(original/'priority.lua'), operating_path=str(original/'operating.lua'),
+                               voltage_map_path=str(original/'voltage_map.lua'), output=str(output))
+                preamble = '\n'.join(f'local {key}={json.dumps(value)}' for key,value in context.items())
+                script = root/'copy.lua'
+                script.write_text(preamble+'\nlocal measured_mode='+str(measured).lower()+
+                    '\nlocal operating={static_field=true}\nlocal paths={1,2,3,4}\n'+copies+
+                    '\nassert(assert(loadfile(output:gsub("%.iob$", ".voltage_waveforms.lua")))().cap_before_edge(10,3,12)==2)\n')
+                result = subprocess.run([str(lua), str(script)], cwd=target,
+                                        capture_output=True, text=True, timeout=20, check=False)
+                self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+                self.assertEqual((target/'retained.voltage_waveforms.lua').read_bytes(), waveform.read_bytes())
+                self.assertEqual((target/'retained.lua').read_bytes(), (original/'program.lua').read_bytes())
+
     def test_support_loads_its_short_pa_copy_dependency(self) -> None:
         source = (PROJECT / 'simion/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
         self.assertIn("common\\simion\\short_pa_path_support.ps1", source)
@@ -153,7 +188,7 @@ try{
     (Join-Path $Repo 'common/simion/assets/iob_instance_seeds/4_instance_seed.iob'),
     (Join-Path $Root 'global.pa'),(Join-Path $Root 'fixture.pa0'),(Join-Path $Root 'accelerator.pa'),(Join-Path $Root 'detector.pa'),
     (Join-Path $Root 'fixture.iob'),(Join-Path $Root 'program.lua'),(Join-Path $Root 'source.fly2'),
-    (Join-Path $Root 'operating.lua'),(Join-Path $Root 'voltage_map.lua'),(Join-Path $project 'simion/native_corridor_priority_contract.lua'),
+    (Join-Path $Root 'operating.lua'),(Join-Path $Root 'voltage_map.lua'),(Join-Path $Root 'priority.lua'),
     '0','0','0','0','0','0','0','0','0','8','0','0')
   & $Simion @build
   if($LASTEXITCODE-ne0){throw 'Guarded production native IOB builder failed'}

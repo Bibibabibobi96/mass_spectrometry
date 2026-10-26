@@ -59,7 +59,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
             binding=dict(accelerator_provider="dual_pressure_rectilinear_ion_processor",manifest="source_manifest.json",
                          authority=dict(analyzer_electrode_voltages_v=values))
             source=evidence.read_bytes()
-            with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface.verified_reference",return_value=evidence),\
+            with patch("integrations.workflows.accelerator_interface.prepare.verified_preparation_reference",return_value=evidence),\
                  patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_binding",return_value=binding),\
                  patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding.load_native_response_basis",side_effect=lambda p,b:dict(response_basis=dict(axis=json.loads(p.read_text())["axis"]))):
                 result=prepare_measured_centroid_acquisition(prepared_run=root,contract_path=evidence,proposal_path=path,

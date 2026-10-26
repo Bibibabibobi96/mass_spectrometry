@@ -507,7 +507,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
             self.assertEqual(receipt["measurement_mode"], "STARTUP_LEDGER")
             self.assertFalse(receipt["candidate_discovery_performed"])
 
-    def test_startup_blocks_all_new_heavy_writes_when_any_writing_recovery_is_overdue(self) -> None:
+    def test_startup_warns_unrelated_overdue_and_blocks_current_input(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _initialize_fixture_ledger(root, objects=[{
@@ -526,10 +526,14 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                 execution_mode="startup",
                 protected_paths=[required], capacity_protection_lease_id="current",
             )
-            self.assertFalse(warning["satisfied"])
+            self.assertTrue(warning["satisfied"])
             self.assertEqual(warning["overdue_writing_object_count"], 1)
-            self.assertEqual(warning["blocking_overdue_writing_object_count"], 1)
-            self.assertEqual(warning["blocking_reason"], "WRITING_RECOVERY_REVIEW_OVERDUE")
+            self.assertEqual(warning["blocking_overdue_writing_object_count"], 0)
+            self.assertIsNone(warning["blocking_reason"])
+            self.assertEqual(warning["warnings"], [{
+                "code": "UNRELATED_WRITING_RECOVERY_REVIEW_OVERDUE", "path": "scratch/old",
+            }])
+            self.assertEqual(warning["resident_bytes"], 1)
             _record_fixture_object(
                 root, path=required, object_class="rebuildable_payload", bytes_count=1,
                 status="writing", owner="current", recovery_reason="review",

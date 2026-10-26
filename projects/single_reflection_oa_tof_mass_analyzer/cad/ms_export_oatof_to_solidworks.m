@@ -1,4 +1,4 @@
-function result = ms_export_oatof_to_solidworks(modelPath, outputDir, visibleSolidWorks)
+function result = ms_export_oatof_to_solidworks(modelPath, outputDir, visibleSolidWorks,options)
 %MS_EXPORT_OATOF_TO_SOLIDWORKS Export physical oa-TOF solids to an assembly.
 %
 % No solve is run and the source MPH is never overwritten.  The output is a
@@ -10,12 +10,13 @@ function result = ms_export_oatof_to_solidworks(modelPath, outputDir, visibleSol
         modelPath (1,1) string = ""
         outputDir (1,1) string = ""
         visibleSolidWorks (1,1) logical = false
+        options.ArtifactRoot (1,1) string = ""
     end
 
     thisDir = fileparts(mfilename('fullpath'));
     componentRoot = fileparts(thisDir);
     addpath(componentRoot);
-    paths = oatof_paths();
+    paths = oatof_paths(options.ArtifactRoot);
     addpath(thisDir, paths.commonSolidWorksDir);
     if strlength(modelPath) == 0
         modelPath = fullfile(paths.comsolFormalDir, ...
@@ -31,7 +32,7 @@ function result = ms_export_oatof_to_solidworks(modelPath, outputDir, visibleSol
         oatof_assert_formal_write_authorized(resolvedOutput,'cad_root');
     end
 
-    exportResult = export_oatof_cad_step(modelPath, outputDir);
+    exportResult = export_oatof_cad_step(modelPath, outputDir,ArtifactRoot=options.ArtifactRoot);
     partStepPaths = string(exportResult.partStepPaths);
     [~, partBases, ~] = fileparts(partStepPaths);
     [~, modelBase, ~] = fileparts(modelPath);

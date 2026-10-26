@@ -89,7 +89,8 @@ def merge_rebased_particle_csvs(
     """Merge batch CSVs while restoring canonical global particle IDs.
 
     Rows remain in batch and solver emission order.  This supports both event
-    tables (multiple rows per particle) and trajectory tables.
+    tables (multiple rows per particle) and trajectory tables. The particle_id
+    column is selected by name; the original column order is preserved.
     """
     if not batches:
         raise ValueError("at least one batch CSV is required")
@@ -102,8 +103,8 @@ def merge_rebased_particle_csvs(
                 raise ValueError("SIMION particle ID offset must be non-negative")
             with source.open(encoding="utf-8-sig", newline="") as stream:
                 reader = csv.DictReader(stream)
-                if not reader.fieldnames or reader.fieldnames[0] != "particle_id":
-                    raise ValueError(f"batch CSV lacks a leading particle_id column: {source}")
+                if not reader.fieldnames or reader.fieldnames.count("particle_id") != 1:
+                    raise ValueError(f"batch CSV requires exactly one particle_id column: {source}")
                 if expected_header is None:
                     expected_header = list(reader.fieldnames)
                     writer = csv.DictWriter(destination, fieldnames=expected_header)

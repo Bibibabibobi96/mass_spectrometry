@@ -1,0 +1,472 @@
+# RF多极杆到单反射oa-TOF当前集成状态
+
+本页只维护当前设计、资格、限制和待办。操作见[RUNNING](RUNNING.md)，参数与失效域见
+[ARCHITECTURE](ARCHITECTURE.md)，历史见[HISTORY](HISTORY.md)。各项结论只适用于明确列出的运行证据，不自动晋升资格。
+
+## 统一组装迁移任务
+
+状态为代码迁移中。目标职责见[统一组装规范](../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)，
+依赖与阶段见[迁移计划](../../../docs/ROADMAP.md#统一组装迁移计划)。本目录及唯一公开入口目前继续活动；
+直接位姿配方与提供者机械接口已接入裸导引→OA准备器；实际实施与待验收项见
+[统一集成状态](../../docs/INTEGRATION.md)。本目录尚未整体退役，冻结运行及资产继续按原身份保护。
+准备器直接复用已解析母群，源码变换由`single_flight_source.transform_source_rows`唯一实现；真实连续单飞的
+ION入口仍调用同一变换。原生场缓存与运行manifest保持各自的身份责任，准备阶段不再发布第二份无消费者清单。
+
+| 现有消费范围 | 待迁移动作 | 关闭条件 |
+|---|---|---|
+| `local_frontend`裸导引→二区／三区OA | 首条配方消费，引用OA及实际导引提供者，保留变体选择 | 同冻结输入的实际几何、电极、RF／脉冲、母群、时钟与默认回放对照成立 |
+| `cooled_frontend`冷却前端→OA | 单独workflow与配方，复用IP物理提供者和既有公共机制 | 当前在途依赖安全闭合后验证HP、聚束／门、气体及驱动绑定，不借裸导引结果宣称冷却通过 |
+| 原多极杆→单反射整机连续单飞诊断 | 保留当前 N1 诊断与真实共享科学 helper，整机由直属 workflow 接管 | 源与restart、完整母群、绝对时钟、场角色／优先级与联合分析保持可追溯 |
+
+目标是每种组合增加配方而非复制运行器；原共享core按真实复用边界提取。各workflow完成等价验证和
+注册／调用／产物切换后，新请求转入`integrations/`直属入口；无在途依赖后才退出被替代副本。
+未切换workflow仍走本目录。旧run、PA来源、GUI包及历史integration身份按原归属保留；迁移不关闭本页
+尚未取得的收敛、完整链或Formal资格。
+现有整机统计分析与直属整机收集器共用`single_reflection_flight/census.py`这一事件解析与完整终态清点实现；
+直属流程不调用本目录发布CLI。新增X跨面事件仅记录真实原生步括号内估计，实施边界仍见上述统一集成状态。
+缓存准入直接使用活动resolver；已删除无生产调用的布尔包装，退役与回归边界见[统一退役记录](../../docs/INTEGRATION.md#已批准的流程收敛与退役)。
+
+旧 `staged_three_stage` 执行链及其专属 COMSOL、分析器运输、接口对比、pulse-chain audit 和 local-exit-state 诊断已整体退役；runtime binding 当前仅接受 schema 5，并只登记 `single_flight_transport` 消费者。源发布、母群／时钟合同、活动 N1 连续单飞及共享科学 helper 保留，历史和在途冻结资产不变。本次为源码／合同收敛，不新增物理资格。 完整旧 family 静态门禁完成 814 项（811 项通过、3 项跳过，205.513 s），直属依赖闭包 7 项及四极杆 phase4 7 项通过；runtime binding 编译检查、Ruff 与 PowerShell 解析通过。公共 GATE 已正常释放；报告保存在工作区 `artifacts/projects/instrument_assembly/scratch/iob_path_probe_20261024/staged_retirement_gate.log`。
+
+## 所有权
+
+- 上游项目拥有器件几何、RF驱动和canonical输出；源以冻结粒子表发布，不能因源的生成方式另立输入权威。
+- 独立[加速器项目](../../../projects/orthogonal_accelerator/README.md)拥有局部理论与构建，
+  [oa-TOF](../../../projects/single_reflection_oa_tof_mass_analyzer/README.md)拥有整机布局、反射器、耦合和Formal资产。
+- integration拥有连接器、端口绑定、单飞适配、campaign生命周期、联合分析和集成证据。
+- 唯一公开执行入口为[execute.ps1](../workflows/family_source_closure/execute.ps1)；
+  [run_single_flight.ps1](../runtime/run_single_flight.ps1)是其内部SIMION运行边界。
+
+## 当前配置与入口
+
+### 同源八极导引接入与二区／三区复用
+
+裸导引局部工作流已迁至[直属执行入口](../../workflows/local_frontend/execute.ps1)的 `-Request`，
+冷却前端也由[直属冷却入口](../../workflows/cooled_frontend/execute.ps1)的 `-Request` 选择，原family冷却路由已删除。
+两者复用 OA 器件提供者、RF／脉冲运行器、
+公共 PA 缓存、自动批调度和完整母群分析，不包含反射器或 MR 联合飞行。裸导引接入已实现
+canonical 二区和显式 sectioned 三区；旧二区／三区整机路径保留。两种局部结构分别冻结实际电极、
+平面、侧口和装配身份，不能只换变体名或复用另一结构的场资格。
+
+同源对象是 IP 的原始 100 行释放及其裸八极导引：29 mm 实体杆长、内切半径 2 mm、圆杆半径
+0.6 mm，3.7 MHz、每极 1000 Vpp、导引段真空。源为半径 1 mm、全高 5 mm、524 Da／+1，
+纵向能量高斯参数 5±1 eV、横向 300 K。具体字节和参数由冻结源合同核验，保留全部 ID、质量、电荷、
+出生时钟和六维状态，不重采样；不得以 IP 出口幸存者或旧 OA 零横向速度源替代出生母群。
+
+所有几何、GEM、PA、IOB、源和诊断直接使用 `mrtof_global_cartesian`：慢漂移 +y、引出 -z，
+观察变换为单位阵，没有仅供显示的 Workbench 旋转。二区通过提供者 requirements schema 2 显式侧入口
+选择实际封闭端 profile；三区通过 `orthogonal_accelerator_bare_three_zone_requirements` schema 1
+完整声明已有 sectioned 几何，由提供者渲染，四个实际平面为 repeller、grid1、intermediate2 和 exit。
+三区不套用二区支撑框或孔径，也不套用旧含入口板／参考套筒的八模式结构。器件 API 与几何边界见
+[OA 当前能力](../../../projects/orthogonal_accelerator/docs/PROJECT.md#当前能力)。
+
+裸导引二区使用五个 PA+ 模式，三区使用六个：两项导引杆共模／差模响应，加各自三个／四个加速电位
+端点响应。实际环位置和 ON／OFF 电压通过同一显式线性模型合成；改变运行电压、RF 驱动或出生时钟
+不单独触发 Refine。缓存仍绑定真实电极、孔、装配、网格、PA 包络、GEM 和构建依赖；源包络改变
+实际 PA 范围时也改变身份。零厚理想栅面贡献求场电位但允许粒子穿越，不代表实际丝网或实体网格透过率。
+
+当前二区功能性作者采用 1 mm 杆端间隙、3 × 2.8 mm 侧孔，MR 孔壁 y=-67…-66 mm、中心
+(0,-66.5,32) mm；它不是历史孔径研究已证明的合适工作点。孔径离散 schema 3 根据真实法向、世界中心
+和各轴 cell 记录警告：当前 x/z=0.1 mm、y=0.2 mm。尺寸或边缘不对齐只告警，不改机械几何；
+实际 PA 的贯通节点及孔外 guard 仍是飞行门禁。
+两实现分别为 4+30 mm 与 4+15+15 mm；主平面电压相同，三区中间面位于下游线性压降的中点。
+它们还分别使用 44／34 mm 屏蔽 x 外宽、1／0.5 mm 环厚、25×26／26×26 mm 开口及不同栅支撑，
+孔边界沿用各提供者的 `inside_only`／`inside_or_on` 语义。因此相同机械侧孔不保证相同有效网格通道，
+必须分别读取编译后的孔拓扑；侧孔无 warning 也不代表整机网格已经收敛。
+
+二区／三区已分别完成原生场、孔拓扑、完整 N=100 discovery／extraction 和严格终态分析。
+两者保存 IOB 的全量默认回放均已通过。出口 z=0 的各自条件群如下，
+全部标准差均为人口 SD（ddof=0），母群分母始终是原始 100 个离子。
+
+| 指标 | 二区 | 三区 |
+|---|---:|---:|
+| 到达出口／母群 | 70/100 | 66/100 |
+| 原生提前停止／超时 | 30/0 | 34/0 |
+| σx／σy（mm） | 1.702776／3.734962 | 1.730299／3.538753 |
+| σθx／σθy（°） | 0.239963／0.980397 | 0.274469／1.096548 |
+| 到达时间 σt（ns） | 19.049654 | 18.007098 |
+
+`native_stop_unresolved` 只确认原生提前停止，尚未逐一归因于具体电极或数值机制。
+这是两个功能性工作点，不证明时间焦点、数值收敛或 MR 接受度；几何对照也不是只改变区数的单变量实验。
+独立对照还保留共同出口 62 个 ID 的配对统计：二区／三区 σt 为 15.014281／16.606567 ns，
+与各自幸存群的变化方向不同，不能据表中 σt 宣称三区聚焦更好。
+两套 IOB、修正后的检查面图、自动选择时刻的空间图和逐离子损失入口统一收录在
+[完整对照报告](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_165805__analysis__python__local-oa-design-comparison/results/scientific_report.md)；
+运行身份、缺陷闭合、验证范围及保留记录见[本轮冻结记录](history/20261021__same-source-local-multipole-oa-n100.md)。
+
+### 接入实际束团后的时间聚焦诊断
+
+目前工作点尚未完成实际束团的时间聚焦匹配，不能据出口宽度比较 OA 与 IP 的固有性能。
+现有三区中间电位恰为 grid1 与出口电位的中点，两个 15 mm 区域的理想场相同，
+尚未利用第三个独立电位消除高阶时间像差。原理论电压只使首区中心、零引出速度附近的一阶
+时间导数在出口为零；经过裸导引后的真实束团几乎填满 4 mm 首区，且具有位置—速度相关，
+不能沿用小束团的一阶焦点结论。
+
+对真实脉冲时刻位于首区且最终到达出口的固定 ID 群，使用原生记录的相邻样点作有界穿面插值，
+在 z=30…0 mm、间距 0.5 mm 的全部 61 个面上保持同一群体：
+
+| 固定配对群指标（人口 SD） | 二区，64 个 ID | 三区，59 个 ID |
+|---|---:|---:|
+| 原生出口 σt（ns） | 17.305794 | 16.618598 |
+| 已采样区间最小 σt（ns） | 14.7250 | 13.0748 |
+| 对应 z（mm） | 12.5 | 13.5 |
+| 同一脉冲六维状态的分段匀场出口预测 σt（ns） | 8.736555 | 7.683662 |
+| 原生减匀场到达时间残差 SD（ns） | 14.500927 | 14.215309 |
+
+这说明实际加速过程中仍有时间压缩，但束腰位于出口之前且仍较宽。由各自全部出口状态
+预测的无场漂移最小点在负漂移距离，向下游移动观察面不能恢复窄时间焦点；负距离外推本身
+不是实际场中的焦点，实际束腰位置依据上表的有界轨迹重建。原生与匀场的时间残差同脉冲
+y 位置有关，但该相关性尚不能把原因唯一归到某个电极、边缘场或数值误差。
+残差与匀场时间相关，必须包含协方差项，不能将两者的 SD 相加或独立平方相加。
+
+理论调压必须使用不依赖检测结果的脉冲占据群：二区 72、三区 83 个原始 ID，全部保留，
+固定几何和源平均位置的静电能量。中心附近的一阶导数闭合反而会增大这两个完整有限束团的
+理想 RMS，不能作为自动接受条件。独立三区调压的理想预测有改善空间，但当前最佳候选
+触及所声明的场强比搜索边界，尚未经过实际三维场 N=100 验证，不能声明聚焦已修复。
+原始数据、逐 ID 预测、沿程空间／时间统计、源稳定性和英文诊断图见
+[诊断 run](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_175500__analysis__python__local-oa-time-focus/summary.json)
+及其 [机制图](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_175500__analysis__python__local-oa-time-focus/results/oa-timing__mechanism.png)。
+这次分析不启动求解器、不改写原生运行，也不生成修复后的 IOB。
+
+进一步固定场强比 2、4、8、20，仅优化首区压降的理论核验，分别得到完整 83 个离子的
+理想 σt 为 5.692433、4.923595、4.522867、4.276670 ns；原同群为 7.782819 ns。
+下一实际场候选采用场强比 8 的内点：repeller/grid1/intermediate2/exit 为
+4964.789546/3815.876939/423.986327/0 V，各环保持实际位置及分段线性电位。
+它是完整有限束团 RMS 的局部候选，中心一、二阶导数并未同时归零，也不是已验证的实际焦点。
+该候选的 [N=100 请求和正式 PrepareOnly 结果](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_182734__build__python__oa-ratio8-candidate-prepare/summary.json)
+已冻结并通过准备校验，六模式物理场缓存键与原三区一致。随后完成的
+[实际场 N=100](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_190350__sim__simion__local-bare-guide-oa/summary.json)
+只改变 ON 电压，保持原脉冲、几何、出生及数值设置；缓存命中，没有重复 Refine。
+出口由66增至69个，原66个全部保留，新增ID为11、17、32。
+各自出口σt由18.007098降至10.396227 ns；固定共同66个出口则由18.007098降至8.65387 ns，
+中央90%宽度由55.66836降至27.40455 ns。新增尾部仍计入69个出口，不能用共同群代替完整结果。
+各自出口σθy由1.096548变为1.191973°，共同66个则为0.89717°；
+出口总能量由4276.735±216.163变为4248.393±330.407 eV。
+实际301面重建及完整逐ID配对见
+[调压对照](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_195956__analysis__python__oa-voltage-paired-focus/summary.json)。
+共同全程完整59个ID的最小σt由13.05771 ns（z=13.7 mm）降至6.90345 ns（z=4.7 mm）；
+这是同网格实际轨迹的改善，尚不是数值收敛后的最终聚焦工作点。
+候选保存IOB默认新进程飞行与调度飞行的100个ID、61,150个事件逐值一致，控制文件未改写。
+
+当前脉冲选择首先最大化合格占据数，其次最小化归一化束宽，之后才比较质心距腔体中心。
+三区选中 83 个离子的 y 均值为 −58.643134 mm；质心最接近 −50 mm 的已有候选只有
+63 个合格占据且 σy 更大。因此延迟脉冲可能改变时间像差与收集率的取舍，不能把占据变化
+直接记为损失，也不能无实场对照地把延迟视为聚焦修复。
+
+对原三区基线（场强比1）的 PA 作原生静态抽样，完整保留 83 个脉冲占据位置、83 个相同 x/z 而 y=-50 mm
+的配对参考及 29 个轴线点。当前脉冲位置中有 27 个的 Ez 相对首区匀场偏差超过 10%，
+13 个超过 50%，8 个 Ez 反向；这些百分比仅作诊断分组，不是验收容差。偏差最大的五个
+ID 为 92、64、78、52、15，均无配对出口。在 59 个配对出口中，Ez 偏差与原生减匀场
+到达时间残差的 Pearson 系数为 0.71125。畸变主要位于侧入口附近且依赖 x/z，不能只按
+y 的单一截断值判定。脉冲场在样点的最大绝对分量约为 Ex/Ey/Ez=402/1448/1437 V/mm，
+瞬时 RF 项仅约 0.225/0.541/0.133 V/mm；这不排除 RF 在脉冲前改变束团相空间。
+该静态场—时间残差配对属于原基线，不能直接当作ratio8调压后的实测残差。
+结果支持有限场参与时间展宽和损失，但单时刻点抽样尚不能证明全部尾部机制或排除网格误差。
+数值、逐 ID 关联及未出射记录见
+[静态场诊断](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_181710__analysis__simion__oa-static-field-probe/summary.json)，
+[英文场分解图](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_181710__analysis__simion__oa-static-field-probe/results/static_field_diagnostic.png)。
+
+下一步先核验入口附近的网格敏感性，再验证理论指导的脉冲调整及最终工作点积分步长，
+报告全母群收集率、固定 ID 的沿程最小时间宽度及出口空间／角度分布，再同源比较 IP。
+当前完整三区 warm N=100 的正式容量承诺约 3.26 GB，新运行仍须按实时台账准入。
+当前 IP D、二区 OA 和 RF25 诊断包的实际 PA 保留；旧 IP A 的部分解 PA 退役范围与保留核验见
+[公共清理审计](../../../../artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/20261021_185355__analysis__repo__retire-completed-a-responses-r02/summary.json)。
+另按公共机制退役旧二区28个批次显示轨迹缓存650,100,000 B，保留全部实际PA、GUI全群轨迹、
+原始日志及诊断；原manifest不改写，保留资产通过retirement verifier及重新封存，见
+[批次缓存清理审计](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_200959__analysis__repo__retire-oa-batch-display-buffers/summary.json)。
+2026-10-22另按公共机制退役原三区基线及早期ratio8两套可重建工作PA和批次显示缓存，
+共60个文件、3,399,271,008 B；原始轨迹、全部损失、源、控制文件和重建输入保持不变。
+这两套历史IOB需要先重建PA才能加载，不能再称为现成可飞行包；二区和RF25的PA不在此次退役范围。
+完整保留校验及容量记录见
+[工作载荷清理审计](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261022_085336__analysis__repo__retire-old-oa-gui-working-payload/summary.json)。
+
+同物理边界局部Dirichlet patch已完成粗网格0.1/0.2/0.1 mm与细网格0.05/0.1/0.05 mm、
+各自installed-default及显式1e-5 V停止条件的四组真实静态求场。195个样点全部保留，
+边界电势闭合至约1.46e-11 V；粗patch自检的小残差不能代表细化收敛。
+83个真实占据点的细减粗ON场最大|ΔEx/ΔEy/ΔEz|约为65.65/57.06/81.28 V/mm
+（显式停止条件）；即使排除作为诊断单列的含金属插值角点，另外81点仍有显著差异。
+同细网格改变停止条件的分量场差小于约0.93 V/mm；RF单位响应乘500 V幅值的网格差
+分量上界约0.03/0.16/0.11 V/mm，主要敏感项为脉冲场。
+侧入口存在真实三维畸变，但目前不能把其全部大小与时间影响认定为已收敛物理结果。
+固定粗父域边界误差及局部域范围仍是限制，不宣称全域收敛，见
+[四组网格与停止条件证据](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_201515__analysis__python__oa-patch-mesh-stopping-comparison/summary.json)。
+独立CSG核验确认父域与patch实体同形，粗细GEM差别只是减料刀具延长量；侧壁、孔缘、
+grid1和repeller关键边缘在两套网格均为整数节点，不能归因于边缘未对齐造成的几何移动。
+ID92的粗插值括号含金属而细括号不含，但同x/z的腔中心配对几乎无差；ID22的两套括号
+全是真空仍有ΔEz约43 V/mm。因此目前只能定位为侧口／高压极缘的离散求场及插值敏感性，
+不能唯一归因于金属角点插值，见
+[几何与插值独立核验](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_202406__analysis__python__oa-patch-geometry-discretization/summary.json)。
+
+同边界全域y加密0.2→0.1 mm的首次[真实N=100运行](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261022_091921__sim__simion__oa-same-bounds-y-refinement/summary.json)
+已正确封存failed/full，不能作为数值或聚焦验收。100出生和100终态均完整，但69个z=0出口记录
+随后均发生原生Splat，未到程序的z=-0.05 mm数值停止面；严格终态校验因此拒绝发布出口统计。
+这里的直接Dirichlet求场把z=-0.1 mm数值边界也标为电极，与z=0理想透明单排栅相邻，
+形成了非物理的连续双层碰撞标记。冻结求场代码、逐六面原生检查和逐离子出口／终态一致状态
+支持此机制；这不证明OA物理栅或新电压本身阻挡了69个离子。
+后续应保留原始失败证据，在新PA身份上恢复原GEM物理电极标记，验证求解电势逐点不变后再飞行，
+不应放宽终态校验或把这69个原生停止直接改称成功。默认100回放及25粒子半步长对照尚未执行。
+独立[故障取证](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261022_094724__analysis__python__oa-boundary-mask-forensic/results/scientific_report.md)
+保留100行完整母群、69行出口／终态逐值核对及545条带SHA的原生日志行；没有改写原始失败运行。
+
+后续[物理标记恢复运行](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261022_095627__sim__simion__oa-y-mesh-physical-mask/summary.json)
+逐套检查86,834,909个节点，恢复标记与原GEM完全一致，全部存储电势逐值不变，
+195个场点及32个共享节点的电势和场分量差也为零。首个离子在相同时间穿越z=0，
+随后正常触发程序数值停止；这只验证单离子出口机制，不替代完整N=100。
+该运行因单批日志路径被公共JSON writer解包成字符串而封存failed/full，完整100尚未启动。
+公共`Write-RunJson`现保留空／单／多元素数组，回归覆盖实际PowerShell序列化和原对象语义；
+后续新运行重新冻结完整依赖，复用已验证场的独立只读副本，不重复Refine或改写旧运行。
+
+经[公共退役审计](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261022_101612__analysis__repo__retire-failed-mask-payload/summary.json)，
+首次错误标记运行的3套可重建PA和18个批次显示缓存已退役，释放2,739,417,984 B；
+629个原文件、249,548,964 B逐字保留，包括原始轨迹、全部损失、场诊断、源码和重建输入。
+原failed状态和三件套不变；修正标记后的场仍保留。旧错误场IOB须重建，不能作为现成交付。
+
+保持调压候选电压不变、脉冲延迟25个RF周期的请求已执行原生飞行及默认文件对照，
+但最终发布被外部中断，原运行清单仍为checkpoint；不能把其success摘要当作终态封存证据。
+现保留全部原始记录，先通过公共owner维护入口固定实际占用，再独立审查原始事件。
+其detector-blind实际目标时刻为34.5502568996449 µs，完整母群仍100，目标占据63个，
+并非将原83个裁去20个；此时88个仍活动、12个此前已有损失。
+完整63个状态的分段匀场σt为4.525202 ns；仅优化首区压降可预测4.165720 ns，
+均为理想理论，不替代实际场结果。其x范围达6.661832 mm，超出既有patch的x≤6 mm边界
+（ID94），不能把旧195点局部数值验证称为覆盖新全群。
+完整状态、理论导数／协方差与适用性见
+[RF25理论诊断](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_201609__analysis__python__oa-rf25-prospective-theory/summary.json)。
+
+独立原始记录[复核](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261022_091027__analysis__python__early-rf25-forensic/results/scientific_report.md)
+核对了两次完整100出生、寿命和61,150／73,774个默认回放事件；RF25仍按非终态诊断来源处理，
+没有补写其历史资格。早期脉冲的96个活动状态中，仅按z落在首区的有89个，预定义capture ROI有83个；
+83不能称为全部首区群。后续响应抽样须保留全部96及完整100母群状态，分别标注这些集合，
+不从缺失某个检查面反推离子已经进入另一个加速区。延迟后出口由69增至85，但完整出口σt由10.396227增至13.032797 ns，
+总能量由4248.393±330.407降至4085.140±517.799 eV。净增16由新增22及失去原出口6组成，
+共同63个出口的σt也由10.742增至12.702 ns，不能只归因于新增尾部。
+延迟脉冲时已有25个离子穿过grid1进入第二区，均出射，其总能量3413.033±317.566 eV、
+σt=21.661 ns；首区的60个出射离子为4365.184±266.768 eV、σt=6.496 ns。
+这些分组支持“脉冲前越过首区、只获得剩余加速电位”机制，但不是裁去尾部后的聚焦修复。
+因此后续网格及积分对照仍固定早期ratio8时钟，而不以延迟脉冲作为最终工作点。
+
+有限束团高阶项另有[完整分解](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_203324__analysis__python__oa-uniform-time-decomposition/summary.json)：
+原83／延迟63个完整占据的ρ(z,vz)为0.87801／0.90655。沿各自仿射速度拟合线的二阶时间模型
+给出σt=4.28275／2.81366 ns，而实际有符号速度的精确分段匀场计算为4.52287／4.52520 ns。
+高阶残差SD为2.82785／3.48083 ns；这些相关项须连同全部协方差重建总方差，不能当作独立噪声。
+此处的“精确”仅指匀场数学模型，不代表实际三维场或网格已收敛。
+
+进一步[完整83粒子两控制量理论](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261022_093316__analysis__python__full83-ideal-two-control/results/report.md)
+保持早期时钟及平均静电出口能量4337.009461 eV/q，仅比较具名场强比和各自一维首区压降。
+ratio8／16／20的理想出口σt分别为4.522867／4.318015／4.276670 ns；模型时间腰已在
+z=-1.038795／-0.935244／-0.915052 mm。因此提高比值不能解释或直接修复实际场中z=+4.7 mm的腰偏移。
+ratio16只是一项小幅候选，端电压4992.633439／3792.763180／223.103716／0 V；
+ratio20仅额外改善约0.041 ns且处于原比较范围边界，不称全局最优。
+该83粒子参考群也不等于新细场的82个detector-blind合格占据；后续实际候选必须重新核对适用群。
+
+后续调压应检查同一实际穿面群的时间—逆轴向速度协方差，而非只最小化理想模型。
+令t为ns、b=1000/|vz|为ns/mm，沿-z传播时dVar(t)/dz=-2Cov(t,b)。
+既有ratio8共同固定59群在出口的Cov(t,b)=+2.804667 ns²/mm，继续向下游仍展宽；
+降低该协方差并核对完整沿程曲率，才支持时间腰向出口移动。它不确定哪路电压应增大。
+两独立控制q的局部响应需实际G=∂t/∂q和H=∂b/∂q，使用
+∂Cov(t,b)/∂q=Cov(G,b)+Cov(t,H)及∂Var(t)/∂q=2Cov(t,G)共同评估。
+这些响应不能从单一工作点或三个混合operating PA倒推出；需要具名响应场或小型原生电压对照。
+无场反推距离仅为相关性诊断，不能代替实际场中的焦点。
+
+### 脉冲居中与冷却束团准备
+
+现有按人数优先的选时并不保证居中。[同刻诊断与同ID直漂分解](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261022_114427__analysis__python__pulse-centering-diagnostic/results/scientific_report.md)
+保留原100出生母群及666个已记录候选：当前窗口内82个离子的y质心偏中心−8.623 mm；
+最近中心候选仅62个，且y宽度增大。因此不能仅把居中提前到排序首位，也不能将捕获人数当作下游透过率。
+更新候选评判还须包括引出期间的慢轴漂移、实际场及位置—速度相关；此轮尚未替换生产选时策略。
+同ID比较表明y展宽的直漂尺度已接近实际值，但场残差与直漂项相关，不能独立相加或给出独立贡献百分比；
+x/z还存在强反相关场作用，不沿用y的单一解释。报告保留全部母群、活动／窗口群、逐ID状态和完整协方差。
+
+当前裸导引为0 Pa、无碰撞，RF约束不等于冷却。带缓冲气体的RF冷却、DC轴向捕获／聚束、门控释放及
+低压过渡是待验证的上游候选；HP主要捕获热化，慢轴居中紧团还需LP辅助势阱类似的功能。
+应复用IP物理实现并建立明确的带冷却提供者合同，不改变现有真空接口的含义；OA二区／三区仍分别保留。
+入口横向已按300 K设置，同温气体不保证横向温度进一步降低，须同时检查RF微运动、约束平衡及释放场。
+必要的小型因果对照为同一新几何的p=0与p>0，保留原始母群并重新适配OA入射Ey和时钟；
+不能用IP幸存者替换出生群。上述离线分析本身未构建组件或启动新飞行。
+
+独立 `cooled_frontend` 已迁至[直属入口](../../workflows/cooled_frontend/execute.ps1)，原family入口的
+`CooledFrontendRequest`路由已删除；活动能力与迁移验收见[直属状态](../../docs/INTEGRATION.md#依赖冻结与门禁)。
+二区／三区各自的初始作者输入在`integrations/config/experiments/cooled_frontend/*_field_seed.json`。
+下述设计与封存场证据保持其原owner。复用 IP 的真实 HP RF、四角辅助、入口镜片和屏蔽 CSG，
+将原 LP inner 对称片缩放为 HP 末端 2.5 mm 的新聚束电极，另以入口镜片形状构造出口门。
+末端中心距 HP 末端5 mm、门至OA外壁1 mm均为明确设计假设；HP100 mm、r0=2 mm与气体参数
+来自冻结 IP 提供者。保留原100出生、ID、时钟和导引位置，OA沿+y移至51.5 mm；不将已解旧PA平移拼接。
+
+七个实际 Laplace 响应在统一几何中求解，包括独立 inner 与 HP common 单位响应。
+局部设计用实际 DC 加 RF 赝势的完整 Hessian 与协方差求辅助电压，保留跨轴耦合；
+静电释放增能由阱内与OA入口真空电势差求解，不能直接把金属5 V当作Ey=5 eV。
+最初探索σy=0.4 mm只借用论文LP出口6σ约2.4 mm的尺度；首批实际场诊断显示其拟合平衡点
+落在局部采样域之外，因此不采用该解。当前作者输入改为σy=0.15 mm的新设计探索目标，
+实际场局部计算的平衡点在采样域内，仍不是新HP阱内测量或验收阈值。
+局部正定、拟合平衡点在采样域内及轴线势垒分别报告；不能代替三维捕获、RF稳定性或实际飞行。
+
+最晚直线入口到达29.3343 us之后首个RF零交叉给出关门初值29.3918919 us，
+再保持文献热化尺度1.5 ms，释放初值1529.3918919 us；实际入口边缘场和捕获仍待原生验证。
+冷参考实际场飞行用于确定共同OA出口居中时刻，再冻结给两种压力；参考粒子不替换母群。
+p=0与p>0只改变HP规定气浴的压力，HP之外均为0 Pa，不独立重选电压或脉冲。
+HS1截面2.27e−18 m²是沿用示例模型值，尚非524 u/N2测量标定；瞬时RF速度展宽不称为secular温度。
+当前代码和解析回归已准备，七模式真实求场已贯通；首轮在分析阶段错误拒绝初始化checkpoint后封存failed，
+未将该owner作为成功场源。修复后另建新运行闭合发布；N=100结果尚未完成，不据此宣称冷却或聚焦改善。
+
+[已封存实际场](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261022_130922__build__simion__cooled-frontend-fielddesign/summary.json)
+保留七个独立PA、真实场探针与[局部电压推演](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261022_130922__build__simion__cooled-frontend-fielddesign/results/cooled_field_design/voltage_design.json)。
+inner修正−3.68946 V、release HP common修正+0.0296361 V是理论控制量；
+预测热宽度及参考粒子不冒充原母群结果。D源已使用连续四角楔形，不能由native_projection的旧阶梯构造片段
+断言实际场使用阶梯CSG；其末端contour覆盖后才是冻结几何。0.2 mm横向网格对应缓楔面约18.10 mm轴向
+体素间距，与已观察的场起伏尺度相符，须局部细网格对照，当前不声明网格收敛。
+
+### 自动诊断与默认加载一致性
+
+局部共享时刻诊断默认叠加冻结 `frontend_contract.json` 中的实际二区／三区几何，
+使用相同 MR 原生坐标：OA 中央截面显示屏蔽、侧孔、repeller、环、支撑及透明理想网格，
+八根导引杆明确标为投影。部件使用填色和细实线边框；离子仍为投影而非截面筛选。
+图例区分仍在飞行、已正常引出、未确定原因的 native stop/splat 与 timeout；
+终态符号仅在实际终止时刻后显示原位置，明确为累计历史锚点，不传播或计入活动束团。
+共享轴限包含几何及全部显示粒子，显示比例变化明确披露。此修复只恢复默认图形语义，
+不改变源、时钟、轨迹、损失分类或统计；旧 immutable 图不覆盖，重绘另建可追溯分析运行。
+
+局部 `pulse` 还支持显式 `detector_blind_actual_occupancy_rf_delay_v1` 与非负整数
+`delay_rf_periods`，保留原 `seed`：先按当前运行的 detector-blind 占据规则给出推荐时刻，
+再由推荐时刻加整数 RF 周期派生实际脉冲。`inputs/pulse_decision.json` 分别绑定推荐／实际时刻、
+周期及目标占据，原100出生和时钟不变；32 ULP只匹配已有目标快照，不改写实际时刻。
+目标快照缺失或存在 unsupported ID 时保留决定证据并停止，不另选时刻或裁减源。
+原 automatic 策略直接沿用原推荐浮点值；引出、诊断与默认回放均消费同一个实际时刻。
+
+局部 extraction 分析现自动复用 IP 的纯穿面／聚焦接口，从 grid1 到实际出口的每个原生 z 网格面
+生成 `focus_*` 证据：完整母群穿面表、各自出口群、全观察面完整的固定 ID 群、σt及中央
+68%／90%时间宽度、x/y束宽、分量角、发射度与时间区间协方差。网格面间距只定义诊断采样，
+不表示轨迹或场已达到该精度；未知穿面不是新增损失，域外终态不作插值锚。出口无场漂移
+预测单独标注，不能替代实际下游飞行。CSV同时保留原始事件表行号及原生日志锚，不重置时钟。
+出口另自动输出全到达群的空间／角度相图、Ex/Ey/Ez及总能量和时间的ECDF、时能散点及
+带字段和单位顺序的总体协方差矩阵；不按尾部筛选，不把穿面群称为同刻束团。
+
+同一批已封存记录的301面验证分别见[二区真实记录诊断](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_192408__analysis__python__local-oa-focus-two-zone/summary.json)
+和[三区真实记录诊断](../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20261021_192453__analysis__python__local-oa-focus-three-zone/summary.json)。
+固定64／59个ID的最小σt为14.723398／13.057707 ns，分别位于z=12.4／13.7 mm；
+新适配器同时加密观察面并纳入合格原生步端点，尚未逐同面分离两者的影响；
+这些是已有记录的重建结果，不是新求解或数值收敛。原始两套运行均未改写。
+
+局部分析自动保留源、孔前／孔后首次正向穿越、各实际加速检查面、出口、全部损失及共同绝对时刻
+空间图。孔面按 +y 穿越，方向分量角为 atan2(vx,|vy|)、atan2(vz,|vy|)；加速出口按 -z，分量角为
+atan2(vx,|vz|)、atan2(vy,|vz|)。这些是有符号横向分量角，传播正反向另由穿越事件判定。各分量角与空间宽度使用完整声明口径的人口 SD（ddof=0）；
+孔前后同时保留各自到达群和配对 ID 对照，不能把幸存筛选后的变窄当作无损冷却。穿面分布与同刻
+空间快照分别输出，旧整机 `oatof_global_cartesian` 的轴名不可直接作为 MR 分量比较。
+
+共享时刻 census 保留诊断缺口：二区旧记录在 6.25 µs 有 12 个超出 32 ULP 的早到样点；三区
+有 ID16／ID36 的 6 个域外采样空缺，位于最后域内轨迹和真实 `instance=0` 终态之间。三区已发出的
+2,345 个共享样点均满足 32 ULP。两类缺口分别解释，不补值、不计为额外损失；出口条件群统计不受影响。
+
+孔面 checkpoint 与出口采用同一原生步内的时间及六维状态线性插值，明确标注为插值状态，
+不宣称它是无误差的积分器采样。每次孔面事件保留 `step_before → step_after → checkpoint` 三联
+TRACE；分析复核同粒子、同载体和同日志来源、正向包围、时间及六维插值值，原生端点不改写。
+没有有效包围的零步确认仅接受原生前后状态相同且实际孔面位置满足 32 ULP 序列化容差，不外推。
+`distance/velocity` 限步在 RF 非匀速场中仍可能微越面；旧直接记录落步状态的运行必须保留失败证据并
+以新冻结 Program 重跑，不能放宽孔面容差或将该分析拒绝计为离子损失。
+
+默认可加载 IOB、显式轨迹质量和轨迹保留使用同一生成链；每次局部执行还自动启动新进程，以保存的
+IOB 默认设置 Fly，并对照调度飞行的全母群原始记录。二区／三区分别在新进程通过 100 个原始 ID、
+61,816／61,502 个事件的逐值一致性检查，控制文件未改动；不使用脚本 `--programs`／Q 覆盖推断默认等价。
+该证据不替代手动 GUI 验收。操作与恢复见 [RUNNING](RUNNING.md#审查与-dry-run)。
+
+审查未发现需要重建调度器或逐成员重新 Refine 的依据；继续保留现有共享机制。零 transmitted 的 handoff
+续飞入口仍会拒绝启动，这是待完善的零收集结果发布边界，不应通过构造空 Fly 或删去母群损失绕过。
+
+| 对象 | 权威来源与范围 |
+|---|---|
+| 连接、端口与位姿 | [connection profiles](../config/connection_profiles.json)及两端port合同 |
+| 活动campaign发现 | [lifecycle registry](../config/diagnostics/lifecycle_registry.json)；普通探索按显式exploration准入 |
+| 单飞布局 | [oaTOF layout profiles](../../../projects/single_reflection_oa_tof_mass_analyzer/config/single_flight_layout_profiles.json) |
+| 300 mm孔径矩阵 | [pre-pulse合同](../config/explorations/ideal_acceptance_300mm_terminal_aperture_height_axialgrid010_pre_pulse_n5000.json) |
+| 当前来源 | `continuous_frontend`或`pre_pulse_restart`；后者不能冒充完整母群连续传输 |
+| 准备输出 | authored最小行单向展开为resolved plan/source/budget并冻结到run-local |
+
+当前20环三区候选为`CANDIDATE_ONLY`，不改变原Formal。完整母群使用
+`frontend_xy025_z010_coarse100_full_bore_main_local_xy050_z010`与`full_accelerator_v1`。
+上游细域、主域与local网格来自冻结profile，不由文档数值表另行定义。
+旧横向core、零场碰撞载体与旧pre-pulse优先级均不能成为当前完整母群路径。
+
+连接器继承上游屏蔽截面。正gap时有带孔端板，方形零gap不另造套筒或端板；圆形侧口由具名
+对接合同派生。长gap分域由冻结bridge合同控制，粗PA提供Dirichlet来源、细PA按优先级替换，
+不叠加场。孔径由入口local表达；缺少local或主family身份不闭合时不能飞行。
+
+单飞及分段analyzer入口已在外层区分轻准备、refine重计算、飞行重计算和轻后处理；
+[阶段运行边界](RUNNING.md#主机资源阶段)说明适用范围。此次改动不改变既有内部并发、观测和断点续算，
+也不增加真实求解或物理资格结论。
+`single_flight_transport`会把加速器理论源码及其实际导入的`common/contracts/particle_physics.py`一并冻结到
+run-local快照，并以脱离仓库的导入回归检查依赖闭包；这只证明执行源码闭包完整，不构成求解器或物理资格证据。
+
+## 活动代码精简边界
+
+活动入口审查已移除四个无注册、无调用、无当前文档或测试消费者的独立 CLI：固定 2.2 mm/100 Da/10 eV
+有限区间源生成、固定 winner 图、独立 time-series restart campaign 作者及独立恢复 pulse-selection 发布。
+当前时序后继仍由 `run_time_series_successor` 调用既有 restart 物化与 prepare；当前 pre/post-pulse 派生、
+恢复和分析发布继续使用 RUNNING 中的具名入口。既有 run、冻结快照和历史证据未改写，旧源码可由 Git 追溯。
+另退役无活动消费者的 compact handoff 独立恢复发布器及其历史 TRACE 恢复专属测试；正常 scanner 与直属收集入口保持，
+仍有效的获胜候选 ranking 收据校验迁入 scanner 测试，不改变母群、脉冲选择或冻结证据。
+无生产调用的作者工具 author_continuous_functional_smoke_campaign.py 已退役；它只用于从既有N=5000
+campaign另写固定首行N=1作者输入。其四项专属测试随工具删除，真实脉冲计划及canonical人口管线的
+两项行为回归保留。当前registry中的N=1诊断、显式exploration与既有母群／来源校验保持不变。
+已退役两份无注册、无活动读取者的 short-focus N=1 诊断收据及其专属 CSV，还有无引用的圆柱
+smoke follow-up 作者输入；历史 campaign 记录保留，不再让这些已移除的单粒子诊断成为活动源资产。
+同时移除未调用的通用验证器、旧全量 states CSV writer 与旧 N=1 manifest reader；保留 callback-neutral
+Lua 校验和当前 streaming CSV writer；原先仅由测试调用的全量内存 parser 及 StateRow 已删除，
+其时钟 ULP、非法采样时刻和终态分类测试改为验证实际 streaming 输出。冻结输入、完整母群、cache generation 及终态 manifest 的身份校验
+均有实际消费者，本次保留；未执行商业求解，不新增物理或资格结论。
+
+selected-source 人口数量只由 prepare 生成的 state-SHA 绑定 receipt 派生；runtime 验证 receipt 的来源、
+数量和区分大小写的 selector，并复核原 state 字节身份，不再为相同 state 另起 Python 计数和临时 JSON。
+launched-source CSV 计数仍保留。adapter 的源合同/上游设计路径与 SHA 检查统一由紧接的 runtime resolver
+执行；runner 冻结输入副本及其身份校验继续保留。单飞路径每次解析省一次 selected-state 扫描、一次 Python
+进程及一次临时 JSON 写读删除；当前 adapter+runner 路径共省两套；旧分段路径已退役。
+
+阶段资源限额在冻结并校验原始 engineering budget 后直接以内存 limits 对象传给进程与容量边界，
+不再另写 `resolved_resource_budget__<stage>.json` 或为该派生副本计算、登记 SHA。原始 run-local budget、
+其 source identity 与 PA cache policy 继续冻结，实际进程限额由各次 usage 的完整 limits 记录。
+共享启动器消费公共调度器冻结的单进程CPU下限；依赖发布经既有binding刷新器更新，未改变集成物理输入或资格。
+
+分域选择直接消费冻结 connection/provider 的间隙、端区跨度与终端厚度，不再另写无人读取的
+`domain_split_runtime_contract.json` 或维护只为该副本设置的 `required_pa_roles`。实际分域模式、
+IOB角色与优先级仍由现有构建、Program receipt及其行为回归核验。
+
+## 当前资格与有效证据
+
+| 范围 | 当前判定 | 证据与限制 |
+|---|---|---|
+| 单粒子分域路径、restart与局部缺陷修复 | 已有专项功能证据 | [历史索引](HISTORY.md)，不证明统计、场收敛或八臂完成 |
+| 旧零场／旧细域孔径比较 | 仅历史诊断 | 几何、电势或上游细域改变后，不能复用其handoff与当前结果混表 |
+| 9月11日第一组三链对照 | 物理资格失效 | RF对象作用域错误导致脉冲前RF未更新；匹配的检测数字也不能恢复资格 |
+| 修复RF后的第二组三链对照 | 对照失败 | pre-pulse IOB优先级与continuous不一致，producer状态集合不闭合 |
+| 当前修复后的方形h100 | 仍需重跑闭合 | 重建pre-pulse证据，再派生post-pulse与同钟continuous；不重复refine相同family |
+| 圆形四孔径与完整八臂 | 未完成 | 缺当前场family及完整链路证据，不宣称孔径优劣或分辨率提升 |
+| Formal与跨求解器等价 | 本轮无新增资格 | 不能由局部命中、单点峰宽或文档整理取得 |
+
+两组三链的精确run身份、数字、失败原因及整治前叙述保留在
+[失效对照与文档快照](history/20260911__single-flight-documentation-and-invalidated-comparisons.md)。本页依据已有源码及记录收窄冲突声明，
+没有重新核验全部外部manifest。运行前核对所用修订、冻结输入和对应验证收据；文档中的实现描述、
+工作区文件存在或代码已提交均不能单独证明该入口已通过真实运行或取得物理资格。
+
+单飞运行从冻结的 `resolved_population_contract.json` 经既有 Python 校验后直接接收 stdout 投影，
+不再另存 `resolved_single_flight_population.json` 或把其作为下游存在标记。family parent 的成功/失败
+manifest 直接调用现有公共 writer，保留原有输入、输出和状态语义，省去 Python 子进程运输。
+
+## 限制与判定边界
+
+完整母群分母始终保留。post-pulse条件群的检测率不能代替母群传输，少量命中不能证明峰宽优劣。
+离散检测/损失一致、脉冲状态一致、轨迹数值等价与场收敛分别验证；一次PASS不能覆盖其他层级。
+修复后的四槽pre-pulse必须与continuous保持同一PA角色优先级；所有旧数字只在对应冻结实现下解释。
+
+来源快照只证明实际记录的依赖身份；尚不宣称全部Python运行与工作树彻底隔离。
+恢复只能消费核验过的来源，建立新run；外部输入缺失、源或时钟不一致时不能凭历史文件名猜测。
+
+## 开放任务
+
+| 动作 | 进入条件 | 关闭条件 |
+|---|---|---|
+| 方形h100修复后全链对照 | RF作用域与IOB角色修复已通过相称静态回归 | 新pre/post/continuous冻结同母群、时钟和场；状态/终态与误差判据独立核验 |
+| 完成其余方形并扩展圆形 | 前一阶段完整且缓存来源可核验 | 八臂完成，发布完整母群比较与不确定度，不使用共同命中子群 |
+| 分域与整体场比较 | 同几何、源、电压、时刻和数值预算 | 电势/场交接及配对粒子差异满足预登记判据 |
+| 扩充跨工具路径preflight | 使用已有公共短路径和run package机制 | 各入口声明深层路径与实测限制；PA完整性错误不混同MAX_PATH |
+
+既有SIMION只读standalone长PA输入已由[公共参考](../../../docs/SIMION_REFERENCE.md#长pa输入路径)闭合，
+不再列为待开发能力。原生family仅在一次性构建staging中操作，运行消费已发布standalone表示；
+具体输入边界按该公共参考核对。尚未迁移的入口不能沿用旧family物化步骤启动供应商进程。
+跨工具preflight待办不代表公共长路径能力尚未实现。

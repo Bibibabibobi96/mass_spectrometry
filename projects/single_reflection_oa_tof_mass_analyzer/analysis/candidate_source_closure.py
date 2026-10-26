@@ -17,15 +17,30 @@ ROLE = "oa_tof_candidate_execution_source_closure"
 # This is intentionally an auditable allowlist, not dependency discovery.
 # Keep paths repository-relative and use forward slashes in the machine record.
 RELATIVE_PATHS = (
+    "common/simion/process_observation.py",
+    "common/multipole/grounded_shield.py",
+    "common/simion/aperture.py",
+    "common/contracts/machine_contracts.py",
+    "common/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_geometry.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_electrical.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/analysis/sync_geometry_contract.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/prepare_candidate_consumers.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/config/candidate_consumers.json",
+    "projects/single_reflection_oa_tof_mass_analyzer/config/design_variables.json",
+    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/formal/oatof_ideal_grounded.lua",
     "common/host_execution_lease.ps1",
     "common/host_resource_scheduler.py",
     "common/host_resource_policy.json",
+    "common/multipole/resource_budget_support.ps1",
     "common/comsol/add_comsol_size_feature.m",
     "common/comsol/livelink_environment.ps1",
     "common/comsol/livelink_failure_classification.ps1",
     "common/comsol/livelink_r2025b/comsolstartup.m",
     "common/comsol/resolve_comsol_64.ps1",
     "common/comsol/run_comsol_r2025b.ps1",
+    "common/paths/workspace_paths.m",
     "common/analysis/peak_metrics.py",
     "common/contracts/artifact_naming.py",
     "common/contracts/file_identity.py",
@@ -39,9 +54,9 @@ RELATIVE_PATHS = (
     "projects/orthogonal_accelerator/analysis/component_contract.py",
     "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
     "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
-    "projects/orthogonal_accelerator/comsol/build_two_zone_geometry.m",
+    "projects/orthogonal_accelerator/comsol/build_sectioned_geometry.m",
     "projects/orthogonal_accelerator/config/component_contract.json",
-    "projects/orthogonal_accelerator/comsol/build_two_zone_grids.m",
+    "projects/orthogonal_accelerator/comsol/build_accelerator_grids.m",
     "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
     "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
     "common/ion_release/dotnet_gaussian_box_ion11.py",
@@ -68,6 +83,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_extract_detector_arrivals.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_export_detector_events.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_parse_field_idealization.m",
+    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_read_cartesian_release.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/run_oatof_model.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m",
     "projects/single_reflection_oa_tof_mass_analyzer/docs/SIMION_REPRODUCTION_PARAMETERS.md",
@@ -103,7 +119,6 @@ PYTHON_BOUND_SOURCES = frozenset({
 })
 PYTHON_ASSIGNMENT = "$python = Join-Path $repoRoot '.venv\\Scripts\\python.exe'"
 HOST_PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {\n    Join-Path $repo '.venv/Scripts/python.exe'\n  }"
-WORKSPACE_ASSIGNMENT = "    workspaceRoot = fileparts(repoRoot);"
 
 
 def _source_path(source_id: str) -> Path:
@@ -159,18 +174,6 @@ def freeze_candidate_source_closure(
             assignment = HOST_PYTHON_ASSIGNMENT if source_id == "common/host_execution_lease.ps1" else PYTHON_ASSIGNMENT
             payload = _bind_python_runtime(payload, python_path, assignment)
             transformations.append("python_runtime_binding")
-        if source_id == "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m":
-            text = payload.decode("utf-8")
-            if text.count(WORKSPACE_ASSIGNMENT) != 1:
-                raise ValueError("candidate MATLAB paths source has an unexpected workspace binding")
-            workspace_path = artifact_path.parents[2]
-            matlab_path = str(workspace_path).replace("'", "''")
-            payload = text.replace(
-                WORKSPACE_ASSIGNMENT,
-                f"    workspaceRoot = '{matlab_path}'; % frozen candidate workspace binding",
-            ).encode("utf-8")
-            transformations.append("candidate_workspace_root_binding")
-
         target = code_root / source_id
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(payload)

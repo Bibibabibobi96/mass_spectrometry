@@ -27,6 +27,7 @@
 | 人工物理设计 | [`config/baseline.json`](config/baseline.json) |
 | Formal科学合同 | [`config/modes/formal.json`](config/modes/formal.json) |
 | 求解器数值合同 | [`config/formal_solver_numerics.json`](config/formal_solver_numerics.json) |
+| 候选仪器布局 | [`config/single_flight_layout_profiles.json`](config/single_flight_layout_profiles.json) |
 | 程序几何发布 | [`config/resolved_geometry.json`](config/resolved_geometry.json) |
 | 下游集成required port | [`config/interfaces/required/oatof_accelerator_entry.json`](config/interfaces/required/oatof_accelerator_entry.json) |
 | 分析定义 | [`config/analysis_contract.json`](config/analysis_contract.json) |
@@ -61,13 +62,12 @@
 SIMION运行边界见[`docs/SIMION.md`](docs/SIMION.md)，Formal与开放任务见[`docs/PROJECT.md`](docs/PROJECT.md)。
 Candidate campaign的仓库模块入口为`workflows.experiment_campaign.run_campaign`。
 
-RF多极杆离子光学→单次反射oa-TOF的活动实现由
-[`../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md`](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)
-规定的项目端口、公共解析器和
-`rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`实例承载。本项目required port描述
+RF多极杆离子光学→单次反射oa-TOF的新装配与整机运行从
+[统一集成入口](../../integrations/README.md)进入；目录与职责遵循
+[连接标准](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)。本项目required port描述
 对上游粒子、入口面、公共电位、场边界和时钟的接受要求。当前连接状态、oracle结论与资格边界只查
 [`docs/PROJECT.md`](docs/PROJECT.md)和
-[`integration当前文档`](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)，
+[统一集成状态](../../integrations/docs/INTEGRATION.md)，
 本入口不复制运行结论。
 
 ## 目录职责

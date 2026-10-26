@@ -12,6 +12,9 @@
 | 序列化几何、检查孔拓扑 | [几何与 Workbench](#几何与-workbench) |
 | 缓存 PA family、导出 standalone 工作点 | [PA 缓存与工作点](#pa-缓存与工作点) |
 | 长 PA 输入与缓存写隔离 | 先读[跨项目边界](../../docs/SIMION_REFERENCE.md#长pa输入路径)，再读 [API 与证据](#长路径输入-api与证据) |
+| 读取原生 Fly 完成事实 | [原生完成事实](#原生完成事实) |
+| HS1运行副本的重复Fly复位与参数审计 | [HS1生命周期](#hs1运行副本生命周期) |
+| 共用电压边沿步长计算 | [电压边沿](#电压边沿) |
 | 并发、资源画像及中断续算 | [调度与恢复](#调度与恢复) |
 | 查旧 Fly 入口审计 | [只读历史入口](PRODUCTION_FLY_AUDIT.md) |
 
@@ -34,17 +37,58 @@ x/y/z顺序取值（法向y时为x/z）。验证器只置换PA节点索引，既
 oaTOF、single-flight或具体电极编号。
 
 `surface=fractional`只提高非对齐表面的场与边界表达精度，不保证连续几何精确，也不能替代真实PA拓扑审计
-或网格敏感性验证。本层不选择PA/IOB和物理参数；商业进程仍由项目runner按统一预算与串行规则启动。
+或网格敏感性验证。本层不选择PA/IOB和物理参数；商业进程仍由项目 runner 经公共主机调度和冻结预算准入，
+独立粒子批次的并发再由本层调度器决定。
 
 所有新建SIMION Workbench必须从[`assets/iob_instance_seeds/`](assets/iob_instance_seeds/README.md)
 中与实际PA实例数一致的干净GUI种子派生。该公共目录提供1--10槽连续容器和唯一占位PA；派生器必须替换每一个槽，
 不得创建空槽或保留占位实例。种子只用于生成运行目录或正式交付目录中的派生IOB，绝不原地修改。
 
+## HS1运行副本生命周期
+
+[`collision_hs1.adapt_hs1_for_repeat_fly`](collision_hs1.py)接收显式冻结的官方SIMION 2020
+`examples/collision_hs1/collision_hs1.lua`文本，返回增加`reset_run_state`和只读`bound_parameters`的运行副本。
+它是仓库的生命周期适配，不是供应商推荐的新碰撞算法；安装目录源码不修改。未知私有声明、参数绑定、
+已适配来源或非唯一return均拒绝。碰撞公式、抽样、参数、PRNG及种子约定保持，调用方负责原始／适配源码身份。
+IP与冷却前端共用此入口，并沿各自现有冻结机制携带公共模块；冷却消费者不再依赖IP functional工作流。
+气体分布、调用时机和科学时序仍由消费者拥有，SDS不通过此HS1专用适配。
+
+## 电压边沿
+
+[`voltage_waveforms.lua`](voltage_waveforms.lua)提供三项纯数学操作，时间输入均为微秒：
+
+- `cap_before_edge(time_us, current_dt_us, edge_us)`仅在边沿严格位于未来时缩短步长；到达或越过边沿后保持传入步长。
+- `rectangular_gate(time_us, on_us, off_us)`返回`active, next_edge_us`，理想脉冲在`[on_us, off_us)`为ON；
+  ON前返回下一开启边沿，ON期间返回关闭边沿，关闭后返回`false, nil`。
+- `cubic_transition(start_value, end_value, u)`按原运算顺序计算
+  `start_value + (end_value - start_value) * u * u * (3 - 2 * u)`；不自行截断`u`或改变原时序。
+
+调用方负责验证时钟、边沿和归一化进度，选择器件阶段、触发及电极绑定；恒定电压仍是普通数值，
+公共模块不调度事件或自动平滑理想跳变。IP的`native_drive.lua`显式接收模块，runtime与场探针注入同一冻结副本，
+抬升进度及其截断仍由IP决定。MR联合场审计保留上游已绑定的驱动与波形源码；电压投影显式冻结并注入公共模块，
+IP距离研究同时绑定并核对源驱动及波形身份。run、worker及保存工作台携带必要代码伴随文件，恢复消费冻结源码。
+full／local脉冲hook及冷却前端的入口关闭／释放边沿也显式注入此公共模块；Program沿已有源清单冻结并内嵌它，
+不从活动仓库动态加载。器件脉冲模式和时序仍归hook，现有RF kernel保持原权威。
+[`test_voltage_waveforms.lua`](test_voltage_waveforms.lua)是无PA／Workbench的纯Lua边沿、矩形门及三次过渡回归；
+职责标准见[电压驱动与同步](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#电压波形器件驱动与同步)。
+
+## 原生完成事实
+
+[`native_completion.py`](native_completion.py)只解析仓库已实测的 SIMION 2020 原始行
+`status,Fly completed. <splats> splats[, <seconds> seconds]`：它提供 splat 数和可选耗时，
+不把这项项目实现表述为供应商稳定 stdout ABI。裸前缀、截断或旧格式不是完成事实；调用方选择自己的
+单日志唯一或多日志显式求和策略，且不相加 elapsed。项目仍负责 TRACE、粒子 ID、时钟、阈值和科学终态。
+
 ## PA 缓存与工作点
 
 [`pa_family_cache.py`](pa_family_cache.py)提供完整静电PA-family的内容寻址复用：调用方必须给出完整的
-数值身份（resolved geometry、GEM、basis namespace、xyz网格、网格相位、surface、SIMION可执行文件身份、
-Refine策略和构建器身份）以及精确文件清单。它只缓存并逐字节核验`.pa#`、`.pa0`和basis数组；新发布的
+数值身份与精确文件清单。family可以只有一份工作PA，沿同一事务、owner和generation协议发布；
+独立求解单元的划分与审计证据边界见[统一复用规则](../../docs/DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)。
+身份包含resolved geometry、GEM、xyz网格、网格相位、surface、SIMION可执行文件
+和构建器身份；响应基另声明basis namespace与Refine策略，实际工作场则声明完整工作点电压／收敛表和边界策略；
+仅实际包含RF工作场时声明RF参考幅值，无RF工作场身份省略该字段。两种身份各有精确字段集合，
+不混用或补假响应基；具体电极与物理含义仍由提供者／工作流校验。
+同一缓存机制核验声明的原生或standalone PA及必要小证据；新发布的
 generation payload和manifest同时设为文件系统只读。schema v2默认按每组等长payload发布流式XOR冗余；单文件
 组的XOR即完整副本，因此不可重建或高成本PA具备单成员恢复能力。调用方只有在payload可由完整内容身份确定性
 重建时，才可显式采用`none_reconstructible`策略：仍逐文件SHA-256、只读封装和原子发布，但不复制等体积XOR。
@@ -52,8 +96,9 @@ generation payload和manifest同时设为文件系统只读。schema v2默认按
 但完整 family 物化只服务字节审计、迁移或受控 build 边界，不授权供应商进程再次打开其中的 `.paN`；
 SIMION 运行必须消费构建 staging 导出的 standalone `.pa`。任一缺失、额外、哈希不同或损坏 generation
 均失败关闭。IOB、Fast Adjust
-工作点、程序和Fly2从不作为缓存几何真值：每个run必须重新装配、重新保存并在本次manifest中绑定。该层不理解
-器件、坐标或电极含义，项目仍拥有其ID和几何合同。发布过程按cache key持有短生命周期目录锁；并发发布同一
+工作点、程序和Fly2从不作为缓存几何真值：新工作台由本次冻结输入派生并在manifest中绑定；恢复运行可以通过
+[公共续算计划](#中断续算)绑定并只读复用前驱的完整批次及其已保存IOB，不为已完成批次重复装配、保存或Fly。
+该层不理解器件、坐标或电极含义，项目仍拥有其ID和几何合同。发布过程按cache key持有短生命周期目录锁；并发发布同一
 key只允许一个写者，并同时建立容量门禁可见的TTL保护租约；遗留锁失败关闭并需按artifact保留规则审计后处置，
 绝不由缓存代码猜测为可删除。v1迁移或v2单成员恢复均发布到新的successor generation，manifest将前一代SHA-256
 冻结为`predecessor_generation_sha256`，完整验证新payload和parity后最后切换pointer；旧generation不原位修改，
@@ -82,6 +127,30 @@ builder把每个成员先写到返回的确定性scratch，再以原子改名落
 不重新Refine。生产`artifacts/`缺少可信容量ledger时在修改payload前失败关闭；首次事务还必须给出显式
 owner和`--producer-run-config`。common只对这个小型、冻结的运行配置记录路径和一次性SHA-256，随后续作和
 缓存命中不再读取它，更不会为此读取PA；因此每个新PA在产生重载荷前已有来源、责任人和恢复入口。fixture可在其外独立运行。
+原生构建或审计在两次advance之间失败时，owner确认原生写者已返回后，在释放容量承诺前调用
+同一`advance-transaction --record-stage-only`（Python参数`record_stage_only=True`）。它只接受已存在、
+同owner与producer的building事务，在原锁内通过文件大小重记该事务及其payload／working容量；
+不创建事务、读PA或重算哈希，不封存或推进发布，保留原状态与科学失败。单反射owner若连该记账也
+失败，在原失败summary说明待收尾，保留现有公共保护租约与承诺，延后stopped-payload seal，不洗成发布成功。
+
+尚未封存的`building`事务可在同一`advance-transaction`显式传`--producer-handoff <json>`
+（Python参数`producer_handoff`），交给新的受管producer继续缺失成员构建，不提供求解器checkpoint续算。
+请求为schema 1，含新run的`inputs/`下三份冻结record：`transaction_record`、`predecessor_manifest`、
+`stopped_receipt`，以及当前`capacity_lease_id/capacity_lease_owner`。三份record核验冻结字节和SHA-256，
+按JSON对象解析，不以文件大小限制合法manifest。stopped receipt必须来自公共
+`seal-stopped-payload`，与前驱manifest的run／状态及当前ready、pinned owner账本一致；owner负责在封存前
+实际确认writer及后代退出。已停止的`checkpoint`保持原科学状态，不改写为成功或失败。
+停止receipt以`run_config`记录封存时实际配置；handoff核对它与原transaction producer属于同一run路径，
+并验证当前配置字节。原producer SHA保留为开始构建时的来源记录；正常生命周期补齐依赖或收尾元数据
+不要求整个配置SHA永远不变。场identity和文件清单仍须完全一致。初始化checkpoint manifest保留原身份，
+停止时配置身份随冻结receipt保留，不改历史文件。
+调用同时以`--owner`和`--producer-run-config`声明新责任人；新run必须已登记，当前workflow租约须保护
+该run及cache，其他活跃key／事务／前驱路径保护仍拒绝。cache identity和文件清单保持完全相同。
+仅空inventory、无verification／generation的事务允许交接；原owner／producer与冻结前驱记录保存在
+同一事务的`producer_handoff`审计记录，新owner／producer一次原子写入。之后普通`building`分支登记容量，
+中断后重放相同请求或由新owner普通advance收敛，不增加状态机。scratch不读、不复制、不视为完成成员；
+已封存或发布的事务拒绝新交接，缺成员仍返回`build`，完整构建后仍须原生审计及正常验证发布。
+
 尚未验证的封存成员与其轻量receipt身份不一致时，owner可在同一个`advance-transaction`调用中传入
 `--member-recovery <json>`（Python参数`member_recovery`）。请求固定为schema v1、role
 `simion_pa_family_member_recovery`，绑定`cache_key`、`owner`、旧`inventory_sha256`、`receipt`
@@ -101,7 +170,12 @@ owner和`--producer-run-config`。common只对这个小型、冻结的运行配�
 任一快照失败均不部分更新。完成后的相同请求幂等返回正常 `verify` 阶段，不再复制或扫描 PA；随后仍须提交
 绑定新库存摘要的正常 SIMION 验证证据。此功能只修复已证明的库存读取差异，不接受损坏字节或跳过物理验证。
 生产`artifacts/`事务若使用`--published-pin-reason`，该pin与发布在ledger同一原子handoff中生效，不存在发布后
-再pin的窗口；这类长期资产不进入自动退休。未pin的generation也只能由固定PA manager入口
+再pin的窗口；这类长期资产不进入自动退休。唯一owner可在同一`advance-transaction`传入`--published-pin-generation-sha256 <exact-generation>`和
+非空`--published-pin-reason`，为已有的未pin published generation补长期保护。动作核对原owner、
+当前精确generation及ready ledger身份，不读PA，不改payload或科学身份；相同请求会补齐中断的ledger写入。
+持久保存IOB等消费者可在`validate_pa_family_cache_generation(..., require_publication_pin=True)`边界
+核验transaction与ledger的generation、owner和pin一致；普通运行期复用仍只需其现有精确租约与只读保护。
+未pin的generation也只能由固定PA manager入口
 `approve_pa_family_cache_retirement(cache_root, cache_key, generation)`退休：它在PA key锁内核对唯一transaction、
 current generation和sealed manifest，并复用manifest中的成员SHA/bytes生成完整文件清单，不重读大型PA。容量ledger
 在decision lock内核对manager、无pin和无租约后，先回调PA owner原子写`retired` transaction，再发布绑定generation
@@ -129,12 +203,17 @@ CLI 返回 `publication_metadata_correction_receipt` 供运行器冻结。原生
 保留原 pin，仅增加轻量证据，不走 stage handoff 或预留另一整包。完整纠错证据也纳入既有 owner retirement 清单。
 需要随 PA family 生成 standalone response receipt 时，同一 `advance-transaction` 可传
 `--response-receipt <json>`（Python 参数 `response_receipt`）。规范只含
-`schema_version: 1`、`receipt_name`（已声明的直接 JSON 成员）、`exporter_path` 和
+`schema_version: 2`、`receipt_name`（已声明的直接 JSON 成员）、`exporter_path`、
+`source_location`（`payload`或`build_scratch`）和
 `exports: [{response_id, source_name, standalone_name}, ...]`，不接受外部 PA 哈希。
-owner 先登记该规范，等待所有数据成员齐全，再在锁内逐成员 flush、扫描一次并置为只读；receipt
-writer 只复用本次内存 inventory，最后仅计算小 receipt 的哈希并联合封存。源映射必须属于该 family。
+owner先登记规范，等待声明成员齐全，在原锁内取得实际来源与保留响应的字节身份；schema 2 receipt中的
+source是构建来源记录，不要求导出用的原生PA永久留在generation。standalone响应仍须属于发布manifest，
+并按其库存核验。若source同样被保留，其名称／大小／SHA须与manifest记录相等，选择器不因此读取源PA。
+writer复用该次inventory，计算小receipt身份并持久化事务库存后，才清理同owner的scratch。
 相同规范或普通 advance 均可重放已登记事务；已经封存时只核对元数据，不再次扫描 PA。
 规范变化、已有未归属 receipt 或失败的写入均不能发布；未封存的中断写入由 owner 按原规范重建。
+新活动入口只消费当前格式；旧schema证据留在历史冻结输入，不增加fallback或改写已发布generation。
+前端仅保留独立响应与必要小记录；仍有真实原生消费者的OA／MR继续保留其声明的raw载荷，不按扩展名统一删除。
 
 [`native_fast_adjust_runtime_support.ps1`](native_fast_adjust_runtime_support.ps1)和
 [`assemble_native_fast_adjust_family.lua`](assemble_native_fast_adjust_family.lua)把已发布 raw `.pa#` 与上述
@@ -269,8 +348,7 @@ family 成员即使完整物化到私有目录也不得再次交给供应商进�
 兄弟文件延迟变化。原生 family 只在一次性 build staging 中构建，并由
 [`export_standalone_pa.lua`](export_standalone_pa.lua)复制到全新 PA 对象、保存为受同一 manifest 覆盖的
 standalone 响应。运行时只为这些真正 standalone 的响应建立短副本，在 SIMION 退出后核对源并清理。
-已经冻结的旧调用方仍可使用
-`New-ShortPaHardLink`／`Remove-ShortPaHardLinkDirectory`，但两个兼容名称也只执行独立副本语义。
+无活动调用者的旧 hard-link 命名转发接口已删除；已冻结运行继续使用自己的源码快照。
 
 `cache_generation.py materialize` 仍提供通用、逐字节核验的完整 family 复制，但不构成已发布 SIMION
 family 的运行时安全证明。只有新 family 的构建 staging 可以执行原生 Refine/Fast Adjust；发布后运行器
@@ -395,29 +473,49 @@ Fast Adjust 的短时多核峰值把随后长时间单核飞行误判为单路�
 SIMION公开策略由`limits.memory_policy=warn_single_worker`标明：预计内存不足时输出
 `MEMORY_PRESSURE_WARNING`与`admission.status=memory_warning`，若当前无活动worker仍允许启动一路。
 已有worker时，加一路仍须当前空闲内存容纳其最新实测峰值，并继续遵守CPU准入、槽位上限和启动间隔，
-避免同时启动多个大场消费者。低于0.5 GiB只在进入该状态时记录警告，不因内存预测或门限终止进程；
-Windows分配失败、真实进程非零退出仍保留失败证据并失败闭合。usage receipt记录实际策略和警告事件。
-无此SIMION策略标记的既有公共调用仍采用原保留量、critical终止与恢复行为；其他求解器不变。
+避免同时启动多个大场消费者。预计不足、普通压力或瞬时低内存不终止健康进程；
+正式首批观测及批次执行均保留已有的持续critical危险保护，不由`warn_single_worker`关闭。
+确认危险后的受管终止、有限恢复及失败收尾沿用原公共机制；阈值、持续时间与次数由同一公共策略提供，项目不得复制。
+Windows分配失败、真实进程非零退出仍保留失败证据并失败闭合。usage receipt记录实际策略、警告和危险处置事件。
+无此SIMION策略标记的调用继续采用其原准入保留量；其他求解器不变。
 
 ### 中断续算
 
-跨运行中断续算由[`batch_continuation.py`](batch_continuation.py)提供统一的不可变协议，有两种互斥策略：
-`build_batch_continuation_plan`验证失败/中断/checkpoint父run的manifest、冻结run-config、批区间、合同、母cohort输入和原始输出SHA-256，
-再把全局有序前缀中已经完整终态的整批物化到新run，并从第一个未完成批开始重放；它不拼接中断批的粒子片段。
-consumer可选择只保留受治理事件，或在仍严格校验释放、终态和完成哨兵的同时原样保留整份stdout及辅助TRACE；
-`build_whole_unit_replay_plan`则只复用每个独立工作单元的全部manifest绑定终态产物，未完整的单元整体重放。
-前者的consumer必须提供本机TRACE语法、可复用终态定义和新run输入投影；后者的consumer只提供独立单元键及
-run相对的终态产物清单。两者都不解析项目物理或替代结果物化。该协议与运行中的45秒观测、内存准入/重排互补，
-均为全仓库SIMION运行器可接入的公共能力。
-失败发布的紧凑保留例外同时支持两种 run-local 完成日志：末行为精确 `status,Fly completed.` 的预脉冲
-`simion__batch*.trace.log`，以及末行为原生 `status,Fly completed.*` 的全流程
-`simion__batch*.stdout.log`。两者都必须由 retention action 和失败/checkpoint manifest 绑定；普通日志或
-不完整批不能借此绕过容量策略。
+跨项目的复用与中断恢复规则以[开发标准：昂贵阶段复用与中断恢复](../../docs/DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)
+为唯一正文；这里仅说明现有公共 API 的职责和接入边界。
+
+[`batch_continuation.py`](batch_continuation.py)的`build_whole_unit_replay_plan`
+复用每个独立工作单元的完整终态产物，生成新的 run 输入，
+不恢复正在运行的 SIMION 进程、不拼接未完成批的粒子片段，也不推断项目的物理终态。
+`WholeUnitReplayUnit`必须显式传入`is_complete`；消费者用原生完成判据产生该布尔事实。
+为false的单元直接安排整单元重跑，不读取或哈希其部分日志；为true的单元仍须通过已有manifest绑定及字节校验。
+whole-unit plan schema 2直接绑定当前显式前驱manifest输入／输出中的实际文件，输出canonical绝对路径；
+恢复run再次中断时，下一次仍可复用其已绑定的更早产物，不扫描祖先、不复制日志或新建恢复权威。
+项目 adapter 只需提供其冻结的科学输入投影、独立单位及实际终态判据；项目 runner 负责把生成的 plan 接到新的执行与结果物化。公共层不把这些物理语义、粒子
+分类或项目结果布局变成第二套通用合同。
+
+PA family 的可恢复发布／复用由[`pa_family_cache.py`](pa_family_cache.py)的事务和 generation API 承担；
+运行期 Fast Adjust 私有 family 由[`native_fast_adjust_runtime_support.ps1`](native_fast_adjust_runtime_support.ps1)
+从已发布 generation 重建。两者均不保存或恢复供应商进程的内存状态。当前公共层尚未提供把任意
+项目 runner 自动接入 continuation 的 CLI：各项目保留上述窄 adapter，避免公共层猜测日志语法或完成语义。
+
+### 直接进程观察
+
+`process_observation.run_observed_process`只采样直接启动的外部根进程，并默认把墙钟阈值作为一次性
+`OBSERVED_PROCESS_WARNING`：健康SIMION自然完成，观测器不因耗时、峰值或日志静默终止它。若调用方已有
+独立、明确的放弃决定，才可同时提供`hard_deadline_seconds`与
+`hard_deadline_action="terminate_process_tree"`；Windows通过`taskkill /T`处置该根进程及其子进程。
+这不是资源调度、健康诊断或普通运行预算的替代入口。
+
+`particle_batching.merge_rebased_particle_csvs`按列名`particle_id`恢复ID，保留原列顺序和批次／事件行顺序。
+消费者可直接合并原CSV，不需为ID列重排物化中间表；项目母群、终态和碰撞校验仍由原消费者负责。
 
 ### 结果收据与串行边界
 
-成功运行只保留紧凑调度收据，不保留逐秒探测文件。 [`resource_profile.py`](resource_profile.py)发布首个正式
-批次的独立峰值并用run manifest及输入收据SHA-256复核；并行聚合峰值不得按进程数拆分。PA/IOB构建及没有独立粒子/可合并结果
+成功运行只保留紧凑调度收据，不保留逐秒探测文件。 [`resource_profile.py`](resource_profile.py)发布已完成运行中
+实测的单worker内存峰值及该worker的实际工作单元数，并用run manifest及输入收据SHA-256复核。
+后续worker峰值高于首批时使用其对应计数；未测得同一worker的CPU时不混用首批CPU。
+进程名、PID及创建身份保存在resource usage中；并行聚合峰值不得按进程数拆分。PA/IOB构建及没有独立粒子/可合并结果
 合同的SIMION任务保持串行；未知case资源身份每次先运行一个正式case，只有同一完整输入的已观测峰值才可参与
 后续case wave。已完成case campaign可以把画像写入manifest覆盖的summary；后续运行只发现这种受完整性保护的
 画像，不接受裸日志或未受manifest覆盖的JSON。调度器不会发现、批准或启动campaign，也不会在外层campaign之上创建嵌套并发。
@@ -425,7 +523,7 @@ run相对的终态产物清单。两者都不解析项目物理或替代结果�
 ### 调度的官方依据
 
 Windows能力依据（2026-08-26查阅）：Microsoft `MEMORYSTATUSEX/GlobalMemoryStatusEx`文档说明
-`ullAvailPhys`表示可立即复用的物理内存，用于实测并发容量和0.5 GiB警告；.NET `System.Diagnostics.Process`文档支持读取
+`ullAvailPhys`表示可立即复用的物理内存，用于实测并发容量和持续危险观测；.NET `System.Diagnostics.Process`文档支持读取
 `WorkingSet64`和`TotalProcessorTime`；Microsoft `taskkill /T`文档支持只终止选中PID及其子进程。采用这些接口
 是为了测量真实SIMION进程族，并记录真实内存压力及进程失败。
 

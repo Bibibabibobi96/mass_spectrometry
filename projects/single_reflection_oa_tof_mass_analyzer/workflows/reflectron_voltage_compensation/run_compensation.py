@@ -113,7 +113,7 @@ def _run_batch(
     started = time.perf_counter()
     completed, peak_working_set_bytes = run_observed_process(
         command, cwd=simion_dir, stdout=log, stderr=error,
-        environment=environment, timeout_seconds=600,
+        environment=environment, warning_seconds=600,
     )
     elapsed = time.perf_counter() - started
     if completed.returncode != 0:

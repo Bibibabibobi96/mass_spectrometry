@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 import copy
 import json
 import os
@@ -340,6 +341,10 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.snapshot["observed_at_ticks"] = time.time_ns()
         result = transact(self.path, request, self.snapshot, self.policy)
         self.assertEqual(result["live_process_ids"], [1, 99])
+        self.assertEqual(
+            [process for process in result["processes"] if process["pid"] == 99],
+            [dict(pid=99, started="0639590650123456807")],
+        )
         self.assertEqual(result["work_roots"], [dict(pid=99, started="0639590650123456807")])
         self.snapshot["processes"][-1]["started"] = "0639590650123456800"
         self.snapshot["observed_at_ticks"] = time.time_ns()
@@ -370,6 +375,26 @@ class HostResourceSchedulerTests(unittest.TestCase):
             self.snapshot["observed_at_ticks"] = time.time_ns()
             transact(self.path, dict(operation="inherit", token="reused", owner=dict(pid=1, started=cim)),
                      self.snapshot, self.policy)
+
+    def test_registered_child_cim_and_native_ticks_remain_one_identity(self) -> None:
+        cim = "0639590650123456700"
+        native = "0639590650123456703"
+        self.snapshot["processes"].append(
+            dict(pid=99, parent_pid=1, started=cim, memory_bytes=GIB)
+        )
+        self.acquire(1, budget(cpu=4))
+        self.snapshot["observed_at_ticks"] = time.time_ns()
+        owner = dict(pid=1, started="0000000000000000001")
+        transact(self.path, dict(operation="register", token="1", owner=owner, process_id=99),
+                 self.snapshot, self.policy)
+        self.snapshot["processes"][-1]["started"] = native
+        self.snapshot["observed_at_ticks"] = time.time_ns()
+        result = transact(self.path, dict(operation="poll", token="1", owner=owner),
+                          self.snapshot, self.policy)
+        self.assertEqual(
+            [process for process in result["processes"] if process["pid"] == 99],
+            [dict(pid=99, started=native)],
+        )
 
     def test_explicit_release_retains_active_descendant(self) -> None:
         self.acquire(1, budget(cpu=4))
@@ -524,6 +549,84 @@ class HostResourceSchedulerTests(unittest.TestCase):
         with self.assertRaises(StaleSnapshotError):
             transact(self.path, dict(operation="status"), stale, self.policy)
         self.assertEqual(self.acquire(2)["status"], "waiting")
+
+    def stored_state(self) -> dict:
+        with closing(sqlite3.connect(self.path)) as connection:
+            return json.loads(connection.execute("SELECT document FROM state WHERE id=1").fetchone()[0])
+
+    def test_slow_child_free_release_survives_unrelated_newer_poll_without_admission(self) -> None:
+        self.acquire(1, budget(cpu=4))
+        self.assertEqual(self.acquire(2)["status"], "waiting")
+        stale = copy.deepcopy(self.snapshot)
+        stale["observed_at_ticks"] = time.time_ns()
+        self.call("poll", 2, token="2")
+        before = self.stored_state()
+        request = dict(operation="release", token="1", owner=dict(pid=1, started="0000000000000000001"))
+        self.assertEqual(transact(self.path, request, stale, self.policy)["status"], "released")
+        expected = copy.deepcopy(before)
+        expected["records"] = [record for record in expected["records"] if record["token"] != "1"]
+        self.assertEqual(self.stored_state(), expected)
+        self.assertEqual(expected["records"][0]["status"], "waiting")
+        self.assertEqual(transact(self.path, request, stale, self.policy)["status"], "released")
+        self.assertEqual(self.stored_state(), expected)
+
+    def test_stale_release_keeps_child_seen_by_either_observation(self) -> None:
+        for child_in_newer in (True, False):
+            with self.subTest(child_in_newer=child_in_newer):
+                self.path = Path(self.temporary.name) / f"child_{child_in_newer}.sqlite3"
+                self.acquire(1)
+                stale = copy.deepcopy(self.snapshot)
+                stale["observed_at_ticks"] = time.time_ns()
+                if child_in_newer:
+                    self.snapshot["processes"][1]["parent_pid"] = 1
+                else:
+                    stale["processes"][1]["parent_pid"] = 1
+                self.call("status")
+                before = self.stored_state()
+                with self.assertRaises(StaleSnapshotError):
+                    transact(self.path, dict(operation="release", token="1", owner=dict(pid=1, started="0000000000000000001")), stale, self.policy)
+                self.assertEqual(self.stored_state(), before)
+                self.snapshot["processes"][1]["parent_pid"] = 0
+
+    def test_stale_release_preserves_owner_identity_unknown_process_and_console_rules(self) -> None:
+        self.snapshot["processes"][1].update(parent_pid=1, is_system_console_host=True)
+        self.acquire(1)
+        base = copy.deepcopy(self.snapshot)
+        base["observed_at_ticks"] = time.time_ns()
+        self.call("poll", token="1")
+        request = dict(operation="release", token="1", owner=dict(pid=1, started="0000000000000000001"))
+        before = self.stored_state()
+        for defect in ("wrong_owner", "reused_owner", "unknown_owner", "unknown_console", "unverified_console"):
+            with self.subTest(defect=defect):
+                stale, release = copy.deepcopy(base), copy.deepcopy(request)
+                error = StaleSnapshotError
+                if defect == "wrong_owner":
+                    release["owner"]["pid"] = 3
+                    error = ValueError
+                elif defect == "reused_owner":
+                    stale["processes"][0]["started"] = "0000000000000000020"
+                    error = ValueError
+                elif defect in {"unknown_owner", "unknown_console"}:
+                    unknown_pid = 1 if defect == "unknown_owner" else 2
+                    stale["processes"] = [p for p in stale["processes"] if p["pid"] != unknown_pid]
+                    stale["unknown_process_ids"] = [unknown_pid]
+                else:
+                    stale["processes"][1]["is_system_console_host"] = False
+                with self.assertRaises(error):
+                    transact(self.path, release, stale, self.policy)
+                self.assertEqual(self.stored_state(), before)
+        self.assertEqual(transact(self.path, request, base, self.policy)["status"], "released")
+
+    def test_stale_nonrelease_operations_remain_closed(self) -> None:
+        self.acquire(1)
+        stale = copy.deepcopy(self.snapshot)
+        stale["observed_at_ticks"] = time.time_ns()
+        self.call("poll", token="1")
+        before = self.stored_state()
+        for operation in ("request", "status", "poll", "transition", "register", "inherit"):
+            with self.subTest(operation=operation), self.assertRaises(StaleSnapshotError):
+                transact(self.path, dict(operation=operation, token="1", owner=dict(pid=1, started="0000000000000000001")), stale, self.policy)
+            self.assertEqual(self.stored_state(), before)
 
     def test_phase_cannot_exceed_host_capacity(self) -> None:
         self.acquire(1)

@@ -52,9 +52,6 @@ $fieldBinding=$null;$responseBasis=$null;$watch=[Diagnostics.Stopwatch]::StartNe
 $levelStatus=[ordered]@{}
 try{
     $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -ArtifactRoot $artifacts -RunDirectory $RunDirectory -Owner $plan.project -CommittedNewBytes ([int64]$plan.committed_new_bytes) -ProtectedPaths @($plan.protected_paths)
-    if($isCollisionOverlay){
-        foreach($path in $plan.guard_paths){$overlayGuards.Add([IO.File]::Open([string]$path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))}
-    }
     $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_static_field_provider.py');geometry_emitter=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_geometry.py');analyzer_shapes=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/analyzer_candidate_geometry.py');candidate_authority=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/corridor_field_provider.py');binding_loader=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/static_field_binding.py');builder=(Join-Path $repo 'common/simion/build_dirichlet_patch_basis.lua');executor=(Join-Path $repo 'common/multipole/resource_budget_support.ps1')}
     foreach($key in $plan.inputs.Keys){$copies[$key]=$plan.inputs[$key]}
     if($plan.ContainsKey('collision_build')){
@@ -78,6 +75,24 @@ try{
         if($LASTEXITCODE-ne0){throw 'Target native field preparation failed.'}
     }
     $plan=Get-Content -LiteralPath $planPath -Raw|ConvertFrom-Json -AsHashtable
+    $nativeInputs=Invoke-RunToolRootContext -RepoRoot $repo -Operation {
+        $text=& $python -B -c 'import json,sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import native_input_binding,read;print(json.dumps(native_input_binding(read(Path(sys.argv[1])),Path(sys.argv[2]))))' $planPath $RunDirectory
+        if($LASTEXITCODE-ne0){throw 'Native input metadata selection failed.'}
+        ($text-join"`n")|ConvertFrom-Json -Depth 50
+    }
+    $nativePaths=@($nativeInputs.instances|ForEach-Object{$_.pa_path})
+    foreach($level in @($nativeInputs)+@($nativeInputs.refinement_windows)){
+        foreach($property in $level.sources.PSObject.Properties){$nativePaths+=@([string]$property.Value)}
+    }
+    foreach($path in @($nativePaths|Select-Object -Unique)){
+        $overlayGuards.Add([IO.File]::Open([string]$path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+    }
+    if(-not$isComposition){
+        Invoke-RunToolRootContext -RepoRoot $repo -Operation {
+            & $python -B -c 'import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import read,verify_native_provider_inputs;verify_native_provider_inputs(read(Path(sys.argv[1])),Path(sys.argv[2]));print("NATIVE_INPUT_ASSETS=PASS")' $planPath $RunDirectory
+            if($LASTEXITCODE-ne0){throw 'Native input asset verification failed before vendor use.'}
+        }
+    }
     foreach($name in @('frozen_input','resolved_geometry')){
         $frozen[$name]=Join-Path $RunDirectory ('inputs/'+$name+'.json')
     }
@@ -183,6 +198,12 @@ try{
             $parentPa=if($plan.levels[$parentLabel].ContainsKey('reuse_source')){$plan.levels[$parentLabel].reuse_source.pa_path}else{Join-Path $RunDirectory ('simion/'+$parentLabel+'/'+$parentName)}
             $parentGuard=[IO.File]::Open($parentPa,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
             $arguments=@('--nogui','--noprompt','lua',$frozen.builder,$pa,$parentPa,($plan.levels[$parentLabel].box_mm[0..2]-join','),($level.box_mm[0..2]-join','),'x_mirror_five_faces',$convergenceText)
+        }
+        if($plan.refine_options.ContainsKey('skipped_point')){
+            if($plan.refine_options.skipped_point-isnot[bool]){throw 'Refine skipped_point must be Boolean.'}
+            $skippedPointText=if($plan.refine_options.skipped_point){'1'}else{'0'}
+            if($label-eq'parent'){$arguments=@($arguments[0..3])+@('--skipped-point='+$skippedPointText)+@($arguments[4])}
+            else{$arguments+=@($skippedPointText)}
         }
         $step=Invoke-ResourceBudgetedProcess @processArgs -ArgumentList $arguments -RedirectStandardOutput (Join-Path $RunDirectory ('logs/'+$stage+'.log')) -RedirectStandardError (Join-Path $RunDirectory ('logs/'+$stage+'.stderr.log'))
         $timings[$stage]=$timer.Elapsed.TotalSeconds

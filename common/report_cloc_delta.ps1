@@ -36,7 +36,7 @@ $filterDescription=(
   'artifacts/projects/<project>/(archive|scratch)/**;' +
   'language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;' +
   'production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);' +
-  'tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|*Test.m|*.Tests.*;' +
+  'tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|*Test.m|*.Tests.*;' +
   'unclassified=other_code_below_test_or_tests_path;' +
   'worktree_source=git_tracked_plus_nonignored_untracked'
 )
@@ -125,6 +125,7 @@ function Get-PathClassification {
   $components=@($normalized.Split('/',[StringSplitOptions]::RemoveEmptyEntries))
   $name=[IO.Path]::GetFileName($normalized)
   $extension=[IO.Path]::GetExtension($name).ToLowerInvariant()
+  $inTests=@($components|Where-Object{$_.ToLowerInvariant()-in @('test','tests')}).Count-gt 0
   if($ActiveEntrypoints.Contains($normalized)){
     return [pscustomobject]@{category='production';reason='execution_profile_entrypoint'}
   }
@@ -139,12 +140,12 @@ function Get-PathClassification {
   if(
     ($extension-in @('.py','.ps1','.m','.lua') -and $name-match '(?i)^test_') -or
     ($extension-eq'.py' -and $name-match '(?i)_test\.py$') -or
+    ($inTests -and $extension-eq'.py' -and $name-match '(?i)_fixtures\.py$') -or
     ($extension-eq'.m' -and $name-match 'Test\.m$') -or
     $name-match '(?i)\.Tests\.[^.]+$'
   ){
     return [pscustomobject]@{category='tests';reason='test_filename'}
   }
-  $inTests=@($components|Where-Object{$_.ToLowerInvariant()-in @('test','tests')}).Count-gt 0
   if($inTests -and @($components|Where-Object{$_.ToLowerInvariant()-eq'support'}).Count-gt 0){
     return [pscustomobject]@{category='production';reason='tests_support_mechanism'}
   }

@@ -34,9 +34,44 @@ COMSOL/SIMION也不得反向改写设计。
 typed operating-mode registry 只声明同一机械 base 上的电气差异。允许模式由对应项目的机器注册表
 解析；模式名不能隐式改变几何、源或数值设置，本页不复制模式枚举。
 
+## SIMION实体与独立PA
+
+[`simion_geometry.py`](simion_geometry.py)的`render_physical_gem(resolved, cell_mm_xyz, electrode_ids=...)`
+与独立项目的`render_gem`共用同一实体生成器。前者输出提供者原生局部mm坐标下的杆、屏蔽、端盖、孔、
+连接器和入口参考套筒；不包含`pa_define`、PA原点平移或数值吸收面。当前接受明确的圆柱外壳，支持连续及
+分段杆；贯通模型保留真实带孔外端盖。旧composed终端和矩形reference模型仍可独立渲染，尚不由该组件API
+解释所有权；封闭模型若把侧壁末端绑在PA域而非实体端面，也不能作为组件导出。
+
+`electrode_ids`是完整、互异的原生SIMION电极编号到装配求解器编号映射，省略时保持原编号。
+同组多个杆使用一个电气编号，不把它误称为每根杆的机械身份。`cell_mm_xyz`仅沿用原渲染器在金属外延长
+布尔减孔的padding，不改变实体表面或成为第二份尺寸权威。装配只在完整原生实体外应用一次显式位姿，
+不能再次按杆、端盖或套筒分别重算坐标。
+
+同文件的`physical_electrode_view(resolved)`发布圆柱提供者的完整物理电气组：原生SIMION ID、
+科学身份、金属角色及指向resolved的电位／drive来源。连续杆和任意已有分段拓扑共用渲染器的编号，
+不把数值census／absorber列为物理电极。同一电气编号的多个金属角色合并，冲突电位明确拒绝；
+视图不复制驱动数值，也不代表整机已支持多套独立驱动。
+
+圆柱外壳的`cylindrical_grounded_shield_v1`保持两端闭合，
+`cylindrical_grounded_shield_through_exit_v1`只发布真实出口孔；
+`cylindrical_grounded_shield_through_entrance_exit_v1`才在同一已解析的入口／出口孔径上贯通两块外端盖，
+并可发布真实`mechanical_entrance`和`mechanical_exit`。它是机械/API变体，尚未替代任何项目的原生运行、
+数值或Formal资格；内部释放面始终不是机械入口。
+
+2026-10-22核对SIMION 2020随附官方`docs/simion.chm`中的
+`gem_geometry_file.html#locate-or-project-project-it-transform`及`rotate_y`、`rotate_z`章节；在线定位见
+[官方GEM参考](https://simion.com/info/gem_geometry_file.html#locate-or-project-project-it-transform)。
+`locate(x,y,z,scale,az,el,rt)`先按`rt`绕X轴、`el`绕Z轴、`az`绕Y轴旋转，再缩放和平移；嵌套变换由内向外。
+第4参数`1`是单位缩放。对于`R=[[0,0,1],[1,0,0],[0,1,0]]`，完整原生实体使用
+`locate(tx,ty,tz,1,90,90,0)`；非轴对称点`(2,3,5)`投影为`(5,2,3)+t`。
+只写`locate(tx,ty,tz,1,90)`不能表达该完整旋转。已有按杆中心单独投影的helper保持原行为，不据新API
+重写其历史科学输出。此处参考向量及实体序列化回归不代替新装配的原生GEM栅格、求场或飞行验证。
+
 ## 下游终端组合
 
-下游终端profile由对应integration拥有，不在三个项目复制。
+下游终端profile由对应integration拥有，不在三个项目复制。 当前 `oatof_shield_terminal` 的唯一catalog为
+[`integrations/config/downstream_terminal_profiles.json`](../../integrations/config/downstream_terminal_profiles.json)，
+由 `instrument_assembly` 注册；公共campaign按该owner绑定，旧N1 family不再提供terminal catalog。
 [`downstream_terminal.py`](downstream_terminal.py)把已验证resolved design与选定profile确定性组合，
 输出唯一`downstream_terminal`几何、所有权和`axial_dc`电位。`owner=downstream`时禁止上游重复
 末端电极。屏蔽罩、连接器和外部参考外壳必须精确为`0 V`。
@@ -76,10 +111,23 @@ particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s,mass_amu,charge_sta
 时钟、释放面、质量、电荷和动能，并绑定 CSV 与 resolved SHA。家族母样本、允许前缀、精确路径与
 SHA 由项目 `particle_source_profiles.json` 绑定；粒子数等级由公共机器政策定义。
 
+新平面源可在项目 `particle_source_profiles.json` 的具名profile声明
+`{"release_spec":"config/sources/<name>.json"}`，与现有CSV `path/sha256` 形式互斥。
+JSON使用公共 `repository_ion_release` 的disk／filled-cone／RF策略，显式声明native coordinate ID、
+完整母群N、质量／电荷、释放盘、能量、RF频率、锥角和种子；RF／几何不随质量隐式调整。
+runtime和预算只验证请求与声明N，不采样。SIMION runner先冻结该JSON及 `common/ion_release` 执行源码，
+再由现有source preflight的 `--materialize-release --release-spec <frozen.json> --release-receipt <receipt.json>`
+一次生成run-local canonical CSV和receipt；输入均进入同一manifest。完整与分批投影只消费该CSV，
+核验冻结spec、receipt、质量／电荷和时钟，不重新采样。不得与family operating point、volume receipt、
+campaign相位／能量派生或外部CSV覆盖组合；COMSOL尚未接入该物化模式并明确拒绝。
+
 RF 家族母样本的随机圆盘位置、filled-cone 方向和 RF 相位出生时间由
 [`common/ion_release/mt19937_disk_cone_rf_phase.py`](../ion_release/mt19937_disk_cone_rf_phase.py)
 的受注册 disk 策略生成；本目录的 family builder 只选择冻结参数并发布既有的嵌套 CSV，不能再维护
 第二份随机采样实现。
+
+样本生成器提供家族N=100／1000／5000嵌套重建，以及`--output-sample --sample-count --seed`独立母样本入口。
+分批消费同一冻结母群并使用公共粒子ID映射；生成器只负责发布母样本。
 
 `ideal_transport.py` 也只投影该公共注册表的
 `mt19937_uniform_disk_sqrt_cone_rf_phase_v1` 状态到 SI 传输状态；该策略保留 L1 历史的五次 MT19937
@@ -142,7 +190,7 @@ effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_
 统计；无批准阈值时输出`UNQUALIFIED`或`INCONCLUSIVE`。
 
 项目当前状态只查各项目`docs/PROJECT.md`，跨器件状态只查
-[integration当前文档](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
+[integration当前文档](../../integrations/docs/INTEGRATION.md)。
 
 ## 求解器投影
 
@@ -151,11 +199,28 @@ effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_
 派生预算只经临时JSON传递，解析后由现有finally清理，不再另存run内的`resolved_resource_budget.json`。
 `Complete-ResourceUsage` 只读取已有 usage 收据收尾，不接收无消费者的预算路径。
 
+单进程观察器不以墙钟、目录体积、进程树工作集或可用内存预算越限判定求解器不健康：每种越限只写一次
+`RESOURCE_BUDGET_WARNING`并保留健康受管进程至其自然退出。低CPU、暂时无输出或采样空洞也不是停止依据。
+原生进程明确失败时，调度器只阻止同一批次继续启动新工作，已运行的健康同级进程自然结束并留下证据。
+只有公共执行机制确认持续低于物理内存危险保留量、继续运行会危及主机时，才走强制停止的受管失败处置；
+后者记录其明确的内存危险原因，不能被普通预算观察替代。
+
+`New-RepositoryProcessObservation`与`Update-RepositoryProcessObservation`复用上述预算与物理危险计量，
+供单进程包装和公共COMSOL入口消费；它们不启动进程、调度、重试或发布科学终态。
+物理危险阈值只来自[主机策略](../host_resource_policy.json)，无Limits时不写usage；
+目录与usage写入失败只告警，不能抹去已确认的物理危险。COMSOL接线与调用边界见[公共入口](../comsol/README.md#主机资源阶段)。
+
 求解器底层入口为 [COMSOL 传输](run_finite_3d_transport.ps1) 和
 [SIMION 传输](run_simion_finite_3d_transport.ps1)。它们由项目 wrapper 或 campaign 传入冻结的
 `ProjectId`、`RuntimeProfileId`、`DesignProfileId`、`ParticleSourcePath` 和 `EngineeringBudgetPath`，
 不作为跳过 runtime profile 的手工调参入口。执行后检查 summary 的实际状态与 manifest，不能仅凭退出
 码或结果文件存在声明成功。
+
+SIMION在原生状态完整后遇到正式科学判据FAIL，会正常发布`failed`、原checks、资格状态和
+`native_execution_complete`；释放运行许可后仍以退出码1告知调用者。PASS为0。执行或发布异常仍走
+通用失败收尾，不赋予完整原生声明。`component_port.load_transport_producer_result`沿manifest的唯一
+小结果记录区分这些情况，供实际出口准备和IP准入复用；完整科学负结果不自动取得器件资格，
+也不豁免真实机械出口、完整母群和时钟校验。旧通用失败无新格式fallback。
 
 两入口同时冻结主机调度 facade、Python 核心、策略和 PowerShell 7 检查四个公共依赖，并向冻结执行链传递已选 Python 路径；预算与继承规则见[主机资源调度](../../docs/OPERATIONS.md#主机资源调度)。
 源码清单以解析后的复制根目录计算相对路径，避免 Windows 8.3 短路径与长路径拼写不同导致依赖项
@@ -210,8 +275,8 @@ SIMION 完整 PA basis 的内容寻址、完整字节库存、损坏判定、原
 运行器统一发布canonical状态、metrics、轻量诊断图、summary和manifest。SIMION与COMSOL的传输率、出口
 RMS、输出能量统计、成对差和指标JSON均由Python分析器从canonical状态/事件生成；MATLAB仅输出原始
 求解器元数据、状态和事件。PowerShell只编排已冻结的输入与外部进程。跨run图必须共享坐标与分箱；
-图和工程metrics本身不授予资格。资源越界时停止本次进程树并报告
-`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不自动重试。
+图和工程metrics本身不授予资格。资源预算告警与健康求解保护遵循上文公共执行边界；
+预算越界本身不构成终止理由，不自动重试。
 
 共享SIMION阶段与资源回执已通过一次四极杆N=100主臂/控制臂真实复验：
 [运行manifest](../../../artifacts/projects/rf_quadrupole_ion_optics/runs/20260914_161823__sim__simion__quad-dispatch-acceptance-a-n100/run_manifest.json)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 import subprocess
@@ -24,30 +25,80 @@ HOST_PERMIT_FIXTURE = "function Assert-HostResourceHeavyStage {};"
 def dispatch_limits(**overrides: int | float) -> dict[str, int | float]:
     """Deterministic process fixtures; production defaults belong to the policy."""
     return {
-        "maximum_concurrency": 2, "launch_stagger_seconds": 5,
-        "memory_critical_seconds": 15, "memory_recovery_stable_seconds": 45,
+        "maximum_concurrency": 2,
+        "launch_stagger_seconds": 5,
+        "memory_critical_seconds": 15,
+        "memory_recovery_stable_seconds": 45,
         "maximum_memory_recovery_attempts": 2,
         "maximum_memory_danger_termination_attempts": 2,
         "memory_admission_reserve_bytes": 1024**3,
         "memory_critical_reserve_bytes": 512 * 1024**2,
-        "cpu_admission_percent": 95.0, "minimum_process_cpu_percent": 6.25, **overrides,
+        "cpu_admission_percent": 95.0,
+        "minimum_process_cpu_percent": 6.25,
+        **overrides,
     }
 
 
 class ResourceBudgetTests(unittest.TestCase):
+    def test_release_budget_uses_authorized_declaration_without_sampling(self) -> None:
+        runtime = resolve_runtime_profile(REPO_ROOT, OCT, "through_exit_no_acceleration_n100")
+        budget = json.loads(Path(runtime["engineering_budget"]["path"]).read_text(encoding="utf-8-sig"))
+        runtime["particle_source"] = dict(
+            profile_id="new_release",
+            particle_count=100,
+            release_spec=dict(path="frozen.json", bytes=1, sha256="A" * 64),
+        )
+        budget["pilot_authorization"]["scope"]["particle_source_profile_id"] = "new_release"
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "budget.json"
+            path.write_text(json.dumps(budget), encoding="utf-8")
+            runtime["engineering_budget"]["path"] = str(path)
+            options = dict(
+                repo_root=REPO_ROOT,
+                budget_path=path,
+                project_id=OCT,
+                solver="simion",
+                runtime_profile_id=runtime["runtime_profile_id"],
+                design_profile_id=runtime["design_profile_id"],
+                retention_class="compact",
+            )
+            with (
+                mock.patch("common.multipole.resource_budget.resolve_runtime_profile", return_value=runtime),
+                mock.patch(
+                    "common.ion_release.mt19937_disk_cone_rf_phase.generate_mt19937_disk_cone_rf_phase_states",
+                    side_effect=AssertionError("budget sampled"),
+                ),
+                mock.patch(
+                    "common.multipole.resource_budget._particle_count",
+                    side_effect=AssertionError("budget read nonexistent CSV"),
+                ),
+            ):
+                value = validate_pilot_budget(**options)
+                self.assertEqual(value["particle_source"], runtime["particle_source"])
+                with self.assertRaisesRegex(ValueError, "external particle source"):
+                    validate_pilot_budget(**options, particle_source_path=path)
+                runtime["particle_source"]["particle_count"] = 99
+                with self.assertRaisesRegex(ValueError, "authorized scope"):
+                    validate_pilot_budget(**options)
+
     def test_live_launcher_rejects_invalid_frozen_effective_cpu_budget(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for section, field in (("limits", "minimum_process_cpu_budget_percent"),
-                                   ("estimation", "per_process_cpu_budget_percent")):
+            for section, field in (
+                ("limits", "minimum_process_cpu_budget_percent"),
+                ("estimation", "per_process_cpu_budget_percent"),
+            ):
                 for budget in (0, "NaN"):
                     with self.subTest(section=section, budget=budget):
-                        plan = dict(role="simion_repository_dispatch_plan", limits=dispatch_limits(),
-                                    estimation=dict(kind="exact_resource_profile"))
+                        plan = dict(
+                            role="simion_repository_dispatch_plan",
+                            limits=dispatch_limits(),
+                            estimation=dict(kind="exact_resource_profile"),
+                        )
                         plan[section][field] = budget
-                        dispatch = root/"dispatch.json"
+                        dispatch = root / "dispatch.json"
                         dispatch.write_text(json.dumps(plan), encoding="utf-8")
-                        support = REPO_ROOT/"common/multipole/resource_budget_support.ps1"
+                        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
                         command = (
                             f". '{support}';"
                             "$record=[pscustomobject]@{name='completed';completed=$true;exit_code=0;"
@@ -55,9 +106,16 @@ class ResourceBudgetTests(unittest.TestCase):
                             f"Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' "
                             f"-RunDir '{root}' -UsagePath '{root}/usage.json' -ExistingProcessRecords @($record)"
                         )
-                        completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                                                   cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
-                                                   errors="replace", timeout=10, check=False)
+                        completed = subprocess.run(
+                            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                            cwd=REPO_ROOT,
+                            capture_output=True,
+                            text=True,
+                            encoding="utf-8",
+                            errors="replace",
+                            timeout=10,
+                            check=False,
+                        )
                         self.assertNotEqual(completed.returncode, 0)
                         self.assertIn("must be finite and positive", completed.stderr)
 
@@ -71,10 +129,12 @@ class ResourceBudgetTests(unittest.TestCase):
                 if effective is not None:
                     estimation.update(per_process_cpu_budget_percent=effective, cpu_demand_safety_factor=1.05)
                     limits.update(minimum_process_cpu_budget_percent=effective, cpu_demand_safety_factor=1.05)
-                dispatch = root/"dispatch.json"
-                dispatch.write_text(json.dumps(dict(role="simion_repository_dispatch_plan", estimation=estimation,
-                                                   limits=limits)), encoding="utf-8")
-                support = REPO_ROOT/"common/multipole/resource_budget_support.ps1"
+                dispatch = root / "dispatch.json"
+                dispatch.write_text(
+                    json.dumps(dict(role="simion_repository_dispatch_plan", estimation=estimation, limits=limits)),
+                    encoding="utf-8",
+                )
+                support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
                 expected_sample = 1 if effective is None else 2
                 command = (
                     f". '{support}';{HOST_PERMIT_FIXTURE}$script:cpuSamples=0;"
@@ -94,11 +154,18 @@ class ResourceBudgetTests(unittest.TestCase):
                     f"if($script:cpuAtLaunch-ne{expected_sample}){{throw ('wrong launch sample '+$script:cpuAtLaunch)}};"
                     "if($result.resource_budget_exceeded-or$result.processes[0].exit_code-ne0){exit 4}"
                 )
-                completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                                           cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
-                                           errors="replace", timeout=15, check=False)
-                self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
-                usage = json.loads((root/"usage.json").read_text(encoding="utf-8-sig"))
+                completed = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=15,
+                    check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                usage = json.loads((root / "usage.json").read_text(encoding="utf-8-sig"))
                 self.assertEqual(usage["scheduler_receipt"]["per_process_cpu_budget_percent"], effective or 6.25)
                 pauses = usage["scheduler_receipt"]["launch_pause_events"]
                 self.assertEqual(any(p["reason"] == "cpu_admission_exceeded" for p in pauses), effective is not None)
@@ -115,10 +182,16 @@ class ResourceBudgetTests(unittest.TestCase):
                     else:
                         limits["minimum_process_cpu_percent"] = floor
                     dispatch = root / "dispatch.json"
-                    dispatch.write_text(json.dumps({
-                        "role": "simion_repository_dispatch_plan",
-                        "estimation": {"kind": "exact_resource_profile"}, "limits": limits,
-                    }), encoding="utf-8")
+                    dispatch.write_text(
+                        json.dumps(
+                            {
+                                "role": "simion_repository_dispatch_plan",
+                                "estimation": {"kind": "exact_resource_profile"},
+                                "limits": limits,
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
                     command = (
                         f". '{support}';"
                         "$record=[pscustomobject]@{name='completed';completed=$true;"
@@ -129,8 +202,13 @@ class ResourceBudgetTests(unittest.TestCase):
                     )
                     completed = subprocess.run(
                         ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                        cwd=REPO_ROOT, check=False, capture_output=True, text=True,
-                        encoding="utf-8", errors="replace", timeout=10,
+                        cwd=REPO_ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        timeout=10,
                     )
                     self.assertNotEqual(completed.returncode, 0)
                     expected = "require minimum_process_cpu_percent" if floor is None else "must be finite"
@@ -141,11 +219,16 @@ class ResourceBudgetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dispatch, usage = root / "dispatch.json", root / "usage.json"
-            dispatch.write_text(json.dumps({
-                "role": "simion_repository_dispatch_plan",
-                "estimation": {"kind": "exact_resource_profile", "per_process_cpu_percent": 6.2},
-                "limits": dispatch_limits(maximum_concurrency=1, launch_stagger_seconds=1),
-            }), encoding="utf-8")
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {"kind": "exact_resource_profile", "per_process_cpu_percent": 6.2},
+                        "limits": dispatch_limits(maximum_concurrency=1, launch_stagger_seconds=1),
+                    }
+                ),
+                encoding="utf-8",
+            )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
                 f". '{support}';{HOST_PERMIT_FIXTURE}$script:cpuSamples=0;"
@@ -164,89 +247,176 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT, check=False, capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=15,
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             receipt = json.loads(usage.read_text(encoding="utf-8-sig"))
             pauses = receipt["scheduler_receipt"]["launch_pause_events"]
             self.assertTrue(any(event["reason"] == "cpu_admission_exceeded" for event in pauses))
 
-    def test_simion_formal_observation_warns_past_critical_duration(self) -> None:
-        """A real child completes naturally even beyond the old kill duration."""
+    def test_simion_formal_observation_resets_transient_critical_pressure(self) -> None:
+        """Separated low samples never become one sustained danger interval."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dispatch = root / "dispatch.json"
-            dispatch.write_text(json.dumps({
-                "role": "simion_repository_dispatch_plan",
-                "estimation": {"kind": "formal_first_batch_observation"},
-                "limits": {"formal_observation_seconds": 10,
-                           "memory_policy": "warn_single_worker",
-                           "memory_critical_reserve_bytes": 512 * 1024**2,
-                           "memory_critical_seconds": 1},
-            }), encoding="utf-8")
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {"kind": "formal_first_batch_observation"},
+                        "limits": {
+                            "formal_observation_seconds": 10,
+                            "memory_policy": "warn_single_worker",
+                            "memory_critical_reserve_bytes": 512 * 1024**2,
+                            "memory_critical_seconds": 1,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "$script:memorySamples=0;function Get-RepositoryAvailableMemoryBytes {"
+                "$script:memorySamples++;if($script:memorySamples-in@(1,3)){[int64](100MB)}else{[int64](8GB)}};"
+                "function Get-SystemCpuPercent {0.0};"
+                "function Stop-ManagedSolverProcesses {throw 'Warning killed observation'};"
+                "$spec=[pscustomobject]@{name='formal';file_path=(Get-Process -Id $PID).Path;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 5;exit 7');"
+                f"stdout='{root / 'out'}';stderr='{root / 'err'}';environment=@{{}};working_directory='{root}'}};"
+                f"$r=Start-ObservedFormalProcess -DispatchPlanPath '{dispatch}' -ProcessSpecification $spec;"
+                "if(-not$r.completed_naturally-or$r.resource_budget_exceeded-or$r.exit_code-ne7){throw 'Lost real process result'};"
+                "if(@($r.process_record.memory_warning_events).Count-ne2){throw 'Pressure interval was not reset'}"
+            )
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=20,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_simion_formal_observation_stops_only_owned_batch_on_sustained_danger(self) -> None:
+        """Warning admission cannot disable the measured host-danger threshold."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch = root / "dispatch.json"
+            dispatch.write_text(
+                json.dumps(dict(
+                    role="simion_repository_dispatch_plan",
+                    estimation=dict(kind="formal_first_batch_observation"),
+                    limits=dict(formal_observation_seconds=10, memory_policy="warn_single_worker",
+                                memory_critical_reserve_bytes=512 * 1024**2, memory_critical_seconds=1),
+                )), encoding="utf-8",
+            )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
                 f". '{support}';{HOST_PERMIT_FIXTURE}"
                 "function Get-RepositoryAvailableMemoryBytes {[int64](100MB)};"
                 "function Get-SystemCpuPercent {0.0};"
-                "function Stop-ManagedSolverProcesses {throw 'Warning killed observation'};"
-                "$spec=[pscustomobject]@{name='formal';file_path=(Get-Process -Id $PID).Path;"
-                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 3;exit 7');"
+                "$script:stops=@();$script:originalStop=${function:Stop-ManagedSolverProcesses};"
+                "function Stop-ManagedSolverProcesses {param([int[]]$ProcessIds);"
+                "$script:stops+=,@($ProcessIds);&$script:originalStop -ProcessIds $ProcessIds};"
+                "$script:started=$null;$script:originalStart=${function:Start-RepositoryScheduledProcess};"
+                "function Start-RepositoryScheduledProcess {param($Specification);"
+                "$script:started=&$script:originalStart -Specification $Specification;return $script:started};"
+                "$spec=[pscustomobject]@{name='owned-formal';file_path=(Get-Process -Id $PID).Path;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 30');"
                 f"stdout='{root / 'out'}';stderr='{root / 'err'}';environment=@{{}};working_directory='{root}'}};"
+                "try{"
                 f"$r=Start-ObservedFormalProcess -DispatchPlanPath '{dispatch}' -ProcessSpecification $spec;"
-                "if(-not$r.completed_naturally-or$r.resource_budget_exceeded-or$r.exit_code-ne7){throw 'Lost real process result'};"
-                "if(@($r.process_record.memory_warning_events).Count-ne1){throw 'Warning spam/missing warning'}"
+                "if($r.completed_naturally-or-not$r.resource_budget_exceeded-or$null-ne$r.exit_code){throw 'Danger result lost'};"
+                "if(-not$r.process_record.pressure_terminated-or$script:stops.Count-ne1){throw 'Danger stop missing/repeated'};"
+                "if((($script:stops[0]|Sort-Object)-join',')-ne(($r.process_record.tracked_process_ids|Sort-Object)-join',')){throw 'Stopped another unit'};"
+                "if($r.process_record.root_process_id-notin$script:stops[0]){throw 'Owned root not stopped'};"
+                "if(@($r.process_record.memory_warning_events).Count-ne1){throw 'Warning missing/spam'}"
+                "}finally{if($null-ne$script:started){"
+                "Stop-Process -Id $script:started.root_process_id -Force -ErrorAction SilentlyContinue}};exit 0"
             )
             result = subprocess.run(
-                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20,
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command], cwd=REPO_ROOT,
+                capture_output=True, text=True, encoding="utf-8", timeout=20,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("MEMORY_DANGER_TERMINATION", result.stdout)
 
     def test_simion_warning_policy_runs_serially_under_memory_pressure(self) -> None:
         """Shortage permits one worker, never two, and preserves CPU admission."""
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            dispatch, usage = root / "dispatch.json", root / "usage.json"
-            dispatch.write_text(json.dumps({
-                "role": "simion_repository_dispatch_plan",
-                "estimation": {"kind": "exact_resource_profile",
-                               "per_process_memory_budget_bytes": 40 * 1024**3,
-                               "memory_safety_factor": 1.0},
-                "limits": {**dispatch_limits(), "memory_policy": "warn_single_worker",
-                           "memory_admission_reserve_bytes": 0},
-            }), encoding="utf-8")
-            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
-            command = (
-                f". '{support}';{HOST_PERMIT_FIXTURE}"
-                "$script:cpuSamples=0;function Get-SystemCpuPercent {"
-                "$script:cpuSamples++;if($script:cpuSamples-eq1){96.0}else{0.0}};"
-                "function Get-RepositoryAvailableMemoryBytes {[int64](100MB)};"
-                "function Stop-ManagedSolverProcesses {throw 'Memory warning killed a worker'};"
-                "$exe=(Get-Process -Id $PID).Path;"
-                "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path=$exe;"
-                "argument_list=@('-NoProfile','-Command','Start-Sleep -Milliseconds 200');"
-                f"stdout='{root}\\$_.out';stderr='{root}\\$_.err';environment=@{{}};working_directory='{root}'}}}});"
-                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
-                f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
-                "if($r.resource_budget_exceeded-or$r.processes.Count-ne2){throw 'Incomplete wave'};"
-                f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
-                "if($receipt.execution_wave.peak_concurrency-ne1){throw 'Over-admitted siblings'};"
-                "if($receipt.scheduler_receipt.memory_policy-ne'warn_single_worker'){throw 'Missing policy'};"
-                "if(@($receipt.scheduler_receipt.memory_warning_events).Count-ne1){throw 'Warning spam/missing warning'};"
-                "if(@($receipt.scheduler_receipt.launch_pause_events|Where-Object {$_.reason-eq'cpu_admission_exceeded'}).Count-lt1){throw 'CPU bypassed'};"
-                "if(@($r.processes|Where-Object {$_.exit_code-ne0}).Count){throw 'Process failed'}"
-            )
-            result = subprocess.run(
-                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=25,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for transient_critical in (False, True):
+            with self.subTest(transient_critical=transient_critical), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                dispatch, usage = root / "dispatch.json", root / "usage.json"
+                dispatch.write_text(
+                    json.dumps(
+                        {
+                            "role": "simion_repository_dispatch_plan",
+                            "estimation": {
+                                "kind": "exact_resource_profile",
+                                "per_process_memory_budget_bytes": 40 * 1024**3,
+                                "memory_safety_factor": 1.0,
+                            },
+                            "limits": {
+                                **dispatch_limits(),
+                                "memory_policy": "warn_single_worker",
+                                "memory_admission_reserve_bytes": 0,
+                                "memory_critical_seconds": 1,
+                            },
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+                memory_function = (
+                    "$script:memorySamples=0;function Get-RepositoryAvailableMemoryBytes {"
+                    "$script:memorySamples++;if($script:memorySamples-in@(1,3)){[int64](100MB)}else{[int64](1GB)}};"
+                    if transient_critical else
+                    "function Get-RepositoryAvailableMemoryBytes {[int64](1GB)};"
+                )
+                command = (
+                    f". '{support}';{HOST_PERMIT_FIXTURE}"
+                    "$script:cpuSamples=0;function Get-SystemCpuPercent {"
+                    "$script:cpuSamples++;if($script:cpuSamples-eq1){96.0}else{0.0}};"
+                    f"{memory_function}"
+                    "function Stop-ManagedSolverProcesses {throw 'Memory warning killed a worker'};"
+                    "$exe=(Get-Process -Id $PID).Path;"
+                    "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path=$exe;"
+                    "argument_list=@('-NoProfile','-Command','Start-Sleep -Milliseconds 200');"
+                    f"stdout='{root}\\$_.out';stderr='{root}\\$_.err';environment=@{{}};working_directory='{root}'}}}});"
+                    f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                    f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
+                    "if($r.resource_budget_exceeded-or$r.processes.Count-ne2){throw 'Incomplete wave'};"
+                    f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
+                    "if($receipt.execution_wave.peak_concurrency-ne1){throw 'Over-admitted siblings'};"
+                    "if($receipt.scheduler_receipt.memory_policy-ne'warn_single_worker'){throw 'Missing policy'};"
+                    "if(@($receipt.scheduler_receipt.memory_warning_events).Count-ne1){throw 'Warning spam/missing warning'};"
+                    "if(@($receipt.scheduler_receipt.launch_pause_events|Where-Object {$_.reason-eq'cpu_admission_exceeded'}).Count-lt1){throw 'CPU bypassed'};"
+                    "if(@($r.processes|Where-Object {$_.exit_code-ne0}).Count){throw 'Process failed'}"
+                )
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    # Include PowerShell startup and process-tree observation under
+                    # concurrent gates; the 200 ms workers are not a timing test.
+                    timeout=60,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_dispatch_limits_reject_invalid_values_before_launch(self) -> None:
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
-        script = f". '{support}';" + r"""
+        script = (
+            f". '{support}';"
+            + r"""
 foreach($value in @($null,$true,'5',0,-1,1.5,[double]::NaN,[double]::PositiveInfinity)){
  $rejected=$false
  try{Assert-RepositoryDispatchLimits -Limits @{duration=$value} -PositiveIntegers duration}
@@ -255,9 +425,14 @@ foreach($value in @($null,$true,'5',0,-1,1.5,[double]::NaN,[double]::PositiveInf
 }
 Assert-RepositoryDispatchLimits -Limits @{duration=7;bytes=[int64]3221225472} -PositiveIntegers duration,bytes
 """
+        )
         result = subprocess.run(
             ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
-            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=15,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=15,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -283,7 +458,10 @@ Assert-RepositoryDispatchLimits -Limits @{duration=7;bytes=[int64]3221225472} -P
                     )
                     result = subprocess.run(
                         ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                        cwd=REPO_ROOT, capture_output=True, timeout=15, check=False,
+                        cwd=REPO_ROOT,
+                        capture_output=True,
+                        timeout=15,
+                        check=False,
                     )
                     self.assertEqual(result.returncode, 0, repr(result.stdout) + repr(result.stderr))
                     self.assertFalse((root / "usage.json").exists())
@@ -295,9 +473,17 @@ Assert-RepositoryDispatchLimits -Limits @{duration=7;bytes=[int64]3221225472} -P
         end = source.index("    if($solverProcess.resource_budget_exceeded)", start)
         block = source[start:end]
         facade = REPO_ROOT / "common/host_execution_lease.ps1"
-        for scenario in ("success", "child_failure", "failure_and_postprocess_denied", "inherited_light", "inherited_heavy"):
+        for scenario in (
+            "success",
+            "child_failure",
+            "failure_and_postprocess_denied",
+            "inherited_light",
+            "inherited_heavy",
+        ):
             with self.subTest(scenario=scenario):
-                script = f". '{facade}'\n$scenario='{scenario}'\n" + r'''
+                script = (
+                    f". '{facade}'\n$scenario='{scenario}'\n"
+                    + r"""
 Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue
 $script:events=@();$script:counter=0
 function Enter-HostExecutionLease {
@@ -354,7 +540,9 @@ if($scenario-like'inherited_*'){
 }
 $caught=''
 try {
-''' + block + r'''
+"""
+                    + block
+                    + r"""
 }catch{$caught=$_.Exception.Message}
 if($scenario-eq'inherited_light'){
  if($caught-ne'inherited-light-denied'-or$script:events.Count){throw 'inherited-light-bypassed'}
@@ -373,17 +561,22 @@ if($scenario-eq'inherited_light'){
  if($null-ne$hostExecutionLease){Exit-HostExecutionLease -Lease $hostExecutionLease}
  if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN){throw 'owned-token-remains'}
 }
-'''
-                completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
-                                           cwd=REPO_ROOT, capture_output=True, timeout=20, check=False)
+"""
+                )
+                completed = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    timeout=20,
+                    check=False,
+                )
                 self.assertEqual(completed.returncode, 0, repr(completed.stdout) + repr(completed.stderr))
 
     def test_internal_dispatch_checks_host_permit_before_work(self) -> None:
         """Pending and active workers require permission before touching inputs."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
         for invocation in (
-            "Start-ObservedFormalProcess -DispatchPlanPath missing.json "
-            "-ProcessSpecification ([pscustomobject]@{})",
+            "Start-ObservedFormalProcess -DispatchPlanPath missing.json -ProcessSpecification ([pscustomobject]@{})",
             "Invoke-ResourceBudgetedProcesses -DispatchPlanPath missing.json "
             "-RunDir . -UsagePath missing-usage.json -ProcessSpecifications @([pscustomobject]@{})",
             "Invoke-ResourceBudgetedProcesses -DispatchPlanPath missing.json "
@@ -399,8 +592,13 @@ if($scenario-eq'inherited_light'){
                 )
                 result = subprocess.run(
                     ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                    cwd=REPO_ROOT, capture_output=True, text=True,
-                    encoding="utf-8", errors="replace", timeout=15, check=False,
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=15,
+                    check=False,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -469,12 +667,9 @@ if($scenario-eq'inherited_light'){
         ):
             self.assertIn(token, completed.stdout)
 
-
     def test_scheduler_suppresses_checkpoint_callback_pipeline_output(self) -> None:
         """A manifest-publishing callback must not turn the wave receipt into an array."""
-        source = (REPO_ROOT / "common/multipole/resource_budget_support.ps1").read_text(
-            encoding="utf-8"
-        )
+        source = (REPO_ROOT / "common/multipole/resource_budget_support.ps1").read_text(encoding="utf-8")
         self.assertEqual(source.count("$null = & $OnProcessCompleted $record"), 2)
         self.assertNotIn("      & $OnProcessCompleted $record", source)
 
@@ -505,6 +700,7 @@ if($scenario-eq'inherited_light'){
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
         command = (
             f". '{support}';{HOST_PERMIT_FIXTURE}"
+            "function Get-CimInstance {throw 'TEST_ONLY forced CIM denial'};"
             "$ticks=[int64]((Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks-1);"
             "$sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID) "
             "-RootProcessStartedAtUtcTicks @{([string]$PID)=$ticks};"
@@ -521,6 +717,57 @@ if($scenario-eq'inherited_light'){
             timeout=15,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_native_parent_observation_marks_missing_ancestry_without_stopping_root(self) -> None:
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = (
+            f". '{support}';"
+            "function Get-CimInstance {throw 'TEST_ONLY forced CIM denial'};"
+            "function Get-HostResourceProcessParents {"
+            "[pscustomobject]@{parents=[Collections.Generic.Dictionary[int,int]]::new();"
+            "complete=$false;started_at_utc_ticks=[DateTime]::UtcNow.Ticks}};"
+            "$sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID);"
+            "if($sample.ancestry_complete-or$sample.active_process_ids-notcontains$PID){exit 3};"
+            "function Get-HostResourceProcessParents {"
+            "$parents=[Collections.Generic.Dictionary[int,int]]::new();$parents[$PID]=123;"
+            "[pscustomobject]@{parents=$parents;complete=$true;started_at_utc_ticks=0}};"
+            "$sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID);"
+            "if($sample.ancestry_complete-or$sample.unknown_ancestry_process_ids-notcontains$PID){exit 4}"
+        )
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_native_parent_unknown_identity_is_scoped_to_owned_candidates(self) -> None:
+        """TEST_ONLY protected identities are unrelated until their parent joins this tree."""
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = f"""
+. '{support}'
+function Get-CimInstance {{throw 'TEST_ONLY forced CIM denial'}}
+$realOwner=Get-Process -Id $PID
+$protected=[pscustomobject]@{{Id=424242;Path=''}}
+$protected|Add-Member -MemberType ScriptProperty -Name StartTime -Value {{throw 'TEST_ONLY inaccessible creation time'}}
+$grandchild=[pscustomobject]@{{Id=424243;Path=''}}
+$grandchild|Add-Member -MemberType ScriptProperty -Name StartTime -Value {{throw 'TEST_ONLY inaccessible creation time'}}
+function Get-Process {{@($realOwner,$protected,$grandchild)}}
+function Get-HostResourceNativeProcessCreationTicks {{param($ProcessId);return $null}}
+$script:ownedCandidate=$false
+function Get-HostResourceProcessParents {{
+ $parents=[Collections.Generic.Dictionary[int,int]]::new()
+ $parents[$PID]=0;$parents[424242]=$(if($script:ownedCandidate){{$PID}}else{{0}})
+ $parents[424243]=424242
+ [pscustomobject]@{{parents=$parents;complete=$true;started_at_utc_ticks=[DateTime]::UtcNow.Ticks}}
+}}
+$sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID)
+if(-not$sample.ancestry_complete-or$sample.unknown_ancestry_process_ids.Count-ne0){{throw 'Unrelated protected identities polluted the owned tree'}}
+$script:ownedCandidate=$true
+$sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID)
+if($sample.ancestry_complete-or($sample.unknown_ancestry_process_ids-join',')-ne'424242,424243'){{throw 'Unresolved owned candidate chain disappeared'}}
+if($sample.active_process_ids-contains424242-or$sample.active_process_ids-contains424243){{throw 'Unknown identities became verified owned processes'}}
+"""
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_launcher_completion_ignores_only_classified_system_console_hosts(self) -> None:
         """Console infrastructure cannot strand work or hide a real descendant."""
@@ -594,13 +841,18 @@ if($scenario-eq'inherited_light'){
             root = Path(directory)
             dispatch = root / "dispatch.json"
             usage = root / "usage.json"
-            dispatch.write_text(json.dumps({
-                "role": "simion_repository_dispatch_plan",
-                "dispatch_unit": "independent_work_items",
-                "work_item_count": 2,
-                "estimation": {"kind": "exact_resource_profile"},
-                "limits": dispatch_limits(maximum_concurrency=1, launch_stagger_seconds=1),
-            }), encoding="utf-8")
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "dispatch_unit": "independent_work_items",
+                        "work_item_count": 2,
+                        "estimation": {"kind": "exact_resource_profile"},
+                        "limits": dispatch_limits(maximum_concurrency=1, launch_stagger_seconds=1),
+                    }
+                ),
+                encoding="utf-8",
+            )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
                 f". '{support}';{HOST_PERMIT_FIXTURE}"
@@ -617,9 +869,9 @@ if($scenario-eq'inherited_light'){
                 "managed_memory_bytes=0;total_processor_time_ticks=0}};"
                 "$pwsh=(Get-Process -Id $PID).Path;"
                 f"$root='{root}';"
-                "$specs=@(1,2|ForEach-Object{[pscustomobject]@{name=\"worker$_\";file_path=$pwsh;"
+                '$specs=@(1,2|ForEach-Object{[pscustomobject]@{name="worker$_";file_path=$pwsh;'
                 "argument_list=@('-NoProfile','-Command','exit 0');"
-                "stdout=(Join-Path $root \"worker$_.stdout.log\");stderr=(Join-Path $root \"worker$_.stderr.log\");"
+                'stdout=(Join-Path $root "worker$_.stdout.log");stderr=(Join-Path $root "worker$_.stderr.log");'
                 "environment=@{};working_directory=$root;scheduler_batch=[pscustomobject]@{"
                 "execution_unit='independent_work_items';index=$_;total_batches=2;"
                 "work_item_id_min=$_;work_item_id_max=$_;count=1}}});"
@@ -704,16 +956,18 @@ if($scenario-eq'inherited_light'){
             root = Path(directory)
             dispatch = root / "dispatch.json"
             dispatch.write_text(
-                json.dumps({
-                    "role": "simion_repository_dispatch_plan",
-                    "estimation": {"kind": "formal_first_batch_observation"},
-                    "host": {"logical_processors": 16},
-                    "limits": {
-                        "formal_observation_seconds": 7,
-                        "memory_critical_reserve_bytes": 512 * 1024**2,
-                        "memory_critical_seconds": 15,
-                    },
-                }),
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {"kind": "formal_first_batch_observation"},
+                        "host": {"logical_processors": 16},
+                        "limits": {
+                            "formal_observation_seconds": 7,
+                            "memory_critical_reserve_bytes": 512 * 1024**2,
+                            "memory_critical_seconds": 15,
+                        },
+                    }
+                ),
                 encoding="utf-8",
             )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
@@ -764,16 +1018,18 @@ if($scenario-eq'inherited_light'){
             root = Path(directory)
             dispatch = root / "dispatch.json"
             dispatch.write_text(
-                json.dumps({
-                    "role": "simion_repository_dispatch_plan",
-                    "estimation": {"kind": "formal_first_batch_observation"},
-                    "host": {"logical_processors": 16},
-                    "limits": {
-                        "formal_observation_seconds": 45,
-                        "memory_critical_reserve_bytes": 512 * 1024**2,
-                        "memory_critical_seconds": 15,
-                    },
-                }),
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {"kind": "formal_first_batch_observation"},
+                        "host": {"logical_processors": 16},
+                        "limits": {
+                            "formal_observation_seconds": 45,
+                            "memory_critical_reserve_bytes": 512 * 1024**2,
+                            "memory_critical_seconds": 15,
+                        },
+                    }
+                ),
                 encoding="utf-8",
             )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
@@ -820,6 +1076,39 @@ if($scenario-eq'inherited_light'){
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    def test_wave_publishes_measured_worker_peak_with_its_own_count_and_identity(self) -> None:
+        """TEST_ONLY children measure real worker memory, never wave/count arithmetic."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            dispatch.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan", "particle_count": 7,
+                "estimation": {"kind": "observed_formal_batch"},
+                "limits": dispatch_limits(maximum_concurrency=1, launch_stagger_seconds=1),
+            }), encoding="utf-8")
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](8GB)};"
+                "function Get-SystemCpuPercent {0.0};"
+                "$spec=[pscustomobject]@{name='TEST_ONLY_seven';scheduler_batch=[pscustomobject]@{count=7;index=2};"
+                "file_path=(Get-Process -Id $PID).Path;argument_list=@('-NoProfile','-Command',"
+                "'$memory=[byte[]]::new(96MB);$memory[0]=1;$PID;Start-Sleep -Seconds 3');"
+                f"stdout='{root / 'worker.out'}';stderr='{root / 'worker.err'}';environment=@{{}};working_directory='{root}'}};"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications @($spec);"
+                "if($r.resource_budget_exceeded){throw 'Controlled child did not finish'}"
+            )
+            result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            observation = json.loads(usage.read_text())["per_process_memory_observation"]
+            self.assertEqual(observation["work_units"], 7)
+            self.assertEqual(observation["process"], "TEST_ONLY_seven")
+            self.assertEqual(observation["root_process_id"], int((root / "worker.out").read_text().strip()))
+            self.assertGreater(observation["root_process_started_at_utc_ticks"], 0)
+            self.assertGreater(observation["peak_managed_memory_bytes"], 96 * 1024**2)
+
     def test_completed_first_formal_observation_still_writes_admission_receipt(self) -> None:
         """A terminal first batch publishes evidence without a renewed heavy permit."""
         with tempfile.TemporaryDirectory() as directory:
@@ -827,16 +1116,21 @@ if($scenario-eq'inherited_light'){
             dispatch, usage = root / "dispatch.json", root / "usage.json"
             trace = root / "trace.log"
             trace.write_text("TRACE: fixture\n", encoding="utf-8")
-            dispatch.write_text(json.dumps({
-                "role": "simion_repository_dispatch_plan",
-                "particle_count": 1,
-                "estimation": {
-                    "kind": "observed_formal_batch",
-                    "per_process_memory_budget_bytes": 123456,
-                    "memory_safety_factor": 1.0,
-                },
-                "limits": dispatch_limits(maximum_concurrency=1),
-            }), encoding="utf-8")
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "particle_count": 1,
+                        "estimation": {
+                            "kind": "observed_formal_batch",
+                            "per_process_memory_budget_bytes": 123456,
+                            "memory_safety_factor": 1.0,
+                        },
+                        "limits": dispatch_limits(maximum_concurrency=1),
+                    }
+                ),
+                encoding="utf-8",
+            )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
                 f". '{support}';"
@@ -857,20 +1151,26 @@ if($scenario-eq'inherited_light'){
                 f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
                 "if($receipt.scheduler_receipt.dynamic_admission_bytes_at_finish-ne123456){exit 4};"
                 "if($script:callbackCount-ne1){exit 5};"
+                "if($receipt.PSObject.Properties.Name-contains'per_process_memory_observation'){exit 7};"
                 f"if((Get-Content -LiteralPath '{trace}' -Tail 1)-ne"
                 "'status,Fly completed.'){exit 6}"
             )
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT, check=False, capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=15,
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_scheduler_recovers_twice_then_fails_closed_after_third_danger(self) -> None:
         """Frozen timing and reserve changes drive the same pressure state machine."""
-        for scale in (1, 2):
-            with self.subTest(policy_scale=scale):
+        for scale, warning in ((1, False), (2, False), (1, True), (2, True)):
+            with self.subTest(policy_scale=scale, warning_policy=warning):
                 with tempfile.TemporaryDirectory() as directory:
                     root = Path(directory)
                     dispatch, usage = root / "dispatch.json", root / "usage.json"
@@ -887,7 +1187,8 @@ if($scenario-eq'inherited_light'){
                                     launch_stagger_seconds=5 * scale,
                                     memory_critical_seconds=15 * scale,
                                     memory_recovery_stable_seconds=45 * scale,
-                                    memory_admission_reserve_bytes=1024**3 * scale,
+                                    memory_admission_reserve_bytes=0 if warning else 1024**3 * scale,
+                                    **({"memory_policy": "warn_single_worker"} if warning else {}),
                                     memory_critical_reserve_bytes=512 * 1024**2 * scale,
                                 ),
                             }
@@ -897,13 +1198,13 @@ if($scenario-eq'inherited_light'){
                     support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
                     command = (
                         f". '{support}';{HOST_PERMIT_FIXTURE}$script:policyScale={scale};"
-                        "$script:now=[datetimeoffset]'2026-08-26T00:00:00Z';$script:nextPid=100;"
+                        "$script:now=[datetimeoffset]'2026-08-26T00:00:00Z';$script:nextPid=100;$script:stoppedIds=@();"
                         "function Get-RepositoryUtcNow {$script:now};"
                         "function Start-Sleep {param([int]$Seconds=0,[int]$Milliseconds=0);"
                         "$script:now=$script:now.AddSeconds($Seconds+($Milliseconds/1000.0))};"
                         "function Get-RepositoryAvailableMemoryBytes {"
                         "$seconds=($script:now-[datetimeoffset]'2026-08-26T00:00:00Z').TotalSeconds/$script:policyScale;"
-                        "if(($seconds-ge1-and$seconds-lt17)-or($seconds-ge72-and$seconds-lt88)-or$seconds-ge138){return [int64](256MB)};"
+                        "if(($seconds-ge0-and$seconds-lt0.5)-or($seconds-ge1-and$seconds-lt17)-or($seconds-ge72-and$seconds-lt88)-or$seconds-ge138){return [int64](256MB)};"
                         "return [int64](8GB)};"
                         "function Get-SystemCpuPercent {[double]0};"
                         "function Start-RepositoryScheduledProcess {param($Specification);$script:nextPid+=1;"
@@ -915,12 +1216,13 @@ if($scenario-eq'inherited_light'){
                         "[pscustomobject]@{tracked_process_ids=@($RootProcessIds[0]);active_process_ids=@($RootProcessIds[0]);"
                         "working_set_bytes=1073741824;private_bytes=2147483648;managed_memory_bytes=2147483648;"
                         "total_processor_time_ticks=0}};"
-                        "function Stop-ManagedSolverProcesses {param([int[]]$ProcessIds)};"
+                        "function Stop-ManagedSolverProcesses {param([int[]]$ProcessIds);$script:stoppedIds+=@($ProcessIds)};"
                         "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path='unused';argument_list=@();"
                         "stdout='unused';stderr='unused';environment=@{};working_directory=''}});"
                         f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
                         f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
                         "if(-not$r.resource_budget_exceeded){exit 3};"
+                        "if(@($script:stoppedIds|Where-Object{$_-lt101-or$_-gt$script:nextPid}).Count){throw 'Stopped unrelated unit'};"
                         f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
                         "if($receipt.status-ne'resource_pressure_failed' -or"
                         "$receipt.failure_class-ne'memory_danger_recovery_attempts_exhausted' -or"
@@ -928,6 +1230,9 @@ if($scenario-eq'inherited_light'){
                         "$receipt.scheduler_receipt.recovery_relaunch_events.Count-ne2 -or"
                         "$receipt.scheduler_receipt.recovery_relaunch_events[0].attempt-ne1 -or"
                         "$receipt.scheduler_receipt.recovery_relaunch_events[1].attempt-ne2){exit 4};"
+                        "$firstStopSeconds=([datetimeoffset]$receipt.scheduler_receipt.termination_requeue_events[0].at_utc-"
+                        "[datetimeoffset]'2026-08-26T00:00:00Z').TotalSeconds;"
+                        "if($firstStopSeconds-lt(16*$script:policyScale)){throw 'Transient danger timer was not reset'};"
                         "if(([datetimeoffset]$receipt.scheduler_receipt.recovery_relaunch_events[0].at_utc-"
                         "[datetimeoffset]$receipt.scheduler_receipt.termination_requeue_events[0].at_utc).TotalSeconds-lt(45*$script:policyScale)){exit 5}"
                     )
@@ -943,8 +1248,40 @@ if($scenario-eq'inherited_light'){
                     )
                     self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
-    def test_failed_batch_cancels_its_wave_without_claiming_resource_pressure(self) -> None:
-        """A solver failure stops siblings and queued work, preserving its cause."""
+    def test_managed_termination_failure_preserves_live_process_and_cause(self) -> None:
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = f"""
+. '{support}'
+$script:exited=$false;$script:disposed=0;$script:kills=0
+function Get-Process {{
+ param($Id,$ErrorAction)
+ $p=[pscustomobject]@{{HasExited=$script:exited}}
+ $p|Add-Member ScriptMethod Refresh {{}}
+ $p|Add-Member ScriptMethod Dispose {{$script:disposed++}}
+ return $p
+}}
+function taskkill.exe {{$script:kills++;$global:LASTEXITCODE=5}}
+try{{Stop-ManagedSolverProcesses -ProcessIds @(12345);throw 'Live termination failure was accepted'}}
+catch{{if($_.Exception.Message-ne'MANAGED_PROCESS_TERMINATION_FAILED PID=12345 EXIT_CODE=5'){{throw}}}}
+$script:exited=$true
+Stop-ManagedSolverProcesses -ProcessIds @(12345)
+if($script:disposed-ne2-or$script:kills-ne2){{throw 'Held process instance was not disposed'}}
+Write-Output 'TERMINATION_FAILURE=PASS'
+"""
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("TERMINATION_FAILURE=PASS", result.stdout)
+
+    def test_failed_batch_halts_new_launches_without_stopping_healthy_siblings(self) -> None:
+        """A peer failure preserves natural evidence from active healthy workers."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dispatch, usage = root / "dispatch.json", root / "usage.json"
@@ -957,7 +1294,7 @@ if($scenario-eq'inherited_light'){
                             "per_process_memory_budget_bytes": 1024**2,
                             "memory_safety_factor": 1.10,
                         },
-                        "limits": dispatch_limits(),
+                        "limits": dispatch_limits(launch_stagger_seconds=1),
                     }
                 ),
                 encoding="utf-8",
@@ -977,21 +1314,23 @@ if($scenario-eq'inherited_light'){
                 "$exe=(Get-Process -Id $PID).Path;"
                 "$specs=@("
                 "[pscustomobject]@{name='fails';file_path=$exe;"
-                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 7; exit 7');"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 2; exit 7');"
                 f"stdout='{root}\\fails.out';stderr='{root}\\fails.err';environment=@{{}};working_directory='{root}'}},"
                 "[pscustomobject]@{name='sibling';file_path=$exe;"
-                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 20');"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 5');"
                 f"stdout='{root}\\sibling.out';stderr='{root}\\sibling.err';environment=@{{}};working_directory='{root}'}},"
                 "[pscustomobject]@{name='queued';file_path=$exe;"
-                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 20');"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 5');"
                 f"stdout='{root}\\queued.out';stderr='{root}\\queued.err';environment=@{{}};working_directory='{root}'}}) ;"
                 f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
                 f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
                 "if($r.resource_budget_exceeded){exit 3};"
                 f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
                 "if($receipt.status-ne'process_failed' -or "
-                "$receipt.scheduler_receipt.batch_failure_cancellation_events.Count-ne1){exit 4};"
-                "if(Test-Path -LiteralPath '" + str(root / "queued.out") + "'){exit 5}"
+                "$receipt.scheduler_receipt.batch_failure_cancellation_events.Count-ne1 -or "
+                "$receipt.scheduler_receipt.batch_failure_cancellation_events[0].stopped_active_batch_count-ne0){exit 4};"
+                "if(Test-Path -LiteralPath '" + str(root / "queued.out") + "'){exit 5};"
+                "if(-not(Test-Path -LiteralPath '" + str(root / "sibling.out") + "')){exit 6}"
             )
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
@@ -1001,7 +1340,7 @@ if($scenario-eq'inherited_light'){
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=25,
+                timeout=15,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
@@ -1093,6 +1432,8 @@ if($scenario-eq'inherited_light'){
                 "if($pauses.Count-lt1-or$pauses[0].available_memory_bytes-ne(5GB)-or"
                 "$pauses[0].required_available_memory_bytes-le(5GB)){exit 4}"
             )
+            # Two 7 s children plus Win32 observation measured 20.625 s alone.
+            # Allow 30 s per stage under concurrent gates; scientific limits stay unchanged.
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
                 cwd=REPO_ROOT,
@@ -1101,7 +1442,7 @@ if($scenario-eq'inherited_light'){
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=30,
+                timeout=60,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
@@ -1183,9 +1524,7 @@ if($scenario-eq'inherited_light'){
 
     def test_single_process_meter_carries_descendant_birth_identities(self) -> None:
         """The lightweight meter must not confuse a reused helper PID with SIMION."""
-        support = (REPO_ROOT / "common/multipole/resource_budget_support.ps1").read_text(
-            encoding="utf-8"
-        )
+        support = (REPO_ROOT / "common/multipole/resource_budget_support.ps1").read_text(encoding="utf-8")
         start = support.index("function Invoke-ResourceBudgetedProcess")
         end = support.index("function Assert-RepositoryProcessSpecification", start)
         meter = support[start:end]
@@ -1197,7 +1536,6 @@ if($scenario-eq'inherited_light'){
             "$trackedProcessStartedAtUtcTicks=$sample.tracked_process_started_at_utc_ticks",
             meter,
         )
-
 
     def validate(
         self,
@@ -1222,17 +1560,11 @@ if($scenario-eq'inherited_light'){
             (QUAD, "exit_aperture_plate_acceleration_n100_spatial_refined"),
             (OCT, "exit_aperture_plate_acceleration_n100_spatial_refined"),
         ):
-            with self.assertRaisesRegex(
-                ValueError, "not authorized|differs from authorized scope"
-            ):
+            with self.assertRaisesRegex(ValueError, "not authorized|differs from authorized scope"):
                 self.validate(project_id, profile)
-        with self.assertRaisesRegex(
-            ValueError, "not authorized|differs from authorized scope"
-        ):
+        with self.assertRaisesRegex(ValueError, "not authorized|differs from authorized scope"):
             self.validate(HEX, "exit_aperture_plate_acceleration_n100_spatial_refined")
-        with self.assertRaisesRegex(
-            ValueError, "not authorized|differs from authorized scope"
-        ):
+        with self.assertRaisesRegex(ValueError, "not authorized|differs from authorized scope"):
             self.validate(
                 OCT,
                 "exit_aperture_plate_acceleration",
@@ -1251,7 +1583,9 @@ if($scenario-eq'inherited_light'){
         with tempfile.TemporaryDirectory() as directory:
             for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
                 runner = REPO_ROOT / "common/multipole" / name
-                command = f"$path='{runner}';$budgetPreflight='{Path(directory)/'budget.json'}';" + r'''
+                command = (
+                    f"$path='{runner}';$budgetPreflight='{Path(directory) / 'budget.json'}';"
+                    + r"""
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$null,[ref]$null)
 $blocks=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.TryStatementAst] -and $node.Finally -and $node.Finally.Extent.Text.Contains('Remove-Item -LiteralPath $budgetPreflight')},$true))
 if($blocks.Count-ne1-or-not$blocks[0].Body.Extent.Text.Contains('common.multipole.resource_budget')){throw 'TEMP cleanup does not belong to the compiler preflight'}
@@ -1261,9 +1595,17 @@ foreach($fail in @($false,$true)){
  try{& $script}catch{if($_.Exception.Message-ne'fixture'){throw}}
  if(Test-Path -LiteralPath $budgetPreflight){throw 'Compiler TEMP budget leaked'}
 }
-'''
-                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                                        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=False, timeout=20)
+"""
+                )
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=False,
+                    timeout=20,
+                )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_high_cost_runners_validate_before_creating_run_package(self) -> None:
@@ -1282,16 +1624,11 @@ foreach($fail in @($false,$true)){
                 self.assertIn(token, source)
             self.assertIn("-UseShortExecutionPath", source)
             self.assertIn("Remove-RunPackageExecutionAlias", source)
-        comsol = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(
-            encoding="utf-8"
-        )
-        comsol += (
-            REPO_ROOT / "common/multipole/finite_3d_transport_preflight.ps1"
-        ).read_text(encoding="utf-8")
+        comsol = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        comsol += (REPO_ROOT / "common/multipole/finite_3d_transport_preflight.ps1").read_text(encoding="utf-8")
         self.assertIn("'-StartupAttempts','1'", comsol)
         self.assertIn(
-            "[ValidateSet('transport','mesh_build','field_solve')]"
-            "[string]$StopStage='transport'",
+            "[ValidateSet('transport','mesh_build','field_solve')][string]$StopStage='transport'",
             comsol,
         )
         self.assertIn("MULTIPOLE_L3_STOP_STAGE", comsol)
@@ -1313,8 +1650,7 @@ foreach($fail in @($false,$true)){
             comsol.index("New-RunPackage"),
         )
         self.assertIn(
-            "stationary_linear_solver_backend="
-            "$authorizedBackend",
+            "stationary_linear_solver_backend=$authorizedBackend",
             comsol,
         )
         self.assertIn(
@@ -1332,9 +1668,7 @@ foreach($fail in @($false,$true)){
         self.assertIn("MULTIPOLE_L3_MAXIMUM_MESH_CELLS", comsol)
         self.assertIn("Assert-MultipoleMeshCellBudgetReport", comsol)
         self.assertIn("Compiled resolved design differs from the authorized run identity", comsol)
-        solver = (
-            REPO_ROOT / "common/multipole/solve_finite_3d_transport.m"
-        ).read_text(encoding="utf-8")
+        solver = (REPO_ROOT / "common/multipole/solve_finite_3d_transport.m").read_text(encoding="utf-8")
         budget_gate = solver.index("MULTIPOLE_L3_MAXIMUM_MESH_CELLS")
         self.assertGreater(budget_gate, solver.index("CHECKPOINT=MESH_COMPLETE"))
         self.assertLess(budget_gate, solver.index("material = model.material.create"))
@@ -1343,12 +1677,8 @@ foreach($fail in @($false,$true)){
         self.assertIn("MESH_LOCAL_SENSITIVE_SIZE_FEATURE_PRESENT=%d", solver)
 
     def test_comsol_runner_fails_closed_on_stop_stage_disagreement(self) -> None:
-        runner = (
-            REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1"
-        ).read_text(encoding="utf-8")
-        start = runner.index(
-            "  if($resolvedBudget.PSObject.Properties.Name-notcontains'stop_stage')"
-        )
+        runner = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        start = runner.index("  if($resolvedBudget.PSObject.Properties.Name-notcontains'stop_stage')")
         end = runner.index("  $authorizedNumerics=$resolvedBudget.solver_numerics", start)
         stop_stage_gate = runner[start:end]
 
@@ -1383,18 +1713,9 @@ foreach($fail in @($false,$true)){
         self.assertIn("differs from the authorized runtime profile", mismatch.stderr)
 
     def test_mesh_cell_limit_is_optional_and_strictly_positive(self) -> None:
-        budget_path = (
-            REPO_ROOT
-            / "projects"
-            / HEX
-            / "config"
-            / "qualification"
-            / "engineering_budget.json"
-        )
+        budget_path = REPO_ROOT / "projects" / HEX / "config" / "qualification" / "engineering_budget.json"
         active_budget = json.loads(budget_path.read_text(encoding="utf-8"))
-        runtime_profile_id = active_budget["pilot_authorization"]["scope"][
-            "runtime_profile_id"
-        ]
+        runtime_profile_id = active_budget["pilot_authorization"]["scope"]["runtime_profile_id"]
         runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
         self.assertEqual(
             budget_path.resolve(),
@@ -1402,16 +1723,12 @@ foreach($fail in @($false,$true)){
         )
         authorized_fixture = json.loads(budget_path.read_text(encoding="utf-8"))
         authorized_fixture["pilot_authorization"]["authorized"] = True
-        authorized_fixture["pilot_authorization"]["scope"]["stop_stage"] = runtime[
-            "stop_stage"
-        ]
-        authorized_fixture["pilot_authorization"]["limits"][
-            "maximum_mesh_cells"
-        ] = 100
+        authorized_fixture["pilot_authorization"]["scope"]["stop_stage"] = runtime["stop_stage"]
+        authorized_fixture["pilot_authorization"]["limits"]["maximum_mesh_cells"] = 100
         hybrid_runtime = json.loads(json.dumps(runtime))
-        hybrid_runtime["solver_numerics"]["comsol"]["values"]["mesh"][
-            "strategy"
-        ] = "physical_segment_hybrid_swept_tetra_v1"
+        hybrid_runtime["solver_numerics"]["comsol"]["values"]["mesh"]["strategy"] = (
+            "physical_segment_hybrid_swept_tetra_v1"
+        )
 
         def validate_with(candidate: dict) -> dict:
             with (
@@ -1467,38 +1784,23 @@ foreach($fail in @($false,$true)){
         for invalid in (True, 0, -1, 1.5, "3000000"):
             with self.subTest(invalid=invalid):
                 invalid_budget = json.loads(json.dumps(authorized_fixture))
-                invalid_budget["pilot_authorization"]["limits"][
-                    "maximum_mesh_cells"
-                ] = invalid
+                invalid_budget["pilot_authorization"]["limits"]["maximum_mesh_cells"] = invalid
                 with self.assertRaisesRegex(ValueError, "positive integers"):
                     validate_with(invalid_budget)
         invalid_identity = json.loads(json.dumps(authorized_fixture))
-        invalid_identity["pilot_authorization"]["scope"][
-            "expected_run_parent_resolved_design_sha256"
-        ] = "not-a-sha"
+        invalid_identity["pilot_authorization"]["scope"]["expected_run_parent_resolved_design_sha256"] = "not-a-sha"
         with self.assertRaisesRegex(ValueError, "must be uppercase SHA-256"):
             validate_with(invalid_identity)
 
     def test_optional_authorized_run_id_is_exact_and_legacy_compatible(self) -> None:
-        budget_path = (
-            REPO_ROOT
-            / "projects"
-            / HEX
-            / "config"
-            / "qualification"
-            / "engineering_budget.json"
-        )
+        budget_path = REPO_ROOT / "projects" / HEX / "config" / "qualification" / "engineering_budget.json"
         fixture = json.loads(budget_path.read_text(encoding="utf-8"))
-        runtime_profile_id = fixture["pilot_authorization"]["scope"][
-            "runtime_profile_id"
-        ]
+        runtime_profile_id = fixture["pilot_authorization"]["scope"]["runtime_profile_id"]
         runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
         fixture["pilot_authorization"]["authorized"] = True
         fixture["pilot_authorization"]["scope"]["stop_stage"] = runtime["stop_stage"]
         authorized_run_id = "20260731_010203__sim__simion__authorized-run"
-        fixture["pilot_authorization"]["scope"][
-            "authorized_run_id"
-        ] = authorized_run_id
+        fixture["pilot_authorization"]["scope"]["authorized_run_id"] = authorized_run_id
 
         def validate_with(candidate: dict, run_id: str | None) -> dict:
             with mock.patch(
@@ -1532,18 +1834,9 @@ foreach($fail in @($false,$true)){
     def test_simion_pa_grid_limit_is_optional_solver_specific_and_positive(
         self,
     ) -> None:
-        budget_path = (
-            REPO_ROOT
-            / "projects"
-            / HEX
-            / "config"
-            / "qualification"
-            / "engineering_budget.json"
-        )
+        budget_path = REPO_ROOT / "projects" / HEX / "config" / "qualification" / "engineering_budget.json"
         fixture = json.loads(budget_path.read_text(encoding="utf-8"))
-        runtime_profile_id = fixture["pilot_authorization"]["scope"][
-            "runtime_profile_id"
-        ]
+        runtime_profile_id = fixture["pilot_authorization"]["scope"]["runtime_profile_id"]
         runtime = resolve_runtime_profile(REPO_ROOT, HEX, runtime_profile_id)
         fixture["pilot_authorization"]["authorized"] = True
         fixture["pilot_authorization"]["scope"]["stop_stage"] = runtime["stop_stage"]
@@ -1581,16 +1874,12 @@ foreach($fail in @($false,$true)){
         for invalid in (True, 0, -1, 1.5, "20000000"):
             with self.subTest(invalid=invalid):
                 invalid_budget = json.loads(json.dumps(fixture))
-                invalid_budget["pilot_authorization"]["limits"][
-                    "maximum_pa_grid_points"
-                ] = invalid
+                invalid_budget["pilot_authorization"]["limits"]["maximum_pa_grid_points"] = invalid
                 with self.assertRaisesRegex(ValueError, "positive integers"):
                     validate_with(invalid_budget)
 
     def test_mesh_build_report_enforces_declared_cell_limit(self) -> None:
-        runner = (
-            REPO_ROOT / "common/multipole/finite_3d_transport_preflight.ps1"
-        ).read_text(encoding="utf-8")
+        runner = (REPO_ROOT / "common/multipole/finite_3d_transport_preflight.ps1").read_text(encoding="utf-8")
         start = runner.index("function Assert-MultipoleMeshBuildReport")
         end = runner.index("\nfunction Assert-MultipoleFieldSolveReport", start)
         assertion_function = runner[start:end]
@@ -1620,11 +1909,7 @@ foreach($fail in @($false,$true)){
                 *,
                 report_present: bool = True,
             ) -> subprocess.CompletedProcess[str]:
-                report_path = (
-                    report
-                    if report_present
-                    else Path(directory) / "missing_mesh_report.txt"
-                )
+                report_path = report if report_present else Path(directory) / "missing_mesh_report.txt"
                 if report_present:
                     lines = required_lines.copy()
                     if element_value is not None:
@@ -1672,9 +1957,7 @@ foreach($fail in @($false,$true)){
                     self.assertIn(expected, rejected.stdout + rejected.stderr)
 
     def test_field_solve_report_requires_complete_fields_and_no_particles(self) -> None:
-        runner = (
-            REPO_ROOT / "common/multipole/finite_3d_transport_preflight.ps1"
-        ).read_text(encoding="utf-8")
+        runner = (REPO_ROOT / "common/multipole/finite_3d_transport_preflight.ps1").read_text(encoding="utf-8")
         start = runner.index("function Assert-MultipoleFieldSolveReport")
         end = len(runner)
         assertion_function = runner[start:end]
@@ -1752,15 +2035,13 @@ foreach($fail in @($false,$true)){
                     else "DIFFERENTIAL_FIELD_FINAL_RESIDUAL=1e-8"
                     if line == "DIFFERENTIAL_FIELD_FINAL_RESIDUAL=UNKNOWN"
                     else "DIFFERENTIAL_FIELD_SOLVER_EVIDENCE_SOURCE=COMSOL_PROGRESS_LINIT_LINRES"
-                    if line
-                    == "DIFFERENTIAL_FIELD_SOLVER_EVIDENCE_SOURCE=NOT_APPLICABLE_DIRECT_SOLVER"
+                    if line == "DIFFERENTIAL_FIELD_SOLVER_EVIDENCE_SOURCE=NOT_APPLICABLE_DIRECT_SOLVER"
                     else "STATIC_FIELD_ITERATIONS=9"
                     if line == "STATIC_FIELD_ITERATIONS=UNKNOWN"
                     else "STATIC_FIELD_FINAL_RESIDUAL=2e-8"
                     if line == "STATIC_FIELD_FINAL_RESIDUAL=UNKNOWN"
                     else "STATIC_FIELD_SOLVER_EVIDENCE_SOURCE=COMSOL_PROGRESS_LINIT_LINRES"
-                    if line
-                    == "STATIC_FIELD_SOLVER_EVIDENCE_SOURCE=NOT_APPLICABLE_DIRECT_SOLVER"
+                    if line == "STATIC_FIELD_SOLVER_EVIDENCE_SOURCE=NOT_APPLICABLE_DIRECT_SOLVER"
                     else line
                 )
                 for line in required_lines
@@ -1770,20 +2051,12 @@ foreach($fail in @($false,$true)){
             self.assertIn("BACKEND=cg_amg CONTROL=user", accepted_cg.stdout)
             invalid_cases = (
                 (
-                    [
-                        line
-                        for line in required_lines
-                        if line != "PARTICLE_PHYSICS_CREATED=0"
-                    ]
+                    [line for line in required_lines if line != "PARTICLE_PHYSICS_CREATED=0"]
                     + ["PARTICLE_PHYSICS_CREATED=1"],
                     "PARTICLE_PHYSICS_CREATED=0",
                 ),
                 (
-                    [
-                        line
-                        for line in required_lines
-                        if line != "STATIC_FIELD_DOF=100"
-                    ],
+                    [line for line in required_lines if line != "STATIC_FIELD_DOF=100"],
                     "incomplete field-DOF identity",
                 ),
                 (
@@ -1796,18 +2069,12 @@ foreach($fail in @($false,$true)){
                     "invalid stationary solver backend",
                 ),
                 (
-                    [
-                        line
-                        for line in required_lines
-                        if line != "ELECTRIC_POTENTIAL_ELEMENT_ORDER=QUADRATIC"
-                    ],
+                    [line for line in required_lines if line != "ELECTRIC_POTENTIAL_ELEMENT_ORDER=QUADRATIC"],
                     "invalid electric-potential element order",
                 ),
                 (
                     [
-                        "DIFFERENTIAL_FIELD_ITERATIONS=0"
-                        if line == "DIFFERENTIAL_FIELD_ITERATIONS=12"
-                        else line
+                        "DIFFERENTIAL_FIELD_ITERATIONS=0" if line == "DIFFERENTIAL_FIELD_ITERATIONS=12" else line
                         for line in cg_lines
                     ],
                     "lacks positive DIFFERENTIAL_FIELD LinIt/LinRes evidence",
@@ -1819,7 +2086,7 @@ foreach($fail in @($false,$true)){
                     self.assertNotEqual(rejected.returncode, 0)
                     self.assertIn(expected, rejected.stdout + rejected.stderr)
 
-    def test_observer_does_not_interrupt_a_healthy_child_on_wall_clock_limit(self) -> None:
+    def test_observer_warns_without_interrupting_a_healthy_child_on_wall_clock_limit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             budget = root / "budget.json"
@@ -1861,20 +2128,81 @@ foreach($fail in @($false,$true)){
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
             self.assertEqual(measured["status"], "running")
             self.assertIsNone(measured["limit_name"])
+            self.assertIn("wall_clock_seconds", measured["warning_names"])
+
+    def test_observer_warns_without_interrupting_a_healthy_child_on_observed_limits(self) -> None:
+        """Observed budget excursions are evidence, not a solver-health verdict."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            budget = root / "budget.json"
+            usage = root / "usage.json"
+            budget.write_text(
+                json.dumps(
+                    {
+                        "limits": {
+                            "wall_clock_seconds": 60,
+                            "transient_run_directory_bytes": 1,
+                            "process_tree_working_set_bytes": 1,
+                            "minimum_system_available_memory_bytes": 1024**5,
+                            "compact_final_retained_bytes": 1024**2,
+                            "automatic_retry_count": 0,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';{HOST_PERMIT_FIXTURE}"
+                f"$r=Invoke-ResourceBudgetedProcess -Limits ((Get-Content -LiteralPath '{budget}' -Raw|ConvertFrom-Json).limits) "
+                f"-RunDir '{root}' -UsagePath '{usage}' -FilePath (Get-Process -Id $PID).Path "
+                "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 2');"
+                "if($r.resource_budget_exceeded-or$r.exit_code-ne0){exit 3}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            measured = json.loads(usage.read_text(encoding="utf-8-sig"))
+            self.assertEqual(measured["status"], "running")
+            self.assertIsNone(measured["limit_name"])
+            self.assertTrue(
+                {
+                    "transient_run_directory_bytes",
+                    "process_tree_working_set_bytes",
+                    "minimum_system_available_memory_bytes",
+                } <= set(measured["warning_names"])
+            )
 
     def test_every_production_completion_call_binds_to_the_real_usage_helper(self) -> None:
         """Execute parsed call sites, including multiline staged-runner cleanup."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             command = f"""
-. '{REPO_ROOT / 'common/multipole/resource_budget_support.ps1'}'
+. '{REPO_ROOT / "common/multipole/resource_budget_support.ps1"}'
 function Get-RunDirectoryBytes {{ param($RunDir) return [int64]128 }}
-$runDir='{root}';$run=$runDir
+$runDir='{root}';$run=$runDir;$RunDirectory=$runDir;$OutputDirectory=$runDir;$phaseDirectory=$runDir
 $usage=Join-Path $runDir 'usage.json'
 $usagePath=$usage
 $resourceUsage=$usage;$controlResourceUsage=$usage;$axisFieldUsage=$usage
 $batchResourceUsagePath=$usage
-$package=@{{run_dir=$runDir}};$arguments=@{{RunDir=$runDir;UsagePath=$usage}}
+$package=@{{run_dir=$runDir;artifact_run_dir=$runDir;result_dir=$runDir}};$arguments=@{{RunDir=$runDir;UsagePath=$usage}}
+$actualComplete=${{function:Complete-ResourceUsage}}
+function Complete-ResourceUsage {{
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$RunDir,[Parameter(Mandatory)][string]$UsagePath)
+    @{{status='running';peak_run_directory_bytes=0;limits=@{{fixture=42}}}} |
+        ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $UsagePath
+    $script:boundUsagePath=$UsagePath
+    & $actualComplete @PSBoundParameters
+}}
 $count=0
 foreach($folder in @('common','projects','integrations')){{
     foreach($source in Get-ChildItem -LiteralPath (Join-Path '{REPO_ROOT}' $folder) -Recurse -File -Filter '*.ps1'){{
@@ -1902,10 +2230,8 @@ foreach($folder in @('common','projects','integrations')){{
             $node.GetCommandName()-eq'Complete-ResourceUsage'
         }},$true))
         foreach($call in $calls){{
-            @{{status='running';peak_run_directory_bytes=0;limits=@{{fixture=42}}}} |
-                ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $usage
             $completed=. ([scriptblock]::Create($call.Extent.Text))
-            $receipt=Get-Content -LiteralPath $usage -Raw|ConvertFrom-Json
+            $receipt=Get-Content -LiteralPath $boundUsagePath -Raw|ConvertFrom-Json
             if($completed-ne$true-or$receipt.status-ne'completed'-or
                 $receipt.final_retained_bytes-ne128-or$receipt.limits.fixture-ne42){{
                 throw ('Completion receipt changed: '+$source.FullName)
@@ -1920,19 +2246,27 @@ exit 0
 """
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=30,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             self.assertIn("COMPLETION_CALLS=", completed.stdout)
 
     def test_single_process_limits_preserve_receipts_for_json_and_dictionary_inputs(self) -> None:
         """The real observer accepts existing JSON objects and both map types equally."""
-        limits = dict(wall_clock_seconds=10, transient_run_directory_bytes=1,
-                      transient_run_directory_sample_interval_seconds=1,
-                      process_tree_working_set_bytes=1024**3,
-                      minimum_system_available_memory_bytes=1,
-                      compact_final_retained_bytes=1024**2, automatic_retry_count=0)
+        limits = dict(
+            wall_clock_seconds=10,
+            transient_run_directory_bytes=1,
+            transient_run_directory_sample_interval_seconds=1,
+            process_tree_working_set_bytes=1024**3,
+            minimum_system_available_memory_bytes=1,
+            compact_final_retained_bytes=1024**2,
+            automatic_retry_count=0,
+        )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
@@ -1966,8 +2300,12 @@ exit 0
 """
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=30,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             for index in range(3):
@@ -2121,29 +2459,74 @@ exit 0
                 ),
                 encoding="utf-8",
             )
-            dispatch.write_text(json.dumps({
-                "role": "simion_repository_dispatch_plan",
-                "particle_count": 1,
-                "estimation": {"kind": "exact_resource_profile"},
-                "limits": dispatch_limits(maximum_concurrency=1),
-            }), encoding="utf-8")
-            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
-            command = (
-                f". '{support}';{HOST_PERMIT_FIXTURE}"
-                "function Get-SystemCpuPercent {0.0};"
-                "function Get-RepositoryAvailableMemoryBytes {[int64](64GB)};"
-                "$child=(Get-Process -Id $PID).Path;"
-                "$spec=[pscustomobject]@{name='launcher';file_path=$child;"
-                "argument_list=@('-NoProfile','-Command',"
-                "'Start-Process -FilePath $env:ComSpec "
-                "-ArgumentList @(''/c'',''timeout /t 2 /nobreak >nul'') "
-                "-WindowStyle Hidden');"
-                f"stdout='{stdout}';stderr='{stderr}';environment=@{{}};working_directory='{root}'}};"
-                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' "
-                f"-RunDir '{root}' -UsagePath '{usage}' "
-                "-ProcessSpecifications @($spec);"
-                "if($r.resource_budget_exceeded-or$r.processes[0].exit_code-ne0){exit 3}"
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "particle_count": 1,
+                        "estimation": {"kind": "exact_resource_profile"},
+                        "limits": dispatch_limits(maximum_concurrency=1),
+                    }
+                ),
+                encoding="utf-8",
             )
+            observed = root / "worker_observed"
+            identities = root / "process_identities.json"
+            orphan_observed = root / "worker_observed_after_launcher_exit"
+            worker = f"""
+$deadline=[DateTime]::UtcNow.AddSeconds(10)
+while(-not(Test-Path -LiteralPath '{observed}')){{
+    if([DateTime]::UtcNow-ge$deadline){{throw 'fixture worker was not observed'}}
+    Start-Sleep -Milliseconds 20
+}}
+Start-Sleep -Seconds 2
+"""
+            worker_command = base64.b64encode(worker.encode("utf-16-le")).decode("ascii")
+            launcher = f"""
+$worker=Start-Process -FilePath (Get-Process -Id $PID).Path -WindowStyle Hidden -PassThru `
+    -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand','{worker_command}')
+@(@{{pid=$worker.Id;started=$worker.StartTime.ToUniversalTime().Ticks}},
+  @{{pid=$PID;started=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks}}) |
+    ConvertTo-Json | Set-Content -LiteralPath '{identities}'
+$deadline=[DateTime]::UtcNow.AddSeconds(10)
+while(-not(Test-Path -LiteralPath '{observed}')){{
+    if([DateTime]::UtcNow-ge$deadline){{throw 'fixture launcher observation timed out'}}
+    Start-Sleep -Milliseconds 20
+}}
+"""
+            launcher_command = base64.b64encode(launcher.encode("utf-16-le")).decode("ascii")
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            # Release the launcher only after a real process-family sample has
+            # discovered its worker. Sleep alone cannot establish that boundary.
+            command = f"""
+. '{support}'
+{HOST_PERMIT_FIXTURE}
+function Get-SystemCpuPercent {{0.0}}
+function Get-RepositoryAvailableMemoryBytes {{[int64](64GB)}}
+function Get-CimInstance {{throw 'TEST_ONLY forced CIM denial for hidden launcher and worker'}}
+$originalSample=${{function:Get-ManagedSolverProcessSample}}
+function Get-ManagedSolverProcessSample {{
+    param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds,
+          [hashtable]$RootProcessStartedAtUtcTicks,[hashtable]$TrackedProcessStartedAtUtcTicks)
+    $sample=& $originalSample @PSBoundParameters
+    if(Test-Path -LiteralPath '{identities}'){{
+        $owned=@(Get-Content -LiteralPath '{identities}' -Raw | ConvertFrom-Json)
+        if(@($sample.active_process_ids)-contains$owned[0].pid){{
+            Set-Content -LiteralPath '{observed}' -Value 'observed'
+            if(@($sample.active_process_ids)-notcontains$owned[1].pid){{
+                Set-Content -LiteralPath '{orphan_observed}' -Value 'observed'
+            }}
+        }}
+    }}
+    return $sample
+}}
+$spec=[pscustomobject]@{{name='launcher';file_path=(Get-Process -Id $PID).Path;
+    argument_list=@('-NoProfile','-NonInteractive','-EncodedCommand','{launcher_command}');
+    stdout='{stdout}';stderr='{stderr}';environment=@{{}};working_directory='{root}'}}
+$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' `
+    -UsagePath '{usage}' -ProcessSpecifications @($spec)
+if($r.resource_budget_exceeded-or$r.processes[0].exit_code-ne0){{exit 3}}
+"""
             scheduler_log = root / "scheduler.log"
             try:
                 # A real file preserves admission/lifecycle evidence without
@@ -2159,11 +2542,31 @@ exit 0
                     )
             except subprocess.TimeoutExpired as exc:
                 self.fail(f"{exc}\n{scheduler_log.read_text(encoding='utf-8', errors='replace')}")
+            finally:
+                # Drain only this fixture's recorded process identities before
+                # TemporaryDirectory attempts to remove their working directory.
+                drain = f"""
+$ErrorActionPreference='Stop'
+if(Test-Path -LiteralPath '{identities}'){{
+    foreach($owned in @(Get-Content -LiteralPath '{identities}' -Raw | ConvertFrom-Json)){{
+        $process=Get-Process -Id $owned.pid -ErrorAction SilentlyContinue
+        if($process-and$process.StartTime.ToUniversalTime().Ticks-eq$owned.started){{
+            if(-not$process.WaitForExit(15000)){{throw 'fixture process failed to drain naturally'}}
+        }}
+    }}
+}}
+exit 0
+"""
+                drained = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", drain],
+                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=35)
+                self.assertEqual(drained.returncode, 0, drained.stdout + drained.stderr)
             self.assertEqual(
-                completed.returncode, 0,
+                completed.returncode,
+                0,
                 scheduler_log.read_text(encoding="utf-8", errors="replace"),
             )
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
+            self.assertTrue(orphan_observed.is_file(), "worker was never sampled after launcher exit")
             self.assertEqual(measured["status"], "running")
             self.assertGreaterEqual(measured["wall_clock_seconds"], 1.5)
             self.assertGreater(measured["peak_process_tree_working_set_bytes"], 0)
@@ -2174,12 +2577,17 @@ exit 0
             root = Path(directory)
             dispatch = root / "dispatch.json"
             usage = root / "usage.json"
-            dispatch.write_text(json.dumps({
-                "role": "simion_repository_dispatch_plan",
-                "particle_count": 1,
-                "estimation": {"kind": "exact_resource_profile"},
-                "limits": dispatch_limits(maximum_concurrency=1),
-            }), encoding="utf-8")
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "particle_count": 1,
+                        "estimation": {"kind": "exact_resource_profile"},
+                        "limits": dispatch_limits(maximum_concurrency=1),
+                    }
+                ),
+                encoding="utf-8",
+            )
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
                 f". '{support}';{HOST_PERMIT_FIXTURE}"
@@ -2223,6 +2631,45 @@ exit 0
             events = scheduler_log.read_text(encoding="utf-8", errors="replace")
             self.assertEqual(completed.returncode, 0, events)
             self.assertIn("SIMION_RESOURCE_EVENT=BATCH_WAVE_COMPLETED", events)
+
+    def test_shared_observation_uses_common_danger_policy_and_resets_unknown_or_transient_pressure(self) -> None:
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = f"""
+. '{support}'
+$script:now=[datetimeoffset]::UtcNow
+function Get-RepositoryUtcNow {{$script:now}}
+$script:available=[int64](100MB)
+function Get-RepositoryAvailableMemoryBytes {{$script:available}}
+function Get-RunDirectoryBytes {{throw 'No ordinary limits must not scan a run directory'}}
+$observation=New-RepositoryProcessObservation
+if($null-ne$observation.usage){{throw 'No-limit observer invented a usage payload'}}
+$sample=[pscustomobject]@{{ancestry_complete=$true;working_set_bytes=0}}
+if((Update-RepositoryProcessObservation -Observation $observation -Sample $sample).physical_danger){{exit 3}}
+$script:now=$script:now.AddSeconds($observation.critical_seconds)
+$sample.ancestry_complete=$false
+if((Update-RepositoryProcessObservation -Observation $observation -Sample $sample).physical_danger){{exit 4}}
+$sample.ancestry_complete=$true
+if((Update-RepositoryProcessObservation -Observation $observation -Sample $sample).physical_danger){{exit 5}}
+$script:available=[int64](8GB)
+$null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample
+$script:available=[int64](100MB)
+$null=Update-RepositoryProcessObservation -Observation $observation -Sample $sample
+$script:now=$script:now.AddSeconds($observation.critical_seconds-1)
+if((Update-RepositoryProcessObservation -Observation $observation -Sample $sample).physical_danger){{exit 6}}
+$script:now=$script:now.AddSeconds(1)
+if(-not(Update-RepositoryProcessObservation -Observation $observation -Sample $sample).physical_danger){{exit 7}}
+$limits=[pscustomobject]@{{wall_clock_seconds=100;process_tree_working_set_bytes=100;transient_run_directory_bytes=100;minimum_system_available_memory_bytes=1}}
+$metrics=New-RepositoryProcessObservation -Limits $limits -RunDir $env:TEMP -UsagePath (Join-Path $env:TEMP ('TEST_ONLY_never_published_'+[guid]::NewGuid().ToString('N')+'.json'))
+$null=Update-RepositoryProcessObservation -Observation $metrics -Sample $sample
+$script:now=$script:now.AddSeconds($metrics.critical_seconds)
+if(-not(Update-RepositoryProcessObservation -Observation $metrics -Sample $sample).physical_danger){{throw 'Directory failure hid known physical danger'}}
+function Get-RunDirectoryBytes {{return 0}}
+function Write-ResourceUsage {{param($Usage,$Path);throw 'TEST_ONLY metrics write failure'}}
+if(-not(Update-RepositoryProcessObservation -Observation $metrics -Sample $sample -Final).physical_danger){{throw 'Usage write failure hid known physical danger'}}
+"""
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=15, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_watchdog_samples_run_directory_on_frozen_cadence_and_at_exit(
         self,
@@ -2277,15 +2724,11 @@ exit 0
             self.assertEqual(measured["status"], "running")
             self.assertIsNone(measured["limit_name"])
             self.assertEqual(measured["peak_run_directory_bytes"], 2048)
-            self.assertEqual(
-                measured["warning_names"], ["transient_run_directory_bytes"]
-            )
+            self.assertEqual(measured["warning_names"], ["transient_run_directory_bytes"])
 
     def test_common_runners_reject_free_numerics_before_run_package(self) -> None:
         project = REPO_ROOT / "projects" / QUAD
-        source = REPO_ROOT / (
-            "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv"
-        )
+        source = REPO_ROOT / ("common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv")
         budget = project / "config/family_experiment/engineering_budget.json"
         cases = (
             (
@@ -2356,13 +2799,7 @@ exit 0
                 "not authorized",
                 completed.stdout + completed.stderr,
             )
-            run_dir = (
-                REPO_ROOT.parent
-                / "artifacts/projects"
-                / QUAD
-                / "runs"
-                / run_id
-            )
+            run_dir = REPO_ROOT.parent / "artifacts/projects" / QUAD / "runs" / run_id
             self.assertFalse(run_dir.exists(), "rejected numerics created a run package")
 
 

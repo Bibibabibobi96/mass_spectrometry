@@ -1,7 +1,7 @@
-"""Publish and discover verified first-formal-batch SIMION observations.
+"""Publish and discover verified single-worker SIMION observations.
 
-An aggregate parallel peak is never divided by process count.  New profiles use
-the explicitly recorded first formal batch, whose scientific result is retained.
+An aggregate parallel peak is never divided by process count. Profiles retain
+the actual work-unit count of the worker providing the observed memory peak.
 Legacy completed one-process bootstrap receipts remain readable.
 """
 
@@ -91,6 +91,20 @@ def publish_resource_profile(
     observed_batch_work_units = _positive_int(
         batches[0].get("count"), "observed batch work-unit count"
     )
+    selected_later_worker = False
+    worker = usage.get("per_process_memory_observation")
+    if is_new and worker is not None:
+        if not isinstance(worker, dict):
+            raise ValueError("per-process memory observation must be an object")
+        worker_peak = _positive_int(worker.get("peak_managed_memory_bytes"), "worker memory peak")
+        worker_count = _positive_int(worker.get("work_units"), "worker work-unit count")
+        _positive_int(worker.get("root_process_id"), "worker process ID")
+        _positive_int(worker.get("root_process_started_at_utc_ticks"), "worker creation identity")
+        if not isinstance(worker.get("process"), str) or not worker["process"]:
+            raise ValueError("worker process name is required")
+        if worker_peak > _positive_int(peak, "first formal memory peak"):
+            peak, observed_batch_work_units = worker_peak, worker_count
+            selected_later_worker = True
     result = {
         "schema_version": 1,
         "role": PROFILE_ROLE,
@@ -112,7 +126,7 @@ def publish_resource_profile(
             },
         },
     }
-    if is_new:
+    if is_new and not selected_later_worker:
         cpu = first_observation.get("process_cpu_percent")
         if isinstance(cpu, (int, float)) and not isinstance(cpu, bool) and cpu >= 0:
             result["per_batch_cpu_percent"] = float(cpu)

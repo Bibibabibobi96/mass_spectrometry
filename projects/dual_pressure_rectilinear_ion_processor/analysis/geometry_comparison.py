@@ -18,6 +18,8 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 import numpy as np
 
+from common.analysis.population_moments import population_pair_moments
+
 from common.contracts.write_run_manifest import file_record
 from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.dual_pressure_rectilinear_ion_processor.analysis import beam_focus_diagnostics, aperture_acceptance_diagnostics
@@ -202,9 +204,10 @@ def extend_statistics(cases: list[dict], statistics: list[dict], common: list[in
         if directed:
             y = np.array([r["y_mm"] for r in directed])
             angle = np.radians([r["theta_y_deg"] for r in directed])*1000
-            cov = float(np.mean((y-y.mean())*(angle-angle.mean())))
+            moments = population_pair_moments(y, angle)
+            cov = moments["covariance"]
             stat["cov_y_theta_y_mm_mrad"] = cov
-            stat["rms_emittance_y_theta_mm_mrad"] = math.sqrt(max(0., float(y.var()*angle.var()-cov**2)))
+            stat["rms_emittance_y_theta_mm_mrad"] = math.sqrt(max(0., moments["variance_first"]*moments["variance_second"]-cov**2))
         else:
             stat["cov_y_theta_y_mm_mrad"] = None
             stat["rms_emittance_y_theta_mm_mrad"] = None

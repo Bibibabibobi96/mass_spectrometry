@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/assembly_recipe.schema.json",
+  "title": "Direct component placements and explicit mechanical mating checks",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "integration_id",
+    "recipe_id",
+    "assembly_frame_id",
+    "position_tolerance_mm",
+    "angular_tolerance_rad",
+    "instances",
+    "connections"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "assembly_recipe"},
+    "integration_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "recipe_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "assembly_frame_id": {"type": "string", "minLength": 1},
+    "position_tolerance_mm": {"type": "number", "exclusiveMinimum": 0},
+    "angular_tolerance_rad": {"type": "number", "exclusiveMinimum": 0, "maximum": 3.141592653589793},
+    "instances": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["instance_id", "project_id", "transform"],
+        "properties": {
+          "instance_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+          "project_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+          "transform": {"$ref": "#/$defs/transform"}
+        }
+      }
+    },
+    "connections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["connection_id", "upstream", "downstream", "gap_mm", "coupling_mode"],
+        "properties": {
+          "connection_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+          "upstream": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["instance_id", "port_id"],
+            "properties": {
+              "instance_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+              "port_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"}
+            }
+          },
+          "downstream": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["instance_id", "port_id"],
+            "properties": {
+              "instance_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+              "port_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"}
+            }
+          },
+          "gap_mm": {"type": "number", "minimum": 0},
+          "coupling_mode": {"enum": ["monolithic_joint_solve", "state_handoff", "field_overlap"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "role", "from_frame_id", "to_frame_id", "rotation", "translation_mm"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "role": {"const": "rigid_transform"},
+        "from_frame_id": {"type": "string", "minLength": 1},
+        "to_frame_id": {"type": "string", "minLength": 1},
+        "rotation": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}}
+        },
+        "translation_mm": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}}
+      }
+    },
+    "identifier": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"}
+  }
+}
