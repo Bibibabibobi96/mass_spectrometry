@@ -17,6 +17,8 @@ N=1000是峰形、尾部、束斑/发散分布、损失分布与标准分辨率�
 
 ## 工具链与执行入口
 
+近期本机门禁的实际宿主、验证范围与保留的失败记录见[架构迁移审计](history/20261027__repository-architecture-migration.md)。
+
 PowerShell Core 7（`pwsh`）是仓库唯一受支持的PowerShell运行时。公开根入口必须通过公共preflight
 失败关闭地验证当前宿主为Core 7，禁止回退到Windows PowerShell 5.1。Python等非PowerShell边界启动
 PowerShell时必须使用`pwsh`；PowerShell脚本内部继承当前宿主，不得另行选择或启动第二套PowerShell。
@@ -251,6 +253,9 @@ git diff --check
 git diff --stat
 .\common\verify_changed.ps1
 ```
+
+独立工作树复用其他checkout的Python 3.11时，提交前将该解释器目录置于当前进程PATH首位；
+提交钩子依次选择本checkout的`.venv`和PATH中的`python`并验证版本。
 
 确认没有 MPH、PA/IOB、结果、日志或一次性脚本进入暂存区。不得强制推送、改写远程历史或
 覆盖/夹带任务开始前的无关改动；Agent何时自主提交和推送只由[`AGENTS.md`](../AGENTS.md)定义。

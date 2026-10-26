@@ -26,6 +26,8 @@
 
 ## 文档整治
 
+- [2026-10-27 全仓项目边界、文档体系与冻结身份迁移](history/20261027__repository-architecture-migration.md)
+
 - [2026-10-26 仿真组装厂定位、文档存放与规模审查](history/20261026__simulation-assembly-documentation-review.md)
 
 - [2026-09-14 任务阅读路径、内容收口与检索验收](history/20260914__documentation-reading-upgrade.md)
