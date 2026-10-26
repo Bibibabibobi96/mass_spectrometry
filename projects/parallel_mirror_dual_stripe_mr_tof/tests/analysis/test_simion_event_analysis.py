@@ -20,7 +20,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 PROGRAM = REPOSITORY_ROOT / "projects" / "parallel_mirror_dual_stripe_mr_tof" / "simion" / "mrtof_candidate.lua"
-PEAK_CONTRACT = json.loads((Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json").read_text())["peak_analysis"]
+PEAK_CONTRACT = json.loads((Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))["peak_analysis"]
 
 
 def terminal(ion: int, **changes: object) -> dict[str, object]:

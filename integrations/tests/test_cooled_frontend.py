@@ -216,7 +216,8 @@ class CooledFrontendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
             author,_=cooled_request_fixture(root)
-            run=root/"first"
+            run=root/"artifacts/projects/instrument_assembly/runs/20261022_120000__build__python__cooled-fixture"
+            self.assertEqual(run.parents[4],root)
             prepare_cooled_frontend(author,run,REPO,root,run_id="20261022_120000__build__python__cooled-fixture")
             (run/"inputs/native_discovery.json").write_text(json.dumps(dict(bytes=1,sha256="A"*64,file_version="INERT")))
             plan=cooled_runtime.field_cache_plan(run,cache_root=root/"cache")
@@ -224,7 +225,7 @@ class CooledFrontendTests(unittest.TestCase):
             retained=Path(first["build_directory"])/first["missing_files"][0]
             retained.write_bytes(b"INERT_RETAINED_MEMBER"*4)
             original=retained.read_bytes()
-            next_run=root/"second"
+            next_run=run.with_name("20261022_120000__build__python__cooled-fixture__r02")
             shutil.copytree(run/"inputs",next_run/"inputs")
             resumed=cooled_runtime.advance_field_cache(next_run,plan)
             self.assertEqual(len(resumed["missing_files"]),6)
@@ -642,7 +643,8 @@ $null=Freeze-ConsumerDependencies -RepoRoot $Repo -ContractPath $inventory -Inpu
         with tempfile.TemporaryDirectory() as temporary:
             workspace=Path(temporary)
             path,_=cooled_request_fixture(workspace)
-            run=workspace/"run"
+            run=workspace/"artifacts/projects/instrument_assembly/runs/20261022_120000__build__python__cooled-fixture"
+            self.assertEqual(run.parents[4],workspace)
             prepare_cooled_frontend(path,run,REPO,workspace, run_id="20261022_120000__build__python__cooled-fixture")
             records=[]
             try:

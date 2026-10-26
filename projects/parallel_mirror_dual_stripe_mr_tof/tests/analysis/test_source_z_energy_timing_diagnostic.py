@@ -32,7 +32,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing
 )
 
 
-PEAK_CONTRACT = json.loads((Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json").read_text())["peak_analysis"]
+PEAK_CONTRACT = json.loads((Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))["peak_analysis"]
 
 
 def _sha(path: Path) -> str:

@@ -417,9 +417,12 @@ print('OA_BUILDER_MOCK=PASS')
                 self.assertIn("field_assembly_verified=true", sidecar)
                 self.assertIn("measured_source_matches_workpoint=true", sidecar)
                 self.assertIn("ip_local.pa", sidecar)
-                lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
-                check = root / "check_finalized_voltages.lua"
-                check.write_text("""local t=dofile(arg[1])
+                with self.subTest(verification="plain_lua_voltage_projection"):
+                    lua = shutil.which('lua') or 'C:/Program Files/SIMION-2020/lua.exe'
+                    if not Path(lua).is_file():
+                        self.skipTest('plain Lua unavailable; Python preparation assertions remain active')
+                    check = root / "check_finalized_voltages.lua"
+                    check.write_text("""local t=dofile(arg[1])
 local map=dofile(arg[2])
 local actual=map.physical_voltages(t.mirror_voltages_v,t.stripe_biases_v,t.prism_voltages_v,
   {0,0,0},{0},t.nonaccelerator_scale).analyser
@@ -430,11 +433,11 @@ assert(t.stripe_biases_v[1]==-27 and t.prism_voltages_v[1]==343)
 assert(t.source_clock_marker==7500.6370908093995)
 print('FINALIZED_FIELD_VOLTAGES=PASS')
 """, encoding="utf-8")
-                evaluated = subprocess.run([lua, str(check), str(root / "bound/runtime/joint.operating_point.lua"),
-                                           str(PROJECT / "simion/candidate_voltage_map.lua")],
-                                          cwd=root, capture_output=True, text=True, timeout=30)
-                self.assertEqual(evaluated.returncode, 0, evaluated.stdout + evaluated.stderr)
-                self.assertIn('FINALIZED_FIELD_VOLTAGES=PASS', evaluated.stdout)
+                    evaluated = subprocess.run([lua, str(check), str(root / "bound/runtime/joint.operating_point.lua"),
+                                               str(PROJECT / "simion/candidate_voltage_map.lua")],
+                                              cwd=root, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(evaluated.returncode, 0, evaluated.stdout + evaluated.stderr)
+                    self.assertIn('FINALIZED_FIELD_VOLTAGES=PASS', evaluated.stdout)
                 self.assertEqual(result["measured_source"]["counts"],
                                  {"source": 100, "transferred": 97, "not_transferred": 3})
                 original_fields = json.loads(json.dumps(binding))

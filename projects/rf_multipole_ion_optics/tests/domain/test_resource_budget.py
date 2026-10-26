@@ -347,7 +347,7 @@ class ResourceBudgetTests(unittest.TestCase):
             self.assertIn("MEMORY_DANGER_TERMINATION", result.stdout)
 
     def test_simion_warning_policy_runs_serially_under_memory_pressure(self) -> None:
-        """Shortage permits one worker, never two, and preserves CPU admission."""
+        """Exercise admission and transient pressure with a deterministic clock."""
         for transient_critical in (False, True):
             with self.subTest(transient_critical=transient_critical), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -373,20 +373,45 @@ class ResourceBudgetTests(unittest.TestCase):
                 )
                 support = REPO_ROOT / "common/resource_budget_support.ps1"
                 memory_function = (
-                    "$script:memorySamples=0;function Get-RepositoryAvailableMemoryBytes {"
-                    "$script:memorySamples++;if($script:memorySamples-in@(1,3)){[int64](100MB)}else{[int64](1GB)}};"
+                    "$script:activeCriticalSamples=0;function Get-RepositoryAvailableMemoryBytes {"
+                    "if($null-ne$script:firstWorkerAt){$elapsed=($script:now-$script:firstWorkerAt).TotalSeconds;"
+                    "if($elapsed-ge0.5-and$elapsed-lt1){$script:activeCriticalSamples++;return [int64](100MB)}};"
+                    "return [int64](1GB)};"
                     if transient_critical else
                     "function Get-RepositoryAvailableMemoryBytes {[int64](1GB)};"
                 )
+                # Real launch/ancestry/console behavior has separate tests below.
+                # Here six-second workers outlive the five-second launch stagger,
+                # so a wrongly admitted sibling would actually overlap.
                 command = (
                     f". '{support}';{HOST_PERMIT_FIXTURE}"
+                    "$script:now=[datetimeoffset]'2026-10-27T00:00:00Z';"
+                    "$script:firstWorkerAt=$null;$script:workers=@{};$script:nextPid=100;$script:disposed=0;"
+                    "function Get-CimInstance {throw 'Policy fixture queried host CIM'};"
+                    "function Start-Process {throw 'Policy fixture launched a native worker'};"
+                    "function Get-RepositoryUtcNow {$script:now};"
+                    "function Start-Sleep {param([int]$Seconds=0,[int]$Milliseconds=0);"
+                    "$script:now=$script:now.AddSeconds($Seconds+$Milliseconds/1000.0);"
+                    "if($script:now-gt[datetimeoffset]'2026-10-27T00:00:30Z'){throw 'Policy did not finish'}};"
                     "$script:cpuSamples=0;function Get-SystemCpuPercent {"
                     "$script:cpuSamples++;if($script:cpuSamples-eq1){96.0}else{0.0}};"
                     f"{memory_function}"
                     "function Stop-ManagedSolverProcesses {throw 'Memory warning killed a worker'};"
-                    "$exe=(Get-Process -Id $PID).Path;"
-                    "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path=$exe;"
-                    "argument_list=@('-NoProfile','-Command','Start-Sleep -Milliseconds 200');"
+                    "function Start-RepositoryScheduledProcess {param($Specification);$script:nextPid++;"
+                    "if($null-eq$script:firstWorkerAt){$script:firstWorkerAt=$script:now};"
+                    "$script:workers[$script:nextPid]=$script:now;"
+                    "$process=[pscustomobject]@{ExitCode=0};$process|Add-Member ScriptMethod WaitForExit {};"
+                    "$process|Add-Member ScriptMethod Dispose {$script:disposed++};"
+                    "[pscustomobject]@{name=$Specification.name;specification=$Specification;process=$process;"
+                    "root_process_id=$script:nextPid;tracked_process_ids=@($script:nextPid);started_at=$script:now;"
+                    "active=$true;completed=$false;exit_code=$null;pressure_terminated=$false;"
+                    "peak_working_set_bytes=[int64]0;peak_managed_memory_bytes=[int64]0}};"
+                    "function Get-ManagedSolverProcessSample {param($RootProcessIds,$TrackedProcessIds);"
+                    "$worker=$RootProcessIds[0];$active=@();"
+                    "if(($script:now-$script:workers[$worker]).TotalSeconds-lt6){$active=@($worker)};"
+                    "[pscustomobject]@{tracked_process_ids=@($worker);active_process_ids=$active;"
+                    "working_set_bytes=[int64](1MB);managed_memory_bytes=[int64](1MB)}};"
+                    "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path='unused';argument_list=@();"
                     f"stdout='{root}\\$_.out';stderr='{root}\\$_.err';environment=@{{}};working_directory='{root}'}}}});"
                     f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
                     f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
@@ -396,7 +421,12 @@ class ResourceBudgetTests(unittest.TestCase):
                     "if($receipt.scheduler_receipt.memory_policy-ne'warn_single_worker'){throw 'Missing policy'};"
                     "if(@($receipt.scheduler_receipt.memory_warning_events).Count-ne1){throw 'Warning spam/missing warning'};"
                     "if(@($receipt.scheduler_receipt.launch_pause_events|Where-Object {$_.reason-eq'cpu_admission_exceeded'}).Count-lt1){throw 'CPU bypassed'};"
-                    "if(@($r.processes|Where-Object {$_.exit_code-ne0}).Count){throw 'Process failed'}"
+                    "if(@($r.processes|Where-Object {$_.exit_code-ne0}).Count){throw 'Process failed'};"
+                    "if($script:disposed-ne2){throw 'Worker completion lost'};"
+                    "if((@($r.processes.name|Sort-Object)-join',')-ne'a,b'){throw 'Work item identity lost'};"
+                    "if(($script:workers[101]-[datetimeoffset]'2026-10-27T00:00:00Z').TotalSeconds-lt2){throw 'Launched before CPU resample'};"
+                    "if(($script:workers[102]-$script:workers[101]).TotalSeconds-lt6){throw 'Overlapping warning workers'};"
+                    + ("if($script:activeCriticalSamples-ne1){throw 'Active transient pressure not exercised'}" if transient_critical else "")
                 )
                 result = subprocess.run(
                     ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
@@ -404,8 +434,6 @@ class ResourceBudgetTests(unittest.TestCase):
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
-                    # Include PowerShell startup and process-tree observation under
-                    # concurrent gates; the 200 ms workers are not a timing test.
                     timeout=60,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal, localcontext
 import json
 import math
 import tempfile
@@ -191,7 +192,15 @@ class DualStripeL0MathTest(unittest.TestCase):
             axial_energy_per_charge_v=4372.010347796059,
         )
 
-        self.assertAlmostEqual(slow_energy, 4.9611316919, places=9)
+        # K*Tbar*sqrt(Ey)=L*kappa: check the selector independently at high
+        # precision, without freezing the platform-dependent numerical shape.
+        with localcontext() as context:
+            context.prec = 80
+            expected_energy = (
+                Decimal(str(shape.drift_length_l_mm)) * Decimal(str(shape.kappa_1))
+                / (Decimal(str(reduced_period_mm_per_sqrt_v)) * Decimal(str(target_k)))
+            ) ** 2
+        self.assertAlmostEqual(slow_energy, float(expected_energy), places=12)
         self.assertAlmostEqual(result.continuous_oscillation_count, target_k, places=12)
         self.assertAlmostEqual(result.turning_pseudopotential_v, slow_energy, places=12)
 
