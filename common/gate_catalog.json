@@ -367,7 +367,7 @@
     },
     {
       "stage": "gate_contract_tests",
-      "dependency_profile": "stdlib",
+      "dependency_profile": "locked",
       "repository_integration_group": "covered",
       "run_on_full_scope": false,
       "full_scope_coverage_stage": "common_contracts",

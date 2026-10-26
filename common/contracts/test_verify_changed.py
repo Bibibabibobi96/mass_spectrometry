@@ -542,7 +542,13 @@ exit 0
             return match.group(1)
 
         self.assertEqual(profile_for("CHANGELOG.md"), "stdlib")
-        self.assertEqual(profile_for("common/gate_catalog_support.ps1"), "stdlib")
+        # These routes run real Ruff and nested changed-Python gates, even if
+        # the author's own change is only PowerShell or workflow YAML.
+        for path in ("common/gate_catalog_support.ps1", "common/verify_changed.ps1",
+                     "common/contracts/test_verify_changed.py", ".github/workflows/lightweight-gate.yml"):
+            with self.subTest(gate_contract_path=path):
+                self.assertIn("gate_contract_tests", self.routed_stages(path))
+                self.assertEqual(profile_for(path), "locked")
         self.assertEqual(profile_for("pyproject.toml"), "locked")
         self.assertEqual(profile_for("config/project_registry.json"), "locked")
         self.assertEqual(
