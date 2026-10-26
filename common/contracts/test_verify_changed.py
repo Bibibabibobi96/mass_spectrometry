@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -700,6 +702,56 @@ $wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
         self.assertIn("changed_scope.json", workflow)
         self.assertNotIn("$fallbackChangedPaths", workflow)
         self.assertNotIn("projects/rf_quadrupole_ion_optics/README.md", workflow)
+
+    def test_ci_temp_setup_gives_python_canonical_fixture_paths(self) -> None:
+        workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
+        scripts = re.findall(
+            r"(?m)^      - name: Configure canonical test temporary directory\n"
+            r"        shell: pwsh\n        run: \|\n((?:          .+\n)+)",
+            workflow,
+        )
+        self.assertEqual(len(scripts), 2, "Both CI jobs must prepare their fixture root")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            runner_temp = root / "runner temporary directory"
+            runner_temp.mkdir()
+            environment_file = root / "github_env"
+            environment = {
+                key: value for key, value in os.environ.items()
+                if key.casefold() not in {"runner_temp", "github_env", "path"}
+            }
+            environment.update(
+                RUNNER_TEMP=str(runner_temp), GITHUB_ENV=str(environment_file),
+                PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""),
+            )
+            for index, script in enumerate(scripts):
+                with self.subTest(job=index):
+                    environment_file.write_text("", encoding="utf-8")
+                    result = subprocess.run(
+                        [shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-Command",
+                         textwrap.dedent(script)], cwd=REPO_ROOT, env=environment,
+                        capture_output=True, text=True, encoding="utf-8", timeout=30,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    exported = dict(
+                        line.split("=", 1)
+                        for line in environment_file.read_text(encoding="utf-8-sig").splitlines()
+                    )
+                    self.assertEqual(set(exported), {"TEMP", "TMP"})
+                    child_environment = {
+                        key: value for key, value in environment.items()
+                        if key.casefold() not in {"temp", "tmp"}
+                    }
+                    child_environment.update(exported)
+                    probe = subprocess.run(
+                        [sys.executable, "-c",
+                         "from pathlib import Path; import tempfile; "
+                         "assert Path(tempfile.gettempdir()) == Path.cwd(); "
+                         "assert Path(tempfile.mkdtemp()).parent == Path.cwd()"],
+                        cwd=runner_temp, env=child_environment, capture_output=True,
+                        text=True, encoding="utf-8", timeout=30,
+                    )
+                    self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
 
     def test_documentation_gate_accepts_workspace_artifact_links(self) -> None:
         from tempfile import TemporaryDirectory

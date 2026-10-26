@@ -34,6 +34,15 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: requirements-lock.txt
+      - name: Configure canonical test temporary directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $temporaryRoot = & python -c 'import os; from pathlib import Path; print(Path(os.environ["RUNNER_TEMP"]).resolve(strict=True))'
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve the runner temporary directory.' }
+          "TEMP=$temporaryRoot" >> $env:GITHUB_ENV
+          "TMP=$temporaryRoot" >> $env:GITHUB_ENV
+          Write-Output "CI_TEMP_ROOT=$temporaryRoot"
       - name: Verify PowerShell host
         shell: pwsh
         run: |
@@ -109,6 +118,15 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: requirements-lock.txt
+      - name: Configure canonical test temporary directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $temporaryRoot = & python -c 'import os; from pathlib import Path; print(Path(os.environ["RUNNER_TEMP"]).resolve(strict=True))'
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve the runner temporary directory.' }
+          "TEMP=$temporaryRoot" >> $env:GITHUB_ENV
+          "TMP=$temporaryRoot" >> $env:GITHUB_ENV
+          Write-Output "CI_TEMP_ROOT=$temporaryRoot"
       - name: Verify PowerShell host
         shell: pwsh
         run: |

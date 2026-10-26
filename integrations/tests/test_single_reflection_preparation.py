@@ -21,6 +21,7 @@ from common.integration.resolve_assembly import compile_assembly_layout
 from common.contracts.write_run_manifest import file_record
 from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import validate_source
+from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
 from common.ion_release import cylinder
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, inputs, reframe_parent
 from integrations.runtime.single_flight_source import GLOBAL_COLUMNS, SOURCE_COLUMNS, published_producer_input
@@ -314,6 +315,68 @@ def downstream_field_source_fixture(root: Path, request_path: Path, request: dic
 
 
 class SingleReflectionPreparationTests(unittest.TestCase):
+    def _current_octupole_provider(self, historical):
+        # This fixed historical case requires the current profile to remain
+        # physically equivalent; a changed design cannot inherit its evidence.
+        current = resolve_design_profile(Path(__file__).resolve().parents[2],
+            'rf_multipole_ion_optics', 'octupole_through_exit_no_acceleration')['resolved_design']
+        for key in ('units', 'coordinate', 'geometry_mm', 'interfaces_mm', 'drive',
+                    'axial_drive', 'static_electrodes_V', 'particle_source'):
+            self.assertEqual(historical[key], current[key], key)
+        segmentation = copy.deepcopy(historical['segmentation'])
+        # Exclude only the ownership label from the physical comparison.
+        segmentation['axial_acceleration']['project_id'] = current['identity']['project_id']
+        self.assertEqual(segmentation, current['segmentation'])
+        return current
+
+    def _current_source_metadata(self, source_path, provider, historical):
+        current = validate_source(source_path, provider)
+        self.assertEqual(current, {**historical, 'parent_resolved_design_sha256': provider['resolved_sha256']})
+        return current
+
+    def test_historical_provider_derives_current_author_without_legacy_native_support(self):
+        from projects.rf_multipole_ion_optics.core.compile_design_request import (
+            apply_typed_operating_mode, compile_design_request,
+        )
+        from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
+        from integrations.runtime.single_flight_frontend import native_frontend_instances
+
+        profile = resolve_design_profile(Path(__file__).resolve().parents[2],
+            'rf_multipole_ion_optics', 'octupole_through_exit_no_acceleration')
+        request = json.loads(profile['paths']['design_request'].read_text(encoding='utf-8-sig'))
+        modes = json.loads(profile['paths']['operating_mode_registry'].read_text(encoding='utf-8-sig'))
+        request = apply_typed_operating_mode(request, modes, profile['profile']['mode_id'])
+        if profile['profile'].get('enclosure_model') is not None:
+            request['geometry_mm']['enclosure']['model'] = profile['profile']['enclosure_model']
+        request['identity']['project_id'] = 'rf_octupole_ion_optics'
+        historical = compile_design_request(request, expected_identity=request['identity'])
+        original = copy.deepcopy(historical)
+        old_plan = inputs(historical, candidate_300mm_fixture())['composition_plan']
+        with self.assertRaisesRegex(ValueError, 'unsupported for rf_octupole_ion_optics'):
+            native_frontend_instances(old_plan)
+        current = self._current_octupole_provider(historical)
+        components = copy.deepcopy(old_plan['components'])
+        components['multipole'] = build_assembly_interface(current, geometry_profile_id=None)
+        self.assertEqual(components['multipole']['ports'], old_plan['components']['multipole']['ports'])
+        recipe = copy.deepcopy(old_plan['recipe'])
+        recipe['instances'][0]['project_id'] = components['multipole']['project_id']
+        plan = compile_assembly_layout(recipe, components)
+        self.assertEqual(native_frontend_instances(plan), (('multipole',), 'oatof'))
+        self.assertEqual(historical, original)
+        self.assertEqual(old_plan['components']['multipole']['project_id'], 'rf_octupole_ion_optics')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture(root, source=historical)
+            metadata_path = root/'author/metadata.json'
+            original_metadata = metadata_path.read_bytes()
+            self._current_source_metadata(root/'author/source.csv', current, json.loads(original_metadata))
+            self.assertEqual(metadata_path.read_bytes(), original_metadata)
+        changed_request = copy.deepcopy(request)
+        changed_request['drive']['frequency_Hz'] *= 2
+        changed = compile_design_request(changed_request, expected_identity=changed_request['identity'])
+        with self.assertRaisesRegex(AssertionError, 'drive'):
+            self._current_octupole_provider(changed)
+
     def test_available_actual_providers_keep_native_payloads_under_parent_references(self):
         from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
         frozen = Path(__file__).resolve().parents[3] / ('artifacts/projects/instrument_assembly/runs/'
@@ -335,20 +398,34 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                     for axis in 'xyz':
                         domain['pa_bounds_mm'][axis+'_min'] -= 1.
                         domain['pa_bounds_mm'][axis+'_max'] += 1.
+                providers = {}
                 for key, instance in request['providers']['instances'].items():
-                    instance['resolved_design'] = file_record(frozen/'components'/key/'resolved_design.json')
+                    provider_path = frozen/'components'/key/'resolved_design.json'
+                    if key != 'oatof':
+                        provider = self._current_octupole_provider(json.loads(provider_path.read_text()))
+                        providers[key] = provider
+                        provider_path = root/(key+'.current_resolved_design.json')
+                        write_json(provider_path, provider)
+                    instance['resolved_design'] = file_record(provider_path)
                 for key, name in (('particle_source','particle_source.csv'), ('metadata','particle_source_metadata.json'),
                                   ('clock_authority','clock_authority.json'), ('instrument_epoch','instrument_epoch.json')):
                     request['source'][key] = file_record(frozen/name)
+                metadata = self._current_source_metadata(frozen/'particle_source.csv',
+                    providers[request['source']['instance_id']],
+                    json.loads((frozen/'particle_source_metadata.json').read_text()))
+                write_json(root/'current_source_metadata.json', metadata)
+                request['source']['metadata'] = file_record(root/'current_source_metadata.json')
                 parent = json.loads((frozen/'composition_plan.json').read_text())
                 components = copy.deepcopy(parent['components'])
                 for instance_id, component in components.items():
                     if instance_id == 'oatof':
                         continue
-                    provider = json.loads((frozen/'components'/instance_id/'resolved_design.json').read_text())
+                    provider = providers[instance_id]
                     current = build_assembly_interface(provider,geometry_profile_id=component['geometry_profile_id'])
                     self.assertEqual(current['ports'],component['ports'])
                     components[instance_id] = current
+                for instance in parent['recipe']['instances']:
+                    instance['project_id'] = components[instance['instance_id']]['project_id']
                 parent = compile_assembly_layout(parent['recipe'],components)
                 if change:
                     parent = reframe_parent(parent, **change)
@@ -1245,13 +1322,16 @@ class SingleReflectionPreparationTests(unittest.TestCase):
         if not source_run.is_dir():
             self.skipTest("external actual 210633 run is unavailable in this checkout")
         source = json.loads((source_run / "multipole_resolved_design.json").read_text())
+        source = self._current_octupole_provider(source)
         raw = (source_run / "particle_source.csv").read_bytes()
+        metadata = self._current_source_metadata(source_run/'particle_source.csv', source,
+            json.loads((source_run/'particle_source_metadata.json').read_text()))
         with tempfile.TemporaryDirectory() as directory:
             path, run, _ = fixture(
                 Path(directory),
                 source=source,
                 source_rows=raw,
-                source_metadata=json.loads((source_run / "particle_source_metadata.json").read_text()),
+                source_metadata=metadata,
                 clock_bytes=(source_run / "clock_authority.json").read_bytes(),
                 epoch_bytes=(source_run / "instrument_epoch.json").read_bytes(),
             )

@@ -594,6 +594,8 @@ print(json.dumps(dict(cache_receipt=str(receipt))))
                 script=root/'run.ps1'
                 script.write_text(r'''
 param($ActualRepo,$Repo,$Python,$Root,$Request,$Budget)
+# Set after pwsh startup, which replaces an inherited ProgramFiles value.
+$env:ProgramFiles=Join-Path $Root 'ProgramFiles'
 . (Join-Path $ActualRepo 'common/contracts/run_artifact_support.ps1')
 $package=New-RunPackage -Python $Python -RepoRoot $ActualRepo -ArtifactRoot (Join-Path $Root 'packages') `
  -RunId '20261023_010001__build__simion__single-reflection-test' -Project instrument_assembly `

@@ -441,7 +441,7 @@ try{
  if($LASTEXITCODE-ne0){throw 'Detached provider import failed'}
  & $Python -B -s -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial recording-config --contract (Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json')
  if($LASTEXITCODE-ne0){throw 'Detached provider compilation failed'}
- & $Python -B -s -c "import json; from pathlib import Path; from common.contracts.particle_count_policy import validate_standard_particle_count; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import build_two_zone_accelerator_requirements; validate_standard_particle_count(100); c=json.loads(Path('projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json').read_text()); assert build_two_zone_accelerator_requirements(c)['variant_id']=='two_zone'"
+ & $Python -B -s -c "import json; from pathlib import Path; from common.contracts.particle_count_policy import validate_standard_particle_count; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import build_two_zone_accelerator_requirements; validate_standard_particle_count(100); c=json.loads(Path('projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json').read_text(encoding='utf-8')); assert build_two_zone_accelerator_requirements(c)['variant_id']=='two_zone'"
  if($LASTEXITCODE-ne0){throw 'Detached source policy or physical provider requirements failed'}
 """ + stage_fixture + r"""
 }finally{Pop-Location}
