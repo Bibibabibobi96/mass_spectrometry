@@ -34,6 +34,65 @@ class ClocDeltaReportTests(unittest.TestCase):
         path_lookup = source.index("Get-Command $clocRequest")
         self.assertLess(pinned, path_lookup)
 
+    def test_quiet_counting_rejects_stderr_even_with_valid_json_and_exit_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source.py'
+            source.write_text("print('fixture')\n", encoding='utf-8')
+            for diagnostic in ('', '-B on closed filehandle _GEN_0 at script/cloc line 6722\n'
+                               'readline() on closed filehandle _GEN_2 at script/cloc line 7536'):
+                with self.subTest(diagnostic=diagnostic):
+                    command = f"""
+$ErrorActionPreference='Stop'
+$tokens=$null; $errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile('{REPORT_SCRIPT.as_posix()}',[ref]$tokens,[ref]$errors)
+if($errors.Count){{throw ($errors|Out-String)}}
+foreach($name in @('Invoke-ClocSnapshot','Add-ClocMetric','Get-InputIdentity')){{
+  $node=$ast.Find({{param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name-eq$name}},$true)
+  . ([scriptblock]::Create($node.Extent.Text))
+}}
+$record=[pscustomobject]@{{relative='source.py';full='{source.as_posix()}';category='production';function='tooling_other';reason='non_test_source';is_script=$true}}
+$languageDefinitionPath='unused_by_test_double'
+function Invoke-ClocText {{
+  param([string[]]$Arguments)
+  if($Arguments -notcontains '--quiet'){{throw 'Expected quiet counting'}}
+  $document=@{{header=@{{cloc_version='2.10-test-double'}};SUM=@{{code=0}}}}
+  $document[$record.full]=@{{language='Python';blank=0;comment=0;code=0}}
+  return [pscustomobject]@{{exit_code=0;stdout=($document|ConvertTo-Json -Depth 5);stderr='{diagnostic}'}}
+}}
+$null=Invoke-ClocSnapshot -Records @($record) -ListPath '{(root / 'list.txt').as_posix()}'
+Write-Output 'CLOC_SNAPSHOT=PASS'
+"""
+                    completed = _run(['pwsh', '-NoProfile', '-Command', command], root)
+                    if diagnostic:
+                        self.assertNotEqual(completed.returncode, 0)
+                        self.assertNotIn('CLOC_SNAPSHOT=PASS', completed.stdout)
+                        self.assertIn('quiet counting', completed.stderr)
+                        self.assertIn('closed filehandle _GEN_0', completed.stderr)
+                        self.assertIn('closed filehandle _GEN_2', completed.stderr)
+                    else:
+                        self.assertEqual(completed.returncode, 0, completed.stderr)
+                        self.assertIn('CLOC_SNAPSHOT=PASS', completed.stdout)
+                        self.assertEqual(completed.stderr, '')
+
+    def test_explicit_official_perl_counter_keeps_quiet_counting_successful(self) -> None:
+        cloc = REPO_ROOT.parent / '.tools/cloc/2.10/cloc-2.10.pl'
+        if not cloc.is_file():
+            self.skipTest('official CLOC 2.10 Perl source is unavailable')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._initialize_repo(root)
+            completed = _run([
+                'pwsh', '-NoProfile', '-File', str(REPORT_SCRIPT),
+                '-Base', 'HEAD', '-Current', 'HEAD', '-ClocExe', str(cloc),
+                '-RepoRoot', str(root),
+            ], root)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, '')
+        self.assertIn('CLOC_DELTA=PASS', completed.stdout)
+        self.assertIn('CLOC_VERSION=2.10', completed.stdout)
+        self.assertEqual(self._category_code_sums(completed.stdout)['total'], 5)
+
     def _initialize_repo(self, root: Path) -> None:
         (root / "src").mkdir()
         (root / "config").mkdir()

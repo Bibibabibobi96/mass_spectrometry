@@ -361,6 +361,9 @@ function Invoke-ClocSnapshot {
     "--list-file=$ListPath"
   )
   if($result.exit_code-ne 0){throw "cloc failed for list: $ListPath $($result.stderr.Trim())"}
+  if(-not[string]::IsNullOrWhiteSpace($result.stderr)){
+    throw "cloc reported diagnostics during quiet counting: $ListPath`n$($result.stderr)"
+  }
   $raw=$result.stdout
   try{
     $document=$raw|ConvertFrom-Json -AsHashtable
