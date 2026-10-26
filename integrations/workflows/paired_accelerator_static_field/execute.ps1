@@ -34,6 +34,7 @@ $software=@('Python 3.11','PowerShell 7')
 if(-not$DryRun){$software+=@('SIMION 2020','COMSOL 6.4','MATLAB R2025b')}
 $package=$null;$capacity=$null;$lease=$null;$buildAlias=$null;$guard=$null;$terminalized=$false
 $frozen=$null;$stage='initialization';$cache=$null;$reusedComsol=$false;$savedModel=$null;$comsolSourceStage=''
+$completedComsolExports=$null;$comsolNativeExecuted=$false
 $protected=@();if($ComsolSourceManifest){$protected+=Split-Path -Parent (Resolve-Path -LiteralPath $ComsolSourceManifest).Path}
 $header="import json,sys; from pathlib import Path; from integrations.workflows.paired_accelerator_static_field.runtime import *; "
 function Invoke-PairedPython {
@@ -88,8 +89,19 @@ try{
     $null=Copy-VerifiedRunInput -Source $ComsolSourceManifest -Destination (Join-Path $package.input_dir 'comsol_source_manifest.json')
     $source=Invoke-PairedPython 'print(json.dumps(comsol_reuse(Path(sys.argv[1]),Path(sys.argv[2]))))' @($package.run_dir,$ComsolSourceManifest)
     $savedModel=[string]$source.model.path;$comsolSourceStage=[string]$source.source_stage
-    $protected+=@($savedModel)
     $reusedComsol=($comsolSourceStage-eq'solved_saved')
+    $completedComsolExports=$source.exports
+    if($completedComsolExports){
+      $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
+      foreach($name in @('samples','native_facts','plan','points')){
+        $path=[string]$completedComsolExports[$name].path
+        $config.inputs["completed_comsol_$name"]=$path
+        $protected+=@($path)
+      }
+      Write-RunJson -Path $package.run_config -Depth 100 -Value $config
+    }else{
+      $protected+=@($savedModel)
+    }
   }
   if(-not$DryRun){
     $budgetPath=Copy-VerifiedRunInput -Source $ExecutionBudgetPath -Destination (Join-Path $package.input_dir 'execution_budget.json')
@@ -139,8 +151,9 @@ try{
       $member=@($manifest.files|Where-Object name -eq 'paired_static_on.pa')[0]
       $guard=Protect-ImmutablePaSource -Source $pa -ExpectedBytes $member.bytes -ExpectedSha256 $member.sha256
     }
-    $taskArguments=@($package.run_dir,$frozen.execution_root,$pa);if($savedModel){$taskArguments+=@($savedModel,$comsolSourceStage)}
-    $taskCode='print(json.dumps(materialize_tasks(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),saved_model=Path(sys.argv[4]) if len(sys.argv)>4 else None,saved_model_stage=sys.argv[5] if len(sys.argv)>5 else "solved_saved")))'
+    $taskArguments=@($package.run_dir,$frozen.execution_root,$pa,$(if($savedModel){$savedModel}else{''}),
+      $(if($savedModel){$comsolSourceStage}else{'solved_saved'}),$(if($completedComsolExports){'false'}else{'true'}))
+    $taskCode='print(json.dumps(materialize_tasks(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),saved_model=Path(sys.argv[4]) if sys.argv[4] else None,saved_model_stage=sys.argv[5],comsol_required=sys.argv[6]=="true")))'
     $tasks=Invoke-PairedPython $taskCode $taskArguments
     $lease=Enter-HostResourceStage -Role SIMION -Stage prepare -Budget $budget.host_budgets.simion_prepare -RunId $RunId
     Invoke-PairedNative -Name sample_static_on -Directory $package.run_dir -Arguments @('--nogui','--noprompt','lua',$tasks.lua)
@@ -151,15 +164,20 @@ try{
       if($progress.action_required-ne'complete'){throw 'Public working PA publication did not complete.'}
     }
     Write-RunJson -Path (Join-Path $package.result_dir 'simion_field_publication.json') -Depth 100 -Value $progress
-    $stage='comsol_field'
-    & (Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1') -TaskScript $tasks.matlab `
-      -ReportPath (Join-Path $package.log_dir 'comsol_bootstrap.txt') -ResourceBudgets $budget.host_budgets.comsol -RunId $RunId
-    if($LASTEXITCODE-ne0){throw 'COMSOL field build/export failed; any solved/saved MPH is retained.'}
-    $null=Invoke-PairedPython 'validate_samples(read(Path(sys.argv[1])),Path(sys.argv[2]));print("{}")' @((Join-Path $package.input_dir 'bvp/paired_accelerator_static_field_plan.json'),(Join-Path $package.run_dir 'comsol/comsol_field_samples.csv'))
+    $comsolSamples=Join-Path $package.run_dir 'comsol/comsol_field_samples.csv'
+    if($completedComsolExports){
+      $comsolSamples=[string]$completedComsolExports.samples.path
+    }else{
+      $stage='comsol_field';$comsolNativeExecuted=$true
+      & (Join-Path $RepoRoot 'common/comsol/run_comsol_r2025b.ps1') -TaskScript $tasks.matlab `
+        -ReportPath (Join-Path $package.log_dir 'comsol_bootstrap.txt') -ResourceBudgets $budget.host_budgets.comsol -RunId $RunId
+      if($LASTEXITCODE-ne0){throw 'COMSOL field build/export failed; any solved/saved MPH is retained.'}
+      $null=Invoke-PairedPython 'validate_samples(read(Path(sys.argv[1])),Path(sys.argv[2]));print("{}")' @((Join-Path $package.input_dir 'bvp/paired_accelerator_static_field_plan.json'),$comsolSamples)
+    }
     $stage='diagnostic_comparison'
     Invoke-RunToolRootContext -RepoRoot $frozen.execution_root -Operation {
       &$Python -B -m projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_vector_field_samples `
-        (Join-Path $package.run_dir 'comsol/comsol_field_samples.csv') (Join-Path $package.result_dir 'simion_field_samples.csv') --output (Join-Path $package.result_dir 'comparison')
+        $comsolSamples (Join-Path $package.result_dir 'simion_field_samples.csv') --output (Join-Path $package.result_dir 'comparison')
       if($LASTEXITCODE-ne0){throw 'Static field diagnostic comparison failed.'}
     }
   }
@@ -171,6 +189,7 @@ try{
   Write-RunJson -Path $package.summary -Value @{
     schema_version=1;role='paired_accelerator_static_field_summary';status='success';dry_run=[bool]$DryRun
     native_executed=(-not$DryRun);comsol_reused_solution=$reusedComsol;comsol_source_stage=$comsolSourceStage;sample_points=$plan.sample_points.count
+    comsol_reused_exports=[bool]$completedComsolExports;comsol_native_executed=$comsolNativeExecuted
     qualification='preparation_only_or_static_diagnostic__no_numerical_equivalence_or_particle_qualification'}
   $null=Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot -RunConfig $package.run_config
   $outputs=@(Get-ChildItem $package.result_dir,$package.log_dir,(Join-Path $package.run_dir 'comsol') -Recurse -File|ForEach-Object FullName)+@($package.summary)

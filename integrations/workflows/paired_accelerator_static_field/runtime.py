@@ -129,22 +129,75 @@ def validate_samples(plan: dict, path: Path) -> None:
 
 
 def comsol_reuse(run: Path, manifest_path: Path) -> dict:
-    """Verify the selected payload once at the actual field execution boundary."""
+    """Reuse complete exports, or verify the model only for native consumption."""
+    plan = read(run/'inputs/bvp/paired_accelerator_static_field_plan.json')
     source = load_paired_static_model_source(
         manifest_path, run/'inputs/comsol_source_manifest.json',
-        expected_plan=read(run/'inputs/bvp/paired_accelerator_static_field_plan.json'))
-    verify_record('COMSOL source model', source['model'], base_dir=manifest_path.parent)
+        expected_plan=plan)
+    source['exports'] = _completed_comsol_exports(run, manifest_path, source, plan)
+    if source['exports'] is None:
+        verify_record('COMSOL source model', source['model'], base_dir=manifest_path.parent)
     return write(run/'inputs/comsol_source.json', source)
 
+def _completed_comsol_exports(run: Path, manifest_path: Path, source: dict, plan: dict) -> dict | None:
+    """Bind the selected owner's original small exports without re-signing facts."""
+    manifest = read(run/'inputs/comsol_source_manifest.json')
+    records = [*manifest['inputs'].values(), *manifest['outputs']]
+    base = manifest_path.parent
+
+    def bound(path: Path) -> dict | None:
+        matches = [row for row in records if record_path(row, base_dir=base) == path.resolve()]
+        if not matches:
+            return None
+        if any((row['bytes'], row['sha256']) != (matches[0]['bytes'], matches[0]['sha256']) for row in matches):
+            raise ValueError('COMSOL export records conflict')
+        verify_record('completed COMSOL export', matches[0], base_dir=base)
+        return matches[0]
+
+    samples = bound(base/'comsol/comsol_field_samples.csv')
+    facts_record = bound(base/'comsol/comsol_field_native_facts.json')
+    if samples is None and facts_record is None:
+        # A prior export consumer keeps the original facts and their paths.
+        receipt = bound(base/'inputs/comsol_source.json')
+        carried = read(record_path(receipt)).get('exports') if receipt is not None else None
+        if carried:
+            samples = bound(record_path(carried['samples']))
+            facts_record = bound(record_path(carried['native_facts']))
+            if samples is None or facts_record is None:
+                raise ValueError('Borrowed COMSOL exports lack published input bindings')
+    if samples is None or facts_record is None:
+        return None  # No completed pair; the saved-model path remains valid.
+    facts = read(record_path(facts_record, base_dir=base))
+    exported_plan = bound(Path(facts['plan_path']))
+    if exported_plan is None:
+        raise ValueError('COMSOL export plan is not manifest-bound')
+    previous = read(record_path(exported_plan, base_dir=base))
+    points = bound(Path(previous['sample_points']['path']))
+    if points is None:
+        raise ValueError('COMSOL export points are not manifest-bound')
+    if (source['source_stage'] != 'solved_saved' or facts.get('backend') != 'COMSOL'
+            or facts.get('coordinate_unit') != 'mm' or facts.get('field_unit') != ['V/m']*3
+            or facts.get('point_count') != previous['sample_points']['count']
+            or Path(facts['model_path']).resolve() != record_path(source['model'])
+            or Path(facts['sample_path']).resolve() != record_path(samples, base_dir=base)):
+        raise ValueError('Completed COMSOL export native facts differ')
+    # The existing projection verifies BVP identity; points are not ES inputs.
+    load_paired_static_model_source(manifest_path, run/'inputs/comsol_source_manifest.json', expected_plan=previous)
+    validate_samples(previous, record_path(samples, base_dir=base))
+    try:
+        validate_samples(plan, record_path(samples, base_dir=base))
+    except ValueError:
+        return None  # A new exact point inventory needs a new native export.
+    return dict(samples=samples, native_facts=facts_record, plan=exported_plan, points=points)
+
+
 def materialize_tasks(run: Path, code: Path, pa: Path, *, saved_model: Path | None = None,
-                      saved_model_stage: str = 'solved_saved') -> dict:
+                      saved_model_stage: str = 'solved_saved', comsol_required: bool = True) -> dict:
     """Write only vendor-required Lua/MATLAB tasks; transport the existing plan."""
     # Run execution junctions are removed at terminal publication. Native model
     # facts must name enduring scientific paths before MATLAB saves them.
     run = run.resolve(strict=True)
     code = code.resolve(strict=True)
-    if saved_model is not None:
-        saved_model = saved_model.resolve(strict=True)
     plan_path = run/'inputs/bvp/paired_accelerator_static_field_plan.json'
     plan = read(plan_path)
     grid = plan['native_geometry_compilation']['grid']
@@ -163,6 +216,10 @@ def materialize_tasks(run: Path, code: Path, pa: Path, *, saved_model: Path | No
                quote(run/'inputs/bvp/paired_accelerator_field_points.csv'), plan['sample_points']['count'],
                quote(pa), quote(run/'results/simion_field_samples.csv'), quote(run/'logs/simion_field_native_facts.txt'))
     lua_path = run/'inputs/export_simion_field.lua'; lua_path.write_text(lua, encoding='utf-8', newline='\n')
+    if not comsol_required:
+        return dict(lua=str(lua_path), matlab=None)
+    if saved_model is not None:
+        saved_model = saved_model.resolve(strict=True)
     def matlab(path: Path | str) -> str:
         return "'"+str(path).replace('\\', '/').replace("'", "''")+"'"
     task_path = run/'inputs/run_comsol_field.m'

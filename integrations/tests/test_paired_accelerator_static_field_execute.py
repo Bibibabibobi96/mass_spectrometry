@@ -160,6 +160,178 @@ if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'wrong stage sequence'}
         for name in ('results','logs','comsol'):(run/name).mkdir()
         return run,author
 
+    def completed_comsol_source(self, root):
+        """Publish 115 inert sample rows; model bytes never represent a solve."""
+        run,_=self.prepared(root);plan=runtime.prepare_run(run)
+        producer=root/'producer';(producer/'comsol').mkdir(parents=True)
+        points=producer/'inputs/bvp/paired_accelerator_field_points.csv'
+        points.parent.mkdir(parents=True)
+        frame=__import__('pandas').read_csv(plan['sample_points']['path']).iloc[[0]*115].copy()
+        frame['point_id']=range(1,116);frame.to_csv(points,index=False)
+        previous=copy.deepcopy(plan);previous['sample_points']=dict(file_record(points),count=115)
+        plan_path=producer/'inputs/bvp/paired_accelerator_static_field_plan.json'
+        runtime.write(plan_path,previous)
+        runtime.write(run/'inputs/bvp/paired_accelerator_static_field_plan.json',previous)
+        backend=Path('projects')/runtime.PROJECT/'comsol/build_and_export_paired_accelerator_field.m'
+        frozen=producer/'inputs/runtime_snapshot'/backend;frozen.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT/backend,frozen)
+        model=producer/'comsol/paired_accelerator_static.mph';model.write_bytes(b'inert model identity only')
+        solution=producer/'comsol/comsol_field_solution.json'
+        runtime.write(solution,dict(schema_version=1,role='oatof_paired_accelerator_static_field_solution',
+            status='solved_saved',solution_present=True,solution_tag='sol1',
+            plan_path=str(plan_path),model_path=str(model)))
+        samples=producer/'comsol/comsol_field_samples.csv'
+        for axis in 'xyz':frame[f'E{axis}_V_per_m']=0.
+        frame.to_csv(samples,index=False)
+        facts=producer/'comsol/comsol_field_native_facts.json'
+        runtime.write(facts,dict(backend='COMSOL',coordinate_unit='mm',field_unit=['V/m']*3,
+            point_count=115,plan_path=str(plan_path),model_path=str(model),sample_path=str(samples)))
+        config=producer/'run_config.json'
+        runtime.write(config,dict(schema_version=1,run_id='20261026_010000__test__python__inert-static-exports',
+            project='instrument_assembly',mode='paired_accelerator_static_field',
+            inputs={'plan':str(plan_path),'points':str(points),'backend':str(frozen)}))
+
+        def publish(outputs=None):
+            manifest=build_run_manifest(config,'success',output_paths=outputs or [solution,model,samples,facts])
+            runtime.write(producer/'run_manifest.json',manifest)
+            runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+        publish()
+        return run,producer,model,samples,facts,publish
+
+    def test_completed_static_exports_reuse_115_points_without_model_read_or_matlab(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,producer,model,samples,facts,_=self.completed_comsol_source(root)
+            before=(samples.read_bytes(),facts.read_bytes())
+            with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
+                source=runtime.comsol_reuse(run,producer/'run_manifest.json')
+            self.assertFalse(any(Path(call.args[1]['path'])==model for call in verified.call_args_list))
+            self.assertEqual(Path(source['exports']['samples']['path']),samples)
+            self.assertEqual(Path(source['exports']['native_facts']['path']),facts)
+            model.unlink()  # Completed exports do not consume this inert payload.
+            self.assertEqual(runtime.comsol_reuse(run,producer/'run_manifest.json')['exports'],source['exports'])
+            tasks=runtime.materialize_tasks(run,ROOT,root/'not-opened.pa',
+                saved_model=model,comsol_required=False)
+            self.assertIsNone(tasks['matlab'])
+            self.assertTrue(Path(tasks['lua']).is_file())
+            self.assertFalse((run/'inputs/run_comsol_field.m').exists())
+            self.assertEqual((samples.read_bytes(),facts.read_bytes()),before)
+
+            # A published export consumer carries the same original facts and
+            # explicit bindings; it must not invent a new model or walk history.
+            inputs={'plan':str(run/'inputs/bvp/paired_accelerator_static_field_plan.json'),
+                'source':str(run/'inputs/comsol_source.json'),
+                'source_manifest':str(run/'inputs/comsol_source_manifest.json')}
+            inputs.update({'completed_'+name:record['path'] for name,record in source['exports'].items()})
+            runtime.write(run/'run_config.json',dict(schema_version=1,project='instrument_assembly',
+                run_id='20261026_010001__test__python__inert-export-consumer',
+                mode='paired_accelerator_static_field',inputs=inputs))
+            manifest=build_run_manifest(run/'run_config.json','success')
+            runtime.write(run/'run_manifest.json',manifest)
+            next_run=root/'next';(next_run/'inputs/bvp').mkdir(parents=True)
+            shutil.copyfile(run/'inputs/bvp/paired_accelerator_static_field_plan.json',
+                next_run/'inputs/bvp/paired_accelerator_static_field_plan.json')
+            runtime.write(next_run/'inputs/comsol_source_manifest.json',manifest)
+            with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
+                reused=runtime.comsol_reuse(next_run,run/'run_manifest.json')
+            self.assertEqual(reused['exports'],source['exports'])
+            self.assertFalse(any(Path(call.args[1]['path'])==model for call in verified.call_args_list))
+
+    def test_new_points_or_incomplete_exports_keep_saved_model_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,producer,model,samples,facts,publish=self.completed_comsol_source(root)
+            path=run/'inputs/bvp/paired_accelerator_static_field_plan.json';original=runtime.read(path)
+            changed=copy.deepcopy(original);points=run/'inputs/new_points.csv'
+            frame=__import__('pandas').read_csv(original['sample_points']['path'])
+            frame.loc[0,'x_mm']+=.01;frame.to_csv(points,index=False)
+            changed['sample_points']=dict(file_record(points),count=115);runtime.write(path,changed)
+            solution=producer/'comsol/comsol_field_solution.json'
+            variants=[('new_points',None),('no_facts',[solution,model,samples]),
+                      ('no_samples',[solution,model,facts]),('no_exports',[solution,model])]
+            for name,outputs in variants:
+                with self.subTest(reason=name):
+                    runtime.write(path,changed if name=='new_points' else original);publish(outputs)
+                    with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
+                        source=runtime.comsol_reuse(run,producer/'run_manifest.json')
+                    self.assertIsNone(source['exports'])
+                    self.assertEqual(sum(Path(c.args[1]['path'])==model for c in verified.call_args_list),1)
+                    task=runtime.materialize_tasks(run,ROOT,root/'not-opened.pa',saved_model=model)
+                    self.assertIn(model.as_posix(),Path(task['matlab']).read_text())
+
+    def test_declared_export_corruption_and_wrong_native_identity_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,producer,_,samples,facts,publish=self.completed_comsol_source(root)
+            for path in (samples,facts):
+                original=path.read_bytes();path.write_bytes(original+b'changed')
+                try:
+                    with self.subTest(corrupt=path.name),self.assertRaises((ValueError,AssertionError)):
+                        runtime.comsol_reuse(run,producer/'run_manifest.json')
+                finally:path.write_bytes(original)
+            original=runtime.read(facts)
+            for key,value in (('model_path',str(root/'wrong.mph')),('sample_path',str(root/'other.csv')),
+                              ('point_count',114),('backend','SIMION'),('field_unit',['V/mm']*3),
+                              ('coordinate_unit','m'),('plan_path',str(root/'unbound.json'))):
+                with self.subTest(identity=key):
+                    runtime.write(facts,dict(original,**{key:value}));publish()
+                    with self.assertRaises(ValueError):runtime.comsol_reuse(run,producer/'run_manifest.json')
+            runtime.write(facts,original);publish()
+
+    def test_actual_owner_completed_exports_skip_comsol_and_report_native_scope(self):
+        """Execute the actual branch/task/summary AST with an inert launcher."""
+        script=r"""param($Source,$Directory)
+$ErrorActionPreference='Stop'
+$errors=$null;$tokens=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and
+ $n.Clauses[0].Item1.Extent.Text-eq'$completedComsolExports'-and$n.Extent.Text-like'*comsol_bootstrap.txt*'},$true)
+$summary=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and
+ $n.GetCommandName()-eq'Write-RunJson'-and$n.Extent.Text-like"*role='paired_accelerator_static_field_summary'*"},$true)
+if($null-eq$branch-or$null-eq$summary){throw 'Actual owner boundaries missing'}
+$RepoRoot=$Directory;$Python='unused';$RunId='inert';$stage='inert';$DryRun=$false
+$package=@{run_dir=$Directory;input_dir=$Directory;log_dir=$Directory;summary='unused'}
+$frozen=@{execution_root=$Directory};$pa='unused';$budget=@{host_budgets=@{comsol=@{}}}
+$plan=@{sample_points=@{count=115}};$reusedComsol=$true;$comsolSourceStage='solved_saved'
+$launcher=Join-Path $Directory 'common/comsol/run_comsol_r2025b.ps1'
+$null=New-Item -ItemType Directory -Path (Split-Path $launcher) -Force
+@'
+param($TaskScript,$ReportPath,$ResourceBudgets,$RunId)
+$global:nativeCalls++;$global:LASTEXITCODE=0
+'@ | Set-Content -LiteralPath $launcher
+$global:nativeCalls=0
+function Invoke-PairedPython {param($Code,$Arguments) $script:taskInvocation=@($Code,$Arguments);@{lua='inert.lua';matlab='inert.m'}}
+function Write-RunJson {param($Path,$Value) $script:publishedSummary=$Value}
+foreach($completed in @($true,$false)){
+ $completedComsolExports=if($completed){@{samples=@{path='borrowed-original.csv'}}}else{$null}
+ $savedModel=if($completed){'absent-original.mph'}else{''}
+ foreach($name in @('$comsolNativeExecuted','$taskArguments','$taskCode','$tasks')){
+  $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq$name},$true)
+  . ([scriptblock]::Create($assignment.Extent.Text))
+ }
+ if($taskArguments[5]-ne$(if($completed){'false'}else{'true'})){throw 'MATLAB materialization decision differs'}
+ if(-not$taskCode.Contains('comsol_required=sys.argv[6]')){throw 'Factory does not receive the actual decision'}
+ $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$comsolSamples'},$true)
+ . ([scriptblock]::Create($assignment.Extent.Text))
+ . ([scriptblock]::Create($branch.Extent.Text))
+ . ([scriptblock]::Create($summary.Extent.Text))
+ if($completed){
+  if($global:nativeCalls-ne0-or$comsolSamples-ne'borrowed-original.csv'){throw 'Completed exports invoked native or changed sample ownership'}
+  if(-not$publishedSummary.comsol_reused_exports-or$publishedSummary.comsol_native_executed){throw 'Reused COMSOL summary scope differs'}
+ }else{
+  if($global:nativeCalls-ne1-or-not$publishedSummary.comsol_native_executed){throw 'Cold/native branch silently skipped'}
+ }
+ if(-not$publishedSummary.native_executed){throw 'SIMION diagnostic execution must not be relabelled as wholly nonnative'}
+}
+'OWNER_EXPORT_REUSE=PASS'
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);wrapper=root/'owner_export_reuse.ps1'
+            wrapper.write_text(script,encoding='utf-8',newline='\n')
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),
+                str(WORKFLOW/'execute.ps1'),str(root)],cwd=ROOT,capture_output=True,
+                text=True,encoding='utf-8',errors='replace',timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('OWNER_EXPORT_REUSE=PASS',result.stdout)
+
     def test_snapshots_preserve_canonical_membership_without_live_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             run,author=self.prepared(Path(directory))
@@ -460,6 +632,7 @@ $capacity=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $RepoR
  -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 -Owner ('paired-static:'+$RunId)
 $lease=$null;$guard=$null;$buildAlias=$null;$terminalized=$false;$stage='inert_vendor_boundary'
 $DryRun=$false;$reusedComsol=$false;$comsolSourceStage='';$plan=@{sample_points=@{count=2}}
+$completedComsolExports=$null;$comsolNativeExecuted=$false
 $failureMessage=''
 $sourceBranch=@($owner.Body.FindAll({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and
  $n.Clauses[0].Item1.Extent.Text-eq'-not$DryRun-and$ComsolSourceManifest'},$true))
@@ -473,7 +646,7 @@ New-Item -ItemType Directory -Path (Split-Path $actualModel),(Split-Path $Comsol
 [IO.File]::WriteAllText($ComsolSourceManifest,'{"fixture":"inert source boundary only"}')
 $protected=@((Split-Path $ComsolSourceManifest));$cache=@{cache_key=('A'*64)};$budget=@{committed_new_bytes=0}
 function Invoke-PairedPython {param($Code,$Arguments)
- [pscustomobject]@{model=[pscustomobject]@{path=$actualModel};source_stage='solved_saved'}
+ [pscustomobject]@{model=[pscustomobject]@{path=$actualModel};source_stage='solved_saved';exports=$null}
 }
 try{
  try{
