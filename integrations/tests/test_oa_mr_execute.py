@@ -455,6 +455,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
             ("exact", None, [1, 2], [1, 2], initial, False, [1, 2], 0),
             ("formal_index_zero", 0, [0, 1, 2], [0, 1, 2], initial, False, [1, 2], 1),
             ("continuation_replay", None, [1, 2], [2], initial, False, [2], 0),
+            ("continuation_formal", 1, [1, 2], [2], initial, False, [2], 1),
             ("empty", None, [], [], None, False, [], 0),
             ("missing_inputs", 0, [0, 1], [0, 1], {}, False, None, 0),
             ("write_failure", 0, [0, 1], [0, 1], initial, True, None, 1),
@@ -477,6 +478,9 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                         "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
                         f"$runConfig={quote(run_config)};$batchPlanPath={quote(batch_plan)};"
                         f"$runDir={quote(root)};$formalBatchIndex={formal_value};"
+                        f"$package=@{{artifact_run_dir={quote(root)}}};"
+                        + ("$batchContinuationPlan=@{};" if label == "continuation_formal" else "$batchContinuationPlan=$null;")
+                        +
                         f"$replayBatchIndexes=@({','.join(map(str, replay))});"
                         "$batchRecords=@{};"
                         f"foreach($index in @({','.join(map(str, indices))}))"
@@ -512,10 +516,48 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                         self.assertEqual(actual["manifests"], writes)
                         self.assertEqual(actual["pending"], pending)
                         if formal is not None:
-                            expected = {**initial, "inputs": {"simion_execution_batch_plan": str(batch_plan)}}
+                            expected_plan = batch_plan if label == "continuation_formal" else root / "results/simion_execution_batch_plan.json"
+                            expected = {**initial, "inputs": {"simion_execution_batch_plan": str(expected_plan)}}
                             self.assertEqual(json.loads(run_config.read_text(encoding="utf-8-sig")), expected)
                         else:
                             self.assertEqual(run_config.read_bytes() if run_config.exists() else None, before)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_summary_counts_final_batches_after_first_observation_replans(self):
+        source = RUNNER.read_text(encoding="utf-8")
+        statement = next(line for line in source.splitlines() if "$summaryValue.batch_recovery=" in line)
+        for replay, expected in (([1, 2], (2, 0)), ([], (0, 2)), ([2], (1, 1))):
+            with self.subTest(replay=replay):
+                script = (
+                    "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
+                    "$isBunchFlight=$true;$summaryValue=@{};$batchContinuationPlanPath=$null;"
+                    "$initialBatchPlan=@{batches=@(@{index=1})};"
+                    "$finalBatchPlan=@{batches=@(@{index=1},@{index=2})};"
+                    f"$replayBatchIndexes=@({','.join(map(str, replay))});"
+                    + statement + ";$summaryValue.batch_recovery|ConvertTo-Json -Compress"
+                )
+                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                recovery = json.loads(result.stdout)
+                self.assertEqual((recovery["native_batches_executed"], recovery["reused_batches"]), expected)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_recovery_plan_uses_durable_owner_after_execution_alias_is_removed(self):
+        source = RUNNER.read_text(encoding="utf-8")
+        assignment = next(line for line in source.splitlines() if "$continuationRoot=Join-Path" in line)
+        with TemporaryDirectory() as directory:
+            owner = Path(directory) / "durable owner"
+            alias = Path(directory) / "removed alias"
+            quote = lambda path: "'" + str(path).replace("'", "''") + "'"
+            script = ("$ErrorActionPreference='Stop';"
+                      f"$package=@{{artifact_run_dir={quote(owner)};input_dir={quote(alias)}}};"
+                      + assignment + ";$continuationRoot")
+            result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(Path(result.stdout.strip()), owner / "inputs/mrtof_batch_continuation")
+            self.assertFalse(alias.exists())
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_pose_consumes_materialized_receipt_without_reopening_author_inputs(self):

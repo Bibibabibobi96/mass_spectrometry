@@ -635,7 +635,7 @@ try{
     Write-RunJson -Path $runConfig -Value $checkpointConfig
 
     if(-not[string]::IsNullOrWhiteSpace($BatchContinuationRunPath)){
-      $continuationRoot=Join-Path $package.input_dir 'mrtof_batch_continuation'
+      $continuationRoot=Join-Path ([string]$package.artifact_run_dir) 'inputs/mrtof_batch_continuation'
       Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation',
         '--predecessor-run-dir',(Resolve-Path -LiteralPath $BatchContinuationRunPath).Path,
         '--current-run-config',$runConfig,'--output-dir',$continuationRoot)
@@ -650,7 +650,7 @@ try{
       $checkpointConfig.parameters.continuation_completed_particle_count=[int]$batchContinuationPlan.completed_particle_count
       $checkpointConfig.parameters.continuation_replay_particle_count=[int]$batchContinuationPlan.replay_particle_count
     }else{
-      $checkpointConfig.inputs.simion_execution_batch_plan=$batchPlanPath
+      $checkpointConfig.inputs.simion_execution_batch_plan=Join-Path ([string]$package.artifact_run_dir) 'results/simion_execution_batch_plan.json'
     }
     Write-RunJson -Path $runConfig -Value $checkpointConfig
     $initialBatchPlan=Get-Content -Raw -LiteralPath $batchPlanPath|ConvertFrom-Json
@@ -976,7 +976,7 @@ try{
     $finalBatchPlan=Get-Content -Raw -LiteralPath $batchPlanPath|ConvertFrom-Json
     if($null-ne$formalBatchIndex){
       $checkpointConfig=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-      $checkpointConfig.inputs.simion_execution_batch_plan=$batchPlanPath
+      $checkpointConfig.inputs.simion_execution_batch_plan=if($null-eq$batchContinuationPlan){Join-Path ([string]$package.artifact_run_dir) 'results/simion_execution_batch_plan.json'}else{$batchPlanPath}
       Write-RunJson -Path $runConfig -Value $checkpointConfig
     }
     $checkpointAction={
@@ -1073,7 +1073,7 @@ try{
   if($staticFieldRequested){$summaryQualification=if($staticFieldMode-eq'native_static_pa'){if($isBunchFlight){'candidate_native_static_bunch__not_formal'}else{'single_center_native_static_trial__not_formal'}}else{if($isBunchFlight){'candidate_static_comsol_bunch__not_formal'}else{'single_center_static_comsol_trial__not_formal'}}}
   if($isSafeExitOnly){$summaryQualification='accelerator_exit_envelope_diagnostic__no_detector_performance_qualification'}
   $summaryValue=[ordered]@{schema_version=1;role='mrtof_finite_3d_two_prism_voltage_trial';status='success';qualification=$summaryQualification;source_particle_count=[int]$trial.source_particle_count;source_cohort=$trial.source_cohort;source_y_offset_from_accelerator_axis_mm=$trial.source_y_offset_from_accelerator_axis_mm;dispatch=$dispatchSummary;stripe_biases_v=@($trial.stripe_biases_v);prism_voltages_v=@($Prism1VoltageV,$Prism2VoltageV);stripe_operating_provenance=$stripeOperatingProvenance;response_regions=@();accelerator_pulse=$trial.accelerator_pulse;accelerator_pulse_diagnostic=$observed.accelerator_pulse_diagnostic;transport_status=$observed.status;cohort_analysis=$cohortAnalysis;collection_gate=$collectionGate;extraction_diagnostic=$observedExtraction;residuals=$observedResiduals;reason=$summaryReason}
-  if($isBunchFlight){$summaryValue.batch_recovery=[ordered]@{native_batches_executed=$replayBatchIndexes.Count;reused_batches=$initialBatchPlan.batches.Count-$replayBatchIndexes.Count;plan=$batchContinuationPlanPath}}
+  if($isBunchFlight){$summaryValue.batch_recovery=[ordered]@{native_batches_executed=$replayBatchIndexes.Count;reused_batches=@($finalBatchPlan.batches).Count-$replayBatchIndexes.Count;plan=$batchContinuationPlanPath}}
   if($staticFieldRequested){$summaryValue.field_binding=$trial.field_binding}
   Write-RunJson -Path $summary -Depth 100 -Value $summaryValue
   $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable

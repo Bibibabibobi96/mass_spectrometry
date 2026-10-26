@@ -487,6 +487,7 @@ Windows分配失败、真实进程非零退出仍保留失败证据并失败闭�
 [`batch_continuation.py`](batch_continuation.py)的`build_whole_unit_replay_plan`
 复用每个独立工作单元的完整终态产物，生成新的 run 输入，
 不恢复正在运行的 SIMION 进程、不拼接未完成批的粒子片段，也不推断项目的物理终态。
+前驱也可为已发布的`success`，用于重做分析或发布而不重新Fly；`running`／live仍拒绝。
 `WholeUnitReplayUnit`必须显式传入`is_complete`；消费者用原生完成判据产生该布尔事实。
 为false的单元直接安排整单元重跑，不读取或哈希其部分日志；为true的单元仍须通过已有manifest绑定及字节校验。
 whole-unit plan schema 2直接绑定当前显式前驱manifest输入／输出中的实际文件，输出canonical绝对路径；

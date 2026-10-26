@@ -11,6 +11,7 @@ from typing import Any, Mapping
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
+from common.contracts.verify_run_manifest import record_path, verify_record
 from common.simion.native_completion import parse_fly_completed_line
 from common.simion.batch_continuation import (
     WholeUnitReplayUnit,
@@ -249,19 +250,21 @@ def _bound_parent_input(
     record = records.get(role) if isinstance(records, dict) else None
     if not isinstance(value, str) or not isinstance(record, dict):
         raise ContractError(f"prepared-joint predecessor lacks frozen input: {role}")
-    path = Path(value).resolve()
-    record_path = record.get("path")
     digest = record.get("sha256")
     if (
-        not isinstance(record_path, str)
+        not isinstance(record.get("path"), str)
         or not isinstance(digest, str)
         or len(digest) != 64
         or not record.get("exists")
-        or path != Path(record_path).resolve()
-        or not path.is_file()
-        or file_sha256(path).upper() != digest.upper()
     ):
         raise ContractError(f"prepared-joint predecessor frozen input differs: {role}")
+    # The published role owns the durable location; config paths are transport
+    # locators and may name an execution alias retired after publication.
+    try:
+        verify_record(role, record)
+        path = record_path(record)
+    except (AssertionError, OSError, ValueError) as exc:
+        raise ContractError(f"prepared-joint predecessor frozen input differs: {role}") from exc
     return {"path": str(path), "sha256": digest.upper()}
 
 

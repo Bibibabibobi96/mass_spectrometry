@@ -346,14 +346,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
         )
         partial = parent / "logs" / "native_two_prism_flight__batch02.log"
         partial.write_text("MRTOF_EVENT terminal ion=1 splat=1 t_us=2\n", encoding="utf-8")
-        manifest_inputs = {
-            role: {
-                "path": path,
-                "exists": True,
-                "sha256": file_sha256(Path(path)),
-            }
-            for role, path in parent_inputs.items()
-        }
+        manifest_inputs = {role: file_record(Path(path)) for role, path in parent_inputs.items()}
         (parent / "run_manifest.json").write_text(
             json.dumps(
                 {
@@ -388,6 +381,44 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             [batch["action"] for batch in plan["batches"]],
             ["reuse", "replay"],
         )
+
+    def test_published_batch_role_survives_retired_config_transport_locator(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent, current = self._fixture(root)
+            config_path, manifest_path = parent / "run_config.json", parent / "run_manifest.json"
+            config = json.loads(config_path.read_text())
+            config["inputs"]["simion_execution_batch_plan"] = str(root / "retired_alias/results/plan.json")
+            config_path.write_text(json.dumps(config))
+            manifest = json.loads(manifest_path.read_text())
+            manifest["run_config"] = {"sha256": file_sha256(config_path)}
+            manifest_path.write_text(json.dumps(manifest))
+            plan = build_continuation_plan(predecessor_run_dir=parent,
+                current_run_config=current, output_dir=root / "recovery")
+            self.assertEqual(plan["batch_plan"]["path"],
+                manifest["inputs"]["simion_execution_batch_plan"]["path"])
+            self.assertEqual(plan["completed_particle_count"], 1)
+
+    def test_published_batch_role_rejects_missing_or_damaged_record(self) -> None:
+        for damage in ("missing_record", "missing_file", "bytes", "sha256"):
+            with self.subTest(damage=damage), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                parent, current = self._fixture(root)
+                manifest_path = parent / "run_manifest.json"
+                manifest = json.loads(manifest_path.read_text())
+                record = manifest["inputs"]["simion_execution_batch_plan"]
+                if damage == "missing_record":
+                    del manifest["inputs"]["simion_execution_batch_plan"]
+                elif damage == "missing_file":
+                    Path(record["path"]).unlink()
+                elif damage == "bytes":
+                    record["bytes"] += 1
+                else:
+                    record["sha256"] = "0" * 64
+                manifest_path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ContractError, "predecessor.*input"):
+                    build_continuation_plan(predecessor_run_dir=parent,
+                        current_run_config=current, output_dir=root / "recovery")
 
     def test_rejects_changed_frozen_physics_input(self) -> None:
         for role in ("operating_point_lua", "flight_program", "voltage_waveforms"):

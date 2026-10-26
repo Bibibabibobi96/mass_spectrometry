@@ -53,6 +53,55 @@ def _parent(root: Path, batches: list[list[int]], logs: list[list[str]]) -> tupl
 
 
 class BatchContinuationTests(unittest.TestCase):
+    def test_success_predecessor_reuses_complete_units_and_replays_missing_units(self) -> None:
+        for missing in (False, True):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                run, _ = _parent(root, [[1], [2]], [["first complete"], ["second complete"]])
+                manifest_path = run / "run_manifest.json"
+                manifest = json.loads(manifest_path.read_text())
+                manifest["status"] = "success"
+                manifest_path.write_text(json.dumps(manifest))
+                first = Path("logs/simion__batch01.stdout.log")
+                second = Path("logs/simion__batch02.stdout.log")
+                if missing:
+                    (run / second).unlink()
+                plan = build_whole_unit_replay_plan(predecessor_run_dir=run,
+                    output_dir=root / "child", units=(
+                        WholeUnitReplayUnit("first", (first,), True),
+                        WholeUnitReplayUnit("second", (second,), not missing)))
+                self.assertEqual([unit["action"] for unit in plan["units"]],
+                    ["reuse", "replay" if missing else "reuse"])
+                self.assertEqual(plan["reusable_unit_count"], 1 if missing else 2)
+
+    def test_success_predecessor_still_rejects_damaged_completed_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = _parent(root, [[1]], [["complete"]])
+            manifest_path = run / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["status"] = "success"
+            manifest_path.write_text(json.dumps(manifest))
+            log = Path("logs/simion__batch01.stdout.log")
+            (run / log).write_text("changed completed output")
+            with self.assertRaisesRegex(ContractError, "output hash differs"):
+                build_whole_unit_replay_plan(predecessor_run_dir=run,
+                    output_dir=root / "child", units=(WholeUnitReplayUnit("first", (log,), True),))
+
+    def test_running_and_live_predecessors_remain_rejected(self) -> None:
+        for status in ("running", "live"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                run, _ = _parent(root, [[1]], [["complete"]])
+                manifest_path = run / "run_manifest.json"
+                manifest = json.loads(manifest_path.read_text())
+                manifest["status"] = status
+                manifest_path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ContractError, "manifest status differs"):
+                    build_whole_unit_replay_plan(predecessor_run_dir=run,
+                        output_dir=root / "child", units=(WholeUnitReplayUnit(
+                            "first", (Path("logs/simion__batch01.stdout.log"),), True),))
+
     def test_checkpoint_accepts_completion_metadata_after_config_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

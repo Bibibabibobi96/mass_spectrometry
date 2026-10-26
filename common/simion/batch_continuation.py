@@ -91,10 +91,10 @@ def _checkpoint_has_intact_immutable_inputs(
 def _manifest_hashes(run_dir: Path) -> tuple[dict[Path, str], dict[str, Any]]:
     manifest_path = run_dir / "run_manifest.json"
     manifest = _load_object(manifest_path, "continuation predecessor manifest")
-    # A checkpoint is a resumable, manifest-bound predecessor.  It is the
-    # normal state after a native batch completes and before its downstream
-    # materialization succeeds; treating it as failed would discard valid work.
-    if manifest.get("role") != "simulation_run_manifest" or manifest.get("status") not in {"failed", "interrupted", "checkpoint"}:
+    # Completed batches remain reusable after successful publication too, so
+    # analysis or publication can be repeated without another native flight.
+    # Live runs are never predecessors; all accepted inputs stay manifest-bound.
+    if manifest.get("role") != "simulation_run_manifest" or manifest.get("status") not in {"failed", "interrupted", "checkpoint", "success"}:
         raise ContractError("continuation predecessor manifest status differs")
     config_path = run_dir / "run_config.json"
     config = _load_object(config_path, "continuation predecessor run configuration")
