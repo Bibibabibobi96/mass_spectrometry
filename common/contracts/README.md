@@ -77,12 +77,14 @@ producer关闭载荷后，writer CLI计算全部身份并检查保留合同，�
 选择待删对象。容量、run retention和solver-review退休各自决定准入并先发布pending；迭代器每删除一项
 返回该记录，由调用方保存原有进度和终态语义。目录收尾、缺失容忍和退休续做仍在各自生命周期边界。
 
-容量账本出现唯一退役、未pin、0字节记录的`path`键大小写损坏时，可显式调用原公共入口
-`reconcile_artifact_capacity --restore-retired-path-key-receipt <completed-recovery-receipt>`，并提供
-`--expected-ledger-sha256`、`--expected-receipt-sha256`。该已完成收据认证的原始raw备份必须包含
-逐字段完全相同的正常记录；恢复只替换唯一键token，其他原始字节、容量和对象均保持。
-默认dry-run，`--apply`仍要求HostExecutionLease；原坏字节以base64保存，pending journal支持原子发布后重放。
-其他损坏或完整账本均拒绝，不重新校准、不扫描载荷。
+容量账本出现唯一对象的`path`或`class`键损坏时，可显式调用公共入口
+`reconcile_artifact_capacity --restore-ledger-object-key-receipt <completed-recovery-receipt>`，并提供
+`--expected-ledger-sha256`、`--expected-receipt-sha256`。`path`仅允许退役、未pin、0字节且载荷未重现的对象，
+`class`仅允许ready对象。对象须恰缺这两个受支持键之一、恰有一个未知替代键；纠正后的全部字段必须
+与已完成恢复收据认证的原始raw中唯一记录完全相同，不猜测字段名、类别或容量。
+恢复只替换唯一原始键token，其余raw字节、resident/status/pin/bytes均保持，并完整校验候选账本。
+默认dry-run，`--apply`仍要求HostExecutionLease；复用原raw备份和pending journal，原子发布后可严格重放。
+历史完成恢复收据仍可认证原raw。其他损坏或完整账本拒绝，不重新校准、不扫描载荷。
 
 已完成退役的solver-review run若保留的普通PA出现缓冲／无缓冲读取分叉，owner可显式使用
 `invoke_solver_review_retirement.ps1 -RepairPreservedFile <relative.pa> -RepairEvidenceRun <audit-run>`，

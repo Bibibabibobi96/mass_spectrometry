@@ -27,12 +27,14 @@ WRITING_RANGE = {
 
 
 class CapacityLedgerV3Test(unittest.TestCase):
-    def key_recovery_fixture(self, root):
+    def key_recovery_fixture(self, root, *, ready_class=False, authority_role="capacity_ledger_retired_path_recovery"):
         from common.contracts.file_identity import file_sha256
         from common.contracts.recorded_file_removal import write_json_atomic
-        document = capacity_ledger.initialize_capacity_ledger(root, objects=[dict(
-            path="projects/example/scratch/old/empty.log", **{"class": "rebuildable_payload"},
-            bytes=0, status="retired", pin=False, owner="example")])
+        record = (dict(path="projects/example/runs/evidence", **{"class": "light_evidence"},
+                       bytes=17, status="ready", pin=True, pin_reason="retain evidence", owner="example")
+                  if ready_class else dict(path="projects/example/scratch/old/empty.log",
+                       **{"class": "rebuildable_payload"}, bytes=0, status="retired", pin=False, owner="example"))
+        document = capacity_ledger.initialize_capacity_ledger(root, objects=[record])
         ledger = capacity_ledger.resolve_ledger_path(root)
         raw = ledger.read_bytes()
         directory = root/"common/capacity_disposal_receipts"
@@ -40,9 +42,10 @@ class CapacityLedgerV3Test(unittest.TestCase):
         digest = file_sha256(ledger)
         write_json_atomic(backup, dict(schema_version=1, role="capacity_ledger_damaged_raw_backup",
             bytes=len(raw), sha256=digest, base64=base64.b64encode(raw).decode()))
-        write_json_atomic(receipt, dict(schema_version=1, role="capacity_ledger_retired_path_recovery",
+        write_json_atomic(receipt, dict(schema_version=1, role=authority_role,
             status="complete", original_sha256=digest, raw_backup_path=str(backup)))
-        ledger.write_bytes(raw.replace(b'"path":', b'"pAth":'))
+        ledger.write_bytes(raw.replace(b'"class":', b'"unrecognized_field":') if ready_class
+                           else raw.replace(b'"path":', b'"pAth":'))
         return document, ledger, receipt, dict(receipt_path=receipt,
             expected_ledger_sha256=file_sha256(ledger), expected_receipt_sha256=file_sha256(receipt))
 
@@ -51,14 +54,14 @@ class CapacityLedgerV3Test(unittest.TestCase):
             root = Path(temporary).resolve()
             original, ledger, _, args = self.key_recovery_fixture(root)
             raw = ledger.read_bytes()
-            result = capacity_ledger.restore_retired_path_key(root, **args)
+            result = capacity_ledger.restore_ledger_object_key(root, **args)
             self.assertTrue(result["dry_run"])
             self.assertEqual(ledger.read_bytes(), raw)
-            result = capacity_ledger.restore_retired_path_key(root, **args, apply=True)
+            result = capacity_ledger.restore_ledger_object_key(root, **args, apply=True)
             self.assertEqual(ledger.read_bytes(), raw.replace(b'"pAth":', b'"path":', 1))
             self.assertEqual(capacity_ledger.load_capacity_ledger(root), original)
             self.assertEqual(base64.b64decode(json.loads(Path(result["raw_backup_path"]).read_bytes())["base64"]), raw)
-            self.assertTrue(capacity_ledger.restore_retired_path_key(root, **args, apply=True)["replayed"])
+            self.assertTrue(capacity_ledger.restore_ledger_object_key(root, **args, apply=True)["replayed"])
 
     def test_path_key_restore_rejects_other_changes_and_reappeared_payload(self):
         from common.contracts.file_identity import file_sha256
@@ -81,7 +84,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 args["expected_ledger_sha256"] = file_sha256(ledger)
                 before = ledger.read_bytes()
                 with self.assertRaises((ValueError, KeyError)):
-                    capacity_ledger.restore_retired_path_key(root, **args, apply=True)
+                    capacity_ledger.restore_ledger_object_key(root, **args, apply=True)
                 self.assertEqual(ledger.read_bytes(), before)
 
     def test_path_key_restore_replays_both_atomic_publication_boundaries(self):
@@ -91,7 +94,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 root = Path(temporary).resolve()
                 original, ledger, _, args = self.key_recovery_fixture(root)
                 def publish(path, value):
-                    if boundary == "complete" and value.get("role") == "capacity_ledger_retired_key_recovery" and value["status"] == "complete":
+                    if boundary == "complete" and value.get("role") == "capacity_ledger_object_key_recovery" and value["status"] == "complete":
                         raise OSError("injected complete failure")
                     write_json_atomic(path, value)
                 real_replace = capacity_ledger.os.replace
@@ -102,8 +105,8 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 with patch.object(capacity_ledger, "write_json_atomic", side_effect=publish), \
                      patch.object(capacity_ledger.os, "replace", side_effect=replace):
                     with self.assertRaises(OSError):
-                        capacity_ledger.restore_retired_path_key(root, **args, apply=True)
-                self.assertEqual(capacity_ledger.restore_retired_path_key(root, **args, apply=True)["status"], "complete")
+                        capacity_ledger.restore_ledger_object_key(root, **args, apply=True)
+                self.assertEqual(capacity_ledger.restore_ledger_object_key(root, **args, apply=True)["status"], "complete")
                 self.assertEqual(capacity_ledger.load_capacity_ledger(root), original)
 
     def test_path_key_restore_preserves_conflicting_evidence_after_pre_rename_interruption(self):
@@ -118,7 +121,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                     return real_replace(source, destination)
                 with patch.object(capacity_ledger.os, "replace", side_effect=interrupt):
                     with self.assertRaisesRegex(OSError, "before ledger rename"):
-                        capacity_ledger.restore_retired_path_key(root, **args, apply=True)
+                        capacity_ledger.restore_ledger_object_key(root, **args, apply=True)
                 stem = "ledger_key_recovery_" + args["expected_ledger_sha256"]
                 backup = authority.parent / (stem + "_raw.json")
                 journal = authority.parent / (stem + ".json")
@@ -130,7 +133,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 snapshots = {item:item.read_bytes() for item in (ledger, authority, backup, journal)}
                 for apply in (False, True):
                     with self.assertRaisesRegex(ValueError, "conflicts"):
-                        capacity_ledger.restore_retired_path_key(root, **args, apply=apply)
+                        capacity_ledger.restore_ledger_object_key(root, **args, apply=apply)
                     self.assertEqual({item:item.read_bytes() for item in snapshots}, snapshots)
 
     def test_path_key_replay_rederives_exact_candidate_instead_of_trusting_journal_digest(self):
@@ -139,7 +142,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
             with self.subTest(damaged=damaged), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary).resolve()
                 _, ledger, authority, args = self.key_recovery_fixture(root)
-                result = capacity_ledger.restore_retired_path_key(root, **args, apply=True)
+                result = capacity_ledger.restore_ledger_object_key(root, **args, apply=True)
                 backup = Path(result["raw_backup_path"])
                 journal = authority.parent / ("ledger_key_recovery_" + args["expected_ledger_sha256"] + ".json")
                 if damaged == "ledger_and_journal":
@@ -159,8 +162,112 @@ class CapacityLedgerV3Test(unittest.TestCase):
                 snapshots = {item:item.read_bytes() for item in (ledger, authority, backup, journal)}
                 for apply in (False, True):
                     with self.assertRaisesRegex(ValueError, message):
-                        capacity_ledger.restore_retired_path_key(root, **args, apply=apply)
+                        capacity_ledger.restore_ledger_object_key(root, **args, apply=apply)
                     self.assertEqual({item:item.read_bytes() for item in snapshots}, snapshots)
+
+    def test_ready_class_key_restore_preserves_owner_metadata_raw_bytes_and_replays(self):
+        for authority_role in ("capacity_ledger_retired_path_recovery", "capacity_ledger_retired_key_recovery",
+                               "capacity_ledger_object_key_recovery"):
+            with self.subTest(authority=authority_role), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                original, ledger, _, args = self.key_recovery_fixture(root, ready_class=True, authority_role=authority_role)
+                damaged = ledger.read_bytes()
+                result = capacity_ledger.restore_ledger_object_key(root, **args)
+                self.assertTrue(result['dry_run'])
+                self.assertEqual(ledger.read_bytes(), damaged)
+                result = capacity_ledger.restore_ledger_object_key(root, **args, apply=True)
+                self.assertEqual(result['restored_key'], 'class')
+                self.assertEqual(ledger.read_bytes(), damaged.replace(b'"unrecognized_field":', b'"class":', 1))
+                self.assertEqual(capacity_ledger.load_capacity_ledger(root), original)
+                evidence = [ledger, Path(result['raw_backup_path']),
+                            ledger.parent/'capacity_disposal_receipts'/('ledger_key_recovery_'+args['expected_ledger_sha256']+'.json')]
+                snapshots = {p:p.read_bytes() for p in evidence}
+                self.assertTrue(capacity_ledger.restore_ledger_object_key(root, **args, apply=True)['replayed'])
+                self.assertEqual({p:p.read_bytes() for p in evidence}, snapshots)
+
+    def test_ready_class_key_restore_rejects_other_drift_multiple_bad_and_valid_ledger(self):
+        from common.contracts.file_identity import file_sha256
+        for mode in ('owner', 'bytes', 'pin', 'resident', 'status', 'extra_unknown', 'two_objects',
+                     'two_missing', 'valid', 'unauthenticated'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                _, ledger, receipt, args = self.key_recovery_fixture(root, ready_class=True)
+                document = json.loads(ledger.read_bytes());item = document['objects'][0]
+                if mode == 'owner':item['owner'] = 'different'
+                elif mode == 'bytes':item['bytes'] += 1
+                elif mode == 'pin':item['pin'] = False;item.pop('pin_reason')
+                elif mode == 'resident':document['resident_bytes'] += 1
+                elif mode == 'status':item['status'] = 'writing'
+                elif mode == 'extra_unknown':item['another_unknown'] = 2
+                elif mode == 'two_objects':document['objects'].append(dict(item))
+                elif mode == 'two_missing':item['other_unknown'] = item.pop('path')
+                elif mode == 'valid':item['class'] = item.pop('unrecognized_field')
+                else:receipt.write_text('{}', encoding='utf-8')
+                ledger.write_text(json.dumps(document), encoding='utf-8')
+                args['expected_ledger_sha256'] = file_sha256(ledger)
+                before = ledger.read_bytes()
+                with self.assertRaises((ValueError, KeyError)):
+                    capacity_ledger.restore_ledger_object_key(root, **args, apply=True)
+                self.assertEqual(ledger.read_bytes(), before)
+
+    def test_ready_class_key_restore_replays_atomic_boundaries_and_rejects_source_change(self):
+        from common.contracts.recorded_file_removal import write_json_atomic
+        for boundary in ('replace', 'complete', 'source_changed', 'source_backup_changed'):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                original, ledger, receipt, args = self.key_recovery_fixture(root, ready_class=True)
+                damaged = ledger.read_bytes()
+                def publish(path, value):
+                    if value.get('role') == 'capacity_ledger_object_key_recovery':
+                        if boundary == 'complete' and value['status'] == 'complete':
+                            raise OSError('injected complete failure')
+                        if boundary == 'source_changed' and value['status'] == 'pending':
+                            receipt.write_text('{}', encoding='utf-8')
+                        if boundary == 'source_backup_changed' and value['status'] == 'pending':
+                            (receipt.parent/'original_raw.json').write_text('{}', encoding='utf-8')
+                    write_json_atomic(path, value)
+                real_replace = capacity_ledger.os.replace
+                def replace(source, destination):
+                    if boundary == 'replace' and Path(destination) == ledger:
+                        raise OSError('injected rename')
+                    return real_replace(source, destination)
+                with patch.object(capacity_ledger, 'write_json_atomic', side_effect=publish), \
+                     patch.object(capacity_ledger.os, 'replace', side_effect=replace):
+                    with self.assertRaises((OSError, ValueError)):
+                        capacity_ledger.restore_ledger_object_key(root, **args, apply=True)
+                if boundary in ('source_changed', 'source_backup_changed'):
+                    self.assertEqual(ledger.read_bytes(), damaged)
+                else:
+                    self.assertEqual(capacity_ledger.restore_ledger_object_key(root, **args, apply=True)['status'], 'complete')
+                    self.assertEqual(capacity_ledger.load_capacity_ledger(root), original)
+
+    def test_object_key_restore_rejects_authenticated_same_path_conflicts(self):
+        from common.contracts.file_identity import file_sha256
+        from common.contracts.recorded_file_removal import write_json_atomic
+        for ready_class in (False, True):
+            for changed in ('owner', 'class'):
+                with self.subTest(ready_class=ready_class, changed=changed), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary).resolve()
+                    _, ledger, receipt, args = self.key_recovery_fixture(root, ready_class=ready_class)
+                    backup_path = receipt.parent/'original_raw.json'
+                    backup = json.loads(backup_path.read_bytes())
+                    original = json.loads(base64.b64decode(backup['base64']))
+                    conflict = dict(original['objects'][0])
+                    conflict[changed] = 'different' if changed == 'owner' else 'published_cache'
+                    original['objects'].append(conflict)
+                    raw = json.dumps(original).encode('utf-8')
+                    import hashlib
+                    digest = hashlib.sha256(raw).hexdigest().upper()
+                    write_json_atomic(backup_path, dict(schema_version=1, role='capacity_ledger_damaged_raw_backup',
+                        bytes=len(raw), sha256=digest, base64=base64.b64encode(raw).decode('ascii')))
+                    authority = json.loads(receipt.read_bytes());authority['original_sha256'] = digest
+                    write_json_atomic(receipt, authority)
+                    args['expected_receipt_sha256'] = file_sha256(receipt)
+                    before = ledger.read_bytes()
+                    for apply in (False, True):
+                        with self.assertRaisesRegex(ValueError, 'original authenticated inventory'):
+                            capacity_ledger.restore_ledger_object_key(root, **args, apply=apply)
+                        self.assertEqual(ledger.read_bytes(), before)
 
     def recovery_fixture(self, root):
         from common.contracts.file_identity import file_sha256

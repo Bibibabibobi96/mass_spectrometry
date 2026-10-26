@@ -328,50 +328,90 @@ def restore_retired_disposition_paths(
         return result
 
 
-def restore_retired_path_key(
+def restore_ledger_object_key(
     root: Path, *, receipt_path: Path, expected_ledger_sha256: str,
     expected_receipt_sha256: str, apply: bool = False,
 ) -> dict[str, Any]:
-    """Restore one case-damaged retired path key from an authenticated raw backup.
+    """Restore one missing path/class key from an authenticated original object.
 
-    The completed recovery receipt authenticates its original raw ledger. Every
-    field of the affected retired record must equal that historical record after
-    correcting only the key spelling. No payload scan or capacity change occurs.
+    Only a retired unpinned zero-byte path or a ready object's class is covered.
+    The complete object must match the source record; only one raw key token
+    changes. No payload discovery, class inference or recalibration occurs.
     """
     root = root.resolve(strict=False)
     directory = root / "common" / "capacity_disposal_receipts"
     receipt_path = receipt_path.resolve(strict=True)
     expected, authority = expected_ledger_sha256.upper(), expected_receipt_sha256.upper()
     if receipt_path.parent != directory.resolve() or any(SHA256.fullmatch(s) is None for s in (expected, authority)):
-        raise ValueError("path-key recovery requires a public receipt and explicit SHA identities")
+        raise ValueError("object-key recovery requires a public receipt and explicit SHA identities")
     destination = resolve_ledger_path(root)
     recovery_path = directory / f"ledger_key_recovery_{expected}.json"
     backup_path = directory / f"ledger_key_recovery_{expected}_raw.json"
     with protection.capacity_decision_lock(root):
         receipt_raw = receipt_path.read_bytes()
         if hashlib.sha256(receipt_raw).hexdigest().upper() != authority:
-            raise ValueError("path-key recovery authority changed")
+            raise ValueError("object-key recovery authority changed")
         receipt = json.loads(receipt_raw)
-        if receipt.get("role") != "capacity_ledger_retired_path_recovery" or receipt.get("status") != "complete":
-            raise ValueError("path-key recovery requires a completed original recovery receipt")
+        if (receipt.get("role") not in {"capacity_ledger_retired_path_recovery",
+                "capacity_ledger_retired_key_recovery", "capacity_ledger_object_key_recovery"}
+                or receipt.get("status") != "complete"):
+            raise ValueError("object-key recovery requires a completed original recovery receipt")
         original_path = Path(receipt["raw_backup_path"]).resolve(strict=True)
         if original_path.parent != directory.resolve():
             raise ValueError("original raw backup is outside public evidence")
-        backup = json.loads(original_path.read_bytes())
+        original_backup_raw = original_path.read_bytes()
+        backup = json.loads(original_backup_raw)
         original_raw = base64.b64decode(backup["base64"], validate=True)
         if (backup.get("role") != "capacity_ledger_damaged_raw_backup"
                 or len(original_raw) != backup.get("bytes")
                 or hashlib.sha256(original_raw).hexdigest().upper() != receipt["original_sha256"]
                 or backup.get("sha256") != receipt["original_sha256"]):
             raise ValueError("original raw backup identity differs")
+        original = json.loads(original_raw.decode("utf-8-sig", errors="surrogateescape"))
+
+        def candidate_from(raw):
+            document = json.loads(raw.decode("utf-8-sig"))
+            if _is_valid_capacity_ledger(root, document):
+                raise ValueError("valid capacity ledger cannot be overwritten")
+            missing = [(i, item, {"path", "class"} - item.keys())
+                       for i, item in enumerate(document["objects"])
+                       if {"path", "class"} - item.keys()]
+            if len(missing) != 1 or len(missing[0][2]) != 1:
+                raise ValueError("object-key recovery requires exactly one missing path/class key")
+            index, item, fields = missing[0]
+            restored_key = next(iter(fields))
+            unknown = item.keys() - BASE_OBJECT_FIELDS - OPTIONAL_OBJECT_FIELDS
+            if len(unknown) != 1:
+                raise ValueError("object-key recovery requires one unknown replacement key")
+            damaged_key = next(iter(unknown))
+            restored = {(restored_key if k == damaged_key else k): v for k, v in item.items()}
+            matches = [r for r in original["objects"] if r.get("path") == restored["path"]]
+            if matches != [restored]:
+                raise ValueError("object differs from original authenticated inventory")
+            if restored_key == "path":
+                if restored.get("status") != "retired" or restored.get("bytes") != 0 or restored.get("pin"):
+                    raise ValueError("path recovery requires one unpinned zero-byte retired record")
+                if (root / restored["path"]).exists():
+                    raise ValueError("retired payload reappeared")
+            elif restored.get("status") != "ready":
+                raise ValueError("class recovery requires a ready record")
+            needle = json.dumps(damaged_key).encode() + b":"
+            if raw.count(needle) != 1:
+                raise ValueError("damaged key is not a unique raw token")
+            candidate = raw.replace(needle, json.dumps(restored_key).encode() + b":", 1)
+            if not _is_valid_capacity_ledger(root, json.loads(candidate)):
+                raise ValueError("key restoration does not restore the complete ledger")
+            return document, index, damaged_key, restored_key, restored["path"], candidate
+
         current_raw = destination.read_bytes()
         digest = hashlib.sha256(current_raw).hexdigest().upper()
         if digest != expected:
             if recovery_path.exists():
                 prior = json.loads(recovery_path.read_bytes())
-                if (prior.get("role") == "capacity_ledger_retired_key_recovery"
+                if (prior.get("role") == "capacity_ledger_object_key_recovery"
                         and prior.get("original_sha256") == expected
                         and prior.get("source_receipt_sha256") == authority
+                        and prior.get("source_receipt_path") == str(receipt_path)
                         and prior.get("candidate_sha256") == digest
                         and prior.get("status") in {"pending", "complete"}
                         and load_capacity_ledger(root) is not None):
@@ -380,63 +420,42 @@ def restore_retired_path_key(
                     if (saved.get("role") != "capacity_ledger_damaged_raw_backup"
                             or saved.get("bytes") != len(saved_raw) or saved.get("sha256") != expected
                             or hashlib.sha256(saved_raw).hexdigest().upper() != expected):
-                        raise ValueError("path-key recovery raw evidence differs")
-                    damaged_key = prior.get("damaged_key")
-                    if not isinstance(damaged_key, str) or damaged_key == "path" or damaged_key.casefold() != "path":
-                        raise ValueError("path-key recovery replay key differs")
-                    token = json.dumps(damaged_key).encode()+b":"
-                    if saved_raw.count(token) != 1 or saved_raw.replace(token, b'"path":', 1) != current_raw:
-                        raise ValueError("path-key recovery replay changed more than the original key")
+                        raise ValueError("object-key recovery raw evidence differs")
+                    _, index, key, restored_key, target, candidate = candidate_from(saved_raw)
+                    if (candidate != current_raw or prior.get("damaged_key") != key
+                            or prior.get("restored_key") != restored_key or prior.get("object_index") != index
+                            or prior.get("target_path") != target):
+                        raise ValueError("object-key recovery replay changed more than the original key")
                     if apply and prior["status"] == "pending":
                         prior["status"] = "complete"
                         write_json_atomic(recovery_path, prior)
                     return dict(prior, replayed=True)
-            raise ValueError("capacity ledger changed before path-key recovery")
-        document = json.loads(current_raw.decode("utf-8-sig"))
-        if _is_valid_capacity_ledger(root, document):
-            raise ValueError("valid capacity ledger cannot be overwritten")
-        missing = [(i, item) for i, item in enumerate(document["objects"]) if "path" not in item]
-        if len(missing) != 1:
-            raise ValueError("path-key recovery requires exactly one missing path key")
-        index, item = missing[0]
-        keys = [k for k in item if k != "path" and k.casefold() == "path"]
-        if len(keys) != 1 or item.get("status") != "retired" or item.get("bytes") != 0 or item.get("pin"):
-            raise ValueError("path-key recovery is restricted to one unpinned zero-byte retired record")
-        key = keys[0]
-        restored = {("path" if k == key else k): v for k, v in item.items()}
-        original = json.loads(original_raw.decode("utf-8-sig", errors="surrogateescape"))
-        matches = [r for r in original["objects"] if r.get("path") == restored["path"]]
-        if matches != [restored] or (root / restored["path"]).exists():
-            raise ValueError("retired record differs from original authenticated inventory or payload reappeared")
-        needle = json.dumps(key).encode()+b":"
-        if current_raw.count(needle) != 1:
-            raise ValueError("damaged key is not a unique raw token")
-        candidate_raw = current_raw.replace(needle, b'"path":', 1)
-        if not _is_valid_capacity_ledger(root, json.loads(candidate_raw)):
-            raise ValueError("key restoration does not restore the complete ledger")
-        result = dict(schema_version=1, role="capacity_ledger_retired_key_recovery", status="pending",
+            raise ValueError("capacity ledger changed before object-key recovery")
+        document, index, key, restored_key, target, candidate_raw = candidate_from(current_raw)
+        result = dict(schema_version=1, role="capacity_ledger_object_key_recovery", status="pending",
                       original_sha256=expected, source_receipt_path=str(receipt_path),
                       source_receipt_sha256=authority, candidate_sha256=hashlib.sha256(candidate_raw).hexdigest().upper(),
-                      raw_backup_path=str(backup_path), object_index=index, target_path=restored["path"],
-                      damaged_key=key, resident_bytes=document["resident_bytes"],
+                      raw_backup_path=str(backup_path), object_index=index, target_path=target,
+                      damaged_key=key, restored_key=restored_key, resident_bytes=document["resident_bytes"],
                       change="one raw key token only; all other bytes preserved")
         if recovery_path.exists() and json.loads(recovery_path.read_bytes()) != result:
-            raise ValueError("path-key recovery journal conflicts")
+            raise ValueError("object-key recovery journal conflicts")
         saved_backup = dict(schema_version=1, role="capacity_ledger_damaged_raw_backup",
             bytes=len(current_raw), sha256=expected, base64=base64.b64encode(current_raw).decode("ascii"))
         if backup_path.exists() and json.loads(backup_path.read_bytes()) != saved_backup:
-            raise ValueError("path-key recovery raw evidence conflicts")
+            raise ValueError("object-key recovery raw evidence conflicts")
         if not apply:
             return dict(result, dry_run=True)
         if not backup_path.exists():
             write_json_atomic(backup_path, saved_backup)
         write_json_atomic(recovery_path, result)
-        if destination.read_bytes() != current_raw or receipt_path.read_bytes() != receipt_raw:
-            raise ValueError("path-key recovery source changed before publication")
+        if (destination.read_bytes() != current_raw or receipt_path.read_bytes() != receipt_raw
+                or original_path.read_bytes() != original_backup_raw):
+            raise ValueError("object-key recovery source changed before publication")
         temporary = destination.with_name(destination.name+".key-recovery")
         if temporary.exists():
             if temporary.read_bytes() != candidate_raw:
-                raise ValueError("path-key recovery staging bytes conflict")
+                raise ValueError("object-key recovery staging bytes conflict")
         else:
             with temporary.open("xb") as stream:
                 stream.write(candidate_raw)
@@ -444,7 +463,7 @@ def restore_retired_path_key(
                 os.fsync(stream.fileno())
         os.replace(temporary, destination)
         if destination.read_bytes() != candidate_raw or load_capacity_ledger(root) is None:
-            raise ValueError("path-key recovery publication failed verification")
+            raise ValueError("object-key recovery publication failed verification")
         result["status"] = "complete"
         write_json_atomic(recovery_path, result)
         return result

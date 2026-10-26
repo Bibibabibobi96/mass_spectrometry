@@ -1468,7 +1468,7 @@ def main() -> None:
     parser.add_argument("--artifact-root", required=True, type=Path)
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--restore-retired-disposition-receipt", type=Path)
-    actions.add_argument("--restore-retired-path-key-receipt", type=Path)
+    actions.add_argument("--restore-ledger-object-key-receipt", type=Path)
     parser.add_argument("--expected-ledger-sha256")
     parser.add_argument("--expected-receipt-sha256")
     actions.add_argument("--create-protection-lease")
@@ -1508,20 +1508,20 @@ def main() -> None:
         target_gib = args.maintenance_target_gib
     if args.apply and not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
         parser.error("--apply requires the shared HostExecutionLease")
-    if args.restore_retired_disposition_receipt is not None or args.restore_retired_path_key_receipt is not None:
+    if args.restore_retired_disposition_receipt is not None or args.restore_ledger_object_key_receipt is not None:
         if (not args.expected_ledger_sha256 or not args.expected_receipt_sha256
                 or args.capacity_ledger is not None or args.maintenance_target_gib is not None):
-            parser.error("retired disposition recovery requires explicit SHA identities and canonical ledger")
-        recovery = (capacity_ledger.restore_retired_path_key if args.restore_retired_path_key_receipt is not None
+            parser.error("ledger recovery requires explicit SHA identities and canonical ledger")
+        recovery = (capacity_ledger.restore_ledger_object_key if args.restore_ledger_object_key_receipt is not None
                     else capacity_ledger.restore_retired_disposition_paths)
         result = recovery(
-            args.artifact_root, receipt_path=args.restore_retired_path_key_receipt or args.restore_retired_disposition_receipt,
+            args.artifact_root, receipt_path=args.restore_ledger_object_key_receipt or args.restore_retired_disposition_receipt,
             expected_ledger_sha256=args.expected_ledger_sha256,
             expected_receipt_sha256=args.expected_receipt_sha256, apply=args.apply)
         print(json.dumps(result, indent=2))
         return
     if args.expected_ledger_sha256 or args.expected_receipt_sha256:
-        parser.error("expected SHA identities require retired disposition recovery")
+        parser.error("expected SHA identities require ledger recovery")
     try:
         lease = _lease_action(args, parser)
         if lease is not None:

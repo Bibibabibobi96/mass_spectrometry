@@ -2845,9 +2845,9 @@ class FiniteCapacityProtectionLeaseTest(unittest.TestCase):
 
 class RetiredDispositionRecoveryCliTests(unittest.TestCase):
     def test_retired_key_recovery_reuses_explicit_identity_and_apply_lease_gate(self):
-        args = ["capacity", "--artifact-root", "unused", "--restore-retired-path-key-receipt", "receipt.json",
+        args = ["capacity", "--artifact-root", "unused", "--restore-ledger-object-key-receipt", "receipt.json",
                 "--expected-ledger-sha256", "A"*64, "--expected-receipt-sha256", "B"*64]
-        with patch.object(sys, "argv", args), patch.object(capacity_ledger, "restore_retired_path_key", return_value={}) as recover:
+        with patch.object(sys, "argv", args), patch.object(capacity_ledger, "restore_ledger_object_key", return_value={}) as recover:
             with redirect_stdout(io.StringIO()):normal_capacity.main()
             self.assertFalse(recover.call_args.kwargs["apply"])
             self.assertEqual(recover.call_args.kwargs["receipt_path"], Path("receipt.json"))
