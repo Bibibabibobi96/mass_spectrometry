@@ -1,8 +1,18 @@
 # 开孔长管电子轰击离子源项目
 
-开始任务先读仓库根[`README.md`](../../README.md)，再读本项目当前状态
-[`docs/PROJECT.md`](docs/PROJECT.md)。只有实际修改模型时才进入`comsol/`；本项目目前没有独立
-软件实施文档，已确认的软件事实暂记在PROJECT，达到足够规模后再拆分`docs/COMSOL.md`。
+本项目维护开孔电离管内电子轰击电离的可行性模型。装配用途、离子出生状态与可交接范围须先查
+[当前状态](docs/PROJECT.md#当前物理边界)，不能仅凭“离子源”名称假定已有完整上游源。
+
+## 按任务阅读
+
+| 任务 | 入口 |
+|---|---|
+| 开始项目工作 | [仓库README](../../README.md) → [PROJECT](docs/PROJECT.md) |
+| 理解物理范围与缺口 | [物理边界](docs/PROJECT.md#当前物理边界)、[开放任务](docs/PROJECT.md#开放任务) |
+| 修改或构建COMSOL模型 | 下方源码与合同入口；已确认实施事实暂由PROJECT维护 |
+| 查资格与证据 | [当前状态](docs/PROJECT.md#当前状态) |
+
+## 合同与执行入口
 
 当前实现入口是[`comsol/ms_stage1_ei_source.m`](comsol/ms_stage1_ei_source.m)，路径解析器为
 [`ei_source_paths.m`](ei_source_paths.m)。新模型与结果写入

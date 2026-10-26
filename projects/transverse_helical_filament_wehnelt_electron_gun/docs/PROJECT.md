@@ -16,12 +16,8 @@
 
 机器参数链为`config/baseline.json + config/numerical_modes.json → analysis/resolve_contract.py →
 config/resolved_model.json`。MATLAB只消费resolved并绑定GUI参数，不从源码、环境或旧MPH回退物理值。
-resolver 的规范 JSON 身份复用 `common/contracts/file_identity.py`；项目薄适配器保留原生 JSON 错误类型
-与消息。生成的 resolved 合同和身份不变，build-only 输入冻结已包含该公共依赖；此迁移不构成新的商业求解证据。
-build-only 入口同时冻结公共主机调度适配器、核心和策略，并传递既定 Python 路径。隔离冻结 Static
-回归包含 manifest writer 的 `recorded_file_removal.py` 直接依赖；该闭包通过不构成真实 COMSOL 复验。
-公共COMSOL入口新增的预算支持脚本已纳入同一冻结表；与双锥气流入口的6项focused回归包含实际冻结加载及
-无Limits不生成usage检查，未启动商业软件，不改变本项目build-only资格。
+build-only入口冻结实际MATLAB、解析器与公共运行依赖；源码闭包回归只证明准备与身份链，
+不构成新的COMSOL求解或功能资格。运行与失败收尾见[COMSOL说明](COMSOL.md)。
 实心阴极与轴向线圈源码已冻结到
 [`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
 
@@ -45,18 +41,6 @@ build-only 入口同时冻结公共主机调度适配器、核心和策略，并
 - COMSOL默认随机采样seed尚未冻结，当前单次粒子实现不可复现。
 - 非有限末态只能报告为未分类，不得推断为灯丝或Wehnelt自吸收。
 - 横置Wehnelt参数扫描尚未建立；旧phase5属于轴向灯丝，只支持非单调性的历史假设。
-
-## 代码精简审查
-
-2026-10-17审查确认路径解析器的componentRoot别名及formal/archive/scratch等返回字段无活动消费者，
-已删除这些多余字段；解析器继续提供实际构建所用项目、run和输出路径。合同验证、resolved物化与
-冻结输入身份由MATLAB读取和build-only证据消费，保留其单向输入链；本次未运行商业软件。
-
-build-only运行器不再逐字段阻断检查`config/modes/build_only_smoke.json`描述文件；
-该文件仍满足公共注册表mode发现合同并进入冻结输入。
-其固定英文声明、键集合和profile名称比对不控制模型构建或求解。实际边界继续由冻结的numerical mode→resolved
-校验、MATLAB三阶段的build-only提前返回、任务报告与候选资格字段共同约束；build-only允许网格和物理树构建，
-禁止静电与粒子求解。现有隔离冻结Static行为回归和模式解析回归覆盖该边界，未运行商业软件。
 
 ## 开放任务
 

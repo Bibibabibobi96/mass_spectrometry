@@ -92,6 +92,8 @@ single_reflection_oa_tof_mass_analyzer/
 <details>
 <summary>展开已冻结实验、迁移与故障证据</summary>
 
+- [组装接口、回归与状态文档收敛](docs/history/20261026__assembly-documentation-consolidation.md)
+
 - [原生事件积分器／方程形式隔离与曲面几何阶次收敛](docs/history/20261022__curved-events-and-formulation-isolation.md)
 - [稀疏 Counter 原因隔离、原生辅助事件读取与重复验证](docs/history/20261022__sparse-counter-cause-and-native-event-reader.md)
 - [原生事件回读、额外碰壁数据与 Counter 小模型验证](docs/history/20261022__native-event-readback-and-counter-validation.md)

@@ -4,7 +4,24 @@
 单位是否完整；Python语义层判断项目选择、能力成熟度、模式、指标、设计变量和约束是否成立。
 二者不能互相取代。
 
+## 按任务导航
+
+只读本次任务对应的章节；本页说明公共 API，生命周期政策仍以[生命周期](../../docs/LIFECYCLE.md)为准。
+
+| 任务 | 入口 |
+|---|---|
+| 创建 run、冻结输入、发布或消费 manifest | [初始化与冻结](#运行初始化与输入冻结)、[文件身份](#文件身份与读取)、[manifest](#manifest发布与消费) |
+| 配置终态保留、申请容量或维护台账 | [终态保留](#运行终态保留)、[容量准入与维护](#容量准入与维护)、[登记与租约](#容量登记租约与退休) |
+| 恢复精确旧载荷、账本或停止的 run | [精确恢复](#精确恢复与旧载荷处置)、[停止载荷收尾](#异常账本与停止载荷收尾)、[中断与旧身份](#中断与旧身份) |
+| 退役 solver_review 重型载荷 | [唯一退休入口及适用模式](#solver_review-被取代后的重型载荷退休) |
+| 复用已完成阶段 | [阶段复用](#阶段复用) |
+| 交接粒子、注册坐标或仪器时钟 | [粒子状态与坐标](#粒子状态与坐标)、[时钟与运行初始化](#运行初始化与输入冻结) |
+| 发现项目、把需求变为可执行计划 | [项目发现](#项目发现)、[需求规划](#从自然语言到计划)、[执行预览](#执行dry-run) |
+| 编译候选或发布正式资产 | [候选参数](#候选参数编译)、[正式发布](#正式结果与来源运行) |
+
 ## 运行身份与生命周期
+
+### 运行初始化与输入冻结
 
 `canonical_clock_authority.py`与同名Schema定义跨项目事件链唯一instrument clock权威：求解器局部时钟
 从零累计，adapter仅一次物化`epoch + elapsed`，handoff保留时间戳；新run不得使用legacy相对时钟旁路。
@@ -38,6 +55,8 @@ artifact路径，因此run ID、输入/输出身份、SHA和历史引用不变�
 writer与verifier共用保留策略入口，独立消费时仍重新验证完整内容，不维护两份同义导入逻辑。
 冻结执行快照中的公共IOB占位模板属于必需输入，所有已引用槽位均须保留；该分类不适用于运行目录中
 同名的普通求解PA。它们的来源与用途见[模板说明](../simion/assets/iob_instance_seeds/README.md)。
+
+### 文件身份与读取
 
 `file_identity.py`是SHA-256身份的唯一共享实现，固定返回大写十六进制。`file_sha256`按原始字节标识
 manifest、正式资产和外部artifact；`repository_text_sha256`只用于Git治理的文本依赖，先把行尾规范为
@@ -76,6 +95,8 @@ producer须在发布前关闭写入和映射，不通过这项读取选择刷新
 [ReadFile](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile)定义同步读和跨EOF尾读。
 这是基于官方API的项目SHA-256实现，用于显式核对异常的大文件缓存视图；不支持这些接口的存储失败关闭。
 
+### manifest发布与消费
+
 producer关闭载荷后，writer CLI计算全部身份并检查保留合同，拒绝缺失输出和未完成的终态journal；
 原子写入后读回小型manifest与内存记录完整比对，公共发布器不再另起verifier重复全文读取同批载荷。
 这是同次发布的工作复用，不是跨消费边界缓存。`build_run_manifest`纯构建API仍可记录缺失输出，
@@ -86,6 +107,8 @@ producer关闭载荷后，writer CLI计算全部身份并检查保留合同，�
 约束，并把每个实际消费路径唯一绑定到manifest记录后核对字节数和SHA-256。投影不得用于发布或宣称整个
 上游run仍完整有效；消费run必须在自己的run config记录投影ID、记录名、路径以及未断言其余记录。选择器
 缺少投影ID、空投影、路径不一致、重复记录或消费记录漂移均失败关闭。
+
+### 精确恢复与旧载荷处置
 
 普通owner通过`solver_review_retirement.py`精确选择重型文件后，可在后续需求结束时继续退役另一个不相交子集。
 首份`solver_review_retirement_receipt.json`保持原字节；后续使用`solver_review_retirement_receipt_0002.json`等
@@ -141,6 +164,8 @@ audit须为同项目规范run、`mode=owned_payload_view_repair`、solver_review
 批准仍由公共维护执行已封存disposition，owner入口本身不删除，也不将旧项目缓存冒充公共PA-family缓存。
 `simion_pa_basis`项目基场缓存沿同一入口执行相同的owner、pin、消费者和库存检查，不另设退役协议。
 
+### 运行终态保留
+
 `artifact_retention.json`和`artifact_retention.py`实现[生命周期](../../docs/LIFECYCLE.md)的run产物保留合同。迁移到manifest v2的
 入口必须显式启用公共生命周期retention，启用后的默认类是`compact`；`qualification/solver_review`
 必须在运行前给出理由。终态前`apply`只清除本次未闭合run中策略禁止的可重建文件并写
@@ -148,6 +173,8 @@ audit须为同项目规范run、`mode=owned_payload_view_repair`、solver_review
 manifest schema v2记录保留类和每项输出角色；
 writer/verifier同时扫描未列出的重型文件，防止通过漏报output绕过。schema v1只承担历史兼容，不因
 新增合同而失效；未迁移入口由测试中的具名棘轮清单约束，新建或实质修改时必须退出该清单。
+
+### 容量准入与维护
 
 `reconcile_artifact_capacity.py`与`artifact_capacity_policy.json`实现日常容量治理，只有三项职责：
 启动检查、生命周期登记和维护清理。唯一权威状态是[`capacity_ledger.py`](capacity_ledger.py)维护的
@@ -174,6 +201,8 @@ owner入口根据真实证据产生可重放的收尾决定，由同一maintenan
 历史checkpoint不自动改写为失败；活动消费者与已封存证据仍须保护。验收须覆盖中断重放、缺owner或处置能力
 拒绝新建、未知路径拒绝准入、单对象失败后继续独立对象，以及保留期到期后的实际处置；仅缩减台账占用
 或输出行动清单不能视为这一闭环完成。不新增第二份台账、通用任务调度器或平行删除入口。
+
+### 异常账本与停止载荷收尾
 
 若账本仅有一个已退休对象的处置文件路径损坏，可显式沿同一CLI使用
 `--restore-retired-disposition-receipt <原complete处置收据>`、`--expected-ledger-sha256 <坏账本SHA>`及
@@ -236,6 +265,8 @@ PA cache 的锁、build-lock 与 staging 目录则是可复用 runtime state：P
 范围进入既有自动退休队列；其余 checkpoint、历史引用、失效合同和缺少 producer 证据的范围列为 owner
 决策或恢复对象。历史配置中的路径引用本身不是活动消费者，不能无限期保护载荷；当前 GUI 收据也不表示
 检查已经完成。该投影只读取小型 JSON 和租约，不打开或全文哈希 PA payload。
+
+### 容量登记、租约与退休
 
 台账只使用三类对象：`light_evidence`保留必要证据，`published_cache`保存公共可复用重型资产，
 `rebuildable_payload`保存可重建载荷。对象状态只使用`writing/ready/retirement_pending/retired`；pin必须说明理由，
@@ -322,6 +353,8 @@ maintenance 默认只返回聚合 receipt：`resident_bytes`、`free_bytes`、`c
 文件大小或时间戳冒充内容验证，也不能在发布、删除或运行收尾之外自行推断外部写入；首次建立或发现不一致时
 才做一次完整扫描，之后按收据增量更新。
 
+### 中断与旧身份
+
 `reconcile_interrupted_compact_runs.py --run-dir <exact-run>`提供单run plan/apply；只接受正规终态且
 manifest/summary一致的`failed`或`interrupted` compact run。apply必须持有共享`HostExecutionLease`；
 无关SIMION进程不再形成全机禁令。入口按规范化结构字段识别指向目标run内具体文件的活动消费者：被引用的
@@ -333,6 +366,28 @@ manifest/summary一致的`failed`或`interrupted` compact run。apply必须持�
 迁移、回滚或裁剪命令；现有归档保持不可变，`archived_verified`也不提供旧顶层路径fallback。
 
 ### solver_review 被取代后的重型载荷退休
+
+`solver_review_retirement.py`是既有完整terminal `success`或`failed`的 `solver_review` run 被明确更新成功运行取代后，退休其可重建
+求解器原生载荷的唯一公共入口。它不是普通容量清理：默认只生成plan；apply必须通过
+`invoke_solver_review_retirement.ps1`取得共享 `HostExecutionLease`，并逐个精确给出target、replacement
+和人工审阅后的兼容性说明，并逐项声明本设计线判定兼容所需的同名输入角色；历史角色改名则用
+`TARGET_ROLE=REPLACEMENT_ROLE`逐项映射，两端manifest记录的字节数和SHA-256必须相同。入口失败关闭检查
+target为一致的success/failed终态、replacement为success、两端均非Formal、replacement更新、项目与mode一致、
+两端均具备调用者声明的角色、target没有活动下游run_config引用，且不受活动容量保护租约
+覆盖；两端完整manifest记录与config/summary/输入绑定必须通过字节数和SHA验证，apply前再次复核。
+Git Markdown中的历史run引用只进入plan/receipt审计，不等于对其重型载荷的活动依赖。旧run若具有精确的初始化
+checkpoint summary模板而manifest已是success，允许仅对target使用该兼容形状；replacement仍必须是summary/
+manifest一致、证据完整的success。
+下游扫描只把manifest缺失或非终态run中结构化配置值精确指向target run、路径或manifest的依赖作为活动阻塞；
+活动run_config无法解析时失败关闭。已经终态的相同引用只写入plan/receipt历史审计，不永久钉住被取代重载，
+apply会重新执行同一分类。
+对于非终态run，若run_config无法解析，退休入口先用有效manifest中绑定的本地
+`run_config`字节数和SHA-256核对实际文件：身份已损坏时只记录
+`corrupt_run_config_reference_unavailable`审计项，并继续检查manifest自身的结构化引用；身份仍匹配而仅解析失败时，
+仍按`run_config_unreadable_reference_uncertain`失败关闭。这样损坏的旧引用不会锁死所有target，真正不可判定的配置仍不会被忽略。
+只删除`solver_native_binary`和`dense_trajectory`，不删除轻量IOB、报告或三件套。
+已通过完整身份核验并绑定为input的外部来源manifest，包括冻结到本run `inputs/`的副本，
+仅作为provenance保留，不继承其引用的载荷。相同路径若也绑定为output，仍执行严格的本地child身份与owner校验。
 
 同一入口也接受已结束成功或失败实验的 owner 明确退出：`-Owner <project>` 与
 `-OwnerAbandonmentReason "<完成用途及无人继续消费的具名原因>"`。此模式与 replacement/compatibility
@@ -362,28 +417,6 @@ owner须确认其writer及子进程均已停止，plan/receipt冻结各自小证
 该入口允许以原验证器通过的完整solver_review退役receipt作为处置完成证据；已有但损坏或未完成的普通receipt不得被替代。
 后续实际inventory、轻证据预算及无重载荷检查不变，不补造普通receipt，不改原科学终态或manifest。
 
-`solver_review_retirement.py`是既有完整terminal `success`或`failed`的 `solver_review` run 被明确更新成功运行取代后，退休其可重建
-求解器原生载荷的唯一公共入口。它不是普通容量清理：默认只生成plan；apply必须通过
-`invoke_solver_review_retirement.ps1`取得共享 `HostExecutionLease`，并逐个精确给出target、replacement
-和人工审阅后的兼容性说明，并逐项声明本设计线判定兼容所需的同名输入角色；历史角色改名则用
-`TARGET_ROLE=REPLACEMENT_ROLE`逐项映射，两端manifest记录的字节数和SHA-256必须相同。入口失败关闭检查
-target为一致的success/failed终态、replacement为success、两端均非Formal、replacement更新、项目与mode一致、
-两端均具备调用者声明的角色、target没有活动下游run_config引用，且不受活动容量保护租约
-覆盖；两端完整manifest记录与config/summary/输入绑定必须通过字节数和SHA验证，apply前再次复核。
-Git Markdown中的历史run引用只进入plan/receipt审计，不等于对其重型载荷的活动依赖。旧run若具有精确的初始化
-checkpoint summary模板而manifest已是success，允许仅对target使用该兼容形状；replacement仍必须是summary/
-manifest一致、证据完整的success。
-下游扫描只把manifest缺失或非终态run中结构化配置值精确指向target run、路径或manifest的依赖作为活动阻塞；
-活动run_config无法解析时失败关闭。已经终态的相同引用只写入plan/receipt历史审计，不永久钉住被取代重载，
-apply会重新执行同一分类。
-对于非终态run，若run_config无法解析，退休入口先用有效manifest中绑定的本地
-`run_config`字节数和SHA-256核对实际文件：身份已损坏时只记录
-`corrupt_run_config_reference_unavailable`审计项，并继续检查manifest自身的结构化引用；身份仍匹配而仅解析失败时，
-仍按`run_config_unreadable_reference_uncertain`失败关闭。这样损坏的旧引用不会锁死所有target，真正不可判定的配置仍不会被忽略。
-只删除`solver_native_binary`和`dense_trajectory`，不删除轻量IOB、报告或三件套。
-已通过完整身份核验并绑定为input的外部来源manifest，包括冻结到本run `inputs/`的副本，
-仅作为provenance保留，不继承其引用的载荷。相同路径若也绑定为output，仍执行严格的本地child身份与owner校验。
-
 已明确停止写入、被更新 GUI 准备包取代的未飞行 `solver_review` checkpoint 可在同一
 `solver_review_retirement.py` plan/apply 入口显式提供 `--prepared-gui-checkpoint
 --confirm-writing-stopped`。默认为 supersession：两端必须是 `checkpoint` manifest、
@@ -399,8 +432,9 @@ apply 仍必须在公共 HostExecutionLease 内执行；原 terminal 和 compact
 三件套、轻量证据和重建输入保留。收据沿用 `completed_experiment_payload_retired`，原科学状态保持 checkpoint。
 余量沿前述 `seal-stopped-payload` 原 owner/原保留理由闭合，不把 checkpoint 或 GUI 准备状态改称成功。
 
-apply前先在target内原子写入pending receipt，逐文件验证原始SHA-256后删除，最后写成
-`superseded_payload_retired`。receipt保存原完整逐文件清单、被删/保留集合、原manifest身份和替代run绑定。
+apply前先在target内原子写入pending receipt，再按精确清单复核路径、常规文件类型和字节数后删除；
+重型载荷沿用已封存身份，不在删除时重复全文哈希。完成状态按上述模式写为`superseded_payload_retired`
+或`completed_experiment_payload_retired`；receipt保存完整清单、被删/保留集合、原manifest及适用的替代run绑定。
 原`run_manifest.json`保持不可变，但删除后不再代表当前磁盘完整性，也不得交给普通manifest verifier或
 下游消费者；只能用`--verify <retired-run>`验证“历史终态身份 + 明确被取代 + 重型载荷已退休”的新语义。
 pending receipt表示中断处置，必须人工恢复，不能当作完成或重新自动删除。

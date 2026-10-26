@@ -75,7 +75,7 @@ CSV 必须按 `z` 主序、`r` 次序排列，列顺序严格为：
 z_index,r_index,z_mm,r_mm,p_pa,temperature_k,u_z_m_per_s,u_r_m_per_s,rho_kg_per_m3,mach,knudsen_aperture,fluid_mask
 ```
 
-规则矩形网格中流体域外的物理量全部为 `NaN` 且 `fluid_mask=0`。元数据记录 CSV 与三个源合同的 SHA-256、网格轴、坐标系、请求出口压力、进出口质量流量、质量守恒误差、最大马赫数和最大孔径 Knudsen 数。SIMION 只能在 `fluid_mask=1` 内做双线性插值，禁止外推；轴对称映射采用 `r=sqrt(x^2+y^2)`。COMSOL 二维轴对称分量固定为径向 `u`、周向 `v`、轴向 `w`；`u_z_m_per_s` 与质量流量使用 `w`，`u_r_m_per_s` 使用 `u`。
+规则矩形网格中流体域外的物理量全部为 `NaN` 且 `fluid_mask=0`。元数据记录 CSV 与三个源合同的 SHA-256、网格轴、坐标系、请求出口压力、进出口质量流量、质量守恒误差、最大马赫数和最大孔径 Knudsen 数。SIMION运行插值遵循`gas_field_interface.json`：普通单元双线性插值，切割单元仅对有效流体角点权重归一化；无有效支撑或越出治理域即拒绝，不作域外外推。轴对称映射采用`r=sqrt(x^2+y^2)`。COMSOL 二维轴对称分量固定为径向 `u`、周向 `v`、轴向 `w`；`u_z_m_per_s` 与质量流量使用 `w`，`u_r_m_per_s` 使用 `u`。
 
 运行后必须执行独立验证：
 
@@ -94,7 +94,7 @@ projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transp
   -ComsolRunDirectory <已验证的COMSOL运行目录>
 ```
 
-编译器采用合同声明的轴对称双线性插值，把径向速度映射到三维笛卡尔分量；越出治理域或插值单元触及非流体网格时立即报错，不做外推或最近邻填充。
+编译器将径向速度映射到三维笛卡尔分量，切割单元按上述有效角点权重处理；无有效流体支撑或越出治理域时立即报错，不做域外外推或最近邻填充。
 
 ## 最小验收
 

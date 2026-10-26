@@ -14,7 +14,7 @@
 |---|---|
 | 理解模型、符号、推导和验证范围 | [理论索引](docs/theory/index.md) |
 | 构建、检查或运行 SIMION | [SIMION 实施说明](simion/README.md) |
-| 选择 OA 或 Ion Processor 并准备接口（不求解） | [加速器选择与准备](simion/README.md#加速器选择与接口准备) |
+| 选择OA／IP并准备或执行跨器件链 | [统一集成入口](../../integrations/README.md)、[组装当前边界](docs/PROJECT.md#统一组装迁移任务) |
 | 处理原始装配、曲线或机械证据 | [CAD 实施说明](docs/CAD.md) |
 | 查项目身份、旧资产位置、Candidate 成熟度和机器登记的 baseline | [项目描述符](config/project.json) |
 | 查活动几何与 CAD 变换 | [候选几何合同](config/simion_candidate_two_zone.json)、[坐标合同](config/cad_to_theory_frame.json) |
@@ -32,10 +32,9 @@ COMSOL 或其他求解器是否已有可执行入口，以 PROJECT 的当前说�
 原 Astral 的“收敛镜 + 单 Stripe/Ion Foil”为当前会聚候选提供理论依据；
 现候选保留额外接地线性Stripe实体，不能视为原论文几何或已复现论文性能。
 二区／三区正交加速器的局部理论、几何与复用实现由独立
-[正交加速器项目](../orthogonal_accelerator/README.md)拥有。MR 通过
-[正交加速器组件工作流](../orthogonal_accelerator/simion/run_component_focus_workflow.ps1)直接提交现有
-component request 和 repository-common release 规格；本项目负责 MR 专属输入、装配、棱镜、镜组及整机飞行，不复制另一仪器的 PA 或
-Formal/integration 运行产物作为自身资格。
+[正交加速器项目](../orthogonal_accelerator/README.md)拥有。MR保留分析器几何、棱镜、镜组、系统布局约束、
+匹配与验收；器件实例组装和跨项目飞行从[统一集成入口](../../integrations/README.md)进入。
+组件请求与公共release由实际工作流冻结，不复制另一仪器的PA或Formal/integration结果作为自身资格。
 
 知识权威与单向几何链见[仓库架构](../../docs/REPOSITORY_ARCHITECTURE.md)，原始 CAD 只提供已审计
 机械约束；归档、运行和发布见[生命周期](../../docs/LIFECYCLE.md)。新运行使用当前项目身份，
@@ -74,3 +73,4 @@ execution profile；轻量项目门禁统一由[`verify_project.ps1`](verify_pro
 - [D三路线理论、局部验证及独立回放](docs/history/20261020__d-routes-theory-local-validation-and-replay.md)
 
 - [双透镜相空间机制与加大间距验证](docs/history/20261021__doublet-phase-space-and-wide-spacing-validation.md)
+- [组装文档职责收口与原文](docs/history/20261026__assembly-documentation-consolidation.md)

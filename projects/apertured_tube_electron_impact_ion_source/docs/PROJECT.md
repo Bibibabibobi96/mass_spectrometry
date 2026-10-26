@@ -38,12 +38,6 @@ oa-TOF上游接口。具体数值不在本文复制，避免与机器合同形�
 - 现有结果提取以脚本端统计为主；正式化前必须确认关键结果节点、Study/Solver和判据在GUI中可见。
 - 旧模型未按当前运行生命周期生成run config、summary和manifest，不能仅凭文件存在恢复正式资格。
 
-## 代码精简审查
-
-2026-10-17审查确认路径解析器的componentRoot别名及formal/archive/scratch等返回字段无活动消费者，
-已删除这些多余字段；解析器继续提供实际构建所用项目、run和输出路径。合同验证、resolved物化与
-冻结输入身份由MATLAB读取和build-only证据消费，保留其单向输入链；本次未运行商业软件。
-
 ## 开放任务
 
 1. 使用`functional_reference`和最低N=100完成GUI Compute、结果提取与manifest；在此之前不建立

@@ -6,6 +6,10 @@
 理论和规范。知识归属见[仓库架构](docs/REPOSITORY_ARCHITECTURE.md)，创建或归档文件前读
 [生命周期](docs/LIFECYCLE.md)，执行与提交前读[操作指南](docs/OPERATIONS.md)；不要默认通读历史。
 
+部件复用、新增能力或组装任务先按[部件与组装边界](docs/REPOSITORY_ARCHITECTURE.md#部件实例与组装)
+确认知识所有者与现有能力；文档任务按[存放位置](docs/REPOSITORY_ARCHITECTURE.md#文档存放位置)选择唯一正文。
+参考资料仅在需要核对物理或接口来源时定向读取，不把整本教材加入默认启动阅读链。
+
 ## 必须遵守
 
 - 开始修改前先搜索已有实现、机器合同、测试和相邻入口；优先扩展现有边界，不创建同义函数、同义字段、

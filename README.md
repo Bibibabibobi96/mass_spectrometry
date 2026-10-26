@@ -1,8 +1,10 @@
-# 质谱仿真仓库
+# 质谱仪仿真组装厂
 
-本仓库维护质谱仪器及离子／电子光学部件的参数化建模、跨求解器验证与可重建交付。
-项目按物理问题组织；COMSOL、SIMION、MATLAB、Python和SolidWorks是实现工具。
-本页是人类研究人员和Agent共用的导航入口，当前事实进入各项目状态页查询。
+本仓库持续积累可复用的质谱部件与仿真能力，支持部件独立研究和仪器组合模拟；离子轨道、
+气压、分子流及所需耦合物理是逐步扩展的范围。项目按实际物理问题和复用边界组织，
+部件定义由项目维护，实例与跨项目组装由配方表达，COMSOL、SIMION等软件承担适用求解。
+这是[建设定位](docs/VISION.md)，不表示任意组合或物理域已经可用。当前能力与资格从项目状态页和
+[集成状态](integrations/docs/INTEGRATION.md)查询；本页是人类研究人员和Agent共用的导航入口。
 
 ## 开始任务
 
@@ -41,6 +43,7 @@
 | 要解决的问题 | 权威入口 |
 |---|---|
 | 文件放哪里、谁拥有结论、何时提炼公共知识 | [架构与知识权威](docs/REPOSITORY_ARCHITECTURE.md) |
+| 选部件、复用实例、增加能力或组装研究 | [项目与组装边界](docs/REPOSITORY_ARCHITECTURE.md#部件实例与组装)、[组装入口](integrations/README.md)；能力是否可执行以相应状态页为准 |
 | baseline/resolved、软件职责、正式几何验收 | [参数派生](docs/REPOSITORY_ARCHITECTURE.md#参数权威与单向派生)、[GUI/CAD](docs/REPOSITORY_ARCHITECTURE.md#gui-与-cad-门禁) |
 | run、artifact、缓存、归档、保留 | [生命周期](docs/LIFECYCLE.md) |
 | 准备环境、启动工具、执行验证、提交 | [操作指南](docs/OPERATIONS.md) |
@@ -53,6 +56,7 @@
 | 多极杆解析理论 | [理论入口](docs/multipoles/index.md) |
 | 端口、连接器与联合模拟；统一组装迁移 | [统一入口](integrations/README.md)、[连接架构](docs/COMPONENT_CONNECTION_ARCHITECTURE.md)、[迁移计划](docs/ROADMAP.md#统一组装迁移计划) |
 | 长期目标与跨项目阶段 | [愿景](docs/VISION.md)、[路线图](docs/ROADMAP.md) |
+| 查参考书、论文或供应商原始资料 | [学术参考资料](docs/references/README.md)、[官方手册](official_docs/README.md)；按问题定向读取 |
 | 已完成全仓审计 | [历史索引](docs/AUDITS.md) |
 
 ## 工具链与执行入口

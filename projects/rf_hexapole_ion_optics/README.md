@@ -3,11 +3,11 @@
 本项目是 `rf_multipole_ion_optics` 家族的六极杆设计线。当前物理状态、资格边界和下一步以
 [`docs/PROJECT.md`](docs/PROJECT.md)为准。
 
-## 固定阅读顺序
+## 按任务阅读
 
 1. 仓库根[`README.md`](../../README.md)。
 2. 本项目[`docs/PROJECT.md`](docs/PROJECT.md)。
-3. [`docs/multipoles/foundations.md`](../../docs/multipoles/foundations.md)和
+3. 涉及理论、场或RF解释时，再读[`docs/multipoles/foundations.md`](../../docs/multipoles/foundations.md)和
    [`docs/multipoles/higher_multipoles.md`](../../docs/multipoles/higher_multipoles.md)。
 
 ## 机器权威

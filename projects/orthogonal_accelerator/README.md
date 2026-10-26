@@ -33,8 +33,9 @@ ion-release receipt/CSV 及原生 SIMION 日志，不生成本地源，也不调
 共享运行、IOB基础机制、坐标与证据工具继续使用根`common/`。不保留另一份`common/accelerator/`领域实现。
 离子释放、粒子状态和 FLY2 序列化是共享层职责；本项目只声明源包络与组件验收，不得复制释放器。
 
-仪器项目通过明确接口复用本项目：自身保留系统布局、完整粒子链、联合聚焦与整机验收；
-integration保存连接及冻结依赖，不保存第二份加速器模型。旧OA整机适配器只做参数映射或兼容导入。
+仪器项目通过明确接口复用本项目，保留系统布局约束、联合聚焦与整机科学验收；
+[统一集成](../../integrations/README.md)拥有组件实例装配、跨组件执行及冻结依赖，不保存第二份加速器模型。
+旧OA整机适配器只做参数映射或兼容导入。
 新器件独立运行产物归`artifacts/projects/orthogonal_accelerator/`；既有OA/MR历史证据不迁移、不改身份。
 
 
@@ -46,5 +47,7 @@ integration保存连接及冻结依赖，不保存第二份加速器模型。旧
 - [20260903__legacy-accelerator-diagnostic](docs/history/20260903__legacy-accelerator-diagnostic.md)
 
 - [加速器迁移与原生检查](docs/history/20260911__component-migration-evidence.md)
+
+- [组装文档职责收口与原文](docs/history/20261026__assembly-documentation-consolidation.md)
 
 </details>

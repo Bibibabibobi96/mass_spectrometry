@@ -7,12 +7,8 @@
 
 1. 仓库根[`README.md`](../../README.md)。
 2. 本项目[`docs/PROJECT.md`](docs/PROJECT.md)。
-3. 共享实现与术语：[`common/multipole/README.md`](../../common/multipole/README.md)。
-4. 理论背景：
-   [共同理论](../../docs/multipoles/foundations.md)和
-   [高阶多极杆](../../docs/multipoles/higher_multipoles.md)。
-5. 跨器件单流程：
-   [统一装配与物理工作流](../../integrations/README.md)。
+3. 涉及理论、场或RF解释时，读[共同理论](../../docs/multipoles/foundations.md)和
+   [高阶多极杆](../../docs/multipoles/higher_multipoles.md)；共享实现与组装按下节入口选择。
 
 ## 机器权威
 

@@ -46,17 +46,9 @@ FEM 网格 CSV 也已无活动生成入口；原 PA 脚本仅导出场，不作�
 `same_solver_convergence` workflow 和具名数值合同，不恢复硬编码 0.2 mm 基线的 GEM 文本替换链。
 历史证据保留，源码可从 Git 恢复；本次未删除任何运行数据。
 
-成对粒子源只由 `validate_bundle` 完整验证：它检查输入和逐表身份、父样本绑定，并从同一冻结 latent
-重建两种表示逐字节比较，随后校验 canonical 源的物理合同。生成器在发布后调用这一入口，binding
-复用其已验证结果，不重复解析两种表示、重复哈希或另做前缀扫描；前缀和坐标映射仍有独立数值回归。
-这项精简不改变源字节、运行身份或科学资格；本次只做无求解器回归。
-
-粒子表回归分别检查探索计数的前缀一致性和非法计数拒绝；生成成功不授予正式样本资格，资格判定仍使用
-[公共粒子数合同](../../../common/contracts/particle_count_policy.json)。
-接口 workflow 的隔离 Python 包冻结 `common.ion_release` 包入口及其直接模块闭包；该静态闭包通过不构成新的求解器或物理资格。
-预求解失败回归使用隔离的合法容量台账，验证缺失源 bundle 仍在 SIMION 启动前失败并完整终态。
-COMSOL非法数值合同回归使用临时artifact根和独立账本，验证数值校验拒绝、失败三件套及环境恢复；
-生产容量策略不变。
+成对粒子源由公共`validate_bundle`核验完整身份、母样本、两种表示与canonical物理合同。
+生成成功不授予统计资格，粒子数与证据范围仍按[公共粒子数合同](../../../common/contracts/particle_count_policy.json)。
+输入和依赖冻结的纯回归不构成新的求解器验收。
 
 ## 当前机械与模式
 
@@ -100,17 +92,9 @@ workflow 投影至其 SI 积分状态。
 
 ## 当前能力
 
-接口就绪和质量过滤的SIMION入口使用轻准备许可，仅在refine与飞行阶段占重许可，后处理回到轻许可，
-成功或失败时均释放本层持有的许可。嵌套运行不重复占位，也不把父轻许可当作重计算授权。
-两条 SIMION workflow 共用 `runtime/simion_execution.ps1` 的首批观察、重规划、批执行和资源发布；
-workflow 仅提供各自的批输入构造与科学结果校验。首批不会因重规划再次执行，重新生成的批清单
-在执行前交还调用方，失败路径仍能收集本次真实批产物。
-内部并发仍由原公共planner与实时worker准入控制；本次只完成阶段接入和无求解器回归，
-未重新执行这两个workflow的科学验收。分类规则见[主机资源调度](../../../docs/OPERATIONS.md#主机资源调度)。
-
-两条SIMION workflow的共享配置预检已修正可选机械出口观察的字段误判：闭壳工况不要求观察字段，
-启用时必须完整绑定CSV、真实出口面、孔径与数值停止面，不生成假出口或默认尺寸。
-两个完整受影响模块共38项纯回归通过，保留原数值、身份与映射检查；未重新运行商业求解器。
+接口就绪和质量过滤共享运行机制，按[公共主机调度](../../../docs/OPERATIONS.md#主机资源调度)
+分离准备、refine／飞行和后处理；机制回归不更新两项科学资格。
+可选机械出口观察只在显式启用时绑定CSV、真实端面、孔径与数值停止面，不给闭壳工况生成假出口。
 
 - 无碰撞部件回归、接口就绪输运、RF+DC质量过滤和三模式轴向实验是四个独立workflow。
 - 三模式正式统计binding必须在运行前冻结bootstrap、接受尺度、effect resolution和预算；既有缺少
@@ -123,7 +107,7 @@ workflow 仅提供各自的批输入构造与科学结果校验。首批不会�
 ## oaTOF连接
 
 当前连接由
-[integration入口](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/README.md)
+[统一集成入口](../../../integrations/README.md)
 拥有。项目只发布provided port和canonical handoff；connection profile负责连接器、位姿、公共电位、
 时钟和下游场域。单流程或分阶段策略、当前census与oaTOF性能不得复制回本PROJECT。
 
