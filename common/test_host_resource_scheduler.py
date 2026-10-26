@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from common.host_resource_scheduler import StaleSnapshotError, _same_creation_time, load_policy, transact, validate_budget
 
@@ -326,19 +327,21 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.snapshot["processes"][0]["started"] = "0000000000000000003"
         self.assertEqual(self.acquire(2)["status"], "acquired")
 
+    @patch("time.time_ns", new=lambda: 1)
     def test_cim_native_precision_preserves_owner_registration_and_release(self) -> None:
         cim = "0639590650123456700"
         native = "0639590650123456703"
         self.snapshot["processes"][0]["started"] = cim
         request = dict(operation="request", token="precision", role="SIMION", stage="test",
                        owner=dict(pid=1, started=cim), budget=budget(cpu=4))
-        self.snapshot["observed_at_ticks"] = time.time_ns()
+        # Identity precision is independent of wall-clock sampling resolution.
+        self.snapshot["observed_at_ticks"] = 1
         transact(self.path, request, self.snapshot, self.policy)
         self.snapshot["processes"][0]["started"] = native
         self.snapshot["processes"].append(
             dict(pid=99, parent_pid=1, started="0639590650123456807", memory_bytes=GIB))
         request.update(operation="register", owner=dict(pid=1, started=native), process_id=99)
-        self.snapshot["observed_at_ticks"] = time.time_ns()
+        self.snapshot["observed_at_ticks"] += 1
         result = transact(self.path, request, self.snapshot, self.policy)
         self.assertEqual(result["live_process_ids"], [1, 99])
         self.assertEqual(
@@ -347,18 +350,19 @@ class HostResourceSchedulerTests(unittest.TestCase):
         )
         self.assertEqual(result["work_roots"], [dict(pid=99, started="0639590650123456807")])
         self.snapshot["processes"][-1]["started"] = "0639590650123456800"
-        self.snapshot["observed_at_ticks"] = time.time_ns()
+        self.snapshot["observed_at_ticks"] += 1
         result = transact(self.path, dict(operation="poll", token="precision",
                                         owner=dict(pid=1, started=cim)), self.snapshot, self.policy)
         self.assertEqual(result["live_work_process_ids"], [99])
         self.snapshot["processes"] = [p for p in self.snapshot["processes"] if p["pid"] != 99]
-        self.snapshot["observed_at_ticks"] = time.time_ns()
+        self.snapshot["observed_at_ticks"] += 1
         result = transact(self.path, dict(operation="release", token="precision",
                                         owner=dict(pid=1, started=native),
                                         completed_work_processes=[dict(pid=99, started="0639590650123456807")]),
                           self.snapshot, self.policy)
         self.assertEqual(result["status"], "released")
 
+    @patch("time.time_ns", new=lambda: 1)
     def test_creation_precision_does_not_match_different_process_birth(self) -> None:
         cim = "0639590650123456700"
         for other in ("0639590650123456710", "0639590650123456690", "wrong"):
@@ -368,14 +372,15 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.snapshot["processes"][0]["started"] = cim
         request = dict(operation="request", token="reused", role="GATE", stage="test",
                        owner=dict(pid=1, started=cim), budget=budget(cpu=4))
-        self.snapshot["observed_at_ticks"] = time.time_ns()
+        self.snapshot["observed_at_ticks"] = 1
         transact(self.path, request, self.snapshot, self.policy)
         self.snapshot["processes"][0]["started"] = "0639590650123456710"
         with self.assertRaisesRegex(ValueError, "token is absent"):
-            self.snapshot["observed_at_ticks"] = time.time_ns()
+            self.snapshot["observed_at_ticks"] += 1
             transact(self.path, dict(operation="inherit", token="reused", owner=dict(pid=1, started=cim)),
                      self.snapshot, self.policy)
 
+    @patch("time.time_ns", new=lambda: 1)
     def test_registered_child_cim_and_native_ticks_remain_one_identity(self) -> None:
         cim = "0639590650123456700"
         native = "0639590650123456703"
@@ -383,12 +388,12 @@ class HostResourceSchedulerTests(unittest.TestCase):
             dict(pid=99, parent_pid=1, started=cim, memory_bytes=GIB)
         )
         self.acquire(1, budget(cpu=4))
-        self.snapshot["observed_at_ticks"] = time.time_ns()
+        self.snapshot["observed_at_ticks"] = self.stored_state()["observed_at_ticks"] + 1
         owner = dict(pid=1, started="0000000000000000001")
         transact(self.path, dict(operation="register", token="1", owner=owner, process_id=99),
                  self.snapshot, self.policy)
         self.snapshot["processes"][-1]["started"] = native
-        self.snapshot["observed_at_ticks"] = time.time_ns()
+        self.snapshot["observed_at_ticks"] += 1
         result = transact(self.path, dict(operation="poll", token="1", owner=owner),
                           self.snapshot, self.policy)
         self.assertEqual(
