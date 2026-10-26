@@ -16,6 +16,7 @@ from common.multipole.test_compile_design_request import identity
 from integrations.runtime.single_flight_frontend import native_frontend_instances
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, multi_inputs, multipole_source as chained_source, quadrupole_source
 from common.contracts.verify_run_manifest import record_path
+from common.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
 
 
 def multipole_source(project):
@@ -92,7 +93,8 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             fine = request['numerics']['frontend_domains']['entrance_refinement']
             pitch = fine['cell_mm_xyz']['z']
             origin = fine['pa_bounds_mm']['z_min']
-            fine['pa_bounds_mm']['z_max'] = origin+(math.floor((lower-origin)/pitch)+2)*pitch
+            # Keep two guard cells outside the actual sampled ring slice.
+            fine['pa_bounds_mm']['z_max'] = origin+(math.floor((lower-origin)/pitch)+4)*pitch
             self.assertLess(fine['pa_bounds_mm']['z_max'], ring_z)
             write_json(path, request)
             prepare(path, run)
@@ -116,9 +118,28 @@ class SingleReflectionFieldsTests(unittest.TestCase):
         box = dict(x_min_mm=-2.,x_max_mm=2.,y_min_mm=-2.,y_max_mm=2.,z_min_mm=.2,z_max_mm=.3)
         kwargs = dict(rotation=[[1,0,0],[0,1,0],[0,0,1]], translation=[0.,0.,0.],
                       origin=dict(x=-3.,y=-3.,z=0.),pitch=dict(x=1.,y=1.,z=1.),dimensions=dict(nx=7,ny=7,nz=3))
-        self.assertIsNone(box_sample(box,None,**kwargs,local_z_bounds_mm=(1.,2.)))
+        bounds = dict(x_min=-3.,x_max=3.,y_min=-3.,y_max=3.,z_min=1.,z_max=2.)
+        self.assertIsNone(box_sample(box,None,**kwargs,local_bounds_mm=bounds))
+        bounds.update(z_min=0.,z_max=1.)
         with self.assertRaisesRegex(ValueError,'strictly inside'):
-            box_sample(box,None,**kwargs,local_z_bounds_mm=(0.,1.))
+            box_sample(box,None,**kwargs,local_bounds_mm=bounds)
+
+    def test_narrow_box_intersection_samples_present_metal_and_skips_absent_axes(self):
+        from integrations.runtime.frontend_field_plan import box_sample
+        box = dict(x_min_mm=-4.,x_max_mm=4.,y_min_mm=-4.,y_max_mm=4.,z_min_mm=-1.,z_max_mm=1.)
+        hole = dict(x_min_mm=-2.,x_max_mm=2.,y_min_mm=-2.,y_max_mm=2.,z_min_mm=-2.,z_max_mm=2.)
+        bounds = dict(x_min=-4.,x_max=-2.5,y_min=-1.,y_max=1.,z_min=-1.,z_max=1.)
+        kwargs = dict(rotation=[[1,0,0],[0,1,0],[0,0,1]],translation=[0.,0.,0.],
+            origin=dict(x=-4.,y=-4.,z=-2.),pitch=dict(x=.5,y=.5,z=.5),dimensions=dict(nx=17,ny=17,nz=9))
+        gu = box_sample(box,hole,**kwargs,local_bounds_mm=bounds)
+        self.assertLess(-4.+gu[0]*.5,-2.)
+        self.assertIsNone(box_sample(box,hole,**kwargs,local_bounds_mm=dict(bounds,x_min=5.,x_max=6.)))
+        self.assertIsNone(box_sample(box,hole,**kwargs,local_bounds_mm=dict(bounds,y_min=5.,y_max=6.)))
+        self.assertIsNone(box_sample(box,hole,**kwargs,local_bounds_mm=dict(bounds,x_min=-1.,x_max=1.)))
+        # There is real metal here, but neither neighboring grid node belongs
+        # to this numerical intersection. A guard node must not substitute.
+        with self.assertRaisesRegex(ValueError,'local numerical bounds'):
+            box_sample(box,None,**kwargs,local_bounds_mm=dict(bounds,x_min=.2,x_max=.3))
 
     def test_four_six_eight_provider_preparation_and_invalid_pieces(self):
         from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
@@ -165,6 +186,23 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             self.assertEqual([point['working_point_id'] for point in design['working_points'][1:-1]],
                              [f'rf_reference_{index:02d}' for index in range(1, count + 1)])
             carrier = design['working_points'][0]['electrode_voltages_v']
+            domain = design['domains'][0]
+            poses = {row['instance_id']: RigidTransform.from_contract(row['transform'])
+                     for row in geometry['composition_plan']['recipe']['instances']}
+            downstream = native_frontend_instances(geometry['composition_plan'])[1]
+            for name, source in zip(names, sources[:count], strict=True):
+                inverse = relative_transform(poses[name], poses[downstream]).inverse()
+                mapping = geometry['electrode_bindings'][name]
+                for native_id in (9, 10):
+                    sample = next(row for row in domain['physical_samples']
+                                  if row['label'] == f'static_e{mapping[native_id]}')
+                    xyz = tuple(domain['instance_origin_mm'][axis] + gu * domain['cell_mm_xyz'][axis]
+                                for axis, gu in zip('xyz', sample['gu'], strict=True))
+                    local = inverse.transform_position(FramedPosition(inverse.from_frame_id, xyz)).coordinates_mm
+                    enclosure = source['geometry_mm']['enclosure']
+                    # Neither audit anchor may land on a component mating cap.
+                    self.assertGreater(local[2], enclosure['entrance_outer_endcap_downstream_face_z_mm'])
+                    self.assertLess(local[2], enclosure['exit_outer_endcap_upstream_face_z_mm'])
             for ordinal, point in enumerate(design['working_points'][1:-1]):
                 active = {key for key, value in point['electrode_voltages_v'].items() if value}
                 provider_ids = {str(value) for value in geometry['electrode_bindings'][names[ordinal]].values()}
@@ -172,6 +210,37 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                 self.assertTrue(active)
                 self.assertTrue(all(carrier[key] == point['electrode_voltages_v'][key] == 0. or key in active
                                     for key in carrier if key not in provider_ids))
+
+    def test_narrow_fine_fields_sample_actual_entry_wall_and_all_multipole_groups(self):
+        from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
+        oatof = candidate_300mm_fixture()
+        sources = [chained_source(project) for project in
+                   ('rf_octupole_ion_optics','rf_hexapole_ion_optics','rf_quadrupole_ion_optics')]
+        for count in (2,3):
+            with self.subTest(count=count):
+                names = [f'mp_{i}' for i in range(count)]
+                providers = dict(zip(names,sources[:count],strict=True))
+                kw = multi_inputs(sources[:count],oatof,names=names)
+                kw['numerical_domains']['parent']['pa_bounds_mm']['x_min'] = -1000.
+                kw['numerical_domains']['parent']['cell_mm_xyz']['x'] = .5
+                fine = copy.deepcopy(kw['numerical_domains']['parent'])
+                fine.update(cell_mm_xyz=dict(x=.25,y=.5,z=.05),guard_cells=1)
+                repeller = oatof['accelerator_topology']['planes_global_z_mm']['repeller']
+                fine['pa_bounds_mm'].update(x_max=-115.,y_min=-40.,y_max=40.,z_max=repeller+40.)
+                kw['numerical_domains']['entrance_refinement'] = fine
+                _, geometry = compile_frontend_geometry(providers,oatof,**kw)
+                convergence = dict(carrier_off=.1,rf_reference=.1,pulse_delta=.1)
+                design = prepare_field_design(providers,oatof,geometry,variant_id='three_zone_square',
+                    pulse_voltage_policy_id=POLICY,boundary_policy='native_zero_neumann',
+                    frontend_domains={name:dict(refine_convergence_v=convergence) for name in kw['numerical_domains']},
+                    rf_reference_voltage_v=10000.)
+                parent, local = design['domains']
+                shield = next(s for s in local['physical_samples'] if s['label']=='accelerator_shield')
+                world_x = local['instance_origin_mm']['x']+shield['gu'][0]*local['cell_mm_xyz']['x']
+                self.assertLess(world_x,geometry['accelerator_projection']['axis_x_mm'])
+                mp_ids = {eid for name in names for eid in geometry['electrode_bindings'][name].values()}
+                self.assertTrue(mp_ids <= {s['electrode_id'] for s in local['physical_samples']})
+                self.assertGreater(len(parent['physical_samples']),len(local['physical_samples']))
 
     def test_three_quadrupoles_have_three_disjoint_rf_responses_and_real_dc(self):
         oatof = candidate_300mm_fixture()

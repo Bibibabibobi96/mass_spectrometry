@@ -167,9 +167,6 @@ class DirectFieldPlanTests(unittest.TestCase):
         arguments = multi_inputs(sources, oatof, names=['a', 'b'])
         arguments['numerical_domains']['entrance_refinement'] = copy.deepcopy(arguments['numerical_domains']['parent'])
         arguments['numerical_domains']['entrance_refinement']['guard_cells'] = 1
-        with self.assertRaisesRegex(ValueError, 'parent-only'):
-            compile_frontend_geometry(dict(zip(['a','b'], sources, strict=True)), oatof, **arguments)
-        del arguments['numerical_domains']['entrance_refinement']
         gems, geometry = compile_frontend_geometry(dict(zip(['a','b'], sources, strict=True)), oatof, **arguments)
         convergence = dict(carrier_off=.1, rf_reference=.1, pulse_delta=.1)
         design = prepare_field_design(dict(zip(['a','b'], sources, strict=True)), oatof, geometry,
@@ -188,7 +185,7 @@ class DirectFieldPlanTests(unittest.TestCase):
         member = dict(member_id=member_id, identity=identity, frozen_field_source=dict(
             identity=copy.deepcopy(identity), physical_point=identity['working_points'][0], source_schema_version=3))
         _check_source_physics(member)
-        # Pure boundary projection only; actual N2 fine scope remains rejected above.
+        # Each fine member consumes only its corresponding published parent field.
         boundary_identity = dict(identity, boundary_policy=_parent_boundary(
             design['domains'][0]['instance_origin_mm'], parents[member_id]))
         self.assertEqual(boundary_identity['boundary_policy']['parent_working_points'][0]['name'], 'frontend.rf_reference_02.pa')

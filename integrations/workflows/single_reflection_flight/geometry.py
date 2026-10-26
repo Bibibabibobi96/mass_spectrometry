@@ -53,10 +53,10 @@ def _require_domain_contains(box: dict, multipoles: list[tuple[dict, tuple]], ac
         envelopes.append(((x-half, y-half, float(accelerator["shield_back_z_mm"])),
                           (x+half, y+half, float(accelerator["grid2_z_mm"]))))
     else:
-        _, port_y, port_z = entrance_opening["center_mm"]
+        port_x, port_y, port_z = entrance_opening["center_mm"]
         dy, dz = entrance_opening["width_mm"]/2, entrance_opening["height_mm"]/2
-        envelopes.append(((x-half, min(y, port_y-dy), port_z-dz),
-                          (x+half, max(y, port_y+dy), port_z+dz)))
+        envelopes.append(((port_x, port_y-dy, port_z-dz),
+                          (port_x+float(accelerator["shield_wall_mm"]), port_y+dy, port_z+dz)))
     for lower, upper in envelopes:
         if any(lower[index] < box[f"{axis}_min"] - 1e-9 or upper[index] > box[f"{axis}_max"] + 1e-9
                for index, axis in enumerate("xyz")):
@@ -234,8 +234,6 @@ def compile_frontend_geometry(
         multipole_ids = tuple(ordered)
     if not multipole_ids and 'entrance_refinement' in domains:
         raise ValueError('OA-only native scope cannot use multipole entrance_refinement')
-    if len(multipole_ids) > 1 and 'entrance_refinement' in domains:
-        raise ValueError('multi-multipole native scope currently requires parent-only numerical coverage')
     poses = {item['instance_id']: RigidTransform.from_contract(item['transform']) for item in plan['recipe']['instances']}
     native_frame = plan['components'][downstream_id]['local_frame_id']
     poses = {key: relative_transform(pose, poses[downstream_id]) for key, pose in poses.items()}
@@ -249,7 +247,7 @@ def compile_frontend_geometry(
                             for instance_id in multipole_ids]
     _require_domain_contains(bounds, physical_multipoles, g)
     if 'entrance_refinement' in domains:
-        _require_domain_contains(domains['entrance_refinement']['bounds_mm'], physical_multipoles, g,
+        _require_domain_contains(domains['entrance_refinement']['active_bounds_mm'], physical_multipoles, g,
                                  entrance_opening=side_opening)
     body = render_frontend_body(
         [(multipoles_resolved[instance_id], poses[instance_id].translation_mm, multipole_electrodes[instance_id])

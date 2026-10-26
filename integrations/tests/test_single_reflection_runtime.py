@@ -731,6 +731,7 @@ class NativePriorityOccupancyProbeTests(unittest.TestCase):
                  cell_mm_xyz=dict(x=.5, y=.5, z=.5),
                  dimensions=dict(nx=21, ny=13, nz=11),
                  bounds_mm=dict(x_min=0., x_max=10., y_min=2., y_max=8., z_min=0., z_max=5.),
+                 active_bounds_mm=dict(x_min=.5, x_max=9.5, y_min=2.5, y_max=7.5, z_min=.5, z_max=4.5),
                  physical_samples=[dict(label="repeller_metal", kind="endpoint", electrode_id=12, gu=[6, 2, 4])])])
 
     def test_frozen_named_samples_preserve_identity_and_numerical_transition_basis(self):
@@ -776,6 +777,28 @@ class NativePriorityOccupancyProbeTests(unittest.TestCase):
                 self.assertEqual(probe['basis']['world_query_scope'], 'numerical_boundary_observation')
         self.assertEqual(len([row for row in probes.values() if row.get('expected_node_electrode')]), 7)
         self.assertEqual(self.design, before)
+
+    def test_parent_volume_uses_active_coverage_but_raw_instance_query_keeps_raw_bounds(self):
+        parent, fine = self.design['domains']
+        for y, masked in ((4., True), (2., False), (2.5, False), (8., False)):
+            with self.subTest(y=y):
+                parent['cell_mm_xyz']['y'] = .5
+                parent['dimensions']['ny'] = 21
+                parent['physical_samples'][0]['gu'][1] = y / .5
+                probes = {row['label']: row for row in runtime.native_priority_occupancy_probes(self.geometry, self.design)}
+                probe = probes['parent:repeller_metal']
+                self.assertEqual('expected_adjacent_metal_cell' not in probe, masked)
+                if y == 2.5:
+                    self.assertEqual(probe['expected_instance'], 5)
+        parent['physical_samples'][0]['gu'][1] = 8
+        for field, value in (('label', 'other'), ('kind', 'ideal_sheet'), ('electrode_id', 99)):
+            changed = copy.deepcopy(self.design)
+            changed['domains'][1]['physical_samples'][0][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'lacks its fine physical sample'):
+                runtime.native_priority_occupancy_probes(self.geometry, changed)
+        fine['physical_samples'] = []
+        with self.assertRaisesRegex(ValueError, 'lacks its fine physical sample'):
+            runtime.native_priority_occupancy_probes(self.geometry, self.design)
 
     def test_fractional_surface_requires_its_own_volume_contract(self):
         self.design['surface'] = 'fractional'
@@ -850,7 +873,7 @@ class FourSlotIobTests(unittest.TestCase):
                         dict(label="terminal_observation", point_mm=[2., 0., 0.])],
                     seed_iob=(self.root / f"{len(self.rows)}_instance_seed.iob").as_posix(), output_iob=self.output.as_posix())
         first_probe = spec['native_priority_occupancy_probes'][0]
-        if mode == 'verify_source_fine':
+        if mode in {'verify_source_fine', 'verify_crop_fine_layer'}:
             first_probe['basis']['domain_id'] = 'entrance_refinement'
         if mode in {'verify_source_sheet', 'verify_source_sheet_missing'}:
             first_probe['basis']['sample_kind'] = 'ideal_sheet'
@@ -860,6 +883,8 @@ class FourSlotIobTests(unittest.TestCase):
             first_probe.pop('expected_instance')
             first_probe.pop('expected_electrode')
             first_probe['basis']['world_query_scope'] = 'numerical_boundary_observation'
+        if mode == 'verify_crop_fine_layer':
+            first_probe['expected_instance'] = 5
         if mode.startswith('verify_crop_'):
             # Exact 3x3x3 flag patterns observed in native 132337, with the
             # original world queries retained; different metal IDs are allowed.
@@ -874,7 +899,7 @@ class FourSlotIobTests(unittest.TestCase):
                 for dy in (-1, 0, 1):
                     for dz in (-1, 0, 1):
                         metal = dx <= 0
-                        if mode == 'verify_crop_layer':
+                        if mode in {'verify_crop_layer', 'verify_crop_fine_layer'}:
                             metal = dx == 0
                         if mode == 'verify_crop_node_missing' and (dx,dy,dz) == (0,0,0):
                             metal = False
@@ -903,6 +928,7 @@ function simion.wb:find_at(x,y,z)
  local instance=probe_calls==3 and 5 or 3
  if (mode=='verify_priority' or mode=='verify_crop_priority') and probe_calls==1 then instance=2 end
  if mode:match('^verify_crop_') and probe_calls==1 then electrode=false end
+ if mode=='verify_crop_fine_layer' and probe_calls==1 then instance=5 end
  if mode=='verify_electrode' and probe_calls==2 then electrode=true end
  if mode=='verify_numeric_electrode' and probe_calls==1 then electrode=1 end
  if mode=='verify_observed_metal' and probe_calls==3 then electrode=true end
@@ -968,7 +994,7 @@ function simion.command(command)
    item.x,item.y,item.z=p.x_mm,p.y_mm,p.z_mm
    item.az,item.el,item.rt,item.scale=p.az_deg,p.el_deg,p.rt_deg,p.scale
    function pa:point(x,y,z)
-    assert(index==(mode=='verify_source_fine' and 5 or 3),'wrong physical-sample source instance')
+    assert(index==((mode=='verify_source_fine' or mode=='verify_crop_fine_layer') and 5 or 3),'wrong physical-sample source instance')
     local probe=spec.native_priority_occupancy_probes[1]
     if spec.fixture_nodes then
      local value=assert(spec.fixture_nodes['n_'..x..'_'..y..'_'..z],'fixture queried beyond observed neighborhood')
@@ -1122,6 +1148,17 @@ if mode:match('^verify') then assert(reference_closed,'temporary path reference 
                 else:
                     self.assertIn('native priority/occupancy point mismatch',result.stderr)
                 self.assertFalse(self.output.exists())
+
+    def test_fine_nonideal_metal_cannot_use_an_isolated_node_sheet_as_volume(self):
+        fine = copy.deepcopy(self.rows[2])
+        fine.update(role='entrance_refinement', instance_index=5, priority_number=5,
+                    path=(self.root / 'fine.carrier_off.pa').as_posix())
+        self.rows.append(fine)
+        result = self.invoke('verify_crop_fine_layer')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('source_instance=5', result.stdout)
+        self.assertIn('adjacent_metal_cells=0', result.stdout)
+        self.assertIn('native priority/occupancy point mismatch', result.stderr)
 
     def test_wrong_grid_or_seed_slot_count_fails_before_iob_save(self):
         for mode in ("wrong_grid", "wrong_slots"):

@@ -34,21 +34,32 @@ def cylinder_sample(rod: dict, rotation: list, translation: list, origin: dict,
 
 def box_sample(box: dict, hole: dict | None, rotation: list, translation: list,
                origin: dict, pitch: dict, dimensions: dict, *,
-               local_z_bounds_mm: tuple[float, float] | None = None) -> list[int] | None:
-    """Sample original metal, optionally intersected with an explicit local Z interval.
+               local_bounds_mm: dict | None = None) -> list[int] | None:
+    """Sample original metal intersected with optional bounds in its local frame.
 
-    The entrance-domain caller guarantees the complete X extent and center Y.
-    Only a geometrically disjoint Z interval returns None; an intersecting body
-    without a legal grid node still fails the original metal/sheet checks.
+    Geometrically absent metal returns None. Intersecting metal without a legal
+    grid node still fails the original metal/sheet checks; no body is moved.
     """
-    point = [(box[f'{axis}_min_mm']+box[f'{axis}_max_mm'])/2 for axis in 'xyz']
-    if local_z_bounds_mm is not None:
-        lo, hi = max(box['z_min_mm'], local_z_bounds_mm[0]), min(box['z_max_mm'], local_z_bounds_mm[1])
-        if lo > hi:
+    bounds = {axis: (box[f'{axis}_min_mm'], box[f'{axis}_max_mm']) for axis in 'xyz'}
+    if local_bounds_mm is not None:
+        bounds = {axis: (max(lo, local_bounds_mm[axis+'_min']), min(hi, local_bounds_mm[axis+'_max']))
+                  for axis, (lo, hi) in bounds.items()}
+        if any(lo > hi or (lo == hi and box[axis+'_min_mm'] != box[axis+'_max_mm'])
+               for axis, (lo, hi) in bounds.items()):
             return None
-        point[2] = (lo+hi)/2
+    point = [(lo+hi)/2 for lo, hi in bounds.values()]
     if hole:
-        point[0] = (hole['x_max_mm']+box['x_max_mm'])/2
+        # Prefer the established positive-X face, then the other actual metal
+        # slabs. A narrow numerical patch may contain only the opposite face.
+        for axis, side in ((a, s) for a in 'xyz' for s in ('max', 'min')):
+            lo, hi = bounds[axis]
+            if side == 'max': lo = max(lo, hole[axis+'_max_mm'])
+            else: hi = min(hi, hole[axis+'_min_mm'])
+            if lo < hi:
+                point['xyz'.index(axis)] = (lo+hi)/2
+                break
+        else:
+            return None
     gu, body = sample_node(point, rotation, translation, origin, pitch, dimensions)
     for k, axis in enumerate('xyz'):
         lo, hi = box[f'{axis}_min_mm'], box[f'{axis}_max_mm']
@@ -59,6 +70,11 @@ def box_sample(box: dict, hole: dict | None, rotation: list, translation: list,
             raise ValueError("endpoint/ring anchor not strictly inside actual metal extent")
     if hole and all(hole[f'{axis}_min_mm'] <= body[k] <= hole[f'{axis}_max_mm'] for k,axis in enumerate('xyz')):
         raise ValueError("metal sample landed in aperture")
+    if local_bounds_mm is not None:
+        for index, (lo, hi) in enumerate(bounds.values()):
+            tolerance = 32*math.ulp(max(1.,abs(lo),abs(hi)))
+            if body[index] < lo-tolerance or body[index] > hi+tolerance:
+                raise ValueError("metal sample has no represented node in local numerical bounds")
     return gu
 
 

@@ -126,11 +126,11 @@ def _physical_samples(multipoles: dict[str, dict], geometry: dict, domain: dict,
     g = geometry['accelerator_projection']
     origin, pitch, dimensions = domain['instance_origin_mm'], domain['cell_mm_xyz'], domain['dimensions']
     physical = []
-    z_bounds = (domain['bounds_mm']['z_min'], domain['bounds_mm']['z_max']) if entrance else None
+    sample_bounds = domain['active_bounds_mm'] if entrance else None
 
     def append_box(label, kind, electrode, box, hole=None):
         gu = box_sample(box, hole, IDENTITY, [0.,0.,0.], origin, pitch, dimensions,
-                        local_z_bounds_mm=z_bounds)
+                        local_bounds_mm=sample_bounds)
         if gu is not None:
             physical.append(dict(label=label, kind=kind, electrode_id=electrode, gu=gu))
 
@@ -159,15 +159,18 @@ def _physical_samples(multipoles: dict[str, dict], geometry: dict, domain: dict,
                 sleeve = upstream['axial_dc']['entrance_reference_sleeve']
                 radial_low, radial_high = sleeve['inner_radius_mm'], sleeve['outer_radius_mm']
                 zlo, zhi = sleeve['upstream_face_z_mm'], sleeve['downstream_face_z_mm']
-            elif 'exit_outer_endcap' in roles:
-                radial_low, radial_high = upstream['interfaces_mm']['exit']['aperture_radius_mm'], outer
-                zlo, zhi = enclosure['exit_outer_endcap_upstream_face_z_mm'], enclosure['exit_outer_endcap_downstream_face_z_mm']
-            elif 'entrance_outer_endcap' in roles:
-                radial_low, radial_high = upstream['interfaces_mm']['entrance']['aperture_radius_mm'], outer
-                zlo, zhi = enclosure['entrance_outer_endcap_upstream_face_z_mm'], enclosure['entrance_outer_endcap_downstream_face_z_mm']
-            else:
+            elif 'shield' in roles:
                 radial_low, radial_high = inner, outer
                 zlo, zhi = enclosure['entrance_outer_endcap_downstream_face_z_mm'], enclosure['exit_outer_endcap_upstream_face_z_mm']
+            elif roles & {'exit_aperture_plate', 'entrance_aperture_plate'}:
+                # Mating endcap faces can belong to the adjacent component.
+                # Audit this electrode on its own internal aperture plate.
+                side = 'exit' if 'exit_aperture_plate' in roles else 'entrance'
+                interface = upstream['interfaces_mm'][side]
+                radial_low, radial_high = interface['aperture_radius_mm'], outer
+                zlo, zhi = interface['aperture_plate_upstream_face_z_mm'], interface['aperture_plate_downstream_face_z_mm']
+            else:
+                raise ValueError(f'{instance_id}: no supported static metal sample for roles {sorted(roles)}')
             gu, _ = sample_node([(radial_low + radial_high) / 2, 0, (zlo + zhi) / 2], rotation, translation, origin, pitch, dimensions)
             physical.append(dict(label=f'static_e{mapping[row["native_electrode_id"]]}', kind='static',
                                  electrode_id=mapping[row['native_electrode_id']], gu=gu))
@@ -183,11 +186,16 @@ def _physical_samples(multipoles: dict[str, dict], geometry: dict, domain: dict,
         box = _box([x,y,z],[width,width,g['ring_thickness_mm']])
         hole = _box([x,y,z],[g['bore_width_mm'],g['bore_width_mm'],g['ring_thickness_mm']+geometry['numerical_domains']['parent']['cell_mm_xyz']['z']])
         append_box(f'accelerator_ring_{index}', 'ring', eid, box, hole)
-    # Use the unperforated positive-X side wall, not the aperture plane or PA boundary.
+    # The parent samples its positive-X wall. A local entrance patch samples
+    # the actual negative-X wall minus the provider's side opening.
     z = (g['shield_back_z_mm']+g['grid2_z_mm'])/2
-    box = _box([x+(g['shield_outer_width_mm']-g['shield_wall_mm'])/2,y,z],
+    side = -1 if entrance else 1
+    box = _box([x+side*(g['shield_outer_width_mm']-g['shield_wall_mm'])/2,y,z],
                [g['shield_wall_mm'],g['shield_inner_width_mm'],g['shield_span_z_mm']])
-    append_box('accelerator_shield', 'ground', ids['grounded_shield_id'], box)
+    hole = (_box([g['negative_x_face_mm']+g['shield_wall_mm']/2,g['port_center_y_mm'],g['port_center_z_mm']],
+                 [g['shield_wall_mm']+geometry['numerical_domains']['parent']['cell_mm_xyz']['x'],
+                  g['numerical_port_width_mm'],g['numerical_port_height_mm']]) if entrance else None)
+    append_box('accelerator_shield', 'ground', ids['grounded_shield_id'], box, hole)
     physical_ids = {value for key,value in ids.items() if key != 'accelerator_ring_ids'} | set(ids['accelerator_ring_ids'])
     multipole_solver_ids = {solver_id for binding in multipole_ids.values() for solver_id in binding.values()}
     physical_ids.update(multipole_solver_ids)

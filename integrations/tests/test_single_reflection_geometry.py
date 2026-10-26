@@ -470,3 +470,55 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         self.assertEqual([source['drive']['phase_rad'] for source in sources], [.1, .2, .3])
         self.assertEqual(len(gems['parent'].split('pa_define(')) - 1, 1)
         self.assertEqual(len(geometry['composition_plan']['connection_checks']), 3)
+
+    def test_two_and_three_multipoles_share_one_fine_domain_without_changing_parent(self):
+        sources = [multipole_source(project) for project in
+                   ('rf_octupole_ion_optics', 'rf_hexapole_ion_optics', 'rf_quadrupole_ion_optics')]
+        for count in (2, 3):
+            with self.subTest(count=count):
+                names = [f'mp_{index}' for index in range(count)]
+                providers = dict(zip(names, sources[:count], strict=True))
+                kw = multi_inputs(sources[:count], self.oatof, names=names)
+                kw['numerical_domains']['parent']['pa_bounds_mm']['x_min'] = -1000.
+                kw['numerical_domains']['parent']['cell_mm_xyz']['x'] = .5
+                baseline, geometry = compile_frontend_geometry(providers, self.oatof, **kw)
+                fine = copy.deepcopy(kw['numerical_domains']['parent'])
+                fine.update(cell_mm_xyz=dict(x=.25, y=.5, z=.05), guard_cells=1)
+                repeller = self.oatof['accelerator_topology']['planes_global_z_mm']['repeller']
+                fine['pa_bounds_mm'].update(x_max=-115., y_min=-40., y_max=40., z_max=repeller+40.)
+                kw['numerical_domains']['entrance_refinement'] = fine
+                gems, actual = compile_frontend_geometry(providers, self.oatof, **kw)
+                self.assertEqual(gems['parent'], baseline['parent'])
+                for key in ('composition_plan', 'electrode_bindings', 'accelerator_projection'):
+                    self.assertEqual(actual[key], geometry[key])
+                self.assertEqual(actual['numerical_domains']['parent'], geometry['numerical_domains']['parent'])
+                self.assertEqual(gems['parent'].splitlines()[3:], gems['entrance_refinement'].splitlines()[3:])
+                self.assertEqual(actual['numerical_domains']['entrance_refinement']['cell_mm_xyz'],
+                                 dict(x=.25, y=.5, z=.05))
+                fine['pa_bounds_mm']['x_min'] = -150.
+                with self.assertRaisesRegex(ValueError, 'clip a provider physical envelope'):
+                    compile_frontend_geometry(providers, self.oatof, **kw)
+
+    def test_fine_active_window_contains_true_wall_slab_and_guard_not_whole_oa(self):
+        from integrations.workflows.single_reflection_flight.geometry import _require_domain_contains
+        accelerator = dict(shield_outer_width_mm=20., axis_x_mm=0., axis_y_mm=0.,
+                           shield_back_z_mm=-10., grid2_z_mm=20., shield_wall_mm=2.)
+        opening = dict(center_mm=[-10., 3., 4.], width_mm=4., height_mm=6.)
+        box = dict(x_min=-10., x_max=-8., y_min=1., y_max=5., z_min=1., z_max=7.)
+        _require_domain_contains(box, [], accelerator, entrance_opening=opening)
+        with self.assertRaisesRegex(ValueError, 'clip a provider physical envelope'):
+            _require_domain_contains(box, [], accelerator)
+        for key, shift in (('x_min', .1), ('x_max', -.1), ('y_min', .1),
+                           ('y_max', -.1), ('z_min', .1), ('z_max', -.1)):
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'clip a provider physical envelope'):
+                _require_domain_contains(dict(box, **{key: box[key]+shift}), [], accelerator,
+                                         entrance_opening=opening)
+        kw = inputs(self.source, self.oatof)
+        fine = copy.deepcopy(kw['numerical_domains']['parent'])
+        fine['guard_cells'] = 1
+        # Raw coverage is valid but an oversized guard excludes physical metal.
+        fine['cell_mm_xyz'] = dict(x=30., y=20., z=10.)
+        fine['guard_cells'] = 2
+        kw['numerical_domains']['entrance_refinement'] = fine
+        with self.assertRaisesRegex(ValueError, 'clip a provider physical envelope'):
+            compile_frontend_geometry({'multipole': self.source}, self.oatof, **kw)

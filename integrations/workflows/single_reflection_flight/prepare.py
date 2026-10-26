@@ -282,7 +282,8 @@ def prepare(request_path: Path, run: Path) -> dict:
                                              stopped_receipt=stopped)
         if parent.get("mode") != "single_reflection_fly":
             raise ValueError("continuation parent must be a single-reflection Fly run")
-        if not {"frontend_fields", "downstream_fields"} <= request["providers"].keys():
+        if ("frontend_field_transactions" not in continuation
+                and not {"frontend_fields", "downstream_fields"} <= request["providers"].keys()):
             raise ValueError("continuation requires explicit published frontend_fields and downstream_fields")
         shutil.copyfile(parent_manifest, paths["continuation_parent_manifest"])
         verify_record("continuation parent manifest", {**parent_record, "path": str(paths["continuation_parent_manifest"])})
@@ -454,7 +455,8 @@ def prepare(request_path: Path, run: Path) -> dict:
     if continuation is not None and "frontend_field_transactions" in continuation:
         domains = {domain["domain_id"] for domain in field_design["domains"]}
         members = {point.get("working_point_id", point["kind"]) for point in field_design["working_points"]}
-        reused = set(reuse_members if reuse_members is not None else members)
+        reused = (set(reuse_members if reuse_members is not None else members)
+                  if "frontend_fields" in request["providers"] else set())
         seen = set()
         for entry in continuation["frontend_field_transactions"]:
             route = (entry["domain_id"], entry["member_id"])

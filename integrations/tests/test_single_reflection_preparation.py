@@ -124,7 +124,7 @@ def fixture(root, *, source=None, source_rows=None, source_metadata=None, clock_
         repeller = oatof['accelerator_topology']['planes_global_z_mm']['repeller']
         domains['entrance_refinement'] = dict(cell_mm_xyz=dict(x=.15,y=.125,z=.05),
             pa_bounds_mm=dict(domains['parent']['pa_bounds_mm'], y_min=-21.5,y_max=21.5,
-                              z_min=repeller-19.,z_max=repeller+23.),
+                              z_min=repeller-20.,z_max=repeller+24.),
             refine_convergence_v=dict(convergence),guard_cells=2)
     request = dict(
         schema_version=9,
@@ -329,6 +329,12 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                 request = json.loads((frozen/'request.json').read_text())
                 request['schema_version'] = 9  # Author a current request; frozen historical inputs stay unchanged.
                 request['providers'] = dict(instances=request['providers']['instances'])
+                # Current active coverage needs guard clearance. This is a new
+                # numerical grid, while physical bodies, source and clock stay fixed.
+                for domain in request['numerics']['frontend_domains'].values():
+                    for axis in 'xyz':
+                        domain['pa_bounds_mm'][axis+'_min'] -= 1.
+                        domain['pa_bounds_mm'][axis+'_max'] += 1.
                 for key, instance in request['providers']['instances'].items():
                     instance['resolved_design'] = file_record(frozen/'components'/key/'resolved_design.json')
                 for key, name in (('particle_source','particle_source.csv'), ('metadata','particle_source_metadata.json'),
@@ -359,10 +365,12 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                     current = (root/'inputs'/name).read_bytes()
                     if name.endswith('.gem'):
                         self.assertNotIn(b' within {', current)
-                        # The historical raster instruction changes; every physical
-                        # primitive, pose, hole and numerical grid remains identical.
+                        # Compare actual body primitives; the PA grid and origin
+                        # wrapper changed to leave the current active guard clear.
                         current = current.replace(b' within_inside_or_on {', b' within {')
-                    self.assertEqual(current, (frozen/name).read_bytes())
+                        self.assertEqual(current.splitlines()[3:], (frozen/name).read_bytes().splitlines()[3:])
+                    else:
+                        self.assertEqual(current, (frozen/name).read_bytes())
         self.assertEqual(results[0], results[1])
         self.assertEqual(results[0], results[2])
 
@@ -450,6 +458,50 @@ class SingleReflectionPreparationTests(unittest.TestCase):
                     self.assertEqual(Path(record["path"]).read_bytes(), original.read_bytes())
                     self.assertTrue(Path(record["path"]).is_relative_to(run / "inputs"))
                     self.assertEqual(record["source_path"], str(original.resolve()))
+
+    def test_first_field_continuation_needs_no_unpublished_frontend_receipt(self):
+        for invalid in (None, "cold_downstream", "route", "reuse"):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path, baseline, request = fixture(root)
+                downstream_field_source_fixture(root, path, request)
+                self.assertNotIn("frontend_fields", request["providers"])
+                prepare(path, baseline)
+                parent = root / "parent"
+                parent.mkdir()
+                config = dict(schema_version=2, project="instrument_assembly", run_id="parent", mode="single_reflection_fly")
+                write_json(parent / "run_config.json", config)
+                write_json(parent / "run_manifest.json", dict(schema_version=2, role="simulation_run_manifest",
+                    project=config["project"], run_id=config["run_id"], mode=config["mode"], status="interrupted",
+                    run_config=file_record(parent / "run_config.json"), inputs={}, outputs=[]))
+                # Preparation freezes these small records; the common cache
+                # transaction owner alone validates the sealed producer handoff.
+                transaction, stopped = root / "transaction.json", root / "stopped.json"
+                write_json(transaction, dict(fixture="unpublished first carrier transaction"))
+                write_json(stopped, dict(schema_version=1, role="run_capacity_lifecycle_receipt",
+                    action="seal_stopped_payload", status="ready", run_status="interrupted",
+                    continuation="new_run_required", run_directory=str(parent.resolve()),
+                    run_config=file_record(parent / "run_config.json")))
+                entry = dict(domain_id="parent", member_id="carrier_off", transaction_record=file_record(transaction))
+                request["continuation"] = dict(predecessor_run_manifest=file_record(parent / "run_manifest.json"),
+                    stopped_receipt=file_record(stopped), frontend_field_transactions=[entry])
+                if invalid == "cold_downstream": del request["providers"]["downstream_fields"]
+                elif invalid == "route": entry["member_id"] = "missing_member"
+                elif invalid == "reuse": request["providers"]["frontend_field_reuse_members"] = ["carrier_off"]
+                write_json(path, request)
+                run = root / "continuing"
+                (run / "inputs").mkdir(parents=True)
+                if invalid in ("route", "reuse"):
+                    with self.assertRaises(ValueError): prepare(path, run)
+                    self.assertFalse((run / "inputs/frontend_field_design.json").exists())
+                    continue
+                result = prepare(path, run)
+                self.assertNotIn("frontend_fields", result["input_records"])
+                for name in ("frontend.gem", "frontend_field_design.json", "projected_source.csv",
+                             "clock_authority.json", "instrument_epoch.json"):
+                    self.assertEqual((baseline / "inputs" / name).read_bytes(), (run / "inputs" / name).read_bytes())
+                self.assertEqual(Path(result["input_records"]["continuation_field_transaction_001"]["path"]).read_bytes(),
+                                 transaction.read_bytes())
 
     def test_continuation_freezes_a_managed_fly_parent_and_requires_published_fields(self):
         for change in (None, "success", "mode", "config", "fields"):

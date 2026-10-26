@@ -81,7 +81,10 @@ local raw=assert(simion.pas:open(raw_path),'cannot open raw geometry')
 check_grid(raw)
 for _,sample in ipairs(samples) do
   local value,metal=raw:point(sample.x,sample.y,sample.z)
-  assert(finite(value) and metal and value==sample.id,'raw physical ID differs: '..sample.label)
+  assert(finite(value) and metal and value==sample.id,
+    'raw physical ID differs: '..sample.label..' expected='..tostring(sample.id)..
+    ' actual='..tostring(value)..' metal='..tostring(metal)..
+    ' gu='..sample.x..','..sample.y..','..sample.z)
 end
 raw:close()
 local count=0;for _ in pairs(working) do count=count+1 end

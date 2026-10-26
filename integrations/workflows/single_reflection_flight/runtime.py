@@ -251,8 +251,9 @@ def native_priority_occupancy_probes(geometry: dict, design: dict, *,
     """Freeze declared native point checks; terminal neighborhoods are observations.
 
     Every field sample retains its source integer-node electrode check. Node
-    positions are observations in continuous collision space; physical metal
-    must support an adjacent full cell, while ideal sheets need no volume.
+    positions are observations in continuous collision space. Metal must support
+    an adjacent full cell in its unmasked domain; fine samples verify metal that
+    masks a parent sample. Ideal sheets need no volume.
     Exact numerical faces retain world-query observations without asserting boundary instance choice;
     these checks do not qualify boundary-field continuity or dynamic fields.
     """
@@ -260,6 +261,8 @@ def native_priority_occupancy_probes(geometry: dict, design: dict, *,
         raise ValueError("adjacent electrode-node cell checks require surface=none")
     domains = {row["domain_id"]: row for row in design["domains"]}
     parent, fine = domains["parent"], domains.get("entrance_refinement")
+    fine_samples = {(row['label'], row['kind'], row['electrode_id'])
+                    for row in fine['physical_samples']} if fine else set()
 
     def selected(point):
         return 5 if fine and all(fine["bounds_mm"][axis + "_min"] < value <
@@ -284,7 +287,13 @@ def native_priority_occupancy_probes(geometry: dict, design: dict, *,
                            electrode_id=sample["electrode_id"], gu=sample["gu"],
                            world_query_scope="numerical_boundary_observation" if on_boundary else "source_node_location_observation"))
             if sample["kind"] != "ideal_sheet":
-                probe["expected_adjacent_metal_cell"] = True
+                if domain['domain_id'] == 'parent' and fine and all(
+                        fine['active_bounds_mm'][axis+'_min'] < value < fine['active_bounds_mm'][axis+'_max']
+                        for axis, value in zip('xyz', point, strict=True)):
+                    if (sample['label'], sample['kind'], sample['electrode_id']) not in fine_samples:
+                        raise ValueError('masked parent metal lacks its fine physical sample: ' + sample['label'])
+                else:
+                    probe["expected_adjacent_metal_cell"] = True
             if not on_boundary:
                 probe["expected_instance"] = selected(point)
             probes.append(probe)
