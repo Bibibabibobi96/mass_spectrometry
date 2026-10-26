@@ -13,6 +13,7 @@ from integrations.runtime.refresh_repository_bindings import (
 
 class RepositoryBindingsTests(unittest.TestCase):
     def fixture(self, root):
+        root = root.resolve()
         def save(name, value):
             path = root / name
             path.parent.mkdir(parents=True, exist_ok=True)
