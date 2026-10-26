@@ -107,7 +107,7 @@ if($PrepareOnly){
   return
 }
 . (Join-Path $RepoRoot 'integrations/runtime/engineering_budget.ps1')
-. (Join-Path $RepoRoot 'common/multipole/resource_budget_support.ps1')
+. (Join-Path $RepoRoot 'common/resource_budget_support.ps1')
 . (Join-Path $frozen.execution_root 'integrations/runtime/frontend_flight_support.ps1')
 . (Join-Path $RepoRoot 'common/simion/short_pa_path_support.ps1')
 . (Join-Path $frozen.execution_root 'integrations/workflows/single_reflection_flight/field_stage.ps1')

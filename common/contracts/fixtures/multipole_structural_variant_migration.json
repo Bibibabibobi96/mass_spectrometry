@@ -1,0 +1,134 @@
+{
+  "baseline_commit": "3647bcae",
+  "role": "structural_variant_migration_physical_projection",
+  "excluded_provenance_fields": [
+    "compiler",
+    "governance",
+    "request",
+    "sources",
+    "resolved_sha256",
+    "identity.project_id",
+    "segmentation.axial_acceleration.project_id"
+  ],
+  "path_normalization": "particle_source.energy_model.authority basename only; no physical scalar excluded",
+  "profiles": [
+    {
+      "recorded_project_id": "rf_quadrupole_ion_optics",
+      "recorded_design_profile_id": "official_transport",
+      "design_profile_id": "quadrupole_official_transport",
+      "physical_projection_sha256": "964B3AEB3B01492BBA16936DE7D783FE7909246CB52F9F5C5BAF8690ED5E2644"
+    },
+    {
+      "recorded_project_id": "rf_quadrupole_ion_optics",
+      "recorded_design_profile_id": "interface_readiness",
+      "design_profile_id": "quadrupole_interface_readiness",
+      "physical_projection_sha256": "964B3AEB3B01492BBA16936DE7D783FE7909246CB52F9F5C5BAF8690ED5E2644"
+    },
+    {
+      "recorded_project_id": "rf_quadrupole_ion_optics",
+      "recorded_design_profile_id": "mass_filter_reference",
+      "design_profile_id": "quadrupole_mass_filter_reference",
+      "physical_projection_sha256": "E1683F20F8FBB2F4A96B921194C39799190DD68AF520706105EC20BBDFE6CDCB"
+    },
+    {
+      "recorded_project_id": "rf_quadrupole_ion_optics",
+      "recorded_design_profile_id": "explicit_axial_reference",
+      "design_profile_id": "quadrupole_explicit_axial_reference",
+      "physical_projection_sha256": "1518B61D4092B664768AF3E0D99ED37082544B2A4109D6BF7C17A3BE04EAFFBD"
+    },
+    {
+      "recorded_project_id": "rf_quadrupole_ion_optics",
+      "recorded_design_profile_id": "exit_aperture_plate_acceleration_reference",
+      "design_profile_id": "quadrupole_exit_aperture_plate_acceleration_reference",
+      "expected_compile_error": "axial-drive potential profile does not accelerate the selected charge sign"
+    },
+    {
+      "recorded_project_id": "rf_quadrupole_ion_optics",
+      "recorded_design_profile_id": "no_acceleration_full_length",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "physical_projection_sha256": "FB0CD0F54FF3DC385577B05DDCE9F6F4FC24AB7C0525B07EBD5A4A2A7C5C3AB7"
+    },
+    {
+      "recorded_project_id": "rf_quadrupole_ion_optics",
+      "recorded_design_profile_id": "segmented_rod_axial_acceleration",
+      "design_profile_id": "quadrupole_segmented_rod_axial_acceleration",
+      "physical_projection_sha256": "E5E1587C540A37F24207540F30B87A011CEA9A4F6634C7AC4CE39910504ABDA2"
+    },
+    {
+      "recorded_project_id": "rf_quadrupole_ion_optics",
+      "recorded_design_profile_id": "exit_aperture_plate_acceleration",
+      "design_profile_id": "quadrupole_exit_aperture_plate_acceleration",
+      "physical_projection_sha256": "C4E50509418D190023345480C8BCE2B1FBCF04EF27C00245EF11EA456E4895D5"
+    },
+    {
+      "recorded_project_id": "rf_hexapole_ion_optics",
+      "recorded_design_profile_id": "no_acceleration_full_length",
+      "design_profile_id": "hexapole_no_acceleration_full_length",
+      "physical_projection_sha256": "4D3F64411EBDEA3901AD47559BBA9B3AAF9A9098081966F9DD176159CA593B6B"
+    },
+    {
+      "recorded_project_id": "rf_hexapole_ion_optics",
+      "recorded_design_profile_id": "segmented_rod_axial_acceleration",
+      "design_profile_id": "hexapole_segmented_rod_axial_acceleration",
+      "physical_projection_sha256": "4201E33533174E1D7062AAE82764BEF314B083B7D114433E78CAF2C014EA9E9D"
+    },
+    {
+      "recorded_project_id": "rf_hexapole_ion_optics",
+      "recorded_design_profile_id": "exit_aperture_plate_acceleration",
+      "design_profile_id": "hexapole_exit_aperture_plate_acceleration",
+      "physical_projection_sha256": "99E2583F7ED5DDE14CED21E59A1AB549AE7FC6F92E8534013BF8FA1908F8ABF6"
+    },
+    {
+      "recorded_project_id": "rf_octupole_ion_optics",
+      "recorded_design_profile_id": "no_acceleration_full_length",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "physical_projection_sha256": "3943FE13790F1AE8F214002CE451411CF92A639556F69AA59F2839097F091C2B"
+    },
+    {
+      "recorded_project_id": "rf_octupole_ion_optics",
+      "recorded_design_profile_id": "segmented_rod_axial_acceleration",
+      "design_profile_id": "octupole_segmented_rod_axial_acceleration",
+      "physical_projection_sha256": "87B0BF9D9941A1664AB5CC62135BA8072C9EBE32B436E8B708377995B18106D7"
+    },
+    {
+      "recorded_project_id": "rf_octupole_ion_optics",
+      "recorded_design_profile_id": "exit_aperture_plate_acceleration",
+      "design_profile_id": "octupole_exit_aperture_plate_acceleration",
+      "physical_projection_sha256": "7083FB58A67A7D4D58679F6452562CFB1F8FD2AFF6E3EFC54B867CC9C59A0B52"
+    },
+    {
+      "recorded_project_id": "rf_octupole_ion_optics",
+      "recorded_design_profile_id": "through_exit_no_acceleration",
+      "design_profile_id": "octupole_through_exit_no_acceleration",
+      "physical_projection_sha256": "48F989B2D09E625EFEE1334488D00E9DB8D7EC0163AED11BB3FACEE1EE57F8DB"
+    },
+    {
+      "recorded_project_id": "rf_octupole_ion_optics",
+      "recorded_design_profile_id": "through_entrance_exit_no_acceleration",
+      "design_profile_id": "octupole_through_entrance_exit_no_acceleration",
+      "physical_projection_sha256": "770930E7510BA7C56267152B28C1393CF9807B45D460C2D15D0B62314D1A0460"
+    }
+  ],
+  "shared_particle_sources": [
+    {
+      "profile_id": "family_mother_sample_v1_n100",
+      "original_path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+      "bytes_sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+    },
+    {
+      "profile_id": "family_mother_sample_v1_n1000",
+      "original_path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
+      "bytes_sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF"
+    },
+    {
+      "profile_id": "paper1_prospective_mother_sample_v1_n1000",
+      "original_path": "common/multipole/sources/rf_multipole_paper1_prospective_mother_sample_v1_1000.csv",
+      "bytes_sha256": "03DCEB7CCD763075696145CD370E9D14CA2FADAE86BA83370BAF7B171E13126D"
+    },
+    {
+      "profile_id": "paper1_prospective_mother_sample_v1_n5000",
+      "original_path": "common/multipole/sources/rf_multipole_paper1_prospective_mother_sample_v1_5000.csv",
+      "bytes_sha256": "38BF87E06C210A05BFFB21EE4997EF39343CE17B8924AFF606CEAEC79A2335C6"
+    }
+  ]
+}

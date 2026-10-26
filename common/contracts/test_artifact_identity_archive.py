@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from common.contracts.artifact_identity_archive import (
+    READ_ONLY_IDENTITY_POLICY,
+    assert_new_run_project_allowed,
+    historical_project_identities,
     legacy_artifact_location,
+    load_retired_project_descriptors,
     relocated_manifest_path,
     resolve_legacy_artifact_root,
     validate_identity_archive_manifest,
@@ -20,6 +27,7 @@ from common.contracts.file_identity import file_sha256
 CURRENT = "current_project"
 LEGACY = "legacy_project"
 ARCHIVE_ID = "20260728_000000__migration-snapshot__repo__legacy-project"
+CONSOLIDATED = "consolidated_project"
 
 
 def _location(state: str) -> dict:
@@ -60,7 +68,125 @@ def _plan(records: list[dict]) -> dict:
     }
 
 
+def retirement_fixture(repository: Path) -> tuple[dict, Path]:
+    """Freeze an original owner and its already archived alias in a small fixture."""
+    path = repository / "projects" / CONSOLIDATED / "docs/history/retired_projects" / CURRENT / "config/project.json"
+    path.parent.mkdir(parents=True)
+    alias = {**_location("archived_verified"), **READ_ONLY_IDENTITY_POLICY,
+             "migration_kind": "administrative_rename_only"}
+    previous = {"project_id": CURRENT, "legacy_identities": [alias]}
+    path.write_bytes((json.dumps(previous) + "\n").encode("utf-8"))
+    descriptor = {
+        "project_id": CONSOLIDATED,
+        "retired_project_descriptors": [{
+            "project_id": CURRENT,
+            "path": path.relative_to(repository).as_posix(),
+            "bytes": path.stat().st_size,
+            "sha256": file_sha256(path),
+            "source_commit": "a" * 40,
+            **READ_ONLY_IDENTITY_POLICY,
+        }],
+    }
+    active = repository / "projects" / CONSOLIDATED / "config/project.json"
+    active.parent.mkdir(parents=True)
+    active.write_text(json.dumps(descriptor), encoding="utf-8")
+    return descriptor, path
+
+
 class ArtifactIdentityArchiveTests(unittest.TestCase):
+    def test_retired_owner_and_archived_alias_keep_original_locations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            descriptor, frozen = retirement_fixture(repository)
+            original = frozen.read_bytes()
+            previous = load_retired_project_descriptors(descriptor, repository)
+            identities = list(historical_project_identities(descriptor, repository))
+            self.assertEqual([item.project_id for item in identities], [CURRENT, LEGACY])
+            self.assertEqual([item.artifact_owner_project_id for item in identities], [CURRENT, CURRENT])
+            self.assertIsNone(identities[0].legacy_mapping)
+            mapping = previous[0]["legacy_identities"][0]
+            location = legacy_artifact_location(mapping, identities[1].artifact_owner_project_id)
+            self.assertEqual(location["active_root"], mapping["artifact_location"]["archive_root"])
+            self.assertIn(f"projects/{CURRENT}/archive/", str(location["active_root"]))
+            with self.assertRaisesRegex(ValueError, "legacy archive location differs"):
+                legacy_artifact_location(mapping, CONSOLIDATED)
+            self.assertEqual(frozen.read_bytes(), original)
+
+    def test_retired_descriptor_requires_raw_identity_and_read_only_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            descriptor, frozen = retirement_fixture(repository)
+            reference = descriptor["retired_project_descriptors"][0]
+            reference["new_runs_allowed"] = True
+            with self.assertRaisesRegex(ValueError, "new_runs_allowed"):
+                load_retired_project_descriptors(descriptor, repository)
+            reference["new_runs_allowed"] = False
+            reference["path"] = "../project.json"
+            with self.assertRaisesRegex(ValueError, "descriptor path differs"):
+                load_retired_project_descriptors(descriptor, repository)
+            reference["path"] = frozen.relative_to(repository).as_posix()
+            frozen.write_bytes(frozen.read_bytes().replace(b"\n", b"\r\n"))
+            with self.assertRaisesRegex(ValueError, "frozen retired descriptor identity differs"):
+                load_retired_project_descriptors(descriptor, repository)
+
+    def test_new_run_guard_rejects_only_explicitly_retired_owners_and_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            retirement_fixture(repository)
+            before = {path: path.read_bytes() for path in repository.rglob("*") if path.is_file()}
+            for project in (CURRENT, LEGACY):
+                with self.assertRaisesRegex(ValueError, "new runs are forbidden"):
+                    assert_new_run_project_allowed(repository, project)
+            for project in (CONSOLIDATED, "instrument_assembly", "existing_fixture"):
+                assert_new_run_project_allowed(repository, project)
+            after = {path: path.read_bytes() for path in repository.rglob("*") if path.is_file()}
+            self.assertEqual(before, after)
+
+    @unittest.skipUnless(shutil.which("pwsh") and sys.version_info[:2] == (3, 11), "requires pwsh and Python 3.11")
+    def test_run_package_guard_precedes_directory_and_capacity_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory)
+            repository = fixture / "repo"
+            retirement_fixture(repository)
+            source = Path(__file__).resolve().parent
+            scripts = repository / "common/contracts"
+            scripts.mkdir(parents=True)
+            for name in ("artifact_identity_archive.py", "artifact_naming.py", "file_identity.py"):
+                shutil.copyfile(source / name, scripts / name)
+            ledger = fixture / "artifacts/common/fixture.sqlite3"
+            ledger.parent.mkdir(parents=True)
+            ledger.write_bytes(b"untouched ledger fixture")
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            script = f"""
+$ErrorActionPreference='Stop'
+. {quote(source / 'run_artifact_support.ps1')}
+$script:capacityCalls=0
+function Invoke-RunCapacityLifecycleAdapter {{ $script:capacityCalls++; throw 'CAPACITY_CALLED' }}
+foreach($owner in @('{CURRENT}','{LEGACY}')) {{
+  $rejected=$false
+  try {{
+    New-RunPackage -Python {quote(sys.executable)} -RepoRoot {quote(repository)} `
+      -ArtifactRoot (Join-Path {quote(fixture / 'artifacts/projects')} $owner) `
+      -RunId '20261026_120000__test__python__retired-owner' -Project $owner `
+      -Mode 'fixture' -Software @('python') -RetentionContractEnabled -CapacityLedgerLifecycleEnabled | Out-Null
+  }} catch {{
+    if($_.Exception.Message -notmatch 'retired project identity') {{ throw }}
+    $rejected=$true
+  }}
+  if(-not $rejected) {{ throw 'retired owner was accepted' }}
+}}
+if($script:capacityCalls -ne 0) {{ throw 'capacity mutation reached' }}
+Write-Output 'RETIRED_RUN_GUARD=PASS'
+"""
+            process = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=60,
+            )
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            self.assertIn("RETIRED_RUN_GUARD=PASS", process.stdout)
+            self.assertFalse((fixture / "artifacts/projects").exists())
+            self.assertEqual(ledger.read_bytes(), b"untouched ledger fixture")
+
     def test_location_contract_has_one_active_root(self) -> None:
         pending = legacy_artifact_location(_location("source_pending_relocation"), CURRENT)
         archived = legacy_artifact_location(_location("archived_verified"), CURRENT)

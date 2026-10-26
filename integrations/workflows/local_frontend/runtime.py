@@ -29,7 +29,7 @@ from integrations.workflows.local_frontend.prepare import SOURCE_CLOCK
 PHASES = ("discovery", "extraction")
 _INTEGRATION = "integrations"
 _PROGRAM_SOURCES = {
-    "rf_drive_kernel_source": "common/multipole/simion_rf_drive.lua",
+    "rf_drive_kernel_source": "common/simion/rf_drive.lua",
     "voltage_waveforms_source": "common/simion/voltage_waveforms.lua",
     "pulse_hook_source": _INTEGRATION+"/runtime/single_flight_pulse_hook.lua",
     "frontend_hook_source": _INTEGRATION+"/runtime/single_flight_frontend_hook.lua",

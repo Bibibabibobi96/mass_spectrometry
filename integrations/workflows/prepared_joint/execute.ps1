@@ -37,7 +37,7 @@ function Invoke-PreparedJointTrial {
   # One public trial entry; common run/lease/capacity and batch executors own
   # lifecycle and admission. The compiler only freezes scientific inputs.
   . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-  . (Join-Path $repoRoot 'common/multipole/resource_budget_support.ps1')
+  . (Join-Path $repoRoot 'common/resource_budget_support.ps1')
   . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
   if(-not$ContractPath){throw 'Prepared joint flight requires an explicit observation ContractPath.'}
   $prepared=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path

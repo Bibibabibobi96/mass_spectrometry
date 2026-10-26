@@ -36,7 +36,7 @@
       "additionalProperties": false,
       "required": ["name", "version"],
       "properties": {
-        "name": {"const": "common.multipole.compile_design_request"},
+        "name": {"const": "common.multipole.compile_design_request", "description": "Stable v2 compiler contract identifier; source relocation does not change this serialized identity or make it an import path."},
         "version": {"const": 2}
       }
     },
@@ -488,7 +488,7 @@
       "additionalProperties": false,
       "required": ["composer", "base_resolved_sha256", "terminal_profile_sha256"],
       "properties": {
-        "composer": {"const": "common.multipole.downstream_terminal.compose_downstream_terminal"},
+        "composer": {"const": "common.multipole.downstream_terminal.compose_downstream_terminal", "description": "Stable composition contract identifier, retained when the owning module moves."},
         "base_resolved_sha256": {"$ref": "#/$defs/sha256"},
         "terminal_profile_sha256": {"$ref": "#/$defs/sha256"}
       }

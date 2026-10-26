@@ -618,7 +618,8 @@ try {
  }
 }
 ''',encoding='utf-8',newline='\n')
-                env=dict(os.environ,ProgramFiles=str(root/'ProgramFiles'),TEST_FIELD_FAILURE=failure,
+                env={key:value for key,value in os.environ.items() if key.upper()!='PROGRAMFILES'}
+                env.update(ProgramFiles=str(root/'ProgramFiles'),TEST_FIELD_FAILURE=failure,
                          TEST_WORKBENCH='1' if workbench else '0',TEST_FLY='1' if flight else '0',
                          TEST_BORROWED_CAPACITY='1' if borrowed_capacity else '0')
                 # The public fixture runs complete phases, each containing real
@@ -649,7 +650,11 @@ try {
                 self.assertEqual(result.returncode==0,failure in ('downstream_source_fly','none','elapsed','workbench','workbench_held_off','local_fly','fly','fly_held_off','fly_refinement','discovery_fly','local_discovery_fly'),result.stdout+result.stderr)
                 run=next((root/'packages/runs').iterdir())
                 if borrowed_capacity:
-                    lifecycle=(run/'boundary.txt').read_text()
+                    boundary_path=run/'boundary.txt'
+                    self.assertTrue(boundary_path.is_file(),
+                        f'Missing lifecycle boundary file: {boundary_path}; returncode={result.returncode}\n'
+                        f'stdout:\n{result.stdout}\nstderr:\n{result.stderr}')
+                    lifecycle=boundary_path.read_text()
                     self.assertIn('borrowed_session_retained',lifecycle)
                     self.assertEqual(lifecycle.count('capacity_released'),1)
                 config=json.loads((run/'run_config.json').read_text())

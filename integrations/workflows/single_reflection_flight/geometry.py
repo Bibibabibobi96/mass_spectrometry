@@ -10,9 +10,9 @@ import copy
 from typing import Any
 
 from common.contracts.rigid_transform import RigidTransform, relative_transform
-from common.multipole.component_port import build_assembly_interface
-from common.multipole.simion_geometry import render_physical_gem
-from common.multipole.simion_numerics import normalize_cell_mm_xyz
+from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
+from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physical_gem
+from projects.rf_multipole_ion_optics.runtime.simion_numerics import normalize_cell_mm_xyz
 from common.simion.gem_primitives import format_number as _fmt
 from integrations.runtime.single_flight_frontend import _electrodes, native_frontend_instances
 from projects.orthogonal_accelerator.simion.sectioned_accelerator import render_accelerator_local_geometry

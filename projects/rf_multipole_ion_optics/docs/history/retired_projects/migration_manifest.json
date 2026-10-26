@@ -1,0 +1,1003 @@
+{
+  "schema_version": 1,
+  "source_commit": "3647bcae1f20682c2d3e9ca164bf945645316d09",
+  "purpose": "Byte-preserved original project records; no new-run authority or qualification transfer. Relative links retain their original Git context.",
+  "entries": [
+    {
+      "source_path": "common/multipole/campaigns/20260731__endface_h15_n100.json",
+      "archive_path": "common/multipole/campaigns/20260731__endface_h15_n100.json",
+      "bytes": 5684,
+      "sha256": "168b21e45f39cec3af6fd4b49a053475f5b716d9428b28d33d7109c9440e18b7"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260731__noacc_vs_segmented_h15_n100.json",
+      "archive_path": "common/multipole/campaigns/20260731__noacc_vs_segmented_h15_n100.json",
+      "bytes": 9096,
+      "sha256": "7b75647f7cc68967ce9cb11b89cb08de1339220494dbf1470d75e3f00782dbb6"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260731__oatof_shield_terminal_h15_n100.json",
+      "archive_path": "common/multipole/campaigns/20260731__oatof_shield_terminal_h15_n100.json",
+      "bytes": 14129,
+      "sha256": "753d51aaa57be10c1e570a753dfedbfdeb85089ecf0aceb76c9d10eed2d06812"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260803__hex_rf_drive_d50_followup_h15_n100.json",
+      "archive_path": "common/multipole/campaigns/20260803__hex_rf_drive_d50_followup_h15_n100.json",
+      "bytes": 3026,
+      "sha256": "4953d9d9372d1a397d6feb0d6f0a37e548601094d193f292db13ccbaa08c65de"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260803__hex_rf_drive_phase_matched_h15_n100.json",
+      "archive_path": "common/multipole/campaigns/20260803__hex_rf_drive_phase_matched_h15_n100.json",
+      "bytes": 12794,
+      "sha256": "7ccbeb6f8a3c9b7b3d1f96d4893e0a634c7ad43e1bab6cf0edb879c141595360"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260803__hex_rf_drive_phase_matched_h15_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260803__hex_rf_drive_phase_matched_h15_n1000.json",
+      "bytes": 13439,
+      "sha256": "a2a5057bdc17dff5d114f3604a3c21caa1692773a09ff67dbd384b96ce52d28c"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260803__multipole_noacc_5ev_h15_n100.json",
+      "archive_path": "common/multipole/campaigns/20260803__multipole_noacc_5ev_h15_n100.json",
+      "bytes": 5596,
+      "sha256": "8566958c275ced88076c533df0d73a76b95c1b197d65ec57bd35007f0f40b234"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260803__oatof_link_sources_current_n100.json",
+      "archive_path": "common/multipole/campaigns/20260803__oatof_link_sources_current_n100.json",
+      "bytes": 4686,
+      "sha256": "0bbae32d0a8840cb77dbb1e5247aa51e4ab38677a9cb03b7ea87b602c5142647"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260804__oct_aperture050_integrated_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260804__oct_aperture050_integrated_n1000.json",
+      "bytes": 2773,
+      "sha256": "d14fb324e6f62cc25803dd4047911abb8ad864c704b83c25ced1532a8effb2c6"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260804__oct_grounded_noacc_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260804__oct_grounded_noacc_n1000.json",
+      "bytes": 2792,
+      "sha256": "4b84ce110267cf3130d7070b02a2dff160eb590a7954ed27fd85f5c7e04b30cd"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260804__oct_grounded_reference_sleeve_n100.json",
+      "archive_path": "common/multipole/campaigns/20260804__oct_grounded_reference_sleeve_n100.json",
+      "bytes": 2780,
+      "sha256": "cd8cbfb6ccb95601b650a22ffbddf7d416167a80837736742ae8c08a0f22f8b4"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260804__oct_grounded_reference_sleeve_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260804__oct_grounded_reference_sleeve_n1000.json",
+      "bytes": 2824,
+      "sha256": "e0ac90faf313dcc7aad071740dcc90beabbb6babb6bfc16d87d3fef549b1953f"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260804__oct_grounded_shield_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260804__oct_grounded_shield_n1000.json",
+      "bytes": 2767,
+      "sha256": "4a0914d16bd169189d6a5a0ecb1aebe81006263f7d5657e3129d1c515dc5cced"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260805__oct_10ev_rf_off_energy_check_n100.json",
+      "archive_path": "common/multipole/campaigns/20260805__oct_10ev_rf_off_energy_check_n100.json",
+      "bytes": 5792,
+      "sha256": "6ab6d90357d05834e29ecaee518e98e8fea894af0e14062e134308637558d508"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260805__oct_15mm_coplanar_sleeve_rf_off_n100.json",
+      "archive_path": "common/multipole/campaigns/20260805__oct_15mm_coplanar_sleeve_rf_off_n100.json",
+      "bytes": 6308,
+      "sha256": "975618dca2f0d058acc4d2b0a56cc07073a5ca8fcf58899e6479ced0a2d0ebce"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260805__oct_15mm_sleeve_8v_entrance_rf_off_n100.json",
+      "archive_path": "common/multipole/campaigns/20260805__oct_15mm_sleeve_8v_entrance_rf_off_n100.json",
+      "bytes": 6342,
+      "sha256": "d717e4c23ee933d2ce458fc2e699babda1757558ba3486b2c4f9b4cf204d6add"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260805__oct_segmented_10ev_h15.json",
+      "archive_path": "common/multipole/campaigns/20260805__oct_segmented_10ev_h15.json",
+      "bytes": 5711,
+      "sha256": "d1010e1022939319aca5ef75605a120d64cd3742c6b48ca6749074bdf8692a56"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260805__oct_terminal_10ev_h15.json",
+      "archive_path": "common/multipole/campaigns/20260805__oct_terminal_10ev_h15.json",
+      "bytes": 6031,
+      "sha256": "be50f233ec008b9c7c7c2a03ab59607577d8f2af5c9587ef1382a104cd5d307c"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260811__oct_rf_amplitude_h15_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260811__oct_rf_amplitude_h15_n1000.json",
+      "bytes": 7768,
+      "sha256": "9e7c93a8a0d64fb4b90fe283c25c21bce00a01a696830d3f19b0247dfb3e7e57"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260811__oct_rf_phase_p90_h15_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260811__oct_rf_phase_p90_h15_n1000.json",
+      "bytes": 3691,
+      "sha256": "b8b3f639be60fe6f3f364815724dbfb40d386ae9cc8dd4f78f6fdb23d23413cc"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260811__oct_rf_v140_h15_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260811__oct_rf_v140_h15_n1000.json",
+      "bytes": 3699,
+      "sha256": "6c023d95d952e16d25fcd4a51833ed882e383e3f0c15d059663f7a0e822e6696"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260820__oct_terminal_10ev_h15_n5000.json",
+      "archive_path": "common/multipole/campaigns/20260820__oct_terminal_10ev_h15_n5000.json",
+      "bytes": 3864,
+      "sha256": "2e914daca12c2a3c1b4288b624e61f0bbf184e94eda4f301dddb17798ec8c8fe"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260825__paper1_s1_octupole_terminal_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260825__paper1_s1_octupole_terminal_n1000.json",
+      "bytes": 3745,
+      "sha256": "7cb965dc4662bbac66534dfafb3faba9a11b0bd871ad7c83d548550d92369eb0"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260825__paper1_s2_segmented_standard_terminal_n100.json",
+      "archive_path": "common/multipole/campaigns/20260825__paper1_s2_segmented_standard_terminal_n100.json",
+      "bytes": 3340,
+      "sha256": "be1055521448b44ab310b2eaf606d91601a5ec7b21c097aa09934df6affde0b9"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260825__paper1_s2_segmented_standard_terminal_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260825__paper1_s2_segmented_standard_terminal_n1000.json",
+      "bytes": 3606,
+      "sha256": "f132ddf2c7192a9a9c5a62c22f67be5844cf9dbf3edf20e670268252fc591f0c"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260826__paper1_s1_prospective_octupole_source_n5000.json",
+      "archive_path": "common/multipole/campaigns/20260826__paper1_s1_prospective_octupole_source_n5000.json",
+      "bytes": 3701,
+      "sha256": "153b0303f1b77f5addeb3082ffcfd2c0a3d66b7b285f266a32085d4063e1388f"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260826__paper1_s1_prospective_octupole_source_n5000_r02.json",
+      "archive_path": "common/multipole/campaigns/20260826__paper1_s1_prospective_octupole_source_n5000_r02.json",
+      "bytes": 3815,
+      "sha256": "218117e5ae69b0fb9381723fe746bc8993ed8077b8e873d209afbd3630b653ea"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260826__paper1_s1_prospective_octupole_source_n5000_r03.json",
+      "archive_path": "common/multipole/campaigns/20260826__paper1_s1_prospective_octupole_source_n5000_r03.json",
+      "bytes": 3872,
+      "sha256": "f7c50ed6fd506809a9665479d2688be04b717d2c46235d60ba35e09f38345241"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260826__paper1_s2_prospective_segmented_source_n5000.json",
+      "archive_path": "common/multipole/campaigns/20260826__paper1_s2_prospective_segmented_source_n5000.json",
+      "bytes": 3355,
+      "sha256": "c00fa3c1550d3ca90d5d1c841322e8f848275dfd54cb528b63b48f8aad777750"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260829__oct_planar_vs_volume_source_n1000.json",
+      "archive_path": "common/multipole/campaigns/20260829__oct_planar_vs_volume_source_n1000.json",
+      "bytes": 6042,
+      "sha256": "f76aff10144c464044b3d70fa1895191400e5e6fdcff7c622f80b877715b4c18"
+    },
+    {
+      "source_path": "common/multipole/campaigns/20260914__host_dispatch_acceptance.json",
+      "archive_path": "common/multipole/campaigns/20260914__host_dispatch_acceptance.json",
+      "bytes": 3975,
+      "sha256": "12ed947bdf881ed6813b2a749764972cbe81980e4bfb521ba9870742a8f3c015"
+    },
+    {
+      "source_path": "common/multipole/configure_comsol_stationary_solver.m",
+      "archive_path": "common/multipole/configure_comsol_stationary_solver.m",
+      "bytes": 5425,
+      "sha256": "5e77e47e4d133504067d99c0799bd1e622bd2508289928dc5bc5ff1c8914a748"
+    },
+    {
+      "source_path": "common/multipole/functional_transport_acceptance.json",
+      "archive_path": "common/multipole/functional_transport_acceptance.json",
+      "bytes": 1808,
+      "sha256": "a4c4f4a6395aab0f59e0bc8f380e87cda0f1ad265ec19e66f844c14ff12a98d9"
+    },
+    {
+      "source_path": "common/multipole/no_acceleration_followup_resolution.json",
+      "archive_path": "common/multipole/no_acceleration_followup_resolution.json",
+      "bytes": 2688,
+      "sha256": "ff941874dd54a32cd05c119894fd6633d795266eac8c9eaaf4ae0d9ebef691dd"
+    },
+    {
+      "source_path": "common/multipole/numerical_qualification.json",
+      "archive_path": "common/multipole/numerical_qualification.json",
+      "bytes": 5223,
+      "sha256": "79295541e2f8d5c851ec23e3777e93cccb0cc900a15bffeb34b88fd75ed60b12"
+    },
+    {
+      "source_path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+      "archive_path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
+      "bytes": 13612,
+      "sha256": "0125c3ab02b2321ef26a3a913cf6ec04325fd0d48597d2cb439d0ce42411662f"
+    },
+    {
+      "source_path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
+      "archive_path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
+      "bytes": 136153,
+      "sha256": "ce68a6b47dc5726d9c45cbe28e4397a2321d782faed265067824891aaf4d0fbf"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/config/evidence/no_acceleration_full_length.json",
+      "archive_path": "rf_hexapole_ion_optics/config/evidence/no_acceleration_full_length.json",
+      "bytes": 314,
+      "sha256": "3c207846765aa192cde007fad29b50d08b33bb719daba9b412ea1de7e5a765c1"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/config/project.json",
+      "archive_path": "rf_hexapole_ion_optics/config/project.json",
+      "bytes": 3942,
+      "sha256": "318fb3300bb4ebcbe4f66daa781882e073bfe17d2b3842a4eacab9feb49da6dd"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/config/qualification/dispersion_acceptance.json",
+      "archive_path": "rf_hexapole_ion_optics/config/qualification/dispersion_acceptance.json",
+      "bytes": 1410,
+      "sha256": "e91779161caf4f9b2c472a1fce226f530572a5a59a868501ce65fba499e601aa"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/config/qualification/dispersion_effect_resolution.json",
+      "archive_path": "rf_hexapole_ion_optics/config/qualification/dispersion_effect_resolution.json",
+      "bytes": 1081,
+      "sha256": "95149aa0e08ebf5f680314a7bc6cbc02525913fc3f5555bd2039c34be7c0e036"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/config/qualification/engineering_budget.json",
+      "archive_path": "rf_hexapole_ion_optics/config/qualification/engineering_budget.json",
+      "bytes": 1622,
+      "sha256": "999ca9c2f42639a5f32145f686c6b10110cf44da3f575aeaf22b280b2988a539"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/config/qualification/n100_convergence_preregistration.json",
+      "archive_path": "rf_hexapole_ion_optics/config/qualification/n100_convergence_preregistration.json",
+      "bytes": 6232,
+      "sha256": "7930feb230da4a2f2855569a6d1110b38e92e442b54ded8e8f2ddad1d95691d9"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/config/qualification/n100_exit_aperture_plate_acceleration_qualification.json",
+      "archive_path": "rf_hexapole_ion_optics/config/qualification/n100_exit_aperture_plate_acceleration_qualification.json",
+      "bytes": 4666,
+      "sha256": "dec29f68b75d18ada2ac3108dba601fcb2e669b2ba8756d37d467ae541fdc8d9"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/config/qualification/n100_no_acceleration_qualification.json",
+      "archive_path": "rf_hexapole_ion_optics/config/qualification/n100_no_acceleration_qualification.json",
+      "bytes": 4001,
+      "sha256": "0c485234cc85d7fac0e5035487e22fde267ab090ed847e5f04239245fc57d2e2"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/config/qualification/n100_segmented_rod_axial_acceleration_qualification.json",
+      "archive_path": "rf_hexapole_ion_optics/config/qualification/n100_segmented_rod_axial_acceleration_qualification.json",
+      "bytes": 3892,
+      "sha256": "2f6d6b84c3b29746cbd43a1f2c0f359b56258724765cba523a19211febbc0e37"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260723__pre-n100-multipole-functional-evidence.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260723__pre-n100-multipole-functional-evidence.md",
+      "bytes": 2162,
+      "sha256": "7ddcdfc8a7a275e7269c058b5623730aa9ea11470e61d3fd432918229bd8c2df"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260729__closed-hybrid-mesh-campaigns.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260729__closed-hybrid-mesh-campaigns.md",
+      "bytes": 1443,
+      "sha256": "35986b4fc212d5170c815e0a34c826497c49bf6165b501424737823e92118093"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260729__closed-hybrid-mesh-campaigns/SHA256SUMS.txt",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260729__closed-hybrid-mesh-campaigns/SHA256SUMS.txt",
+      "bytes": 235,
+      "sha256": "396056e810f1de5ccb248d7d584081c2b10f886b53478b97c8b9d5633d0839ae"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260729__closed-hybrid-mesh-campaigns/comsol_hybrid_mesh_build_diagnostic_preregistration.json",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260729__closed-hybrid-mesh-campaigns/comsol_hybrid_mesh_build_diagnostic_preregistration.json",
+      "bytes": 5085,
+      "sha256": "4adfc47fcaadf7ebf846e6599db07b42aea2d2ea6456d416b877c9cd06982c6f"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260729__closed-hybrid-mesh-campaigns/comsol_hybrid_mesh_pilot_preregistration.json",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260729__closed-hybrid-mesh-campaigns/comsol_hybrid_mesh_pilot_preregistration.json",
+      "bytes": 10797,
+      "sha256": "9c86407eb507e1828d59606d64d60383cf72eb377a85dba07d76e2f84f662fd0"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260729__multipole-three-mode-posthoc-n100.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260729__multipole-three-mode-posthoc-n100.md",
+      "bytes": 4410,
+      "sha256": "75466f90dce5cd2e3b67a74b8783d6b26e1b81a1fd6f0956848bbc091f9752dd"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260731__multipole-engineering-reanalysis-18-comparisons.md",
+      "bytes": 5807,
+      "sha256": "fc26f780bed1170b604432df29e30603445949f6cfe96ccf26c4b1968d149d22"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260731__multipole-noacc-vs-segmented-h15-n100.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260731__multipole-noacc-vs-segmented-h15-n100.md",
+      "bytes": 4361,
+      "sha256": "2260791578d2b9f75167651c7e0706cdd2bd96515453d55a702f68279fda8248"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260731__multipole-three-mode-h15-n100.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260731__multipole-three-mode-h15-n100.md",
+      "bytes": 3748,
+      "sha256": "12ce73a76ca27bac2895b2e46f18755a54ecdcfb2379c8ba2642cfe1ccedd4bc"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260731__no-acceleration-multipole-discretization-followup.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260731__no-acceleration-multipole-discretization-followup.md",
+      "bytes": 4666,
+      "sha256": "7e22d87c3913140aa4f28fd6af75d866033b2c0ae958d5b90a6ba1a9f821430e"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260802__retired-comsol-qualification-campaigns.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260802__retired-comsol-qualification-campaigns.md",
+      "bytes": 1759,
+      "sha256": "119f0c0a1c615973762f17c88ccc1d7c3158535c0d18c393a471b34dd533d770"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260803__hex-rf-drive-phase-matched-h15-n100.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260803__hex-rf-drive-phase-matched-h15-n100.md",
+      "bytes": 3869,
+      "sha256": "e990f64a0b5ad11ede1378f0dd7bca048361fd697a594bf6f69e073fa44739da"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260803__hex-rf-drive-phase-matched-h15-n1000.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260803__hex-rf-drive-phase-matched-h15-n1000.md",
+      "bytes": 3854,
+      "sha256": "1999a272ea6c45f4587a7a2af831508a72a90facda9468025a069b717ae08665"
+    },
+    {
+      "source_path": "projects/rf_hexapole_ion_optics/docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md",
+      "archive_path": "rf_hexapole_ion_optics/docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md",
+      "bytes": 3649,
+      "sha256": "da22062b5700ced6eb7d7eb77b5578457b0247bbae3eac8f566dc6812501d4b4"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/comsol_solver_numerics.json",
+      "archive_path": "rf_octupole_ion_optics/config/comsol_solver_numerics.json",
+      "bytes": 6764,
+      "sha256": "b277a50e492054fd04471613a0dd56bf0fb92e0fd7e8467188eb2055d5eafb3d"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/evidence/no_acceleration_full_length.json",
+      "archive_path": "rf_octupole_ion_optics/config/evidence/no_acceleration_full_length.json",
+      "bytes": 314,
+      "sha256": "35342b6bdd552ac057f6973521fff178453ec86f0255a60bdee2d9bd5c3fe5d4"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/particle_source_profiles.json",
+      "archive_path": "rf_octupole_ion_optics/config/particle_source_profiles.json",
+      "bytes": 2394,
+      "sha256": "89e2cb94f9b905e8d842973771210803f1d7f0a14a316721ae94a0721d7e948d"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/project.json",
+      "archive_path": "rf_octupole_ion_optics/config/project.json",
+      "bytes": 3942,
+      "sha256": "0f48c0340c4c80d1d5bdeeb292dc51e8bbeb226e5c3dc75e3866d664468b4e27"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "bytes": 1991,
+      "sha256": "b54746b4492cdff4d17fca991f0f50ac7087b65fc0feb00970c8abfba3942a1b"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json",
+      "bytes": 6603,
+      "sha256": "3c5cb067b368e3d074ddf91478fbfd44424f1aa513a062e33d86e40661cdb106"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/dispersion_acceptance.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/dispersion_acceptance.json",
+      "bytes": 689,
+      "sha256": "751d45f4d56fff26389f3b3f35200122c30588add61da64f3fc6c8f03131012e"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/dispersion_effect_resolution.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/dispersion_effect_resolution.json",
+      "bytes": 724,
+      "sha256": "ef69550ed566413a0867f4c1a7a29762bcec4317d482a8b7c1847ff64ad75b57"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/engineering_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/engineering_budget.json",
+      "bytes": 1688,
+      "sha256": "7bb7b22b797cffedc0776b089891e188968df3d0ab48c34df9a1620ca02dd6a9"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/n100_convergence_preregistration.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/n100_convergence_preregistration.json",
+      "bytes": 4229,
+      "sha256": "d3c965869a2cb715fe710c8c5507a7c6f1aabfd6c845378f8d60820376a27669"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/n100_exit_aperture_plate_acceleration_qualification.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/n100_exit_aperture_plate_acceleration_qualification.json",
+      "bytes": 4832,
+      "sha256": "5de280382710fe4dfe89ef835038a7df5dad380de384ebbb275ee47f84baeb4f"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/n100_no_acceleration_qualification.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/n100_no_acceleration_qualification.json",
+      "bytes": 4212,
+      "sha256": "d5c1d974d422fb4777595f75fd325ba0810be9b918572c0d886ca40a994872b5"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/n100_segmented_rod_axial_acceleration_qualification.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/n100_segmented_rod_axial_acceleration_qualification.json",
+      "bytes": 4659,
+      "sha256": "b7a308ade09b95be8fca122eb497aaa766ac955c78b8622f7b61c336ce5c4497"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/comsol_exit020_t160_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/no_acceleration_followup/comsol_exit020_t160_budget.json",
+      "bytes": 1647,
+      "sha256": "fdd00b2d85b1f386200462d1f74333c1327be046063e17e47e1e102b67c0c3dc"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/comsol_exit020_t320_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/no_acceleration_followup/comsol_exit020_t320_budget.json",
+      "bytes": 1643,
+      "sha256": "80529096e7ade73f3c0041374f6d4a29fc54cff2664c3762f30515ca02a3961f"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/comsol_preregistration.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/no_acceleration_followup/comsol_preregistration.json",
+      "bytes": 3640,
+      "sha256": "6c9617f7dc28628ae341df0e05bfe2574e91e57e9f1b80056ae973c1e80ea022"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/followup_result.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/no_acceleration_followup/followup_result.json",
+      "bytes": 2976,
+      "sha256": "e0276a131514187dc7cb166339805663620e7475392556c0080caea237410f9e"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_A_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_A_budget.json",
+      "bytes": 1657,
+      "sha256": "edf162753321ddbb9ef4c08402d0e94d071286b5a503d9294aed7adc98b257eb"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_I_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_I_budget.json",
+      "bytes": 1657,
+      "sha256": "acecb681158d6f0527b884c8d9c70f8355461de8d6b8fd38ed4a30720feefca4"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_R_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_R_budget.json",
+      "bytes": 1657,
+      "sha256": "9a13d03f3ee17abd698d71b394ecf02a4cb2c4abde37fdd5f667df6b9495f078"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_T_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_T_budget.json",
+      "bytes": 1657,
+      "sha256": "bd0f54c9174889dae3f65df28286a02afeaaa225b94ff5574b18333429bffeac"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_Z_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_Z_budget.json",
+      "bytes": 1657,
+      "sha256": "a0aea1ddd2309e5bb8a78d98e01b6fa4e393d2feb87dd226de838dcef83fd35d"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_preregistration.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/no_acceleration_followup/simion_preregistration.json",
+      "bytes": 5288,
+      "sha256": "70d5093ccdd3798a47ac25e59979181f13f0b2bff9667864a93181cf48cca00d"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/three_mode_dispersion_preregistration.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/three_mode_dispersion_preregistration.json",
+      "bytes": 3414,
+      "sha256": "a2c11402f66a36c309eeccaf6b183abf9079372124c689fba953f68da2a2178b"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/three_mode_geometry_invariant.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/three_mode_geometry_invariant.json",
+      "bytes": 1278,
+      "sha256": "a7c87a3ebad043e61bca27a1c2f92d7263f3ac41e795c7aaafce79c1dd9c13ad"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/through_exit_524da_functional_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/through_exit_524da_functional_budget.json",
+      "bytes": 1915,
+      "sha256": "3983e5eac5be715c87e9c71d47a316b19a4b365a33f5d2173651d530e8198754"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/through_exit_functional_budget.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/through_exit_functional_budget.json",
+      "bytes": 1637,
+      "sha256": "b0aa9bc882d03e4b6bc1019db2d444928f1db9886606cb5ea1eb032be8430015"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/voltage_exit_aperture_plate_acceleration.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/voltage_exit_aperture_plate_acceleration.json",
+      "bytes": 417,
+      "sha256": "8197259a06c800cba8cc2621f450d62eabd521117209f24482bc89c94fe76c6a"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/voltage_no_acceleration_full_length.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/voltage_no_acceleration_full_length.json",
+      "bytes": 411,
+      "sha256": "bf7a7498667a34528582bd946a7eef1ac8cab982b0e15a503ce56aa6bda2a87a"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/qualification/voltage_segmented_rod_axial_acceleration.json",
+      "archive_path": "rf_octupole_ion_optics/config/qualification/voltage_segmented_rod_axial_acceleration.json",
+      "bytes": 420,
+      "sha256": "28ee96154f7329aaac49bbf80d7d118903049a1b010e1db5b8583367613bb7af"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/runtime_profiles.json",
+      "archive_path": "rf_octupole_ion_optics/config/runtime_profiles.json",
+      "bytes": 10647,
+      "sha256": "5fe2783932555b3823bc5f7c3bb3190e9a4765f847f82cf639fcc7ca20f00d1b"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/config/simion_solver_numerics.json",
+      "archive_path": "rf_octupole_ion_optics/config/simion_solver_numerics.json",
+      "bytes": 2095,
+      "sha256": "d70116ef84fffd5aa09b074853a298a0b46c00f78aed233c2afa3d279f2dc1b1"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/docs/history/20260723__pre-n100-multipole-functional-evidence.md",
+      "archive_path": "rf_octupole_ion_optics/docs/history/20260723__pre-n100-multipole-functional-evidence.md",
+      "bytes": 1833,
+      "sha256": "8738c677b294773e0fdf3ca3dd555ecb8db9c120d74f7bd592133e74efb63c10"
+    },
+    {
+      "source_path": "projects/rf_octupole_ion_optics/docs/history/20260911__source-model-comparison.md",
+      "archive_path": "rf_octupole_ion_optics/docs/history/20260911__source-model-comparison.md",
+      "bytes": 1076,
+      "sha256": "15edb6083f2d8b8785d2998a63304cb79dc9fb459283a40db662609dd93734cc"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/design_profiles.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/design_profiles.json",
+      "bytes": 8193,
+      "sha256": "725bc7b68562e54ed3749bbff09e1aadd664c7db1baa1f28fe5d003cc5035b22"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/evidence/exit_aperture_plate_acceleration_reference.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/evidence/exit_aperture_plate_acceleration_reference.json",
+      "bytes": 384,
+      "sha256": "cdd4b4f245e126d4151641095ee0520fb2d7254f52f5161bea4534ecec79d3b4"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/evidence/explicit_axial_reference.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/evidence/explicit_axial_reference.json",
+      "bytes": 366,
+      "sha256": "cb76220461ea07d270aded849234b5e414c238c473c68ca94ab8a271564dcc08"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/evidence/official_transport_functional.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/evidence/official_transport_functional.json",
+      "bytes": 307,
+      "sha256": "01fa862c6560622a0fe294b158deea30c087c92cb35849b14c78bfaaedf66b93"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "bytes": 1999,
+      "sha256": "aa5d1189a8510fc5967e37b7bd3e6cb92069650735ef07b254d291bfbbd5f592"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json",
+      "bytes": 6984,
+      "sha256": "4f2f0f3c1b94716b758a4332d87b3ab333c296753c0ad4038a82a8cdee23b750"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/dispersion_acceptance.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/dispersion_acceptance.json",
+      "bytes": 784,
+      "sha256": "12cae795f1df8df4979bbb7ef2de5db4da7cbccbf2d29fe0aadd4899f959d02e"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/dispersion_effect_resolution.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/dispersion_effect_resolution.json",
+      "bytes": 720,
+      "sha256": "48a8bd82295d6d7bcedc3ca328badcbdec5033f35a8048dbc69d42e047197edd"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/engineering_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/engineering_budget.json",
+      "bytes": 1694,
+      "sha256": "427731aaf1922e36a4435bac77a033cea39c0cd346cf8bae3eb064515b371dcb"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/geometry_invariant.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/geometry_invariant.json",
+      "bytes": 1075,
+      "sha256": "d54efb6aa1504a78cd746be599e1f4e23f8d6a5380824607fa4975a79d49a1e9"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/n100_convergence_preregistration.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/n100_convergence_preregistration.json",
+      "bytes": 7260,
+      "sha256": "753a48856a804ed7da613671cb577e7ecf05fbae3ed90d7899498d01b64df9e9"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/n100_exit_aperture_plate_acceleration_qualification.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/n100_exit_aperture_plate_acceleration_qualification.json",
+      "bytes": 4703,
+      "sha256": "a5fa564da2525b45aa9c04bbeae479fe7d37bf8504c1e4371c7694551798c4e3"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/n100_no_acceleration_qualification.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/n100_no_acceleration_qualification.json",
+      "bytes": 4421,
+      "sha256": "45c092294aef20d450ac752fe407b9e1dcb737a3a738f481d4124bddfeda656e"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/n100_segmented_rod_axial_acceleration_qualification.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/n100_segmented_rod_axial_acceleration_qualification.json",
+      "bytes": 5116,
+      "sha256": "4cace19a5a9b755f8d1c179736e2198a37ffaf57cfc2740899647a6e3726dc8c"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/comsol_exit020_t160_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/comsol_exit020_t160_budget.json",
+      "bytes": 1654,
+      "sha256": "630cf1ff62f22f409242aa30cd56d792d21812a6a4e56cc8deaab0b38f707ccb"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/comsol_exit020_t320_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/comsol_exit020_t320_budget.json",
+      "bytes": 1650,
+      "sha256": "25c483cdb5642238a7721722c6e3992c2a8c0f0ee57b72c5eaeacb7de9c0a67b"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/comsol_preregistration.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/comsol_preregistration.json",
+      "bytes": 3690,
+      "sha256": "f18da02812654bed04bbe2476c3b6b65a1d4bc6e748442fa5501b33044f5164d"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/followup_result.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/followup_result.json",
+      "bytes": 2997,
+      "sha256": "59ea399cfb81a842be930573ffe7b0d553663984a150c56e408482b3e184aa89"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_A_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_A_budget.json",
+      "bytes": 1693,
+      "sha256": "d609e85a9e64d99cc9268827e116f283ffa06881b590cea79a093a55e7a9972c"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_I_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_I_budget.json",
+      "bytes": 1688,
+      "sha256": "56977fe9980158a33419c76aaf3c3fc2f3781927ed7da533092ed55e6db446cb"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_R_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_R_budget.json",
+      "bytes": 1688,
+      "sha256": "15fd963fced7911ddf13585a3c3a450f069deea633c2440cea32d9b34326e4f0"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_T_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_T_budget.json",
+      "bytes": 1688,
+      "sha256": "bf7f42c2fd2247b8935fd213a6172d7a77aec9df4e3283873b6f6e7aaa3a9039"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_Z_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_Z_budget.json",
+      "bytes": 1688,
+      "sha256": "5e100fd2bed53e7790cce3d3dce08da0d3fb842e386e3039dcc11b09956fef37"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_preregistration.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_followup/simion_preregistration.json",
+      "bytes": 6832,
+      "sha256": "8d09fca4d6ee267f10cbd91626dc12742ac386f72c06cef2c389bef2122b7531"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_comsol_bridge/comsol_t160_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_comsol_bridge/comsol_t160_budget.json",
+      "bytes": 1742,
+      "sha256": "b7cd93994f883c16bc399ae971acbe7f1dae3c5f157f19c6bc43ef76146fe4f1"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_comsol_bridge/preregistration.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_comsol_bridge/preregistration.json",
+      "bytes": 5970,
+      "sha256": "a5ef12210d83a80886d7c89ed0bd74269f138a53ba70787df802227a470072ea"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/campaign_decision.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/campaign_decision.json",
+      "bytes": 2127,
+      "sha256": "626ef442cf60b499e20e7dcfc92ced69e76bed5fb4f33c10cfea2764efcfb8db"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/preregistration.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/preregistration.json",
+      "bytes": 3593,
+      "sha256": "21ad50bc46c9ba8a12a4cb35733c81169dd3ab25bb85bc0a70f7dfe2a99f0538"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/sampling_comparison.png",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/sampling_comparison.png",
+      "bytes": 131434,
+      "sha256": "4a750b4b2435651d1572fd819bee41c2d17f16140d7f0fc5ebd58aab267f1e15"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/sampling_result.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/sampling_result.json",
+      "bytes": 11442,
+      "sha256": "c56ef5aca5ccc3c71b0302929681b74ebd0ec5f4c30129ca9aab08c21d63eb21"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/simion_I_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/simion_I_budget.json",
+      "bytes": 1652,
+      "sha256": "b395705c2f013b73be2bf39ec3f7639fc29f8157356e682b9a41c5b4fb0555cc"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/simion_T_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/no_acceleration_n1000_sampling/simion_T_budget.json",
+      "bytes": 1647,
+      "sha256": "23de7560ab75a1b6f38f242ca7aeb4fff79f01f5ced465aef86745f9571871f9"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/comsol_n100_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/comsol_n100_budget.json",
+      "bytes": 1898,
+      "sha256": "c3606c06dd3b169ac927a402ea508b742481ed52c2d5619dca17e2270a06e2a3"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/comsol_n100_v2_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/comsol_n100_v2_budget.json",
+      "bytes": 1936,
+      "sha256": "dcae5b46ccfd1319360f4f8de61ea90ced31c06aee94971af15bfe6f4dddebbb"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/comsol_n100_v3_budget.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/comsol_n100_v3_budget.json",
+      "bytes": 1918,
+      "sha256": "ce938c729c788fa2fbc650491114b4eb7d956d852cf21da8339feb335cb27c53"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration.json",
+      "bytes": 6420,
+      "sha256": "f47697081764a78e2e02fe1750cc63d4e5b4d7caa75825cf8285b4e3be10bb54"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration_v2.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration_v2.json",
+      "bytes": 6194,
+      "sha256": "3fefdd0682b6aebccd1801df2d009e6ecd6cf59ac05c84e00a15f70bc8c705cb"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration_v3.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration_v3.json",
+      "bytes": 9406,
+      "sha256": "443aa32ad2af5fbcb2cadab5e8d9312a166f7c24b87d8b2f0bd1980203966b94"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/voltage_exit_aperture_plate_acceleration.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/voltage_exit_aperture_plate_acceleration.json",
+      "bytes": 566,
+      "sha256": "278491d43abab4342eec0fbaeda7710a135674a40d26a014888508837f0197cf"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/voltage_no_acceleration_full_length.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/voltage_no_acceleration_full_length.json",
+      "bytes": 560,
+      "sha256": "a584f7e9844b05c61816e203feb2606883ed417f53729666fff744f9188617ba"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/family_experiment/voltage_segmented_rod_axial_acceleration.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/family_experiment/voltage_segmented_rod_axial_acceleration.json",
+      "bytes": 569,
+      "sha256": "1503f23ccbb9754cf476b974141d2b976e0262bac7199a824ed19239a53c920f"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/multipole_transport_comsol_solver_numerics.json",
+      "bytes": 6766,
+      "sha256": "9f866b7fba171e954d6b61e58b677402775a6e06303befcf8b9e66ebd8a710f8"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/multipole_transport_simion_solver_numerics.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/multipole_transport_simion_solver_numerics.json",
+      "bytes": 1800,
+      "sha256": "0bfd69ce6723fc91ade95790e904dec760d337d70c7269eed41e825a928afca5"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/operating_modes.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/operating_modes.json",
+      "bytes": 863,
+      "sha256": "8877da7f272d7945cd852495f4a94095d65ff6288d1ad6ba72d6c8f900c343f3"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/particle_source_profiles.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/particle_source_profiles.json",
+      "bytes": 789,
+      "sha256": "1a30735bf8cceb08764329d1af3d98ee04a3798e131e59cb948424a3b7618c02"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/project.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/project.json",
+      "bytes": 4178,
+      "sha256": "8cfb5b07ebddc1944f3ee0af5f56b168c98aa6bf4b26ae8dc98f466123c96c8a"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/config/runtime_profiles.json",
+      "archive_path": "rf_quadrupole_ion_optics/config/runtime_profiles.json",
+      "bytes": 10488,
+      "sha256": "d48ef4852cc40025d264a871fdfb7b715964892d4a8e523538f781e16c6df958"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260722__rf-oatof-s2-s3-functional-closure.md",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260722__rf-oatof-s2-s3-functional-closure.md",
+      "bytes": 9413,
+      "sha256": "6cb837a5c3c34a79abd0f50908d3644ddf0959b35b7b9f2e8e943e04a8bb20dd"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260722_rf-mesh-strategy-screen.md",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260722_rf-mesh-strategy-screen.md",
+      "bytes": 1162,
+      "sha256": "02dc6f3467141a306e398f7f744ca288ef31d67ff290378209634fa96b2605de"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260722_rf-validation-and-s1-integration.md",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260722_rf-validation-and-s1-integration.md",
+      "bytes": 56683,
+      "sha256": "0982231a22f0f0f6d7019311ab6a69459d175ef4df681c128ad1877ec9e36b1d"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260723__pre-n100-multipole-functional-evidence.md",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260723__pre-n100-multipole-functional-evidence.md",
+      "bytes": 2332,
+      "sha256": "a6c42e9c07f2b09bc981d22415886fd7f92305e315bbd4558b42084951759c59"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol.md",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol.md",
+      "bytes": 665,
+      "sha256": "0eba493377be4c527ad84ba267ebe83a40065f465cc950dff6013f7599d61105"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol/COMSOL.txt",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol/COMSOL.txt",
+      "bytes": 20935,
+      "sha256": "97fe72b3ba444fac69caeaf083a2a477c54cfc172e19cc9e5ba0fd483bb8c4bc"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol/SHA256SUMS.txt",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol/SHA256SUMS.txt",
+      "bytes": 77,
+      "sha256": "9924116875b70a5fe7d217bc6527145bcea583ee1e7c7dd4fadd3bd3e060176a"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-project.md",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-project.md",
+      "bytes": 706,
+      "sha256": "d3e8a0b1ed19ea3a0da0f01de17cd529e14865e833d2d9603c68ae5787f57464"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-project/PROJECT.txt",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-project/PROJECT.txt",
+      "bytes": 43974,
+      "sha256": "7855915e2b54bd3d03ed93a610fc93684e7cfb4b2504a1d52c86f05667b5d21e"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-project/SHA256SUMS.txt",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-project/SHA256SUMS.txt",
+      "bytes": 78,
+      "sha256": "3509601b834f7dce6468bd0bd40c009850434d3a31b9801da8ec9bbc11d401ff"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-readme.md",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-readme.md",
+      "bytes": 729,
+      "sha256": "1cf5017859f4137eceb839bcb587cae016ef45d6ca9235498413997dc3b7ccd9"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-readme/README.txt",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-readme/README.txt",
+      "bytes": 24678,
+      "sha256": "51212f24c0017ce9fd0a3e1b45e35f97df4e59e7f34aa6cbaebe6ad0ef7fd002"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-readme/SHA256SUMS.txt",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-readme/SHA256SUMS.txt",
+      "bytes": 77,
+      "sha256": "be033bd915985600e4652815138a8619102c7a173172d24d824809a51b87ea33"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion.md",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion.md",
+      "bytes": 679,
+      "sha256": "13ff3a7b5601461e31b3ebc7ce4334800f694fa5fb856676e446647bd4e2e38c"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion/SHA256SUMS.txt",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion/SHA256SUMS.txt",
+      "bytes": 77,
+      "sha256": "83f15e469f8f82ae22de971bac5df46b777ceb92615930635980ff4618bb8263"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion/SIMION.txt",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion/SIMION.txt",
+      "bytes": 10561,
+      "sha256": "b4fcdfc7f6f3103f922e7fe109390b08dc5cafac379d9331209746de1eb0f13a"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts.md",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts.md",
+      "bytes": 3033,
+      "sha256": "0aeff58cd4b1f86ce6b8507a6d4e0d27ff7ac6e13a3ff5c8a6b13a833da2756d"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/SHA256SUMS.txt",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/SHA256SUMS.txt",
+      "bytes": 664,
+      "sha256": "c9592c4254e0b27e288057e6399f92198127f22e27b53a1039f177db373a362a"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/analysis__resolve_s2_connector_case.py",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/analysis__resolve_s2_connector_case.py",
+      "bytes": 3729,
+      "sha256": "23de6e2e7c8b6d4794db45ac6ebbee054d89d6e353a3e50f9a741384348b8515"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/analysis__resolve_spatial_registration.py",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/analysis__resolve_spatial_registration.py",
+      "bytes": 15320,
+      "sha256": "07052e09ea0928095e01acb9286da9bf9d59fb713a2c05cbab79419a116e3148"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__resolved_rf_to_oatof_s2_spatial_registration.json",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__resolved_rf_to_oatof_s2_spatial_registration.json",
+      "bytes": 7785,
+      "sha256": "360e05130038c003085838e87f0a32af62b1f2a819fe28ea5021454ee46dbdbd"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__rf_to_oatof_s2_dependencies.json",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__rf_to_oatof_s2_dependencies.json",
+      "bytes": 21455,
+      "sha256": "8502b6caaef18e8b4f58b6ffcb2d28117ea858cbe72c154ab47ac6859f52db45"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__rf_to_oatof_s2_passive_connector.json",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__rf_to_oatof_s2_passive_connector.json",
+      "bytes": 12324,
+      "sha256": "76f9c93e0877254d4bd36099cc15ec879827ef2aded35df7e7ee292bb3332ace"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__rf_to_oatof_s3_pulse_capture.json",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts/config__rf_to_oatof_s3_pulse_capture.json",
+      "bytes": 6874,
+      "sha256": "f13246cc22bfcbfa2a511cea4291c7bcac55f954e105c0941d2e84d56073d80a"
+    },
+    {
+      "source_path": "projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md",
+      "archive_path": "rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md",
+      "bytes": 4014,
+      "sha256": "663deddc8f01f5b51b846d63bce97b0271e9f8c4805946d116e8ebf0aa0e5823"
+    }
+  ]
+}

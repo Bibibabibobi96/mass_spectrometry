@@ -29,9 +29,9 @@ foreach($relative in $schedulerFiles.Values){
   Copy-Item -LiteralPath (Join-Path $env:DEPENDENCY_TEST_REPO $relative) -Destination $destination
 }
 Set-Location $env:FROZEN_DEPENDENCY_TEST_ROOT
-. ./common/multipole/resource_budget_support.ps1
+. ./common/resource_budget_support.ps1
 if((Get-Command New-RepositoryProcessObservation).ScriptBlock.File -ne
-    (Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'common/multipole/resource_budget_support.ps1')){
+    (Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'common/resource_budget_support.ps1')){
   throw 'Observation did not load from the frozen source table'
 }
 $observation=New-RepositoryProcessObservation

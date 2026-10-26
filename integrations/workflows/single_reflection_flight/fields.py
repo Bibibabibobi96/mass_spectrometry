@@ -9,7 +9,7 @@ import math
 
 from common.contracts.rigid_transform import RigidTransform, relative_transform
 from integrations.runtime.frontend_field_plan import box_sample, cylinder_sample, sample_node
-from common.multipole.simion_geometry import physical_electrode_view
+from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 from integrations.runtime.single_flight_electrode_contract import (
     physical_multipole_voltages,
     segmented_through_exit_rod_pieces,

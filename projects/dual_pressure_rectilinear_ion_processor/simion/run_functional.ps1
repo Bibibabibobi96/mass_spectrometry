@@ -80,7 +80,7 @@ $repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
 . (Join-Path $repoRoot 'common/require_powershell7.ps1')
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'common/multipole/resource_budget_support.ps1')
+. (Join-Path $repoRoot 'common/resource_budget_support.ps1')
 . (Join-Path $repoRoot 'common/simion/short_pa_path_support.ps1')
 $python=Join-Path $repoRoot '.venv/Scripts/python.exe'
 if(-not $SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}

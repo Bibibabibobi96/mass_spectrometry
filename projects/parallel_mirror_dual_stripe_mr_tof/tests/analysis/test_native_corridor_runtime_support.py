@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -149,7 +150,7 @@ try{
             fixture.write_text(script, encoding='utf-8')
             result = subprocess.run(
                 ['pwsh', '-NoProfile', '-File', str(fixture), str(PROJECT.parents[1]), temporary,
-                 str(PROJECT.parents[1] / '.venv/Scripts/python.exe')],
+                 sys.executable],
                 cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

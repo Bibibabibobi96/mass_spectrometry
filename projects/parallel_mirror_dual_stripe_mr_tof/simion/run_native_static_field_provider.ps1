@@ -12,7 +12,7 @@ $repo=Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
 . (Join-Path $repo 'common/require_powershell7.ps1')
 . (Join-Path $repo 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $repo 'common/host_execution_lease.ps1')
-. (Join-Path $repo 'common/multipole/resource_budget_support.ps1')
+. (Join-Path $repo 'common/resource_budget_support.ps1')
 $python=Join-Path $repo '.venv/Scripts/python.exe'
 $module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider'
 $RequestPath=(Resolve-Path -LiteralPath $RequestPath).Path
@@ -52,7 +52,7 @@ $fieldBinding=$null;$responseBasis=$null;$watch=[Diagnostics.Stopwatch]::StartNe
 $levelStatus=[ordered]@{}
 try{
     $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -ArtifactRoot $artifacts -RunDirectory $RunDirectory -Owner $plan.project -CommittedNewBytes ([int64]$plan.committed_new_bytes) -ProtectedPaths @($plan.protected_paths)
-    $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_static_field_provider.py');geometry_emitter=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_geometry.py');analyzer_shapes=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/analyzer_candidate_geometry.py');candidate_authority=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/corridor_field_provider.py');binding_loader=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/static_field_binding.py');builder=(Join-Path $repo 'common/simion/build_dirichlet_patch_basis.lua');executor=(Join-Path $repo 'common/multipole/resource_budget_support.ps1')}
+    $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_static_field_provider.py');geometry_emitter=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_geometry.py');analyzer_shapes=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/analyzer_candidate_geometry.py');candidate_authority=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/corridor_field_provider.py');binding_loader=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/static_field_binding.py');builder=(Join-Path $repo 'common/simion/build_dirichlet_patch_basis.lua');executor=(Join-Path $repo 'common/resource_budget_support.ps1')}
     foreach($key in $plan.inputs.Keys){$copies[$key]=$plan.inputs[$key]}
     if($plan.ContainsKey('collision_build')){
         $copies.geometry_resolver=Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/resolved_geometry.py'

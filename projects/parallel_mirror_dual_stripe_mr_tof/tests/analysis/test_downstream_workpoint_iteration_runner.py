@@ -3380,9 +3380,9 @@ Write-Output 'SEED_PROJECTION=PASS'
             }))
             fixture = root / "fixture.ps1"
             fixture.write_text(script)
-            command = ["C:/Program Files/PowerShell/7/pwsh.exe", "-NoProfile", "-File", str(fixture),
+            command = ["pwsh", "-NoProfile", "-File", str(fixture),
                        str(PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"), str(repo),
-                       str(repo / ".venv/Scripts/python.exe"), str(manifest), str(inputs)]
+                       sys.executable, str(manifest), str(inputs)]
             good = subprocess.run(command, cwd=PROJECT, capture_output=True, text=True, encoding="utf-8", check=False, timeout=40)
             self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
             self.assertIn("SEED_PROJECTION=PASS", good.stdout)

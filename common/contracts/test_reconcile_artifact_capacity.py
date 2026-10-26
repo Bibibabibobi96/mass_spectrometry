@@ -18,6 +18,7 @@ from common.contracts.capacity_protection import (
     CapacityProtectionLeaseError,
     create_capacity_protection_lease as _create_capacity_protection_lease,
     load_capacity_protection_leases,
+    path_is_protected,
     prune_expired_capacity_protection_leases,
     renew_capacity_protection_lease,
 )
@@ -2740,6 +2741,51 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
 
 
 class FiniteCapacityProtectionLeaseTest(unittest.TestCase):
+    def test_equivalent_paths_preserve_parent_child_and_missing_descendant_protection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            (root / "branch").mkdir()
+            equivalent = root / "branch" / ".." / "asset"
+            asset = root / "asset"
+            child = asset / "not-created" / "payload.pa"
+            self.assertFalse(asset.exists())
+            for candidate, protected in (
+                (equivalent, asset), (asset, equivalent),
+                (child, equivalent), (equivalent, child),
+            ):
+                with self.subTest(candidate=candidate, protected=protected):
+                    self.assertTrue(path_is_protected(candidate, [protected]))
+            self.assertFalse(path_is_protected(root / "asset-other", [equivalent]))
+            self.assertFalse(path_is_protected(asset, []))
+
+    @unittest.skipUnless(os.name == "nt", "Windows short path identity")
+    def test_loaded_lease_protects_short_and_expanded_path_spellings(self) -> None:
+        from projects.rf_multipole_ion_optics.tests.domain.test_simion_runner_contract import _short_windows_path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve() / "capacity protection long directory"
+            root.mkdir()
+            short_root = _short_windows_path(root)
+            if short_root == root:
+                self.skipTest("Volume does not expose an 8.3 spelling")
+            protected = root / "payload"
+            create_capacity_protection_lease(
+                short_root, lease_id="alias-path", owner="fixture", ttl_seconds=300,
+                protected_paths=[protected],
+            )
+            for spelling in (root, short_root):
+                loaded = load_capacity_protection_leases(spelling)
+                for candidate in (protected, short_root / "payload" / "missing.pa"):
+                    self.assertTrue(path_is_protected(candidate, loaded["protected_paths"]))
+                self.assertFalse(path_is_protected(root / "unrelated", loaded["protected_paths"]))
+            create_capacity_protection_lease(
+                root, lease_id="key-only", owner="fixture", ttl_seconds=300,
+                protected_cache_keys=["a" * 64],
+            )
+            loaded = load_capacity_protection_leases(root)
+            self.assertEqual(loaded["protected_cache_keys"], {"a" * 64})
+            self.assertEqual(len(loaded["protected_paths"]), 1)
+
     def test_new_lease_has_finite_closure_deadline_and_renewal_cannot_extend_it(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

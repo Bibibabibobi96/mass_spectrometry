@@ -14,9 +14,9 @@ import unittest
 
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
 from common.contracts.write_run_manifest import file_record
-from common.multipole.compile_design_request import compile_design_request
-from common.multipole.component_port import prepare_exit_observation_inputs, validate_exit_observations
-from common.multipole.test_compile_design_request import design_request
+from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+from projects.rf_multipole_ion_optics.core.component_port import prepare_exit_observation_inputs, validate_exit_observations
+from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from common.contracts.machine_contracts import validate_schema
 from common.contracts.rigid_transform import RigidTransform
@@ -72,7 +72,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         for run in (self.source, self.receiver, self.run):
             (run / "inputs").mkdir(parents=True)
             (run / "results").mkdir()
-        request = design_request("rf_octupole_ion_optics")
+        request = design_request("octupole")
         request["geometry_mm"]["enclosure"].update(model="cylindrical_grounded_shield_through_exit_v1", vacuum_z_max_mm=90.)
         request["geometry_mm"]["exit_interface"]["connector_length_mm"] = 0.
         resolved = compile_design_request(request, expected_identity=request["identity"])
@@ -99,10 +99,10 @@ class MultipoleIPPreparationTests(unittest.TestCase):
                  for name in ("baseline", "numerics")}
         write_json(self.receiver / "inputs/resolved_model.json", model)
         self.source_summary = dict(schema_version=1, role="multipole_simion_finite_3d_transport_summary",
-            status="success", project_id="rf_octupole_ion_optics", design_profile_id="fixture",
+            status="success", project_id="rf_multipole_ion_optics", design_profile_id="fixture",
             qualification_status="UNQUALIFIED")
         write_json(self.source / "summary.json", self.source_summary)
-        self.source_selection = self.publish_manifest(self.source, "rf_octupole_ion_optics", "source_run")
+        self.source_selection = self.publish_manifest(self.source, "rf_multipole_ion_optics", "source_run")
         self.source_selection["case_id"] = "rf_on"
         receiver_selection = self.publish_manifest(self.receiver, "dual_pressure_rectilinear_ion_processor", "receiver_run")
         def pose(frame, rotation, translation):
@@ -111,7 +111,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         recipe=dict(
                 schema_version=1, role="assembly_recipe", integration_id="instrument_assembly", recipe_id="fixture",
                 assembly_frame_id=FRAME, position_tolerance_mm=1e-9, angular_tolerance_rad=1e-9,
-                instances=[dict(instance_id="multipole", project_id="rf_octupole_ion_optics",
+                instances=[dict(instance_id="multipole", project_id="rf_multipole_ion_optics",
                     transform=pose(resolved["coordinate"]["coordinate_id"], [[0,0,1],[1,0,0],[0,1,0]], [-89.,0.,0.])),
                     dict(instance_id="ion_processor", project_id="dual_pressure_rectilinear_ion_processor",
                     transform=pose(FRAME, [[1,0,0],[0,1,0],[0,0,1]], [0.,0.,0.]))],
@@ -145,7 +145,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         return dict(manifest=file_record(path), project_id=project, run_id=run_id)
 
     def refresh_source(self):
-        self.source_selection.update(self.publish_manifest(self.source, "rf_octupole_ion_optics", "source_run"))
+        self.source_selection.update(self.publish_manifest(self.source, "rf_multipole_ion_optics", "source_run"))
 
     def execute(self):
         self.write_parent()
@@ -299,7 +299,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         write_json(self.source / "summary.json", self.source_summary)
         write_json(self.source / "results/evidence_evaluation.json", dict(
             schema_version=1, role="multipole_transport_evidence_evaluation", status="FAIL",
-            project_id="rf_octupole_ion_optics", design_profile_id="fixture",
+            project_id="rf_multipole_ion_optics", design_profile_id="fixture",
             evaluation="rf_vs_zero_rf", checks=checks))
         self.refresh_source()
         return checks
@@ -322,7 +322,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         valid = dict(self.source_summary, status="failed", native_execution_complete=True,
                      qualification_status="FAIL", checks=checks)
         evaluation = dict(schema_version=1, role="multipole_transport_evidence_evaluation",
-            status="FAIL", project_id="rf_octupole_ion_optics", design_profile_id="fixture",
+            status="FAIL", project_id="rf_multipole_ion_optics", design_profile_id="fixture",
             evaluation="rf_vs_zero_rf", checks=checks)
         for scenario in ("generic_failed", "incomplete", "check_drift", "nonboolean_checks", "wrong_evaluation"):
             with self.subTest(scenario=scenario):
@@ -396,7 +396,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
                 elif change == "unknown_instance":
                     edge["upstream"]["instance_id"] = "absent"
                 elif change == "wrong_provider":
-                    recipe["instances"][0]["project_id"] = "rf_octupole_ion_optics"
+                    recipe["instances"][0]["project_id"] = "rf_multipole_ion_optics"
                 elif change == "upstream_port":
                     edge["upstream"]["port_id"] = "guide_inlet"
                 elif change == "downstream_port":

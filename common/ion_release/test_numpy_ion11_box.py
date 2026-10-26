@@ -16,7 +16,7 @@ from common.ion_release.numpy_ion11_box import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DISTRIBUTION = REPO_ROOT / "projects/rf_quadrupole_ion_optics/config/official_particle_source.json"
+DISTRIBUTION = REPO_ROOT / "projects/rf_multipole_ion_optics/variants/quadrupole/config/official_particle_source.json"
 
 
 def _sha_table(table: np.ndarray) -> str:

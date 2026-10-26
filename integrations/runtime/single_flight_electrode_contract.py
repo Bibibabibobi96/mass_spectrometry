@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping
 
-from common.multipole.simion_geometry import physical_electrode_view
+from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
 
 
 ROD_ELECTRODE_IDS = tuple(range(1, 9))

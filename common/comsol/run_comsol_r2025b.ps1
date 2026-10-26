@@ -39,7 +39,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\require_powershell7.ps1')
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-. (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
+. (Join-Path $repoRoot 'common\resource_budget_support.ps1')
 foreach ($stageName in $ResourceBudgets.Keys) {
     if ($stageName -notin @('prepare', 'solver', 'postprocess')) {
         throw "Unknown COMSOL resource stage: $stageName"

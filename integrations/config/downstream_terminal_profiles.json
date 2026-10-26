@@ -4,9 +4,7 @@
   "integration_id": "instrument_assembly",
   "compatible_upstream_family_id": "rf_multipole_ion_optics",
   "allowed_upstream_project_ids": [
-    "rf_quadrupole_ion_optics",
-    "rf_hexapole_ion_optics",
-    "rf_octupole_ion_optics"
+    "rf_multipole_ion_optics"
   ],
   "profiles": [
     {

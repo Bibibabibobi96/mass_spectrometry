@@ -13,7 +13,7 @@ $repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
 . (Join-Path $repoRoot 'common/require_powershell7.ps1')
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'common/multipole/resource_budget_support.ps1')
+. (Join-Path $repoRoot 'common/resource_budget_support.ps1')
 if(-not $PythonExe){$PythonExe=Join-Path $repoRoot '.venv/Scripts/python.exe'}
 $sourceRun=(Resolve-Path -LiteralPath $BaselineRun).Path
 $sourceManifest=Join-Path $sourceRun 'run_manifest.json'

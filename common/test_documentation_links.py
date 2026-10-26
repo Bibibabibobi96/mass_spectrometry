@@ -1,13 +1,14 @@
 """Focused regressions for documentation navigation and frozen history boundaries."""
 
 from pathlib import Path
+import hashlib
 import json
 import os
 import subprocess
 import tempfile
 import unittest
 
-from common.documentation_links import anchors, inspect_repository, is_history, links, table_diagnostics
+from common.documentation_links import anchors, inspect_repository, is_history, links, migrated_history, table_diagnostics
 
 
 class PowerShellHistoryScopeTests(unittest.TestCase):
@@ -37,6 +38,22 @@ class PowerShellHistoryScopeTests(unittest.TestCase):
         )
         return json.loads(result.stdout)
 
+    def test_markdown_discovery_inside_artifacts_checkout(self):
+        source = Path(__file__).with_name('verify_documentation.ps1').read_text(encoding='utf-8')
+        discovery = source[source.index('$markdownFiles = '):source.index('$utf8 = ')]
+        with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
+            root = Path(directory) / 'artifacts' / 'scratch' / 'repo'
+            (root / 'artifacts').mkdir(parents=True)
+            (root / 'README.md').write_text('# Active\n', encoding='utf-8')
+            (root / 'artifacts/ignored.md').write_text('# Generated\n', encoding='utf-8')
+            script = "$repoRoot=$env:DOC_HISTORY_TEST_ROOT\n" + discovery + '\n$markdownFiles.Count'
+            result = subprocess.run(
+                ['pwsh', '-NoProfile', '-NonInteractive', '-Command', script],
+                env={**os.environ, 'DOC_HISTORY_TEST_ROOT': str(root)}, cwd=root,
+                check=True, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.stdout.strip(), '1')
+
     def prepare_root(self, directory):
         root = Path(directory)
         (root / 'docs/history').mkdir(parents=True)
@@ -49,8 +66,8 @@ class PowerShellHistoryScopeTests(unittest.TestCase):
             root = self.prepare_root(directory)
             scopes = (
                 ('docs/history', 'docs/AUDITS.md', 'history/'),
-                ('integrations/docs/history', 'integrations/README.md', 'docs/history/'),
-                ('projects/p/docs/history', 'projects/p/README.md', 'docs/history/'),
+                ('integrations/docs/history', 'integrations/docs/history/README.md', ''),
+                ('projects/p/docs/history', 'projects/p/docs/history/README.md', ''),
                 ('integrations/legacy/docs/history', 'integrations/legacy/docs/HISTORY.md', 'history/'),
             )
             for history, index, prefix in scopes:
@@ -76,11 +93,58 @@ class PowerShellHistoryScopeTests(unittest.TestCase):
             errors = self.check_history(root)
             self.assertEqual(len(errors), 3)
             self.assertTrue(any('missing read-only archive banner' in item for item in errors))
-            self.assertTrue(any("integrations/README.md does not index 'docs/history/snapshot.md'" in item for item in errors))
+            self.assertTrue(any("integrations/docs/history/README.md does not index 'snapshot.md'" in item for item in errors))
             self.assertTrue(any('history payload must be inside a same-name manifest directory' in item for item in errors))
+
+    def test_retired_project_exemption_cannot_hide_other_history_payloads(self):
+        with tempfile.TemporaryDirectory(prefix='documentation_history_test_') as directory:
+            root = self.prepare_root(directory)
+            for scope in ('docs/history', 'integrations/docs/history'):
+                target = root / scope / 'retired_projects/old'
+                target.mkdir(parents=True)
+                (target / 'unregistered.json').write_text('{}', encoding='utf-8')
+            errors = self.check_history(root)
+            self.assertEqual(len(errors), 2)
+            self.assertTrue(all('payload directory has no same-name flat Markdown manifest' in message for message in errors))
 
 
 class MarkdownNavigationTests(unittest.TestCase):
+    def test_retired_project_move_requires_exact_git_bytes_and_complete_inventory(self):
+        with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
+            root = Path(directory)
+            subprocess.run(['git', 'init', '--quiet', str(root)], check=True, cwd=root, timeout=30)
+            original = root / 'projects/old/docs/history/snapshot.md'
+            original.parent.mkdir(parents=True)
+            content = b'# Frozen\n[original context](../old.md)\n'
+            original.write_bytes(content)
+            (root / '.gitattributes').write_text('* -text\n', encoding='utf-8')
+            subprocess.run(['git', '-C', str(root), 'add', '.'], check=True, cwd=root, timeout=30)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'Freeze source'], check=True, cwd=root, timeout=30)
+            commit = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True, cwd=root, timeout=30).strip()
+            archive = root / 'projects/new/docs/history/retired_projects'
+            moved = archive / 'old/docs/history/snapshot.md'
+            moved.parent.mkdir(parents=True)
+            moved.write_bytes(content)
+            manifest = {'schema_version': 1, 'source_commit': commit, 'entries': [{
+                'source_path': 'projects/old/docs/history/snapshot.md',
+                'archive_path': 'old/docs/history/snapshot.md',
+                'bytes': len(content), 'sha256': hashlib.sha256(content).hexdigest(),
+            }]}
+            (archive / 'migration_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            verified, errors = migrated_history(root)
+            self.assertFalse(errors)
+            self.assertEqual(verified, {moved.relative_to(root).as_posix()})
+            self.assertFalse(inspect_repository(root)['errors'])
+            moved.write_bytes(content + b'changed')
+            self.assertIn('frozen bytes/source mismatch', migrated_history(root)[1][0])
+            moved.write_bytes(content)
+            (archive / 'unlisted.json').write_text('{}', encoding='utf-8')
+            self.assertIn('unlisted or missing', migrated_history(root)[1][0])
+            (archive / 'unlisted.json').unlink()
+            manifest['entries'][0]['source_path'] = 'projects/old/docs/history/absent.md'
+            (archive / 'migration_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            self.assertIn('invalid original path mapping', migrated_history(root)[1][0])
+
     def test_incomplete_validation_matrix_reports_exact_rows(self):
         text = '# Evidence\n\n| Item | Requirement |\n|---|---|\n| Source |\n| Statistics |\n| Mass | Three points |\n'
         self.assertEqual(table_diagnostics(text), [
@@ -153,6 +217,21 @@ class MarkdownNavigationTests(unittest.TestCase):
         self.assertTrue(is_history(Path('docs/history/snapshot.md')))
         self.assertFalse(is_history(Path('common/history/README.md')))
         self.assertFalse(is_history(Path('docs/history_notes.md')))
+        self.assertFalse(is_history(Path('projects/p/docs/history/README.md')))
+        self.assertFalse(is_history(Path('docs/history/README.md')))
+
+    def test_committed_history_entry_index_remains_active(self):
+        with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
+            root = Path(directory)
+            subprocess.run(['git', 'init', '--quiet', str(root)], check=True, cwd=root, timeout=30)
+            history = root / 'docs/history'
+            history.mkdir(parents=True)
+            (history / 'README.md').write_text('# Index\n[bad](missing.md)\n', encoding='utf-8')
+            subprocess.run(['git', '-C', str(root), 'add', '.'], check=True, cwd=root, timeout=30)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'Add index'], check=True, cwd=root, timeout=30)
+            result = inspect_repository(root)
+            self.assertEqual(len(result['errors']), 1)
+            self.assertEqual(result['inventory'][0]['kind'], 'entry')
 
     def test_fragment_and_missing_link_fail_but_history_is_diagnostic(self):
         with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
@@ -190,6 +269,17 @@ class MarkdownNavigationTests(unittest.TestCase):
             result = inspect_repository(root)
             self.assertFalse(result['errors'])
             self.assertTrue(any('scratch evidence' in message for message in result['diagnostics']))
+
+    def test_checkout_under_scratch_does_not_taint_internal_links(self):
+        with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
+            root = Path(directory) / 'scratch' / 'repo'
+            root.mkdir(parents=True)
+            subprocess.run(['git', 'init', '--quiet', str(root)], check=True, cwd=root, timeout=30)
+            (root / 'README.md').write_text('# Entry\n[guide](guide.md)\n', encoding='utf-8')
+            (root / 'guide.md').write_text('# Guide\n', encoding='utf-8')
+            result = inspect_repository(root)
+            self.assertFalse(result['errors'])
+            self.assertFalse(any('scratch evidence' in message for message in result['diagnostics']))
 
     def test_windows_path_examples_and_explicit_html_fragment(self):
         with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:

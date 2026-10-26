@@ -20,7 +20,7 @@ $Python=(Resolve-Path -LiteralPath $Python).Path
 $Request=(Resolve-Path -LiteralPath $Request).Path
 . (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/engineering_budget.ps1')
-. (Join-Path $RepoRoot 'common/multipole/resource_budget_support.ps1')
+. (Join-Path $RepoRoot 'common/resource_budget_support.ps1')
 . (Join-Path $RepoRoot 'common/simion/short_pa_path_support.ps1')
 $integration='instrument_assembly'
 $relative='integrations'

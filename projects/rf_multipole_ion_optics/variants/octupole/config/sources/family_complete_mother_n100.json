@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "role": "repository_ion_release",
+  "frame_id": "multipole.cartesian.z_axis.v1",
+  "particle_count": 100,
+  "mother_particle_count": 100,
+  "geometry": {
+    "shape": "disk",
+    "center_mm": [
+      0.0,
+      0.0,
+      -1.5
+    ],
+    "radius_mm": 0.5
+  },
+  "species": {
+    "mass_amu": 100.0,
+    "charge_state": 1
+  },
+  "sampling": {
+    "strategy": "mt19937_uniform_disk_filled_cone_rf_phase_v1",
+    "seed": 2026072801,
+    "rf_frequency_hz": 1100000.0,
+    "kinetic_energy_ev": 2.0,
+    "cone_half_angle_deg": 5.0
+  }
+}

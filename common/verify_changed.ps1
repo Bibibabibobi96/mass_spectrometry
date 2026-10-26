@@ -444,7 +444,7 @@ $preFreshnessBarrier = @(
     'development_standards',
     'ruff_changed_python',
     'project_registry',
-    'rf_quadrupole_generated_publications'
+    'rf_multipole_generated_publications'
 )
 Invoke-ChangedStageGroup $preFreshnessBarrier
 
@@ -454,12 +454,12 @@ $postFreshnessStages = @(
         Where-Object {
             $_ -notin @(
                 'project_registry',
-                'rf_quadrupole_generated_publications'
+                'rf_multipole_generated_publications'
             )
         }
 )
-# Any selected quadrupole Core gate is now separated from its Freshness gate by
-# the completed group above; no two quadrupole gate instances run concurrently.
+# Selected multipole variant gates run only after their shared Freshness stage
+# has completed; each variant keeps its own validation scope.
 Invoke-ChangedStageGroup $postFreshnessStages
 
 Write-Output "CHANGED_GATE=PASS PYTHON=$pythonVersion CHANGED_PATHS=$($changedPaths.Count) FULL_SCOPE=$([bool]$FullScope)"

@@ -36,7 +36,7 @@ _SOURCES = {
     "analyzer_component_source": "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua",
     "pulse_hook_source": "integrations/runtime/single_flight_pulse_hook.lua",
     "frontend_hook_source": "integrations/runtime/single_flight_frontend_hook.lua",
-    "rf_drive_kernel_source": "common/multipole/simion_rf_drive.lua",
+    "rf_drive_kernel_source": "common/simion/rf_drive.lua",
     "voltage_waveforms_source": "common/simion/voltage_waveforms.lua",
 }
 _SLOTS = {"flight_tube": 1, "reflectron": 2, "accelerator": 3, "detector": 4}

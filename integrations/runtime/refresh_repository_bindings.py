@@ -35,7 +35,7 @@ def compile_publications(repo_root: Path) -> dict[Path, bytes]:
         raise ValueError("terminal catalog owner differs")
     catalog_sha = repository_text_sha256(catalog)
     compiled = {}
-    for path in sorted((root / "common/multipole/campaigns").glob("*.json")):
+    for path in sorted((root / "projects/rf_multipole_ion_optics/config/campaigns").glob("*.json")):
         document = _load(path)
         binding = document.get("downstream_terminal_profile")
         if binding is None:

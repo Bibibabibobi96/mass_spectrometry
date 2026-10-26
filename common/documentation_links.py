@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter, defaultdict
 import html
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -18,7 +19,9 @@ from urllib.parse import unquote, urlsplit
 
 
 def is_history(path: Path) -> bool:
-    """Recognize only the explicit docs/history boundary, including frozen payloads."""
+    """Recognize frozen docs/history content, excluding its maintained entry index."""
+    if path.parts[-3:] == ("docs", "history", "README.md"):
+        return False
     return any(a == "docs" and b == "history" for a, b in zip(path.parts, path.parts[1:]))
 
 
@@ -37,6 +40,64 @@ def document_kind(path: Path) -> str:
     if path.parts[0] == "docs":
         return "repository-reference"
     return "implementation-or-support"
+
+
+def migrated_history(root: Path) -> tuple[set[str], list[str]]:
+    """Verify retired project records against their fixed Git source and exact bytes.
+
+    A move does not make old relative links current guidance. The maintained
+    parent index supplies both the relocated record and its original Git context.
+    Only verified records retain the existing-history diagnostic treatment.
+    """
+    verified, errors = set(), []
+    for directory in root.glob("projects/*/docs/history/retired_projects"):
+        manifest_path = directory / "migration_manifest.json"
+        label = manifest_path.relative_to(root).as_posix()
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            commit = manifest["source_commit"]
+            if manifest.get("schema_version") != 1 or not re.fullmatch(r"[0-9a-f]{40}", commit):
+                raise ValueError("invalid migration source/version")
+            tree = subprocess.run(
+                ["git", "-C", str(root), "ls-tree", "-rz", commit],
+                check=True, capture_output=True, cwd=root, timeout=30,
+            ).stdout
+            source_blobs = {}
+            for record in tree.split(b"\0"):
+                if record:
+                    metadata, source_path = record.split(b"\t", 1)
+                    source_blobs[source_path.decode("utf-8")] = metadata.split()[2].decode("ascii")
+            expected = {manifest_path}
+            entries = manifest["entries"]
+            if not isinstance(entries, list) or not entries:
+                raise ValueError("empty migration inventory")
+            for entry in entries:
+                source = entry["source_path"]
+                source_parts = Path(source).parts
+                archive = entry["archive_path"]
+                is_project = len(source_parts) >= 3 and source_parts[0] == "projects"
+                is_domain = source_parts[:2] == ("common", "multipole")
+                expected_archive = "/".join(source_parts[1:]) if is_project else source
+                if (not (is_project or is_domain) or ".." in source_parts
+                        or "\\" in source or archive != expected_archive):
+                    raise ValueError(f"invalid original path mapping: {source}")
+                path = directory / archive
+                if path in expected:
+                    raise ValueError(f"duplicate archive record: {archive}")
+                expected.add(path)
+                content = path.read_bytes()
+                digest = hashlib.sha256(content).hexdigest()
+                blob = hashlib.sha1(b"blob " + str(len(content)).encode("ascii") + b"\0" + content).hexdigest()
+                if (digest != entry["sha256"] or len(content) != entry["bytes"]
+                        or blob != source_blobs.get(source)):
+                    raise ValueError(f"frozen bytes/source mismatch: {archive}")
+                verified.add(path.relative_to(root).as_posix())
+            actual = {path for path in directory.rglob("*") if path.is_file()}
+            if actual != expected:
+                raise ValueError("unlisted or missing retired project payload")
+        except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+            errors.append(f"{label}: {error}")
+    return verified, errors
 
 
 def prose(text: str, *, keep_code_text: bool = False) -> str:
@@ -173,14 +234,15 @@ def inspect_repository(root: Path) -> dict:
         raise RuntimeError("Cannot read committed history boundary")
     committed = {p.decode("utf-8") for p in baseline.stdout.split(b"\0") if p}
     texts = {p: p.read_text(encoding="utf-8-sig") for p in paths if p.is_file()}
-    errors, diagnostics, inventory = [], [], []
+    moved_history, errors = migrated_history(root)
+    diagnostics, inventory = [], []
     incoming = set()
     paragraphs = defaultdict(set)
     artifact_root = root.parent / "artifacts"
     for path, text in texts.items():
         relative = path.relative_to(root)
         frozen = is_history(relative)
-        existing_history = frozen and relative.as_posix() in committed
+        existing_history = frozen and relative.as_posix() in (committed | moved_history)
         row = {"path": relative.as_posix(), "kind": document_kind(relative), "lines": len(text.splitlines()), "characters": len(text), "diagnostics": []}
         inventory.append(row)
         for number, target in links(text):
@@ -204,7 +266,7 @@ def inspect_repository(root: Path) -> dict:
                 row["diagnostics"].append(message)
             if resolved != path and not frozen:
                 incoming.add(resolved)
-            if not frozen and "scratch" in resolved.parts:
+            if not frozen and "scratch" in Path(unquote(file_part)).parts:
                 message = f"{relative.as_posix()}:{number}: scratch evidence reference '{target}'"
                 diagnostics.append(message)
                 row["diagnostics"].append(message)

@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping, Sequence
 
-from common.multipole.grounded_shield import require_grounded_potential
+from projects.rf_multipole_ion_optics.core.grounded_shield import require_grounded_potential
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import resolve_accelerator_geometry
 
 

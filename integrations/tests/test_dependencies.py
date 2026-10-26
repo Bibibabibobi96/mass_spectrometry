@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -456,6 +457,49 @@ $null=Freeze-ConsumerDependencies -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENT
                         self.assertIn(resource.stem, missing.stderr)
                     finally:
                         resource.write_bytes(original)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
+    def test_changed_frozen_dependency_reports_both_paths_and_measured_hashes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            repo = root / "repo"
+            source = repo / "common/fixture.txt"
+            source.parent.mkdir(parents=True)
+            original = b"dependency fixture\n"
+            source.write_bytes(original)
+            inputs = root / "inputs"
+            destination = inputs / "runtime_snapshot/common/fixture.txt"
+            quote = lambda value: str(value).replace("'", "''")
+            script = f"""
+. '{quote(DEPENDENCIES)}'
+function Copy-Item {{
+ param([string]$LiteralPath,[string]$Destination)
+ Microsoft.PowerShell.Management\\Copy-Item -LiteralPath $LiteralPath -Destination $Destination
+ # TEST_ONLY: force a different copied payload before the real two hash reads.
+ [IO.File]::AppendAllText($Destination,'changed')
+}}
+$dependency=[pscustomobject]@{{
+ id='fixture';provider_scope='repository_common';provider_project='common';provider_repo_path='common'
+ source_repo_path='common/fixture.txt';frozen_filename='runtime_snapshot/common/fixture.txt'
+ run_input_name='fixture';consumers=@('local_frontend')
+}}
+try {{
+ $null=Copy-FrozenDependency -RepoRoot '{quote(repo)}' -InputDir '{quote(inputs)}' -Dependency $dependency
+}} catch {{
+ [Console]::Error.WriteLine($_.Exception.Message)
+ exit 1
+}}
+"""
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(source.read_bytes(), original)
+            self.assertEqual(destination.read_bytes(), original + b"changed")
+            source_hash = hashlib.sha256(original).hexdigest().upper()
+            frozen_hash = hashlib.sha256(original + b"changed").hexdigest().upper()
+            self.assertEqual(result.stderr.strip(),
+                f"Dependency changed while frozen: {source}; destination={destination}; "
+                f"source_sha256={source_hash}; frozen_sha256={frozen_hash}")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_registered_provider_roots_and_frozen_boundaries(self) -> None:

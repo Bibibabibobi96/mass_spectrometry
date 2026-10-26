@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256 as _sha256
-from common.multipole.grounded_shield import require_grounded_potential
+from projects.rf_multipole_ion_optics.core.grounded_shield import require_grounded_potential
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

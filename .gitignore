@@ -2,10 +2,10 @@
 *.mph
 
 # Official manuals are local reference material, not normal repository history.
-official_docs/*.pdf
+docs/references/software/*.pdf
 
 # Academic source books are local references; track their bibliography, not PDFs.
-docs/references/*.pdf
+docs/references/literature/*.pdf
 
 # Local runtime caches and machine-specific launchers are not source assets.
 __pycache__/

@@ -132,6 +132,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         initial = plan_simion_dispatch(
             self.request(), [], available_memory_bytes=10_000,
             total_physical_memory_bytes=20_000,
+            logical_processors=16,
         )
         final = plan_adaptive_followup(
             initial, GIB, observed_cpu_percent=8, background_cpu_percent=5,
@@ -151,6 +152,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         initial = plan_simion_dispatch(
             self.request(particle_count=100), [], available_memory_bytes=10_000,
             total_physical_memory_bytes=20_000,
+            logical_processors=16,
         )
         final = plan_adaptive_followup(
             initial, GIB, observed_cpu_percent=10,
@@ -344,6 +346,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         initial = plan_simion_dispatch(
             self.request(), [], available_memory_bytes=100 * GIB,
             total_physical_memory_bytes=128 * GIB,
+            logical_processors=16,
         )
         for completed in (False, True):
             with self.subTest(first_completed=completed):
@@ -367,6 +370,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         initial = plan_simion_dispatch(
             self.request(), [], available_memory_bytes=10_000,
             total_physical_memory_bytes=20_000,
+            logical_processors=16,
         )
         final = plan_adaptive_followup(
             initial, GIB, observed_cpu_percent=8, background_cpu_percent=5,
@@ -386,6 +390,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         initial = plan_simion_dispatch(
             self.request(), [], available_memory_bytes=1,
             total_physical_memory_bytes=1,
+            logical_processors=16,
         )
         final = plan_adaptive_followup(
             initial,
@@ -441,6 +446,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         plan = plan_simion_dispatch(
             self.request(), [self.profile(peak=GIB)], available_memory_bytes=4 * GIB,
             total_physical_memory_bytes=10 * GIB, background_cpu_percent=5,
+            logical_processors=16,
         )
         self.assertEqual(plan["estimation"]["kind"], "exact_resource_profile")
         self.assertTrue(plan["estimation"]["observation_wait_skipped"])
@@ -514,10 +520,12 @@ class ResourceSchedulerTests(unittest.TestCase):
         prepared = plan_simion_dispatch(
             self.request(), [self.profile(peak=GIB)], available_memory_bytes=3 * GIB,
             total_physical_memory_bytes=10 * GIB,
+            logical_processors=16,
         )
         runtime = plan_runtime_dispatch(
             prepared, available_memory_bytes=6 * GIB,
             total_physical_memory_bytes=10 * GIB,
+            logical_processors=16,
         )
         self.assertGreater(runtime["limits"]["maximum_concurrency"], prepared["limits"]["maximum_concurrency"])
 
@@ -569,6 +577,7 @@ class ResourceSchedulerTests(unittest.TestCase):
                     "--request", str(request_path), "--output", str(output_path),
                     "--available-memory-bytes", str(int(4.5 * GIB)),
                     "--total-physical-memory-bytes", str(10 * GIB),
+                    "--logical-processors", "16",
                     "--observed-formal-peak-bytes", str(GIB),
                     "--observed-formal-cpu-percent", "8",
                     "--observed-background-cpu-percent", "5",

@@ -18,6 +18,107 @@ HELPER = Path(__file__).with_name("short_pa_path_support.ps1")
 
 @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell test")
 class ShortPaPathSupportTest(unittest.TestCase):
+    def test_immutable_guard_uses_one_key_for_short_expanded_and_ps_relative_paths(self) -> None:
+        from projects.rf_multipole_ion_optics.tests.domain.test_simion_runner_contract import _short_windows_path
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "immutable source long directory"
+            root.mkdir()
+            source = root / "source.pa"
+            payload = b"alias-guard"
+            source.write_bytes(payload)
+            short_source = _short_windows_path(source)
+            if short_source == source:
+                self.skipTest("Volume does not expose an 8.3 spelling")
+            script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+try {
+  $first=Protect-ImmutablePaSource -Source $env:PA_SHORT_SOURCE -ExpectedBytes 11 -ExpectedSha256 $env:PA_SHA
+  $second=Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes 11 -ExpectedSha256 $env:PA_SHA
+  if(-not$second.already_protected-or$global:MassSpectrometryImmutablePaSourceGuards.Count-ne1){throw 'Alias registered twice'}
+  Unprotect-ImmutablePaSource -Source $env:PA_SOURCE|Out-Null
+  Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes 11 -ExpectedSha256 $env:PA_SHA|Out-Null
+  Unprotect-ImmutablePaSource -Source $env:PA_SHORT_SOURCE|Out-Null
+  $before=[Environment]::CurrentDirectory
+  Push-Location -LiteralPath (Split-Path -Parent $env:PA_SHORT_SOURCE)
+  try {
+    Protect-ImmutablePaSource -Source 'source.pa' -ExpectedBytes 11 -ExpectedSha256 $env:PA_SHA|Out-Null
+    if([Environment]::CurrentDirectory-ne$before){throw 'PS-relative fixture changed process directory'}
+  } finally {Pop-Location}
+  $released=Unprotect-ImmutablePaSourcesUnderDirectory -Path (Split-Path -Parent $env:PA_SOURCE)
+  if($released-ne1-or$global:MassSpectrometryImmutablePaSourceGuards.Count-ne0){throw 'Directory release missed alias'}
+  [IO.File]::WriteAllText($env:PA_SOURCE,'released')
+  [pscustomobject]@{same_key=($first.path-eq$second.path);released=$released}|ConvertTo-Json -Compress
+} finally {Unprotect-AllImmutablePaSources|Out-Null}
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                     "PA_SHORT_SOURCE": str(short_source), "PA_SHA": hashlib.sha256(payload).hexdigest()},
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual(json.loads(completed.stdout.strip().splitlines()[-1]),
+                             {"same_key": True, "released": 1})
+            self.assertEqual(source.read_bytes(), b"released")
+
+    def test_imported_short_copy_and_new_copy_share_source_and_directory_cleanup(self) -> None:
+        from projects.rf_multipole_ion_optics.tests.domain.test_simion_runner_contract import _short_windows_path
+
+        with tempfile.TemporaryDirectory(prefix="simion_pa_links_test_") as directory:
+            root = Path(directory).resolve()
+            source = root / "published source long name.pa"
+            destination = root / "existing copy long name.pa"
+            payload = b"alias-copy"
+            source.write_bytes(payload)
+            destination.write_bytes(payload)
+            destination.chmod(stat.S_IREAD)
+            short_root = _short_windows_path(root)
+            short_source = _short_windows_path(source)
+            short_destination = _short_windows_path(destination)
+            if short_destination == destination:
+                self.skipTest("Volume does not expose an 8.3 spelling")
+            script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+try {
+  $imported=Import-ExistingShortPaCopy -Source $env:PA_SHORT_SOURCE -Destination $env:PA_SHORT_DESTINATION `
+    -ExpectedBytes 10 -ExpectedSha256 $env:PA_SHA
+  Confirm-ShortPaCopyIdentity -Path $env:PA_DESTINATION|Out-Null
+  $created=New-ShortPaCopy -Source $env:PA_SOURCE -Destination (Join-Path $env:PA_ROOT 'new.pa') `
+    -ExpectedBytes 10 -ExpectedSha256 $env:PA_SHA -MarkDestinationReadOnly -GuardDestinationReadOnly
+  $created=Get-ShortPaCopyIdentity -Path $created
+  if($global:MassSpectrometryShortPaSourceGuards.Count-ne1){throw 'Source alias acquired duplicate guard'}
+  if($global:MassSpectrometryShortPaCopies.Count-ne2){throw 'Copy registration differs'}
+  Get-ShortPaCopyIdentity -Path $env:PA_SHORT_DESTINATION|Out-Null
+  Remove-ShortPaCopiesUnderDirectory -Path $env:PA_SHORT_ROOT -ExpectedNamePrefix 'simion_pa_links_test_'
+  if($global:MassSpectrometryShortPaCopies.Count-ne0-or$global:MassSpectrometryShortPaSourceGuards.Count-ne0){throw 'Directory cleanup missed alias'}
+  [IO.File]::WriteAllText($env:PA_SOURCE,'released')
+  [pscustomobject]@{imported=$imported.destination_write_guarded;created=$created.destination_write_guarded}|ConvertTo-Json -Compress
+} finally {
+  foreach($path in @($global:MassSpectrometryShortPaCopies.Keys)){Remove-ShortPaCopy -Path $path}
+}
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                     "PA_SHORT_SOURCE": str(short_source), "PA_ROOT": str(root),
+                     "PA_SHORT_ROOT": str(short_root), "PA_DESTINATION": str(destination),
+                     "PA_SHORT_DESTINATION": str(short_destination),
+                     "PA_SHA": hashlib.sha256(payload).hexdigest()}, timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual(json.loads(completed.stdout.strip().splitlines()[-1]),
+                             {"imported": True, "created": True})
+            self.assertFalse(destination.exists())
+            self.assertFalse((root / "new.pa").exists())
+            self.assertEqual(source.read_bytes(), b"released")
+
     def test_frozen_unbuffered_identity_uses_explicit_python_and_invalid_override_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

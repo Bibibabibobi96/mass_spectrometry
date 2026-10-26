@@ -6,8 +6,8 @@ import json
 import math
 from typing import Any
 
-from common.multipole.axial_acceleration import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
-from common.multipole.simion_geometry import (
+from projects.rf_multipole_ion_optics.core.axial_acceleration import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
+from projects.rf_multipole_ion_optics.simion.simion_geometry import (
     render_grouped_rod_array_gem,
 )
 from common.simion.aperture import resolve_rectangular_aperture_discretization
@@ -251,7 +251,7 @@ def native_frontend_instances(plan: dict) -> tuple[tuple[str, ...], str]:
         project = plan['components'][instance_id]['project_id']
         if project == 'single_reflection_oa_tof_mass_analyzer':
             analyzers.append(instance_id)
-        elif project in ('rf_quadrupole_ion_optics', 'rf_hexapole_ion_optics', 'rf_octupole_ion_optics'):
+        elif project == 'rf_multipole_ion_optics':
             multipoles.append(instance_id)
         else:
             raise ValueError(f'{instance_id}: native single-reflection renderer/field/drive is unsupported for {project}')

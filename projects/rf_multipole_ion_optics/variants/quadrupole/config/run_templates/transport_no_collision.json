@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "role": "rf_quadrupole_run_config_template",
+  "project": "rf_multipole_ion_optics",
+  "mode": "transport_no_collision",
+  "inputs": {
+    "baseline": "variants/quadrupole/config/baseline.json",
+    "resolved_design": "variants/quadrupole/config/resolved_design_official.json",
+    "mode": "config/modes/quadrupole_transport_no_collision.json",
+    "particle_source": "variants/quadrupole/config/official_particle_source.json",
+    "particle_table": "variants/quadrupole/config/particles/official_fixed_100.ion"
+  },
+  "output_policy": {
+    "lifecycle": "candidate",
+    "overwrite": false,
+    "manifest_required": true,
+    "particle_state_required": true
+  }
+}

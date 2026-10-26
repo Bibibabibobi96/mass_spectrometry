@@ -580,9 +580,9 @@ foreach($relative in $commonFrozenFiles.Values){
   Copy-Item -LiteralPath (Join-Path $env:DEPENDENCY_TEST_REPO $relative) -Destination $destination
 }
 Set-Location $env:FROZEN_DEPENDENCY_TEST_ROOT
-. ./common/multipole/resource_budget_support.ps1
+. ./common/resource_budget_support.ps1
 if((Get-Command New-RepositoryProcessObservation).ScriptBlock.File -ne
-    (Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'common/multipole/resource_budget_support.ps1')){
+    (Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'common/resource_budget_support.ps1')){
   throw 'Observation did not load from the frozen source table'
 }
 $observation=New-RepositoryProcessObservation
@@ -631,7 +631,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "common/host_execution_lease.ps1",
             "common/host_resource_scheduler.py",
             "common/host_resource_policy.json",
-            "common/multipole/resource_budget_support.ps1",
+            "common/resource_budget_support.ps1",
             "common/contracts/run_artifact_support.ps1",
             "common/contracts/write_run_manifest.py",
             "common/contracts/recorded_file_removal.py",

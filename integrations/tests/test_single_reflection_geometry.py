@@ -9,11 +9,11 @@ from unittest.mock import patch
 
 from common.contracts.machine_contracts import ContractError
 from common.contracts.rigid_transform import FramedPosition, RigidTransform
-from common.multipole.compile_design_request import compile_design_request
-from common.multipole.simion_geometry import render_physical_gem, physical_electrode_view
-from common.multipole.test_compile_design_request import design_request
+from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physical_gem, physical_electrode_view
+from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from common.integration.resolve_assembly import compile_assembly_layout
-from common.multipole.component_port import build_assembly_interface
+from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
 from integrations.workflows.single_reflection_flight.geometry import (
     compile_frontend_geometry, render_frontend_body, render_frontend_domain,
 )
@@ -58,7 +58,7 @@ def candidate_300mm_fixture():
 
 def multipole_source(project):
     root = Path(__file__).resolve().parents[2]
-    request = json.loads((root / 'projects/rf_octupole_ion_optics/config/requests/through_exit.json').read_text())
+    request = json.loads((root / 'projects/rf_multipole_ion_optics/variants/octupole/config/requests/through_exit.json').read_text())
     request['identity'] = design_request(project)['identity']
     request['request_id'] = 'test_' + project
     request['geometry_mm']['enclosure']['model'] = 'cylindrical_grounded_shield_through_entrance_exit_v1'
@@ -67,8 +67,8 @@ def multipole_source(project):
 
 def quadrupole_source(*, r0, dc, frequency_hz, phase_rad):
     root = Path(__file__).resolve().parents[2]
-    request = json.loads((root / 'projects/rf_octupole_ion_optics/config/requests/through_exit.json').read_text())
-    request['identity'] = design_request('rf_quadrupole_ion_optics')['identity']
+    request = json.loads((root / 'projects/rf_multipole_ion_optics/variants/octupole/config/requests/through_exit.json').read_text())
+    request['identity'] = design_request('quadrupole')['identity']
     request['request_id'] = f'test_quad_{r0}_{dc}_{frequency_hz}_{phase_rad}'
     request['geometry_mm']['inscribed_radius_r0'] = r0
     request['geometry_mm']['enclosure']['model'] = 'cylindrical_grounded_shield_through_entrance_exit_v1'
@@ -77,7 +77,7 @@ def quadrupole_source(*, r0, dc, frequency_hz, phase_rad):
 
 
 def source_fixture(segmentation=None):
-    request = design_request("rf_octupole_ion_optics", segmentation=segmentation)
+    request = design_request("octupole", segmentation=segmentation)
     request["geometry_mm"]["enclosure"].update(model="cylindrical_grounded_shield_through_exit_v1", vacuum_z_max_mm=90.)
     request["geometry_mm"]["exit_interface"]["connector_length_mm"] = 0.
     return compile_design_request(request, expected_identity=request["identity"])
@@ -201,7 +201,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
             current = self.kw['composition_plan']['recipe']
             if failure=='extra_instance': current['instances'].append(dict(current['instances'][0],instance_id='extra'))
             elif failure=='extra_edge': current['connections'].append(dict(current['connections'][0],connection_id='extra'))
-            elif failure=='provider': current['instances'][0]['project_id']='rf_octupole_ion_optics'
+            elif failure=='provider': current['instances'][0]['project_id']='rf_multipole_ion_optics'
             elif failure=='port': current['connections'][0]['downstream']['port_id']='mechanical_exit'
             elif failure=='coupling': current['connections'][0]['coupling_mode']='state_handoff'
             else: current['connections'][0]['gap_mm']=1.
@@ -209,7 +209,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
 
     def test_local_oatof_removes_only_native_multipole_body_without_remapping(self):
         from integrations.tests.test_single_reflection_fields import multipole_source
-        self.source = multipole_source('rf_octupole_ion_optics')
+        self.source = multipole_source('octupole')
         self.kw = inputs(self.source, self.oatof)
         self.kw['electrode_bindings']['multipole'] = {i:i for i in range(1,11)}
         self.kw['electrode_bindings']['oatof']['accelerator_ring_ids'] = list(range(16,36))
@@ -428,7 +428,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
             self.kw = original
 
     def test_two_and_three_distinct_providers_form_one_zero_gap_chain(self):
-        sources = [source_fixture(), multipole_source('rf_hexapole_ion_optics'), multipole_source('rf_quadrupole_ion_optics')]
+        sources = [source_fixture(), multipole_source('hexapole'), multipole_source('quadrupole')]
         for count in (2, 3):
             names = [f'mp_{index}' for index in range(count)]
             kw = multi_inputs(sources[:count], self.oatof, names=names)
@@ -473,7 +473,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
 
     def test_two_and_three_multipoles_share_one_fine_domain_without_changing_parent(self):
         sources = [multipole_source(project) for project in
-                   ('rf_octupole_ion_optics', 'rf_hexapole_ion_optics', 'rf_quadrupole_ion_optics')]
+                   ('octupole', 'hexapole', 'quadrupole')]
         for count in (2, 3):
             with self.subTest(count=count):
                 names = [f'mp_{index}' for index in range(count)]

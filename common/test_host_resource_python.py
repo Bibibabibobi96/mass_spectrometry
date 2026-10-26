@@ -157,7 +157,9 @@ class HeavyConsumerEntryTests(unittest.TestCase):
                 ["--contract", "missing.json", "--output", "unused.json"],
             "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0_l1_hardware_candidate":
                 ["--l0-receipt", "missing.json", "--contract", "missing.json", "--output", "unused.json"],
-            "common.multipole.run_ideal_transport": ["--project-root", "missing"],
+            "projects.rf_multipole_ion_optics.runtime.run_ideal_transport": [
+                "--project-root", "missing", "--design-profile-id", "hexapole_no_acceleration_full_length"
+            ],
             "projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison":
                 ["--seed", "1", "--config", "missing.json"],
         }

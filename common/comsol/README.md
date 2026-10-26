@@ -1,7 +1,7 @@
 # COMSOL共享测试与启动器
 
 本目录保存跨项目可复用的COMSOL启动器和组件级验证测试，不保存任何项目的正式参数、模型或
-当前结论。任务分流返回[COMSOL 阅读入口](../../docs/COMSOL_GUIDE.md)；采用组件测试进入正式项目后，
+当前结论。任务分流返回[COMSOL 阅读入口](../../docs/tools/COMSOL_GUIDE.md)；采用组件测试进入正式项目后，
 其几何、参数、GUI节点和验收状态必须写入该项目文档。
 
 按本次工作选择：[启动与失败分类](#正式启动入口) · [资源阶段](#主机资源阶段) ·
@@ -97,7 +97,7 @@ launcher 启动后立即登记 PID；等待报告和 Compute 期间复用公共�
 未传`Limits`时仍观察物理危险，但不生成usage文件或虚构工程预算。危险保留量和持续时间只读取
 [主机策略](../host_resource_policy.json)；持续危险只停止本次受管进程并失败，不自动重试Compute。
 未知进程范围或未知内存不冒充已确认危险；计量写入失败告警，不抹去已确认危险或遮蔽科学异常。
-该机制由`resource_budget_support.ps1`中的窄观察器提供，科学阶段、成功条件和终态发布仍由调用方拥有。
+该机制由[`common/resource_budget_support.ps1`](../resource_budget_support.ps1)中的窄观察器提供，科学阶段、成功条件和终态发布仍由调用方拥有。
 
 `test_livelink_resource_stages.py` 在临时目录替换外部调度与进程启动，验证阶段顺序、登记失败清理及
 重试边界；另以实际惰性父子进程验证预算／危险和清理归属，角色候选由替身提供。
@@ -145,9 +145,9 @@ Study/Solver 执行；GUI Compute 指 Desktop 重开后操作，二者不能互�
 
 | 能力 | 官方语义与本地实现入口 | 已登记验证 | 尚不能证明 |
 |---|---|---|---|
-| 活动 Time 步策略 | [Time API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.51.html)；[活动键映射](../../docs/COMSOL_API.md#time-节点的活动步策略) | [OA 修复记录第 2 节](../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#2-已完成的实现验证及其边界)：GA/BDF/DP5 空模型写入、保存重开、回读；DP5/GA 小模型另有真实 Study.run 前后回读 | 空模型不是轨迹求解；诊断配置未完成正式资产保存重开与 GUI Compute 晋升 |
-| 固定网格的代数停止误差 | [CG-AMG](../../docs/COMSOL_API.md#稳态cg-amg与电势阶次)；[场探针冻结结果][api-field] | 同一 4,879 四面体、7,292 DOF 的线性电势模型，真实 CG 默认/加严及 PARDISO 参考三案，保存活动引用与采样误差 | 未做仪器空间收敛；不能据此规定全仓 stol 或直接法 |
-| 原生粒子读取 | [mphparticle 官方参考](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.51.html)；[数值提取](../../docs/COMSOL_API.md#数值提取) | [输出双通道小模型][api-output]核对默认 p/v 与显式坐标/速度；[OA README](../../projects/single_reflection_oa_tof_mass_analyzer/README.md)导航到真实 N100 配对与事件回归 | 数组有限不代表数值准确；固定 t 查询不能自动获得精确壁面位置或停止时间 |
+| 活动 Time 步策略 | [Time API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.51.html)；[活动键映射](../../docs/tools/COMSOL_API.md#time-节点的活动步策略) | [OA 修复记录第 2 节](../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#2-已完成的实现验证及其边界)：GA/BDF/DP5 空模型写入、保存重开、回读；DP5/GA 小模型另有真实 Study.run 前后回读 | 空模型不是轨迹求解；诊断配置未完成正式资产保存重开与 GUI Compute 晋升 |
+| 固定网格的代数停止误差 | [CG-AMG](../../docs/tools/COMSOL_API.md#稳态cg-amg与电势阶次)；[场探针冻结结果][api-field] | 同一 4,879 四面体、7,292 DOF 的线性电势模型，真实 CG 默认/加严及 PARDISO 参考三案，保存活动引用与采样误差 | 未做仪器空间收敛；不能据此规定全仓 stol 或直接法 |
+| 原生粒子读取 | [mphparticle 官方参考](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.51.html)；[数值提取](../../docs/tools/COMSOL_API.md#数值提取) | [输出双通道小模型][api-output]核对默认 p/v 与显式坐标/速度；[OA README](../../projects/single_reflection_oa_tof_mass_analyzer/README.md)导航到真实 N100 配对与事件回归 | 数组有限不代表数值准确；固定 t 查询不能自动获得精确壁面位置或停止时间 |
 | 原生插值函数驱动 CPT | [函数 API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.34.html)；[小模型结果][api-interpolation] | 规则线性表、显式单位、范围外行为和解析轨迹的真实 Compute | 非均匀三维仪器场的采样收敛、能量一致性及整体提速仍未验证 |
 | Freeze 与停止时间 | [粒子状态](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.02.html)、[Freeze](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.38.html) | [平面常速小模型][api-wall]核对全部 N100 的解析停止时间；后续具名曲面阶次及原生事件对照从 [OA 项目入口](../../projects/single_reflection_oa_tof_mass_analyzer/README.md)追溯，稀疏固定 t 查询的负结果保留 | 具名解析夹具不授予任意曲面、多壁面或实际仪器资格，不能直接替换整机检测器 |
 | 装配内存选项 | [Windows 命令](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)；[共享入口边界](#正式启动入口) | [冻结启动与恢复配置][api-assembly]：本机拒绝 on，auto/matrix 已完成真实小模型；原始拒绝日志已绑定 | 官方页和当前 wrapper 枚举不等于本机均可启动；没有大型装配峰值或 MR 断言修复结论 |
@@ -162,7 +162,7 @@ Study/Solver 执行；GUI Compute 指 Desktop 重开后操作，二者不能互�
 [后续原因隔离与原生事件候选](../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261022__sparse-counter-cause-and-native-event-reader.md)
 区分了保存状态、Counter、原生 st 查询与辅助变量记录：GA／Newtonian 稀疏终态候选通过两真实壁面及重复，
 DP5 晚期辅助表和交点身份路径保留失败。evaluate 数量抽样、all-solnum 缺 t、Particle expr 单字符串等
-接口实证见[数值提取](../../docs/COMSOL_API.md#数值提取)。这仍不是第二个仪器项目或整机性能验证。
+接口实证见[数值提取](../../docs/tools/COMSOL_API.md#数值提取)。这仍不是第二个仪器项目或整机性能验证。
 
 [api-field]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_102831__test__comsol__field-and-cpt-followup__r02/results/field_followup_summary.json
 [api-output]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/output_controls_summary.json

@@ -40,7 +40,7 @@
 `artifacts/.../runs/<run_id>`；运行器把短路径仅作为进程工作路径，并在终态后调用
 `Remove-RunPackageExecutionAlias`清理它。实际文件从未搬离最终run，Python manifest解析 junction 后记录真实
 artifact路径，因此run ID、输入/输出身份、SHA和历史引用不变。不能以复制后回迁或只缩短某个求解器子目录
-替代该合同。该 junction 仅指向本次可写 run；SIMION 外部只读 PA 输入另用[已验证普通副本机制](../../docs/SIMION_REFERENCE.md#长pa输入路径)，不得用此别名暴露不可变 PA 源。
+替代该合同。该 junction 仅指向本次可写 run；SIMION 外部只读 PA 输入另用[已验证普通副本机制](../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，不得用此别名暴露不可变 PA 源。
 `Write-RunManifest`通过UTF-8标准输入向`write_run_manifest.py --output-list-json -`传递输出路径，
 避免大量文件路径超过Windows进程命令行长度；列表严格为字符串数组，不再落盘临时运输文件。
 原Python入口的重复`--output`仍可使用，两种输入共同进入同一manifest校验和身份计算。
@@ -181,6 +181,7 @@ writer/verifier同时扫描未列出的重型文件，防止通过漏报output�
 `capacity_ledger.json`及[`capacity_protection.py`](capacity_protection.py)维护的公共租约，不存在第二套项目级门禁。
 artifact布局检查接受该精确台账文件并复用台账校验器；租约目录的既有decision lock由公共租约读取器识别，
 它是内核互斥所用的保留文件，不是JSON证据。其他未登记common文件仍拒绝。
+公共租约按解析后的路径身份比较保护范围，保留父／子覆盖和未创建子路径的保护；不改写已有租约路径表示或key保护。
 公共PA布局检查复用owner的只读事务校验入口，接受严格事务元数据及具名key锁；未完成的非空payload、
 build-scratch或未知文件仍不能作为干净缓存布局通过，不调用会修改台账的maintenance审计。
 
@@ -471,7 +472,7 @@ manifest。旧manifest若记录绝对路径，只有仍位于原路径且全部�
 角色而不是四个可互换平面：`source`记录从粒子源合同在源释放面产生的初始事件，`rod_exit`记录杆端
 事件，`handoff`记录跨组件交接事件，`terminal`记录求解器终止、撞壁、超时等最终分类。公共事件
 角色不定义任何器件表面；具体技术域必须在本域机器合同和README中定义事件绑定的物理对象。多极杆
-绑定只按[`../multipole/README.md`](../multipole/README.md#统一术语)解释。
+绑定只按[多极杆术语](../../projects/rf_multipole_ion_optics/docs/IMPLEMENTATION.md#统一术语)解释。
 `component_particle_state.py`及
 [`schemas/component_particle_state.schema.json`](schemas/component_particle_state.schema.json)
 定义跨组件转移使用的version 1 canonical状态：每个粒子一行，严格按Schema中的
@@ -538,12 +539,25 @@ Euler顺序或器件参数反写到公共刚体语义。供应商局部坐标映
 .\.venv\Scripts\python.exe common\contracts\build_project_registry.py --check
 ```
 
+项目合并通过`retired_project_descriptors`绑定原字节冻结的旧描述符：仓库相对路径、字节数、SHA-256及
+来源commit必须明确，旧owner和其更早aliases仍使用原artifact位置、记录身份及资格边界。
+[`artifact_identity_archive.py`](artifact_identity_archive.py)只读展开这些身份；旧capabilities不进入活动项目注册，
+行政改名的`legacy_identities`也不因合并改写为新的归档owner。
+`New-RunPackage`在创建目录和登记容量前调用同一身份检查，拒绝明确退休owner及其aliases创建新run；
+其他项目、`instrument_assembly`及未声明退休的既有调用边界保持不变。历史读取与验证继续允许，
+发现旧描述符字节、路径或只读策略不符时失败关闭，不重写manifest或晋级原结果。
+
 ## 从自然语言到计划
 
 当前边界是“Agent理解自然语言，确定性工具验证合同”：Agent先把需求翻译成`design_request` JSON，
 保留为`proposed`，由使用者批准后才能请求formal证据。校验结果固定为`READY`、
 `NEEDS_CLARIFICATION`、`NEEDS_PROJECT_COMPLETION`、`NEEDS_NEW_PROJECT`或`UNSUPPORTED`，不会因为
 项目目录存在就假定能力已经完成。
+
+`target.structural_variant_id`显式选择项目描述符声明的结构变体，并仅使用该变体的能力、指标和资格等级。
+同一功能存在多个结构候选而未指定时返回`NEEDS_CLARIFICATION`，不会按成熟度代选极数；未知变体返回
+`UNSUPPORTED`，不回退其他变体。没有结构变体的既有项目仍按原功能合同校验。
+显式`target.mode`先在所选结构内筛选对应能力，再判断其成熟度；未知模式不能回退同结构的其他能力。
 
 ```powershell
 .\.venv\Scripts\python.exe -m common.contracts.validate_design_request <request.json>
@@ -569,6 +583,8 @@ Euler顺序或器件参数反写到公共刚体语义。供应商局部坐标映
 求解已经运行或指标已经满足。只完成结构构建的runner不得把分辨率等未评价目标列为支持。
 需要显式粒子表、RF幅值等运行绑定的profile使用`--bind key=value`提供预览值。编译器会验证入口文件、
 生成受命名合同约束的子run ID，并保留项目profile的限制说明，但不会创建artifact运行目录。
+多极杆`runtime_profile_id`须解析到所选能力的同一结构变体；未知、空值或跨变体绑定拒绝执行，完整绑定后仍未展开的命令占位符也会被拒绝。
+campaign绑定复用既有实验解析器核对结构，并读取实验冻结的`authorized_run_id`；该身份不能由调用者覆盖。缺少campaign绑定时只返回缺失输入的预览。
 
 ## 正式结果与来源运行
 

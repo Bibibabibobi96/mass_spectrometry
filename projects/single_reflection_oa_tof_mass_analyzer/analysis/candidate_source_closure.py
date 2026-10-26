@@ -18,7 +18,7 @@ ROLE = "oa_tof_candidate_execution_source_closure"
 # Keep paths repository-relative and use forward slashes in the machine record.
 RELATIVE_PATHS = (
     "common/simion/process_observation.py",
-    "common/multipole/grounded_shield.py",
+    "projects/rf_multipole_ion_optics/core/grounded_shield.py",
     "common/simion/aperture.py",
     "common/contracts/machine_contracts.py",
     "common/contracts/schemas/simion_rectangular_aperture_discretization.schema.json",
@@ -33,7 +33,7 @@ RELATIVE_PATHS = (
     "common/host_execution_lease.ps1",
     "common/host_resource_scheduler.py",
     "common/host_resource_policy.json",
-    "common/multipole/resource_budget_support.ps1",
+    "common/resource_budget_support.ps1",
     "common/comsol/add_comsol_size_feature.m",
     "common/comsol/livelink_environment.ps1",
     "common/comsol/livelink_failure_classification.ps1",

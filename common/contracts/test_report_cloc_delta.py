@@ -31,7 +31,7 @@ def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 class ClocDeltaReportTests(unittest.TestCase):
     def test_fixture_filename_in_test_boundary_preserves_production_priority(self) -> None:
         # Execute the real classifier functions without running CLOC/snapshots.
-        profile = REPO_ROOT / 'projects/rf_octupole_ion_optics/config/execution_profiles.json'
+        profile = REPO_ROOT / 'projects/rf_multipole_ion_optics/config/execution_profiles.json'
         fixture = 'integrations/tests/frontend_fixtures.py'
         self.assertTrue((REPO_ROOT / fixture).is_file())
         command = f"""
@@ -42,12 +42,12 @@ foreach($name in @('Get-ExecutionProfileEntrypoints','Get-PathClassification')){
   $node=$ast.Find({{param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name-eq$name}},$true)
   . ([scriptblock]::Create($node.Extent.Text))
 }}
-$selected=@([pscustomobject]@{{relative='projects/rf_octupole_ion_optics/config/execution_profiles.json';full='{profile.as_posix()}'}})
+$selected=@([pscustomobject]@{{relative='projects/rf_multipole_ion_optics/config/execution_profiles.json';full='{profile.as_posix()}'}})
 $active=Get-ExecutionProfileEntrypoints -Root '{REPO_ROOT.as_posix()}' -SelectedFiles $selected
 $paths=@('{fixture}','project/test/other_fixtures.py','project/src/other_fixtures.py',
   'project/tests/helper.py','project/tests/support/helper.py',
   'common/comsol/run_comsol_r2025b.ps1','projects/orthogonal_accelerator/verify_project.ps1',
-  'common/multipole/run_simion_transport_campaign.ps1')
+  'projects/rf_multipole_ion_optics/runtime/run_simion_transport_campaign.ps1')
 $results=@($paths|ForEach-Object{{Get-PathClassification -RelativePath $_ -ActiveEntrypoints $active}})
 # A registered entrypoint overrides even an otherwise explicit fixture name.
 $null=$active.Add('{fixture}')

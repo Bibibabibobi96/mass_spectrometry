@@ -18,6 +18,16 @@ OWNER = ROOT / 'integrations/workflows/paired_accelerator_pulse/execute.ps1'
 
 
 class PairedPulseOwnerTests(unittest.TestCase):
+    def capacity_isolated_owner(self, root):
+        """Startup capacity admission is inert; lease and lifecycle operations remain real."""
+        source=OWNER.read_text(encoding='utf-8')
+        boundary=". (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')"
+        self.assertEqual(source.count(boundary),1)
+        owner=root/'inert_capacity_owner.ps1'
+        owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }"),
+            encoding='utf-8',newline='\n')
+        return owner
+
     def invoke(self, arguments: list[str], *, timeout: int = 180):
         return subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', *arguments], cwd=ROOT,
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout, check=False)
@@ -40,8 +50,8 @@ class PairedPulseOwnerTests(unittest.TestCase):
             artifacts.mkdir()
             initialize_capacity_ledger(artifacts, objects=[])
             run_id = '20261026_060001__test__python__paired-pulse-owner'
-            result = self.invoke(['-File', str(OWNER), '-Request', str(request), '-DryRun',
-                '-ArtifactRoot', str(artifacts), '-Python', sys.executable, '-RunId', run_id])
+            result = self.invoke(['-File', str(self.capacity_isolated_owner(root)), '-Request', str(request), '-DryRun',
+                '-ArtifactRoot', str(artifacts), '-Python', sys.executable, '-RunId', run_id,'-RepoRoot',str(ROOT)])
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             run = artifacts / 'projects/instrument_assembly/runs' / run_id
             summary = json.loads((run / 'summary.json').read_text())
@@ -128,6 +138,7 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
         script = r'''param($Owner,$RepoRoot,$Python,$ArtifactRoot,$RunId,$Outcome)
 $ErrorActionPreference='Stop'
 . (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+function Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}

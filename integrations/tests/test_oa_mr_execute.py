@@ -26,6 +26,11 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_bunch_source_and_schedule import _states
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import materialize_bunch_source
         from projects.parallel_mirror_dual_stripe_mr_tof.analysis.static_field_binding import load_binding
+        from common.contracts.verify_run_manifest import verify_record
+        from common.integration.resolve_assembly import compile_assembly_layout, derive_assembly_scope
+        from common.integration.test_resolve_assembly import direct_fixture
+        recipe,components=direct_fixture()
+        parent_assembly=compile_assembly_layout(recipe,components)
         source = RUNNER.read_text(encoding="utf-8")
         start = source.index("    if(-not[string]::IsNullOrWhiteSpace($BatchContinuationRunPath)){")
         stages = "  if($isBunchFlight){\n" + source[start:source.index("  # Static component guards remain live", start)]
@@ -37,7 +42,7 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
             self.assertNotIn(name + "=", final_inputs)
         for case in ("zero", "mixed", "fresh", "science_changed", "gui_missing", "mixed_missing"):
             with self.subTest(case=case), TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = Path(directory).resolve()
                 fixture = MrtofBatchContinuationTests()
                 parent, config_path = fixture._fixture(root, static_mode="native_static_pa")
                 current = config_path.parent
@@ -64,6 +69,17 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
                     (parent / "logs" / f"native_two_prism_flight__batch{index:02d}.log").write_text(
                         "".join(f"MRTOF_EVENT terminal ion={i} splat=1 t_us=2 turns=0 x_mm=0 y_mm=0 z_mm=0 vx_mm_us=0 vy_mm_us=0 vz_mm_us=0 central_crossings=0\n" for i in range(1, count+1))
                         + f"status,Fly completed. {count} splats\nIOB_FLIGHT: PASS iob=fixture.iob\n")
+                local_scope=(dict(instance_ids=['oa'],research_scope='inert publication fixture',
+                    boundary_assumptions='upstream guide omitted') if case.startswith('mixed') else None)
+                selected=derive_assembly_scope(parent_assembly,local_scope=local_scope)
+                self.assertEqual(selected['scope']['kind'],'local' if local_scope else 'full')
+                if local_scope is None:
+                    self.assertEqual(selected['scope']['instance_ids'],['guide','oa'])
+                for run in (parent,current):
+                    assembly_path=run/'inputs/oa_mr_composition_plan.json'
+                    assembly_path.write_text(json.dumps(parent_assembly),encoding='utf-8')
+                    if local_scope is not None:
+                        (run/'inputs/oa_mr_local_scope.json').write_text(json.dumps(local_scope),encoding='utf-8')
                 fixture._seal_oa_parent(parent)
                 config = json.loads(config_path.read_text())
                 config.update(run_id="20261025_170000__sim__simion__oa-recovery-fixture",
@@ -103,6 +119,9 @@ $simion=if($Case-eq'zero'){Join-Path $Root 'missing_simion.exe'}else{$Python}
 $runDir=$Current;$runConfig=Join-Path $Current run_config.json
 $resultDir=Join-Path $Current results;$logDir=Join-Path $Current logs;$solverDir=Join-Path $Current inputs
 $artifactSolverDir=$solverDir;$package=@{input_dir=$solverDir;artifact_run_dir=$Current}
+$compositionPlanLocal=Join-Path $solverDir 'oa_mr_composition_plan.json'
+$scopePath=Join-Path $solverDir 'oa_mr_local_scope.json'
+$localScopeLocal=if(Test-Path -LiteralPath $scopePath){$scopePath}else{$null}
 $checkpointConfig=Get-Content $runConfig -Raw|ConvertFrom-Json -AsHashtable
 $trial=Get-Content $checkpointConfig.inputs.trial_materialization -Raw|ConvertFrom-Json -Depth 100
 $staticFieldLocal=$checkpointConfig.inputs.static_field_binding;$FieldBindingPath=$staticFieldLocal
@@ -163,15 +182,39 @@ function Invoke-ResourceBudgetedProcesses {
  })
  return @{resource_budget_exceeded=$false;processes=$records}
 }
+# Exercise the owner map expressions and assignment loops, without binding the
+# unrelated vendor inputs that the existing recovery fixture does not consume.
+$tokens=$null;$errors=$null
+$ownerAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/oa_mr/execute.ps1'),[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+function Register-AssemblyFixtureInputs {
+ param([string]$Table,$Config)
+ $assignment=$ownerAst.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq('$'+$Table)},$true)
+ $map=$assignment.Find({param($n)$n-is[Management.Automation.Language.HashtableAst]},$true)
+ $entries=@($map.KeyValuePairs|Where-Object{$_.Item1.Value-in@('composition_plan','local_scope')})
+ if($entries.Count-ne2){throw "Assembly inputs missing from actual owner $Table"}
+ $values=[ordered]@{}
+ foreach($entry in $entries){$values[$entry.Item1.Value]=. ([scriptblock]::Create($entry.Item2.Extent.Text))}
+ Set-Variable -Name $Table -Value $values
+ $checkpointConfig=$Config;$config=$Config
+ $loop=$ownerAst.Find({param($n)$n-is[Management.Automation.Language.ForEachStatementAst]-and$n.Extent.Text.Contains('$'+$Table+'.GetEnumerator()')},$true)
+ if($null-eq$loop){throw "Actual owner input assignment loop missing: $Table"}
+ . ([scriptblock]::Create($loop.Extent.Text))
+}
+Register-AssemblyFixtureInputs checkpointInputs $checkpointConfig
+Write-RunJson -Path $runConfig -Depth 100 -Value $checkpointConfig
+Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status checkpoint -Software @('inert publication fixture')|Out-Null
+$checkpointAssemblyInputs=(Get-Content (Join-Path $Current run_manifest.json) -Raw|ConvertFrom-Json -AsHashtable).inputs
 """ + python_helper + "\ntry{\n" + stages + r"""
  $config=Get-Content $runConfig -Raw|ConvertFrom-Json -AsHashtable
+ Register-AssemblyFixtureInputs flightInputs $config
  if(-not$config.Contains('provenance')){$config['provenance']=[ordered]@{}}
 """ + pa_provenance + r"""
  Write-RunJson -Path $runConfig -Depth 100 -Value $config
  $summary=Join-Path $resultDir summary.json
  Write-RunJson -Path $summary -Value @{status='success';qualification='inert_vendor_fixture__workflow_mechanism_only'}
  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('inert vendor fixture') -Outputs @($summary,$rawLog,$batchMergeReceipt)|Out-Null
- @{vendor=@($script:vendor);replay=@($replayBatchIndexes);shared_session=$NativeCorridorRuntimeSession;records=@($batchRecords.Values|ForEach-Object{@{index=$_.index;offset=$_.offset;count=$_.count;log=$_.stdout}})}|ConvertTo-Json -Depth 20 -Compress
+ @{checkpoint_inputs=$checkpointAssemblyInputs;vendor=@($script:vendor);replay=@($replayBatchIndexes);shared_session=$NativeCorridorRuntimeSession;records=@($batchRecords.Values|ForEach-Object{@{index=$_.index;offset=$_.offset;count=$_.count;log=$_.stdout}})}|ConvertTo-Json -Depth 20 -Compress
 } finally {
  foreach($guard in $staticPaGuards){$guard.Dispose()}
  foreach($path in @($temporarySolverDir,$batchRuntimeRoot)){
@@ -202,6 +245,24 @@ function Invoke-ResourceBudgetedProcesses {
                                  [(1, 0, 1), (2, 1, 2)])
                 manifest = json.loads((current / "run_manifest.json").read_text(encoding="utf-8-sig"))
                 self.assertEqual(manifest["status"], "success")
+                for inputs in (actual['checkpoint_inputs'],manifest['inputs']):
+                    assembly_inputs={'composition_plan':current/'inputs/oa_mr_composition_plan.json'}
+                    if local_scope is not None:
+                        assembly_inputs['local_scope']=current/'inputs/oa_mr_local_scope.json'
+                    else:
+                        self.assertNotIn('local_scope',inputs)
+                        self.assertFalse((current/'inputs/oa_mr_local_scope.json').exists())
+                    for name,path in assembly_inputs.items():
+                        self.assertEqual(inputs[name],file_record(path))
+                        verify_record(name,inputs[name])
+                        original=path.read_bytes()
+                        try:
+                            # Same-size corruption proves hash binding, not
+                            # merely file existence or a byte-count check.
+                            path.write_bytes(original.replace(b'oa',b'ox',1))
+                            self.assertNotEqual(path.read_bytes(),original)
+                            with self.assertRaises(AssertionError):verify_record(name,inputs[name])
+                        finally:path.write_bytes(original)
                 final_config = json.loads(config_path.read_text(encoding="utf-8-sig"))
                 self.assertEqual(final_config["provenance"]["pa_bindings"]["identity_authority_input"], "static_field_binding")
                 self.assertEqual(final_config["provenance"]["pa_bindings"]["payload_consumed"], bool(expected))

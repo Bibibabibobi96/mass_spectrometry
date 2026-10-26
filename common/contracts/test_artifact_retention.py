@@ -438,7 +438,7 @@ class ArtifactRetentionTests(unittest.TestCase):
             "run_simion_finite_3d_transport.ps1",
         ):
             source = (
-                Path(__file__).parents[1] / "multipole" / name
+                REPO_ROOT / "projects" / "rf_multipole_ion_optics" / "runtime" / name
             ).read_text(encoding="utf-8-sig")
             compact = source.replace(" ", "")
             self.assertIn(

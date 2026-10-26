@@ -17,8 +17,8 @@ INTEGRATION_GATE = REPO_ROOT / "common" / "verify_repository_integration.ps1"
 PARALLEL_GATE_SUPPORT = REPO_ROOT / "common" / "parallel_gate_support.ps1"
 LIGHTWEIGHT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "lightweight-gate.yml"
 DOCUMENTATION_GATE = REPO_ROOT / "common" / "verify_documentation.ps1"
-QUADRUPOLE_GATE = (
-    REPO_ROOT / "projects" / "rf_quadrupole_ion_optics" / "verify_project.ps1"
+MULTIPOLE_GATE = (
+    REPO_ROOT / "projects" / "rf_multipole_ion_optics" / "verify_project.ps1"
 )
 
 
@@ -158,6 +158,51 @@ exit 0
                     self.assertIn("F821" if failed else "All checks passed!", output)
                     self.assertEqual(list(temporary_files.iterdir()), [])
 
+    def test_integration_documentation_action_forwards_selected_python(self) -> None:
+        """The real stage action must not fall back to checkout/PATH discovery."""
+        pwsh = shutil.which("pwsh")
+        with tempfile.TemporaryDirectory(prefix="documentation_python_") as directory:
+            root = Path(directory)
+            (root / "verify_documentation.ps1").write_text(
+                "param([Parameter(Mandatory=$true)][string]$PythonExe)\n"
+                "& $PythonExe -c 'import sys; print(\"DOCUMENTATION_PYTHON_VERSION=\" "
+                "+ str(sys.version_info.major) + \".\" + str(sys.version_info.minor))'\n"
+                "if($LASTEXITCODE-ne0){throw 'Selected Python failed'}\n",
+                encoding="utf-8",
+            )
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            command = r"""
+$ErrorActionPreference='Stop'
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile(__GATE__,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Integration gate failed PowerShell parsing'}
+$assignment=$ast.Find({param($node)
+  $node-is[Management.Automation.Language.AssignmentStatementAst]-and
+  $node.Left.Extent.Text-eq'$stageActions'
+},$true)
+$table=$assignment.Find({param($node)
+  $node-is[Management.Automation.Language.HashtableAst]
+},$true)
+$entry=@($table.KeyValuePairs|Where-Object {$_.Item1.Value-eq'documentation'})
+if($entry.Count-ne1){throw 'Expected exactly one documentation action'}
+$action=$entry[0].Item2.Find({param($node)
+  $node-is[Management.Automation.Language.ScriptBlockExpressionAst]
+},$true)
+$wrapper=Join-Path __FIXTURE__ 'invoke.ps1'
+[IO.File]::WriteAllText($wrapper,
+  'param([string]$PythonExe)'+[Environment]::NewLine+'& '+$action.Extent.Text)
+& $wrapper -PythonExe __PYTHON__
+""".replace("__GATE__", quote(INTEGRATION_GATE)).replace(
+                "__FIXTURE__", quote(root)
+            ).replace("__PYTHON__", quote(sys.executable))
+            completed = subprocess.run(
+                [pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, capture_output=True, text=True,
+                encoding="utf-8", timeout=30, check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn("DOCUMENTATION_PYTHON_VERSION=3.11", completed.stdout)
+
     def test_documentation_only_fast_path_runs_without_project_gates(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
@@ -190,9 +235,9 @@ exit 0
             completed.stdout.index("CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY"),
         )
         self.assertIn("CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY", completed.stdout)
-        self.assertNotIn("GATE_STAGE=RUN NAME=multipole_common", completed.stdout)
+        self.assertNotIn("GATE_STAGE=RUN NAME=rf_multipole_domain_tests", completed.stdout)
         self.assertNotIn(
-            "GATE_STAGE=RUN NAME=rf_quadrupole_ion_optics_static",
+            "GATE_STAGE=RUN NAME=rf_multipole_quadrupole_static",
             completed.stdout,
         )
 
@@ -376,6 +421,54 @@ exit 0
         )
         self.assertEqual(routed_integrations, integration_gates)
 
+    def test_multipole_variants_have_separate_routes_and_one_project_registration(self) -> None:
+        stages = {f"rf_multipole_{variant}_static" for variant in ("quadrupole", "hexapole", "octupole")}
+        project_routes = [route for route in self.routes if route.get("project_id") == "rf_multipole_ion_optics"]
+        self.assertEqual([route["stage"] for route in project_routes], ["rf_multipole_generated_publications"])
+        for variant in ("quadrupole", "hexapole", "octupole"):
+            expected = f"rf_multipole_{variant}_static"
+            test_directory = "analysis" if variant == "quadrupole" else variant
+            paths = (
+                f"projects/rf_multipole_ion_optics/variants/{variant}/config/design_request.json",
+                f"projects/rf_multipole_ion_optics/tests/{test_directory}/test_contract.py",
+            )
+            for path in paths:
+                with self.subTest(path=path):
+                    selected = self.routed_stages(path)
+                    self.assertEqual(stages.intersection(selected), {expected})
+                    self.assertIn("rf_multipole_generated_publications", selected)
+            route = next(route for route in self.routes if route["stage"] == expected)
+            self.assertEqual(route["command"]["script"], "projects/rf_multipole_ion_optics/verify_project.ps1")
+            self.assertEqual(route["command"]["parameters"]["StructuralVariant"], variant)
+            self.assertEqual(route["requires_stages"], ["rf_multipole_generated_publications"])
+        for path in (
+            "projects/rf_multipole_ion_optics/config/project.json",
+            "projects/rf_multipole_ion_optics/analysis/resolve_contract.py",
+            "projects/rf_multipole_ion_optics/tests/test_support/historical_contracts.py",
+            "projects/rf_multipole_ion_optics/tests/domain/run_production_probe.ps1",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(stages.issubset(self.routed_stages(path)))
+        for old in ("rf_quadrupole_ion_optics", "rf_hexapole_ion_optics", "rf_octupole_ion_optics"):
+            self.assertFalse(any(route.get("project_id") == old for route in self.routes))
+            self.assertFalse(any(route["command"].get("script") == f"projects/{old}/verify_project.ps1" for route in self.routes))
+
+    def test_variant_plan_includes_freshness_and_only_its_static_selection(self) -> None:
+        stages = {f"rf_multipole_{variant}_static" for variant in ("quadrupole", "hexapole", "octupole")}
+        for variant in ("quadrupole", "hexapole", "octupole"):
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(CHANGED_GATE),
+                 "-PythonExe", sys.executable, "-PlanOnly", "-ChangedPath",
+                 f"projects/rf_multipole_ion_optics/variants/{variant}/config/design_request.json"],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
+            self.assertIsNotNone(selected, completed.stdout)
+            selected_stages = set(selected.group(1).split(","))
+            self.assertEqual(stages.intersection(selected_stages), {f"rf_multipole_{variant}_static"})
+            self.assertIn("rf_multipole_generated_publications", selected_stages)
+
     def test_direct_integration_gate_owns_only_its_tests(self) -> None:
         for path in ("integrations/tests/test_dependencies.py",
                      "integrations/config/runtime_dependencies.json",
@@ -552,7 +645,7 @@ exit 0
         self.assertEqual(profile_for("pyproject.toml"), "locked")
         self.assertEqual(profile_for("config/project_registry.json"), "locked")
         self.assertEqual(
-            profile_for("projects/rf_hexapole_ion_optics/config/project.json"),
+            profile_for("projects/rf_multipole_ion_optics/config/project.json"),
             "locked",
         )
 
@@ -627,15 +720,15 @@ exit 0
             self.assertIn("artifacts_other/missing.json", report["errors"][0])
 
     def test_shared_dependencies_route_to_actual_consumers(self) -> None:
-        multipole = self.routed_stages("common/multipole/simion_particle_source.py")
+        multipole = self.routed_stages("projects/rf_multipole_ion_optics/runtime/simion_particle_source.py")
         self.assertTrue(
             {
-                "multipole_common",
-                "multipole_foundation",
-                "rf_quadrupole_generated_publications",
-                "rf_quadrupole_ion_optics_static",
-                "rf_hexapole_ion_optics_static",
-                "rf_octupole_ion_optics_static",
+                "rf_multipole_domain_tests",
+                "rf_multipole_foundation",
+                "rf_multipole_generated_publications",
+                "rf_multipole_quadrupole_static",
+                "rf_multipole_hexapole_static",
+                "rf_multipole_octupole_static",
             }.issubset(multipole)
         )
         self.assertNotIn("single_reflection_oa_tof_mass_analyzer_static", multipole)
@@ -645,27 +738,27 @@ exit 0
             "common/comsol/create_multipole_round_rods.m",
         ):
             routed = self.routed_stages(shared_path)
-            self.assertIn("multipole_common", routed)
-            self.assertIn("multipole_foundation", routed)
+            self.assertIn("rf_multipole_domain_tests", routed)
+            self.assertIn("rf_multipole_foundation", routed)
             if shared_path.startswith("common/simion/"):
                 self.assertIn("instrument_assembly_integration", routed)
             for project_id in (
-                "rf_quadrupole_ion_optics",
-                "rf_hexapole_ion_optics",
-                "rf_octupole_ion_optics",
+                "rf_multipole_quadrupole",
+                "rf_multipole_hexapole",
+                "rf_multipole_octupole",
             ):
                 self.assertIn(f"{project_id}_static", routed)
 
     def test_common_contracts_routes_to_declared_direct_consumers(self) -> None:
         routed = self.routed_stages("common/contracts/machine_contracts.py")
         self.assertIn("common_contracts", routed)
-        self.assertIn("rf_quadrupole_generated_publications", routed)
+        self.assertIn("rf_multipole_generated_publications", routed)
         self.assertIn("instrument_assembly_integration", routed)
         for project_id in (
             "single_reflection_oa_tof_mass_analyzer",
-            "rf_quadrupole_ion_optics",
-            "rf_hexapole_ion_optics",
-            "rf_octupole_ion_optics",
+            "rf_multipole_quadrupole",
+            "rf_multipole_hexapole",
+            "rf_multipole_octupole",
             "dual_cone_tandem_quadrupole_ion_interface",
             "transverse_helical_filament_wehnelt_electron_gun",
             "apertured_tube_electron_impact_ion_source",
@@ -680,10 +773,63 @@ exit 0
         )
 
     def test_multipole_tests_do_not_route_to_runtime_consumers(self) -> None:
-        self.assertEqual(
-            self.routed_stages("common/multipole/test_simion_geometry.py"),
-            {"multipole_common": "common_multipole_changed"},
+        for filename in ("test_simion_geometry.py", "test_simion_rf_drive.lua",
+                         "test_comsol_stationary_solver_smoke.m"):
+            with self.subTest(filename=filename):
+                self.assertEqual(
+                    self.routed_stages(f"projects/rf_multipole_ion_optics/tests/domain/{filename}"),
+                    {"rf_multipole_domain_tests": "rf_multipole_domain_tests_changed"},
+                )
+
+    def test_multipole_domain_and_shared_kernels_keep_actual_consumers(self) -> None:
+        variants = {f"rf_multipole_{variant}_static" for variant in ("quadrupole", "hexapole", "octupole")}
+        domain_stages = variants | {
+            "rf_multipole_generated_publications", "rf_multipole_domain_tests",
+            "rf_multipole_foundation",
+        }
+        for path in (
+            "projects/rf_multipole_ion_optics/core/family_contract.py",
+            "projects/rf_multipole_ion_optics/runtime/design_profile.py",
+            "projects/rf_multipole_ion_optics/analysis/campaign_analysis.py",
+            "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m",
+            "projects/rf_multipole_ion_optics/simion/simion_geometry.py",
+            "projects/rf_multipole_ion_optics/config/contracts/family_contract.json",
+            "projects/rf_multipole_ion_optics/config/sources/rf_multipole_family_mother_sample_v1.json",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue((REPO_ROOT / path).is_file(), path)
+                self.assertTrue(domain_stages <= self.routed_stages(path).keys(), path)
+        resource_consumers = domain_stages | {
+            "livelink_resource_stages_tests", "instrument_assembly_integration",
+            "parallel_mirror_dual_stripe_mr_tof_static",
+            "single_reflection_oa_tof_mass_analyzer_static",
+            "dual_pressure_rectilinear_ion_processor_static",
+            "dual_cone_tandem_quadrupole_ion_interface_static",
+            "transverse_helical_filament_wehnelt_electron_gun_static",
+        }
+        self.assertTrue(resource_consumers <= self.routed_stages("common/resource_budget_support.ps1").keys())
+        rf_consumers = domain_stages | {
+            "simion_common", "instrument_assembly_integration",
+            "dual_pressure_rectilinear_ion_processor_static",
+            "dual_cone_tandem_quadrupole_ion_interface_static",
+        }
+        self.assertTrue(rf_consumers <= self.routed_stages("common/simion/rf_drive.lua").keys())
+        serialized = json.dumps(self.route_contract)
+        self.assertNotIn("common/multipole", serialized)
+        self.assertNotIn("common.multipole", serialized)
+
+    def test_domain_test_plan_avoids_production_and_freshness_stages(self) -> None:
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(CHANGED_GATE),
+             "-PythonExe", sys.executable, "-PlanOnly", "-ChangedPath",
+             "projects/rf_multipole_ion_optics/tests/domain/test_simion_geometry.py"],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
         )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
+        self.assertIsNotNone(selected, completed.stdout)
+        domain_stages = {name for name in selected.group(1).split(",") if name.startswith("rf_multipole_")}
+        self.assertEqual(domain_stages, {"rf_multipole_domain_tests"})
 
     def test_simion_tests_use_their_direct_test_stage(self) -> None:
         self.assertEqual(
@@ -701,8 +847,8 @@ exit 0
             "common/comsol/test_unclassified_support.py",
         ):
             with self.subTest(path=path):
-                self.assertIn("multipole_common", self.routed_stages(path))
-                self.assertIn("rf_quadrupole_generated_publications", self.routed_stages(path))
+                self.assertIn("rf_multipole_domain_tests", self.routed_stages(path))
+                self.assertIn("rf_multipole_generated_publications", self.routed_stages(path))
         self.assertEqual(
             self.routed_stages("common/comsol/test_livelink_environment.ps1"),
             {"livelink_environment": "livelink_environment_test_changed"},
@@ -725,9 +871,9 @@ exit 0
     def test_comsol_readme_does_not_expand_mixed_changed_scope(self) -> None:
         self.assertEqual(self.routed_stages("common/comsol/README.md"), {})
         consumers = {
-            "rf_quadrupole_generated_publications", "multipole_common",
-            "multipole_foundation",             "single_reflection_oa_tof_mass_analyzer_static", "rf_quadrupole_ion_optics_static",
-            "rf_hexapole_ion_optics_static", "rf_octupole_ion_optics_static",
+            "rf_multipole_generated_publications", "rf_multipole_domain_tests",
+            "rf_multipole_foundation",             "single_reflection_oa_tof_mass_analyzer_static", "rf_multipole_quadrupole_static",
+            "rf_multipole_hexapole_static", "rf_multipole_octupole_static",
             "transverse_helical_filament_wehnelt_electron_gun_static",
         }
         for path in ("common/comsol/run_comsol_r2025b.ps1", "common/comsol/livelink_environment.ps1"):
@@ -801,7 +947,7 @@ exit 0
             },
         )
         interface_route = self.routed_stages(
-            "projects/rf_hexapole_ion_optics/config/interfaces/output_port.json"
+            "projects/rf_multipole_ion_optics/variants/hexapole/config/interfaces/output_port.json"
         )
         self.assertNotIn("rf_multipole_to_single_reflection_oatof_integration", interface_route)
 
@@ -825,15 +971,15 @@ exit 0
 
     def test_generated_publications_fail_before_long_test_suites(self) -> None:
         stage_order = [route["stage"] for route in self.routes]
-        freshness = stage_order.index("rf_quadrupole_generated_publications")
+        freshness = stage_order.index("rf_multipole_generated_publications")
         common_contracts = stage_order.index("common_contracts")
-        multipole_common = stage_order.index("multipole_common")
+        rf_multipole_domain_tests = stage_order.index("rf_multipole_domain_tests")
         self.assertLess(freshness, common_contracts)
-        self.assertLess(freshness, multipole_common)
+        self.assertLess(freshness, rf_multipole_domain_tests)
         freshness_route = self.routes[freshness]
         self.assertEqual(
             freshness_route["command"]["parameters"],
-            {"Level": "Freshness", "PythonExe": "{python}"},
+            {"Level": "Freshness", "PythonExe": "{python}", "StructuralVariant": "All"},
         )
 
         self.assertEqual(
@@ -842,14 +988,14 @@ exit 0
         quadrupole_route = next(
             route
             for route in self.routes
-            if route.get("project_id") == "rf_quadrupole_ion_optics"
+            if route["stage"] == "rf_multipole_quadrupole_static"
         )
         self.assertEqual(
             quadrupole_route["repository_integration_group"], "regression"
         )
         self.assertEqual(
             quadrupole_route["requires_stages"],
-            ["rf_quadrupole_generated_publications"],
+            ["rf_multipole_generated_publications"],
         )
 
         integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")
@@ -861,13 +1007,14 @@ exit 0
         )
         self.assertLess(fast_barrier, full_regression)
 
-        quadrupole_source = QUADRUPOLE_GATE.read_text(encoding="utf-8")
+        quadrupole_source = MULTIPOLE_GATE.read_text(encoding="utf-8")
         self.assertIn(
             "[ValidateSet('Freshness','Core','Static','Formal')]",
             quadrupole_source,
         )
         self.assertIn("[switch]$FreshnessPrevalidated", quadrupole_source)
-        self.assertIn("QUADRUPOLE_FRESHNESS=PREVALIDATED", quadrupole_source)
+        self.assertIn("MULTIPOLE_FRESHNESS=PREVALIDATED", quadrupole_source)
+        self.assertIn("[ValidateSet('All','quadrupole','hexapole','octupole')]", quadrupole_source)
         freshness_return = quadrupole_source.index(
             "if ($Level -eq 'Freshness')"
         )
@@ -880,12 +1027,13 @@ exit 0
         quadrupole_route = next(
             route
             for route in self.routes
-            if route.get("project_id") == "rf_quadrupole_ion_optics"
+            if route["stage"] == "rf_multipole_quadrupole_static"
         )
         self.assertEqual(
             quadrupole_route["command"]["parameters"],
             {
                 "Level": "Core",
+                "StructuralVariant": "quadrupole",
                 "FreshnessPrevalidated": True,
                 "PythonExe": "{python}",
             },
@@ -894,6 +1042,7 @@ exit 0
             quadrupole_route["repository_integration_command"]["parameters"],
             {
                 "Level": "Static",
+                "StructuralVariant": "quadrupole",
                 "FreshnessPrevalidated": True,
                 "PythonExe": "{python}",
             },

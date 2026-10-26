@@ -20,7 +20,7 @@ from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.integration.resolve_assembly import compile_assembly_layout
 from common.contracts.write_run_manifest import file_record
 from common.contracts.verify_run_manifest import record_path, verify_record
-from common.multipole.particle_source_preflight import validate_source
+from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import validate_source
 from common.ion_release import cylinder
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, inputs, reframe_parent
 from integrations.runtime.single_flight_source import GLOBAL_COLUMNS, SOURCE_COLUMNS, published_producer_input
@@ -38,12 +38,12 @@ def fixture(root, *, source=None, source_rows=None, source_metadata=None, clock_
     run = root / "run"
     (run / "inputs").mkdir(parents=True)
     if source is None:
-        from common.multipole.compile_design_request import compile_design_request
+        from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
 
         raw = json.loads(
             (
                 Path(__file__).resolve().parents[2]
-                / "projects/rf_octupole_ion_optics/config/requests/through_exit.json"
+                / "projects/rf_multipole_ion_optics/variants/octupole/config/requests/through_exit.json"
             ).read_text()
         )
         source = compile_design_request(raw, expected_identity=raw["identity"])
@@ -315,7 +315,7 @@ def downstream_field_source_fixture(root: Path, request_path: Path, request: dic
 
 class SingleReflectionPreparationTests(unittest.TestCase):
     def test_available_actual_providers_keep_native_payloads_under_parent_references(self):
-        from common.multipole.component_port import build_assembly_interface
+        from projects.rf_multipole_ion_optics.core.component_port import build_assembly_interface
         frozen = Path(__file__).resolve().parents[3] / ('artifacts/projects/instrument_assembly/runs/'
             '20261025_193652__analysis__python__current-parent-preparation/inputs')
         if not frozen.is_dir():

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 try:
     from common.contracts.artifact_naming import validate_archive_id
@@ -20,6 +23,103 @@ ARCHIVE_ROLE = "artifact_identity_archive_manifest"
 PRUNING_ROLE = "artifact_identity_pruning_journal"
 PRUNING_STATES = {"planned", "in_progress", "quarantined", "deleting", "complete"}
 LOCATION_SCHEMA_VERSION = 1
+READ_ONLY_IDENTITY_POLICY = {
+    "artifact_access": "read_only",
+    "new_runs_allowed": False,
+    "verification_identity": "recorded_project_id",
+    "claim_policy": "preserve_original_status_and_claim_limits_no_promotion",
+}
+
+
+@dataclass(frozen=True)
+class HistoricalProjectIdentity:
+    """One recorded identity and the unchanged owner of its artifact location."""
+
+    project_id: str
+    artifact_owner_project_id: str
+    policy: dict
+    legacy_mapping: dict | None
+
+
+def load_retired_project_descriptors(descriptor: dict, repository_root: Path) -> list[dict]:
+    """Read hash-bound retired descriptors without registering their capabilities.
+
+    Paths are repository-relative frozen history. Raw bytes, recorded project IDs
+    and read-only policy must match; no source or artifact files are modified.
+    """
+    repository = repository_root.resolve()
+    current_id = descriptor["project_id"]
+    result: list[dict] = []
+    seen: set[str] = set()
+    required = {"project_id", "path", "bytes", "sha256", "source_commit"} | set(READ_ONLY_IDENTITY_POLICY)
+    for record in descriptor.get("retired_project_descriptors", []):
+        if not isinstance(record, dict) or set(record) != required:
+            raise ValueError(f"{current_id}: retired descriptor fields differ")
+        retired_id = record["project_id"]
+        if (
+            not isinstance(retired_id, str)
+            or re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", retired_id) is None
+            or retired_id == current_id
+            or retired_id in seen
+        ):
+            raise ValueError(f"{current_id}: retired descriptor project identity differs")
+        seen.add(retired_id)
+        for field, value in READ_ONLY_IDENTITY_POLICY.items():
+            if record.get(field) != value or (field == "new_runs_allowed" and record[field] is not False):
+                raise ValueError(f"{retired_id}: invalid retired identity field {field}")
+        expected_path = f"projects/{current_id}/docs/history/retired_projects/{retired_id}/config/project.json"
+        if record["path"] != expected_path:
+            raise ValueError(f"{retired_id}: retired descriptor path differs")
+        if re.fullmatch(r"[0-9a-fA-F]{40}", str(record["source_commit"])) is None:
+            raise ValueError(f"{retired_id}: retired descriptor source commit differs")
+        path = (repository / expected_path).resolve()
+        path.relative_to(repository)
+        size = record["bytes"]
+        digest = record["sha256"]
+        if (
+            not isinstance(size, int) or isinstance(size, bool) or size <= 0
+            or not isinstance(digest, str) or re.fullmatch(r"[0-9a-fA-F]{64}", digest) is None
+            or not path.is_file() or path.stat().st_size != size
+            or file_sha256(path) != digest.upper()
+        ):
+            raise ValueError(f"{retired_id}: frozen retired descriptor identity differs")
+        retired = json.loads(path.read_text(encoding="utf-8-sig"))
+        if (
+            not isinstance(retired, dict)
+            or retired.get("project_id") != retired_id
+            or retired.get("retired_project_descriptors")
+        ):
+            raise ValueError(f"{retired_id}: frozen retired descriptor project differs")
+        result.append(retired)
+    return result
+
+
+def historical_project_identities(
+    descriptor: dict, repository_root: Path
+) -> Iterator[HistoricalProjectIdentity]:
+    """Yield retired owners and aliases using each original archive owner."""
+    current_id = descriptor["project_id"]
+    for mapping in descriptor.get("legacy_identities", []):
+        legacy_artifact_location(mapping, current_id)
+        yield HistoricalProjectIdentity(mapping["project_id"], current_id, mapping, mapping)
+    retired = load_retired_project_descriptors(descriptor, repository_root)
+    for binding, previous in zip(descriptor.get("retired_project_descriptors", []), retired):
+        owner = previous["project_id"]
+        yield HistoricalProjectIdentity(owner, owner, binding, None)
+        for mapping in previous.get("legacy_identities", []):
+            legacy_artifact_location(mapping, owner)
+            yield HistoricalProjectIdentity(mapping["project_id"], owner, mapping, mapping)
+
+
+def assert_new_run_project_allowed(repository_root: Path, project_id: str) -> None:
+    """Reject explicitly retired owners/aliases before run creation; leave other owners unchanged."""
+    for path in sorted((repository_root / "projects").glob("*/config/project.json")):
+        descriptor = json.loads(path.read_text(encoding="utf-8-sig"))
+        if descriptor.get("project_id") != path.parents[1].name:
+            raise ValueError(f"project descriptor identity differs: {path}")
+        for identity in historical_project_identities(descriptor, repository_root):
+            if identity.project_id == project_id:
+                raise ValueError(f"{project_id}: retired project identity is read-only; new runs are forbidden")
 
 
 def _relative_path(value: str) -> Path:
@@ -281,3 +381,20 @@ def verify_pruned_inventory(
             raise ValueError(f"retained migration identity differs: {record['path']}")
     if (archive / ".prune-quarantine").exists():
         raise ValueError("completed pruning retains quarantine")
+
+
+def main() -> None:
+    """Expose the read-only project guard used before creating a run package."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repository-root", type=Path, required=True)
+    parser.add_argument("--check-new-run-project", required=True)
+    args = parser.parse_args()
+    try:
+        assert_new_run_project_allowed(args.repository_root.resolve(), args.check_new_run_project)
+    except (OSError, TypeError, ValueError) as exc:
+        parser.exit(1, f"NEW_RUN_PROJECT=FAIL {exc}\n")
+    print(f"NEW_RUN_PROJECT=PASS PROJECT={args.check_new_run_project}")
+
+
+if __name__ == "__main__":
+    main()

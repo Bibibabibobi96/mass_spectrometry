@@ -1,0 +1,455 @@
+{
+  "schema_version": 2,
+  "role": "multipole_transport_runtime_profiles",
+  "project_id": "rf_multipole_ion_optics",
+  "profiles": {
+    "quadrupole_no_acceleration_full_length": {
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_no_acceleration_full_length_n100_spatial_refined": {
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_n100_spatial_refined",
+      "simion_solver_numerics_profile_id": "quadrupole_n100_spatial_refined",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_no_acceleration_full_length_n100_temporal_refined": {
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_n100_temporal_refined",
+      "simion_solver_numerics_profile_id": "quadrupole_n100_temporal_refined",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d"
+    },
+    "quadrupole_no_acceleration_full_length_n100_hybrid_exit025_temporal_refined": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_hybrid_c1_corridor040_exit025_nosweep_cg_amg_temporal_refined",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d"
+    },
+    "quadrupole_no_acceleration_full_length_n100_hybrid_exit020_spatial_temporal_refined": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d"
+    },
+    "quadrupole_segmented_rod_axial_acceleration": {
+      "design_profile_id": "quadrupole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_segmented_rod_axial_acceleration_n100_spatial_refined": {
+      "design_profile_id": "quadrupole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_n100_spatial_refined",
+      "simion_solver_numerics_profile_id": "quadrupole_n100_spatial_refined",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_segmented_rod_axial_acceleration_n100_temporal_refined": {
+      "design_profile_id": "quadrupole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_n100_temporal_refined",
+      "simion_solver_numerics_profile_id": "quadrupole_n100_temporal_refined",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_exit_aperture_plate_acceleration": {
+      "design_profile_id": "quadrupole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_exit_aperture_plate_acceleration_n100_spatial_refined": {
+      "design_profile_id": "quadrupole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_n100_spatial_refined",
+      "simion_solver_numerics_profile_id": "quadrupole_n100_spatial_refined",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_exit_aperture_plate_acceleration_n100_temporal_refined": {
+      "design_profile_id": "quadrupole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_n100_temporal_refined",
+      "simion_solver_numerics_profile_id": "quadrupole_n100_temporal_refined",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_no_acceleration_full_length_n1000": {
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_segmented_rod_axial_acceleration_n1000": {
+      "design_profile_id": "quadrupole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_exit_aperture_plate_acceleration_n1000": {
+      "design_profile_id": "quadrupole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/engineering_budget.json"
+    },
+    "quadrupole_no_acceleration_full_length_n100_simion_followup_A_r030_z030_t080": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/no_acceleration_followup/simion_A_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_simion_followup_A_r030_z030_t080"
+    },
+    "quadrupole_no_acceleration_full_length_n100_simion_followup_R_r020_z030_t080": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/no_acceleration_followup/simion_R_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_simion_followup_R_r020_z030_t080"
+    },
+    "quadrupole_no_acceleration_full_length_n100_simion_followup_Z_r030_z020_t080": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/no_acceleration_followup/simion_Z_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_simion_followup_Z_r030_z020_t080"
+    },
+    "quadrupole_no_acceleration_full_length_n100_simion_followup_I_r020_z020_t080": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/no_acceleration_followup/simion_I_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_simion_followup_I_r020_z020_t080"
+    },
+    "quadrupole_no_acceleration_full_length_n100_simion_followup_T_r020_z020_t160": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/no_acceleration_followup/simion_T_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_simion_followup_T_r020_z020_t160"
+    },
+    "quadrupole_no_acceleration_full_length_n100_comsol_followup_exit020_t160": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/no_acceleration_followup/comsol_exit020_t160_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d"
+    },
+    "quadrupole_no_acceleration_full_length_n100_comsol_followup_exit020_t320": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/no_acceleration_followup/comsol_exit020_t320_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "quadrupole_hybrid_c1_corridor040_exit020_nosweep_cg_amg_temporal_refined_320",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d"
+    },
+    "quadrupole_no_acceleration_full_length_n1000_sampling_I_r020_z020_t080": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/no_acceleration_n1000_sampling/simion_I_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_simion_followup_I_r020_z020_t080"
+    },
+    "quadrupole_no_acceleration_full_length_n1000_sampling_T_r020_z020_t160": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/no_acceleration_n1000_sampling/simion_T_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "quadrupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "quadrupole_simion_followup_T_r020_z020_t160"
+    },
+    "quadrupole_no_acceleration_full_length_n1000_comsol_bridge_exit020_t160": {
+      "engineering_budget_path": "variants/quadrupole/config/family_experiment/no_acceleration_n1000_comsol_bridge/comsol_t160_budget.json",
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "quadrupole_hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+      "simion_solver_numerics_profile_id": "quadrupole_baseline_finite_3d"
+    },
+    "hexapole_no_acceleration_full_length": {
+      "design_profile_id": "hexapole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_segmented_rod_axial_acceleration": {
+      "design_profile_id": "hexapole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_exit_aperture_plate_acceleration": {
+      "design_profile_id": "hexapole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_no_acceleration_full_length_n100_spatial_refined": {
+      "design_profile_id": "hexapole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hexapole_n100_spatial_refined",
+      "simion_solver_numerics_profile_id": "hexapole_n100_spatial_refined",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_segmented_rod_axial_acceleration_n100_spatial_refined": {
+      "design_profile_id": "hexapole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hexapole_n100_spatial_refined",
+      "simion_solver_numerics_profile_id": "hexapole_n100_spatial_refined",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_exit_aperture_plate_acceleration_n100_spatial_refined": {
+      "design_profile_id": "hexapole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hexapole_n100_spatial_refined",
+      "simion_solver_numerics_profile_id": "hexapole_n100_spatial_refined",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_no_acceleration_full_length_n100_temporal_refined": {
+      "design_profile_id": "hexapole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hexapole_n100_temporal_refined",
+      "simion_solver_numerics_profile_id": "hexapole_n100_temporal_refined",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_segmented_rod_axial_acceleration_n100_temporal_refined": {
+      "design_profile_id": "hexapole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hexapole_n100_temporal_refined",
+      "simion_solver_numerics_profile_id": "hexapole_n100_temporal_refined",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_exit_aperture_plate_acceleration_n100_temporal_refined": {
+      "design_profile_id": "hexapole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "hexapole_n100_temporal_refined",
+      "simion_solver_numerics_profile_id": "hexapole_n100_temporal_refined",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_no_acceleration_full_length_n1000": {
+      "design_profile_id": "hexapole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_segmented_rod_axial_acceleration_n1000": {
+      "design_profile_id": "hexapole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "hexapole_exit_aperture_plate_acceleration_n1000": {
+      "design_profile_id": "hexapole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "hexapole_baseline_finite_3d",
+      "engineering_budget_path": "variants/hexapole/config/qualification/engineering_budget.json"
+    },
+    "octupole_no_acceleration_full_length": {
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_no_acceleration_full_length_volume_snapshot_n100": {
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "octupole_continuous_axial_volume_snapshot_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_no_acceleration_full_length_volume_snapshot_n1000": {
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "octupole_continuous_axial_volume_snapshot_v1_n1000",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_no_acceleration_full_length_n100_spatial_refined": {
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_n100_spatial_refined",
+      "simion_solver_numerics_profile_id": "octupole_n100_spatial_refined",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_no_acceleration_full_length_n100_temporal_refined": {
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_n100_temporal_refined",
+      "simion_solver_numerics_profile_id": "octupole_n100_temporal_refined",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse": {
+      "engineering_budget_path": "variants/octupole/config/qualification/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_hybrid_c1_corridor040_exit025_nosweep_cg_amg_field_screen",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d"
+    },
+    "octupole_no_acceleration_full_length_n100_hybrid_exit025_temporal_refined": {
+      "engineering_budget_path": "variants/octupole/config/qualification/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_hybrid_c1_corridor040_exit025_nosweep_cg_amg_temporal_refined",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d"
+    },
+    "octupole_no_acceleration_full_length_n100_hybrid_exit020_spatial_temporal_refined": {
+      "engineering_budget_path": "variants/octupole/config/qualification/comsol_hybrid_no_acceleration_particle_convergence_budget.json",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d"
+    },
+    "octupole_segmented_rod_axial_acceleration": {
+      "design_profile_id": "octupole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_segmented_rod_axial_acceleration_n100_spatial_refined": {
+      "design_profile_id": "octupole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_n100_spatial_refined",
+      "simion_solver_numerics_profile_id": "octupole_n100_spatial_refined",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_segmented_rod_axial_acceleration_n100_temporal_refined": {
+      "design_profile_id": "octupole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_n100_temporal_refined",
+      "simion_solver_numerics_profile_id": "octupole_n100_temporal_refined",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_exit_aperture_plate_acceleration": {
+      "design_profile_id": "octupole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_exit_aperture_plate_acceleration_n100_spatial_refined": {
+      "design_profile_id": "octupole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_n100_spatial_refined",
+      "simion_solver_numerics_profile_id": "octupole_n100_spatial_refined",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_exit_aperture_plate_acceleration_n100_temporal_refined": {
+      "design_profile_id": "octupole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_n100_temporal_refined",
+      "simion_solver_numerics_profile_id": "octupole_n100_temporal_refined",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_no_acceleration_full_length_n1000": {
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_segmented_rod_axial_acceleration_n1000": {
+      "design_profile_id": "octupole_segmented_rod_axial_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_exit_aperture_plate_acceleration_n1000": {
+      "design_profile_id": "octupole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n1000",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_exit_aperture_plate_acceleration_n5000": {
+      "design_profile_id": "octupole_exit_aperture_plate_acceleration",
+      "particle_source_profile_id": "octupole_family_mother_sample_v1_n5000",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "engineering_budget_path": "variants/octupole/config/qualification/engineering_budget.json"
+    },
+    "octupole_no_acceleration_full_length_n100_simion_followup_A_r030_z030_t080": {
+      "engineering_budget_path": "variants/octupole/config/qualification/no_acceleration_followup/simion_A_budget.json",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_simion_followup_A_r030_z030_t080"
+    },
+    "octupole_no_acceleration_full_length_n100_simion_followup_R_r020_z030_t080": {
+      "engineering_budget_path": "variants/octupole/config/qualification/no_acceleration_followup/simion_R_budget.json",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_simion_followup_R_r020_z030_t080"
+    },
+    "octupole_no_acceleration_full_length_n100_simion_followup_Z_r030_z020_t080": {
+      "engineering_budget_path": "variants/octupole/config/qualification/no_acceleration_followup/simion_Z_budget.json",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_simion_followup_Z_r030_z020_t080"
+    },
+    "octupole_no_acceleration_full_length_n100_simion_followup_I_r020_z020_t080": {
+      "engineering_budget_path": "variants/octupole/config/qualification/no_acceleration_followup/simion_I_budget.json",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_simion_followup_I_r020_z020_t080"
+    },
+    "octupole_no_acceleration_full_length_n100_simion_followup_T_r020_z020_t160": {
+      "engineering_budget_path": "variants/octupole/config/qualification/no_acceleration_followup/simion_T_budget.json",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_simion_followup_T_r020_z020_t160"
+    },
+    "octupole_no_acceleration_full_length_n100_comsol_followup_exit020_t160": {
+      "engineering_budget_path": "variants/octupole/config/qualification/no_acceleration_followup/comsol_exit020_t160_budget.json",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_hybrid_c1_corridor040_exit020_nosweep_cg_amg_spatial_temporal_refined",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d"
+    },
+    "octupole_no_acceleration_full_length_n100_comsol_followup_exit020_t320": {
+      "engineering_budget_path": "variants/octupole/config/qualification/no_acceleration_followup/comsol_exit020_t320_budget.json",
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_hybrid_c1_corridor040_exit020_nosweep_cg_amg_temporal_refined_320",
+      "simion_solver_numerics_profile_id": "octupole_baseline_finite_3d"
+    },
+    "octupole_through_exit_no_acceleration_n100": {
+      "engineering_budget_path": "variants/octupole/config/qualification/through_exit_functional_budget.json",
+      "design_profile_id": "octupole_through_exit_no_acceleration",
+      "particle_source_profile_id": "family_mother_sample_v1_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_n100_spatial_refined"
+    },
+    "octupole_through_exit_no_acceleration_524da_n100": {
+      "engineering_budget_path": "variants/octupole/config/qualification/through_exit_524da_functional_budget.json",
+      "design_profile_id": "octupole_through_exit_no_acceleration",
+      "particle_source_profile_id": "octupole_planar_524da_2ev_n100",
+      "comsol_solver_numerics_profile_id": "octupole_baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "octupole_n100_spatial_refined_524da_observation_window"
+    }
+  }
+}

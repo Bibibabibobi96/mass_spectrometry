@@ -14,7 +14,7 @@ from typing import Any
 
 from common.contracts.rigid_transform import FramedPosition, RigidTransform
 from common.ion_release.release import validate_release_spec
-from common.multipole.round_rod_geometry import build_rod_array
+from projects.rf_multipole_ion_optics.core.round_rod_geometry import build_rod_array
 
 
 MULTIPOLE_FRAME_ID = "multipole_cartesian_z_axis_v1"

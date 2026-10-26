@@ -20,8 +20,8 @@ from common.ion_release.release import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FROZEN_SPEC = REPO_ROOT / "common/multipole/sources/rf_octupole_continuous_axial_volume_snapshot_v1_n1000.json"
-FROZEN_TABLE = REPO_ROOT / "common/multipole/sources/rf_octupole_continuous_axial_volume_snapshot_v1_1000.csv"
+FROZEN_SPEC = REPO_ROOT / "projects/rf_multipole_ion_optics/config/sources/rf_octupole_continuous_axial_volume_snapshot_v1_n1000.json"
+FROZEN_TABLE = REPO_ROOT / "projects/rf_multipole_ion_optics/config/sources/rf_octupole_continuous_axial_volume_snapshot_v1_1000.csv"
 
 
 def spec(*, particle_count: int = 20) -> dict[str, object]:

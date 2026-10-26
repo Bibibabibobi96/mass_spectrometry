@@ -245,13 +245,22 @@ class GasPreparationTests(unittest.TestCase):
         repo = PROJECT.parents[1]
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory) / "snapshot"
-            for relative in ("common/contracts", "common/multipole", "common/ion_release", "common/simion",
+            for relative in ("common/contracts", "common/ion_release", "common/simion",
                              "projects/" + PROJECT.name + "/config", "projects/" + PROJECT.name + "/simion",
                              "projects/" + PROJECT.name + "/analysis"):
                 shutil.copytree(repo / relative, snapshot / relative,
                     ignore=lambda folder, names: [name for name in names
                         if name == "__pycache__" or ((Path(folder)/name).is_file()
                             and Path(name).suffix not in {".py", ".json", ".lua"})])
+            for relative in (
+                "core/round_rod_geometry.py", "core/connector_geometry.py",
+                "core/interface_geometry.py", "core/axial_acceleration.py",
+                "simion/simion_geometry.py", "runtime/simion_numerics.py",
+            ):
+                source = Path("projects/rf_multipole_ion_optics") / relative
+                target = snapshot / source
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(repo / source, target)
             code = r"""
 from pathlib import Path
 from common.contracts import frozen_inputs

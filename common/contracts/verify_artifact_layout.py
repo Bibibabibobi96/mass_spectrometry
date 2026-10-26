@@ -34,7 +34,8 @@ from common.simion.cache_generation import (
 )
 
 from common.contracts.artifact_identity_archive import (
-    legacy_artifact_location,
+    READ_ONLY_IDENTITY_POLICY,
+    historical_project_identities,
     validate_identity_archive_manifest,
     validate_plan,
     validate_pruning_journal,
@@ -52,13 +53,6 @@ ALLOWED_PROJECT_ENTRIES = {
 }
 ALLOWED_ARTIFACT_ROOT_ENTRIES = {"common", "projects"}
 REQUIRED_RUN_FILES = {"run_config.json", "summary.json", "run_manifest.json"}
-LEGACY_POLICY = {
-    "migration_kind": "administrative_rename_only",
-    "artifact_access": "read_only",
-    "new_runs_allowed": False,
-    "verification_identity": "recorded_project_id",
-    "claim_policy": "preserve_original_status_and_claim_limits_no_promotion",
-}
 INTEGRATION_CACHE_ROLES = {
     "simion_single_flight_frontend": {"simion_single_flight_frontend_pa_cache"},
     "simion_single_flight_upstream_bridge": {
@@ -573,7 +567,7 @@ def verify_cache(project: Path, verify_hashes: bool = False) -> None:
 def legacy_identity(repository_root: Path, project_id: str) -> dict | None:
     """Resolve one retired artifact identity without requiring its old source tree."""
 
-    matches: list[tuple[str, dict]] = []
+    matches = []
     active_ids: set[str] = set()
     for descriptor_path in sorted(
         (repository_root / "projects").glob("*/config/project.json")
@@ -583,26 +577,27 @@ def legacy_identity(repository_root: Path, project_id: str) -> dict | None:
         if current_id != descriptor_path.parents[1].name:
             raise AssertionError(f"project descriptor identity differs: {descriptor_path}")
         active_ids.add(current_id)
-        matches.extend(
-            (current_id, mapping)
-            for mapping in descriptor.get("legacy_identities", [])
-            if mapping.get("project_id") == project_id
-        )
+        try:
+            matches.extend(
+                identity for identity in historical_project_identities(descriptor, repository_root)
+                if identity.project_id == project_id
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise AssertionError(f"{project_id}: invalid historical artifact identity: {exc}") from exc
     if len(matches) > 1:
         raise AssertionError(f"{project_id}: duplicate legacy identity mappings")
     if not matches:
         return None
     if project_id in active_ids:
         raise AssertionError(f"{project_id}: legacy identity is still an active project")
-    current_id, mapping = matches[0]
-    expected = LEGACY_POLICY
+    identity = matches[0]
+    mapping = identity.policy
+    expected = dict(READ_ONLY_IDENTITY_POLICY)
+    if identity.legacy_mapping is not None:
+        expected["migration_kind"] = "administrative_rename_only"
     for field, value in expected.items():
         if mapping.get(field) != value:
             raise AssertionError(f"{project_id}: invalid legacy identity field {field}")
-    try:
-        legacy_artifact_location(mapping, current_id)
-    except ValueError as exc:
-        raise AssertionError(f"{project_id}: invalid legacy artifact location") from exc
     return mapping
 
 
@@ -688,6 +683,7 @@ def verify_project(
         raise AssertionError(f"{project.name}: 00_README.txt is missing")
     verify_formal(project, verify_hashes, repository_root)
     verify_cache(project, verify_hashes)
+    retired_identity = legacy_identity(repository_root, project.name) if repository_root is not None else None
 
     run_count = 0
     runs = project / "runs"
@@ -701,6 +697,13 @@ def verify_project(
             manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
             if config.get("run_id") != run.name or manifest.get("run_id") != run.name:
                 raise AssertionError(f"{run}: folder, config, and manifest run_id differ")
+            if retired_identity is not None:
+                summary = json.loads((run / "summary.json").read_text(encoding="utf-8-sig"))
+                identities = [config.get("project"), manifest.get("project")]
+                if "project" in summary:
+                    identities.append(summary["project"])
+                if any(identity != project.name for identity in identities):
+                    raise AssertionError(f"{run}: retired run recorded project identity differs")
             if manifest.get("schema_version") == 2:
                 retention = validate_retention(config.get("artifact_retention"))
                 if manifest.get("artifact_retention") != {

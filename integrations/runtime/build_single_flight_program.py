@@ -10,7 +10,7 @@ import re
 from typing import Any, Mapping
 
 from common.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
-from common.multipole.simion_geometry import segmented_rod_electrode_ids
+from projects.rf_multipole_ion_optics.simion.simion_geometry import segmented_rod_electrode_ids
 from integrations.runtime.single_flight_source import canonical_clock_lua, lua_number as _lua_number, lua_value as _lua_value
 from integrations.runtime.single_flight_electrode_contract import (
     ROD_ELECTRODE_IDS,

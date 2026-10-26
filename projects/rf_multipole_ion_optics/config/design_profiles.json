@@ -1,0 +1,390 @@
+{
+  "schema_version": 2,
+  "role": "multipole_design_profile_registry",
+  "project_id": "rf_multipole_ion_optics",
+  "family_id": "rf_multipole_ion_optics",
+  "operating_mode_registry": "config/operating_modes.json",
+  "profiles": [
+    {
+      "design_profile_id": "quadrupole_official_transport",
+      "design_request": "variants/quadrupole/config/requests/official.json",
+      "design_variables": "variants/quadrupole/config/design_variables_nonsegmented.json",
+      "optimization_envelope": "variants/quadrupole/config/optimization_envelope_official.json",
+      "sha256": {
+        "design_request": "175873D8758E3828C77D08037D51C1A14A4EC8516C64CD83E800B20D87DDB4AB",
+        "design_variables": "A483EDDD661AB49DD5A9F2267FF5DC2A366EF28FD89C2DD327AF8F10785C4A4C",
+        "optimization_envelope": "0CF27E10CFDA2DF79B78BADA5830B29B3AAD96075FB4F838D70903CDFA751339"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "none"
+      },
+      "structural_variant_id": "quadrupole"
+    },
+    {
+      "design_profile_id": "quadrupole_interface_readiness",
+      "design_request": "variants/quadrupole/config/requests/official.json",
+      "design_variables": "variants/quadrupole/config/design_variables_nonsegmented.json",
+      "optimization_envelope": "variants/quadrupole/config/optimization_envelope_official.json",
+      "sha256": {
+        "design_request": "175873D8758E3828C77D08037D51C1A14A4EC8516C64CD83E800B20D87DDB4AB",
+        "design_variables": "A483EDDD661AB49DD5A9F2267FF5DC2A366EF28FD89C2DD327AF8F10785C4A4C",
+        "optimization_envelope": "0CF27E10CFDA2DF79B78BADA5830B29B3AAD96075FB4F838D70903CDFA751339"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "none"
+      },
+      "structural_variant_id": "quadrupole"
+    },
+    {
+      "design_profile_id": "quadrupole_mass_filter_reference",
+      "design_request": "variants/quadrupole/config/requests/mass_filter.json",
+      "design_variables": "variants/quadrupole/config/design_variables_nonsegmented.json",
+      "optimization_envelope": "variants/quadrupole/config/optimization_envelope_mass_filter.json",
+      "sha256": {
+        "design_request": "8B872B195F1BD8ADFEE16E4EABDD1D7D600ED92A7E8437BA09F668D4CA430793",
+        "design_variables": "A483EDDD661AB49DD5A9F2267FF5DC2A366EF28FD89C2DD327AF8F10785C4A4C",
+        "optimization_envelope": "648B7E4985B45534B16840E6651826FFCA2C79E83EA50A0908855B4DEC8AD2DF"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "none"
+      },
+      "structural_variant_id": "quadrupole"
+    },
+    {
+      "design_profile_id": "quadrupole_explicit_axial_reference",
+      "design_request": "variants/quadrupole/config/requests/explicit_axial.json",
+      "design_variables": "variants/quadrupole/config/design_variables_explicit_axial.json",
+      "optimization_envelope": "variants/quadrupole/config/optimization_envelope_explicit_axial.json",
+      "sha256": {
+        "design_request": "1629854A37CD37AC88FC202BF34AB6721231A591829F34575970A13F306C0A17",
+        "design_variables": "D14AC36E604C142D08E6EB9BA62DFE11D0DD7A58273545B7B53DC745DE73FB73",
+        "optimization_envelope": "A0135DF6B19F79FC70B365780707DD233C3390588545301CFF8C50DF5C4C11DC"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "explicit",
+        "axial_drive_topology": "segmented_rod_axial_acceleration"
+      },
+      "structural_variant_id": "quadrupole"
+    },
+    {
+      "design_profile_id": "quadrupole_exit_aperture_plate_acceleration_reference",
+      "design_request": "variants/quadrupole/config/requests/exit_aperture_plate.json",
+      "design_variables": "variants/quadrupole/config/design_variables_exit_aperture_plate.json",
+      "optimization_envelope": "variants/quadrupole/config/optimization_envelope_exit_aperture_plate.json",
+      "sha256": {
+        "design_request": "C75B196578EBF38CDE68CD36271B6BFFF22EC25F477D6C0818B1C9043B2F9118",
+        "design_variables": "C1D690D931285530E71D87AFDB13E3C71BB839F54A2E19FDB8F36BB775191426",
+        "optimization_envelope": "7F30E7265F6051A2B60EF6A6B1A300B15D4E6E94E29BB31456A3737563040EFB"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "downstream_local_reference_enclosure",
+        "segmentation_strategy": "off",
+        "axial_drive_topology": "exit_aperture_plate_potential_step"
+      },
+      "structural_variant_id": "quadrupole"
+    },
+    {
+      "design_profile_id": "quadrupole_no_acceleration_full_length",
+      "mode_id": "no_acceleration_full_length",
+      "design_request": "variants/quadrupole/config/requests/baseline.json",
+      "design_variables": "variants/quadrupole/config/design_variables.json",
+      "optimization_envelope": "variants/quadrupole/config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "68A35B0783DE2EC3A84C65DDCC83937624915241923418721121F3DE22E07364",
+        "design_variables": "BD8952952308C0B48123EDC14E8C9AA043A42924F1512E3D2B3DA255339EFDCC",
+        "optimization_envelope": "2E6885279B902A6A7852CFC76B75B1281D4536B3496D5ABBCFA3C324B60556A8"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "none"
+      },
+      "structural_variant_id": "quadrupole"
+    },
+    {
+      "design_profile_id": "quadrupole_segmented_rod_axial_acceleration",
+      "mode_id": "segmented_rod_axial_acceleration",
+      "design_request": "variants/quadrupole/config/requests/baseline.json",
+      "design_variables": "variants/quadrupole/config/design_variables.json",
+      "optimization_envelope": "variants/quadrupole/config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "68A35B0783DE2EC3A84C65DDCC83937624915241923418721121F3DE22E07364",
+        "design_variables": "BD8952952308C0B48123EDC14E8C9AA043A42924F1512E3D2B3DA255339EFDCC",
+        "optimization_envelope": "2E6885279B902A6A7852CFC76B75B1281D4536B3496D5ABBCFA3C324B60556A8"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "segmented_rod_axial_acceleration"
+      },
+      "structural_variant_id": "quadrupole"
+    },
+    {
+      "design_profile_id": "quadrupole_exit_aperture_plate_acceleration",
+      "mode_id": "exit_aperture_plate_acceleration",
+      "design_request": "variants/quadrupole/config/requests/baseline.json",
+      "design_variables": "variants/quadrupole/config/design_variables.json",
+      "optimization_envelope": "variants/quadrupole/config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "68A35B0783DE2EC3A84C65DDCC83937624915241923418721121F3DE22E07364",
+        "design_variables": "BD8952952308C0B48123EDC14E8C9AA043A42924F1512E3D2B3DA255339EFDCC",
+        "optimization_envelope": "2E6885279B902A6A7852CFC76B75B1281D4536B3496D5ABBCFA3C324B60556A8"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 2,
+        "electrode_count": 4
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "exit_aperture_plate_potential_step"
+      },
+      "structural_variant_id": "quadrupole"
+    },
+    {
+      "design_profile_id": "hexapole_no_acceleration_full_length",
+      "mode_id": "no_acceleration_full_length",
+      "design_request": "variants/hexapole/config/requests/mechanical_base.json",
+      "design_variables": "variants/hexapole/config/design_variables.json",
+      "optimization_envelope": "variants/hexapole/config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "293BEA2876238D4446CEA5A6BFDEC614334E08D209B26A8F969195491B8B00F6",
+        "design_variables": "BD8952952308C0B48123EDC14E8C9AA043A42924F1512E3D2B3DA255339EFDCC",
+        "optimization_envelope": "B88E22D209C171F272E2689AE67FA20C50D3DF14293B50FE175B3B2584E428C4"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "none"
+      },
+      "structural_variant_id": "hexapole"
+    },
+    {
+      "design_profile_id": "hexapole_segmented_rod_axial_acceleration",
+      "mode_id": "segmented_rod_axial_acceleration",
+      "design_request": "variants/hexapole/config/requests/mechanical_base.json",
+      "design_variables": "variants/hexapole/config/design_variables.json",
+      "optimization_envelope": "variants/hexapole/config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "293BEA2876238D4446CEA5A6BFDEC614334E08D209B26A8F969195491B8B00F6",
+        "design_variables": "BD8952952308C0B48123EDC14E8C9AA043A42924F1512E3D2B3DA255339EFDCC",
+        "optimization_envelope": "B88E22D209C171F272E2689AE67FA20C50D3DF14293B50FE175B3B2584E428C4"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "segmented_rod_axial_acceleration"
+      },
+      "structural_variant_id": "hexapole"
+    },
+    {
+      "design_profile_id": "hexapole_exit_aperture_plate_acceleration",
+      "mode_id": "exit_aperture_plate_acceleration",
+      "design_request": "variants/hexapole/config/requests/mechanical_base.json",
+      "design_variables": "variants/hexapole/config/design_variables.json",
+      "optimization_envelope": "variants/hexapole/config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "293BEA2876238D4446CEA5A6BFDEC614334E08D209B26A8F969195491B8B00F6",
+        "design_variables": "BD8952952308C0B48123EDC14E8C9AA043A42924F1512E3D2B3DA255339EFDCC",
+        "optimization_envelope": "B88E22D209C171F272E2689AE67FA20C50D3DF14293B50FE175B3B2584E428C4"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 3,
+        "electrode_count": 6
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "exit_aperture_plate_potential_step"
+      },
+      "structural_variant_id": "hexapole"
+    },
+    {
+      "design_profile_id": "octupole_no_acceleration_full_length",
+      "mode_id": "no_acceleration_full_length",
+      "design_request": "variants/octupole/config/requests/mechanical_base.json",
+      "design_variables": "variants/octupole/config/design_variables.json",
+      "optimization_envelope": "variants/octupole/config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "1983191BED1F7D7EF8E5D7F0656B140AC509099FC92EC68976EAFC4E8F5E8A2C",
+        "design_variables": "BAAEB2E9FCE0B8F439BC44C5BFD1E2AD3CFBA9AF764995CD2EBB56B9854DABEB",
+        "optimization_envelope": "CDF4FD638B5B5B1F786A5FFBE7FB25F6EB2CB41C7CF9E902033A013914EC3D24"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 4,
+        "electrode_count": 8
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "none"
+      },
+      "structural_variant_id": "octupole"
+    },
+    {
+      "design_profile_id": "octupole_segmented_rod_axial_acceleration",
+      "mode_id": "segmented_rod_axial_acceleration",
+      "design_request": "variants/octupole/config/requests/mechanical_base.json",
+      "design_variables": "variants/octupole/config/design_variables.json",
+      "optimization_envelope": "variants/octupole/config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "1983191BED1F7D7EF8E5D7F0656B140AC509099FC92EC68976EAFC4E8F5E8A2C",
+        "design_variables": "BAAEB2E9FCE0B8F439BC44C5BFD1E2AD3CFBA9AF764995CD2EBB56B9854DABEB",
+        "optimization_envelope": "CDF4FD638B5B5B1F786A5FFBE7FB25F6EB2CB41C7CF9E902033A013914EC3D24"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 4,
+        "electrode_count": 8
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "segmented_rod_axial_acceleration"
+      },
+      "structural_variant_id": "octupole"
+    },
+    {
+      "design_profile_id": "octupole_exit_aperture_plate_acceleration",
+      "mode_id": "exit_aperture_plate_acceleration",
+      "design_request": "variants/octupole/config/requests/mechanical_base.json",
+      "design_variables": "variants/octupole/config/design_variables.json",
+      "optimization_envelope": "variants/octupole/config/optimization_envelope.json",
+      "sha256": {
+        "design_request": "1983191BED1F7D7EF8E5D7F0656B140AC509099FC92EC68976EAFC4E8F5E8A2C",
+        "design_variables": "BAAEB2E9FCE0B8F439BC44C5BFD1E2AD3CFBA9AF764995CD2EBB56B9854DABEB",
+        "optimization_envelope": "CDF4FD638B5B5B1F786A5FFBE7FB25F6EB2CB41C7CF9E902033A013914EC3D24"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 4,
+        "electrode_count": 8
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "exit_aperture_plate_potential_step"
+      },
+      "structural_variant_id": "octupole"
+    },
+    {
+      "design_profile_id": "octupole_through_exit_no_acceleration",
+      "mode_id": "no_acceleration_full_length",
+      "design_request": "variants/octupole/config/requests/through_exit.json",
+      "design_variables": "variants/octupole/config/design_variables.json",
+      "optimization_envelope": "variants/octupole/config/through_exit_optimization_envelope.json",
+      "sha256": {
+        "design_request": "A0DC8D5F06C5E9DA8408275CAFF707D3D3461DA909F1F6AA13F0B7E0CF906D4F",
+        "design_variables": "BAAEB2E9FCE0B8F439BC44C5BFD1E2AD3CFBA9AF764995CD2EBB56B9854DABEB",
+        "optimization_envelope": "07250A3DE3B73C38FBD1A4447BF4D39EE521E223D0F616566AC03A6EED60FBBD"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 4,
+        "electrode_count": 8
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "none"
+      },
+      "structural_variant_id": "octupole"
+    },
+    {
+      "design_profile_id": "octupole_through_entrance_exit_no_acceleration",
+      "mode_id": "no_acceleration_full_length",
+      "design_request": "variants/octupole/config/requests/through_exit.json",
+      "design_variables": "variants/octupole/config/design_variables.json",
+      "optimization_envelope": "variants/octupole/config/through_exit_optimization_envelope.json",
+      "sha256": {
+        "design_request": "A0DC8D5F06C5E9DA8408275CAFF707D3D3461DA909F1F6AA13F0B7E0CF906D4F",
+        "design_variables": "BAAEB2E9FCE0B8F439BC44C5BFD1E2AD3CFBA9AF764995CD2EBB56B9854DABEB",
+        "optimization_envelope": "07250A3DE3B73C38FBD1A4447BF4D39EE521E223D0F616566AC03A6EED60FBBD"
+      },
+      "identity": {
+        "project_id": "rf_multipole_ion_optics",
+        "family_id": "rf_multipole_ion_optics",
+        "radial_order_n": 4,
+        "electrode_count": 8
+      },
+      "topology": {
+        "enclosure_role": "full_length_grounded_shield",
+        "segmentation_strategy": "uniform",
+        "axial_drive_topology": "none"
+      },
+      "enclosure_model": "cylindrical_grounded_shield_through_entrance_exit_v1",
+      "structural_variant_id": "octupole"
+    }
+  ],
+  "operating_mode_registry_sha256": "7C3B04C79A6C8EE5332A78EC93F4119FF72345F6AFEAF9E01E70E64B10D12125"
+}

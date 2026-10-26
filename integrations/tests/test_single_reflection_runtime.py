@@ -67,7 +67,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.addCleanup(self.make_writable)
         request, self.run, _ = fixture(self.root)
         self.preparation = prepare(request, self.run)

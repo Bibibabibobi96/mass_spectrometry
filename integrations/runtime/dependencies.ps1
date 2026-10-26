@@ -120,7 +120,7 @@ function Copy-FrozenDependency {
   $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
   $frozenHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
   if ($sourceHash -ne $frozenHash) {
-    throw "Dependency changed while frozen: $source"
+    throw "Dependency changed while frozen: $source; destination=$destination; source_sha256=$sourceHash; frozen_sha256=$frozenHash"
   }
   return [pscustomobject]@{
     id = [string]$Dependency.id

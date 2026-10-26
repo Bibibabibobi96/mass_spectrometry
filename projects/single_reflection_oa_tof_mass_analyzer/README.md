@@ -15,9 +15,9 @@
 4. 评估论文主张、证据边界或JASMS/Analytical Chemistry分工时，读
    [`docs/publication/README.md`](docs/publication/README.md)。
 5. 涉及COMSOL实现、事件读取或数值审查时，按[`docs/COMSOL.md`](docs/COMSOL.md)开头的任务表选章节；
-   通用API、排错与误差预算从[COMSOL阅读入口](../../docs/COMSOL_GUIDE.md)选择，不作为无关任务的前置阅读。
+   通用API、排错与误差预算从[COMSOL阅读入口](../../docs/tools/COMSOL_GUIDE.md)选择，不作为无关任务的前置阅读。
    SIMION或CAD任务只进入相应[`docs/SIMION.md`](docs/SIMION.md)或[`docs/CAD.md`](docs/CAD.md)。
-6. 只有追溯旧结论、run ID或失败链时才进入[`docs/history/`](docs/history/)。
+6. 只有追溯旧结论、run ID或失败链时才进入[历史索引](docs/history/README.md)。
 
 ## 机器权威
 
@@ -89,48 +89,4 @@ single_reflection_oa_tof_mass_analyzer/
 
 ## History索引
 
-<details>
-<summary>展开已冻结实验、迁移与故障证据</summary>
-
-- [组装接口、回归与状态文档收敛](docs/history/20261026__assembly-documentation-consolidation.md)
-
-- [原生事件积分器／方程形式隔离与曲面几何阶次收敛](docs/history/20261022__curved-events-and-formulation-isolation.md)
-- [稀疏 Counter 原因隔离、原生辅助事件读取与重复验证](docs/history/20261022__sparse-counter-cause-and-native-event-reader.md)
-- [原生事件回读、额外碰壁数据与 Counter 小模型验证](docs/history/20261022__native-event-readback-and-counter-validation.md)
-- [OA-TOF 活动步策略修复、可重复参考与完整流程对照](docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md)
-- [OA-TOF N100 原生离子追踪受控对照](docs/history/20261021__oatof-cpt-performance-controlled-comparison.md)
-- [论文阶段状态与文档整治前沿革](docs/history/20260911__publication-status-consolidation.md)
-
-
-- [理想场残差扫描与两区/三区束宽比较](docs/history/20260827__ideal-source-residual-and-width-comparison.md)
-- [理想场仿射源斜率机制比较](docs/history/20260827__synthetic-affine-slope-scan.md)
-- [200 mm三区理想场束宽接受扫描](docs/history/20260827__200mm-ideal-acceptance-scan.md)
-- [300 mm三区理想场束宽接受公平对照](docs/history/20260827__300mm-ideal-acceptance-scan.md)
-- [`docs/history/20260716__simion-gui-recording-and-program-audit.md`](docs/history/20260716__simion-gui-recording-and-program-audit.md)
-- [`docs/history/20260719__analysis-scaling-and-field-diagnostics.md`](docs/history/20260719__analysis-scaling-and-field-diagnostics.md)
-- [`docs/history/20260720__midgrid-candidate-runtime-coverage.md`](docs/history/20260720__midgrid-candidate-runtime-coverage.md)
-- [`docs/history/20260720__oatof-theory-refactor-review.md`](docs/history/20260720__oatof-theory-refactor-review.md)
-- [`docs/history/20260721__superseded-theory-docx.md`](docs/history/20260721__superseded-theory-docx.md)
-- [`docs/history/20260727__superseded-rf-handoff-diagnostics.md`](docs/history/20260727__superseded-rf-handoff-diagnostics.md)
-- [`docs/history/20260728__pre-document-consolidation-comsol.md`](docs/history/20260728__pre-document-consolidation-comsol.md)
-- [`docs/history/20260728__pre-document-consolidation-project.md`](docs/history/20260728__pre-document-consolidation-project.md)
-- [`docs/history/20260728__pre-document-consolidation-readme.md`](docs/history/20260728__pre-document-consolidation-readme.md)
-- [`docs/history/20260728__pre-document-consolidation-simion.md`](docs/history/20260728__pre-document-consolidation-simion.md)
-- [`docs/history/20260729__formal-vnext-zero-change-requests.md`](docs/history/20260729__formal-vnext-zero-change-requests.md)
-- [`docs/history/20260802__reflectron-midgrid-campaign-authorization.md`](docs/history/20260802__reflectron-midgrid-campaign-authorization.md)
-- [`docs/history/20260802__formal-simion-integrity-recovery.md`](docs/history/20260802__formal-simion-integrity-recovery.md)
-- [`docs/history/20260817__three-zone-accelerator-external-document-review.md`](docs/history/20260817__three-zone-accelerator-external-document-review.md)
-- [`docs/history/20260817__three-zone-observed-transverse-sensitivity.md`](docs/history/20260817__three-zone-observed-transverse-sensitivity.md)
-- [`docs/history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md`](docs/history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md)
-- [`docs/history/20260823__three-zone-completed-results-snapshot.md`](docs/history/20260823__three-zone-completed-results-snapshot.md)
-- [`docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`](docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md)
-- [`docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md`](docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md)
-- [`docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md`](docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md)
-- [`docs/history/NUMERICAL_VALIDATION_20260716_18.md`](docs/history/NUMERICAL_VALIDATION_20260716_18.md)
-- [`docs/history/PROJECT_HISTORY.md`](docs/history/PROJECT_HISTORY.md)
-- [`docs/history/SIMION_VALIDATION.md`](docs/history/SIMION_VALIDATION.md)
-- [`docs/history/SUPERSEDED_RESULTS.md`](docs/history/SUPERSEDED_RESULTS.md)
-
-- [20260801__oatof-legacy-artifact-migration-audit](docs/history/20260801__oatof-legacy-artifact-migration-audit.md)
-
-</details>
+[历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。

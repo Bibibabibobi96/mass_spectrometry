@@ -418,7 +418,7 @@ class RuntimeReplayTests(unittest.TestCase):
                     (folder / name).write_text(text.replace("adjustable ", ""), encoding="utf-8")
                 else:
                     shutil.copyfile(PROJECT / "simion" / name, folder / name)
-            shutil.copyfile(REPOSITORY / "common/multipole/simion_rf_drive.lua",
+            shutil.copyfile(REPOSITORY / "common/simion/rf_drive.lua",
                             folder / "simion_rf_drive.lua")
             shutil.copyfile(REPOSITORY / "common/simion/voltage_waveforms.lua",
                             folder / "voltage_waveforms.lua")

@@ -21,7 +21,7 @@ from common.contracts.rigid_transform import FramedPosition, FramedVector, Rigid
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from common.integration.resolve_assembly import derive_assembly_scope
-from common.multipole.component_port import (
+from projects.rf_multipole_ion_optics.core.component_port import (
     build_assembly_interface, validate_exit_observations, load_transport_producer_result,
 )
 from projects.dual_pressure_rectilinear_ion_processor.analysis.assembly_interface import resolve_assembly_interface

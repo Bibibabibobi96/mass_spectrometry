@@ -63,7 +63,7 @@ N100全部穿过出口；后续私有runtime恢复及K=25.5、23.5工况也各�
 
 PA发布沿[公共缓存事务](../../../common/simion/README.md#pa-缓存与工作点)。现有cache HIT及显式
 runtime checkpoint复用已经使用，但未发布事务的跨run重入仍未全覆盖；不能由HIT推定中断恢复完成。
-旧私有缓存根是否可退役取决于实际消费者、GUI及公共owner记录，本次文档整理不处理载荷。
+旧私有缓存根是否可退役取决于实际消费者、GUI及公共owner记录。
 
 ## 统一组装迁移任务
 
@@ -80,8 +80,7 @@ runtime checkpoint复用已经使用，但未发布事务的跨run重入仍未�
 | COMSOL新投影 | 纯回归及静态接线；新几何／选择集／保存重开尚未验收 |
 | 数值收敛、独立GUI/CAD、Candidate／Formal | 未完成，BLOCKED |
 
-旧迁移细节见[迁移记录](history/20260911__component-migration-evidence.md)。本次只整理文档，
-未改变已有PA、MPH、Formal、科学参数或运行资格。
+旧迁移细节见[迁移记录](history/20260911__component-migration-evidence.md)。
 
 ## 开放任务
 
@@ -95,4 +94,4 @@ runtime checkpoint复用已经使用，但未发布事务的跨run重入仍未�
 ## 产物
 
 独立器件新运行归`artifacts/projects/orthogonal_accelerator/`。既有OA/MR run、冻结包与Formal资产
-保持原owner及身份；本次文档收口不迁移或删除它们。
+保持原owner及身份。

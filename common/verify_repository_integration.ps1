@@ -42,7 +42,7 @@ function Invoke-IntegrationStage {
 }
 
 $stageActions = [ordered]@{
-    documentation = { & (Join-Path $PSScriptRoot 'verify_documentation.ps1') }
+    documentation = { & (Join-Path $PSScriptRoot 'verify_documentation.ps1') -PythonExe $PythonExe }
     repository_text_bytes = { & $PythonExe (Join-Path $PSScriptRoot 'verify_repository_text_bytes.py') }
     development_standards = { & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py') }
     ruff_all = {
@@ -148,8 +148,8 @@ $env:RUFF_NO_CACHE = 'true'
 # Documentation recursively enumerates the repository, so keep it exclusive.
 Invoke-IntegrationStage 'documentation' $stageActions['documentation']
 Invoke-ParallelIntegrationGroup $fastFailStages
-# Freshness is in the completed group above.  No second quadrupole gate starts
-# until that hard barrier has passed.
+# All multipole publication checks completed in the group above.
+# Variant Static gates reuse that Freshness barrier before regression starts.
 Invoke-ParallelIntegrationGroup $fullRegressionStages
 
 Write-Output "REPOSITORY_INTEGRATION_GATE=PASS PYTHON=$pythonVersion"

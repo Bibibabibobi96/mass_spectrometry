@@ -1,0 +1,43 @@
+# 单次反射正交加速飞行时间质量分析器历史索引
+
+返回[项目入口](../../README.md)；当前结论、资格与开放任务见[PROJECT](../PROJECT.md)。
+本页是可更新导航。以下记录按归档时点解释，不作为当前运行指令；各档案正文及证据身份保持冻结。
+
+## 归档记录
+
+- [组装接口、回归与状态文档收敛](20261026__assembly-documentation-consolidation.md)
+- [原生事件积分器／方程形式隔离与曲面几何阶次收敛](20261022__curved-events-and-formulation-isolation.md)
+- [稀疏 Counter 原因隔离、原生辅助事件读取与重复验证](20261022__sparse-counter-cause-and-native-event-reader.md)
+- [原生事件回读、额外碰壁数据与 Counter 小模型验证](20261022__native-event-readback-and-counter-validation.md)
+- [OA-TOF 活动步策略修复、可重复参考与完整流程对照](20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md)
+- [OA-TOF N100 原生离子追踪受控对照](20261021__oatof-cpt-performance-controlled-comparison.md)
+- [论文阶段状态与文档整治前沿革](20260911__publication-status-consolidation.md)
+- [理想场残差扫描与两区/三区束宽比较](20260827__ideal-source-residual-and-width-comparison.md)
+- [理想场仿射源斜率机制比较](20260827__synthetic-affine-slope-scan.md)
+- [200 mm三区理想场束宽接受扫描](20260827__200mm-ideal-acceptance-scan.md)
+- [300 mm三区理想场束宽接受公平对照](20260827__300mm-ideal-acceptance-scan.md)
+- [oa-TOF SIMION GUI Recording 与 Program 审计归档（2026-07-15—16）](20260716__simion-gui-recording-and-program-audit.md)
+- [oa-TOF 分析、缩放与场归因诊断归档（2026-07-18—19）](20260719__analysis-scaling-and-field-diagnostics.md)
+- [oa-TOF 中栅电压候选运行时覆盖归档（2026-07-20）](20260720__midgrid-candidate-runtime-coverage.md)
+- [oa-TOF 理论重写审查记录](20260720__oatof-theory-refactor-review.md)
+- [oa-TOF 已被取代理论 DOCX 归档（2026-07-21）](20260721__superseded-theory-docx.md)
+- [oa-TOF 已替代 RF handoff 投影诊断源码归档](20260727__superseded-rf-handoff-diagnostics.md)
+- [oa-TOF文档收敛前COMSOL快照](20260728__pre-document-consolidation-comsol.md)
+- [oa-TOF文档收敛前PROJECT快照](20260728__pre-document-consolidation-project.md)
+- [oa-TOF文档收敛前README快照](20260728__pre-document-consolidation-readme.md)
+- [oa-TOF文档收敛前SIMION快照](20260728__pre-document-consolidation-simion.md)
+- [OA‑TOF Formal vNext 零物理变化请求归档](20260729__formal-vnext-zero-change-requests.md)
+- [reflectron midgrid声明式campaign授权（2026-08-02）](20260802__reflectron-midgrid-campaign-authorization.md)
+- [Formal SIMION完整性恢复（2026-08-02）](20260802__formal-simion-integrity-recovery.md)
+- [2026-08-17 三区加速器外部文档审阅](20260817__three-zone-accelerator-external-document-review.md)
+- [三区真实PA observed纵向束与横向六维敏感性](20260817__three-zone-observed-transverse-sensitivity.md)
+- [三区真实PA经验z-vz非线性、能谱与横向源敏感性](20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md)
+- [2026-08-17 三区加速器完成结果快照](20260823__three-zone-completed-results-snapshot.md)
+- [oa-TOF 集成候选工作流真实验证归档（2026-07-20）](CANDIDATE_WORKFLOW_VALIDATION_20260720.md)
+- [COMSOL 极小粒子数原生崩溃调查归档（2026-07-18—19）](COMSOL_EXTREME_N_CRASH_20260718_19.md)
+- [COMSOL 极小粒子数原生崩溃调查关闭归档（2026-07-19）](COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md)
+- [oa-TOF 数值验证归档（2026-07-16—18）](NUMERICAL_VALIDATION_20260716_18.md)
+- [项目笔记：oa-TOF 正交加速飞行时间质谱双级环栈反射镜分析器](PROJECT_HISTORY.md)
+- [oa-TOF SIMION 验证与进展记录](SIMION_VALIDATION.md)
+- [oa-TOF 已被取代的验证结果](SUPERSEDED_RESULTS.md)
+- [oaTOF 旧身份产物迁移与减容审计（2026-08-01）](20260801__oatof-legacy-artifact-migration-audit.md)

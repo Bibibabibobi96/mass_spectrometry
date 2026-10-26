@@ -24,7 +24,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.finite_interval_de
 
 def canonical_frontend_fixture() -> tuple[dict, dict, dict]:
     """Return an artifact-free two-zone provider contract."""
-    from common.multipole.round_rod_geometry import build_rod_array
+    from projects.rf_multipole_ion_optics.core.round_rod_geometry import build_rod_array
     from projects.orthogonal_accelerator.simion.two_zone_candidate import (
         compile_closed_two_zone_accelerator,
     )

@@ -24,8 +24,8 @@ from common.ion_release.release import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FAMILY_N100 = REPO_ROOT / "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv"
-FAMILY_N1000 = REPO_ROOT / "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv"
+FAMILY_N100 = REPO_ROOT / "projects/rf_multipole_ion_optics/config/sources/rf_multipole_family_mother_sample_v1_100.csv"
+FAMILY_N1000 = REPO_ROOT / "projects/rf_multipole_ion_optics/config/sources/rf_multipole_family_mother_sample_v1_1000.csv"
 
 
 def _spec(count: int) -> dict[str, object]:

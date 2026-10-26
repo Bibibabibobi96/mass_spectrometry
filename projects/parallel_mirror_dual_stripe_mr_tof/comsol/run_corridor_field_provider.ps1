@@ -15,7 +15,7 @@ $repo = if($Child){[string](Get-Content (Join-Path $PSScriptRoot 'plan.json') -R
 $python=Join-Path $repo '.venv/Scripts/python.exe'
 if($Child){
     $plan=Get-Content (Join-Path $PSScriptRoot 'plan.json') -Raw | ConvertFrom-Json
-    . (Join-Path $repo 'common/multipole/resource_budget_support.ps1')
+    . (Join-Path $repo 'common/resource_budget_support.ps1')
     $budget=Get-HostResourceBudget -Role COMSOL -Stage solver
     $launcherOptions=@{}
     if($plan.PSObject.Properties.Name -contains 'comsol_allocator'){
@@ -41,7 +41,7 @@ if(-not $Approved){return}
 $inputs=Join-Path $RunDirectory 'inputs'
 if((Test-Path (Join-Path $RunDirectory 'run_manifest.json')) -or (Test-Path (Join-Path $inputs 'provider.stdout.log'))){throw 'Existing attempt/terminal identity; no automatic retry.'}
 $plan=Get-Content (Join-Path $inputs 'plan.json') -Raw | ConvertFrom-Json
-. (Join-Path $repo 'common/multipole/resource_budget_support.ps1')
+. (Join-Path $repo 'common/resource_budget_support.ps1')
 $capacity=$null
 $process=$null
 $outcome='failed'

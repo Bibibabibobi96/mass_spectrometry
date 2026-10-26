@@ -9,6 +9,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from artifact_identity_archive import (
+    historical_project_identities,
+    legacy_artifact_location,
+    load_retired_project_descriptors,
+)
 from build_project_registry import (
     DEFAULT_OUTPUT,
     ContractError,
@@ -22,6 +27,14 @@ from build_project_registry import (
 )
 from machine_contracts import load_json, validate_schema
 from file_identity import repository_text_sha256
+
+
+MULTIPOLE_PROJECT_ID = "rf_multipole_ion_optics"
+RETIRED_MULTIPOLE_IDS = {
+    "rf_quadrupole_ion_optics",
+    "rf_hexapole_ion_optics",
+    "rf_octupole_ion_optics",
+}
 
 
 def pending_location(current: str, retired: str, suffix: str) -> dict:
@@ -41,15 +54,25 @@ class ProjectRegistryTests(unittest.TestCase):
     def test_registry_and_multipole_profile_hashes_are_lf_crlf_equivalent(
         self,
     ) -> None:
-        project_id = "rf_hexapole_ion_optics"
+        project_id = MULTIPOLE_PROJECT_ID
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             lf_root = base / "lf"
             crlf_root = base / "crlf"
             lf_project = lf_root / "projects" / project_id
             lf_project.parent.mkdir(parents=True)
-            shutil.copytree(REPO_ROOT / "projects" / project_id, lf_project)
+            shutil.copytree(
+                REPO_ROOT / "projects" / project_id, lf_project,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            )
+            frozen = {
+                path.relative_to(lf_project): path.read_bytes()
+                for path in (lf_project / "docs/history").rglob("*")
+                if path.is_file()
+            }
             for path in lf_project.rglob("*.json"):
+                if path.relative_to(lf_project) in frozen:
+                    continue
                 path.write_bytes(
                     path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
                 )
@@ -95,8 +118,16 @@ class ProjectRegistryTests(unittest.TestCase):
                         entrypoint.touch()
 
             shutil.copytree(lf_root, crlf_root)
-            for path in (crlf_root / "projects" / project_id).rglob("*.json"):
+            crlf_project = crlf_root / "projects" / project_id
+            for path in crlf_project.rglob("*.json"):
+                if path.relative_to(crlf_project) in frozen:
+                    continue
                 path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+
+            # Active text hashes normalize EOLs; retired identities stay raw bytes.
+            for relative, content in frozen.items():
+                self.assertEqual((lf_project / relative).read_bytes(), content)
+                self.assertEqual((crlf_project / relative).read_bytes(), content)
 
             lf_registry = build_registry(lf_root)
             crlf_registry = build_registry(crlf_root)
@@ -134,16 +165,28 @@ class ProjectRegistryTests(unittest.TestCase):
             consistent_profile_identity([], profiles_path)
 
     def test_rf_multipole_descriptors_do_not_register_legacy_baselines(self) -> None:
-        project_ids = (
-            "rf_quadrupole_ion_optics",
-            "rf_hexapole_ion_optics",
-            "rf_octupole_ion_optics",
+        path = REPO_ROOT / "projects" / MULTIPOLE_PROJECT_ID / "config/project.json"
+        descriptor = load_json(path)
+        self.assertIsNone(descriptor["contracts"]["baseline"])
+        validate_descriptor(descriptor, path, REPO_ROOT)
+        retired = load_retired_project_descriptors(descriptor, REPO_ROOT)
+        self.assertEqual({item["project_id"] for item in retired}, RETIRED_MULTIPOLE_IDS)
+        for previous in retired:
+            with self.subTest(project_id=previous["project_id"]):
+                self.assertIsNone(previous["contracts"]["baseline"])
+                validate_schema(previous, "project.schema.json")
+
+        registry = build_registry()
+        active = {item["project_id"]: item for item in registry["projects"]}
+        historical_ids = {
+            identity.project_id for identity in historical_project_identities(descriptor, REPO_ROOT)
+        }
+        self.assertTrue(historical_ids.isdisjoint(active))
+        self.assertEqual(active[MULTIPOLE_PROJECT_ID]["capabilities"], descriptor["capabilities"])
+        self.assertEqual(
+            sum(item["family_id"] == MULTIPOLE_PROJECT_ID for item in registry["projects"]),
+            1,
         )
-        for project_id in project_ids:
-            path = REPO_ROOT / "projects" / project_id / "config" / "project.json"
-            descriptor = load_json(path)
-            self.assertIsNone(descriptor["contracts"]["baseline"])
-            validate_descriptor(descriptor, path, REPO_ROOT)
 
     def test_all_project_directories_have_descriptors(self) -> None:
         project_directories = sorted(path.name for path in (REPO_ROOT / "projects").iterdir() if path.is_dir())
@@ -260,35 +303,51 @@ class ProjectRegistryTests(unittest.TestCase):
             validate_legacy_identity_mappings(descriptors)
 
     def test_multipole_relocation_has_one_governed_archive(self) -> None:
-        for project_id in (
-            "rf_quadrupole_ion_optics",
-            "rf_hexapole_ion_optics",
-            "rf_octupole_ion_optics",
-        ):
-            descriptor = load_json(
-                REPO_ROOT / "projects" / project_id / "config" / "project.json"
-            )
-            mapping = descriptor["legacy_identities"][0]
-            location = mapping["artifact_location"]
-            self.assertIn(
-                location["state"], {"source_pending_relocation", "archived_verified"}
-            )
-            if location["state"] == "source_pending_relocation":
-                self.assertEqual(
-                    location["source_root"],
-                    f"artifacts/projects/{mapping['project_id']}",
+        descriptor = load_json(
+            REPO_ROOT / "projects" / MULTIPOLE_PROJECT_ID / "config/project.json"
+        )
+        retired = load_retired_project_descriptors(descriptor, REPO_ROOT)
+        identities = {
+            identity.project_id: identity
+            for identity in historical_project_identities(descriptor, REPO_ROOT)
+        }
+        self.assertEqual({item["project_id"] for item in retired}, RETIRED_MULTIPOLE_IDS)
+        for previous in retired:
+            project_id = previous["project_id"]
+            owner = identities[project_id]
+            self.assertEqual(owner.artifact_owner_project_id, project_id)
+            self.assertIsNone(owner.legacy_mapping)
+            self.assertEqual(owner.policy["artifact_access"], "read_only")
+            self.assertFalse(owner.policy["new_runs_allowed"])
+            self.assertEqual(owner.policy["verification_identity"], "recorded_project_id")
+            self.assertTrue(previous["legacy_identities"])
+            for mapping in previous["legacy_identities"]:
+                identity = identities[mapping["project_id"]]
+                self.assertEqual(identity.artifact_owner_project_id, project_id)
+                self.assertEqual(identity.legacy_mapping, mapping)
+                location = mapping["artifact_location"]
+                validated = legacy_artifact_location(mapping, identity.artifact_owner_project_id)
+                self.assertIn(
+                    location["state"], {"source_pending_relocation", "archived_verified"}
                 )
-            else:
-                self.assertNotIn("source_root", location)
-            self.assertNotIn("artifact_root", mapping)
-            self.assertTrue(location["archive_root"].startswith(
-                f"artifacts/projects/{project_id}/archive/"
-            ))
-            self.assertEqual(
-                location["migration_manifest"],
-                location["archive_root"].removesuffix("/legacy-project-root")
-                + "/identity_migration_manifest.json",
-            )
+                if location["state"] == "source_pending_relocation":
+                    self.assertEqual(
+                        location["source_root"],
+                        f"artifacts/projects/{mapping['project_id']}",
+                    )
+                    self.assertEqual(validated["active_root"], location["source_root"])
+                else:
+                    self.assertNotIn("source_root", location)
+                    self.assertEqual(validated["active_root"], location["archive_root"])
+                self.assertNotIn("artifact_root", mapping)
+                self.assertTrue(location["archive_root"].startswith(
+                    f"artifacts/projects/{project_id}/archive/"
+                ))
+                self.assertEqual(
+                    location["migration_manifest"],
+                    location["archive_root"].removesuffix("/legacy-project-root")
+                    + "/identity_migration_manifest.json",
+                )
 
     def test_legacy_identity_rejects_duplicate_ids_and_mapping_ids(self) -> None:
         descriptors = [
@@ -331,6 +390,45 @@ class ProjectRegistryTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ContractError, "duplicate legacy mapping_id"):
             validate_legacy_identity_mappings(descriptors)
+
+
+class RetiredProjectRegistryTests(unittest.TestCase):
+    def test_retired_owners_and_aliases_are_not_active_or_duplicate(self) -> None:
+        from common.contracts.test_artifact_identity_archive import CURRENT, LEGACY, retirement_fixture
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            descriptor, _ = retirement_fixture(repository)
+            validate_legacy_identity_mappings([descriptor], repository)
+            for project_id in (CURRENT, LEGACY):
+                with self.subTest(project_id=project_id):
+                    with self.assertRaisesRegex(ContractError, "still active"):
+                        validate_legacy_identity_mappings([descriptor, {"project_id": project_id}], repository)
+            duplicate = {"project_id": "other", "legacy_identities": [{
+                "mapping_id": "other_alias", "project_id": CURRENT,
+                "artifact_location": pending_location("other", CURRENT, "other-alias"),
+            }]}
+            with self.assertRaisesRegex(ContractError, "duplicate legacy project_id"):
+                validate_legacy_identity_mappings([descriptor, duplicate], repository)
+            self.assertNotIn("capabilities", descriptor)
+
+    def test_retired_descriptor_schema_requires_identity_and_read_only_fields(self) -> None:
+        from common.contracts.test_artifact_identity_archive import retirement_fixture
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            retired, _ = retirement_fixture(repository)
+            descriptor = load_json(REPO_ROOT / "projects/orthogonal_accelerator/config/project.json")
+            descriptor["retired_project_descriptors"] = retired["retired_project_descriptors"]
+            validate_schema(descriptor, "project.schema.json")
+            for field in ("source_commit", "sha256", "path", "new_runs_allowed"):
+                changed = copy.deepcopy(descriptor)
+                changed["retired_project_descriptors"][0].pop(field)
+                with self.subTest(field=field), self.assertRaises(ContractError):
+                    validate_schema(changed, "project.schema.json")
+            descriptor["retired_project_descriptors"][0]["new_runs_allowed"] = True
+            with self.assertRaises(ContractError):
+                validate_schema(descriptor, "project.schema.json")
 
 
 if __name__ == "__main__":

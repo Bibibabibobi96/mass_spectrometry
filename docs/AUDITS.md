@@ -50,7 +50,7 @@
 - [2026-08-01 oaTOF旧身份artifact迁移与减容审计](../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20260801__oatof-legacy-artifact-migration-audit.md)
 - [2026-08-01 多极杆旧项目身份 artifact 迁移审计](history/20260801__multipole-legacy-artifact-migration-audit.md)
 - [2026-08-01 活动兼容层退役](history/20260801__active-compatibility-retirement.md)
-- [2026-07-31 无加速多极杆离散跟进](../projects/rf_hexapole_ion_optics/docs/history/20260731__no-acceleration-multipole-discretization-followup.md)
+- [2026-07-31 无加速多极杆离散跟进](../projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_hexapole_ion_optics/docs/history/20260731__no-acceleration-multipole-discretization-followup.md)
 - [2026-07-30 Production边界处置](history/20260730__production-maintenance-boundary-disposition.md)
 - [2026-07-30 Production维护面一次性基线](history/20260730__production-maintenance-surface-baseline.md)
 - [2026-07-30 仓库规模与架构评审核验](history/20260730__repository-size-and-architecture-audit.md)

@@ -36,7 +36,7 @@ def load_injected_source(contract_path: Path) -> dict[str, Any]:
     producing run's epoch. Zero exits require a null state record, not an empty
     canonical table masquerading as a new simulated cohort.
     """
-    from common.multipole.component_port import load_transport_producer_result
+    from projects.rf_multipole_ion_optics.core.component_port import load_transport_producer_result
 
     path = Path(contract_path).resolve()
     contract = _json(path)

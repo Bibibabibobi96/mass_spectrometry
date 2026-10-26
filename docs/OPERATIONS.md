@@ -13,7 +13,7 @@ N=1000是峰形、尾部、束斑/发散分布、损失分布与标准分辨率�
 质量分辨率统一为 `R=m/FWHM_m`；窄峰时间域等价式是 `R=T/(2*FWHM_t)`。`2.3548×sigma`
 只有在峰形近似高斯时才可作为 FWHM 代理。比较 COMSOL 与 SIMION 时至少统一几何、粒子表、
 有效检测面、命中定义、FWHM 算法和样本量，并分别检查网格收敛与统计不确定度。详细方法写入
-`docs/VALIDATION_METHODS.md`，项目数值写入项目 PROJECT。
+`docs/science/VALIDATION_METHODS.md`，项目数值写入项目 PROJECT。
 
 ## 工具链与执行入口
 
@@ -36,11 +36,17 @@ PowerShell时必须使用`pwsh`；PowerShell脚本内部继承当前宿主，不
 L1 始终先查仓库卫生与受管文本字节。纯 Markdown 及根、项目或integration的
 `docs/history/<同名载荷目录>/*.txt`单层只读快照改动，运行文档检查后走`DOCUMENTATION_ONLY`快速路径；
 快照清单、字节和SHA检查仍执行。活动配置、源码及其他文本不获该豁免；其余只运行活动项目、直接公共依赖和必要静态合同，报告 RUN/SKIP 原因。
-四极杆或其直接公共依赖变化时先查生成物 Freshness，再复用前置结果执行无求解器 Core 合同。
+触发多极杆发布或变体门禁时，先由统一项目入口执行`Freshness -StructuralVariant All`，检查三种结构的
+设计发布及四极专属派生物。L1按改动范围选择四极`Core`、六极／八极`Static`，三者均复用该发布前置结果。
+统一`verify_project.ps1`的`Core`停在所选结构的无求解器设计合同；`Static`再运行所选变体的Python回归并
+解析全项目PowerShell。共享领域测试由目录中的独立阶段执行，不由变体`Core`或`Static`替代。
 
-L2 在长测试前检查四极杆 Freshness，然后覆盖全部活动项目、integration 和公共静态回归；四极杆
-Static 复用该前置检查。纯文档和规则文字调整不触发 L2，GitHub 仅手动触发。
-L3 才核验商业求解、GUI/CAD、冻结输入、manifest 和物理证据链。
+L2在长测试前完成全多极杆`Freshness`，之后覆盖全部活动项目、integration和公共静态回归；四／六／八极
+均执行`Static`并复用该前置结果。纯文档和规则文字调整不触发L2，GitHub仅手动触发。
+L3才核验商业求解、GUI/CAD、冻结输入、manifest和物理证据链。
+
+历史迁位清单会核对固定源提交中的Git blob，因此克隆必须能读取这些源提交；L1/L2的CI checkout均保留完整
+历史。浅克隆缺少源对象时须先补取历史，再进行身份校验，不能跳过原始字节验证。
 
 
 `common/gate_catalog.json`是L1路径路由、依赖等级、阶段前置关系和L2成员身份的唯一机器目录；项目或
@@ -74,7 +80,7 @@ L1/L2共用命令调用器直接绑定函数脚本块；仅冻结每项路由参
 ### 主机资源调度
 
 粒子拆批与默认并发遵循[开发标准](DEVELOPMENT_STANDARDS.md#独立粒子与耦合求解的调度)，
-随机重复运行的验收遵循[验证方法](VALIDATION_METHODS.md#随机碰撞与重复运行)。
+随机重复运行的验收遵循[验证方法](science/VALIDATION_METHODS.md#随机碰撞与重复运行)。
 PA等昂贵阶段复用及中断恢复遵循[统一复用与恢复规则](DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)。
 
 本机门禁与SIMION/COMSOL运行通过[`host_execution_lease.ps1`](../common/host_execution_lease.ps1)
@@ -187,7 +193,7 @@ ledger-only日常startup/maintenance。首次校准或台账失准时，必须�
 
 公共 PA-family generation 是不可变发布介质，不是求解器可写工作目录。原生 family 成员及其物化副本
 不能交给供应商进程；已发布 ordinary standalone PA 的受护直接只读消费与必要独立副本，统一遵循
-[长PA输入路径](SIMION_REFERENCE.md#长pa输入路径)。不得用Junction或硬链接替代该隔离边界。
+[长PA输入路径](tools/SIMION_REFERENCE.md#长pa输入路径)。不得用Junction或硬链接替代该隔离边界。
 公共 `New-ShortPaCopy` 对父目录含 `cache_manifest.json` 的来源强制要求manifest `bytes + SHA-256`，
 缺少任一项即失败。Windows 大 PA 若普通缓冲读取与 `/J` 持久读取分叉，不得对发布源 ReadWrite/Flush；
 应先用 manifest-bound `/J` 快照验证，并把旧文件对象隔离后以同字节的新对象原子替换，禁止原位修补。

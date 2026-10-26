@@ -14,7 +14,7 @@ from common.ion_release.numpy_box_cone import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RFQ_SOURCE = REPO_ROOT / "projects/rf_quadrupole_ion_optics/config/official_particle_source.json"
+RFQ_SOURCE = REPO_ROOT / "projects/rf_multipole_ion_optics/variants/quadrupole/config/official_particle_source.json"
 
 
 class NumpyBoxConeTests(unittest.TestCase):

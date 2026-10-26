@@ -2,6 +2,17 @@
 
 当前科学状态与资格见[PROJECT](PROJECT.md)。
 
+## 按任务查阅
+
+| 任务 | 入口 |
+|---|---|
+| 选择生产入口、输入和证据层级 | [执行与验收边界](#执行与验收边界) |
+| 修改实体几何或理解厂商支持范围 | [表示与官方支持路径](#表示与官方支持路径) |
+| 复用原生场、分批飞行或传入候选配置 | [自动分批与单工作台重放](#自动分批与单工作台重放) |
+| 准备独立用户工作台 | [GUI准备](#gui准备与批处理区别) |
+| 核查碰撞副本、随机状态及参数绑定 | [HS1生命周期](#hs1运行副本生命周期适配)、[参数审计](#hs1参数绑定与原生内部值审计) |
+| 解释坐标、原生诊断或引出受力 | [世界坐标](#项目世界坐标与当前验收状态)、[几何与诊断](#当前几何时序与诊断)、[受力审计](#被动引出受力与碰撞审计) |
+
 ## 表示与官方支持路径
 
 2026-10-20补充：成形提取件及连续辅助片用原生GEM `half_space(x,y,z,nx,ny,nz)`交集表示凸体，
@@ -41,7 +52,7 @@ LP浮动屏蔽件电极14平时与LP common-mode同步，引出脉冲时消费�
 
 查阅日期：2026-10-15。在线补充文档目前标注SIMION 2026，实际调用以本机2020示例和接口为准。
 
-| 资料 | 支持与本轮采用范围 |
+| 资料 | 支持与采用范围 |
 |---|---|
 | [Collision Model HS1](https://simion.com/info/collision_model_hs1.html) | 官方硬球、弹性、Maxwell气体模型，包含冷却与反向加热；不含碎裂、反应或气体反馈 |
 | [GEM Geometry File](https://simion.com/info/gem_geometry_file.html) | 官方CSG实体电极与GEM→PA路线；在线页面为2026，采用本机2020支持语法 |
@@ -51,13 +62,13 @@ LP浮动屏蔽件电极14平时与LP common-mode同步，引出脉冲时消费�
 | [User Programming](https://simion.com/info/user_programming.html#efield-adjust) | 官方用户程序入口；该网页当前正文未提供完整efield_adjust细节，不能单凭页面锚点证明调用语义 |
 | `C:/Program Files/SIMION-2020/examples/collision_hs1/README.html` | 已读取，明确示例空PA、低压适用性及test2可按空间变化压力/温度/气流 |
 | `C:/Program Files/SIMION-2020/examples/collision_hs1/collision_hs1.lua` | 已读取头部和参数：自动MFP=-1、每MFP默认20步、seed约定、截面示例；正式执行前冻结实际消费完整源码身份 |
-| [装置论文DOI](https://pubs.acs.org/doi/10.1021/jasms.3c00311) | 公开装置结构依据；本轮在线打开失败，不把访问失败写成论文不存在 |
+| [装置论文DOI](https://pubs.acs.org/doi/10.1021/jasms.3c00311) | 公开装置结构依据；该次查阅在线打开失败，不把访问失败写成论文不存在 |
 
 HS1示例的2.27e-18 m²用于He与约200 amu离子示例，不是N2与524 amu的测量。
 `seed=42`定义实际PRNG seed；本机HS1的`_random_seed=n`使用n−1，因此应向该参数传43并记录映射。
 数值合同声明自动平均自由程及每MFP步数；碰撞步长与RF步长同时约束实际积分。
 
-本轮是基于官方求场接口和官方碰撞算法的项目实体电极模型，不是供应商验证过的Astral装置模型。
+本项目采用基于官方求场接口和官方碰撞算法的实体电极模型，不是供应商验证过的Astral装置模型。
 
 ## 被动引出受力与碰撞审计
 
@@ -106,7 +117,7 @@ Pull与LP shield的狭缝是实体cutout，狭缝几何本身不是独立单位�
 项目专用[执行合同](../config/execution_profiles.json)的`native_functional`绑定
 `native_electrode_functional`、唯一runner及五份相对输入路径，不复制物理标量。该合同使用项目专用role，
 由项目编译器校验；不冒充公共通用execution profile格式。
-本轮选择`solver_review`，理由为保留原生电极场与工作台供GUI审查。
+保留原生电极场与工作台供GUI审查的运行使用`solver_review`；实际保留合同随运行冻结。
 N100和独立GUI准备的字节承诺分别消费本次冻结profile的`committed_new_bytes`与
 `gui_preparation_committed_new_bytes`，实际承诺与准入结果写入run；不将旧尺寸场族的体积当作新几何的实际占用。
 CLI保留完整事件与既定采样CSV及合并副本，
@@ -179,15 +190,14 @@ checkpoint只表示准备完成，不表示GUI视觉通过、轨迹等价或功�
 
 ## HS1运行副本生命周期适配
 
-安装目录的原始HS1保持不变，run同时保存其来源身份及适配运行副本的SHA。
-适配只为运行副本增加`reset_run_state`生命周期入口，清理HS1私有初始化标志、碰撞步长与累计状态，
-使同一GUI工作台重复Fly能够重新初始化随机源。碰撞采样、速度分布和弹性碰撞方程正文不变。
-程序顶层只import HS1一次，Fly回调调用reset钩子，不在回调中重新import。
-此项是基于官方模块的项目生命周期适配，不声称官方原模块直接提供该钩子。
+项目准备入口调用[公共HS1生命周期适配](../../../common/simion/README.md#hs1运行副本生命周期)，
+同时冻结官方安装源与适配运行副本身份。reset与只读参数审计的机制由公共实现维护，
+碰撞采样及弹性碰撞方程不因生命周期适配改变。项目runtime顶层只import一次，在Fly回调中调用reset，
+不在回调内重新import；SIMION曾拒绝后一用法。
 
-回调内重新import已被SIMION拒绝，当前采用上述reset钩子。r04已真实进入Fly后被外部中止，
-仅保留不完整探索观察；重复Fly等价性仍须实际headless重放与手动GUI核验，当前不声明功能或GUI通过。
-
+早期r04进入Fly后被外部中止，仅支持不完整探索观察，见[原生运行历史](history/20261016__native-flight-and-source-identity.md)。
+该记录不代表当前功能或GUI状态；后继封存参考与用户确认只查[PROJECT](PROJECT.md#有效结果与默认诊断)。
+新工作台的重复Fly仍按其冻结数值身份分别验收，不能由历史确认自动推定逐轨迹等价。
 
 ## 当前几何、时序与诊断
 
@@ -210,8 +220,7 @@ N=10全部散点/ECDF，不加KDE/拟合或统计资格；N=100仍是功能范�
 不以解析场替代原生响应。旧r05审计和r06探索只约束各自冻结几何；当前新几何必须独立求场与诊断。
 旧r06已取得`exploration_pass`，具体旧几何数值与不适用当前验证的边界由PROJECT维护，不复制为新结论。
 
-原生证据按solver_review保留。HS1运行副本reset adapter只修改生命周期：安装源不改、碰撞正文不改、
-顶层一次import、reset_run_state清理私有状态；原源/适配副本SHA进入run。
+原生证据按solver_review保留；HS1副本与身份处理见[生命周期适配](#hs1运行副本生命周期适配)。
 正式N=100、数值收敛、同IOB headless重放、两次Fly生命周期与手动GUI可见轨迹分别验收。
 
 ## 项目世界坐标与当前验收状态
@@ -219,7 +228,8 @@ N=10全部散点/ECDF，不加KDE/拟合或统计资格；N=100仍是功能范�
 PA/GEM、native projection、source.json及source_states母集均保持局部几何。
 公共`rigid_transform`合同定义world=(-local z, local x, 9.8-local y) mm，速度和场向量仅旋转；
 项目frame为`ion_processor.xyz.reflection_z.drift_y.transverse_x.local.v2`。
-世界横向x、慢漂移+y、引出−z，与MRTOF方向兼容，但装配port Y未注册，不能称MRTOF全局frame。
+世界横向x、慢漂移+y、引出−z，与MRTOF方向兼容；器件frame不自动等于MR装配frame。
+实际机械端口与接口状态见[PROJECT](PROJECT.md#统一组装迁移任务)，实例位姿由冻结配方绑定。
 FLY2与工作台姿态使用同一合同；runtime将SIMION世界状态逆转到局部进行HS1压力分区、原生接受域与事件判定，
 输出事件和samples再转世界。canonical快轴z，半径及散角按世界z计算；原生接受参数另行注明，压缩使用慢轴y。
 旧无合同冻结运行保留原坐标解释，不通过重命名旧CSV伪造新证据。
@@ -230,7 +240,10 @@ FLY2与工作台姿态使用同一合同；runtime将SIMION世界状态逆转到
 原生局部场CSV保留，电势为旋转不变量。默认全过程图角色和元数据区分全母群、条件LP子群及unknown，
 全母群展宽不能以LP局部展宽替代。
 
-当前用户工作台为 `20261016_015429__test__simion__ion-processor-n100-user-workbench`，从同一冻结GEM独立Refine并保留完整18文件场族。57,106个对应采样点的电势和三分量电场值与CLI相同；未执行GUI Fly。GUI操作和Programs状态确认由用户完成；旧clone包不作为当前入口。
+早期准备包`20261016_015429__test__simion__ion-processor-n100-user-workbench`从同一冻结GEM独立Refine，
+保留完整18文件场族；57,106个对应采样点的电势和三分量电场值与CLI相同，该准备步骤未执行GUI Fly。
+此场采样对照不替代后继热源包的用户确认。当前封存参考与确认包见[PROJECT](PROJECT.md#有效结果与默认诊断)，
+新包仍按上述GUI准备与用户验收边界处理；旧clone包不作为当前入口。
 
 ## 冻结代码资源与下游数值离域记录
 

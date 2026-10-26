@@ -21,7 +21,7 @@ if(-not$DryRun-and(-not$SolverAuthorized-or-not$ExecutionBudgetPath)){
 . (Join-Path $RepoRoot 'common/require_powershell7.ps1')
 . (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $RepoRoot 'common/host_execution_lease.ps1')
-. (Join-Path $RepoRoot 'common/multipole/resource_budget_support.ps1')
+. (Join-Path $RepoRoot 'common/resource_budget_support.ps1')
 . (Join-Path $RepoRoot 'common/simion/short_pa_path_support.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/frontend_flight_support.ps1')

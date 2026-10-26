@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.multipole.simion_geometry import render_grouped_rod_array_gem
+from projects.rf_multipole_ion_optics.simion.simion_geometry import render_grouped_rod_array_gem
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

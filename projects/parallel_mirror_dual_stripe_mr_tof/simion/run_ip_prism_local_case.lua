@@ -12,7 +12,7 @@ local function write(path,bytes)
  local handle=assert(io.open(path,'wb'));handle:write(bytes);handle:close()
 end
 -- Official wb:save also saves associated files. Preserve complete companions
--- as in common/multipole/build_simion_runtime_iob.lua; never keep GUI stubs.
+-- as in projects/rf_multipole_ion_optics/simion/build_simion_runtime_iob.lua; never keep GUI stubs.
 local program_path,particles_path=directory..'local.lua',directory..'local.fly2'
 local program_bytes,particles_bytes=read(program_path),read(particles_path)
 -- The official command interface and pa:refine are supported in installed 8.2.

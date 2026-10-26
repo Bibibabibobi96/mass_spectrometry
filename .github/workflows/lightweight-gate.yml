@@ -100,6 +100,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          # Frozen migration records are verified against their original Git blobs.
+          fetch-depth: 0
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:

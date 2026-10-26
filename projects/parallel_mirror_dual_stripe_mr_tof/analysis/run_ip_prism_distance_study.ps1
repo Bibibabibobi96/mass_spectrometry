@@ -9,7 +9,7 @@ $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 . (Join-Path $repoRoot 'common/require_powershell7.ps1')
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'common/multipole/resource_budget_support.ps1')
+. (Join-Path $repoRoot 'common/resource_budget_support.ps1')
 $python=Join-Path $repoRoot '.venv/Scripts/python.exe'
 $module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_study'
 $projectId='parallel_mirror_dual_stripe_mr_tof'

@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from common.multipole.round_rod_geometry import build_rod_array
+from projects.rf_multipole_ion_optics.core.round_rod_geometry import build_rod_array
 
 
 PROJECT_ID = "dual_cone_tandem_quadrupole_ion_interface"

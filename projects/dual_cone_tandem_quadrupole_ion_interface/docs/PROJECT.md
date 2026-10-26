@@ -1,8 +1,8 @@
 # 双锥串联四极杆离子传输接口项目状态
 
 本文件是当前参数解释、物理链、资格和开放任务的唯一权威。多极杆通用理论见
-[`docs/multipoles/index.md`](../../../docs/multipoles/index.md)，碰撞模型分级见
-[`docs/multipoles/collisions.md`](../../../docs/multipoles/collisions.md)。
+[多极杆理论](../../rf_multipole_ion_optics/docs/theory/index.md)，碰撞模型分级见
+[碰撞模型](../../rf_multipole_ion_optics/docs/theory/collisions.md)。
 
 ## 部件判断
 

@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "role": "multipole_simion_solver_numerics_profiles",
+  "project_id": "rf_multipole_ion_optics",
+  "profiles": {
+    "quadrupole_baseline_finite_3d": {
+      "cell_mm": 0.4,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 40,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "quadrupole_n100_spatial_refined": {
+      "cell_mm": 0.3,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 40,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "quadrupole_n100_temporal_refined": {
+      "cell_mm": 0.3,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "quadrupole_simion_followup_A_r030_z030_t080": {
+      "cell_mm_xyz": {
+        "x": 0.3,
+        "y": 0.3,
+        "z": 0.3
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "quadrupole_simion_followup_R_r020_z030_t080": {
+      "cell_mm_xyz": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.3
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "quadrupole_simion_followup_Z_r030_z020_t080": {
+      "cell_mm_xyz": {
+        "x": 0.3,
+        "y": 0.3,
+        "z": 0.2
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "quadrupole_simion_followup_I_r020_z020_t080": {
+      "cell_mm_xyz": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.2
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "quadrupole_simion_followup_T_r020_z020_t160": {
+      "cell_mm_xyz": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.2
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 160,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "hexapole_baseline_finite_3d": {
+      "cell_mm": 0.4,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 40,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "hexapole_n100_spatial_refined": {
+      "cell_mm": 0.3,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 40,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "hexapole_n100_temporal_refined": {
+      "cell_mm": 0.3,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "octupole_baseline_finite_3d": {
+      "cell_mm": 0.4,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 40,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "octupole_n100_spatial_refined": {
+      "cell_mm": 0.3,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 40,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "octupole_n100_temporal_refined": {
+      "cell_mm": 0.3,
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "octupole_simion_followup_A_r030_z030_t080": {
+      "cell_mm_xyz": {
+        "x": 0.3,
+        "y": 0.3,
+        "z": 0.3
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "octupole_simion_followup_R_r020_z030_t080": {
+      "cell_mm_xyz": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.3
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "octupole_simion_followup_Z_r030_z020_t080": {
+      "cell_mm_xyz": {
+        "x": 0.3,
+        "y": 0.3,
+        "z": 0.2
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "octupole_simion_followup_I_r020_z020_t080": {
+      "cell_mm_xyz": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.2
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 80,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "octupole_simion_followup_T_r020_z020_t160": {
+      "cell_mm_xyz": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.2
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 160,
+        "maximum_global_time_us": 80.0
+      }
+    },
+    "octupole_n100_spatial_refined_524da_observation_window": {
+      "cell_mm_xyz": {
+        "x": 0.3,
+        "y": 0.3,
+        "z": 0.3
+      },
+      "trajectory_quality": 10,
+      "trajectory": {
+        "rf_steps_per_period": 40,
+        "maximum_global_time_us": 183.12837027615356
+      }
+    }
+  }
+}

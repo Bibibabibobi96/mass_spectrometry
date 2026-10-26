@@ -361,7 +361,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmm
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-. (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
+. (Join-Path $repoRoot 'common\resource_budget_support.ps1')
 . (Join-Path $repoRoot 'common\simion\short_pa_path_support.ps1')
 . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
@@ -601,6 +601,8 @@ try{
     # naturally completed logs; it never revalidates or transports PA payloads.
     $checkpointConfig=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
     $checkpointInputs=[ordered]@{
+      composition_plan=Join-Path $artifactSolverDir 'oa_mr_composition_plan.json'
+      local_scope=if($null-eq$localScopeLocal){$null}else{Join-Path $artifactSolverDir 'oa_mr_local_scope.json'}
       accelerator_provider_plan=$acceleratorProviderPlanLocal
       accelerator_resolved_campaign=$acceleratorResolvedCampaignLocal
       trial_materialization=$trialReceipt
@@ -1174,6 +1176,8 @@ try{
     terminal_time_mirror_voltage_variation=if($null-eq$mirrorVoltageVariation){$null}else{Join-Path $artifactSolverDir 'terminal_time_mirror_voltage_variation.json'}
     accelerator_run_manifest=$acceleratorManifest
     accelerator_provider_receipt=Join-Path $artifactSolverDir 'accelerator_provider_runtime_receipt.json'
+    composition_plan=Join-Path $artifactSolverDir 'oa_mr_composition_plan.json'
+    local_scope=if($null-eq$localScopeLocal){$null}else{Join-Path $artifactSolverDir 'oa_mr_local_scope.json'}
     accelerator_provider_plan=Join-Path $artifactSolverDir 'accelerator_provider_plan.json'
     accelerator_resolved_campaign=Join-Path $artifactSolverDir 'accelerator_resolved_campaign.json'
     accelerator_pulse_schedule=if($null-eq$acceleratorPulseScheduleLocal){$null}else{Join-Path $artifactSolverDir 'accelerator_pulse_schedule.json'}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,45 @@ class PreserveMissing(dict):
 
 def _operating_point_key(point: dict[str, Any]) -> tuple[float, str, int]:
     return (float(point["mass"]["value"]), point["mass"]["unit"], int(point["charge_state"]))
+
+
+def _validate_runtime_structure_binding(project: dict[str, Any], profile: dict[str, Any],
+                                        bindings: dict[str, str]) -> dict[str, str]:
+    """Validate actual runtime structure and return any campaign-owned run context."""
+    if project["family_id"] != "rf_multipole_ion_optics":
+        return {}
+    required = set(profile["required_bindings"])
+    if "runtime_profile_id" in required:
+        selection_keys = {"runtime_profile_id"}
+    elif {"campaign_path", "experiment_id"} <= required:
+        selection_keys = {"campaign_path", "experiment_id"}
+    else:
+        return {}
+    if not selection_keys <= set(bindings):
+        return {}
+    for key in selection_keys:
+        if not isinstance(bindings[key], str) or not bindings[key].strip():
+            raise ValueError(f"{key} must name a registered runtime selection")
+    owners = {
+        variant["variant_id"] for variant in project.get("structural_variants", [])
+        if profile["capability_id"] in variant["capability_ids"]
+    }
+    if len(owners) != 1:
+        raise ValueError("Execution capability must have one declared structural variant")
+    from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_selection
+    if "runtime_profile_id" in selection_keys:
+        runtime = resolve_runtime_selection(REPO_ROOT, project["project_id"], runtime_profile_id=bindings["runtime_profile_id"])
+    else:
+        runtime = resolve_runtime_selection(REPO_ROOT, project["project_id"],
+                                            campaign_path=Path(bindings["campaign_path"]), experiment_id=bindings["experiment_id"])
+    actual = runtime["design_profile_resolution"]["profile"]["structural_variant_id"]
+    if actual not in owners:
+        raise ValueError(f"Runtime structural variant {actual!r} differs from selected capability {sorted(owners)!r}")
+    if "campaign" in runtime:
+        authorized_run_id = runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["scope"]["authorized_run_id"]
+        validate_run_id(authorized_run_id)
+        return {"authorized_run_id": authorized_run_id}
+    return {}
 
 
 def compile_execution(
@@ -88,6 +128,7 @@ def compile_execution(
         "design_plan_path",
         "request_path",
         "run_id",
+        "authorized_run_id",
     }
     protected_supplied = sorted(set(bindings) & protected_bindings)
     if protected_supplied:
@@ -102,6 +143,7 @@ def compile_execution(
             + ", ".join(unexpected_bindings)
         )
     missing_bindings = sorted(set(profile["required_bindings"]) - set(bindings))
+    resolved_context = _validate_runtime_structure_binding(project, profile, bindings)
 
     stamp = validate_run_id(plan["run_id"])["stamp"]
     context: dict[str, str] = {
@@ -112,16 +154,25 @@ def compile_execution(
         "run_id": plan["run_id"],
     }
     context.update(bindings)
+    context.update(resolved_context)
     for step in profile["steps"]:
         if step["run_id_template"]:
             generated = step["run_id_template"].format_map(PreserveMissing(context))
+            if re.search(r"\{[A-Za-z_]\w*\}", generated):
+                if missing_bindings:
+                    continue
+                raise ValueError(f"Unresolved execution run ID placeholder in step: {step['step_id']}")
             validate_run_id(generated)
             context[f"{step['step_id']}_run_id"] = generated
+            if step["step_id"].endswith("_run"):
+                context[f"{step['step_id']}_id"] = generated
 
     commands = []
     for step in profile["steps"]:
         entrypoint = (project_root / step["entrypoint"]).resolve()
         arguments = [value.format_map(PreserveMissing(context)) for value in step["arguments"]]
+        if not missing_bindings and any(re.search(r"\{[A-Za-z_]\w*\}", value) for value in arguments):
+            raise ValueError(f"Unresolved execution argument placeholder in step: {step['step_id']}")
         if step["shell"] == "powershell":
             argv = [
                 "pwsh.exe", "-NoProfile", "-NonInteractive", "-File",

@@ -1,7 +1,7 @@
 # 单次反射正交加速飞行时间质量分析器：COMSOL实施与验证
 
 本文只记录COMSOL入口、模型树和独立验收。当前项目资格、跨求解器结论与开放任务只见
-[`PROJECT.md`](PROJECT.md)。先按下表读取本次需要的章节；完成记录从项目 README 的 History 索引追溯。
+[`PROJECT.md`](PROJECT.md)。先按下表读取本次需要的章节；完成记录从[历史索引](history/README.md)追溯。
 
 | 本次任务 | 章节 |
 |---|---|
@@ -129,7 +129,7 @@ python -m common.analysis.tof_error_budget --flight-time-us 71.35279859675002 --
 ```
 
 该样本的直接 FWHM 与高斯代理明显不同，且有多个 KDE 模态，不能用高斯 sigma 预算作验收。
-按[时间预算指南](../../../docs/TOF_ERROR_BUDGET.md)先留出其他未计入误差，再由完整配对事件重算
+按[时间预算指南](../../../docs/science/TOF_ERROR_BUDGET.md)先留出其他未计入误差，再由完整配对事件重算
 canonical 峰形／FWHM、共同漂移、全部粒子和状态指标；通过声明预算后才比较成本。
 
 [precision-comparison]: ../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_195714__analysis__python__oatof-cpt-comparison/results/comparison.json

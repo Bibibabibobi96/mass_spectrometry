@@ -15,12 +15,19 @@ from unittest.mock import patch
 from common.contracts import capacity_ledger
 from common.contracts.capacity_protection import create_capacity_protection_lease
 from common.contracts.verify_artifact_layout import (
+    legacy_identity,
     main,
     verify_artifacts_root,
     verify_cache,
     verify_formal,
     verify_integration_cache_entry,
+    verify_project,
     verify_verified_pulse_cache_entry,
+)
+from common.contracts.test_artifact_identity_archive import (
+    CURRENT,
+    LEGACY,
+    retirement_fixture,
 )
 from common.simion.pa_family_cache import (
     VERIFICATION_EVIDENCE_ROLE,
@@ -1081,6 +1088,51 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                 verify_formal(
                     project, verify_hashes=True, repository_root=repository
                 )
+
+    def test_consolidated_owner_keeps_original_formal_identity_and_asset_hashes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root / "repo"
+            descriptor, frozen = retirement_fixture(repository)
+            frozen_before = frozen.read_bytes()
+            reference = {"path": f"projects/{CURRENT}/config/formal_validation.json",
+                         "bytes": 123, "sha256": "A" * 64}
+            project, asset = self.make_formal(
+                root / "artifacts/projects", CURRENT, reference, legacy_primary_name=True
+            )
+            manifest = project / "formal/asset_manifest.json"
+            original = manifest.read_bytes()
+            verify_formal(project, verify_hashes=True, repository_root=repository)
+            self.assertEqual(legacy_identity(repository, CURRENT), descriptor["retired_project_descriptors"][0])
+            alias = legacy_identity(repository, LEGACY)
+            self.assertIn(f"projects/{CURRENT}/archive/", alias["artifact_location"]["archive_root"])
+            self.assertEqual(manifest.read_bytes(), original)
+            self.assertEqual(frozen.read_bytes(), frozen_before)
+            asset.write_text("tampered", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "byte count differs"):
+                verify_formal(project, verify_hashes=True, repository_root=repository)
+
+    def test_retired_run_rejects_relabeling_to_successor(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root / "repo"
+            descriptor, _ = retirement_fixture(repository)
+            project = root / "artifacts/projects" / CURRENT
+            run = project / "runs" / RUN_ID
+            for name in ("run_config.json", "summary.json", "run_manifest.json"):
+                write_json(run / name, {"schema_version": 1, "run_id": RUN_ID, "project": CURRENT})
+            (project / "00_README.txt").write_text("Recorded owner", encoding="utf-8")
+            before = {path: path.read_bytes() for path in project.rglob("*") if path.is_file()}
+            self.assertEqual(verify_project(project, repository_root=repository), (1, 0))
+            self.assertEqual(before, {path: path.read_bytes() for path in project.rglob("*") if path.is_file()})
+            for name in ("run_config.json", "summary.json", "run_manifest.json"):
+                with self.subTest(name=name):
+                    write_json(run / name, {
+                        "schema_version": 1, "run_id": RUN_ID, "project": descriptor["project_id"]
+                    })
+                    with self.assertRaisesRegex(AssertionError, "recorded project identity differs"):
+                        verify_project(project, repository_root=repository)
+                    (run / name).write_bytes(before[run / name])
 
     def test_unmapped_retired_source_is_not_silently_skipped(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -307,13 +307,13 @@ class DirectFieldPlanTests(unittest.TestCase):
 
     @unittest.skipUnless(LUA.is_file(), 'plain Lua unavailable')
     def test_actual_lua_audit_opens_one_pa_and_rejects_wrong_ids_voltages_mask_and_grid(self):
-        for project in ('rf_quadrupole_ion_optics', 'rf_hexapole_ion_optics', 'rf_octupole_ion_optics'):
+        for project in ('quadrupole', 'hexapole', 'octupole'):
             with self.subTest(project=project):
                 self.check_lua_audit(multipole_source(project))
 
     @unittest.skipUnless(LUA.is_file(), 'plain Lua unavailable')
     def test_fine_lua_audit_accepts_actual_subset_but_checks_full_voltage_namespace(self):
-        self.check_lua_audit(multipole_source('rf_octupole_ion_optics'), entrance_refinement=True)
+        self.check_lua_audit(multipole_source('octupole'), entrance_refinement=True)
 
     @unittest.skipUnless(LUA.is_file(), 'plain Lua unavailable')
     def test_public_operating_builder_preserves_sparse_ids_and_does_not_create_padding_metal(self):

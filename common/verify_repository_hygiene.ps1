@@ -62,7 +62,7 @@ if ($workspaceManaged) {
 
 $allowedRepositoryDirectories = @(
   '.agents','.git','.githooks','.github','.venv','.ruff_cache','.pytest_cache','.mypy_cache',
-  'common','config','docs','integrations','official_docs','projects'
+  'common','config','docs','integrations','projects'
 )
 foreach ($directory in Get-ChildItem -Force -Directory -LiteralPath $repoRoot) {
   if ($directory.Name -notin $allowedRepositoryDirectories) {

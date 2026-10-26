@@ -33,7 +33,7 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.workspace = Path(self.temporary.name)
+        self.workspace = Path(self.temporary.name).resolve()
         self.addCleanup(self._make_writable)
         path, _ = fixture(self.workspace)
         self.run = self.workspace/"owned_run"
@@ -143,7 +143,7 @@ class LocalFrontendRuntimeTests(unittest.TestCase):
         snapshot = self.workspace / "runtime_snapshot"
         relative = Path("integrations/workflows/local_frontend/runtime.py")
         resources = [relative, Path("integrations/runtime/build_single_flight_program.py"),
-                     Path("common/multipole/simion_rf_drive.lua"),
+                     Path("common/simion/rf_drive.lua"),
                      Path("common/simion/voltage_waveforms.lua"),
                      Path("integrations/runtime/single_flight_pulse_hook.lua"),
                      Path("integrations/runtime/single_flight_frontend_hook.lua")]

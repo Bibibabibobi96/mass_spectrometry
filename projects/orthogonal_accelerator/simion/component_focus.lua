@@ -1,5 +1,5 @@
 -- Native runtime focus trace for one accelerator PA controller; it never saves PA state.
--- Lifecycle follows common/multipole/simion_transport.lua: persistent streams,
+-- Lifecycle follows projects/rf_multipole_ion_optics/simion/simion_transport.lua: persistent streams,
 -- per-ion first-action state, per-ion terminate finalization, run-end backstop.
 simion.workbench_program()
 local program_path=debug.getinfo(1,'S').source:sub(2)

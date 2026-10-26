@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "role": "multipole_particle_source_profiles",
+  "project_id": "rf_multipole_ion_optics",
+  "profiles": {
+    "quadrupole_official_fixed_100": {
+      "path": "projects/rf_multipole_ion_optics/variants/quadrupole/config/particles/official_fixed_100_canonical.csv",
+      "sha256": "3A04CFDD2A091F8CC979DD6180E5C7E072A5D96A87ED03768A606581D15D15C5"
+    },
+    "family_mother_sample_v1_n100": {
+      "path": "projects/rf_multipole_ion_optics/config/sources/rf_multipole_family_mother_sample_v1_100.csv",
+      "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F"
+    },
+    "family_mother_sample_v1_n1000": {
+      "path": "projects/rf_multipole_ion_optics/config/sources/rf_multipole_family_mother_sample_v1_1000.csv",
+      "sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF"
+    },
+    "paper1_prospective_mother_sample_v1_n1000": {
+      "path": "projects/rf_multipole_ion_optics/config/sources/rf_multipole_paper1_prospective_mother_sample_v1_1000.csv",
+      "sha256": "03DCEB7CCD763075696145CD370E9D14CA2FADAE86BA83370BAF7B171E13126D"
+    },
+    "paper1_prospective_mother_sample_v1_n5000": {
+      "path": "projects/rf_multipole_ion_optics/config/sources/rf_multipole_paper1_prospective_mother_sample_v1_5000.csv",
+      "sha256": "38BF87E06C210A05BFFB21EE4997EF39343CE17B8924AFF606CEAEC79A2335C6"
+    },
+    "octupole_family_mother_sample_v1_n5000": {
+      "path": "projects/rf_multipole_ion_optics/config/sources/rf_multipole_family_mother_sample_v1_5000.csv",
+      "sha256": "131C63A4DA0BD8A5BC2E5133432B8E4B77EAA5F1B94188E3B1393B8E36DC61CA"
+    },
+    "octupole_family_complete_mother_n100": {
+      "release_spec": "variants/octupole/config/sources/family_complete_mother_n100.json"
+    },
+    "octupole_continuous_axial_volume_snapshot_v1_n100": {
+      "path": "projects/rf_multipole_ion_optics/config/sources/rf_octupole_continuous_axial_volume_snapshot_v1_100.csv",
+      "sha256": "64580DDACB86B09104DC97C3446FF90FAF027978169B7CE0943600FE4270F09D",
+      "volume_snapshot_receipt": {
+        "path": "projects/rf_multipole_ion_optics/config/sources/rf_octupole_continuous_axial_volume_snapshot_v1_100.receipt.json",
+        "sha256": "8D9D438AEAD86EFA70FD8BB4806272CB11A5A9EE6AD2B85B686FF87426D1F916"
+      }
+    },
+    "octupole_continuous_axial_volume_snapshot_v1_n1000": {
+      "path": "projects/rf_multipole_ion_optics/config/sources/rf_octupole_continuous_axial_volume_snapshot_v1_1000.csv",
+      "sha256": "6FEC36E244C723148800E792EFA329B236A3AD8E188C75E055EE77E2F2D845A2",
+      "volume_snapshot_receipt": {
+        "path": "projects/rf_multipole_ion_optics/config/sources/rf_octupole_continuous_axial_volume_snapshot_v1_1000.receipt.json",
+        "sha256": "F438FBB79586B71AFC69115FFDDEC8BBE164F5B1133CC3C9B95B09D92F492094"
+      }
+    },
+    "octupole_planar_524da_2ev_n100": {
+      "release_spec": "variants/octupole/config/sources/planar_524da_2ev_n100.json"
+    }
+  }
+}

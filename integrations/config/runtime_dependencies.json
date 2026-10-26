@@ -120,29 +120,8 @@
           ]
         },
         {
-          "id": "common_grounded_shield_connector",
-          "source_repo_path": "common/multipole/grounded_shield.py",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "common_multipole_simion_geometry",
-          "source_repo_path": "common/multipole/simion_geometry.py",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
           "id": "common_multipole_simion_rf_drive_kernel",
-          "source_repo_path": "common/multipole/simion_rf_drive.lua",
+          "source_repo_path": "common/simion/rf_drive.lua",
           "consumers": [
             "local_frontend",
             "cooled_frontend",
@@ -269,7 +248,7 @@
         },
         {
           "id": "common_resource_budget_support",
-          "source_repo_path": "common/multipole/resource_budget_support.ps1",
+          "source_repo_path": "common/resource_budget_support.ps1",
           "consumers": [
             "local_frontend",
             "cooled_frontend",
@@ -610,53 +589,6 @@
           ]
         },
         {
-          "id": "local_frontend_common_multipole_axial_acceleration_py",
-          "source_repo_path": "common/multipole/axial_acceleration.py",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "local_frontend_common_multipole_connector_geometry_py",
-          "source_repo_path": "common/multipole/connector_geometry.py",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "local_frontend_common_multipole_round_rod_geometry_py",
-          "source_repo_path": "common/multipole/round_rod_geometry.py",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "multipole_ip",
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "local_frontend_common_multipole_simion_numerics_py",
-          "source_repo_path": "common/multipole/simion_numerics.py",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
           "id": "local_frontend_common_simion_assets_iob_instance_seeds_1_instance_seed_iob",
           "source_repo_path": "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
           "consumers": [
@@ -919,16 +851,6 @@
           ]
         },
         {
-          "id": "prepared_joint_common_multipole_exit_state_plot_py",
-          "source_repo_path": "common/multipole/exit_state_plot.py",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "cooled_frontend",
-            "oa_mr"
-          ]
-        },
-        {
           "id": "prepared_joint_common_simion_operating_pa_cache_py",
           "source_repo_path": "common/simion/operating_pa_cache.py",
           "consumers": [
@@ -1035,26 +957,6 @@
           ]
         },
         {
-          "id": "common_multipole_interface_geometry",
-          "source_repo_path": "common/multipole/interface_geometry.py",
-          "consumers": [
-            "local_frontend",
-            "cooled_frontend",
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "common_multipole_component_port",
-          "source_repo_path": "common/multipole/component_port.py",
-          "consumers": [
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
           "id": "common_contracts_schemas_multipole_resolved_design_schema_json",
           "source_repo_path": "common/contracts/schemas/multipole_resolved_design.schema.json",
           "consumers": [
@@ -1074,15 +976,6 @@
           "source_repo_path": "common/contracts/schemas/multipole_evidence_evaluation.schema.json",
           "consumers": [
             "multipole_ip"
-          ]
-        },
-        {
-          "id": "common_multipole_compile_design_request",
-          "source_repo_path": "common/multipole/compile_design_request.py",
-          "consumers": [
-            "multipole_ip",
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
           ]
         },
         {
@@ -1199,13 +1092,6 @@
           ]
         },
         {
-          "id": "single_reflection_common_multipole_particle_source_preflight_py",
-          "source_repo_path": "common/multipole/particle_source_preflight.py",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
           "id": "assembly_common_integration___init___py",
           "source_repo_path": "common/integration/__init__.py",
           "consumers": [
@@ -1224,15 +1110,6 @@
           "source_repo_path": "common/ion_release/numpy_box_cone.py",
           "consumers": [
             "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "assembly_common_multipole___init___py",
-          "source_repo_path": "common/multipole/__init__.py",
-          "consumers": [
-            "single_reflection_flight",
-            "local_frontend",
-            "cooled_frontend"
           ]
         },
         {
@@ -2977,6 +2854,135 @@
           "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json",
           "consumers": [
             "oa_mr"
+          ]
+        }
+      ]
+    },
+    {
+      "provider_scope": "project",
+      "provider_project": "rf_multipole_ion_optics",
+      "files": [
+        {
+          "id": "common_grounded_shield_connector",
+          "source_repo_path": "projects/rf_multipole_ion_optics/core/grounded_shield.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_multipole_simion_geometry",
+          "source_repo_path": "projects/rf_multipole_ion_optics/simion/simion_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_common_multipole_axial_acceleration_py",
+          "source_repo_path": "projects/rf_multipole_ion_optics/core/axial_acceleration.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_common_multipole_connector_geometry_py",
+          "source_repo_path": "projects/rf_multipole_ion_optics/core/connector_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_common_multipole_round_rod_geometry_py",
+          "source_repo_path": "projects/rf_multipole_ion_optics/core/round_rod_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "local_frontend_common_multipole_simion_numerics_py",
+          "source_repo_path": "projects/rf_multipole_ion_optics/runtime/simion_numerics.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "prepared_joint_common_multipole_exit_state_plot_py",
+          "source_repo_path": "projects/rf_multipole_ion_optics/analysis/exit_state_plot.py",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "cooled_frontend",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "common_multipole_interface_geometry",
+          "source_repo_path": "projects/rf_multipole_ion_optics/core/interface_geometry.py",
+          "consumers": [
+            "local_frontend",
+            "cooled_frontend",
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_multipole_component_port",
+          "source_repo_path": "projects/rf_multipole_ion_optics/core/component_port.py",
+          "consumers": [
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "common_multipole_compile_design_request",
+          "source_repo_path": "projects/rf_multipole_ion_optics/core/compile_design_request.py",
+          "consumers": [
+            "multipole_ip",
+            "single_reflection_flight",
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "single_reflection_common_multipole_particle_source_preflight_py",
+          "source_repo_path": "projects/rf_multipole_ion_optics/runtime/particle_source_preflight.py",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "assembly_common_multipole___init___py",
+          "source_repo_path": "projects/rf_multipole_ion_optics/core/__init__.py",
+          "consumers": [
+            "single_reflection_flight",
+            "local_frontend",
+            "cooled_frontend"
           ]
         }
       ]

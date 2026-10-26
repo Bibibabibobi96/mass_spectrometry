@@ -92,6 +92,10 @@
         {
           "exact": "common/host_execution_lease.ps1",
           "reason": "host_adapter_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
@@ -234,6 +238,10 @@
         {
           "regex": "^projects/[^/]+/config/project\\.json$",
           "reason": "project_descriptor_changed"
+        },
+        {
+          "regex": "^projects/[^/]+/docs/history/retired_projects/[^/]+/config/project\\.json$",
+          "reason": "retired_project_descriptor_changed"
         }
       ],
       "command": {
@@ -283,21 +291,17 @@
       }
     },
     {
-      "stage": "rf_quadrupole_generated_publications",
+      "stage": "rf_multipole_generated_publications",
       "dependency_profile": "locked",
       "repository_integration_group": "fast",
       "matches": [
         {
-          "prefix": "projects/rf_quadrupole_ion_optics/",
-          "reason": "quadrupole_path_changed"
+          "regex": "^projects/rf_multipole_ion_optics/(?!tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
+          "reason": "rf_multipole_project_changed"
         },
         {
           "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
-        },
-        {
-          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_multipole_direct_dependency_changed"
         },
         {
           "regex": "^common/comsol/(?!README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
@@ -306,16 +310,22 @@
         {
           "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
         "runner": "powershell",
-        "script": "projects/rf_quadrupole_ion_optics/verify_project.ps1",
+        "script": "projects/rf_multipole_ion_optics/verify_project.ps1",
         "parameters": {
           "Level": "Freshness",
-          "PythonExe": "{python}"
+          "PythonExe": "{python}",
+          "StructuralVariant": "All"
         }
-      }
+      },
+      "project_id": "rf_multipole_ion_optics"
     },
     {
       "stage": "common_contracts",
@@ -498,13 +508,21 @@
       }
     },
     {
-      "stage": "multipole_common",
+      "stage": "rf_multipole_domain_tests",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
         {
-          "prefix": "common/multipole/",
-          "reason": "common_multipole_changed"
+          "regex": "^projects/rf_multipole_ion_optics/(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)(?:core/|runtime/|analysis/|comsol/|simion/|config/(?:contracts|campaigns|sources)/|config/simion_layout_template\\.json$|tests/domain/)",
+          "reason": "rf_multipole_domain_changed"
+        },
+        {
+          "prefix": "projects/rf_multipole_ion_optics/tests/domain/",
+          "reason": "rf_multipole_domain_tests_changed"
+        },
+        {
+          "prefix": "projects/rf_multipole_ion_optics/tests/test_support/",
+          "reason": "rf_multipole_test_support_changed"
         },
         {
           "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
@@ -513,6 +531,10 @@
         {
           "regex": "^common/comsol/(?!README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
@@ -522,20 +544,20 @@
           "unittest",
           "discover",
           "-s",
-          "common/multipole",
+          "projects/rf_multipole_ion_optics/tests/domain",
           "-p",
           "test_*.py"
         ]
       }
     },
     {
-      "stage": "multipole_foundation",
+      "stage": "rf_multipole_foundation",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
         {
-          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_multipole_changed"
+          "regex": "^projects/rf_multipole_ion_optics/(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)(?:core/|runtime/|analysis/|comsol/|simion/|config/(?:contracts|campaigns|sources)/|config/simion_layout_template\\.json$|tests/domain/)",
+          "reason": "rf_multipole_domain_dependency_changed"
         },
         {
           "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
@@ -544,13 +566,17 @@
         {
           "regex": "^common/comsol/(?!README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
         "runner": "python",
         "arguments": [
           "-m",
-          "common.multipole.verify_family_foundation"
+          "projects.rf_multipole_ion_optics.analysis.verify_family_foundation"
         ]
       }
     },
@@ -655,8 +681,12 @@
           "reason": "common_simion_direct_dependency_changed"
         },
         {
-          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_multipole_direct_dependency_changed"
+          "regex": "^projects/rf_multipole_ion_optics/(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)(?:core/|runtime/|analysis/|comsol/|simion/|config/(?:contracts|campaigns|sources)/|config/simion_layout_template\\.json$|tests/domain/)",
+          "reason": "rf_multipole_domain_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
@@ -743,6 +773,10 @@
         {
           "exact": "common/analysis/population_moments.py",
           "reason": "shared_population_moments_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
@@ -791,6 +825,10 @@
         {
           "regex": "^common/comsol/(?!README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_direct_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
@@ -802,25 +840,28 @@
       }
     },
     {
-      "stage": "rf_quadrupole_ion_optics_static",
+      "stage": "rf_multipole_quadrupole_static",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "requires_stages": [
-        "rf_quadrupole_generated_publications"
+        "rf_multipole_generated_publications"
       ],
-      "project_id": "rf_quadrupole_ion_optics",
       "matches": [
         {
-          "prefix": "projects/rf_quadrupole_ion_optics/",
-          "reason": "rf_quadrupole_path_changed"
+          "prefix": "projects/rf_multipole_ion_optics/variants/quadrupole/",
+          "reason": "quadrupole_variant_changed"
+        },
+        {
+          "prefix": "projects/rf_multipole_ion_optics/tests/analysis/",
+          "reason": "quadrupole_tests_changed"
+        },
+        {
+          "regex": "^projects/rf_multipole_ion_optics/(?!variants/|tests/(?:analysis|hexapole|octupole)/|tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
+          "reason": "rf_multipole_shared_project_changed"
         },
         {
           "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
-        },
-        {
-          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_multipole_direct_dependency_changed"
         },
         {
           "regex": "^common/comsol/(?!README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
@@ -829,44 +870,53 @@
         {
           "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
         "runner": "powershell",
-        "script": "projects/rf_quadrupole_ion_optics/verify_project.ps1",
+        "script": "projects/rf_multipole_ion_optics/verify_project.ps1",
         "parameters": {
           "Level": "Core",
+          "StructuralVariant": "quadrupole",
           "FreshnessPrevalidated": true,
           "PythonExe": "{python}"
         }
       },
       "repository_integration_command": {
         "runner": "powershell",
-        "script": "projects/rf_quadrupole_ion_optics/verify_project.ps1",
+        "script": "projects/rf_multipole_ion_optics/verify_project.ps1",
         "parameters": {
           "Level": "Static",
+          "StructuralVariant": "quadrupole",
           "FreshnessPrevalidated": true,
           "PythonExe": "{python}"
         }
       }
     },
     {
-      "stage": "rf_hexapole_ion_optics_static",
+      "stage": "rf_multipole_hexapole_static",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
-      "project_id": "rf_hexapole_ion_optics",
       "matches": [
         {
-          "prefix": "projects/rf_hexapole_ion_optics/",
-          "reason": "rf_hexapole_path_changed"
+          "prefix": "projects/rf_multipole_ion_optics/variants/hexapole/",
+          "reason": "hexapole_variant_changed"
+        },
+        {
+          "prefix": "projects/rf_multipole_ion_optics/tests/hexapole/",
+          "reason": "hexapole_tests_changed"
+        },
+        {
+          "regex": "^projects/rf_multipole_ion_optics/(?!variants/|tests/(?:analysis|hexapole|octupole)/|tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
+          "reason": "rf_multipole_shared_project_changed"
         },
         {
           "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
-        },
-        {
-          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_multipole_direct_dependency_changed"
         },
         {
           "regex": "^common/comsol/(?!README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
@@ -875,33 +925,46 @@
         {
           "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
         "runner": "powershell",
-        "script": "projects/rf_hexapole_ion_optics/verify_project.ps1",
+        "script": "projects/rf_multipole_ion_optics/verify_project.ps1",
         "parameters": {
+          "Level": "Static",
+          "StructuralVariant": "hexapole",
+          "FreshnessPrevalidated": true,
           "PythonExe": "{python}"
         }
-      }
+      },
+      "requires_stages": [
+        "rf_multipole_generated_publications"
+      ]
     },
     {
-      "stage": "rf_octupole_ion_optics_static",
+      "stage": "rf_multipole_octupole_static",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
-      "project_id": "rf_octupole_ion_optics",
       "matches": [
         {
-          "prefix": "projects/rf_octupole_ion_optics/",
-          "reason": "rf_octupole_path_changed"
+          "prefix": "projects/rf_multipole_ion_optics/variants/octupole/",
+          "reason": "octupole_variant_changed"
+        },
+        {
+          "prefix": "projects/rf_multipole_ion_optics/tests/octupole/",
+          "reason": "octupole_tests_changed"
+        },
+        {
+          "regex": "^projects/rf_multipole_ion_optics/(?!variants/|tests/(?:analysis|hexapole|octupole)/|tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
+          "reason": "rf_multipole_shared_project_changed"
         },
         {
           "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
-        },
-        {
-          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_multipole_direct_dependency_changed"
         },
         {
           "regex": "^common/comsol/(?!README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
@@ -910,15 +973,25 @@
         {
           "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_direct_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
         "runner": "powershell",
-        "script": "projects/rf_octupole_ion_optics/verify_project.ps1",
+        "script": "projects/rf_multipole_ion_optics/verify_project.ps1",
         "parameters": {
+          "Level": "Static",
+          "StructuralVariant": "octupole",
+          "FreshnessPrevalidated": true,
           "PythonExe": "{python}"
         }
-      }
+      },
+      "requires_stages": [
+        "rf_multipole_generated_publications"
+      ]
     },
     {
       "stage": "dual_pressure_rectilinear_ion_processor_static",
@@ -943,12 +1016,16 @@
           "reason": "shared_simion_source_changed"
         },
         {
-          "exact": "common/multipole/simion_rf_drive.lua",
+          "exact": "common/simion/rf_drive.lua",
           "reason": "shared_rf_drive_changed"
         },
         {
           "exact": "common/analysis/population_moments.py",
           "reason": "shared_population_moments_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
@@ -974,23 +1051,23 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "exact": "common/multipole/family_contract.py",
+          "exact": "projects/rf_multipole_ion_optics/core/family_contract.py",
           "reason": "shared_rf_voltage_dependency_changed"
         },
         {
-          "exact": "common/multipole/ideal_transport.py",
+          "exact": "projects/rf_multipole_ion_optics/core/ideal_transport.py",
           "reason": "shared_ideal_field_dependency_changed"
         },
         {
-          "exact": "common/multipole/round_rod_geometry.py",
+          "exact": "projects/rf_multipole_ion_optics/core/round_rod_geometry.py",
           "reason": "shared_rod_cross_section_dependency_changed"
         },
         {
-          "exact": "common/multipole/simion_geometry.py",
+          "exact": "projects/rf_multipole_ion_optics/simion/simion_geometry.py",
           "reason": "shared_simion_rod_renderer_dependency_changed"
         },
         {
-          "exact": "common/multipole/simion_rf_drive.lua",
+          "exact": "common/simion/rf_drive.lua",
           "reason": "shared_simion_rf_drive_dependency_changed"
         },
         {
@@ -1000,6 +1077,10 @@
         {
           "exact": "common/simion/pa_family_cache.ps1",
           "reason": "shared_simion_pa_cache_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {
@@ -1027,6 +1108,10 @@
         {
           "regex": "^common/comsol/(?!README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)",
           "reason": "common_comsol_direct_dependency_changed"
+        },
+        {
+          "exact": "common/resource_budget_support.ps1",
+          "reason": "shared_resource_budget_dependency_changed"
         }
       ],
       "command": {

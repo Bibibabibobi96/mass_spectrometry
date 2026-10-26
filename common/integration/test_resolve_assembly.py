@@ -362,7 +362,7 @@ class DirectAssemblyTests(unittest.TestCase):
             ("q3", "tapered_rods", 5, 35, 3, 28),
         ):
             interface = copy.deepcopy(self.components["guide"])
-            interface.update(project_id="rf_quadrupole_ion_optics", variant_id=variant,
+            interface.update(project_id="rf_multipole_ion_optics", variant_id=variant,
                              geometry_profile_id=f"fixture_{instance_id}")
             interface["ports"]["exit"]["center_mm"] = [0, 0, exit_z]
             interface["ports"]["exit"]["cross_section"]["inscribed_radius_mm"] = radius

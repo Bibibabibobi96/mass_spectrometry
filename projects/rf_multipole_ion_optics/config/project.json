@@ -1,0 +1,359 @@
+{
+  "schema_version": 1,
+  "project_id": "rf_multipole_ion_optics",
+  "family_id": "rf_multipole_ion_optics",
+  "display_name": "RF多极杆离子光学（四极／六极／八极）",
+  "purpose": "显式结构变体的无碰撞传输、轴向加速及四极质量过滤；分别维护科学输入与资格",
+  "lifecycle_status": "candidate",
+  "toolchains": [
+    "comsol",
+    "simion",
+    "matlab",
+    "python"
+  ],
+  "contracts": {
+    "baseline": null,
+    "resolved": null,
+    "analysis": null,
+    "interface": null,
+    "execution": "config/execution_profiles.json",
+    "design_profiles": "config/design_profiles.json",
+    "design_variables": null,
+    "optimization_envelope": null
+  },
+  "structural_variants": [
+    {
+      "variant_id": "quadrupole",
+      "display_name": "四极杆",
+      "radial_order_n": 2,
+      "electrode_count": 4,
+      "capability_ids": [
+        "quadrupole_ion_transport",
+        "quadrupole_collision_cooling",
+        "quadrupole_mass_filter_reference"
+      ]
+    },
+    {
+      "variant_id": "hexapole",
+      "display_name": "六极杆",
+      "radial_order_n": 3,
+      "electrode_count": 6,
+      "capability_ids": [
+        "hexapole_ideal_transport",
+        "hexapole_round_rod_l2_transport",
+        "hexapole_finite_3d_transport"
+      ]
+    },
+    {
+      "variant_id": "octupole",
+      "display_name": "八极杆",
+      "radial_order_n": 4,
+      "electrode_count": 8,
+      "capability_ids": [
+        "octupole_ideal_transport",
+        "octupole_round_rod_l2_transport",
+        "octupole_finite_3d_transport"
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "capability_id": "quadrupole_ion_transport",
+      "function": "ion_transport",
+      "status": "candidate",
+      "modes": [
+        "quadrupole_transport_no_collision",
+        "quadrupole_transport_interface_readiness"
+      ],
+      "metrics": [
+        "transmission_fraction",
+        "mean_tof",
+        "rms_beam_radius",
+        "rms_divergence",
+        "mean_kinetic_energy"
+      ],
+      "design_variables": [
+        "inscribed_radius_r0",
+        "rod_radius_ratio",
+        "rod_z_min",
+        "rod_z_max",
+        "enclosure_working_region_radius",
+        "vacuum_z_min",
+        "vacuum_z_max",
+        "shield_inner_radius",
+        "shield_outer_radius",
+        "entrance_outer_endcap_upstream_face_z",
+        "entrance_outer_endcap_downstream_face_z",
+        "exit_outer_endcap_upstream_face_z",
+        "exit_outer_endcap_downstream_face_z",
+        "entrance_aperture_radius",
+        "entrance_plate_thickness",
+        "entrance_rod_clearance",
+        "entrance_connector_length",
+        "entrance_release_offset",
+        "exit_aperture_radius",
+        "exit_plate_thickness",
+        "exit_rod_clearance",
+        "exit_connector_length",
+        "exit_census_offset",
+        "rf_amplitude",
+        "dc_amplitude",
+        "common_mode_offset",
+        "rf_frequency",
+        "rf_phase",
+        "segment_count",
+        "intersegment_gap",
+        "segment_entrance_common_mode",
+        "segment_exit_common_mode",
+        "segment_output_reference"
+      ]
+    },
+    {
+      "capability_id": "quadrupole_collision_cooling",
+      "function": "collision_cooling",
+      "status": "prototype",
+      "modes": [],
+      "metrics": [
+        "transmission_fraction",
+        "cooling_time",
+        "exit_energy",
+        "collision_count"
+      ],
+      "design_variables": []
+    },
+    {
+      "capability_id": "quadrupole_mass_filter_reference",
+      "function": "mass_filtering",
+      "status": "static",
+      "modes": [
+        "quadrupole_mass_filter_reference"
+      ],
+      "metrics": [
+        "mass_resolving_power",
+        "transmission_fraction",
+        "mass_peak_centroid"
+      ],
+      "design_variables": [
+        "rf_amplitude",
+        "dc_amplitude",
+        "common_mode_offset",
+        "rf_frequency",
+        "rf_phase"
+      ]
+    },
+    {
+      "capability_id": "hexapole_ideal_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": [
+        "hexapole_transport_no_collision"
+      ],
+      "metrics": [
+        "transmission_fraction",
+        "exit_rms_radius",
+        "maximum_radius"
+      ],
+      "design_variables": []
+    },
+    {
+      "capability_id": "hexapole_round_rod_l2_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": [
+        "hexapole_round_rod_no_collision"
+      ],
+      "metrics": [
+        "parasitic_harmonic_score",
+        "transmission_fraction",
+        "exit_rms_radius"
+      ],
+      "design_variables": [
+        "rod_radius_ratio"
+      ]
+    },
+    {
+      "capability_id": "hexapole_finite_3d_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": [
+        "hexapole_finite_3d_no_collision"
+      ],
+      "metrics": [
+        "entrance_passed",
+        "exit_passed",
+        "transmission_fraction",
+        "exit_rms_radius",
+        "maximum_rod_radius"
+      ],
+      "design_variables": [
+        "inscribed_radius_r0",
+        "rod_radius_ratio",
+        "rod_z_min",
+        "rod_z_max",
+        "enclosure_working_region_radius",
+        "vacuum_z_min",
+        "vacuum_z_max",
+        "shield_inner_radius",
+        "shield_outer_radius",
+        "entrance_outer_endcap_upstream_face_z",
+        "entrance_outer_endcap_downstream_face_z",
+        "exit_outer_endcap_upstream_face_z",
+        "exit_outer_endcap_downstream_face_z",
+        "entrance_aperture_radius",
+        "entrance_plate_thickness",
+        "entrance_rod_clearance",
+        "entrance_connector_length",
+        "entrance_release_offset",
+        "exit_aperture_radius",
+        "exit_plate_thickness",
+        "exit_rod_clearance",
+        "exit_connector_length",
+        "exit_census_offset",
+        "rf_amplitude",
+        "dc_amplitude",
+        "common_mode_offset",
+        "rf_frequency",
+        "rf_phase",
+        "segment_count",
+        "intersegment_gap",
+        "segment_entrance_common_mode",
+        "segment_exit_common_mode",
+        "segment_output_reference"
+      ]
+    },
+    {
+      "capability_id": "octupole_ideal_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": [
+        "octupole_transport_no_collision"
+      ],
+      "metrics": [
+        "transmission_fraction",
+        "exit_rms_radius",
+        "maximum_radius"
+      ],
+      "design_variables": []
+    },
+    {
+      "capability_id": "octupole_round_rod_l2_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": [
+        "octupole_round_rod_no_collision"
+      ],
+      "metrics": [
+        "parasitic_harmonic_score",
+        "transmission_fraction",
+        "exit_rms_radius"
+      ],
+      "design_variables": [
+        "rod_radius_ratio"
+      ]
+    },
+    {
+      "capability_id": "octupole_finite_3d_transport",
+      "function": "ion_transport",
+      "status": "static",
+      "modes": [
+        "octupole_finite_3d_no_collision"
+      ],
+      "metrics": [
+        "entrance_passed",
+        "exit_passed",
+        "transmission_fraction",
+        "exit_rms_radius",
+        "maximum_rod_radius"
+      ],
+      "design_variables": [
+        "inscribed_radius_r0",
+        "rod_radius_ratio",
+        "rod_z_min",
+        "rod_z_max",
+        "enclosure_working_region_radius",
+        "vacuum_z_min",
+        "vacuum_z_max",
+        "shield_inner_radius",
+        "shield_outer_radius",
+        "entrance_outer_endcap_upstream_face_z",
+        "entrance_outer_endcap_downstream_face_z",
+        "exit_outer_endcap_upstream_face_z",
+        "exit_outer_endcap_downstream_face_z",
+        "entrance_aperture_radius",
+        "entrance_plate_thickness",
+        "entrance_rod_clearance",
+        "entrance_connector_length",
+        "entrance_release_offset",
+        "exit_aperture_radius",
+        "exit_plate_thickness",
+        "exit_rod_clearance",
+        "exit_connector_length",
+        "exit_census_offset",
+        "rf_amplitude",
+        "dc_amplitude",
+        "common_mode_offset",
+        "rf_frequency",
+        "rf_phase",
+        "segment_count",
+        "intersegment_gap",
+        "segment_entrance_common_mode",
+        "segment_exit_common_mode",
+        "segment_output_reference"
+      ]
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "quadrupole: No current formal mechanical geometry or SolidWorks assembly",
+    "quadrupole: N=100 strict interface phase-space gate remains failed",
+    "quadrupole: Collision physics is not implemented in the current validated chain",
+    "quadrupole: Mass-filter mode has L1 and dual-solver functional evidence; mesh, numerical-equivalence and resolving-power qualification remain open",
+    "hexapole: The circular-rod field is only a provisional 2D L2 screen",
+    "hexapole: The apertured finite 3D interfaces are functional simulation geometry, not a mechanical baseline",
+    "hexapole: Continuous phase-space numerical equivalence and Candidate qualification are not complete",
+    "hexapole: Collision, space-charge and CAD evidence do not exist",
+    "octupole: The circular-rod field is only a provisional 2D L2 screen",
+    "octupole: The apertured finite 3D interfaces are functional simulation geometry, not a mechanical baseline",
+    "octupole: Continuous phase-space numerical equivalence and Candidate qualification are not complete",
+    "octupole: Collision, space-charge and CAD evidence do not exist"
+  ],
+  "retired_project_descriptors": [
+    {
+      "project_id": "rf_quadrupole_ion_optics",
+      "path": "projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/config/project.json",
+      "bytes": 4178,
+      "sha256": "8cfb5b07ebddc1944f3ee0af5f56b168c98aa6bf4b26ae8dc98f466123c96c8a",
+      "source_commit": "3647bcae1f20682c2d3e9ca164bf945645316d09",
+      "artifact_access": "read_only",
+      "new_runs_allowed": false,
+      "verification_identity": "recorded_project_id",
+      "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+    },
+    {
+      "project_id": "rf_hexapole_ion_optics",
+      "path": "projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_hexapole_ion_optics/config/project.json",
+      "bytes": 3942,
+      "sha256": "318fb3300bb4ebcbe4f66daa781882e073bfe17d2b3842a4eacab9feb49da6dd",
+      "source_commit": "3647bcae1f20682c2d3e9ca164bf945645316d09",
+      "artifact_access": "read_only",
+      "new_runs_allowed": false,
+      "verification_identity": "recorded_project_id",
+      "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+    },
+    {
+      "project_id": "rf_octupole_ion_optics",
+      "path": "projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_octupole_ion_optics/config/project.json",
+      "bytes": 3942,
+      "sha256": "0f48c0340c4c80d1d5bdeeb292dc51e8bbeb226e5c3dc75e3866d664468b4e27",
+      "source_commit": "3647bcae1f20682c2d3e9ca164bf945645316d09",
+      "artifact_access": "read_only",
+      "new_runs_allowed": false,
+      "verification_identity": "recorded_project_id",
+      "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+    }
+  ]
+}

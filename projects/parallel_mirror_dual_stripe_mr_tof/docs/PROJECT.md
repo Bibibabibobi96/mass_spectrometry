@@ -20,7 +20,6 @@ MR拥有Prism、镜组、Stripe、检测、系统布局约束与匹配判据；�
 
 2026-10-21用户将工作转向同源八极导引接OA，IP碰撞调查暂停。
 后续已授权的具名状态交接与迁移验收以集成记录为准，不因它们完成而自动恢复旧IP优化或大型联合研究。
-当前文档整理未运行商业软件、改变输入或删除载荷。
 
 ## 统一组装迁移任务
 
@@ -190,7 +189,7 @@ COMSOL对完整C0独立求场，经标量电势→规则PA→SIMION求导／插�
 [终态summary](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_000829__build__simion__zparent-full-central/summary.json)
 记录success、5106.1064271秒、Refine完成；未Fly、COMSOL或crop，qualification仍false。
 它只用z=0.50 mm父场重建中央层并查询原25点，旧中央为物化、新中央为直接解；
-不能把该终态当作纯全局误差界、镜重建或束团资格。本次只读终态，不复验重型场载荷。
+不能把该终态当作纯全局误差界、镜重建或束团资格。
 
 ## 剩余时间响应与设计线索
 
@@ -215,4 +214,4 @@ S1单独-0.1 V对Ey改善弱且空间相位变差，保留负结果，不重复�
 [STEP交付](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/summary.json)
 含40独立电极、6个C0参考面及装配概览；5 μm交换精度不是场或制造精度，第三方消费未验收。
 [Pulsar英文交接包](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_140921__build__python__pulsar-trajectory-handoff/summary.json)
-与待用户发送的邮件保持原发布身份；本任务未发送材料或新增外部交付。
+与待用户发送的邮件保持原发布身份。

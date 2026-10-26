@@ -23,6 +23,10 @@
         "preferred_project_id": {
           "oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]
         },
+        "structural_variant_id": {
+          "description": "Select a declared project structure; required when a function has multiple structural candidates.",
+          "oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]
+        },
         "function": {"$ref": "#/$defs/identifier"},
         "mode": {"oneOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]}
       }

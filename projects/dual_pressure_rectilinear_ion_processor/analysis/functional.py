@@ -310,7 +310,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     write_json(inputs / "source_context.json", git_context)
     for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
         freeze_file(project / "simion" / name, solver / name)
-    freeze_file(repo / "common/multipole/simion_rf_drive.lua", solver / "simion_rf_drive.lua")
+    freeze_file(repo / "common/simion/rf_drive.lua", solver / "simion_rf_drive.lua")
     freeze_file(repo / "common/simion/voltage_waveforms.lua", solver / "voltage_waveforms.lua")
     collision_original = freeze_file(simion_dir / "examples/collision_hs1/collision_hs1.lua", inputs / "collision_hs1_original.lua")
     original=(inputs/"collision_hs1_original.lua").read_text(encoding="utf-8")

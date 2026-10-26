@@ -12,8 +12,8 @@
 2. 再读 [`docs/PROJECT.md`](docs/PROJECT.md)。
 3. 操作 COMSOL 时读 [`docs/COMSOL.md`](docs/COMSOL.md)。
 4. 操作 SIMION 时读 [docs/SIMION.md](docs/SIMION.md)。
-5. 修改代码时读仓库根 [`docs/DEVELOPMENT_STANDARDS.md`](../../docs/DEVELOPMENT_STANDARDS.md)。
-6. 只有追溯已退役 Python 筛选时才进入 [`docs/history/`](docs/history/)。
+5. 修改代码时按[开发标准阅读导航](../../docs/DEVELOPMENT_STANDARDS.md#阅读导航)读通用章节及任务触发专题。
+6. 只有追溯已退役 Python 筛选时才进入 [历史索引](docs/history/README.md)。
 
 ## 机器权威
 
@@ -59,14 +59,6 @@ dual_cone_tandem_quadrupole_ion_interface/
 不存在的实现目录不为空占位。大型模型、场、PA/IOB、轨迹、结果和日志只进入工作区
 `artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/`，不进入 Git。
 
-
 ## History索引
 
-<details>
-<summary>展开只读历史记录</summary>
-
-- [20260908__superseded-python-pressure-drag-screening](docs/history/20260908__superseded-python-pressure-drag-screening.md)
-
-- [空包络气流与传输原型](docs/history/20260911__empty-enclosure-gas-transport-prototype.md)
-
-</details>
+[历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。

@@ -11,8 +11,8 @@ import unittest
 from integrations.tests.test_single_reflection_preparation import fixture, release_fixture, write_json, rename_author_instances
 from integrations.workflows.single_reflection_flight.prepare import prepare
 from integrations.workflows.single_reflection_flight.fields import prepare_field_design, POLICY
-from common.multipole.compile_design_request import compile_design_request
-from common.multipole.test_compile_design_request import identity
+from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import identity
 from integrations.runtime.single_flight_frontend import native_frontend_instances
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, multi_inputs, multipole_source as chained_source, quadrupole_source
 from common.contracts.verify_run_manifest import record_path
@@ -25,7 +25,7 @@ def multipole_source(project):
     These four-segment fixtures are not approved physical operating points.
     """
     root = Path(__file__).resolve().parents[2]
-    request = json.loads((root / 'projects/rf_octupole_ion_optics/config/requests/through_exit.json').read_text())
+    request = json.loads((root / 'projects/rf_multipole_ion_optics/variants/octupole/config/requests/through_exit.json').read_text())
     request['identity'] = identity(project)
     request['request_id'] = 'test_' + project
     return compile_design_request(request, expected_identity=request['identity'])
@@ -145,8 +145,8 @@ class SingleReflectionFieldsTests(unittest.TestCase):
         from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
         from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, inputs
 
-        for project, rod_count in [('rf_quadrupole_ion_optics', 4), ('rf_hexapole_ion_optics', 6),
-                                   ('rf_octupole_ion_optics', 8)]:
+        for project, rod_count in [('quadrupole', 4), ('hexapole', 6),
+                                   ('octupole', 8)]:
             source = multipole_source(project)
             with self.subTest(project=project), tempfile.TemporaryDirectory() as directory:
                 path, run, _ = fixture(Path(directory), source=source)
@@ -171,7 +171,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
     def test_two_and_three_provider_dc_and_rf_tables_are_independent(self):
         from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
         oatof = candidate_300mm_fixture()
-        sources = [chained_source('rf_octupole_ion_optics'), chained_source('rf_hexapole_ion_optics'), chained_source('rf_quadrupole_ion_optics')]
+        sources = [chained_source('octupole'), chained_source('hexapole'), chained_source('quadrupole')]
         for count in (2, 3):
             names = [f'mp_{index}' for index in range(count)]
             kw = multi_inputs(sources[:count], oatof, names=names)
@@ -215,7 +215,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
         from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
         oatof = candidate_300mm_fixture()
         sources = [chained_source(project) for project in
-                   ('rf_octupole_ion_optics','rf_hexapole_ion_optics','rf_quadrupole_ion_optics')]
+                   ('octupole','hexapole','quadrupole')]
         for count in (2,3):
             with self.subTest(count=count):
                 names = [f'mp_{i}' for i in range(count)]
@@ -401,7 +401,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
     def test_only_whole_author_held_off_omits_pulse_and_preserves_two_three_rf_members(self):
         from integrations.workflows.single_reflection_flight.geometry import compile_frontend_geometry
         oatof = candidate_300mm_fixture()
-        sources = [chained_source('rf_octupole_ion_optics'), chained_source('rf_hexapole_ion_optics'), chained_source('rf_quadrupole_ion_optics')]
+        sources = [chained_source('octupole'), chained_source('hexapole'), chained_source('quadrupole')]
         for count in (2, 3):
             names = [f'mp_{i}' for i in range(count)]
             providers = dict(zip(names, sources[:count], strict=True))

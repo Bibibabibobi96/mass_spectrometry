@@ -1,0 +1,508 @@
+{
+  "schema_version": 1,
+  "role": "project_execution_profiles",
+  "project_id": "rf_multipole_ion_optics",
+  "profiles": [
+    {
+      "profile_id": "quadrupole_transport_runtime_functional",
+      "capability_id": "quadrupole_ion_transport",
+      "mode": "quadrupole_transport_no_collision",
+      "evidence_levels": [
+        "plan"
+      ],
+      "supported_objectives": [
+        "transmission_fraction",
+        "mean_tof",
+        "rms_beam_radius",
+        "rms_divergence",
+        "mean_kinetic_energy"
+      ],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 100,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
+      ],
+      "supported_design_variables": [
+        "rf_amplitude",
+        "rf_frequency"
+      ],
+      "supported_constraints": [],
+      "deliverable_outputs": [
+        "simulation_results",
+        "comsol_model",
+        "simion_model",
+        "validation_report",
+        "interface_state"
+      ],
+      "required_bindings": [
+        "runtime_profile_id",
+        "evidence_contract_path"
+      ],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": [
+            "-Level",
+            "Static",
+            "-PythonExe",
+            "{python_exe}",
+            "-StructuralVariant",
+            "quadrupole"
+          ]
+        },
+        {
+          "step_id": "comsol_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "workflows/no_collision_transport/run_comsol.ps1",
+          "run_id_template": "{timestamp}__sim__comsol__rf-transport__no-collision",
+          "arguments": [
+            "-RuntimeProfileId",
+            "{runtime_profile_id}",
+            "-EvidenceContractPath",
+            "{evidence_contract_path}",
+            "-RunId",
+            "{comsol_run_id}",
+            "-PythonExe",
+            "{python_exe}"
+          ]
+        },
+        {
+          "step_id": "simion_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "workflows/no_collision_transport/run_simion.ps1",
+          "run_id_template": "{timestamp}__sim__simion__rf-transport__no-collision",
+          "arguments": [
+            "-RuntimeProfileId",
+            "{runtime_profile_id}",
+            "-EvidenceContractPath",
+            "{evidence_contract_path}",
+            "-RunId",
+            "{simion_run_id}",
+            "-ReferenceComsolRunId",
+            "{comsol_run_id}",
+            "-PythonExe",
+            "{python_exe}"
+          ]
+        }
+      ],
+      "limitations": [
+        "The named runtime profile binds its structural design, source and solver numerics; no free particle-source override is accepted.",
+        "Execution is a functional plan only and does not inherit numerical convergence, Candidate or Formal qualification."
+      ]
+    },
+    {
+      "profile_id": "quadrupole_transport_interface_readiness_candidate",
+      "capability_id": "quadrupole_ion_transport",
+      "mode": "quadrupole_transport_interface_readiness",
+      "evidence_levels": [
+        "candidate"
+      ],
+      "supported_objectives": [
+        "transmission_fraction",
+        "mean_tof",
+        "rms_beam_radius",
+        "rms_divergence",
+        "mean_kinetic_energy"
+      ],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 100,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        },
+        {
+          "mass": {
+            "value": 524,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
+      ],
+      "supported_design_variables": [
+        "rf_amplitude",
+        "rf_frequency"
+      ],
+      "supported_constraints": [],
+      "deliverable_outputs": [
+        "simulation_results",
+        "comsol_model",
+        "simion_model",
+        "validation_report",
+        "interface_state"
+      ],
+      "required_bindings": [
+        "comsol_particle_source_path",
+        "simion_particle_source_path",
+        "particle_bundle_metadata_path",
+        "particle_source_family_path",
+        "particle_distribution_path",
+        "simion_solver_numerics_contract_path",
+        "operating_point_id"
+      ],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": [
+            "-Level",
+            "Static",
+            "-PythonExe",
+            "{python_exe}",
+            "-StructuralVariant",
+            "quadrupole"
+          ]
+        },
+        {
+          "step_id": "comsol_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "workflows/interface_readiness/run_comsol.ps1",
+          "run_id_template": "{timestamp}__sim__comsol__rf-transport__interface-readiness",
+          "arguments": [
+            "-RunId",
+            "{comsol_run_id}",
+            "-ParticleTablePath",
+            "{comsol_particle_source_path}",
+            "-ParticleBundleMetadataPath",
+            "{particle_bundle_metadata_path}",
+            "-SourceFamilyPath",
+            "{particle_source_family_path}",
+            "-ParticleDistributionPath",
+            "{particle_distribution_path}",
+            "-SolverNumericsContractPath",
+            "projects/rf_multipole_ion_optics/variants/quadrupole/config/comsol_solver_numerics.json",
+            "-SolverNumericsProfileId",
+            "baseline",
+            "-OperatingPoint",
+            "{operating_point_id}",
+            "-PythonExe",
+            "{python_exe}"
+          ]
+        },
+        {
+          "step_id": "simion_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "workflows/interface_readiness/run_simion.ps1",
+          "run_id_template": "{timestamp}__sim__simion__rf-transport__interface-readiness",
+          "arguments": [
+            "-RunId",
+            "{simion_run_id}",
+            "-ParticleTablePath",
+            "{simion_particle_source_path}",
+            "-ParticleBundleMetadataPath",
+            "{particle_bundle_metadata_path}",
+            "-SourceFamilyPath",
+            "{particle_source_family_path}",
+            "-ParticleDistributionPath",
+            "{particle_distribution_path}",
+            "-SolverNumericsContractPath",
+            "{simion_solver_numerics_contract_path}",
+            "-OperatingPoint",
+            "{operating_point_id}",
+            "-PythonExe",
+            "{python_exe}"
+          ]
+        },
+        {
+          "step_id": "cross_solver_comparison",
+          "kind": "analyze",
+          "shell": "powershell",
+          "entrypoint": "workflows/cross_solver/compare_cross_solver.ps1",
+          "run_id_template": "{timestamp}__analysis__cross__rf-transport__interface-readiness",
+          "arguments": [
+            "-Mode",
+            "transport_interface_readiness",
+            "-ComsolRunId",
+            "{comsol_run_id}",
+            "-SimionRunId",
+            "{simion_run_id}",
+            "-RunId",
+            "{cross_solver_comparison_run_id}",
+            "-PythonExe",
+            "{python_exe}"
+          ]
+        }
+      ],
+      "limitations": [
+        "Requires explicit paired-bundle metadata, source-family, distribution, COMSOL ION11, and SIMION canonical10 bindings",
+        "Current strict interface comparison is an allowed candidate FAIL, not a formal capability"
+      ]
+    },
+    {
+      "profile_id": "quadrupole_mass_filter_simion_functional_reference",
+      "capability_id": "quadrupole_mass_filter_reference",
+      "mode": "quadrupole_mass_filter_reference",
+      "evidence_levels": [
+        "static"
+      ],
+      "supported_objectives": [
+        "transmission_fraction",
+        "mass_peak_centroid"
+      ],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 100,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
+      ],
+      "supported_design_variables": [
+        "rf_amplitude",
+        "rf_frequency",
+        "dc_differential",
+        "axis_offset"
+      ],
+      "supported_constraints": [],
+      "deliverable_outputs": [
+        "simulation_results",
+        "simion_model",
+        "validation_report"
+      ],
+      "required_bindings": [
+        "mass_filter_base_source_ion11_path",
+        "simion_solver_numerics_contract_path"
+      ],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": [
+            "-Level",
+            "Static",
+            "-PythonExe",
+            "{python_exe}",
+            "-StructuralVariant",
+            "quadrupole"
+          ]
+        },
+        {
+          "step_id": "simion_mass_response",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "workflows/mass_filter_reference/run_simion.ps1",
+          "run_id_template": "{timestamp}__sim__simion__mass-filter__n700",
+          "arguments": [
+            "-SourceIonPath",
+            "{mass_filter_base_source_ion11_path}",
+            "-SolverNumericsContractPath",
+            "{simion_solver_numerics_contract_path}",
+            "-RunId",
+            "{simion_mass_response_run_id}"
+          ]
+        }
+      ],
+      "limitations": [
+        "The SIMION functional scan includes the finite reference geometry but is not a cross-solver comparison",
+        "The seven-point N=100-per-mass response is the functional check tier and does not qualify resolving power or Candidate maturity"
+      ]
+    },
+    {
+      "profile_id": "hexapole_simion_transport_campaign_engineering",
+      "capability_id": "hexapole_finite_3d_transport",
+      "mode": "hexapole_finite_3d_no_collision",
+      "evidence_levels": [
+        "plan"
+      ],
+      "supported_objectives": [
+        "transmission_fraction",
+        "exit_rms_radius",
+        "exit_rms_divergence",
+        "exit_energy_spread"
+      ],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 100.0,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
+      ],
+      "supported_design_variables": [
+        "rf_amplitude",
+        "rf_frequency"
+      ],
+      "supported_constraints": [
+        "locked_multipole_identity",
+        "catalog_variable_bounds",
+        "campaign_variable_bounds",
+        "phase_matched_particle_source",
+        "downstream_terminal_geometry"
+      ],
+      "deliverable_outputs": [
+        "simulation_results",
+        "simion_model",
+        "validation_report",
+        "interface_state"
+      ],
+      "required_bindings": [
+        "campaign_path",
+        "experiment_id"
+      ],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": [
+            "-PythonExe",
+            "{python_exe}",
+            "-StructuralVariant",
+            "hexapole"
+          ]
+        },
+        {
+          "step_id": "simion_campaign_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "runtime/run_simion_transport_campaign.ps1",
+          "run_id_template": "{authorized_run_id}",
+          "arguments": [
+            "-CampaignPath",
+            "{campaign_path}",
+            "-ExperimentId",
+            "{experiment_id}",
+            "-PythonExe",
+            "{python_exe}"
+          ]
+        }
+      ],
+      "limitations": [
+        "Only explicitly preregistered SIMION engineering rows may run through this profile.",
+        "A successful run does not establish numerical convergence, cross-solver equivalence or Candidate maturity."
+      ]
+    },
+    {
+      "profile_id": "octupole_simion_transport_campaign_engineering",
+      "capability_id": "octupole_finite_3d_transport",
+      "mode": "octupole_finite_3d_no_collision",
+      "evidence_levels": [
+        "plan"
+      ],
+      "supported_objectives": [
+        "transmission_fraction",
+        "exit_rms_radius",
+        "exit_rms_divergence",
+        "exit_energy_spread"
+      ],
+      "supported_operating_points": [
+        {
+          "mass": {
+            "value": 100.0,
+            "unit": "Da"
+          },
+          "charge_state": 1
+        }
+      ],
+      "supported_design_variables": [
+        "inscribed_radius_r0",
+        "rod_radius_ratio",
+        "rod_z_min",
+        "rod_z_max",
+        "enclosure_working_region_radius",
+        "vacuum_z_min",
+        "vacuum_z_max",
+        "shield_inner_radius",
+        "shield_outer_radius",
+        "entrance_outer_endcap_upstream_face_z",
+        "entrance_outer_endcap_downstream_face_z",
+        "exit_outer_endcap_upstream_face_z",
+        "exit_outer_endcap_downstream_face_z",
+        "entrance_aperture_radius",
+        "entrance_plate_thickness",
+        "entrance_rod_clearance",
+        "entrance_connector_length",
+        "entrance_release_offset",
+        "exit_aperture_radius",
+        "exit_plate_thickness",
+        "exit_rod_clearance",
+        "exit_connector_length",
+        "exit_census_offset",
+        "rf_amplitude",
+        "dc_amplitude",
+        "common_mode_offset",
+        "rf_frequency",
+        "rf_phase",
+        "segment_count",
+        "intersegment_gap",
+        "segment_entrance_common_mode",
+        "segment_exit_common_mode",
+        "segment_output_reference"
+      ],
+      "supported_constraints": [
+        "locked_multipole_identity",
+        "catalog_variable_bounds",
+        "campaign_variable_bounds",
+        "phase_matched_particle_source",
+        "downstream_terminal_geometry"
+      ],
+      "deliverable_outputs": [
+        "simulation_results",
+        "simion_model",
+        "validation_report",
+        "interface_state"
+      ],
+      "required_bindings": [
+        "campaign_path",
+        "experiment_id"
+      ],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": [
+            "-PythonExe",
+            "{python_exe}",
+            "-StructuralVariant",
+            "octupole"
+          ]
+        },
+        {
+          "step_id": "simion_campaign_run",
+          "kind": "run",
+          "shell": "powershell",
+          "entrypoint": "runtime/run_simion_transport_campaign.ps1",
+          "run_id_template": "{authorized_run_id}",
+          "arguments": [
+            "-CampaignPath",
+            "{campaign_path}",
+            "-ExperimentId",
+            "{experiment_id}",
+            "-PythonExe",
+            "{python_exe}"
+          ]
+        }
+      ],
+      "limitations": [
+        "Only explicitly preregistered SIMION engineering rows may run through this profile.",
+        "A successful run does not establish numerical convergence, cross-solver equivalence or Candidate maturity."
+      ]
+    }
+  ]
+}

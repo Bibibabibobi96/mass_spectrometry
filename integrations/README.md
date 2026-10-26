@@ -58,7 +58,6 @@ L1／L2、冻结依赖与最终验收见[状态页](docs/INTEGRATION.md#依赖�
 它刷新公共terminal catalog及oaTOF required port的受管文本绑定，不改科学设计或历史证据；
 运行依赖只由[runtime_dependencies.json](config/runtime_dependencies.json)声明，冻结机制见状态页。
 
-## History索引
+## 历史追溯
 
-- [统一装配迁移与公共执行机制阶段证据](docs/history/20261026__assembly-migration-execution-evidence.md)
-- [旧RF多极杆→单反射TOF历史入口](rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/README.md)
+[历史索引](docs/history/README.md)维护冻结阶段证据及旧工作流入口；当前操作和能力继续由本页与集成状态维护。

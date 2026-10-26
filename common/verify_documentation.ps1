@@ -23,10 +23,10 @@ $pythonVersion = (& $PythonExe -c 'import sys; print(str(sys.version_info.major)
 if ($pythonVersion -ne '3.11') { throw "Documentation gate requires Python 3.11, found $pythonVersion" }
 $errors = New-Object System.Collections.Generic.List[string]
 $markdownFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter '*.md' |
-    Where-Object { $_.FullName -notmatch '[\\/](\.git|artifacts|\.venv)[\\/]' } |
+    Where-Object { $_.FullName.Substring($repoRoot.Length + 1) -notmatch '(^|[\\/])(\.git|artifacts|\.venv)[\\/]' } |
     Sort-Object FullName)
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
-$comsolApiPath = Join-Path $repoRoot 'docs\COMSOL_API.md'
+$comsolApiPath = Join-Path $repoRoot 'docs\tools\COMSOL_API.md'
 $visionPath = Join-Path $repoRoot 'docs\VISION.md'
 $roadmapPath = Join-Path $repoRoot 'docs\ROADMAP.md'
 $rootReadmePath = Join-Path $repoRoot 'README.md'
@@ -40,7 +40,8 @@ foreach ($file in $markdownFiles) {
     $lines = @(Get-Content -LiteralPath $file.FullName -Encoding UTF8)
     $relative = $file.FullName.Substring($repoRoot.Length + 1)
     $relativeGit = $relative -replace '\\', '/'
-    if ($relativeGit -match '(^|/)docs/history/') { continue }
+    if ($relativeGit -match '(^|/)docs/history/' -and
+        $relativeGit -notmatch '(^|/)docs/history/README\.md$') { continue }
     $requiresGithubMathFence = $relativeGit -in @(
         'projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md',
         'projects/orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md',
@@ -189,19 +190,19 @@ foreach ($file in $markdownFiles) {
 if ($LASTEXITCODE -ne 0) { Add-DocError 'Markdown links/anchors failed; see per-file diagnostics above' }
 
 if (-not (Test-Path -LiteralPath $comsolApiPath -PathType Leaf)) {
-    Add-DocError 'missing docs/COMSOL_API.md'
+    Add-DocError 'missing docs/tools/COMSOL_API.md'
 }
 else {
     $apiInfo = Get-Item -LiteralPath $comsolApiPath
     $apiRaw = [System.IO.File]::ReadAllText($comsolApiPath, $utf8)
     if ($apiInfo.Length -gt 30000) {
-        Add-DocError "docs/COMSOL_API.md: $($apiInfo.Length) bytes exceeds the 30000-byte focused-reference limit"
+        Add-DocError "docs/tools/COMSOL_API.md: $($apiInfo.Length) bytes exceeds the 30000-byte focused-reference limit"
     }
     if ($apiRaw -match '(?m)^#{2,6}\s+\d+(?:\.\d+)*(?:\.|\s)') {
-        Add-DocError 'docs/COMSOL_API.md: numbered headings are forbidden; use stable semantic headings'
+        Add-DocError 'docs/tools/COMSOL_API.md: numbered headings are forbidden; use stable semantic headings'
     }
     if ($apiRaw -match '(?i)oa[-_ ]?tof|rf_quadrupole|wehnelt_electron_gun|electron_impact_ion_source') {
-        Add-DocError 'docs/COMSOL_API.md: project-specific names belong in project documentation'
+        Add-DocError 'docs/tools/COMSOL_API.md: project-specific names belong in project documentation'
     }
 }
 
@@ -235,7 +236,7 @@ foreach ($strategyDoc in $strategyDocs) {
 
 $activeTextFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File |
     Where-Object {
-        $_.FullName -notmatch '[\\/](\.git|artifacts|\.venv|history|legacy)[\\/]' -and
+        $_.FullName.Substring($repoRoot.Length + 1) -notmatch '(^|[\\/])(\.git|artifacts|\.venv|history|legacy)[\\/]' -and
         $_.Extension -in @('.md', '.m', '.py', '.ps1', '.lua')
     })
 foreach ($file in $activeTextFiles) {
@@ -257,9 +258,9 @@ $historyScopes = @(
     if (Test-Path -LiteralPath (Join-Path $repoRoot 'integrations\docs\history') -PathType Container) {
         [pscustomobject]@{
             Directory = Get-Item -LiteralPath (Join-Path $repoRoot 'integrations\docs\history')
-            IndexPath = Join-Path $repoRoot 'integrations\README.md'
-            IndexLabel = 'integrations/README.md'
-            IndexPrefix = 'docs/history/'
+            IndexPath = Join-Path $repoRoot 'integrations\docs\history\README.md'
+            IndexLabel = 'integrations/docs/history/README.md'
+            IndexPrefix = ''
         }
     }
 ) + @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory | ForEach-Object {
@@ -268,9 +269,9 @@ $historyScopes = @(
     $projectPath = $_.FullName
     [pscustomobject]@{
         Directory = Get-Item -LiteralPath $candidate
-        IndexPath = Join-Path $projectPath 'README.md'
-        IndexLabel = "$($_.Name)/README.md"
-        IndexPrefix = 'docs/history/'
+        IndexPath = Join-Path $candidate 'README.md'
+        IndexLabel = "$($_.Name)/docs/history/README.md"
+        IndexPrefix = ''
     }
 }) + @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'integrations') -Directory | ForEach-Object {
     $candidate = Join-Path $_.FullName 'docs\history'
@@ -288,7 +289,8 @@ foreach ($historyScope in $historyScopes) {
     $indexRaw = if (Test-Path -LiteralPath $historyScope.IndexPath -PathType Leaf) {
         [System.IO.File]::ReadAllText($historyScope.IndexPath, $utf8)
     } else { '' }
-    $flatMarkdown = @(Get-ChildItem -LiteralPath $historyDir.FullName -File -Filter '*.md')
+    $flatMarkdown = @(Get-ChildItem -LiteralPath $historyDir.FullName -File -Filter '*.md' |
+        Where-Object { $_.Name -ne 'README.md' })
     foreach ($file in $flatMarkdown) {
         $historyFiles.Add($file)
         $hasArchiveBanner = Select-String -LiteralPath $file.FullName -SimpleMatch `
@@ -311,12 +313,17 @@ foreach ($historyScope in $historyScopes) {
         Add-DocError "$relative`: history payload must be inside a same-name manifest directory"
     }
 
+    # Retired project packages are verified against fixed Git source bytes by
+    # documentation_links.py. Their nested paths preserve original identities.
     # Retired campaign archives are byte-preserved machine records whose
     # dedicated archive indexes own their path-to-SHA mappings.  They are not
     # publication payload sets and therefore do not use the Markdown manifest
     # convention enforced below.
+    $historyRelative = [IO.Path]::GetRelativePath($repoRoot, $historyDir.FullName).Replace('\', '/')
     foreach ($payloadDir in @(Get-ChildItem -LiteralPath $historyDir.FullName -Directory |
         Where-Object { $_.Name -ne 'retired_campaigns' })) {
+        if ($payloadDir.Name -eq 'retired_projects' -and
+            $historyRelative -match '^projects/[^/]+/docs/history$') { continue }
         $manifestPath = Join-Path $historyDir.FullName ($payloadDir.Name + '.md')
         if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             $relative = $payloadDir.FullName.Substring($repoRoot.Length + 1)
@@ -387,17 +394,29 @@ foreach ($required in @('AGENTS.md', 'README.md', 'CLAUDE.md')) {
 }
 
 $rootReadmeRaw = [System.IO.File]::ReadAllText($rootReadmePath, $utf8)
+$documentationIndexPath = Join-Path $repoRoot 'docs/README.md'
+$navigationRaw = $rootReadmeRaw
+if (Test-Path -LiteralPath $documentationIndexPath -PathType Leaf) {
+    $navigationRaw += "`n" + [System.IO.File]::ReadAllText($documentationIndexPath, $utf8)
+}
+$indexRoutes = @('docs/README.md', 'AGENTS.md')
+foreach ($route in $indexRoutes) {
+    if ($rootReadmeRaw -notmatch [regex]::Escape($route)) {
+        Add-DocError "README.md: missing primary route '$route'"
+    }
+}
 $authorityRoutes = @(
     'docs/REPOSITORY_ARCHITECTURE.md', 'docs/LIFECYCLE.md', 'docs/OPERATIONS.md',
-    'docs/DEVELOPMENT_STANDARDS.md', 'docs/PLOTTING_STANDARDS.md',
+    'docs/DEVELOPMENT_STANDARDS.md', 'docs/PLOTTING_STANDARDS.md', 'docs/COMPONENT_CONNECTION_ARCHITECTURE.md',
     'docs/VISION.md', 'docs/ROADMAP.md', 'AGENTS.md'
 )
 foreach ($route in $authorityRoutes) {
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $route) -PathType Leaf)) {
         Add-DocError "missing authority document '$route'"
     }
-    if ($rootReadmeRaw -notmatch [regex]::Escape($route)) {
-        Add-DocError "README.md: missing authority route '$route'"
+    $navigationRoute = if ($route.StartsWith('docs/')) { $route.Substring(5) } else { $route }
+    if ($navigationRaw -notmatch [regex]::Escape($navigationRoute)) {
+        Add-DocError "README.md/docs/README.md: missing authority route '$route'"
     }
 }
 # Check responsibility boundaries by routes, not a fixed heading count or prose order.

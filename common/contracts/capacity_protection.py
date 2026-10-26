@@ -890,4 +890,9 @@ def prune_expired_capacity_protection_leases(
 
 
 def path_is_protected(path: Path, protected_paths: Iterable[Path]) -> bool:
-    return any(path == item or item in path.parents or path in item.parents for item in protected_paths)
+    """Compare resolved paths, including missing descendants, in either direction."""
+    path = path.resolve(strict=False)
+    return any(
+        path == item or item in path.parents or path in item.parents
+        for item in (value.resolve(strict=False) for value in protected_paths)
+    )

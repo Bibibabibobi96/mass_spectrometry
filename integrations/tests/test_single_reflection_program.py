@@ -79,7 +79,7 @@ class SingleReflectionProgramTests(unittest.TestCase):
             pulse_hook_source=(ROOT/"integrations/runtime/single_flight_pulse_hook.lua").read_text(),
             voltage_waveforms_source=(ROOT/"common/simion/voltage_waveforms.lua").read_text(),
             frontend_hook_source=(ROOT/"integrations/runtime/single_flight_frontend_hook.lua").read_text(),
-            rf_drive_kernel_source=(ROOT/"common/multipole/simion_rf_drive.lua").read_text())
+            rf_drive_kernel_source=(ROOT/"common/simion/rf_drive.lua").read_text())
 
     def build(self, **updates):
         kwargs = dict(frontend_geometry=self.geometry,birth_times_us=[.25,2.5],particle_ids=[11,77],
@@ -263,8 +263,8 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
             self.assertNotIn(transport,program)
 
     def test_four_six_eight_provider_program_preserves_eight_electrical_groups(self):
-        for project, rod_count in [('rf_quadrupole_ion_optics', 4), ('rf_hexapole_ion_optics', 6),
-                                   ('rf_octupole_ion_optics', 8)]:
+        for project, rod_count in [('quadrupole', 4), ('hexapole', 6),
+                                   ('octupole', 8)]:
             with self.subTest(project=project), tempfile.TemporaryDirectory() as directory:
                 path, run, _ = fixture(Path(directory), source=multipole_source(project))
                 prepare(path, run)

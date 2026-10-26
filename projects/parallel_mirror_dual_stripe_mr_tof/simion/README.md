@@ -600,7 +600,7 @@ native bank 的 `-TransactionCacheKey` 只恢复／复用指定事务；已发�
 运行中断保留受管 checkpoint，恢复复用仍有效的 payload 身份和容量记录。
 
 长 PA 输入复用[公共短路径支持](../../../common/simion/short_pa_path_support.ps1)；
-先查[已关闭的长路径结论](../../../docs/SIMION_REFERENCE.md#长pa输入路径)，
+先查[已关闭的长路径结论](../../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，
 不要另建项目私有实现。只读、Junction、硬链接或复制本身不保证 native family 写隔离。
 published PA 不是 runtime 写目标；私有 family、standalone PA 的具体装配与封存由公共机制负责。
 不反复复制／哈希已由受管只读机制保护的重型资产；容量、保留和清理由其唯一 owner 处理。
@@ -682,7 +682,7 @@ schedule 冻结要求全部粒子唯一负 z 安全出口，按 `max(exit)+guard
 不能恢复为活动入口。完整整理前原文见
 [场响应工程里程碑归档](../docs/history/20261008__field-response-engineering-milestone.md)；
 其他历史入口由[项目导航](../README.md#历史补充索引)集中索引。
-官方 API 与已验证公共边界见[SIMION 参考](../../../docs/SIMION_REFERENCE.md)；
+官方 API 与已验证公共边界见[SIMION 参考](../../../docs/tools/SIMION_REFERENCE.md)；
 本次结果只从实际冻结 manifest 和原始日志读取。
 
 [scalar-n13]: ../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_093500__sim__simion__converging-mesh2-fixed-u-controlled-n13__r02/summary.json

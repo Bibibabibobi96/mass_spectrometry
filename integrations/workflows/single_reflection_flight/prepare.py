@@ -19,7 +19,7 @@ from common.contracts.rigid_transform import RigidTransform, relative_transform
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.write_run_manifest import file_record, require_completed_terminal_publication
 from common.integration.resolve_assembly import derive_assembly_scope
-from common.multipole.particle_source_preflight import load_validated_source
+from projects.rf_multipole_ion_optics.runtime.particle_source_preflight import load_validated_source
 from common.ion_release.cylinder import CANONICAL_COLUMNS
 from common.ion_release.release import materialize_release, validate_release_spec
 from integrations.runtime.single_flight_source import (

@@ -343,7 +343,7 @@ Invoke-LocalFieldNative -Arguments @('INERT') -Directory $PSScriptRoot -Name 'ex
             script = root / 'check.ps1'
             script.write_text("""param([string]$Repo,[string]$Snapshot,[string]$Run,[string]$Python)
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'common/multipole/resource_budget_support.ps1')
+. (Join-Path $Repo 'common/resource_budget_support.ps1')
 . (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
 $before=$script:HostResourceStatePath
 $source=(Get-Command Get-HostResourceBudget).ScriptBlock.File

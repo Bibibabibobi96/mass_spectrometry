@@ -5,9 +5,10 @@
   "title": "RF quadrupole ion-transport design check",
   "target": {
     "family_id": "rf_multipole_ion_optics",
-    "preferred_project_id": "rf_quadrupole_ion_optics",
+    "preferred_project_id": "rf_multipole_ion_optics",
+    "structural_variant_id": "quadrupole",
     "function": "ion_transport",
-    "mode": "transport_no_collision"
+    "mode": "quadrupole_transport_no_collision"
   },
   "operating_points": [
     {"mass": {"value": 500, "unit": "Da"}, "charge_state": 1}

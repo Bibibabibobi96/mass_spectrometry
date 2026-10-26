@@ -2,8 +2,8 @@
 
 本文件是 Claude Code、Codex 及其他编码 Agent 共用的执行约束。开始任务先完整阅读
 `README.md`；它提供项目与规范路由。项目任务随后读目标项目README和PROJECT；公共工具任务按根入口
-读取最近的公共说明或对应规范，不要求不存在的PROJECT。再读任务实际需要的操作、
-理论和规范。知识归属见[仓库架构](docs/REPOSITORY_ARCHITECTURE.md)，创建或归档文件前读
+读取最近的公共说明或对应规范，不要求不存在的PROJECT。再从[文档任务目录](docs/README.md)选择
+任务实际需要的操作、理论和规范。知识归属见[仓库架构](docs/REPOSITORY_ARCHITECTURE.md)，创建或归档文件前读
 [生命周期](docs/LIFECYCLE.md)，执行与提交前读[操作指南](docs/OPERATIONS.md)；不要默认通读历史。
 
 部件复用、新增能力或组装任务先按[部件与组装边界](docs/REPOSITORY_ARCHITECTURE.md#部件实例与组装)
@@ -23,7 +23,7 @@
   [官方支持路径与自建例外](docs/DEVELOPMENT_STANDARDS.md#官方支持路径与自建例外)：检索并记录官方
   资料，优先采用适用的官方支持路径；实质偏离前报告用户，并在需要时取得相应授权。
 - SIMION 长 PA 输入已经完整实现并经 SIMION 2020 真实运行通过。处理 PA 输入路径或缓存隔离前，必须
-  先读[`docs/SIMION_REFERENCE.md`](docs/SIMION_REFERENCE.md#长pa输入路径)的已关闭结论并复用公共入口；
+  先读[`docs/tools/SIMION_REFERENCE.md`](docs/tools/SIMION_REFERENCE.md#长pa输入路径)的已关闭结论并复用公共入口；
   不得把它当作开放缺口重新调研，也不得建立项目私有的长 PA 短路径实现。
 - 脚本分类、产物生命周期和保留条件以[生命周期](docs/LIFECYCLE.md)为唯一权威；Agent只额外执行本文件规定的
   删除授权、任务内归属和交接责任，不在这里维护第二份分类表。新增代码前必须先按生命周期明确判定
@@ -35,7 +35,7 @@
   必要小证据、重建输入及不可替代的唯一数据。不能确认归属、依赖或必要性时先澄清，不凭文件年龄、
   运行终态或低CPU占用删除。任务内一次性内容由创建Agent及时清理；删除后报告范围、释放容量及
   是否可恢复或重建。用户后续明确指定的保留对象和审批点优先。
-- 修改项目脚本时同步更新最近的项目文档；新增跨项目 COMSOL API 经验更新`docs/COMSOL_API.md`，仅跨项目验证过的策略才更新根 `docs/`。
+- 修改项目脚本时同步更新最近的项目文档；新增跨项目 COMSOL API 经验更新`docs/tools/COMSOL_API.md`，知识归属和提升条件按[仓库架构](docs/REPOSITORY_ARCHITECTURE.md#跨项目知识提升条件)执行。
 - 新增或修改规范前，先按[架构权威表](docs/REPOSITORY_ARCHITECTURE.md#文档权威和冲突优先级)确定唯一写入位置，并用全文搜索检查是否已有同义规则；
   非权威入口只链接或简述适用范围，不复制规范正文。
 - 不建立 COMSOL、SIMION、CAD 文档之间的横向网状引用；项目 README 负责导航，统一结论写入 `docs/PROJECT.md`。

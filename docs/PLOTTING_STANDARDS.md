@@ -3,7 +3,7 @@
 本文是仓库内科学绘图、仿真诊断图、跨求解器比较图、报告图和发表图的唯一跨项目规范。仓库架构、
 artifact 生命周期和文件角色见[生命周期](LIFECYCLE.md)，仓库边界见[架构](REPOSITORY_ARCHITECTURE.md)；编码与机器合同遵循
 [`DEVELOPMENT_STANDARDS.md`](DEVELOPMENT_STANDARDS.md)；指标、统计和跨求解器验证语义遵循
-[`VALIDATION_METHODS.md`](VALIDATION_METHODS.md)。Agent权限和面向用户的交接方式只由
+[`VALIDATION_METHODS.md`](science/VALIDATION_METHODS.md)。Agent权限和面向用户的交接方式只由
 [`AGENTS.md`](../AGENTS.md)定义。
 
 目标期刊、客户或演示模板可以覆盖尺寸、字体和输出格式，但不能降低数据真实性、变换透明度、
@@ -55,8 +55,8 @@ artifact 生命周期和文件角色见[生命周期](LIFECYCLE.md)，仓库边�
 - 供应商私有格式应先转换为项目canonical结果。一次性排错图可直接读取私有格式，但必须标明诊断范围，
   不能成为长期正式分析入口。
 - notebook可以调用正式绘图函数，但不能成为证据图唯一且不可复现的实现。
-- 不为本规范预建统一`src/plotting`、figure registry或空测试树。共享样式或绘图代码只有在至少两个项目
-  实际采用并验证后，才按[仓库架构](REPOSITORY_ARCHITECTURE.md)提升到`common/`。
+- 不为本规范预建统一`src/plotting`、figure registry或空测试树。共享样式或绘图代码按
+  [实际复用与所有权](REPOSITORY_ARCHITECTURE.md#跨项目知识提升条件)判断是否进入`common/`，不以项目目录数作为资格。
 
 ## 命名与API
 
@@ -236,7 +236,7 @@ Python证据图默认使用仓库锁定环境中的Matplotlib，除非项目明�
 - 大数据使用LineCollection、PathCollection、pcolormesh或等价批量artist，避免逐粒子创建大量对象。
 
 MATLAB/COMSOL/SIMION可以保存原生诊断图和GUI节点；影响正式模型检查的PlotGroup、dataset、派生值和
-导出继续遵循[`COMSOL_API.md`](COMSOL_API.md)。求解器原生图不重新定义跨软件指标；跨求解器和最终
+导出继续遵循[`COMSOL_API.md`](tools/COMSOL_API.md)。求解器原生图不重新定义跨软件指标；跨求解器和最终
 报告图优先从canonical数据生成。软件能力不足时明确记录未实现项，不伪造视觉对等。
 
 ## 导出、位置、caption和figure manifest

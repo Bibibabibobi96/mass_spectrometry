@@ -25,7 +25,7 @@ class RepositoryBindingsTests(unittest.TestCase):
             profiles=[dict(terminal_profile_id="actual_terminal", potential_v=0)]))
         provider = save("projects/provider/resolved.json", dict(geometry_mm=[1, 2, 3]))
         port = save(_PORT, dict(authority=dict(source_contract="projects/provider/resolved.json", source_sha256="0" * 64)))
-        campaign = save("common/multipole/campaigns/actual.json", dict(
+        campaign = save("projects/rf_multipole_ion_optics/config/campaigns/actual.json", dict(
             downstream_terminal_profile=dict(integration_id="instrument_assembly",
                 terminal_profile_id="actual_terminal", registry_sha256="0" * 64), science=dict(voltage=123)))
         historical = save("integrations/retired/docs/history/frozen.json", dict(path="projects/provider/resolved.json", sha256="0" * 64))

@@ -134,8 +134,7 @@ class LiveLinkResourceStageTests(unittest.TestCase):
                 (ROOT / "common/host_execution_lease.ps1").read_text(encoding="utf-8") + SCHEDULER,
                 encoding="utf-8")
             shutil.copy2(ROOT / "common/host_resource_policy.json", root / "common")
-            (root / "common/multipole").mkdir()
-            shutil.copy2(ROOT / "common/multipole/resource_budget_support.ps1", root / "common/multipole")
+            shutil.copy2(ROOT / "common/resource_budget_support.ps1", root / "common")
             (comsol / "resolve_comsol_64.ps1").write_text(
                 "function Get-Comsol64Launcher { return $env:FAKE_LAUNCHER }", encoding="utf-8"
             )
@@ -238,7 +237,7 @@ function Update-RepositoryProcessObservation {
  return $result
 }
 '@
-    $anchor=". (Join-Path `$repoRoot 'common\multipole\resource_budget_support.ps1')"
+    $anchor=". (Join-Path `$repoRoot 'common\resource_budget_support.ps1')"
     if(-not$text.Contains($anchor)){throw 'Observation import anchor missing'}
     $text=$text.Replace($anchor,$anchor+"`n"+$observeFixture)
 }
@@ -332,7 +331,7 @@ while(-not(Test-Path -LiteralPath '{release}')){{if([DateTime]::UtcNow-ge$deadli
 """, encoding="utf-8")
                 script = f"""
 $ErrorActionPreference='Stop'
-. '{ROOT / 'common/multipole/resource_budget_support.ps1'}'
+. '{ROOT / 'common/resource_budget_support.ps1'}'
 function Get-CimInstance {{throw 'TEST_ONLY forced CIM denial'}}
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile('{ROOT / 'common/comsol/run_comsol_r2025b.ps1'}',[ref]$tokens,[ref]$errors)

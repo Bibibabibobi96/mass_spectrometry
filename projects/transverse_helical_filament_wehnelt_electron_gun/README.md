@@ -27,11 +27,4 @@
 
 ## History索引
 
-<details>
-<summary>展开只读历史记录</summary>
-
-- [20260713__pre-transverse-wehnelt-lineages](docs/history/20260713__pre-transverse-wehnelt-lineages.md)
-- [20260728__pre-document-consolidation-project](docs/history/20260728__pre-document-consolidation-project.md)
-- [PROJECT_HISTORY](docs/history/PROJECT_HISTORY.md)
-
-</details>
+[历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。

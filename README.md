@@ -1,38 +1,33 @@
 # 质谱仪仿真组装厂
 
-本仓库持续积累可复用的质谱部件与仿真能力，支持部件独立研究和仪器组合模拟；离子轨道、
-气压、分子流及所需耦合物理是逐步扩展的范围。项目按实际物理问题和复用边界组织，
-部件定义由项目维护，实例与跨项目组装由配方表达，COMSOL、SIMION等软件承担适用求解。
-这是[建设定位](docs/VISION.md)，不表示任意组合或物理域已经可用。当前能力与资格从项目状态页和
-[集成状态](integrations/docs/INTEGRATION.md)查询；本页是人类研究人员和Agent共用的导航入口。
+本仓库持续积累可复用的质谱部件与仿真能力，支持部件独立研究和仪器组合模拟。离子轨道、
+电磁场、气压、分子流及所需耦合物理按实际需求与证据逐步扩展。部件设计由项目维护，
+结构变体分别验证，实例与跨项目组装由配方表达，求解器承担各自适用的计算。
+这是[建设定位](docs/VISION.md)，不表示任意组合或物理域已经可用；当前能力与资格查相应状态页。
 
 ## 开始任务
 
-1. Agent先读[执行规则](AGENTS.md)；所有使用者按下表选择项目或集成。
-2. 项目任务读目标README和`docs/PROJECT.md`（集成为`docs/INTEGRATION.md`），确认能力、资格、限制和下一步。
-   公共工具任务读最近的`common/<domain>/README.md`；无该说明时按下表进入对应规范，不创建占位PROJECT。
-3. 修改或审查代码按[开发标准阅读导航](docs/DEVELOPMENT_STANDARDS.md#阅读导航)读通用章节及触发专题；建图前读[绘图标准](docs/PLOTTING_STANDARDS.md)。
-4. 按任务读取对应软件操作或理论文档；只有追溯旧结论时进入history。
-5. 创建文件、运行或归档前查[生命周期](docs/LIFECYCLE.md)，执行与提交前查[操作指南](docs/OPERATIONS.md)。
+1. Agent先读[执行规则](AGENTS.md)，再从下表选择项目或[组装入口](integrations/README.md)。
+2. 项目任务读目标README和`docs/PROJECT.md`；组装任务读`docs/INTEGRATION.md`，确认能力、资格、限制和开放动作。
+   公共工具任务读最近的`common/<domain>/README.md`，不创建占位PROJECT。
+3. 按[文档任务目录](docs/README.md)选择本次需要的理论、操作或规范；修改或审查代码先读
+   [开发标准阅读导航](docs/DEVELOPMENT_STANDARDS.md#阅读导航)。
+4. 创建文件、运行或归档前查[生命周期](docs/LIFECYCLE.md)，执行与提交前查[操作指南](docs/OPERATIONS.md)。
 
-判断目录和知识归属时查[仓库架构](docs/REPOSITORY_ARCHITECTURE.md)。日常项目任务无需通读愿景、
-路线图及全部软件文档；它们也不能替代机器输入与冻结证据。
-任务不涉及 COMSOL 时无需读取其专项文档；涉及其结果解释、数值审查或实现时，即使不启动软件，
-也按下面的 COMSOL 入口选择所需专题，不把全部手册和历史作为前置阅读。
+项目入口和状态页提供最少阅读路径，不要求通读全部理论、软件手册或历史。
+涉及已有结果的物理解释时，仍须读取相关模型的假设与适用域。
 
 ## 项目导航
 
 项目身份和能力发现的机器权威是[生成注册表](config/project_registry.json)，来源为各项目`config/project.json`。
-下表只提供稳定导航，不复制成熟度、物理参数、当前结果或开放任务。
+下表提供稳定导航；同一项目中的结构变体分别保存配置、能力和资格，不能相互继承验证结论。
 
-| 项目 | 入口 |
+| 设计项目 | 入口与可见变体 |
 |---|---|
+| RF多极杆离子光学 | [项目](projects/rf_multipole_ion_optics/README.md)；[四极杆](projects/rf_multipole_ion_optics/variants/quadrupole/README.md)、[六极杆](projects/rf_multipole_ion_optics/variants/hexapole/README.md)、[八极杆](projects/rf_multipole_ion_optics/variants/octupole/README.md) |
+| 正交脉冲加速器 | [二区／三区加速器](projects/orthogonal_accelerator/README.md) |
 | 单次反射正交加速飞行时间质量分析器 | [oa-TOF](projects/single_reflection_oa_tof_mass_analyzer/README.md) |
-| 正交脉冲加速器（二区／三区） | [加速器](projects/orthogonal_accelerator/README.md) |
 | 开放路径平行镜双条带多次反射飞行时间质量分析器 | [MR-TOF](projects/parallel_mirror_dual_stripe_mr_tof/README.md) |
-| RF四极杆离子光学 | [四极杆](projects/rf_quadrupole_ion_optics/README.md) |
-| RF六极杆离子光学 | [六极杆](projects/rf_hexapole_ion_optics/README.md) |
-| RF八极杆离子光学 | [八极杆](projects/rf_octupole_ion_optics/README.md) |
 | 双压力区矩形射频离子处理器 | [Ion Processor](projects/dual_pressure_rectilinear_ion_processor/README.md) |
 | 双锥串联四极杆离子传输接口 | [双锥接口](projects/dual_cone_tandem_quadrupole_ion_interface/README.md) |
 | 开孔长管电子轰击离子源 | [EI离子源](projects/apertured_tube_electron_impact_ion_source/README.md) |
@@ -40,33 +35,23 @@
 
 ## 按问题查阅
 
-| 要解决的问题 | 权威入口 |
+| 要解决的问题 | 入口 |
 |---|---|
-| 文件放哪里、谁拥有结论、何时提炼公共知识 | [架构与知识权威](docs/REPOSITORY_ARCHITECTURE.md) |
-| 选部件、复用实例、增加能力或组装研究 | [项目与组装边界](docs/REPOSITORY_ARCHITECTURE.md#部件实例与组装)、[组装入口](integrations/README.md)；能力是否可执行以相应状态页为准 |
-| baseline/resolved、软件职责、正式几何验收 | [参数派生](docs/REPOSITORY_ARCHITECTURE.md#参数权威与单向派生)、[GUI/CAD](docs/REPOSITORY_ARCHITECTURE.md#gui-与-cad-门禁) |
-| run、artifact、缓存、归档、保留 | [生命周期](docs/LIFECYCLE.md) |
-| 准备环境、启动工具、执行验证、提交 | [操作指南](docs/OPERATIONS.md) |
-| 编码、配置分层、合同、进程和测试 | [开发标准](docs/DEVELOPMENT_STANDARDS.md) |
-| 维护仓库门禁或文档检查器 | [分层门禁](docs/OPERATIONS.md#分层门禁)、[文档检查与验收](docs/OPERATIONS.md#文档结构检查)，再查对应实现与邻近测试 |
-| 粒子样本、收敛、统计和跨求解器比较 | [验证方法](docs/VALIDATION_METHODS.md)、[分辨率与时间精度查表/计算](docs/TOF_ERROR_BUDGET.md) |
-| 科学绘图与图形证据 | [绘图标准](docs/PLOTTING_STANDARDS.md) |
-| COMSOL路线、网格收敛、原生追踪、API与故障定位 | [COMSOL按任务阅读入口](docs/COMSOL_GUIDE.md)：只进入本次需要的专题；项目结果从项目README进入，历史仅用于追溯 |
-| SIMION及长PA输入 | [SIMION参考](docs/SIMION_REFERENCE.md)、[公共实现](common/simion/README.md) |
-| 多极杆解析理论 | [理论入口](docs/multipoles/index.md) |
-| 端口、连接器与联合模拟；统一组装迁移 | [统一入口](integrations/README.md)、[连接架构](docs/COMPONENT_CONNECTION_ARCHITECTURE.md)、[迁移计划](docs/ROADMAP.md#统一组装迁移计划) |
-| 长期目标与跨项目阶段 | [愿景](docs/VISION.md)、[路线图](docs/ROADMAP.md) |
-| 查参考书、论文或供应商原始资料 | [学术参考资料](docs/references/README.md)、[官方手册](official_docs/README.md)；按问题定向读取 |
-| 已完成全仓审计 | [历史索引](docs/AUDITS.md) |
+| 选择部件、配置实例、组装和联合研究 | [组装入口](integrations/README.md)、[当前集成状态](integrations/docs/INTEGRATION.md) |
+| 文件放哪里、项目怎样划分、谁拥有知识 | [仓库架构](docs/REPOSITORY_ARCHITECTURE.md) |
+| 查理论、验证方法、软件操作、规范或参考资料 | [文档任务目录](docs/README.md) |
+| 查公共API、运行机制和机器合同 | [公共机制导航](docs/README.md#公共实现与机器合同) |
+| 查长期目标和建设顺序 | [愿景](docs/VISION.md)、[路线图](docs/ROADMAP.md) |
+| 追溯已完成全仓审计 | [审计索引](docs/AUDITS.md)；项目历史从所属README进入 |
 
 ## 工具链与执行入口
 
 版本、启动方式、连接生命周期及验证层级只在[操作指南](docs/OPERATIONS.md#工具链与执行入口)维护。
-本页保留此路由，便于从既有入口进入新权威。
+本页保留此路由，便于从既有入口进入唯一权威。
 
 ## 维护文档
 
-更新事实时修改它的唯一正文；不要在README、PROJECT和软件说明各追加同一进展。
-[文档维护规则](docs/REPOSITORY_ARCHITECTURE.md#文档维护与阅读体验)说明内容、导航和排版职责，
-[归档条件](docs/LIFECYCLE.md#history-冻结条件)说明何时收缩当前视图。
+更新事实时修改它的唯一正文；入口只负责导航。理论随其模型所有者保存，公共方法、工具经验和
+外部资料由文档任务目录统一发现。[文档维护规则](docs/REPOSITORY_ARCHITECTURE.md#文档维护与阅读体验)
+定义归属与阅读体验，[历史规则](docs/LIFECYCLE.md#history-冻结条件)区分可维护索引、冻结证据和普通Git编辑历史。
 验证和完成条件见[操作指南](docs/OPERATIONS.md#任务完成定义)。

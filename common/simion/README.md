@@ -2,7 +2,7 @@
 
 本目录保存不含器件身份、专用坐标系或运行模式假设的SIMION公共实现。`particle_source.py`接收已经由
 上游适配器转换到工作台语义的 beam 或逐粒子状态并生成 FLY2/Lua 文本；多极杆的 ION11 和 canonical 字段映射
-仍由 `common/multipole/simion_particle_source.py` 负责。
+仍由 `projects/rf_multipole_ion_optics/runtime/simion_particle_source.py` 负责。
 `render_source_states(..., significant_digits=17)`用于binary64往返精确投影；默认15位保持既有源文本不变。
 
 ## 按任务导航
@@ -11,7 +11,7 @@
 |---|---|
 | 序列化几何、检查孔拓扑 | [几何与 Workbench](#几何与-workbench) |
 | 缓存 PA family、导出 standalone 工作点 | [PA 缓存与工作点](#pa-缓存与工作点) |
-| 长 PA 输入与缓存写隔离 | 先读[跨项目边界](../../docs/SIMION_REFERENCE.md#长pa输入路径)，再读 [API 与证据](#长路径输入-api与证据) |
+| 长 PA 输入与缓存写隔离 | 先读[跨项目边界](../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，再读 [API 与证据](#长路径输入-api与证据) |
 | 读取原生 Fly 完成事实 | [原生完成事实](#原生完成事实) |
 | HS1运行副本的重复Fly复位与参数审计 | [HS1生命周期](#hs1运行副本生命周期) |
 | 共用电压边沿步长计算 | [电压边沿](#电压边沿) |
@@ -71,6 +71,17 @@ full／local脉冲hook及冷却前端的入口关闭／释放边沿也显式注�
 不从活动仓库动态加载。器件脉冲模式和时序仍归hook，现有RF kernel保持原权威。
 [`test_voltage_waveforms.lua`](test_voltage_waveforms.lua)是无PA／Workbench的纯Lua边沿、矩形门及三次过渡回归；
 职责标准见[电压驱动与同步](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md#电压波形器件驱动与同步)。
+
+## RF驱动
+
+[`rf_drive.lua`](rf_drive.lua)是共享的纯RF/DC数学kernel，不拥有Workbench、segment callback、PA实例或时钟。
+调用方显式传入唯一instrument time，kernel验证并计算sine/cosine、相位、RF幅值与scale、两组DC、
+逐电极common-mode与scale，并从每周期步数给出timestep cap。`new_differential`用于已包含静态场的载体，
+`new`用于完整逐电极驱动；几何、电极含义、源时钟和数值选择仍归消费者。
+
+生产调用先将kernel冻结为run-local输入；Program加载该副本，在初始化时编译驱动，飞行热路径不重解析配置。
+不同项目及integration不得另存同义RF公式。多极杆的调用时钟和验证边界见
+[实现说明](../../projects/rf_multipole_ion_optics/docs/IMPLEMENTATION.md#求解器投影)。
 
 ## 原生完成事实
 
@@ -324,7 +335,7 @@ surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SI
 
 ## 长路径输入 API与证据
 
-适用规则和关闭结论只由[长 PA 输入路径](../../docs/SIMION_REFERENCE.md#长pa输入路径)定义。
+适用规则和关闭结论只由[长 PA 输入路径](../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)定义。
 本节记录实现调用方式和历史证据；实现提交 `fe09cc9c`、Agent 路由提交 `d6a51112` 已发布。
 
 ### 调用与回归
@@ -336,6 +347,9 @@ surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SI
 | `New-ShortPaCopy -Source <PA> -Destination <short.pa> -ExpectedBytes <n> -ExpectedSha256 <sha>` | 持有禁止写入/删除/替换源文件的句柄并建立目标不存在的独立普通副本；拒绝 `.paN` 响应成员。Windows 大 PA 使用 `robocopy /J`，以私有目标的长度／SHA-256直接核对 manifest，不再用可能滞后的缓冲源视图否决正确落盘字节；较小文件仍核对同一受护源流和目标 |
 | `Protect-ImmutablePaSource ...` / `Unprotect-*` | 为确需直接只读消费的 immutable 源建立进程期 `FileShare.Read` 保护；大 PA 首次直接无缓冲读取并核对 manifest，不建立额外 PA 探针，同一进程后续复用同一保护。只有已经确认不在 Fast Adjust 后执行 `wb:save()` 等写操作的加载／飞行路径，才可把受护源直接交给 SIMION；存在明确写入路径时仍使用一次性私有副本。 |
 | `Remove-ShortPaCopyDirectory -Path <directory>` | 仅清理系统临时目录下匹配前缀的已登记独立副本并释放源句柄；默认前缀为 `simion_pa_links_` |
+
+PA登记与释放共用`GetFullPath`规范化键；已有输入先按PowerShell当前位置解析，8.3短名和展开名不另建记录。
+这复用[既有.NET路径语义](https://learn.microsoft.com/en-us/dotnet/api/system.io.path.getfullpath?view=net-10.0)（2026-10-26核对），不改变长PA运输、复制或哈希协议。
 
 `Get-ImmutablePaSourceVerificationSha256` 的大文件路径在源保护句柄持续持有期间，从运行源码根通过
 `python -m common.contracts.file_identity --unbuffered <path>` 调用公共

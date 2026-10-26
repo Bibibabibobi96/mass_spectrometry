@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
-    from .artifact_identity_archive import legacy_artifact_location
+    from .artifact_identity_archive import historical_project_identities
     from .file_identity import repository_text_sha256
     from .machine_contracts import ContractError, REPO_ROOT, load_json, validate_schema
 else:
-    from artifact_identity_archive import legacy_artifact_location
+    from artifact_identity_archive import historical_project_identities
     from file_identity import repository_text_sha256
     from machine_contracts import ContractError, REPO_ROOT, load_json, validate_schema
 
@@ -29,16 +29,21 @@ def descriptor_paths(repo_root: Path) -> list[Path]:
     return sorted((repo_root / "projects").glob("*/config/project.json"))
 
 
-def validate_legacy_identity_mappings(descriptors: list[dict[str, Any]]) -> None:
-    """Reject ambiguous rename mappings without inspecting or rewriting old artifacts."""
+def validate_legacy_identity_mappings(
+    descriptors: list[dict[str, Any]], repo_root: Path = REPO_ROOT
+) -> None:
+    """Reject ambiguous historical owners without promoting their capabilities."""
     project_ids = {descriptor["project_id"] for descriptor in descriptors}
     legacy_owners: dict[str, str] = {}
     mapping_owners: dict[str, str] = {}
     for descriptor in descriptors:
         current_id = descriptor["project_id"]
-        for legacy in descriptor.get("legacy_identities", []):
-            legacy_id = legacy["project_id"]
-            mapping_id = legacy["mapping_id"]
+        try:
+            identities = list(historical_project_identities(descriptor, repo_root))
+        except (OSError, TypeError, ValueError) as exc:
+            raise ContractError(f"{current_id}: legacy artifact location differs: {exc}") from exc
+        for identity in identities:
+            legacy_id = identity.project_id
             if legacy_id in project_ids:
                 raise ContractError(f"legacy project_id is still active: {legacy_id}")
             if legacy_id in legacy_owners:
@@ -46,18 +51,15 @@ def validate_legacy_identity_mappings(descriptors: list[dict[str, Any]]) -> None
                     f"duplicate legacy project_id {legacy_id}: "
                     f"{legacy_owners[legacy_id]} and {current_id}"
                 )
-            try:
-                legacy_artifact_location(legacy, current_id)
-            except (TypeError, ValueError) as exc:
-                raise ContractError(
-                    f"{current_id}: legacy artifact location differs"
-                ) from exc
+            legacy_owners[legacy_id] = current_id
+            if identity.legacy_mapping is None:
+                continue
+            mapping_id = identity.legacy_mapping["mapping_id"]
             if mapping_id in mapping_owners:
                 raise ContractError(
                     f"duplicate legacy mapping_id {mapping_id}: "
                     f"{mapping_owners[mapping_id]} and {current_id}"
                 )
-            legacy_owners[legacy_id] = current_id
             mapping_owners[mapping_id] = current_id
 
 
@@ -82,6 +84,47 @@ def consistent_profile_identity(
     if len(unique) != 1:
         raise ContractError(f"{profiles_path}: design profile identities differ")
     return next(iter(unique.values()))
+
+
+def validate_structural_variants(
+    descriptor: dict[str, Any], profiles: list[dict[str, Any]], path: Path
+) -> None:
+    """Bind each design to one declared structure without sharing its qualification."""
+    variants = descriptor.get("structural_variants", [])
+    if not variants:
+        consistent_profile_identity([item["identity"] for item in profiles], path)
+        return
+    by_id = {item["variant_id"]: item for item in variants}
+    if len(by_id) != len(variants):
+        raise ContractError(f"{path}: duplicate structural variant")
+    capability_ids = {item["capability_id"] for item in descriptor["capabilities"]}
+    assigned: set[str] = set()
+    for variant in variants:
+        declared = set(variant["capability_ids"])
+        if not declared.issubset(capability_ids) or assigned.intersection(declared):
+            raise ContractError(f"{path}: structural variant capability ownership differs")
+        assigned.update(declared)
+        if variant["electrode_count"] != 2 * variant["radial_order_n"]:
+            raise ContractError(f"{path}: structural variant electrode count differs")
+    if assigned != capability_ids:
+        raise ContractError(f"{path}: capabilities require one structural variant owner")
+    seen: set[str] = set()
+    for profile in profiles:
+        variant_id = profile.get("structural_variant_id")
+        variant = by_id.get(variant_id)
+        if variant is None:
+            raise ContractError(f"{path}: design profile has no declared structural variant")
+        expected = {
+            "project_id": descriptor["project_id"],
+            "family_id": descriptor["family_id"],
+            "radial_order_n": variant["radial_order_n"],
+            "electrode_count": variant["electrode_count"],
+        }
+        if profile["identity"] != expected:
+            raise ContractError(f"{path}: design profile structural identity differs")
+        seen.add(variant_id)
+    if seen != set(by_id):
+        raise ContractError(f"{path}: structural variant has no design profile")
 
 
 def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path) -> None:
@@ -135,6 +178,7 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
                 )
         profile_ids: set[str] = set()
         profile_identities: list[dict[str, Any]] = []
+        variant_variable_ids: dict[str, set[str]] = {}
         for profile in profiles["profiles"]:
             profile_id = profile["design_profile_id"]
             if profile_id in profile_ids:
@@ -154,6 +198,10 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             envelope = load_json(project_root / profile["optimization_envelope"])
             validate_schema(variables, "design_variable_catalog.schema.json")
             validate_schema(envelope, "optimization_envelope.schema.json")
+            if descriptor.get("structural_variants"):
+                variant_variable_ids.setdefault(profile["structural_variant_id"], set()).update(
+                    item["variable_id"] for item in variables["variables"]
+                )
             if (
                 variables["project_id"] != descriptor["project_id"]
                 or variables["family_id"] != descriptor["family_id"]
@@ -183,10 +231,20 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
                 raise ContractError(f"{profiles_path}: profile enclosure topology differs")
             if request["segmentation"]["strategy"] != profile["topology"]["segmentation_strategy"]:
                 raise ContractError(f"{profiles_path}: profile segmentation topology differs")
-        multipole_profile_identity = consistent_profile_identity(
-            profile_identities,
-            profiles_path,
-        )
+        validate_structural_variants(descriptor, profiles["profiles"], profiles_path)
+        for variant in descriptor.get("structural_variants", []):
+            declared = {
+                variable for capability in descriptor["capabilities"]
+                if capability["capability_id"] in variant["capability_ids"]
+                for variable in capability["design_variables"]
+            }
+            missing = declared - variant_variable_ids[variant["variant_id"]]
+            if missing:
+                raise ContractError(f"{profiles_path}: structural variant capability variables are unsupported: {sorted(missing)}")
+        if not descriptor.get("structural_variants"):
+            multipole_profile_identity = consistent_profile_identity(
+                profile_identities, profiles_path
+            )
 
     execution_relative = descriptor["contracts"]["execution"]
     if execution_relative is not None:
@@ -380,7 +438,7 @@ def build_registry(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
                 "sha256": repository_text_sha256(path),
             }
         )
-    validate_legacy_identity_mappings(descriptors)
+    validate_legacy_identity_mappings(descriptors, repo_root)
     registry = {
         "schema_version": 1,
         "role": "generated_project_capability_registry_do_not_edit",

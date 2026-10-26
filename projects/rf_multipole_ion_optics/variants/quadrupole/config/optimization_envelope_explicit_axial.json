@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "role": "project_optimization_envelope",
+  "project_id": "rf_multipole_ion_optics",
+  "family_id": "rf_multipole_ion_optics",
+  "envelope_id": "quadrupole_explicit_axial_functional_reference",
+  "status": "candidate",
+  "policy": "This envelope preserves the historical N=100 explicit-segmentation functional reference and makes no optimization, convergence, mechanical, Candidate or Formal claim.",
+  "reference": {
+    "design_request": "variants/quadrupole/config/requests/explicit_axial.json",
+    "design_request_sha256": "1629854A37CD37AC88FC202BF34AB6721231A591829F34575970A13F306C0A17"
+  },
+  "constraints": [
+    {
+      "constraint_id": "explicit_axial_reference_fixed",
+      "kind": "bounded_variable",
+      "request_json_pointers": [
+        "/geometry_mm/rod_radius_ratio"
+      ],
+      "description": "The governed catalog fixes the historical explicit-segmentation reference rod ratio."
+    },
+    {
+      "constraint_id": "explicit_segment_length_conservation",
+      "kind": "segment_length_conservation",
+      "request_json_pointers": [
+        "/segmentation/segments"
+      ],
+      "description": "Explicit segment lengths and gaps must exactly span the rod interval."
+    }
+  ]
+}

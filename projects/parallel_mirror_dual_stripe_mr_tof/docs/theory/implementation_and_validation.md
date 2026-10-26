@@ -427,7 +427,7 @@ adiabatic_action_error
 
 ## 18. 峰形和 FWHM
 
-峰形算法、KDE、FWHM 和非高斯解释只由[验证方法](../../../../docs/VALIDATION_METHODS.md#分辨率与峰形)
+峰形算法、KDE、FWHM 和非高斯解释只由[验证方法](../../../../docs/science/VALIDATION_METHODS.md#分辨率与峰形)
 定义，图形表达由[绘图标准](../../../../docs/PLOTTING_STANDARDS.md)定义。
 本项目同时报告传输、overtone、实际事件数及探测器响应边界；不能只保留目标振荡数的窄峰而隐藏损失。
 
@@ -447,7 +447,7 @@ overtone +1: K_target + 1
 ## 20. 误差预算
 
 下列是误差来源清单。只有给出来源不确定度、传播关系与组合规则后才能称为误差预算，具体方法见
-[通用验证方法](../../../../docs/VALIDATION_METHODS.md#网格建设与计算量控制)。
+[通用验证方法](../../../../docs/science/VALIDATION_METHODS.md#网格建设与计算量控制)。
 
 ### 20.1 几何
 
@@ -524,7 +524,7 @@ peak field
 ## 22. 跨求解器验证
 
 共同输入、独立求场、事件配对、统计等价与资格边界遵循
-[通用验证方法](../../../../docs/VALIDATION_METHODS.md)。MR-TOF 的比较重点包括单位电压场、轴势、
+[通用验证方法](../../../../docs/science/VALIDATION_METHODS.md)。MR-TOF 的比较重点包括单位电压场、轴势、
 转折点、周期、Poincaré 映射、真实振荡数、粒子状态、FWHM 和透过率；具体阈值在运行前由项目合同冻结。
 
 ## 23. 参考基准

@@ -95,19 +95,40 @@ def validate_request(request: dict[str, Any], registry: dict[str, Any]) -> dict[
     else:
         candidates = family_projects
 
+    structural_variant = target.get("structural_variant_id")
+    if structural_variant is not None and not any(
+        variant["variant_id"] == structural_variant
+        for project in candidates for variant in project.get("structural_variants", [])
+    ):
+        return _result("UNSUPPORTED", request, [f"Unknown structural variant: {structural_variant}"])
+
     selections = []
+    structural_candidates = set()
     for project in candidates:
         for capability in project["capabilities"]:
             if capability["function"] == target["function"]:
+                owners = {
+                    variant["variant_id"] for variant in project.get("structural_variants", [])
+                    if capability["capability_id"] in variant["capability_ids"]
+                }
+                if structural_variant is not None and structural_variant not in owners:
+                    continue
+                structural_candidates.update((project["project_id"], owner) for owner in owners)
                 selections.append((project, capability))
     if not selections:
         return _result("NEEDS_NEW_PROJECT", request, [f"No project implements function: {target['function']}"])
+    if structural_variant is None and len(structural_candidates) > 1:
+        return _result("NEEDS_CLARIFICATION", request, [
+            "Multiple structural variants implement this function; specify target.structural_variant_id: "
+            + ", ".join(sorted(f"{project_id}/{variant}" for project_id, variant in structural_candidates))
+        ])
+    mode = target["mode"]
+    if mode is not None:
+        selections = [(project, capability) for project, capability in selections if mode in capability["modes"]]
+        if not selections:
+            return _result("NEEDS_PROJECT_COMPLETION", request, [f"Mode is not implemented for the selected structure: {mode}"])
     selections.sort(key=lambda item: (MATURITY[item[1]["status"]], item[0]["project_id"]), reverse=True)
     project, capability = selections[0]
-
-    mode = target["mode"]
-    if mode is not None and mode not in capability["modes"]:
-        return _result("NEEDS_PROJECT_COMPLETION", request, [f"Mode is not implemented: {mode}"], project, capability)
 
     missing_metrics = sorted({o["metric"] for o in request["objectives"]} - set(capability["metrics"]))
     missing_variables = sorted(set(request["design_variables"]) - set(capability["design_variables"]))

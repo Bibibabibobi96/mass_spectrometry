@@ -19,6 +19,18 @@ class DesignRequestTests(unittest.TestCase):
     def status(self, request):
         return validate_request(request, self.registry)["status"]
 
+    def multipole_request(self, variant=None):
+        request = load_json(HERE / "examples" / "rf_quadrupole_transport.example.json")
+        request["target"]["mode"] = None
+        if variant is None:
+            request["target"].pop("structural_variant_id")
+        else:
+            request["target"]["structural_variant_id"] = variant
+        request["objectives"] = request["objectives"][:1]
+        request["design_variables"] = []
+        request["evidence_level"] = "static"
+        return request
+
     def test_examples_are_ready(self):
         self.assertEqual(self.status(self.request), "READY")
         rf = load_json(HERE / "examples" / "rf_quadrupole_transport.example.json")
@@ -72,6 +84,76 @@ class DesignRequestTests(unittest.TestCase):
         request = copy.deepcopy(self.request)
         request["design_variables"].append("imaginary_knob")
         self.assertEqual(self.status(request), "NEEDS_PROJECT_COMPLETION")
+
+    def test_explicit_four_six_and_eight_poles_select_only_owned_capabilities(self):
+        project = next(p for p in self.registry["projects"] if p["project_id"] == "rf_multipole_ion_optics")
+        for variant in project["structural_variants"]:
+            with self.subTest(variant=variant["variant_id"]):
+                result = validate_request(self.multipole_request(variant["variant_id"]), self.registry)
+                self.assertEqual(result["status"], "READY")
+                self.assertEqual(result["selected_project_id"], project["project_id"])
+                self.assertIn(result["selected_capability_id"], variant["capability_ids"])
+
+    def test_missing_structure_requires_clarification_before_maturity_selection(self):
+        for preferred in ("rf_multipole_ion_optics", None):
+            for unset in ("omitted", "null"):
+                with self.subTest(preferred=preferred, unset=unset):
+                    request = self.multipole_request()
+                    request["target"]["preferred_project_id"] = preferred
+                    if unset == "null":
+                        request["target"]["structural_variant_id"] = None
+                    result = validate_request(request, self.registry)
+                    self.assertEqual(result["status"], "NEEDS_CLARIFICATION")
+                    self.assertIsNone(result["selected_capability_id"])
+                    self.assertIn("structural_variant_id", result["messages"][0])
+
+    def test_unknown_structure_does_not_fall_back_to_a_mature_pole(self):
+        result = validate_request(self.multipole_request("decapole"), self.registry)
+        self.assertEqual(result["status"], "UNSUPPORTED")
+        self.assertIsNone(result["selected_project_id"])
+        self.assertIsNone(result["selected_capability_id"])
+
+    def test_structure_does_not_inherit_another_poles_maturity_or_metrics(self):
+        for variant in ("hexapole", "octupole"):
+            with self.subTest(variant=variant):
+                request = self.multipole_request(variant)
+                request["evidence_level"] = "candidate"
+                result = validate_request(request, self.registry)
+                self.assertEqual(result["status"], "NEEDS_PROJECT_COMPLETION")
+                self.assertTrue(result["selected_capability_id"].startswith(variant + "_"))
+                self.assertTrue(any("below requested candidate" in message for message in result["messages"]))
+                request["evidence_level"] = "static"
+                request["objectives"][0]["metric"] = "rms_beam_radius"
+                result = validate_request(request, self.registry)
+                self.assertEqual(result["status"], "NEEDS_PROJECT_COMPLETION")
+                self.assertIn("Unsupported metrics: rms_beam_radius", result["messages"])
+
+    def test_structure_does_not_inherit_another_poles_function(self):
+        request = self.multipole_request("octupole")
+        request["target"]["function"] = "collision_cooling"
+        result = validate_request(request, self.registry)
+        self.assertEqual(result["status"], "NEEDS_NEW_PROJECT")
+        self.assertIsNone(result["selected_capability_id"])
+
+    def test_unambiguous_structured_function_does_not_require_variant(self):
+        request = self.multipole_request()
+        request["target"]["function"] = "mass_filtering"
+        result = validate_request(request, self.registry)
+        self.assertEqual(result["status"], "READY")
+        self.assertEqual(result["selected_capability_id"], "quadrupole_mass_filter_reference")
+
+    def test_explicit_mode_selects_its_capability_within_the_structure(self):
+        for variant in ("hexapole", "octupole"):
+            with self.subTest(variant=variant):
+                request = self.multipole_request(variant)
+                request["target"]["mode"] = variant + "_finite_3d_no_collision"
+                result = validate_request(request, self.registry)
+                self.assertEqual(result["status"], "READY")
+                self.assertEqual(result["selected_capability_id"], variant + "_finite_3d_transport")
+                request["target"]["mode"] = "quadrupole_transport_no_collision"
+                rejected = validate_request(request, self.registry)
+                self.assertEqual(rejected["status"], "NEEDS_PROJECT_COMPLETION")
+                self.assertIsNone(rejected["selected_capability_id"])
 
 
 if __name__ == "__main__":

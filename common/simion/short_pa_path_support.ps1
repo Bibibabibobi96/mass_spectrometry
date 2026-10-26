@@ -158,7 +158,8 @@ function Protect-ImmutablePaSource {
     [Parameter(Mandatory)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedSha256
   )
   if($ExpectedBytes-lt0){throw 'Expected immutable PA source byte length must be non-negative.'}
-  $sourcePath=(Resolve-Path -LiteralPath $Source).Path
+  # Resolve against the PS location, then use the same key spelling as release.
+  $sourcePath=[IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Source).Path)
   $expectedHash=$ExpectedSha256.ToUpperInvariant()
   if($global:MassSpectrometryImmutablePaSourceGuards.ContainsKey($sourcePath)){
     $record=$global:MassSpectrometryImmutablePaSourceGuards[$sourcePath]
@@ -264,7 +265,7 @@ function New-ShortPaCopy {
     if($ExpectedSha256-notmatch '^[A-Fa-f0-9]{64}$'){throw 'Expected short PA source SHA256 is invalid.'}
     $expectedHash=$ExpectedSha256.ToUpperInvariant()
   }
-  $sourcePath=(Resolve-Path -LiteralPath $Source).Path
+  $sourcePath=[IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Source).Path)
   if(-not(Test-Path -LiteralPath $sourcePath -PathType Leaf)){
     throw "Short PA source is missing: $sourcePath"
   }
@@ -432,8 +433,8 @@ function Import-ExistingShortPaCopy {
     [Parameter(Mandatory)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedSha256,
     [switch]$TrustLiveOwnerGuard
   )
-  $sourcePath=(Resolve-Path -LiteralPath $Source).Path
-  $destinationPath=(Resolve-Path -LiteralPath $Destination).Path
+  $sourcePath=[IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Source).Path)
+  $destinationPath=[IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Destination).Path)
   if($global:MassSpectrometryShortPaCopies.ContainsKey($destinationPath)){
     $identity=Confirm-ShortPaCopyIdentity -Path $destinationPath
     if([int64]$identity.bytes-ne$ExpectedBytes-or

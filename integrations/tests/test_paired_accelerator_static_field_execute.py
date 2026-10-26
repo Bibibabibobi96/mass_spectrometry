@@ -27,6 +27,16 @@ WORKFLOW = ROOT/'integrations/workflows/paired_accelerator_static_field'
 
 
 class PairedStaticExecutionTests(unittest.TestCase):
+    def capacity_isolated_owner(self, root):
+        """Startup capacity admission is inert; lease and lifecycle operations remain real."""
+        source=(WORKFLOW/'execute.ps1').read_text(encoding='utf-8')
+        boundary=". (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')"
+        self.assertEqual(source.count(boundary),1)
+        owner=root/'inert_capacity_owner.ps1'
+        owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }"),
+            encoding='utf-8',newline='\n')
+        return owner
+
     def test_sample_coordinates_round_trip_exactly_and_reject_a_true_ulp_change(self):
         pairs=[('89.94434260835371','89.944342608353708'),
                ('201.4266955495302','201.42669554953019')]
@@ -162,6 +172,7 @@ if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'wrong stage sequence'}
 
     def completed_comsol_source(self, root):
         """Publish 115 inert sample rows; model bytes never represent a solve."""
+        root=root.resolve()
         run,_=self.prepared(root);plan=runtime.prepare_run(run)
         producer=root/'producer';(producer/'comsol').mkdir(parents=True)
         points=producer/'inputs/bvp/paired_accelerator_field_points.csv'
@@ -591,14 +602,14 @@ dofile('{Path(tasks['lua']).as_posix()}')
 
     def test_public_dry_run_publishes_managed_preparation_without_native(self):
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);_,author=self.prepared(root)
+            root=Path(directory).resolve();_,author=self.prepared(root)
             artifacts=root/'artifacts'
             artifacts.mkdir()
             initialize_capacity_ledger(artifacts,objects=[])
             run_id='20261025_010001__test__python__paired-static-entry'
-            result=subprocess.run(['pwsh','-NoProfile','-File',str(WORKFLOW/'execute.ps1'),
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(self.capacity_isolated_owner(root)),
                 '-Request',str(author/'request.json'),'-ArtifactRoot',str(artifacts),
-                '-Python',sys.executable,'-RunId',run_id,'-DryRun'],
+                '-Python',sys.executable,'-RunId',run_id,'-DryRun','-RepoRoot',str(ROOT)],
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=180)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             run=artifacts/'projects/instrument_assembly/runs'/run_id
@@ -614,6 +625,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
         script=r"""param($Source,$RepoRoot,$Python,$ArtifactRoot,$Outcome,$RunId)
 $ErrorActionPreference='Stop'
 . (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+function Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
@@ -690,16 +702,16 @@ if($receipt.status-ne'complete'){throw 'Retention was not reconciled.'}
 
     def test_invalid_saved_model_source_fails_before_any_vendor_and_seals_failure(self):
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);_,author=self.prepared(root)
+            root=Path(directory).resolve();_,author=self.prepared(root)
             artifacts=root/'artifacts';artifacts.mkdir()
             initialize_capacity_ledger(artifacts,objects=[])
             wrong=artifacts/'projects/instrument_assembly/runs/20261025_010000__test__python__inert-producer/run_manifest.json'
             runtime.write(wrong,{'role':'not_a_terminal_run'})
             run_id='20261025_010002__test__python__paired-static-invalid-source'
-            result=subprocess.run(['pwsh','-NoProfile','-File',str(WORKFLOW/'execute.ps1'),
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(self.capacity_isolated_owner(root)),
                 '-Request',str(author/'request.json'),'-ArtifactRoot',str(artifacts),
                 '-Python',sys.executable,'-RunId',run_id,'-SolverAuthorized',
-                '-ExecutionBudgetPath',str(root/'budget_never_consumed.json'),'-ComsolSourceManifest',str(wrong)],
+                '-ExecutionBudgetPath',str(root/'budget_never_consumed.json'),'-ComsolSourceManifest',str(wrong),'-RepoRoot',str(ROOT)],
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=180)
             self.assertNotEqual(result.returncode,0)
             self.assertIn('terminal instrument_assembly COMSOL producer required',result.stderr)

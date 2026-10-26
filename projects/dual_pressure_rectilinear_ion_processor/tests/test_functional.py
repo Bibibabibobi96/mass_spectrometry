@@ -320,7 +320,7 @@ class FunctionalContractTests(unittest.TestCase):
         for name in ("runtime.lua", "native_drive.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua"):
             (project / "simion" / name).write_text("-- inert copy fixture\n", encoding="utf-8")
         vendor = Path(self.temporary.name) / "vendor_copy_fixture"
-        fixture_paths = [repo / "common/multipole/simion_rf_drive.lua",
+        fixture_paths = [repo / "common/simion/rf_drive.lua",
                          repo / "common/simion/voltage_waveforms.lua",
                          repo / "common/simion/assets/iob_instance_seeds/1_instance_seed.iob",
                          vendor / "examples/collision_hs1/collision_hs1.lua"]
