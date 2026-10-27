@@ -194,7 +194,8 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 源与副本SHA不一致继续失败关闭，报告两条路径及实测摘要，不重试或放宽身份判据；缺依赖不回读活动仓库。
 上游只验证实际消费记录，阶段恢复和终态发布复用公共机制。跨父目录执行显式共用同一调度账本。
 
-近期迁移的软件完整L1／L2及官方CLOC见[架构迁移审计](../../docs/history/20261027__repository-architecture-migration.md)。
+架构迁移的既有验收见[架构迁移审计](../../docs/history/20261027__repository-architecture-migration.md)；
+后续文档与运行边界修复、失败及复验见[系统审查](../../docs/history/20261027__system-maintainability-review.md)。
 先前权限、宿主、夹具和发布失败仍按固定源码及原日志解释，focused通过不拼成失败整轮通过。
 后续改动按[操作指南](../../docs/OPERATIONS.md#分层门禁)运行适用门禁；软件检查不授予新原生、数值或Formal资格。
 
