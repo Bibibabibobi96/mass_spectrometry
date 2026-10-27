@@ -4,8 +4,8 @@
 `0292d3bb037cccc7b6568072c350155566fcc54e`。本页保存目标、任务状态与验收证据；项目当前科学结论
 分别归所属PROJECT，公共API归[公共分析说明](../common/analysis/README.md)与[公共合同](../common/contracts/README.md)。
 
-**当前：Goal执行中，未提交或推送。首轮115路径L1／L2通过；冗余收敛及独立复核完成，
-固定116路径候选的完整L1／L2均已通过，正在执行主题提交与原工作区交付。**
+**当前：实现、独立复核、固定116路径的完整L1／L2与原工作区交付均完成。代码已分主题本地提交，
+最终记录完成后按用户最新授权推送GitHub；远程推送结果以最终交接为准。**
 
 ## 目标与边界
 
@@ -24,7 +24,7 @@
   采样响应包络不能混名；Da、Th、名义相对映射、同批质心拟合与独立标定不能互换。
 - 图、CSV和JSON消费同一prepared结果；来源可通过父分析metadata追溯，不要求每图复制整份输入合同。
 - 不扩大到性能调参、扫描、N=1000、S4或Candidate／Formal晋升；不重写历史冻结结果。
-  本goal未授权远程推送、合并或外部发布。
+  用户随后明确授权推送GitHub；合并与其他外部发布不在本次范围。
 
 规范继续以[架构](REPOSITORY_ARCHITECTURE.md)、[开发标准](DEVELOPMENT_STANDARDS.md)、
 [生命周期](LIFECYCLE.md)和[操作指南](OPERATIONS.md)为准，本页不维护第二套执行规则。
@@ -41,7 +41,7 @@
 | B3 单反射／MR | 纯时间KDE v2；具名时间参考／质量映射；MR辅助bin span退出FWHM名称 | MR方法／clock／设置拒绝；单反射大整数在读取、Hit过滤与最终CSV保真 |
 | B4 RF | 完整出口census；采样响应包络与插值主峰宽分开；run-local分析 | +1源边界、截断／全零／多峰；实际隔离模块来源和篡改拒绝；不授予分辨能力 |
 | B5 公共机制 | strict_json两消费者、公共小输入复制、图形导出、项目runtime binding及四类消费者审计 | 实际替换旧helper，冻结库存和门禁同步；未另建状态／插件框架 |
-| B6 联合交付 | 收敛后的116路径L1与完整L2均PASS，CLOC源码身份与测试树一致 | 主题提交、原工作区交付与最终记录完成后关闭goal |
+| B6 联合交付 | 收敛后的116路径L1与完整L2均PASS，CLOC源码身份与测试树一致 | 主题提交与原工作区交付完成；最终记录及授权推送后关闭goal |
 
 主要知识入口：
 
@@ -72,7 +72,7 @@ cli_callback_uncertain、private_no_calls。它只覆盖Python顶层私有符号
 
 ## 数值、来源与重放证据
 
-以下是实际完成过的同输入／focused证据，不是历史golden或真实求解器重跑；当前收敛后仍需重验受影响范围。
+以下是实际完成过的同输入／focused证据，不是历史golden或真实求解器重跑；收敛后受影响范围已由最终L1／L2复验。
 
 | 范围 | 已取得证据 |
 |---|---|
@@ -110,8 +110,8 @@ cli_callback_uncertain、private_no_calls。它只覆盖Python顶层私有符号
 
 L1的MR路由实际执行Core，完整Static由L2完成。单反射两个skip是明确历史native source snapshot
 未随本工作树携带，以及未配置可选T5 receipt。其他项目缺历史资产的skip按其原层级保留。
-成功门禁诊断目录由公共机制报告CLEANED。109／114路径两组的4个失败／取消临时目录已逐个核对
-归属、无活动引用及无reparse point，使用公共清理入口删除49个日志／缓存文件，释放958,923字节。
+成功门禁诊断目录由公共机制报告CLEANED。包含最初harness失败在内的5个失败／取消临时目录已逐个核对
+归属、无活动引用及无reparse point，使用公共清理入口删除70个日志／缓存文件，释放1,155,239字节。
 原日志不逐字保留，必要失败事实在上表；测试和缓存可重建，没有删除科学模型或唯一数据。
 
 未执行真实COMSOL／SIMION Fly、GUI／CAD或L3 Formal验证；本次没有修改几何、源、积分器、采集或时钟。
@@ -147,14 +147,14 @@ L1的MR路由实际执行Core，完整Static由L2完成。单反射两个skip是
 ```text
 CLOC_DELTA=PASS
 BASELINE=0292d3bb037cccc7b6568072c350155566fcc54e
-RESULT=WORKTREE(head=b5efb9d9c1963b5fc62a4c44c34549c08a9a6878)
+RESULT=ce2ecc865329f8fa993d8e9fe7f6669fe7928fa5
 CLOC_VERSION=2.10
-CREATED_UTC=2026-10-27T13:43:35.0671846+00:00
+CREATED_UTC=2026-10-27T14:52:07.3539108+00:00
 CLASSIFIER_SHA256=d3365e7f02e66a775ec8eb3b12fb7b7bfa1bf34b87009543768a8e36bb4db749
 LANGUAGE_DEFINITION_SHA256=985e60f06bd8981c36966a0895cccfccd182fd625c79eb6ae94b65a12c5508a6
-WORKTREE_DIRTY=true
-WORKTREE_TRACKED_DIRTY_COUNT=107
-WORKTREE_UNTRACKED_COUNT=9
+WORKTREE_DIRTY=false
+WORKTREE_TRACKED_DIRTY_COUNT=0
+WORKTREE_UNTRACKED_COUNT=0
 INPUT_IDENTITY SNAPSHOT=baseline FILES=1453 SHA256=e6b0484dd5571f4f766c64c6378c8a4af669436a2540682419faf51077a3529d
 INPUT_IDENTITY SNAPSHOT=result FILES=1461 SHA256=383f31e7f3804828bbb95b7070c605c2610f394823aef6085f7c40981222da1a
 FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
@@ -254,23 +254,39 @@ SCRIPT_FILES BASE=80 RESULT=80 DELTA=0
 
 | Agent | 责任 | 状态 |
 |---|---|---|
-| Agent 0 | 目标、整合、证据、CLOC、门禁与交付 | 本轮L1／L2与源码身份核对完成，执行本地主题提交和交付 |
+| Agent 0 | 目标、整合、证据、CLOC、门禁与交付 | L1／L2、主题提交与原工作区交付完成；负责授权推送与关闭 |
 | Agent 1 | RF冻结接线清单及结构化退出码 | 5个授权文件已冻结；5项冻结包回归、3PS parser及Ruff通过 |
 | Agent 2 | IP冻结测试脚手架 | 2个授权文件已冻结；35项通过，5成功＋5缺模块失败probe |
 | Agent 3 | 单反射／RF与独立复核 | 前批已交付冻结；精确ID与解释器绑定独立接受 |
 | Agent 4 | B0与提交边界 | 收敛后两实际测试独立通过；RF包probe与IP隔离／计算边界接受 |
 
-本地主题顺序保持：runtime binding；strict_json；公共复制；消费者审计与精确退役；
-RF phase CLI；峰／ID／RF响应；B2束流与观测。共享README、gate catalog、依赖库存、
-PROJECT和本计划按主题分段暂存；后续RF helper若增加改动路径，重新核对清单。
-每组正文说明累计树验证范围，不将累计最终树PASS冒充中间提交独立全门禁PASS。
-Git写入串行，原checkout的旧中间稿在整合前保留恢复点；没有远程推送／合并／发布授权。
+代码提交以累计最终树验证为依据，不将最终树PASS冒充中间提交独立全门禁PASS；Git写入串行。
 
-原工作区：`C:/Users/Liao/Documents/ChatGPT/Mass spectrometry repository`。
-当前隔离工作树：`C:/Users/Liao/.codex/worktrees/unified-diagnostics-b2/Mass spectrometry repository`。
-当前HEAD仍为`b5efb9d9c1963b5fc62a4c44c34549c08a9a6878`。
-正式验证使用原工作区锁定的`.venv/Scripts/python.exe`，独立树不另装环境。
-门禁共用`C:/Users/Liao/Documents/ChatGPT/artifacts/common/host_resources.sqlite3`。
+| 提交 | 主题 |
+|---|---|
+| `3cd9830f` | 目标与计划 |
+| `b5efb9d9` | MR无调用trial builder退役 |
+| `bc20e16a` | 项目runtime binding |
+| `2b3be944` | strict JSON复用 |
+| `88458a97` | 已验证输入复制 |
+| `9d904aa0` | 消费者审计与精确退役 |
+| `de23bf1e` | RF有界相位诊断 |
+| `0a40351b` | 峰、原ID与冻结响应重放 |
+| `ce2ecc86` | 共享观测与加权beam |
+
+代码结果SHA：`ce2ecc865329f8fa993d8e9fe7f6669fe7928fa5`。最终记录提交仅修改Markdown，
+其自身`CLOC_DELTA=N/A (docs-only)`；上面的代码区间与全部语言／过滤报告保持有效。
+
+原工作区：`C:/Users/Liao/Documents/ChatGPT/Mass spectrometry repository`，
+交付分支`codex/unified-diagnostics-verified`，切换后工作树clean。原分支未重写；
+原有37路径中间稿保留恢复stash `e94b6cd818c2d77f90ed09ad53da49d6bd7fd164`。
+原位置冻结包及IP功能smoke共40项通过（32.102秒），受管文本字节检查1624文件通过。
+正式验证使用该工作区锁定的`.venv/Scripts/python.exe`，
+共用`C:/Users/Liao/Documents/ChatGPT/artifacts/common/host_resources.sqlite3`。
+
+隔离验证树`C:/Users/Liao/.codex/worktrees/unified-diagnostics-b2/Mass spectrometry repository`
+保留为审阅副本：已确认clean及376个忽略缓存文件，但app归档返回“primary checkout cannot be removed”，
+重新绑定原位置也因“not a managed worktree”拒绝。未绕过保护手工删除，不将其208,853,416字节计入释放容量。
 
 ## 复现与最终关闭
 
@@ -280,7 +296,7 @@ Git写入串行，原checkout的旧中间稿在整合前保留恢复点；没有
 ./common/verify_changed.ps1 -PythonExe $env:SIMULATION_PYTHON_EXE -PlanOnly
 ./common/verify_changed.ps1 -PythonExe $env:SIMULATION_PYTHON_EXE -MaxConcurrency 2
 ./common/verify_repository_integration.ps1 -PythonExe $env:SIMULATION_PYTHON_EXE -MaxConcurrency 2
-./common/report_cloc_delta.ps1 -Base 0292d3bb037cccc7b6568072c350155566fcc54e -Current WORKTREE
+./common/report_cloc_delta.ps1 -Base 0292d3bb037cccc7b6568072c350155566fcc54e -Current ce2ecc865329f8fa993d8e9fe7f6669fe7928fa5
 ```
 
 - [x] B0候选保留／退役、原始目标与当前事实逐项核对完成。
@@ -289,4 +305,4 @@ Git写入串行，原checkout的旧中间稿在整合前保留恢复点；没有
 - [x] 增长／复杂度复核与已确认冗余收敛完成，规模和操作接口如实报告。
 - [x] 最终固定源码的公共／项目／集成回归与适用L1／L2通过；未执行层级明确。
 - [x] 最新官方CLOC含total／production／tests各语言files、blank、comment、code及完整过滤口径。
-- [ ] 主题提交、原工作区整合、临时内容清理和最终报告一致；全部必要工作完成后才关闭goal。
+- [x] 主题提交、原工作区整合与临时内容清理记录一致；授权推送结果在最终交接报告，完成后关闭goal。
